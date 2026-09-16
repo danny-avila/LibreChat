@@ -245,17 +245,18 @@ const processVisionRequest = async (client, currentAction) => {
     };
   }
 
-  /** @type {ChatCompletion | undefined} */
+  /** @type {Object | undefined} */
   const completion = await client.visionPromise;
   if (completion && completion.usage) {
     recordUsage({
       user: client.req.user.id,
       model: client.req.body.model,
       conversationId: (client.responseMessage ?? client.finalMessage).conversationId,
-      ...completion.usage,
+      prompt_tokens: completion.usage.input_tokens ?? completion.usage.prompt_tokens ?? 0,
+      completion_tokens: completion.usage.output_tokens ?? completion.usage.completion_tokens ?? 0,
     });
   }
-  const output = completion?.choices?.[0]?.message?.content ?? 'No image details found.';
+  const output = completion?.output_text ?? completion?.choices?.[0]?.message?.content ?? 'No image details found.';
   return {
     tool_call_id: currentAction.toolCallId,
     output,
@@ -296,7 +297,7 @@ async function processRequiredActions(client, requiredActions) {
 
   const { loadedTools } = await loadTools({
     user: client.req.user.id,
-    model: client.req.body.model ?? 'gpt-4o-mini',
+    model: client.req.body.model ?? 'gpt-5.4-nano',
     tools,
     functions: true,
     endpoint: client.req.body.endpoint,
@@ -1724,6 +1725,7 @@ module.exports = {
   loadAgentTools,
   loadToolsForExecution,
   processRequiredActions,
+  processVisionRequest,
   resolveAgentCapabilities,
   resolveJuristAIExecutionPolicy,
   filterJuristAIActionTools,

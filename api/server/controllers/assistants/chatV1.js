@@ -95,7 +95,7 @@ const chatV1 = async (req, res) => {
   let attachedFileIds = new Set();
   /** @type {TMessage | null} */
   let requestMessage = null;
-  /** @type {undefined | Promise<ChatCompletion>} */
+  /** @type {undefined | Promise<Object>} */
   let visionPromise;
 
   const userMessageId = v4();
@@ -404,10 +404,22 @@ const chatV1 = async (req, res) => {
       visionMessage.content = createVisionPrompt(plural);
       visionMessage = formatMessage({ message: visionMessage, endpoint: EModelEndpoint.openAI });
 
-      visionPromise = openai.chat.completions
+      const responsesContent = visionMessage.content.map((part) => {
+        if (part.type === 'text') {
+          return { type: 'input_text', text: part.text };
+        }
+        return {
+          type: 'input_image',
+          image_url: part.image_url?.url ?? part.image_url,
+          ...(part.image_url?.detail ? { detail: part.image_url.detail } : {}),
+        };
+      });
+      visionPromise = openai.responses
         .create({
-          messages: [visionMessage],
-          max_tokens: 4000,
+          model: openai._options?.model || body.model || 'gpt-5.4-mini',
+          input: [{ role: 'user', content: responsesContent }],
+          max_output_tokens: 4000,
+          store: false,
         })
         .catch((error) => {
           logger.error('[/assistants/chat/] Error creating vision prompt', error);

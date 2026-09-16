@@ -21,23 +21,18 @@ Assistant: ${responseText}
 
 Title:`;
 
-  const completion = await openai.chat.completions.create({
-    model: 'gpt-4o-mini',
-    messages: [
-      {
-        role: 'user',
-        content: titlePrompt,
-      },
-    ],
-    temperature: 0.7,
-    max_tokens: 20,
+  const response = await openai.responses.create({
+    model: 'gpt-5.4-nano',
+    input: titlePrompt,
+    max_output_tokens: 20,
+    store: false,
   });
 
-  const title = completion.choices[0]?.message?.content?.trim() || 'New conversation';
+  const title = response.output_text?.trim() || 'New conversation';
   return {
     title: sanitizeTitle(title),
-    usage: completion.usage || {},
-    model: completion.model || 'gpt-4o-mini',
+    usage: response.usage || {},
+    model: response.model || 'gpt-5.4-nano',
   };
 };
 
@@ -69,8 +64,8 @@ const addTitle = async (req, { text, responseText, conversationId }) => {
     const title = titleResult.title;
     try {
       await recordUsage({
-        prompt_tokens: titleResult.usage.prompt_tokens || 0,
-        completion_tokens: titleResult.usage.completion_tokens || 0,
+        prompt_tokens: titleResult.usage.prompt_tokens || titleResult.usage.input_tokens || 0,
+        completion_tokens: titleResult.usage.completion_tokens || titleResult.usage.output_tokens || 0,
         model: titleResult.model,
         user: req?.user?.id,
         conversationId,

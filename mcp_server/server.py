@@ -940,24 +940,6 @@ async def remove_user_from_case(ctx: Context, case_id: str, user_id: str | None 
     return await _post(ctx, "/api/remove-user-from-case/", {"caseId": case_id, "userId": user_id})
 
 
-@mcp.tool(description="Invite a collaborator to join a legal team.")
-async def legal_team_invite(
-    ctx: Context,
-    email: str,
-    legal_team_id: str | None = None,
-    case_id: str | None = None,
-) -> dict:
-    return await _post(
-        ctx,
-        "/api/legal-team-invite/",
-        {
-            "email": email,
-            "legalTeamId": legal_team_id,
-            "caseId": case_id,
-        },
-    )
-
-
 @mcp.tool(description="Create a signature request for a document in a case.")
 async def create_signature_request(  # noqa: PLR0913 - MCP tool schema is intentionally flat
     ctx: Context,

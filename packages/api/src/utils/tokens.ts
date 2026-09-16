@@ -56,6 +56,8 @@ const openAIModels = {
   'gpt-5.2': 400000,
   'gpt-5.3': 400000,
   'gpt-5.4': 272000, // standard context; 1M experimental available via API opt-in (2x rate)
+  'gpt-5.4-mini': 400000,
+  'gpt-5.4-nano': 400000,
   'gpt-5.4-pro': 272000, // same window as gpt-5.4
   'gpt-5.5': 1050000,
   'gpt-5.5-pro': 1050000,

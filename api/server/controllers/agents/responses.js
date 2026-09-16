@@ -73,7 +73,7 @@ const db = require('~/models');
  * controls are copied into model_parameters so the provider adapter receives
  * them at the same boundary as normal agent configuration.
  */
-function applyResponseRequestOptions(agentConfig, request) {
+function applyResponseRequestOptions(agentConfig, request, { forceResponsesApi = false } = {}) {
   const modelParameters = { ...(agentConfig.model_parameters ?? {}) };
   const requestModelParameters = [
     'reasoning',
@@ -95,6 +95,14 @@ function applyResponseRequestOptions(agentConfig, request) {
     if (request[key] !== undefined) {
       modelParameters[key] = request[key];
     }
+  }
+
+  // The /v1/responses route must reach OpenAI's Responses transport when the
+  // selected agent is first-party OpenAI. Without this explicit opt-in,
+  // initializeAgent's normal LangChain path can silently use Chat
+  // Completions while the controller merely emits a Responses-shaped facade.
+  if (forceResponsesApi) {
+    modelParameters.useResponsesApi = true;
   }
 
   const instructions = [agentConfig.instructions, request.instructions]
@@ -511,7 +519,12 @@ const createResponse = async (req, res) => {
 
     Object.assign(
       primaryConfig,
-      narrowResponseTools(applyResponseRequestOptions(primaryConfig, request), request.tools),
+      narrowResponseTools(
+        applyResponseRequestOptions(primaryConfig, request, {
+          forceResponsesApi: agent.provider === EModelEndpoint.openAI,
+        }),
+        request.tools,
+      ),
     );
 
     /**

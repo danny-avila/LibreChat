@@ -427,6 +427,35 @@ describe('createResponse controller', () => {
   });
 
   describe('request-scoped Responses controls', () => {
+    it('forces the native Responses transport for first-party OpenAI agents', async () => {
+      const api = require('@librechat/api');
+      const db = require('~/models');
+      db.getAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        name: 'OpenAI Agent',
+        provider: 'openAI',
+        model_parameters: { model: 'gpt-5.4-mini' },
+      });
+      api.initializeAgent.mockResolvedValueOnce({
+        id: 'agent-123',
+        model: 'gpt-5.4-mini',
+        provider: 'openAI',
+        model_parameters: { model: 'gpt-5.4-mini' },
+        toolRegistry: {},
+        edges: [],
+      });
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', input: 'Use native Responses', stream: false },
+      });
+
+      await createResponse(req, res);
+
+      expect(api.createRun.mock.calls[0][0].agents[0].model_parameters).toMatchObject({
+        model: 'gpt-5.4-mini',
+        useResponsesApi: true,
+      });
+    });
+
     it('forwards model controls and instructions into the agent run', async () => {
       const api = require('@librechat/api');
       api.validateResponseRequest.mockReturnValueOnce({

@@ -128,6 +128,7 @@ const {
   loadAgentTools,
   loadToolsForExecution,
   processRequiredActions,
+  processVisionRequest,
   resolveAgentCapabilities,
   resolveJuristAIExecutionPolicy,
   filterJuristAIActionTools,
@@ -167,6 +168,25 @@ describe('ToolService - Action Capability Gating', () => {
     mockGetUserMCPAuthMap.mockResolvedValue({});
     mockGetServerConfig.mockResolvedValue(undefined);
     mockResolveConfigServers.mockResolvedValue({});
+  });
+
+  it('returns Responses output_text for the legacy Assistants vision tool result', async () => {
+    const result = await processVisionRequest(
+      {
+        visionPromise: Promise.resolve({
+          output_text: 'Detailed image description',
+          usage: { input_tokens: 8, output_tokens: 5 },
+        }),
+        req: { user: { id: 'user_123' }, body: { model: 'gpt-5.4-mini' } },
+        responseMessage: { conversationId: 'conversation-1' },
+      },
+      { toolCallId: 'call-1' },
+    );
+
+    expect(result).toEqual({
+      tool_call_id: 'call-1',
+      output: 'Detailed image description',
+    });
   });
 
   describe('resolveAgentCapabilities', () => {
