@@ -25,3 +25,11 @@ export const accountDeletionResponseSchema: z.ZodType<{
 export const messageResponseSchema: z.ZodType<{ message: string }> = z
   .object({ message: z.string() })
   .strict();
+
+/**
+ * The global JSON body parser runs before these routes and, on malformed JSON, returns 400 with
+ * a flat `{ error: 'Invalid JSON format', message }` body. The `error` field is a fixed discriminator.
+ */
+export const jsonParseErrorSchema: z.ZodType<{ error: 'Invalid JSON format'; message: string }> = z
+  .object({ error: z.literal('Invalid JSON format'), message: z.string() })
+  .strict();

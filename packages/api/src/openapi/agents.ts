@@ -14,6 +14,7 @@ import {
   errorMessageResponseSchema,
   accountDeletionResponseSchema,
   messageResponseSchema,
+  jsonParseErrorSchema,
 } from './errors';
 
 const TAG = 'Agents';
@@ -91,7 +92,11 @@ export const agentComponentSchemas: Record<string, ZodTypeAny> = {
 };
 
 const errorResponses = [
-  { status: 400, description: 'Invalid request', schema: agentManagementErrorSchema },
+  {
+    status: 400,
+    description: 'Invalid request, or a malformed JSON body',
+    schema: z.union([agentManagementErrorSchema, jsonParseErrorSchema]),
+  },
   { status: 401, description: 'Authentication failed', schema: errorMessageResponseSchema },
   {
     status: 403,

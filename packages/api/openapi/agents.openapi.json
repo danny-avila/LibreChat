@@ -46,11 +46,18 @@
             }
           },
           "400": {
-            "description": "Invalid request",
+            "description": "Invalid request, or a malformed JSON body",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JsonParseError"
+                    }
+                  ]
                 }
               }
             }
@@ -165,11 +172,18 @@
             }
           },
           "400": {
-            "description": "Invalid request",
+            "description": "Invalid request, or a malformed JSON body",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JsonParseError"
+                    }
+                  ]
                 }
               }
             }
@@ -276,11 +290,18 @@
             }
           },
           "400": {
-            "description": "Invalid request",
+            "description": "Invalid request, or a malformed JSON body",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JsonParseError"
+                    }
+                  ]
                 }
               }
             }
@@ -395,11 +416,18 @@
             }
           },
           "400": {
-            "description": "Invalid request",
+            "description": "Invalid request, or a malformed JSON body",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JsonParseError"
+                    }
+                  ]
                 }
               }
             }
@@ -504,11 +532,18 @@
             }
           },
           "400": {
-            "description": "Invalid request",
+            "description": "Invalid request, or a malformed JSON body",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JsonParseError"
+                    }
+                  ]
                 }
               }
             }
@@ -644,11 +679,18 @@
             }
           },
           "400": {
-            "description": "Invalid request",
+            "description": "Invalid request, or a malformed JSON body",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JsonParseError"
+                    }
+                  ]
                 }
               }
             }
@@ -763,11 +805,18 @@
             }
           },
           "400": {
-            "description": "Invalid request",
+            "description": "Invalid request, or a malformed JSON body",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JsonParseError"
+                    }
+                  ]
                 }
               }
             }
@@ -883,11 +932,18 @@
             }
           },
           "400": {
-            "description": "Invalid request",
+            "description": "Invalid request, or a malformed JSON body",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JsonParseError"
+                    }
+                  ]
                 }
               }
             }
@@ -1004,11 +1060,18 @@
             }
           },
           "400": {
-            "description": "Invalid request",
+            "description": "Invalid request, or a malformed JSON body",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JsonParseError"
+                    }
+                  ]
                 }
               }
             }
@@ -1115,11 +1178,18 @@
             }
           },
           "400": {
-            "description": "Invalid request",
+            "description": "Invalid request, or a malformed JSON body",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JsonParseError"
+                    }
+                  ]
                 }
               }
             }
@@ -1234,11 +1304,18 @@
             }
           },
           "400": {
-            "description": "Invalid request",
+            "description": "Invalid request, or a malformed JSON body",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JsonParseError"
+                    }
+                  ]
                 }
               }
             }
@@ -1352,11 +1429,18 @@
             }
           },
           "400": {
-            "description": "Invalid request",
+            "description": "Invalid request, or a malformed JSON body",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JsonParseError"
+                    }
+                  ]
                 }
               }
             }
@@ -1472,11 +1556,18 @@
             }
           },
           "400": {
-            "description": "Invalid request",
+            "description": "Invalid request, or a malformed JSON body",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JsonParseError"
+                    }
+                  ]
                 }
               }
             }
@@ -1600,11 +1691,18 @@
             }
           },
           "400": {
-            "description": "Invalid request",
+            "description": "Invalid request, or a malformed JSON body",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Error"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/JsonParseError"
+                    }
+                  ]
                 }
               }
             }
@@ -3635,6 +3733,23 @@
           }
         },
         "required": [
+          "message"
+        ],
+        "additionalProperties": false
+      },
+      "JsonParseError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "const": "Invalid JSON format"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
           "message"
         ],
         "additionalProperties": false

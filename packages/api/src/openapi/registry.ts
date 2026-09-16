@@ -4,6 +4,7 @@ import {
   errorMessageResponseSchema,
   accountDeletionResponseSchema,
   messageResponseSchema,
+  jsonParseErrorSchema,
 } from './errors';
 import { agentComponentSchemas, agentContracts } from './agents';
 import { skillComponentSchemas, skillContracts } from './skills';
@@ -24,6 +25,7 @@ export const componentSchemas: Record<string, ZodTypeAny> = {
   ErrorMessage: errorMessageResponseSchema,
   AccountDeletionConflict: accountDeletionResponseSchema,
   MessageError: messageResponseSchema,
+  JsonParseError: jsonParseErrorSchema,
 };
 
 /**
