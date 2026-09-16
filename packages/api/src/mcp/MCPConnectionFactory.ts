@@ -963,13 +963,28 @@ export class MCPConnectionFactory {
       return await readTokens();
     } catch (error) {
       if (!(error instanceof FlowStateNotFoundError)) {
-        throw error;
+        if (error instanceof Error && error.name !== 'Error') {
+          throw error;
+        }
+        // Legacy flow records and cache failures carry no typed outcome. Retry storage first.
+        throw new MCPTokenStorageUnavailableError(this.serverName, error);
       }
       logger.info(
         `${this.logPrefix} Token flow was invalidated while waiting on it; re-reading stored tokens`,
       );
       await this.onOAuthCredentialsInvalidated?.();
-      return await readTokens();
+      try {
+        return await readTokens();
+      } catch (retryError) {
+        if (
+          retryError instanceof Error &&
+          retryError.name !== 'Error' &&
+          !(retryError instanceof FlowStateNotFoundError)
+        ) {
+          throw retryError;
+        }
+        throw new MCPTokenStorageUnavailableError(this.serverName, retryError);
+      }
     }
   }
 
@@ -1124,9 +1139,14 @@ export class MCPConnectionFactory {
           MCPConnectionFactory.SILENT_REFRESH_ABORT_GRACE_MS,
         );
         logger.info(
-          `${this.logPrefix} Silent token refresh timed out after ${timeoutMs}ms, falling back to interactive OAuth`,
+          `${this.logPrefix} Silent token refresh timed out after ${timeoutMs}ms; deferring recovery`,
         );
-        resolve(null);
+        reject(
+          new MCPTokenRefreshUnavailableError(
+            this.serverName,
+            new Error('Silent refresh timed out'),
+          ),
+        );
       }, timeoutMs);
 
       refreshPromise.then(resolve, (error: unknown) => {
@@ -1241,28 +1261,20 @@ export class MCPConnectionFactory {
   private static isRefreshUnavailable(error: unknown): boolean {
     return (
       error instanceof MCPTokenRefreshUnavailableError ||
-      (error instanceof Error && error.name === 'MCPTokenRefreshUnavailableError')
+      error instanceof MCPTokenStorageUnavailableError ||
+      (error instanceof Error &&
+        (error.name === 'MCPTokenRefreshUnavailableError' ||
+          error.name === 'MCPTokenStorageUnavailableError'))
     );
   }
 
-  /**
-   * A credential this replica adopted was rotated, persisted and announced by a peer, so only this
-   * replica's own view is behind: its cached token flow still holds the credential the peer
-   * replaced, and the generation it captured before that rotation is retired.
-   *
-   * Deliberately not `handleOAuthRefreshSuccess`. That path is for a redemption *this* replica
-   * performed, and its `onOAuthCredentialsChanged` announcement advances application authorization
-   * state "after OAuth token persistence succeeds" — persistence this replica did not do. Announcing
-   * again would advance the generation a second time for one rotation, retiring the very generation
-   * recaptured here and leaving the build fenced against itself.
-   *
-   * `adoptPublishedCredentials` cannot serve either: adopted tokens are read from storage and carry
-   * no `publication_generation`, so the recapture reads the stored generation instead, after the
-   * cache write, when nothing this replica does can advance it further.
-   */
+  /** Carries the peer's publication generation to every waiter without publishing it again. */
   private async handleAdoptedCredentials(adoptedTokens: MCPOAuthTokens): Promise<void> {
-    await this.invalidateGetTokensFlow(adoptedTokens);
-    await this.onOAuthCredentialsInvalidated?.();
+    const generation = await this.onOAuthCredentialsInvalidated?.();
+    if (generation) {
+      adoptedTokens.publication_generation = generation;
+    }
+    await this.invalidateGetTokensFlow(adoptedTokens, generation || undefined);
   }
 
   private async handleOAuthRefreshSuccess(freshTokens: MCPOAuthTokens): Promise<void> {
@@ -1651,6 +1663,7 @@ export class MCPConnectionFactory {
             logger.info(
               `${this.logPrefix} Another replica is rotating this credential; deferring recovery`,
             );
+            recoveryPhase = 'silent-refresh';
             connection.emit('oauthFailed', error);
             return;
           }

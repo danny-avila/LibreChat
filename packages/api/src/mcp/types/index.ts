@@ -297,7 +297,7 @@ export interface UserConnectionContext {
    * invalidated its cached token flow. A caller leasing a generation captured earlier re-captures
    * it here, ahead of the read, so a rotation that follows the read still fences the build.
    */
-  onOAuthCredentialsInvalidated?: () => Promise<void>;
+  onOAuthCredentialsInvalidated?: () => Promise<string | void>;
 }
 
 export interface RequestScopedMCPConnectionStore {

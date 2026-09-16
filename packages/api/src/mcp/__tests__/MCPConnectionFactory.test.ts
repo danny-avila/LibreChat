@@ -17,7 +17,13 @@ import { MCPConnection } from '~/mcp/connection';
 import { processMCPEnv } from '~/utils';
 
 jest.mock('~/mcp/connection');
-jest.mock('~/mcp/oauth');
+jest.mock('~/mcp/oauth', () => ({
+  ...jest.createMockFromModule<typeof import('~/mcp/oauth')>('~/mcp/oauth'),
+  MCPTokenRefreshUnavailableError:
+    jest.requireActual('~/mcp/oauth').MCPTokenRefreshUnavailableError,
+  MCPTokenStorageUnavailableError:
+    jest.requireActual('~/mcp/oauth').MCPTokenStorageUnavailableError,
+}));
 jest.mock('~/utils/graph', () => ({
   ...jest.requireActual('~/utils/graph'),
   preProcessGraphTokens: jest.fn(async (options) => options),
@@ -80,6 +86,10 @@ class InspectableMCPConnectionFactory extends MCPConnectionFactory {
 
   public async attemptSilentTokenRefreshForTest(): Promise<MCPOAuthTokens | null> {
     return await this.attemptSilentTokenRefresh();
+  }
+
+  public bindRequestRecoveryForTest(connection: MCPConnection): () => void {
+    return this.handleOAuthEvents(connection, 'oauthReauthenticationRequired');
   }
 
   public async handleOAuthRequiredForTest() {
@@ -639,7 +649,7 @@ describe('MCPConnectionFactory', () => {
           credential_set_id: 'peer-generation',
         };
         const onOAuthCredentialsChanged = jest.fn().mockResolvedValue(undefined);
-        const onOAuthCredentialsInvalidated = jest.fn().mockResolvedValue(undefined);
+        const onOAuthCredentialsInvalidated = jest.fn().mockResolvedValue('peer-publication');
         /** Run the flow handler, so the factory's own `onTokensAdopted` wiring is exercised. */
         mockFlowManager.createFlowWithHandler.mockImplementation(
           async (_flowId: string, _type: string, handler: () => Promise<MCPOAuthTokens | null>) =>
@@ -670,15 +680,16 @@ describe('MCPConnectionFactory', () => {
          * recaptured here and leaving the build fenced against its own tool publication.
          */
         expect(onOAuthCredentialsChanged).not.toHaveBeenCalled();
+        expect(adoptedTokens.publication_generation).toBe('peer-publication');
         expect(onOAuthCredentialsInvalidated).toHaveBeenCalledTimes(1);
-        /** Recapture reads the stored generation, so it must follow the cache write. */
+        /** Capture the peer generation before sharing its tokens with flow waiters. */
         expect(mockFlowManager.deleteFlow).toHaveBeenCalled();
-        expect(mockFlowManager.deleteFlow.mock.invocationCallOrder[0]).toBeLessThan(
-          onOAuthCredentialsInvalidated.mock.invocationCallOrder[0],
+        expect(onOAuthCredentialsInvalidated.mock.invocationCallOrder[0]).toBeLessThan(
+          mockFlowManager.deleteFlow.mock.invocationCallOrder[0],
         );
       });
 
-      it('reports the tokens missing when the re-read loses its flow as well', async () => {
+      it('defers recovery when the re-read loses its flow as well', async () => {
         mockFlowManager.createFlowWithHandler.mockRejectedValue(
           new FlowStateNotFoundError('mcp_get_tokens'),
         );
@@ -686,7 +697,7 @@ describe('MCPConnectionFactory', () => {
 
         await expect(
           tokenLoadingFactory({ onOAuthCredentialsInvalidated }).getOAuthTokensForTest(),
-        ).resolves.toBeNull();
+        ).rejects.toMatchObject({ name: 'MCPTokenStorageUnavailableError' });
 
         expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledTimes(2);
         expect(onOAuthCredentialsInvalidated).toHaveBeenCalledTimes(1);
@@ -700,7 +711,7 @@ describe('MCPConnectionFactory', () => {
 
         await expect(
           tokenLoadingFactory({ onOAuthCredentialsInvalidated }).getOAuthTokensForTest(),
-        ).resolves.toBeNull();
+        ).rejects.toMatchObject({ name: 'MCPTokenStorageUnavailableError' });
 
         expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledTimes(1);
         expect(onOAuthCredentialsInvalidated).not.toHaveBeenCalled();
@@ -2123,6 +2134,44 @@ describe('MCPConnectionFactory', () => {
       expect(mockConnectionInstance.emit).toHaveBeenCalledWith('oauthFailed', contended);
     });
 
+    it('retries silent recovery after contention without spending the interactive phase', async () => {
+      const factory = new InspectableMCPConnectionFactory(
+        {
+          serverName: 'test-server',
+          serverConfig: { type: 'sse', url: 'https://api.example.com' },
+        },
+        {
+          useOAuth: true,
+          user: mockUser,
+          flowManager: mockFlowManager,
+          tokenMethods: {
+            findToken: jest.fn(),
+            createToken: jest.fn(),
+            updateToken: jest.fn(),
+            deleteTokens: jest.fn(),
+          },
+        },
+      );
+      let handler!: (data: Record<string, unknown>) => Promise<void>;
+      mockConnectionInstance.on.mockImplementation((event, listener) => {
+        if (event === 'oauthReauthenticationRequired') handler = listener as typeof handler;
+        return mockConnectionInstance;
+      });
+      factory.bindRequestRecoveryForTest(mockConnectionInstance);
+      const unavailable = Object.assign(new Error('retry'), {
+        name: 'MCPTokenRefreshUnavailableError',
+      });
+      const tokens = { access_token: 'fresh', token_type: 'Bearer', obtained_at: Date.now() };
+      mockMCPTokenStorage.forceRefreshTokens
+        .mockRejectedValueOnce(unavailable)
+        .mockResolvedValueOnce(tokens);
+      await handler({ serverUrl: 'https://api.example.com' });
+      await handler({ serverUrl: 'https://api.example.com' });
+      expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledTimes(2);
+      expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(tokens);
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+    });
+
     it('should bypass any flow cache on silent refresh and invalidate mcp_get_tokens cache (regression for stale cached token reuse)', async () => {
       // Reproduces the cache-collision flagged by Codex on PR #13369: when an
       // earlier `getOAuthTokens` call cached its (now server-rejected) tokens
@@ -2548,7 +2597,11 @@ describe('MCPConnectionFactory', () => {
         ).inflightSilentRefreshes;
         expect(inflightMap.size).toBe(1);
         expect(refreshSignal?.aborted).toBe(true);
-        expect(mockMCPOAuthHandler.initiateOAuthFlow).toHaveBeenCalled();
+        expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+        expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
+          'oauthFailed',
+          expect.objectContaining({ name: 'MCPTokenRefreshUnavailableError' }),
+        );
 
         const secondAttempt = oauthRequiredHandler!({ serverUrl: 'https://api.example.com' });
         await secondAttempt;
@@ -2659,7 +2712,7 @@ describe('MCPConnectionFactory', () => {
       }
     });
 
-    it('should reserve interactive OAuth fallback time when initTimeout is omitted', async () => {
+    it('defers recovery when the silent refresh budget expires with initTimeout omitted', async () => {
       const sseConfig = {
         url: 'https://api.example.com',
         type: 'sse' as const,
@@ -2727,7 +2780,11 @@ describe('MCPConnectionFactory', () => {
         await attempt;
 
         expect(refreshSignal?.aborted).toBe(true);
-        expect(mockMCPOAuthHandler.initiateOAuthFlow).toHaveBeenCalled();
+        expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+        expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
+          'oauthFailed',
+          expect.objectContaining({ name: 'MCPTokenRefreshUnavailableError' }),
+        );
       } finally {
         jest.useRealTimers();
       }
@@ -2807,7 +2864,11 @@ describe('MCPConnectionFactory', () => {
         await attempt;
 
         expect(refreshSignal?.aborted).toBe(true);
-        expect(mockMCPOAuthHandler.initiateOAuthFlow).toHaveBeenCalled();
+        expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+        expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
+          'oauthFailed',
+          expect.objectContaining({ name: 'MCPTokenRefreshUnavailableError' }),
+        );
       } finally {
         jest.useRealTimers();
       }
@@ -5321,7 +5382,7 @@ describe('MCPConnectionFactory', () => {
       const oauthOptions = makeOAuthOptions();
 
       mockProcessMCPEnv.mockReturnValue(serverConfig);
-      mockFlowManager.createFlowWithHandler.mockRejectedValue(new Error('no tokens'));
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(null);
 
       const mockTokens: MCPOAuthTokens = {
         access_token: 'bq-token',
@@ -5489,7 +5550,7 @@ describe('MCPConnectionFactory', () => {
       const oauthOptions = makeOAuthOptions();
 
       mockProcessMCPEnv.mockReturnValue(serverConfig);
-      mockFlowManager.createFlowWithHandler.mockRejectedValue(new Error('no tokens'));
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(null);
       mockConnectionInstance.isConnected.mockResolvedValue(true);
 
       const connection = await MCPConnectionFactory.create(
@@ -5565,7 +5626,7 @@ describe('MCPConnectionFactory', () => {
       };
 
       mockProcessMCPEnv.mockReturnValue(serverConfig);
-      mockFlowManager.createFlowWithHandler.mockRejectedValue(new Error('no tokens'));
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(null);
 
       const mockFlowData = {
         authorizationUrl: 'https://accounts.google.com/o/oauth2/auth',
@@ -5601,7 +5662,7 @@ describe('MCPConnectionFactory', () => {
       const oauthOptions = makeOAuthOptions();
 
       mockProcessMCPEnv.mockReturnValue(serverConfig);
-      mockFlowManager.createFlowWithHandler.mockRejectedValue(new Error('no tokens'));
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(null);
 
       wireEventHandlers(mockConnectionInstance);
       mockConnectionInstance.isConnected.mockResolvedValue(false);
@@ -5634,7 +5695,7 @@ describe('MCPConnectionFactory', () => {
       const oauthOptions = makeOAuthOptions();
 
       mockProcessMCPEnv.mockReturnValue(serverConfig);
-      mockFlowManager.createFlowWithHandler.mockRejectedValue(new Error('no tokens'));
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(null);
 
       const mockTokens: MCPOAuthTokens = {
         access_token: 'cleanup-token',

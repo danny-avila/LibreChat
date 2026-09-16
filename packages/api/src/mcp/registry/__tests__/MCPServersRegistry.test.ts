@@ -1448,6 +1448,16 @@ describe('MCPServersRegistry', () => {
       expect(result['langfuse-docs'].source).toBe('yaml');
     });
 
+    it('retains an admin override that changes only the refresh wait', async () => {
+      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlLangfuseConfig);
+      const configServers = await registry.ensureConfigServers({
+        'langfuse-docs': { ...yamlLangfuseConfig, oauthRefreshWaitTimeout: 25000 },
+      });
+      expect(configServers['langfuse-docs'].oauthRefreshWaitTimeout).toBe(25000);
+      const result = await registry.getAllServerConfigs('user-1', configServers);
+      expect(result['langfuse-docs'].oauthRefreshWaitTimeout).toBe(25000);
+    });
+
     it('preserves user-DB tier (source: "user") over config-tier overrides', async () => {
       const userDbEntry: t.ParsedServerConfig = {
         type: 'streamable-http',

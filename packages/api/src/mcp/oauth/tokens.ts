@@ -1014,29 +1014,16 @@ export class MCPTokenStorage {
             findToken: params.findToken,
             flowManager,
             existingRefreshToken: params.existingRefreshToken,
+            existingAccessToken: params.existingAccessToken,
             waitMs: this.resolveRefreshFlightWaitMs(params.refreshWaitTimeoutMs),
             signal: executionController.signal,
             logPrefix,
           });
         } catch (flightError) {
-          /**
-           * A flight still held by a live peer is reported as retryable and must propagate:
-           * falling through would redeem while that peer's redemption is in flight, which is the
-           * replay this fence exists to prevent.
-           *
-           * What remains is the lease store itself failing to answer, because `beginRefreshFlight`
-           * handles its own storage reads: refusing every refresh during a cache outage would cost
-           * more connections than the race it avoids, so only that degrades to the unfenced
-           * redemption every release before this one performed. Nothing else may reach here — a
-           * storage error arriving as an unfenced redemption is the concurrency this fence exists
-           * to remove, so a new throw inside the flight belongs in the flight's own handling.
-           */
           if (flightError instanceof MCPTokenRefreshUnavailableError) {
             throw flightError;
           }
-          logger.warn(`${logPrefix} Could not take the cross-replica refresh flight`, {
-            error: flightError,
-          });
+          throw new MCPTokenRefreshUnavailableError(serverName, flightError);
         }
       }
       if (flight?.aborted) {
@@ -1073,16 +1060,27 @@ export class MCPTokenStorage {
           await this.releaseRefreshFlight(flight.lease, logPrefix);
         }
       }
-    })().finally(() => {
-      if (staleTimerRef.current) {
-        clearTimeout(staleTimerRef.current);
-      }
-      if (this.inflightRefreshes.get(refreshKey) === refreshPromise) {
-        this.inflightRefreshes.delete(refreshKey);
-        this.inflightRefreshControllers.delete(refreshKey);
-        this.inflightRefreshOwners.delete(refreshKey);
-      }
-    });
+    })()
+      .catch((error: unknown) => {
+        if (
+          error instanceof ReauthenticationRequiredError ||
+          error instanceof MCPTokenRefreshUnavailableError ||
+          error instanceof MCPTokenStorageUnavailableError
+        ) {
+          throw error;
+        }
+        throw new MCPTokenRefreshUnavailableError(serverName, error);
+      })
+      .finally(() => {
+        if (staleTimerRef.current) {
+          clearTimeout(staleTimerRef.current);
+        }
+        if (this.inflightRefreshes.get(refreshKey) === refreshPromise) {
+          this.inflightRefreshes.delete(refreshKey);
+          this.inflightRefreshControllers.delete(refreshKey);
+          this.inflightRefreshOwners.delete(refreshKey);
+        }
+      });
     /**
      * Safety valve for wedged executions: after the stale window the execution
      * is aborted so it can never reach the token endpoint with a refresh token
@@ -1144,6 +1142,7 @@ export class MCPTokenStorage {
     findToken,
     flowManager,
     existingRefreshToken,
+    existingAccessToken,
     waitMs,
     signal,
     logPrefix,
@@ -1153,6 +1152,7 @@ export class MCPTokenStorage {
     findToken: GetTokensParams['findToken'];
     flowManager: NonNullable<GetTokensParams['flowManager']>;
     existingRefreshToken?: IToken | null;
+    existingAccessToken?: IToken | null;
     waitMs: number;
     /** Internal stale-abort signal owned by `forceRefreshTokens`, also fired by teardown. */
     signal: AbortSignal;
@@ -1171,7 +1171,7 @@ export class MCPTokenStorage {
      * nothing for the baseline. When no record is supplied and the read fails, the baseline is
      * simply absent: that costs the adoption optimization and nothing else, and it must not skip
      * the flight, because proceeding unfenced over a storage error is how two replicas come to
-     * redeem one credential. Only the lease store failing may do that.
+     * redeem one credential. Lease-store failures also defer the attempt.
      */
     let observedRefreshToken = existingRefreshToken ?? null;
     if (!observedRefreshToken) {
@@ -1205,6 +1205,7 @@ export class MCPTokenStorage {
           findToken,
           lease,
           observedRefreshToken,
+          existingAccessToken,
           logPrefix,
         });
       }
@@ -1248,6 +1249,7 @@ export class MCPTokenStorage {
     findToken,
     lease,
     observedRefreshToken,
+    existingAccessToken,
     logPrefix,
   }: {
     userId: string;
@@ -1255,37 +1257,30 @@ export class MCPTokenStorage {
     findToken: GetTokensParams['findToken'];
     lease: FlowLease;
     observedRefreshToken: IToken | null;
+    existingAccessToken?: IToken | null;
     logPrefix: string;
   }): Promise<MCPRefreshFlight> {
     let leasedRefreshToken: IToken | null;
     try {
       leasedRefreshToken = await this.readRefreshTokenRecord({ userId, serverName, findToken });
     } catch (readError) {
-      /**
-       * Keep the flight rather than release it. Holding it is what makes redeeming safe, while this
-       * read only decides whether redeeming is necessary, so the redemption proceeds fenced and
-       * reads the credential for itself.
-       */
-      logger.debug(`${logPrefix} Could not read the credential a peer may have rotated`, {
-        error: readError,
-      });
-      return { lease };
+      await this.releaseRefreshFlight(lease, logPrefix);
+      throw new MCPTokenRefreshUnavailableError(serverName, readError);
     }
 
-    let adoptedTokens: MCPOAuthTokens | null = null;
+    let adoptedTokens: MCPOAuthTokens | null;
     try {
       adoptedTokens = await this.adoptRotatedTokens({
         userId,
         serverName,
         findToken,
         observedRefreshToken,
+        existingAccessToken,
         leasedRefreshToken,
-        logPrefix,
       });
     } catch (adoptionError) {
-      logger.debug(`${logPrefix} Tokens a peer rotated could not be loaded`, {
-        error: adoptionError,
-      });
+      await this.releaseRefreshFlight(lease, logPrefix);
+      throw new MCPTokenRefreshUnavailableError(serverName, adoptionError);
     }
     if (!adoptedTokens) {
       return { lease, leasedRefreshToken };
@@ -1337,25 +1332,27 @@ export class MCPTokenStorage {
     serverName,
     findToken,
     observedRefreshToken,
+    existingAccessToken,
     leasedRefreshToken,
-    logPrefix,
   }: {
     userId: string;
     serverName: string;
     findToken: GetTokensParams['findToken'];
     /** The credential as this replica saw it before contending for the flight. */
     observedRefreshToken: IToken | null;
+    existingAccessToken?: IToken | null;
     /** The credential as stored once the flight was held. */
     leasedRefreshToken: IToken | null;
-    logPrefix: string;
   }): Promise<MCPOAuthTokens | null> {
     if (!observedRefreshToken || !leasedRefreshToken) {
       return null;
     }
     const rotated =
       leasedRefreshToken.token !== observedRefreshToken.token ||
-      getCredentialSetId(leasedRefreshToken) !== getCredentialSetId(observedRefreshToken);
-    if (!rotated) {
+      getCredentialSetId(leasedRefreshToken) !== getCredentialSetId(observedRefreshToken) ||
+      (existingAccessToken != null &&
+        getCredentialSetId(leasedRefreshToken) !== getCredentialSetId(existingAccessToken));
+    if (!rotated && existingAccessToken !== null) {
       return null;
     }
 
@@ -1365,17 +1362,27 @@ export class MCPTokenStorage {
       identifier: `mcp:${serverName}`,
     });
     if (
-      !accessTokenData ||
-      (accessTokenData.expiresAt && new Date() >= accessTokenData.expiresAt)
+      !rotated &&
+      (!accessTokenData || (accessTokenData.expiresAt && new Date() >= accessTokenData.expiresAt))
     ) {
       return null;
     }
-    try {
-      return await this.readStoredTokens({ userId, serverName, findToken, accessTokenData });
-    } catch (error) {
-      logger.debug(`${logPrefix} Tokens rotated by another replica are not usable`, { error });
-      return null;
+    if (
+      !accessTokenData ||
+      getCredentialSetId(accessTokenData) !== getCredentialSetId(leasedRefreshToken)
+    ) {
+      throw new MCPTokenRefreshUnavailableError(
+        serverName,
+        new Error('Peer credential is not coherent'),
+      );
     }
+    if (accessTokenData.expiresAt && new Date() >= accessTokenData.expiresAt) {
+      throw new MCPTokenRefreshUnavailableError(
+        serverName,
+        new Error('Peer credential already expired'),
+      );
+    }
+    return await this.readStoredTokens({ userId, serverName, findToken, accessTokenData });
   }
 
   /**
@@ -1524,6 +1531,15 @@ export class MCPTokenStorage {
         throw new ReauthenticationRequiredError(serverName, 'binding');
       }
       this.assertCredentialSetBinding(serverName, refreshCredentialSetId, storedClientMetadata);
+      if (
+        existingAccessToken &&
+        getCredentialSetId(existingAccessToken) !== refreshCredentialSetId
+      ) {
+        throw new MCPTokenRefreshUnavailableError(
+          serverName,
+          new Error('OAuth credential changed before redemption'),
+        );
+      }
       const decryptedRefreshToken = await decryptV2(refreshTokenData.token);
 
       const metadata = {

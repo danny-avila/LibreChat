@@ -833,6 +833,7 @@ export abstract class UserConnectionManager {
           ? undefined
           : async () => {
               credentialGeneration = await getMCPToolsChangedGeneration({ userId, serverName });
+              return credentialGeneration;
             };
 
       const useOAuth = usesDirectOpenIDBearerRecovery(config)
