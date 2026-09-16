@@ -1786,8 +1786,12 @@ export function buildBackgroundHandleContent(
   return JSON.stringify({
     background_task_id: task.id,
     tool: task.toolName,
+    status_check: {
+      name: CHECK_BACKGROUND_TASK_NAME,
+      arguments: { background_task_id: task.id },
+    },
     status: task.status,
-    message,
+    message: `${message} The tool field identifies the originating tool; status_check describes the status request.`,
   });
 }
 

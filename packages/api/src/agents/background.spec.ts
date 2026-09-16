@@ -128,6 +128,23 @@ describe('isBackgroundRequested / stripRunInBackgroundArg', () => {
 });
 
 describe('injectRunInBackgroundParam', () => {
+  it('preserves required command fields across injection and inherited-definition cleanup', () => {
+    const definition = {
+      name: 'bash_tool',
+      description: 'Starts a command',
+      parameters: {
+        type: 'object',
+        properties: { command: { type: 'string' } },
+        required: ['command'],
+      },
+    } as LCTool;
+    const injected = injectRunInBackgroundParam(definition);
+    expect(injected.parameters?.required).toEqual(['command']);
+    expect(injected.name).toBe('bash_tool');
+    const [restored] = stripBackgroundFromToolDefinitions([injected], ['bash_tool']);
+    expect(restored.parameters?.required).toEqual(['command']);
+    expect(restored.parameters?.properties).toEqual(definition.parameters?.properties);
+  });
   it('adds a run_in_background boolean without mutating a frozen def', () => {
     const def = Object.freeze(mcpDef('search_mcp_docs'));
     const injected = injectRunInBackgroundParam(def);
@@ -3210,6 +3227,10 @@ describe('buildBackgroundHandleContent', () => {
     expect(parsed.background_task_id).toBe(created.task.id);
     expect(parsed.status).toBe('running');
     expect(parsed.message).toContain(CHECK_BACKGROUND_TASK_NAME);
+    expect(parsed.status_check).toEqual({
+      name: CHECK_BACKGROUND_TASK_NAME,
+      arguments: { background_task_id: created.task.id },
+    });
   });
 
   it('requires polling when the tool can return a process-local live artifact', () => {

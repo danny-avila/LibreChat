@@ -25,6 +25,7 @@ const DEFAULT_OUTPUT_BYTES = 256 * 1024;
 export const ATTACHED_WORKSPACE_BASH_DESCRIPTION = `Runs bash commands inside the selected attached environment and returns stdout/stderr. The workspace may be an existing project, a Git repository, or an empty directory; Git is not required.
 
 Session behavior:
+- This tool starts a new command. It does not inspect an existing background task. Use check_background_task with background_task_id when that tool is available to inspect an existing task; do not send a task ID to bash_tool.
 - Files in the registered workspace persist between calls.
 - Each call runs in a fresh sandboxed process; shell variables, the working directory, temporary files, and background processes do not survive the call.
 - Network access follows the sandbox policy configured on the worker and may be unavailable.
