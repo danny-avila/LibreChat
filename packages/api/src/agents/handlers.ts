@@ -117,6 +117,7 @@ import {
 import { buildSkillPrimeMessage, isSkillFilePath, SKILL_FILE_PREFIX } from './skills';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
 import { mergeCodeFilesIntoContext } from './codeFilesSession';
+import { toolValidationFeedback } from './validationFeedback';
 import { createSkillContentDigest } from './compatibility';
 import { isMissingSandboxPathError } from '~/files/code';
 import { resolveDownloadPath } from '~/storage/path';
@@ -817,18 +818,21 @@ function getThrownValueMessage(error: unknown): string {
   return stringifyThrownValue(error);
 }
 
-function getSafeToolError(error: unknown): {
+function getSafeToolError(
+  error: unknown,
+  feedback?: string,
+): {
   message: string;
   logContext: Record<string, unknown>;
 } {
-  const rawMessage = getThrownValueMessage(error);
+  const rawMessage = feedback ?? getThrownValueMessage(error);
   const message = truncateMiddle(rawMessage, MAX_TOOL_ERROR_MESSAGE_CHARS);
-  const stack = error instanceof Error && error.stack ? error.stack : undefined;
+  const stack = !feedback && error instanceof Error && error.stack ? error.stack : undefined;
 
   return {
     message,
     logContext: {
-      name: error instanceof Error ? error.name : typeof error,
+      errorName: error instanceof Error ? error.name : typeof error,
       ...(error instanceof WorkspaceToolHttpError
         ? {
             upstreamStatus: error.upstreamStatus,
@@ -836,7 +840,7 @@ function getSafeToolError(error: unknown): {
             upstreamBodyTruncated: error.upstreamBodyTruncated,
           }
         : {}),
-      message,
+      errorMessage: message,
       messageLength: rawMessage.length,
       messageTruncated: message.length !== rawMessage.length,
       stack: stack ? truncateMiddle(stack, MAX_TOOL_ERROR_STACK_CHARS) : undefined,
@@ -6192,7 +6196,16 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       toolError instanceof ContentFilterError
                         ? modelBoundContentFilterErrorMessage(toolError.body)
                         : null;
-                    const { message } = getSafeToolError(toolError);
+                    const { message, logContext } = getSafeToolError(
+                      toolError,
+                      toolValidationFeedback(
+                        toolError,
+                        tc.name,
+                        tool.schema,
+                        normalizedArgs,
+                        backgroundControlEnabled,
+                      ),
+                    );
                     const errorOutput = policyError ?? message;
                     const filteredError =
                       policyError == null
@@ -6205,6 +6218,14 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           })
                         : null;
                     const neutralizedError = filteredError?.errorMessage ?? errorOutput;
+                    if (policyError == null && filteredError == null) {
+                      logger.debug('[background] Tool failed', {
+                        ...logContext,
+                        toolName: tc.name,
+                        toolCallId: tc.id,
+                        backgroundTaskId: task.id,
+                      });
+                    }
                     const deliveredError = toBackgroundToolFailure(tc.name, neutralizedError);
                     const registryError = isCodeCall ? deliveredError : neutralizedError;
                     /** Only an owner-authorized request is cancellation evidence.
@@ -6650,13 +6671,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       });
                       if (filteredError != null) {
                         logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
-                          name: logContext.name,
+                          errorName: logContext.errorName,
                           contentFiltered: true,
                         });
                         return filteredError;
                       }
                       const context = {
                         ...logContext,
+                        toolName: tc.name,
+                        toolCallId: tc.id,
                         toolCallArgsShape: getValueShape(tc.args),
                       };
                       if (runSignal?.aborted === true && isAbortError(toolError)) {
@@ -6794,6 +6817,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     return missingToolResult;
                   }
 
+                  let normalizedArgs: unknown = tc.args;
                   try {
                     const toolCallConfig = buildToolCallConfig(tc, mergedConfigurable);
 
@@ -6914,7 +6938,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       (hasRunInBackgroundArg(tc.args) && !toolDeclaresRunInBackgroundParam(tool))
                         ? stripRunInBackgroundArg(tc.args)
                         : tc.args;
-                    const normalizedArgs = normalizeToolInvokeArgs(
+                    normalizedArgs = normalizeToolInvokeArgs(
                       stripIntentForInvoke(foregroundArgs, tool),
                       tool,
                     );
@@ -7034,7 +7058,16 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       });
                       return errorResult(tc, modelBoundContentFilterErrorMessage(toolError.body));
                     }
-                    const { message, logContext } = getSafeToolError(toolError);
+                    const { message, logContext } = getSafeToolError(
+                      toolError,
+                      toolValidationFeedback(
+                        toolError,
+                        tc.name,
+                        tool.schema,
+                        normalizedArgs,
+                        backgroundControlEnabled,
+                      ),
+                    );
                     /** A user Stop rejects every in-flight call at once. That is
                      *  the abort working, not a fault, so it is logged at debug.
                      *  An aborted run says the turn is over, not that THIS
@@ -7062,13 +7095,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     });
                     if (filteredError != null) {
                       logToolFailure({
-                        name: logContext.name,
+                        errorName: logContext.errorName,
                         contentFiltered: true,
                       });
                       return filteredError;
                     }
                     logToolFailure({
                       ...logContext,
+                      toolName: tc.name,
+                      toolCallId: tc.id,
                       toolCallArgsShape: getValueShape(tc.args),
                       toolInputSchemaKind: getToolInputSchemaKind(tool),
                     });
