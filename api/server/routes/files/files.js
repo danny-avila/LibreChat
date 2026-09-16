@@ -8,6 +8,7 @@ const {
   refreshS3FileUrls,
   handleFilesUsageRequest,
   buildDeleteFilesResponse,
+  partitionAgentResourceFiles,
   shouldUseUploadSse,
   startUploadSseStream,
   sendUploadPolicyError,
@@ -245,20 +246,31 @@ router.delete('/', async (req, res) => {
         });
       }
 
-      const toolResourceFiles = agent.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
-      const agentFiles = files
-        .filter((f) => toolResourceFiles.includes(f.file_id))
-        .map((file) => ({ tool_resource: req.body.tool_resource, file_id: file.file_id }));
-      if (agentFiles.length === 0) {
+      const { ownedFiles, unlinkOnlyFiles } = partitionAgentResourceFiles({
+        requestedFileIds: fileIds,
+        attachedFileIds: agent.tool_resources?.[req.body.tool_resource]?.file_ids ?? [],
+        fileRecords: dbFiles,
+        toolResource: req.body.tool_resource,
+        userId: req.user.id.toString(),
+      });
+
+      if (unlinkOnlyFiles.length > 0) {
+        await db.removeAgentResourceFiles({
+          agent_id: req.body.agent_id,
+          files: unlinkOnlyFiles,
+        });
+      }
+
+      if (ownedFiles.length === 0) {
         res.status(200).json({ message: 'File associations removed successfully from agent' });
         return;
       }
 
-      await db.removeAgentResourceFiles({
-        agent_id: req.body.agent_id,
-        files: agentFiles,
-      });
-      res.status(200).json({ message: 'File associations removed successfully from agent' });
+      const agentDeleteResult = await processDeleteRequest({ req, files: ownedFiles });
+      logger.debug(
+        `[/files] Agent files deleted successfully: ${ownedFiles.map((f) => f.file_id).join(', ')}`,
+      );
+      sendDeleteResult(agentDeleteResult, 'Files deleted successfully');
       return;
     }
 
