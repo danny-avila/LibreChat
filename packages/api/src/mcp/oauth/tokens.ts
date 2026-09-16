@@ -943,8 +943,10 @@ export class MCPTokenStorage {
         return null;
       }
       /** Serialize with the redemptions other replicas may be running for this credential. */
-      const flight = flowManager
-        ? await this.beginRefreshFlight({
+      let flight: { lease: FlowLease | null; adoptedTokens?: MCPOAuthTokens } | null = null;
+      if (flowManager) {
+        try {
+          flight = await this.beginRefreshFlight({
             userId,
             serverName,
             findToken: params.findToken,
@@ -952,8 +954,14 @@ export class MCPTokenStorage {
             singleFlightScope,
             signal: executionController.signal,
             logPrefix,
-          })
-        : null;
+          });
+        } catch (flightError) {
+          /** A lease store that cannot answer must not cost the user their MCP connection. */
+          logger.warn(`${logPrefix} Could not take the cross-replica refresh flight`, {
+            error: flightError,
+          });
+        }
+      }
       try {
         if (flight?.adoptedTokens) {
           logger.info(`${logPrefix} Adopted tokens rotated by another replica`);

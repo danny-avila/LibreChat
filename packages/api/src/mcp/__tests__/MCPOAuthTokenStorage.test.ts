@@ -2322,6 +2322,31 @@ describe('MCPTokenStorage', () => {
         expect(refreshTokens).toHaveBeenCalledTimes(1);
       });
 
+      it('redeems when the lease store cannot answer', async () => {
+        await seedRefreshableTokens('lease-down-srv');
+        const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(5));
+        const flowManager = {
+          getLeaseGeneration: jest.fn().mockResolvedValue(0),
+          acquireLease: jest.fn(
+            async (_leaseId: string, options?: { expectedGeneration?: number }) => {
+              if (options?.expectedGeneration !== undefined) {
+                return { generation: 0, release: jest.fn().mockResolvedValue(undefined) };
+              }
+              throw new Error('redis unavailable');
+            },
+          ),
+        };
+
+        await expect(
+          MCPTokenStorage.forceRefreshTokens({
+            ...refreshParams(refreshTokens, 'lease-down-srv'),
+            flowManager: flowManager as never,
+          }),
+        ).resolves.toMatchObject({ access_token: 'at-5' });
+
+        expect(refreshTokens).toHaveBeenCalledTimes(1);
+      });
+
       it('redeems after the wait window when the holder never releases the flight', async () => {
         jest.useFakeTimers({ doNotFake: ['setImmediate', 'nextTick'] });
         try {
