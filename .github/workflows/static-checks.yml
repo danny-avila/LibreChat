@@ -11,6 +11,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'eslint.config.mjs'
+      - 'eslint-suppressions.json'
       - '.github/workflows/static-checks.yml'
       - '!**.md'
 
@@ -54,11 +55,34 @@ jobs:
               - 'client/**'
               - 'packages/**'
               - 'eslint.config.mjs'
+              - 'eslint-suppressions.json'
               - '.github/workflows/static-checks.yml'
               - '!**.md'
             eslint_config:
               - 'eslint.config.mjs'
               - '.github/workflows/static-checks.yml'
+            # The recorded design-rule backlog is data the lint reads, not code it
+            # lints, so a diff that only edits it matches no source file. Its own
+            # group runs the baseline validation below; it deliberately stays out
+            # of `eslint_config`, which gates the full-tree double sweep and could
+            # learn nothing from a count changing.
+            suppressions:
+              - 'eslint-suppressions.json'
+              - '**/eslint-suppressions.json'
+              - 'client/src/**'
+              - 'packages/client/src/**'
+              # The bundle the rules resolve primitives through is named by the
+              # library's manifest and produced by its build config.
+              - 'packages/client/package.json'
+              - 'packages/client/tsdown.config.mjs'
+              - 'eslint.config.mjs'
+              # The plugin is a dependency: a bump changes what the rules
+              # classify and a removal takes them with it, and neither touches a
+              # source file.
+              - 'package.json'
+              - 'package-lock.json'
+              - '.github/workflows/static-checks.yml'
+              - '!**.md'
             config:
               - 'api/**'
               - 'config/**'
@@ -101,6 +125,17 @@ jobs:
         id: install_dependencies
         continue-on-error: true
         run: npm ci
+
+      # The @shadcn/lint design rules read each primitive's `cva` variants through
+      # the @librechat/client entry point, which resolves to packages/client/dist.
+      # Without it they classify nothing and report strictly fewer violations than
+      # the same tree does on a machine that built the package — a lint that passes
+      # for the wrong reason, and a recorded baseline that cannot be trusted.
+      - name: Build client-package for the design rules
+        id: design_rules_build
+        if: always() && (steps.paths.outputs.eslint == 'true' || steps.paths.outputs.suppressions == 'true')
+        continue-on-error: true
+        run: npm run build:client-package
 
       # Run ESLint on changed files within the api/, client/, and packages/ directories.
       - name: Run ESLint on changed files
@@ -246,6 +281,20 @@ jobs:
         run: |
           node_modules/.bin/eslint --config eslint.config.mjs \
             api/server/index.js client/src/main.jsx packages/api/src/index.ts
+
+      - name: Validate the design-rule suppressions baseline
+        id: suppressions
+        if: always() && steps.paths.outputs.suppressions == 'true'
+        continue-on-error: true
+        run: |
+          # The changed-file ESLint step above selects JS/TS sources, so a diff that
+          # only edits eslint-suppressions.json lints nothing and would otherwise
+          # merge unread. The runner owns the rules for what the baseline may say.
+          # --against the PR base, not just the baseline path: the check also asks
+          # whether the changed files still owe what they record, and that needs
+          # the diff rather than one file name.
+          BASE_SHA=$(jq --raw-output .pull_request.base.sha "$GITHUB_EVENT_PATH")
+          node scripts/static-checks.mts --against "$BASE_SHA" --only suppressions
 
       - name: Restore data-provider build cache
         if: always() && steps.paths.outputs.config == 'true'
@@ -677,6 +726,8 @@ jobs:
           INSTALL_DEPENDENCIES_OUTCOME: ${{ steps.install_dependencies.outcome }}
           ESLINT_OUTCOME: ${{ steps.eslint.outcome }}
           ESLINT_CONFIG_OUTCOME: ${{ steps.eslint_config.outcome }}
+          DESIGN_RULES_BUILD_OUTCOME: ${{ steps.design_rules_build.outcome }}
+          SUPPRESSIONS_OUTCOME: ${{ steps.suppressions.outcome }}
           PRETTIER_OUTCOME: ${{ steps.prettier.outcome }}
           IMPORT_SORT_OUTCOME: ${{ steps.import_sort.outcome }}
           RUNNER_OUTCOME: ${{ steps.runner.outcome }}
@@ -714,6 +765,8 @@ jobs:
           record_failure "Dependency installation" "$INSTALL_DEPENDENCIES_OUTCOME"
           record_failure "ESLint" "$ESLINT_OUTCOME"
           record_failure "ESLint config validation" "$ESLINT_CONFIG_OUTCOME"
+          record_failure "Client-package build for the design rules" "$DESIGN_RULES_BUILD_OUTCOME"
+          record_failure "Design-rule suppressions" "$SUPPRESSIONS_OUTCOME"
           record_failure "Prettier" "$PRETTIER_OUTCOME"
           record_failure "Import sorting" "$IMPORT_SORT_OUTCOME"
           record_failure "Local static-checks runner" "$RUNNER_OUTCOME"
@@ -793,6 +846,15 @@ jobs:
       - name: Install dependencies
         if: steps.paths.outputs.eslint_config == 'true'
         run: npm ci
+
+      # This job has its own clean checkout, so it needs the primitive metadata
+      # the design rules read out of packages/client/dist as much as the Static
+      # checks job does: without it `shadcn/no-restyle` sees no `cva` variants
+      # and classifies fewer overrides, which would let the full-tree gate pass
+      # a component-ownership regression.
+      - name: Build client-package for the design rules
+        if: steps.paths.outputs.eslint_config == 'true'
+        run: npm run build:client-package
 
       # Full-tree sweep that gates on regression, not cleanliness: the tree
       # carries a pre-existing lint backlog (70 errors at time of wiring), so
