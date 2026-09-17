@@ -109,8 +109,8 @@ function ToolCardImpl({
       className={cn(
         'group relative flex h-32 w-full flex-col overflow-hidden rounded-2xl border',
         selected
-          ? 'border-status-success bg-status-success/10 shadow-sm'
-          : 'border-border-light bg-transparent hover:border-border-medium hover:bg-surface-tertiary hover:shadow-sm',
+          ? 'border-status-success bg-status-success/10 shadow-xs'
+          : 'border-border-light hover:border-border-medium hover:bg-surface-tertiary bg-transparent hover:shadow-xs',
       )}
     >
       <button
@@ -119,47 +119,47 @@ function ToolCardImpl({
         aria-pressed={selected}
         className={cn(
           'flex h-full w-full cursor-pointer flex-col gap-2 rounded-2xl p-4 text-left',
-          'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+          'focus-visible:ring-ring-primary focus:outline-hidden focus-visible:ring-2',
         )}
       >
         <div className="flex w-full items-start gap-3">
           <ItemIconView item={item} size="md" />
           <div className="min-w-0 flex-1">
             <div className="flex items-start gap-1.5">
-              <p className="flex min-w-0 flex-1 items-center gap-1 text-sm font-semibold text-text-primary">
+              <p className="text-text-primary flex min-w-0 flex-1 items-center gap-1 text-sm font-semibold">
                 <span className="truncate">{name}</span>
                 {isNative && (
                   <VerifiedIcon
-                    className="size-3.5 shrink-0 text-status-verified"
+                    className="text-status-verified size-3.5 shrink-0"
                     aria-label={localize('com_ui_tools_native')}
                   />
                 )}
               </p>
               {selected && (
                 <span
-                  className="flex size-5 shrink-0 items-center justify-center rounded-full bg-status-success-strong text-text-on-status"
+                  className="bg-status-success-strong text-text-on-status flex size-5 shrink-0 items-center justify-center rounded-full"
                   aria-hidden="true"
                 >
                   <Check className="size-3" strokeWidth={3} />
                 </span>
               )}
             </div>
-            <p className="truncate text-[11px] uppercase tracking-wide text-text-secondary">
+            <p className="text-text-secondary truncate text-[11px] tracking-wide uppercase">
               {kindLabel}
             </p>
           </div>
         </div>
         {description ? (
-          <p className="line-clamp-3 text-xs leading-snug text-text-secondary">{description}</p>
+          <p className="text-text-secondary line-clamp-3 text-xs leading-snug">{description}</p>
         ) : (
-          <p className="line-clamp-3 text-xs italic leading-snug text-text-tertiary">
+          <p className="text-text-tertiary line-clamp-3 text-xs leading-snug italic">
             {isNative ? localize('com_ui_tools_native_short') : kindLabel}
           </p>
         )}
         {(item.kind === 'action' && item.endpointCount > 0) || isPublicSkill || isSharedSkill ? (
           <div className="mt-auto flex w-full flex-wrap items-center gap-1.5">
             {item.kind === 'action' && item.endpointCount > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-surface-tertiary px-2 py-0.5 text-[10px] text-text-tertiary">
+              <span className="bg-surface-tertiary text-text-tertiary inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px]">
                 {localize(
                   item.endpointCount === 1
                     ? 'com_ui_tools_endpoint_count_one'
@@ -170,7 +170,7 @@ function ToolCardImpl({
             )}
             {isSharedSkill && skill && (
               <span
-                className="inline-flex max-w-[60%] items-center gap-1 rounded-full bg-surface-tertiary px-2 py-0.5 text-[10px] text-text-tertiary"
+                className="bg-surface-tertiary text-text-tertiary inline-flex max-w-[60%] items-center gap-1 rounded-full px-2 py-0.5 text-[10px]"
                 title={localize('com_ui_tools_shared_by', { name: skill.authorName })}
                 aria-label={localize('com_ui_tools_shared_by', { name: skill.authorName })}
               >
@@ -180,7 +180,7 @@ function ToolCardImpl({
             )}
             {isPublicSkill && (
               <span
-                className="inline-flex items-center gap-1 rounded-full bg-surface-tertiary px-1.5 py-0.5 text-[10px] text-text-tertiary"
+                className="bg-surface-tertiary text-text-tertiary inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px]"
                 title={localize('com_ui_sr_public_skill')}
                 aria-label={localize('com_ui_sr_public_skill')}
               >
@@ -191,7 +191,7 @@ function ToolCardImpl({
         ) : null}
       </button>
       {(canFavorite || canConfigure || showInfoOnly) && (
-        <div className="absolute bottom-2 right-2 flex items-center gap-1">
+        <div className="absolute right-2 bottom-2 flex items-center gap-1">
           {(canConfigure || showInfoOnly) && (
             <button
               type="button"
@@ -203,10 +203,10 @@ function ToolCardImpl({
                 canConfigure ? localize('com_ui_tools_configure') : localize('com_ui_tools_info')
               }
               className={cn(
-                'flex size-7 items-center justify-center rounded-lg text-text-secondary',
-                'opacity-0 transition duration-150 hover:bg-surface-hover hover:text-text-primary',
+                'text-text-secondary flex size-7 items-center justify-center rounded-lg',
+                'hover:bg-surface-hover hover:text-text-primary opacity-0 transition duration-150',
                 'group-focus-within:opacity-100 group-hover:opacity-100',
-                'focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary',
+                'focus-visible:ring-ring-primary focus:outline-hidden focus-visible:opacity-100 focus-visible:ring-2',
               )}
             >
               <DetailIcon className="size-4" aria-hidden="true" />
@@ -222,11 +222,11 @@ function ToolCardImpl({
               aria-pressed={isFavorited}
               aria-label={localize(isFavorited ? 'com_ui_unfavorite' : 'com_ui_favorite')}
               className={cn(
-                'flex size-7 items-center justify-center rounded-lg text-text-secondary',
-                'opacity-0 transition duration-150 hover:bg-surface-hover hover:text-text-primary',
+                'text-text-secondary flex size-7 items-center justify-center rounded-lg',
+                'hover:bg-surface-hover hover:text-text-primary opacity-0 transition duration-150',
                 'group-focus-within:opacity-100 group-hover:opacity-100',
-                'focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary',
-                isFavorited && 'text-series-4 opacity-100 hover:text-series-4',
+                'focus-visible:ring-ring-primary focus:outline-hidden focus-visible:opacity-100 focus-visible:ring-2',
+                isFavorited && 'text-series-4 hover:text-series-4 opacity-100',
               )}
             >
               <Star className={cn('size-4', isFavorited && 'fill-current')} aria-hidden="true" />

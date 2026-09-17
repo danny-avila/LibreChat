@@ -62,8 +62,8 @@ export default function MessageRow({
       role="group"
       aria-label={ariaLabel}
       className={cn(
-        'message-render group mx-auto flex min-w-0 flex-1 font-theme-ui transition-[max-width] duration-theme-normal motion-reduce:transition-none',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
+        'message-render group font-theme-ui duration-theme-normal mx-auto flex min-w-0 flex-1 transition-[max-width] motion-reduce:transition-none',
+        'focus-visible:ring-text-primary focus-visible:ring-2 focus-visible:outline-hidden',
         isCreatedByUser && !plain ? 'justify-end' : 'items-start',
         widthClass,
         className,
@@ -91,10 +91,10 @@ export default function MessageRow({
             </h2>
           ) : (
             /** `mb-1` keeps the name off its own first line of body text. */
-            <h2 className="mb-1 flex min-h-7 w-full select-none items-center gap-2 text-sm font-semibold text-text-primary">
+            <h2 className="text-text-primary mb-1 flex min-h-7 w-full items-center gap-2 text-sm font-semibold select-none">
               <span
                 aria-hidden="true"
-                className="flex size-6 flex-shrink-0 items-center justify-center overflow-hidden rounded-full"
+                className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full"
               >
                 {icon}
               </span>
@@ -107,9 +107,9 @@ export default function MessageRow({
         <div className={cn('flex w-full flex-col gap-1', isCreatedByUser && !plain && 'items-end')}>
           <div
             className={cn(
-              'flex min-h-[20px] max-w-full flex-grow flex-col gap-0',
+              'flex min-h-[20px] max-w-full grow flex-col gap-0',
               isCreatedByUser && !isEditing && !plain
-                ? 'w-fit rounded-theme-surface rounded-br-theme-control bg-surface-tertiary px-theme-normal py-2.5'
+                ? 'rounded-theme-surface rounded-br-theme-control bg-surface-tertiary px-theme-normal w-fit py-2.5'
                 : 'w-full',
             )}
             data-testid="message-body"

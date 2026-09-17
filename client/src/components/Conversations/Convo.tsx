@@ -272,7 +272,7 @@ function Conversation({
 
   const generatingSpinner = (
     <span role="img" aria-label={localize('com_ui_generating')}>
-      <Spinner className="h-5 w-5 flex-shrink-0 text-text-primary" />
+      <Spinner className="text-text-primary h-5 w-5 shrink-0" />
     </span>
   );
 
@@ -312,9 +312,9 @@ function Conversation({
     <div
       ref={containerRef}
       className={cn(
-        'group relative flex h-12 w-full items-center rounded-lg outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary md:h-9',
+        'group focus-visible:ring-text-primary relative flex h-12 w-full items-center rounded-lg outline-hidden focus-visible:ring-2 focus-visible:outline-hidden focus-visible:ring-inset md:h-9',
         isActiveConvo || isPopoverActive
-          ? 'bg-surface-active-alt before:absolute before:bottom-1 before:left-0 before:top-1 before:w-0.5 before:rounded-full before:bg-text-primary'
+          ? 'bg-surface-active-alt before:bg-text-primary before:absolute before:top-1 before:bottom-1 before:left-0 before:w-0.5 before:rounded-full'
           : 'hover:bg-surface-active-alt',
       )}
       onPointerEnter={(event) => {
@@ -361,7 +361,7 @@ function Conversation({
         </ConvoLink>
       )}
       {isSharedBadgeVisible && (
-        <Link2 className="icon-sm mr-1 shrink-0 text-text-secondary" aria-hidden="true" />
+        <Link2 className="icon-sm text-text-secondary mr-1 shrink-0" aria-hidden="true" />
       )}
       {conversation.pinned === true && (
         <UnpinButton

@@ -55,7 +55,7 @@ describe('mobile drawer Scrim', () => {
     const { scrim } = setup({ expanded: true });
 
     expect(scrim).toHaveClass(
-      'focus-visible:outline-none',
+      'focus-visible:outline-hidden',
       'focus-visible:ring-2',
       'focus-visible:ring-inset',
       'focus-visible:ring-text-primary',

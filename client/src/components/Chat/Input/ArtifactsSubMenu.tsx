@@ -57,7 +57,7 @@ const ArtifactsSubMenu = React.forwardRef<HTMLButtonElement, ArtifactsSubMenuPro
               }
             }}
             className={cn(
-              'flex w-full cursor-pointer items-center justify-between rounded-lg p-2 hover:bg-surface-hover',
+              'hover:bg-surface-hover flex w-full cursor-pointer items-center justify-between rounded-lg p-2',
               className,
             )}
           >
@@ -74,7 +74,7 @@ const ArtifactsSubMenu = React.forwardRef<HTMLButtonElement, ArtifactsSubMenuPro
               }}
               className={cn(
                 'rounded p-1 transition-all duration-200',
-                'hover:bg-surface-tertiary hover:shadow-sm',
+                'hover:bg-surface-tertiary hover:shadow-xs',
                 !isArtifactsPinned && 'text-text-secondary hover:text-text-primary',
               )}
               aria-label={isArtifactsPinned ? 'Unpin' : 'Pin'}
@@ -93,12 +93,12 @@ const ArtifactsSubMenu = React.forwardRef<HTMLButtonElement, ArtifactsSubMenuPro
               shift={24}
               flip="left bottom-end top-end"
               className={cn(
-                'animate-popover-left z-40 flex min-w-[min(250px,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] flex-col rounded-xl',
-                'border border-border-light bg-surface-secondary shadow-lg',
+                'animate-popover-left z-40 flex max-w-[calc(100vw-1rem)] min-w-[min(250px,calc(100vw-1rem))] flex-col rounded-xl',
+                'border-border-light bg-surface-secondary border shadow-lg',
               )}
             >
               <div className="px-2 py-1.5">
-                <div className="mb-2 text-xs font-medium text-text-secondary">
+                <div className="text-text-secondary mb-2 text-xs font-medium">
                   {localize('com_ui_artifacts_options')}
                 </div>
 
@@ -112,7 +112,7 @@ const ArtifactsSubMenu = React.forwardRef<HTMLButtonElement, ArtifactsSubMenuPro
                   }}
                   className={cn(
                     'mb-1 flex items-center justify-between gap-2 rounded-lg px-2 py-2',
-                    'cursor-pointer bg-surface-secondary text-text-primary outline-none transition-colors',
+                    'bg-surface-secondary text-text-primary cursor-pointer outline-hidden transition-colors',
                     'hover:bg-surface-hover data-[active-item]:bg-surface-hover',
                     isShadcnEnabled && 'bg-surface-active',
                   )}
@@ -133,7 +133,7 @@ const ArtifactsSubMenu = React.forwardRef<HTMLButtonElement, ArtifactsSubMenuPro
                   }}
                   className={cn(
                     'mb-1 flex items-center justify-between gap-2 rounded-lg px-2 py-2',
-                    'cursor-pointer bg-surface-secondary text-text-primary outline-none transition-colors',
+                    'bg-surface-secondary text-text-primary cursor-pointer outline-hidden transition-colors',
                     'hover:bg-surface-hover data-[active-item]:bg-surface-hover',
                     isCustomEnabled && 'bg-surface-active',
                   )}

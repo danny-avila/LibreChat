@@ -30,6 +30,6 @@ export const composerControlClasses = (): string =>
   cn(
     'group relative inline-flex items-center justify-center gap-theme-compact',
     'h-theme-control rounded-theme-control-round border border-border-medium',
-    'bg-transparent text-sm font-medium text-text-primary shadow-sm transition-all',
+    'bg-transparent text-sm font-medium text-text-primary shadow-xs transition-all',
     'hover:bg-surface-hover hover:shadow-md active:shadow-inner',
   );

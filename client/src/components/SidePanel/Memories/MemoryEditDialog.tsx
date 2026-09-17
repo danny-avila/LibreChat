@@ -157,10 +157,10 @@ export default function MemoryEditDialog({
           <div className="space-y-4">
             {/* Memory metadata */}
             {memory && (
-              <div className="flex items-center justify-between rounded-lg border border-border-light bg-surface-secondary px-3 py-2">
+              <div className="border-border-light bg-surface-secondary flex items-center justify-between rounded-lg border px-3 py-2">
                 {/* Token count - Left */}
                 {memory.tokenCount !== undefined ? (
-                  <span className="text-xs text-text-secondary">
+                  <span className="text-text-secondary text-xs">
                     {memory.tokenCount.toLocaleString()}{' '}
                     {localize(memory.tokenCount === 1 ? 'com_ui_token' : 'com_ui_tokens')}
                   </span>
@@ -169,7 +169,7 @@ export default function MemoryEditDialog({
                 )}
 
                 {/* Date - Center */}
-                <span className="text-xs text-text-secondary">
+                <span className="text-text-secondary text-xs">
                   {formatDateTime(memory.updated_at, hour12)}
                 </span>
 
@@ -189,7 +189,7 @@ export default function MemoryEditDialog({
 
             {/* Key input */}
             <div className="space-y-2">
-              <Label htmlFor="memory-key" className="text-sm font-medium text-text-primary">
+              <Label htmlFor="memory-key" className="text-text-primary text-sm font-medium">
                 {localize('com_ui_key')}
               </Label>
               <Input
@@ -214,7 +214,7 @@ export default function MemoryEditDialog({
 
             {/* Value textarea */}
             <div className="space-y-2">
-              <Label htmlFor="memory-value" className="text-sm font-medium text-text-primary">
+              <Label htmlFor="memory-value" className="text-text-primary text-sm font-medium">
                 {localize('com_ui_value')}
               </Label>
               <Textarea
@@ -224,7 +224,7 @@ export default function MemoryEditDialog({
                 onBlur={() => setTouched((prev) => ({ ...prev, value: true }))}
                 onKeyDown={handleKeyPress}
                 placeholder={localize('com_ui_enter_value')}
-                className="min-h-[100px] w-full resize-none rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm text-text-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-heavy disabled:cursor-not-allowed disabled:opacity-50"
+                className="border-border-light text-text-primary focus-visible:ring-border-heavy min-h-[100px] w-full resize-none rounded-lg border bg-transparent px-3 py-2 text-sm focus-visible:ring-1 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50"
                 rows={4}
                 disabled={!hasUpdateAccess}
                 aria-invalid={showValueError && valueError != null}

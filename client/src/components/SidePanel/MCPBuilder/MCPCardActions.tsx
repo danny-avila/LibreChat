@@ -58,7 +58,7 @@ export default function MCPCardActions({
     'transition-colors duration-150',
     'text-text-secondary hover:text-text-secondary',
     'hover:bg-surface-tertiary',
-    'focus:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
+    'focus:outline-hidden focus-visible:ring-2 focus-visible:ring-text-primary',
   );
 
   // Loading state - show spinner (with cancel option)
@@ -92,7 +92,7 @@ export default function MCPCardActions({
           >
             <div className="relative size-4">
               <Spinner className="size-4 group-hover:opacity-0" />
-              <X className="absolute inset-0 size-4 text-text-destructive opacity-0 group-hover:opacity-100" />
+              <X className="text-text-destructive absolute inset-0 size-4 opacity-0 group-hover:opacity-100" />
             </div>
           </TooltipAnchor>
         ) : (
@@ -177,7 +177,7 @@ export default function MCPCardActions({
           role="button"
           onClick={onRevoke}
         >
-          <Trash2 className="size-3.5 text-text-destructive" aria-hidden="true" />
+          <Trash2 className="text-text-destructive size-3.5" aria-hidden="true" />
         </TooltipAnchor>
       )}
     </div>

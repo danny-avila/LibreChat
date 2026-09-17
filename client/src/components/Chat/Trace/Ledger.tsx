@@ -65,7 +65,7 @@ function RecordBar({ node, domain }: { node: TraceNode; domain: Domain }) {
 function TurnBar({ turn, domain }: { turn: TraceTurn; domain: Domain }) {
   return (
     <span
-      className="absolute top-1/2 h-1 min-w-[2px] -translate-y-1/2 rounded-full bg-border-heavy"
+      className="bg-border-heavy absolute top-1/2 h-1 min-w-[2px] -translate-y-1/2 rounded-full"
       style={barStyle(turn.start, turn.end, domain)}
     />
   );
@@ -231,7 +231,7 @@ function Ledger({
           aria-label={`${label}, ${localize('com_ui_trace_turn_records', { 0: String(turn.recordCount) })}, ${format.duration(turn.end - turn.start)}`}
           className={cn(
             GRID,
-            'absolute inset-x-0 cursor-pointer items-center gap-2 border-t border-border-light bg-surface-primary-alt px-2 text-xs font-semibold text-text-primary hover:bg-surface-hover',
+            'border-border-light bg-surface-primary-alt text-text-primary hover:bg-surface-hover absolute inset-x-0 cursor-pointer items-center gap-2 border-t px-2 text-xs font-semibold',
             active && ACTIVE_RING,
           )}
         >
@@ -239,16 +239,16 @@ function Ledger({
             <ChevronRight
               aria-hidden="true"
               className={cn(
-                'size-3.5 shrink-0 text-text-secondary transition-transform motion-reduce:transition-none',
+                'text-text-secondary size-3.5 shrink-0 transition-transform motion-reduce:transition-none',
                 row.expanded && 'rotate-90',
               )}
             />
             <span className="truncate">{label}</span>
             {turn.errorCount > 0 && (
-              <CircleAlert aria-hidden="true" className="size-3.5 shrink-0 text-status-error" />
+              <CircleAlert aria-hidden="true" className="text-status-error size-3.5 shrink-0" />
             )}
           </span>
-          <span className="text-right font-normal tabular-nums text-text-secondary">
+          <span className="text-text-secondary text-right font-normal tabular-nums">
             {format.duration(turn.end - turn.start)}
           </span>
           <span className="hidden md:block" />
@@ -285,7 +285,7 @@ function Ledger({
         })}
         className={cn(
           GRID,
-          'absolute inset-x-0 cursor-pointer items-center gap-2 px-2 text-sm text-text-primary hover:bg-surface-hover',
+          'text-text-primary hover:bg-surface-hover absolute inset-x-0 cursor-pointer items-center gap-2 px-2 text-sm',
           selectedId === row.key && 'bg-surface-active-alt',
           active && ACTIVE_RING,
         )}
@@ -308,30 +308,30 @@ function Ledger({
             {row.hasChildren && (
               <ChevronRight
                 className={cn(
-                  'size-3.5 text-text-secondary transition-transform motion-reduce:transition-none',
+                  'text-text-secondary size-3.5 transition-transform motion-reduce:transition-none',
                   row.expanded && 'rotate-90',
                 )}
               />
             )}
           </span>
-          <Icon aria-hidden="true" className="size-3.5 shrink-0 text-text-secondary" />
+          <Icon aria-hidden="true" className="text-text-secondary size-3.5 shrink-0" />
           <span className="min-w-[3ch] truncate">{record.name}</span>
           {record.model != null && (
-            <span className="hidden min-w-0 shrink-[4] truncate text-xs text-text-secondary sm:inline">
+            <span className="text-text-secondary hidden min-w-0 shrink-[4] truncate text-xs sm:inline">
               {record.model}
             </span>
           )}
           {record.status === 'error' && (
-            <CircleAlert aria-hidden="true" className="size-3.5 shrink-0 text-status-error" />
+            <CircleAlert aria-hidden="true" className="text-status-error size-3.5 shrink-0" />
           )}
           {running && (
-            <CircleDashed aria-hidden="true" className="size-3.5 shrink-0 text-text-secondary" />
+            <CircleDashed aria-hidden="true" className="text-text-secondary size-3.5 shrink-0" />
           )}
         </span>
-        <span className="truncate text-right text-xs tabular-nums text-text-secondary">
+        <span className="text-text-secondary truncate text-right text-xs tabular-nums">
           {duration}
         </span>
-        <span className="hidden text-right text-xs tabular-nums text-text-secondary md:block">
+        <span className="text-text-secondary hidden text-right text-xs tabular-nums md:block">
           {recordTokens(node)}
         </span>
         <span className="relative h-full overflow-hidden">
@@ -363,20 +363,20 @@ function Ledger({
         }
       }}
       data-testid="trace-ledger"
-      className="group/tree relative min-h-0 flex-1 overflow-auto focus-visible:outline-none"
+      className="group/tree relative min-h-0 flex-1 overflow-auto focus-visible:outline-hidden"
     >
       <div
         aria-hidden="true"
         className={cn(
           GRID,
-          'sticky top-0 z-10 h-7 items-center gap-2 border-b border-border-light bg-presentation px-2 text-[11px] font-medium uppercase tracking-wide text-text-secondary',
+          'border-border-light bg-presentation text-text-secondary sticky top-0 z-10 h-7 items-center gap-2 border-b px-2 text-[11px] font-medium tracking-wide uppercase',
         )}
       >
         <span>{localize('com_ui_trace_column_name')}</span>
         <span className="text-right">{localize('com_ui_trace_column_duration')}</span>
         <span className="hidden text-right md:block">{localize('com_ui_trace_column_tokens')}</span>
         {viewDomain ? (
-          <span className="flex justify-between normal-case tabular-nums tracking-normal">
+          <span className="flex justify-between tracking-normal normal-case tabular-nums">
             <span>{format.duration(viewDomain.start - model.start)}</span>
             <span>{format.duration(viewDomain.start + viewDomain.span - model.start)}</span>
           </span>

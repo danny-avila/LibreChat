@@ -45,7 +45,7 @@ function Header({
   }, [expanded]);
 
   return (
-    <div className="flex h-14 flex-shrink-0 items-center gap-2 border-b border-border-light px-2">
+    <div className="border-border-light flex h-14 shrink-0 items-center gap-2 border-b px-2">
       <Button
         ref={closeRef}
         /**
@@ -64,7 +64,7 @@ function Header({
         /** The only close control while open, so its binding must be discoverable here. */
         aria-keyshortcuts={toggleSidebarAriaKey}
         tabIndex={expanded ? 0 : -1}
-        className="flex-shrink-0"
+        className="shrink-0"
         onClick={onClose}
       >
         <Sidebar className="icon-md" aria-hidden="true" />

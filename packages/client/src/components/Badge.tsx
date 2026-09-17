@@ -75,10 +75,10 @@ export default function Badge({
     '@container-[600px]:w-full size-9 p-2',
     isActive
       ? 'bg-surface-active shadow-md'
-      : 'bg-surface-chat shadow-sm hover:bg-surface-hover hover:shadow-md',
+      : 'bg-surface-chat shadow-xs hover:bg-surface-hover hover:shadow-md',
     'active:scale-95 active:shadow-inner',
     isMoveable && 'cursor-move',
-    isDisabled && 'cursor-not-allowed opacity-50 hover:shadow-sm',
+    isDisabled && 'cursor-not-allowed opacity-50 hover:shadow-xs',
     className,
   );
   const badgeContent = (
@@ -97,7 +97,7 @@ export default function Badge({
       {isEditing && !isDragging && (
         <motion.button
           type="button"
-          className="@container-[600px]:h-5 @container-[600px]:w-5 absolute -right-1 -top-1 flex h-6 w-6 items-center justify-center rounded-full bg-surface-secondary-alt text-text-primary shadow-sm"
+          className="@container-[600px]:h-5 @container-[600px]:w-5 bg-surface-secondary-alt text-text-primary absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full shadow-xs"
           aria-label={isAvailable ? `Remove ${label}` : `Restore ${label}`}
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
