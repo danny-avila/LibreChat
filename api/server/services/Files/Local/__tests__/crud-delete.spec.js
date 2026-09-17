@@ -1,4 +1,8 @@
-jest.mock('@librechat/api', () => ({ deleteRagFile: jest.fn().mockResolvedValue(undefined) }));
+/** Exactly what `deleteLocalFile` reaches for, so the double does not depend on a built package. */
+jest.mock('@librechat/api', () => ({
+  deleteRagFile: jest.fn().mockResolvedValue(undefined),
+  stripCacheBust: (filepath) => String(filepath).split('?')[0],
+}));
 jest.mock('@librechat/data-schemas', () => ({
   logger: { warn: jest.fn(), error: jest.fn() },
 }));
