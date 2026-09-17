@@ -76,7 +76,7 @@ export default function SharePointPickerDialog({
             {/* SharePoint iframe will be injected here by the hook */}
 
             {isDownloading && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-black/30 backdrop-blur-sm">
+              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-black/30 backdrop-blur-xs">
                 <div className="bg-surface-primary mx-4 w-full max-w-sm rounded-lg p-6 shadow-lg">
                   <div className="text-center">
                     <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-b-2 border-blue-600"></div>

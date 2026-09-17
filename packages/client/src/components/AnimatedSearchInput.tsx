@@ -40,12 +40,12 @@ const AnimatedSearchInput = ({
             onChange={onChange}
             placeholder={placeholder}
             aria-label={localize('com_ui_search')}
-            className={`peer bg-surface-secondary placeholder:text-text-secondary focus:ring-text-primary relative z-20 w-full rounded-lg py-2 pl-10 outline-hidden backdrop-blur-sm transition-all duration-500 ease-in-out`}
+            className={`peer bg-surface-secondary placeholder:text-text-secondary focus:ring-text-primary relative z-20 w-full rounded-lg py-2 pl-10 outline-hidden backdrop-blur-xs transition-all duration-500 ease-in-out`}
           />
 
           {/* Gradient overlay */}
           <div
-            className={`from-accent-primary/20 via-accent-primary/10 to-accent-primary/20 pointer-events-none absolute inset-0 z-20 rounded-lg bg-gradient-to-r transition-all duration-500 ease-in-out ${isSearching && hasValue ? 'opacity-100 blur-sm' : 'opacity-0 blur-none'} `}
+            className={`from-accent-primary/20 via-accent-primary/10 to-accent-primary/20 pointer-events-none absolute inset-0 z-20 rounded-lg bg-gradient-to-r transition-all duration-500 ease-in-out ${isSearching && hasValue ? 'opacity-100 blur-xs' : 'opacity-0 blur-none'} `}
           />
 
           {/* Animated loading indicator */}
