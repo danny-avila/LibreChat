@@ -28,7 +28,7 @@ const ResizableHandle = ({
     {...props}
   >
     {withHandle && (
-      <div className="bg-border-medium z-10 flex h-4 w-3 items-center justify-center rounded-sm border">
+      <div className="bg-border-medium border-border-light z-10 flex h-4 w-3 items-center justify-center rounded-sm border">
         <GripVertical className="h-2.5 w-2.5" />
       </div>
     )}
@@ -50,7 +50,7 @@ const ResizableHandleAlt = ({
     {...props}
   >
     {withHandle && (
-      <div className="bg-border-medium invisible z-10 flex h-4 w-3 items-center justify-center rounded-sm border group-hover:visible group-active:visible group-data-[separator=active]:visible">
+      <div className="bg-border-medium border-border-light invisible z-10 flex h-4 w-3 items-center justify-center rounded-sm border group-hover:visible group-active:visible group-data-[separator=active]:visible">
         <GripVertical className="h-2.5 w-2.5" />
       </div>
     )}

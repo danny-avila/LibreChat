@@ -19,6 +19,7 @@ import applyTheme, { applyResolvedTheme, themeOwnedProperties } from '../utils/a
 import { defaultTheme } from '../themes/default';
 import { darkTheme } from '../themes/dark';
 import '../highContrast.css';
+import '../preflight.css';
 
 const THEME_KEY = 'color-theme';
 const THEME_COLORS_KEY = 'theme-colors';

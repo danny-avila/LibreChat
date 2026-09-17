@@ -89,7 +89,8 @@
     "react-i18next": "^15.4.0 || ^15.6.0",
     "react-resizable-panels": "^4.7.4",
     "react-textarea-autosize": "^8.4.0",
-    "tailwind-merge": "^3.7.0"
+    "tailwind-merge": "^3.7.0",
+    "tailwindcss": "^4.3.3"
   },
   "devDependencies": {
     "@babel/core": "^7.28.5",

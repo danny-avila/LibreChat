@@ -308,11 +308,6 @@
       "count": 28
     }
   },
-  "client/src/components/Chat/Input/Files/Table/TemplateTable.tsx": {
-    "shadcn/no-raw-colors": {
-      "count": 31
-    }
-  },
   "client/src/components/Chat/Input/HeaderOptions.tsx": {
     "shadcn/no-restyle": {
       "count": 10
