@@ -48,6 +48,7 @@ const preparing: MediaSubmissionReceipt = {
 
 function setup() {
   const store = createStore();
+  const openThread = jest.fn();
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     logger: { log: console.log, warn: console.warn, error: () => {} },
@@ -64,7 +65,7 @@ function setup() {
             catchUpIntervalMs: 60000,
             enterToSend: false,
             isCurrentSession: () => active,
-            openThread: () => {},
+            openThread,
           }}
         >
           {children}
@@ -76,6 +77,7 @@ function setup() {
     store,
     client,
     wrapper,
+    openThread,
     endSession: () => {
       active = false;
     },
@@ -104,6 +106,7 @@ test('a preparing receipt keeps the draft until accepted and does not vanish dur
     await hook.result.current.send(command);
   });
   expect(env.store.get(mediaDraftFamily(command.draftKey)).prompt).toBe('A lake');
+  expect(env.openThread).toHaveBeenCalledWith('thread');
   expect(hook.result.current.pending).toHaveLength(1);
   act(() =>
     env.client.setQueryData([QueryKeys.mediaSubmission, 'owner', 'request'], {
@@ -164,6 +167,7 @@ test('an account change discards a late receipt and leaves the next session cach
     await sending;
   });
   expect(env.client.getQueryData([QueryKeys.mediaSubmission, 'owner', 'request'])).toBeUndefined();
+  expect(env.openThread).not.toHaveBeenCalled();
   env.client.clear();
 });
 
@@ -185,5 +189,6 @@ test('a definite validation rejection preserves the draft without an unrecoverab
   expect(env.store.get(mediaPendingFamily('owner'))).toEqual([]);
   expect(env.store.get(mediaDraftFamily(command.draftKey)).prompt).toBe('A lake');
   expect(hook.result.current.error).toBe('invalid_request');
+  expect(env.openThread).not.toHaveBeenCalled();
   env.client.clear();
 });

@@ -484,6 +484,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
           cursor: query.cursor,
           limit: pageLimit(context, query.limit),
           filter: query.filter,
+          include: query.include,
         });
       },
       async thread(threadId: string, context: MediaContext) {

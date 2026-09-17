@@ -162,6 +162,59 @@ describe('media catalog provider conformance', () => {
     expect(denied.catalog.offerings[0].available).toBe(false);
   });
 
+  it.each([{ values: ['1K', '2K', '4K'] }, { values: ['1K'] }])(
+    'does not advertise Seedream resolutions rejected by the live provider ($values)',
+    async ({ values }) => {
+      const modelId = 'bytedance-seed/seedream-4.5';
+      const fixture = fixtureTransport(() =>
+        JSON.stringify({
+          id: modelId,
+          endpoints: [
+            {
+              provider_tag: 'seed',
+              supported_parameters: {
+                resolution: { type: 'enum', values },
+                input_references: { type: 'range', min: 0, max: 14 },
+              },
+            },
+          ],
+        }),
+      );
+      const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+      const result = await catalog.read(
+        {
+          ...config,
+          integrations: [
+            { ...imageIntegration, catalog: { kind: 'configured', models: [modelId] } },
+          ],
+        },
+        async (integration) => connection(integration),
+        'owner',
+      );
+      const offering = result.catalog.offerings[0];
+      expect(offering.available).toBe(values.length > 1);
+      for (const capability of offering.capabilities) {
+        expect(capability.controls.resolution?.values).toEqual(['2K', '4K']);
+      }
+      const submission = {
+        ...request({ resolution: '1K' }),
+        selection: {
+          connectionId: 'images',
+          modelId,
+          catalogVersion: result.catalog.version,
+        },
+      };
+      expect(() => validateMediaOffering(submission, offering)).toThrow();
+      if (offering.available)
+        expect(() =>
+          validateMediaOffering(
+            { ...submission, parameters: { ...submission.parameters, resolution: '2K' } },
+            offering,
+          ),
+        ).not.toThrow();
+    },
+  );
+
   it.each([
     {
       id: 'google/image',
@@ -219,6 +272,81 @@ describe('media catalog provider conformance', () => {
     });
     expect(() => validateMediaOffering(videoRequest, result.catalog.offerings[0])).toThrow();
   });
+
+  it('keeps video offerings available when optional capability flags are null', async () => {
+    const fixture = fixtureTransport(() =>
+      JSON.stringify({
+        data: [
+          ...videoModels.data.map((model) => ({ ...model, generate_audio: null, seed: null })),
+          { id: 'outside/allowlist', generate_audio: null, seed: null },
+        ],
+      }),
+    );
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    const videoConfig = resolveMediaConfig({ enabled: true, integrations: [videoIntegration] });
+    const result = await catalog.read(
+      videoConfig,
+      async (integration) => connection(integration),
+      'owner',
+    );
+
+    expect(result.catalog.offerings.map((offering) => offering.available)).toEqual([
+      true,
+      false,
+      false,
+      false,
+    ]);
+    const capability = result.catalog.offerings[0].capabilities[0];
+    if (capability.operation !== 'video.generate') {
+      throw new Error('Expected video capabilities');
+    }
+    expect(capability.controls.durationSeconds?.values).toEqual([4, 6, 8]);
+    expect(capability.controls.audio).toBeUndefined();
+    expect(capability.controls.seed).toBeUndefined();
+  });
+
+  it.each(['openai/sora-2', 'openai/sora-2-pro'])(
+    'does not expose an audio toggle for %s because its audio is always enabled',
+    async (modelId) => {
+      const fixture = fixtureTransport(() =>
+        JSON.stringify({ data: [...videoModels.data, { ...videoModels.data[0], id: modelId }] }),
+      );
+      const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+      const videoConfig = resolveMediaConfig({
+        enabled: true,
+        integrations: [
+          {
+            ...videoIntegration,
+            catalog: { kind: 'configured', models: [modelId, 'google/video'] },
+          },
+        ],
+      });
+      const result = await catalog.read(
+        videoConfig,
+        async (integration) => connection(integration),
+        'owner',
+      );
+      const offering = result.catalog.offerings[0];
+      expect(offering.available).toBe(true);
+      expect(offering.capabilities[0].controls).not.toHaveProperty('audio', true);
+      expect(result.catalog.offerings[1].capabilities[0]).toMatchObject({
+        controls: { audio: true },
+      });
+      const videoRequest = mediaSubmissionRequestSchema.parse({
+        clientRequestId: 'sora-audio',
+        operation: 'video.generate',
+        prompt: 'A forest',
+        selection: { connectionId: 'videos', modelId, catalogVersion: 'v1' },
+        parameters: { durationSeconds: 4 },
+      });
+      expect(() => validateMediaOffering(videoRequest, offering)).not.toThrow();
+      const audioRequest = mediaSubmissionRequestSchema.parse({
+        ...videoRequest,
+        parameters: { ...videoRequest.parameters, audio: false },
+      });
+      expect(() => validateMediaOffering(audioRequest, offering)).toThrow();
+    },
+  );
 
   it.each([
     { zdr: true },

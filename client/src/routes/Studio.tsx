@@ -4,12 +4,15 @@ import { useRecoilValue } from 'recoil';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Button,
+  Skeleton,
+  Alert,
   OGDialog,
   OGDialogContent,
   OGDialogTitle,
   OGDialogDescription,
 } from '@librechat/client';
 import type { MediaAsset } from 'librechat-data-provider';
+import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import { MediaHostProvider } from '~/components/Media/host';
 import MediaWorkspace from '~/components/Media/Workspace';
 import { mediaChatHandoff } from './mediaHandoff';
@@ -32,13 +35,32 @@ export default function Studio() {
     }),
     [navigate],
   );
-  const { host, media, userId } = useMediaShellHost(actions);
+  const { host, media, userId, loading, failed, reload } = useMediaShellHost(actions);
   const handoff = (conversationId: string) => {
     if (!asset || !userId || !host?.isCurrentSession()) return;
     setHandoff({ scope: host.scope, conversationId, asset });
     setAsset(undefined);
     navigate(`/c/${encodeURIComponent(conversationId)}`);
   };
+  if (loading)
+    return (
+      <div role="status" className="space-y-5 p-6 text-text-primary">
+        <h1 className="text-2xl font-semibold">{localize('com_media_studio')}</h1>
+        <p className="sr-only">{localize('com_media_loading')}</p>
+        <Skeleton className="h-64 motion-reduce:animate-none" />
+      </div>
+    );
+  if (failed)
+    return (
+      <div className="p-6">
+        <Alert variant="error">
+          <p>{localize('com_media_load_failed')}</p>
+          <Button variant="outline" onClick={() => void reload()}>
+            {localize('com_ui_retry')}
+          </Button>
+        </Alert>
+      </div>
+    );
   if (!host || !media?.studio)
     return (
       <div role="status" className="p-6 text-text-primary">
@@ -48,7 +70,15 @@ export default function Studio() {
   return (
     <div className="h-full w-full overflow-y-auto">
       <MediaHostProvider value={host}>
-        <MediaWorkspace threadId={threadId} />
+        <MediaWorkspace
+          threadId={threadId}
+          libraryFirst
+          navigation={
+            <span className="md:hidden">
+              <OpenSidebar testId="studio-open-sidebar-button" />
+            </span>
+          }
+        />
       </MediaHostProvider>
       <OGDialog
         open={!!asset}

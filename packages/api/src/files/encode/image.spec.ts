@@ -143,6 +143,36 @@ describe('encodeAndFormatImages', () => {
     },
   );
 
+  it.each([FileSources.local, undefined])(
+    'reads a media original from %s without the legacy metadata update',
+    async (source) => {
+      const original = {
+        ...file,
+        source,
+        file_id: 'f17ecafe-1234-4567-89ab-123456789abc',
+        filepath: '/images/user/original.png',
+        storageKey: 'images/user/original.png',
+      };
+      // Immutable media files reject the expiry mutation performed by the legacy strategy.
+      prepareImagePayload.mockResolvedValue([null, content]);
+      const result = await encodeAndFormatImages(
+        makeReq(),
+        [original],
+        { endpoint: 'azureOpenAI' },
+        deps,
+        VisionModes.agents,
+      );
+      expect(result.image_urls).toEqual([
+        { type: 'image_url', image_url: { url: dataUrl, detail: 'auto' } },
+      ]);
+      expect(result.files[0]).toMatchObject({ file_id: original.file_id, width: 10, height: 10 });
+      expect(result.files[0]).not.toHaveProperty('storageKey');
+      expect(getDownloadStream).toHaveBeenCalledWith(expect.anything(), original.filepath);
+      expect(memoryGuard.runGuardedEncode).toHaveBeenCalledWith(file.bytes, expect.any(Function));
+      expect(prepareImagePayload).not.toHaveBeenCalled();
+    },
+  );
+
   it('keeps legacy external URLs for endpoints that accept them', async () => {
     prepareImagePayload.mockImplementation(async (_req, image) => [image, file.filepath]);
     const result = await encodeAndFormatImages(

@@ -9,6 +9,7 @@ import type {
   MediaSubmissionReceipt,
   MediaSubmissionRequest,
   MediaThread,
+  MediaThreadListRequest,
   MediaTurn,
 } from 'librechat-data-provider';
 
@@ -215,7 +216,7 @@ export interface MediaMethods {
   ): Promise<MediaImportReceipt | null>;
   getMediaThread(scope: MediaOwnerScope, threadId: string): Promise<MediaThread | null>;
   listMediaThreads(
-    input: MediaPageInput & { filter?: 'all' | 'pending' | 'completed' },
+    input: MediaPageInput & Pick<MediaThreadListRequest, 'filter' | 'include'>,
   ): Promise<MediaPage<MediaThread>>;
   listMediaTurns(
     input: MediaPageInput & { threadId: string; jobsPerTurn: number },

@@ -119,6 +119,20 @@ export const mediaThreadSchema = z
     pendingJobCount: z.number().int().nonnegative(),
     turnCount: z.number().int().nonnegative(),
     cover: mediaAssetSchema.optional(),
+    activity: z
+      .object({
+        readyOutputs: z.number().int().nonnegative(),
+        latestJob: z
+          .object({
+            phase: mediaJobPhaseSchema,
+            operation: mediaOperationSchema,
+            selection: mediaSelectionSchema,
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
     retiredAt: timestamp.optional(),
   })
   .strict();

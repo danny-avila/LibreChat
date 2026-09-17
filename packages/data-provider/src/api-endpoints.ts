@@ -28,6 +28,7 @@ const mediaQuery = (params: MediaThreadListRequest = {}): string => {
   if (params.cursor) query.set('cursor', params.cursor);
   if (params.limit !== undefined) query.set('limit', String(params.limit));
   if (params.filter) query.set('filter', params.filter);
+  if (params.include) query.set('include', params.include);
   const suffix = query.toString();
   return suffix ? `?${suffix}` : '';
 };

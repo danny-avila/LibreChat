@@ -8,6 +8,7 @@ import {
   mediaSubmissionReceiptSchema,
   mediaStartupConfigSchema,
   mediaNumberControlSchema,
+  mediaThreadListRequestSchema,
 } from './index';
 import { PermissionTypes, Permissions, permissionsSchema } from '../permissions';
 import { configSchema, BASE_ONLY_CONFIG_SECTIONS } from '../config';
@@ -88,6 +89,21 @@ describe('media configuration compatibility', () => {
 });
 
 describe('media command contracts', () => {
+  it('opts into gallery activity over HTTP while leaving legacy requests unchanged', () => {
+    const params = {
+      include: 'activity' as const,
+      filter: 'completed' as const,
+      cursor: 'page/next',
+    };
+    const url = new URL(endpoints.mediaThreads(params), 'http://localhost');
+    expect(mediaThreadListRequestSchema.parse(Object.fromEntries(url.searchParams))).toEqual(
+      params,
+    );
+    expect(new URL(endpoints.mediaThreads(), 'http://localhost').searchParams.has('include')).toBe(
+      false,
+    );
+  });
+
   it('canonicalizes omitted version, inputs and parameters', () => {
     expect(mediaSubmissionRequestSchema.parse(submission)).toMatchObject({
       schemaVersion: 1,

@@ -92,6 +92,8 @@ export function useMediaCommands(visibleThreadIds: string[]) {
         if (!host.isCurrentSession()) return;
         client.setQueryData(receiptKey(host.scope, command), receipt);
         if (receipt.phase === 'rejected') setError(receipt.error.code);
+        else if (command.kind !== 'retry' && !command.request.threadId)
+          host.openThread(receipt.threadId);
         await invalidateMedia(client, host.scope);
       } catch (failure) {
         if (host.isCurrentSession()) {

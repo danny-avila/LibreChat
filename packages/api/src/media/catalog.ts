@@ -52,8 +52,8 @@ const videoCatalogSchema = z.object({
       supported_resolutions: z.array(z.string()).nullable().optional(),
       supported_aspect_ratios: z.array(z.string()).nullable().optional(),
       supported_frame_images: z.array(z.string()).nullable().optional(),
-      generate_audio: z.boolean().optional(),
-      seed: z.boolean().optional(),
+      generate_audio: z.boolean().nullable().optional(),
+      seed: z.boolean().nullable().optional(),
       upscale_factor: z.object({ min: z.number(), max: z.number() }).nullable().optional(),
     }),
   ),
@@ -87,16 +87,24 @@ function imageCapabilities(
   parameters: z.infer<typeof parameterSchema>,
   integration: MediaIntegration,
   config: MediaConfig,
+  modelId: string,
 ): MediaCapability[] {
   const reference = numberControl(parameters.input_references);
   const format = enumControl(parameters.output_format);
   if (format && !format.values.some((value) => ['png', 'jpeg', 'webp'].includes(value))) {
     return [];
   }
+  const resolution = enumControl(parameters.resolution);
+  if (modelId === 'bytedance-seed/seedream-4.5' && resolution) {
+    // OpenRouter advertises 1K, but Seedream 4.5 rejects fewer than 3,686,400 pixels.
+    // This is a provider constraint, not a configurable deployment limit.
+    resolution.values = resolution.values.filter((value) => value !== '1K');
+    if (!resolution.values.length) return [];
+  }
   const controls = {
     count: numberControl(parameters.n) ?? { min: 1, max: 1 },
     size: enumControl(parameters.size),
-    resolution: enumControl(parameters.resolution),
+    resolution,
     aspectRatio: enumControl(parameters.aspect_ratio),
     quality: enumControl(parameters.quality),
     format: format
@@ -317,7 +325,8 @@ export function createMediaCatalog({
                 )
                 .find(
                   (item) =>
-                    imageCapabilities(item.supported_parameters, integration, config).length > 0,
+                    imageCapabilities(item.supported_parameters, integration, config, modelId)
+                      .length > 0,
                 );
               if (endpoint) {
                 providerTag = endpoint.provider_tag ?? undefined;
@@ -325,6 +334,7 @@ export function createMediaCatalog({
                   endpoint.supported_parameters,
                   integration,
                   config,
+                  modelId,
                 );
               }
             }
@@ -364,7 +374,9 @@ export function createMediaCatalog({
                     aspectRatio: entry.supported_aspect_ratios?.length
                       ? { values: entry.supported_aspect_ratios }
                       : undefined,
-                    audio: entry.generate_audio || undefined,
+                    // This flag advertises audio output; Sora always includes audio, without a toggle.
+                    audio:
+                      (entry.generate_audio && !modelId.startsWith('openai/sora-')) || undefined,
                     seed: entry.seed ? { min: 0, max: 2_147_483_647 } : undefined,
                   },
                 },

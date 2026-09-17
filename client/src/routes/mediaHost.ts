@@ -12,8 +12,9 @@ import store from '~/store';
 
 /** Shell preferences and identity cross the feature boundary through this host adapter. */
 export function useMediaShellHost(actions: Pick<MediaHost, 'openThread' | 'useInChat'>) {
-  const { user, isAuthenticated } = useAuthContext();
-  const { data: startup } = useGetStartupConfig();
+  const { user, isAuthenticated, isAuthReady } = useAuthContext();
+  const startupQuery = useGetStartupConfig();
+  const startup = startupQuery.data;
   const canUse = useHasAccess({
     permissionType: PermissionTypes.MEDIA,
     permission: Permissions.USE,
@@ -84,5 +85,13 @@ export function useMediaShellHost(actions: Pick<MediaHost, 'openThread' | 'useIn
       actions,
     ],
   );
-  return { host, media, canUse, userId };
+  return {
+    host,
+    media,
+    canUse,
+    userId,
+    loading: !isAuthReady || startupQuery.isLoading,
+    failed: startupQuery.isError,
+    reload: startupQuery.refetch,
+  };
 }

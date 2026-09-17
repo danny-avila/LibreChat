@@ -117,6 +117,18 @@ function cursorParts(cursor?: string): [string, string] | undefined {
   }
   throw new MediaPersistenceError('invalid_input', 'Invalid media cursor');
 }
+function assetView(content: MediaAsset): MediaAsset {
+  return {
+    file_id: content.file_id,
+    filename: content.filename,
+    type: content.type,
+    bytes: content.bytes,
+    filepath: content.filepath,
+    ...(content.width != null ? { width: content.width } : {}),
+    ...(content.height != null ? { height: content.height } : {}),
+    ...(content.durationSeconds != null ? { durationSeconds: content.durationSeconds } : {}),
+  };
+}
 function jobView(job: MediaStoredJob): MediaJob {
   const canRetry =
     job.receipt.phase === 'accepted' &&
@@ -135,7 +147,11 @@ function jobView(job: MediaStoredJob): MediaJob {
     selection: job.selection,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
-    outputs: job.outputs,
+    outputs: job.outputs.map((output) =>
+      output.kind !== 'text' && output.asset
+        ? { ...output, asset: assetView(output.asset) }
+        : output,
+    ),
     ...(job.error ? { error: job.error } : {}),
     ...(job.retryOfJobId ? { retryOfJobId: job.retryOfJobId } : {}),
     allowedActions: {
@@ -158,7 +174,7 @@ function threadView(thread: MediaStoredThread): MediaThread {
     updatedAt: thread.updatedAt,
     pendingJobCount: thread.pendingJobCount,
     turnCount: thread.turnCount,
-    ...(thread.cover ? { cover: thread.cover } : {}),
+    ...(thread.cover ? { cover: assetView(thread.cover) } : {}),
     ...(thread.retiredAt ? { retiredAt: thread.retiredAt } : {}),
   };
 }
@@ -858,6 +874,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     limit,
     cursor,
     filter,
+    include,
   }) => {
     positive(limit);
     const after = cursorParts(cursor);
@@ -867,6 +884,129 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         { createdAt: { $lt: after[0] } },
         { createdAt: after[0], threadId: { $lt: after[1] } },
       ];
+    }
+    if (include === 'activity') {
+      type GalleryThread = MediaStoredThread & {
+        jobs: Array<{
+          pending: Array<{ value: number }>;
+          summary: Array<NonNullable<MediaThread['activity']>>;
+          covers: Array<{ asset: MediaAsset }>;
+        }>;
+      };
+      const filtered = filter === 'pending' || filter === 'completed';
+      const rows = await Thread.aggregate<GalleryThread>([
+        { $match: query },
+        { $sort: { createdAt: -1, threadId: -1 } },
+        ...(!filtered ? [{ $limit: limit + 1 }] : []),
+        {
+          $lookup: {
+            // eslint-disable-next-line no-restricted-syntax -- Owner and tenant are explicit in this correlated lookup.
+            from: Job.collection.name,
+            let: { threadId: '$threadId' },
+            pipeline: [
+              {
+                $match: {
+                  ...scopeFilter(scope),
+                  'receipt.phase': 'accepted',
+                  $expr: { $eq: ['$threadId', '$$threadId'] },
+                },
+              },
+              {
+                $facet: {
+                  pending: [{ $match: { phase: { $nin: terminal } } }, { $count: 'value' }],
+                  summary: [
+                    { $sort: { createdAt: -1, jobId: -1 } },
+                    {
+                      $group: {
+                        _id: null,
+                        latestJob: {
+                          $first: {
+                            phase: '$phase',
+                            operation: '$operation',
+                            selection: '$selection',
+                          },
+                        },
+                        readyOutputs: {
+                          $sum: {
+                            $size: {
+                              $filter: {
+                                input: '$outputs',
+                                as: 'output',
+                                cond: {
+                                  $and: [
+                                    { $in: ['$$output.kind', ['image', 'video']] },
+                                    { $eq: ['$$output.state', 'ready'] },
+                                    { $ne: [{ $ifNull: ['$$output.asset.file_id', null] }, null] },
+                                  ],
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                    { $project: { _id: 0, latestJob: 1, readyOutputs: 1 } },
+                  ],
+                  covers: [
+                    {
+                      $match: {
+                        outputs: {
+                          $elemMatch: {
+                            kind: { $in: ['image', 'video'] },
+                            state: 'ready',
+                            'asset.file_id': { $exists: true },
+                          },
+                        },
+                      },
+                    },
+                    { $sort: { createdAt: 1, jobId: 1 } },
+                    { $limit: 1 },
+                    { $unwind: '$outputs' },
+                    {
+                      $match: {
+                        'outputs.kind': { $in: ['image', 'video'] },
+                        'outputs.state': 'ready',
+                        'outputs.asset.file_id': { $exists: true },
+                      },
+                    },
+                    { $sort: { 'outputs.ordinal': 1 } },
+                    { $limit: 1 },
+                    { $project: { _id: 0, asset: '$outputs.asset' } },
+                  ],
+                },
+              },
+            ],
+            as: 'jobs',
+          },
+        },
+        ...(filtered
+          ? [
+              {
+                $match:
+                  filter === 'pending'
+                    ? { 'jobs.pending.value': { $gt: 0 } }
+                    : { 'jobs.summary.readyOutputs': { $gt: 0 } },
+              },
+              { $limit: limit + 1 },
+            ]
+          : []),
+      ]);
+      const last = rows[limit - 1];
+      return {
+        items: rows.slice(0, limit).map((thread) => {
+          const projected = thread.jobs[0];
+          const cover =
+            thread.cover ?? (!thread.coverExplicit ? projected?.covers[0]?.asset : undefined);
+          return {
+            ...threadView({ ...thread, cover }),
+            pendingJobCount: projected?.pending[0]?.value ?? 0,
+            activity: projected?.summary[0] ?? { readyOutputs: 0 },
+          };
+        }),
+        ...(rows.length > limit && last
+          ? { nextCursor: cursorOf(last.createdAt, last.threadId) }
+          : {}),
+      };
     }
     if (filter === 'pending') {
       query.pendingJobCount = { $gt: 0 };
@@ -1563,21 +1703,6 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     ).lean();
     return row ? threadView(row) : null;
   };
-
-  function assetView(content: MediaAssetContent): MediaAsset {
-    return {
-      file_id: content.file_id,
-      filename: content.filename,
-      type: content.type,
-      bytes: content.bytes,
-      filepath: content.filepath,
-      ...(content.width !== undefined ? { width: content.width } : {}),
-      ...(content.height !== undefined ? { height: content.height } : {}),
-      ...(content.durationSeconds !== undefined
-        ? { durationSeconds: content.durationSeconds }
-        : {}),
-    };
-  }
 
   const reserveMediaAssetWrite: MediaMethods['reserveMediaAssetWrite'] = async (input) => {
     await ensureMediaIndexes();

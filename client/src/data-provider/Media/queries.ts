@@ -1,3 +1,5 @@
+import { useRef } from 'react';
+import { isAxiosError } from 'axios';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   dataService,
@@ -33,16 +35,27 @@ export function useMediaCatalog(host: MediaQueryScope) {
 }
 export function useMediaThreads(host: MediaQueryScope, filter: MediaThreadListRequest['filter']) {
   const client = useQueryClient();
-  const key = [QueryKeys.mediaThreads, host.scope, filter];
+  const activity = useRef(true);
+  const key = [QueryKeys.mediaThreads, host.scope, filter, 'activity'];
   return useInfiniteQuery(
     key,
     async ({ pageParam, signal }): Promise<MediaThreadPage> => {
-      const next = current(
-        host,
-        mediaThreadPageSchema.parse(
-          await dataService.listMediaThreads({ cursor: pageParam, filter }, signal),
-        ),
-      );
+      const params = { cursor: pageParam, filter };
+      const load = async () => {
+        try {
+          return await dataService.listMediaThreads(
+            { ...params, ...(activity.current ? { include: 'activity' as const } : {}) },
+            signal,
+          );
+        } catch (error) {
+          if (!activity.current || !isAxiosError(error) || error.response?.status !== 422)
+            throw error;
+          // Older servers validate query fields strictly. Keep their original response contract.
+          activity.current = false;
+          return dataService.listMediaThreads(params, signal);
+        }
+      };
+      const next = current(host, mediaThreadPageSchema.parse(await load()));
       const previous = client.getQueryData<{ pages: MediaThreadPage[] }>(key);
       const old = new Map(
         previous?.pages.flatMap((page) => page.items).map((thread) => [thread.threadId, thread]),

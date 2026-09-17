@@ -32,6 +32,28 @@ const Harness = ({
 };
 
 describe('Composer', () => {
+  it('offers a visible creation action while preserving the host keyboard policy', () => {
+    const onSubmit = jest.fn();
+    render(
+      <Composer
+        value="A quiet lake"
+        onChange={() => {}}
+        onSubmit={onSubmit}
+        canSubmit
+        submitDisplay="label"
+        submitLabel="Generate image"
+        ariaLabel="Prompt"
+        submitOnEnter={false}
+      />,
+    );
+    const button = screen.getByRole('button', { name: 'Generate image' });
+    expect(button).toHaveTextContent('Generate image');
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'Prompt' }), { key: 'Enter' });
+    expect(onSubmit).not.toHaveBeenCalled();
+    fireEvent.click(button);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
   it('submits on Enter and keeps Shift+Enter for a newline', () => {
     const onSubmit = jest.fn();
     render(<Harness onSubmit={onSubmit} />);

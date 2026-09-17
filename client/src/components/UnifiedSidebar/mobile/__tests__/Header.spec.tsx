@@ -1,6 +1,6 @@
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { NavLink } from '~/common';
 
 let mockShowMarketplace = true;
@@ -49,6 +49,13 @@ import Header from '../Header';
 const links = [] as NavLink[];
 
 describe('mobile drawer header', () => {
+  it('does not forward a click event as the host after-slide callback', () => {
+    const onClose = jest.fn();
+    render(<Header links={links} expanded={true} onClose={onClose} />, { wrapper: MemoryRouter });
+    fireEvent.click(screen.getByTestId('close-sidebar-button'));
+    expect(onClose).toHaveBeenCalledWith();
+  });
+
   it('claims the close identity while the drawer is open', () => {
     render(<Header links={links} expanded={true} onClose={jest.fn()} />, { wrapper: MemoryRouter });
 

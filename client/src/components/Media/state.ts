@@ -91,6 +91,17 @@ export const mediaDraftFamily = atomFamily((key: string) =>
 export const mediaPendingFamily = atomFamily((scope: string) =>
   storedAtom<PendingMedia[]>(`${scope}:pending`, [], z.array(pendingSchema)),
 );
+const librarySchema = z.object({
+  filter: z.enum(['all', 'pending', 'completed']),
+  search: z.string(),
+});
+export const mediaLibraryFamily = atomFamily((scope: string) =>
+  storedAtom(
+    `${scope}:library`,
+    { filter: 'all', search: '' } as z.infer<typeof librarySchema>,
+    librarySchema,
+  ),
+);
 
 export function clearMediaSessionStorage() {
   try {
@@ -103,6 +114,8 @@ export function clearMediaSessionStorage() {
   }
   mediaDraftFamily.setShouldRemove(() => true);
   mediaPendingFamily.setShouldRemove(() => true);
+  mediaLibraryFamily.setShouldRemove(() => true);
   mediaDraftFamily.setShouldRemove(null);
   mediaPendingFamily.setShouldRemove(null);
+  mediaLibraryFamily.setShouldRemove(null);
 }

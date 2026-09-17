@@ -1,16 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { v4 } from 'uuid';
 import { useSetAtom, useAtomValue } from 'jotai';
+import { Clock3, Pencil, RotateCcw, Trash2 } from 'lucide-react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Button,
-  Input,
-  Label,
-  OGDialog,
-  OGDialogContent,
-  OGDialogTitle,
-  OGDialogDescription,
-} from '@librechat/client';
 import {
   dataService,
   QueryKeys,
@@ -18,8 +10,20 @@ import {
   mediaOutputPageSchema,
   mediaTurnPageSchema,
 } from 'librechat-data-provider';
+import {
+  Button,
+  Alert,
+  Spinner,
+  Input,
+  Label,
+  OGDialog,
+  OGDialogContent,
+  OGDialogTitle,
+  OGDialogDescription,
+} from '@librechat/client';
 import type {
   MediaAsset,
+  MediaCatalog,
   MediaJob,
   MediaOutput,
   MediaThreadDetail,
@@ -31,6 +35,7 @@ import { mediaDraftFamily, mediaPendingFamily } from './state';
 import { invalidateMedia } from '~/data-provider/Media';
 import { mediaErrorCode } from './commands';
 import { MediaAssetView } from './Asset';
+import { MediaStatus } from './Status';
 import { useLocalize } from '~/hooks';
 import { useMediaHost } from './host';
 
@@ -40,18 +45,27 @@ function Outputs({
   cover,
 }: {
   outputs: MediaOutput[];
-  refine: (asset: MediaAsset) => void;
+  refine?: (asset: MediaAsset) => void;
   cover: (asset: MediaAsset) => void;
 }) {
   const localize = useLocalize();
   return (
-    <div className="space-y-4">
+    <div
+      className={
+        outputs.filter((output) => output.kind !== 'text').length > 1
+          ? 'grid grid-cols-1 gap-5 sm:grid-cols-2'
+          : 'space-y-4'
+      }
+    >
       {[...outputs]
         .sort((a, b) => a.ordinal - b.ordinal)
         .map((output) => {
           if (output.kind === 'text')
             return (
-              <p key={output.outputId} className="whitespace-pre-wrap">
+              <p
+                key={output.outputId}
+                className="col-span-full whitespace-pre-wrap text-sm leading-6 text-text-secondary"
+              >
                 {output.text}
               </p>
             );
@@ -60,7 +74,7 @@ function Outputs({
               <MediaAssetView
                 key={output.outputId}
                 asset={output.asset}
-                refine={() => refine(output.asset!)}
+                refine={refine ? () => refine(output.asset!) : undefined}
                 cover={() => cover(output.asset!)}
               />
             );
@@ -78,11 +92,15 @@ function Job({
   send,
   refine,
   cover,
+  catalog,
+  edit,
 }: {
   job: MediaJob;
   send: (command: PendingMedia) => Promise<void>;
-  refine: (asset: MediaAsset) => void;
+  refine?: (asset: MediaAsset) => void;
   cover: (asset: MediaAsset) => void;
+  catalog?: MediaCatalog;
+  edit: () => void;
 }) {
   const host = useMediaHost();
   const pending = useAtomValue(mediaPendingFamily(host.scope));
@@ -119,19 +137,52 @@ function Job({
   more.data?.pages.forEach((page) =>
     page.items.forEach((output) => outputs.set(output.outputId, output)),
   );
+  const offering = catalog?.offerings.find(
+    (item) =>
+      item.connectionId === job.selection.connectionId && item.modelId === job.selection.modelId,
+  );
+  const active = !['succeeded', 'failed', 'cancelled', 'requires_attention'].includes(job.phase);
   return (
     <section
-      className="space-y-3 rounded-lg border border-border-light p-3"
+      className="space-y-4 rounded-2xl border border-border-light bg-surface-primary p-4 sm:p-5"
       aria-label={localize('com_media_job')}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p role="status">{localize(mediaJobPhaseLabels[job.phase])}</p>
-        <span className="text-sm text-text-secondary">{job.selection.modelId}</span>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="break-words text-sm font-semibold">
+            {offering?.modelName ?? job.selection.modelId}
+          </h3>
+          <p className="mt-1 text-xs text-text-secondary">
+            {offering?.connectionName ?? job.selection.connectionId}
+          </p>
+        </div>
+        <span role="status">
+          <MediaStatus phase={job.phase} />
+        </span>
       </div>
       {job.retryOfJobId && (
         <p className="text-sm text-text-secondary">{localize('com_media_retry_attempt')}</p>
       )}
-      {job.error && <p role="alert">{localize(mediaErrorLabels[job.error.code])}</p>}
+      {job.error && (
+        <Alert variant="error">
+          <p>{localize(mediaErrorLabels[job.error.code])}</p>
+        </Alert>
+      )}
+      {active && outputs.size === 0 && (
+        <div
+          role="status"
+          className="flex min-h-52 flex-col items-center justify-center gap-3 rounded-xl bg-surface-secondary p-6 text-center"
+        >
+          <Spinner className="size-6" />
+          <p className="font-medium">{localize(mediaJobPhaseLabels[job.phase])}</p>
+          <p className="max-w-sm text-sm leading-6 text-text-secondary">
+            {localize('com_media_generation_hint')}
+          </p>
+        </div>
+      )}
+      {job.phase === 'cancelled' && outputs.size === 0 && (
+        <p className="text-sm text-text-secondary">{localize('com_media_cancelled_hint')}</p>
+      )}
       <Outputs outputs={[...outputs.values()]} refine={refine} cover={cover} />
       {job.outputsNextCursor && (
         <Button
@@ -150,10 +201,11 @@ function Job({
           {localize('com_ui_retry')}
         </Button>
       )}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {job.allowedActions.cancel && (
           <Button
             variant="outline"
+            size="sm"
             disabled={busy}
             onClick={async () => {
               setBusy(true);
@@ -175,6 +227,7 @@ function Job({
         {job.allowedActions.retry && (
           <Button
             variant="outline"
+            size="sm"
             disabled={busy || retryPending || !host.canCreate}
             onClick={async () => {
               setBusy(true);
@@ -188,9 +241,14 @@ function Job({
               if (host.isCurrentSession()) setBusy(false);
             }}
           >
+            <RotateCcw className="mr-1.5 size-4" aria-hidden="true" />
             {localize('com_media_retry_job')}
           </Button>
         )}
+        <Button variant="ghost" size="sm" disabled={!host.canCreate} onClick={edit}>
+          <Pencil className="mr-1.5 size-4" aria-hidden="true" />
+          {localize('com_media_edit_request')}
+        </Button>
       </div>
       {error && <p role="alert">{error}</p>}
     </section>
@@ -200,10 +258,14 @@ function Turn({
   turn,
   send,
   cover,
+  catalog,
+  onCompose,
 }: {
   turn: MediaTurn;
   send: (command: PendingMedia) => Promise<void>;
   cover: (asset: MediaAsset) => void;
+  catalog?: MediaCatalog;
+  onCompose?: () => void;
 }) {
   const host = useMediaHost();
   const localize = useLocalize();
@@ -252,27 +314,73 @@ function Turn({
       ],
       assets: [asset],
     }));
-    document.querySelector<HTMLTextAreaElement>('[data-media-workspace] textarea')?.focus();
+    onCompose?.();
   };
+  const edit = () => {
+    setDraft((previous) => ({
+      ...previous,
+      revision: previous.revision + 1,
+      prompt: turn.prompt,
+      parentTurnId: turn.parentTurnId,
+      offering: turn.selection
+        ? JSON.stringify([turn.selection.connectionId, turn.selection.modelId])
+        : previous.offering,
+      operation: turn.operation ?? previous.operation,
+      parameters: { count: 1 },
+      inputs: turn.inputs,
+      assets: turn.assets,
+    }));
+    onCompose?.();
+  };
+  const offering = catalog?.offerings.find(
+    (item) =>
+      item.connectionId === turn.selection?.connectionId && item.modelId === turn.selection.modelId,
+  );
+  const canRefine =
+    !catalog ||
+    offering?.capabilities.some(
+      (capability) =>
+        capability.operation === 'image.edit' ||
+        (capability.operation === 'video.generate' && capability.inputs.roles.includes('video')),
+    );
   return (
-    <article className="space-y-3 border-t border-border-light pt-4">
-      <p className="whitespace-pre-wrap font-medium">
+    <article className="space-y-4">
+      <p className="whitespace-pre-wrap break-words text-sm leading-6 text-text-primary">
         {turn.prompt || localize('com_media_imported')}
       </p>
-      <time className="text-sm text-text-secondary" dateTime={turn.createdAt}>
-        {new Date(turn.createdAt).toLocaleString()}
+      <time
+        className="flex items-center gap-1.5 text-xs text-text-secondary"
+        dateTime={turn.createdAt}
+      >
+        <Clock3 className="size-3.5" aria-hidden="true" />
+        {new Date(turn.createdAt).toLocaleString(undefined, {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+        })}
       </time>
       {turn.assets.map((asset) => (
         <MediaAssetView
           key={asset.file_id}
           asset={asset}
-          refine={() => refine(asset)}
+          refine={canRefine ? () => refine(asset) : undefined}
           cover={() => cover(asset)}
         />
       ))}
-      {[...jobs.values()].map((job) => (
-        <Job key={job.jobId} job={job} send={send} refine={refine} cover={cover} />
-      ))}
+      {[...jobs.values()]
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .map((job) => (
+          <Job
+            key={job.jobId}
+            job={job}
+            catalog={catalog}
+            send={send}
+            refine={canRefine ? refine : undefined}
+            cover={cover}
+            edit={edit}
+          />
+        ))}
       {turn.jobsNextCursor && (
         <Button
           variant="ghost"
@@ -297,16 +405,23 @@ export function MediaThreadView({
   detail,
   send,
   onDeleted,
+  catalog,
+  onCompose,
 }: {
   detail: MediaThreadDetail;
   send: (command: PendingMedia) => Promise<void>;
   onDeleted: () => void;
+  catalog?: MediaCatalog;
+  onCompose?: () => void;
 }) {
   const host = useMediaHost();
   const localize = useLocalize();
   const client = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const renameTrigger = useRef<HTMLButtonElement>(null);
+  const deleteTrigger = useRef<HTMLButtonElement>(null);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [title, setTitle] = useState(detail.thread.title);
@@ -347,43 +462,99 @@ export function MediaThreadView({
         ...change,
       });
       if (host.isCurrentSession()) await invalidateMedia(client, host.scope);
+      return true;
     } catch (failure) {
       if (host.isCurrentSession()) setError(localize(mediaErrorLabels[mediaErrorCode(failure)]));
+      return false;
     } finally {
       if (host.isCurrentSession()) setBusy(false);
     }
   };
   return (
-    <section className="space-y-4" aria-label={localize('com_media_history')}>
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="min-w-0 flex-1">
+    <section className="space-y-6" aria-label={localize('com_media_history')}>
+      <div className="flex items-start justify-between gap-3 border-b border-border-light pb-4">
+        <div className="min-w-0">
+          <h2 className="line-clamp-2 break-words text-lg font-semibold">{detail.thread.title}</h2>
+          <p className="mt-1 text-xs text-text-secondary">
+            {localize('com_media_revision_count', { count: detail.thread.turnCount })}
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-1">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={localize('com_media_rename')}
+            ref={renameTrigger}
+            title={localize('com_media_rename')}
+            disabled={busy}
+            onClick={() => {
+              setTitle(detail.thread.title);
+              setError(undefined);
+              setRenameOpen(true);
+            }}
+          >
+            <Pencil className="size-4" aria-hidden="true" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={localize('com_ui_delete')}
+            ref={deleteTrigger}
+            title={localize('com_ui_delete')}
+            disabled={busy}
+            onClick={() => setDeleteOpen(true)}
+          >
+            <Trash2 className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
+      </div>
+      {error && <p role="alert">{error}</p>}
+      {[...turns.values()]
+        .sort(
+          (a, b) => (b.sequence ?? 0) - (a.sequence ?? 0) || b.createdAt.localeCompare(a.createdAt),
+        )
+        .map((turn) => (
+          <Turn
+            key={turn.turnId}
+            turn={turn}
+            send={send}
+            catalog={catalog}
+            onCompose={onCompose}
+            cover={(asset) => void update({ coverFileId: asset.file_id })}
+          />
+        ))}
+      <OGDialog open={renameOpen} onOpenChange={setRenameOpen} triggerRef={renameTrigger}>
+        <OGDialogContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            renameTrigger.current?.focus();
+          }}
+        >
+          <OGDialogTitle>{localize('com_media_rename')}</OGDialogTitle>
+          <OGDialogDescription>{localize('com_media_rename_description')}</OGDialogDescription>
           <Label htmlFor="media-thread-title">{localize('com_media_title')}</Label>
           <Input
             id="media-thread-title"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
+            maxLength={catalog?.limits.maxTitleChars}
           />
-        </div>
-        <Button
-          variant="outline"
-          disabled={busy || !title.trim()}
-          onClick={() => void update({ title })}
-        >
-          {localize('com_ui_save')}
-        </Button>
-        <Button variant="ghost" disabled={busy} onClick={() => setDeleteOpen(true)}>
-          {localize('com_ui_delete')}
-        </Button>
-      </div>
-      {error && <p role="alert">{error}</p>}
-      {[...turns.values()].map((turn) => (
-        <Turn
-          key={turn.turnId}
-          turn={turn}
-          send={send}
-          cover={(asset) => void update({ coverFileId: asset.file_id })}
-        />
-      ))}
+          {error && <Alert variant="error">{error}</Alert>}
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setRenameOpen(false)}>
+              {localize('com_ui_cancel')}
+            </Button>
+            <Button
+              disabled={busy || !title.trim()}
+              onClick={async () => {
+                if (await update({ title })) setRenameOpen(false);
+              }}
+            >
+              {localize('com_ui_save')}
+            </Button>
+          </div>
+        </OGDialogContent>
+      </OGDialog>
       {detail.turns.nextCursor && (
         <Button
           variant="outline"
@@ -401,8 +572,13 @@ export function MediaThreadView({
           {localize('com_ui_retry')}
         </Button>
       )}
-      <OGDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <OGDialogContent>
+      <OGDialog open={deleteOpen} onOpenChange={setDeleteOpen} triggerRef={deleteTrigger}>
+        <OGDialogContent
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            deleteTrigger.current?.focus();
+          }}
+        >
           <OGDialogTitle>{localize('com_media_delete_title')}</OGDialogTitle>
           <OGDialogDescription>{localize('com_media_delete_description')}</OGDialogDescription>
           <div className="flex gap-2">

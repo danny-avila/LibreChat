@@ -1,3 +1,4 @@
+import { isMediaFileId } from '@librechat/data-schemas';
 import {
   FileSources,
   VisionModes,
@@ -108,10 +109,15 @@ export async function encodeAndFormatImages(
       continue;
     }
 
-    if (blobStorageSources.has(source)) {
+    if (
+      blobStorageSources.has(source) ||
+      (source === FileSources.local && isMediaFileId(file.file_id))
+    ) {
       try {
+        // The local stream strategy takes a public path; media originals must skip legacy writes.
+        const storedFile = source === FileSources.local ? { ...file, storageKey: undefined } : file;
         const processedFile = await runGuardedEncode(file.bytes ?? 0, () =>
-          getFileStream(req, file, encodingMethods, getStrategyFunctions),
+          getFileStream(req, storedFile, encodingMethods, getStrategyFunctions),
         );
         promises.push([file, processedFile?.content ?? null]);
       } catch (error) {

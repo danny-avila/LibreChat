@@ -157,6 +157,7 @@ export const mediaPageRequestSchema = z
   .strict();
 export const mediaThreadListRequestSchema = mediaPageRequestSchema.extend({
   filter: z.enum(['all', 'pending', 'completed']).optional(),
+  include: z.literal('activity').optional(),
 });
 
 export type MediaOperation = z.infer<typeof mediaOperationSchema>;

@@ -1,10 +1,12 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import {
+  mediaAssetSchema,
   mediaImportReceiptSchema,
   mediaSubmissionReceiptSchema,
   mediaJobSchema,
   mediaSubmissionRequestSchema,
+  mediaThreadSchema,
 } from 'librechat-data-provider';
 import type {
   MediaMethods,
@@ -482,6 +484,209 @@ describe('media persistence on standalone MongoDB', () => {
     expect(await methods.getMediaAssetContent(scope, asset.file_id)).toMatchObject({
       storageKey: write.storageKey,
       contentDigest: content.contentDigest,
+    });
+  });
+
+  it('omits unset dimensions when publishing and reading a video original', async () => {
+    const write = await methods.reserveMediaAssetWrite({
+      scope,
+      outputKey: 'video-original',
+      rendition: 'original',
+      ingestToken: 'video-ingest',
+      fingerprint: 'video-digest',
+      storageKey: `images/${scope.ownerId}/original.mp4`,
+    });
+    const asset = await methods.commitMediaAssetWrite({
+      scope,
+      writeId: write.writeId,
+      content: {
+        file_id: write.fileId,
+        filename: 'original.mp4',
+        type: 'video/mp4',
+        width: undefined,
+        height: undefined,
+        bytes: 32,
+        filepath: `/${write.storageKey}`,
+        source: 'local',
+        storageKey: write.storageKey,
+        contentDigest: 'video-digest',
+      },
+    });
+    expect(mediaAssetSchema.parse(asset)).toMatchObject({ type: 'video/mp4', bytes: 32 });
+    expect(asset).not.toHaveProperty('width');
+    expect(asset).not.toHaveProperty('height');
+    expect(mediaAssetSchema.parse(await methods.getMediaAsset(scope, asset.file_id))).toEqual(
+      asset,
+    );
+  });
+
+  it('normalizes unset dimensions in previously stored output and cover snapshots', async () => {
+    const { asset } = await original();
+    const job = await accepted('legacy-video', { operation: 'video.generate' });
+    const legacyAsset = {
+      ...asset,
+      type: 'video/mp4',
+      width: null,
+      height: null,
+      durationSeconds: null,
+    };
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: job.jobId },
+      {
+        $set: {
+          phase: 'succeeded',
+          outputs: [
+            {
+              kind: 'video',
+              outputId: 'video-output',
+              ordinal: 0,
+              state: 'ready',
+              asset: legacyAsset,
+            },
+          ],
+        },
+      },
+    );
+    await mongoose.models.MediaThread.updateOne(
+      { threadId: job.threadId },
+      { $set: { cover: legacyAsset } },
+    );
+    const detail = mediaJobSchema.parse(await methods.getMediaJobView(scope, job.jobId));
+    expect(detail.outputs[0]).toMatchObject({ kind: 'video', asset: { type: 'video/mp4' } });
+    expect(detail.outputs[0]).not.toHaveProperty('asset.width');
+    const jobs = await methods.listMediaTurnJobs({ scope, turnId: job.turnId, limit: 10 });
+    expect(mediaJobSchema.parse(jobs.items[0])).toEqual(detail);
+    const turns = await methods.listMediaTurns({
+      scope,
+      threadId: job.threadId,
+      limit: 10,
+      jobsPerTurn: 10,
+    });
+    expect(mediaJobSchema.parse(turns.items[0].jobs[0])).toEqual(detail);
+    const thread = mediaThreadSchema.parse(await methods.getMediaThread(scope, job.threadId));
+    expect(thread.cover).not.toHaveProperty('height');
+    expect(thread.cover).not.toHaveProperty('durationSeconds');
+    const threads = await methods.listMediaThreads({ scope, limit: 10 });
+    expect(mediaThreadSchema.parse(threads.items[0])).toEqual(thread);
+  });
+
+  it('shows a gallery original and model before opening its thread, without changing legacy views', async () => {
+    const { asset } = await original();
+    const job = await accepted('unopened-gemini', {
+      selection: { connectionId: 'router', modelId: 'google/gemini-image', catalogVersion: 'v1' },
+    });
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: job.jobId },
+      {
+        $set: {
+          phase: 'succeeded',
+          outputs: [
+            { kind: 'text', outputId: 'caption', ordinal: 0, text: 'Here is your image' },
+            { kind: 'image', outputId: 'image', ordinal: 1, state: 'ready', asset },
+          ],
+        },
+      },
+    );
+    const legacy = (await methods.listMediaThreads({ scope, limit: 10 })).items[0];
+    expect(legacy.cover).toBeUndefined();
+    expect(legacy.activity).toBeUndefined();
+    const result = await methods.listMediaThreads({ scope, limit: 10, include: 'activity' });
+    const thread = mediaThreadSchema.parse(result.items[0]);
+    expect(thread).toMatchObject({
+      cover: asset,
+      pendingJobCount: 0,
+      activity: { readyOutputs: 1, latestJob: { phase: 'succeeded', selection: job.selection } },
+    });
+    expect(thread.version).toBe(legacy.version);
+    expect(thread).not.toHaveProperty('ownerId');
+    expect(thread.activity?.latestJob).not.toHaveProperty('execution');
+    const stored = await mongoose.models.MediaThread.findOne({ threadId: job.threadId }).lean();
+    expect(stored).toMatchObject({ threadId: job.threadId });
+    expect(stored).not.toHaveProperty('cover');
+  });
+
+  it('filters and paginates gallery results by saved output instead of treating failures as completed', async () => {
+    const { asset } = await original();
+    const ready = await accepted('ready-gallery');
+    const failed = await accepted('failed-gallery');
+    const pending = await accepted('pending-gallery');
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: ready.jobId },
+      {
+        $set: {
+          phase: 'succeeded',
+          outputs: [{ kind: 'image', outputId: 'ready', ordinal: 0, state: 'ready', asset }],
+        },
+      },
+    );
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: failed.jobId },
+      { $set: { phase: 'failed' } },
+    );
+    const completed = await methods.listMediaThreads({
+      scope,
+      limit: 1,
+      include: 'activity',
+      filter: 'completed',
+    });
+    expect(completed.items.map((thread) => thread.threadId)).toEqual([ready.threadId]);
+    expect(completed.nextCursor).toBeUndefined();
+    const running = await methods.listMediaThreads({
+      scope,
+      limit: 1,
+      include: 'activity',
+      filter: 'pending',
+    });
+    expect(running.items.map((thread) => thread.threadId)).toEqual([pending.threadId]);
+    const first = await methods.listMediaThreads({ scope, limit: 2, include: 'activity' });
+    const second = await methods.listMediaThreads({
+      scope,
+      limit: 2,
+      include: 'activity',
+      cursor: first.nextCursor,
+    });
+    expect(new Set([...first.items, ...second.items].map((thread) => thread.threadId)).size).toBe(
+      3,
+    );
+    expect(second.nextCursor).toBeUndefined();
+  });
+
+  it('keeps explicit gallery covers cleared and excludes other owners and tenants from activity', async () => {
+    const { asset } = await original();
+    const job = await accepted('private-gallery');
+    await mongoose.models.MediaThread.updateOne(
+      { threadId: job.threadId },
+      { $set: { coverExplicit: true } },
+    );
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: job.jobId },
+      {
+        $set: {
+          phase: 'succeeded',
+          outputs: [{ kind: 'image', outputId: 'own', ordinal: 0, state: 'ready', asset }],
+        },
+      },
+    );
+    const row = await mongoose.models.MediaJob.findOne({ jobId: job.jobId }).lean();
+    for (const other of [
+      { ownerId: new mongoose.Types.ObjectId().toString() },
+      { tenantId: 'another-tenant' },
+    ]) {
+      await mongoose.models.MediaJob.collection.insertOne({
+        ...row,
+        ...other,
+        _id: new mongoose.Types.ObjectId(),
+        jobId: new mongoose.Types.ObjectId().toString(),
+        phase: 'running',
+        createdAt: '2099-01-01T00:00:00.000Z',
+      });
+    }
+    const thread = (await methods.listMediaThreads({ scope, limit: 10, include: 'activity' }))
+      .items[0];
+    expect(thread.cover).toBeUndefined();
+    expect(thread).toMatchObject({
+      pendingJobCount: 0,
+      activity: { readyOutputs: 1, latestJob: { phase: 'succeeded' } },
     });
   });
 

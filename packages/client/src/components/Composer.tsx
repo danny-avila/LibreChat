@@ -10,6 +10,7 @@ import type { SendAction } from './SendActions';
 import { composerSurfaceClasses, composerSurfaceShadow } from '~/utils/composer';
 import { TextareaAutosize } from './TextareaAutosize';
 import { SendActions } from './SendActions';
+import { buttonVariants } from './Button';
 import { TooltipAnchor } from './Tooltip';
 import { SendIcon } from '~/svgs';
 import { cn } from '~/utils';
@@ -30,6 +31,8 @@ export interface ComposerProps {
    *  and read back a draft the surface is not ready to accept. */
   canSubmit: boolean;
   submitLabel: string;
+  /** Show a text action for creation forms while chat keeps its compact send icon. */
+  submitDisplay?: 'icon' | 'label';
   ariaLabel: string;
   placeholder?: string;
   disabled?: boolean;
@@ -104,6 +107,7 @@ const Composer: ForwardRefExoticComponent<
     onSubmit,
     canSubmit,
     submitLabel,
+    submitDisplay = 'icon',
     ariaLabel,
     placeholder,
     disabled = false,
@@ -133,9 +137,14 @@ const Composer: ForwardRefExoticComponent<
       disabled={disabled || !canSubmit}
       onClick={() => onSubmit()}
       data-testid="composer-send-button"
-      className={cn(CONTROL_CLASS, offeredActions.length > 0 && 'ml-auto')}
+      className={cn(
+        submitDisplay === 'label'
+          ? buttonVariants({ variant: 'submit', size: 'sm' })
+          : CONTROL_CLASS,
+        offeredActions.length > 0 && 'ml-auto',
+      )}
     >
-      <SendIcon size={24} />
+      {submitDisplay === 'label' ? submitLabel : <SendIcon size={24} />}
     </button>
   );
 
