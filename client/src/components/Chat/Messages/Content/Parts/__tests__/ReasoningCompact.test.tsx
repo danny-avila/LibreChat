@@ -116,4 +116,17 @@ describe('ReasoningCompact', () => {
 
     expect(screen.getByText('A long stream of reasoning')).toBeInTheDocument();
   });
+
+  it('keeps post-</think> response text out of the Thoughts body', () => {
+    render(
+      <ReasoningCompact
+        reasoning={'<think>hidden plan</think>\n\nVisible answer'}
+        label="Thoughts"
+        showThinking={true}
+      />,
+    );
+
+    expect(screen.getByText('hidden plan')).toBeInTheDocument();
+    expect(screen.queryByText('Visible answer')).not.toBeInTheDocument();
+  });
 });

@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import { useState, useRef, useMemo, useEffect, useCallback, Fragment } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
 import { ChevronDown, MessageCircleQuestion, Users } from 'lucide-react';
@@ -25,6 +25,7 @@ import { mapAttachments, filterAttachmentsForPart } from '~/utils/map';
 import { ToolAuthWarning, ToolAuthWarningContext } from './auth';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { resolveToolCallPhase } from '~/utils/toolCallPhase';
+import { splitThinkPartContent } from '~/utils/splitThinkTaggedContent';
 import { AttachmentGroup, ReasoningCompact } from './Parts';
 import { isMemoryFailureOutput } from './Parts/MemoryCall';
 import { isError, StackedToolIcons } from './ToolOutput';
@@ -710,7 +711,8 @@ export default function ToolCallGroup({
                         handleToolExpand,
                       );
                     }
-                    const streaming = isSubmitting && idx === lastContentIdx;
+                    const { thinking, text } = splitThinkPartContent(reasoning);
+                    const streaming = isSubmitting && idx === lastContentIdx && text.length === 0;
                     const isAfterTool =
                       partIndex > 0 && parts[partIndex - 1]?.part.type === ContentTypes.TOOL_CALL;
                     /** Mirrors the standalone `Reasoning` path: the authored
@@ -720,14 +722,22 @@ export default function ToolCallGroup({
                       generatedLabel ||
                       (streaming ? localize('com_ui_thinking') : localize('com_ui_thoughts'));
                     return (
-                      <ReasoningCompact
-                        key={`reasoning-${idx}`}
-                        reasoning={reasoning}
-                        label={label}
-                        showThinking={showThinking}
-                        isAfterTool={isAfterTool}
-                        isStreaming={streaming}
-                      />
+                      <Fragment key={`reasoning-${idx}`}>
+                        <ReasoningCompact
+                          reasoning={thinking}
+                          label={label}
+                          showThinking={showThinking}
+                          isAfterTool={isAfterTool}
+                          isStreaming={streaming}
+                        />
+                        {text.length > 0 &&
+                          renderPart(
+                            { type: ContentTypes.TEXT, text },
+                            idx,
+                            isLast && idx === lastContentIdx,
+                            handleToolExpand,
+                          )}
+                      </Fragment>
                     );
                   }
                   return renderPart(part, idx, isLast && idx === lastContentIdx, handleToolExpand);

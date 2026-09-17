@@ -53,6 +53,7 @@ export * from './runStepDuration';
 export * from './toolCallPhase';
 export * from './documentTitle';
 export * from './reasoningLabels';
+export * from './splitThinkTaggedContent';
 export * from './numbers';
 export { default as cn } from './cn';
 export { default as logger } from './logger';
