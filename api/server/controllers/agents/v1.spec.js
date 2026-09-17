@@ -4124,9 +4124,12 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
     });
 
     test('should skip avatar refresh if cache already covers the page', async () => {
+      /* Coverage is only coverage while it names the filepath it was taken for: a cached
+         URL for a replaced avatar is a link to a file the agent no longer shows. */
       mockCache.get.mockResolvedValue({
         urlCache: {},
         coveredIds: [agentWithS3Avatar.id],
+        coveredFilepaths: { [agentWithS3Avatar.id]: 'old-s3-path.jpg' },
       });
       findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id]);
       findPubliclyAccessibleResources.mockResolvedValue([]);
@@ -4534,7 +4537,11 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       const agentId = agentWithS3Avatar.id;
       const cachedUrl = 'cached-presigned-url.jpg';
 
-      mockCache.get.mockResolvedValue({ urlCache: { [agentId]: cachedUrl } });
+      mockCache.get.mockResolvedValue({
+        urlCache: { [agentId]: { filepath: 'old-s3-path.jpg', url: cachedUrl } },
+        coveredIds: { [agentId]: Date.now() + 30 * 60 * 1000 },
+        coveredFilepaths: { [agentId]: 'old-s3-path.jpg' },
+      });
       findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id]);
       findPubliclyAccessibleResources.mockResolvedValue([]);
 

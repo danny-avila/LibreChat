@@ -28,15 +28,53 @@ export const selectAvatarRefreshAgents = (
     .slice(0, MAX_AVATAR_REFRESH_AGENTS);
 };
 
+export type AvatarRefreshUrl = {
+  /** The avatar filepath this signed URL was generated for. */
+  filepath: string;
+  url: string;
+};
+
 export type AvatarRefreshCacheEntry = {
-  urlCache: Record<string, string>;
+  /** Maps each agent ID to a signed URL and the source filepath it describes. */
+  urlCache: Record<string, AvatarRefreshUrl>;
   /** Maps each covered agent ID to the absolute time at which its coverage expires. */
   coveredIds: Record<string, number>;
+  /** Maps each covered agent ID to the source filepath checked during that pass. */
+  coveredFilepaths: Record<string, string>;
 };
 
 type LegacyAvatarRefreshCacheEntry = {
-  urlCache?: Record<string, string>;
+  urlCache?: Record<string, string | AvatarRefreshUrl>;
   coveredIds?: string[] | Record<string, number>;
+  coveredFilepaths?: Record<string, string>;
+};
+
+const getCachedAvatarFilepath = (entry: unknown, id: string): string | undefined => {
+  if (!entry || typeof entry !== 'object') {
+    return undefined;
+  }
+  const cacheEntry = entry as LegacyAvatarRefreshCacheEntry;
+  const coveredFilepath = cacheEntry.coveredFilepaths?.[id];
+  if (typeof coveredFilepath === 'string') {
+    return coveredFilepath;
+  }
+  const cachedUrl = cacheEntry.urlCache?.[id];
+  return cachedUrl && typeof cachedUrl === 'object' && typeof cachedUrl.filepath === 'string'
+    ? cachedUrl.filepath
+    : undefined;
+};
+
+const getCachedAvatarUrl = (entry: unknown, id: string): AvatarRefreshUrl | undefined => {
+  if (!entry || typeof entry !== 'object') {
+    return undefined;
+  }
+  const cachedUrl = (entry as LegacyAvatarRefreshCacheEntry).urlCache?.[id];
+  return cachedUrl &&
+    typeof cachedUrl === 'object' &&
+    typeof cachedUrl.filepath === 'string' &&
+    typeof cachedUrl.url === 'string'
+    ? cachedUrl
+    : undefined;
 };
 
 const getAvatarRefreshCoverage = (
@@ -66,7 +104,9 @@ const getAvatarRefreshCoverage = (
 };
 
 export const getAvatarRefreshCoveredIds = (entry: unknown, now: number = Date.now()): string[] =>
-  Object.keys(getAvatarRefreshCoverage(entry, now, 0));
+  Object.keys(getAvatarRefreshCoverage(entry, now, 0)).filter(
+    (id) => getCachedAvatarFilepath(entry, id) != null,
+  );
 
 const getAvatarRefreshCacheTtl = (
   entry: AvatarRefreshCacheEntry,
@@ -116,8 +156,10 @@ const avatarRefreshMergeChains = new Map<string, Promise<unknown>>();
  * Runs one read-merge-write for a refresh key at a time. Two pages that both read
  * before either wrote would each persist their own view and drop the other's coverage,
  * so the next visit re-signs avatars the window says are covered. Within a process this
- * queue prevents that outright; across processes the re-read inside the critical section
- * is what makes them converge, and what is lost there is repeated work, not correctness.
+ * queue prevents that; two replicas can still interleave, and the re-read only narrows
+ * the window rather than closing it. That is deliberate: a dropped merge costs signing
+ * work the next page redoes, never a wrong URL, so it does not earn a distributed lock or
+ * a cache that has to offer compare-and-set.
  */
 const serializeAvatarRefreshMerge = async <T>(
   refreshKey: string,
@@ -161,12 +203,13 @@ export type RefreshStats = {
   no_change: number;
   s3_error: number;
   persist_error: number;
-  /** Maps agentId to the latest valid presigned filepath for re-application on cache hits */
-  urlCache: Record<string, string>;
+  /** Maps agentId to the freshly signed URL and the filepath it was signed for. */
+  urlCache: Record<string, AvatarRefreshUrl>;
   /** IDs whose S3 URL refresh was attempted during this pass, including unchanged/error results. */
   coveredIds: string[];
+  /** Source filepaths checked for each covered agent ID. */
+  coveredFilepaths: Record<string, string>;
 };
-
 /**
  * Resolves the cache and refresh work for one already-paginated agent page.
  * Cache coverage is page-independent: each response contributes the rows it saw,
@@ -189,25 +232,43 @@ export const resolveAvatarRefresh = async ({
     typeof cachedRefreshEntry === 'object' &&
     (cachedRefreshEntry as Partial<AvatarRefreshCacheEntry>).urlCache != null;
   const cachedCoverage = getAvatarRefreshCoverage(cachedRefreshEntry, now, cacheTtl);
-  const cachedCoveredIds = Object.keys(cachedCoverage);
-  const refreshAgents = selectAvatarRefreshAgents(agents, cachedCoveredIds);
-
+  /* Coverage belongs to an avatar, not to an agent id: the owner can replace the file and
+     leave the id alone, and a URL signed for the old one is then a link to something the
+     agent no longer shows. Coverage therefore only counts while the filepath it was taken
+     for is still the filepath on the row, which also drops entries written before this
+     binding existed - they cannot be checked, so they are refreshed. */
+  const loadedFilepaths = new Map(
+    agents.map((agent) => [agent?.id, agent?.avatar?.filepath] as const),
+  );
+  const coverage: Record<string, number> = {};
+  for (const [id, deadline] of Object.entries(cachedCoverage)) {
+    const filepath = getCachedAvatarFilepath(cachedRefreshEntry, id);
+    if (filepath != null && loadedFilepaths.get(id) === filepath) {
+      coverage[id] = deadline;
+    }
+  }
+  const refreshAgents = selectAvatarRefreshAgents(agents, Object.keys(coverage));
   if (!refreshAgents.length && isValidCachedRefresh) {
     logger.debug(
       '[resolveAvatarRefresh] S3 avatar refresh already checked for this page, skipping',
     );
-    return {
-      urlCache: Object.fromEntries(
-        Object.entries(
-          (cachedRefreshEntry as Partial<AvatarRefreshCacheEntry>).urlCache ?? {},
-        ).filter(([id]) => cachedCoverage[id] != null),
-      ),
-      coveredIds: cachedCoverage,
-    };
+    const urlCache: Record<string, AvatarRefreshUrl> = {};
+    const coveredFilepaths: Record<string, string> = {};
+    for (const id of Object.keys(coverage)) {
+      const filepath = getCachedAvatarFilepath(cachedRefreshEntry, id);
+      const cachedUrl = getCachedAvatarUrl(cachedRefreshEntry, id);
+      if (filepath != null) {
+        coveredFilepaths[id] = filepath;
+      }
+      if (cachedUrl != null) {
+        urlCache[id] = cachedUrl;
+      }
+    }
+    return { urlCache, coveredIds: coverage, coveredFilepaths };
   }
 
   try {
-    const { urlCache, coveredIds } = await refreshListAvatars({
+    const { urlCache, coveredIds, coveredFilepaths } = await refreshListAvatars({
       agents: refreshAgents,
       userId,
       refreshS3Url,
@@ -217,7 +278,7 @@ export const resolveAvatarRefresh = async ({
       const latestEntry = await readLatestRefreshEntry(cache, refreshKey, cachedRefreshEntry);
       const mergedEntry = mergeAvatarRefreshCacheEntry(
         latestEntry,
-        { urlCache, coveredIds },
+        { urlCache, coveredIds, coveredFilepaths },
         cacheTtl,
         coverageLimit,
       );
@@ -242,7 +303,8 @@ export const resolveAvatarRefresh = async ({
 
 export const mergeAvatarRefreshCacheEntry = (
   previous: unknown,
-  stats: Pick<RefreshStats, 'urlCache' | 'coveredIds'>,
+  stats: Pick<RefreshStats, 'urlCache' | 'coveredIds'> &
+    Partial<Pick<RefreshStats, 'coveredFilepaths'>>,
   coverageTtl: number = 30 * 60 * 1000,
   coverageLimit: number = DEFAULT_AVATAR_REFRESH_COVERAGE_LIMIT,
   now: number = Date.now(),
@@ -252,29 +314,46 @@ export const mergeAvatarRefreshCacheEntry = (
       ? (previous as Partial<AvatarRefreshCacheEntry>)
       : undefined;
   const coverage = getAvatarRefreshCoverage(previous, now, coverageTtl);
+  const filepaths = { ...(previousEntry?.coveredFilepaths ?? {}) };
   const expiresAt = now + Math.max(0, coverageTtl);
   for (const id of stats.coveredIds) {
     delete coverage[id];
     coverage[id] = expiresAt;
+    const filepath = stats.coveredFilepaths?.[id];
+    if (typeof filepath === 'string') {
+      filepaths[id] = filepath;
+    } else {
+      delete filepaths[id];
+    }
   }
   /* Expired deadlines go first; past the limit the furthest ones are kept, because they
      are the coverage a reader still browsing is about to need. */
   const retainedCoverage = Object.entries(coverage)
-    .filter(([, deadline]) => deadline > now)
+    .filter(([id, deadline]) => deadline > now && typeof filepaths[id] === 'string')
     .sort(([, firstDeadline], [, secondDeadline]) => firstDeadline - secondDeadline)
     .slice(-coverageLimit);
   const coveredIds = Object.fromEntries(retainedCoverage);
   const retainedIds = new Set(Object.keys(coveredIds));
-  const urlCache = Object.fromEntries(
-    Object.entries(previousEntry?.urlCache ?? {}).filter(([id]) => retainedIds.has(id)),
+  const coveredFilepaths = Object.fromEntries(
+    Object.entries(filepaths).filter(
+      ([id, filepath]) => retainedIds.has(id) && typeof filepath === 'string',
+    ),
   );
-  for (const [id, url] of Object.entries(stats.urlCache)) {
-    if (retainedIds.has(id)) {
-      urlCache[id] = url;
+  /* A URL is only worth keeping while the filepath it was signed for is the one coverage
+     was taken for; anything else is a link to a file the agent no longer shows. Entries
+     written before that binding existed carry a bare string and cannot be checked, so
+     they are dropped and the next page signs again. */
+  const urlCache: Record<string, AvatarRefreshUrl> = {};
+  for (const source of [previousEntry?.urlCache ?? {}, stats.urlCache]) {
+    for (const id of Object.keys(source)) {
+      const value = getCachedAvatarUrl({ urlCache: source }, id);
+      if (retainedIds.has(id) && value?.filepath === coveredFilepaths[id]) {
+        urlCache[id] = value;
+      }
     }
   }
 
-  return { urlCache, coveredIds };
+  return { urlCache, coveredIds, coveredFilepaths };
 };
 
 /**
@@ -303,6 +382,7 @@ export const refreshListAvatars = async ({
     persist_error: 0,
     urlCache: {},
     coveredIds: [],
+    coveredFilepaths: {},
   };
 
   if (!agents?.length) {
@@ -330,6 +410,7 @@ export const refreshListAvatars = async ({
           return;
         }
         stats.coveredIds.push(agent.id);
+        stats.coveredFilepaths[agent.id] = agent.avatar.filepath;
 
         try {
           logger.debug('[refreshListAvatars] Refreshing S3 avatar for agent: %s', agent._id);
@@ -340,7 +421,7 @@ export const refreshListAvatars = async ({
             return;
           }
 
-          stats.urlCache[agent.id] = newPath;
+          stats.urlCache[agent.id] = { filepath: agent.avatar.filepath, url: newPath };
 
           try {
             const persisted = await updateAgent({

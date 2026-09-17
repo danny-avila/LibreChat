@@ -164,7 +164,7 @@ describe('refreshListAvatars', () => {
     });
 
     expect(stats.updated).toBe(1);
-    expect(stats.urlCache).toEqual({ agent1: 'new-path.jpg' });
+    expect(stats.urlCache).toEqual({ agent1: { filepath: 'old-path.jpg', url: 'new-path.jpg' } });
     expect(mockRefreshS3Url).toHaveBeenCalledWith(agent.avatar);
     expect(mockUpdateAgent).toHaveBeenCalledWith({
       id: 'agent1',
@@ -258,7 +258,7 @@ describe('refreshListAvatars', () => {
 
     expect(stats.persist_error).toBe(1);
     expect(stats.updated).toBe(0);
-    expect(stats.urlCache).toEqual({ agent1: 'new-path.jpg' });
+    expect(stats.urlCache).toEqual({ agent1: { filepath: 'old-path.jpg', url: 'new-path.jpg' } });
   });
 
   it('should process agents in batches', async () => {
@@ -350,8 +350,124 @@ describe('refreshListAvatars', () => {
     expect(stats.updated).toBe(2); // agent1 and agent2 (other user's agent now refreshed)
     expect(stats.not_s3).toBe(1); // agent3
     expect(stats.no_id).toBe(1); // agent with empty id
-    expect(stats.urlCache).toEqual({ agent1: 'new-path.jpg', agent2: 'new-path.jpg' });
+    expect(stats.urlCache).toEqual({
+      agent1: { filepath: 'old-path.jpg', url: 'new-path.jpg' },
+      agent2: { filepath: 'old-path.jpg', url: 'new-path.jpg' },
+    });
   });
+  it('refreshes covered agents when their avatar filepath changes', async () => {
+    const { cache } = createRefreshCache();
+    const now = jest.spyOn(Date, 'now').mockReturnValue(0);
+    const firstAgent = createAgent({
+      avatar: { source: FileSources.s3, filepath: 'old-path.jpg' },
+    });
+    const changedAgent = createAgent({
+      avatar: { source: FileSources.s3, filepath: 'replacement-path.jpg' },
+    });
+    mockRefreshS3Url
+      .mockResolvedValueOnce('old-signed-url.jpg')
+      .mockResolvedValueOnce('replacement-signed-url.jpg');
+    mockUpdateAgent.mockResolvedValue({});
+
+    const firstEntry = await resolveAvatarRefresh({
+      agents: [firstAgent],
+      userId,
+      cachedRefreshEntry: null,
+      cache,
+      refreshKey: 'avatars:user123',
+      cacheTtl: 30 * 60 * 1000,
+      refreshS3Url: mockRefreshS3Url,
+      updateAgent: mockUpdateAgent,
+    });
+    const secondEntry = await resolveAvatarRefresh({
+      agents: [changedAgent],
+      userId,
+      cachedRefreshEntry: firstEntry,
+      cache,
+      refreshKey: 'avatars:user123',
+      cacheTtl: 30 * 60 * 1000,
+      refreshS3Url: mockRefreshS3Url,
+      updateAgent: mockUpdateAgent,
+    });
+
+    expect(mockRefreshS3Url).toHaveBeenCalledTimes(2);
+    expect(secondEntry?.urlCache.agent1).toEqual({
+      filepath: 'replacement-path.jpg',
+      url: 'replacement-signed-url.jpg',
+    });
+    now.mockRestore();
+  });
+
+  it('skips a covered agent when its avatar filepath is unchanged', async () => {
+    const { cache } = createRefreshCache();
+    const now = jest.spyOn(Date, 'now').mockReturnValue(0);
+    const agent = createAgent({
+      avatar: { source: FileSources.s3, filepath: 'stable-path.jpg' },
+    });
+    mockRefreshS3Url.mockResolvedValue('stable-signed-url.jpg');
+    mockUpdateAgent.mockResolvedValue({});
+
+    const firstEntry = await resolveAvatarRefresh({
+      agents: [agent],
+      userId,
+      cachedRefreshEntry: null,
+      cache,
+      refreshKey: 'avatars:user123',
+      cacheTtl: 30 * 60 * 1000,
+      refreshS3Url: mockRefreshS3Url,
+      updateAgent: mockUpdateAgent,
+    });
+    const secondEntry = await resolveAvatarRefresh({
+      agents: [agent],
+      userId,
+      cachedRefreshEntry: firstEntry,
+      cache,
+      refreshKey: 'avatars:user123',
+      cacheTtl: 30 * 60 * 1000,
+      refreshS3Url: mockRefreshS3Url,
+      updateAgent: mockUpdateAgent,
+    });
+
+    expect(mockRefreshS3Url).toHaveBeenCalledTimes(1);
+    expect(secondEntry?.urlCache.agent1).toEqual({
+      filepath: 'stable-path.jpg',
+      url: 'stable-signed-url.jpg',
+    });
+    now.mockRestore();
+  });
+
+  it('refreshes legacy entries without filepath information instead of applying their URL', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(0);
+    const { cache } = createRefreshCache();
+    const agent = createAgent({
+      avatar: { source: FileSources.s3, filepath: 'current-path.jpg' },
+    });
+    mockRefreshS3Url.mockResolvedValue('current-signed-url.jpg');
+    mockUpdateAgent.mockResolvedValue({});
+
+    const entry = await resolveAvatarRefresh({
+      agents: [agent],
+      userId,
+      cachedRefreshEntry: {
+        urlCache: { agent1: 'removed-signed-url.jpg' },
+        coveredIds: { agent1: 30 * 60 * 1000 },
+      },
+      cache,
+      refreshKey: 'avatars:user123',
+      cacheTtl: 30 * 60 * 1000,
+      refreshS3Url: mockRefreshS3Url,
+      updateAgent: mockUpdateAgent,
+    });
+
+    expect(mockRefreshS3Url).toHaveBeenCalledTimes(1);
+    expect(entry?.urlCache.agent1).toEqual({
+      filepath: 'current-path.jpg',
+      url: 'current-signed-url.jpg',
+    });
+    expect(entry?.urlCache.agent1.url).not.toBe('removed-signed-url.jpg');
+    now.mockRestore();
+  });
+
   it('expires coverage per agent instead of renewing earlier pages', async () => {
     const { cache } = createRefreshCache();
     const cacheSet = cache.set as jest.MockedFunction<AvatarRefreshCache['set']>;
@@ -418,14 +534,22 @@ describe('refreshListAvatars', () => {
     const retainedIds = Array.from({ length: defaultCoverageLimit }, (_, index) => `agent${index}`);
     const firstEntry = mergeAvatarRefreshCacheEntry(
       null,
-      { urlCache: {}, coveredIds: retainedIds },
+      {
+        urlCache: {},
+        coveredIds: retainedIds,
+        coveredFilepaths: Object.fromEntries(retainedIds.map((id) => [id, 'old-path.jpg'])),
+      },
       30 * 60 * 1000,
       defaultCoverageLimit,
       0,
     );
     const boundedEntry = mergeAvatarRefreshCacheEntry(
       firstEntry,
-      { urlCache: {}, coveredIds: ['agent1000'] },
+      {
+        urlCache: {},
+        coveredIds: ['agent1000'],
+        coveredFilepaths: { agent1000: 'old-path.jpg' },
+      },
       30 * 60 * 1000,
       defaultCoverageLimit,
       1,
@@ -458,6 +582,12 @@ describe('refreshListAvatars', () => {
       {
         urlCache: {},
         coveredIds: ['agent0', 'agent1', 'agent2', 'agent3'],
+        coveredFilepaths: {
+          agent0: 'agent0.jpg',
+          agent1: 'agent1.jpg',
+          agent2: 'agent2.jpg',
+          agent3: 'agent3.jpg',
+        },
       },
       30 * 60 * 1000,
       2,
@@ -476,7 +606,11 @@ describe('refreshListAvatars', () => {
     const { cache, stored } = createRefreshCache();
     stored.entry = mergeAvatarRefreshCacheEntry(
       null,
-      { urlCache: { agent2: 'two-new.jpg' }, coveredIds: ['agent2'] },
+      {
+        urlCache: { agent2: { filepath: 'two.jpg', url: 'two-new.jpg' } },
+        coveredIds: ['agent2'],
+        coveredFilepaths: { agent2: 'two.jpg' },
+      },
       30 * 60 * 1000,
       defaultCoverageLimit,
       0,
@@ -498,7 +632,10 @@ describe('refreshListAvatars', () => {
     });
 
     expect(Object.keys(entry?.coveredIds ?? {}).sort()).toEqual(['agent1', 'agent2']);
-    expect(entry?.urlCache).toEqual({ agent1: 'one-new.jpg', agent2: 'two-new.jpg' });
+    expect(entry?.urlCache).toEqual({
+      agent1: { filepath: 'one.jpg', url: 'one-new.jpg' },
+      agent2: { filepath: 'two.jpg', url: 'two-new.jpg' },
+    });
     expect(stored.entry).toEqual(entry);
     now.mockRestore();
   });
@@ -524,7 +661,9 @@ describe('refreshListAvatars', () => {
       updateAgent: mockUpdateAgent,
     });
 
-    expect(entry?.urlCache).toEqual({ agent1: 'one-new.jpg' });
+    expect(entry?.urlCache).toEqual({
+      agent1: { filepath: 'one.jpg', url: 'one-new.jpg' },
+    });
     expect(logger.error).toHaveBeenCalledWith(
       '[resolveAvatarRefresh] Error writing the avatar refresh cache: %o',
       expect.any(Error),
@@ -589,8 +728,8 @@ describe('refreshListAvatars', () => {
 
     expect(Object.keys(stored.entry?.coveredIds ?? {}).sort()).toEqual(['agent1', 'agent2']);
     expect(stored.entry?.urlCache).toEqual({
-      agent1: 'one-new.jpg',
-      agent2: 'two-new.jpg',
+      agent1: { filepath: 'one.jpg', url: 'one-new.jpg' },
+      agent2: { filepath: 'two.jpg', url: 'two-new.jpg' },
     });
   });
 
@@ -598,7 +737,11 @@ describe('refreshListAvatars', () => {
     const now = jest.spyOn(Date, 'now').mockReturnValue(0);
     const snapshot = mergeAvatarRefreshCacheEntry(
       null,
-      { urlCache: { agent2: 'two-new.jpg' }, coveredIds: ['agent2'] },
+      {
+        urlCache: { agent2: { filepath: 'two.jpg', url: 'two-new.jpg' } },
+        coveredIds: ['agent2'],
+        coveredFilepaths: { agent2: 'two.jpg' },
+      },
       30 * 60 * 1000,
       defaultCoverageLimit,
       0,

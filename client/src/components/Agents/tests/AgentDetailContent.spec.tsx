@@ -143,6 +143,7 @@ const renderDetail = (
     phase?: 'open' | 'closing',
     disabled = actionsDisabled,
     unavailable = actionsUnavailable,
+    currentAgent = agent,
   ) => (
     <RecoilRoot>
       <MemoryRouter
@@ -152,7 +153,7 @@ const renderDetail = (
         <QueryClientProvider client={queryClient}>
           <MarketplaceHostContext.Provider value={host}>
             <DetailDialog
-              agent={agent}
+              agent={currentAgent}
               morph={phase}
               actionsUnavailable={unavailable}
               actionsDisabled={disabled}
@@ -169,6 +170,8 @@ const renderDetail = (
     showToast: toastContext.showToast,
     resetNewConversation: host.resetNewConversation,
     setMorph: (phase: 'open' | 'closing') => view.rerender(tree(phase)),
+    setAgent: (nextAgent: t.Agent) =>
+      view.rerender(tree(morph, actionsDisabled, actionsUnavailable, nextAgent)),
     setActionsDisabled: (disabled: boolean) => view.rerender(tree(morph, disabled)),
     setActionsUnavailable: (unavailable: boolean) =>
       view.rerender(tree(morph, actionsDisabled, unavailable)),
@@ -267,6 +270,32 @@ describe('AgentDetailContent', () => {
 
     setMorph('open');
     await waitFor(() => expect(words().every((word) => word.style.opacity !== '0')).toBe(true));
+  });
+  it('clears word animation styles when refreshed copy changes during the morph', async () => {
+    const initial = { ...baseAgent, description: 'Compare sources quickly.' };
+    const refreshed = { ...initial, description: 'Compare sources today.' };
+    const { setAgent } = renderDetail(initial, '/app', 'open');
+    const initialWords = Array.from(
+      within(screen.getByRole('dialog'))
+        .getByText(initial.description)
+        .parentElement?.querySelectorAll<HTMLElement>('[aria-hidden="true"] > span') ?? [],
+    );
+    expect(initialWords.some((word) => word.style.willChange !== '')).toBe(true);
+
+    const words = () =>
+      Array.from(
+        within(screen.getByRole('dialog'))
+          .getByText(refreshed.description)
+          .parentElement?.querySelectorAll<HTMLElement>('[aria-hidden="true"] > span') ?? [],
+      );
+
+    setAgent(refreshed);
+    await waitFor(() => {
+      expect(words()).toHaveLength(3);
+      expect(
+        words().every((word) => word.style.willChange === '' && word.style.transition === ''),
+      ).toBe(true);
+    });
   });
 
   it('uses the public owner name when no support contact is configured', () => {

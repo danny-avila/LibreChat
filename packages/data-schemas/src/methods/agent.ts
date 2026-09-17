@@ -46,7 +46,11 @@ type AggregationExpression =
   | { $lt: [AggregationOperand, AggregationOperand] }
   | { $cond: [AggregationExpression, AggregationOperand, AggregationOperand] }
   | { $indexOfCP: [AggregationOperand, AggregationOperand] }
-  | { $in: [AggregationOperand, number[]] };
+  | { $in: [AggregationOperand, number[]] }
+  | { $type: AggregationOperand }
+  | { $trim: { input: AggregationOperand } }
+  | { $ifNull: [AggregationOperand, AggregationOperand] }
+  | { $arrayElemAt: [AggregationOperand, AggregationOperand] };
 
 /**
  * Picks the earlier of two ACL entry sub-documents by (`grantedAt`, `createdAt`, `_id`) —
@@ -100,6 +104,18 @@ function isValidDisplayName(varRef: string): AggregationExpression {
         $eq: [{ $cond: [{ $eq: [varRef, null] }, -1, { $indexOfCP: [varRef, '@'] }] }, -1],
       },
     ],
+  };
+}
+
+/** Converts any stored value to a string-safe trimmed aggregation operand. Mixed legacy
+ * fields can contain BSON values that `$trim` rejects, so check the type first. */
+function trimStringOrEmpty(value: AggregationOperand): AggregationExpression {
+  return {
+    $trim: {
+      input: {
+        $cond: [{ $eq: [{ $type: value }, 'string'] }, value, ''],
+      },
+    },
   };
 }
 
@@ -2230,6 +2246,19 @@ export function createAgentMethods(
           from: 'aclentries',
           localField: '_id',
           foreignField: 'resourceId',
+          /* Aggregation lookups bypass the ACL model's tenant middleware. Match the
+           * entry's tenant to the agent's tenant, treating missing and null as one
+           * tenantless scope just like the rest of this method. */
+          let: { agentTenantId: '$tenantId' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $eq: [{ $ifNull: ['$tenantId', null] }, { $ifNull: ['$$agentTenantId', null] }],
+                },
+              },
+            },
+          ],
           as: '_ownerAclEntries',
         },
       });
@@ -2278,24 +2307,34 @@ export function createAgentMethods(
           from: 'users',
           localField: '_ownerId',
           foreignField: '_id',
+          /* User lookups bypass the User model's tenant middleware too. Keep an
+           * imported principal from resolving across tenant boundaries. */
+          let: { agentTenantId: '$tenantId' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $eq: [{ $ifNull: ['$tenantId', null] }, { $ifNull: ['$$agentTenantId', null] }],
+                },
+              },
+            },
+          ],
           as: '_ownerUser',
         },
       });
       pipeline.push({
         $addFields: {
           /* Trimmed once so the sort key and the owner contact below read exactly the
-             same values. `$trim` is null-safe (it returns `null` for a missing or null
-             input), and the support fields go through `$ifNull` first, so they are
-             always strings while the owner tiers are either `null` or a trimmed
-             string by the time `isValidDisplayName` runs on them. */
-          _supportName: { $trim: { input: { $ifNull: ['$support_contact.name', ''] } } },
-          _supportEmail: { $trim: { input: { $ifNull: ['$support_contact.email', ''] } } },
-          _ownerName: { $trim: { input: { $arrayElemAt: ['$_ownerUser.name', 0] } } },
-          _ownerUsername: { $trim: { input: { $arrayElemAt: ['$_ownerUser.username', 0] } } },
+           * same values. Every operand is checked for BSON string type first because
+           * imported legacy values can make `$trim` fail the whole aggregation. */
+          _supportName: trimStringOrEmpty('$support_contact.name'),
+          _supportEmail: trimStringOrEmpty('$support_contact.email'),
+          _ownerName: trimStringOrEmpty({ $arrayElemAt: ['$_ownerUser.name', 0] }),
+          _ownerUsername: trimStringOrEmpty({ $arrayElemAt: ['$_ownerUser.username', 0] }),
           // Dead on Agent documents in practice (only Prompts/Skills write it) —
           // kept as the final real-value tier for exact parity with
           // `resolveAgentOwnerContact`, which checks it too.
-          _authorName: { $trim: { input: '$authorName' } },
+          _authorName: trimStringOrEmpty('$authorName'),
           _hasOwnerUser: { $gt: [{ $size: { $ifNull: ['$_ownerUser', []] } }, 0] },
         },
       });
