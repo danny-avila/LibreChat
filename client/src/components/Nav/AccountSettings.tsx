@@ -46,7 +46,7 @@ function HelpSubmenu({
       >
         <CircleHelp className="icon-md" aria-hidden="true" />
         <span className="flex-1 text-left">{localize('com_nav_help')}</span>
-        <ChevronRight className="h-4 w-4 text-text-secondary" aria-hidden="true" />
+        <ChevronRight className="text-text-secondary h-4 w-4" aria-hidden="true" />
       </Menu.MenuItem>
       <Menu.Menu
         portal
@@ -110,20 +110,18 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
         data-testid="nav-user"
         className={
           collapsed
-            ? 'flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-surface-active-alt aria-[expanded=true]:bg-surface-active-alt'
-            : 'mt-text-sm flex h-auto w-full items-center gap-2 rounded-xl p-2 text-sm transition-all duration-200 ease-in-out hover:bg-surface-active-alt aria-[expanded=true]:bg-surface-active-alt'
+            ? 'hover:bg-surface-active-alt aria-[expanded=true]:bg-surface-active-alt flex h-9 w-9 items-center justify-center rounded-lg transition-colors'
+            : 'mt-text-sm hover:bg-surface-active-alt aria-[expanded=true]:bg-surface-active-alt flex h-auto w-full items-center gap-2 rounded-xl p-2 text-sm transition-all duration-200 ease-in-out'
         }
       >
-        <div
-          className={collapsed ? 'size-7 flex-shrink-0' : '-ml-0.9 -mt-0.8 h-8 w-8 flex-shrink-0'}
-        >
+        <div className={collapsed ? 'size-7 shrink-0' : '-ml-0.9 -mt-0.8 h-8 w-8 shrink-0'}>
           <div className="relative flex">
             <Avatar user={user} size={collapsed ? 28 : 32} />
           </div>
         </div>
         {!collapsed && (
           <div
-            className="mt-2 grow overflow-hidden text-ellipsis whitespace-nowrap text-left text-text-primary"
+            className="text-text-primary mt-2 grow overflow-hidden text-left text-ellipsis whitespace-nowrap"
             style={{ marginTop: '0', marginLeft: '0' }}
           >
             {user?.name ?? user?.username ?? localize('com_nav_user')}
@@ -138,13 +136,13 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
           translate: collapsed ? '4px 0' : '0 -4px',
         }}
       >
-        <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
+        <div className="text-token-text-secondary mr-2 ml-3 py-2 text-sm" role="note">
           {user?.email ?? localize('com_nav_user')}
         </div>
         <DropdownMenuSeparator />
         {startupConfig?.balance?.enabled === true && balanceQuery.data != null && (
           <>
-            <div className="text-token-text-secondary ml-3 mr-2 py-2 text-sm" role="note">
+            <div className="text-token-text-secondary mr-2 ml-3 py-2 text-sm" role="note">
               {localize('com_nav_balance')}:{' '}
               {new Intl.NumberFormat().format(Math.round(balanceQuery.data.tokenCredits))}
             </div>

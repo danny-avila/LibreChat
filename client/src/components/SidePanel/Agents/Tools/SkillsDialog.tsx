@@ -182,14 +182,14 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
 
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
-      <OGDialogContent className="w-11/12 max-w-[900px] overflow-hidden rounded-2xl border-border-medium p-0 shadow-xl md:max-h-[92vh]">
+      <OGDialogContent className="border-border-medium w-11/12 max-w-[900px] overflow-hidden rounded-2xl p-0 shadow-xl md:max-h-[92vh]">
         <OGDialogDescription className="sr-only">
           {localize('com_ui_skills_dialog_description')}
         </OGDialogDescription>
         <div className="flex h-[80vh] max-h-[760px] flex-col">
-          <div className="flex flex-col gap-3 border-b border-border-light px-6 pb-4 pt-5">
+          <div className="border-border-light flex flex-col gap-3 border-b px-6 pt-5 pb-4">
             <div className="flex items-center gap-2 pr-10">
-              <OGDialogTitle className="text-base font-semibold text-text-primary">
+              <OGDialogTitle className="text-text-primary text-base font-semibold">
                 {localize('com_ui_skills')}
               </OGDialogTitle>
             </div>
@@ -209,7 +209,7 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
               )}
               <div className="relative min-w-0 flex-1">
                 <Search
-                  className="pointer-events-none absolute left-3 top-1/2 z-[1] size-4 -translate-y-1/2 text-text-tertiary"
+                  className="text-text-tertiary pointer-events-none absolute top-1/2 left-3 z-[1] size-4 -translate-y-1/2"
                   aria-hidden="true"
                 />
                 <Input
@@ -232,7 +232,7 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
                   setView(value as SkillView);
                   setCategory('all');
                 }}
-                className="flex-shrink-0 p-1"
+                className="shrink-0 p-1"
                 aria-labelledby="skills-view-label"
               />
             </div>
@@ -242,7 +242,7 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
             {isSkillsError && (
               <div
                 role="alert"
-                className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-border-medium px-3 py-2 text-sm text-text-secondary"
+                className="border-border-medium text-text-secondary mb-3 flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-sm"
               >
                 <span>{localize('com_ui_skills_load_error')}</span>
                 <Button type="button" variant="outline" onClick={handleRetrySkills}>

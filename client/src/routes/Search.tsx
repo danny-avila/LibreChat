@@ -308,7 +308,7 @@ export default function Search() {
           {resultsAnnouncement}
         </div>
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="rounded-lg bg-surface-secondary p-6 text-lg text-text-secondary">
+          <div className="bg-surface-secondary text-text-secondary rounded-lg p-6 text-lg">
             {localize('com_ui_nothing_found')}
           </div>
         </div>
@@ -317,7 +317,7 @@ export default function Search() {
   }
 
   return (
-    <div className="relative flex h-full w-full flex-col bg-presentation pt-4">
+    <div className="bg-presentation relative flex h-full w-full flex-col pt-4">
       <div className="sr-only" role="alert" aria-atomic="true">
         {resultsAnnouncement}
       </div>
@@ -334,18 +334,18 @@ export default function Search() {
           overscanRowCount={10}
           aria-label={localize('com_nav_search_placeholder')}
           className={cn(
-            'outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary',
+            'focus-visible:ring-ring-primary outline-hidden focus-visible:ring-2 focus-visible:ring-inset',
             showingStale && 'opacity-70',
           )}
           style={{ outline: 'none' }}
         />
       </div>
       {isFetchingNextPage && (
-        <div className="pointer-events-none absolute bottom-0 left-0 right-0 flex justify-center py-4">
+        <div className="pointer-events-none absolute right-0 bottom-0 left-0 flex justify-center py-4">
           <Spinner className="text-text-primary" />
         </div>
       )}
-      <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-[5%] bg-gradient-to-t from-presentation to-transparent" />
+      <div className="from-presentation pointer-events-none absolute right-0 bottom-0 left-0 h-[5%] bg-gradient-to-t to-transparent" />
     </div>
   );
 }

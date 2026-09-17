@@ -196,13 +196,13 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
         icon: runSchedule.isLoading ? (
           <Spinner className="size-4" />
         ) : (
-          <Play className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
+          <Play className="icon-sm text-text-primary mr-2" aria-hidden="true" />
         ),
       },
       {
         label: localize('com_ui_edit'),
         onClick: () => setEditOpen(true),
-        icon: <Pencil className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        icon: <Pencil className="icon-sm text-text-primary mr-2" aria-hidden="true" />,
         ariaHasPopup: 'dialog' as const,
         hideOnClick: false,
         ref: editButtonRef,
@@ -211,7 +211,7 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
       {
         label: localize('com_ui_delete'),
         onClick: () => setDeleteOpen(true),
-        icon: <Trash className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        icon: <Trash className="icon-sm text-text-primary mr-2" aria-hidden="true" />,
         ariaHasPopup: 'dialog' as const,
         hideOnClick: false,
         ref: deleteButtonRef,
@@ -227,10 +227,10 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
   return (
     <div
       data-testid="schedule-card"
-      className="rounded-lg border border-border-light bg-transparent px-3 py-2.5 transition-colors duration-theme-fast hover:bg-surface-secondary"
+      className="border-border-light duration-theme-fast hover:bg-surface-secondary rounded-lg border bg-transparent px-3 py-2.5 transition-colors"
     >
       <div className="flex items-center gap-2">
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold text-text-primary">
+        <span className="text-text-primary min-w-0 flex-1 truncate text-sm font-semibold">
           {schedule.name}
         </span>
         {canWrite && (
@@ -254,7 +254,7 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
                 <Ariakit.MenuButton
                   id={`schedule-menu-${schedule.id}`}
                   aria-label={`${localize('com_ui_schedule_options')}: ${schedule.name}`}
-                  className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-text-secondary hover:bg-surface-tertiary hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+                  className="text-text-secondary hover:bg-surface-tertiary hover:text-text-primary focus-visible:ring-border-heavy inline-flex size-7 shrink-0 items-center justify-center rounded-md focus:outline-hidden focus-visible:ring-2"
                 >
                   <Ellipsis className="size-4" aria-hidden={true} />
                 </Ariakit.MenuButton>
@@ -264,27 +264,27 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
           </>
         )}
       </div>
-      <p className="mt-0.5 truncate text-xs text-text-secondary" title={agentName}>
+      <p className="text-text-secondary mt-0.5 truncate text-xs" title={agentName}>
         {agentName}
       </p>
       {projectName != null && projectName !== '' && (
         <p
-          className="mt-0.5 flex items-center gap-1 truncate text-xs text-text-secondary"
+          className="text-text-secondary mt-0.5 flex items-center gap-1 truncate text-xs"
           title={projectName}
         >
           <Folder className="size-3 shrink-0" aria-hidden="true" />
           <span className="truncate">{projectName}</span>
         </p>
       )}
-      <p className="mt-1 text-sm text-text-primary">{cadenceText}</p>
-      {nextRunText != null && <p className="mt-0.5 text-xs text-text-secondary">{nextRunText}</p>}
+      <p className="text-text-primary mt-1 text-sm">{cadenceText}</p>
+      {nextRunText != null && <p className="text-text-secondary mt-0.5 text-xs">{nextRunText}</p>}
       {(statusChip != null || schedule.disabledReason != null) && (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
           {statusChip != null &&
             (lastRunConvoId != null && lastRunConvoId !== '' ? (
               <button
                 type="button"
-                className="rounded-full hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+                className="focus-visible:ring-text-primary rounded-full hover:underline focus-visible:ring-2 focus-visible:outline-hidden"
                 onClick={() => navigate(`/c/${lastRunConvoId}`)}
               >
                 <Chip tone={statusChip.tone}>{localize(statusChip.label)}</Chip>

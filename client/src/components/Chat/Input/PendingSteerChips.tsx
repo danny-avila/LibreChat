@@ -49,7 +49,7 @@ function ContextCount({
     return null;
   }
   return (
-    <span className="flex shrink-0 items-center gap-0.5 text-xs text-text-secondary">
+    <span className="text-text-secondary flex shrink-0 items-center gap-0.5 text-xs">
       {icon}
       {count}
       <span className="sr-only">{label}</span>
@@ -86,7 +86,7 @@ function QuoteCount({ count, label }: { count: number; label: string }) {
  */
 function QueuedIcon({ warning, hint }: { warning: boolean; hint?: string }) {
   if (warning) {
-    return <TriangleAlert className="h-4 w-4 shrink-0 text-text-warning" aria-hidden="true" />;
+    return <TriangleAlert className="text-text-warning h-4 w-4 shrink-0" aria-hidden="true" />;
   }
   if (!hint) {
     return <Clock className={cn('h-4 w-4 shrink-0', QUEUE_ICON)} aria-hidden="true" />;
@@ -97,7 +97,7 @@ function QueuedIcon({ warning, hint }: { warning: boolean; hint?: string }) {
       role="img"
       aria-label={hint}
       tabIndex={0}
-      className="flex shrink-0 cursor-help rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy"
+      className="focus-visible:ring-border-xheavy flex shrink-0 cursor-help rounded-full focus-visible:ring-2 focus-visible:outline-hidden"
     >
       <Clock className={cn('h-4 w-4', QUEUE_ICON)} aria-hidden="true" />
     </TooltipAnchor>
@@ -261,10 +261,10 @@ function QueuedRow({
         })}
       />
       {(isRejected || isUnconfirmed || isIndeterminate) && (
-        <span className="shrink-0 text-xs text-text-warning">{localize(statusLabel)}</span>
+        <span className="text-text-warning shrink-0 text-xs">{localize(statusLabel)}</span>
       )}
       {revealed === true && (
-        <span className="shrink-0 text-xs text-text-secondary">
+        <span className="text-text-secondary shrink-0 text-xs">
           {localize('com_ui_queued_turn_starting')}
         </span>
       )}
@@ -403,7 +403,7 @@ function FailedSteerRow({
       className={cn(ROW_CLASS, 'border-border-destructive')}
       data-testid="steer-message-row"
     >
-      <Zap className="h-4 w-4 shrink-0 text-text-destructive" aria-hidden="true" />
+      <Zap className="text-text-destructive h-4 w-4 shrink-0" aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate" title={steer.text}>
         {steer.text}
       </span>
@@ -413,7 +413,7 @@ function FailedSteerRow({
           0: String(steer.quotes?.length ?? 0),
         })}
       />
-      <span className="shrink-0 text-xs text-text-destructive">
+      <span className="text-text-destructive shrink-0 text-xs">
         {localize(
           steer.deliveryUncertain ? 'com_ui_steer_delivery_unconfirmed' : 'com_ui_steer_failed',
         )}

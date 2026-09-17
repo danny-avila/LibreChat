@@ -62,7 +62,7 @@ function BottomBar({
 
   return (
     <div
-      className="flex flex-shrink-0 items-center gap-2 px-3 pt-2"
+      className="flex shrink-0 items-center gap-2 px-3 pt-2"
       style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}
     >
       {showSearch && (
@@ -72,7 +72,7 @@ function BottomBar({
       )}
       <Button
         asChild
-        className={showSearch ? 'h-11 flex-shrink-0 gap-2 rounded-full px-5' : 'h-11 w-full gap-2'}
+        className={showSearch ? 'h-11 shrink-0 gap-2 rounded-full px-5' : 'h-11 w-full gap-2'}
       >
         <a
           href="/c/new"

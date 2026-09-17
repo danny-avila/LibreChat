@@ -354,7 +354,7 @@ const AttachFileMenu = ({
           aria-label="Attach File Options"
           aria-keyshortcuts={uploadFileAriaKey}
           className={cn(
-            'flex size-theme-control items-center justify-center rounded-theme-control-round p-1 transition-colors duration-theme-fast hover:bg-surface-composer-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-opacity-50',
+            'size-theme-control rounded-theme-control-round duration-theme-fast hover:bg-surface-composer-hover focus-visible:ring-text-primary/50 flex items-center justify-center p-1 transition-colors focus-visible:ring-2 focus-visible:outline-hidden',
             isPopoverActive && 'bg-surface-composer-hover',
           )}
         >
@@ -411,7 +411,7 @@ const AttachFileMenu = ({
                   label={localize('com_sidepanel_attach_files')}
                   onClick={handleUnifiedUpload}
                   aria-keyshortcuts={uploadFileAriaKey}
-                  className="p-1 hover:bg-surface-composer-hover"
+                  className="hover:bg-surface-composer-hover p-1"
                 >
                   <AttachmentIcon />
                 </IconButton>

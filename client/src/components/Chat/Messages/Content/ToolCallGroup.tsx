@@ -621,11 +621,11 @@ export default function ToolCallGroup({
   }, [hasActiveToolCall, userOverride, suppressAutoExpand]);
 
   return (
-    <div className="mb-2 mt-1" ref={rootRef}>
+    <div className="mt-1 mb-2" ref={rootRef}>
       <Button
         variant="ghost"
         type="button"
-        className="inline-flex h-auto w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-text-secondary hover:bg-transparent hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy focus-visible:ring-offset-0"
+        className="text-text-secondary hover:text-text-secondary focus-visible:ring-border-heavy inline-flex h-auto w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 hover:bg-transparent focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:outline-hidden"
         onClick={handleToggle}
         aria-expanded={isExpanded}
         aria-label={groupAriaLabel}
@@ -640,7 +640,7 @@ export default function ToolCallGroup({
             className={cn(
               ROW_GLYPH_SLOT,
               'text-text-secondary',
-              isGroupLive && 'animate-pulse text-text-primary',
+              isGroupLive && 'text-text-primary animate-pulse',
             )}
             aria-hidden="true"
           >
@@ -668,7 +668,7 @@ export default function ToolCallGroup({
         </span>
         {groupDetail && (
           <span
-            className="min-w-0 max-w-[40%] truncate text-xs font-normal text-text-secondary"
+            className="text-text-secondary max-w-[40%] min-w-0 truncate text-xs font-normal"
             title={groupDetail}
           >
             · {groupDetail}
@@ -676,7 +676,7 @@ export default function ToolCallGroup({
         )}
         <ChevronDown
           className={cn(
-            'size-4 shrink-0 text-text-secondary transition-transform duration-200 ease-out',
+            'text-text-secondary size-4 shrink-0 transition-transform duration-200 ease-out',
             isExpanded && 'rotate-180',
           )}
           aria-hidden="true"
@@ -734,7 +734,7 @@ export default function ToolCallGroup({
                 })}
               </div>
             </ToolAuthWarningContext.Provider>
-            {hasPendingAuthRequest && <ToolAuthWarning className="mb-1 mt-2.5" />}
+            {hasPendingAuthRequest && <ToolAuthWarning className="mt-2.5 mb-1" />}
           </div>
         )}
       </div>

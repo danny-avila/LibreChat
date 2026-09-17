@@ -66,7 +66,7 @@ MeasuredRow.displayName = 'ProjectWorkspaceMeasuredRow';
 const LoadingRow = memo(() => {
   const localize = useLocalize();
   return (
-    <div className="flex items-center justify-center gap-2 py-4 text-sm text-text-secondary">
+    <div className="text-text-secondary flex items-center justify-center gap-2 py-4 text-sm">
       <Spinner className="text-text-primary" />
       <span>{localize('com_ui_loading')}</span>
     </div>
@@ -91,28 +91,28 @@ const ConversationRow = memo(
     return (
       <article
         className={cn(
-          'group/project-chat mb-2 flex items-center rounded-2xl border border-border-light bg-surface-secondary',
-          'transition-colors hover:bg-surface-hover',
+          'group/project-chat border-border-light bg-surface-secondary mb-2 flex items-center rounded-2xl border',
+          'hover:bg-surface-hover transition-colors',
           isMenuOpen && 'bg-surface-hover',
         )}
       >
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-3.5 py-3 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
+          className="focus-visible:ring-text-primary flex min-w-0 flex-1 items-center gap-3 rounded-2xl px-3.5 py-3 text-left outline-hidden focus-visible:ring-2 focus-visible:ring-inset"
           onClick={() => navigateToConvo(conversation)}
         >
           <span className="flex h-10 w-10 shrink-0 items-center justify-center">
             <ConversationEndpointIcon conversation={conversation} size={40} context="landing" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-medium text-text-primary">{title}</span>
-            <span className="block truncate text-xs tabular-nums text-text-secondary">
+            <span className="text-text-primary block truncate text-sm font-medium">{title}</span>
+            <span className="text-text-secondary block truncate text-xs tabular-nums">
               {formattedDate}
             </span>
           </span>
           {isGenerating ? (
             <Spinner
-              className="h-4 w-4 shrink-0 text-text-primary"
+              className="text-text-primary h-4 w-4 shrink-0"
               aria-label={localize('com_ui_generating')}
             />
           ) : null}
@@ -222,7 +222,7 @@ const ProjectChatList = ({
       if (item.type === 'empty') {
         return (
           <MeasuredRow key={key} {...rowProps}>
-            <div className="px-3 py-14 text-center text-sm text-text-secondary">{emptyLabel}</div>
+            <div className="text-text-secondary px-3 py-14 text-center text-sm">{emptyLabel}</div>
           </MeasuredRow>
         );
       }
@@ -277,7 +277,7 @@ const ProjectChatList = ({
             deferredMeasurementCache={cache}
             overscanRowCount={8}
             onRowsRendered={handleRowsRendered}
-            className="outline-none"
+            className="outline-hidden"
             style={{ outline: 'none' }}
           />
         )}

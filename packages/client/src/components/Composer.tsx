@@ -198,7 +198,7 @@ const Composer: ForwardRefExoticComponent<
         /** Main chat's own field metrics (`ChatForm`'s `baseClasses`), so the
          *  two composers stand the same height and their surfaces line up
          *  when this panel is open beside the thread. */
-        className="m-0 w-full resize-none bg-transparent px-3 py-[13px] text-text-primary placeholder:text-text-tertiary focus:outline-none disabled:cursor-not-allowed md:py-3.5"
+        className="text-text-primary placeholder:text-text-tertiary m-0 w-full resize-none bg-transparent px-3 py-[13px] focus:outline-hidden disabled:cursor-not-allowed md:py-3.5"
       />
       {/* The row holds its height whether or not it carries secondary actions,
           so the surface cannot resize as a run changes what it offers. */}

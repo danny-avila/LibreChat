@@ -410,7 +410,7 @@ describe('AgentDetail', () => {
       renderWithProviders(<AgentDetail {...defaultProps} />);
 
       const copyLinkButton = screen.getByRole('button', { name: 'com_agents_copy_link' });
-      expect(copyLinkButton).toHaveClass('focus-visible:outline-none', 'focus-visible:ring-2');
+      expect(copyLinkButton).toHaveClass('focus-visible:outline-hidden', 'focus-visible:ring-2');
     });
   });
 

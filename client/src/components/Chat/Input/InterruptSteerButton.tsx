@@ -51,10 +51,10 @@ const InterruptSteerButton = React.memo((props: InterruptSteerButtonProps) => {
             disabled={disabled}
             onClick={onClick}
             className={cn(
-              'flex size-theme-control items-center justify-center rounded-theme-control-round border border-border-light',
-              'text-text-secondary transition-colors duration-theme-normal',
+              'size-theme-control rounded-theme-control-round border-border-light flex items-center justify-center border',
+              'text-text-secondary duration-theme-normal transition-colors',
               'hover:bg-surface-composer-hover hover:text-text-primary',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
+              'focus-visible:ring-border-xheavy focus-visible:ring-2 focus-visible:outline-hidden',
               'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent',
             )}
           >
@@ -62,7 +62,7 @@ const InterruptSteerButton = React.memo((props: InterruptSteerButtonProps) => {
           </button>
         }
       />
-      <Ariakit.Tooltip className="z-50 rounded-lg bg-surface-tertiary px-2 py-1 text-xs text-text-primary shadow-lg">
+      <Ariakit.Tooltip className="bg-surface-tertiary text-text-primary z-50 rounded-lg px-2 py-1 text-xs shadow-lg">
         {localize('com_ui_interrupt_steer_desc')}
       </Ariakit.Tooltip>
     </Ariakit.TooltipProvider>

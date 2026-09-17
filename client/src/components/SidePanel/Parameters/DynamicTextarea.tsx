@@ -62,7 +62,7 @@ function DynamicTextarea({
             >
               {labelCode ? (localize(label as TranslationKeys) ?? label) : label || settingKey}{' '}
               {showDefault && (
-                <small className="opacity-40 high-contrast:opacity-100">
+                <small className="high-contrast:opacity-100 opacity-40">
                   (
                   {typeof defaultValue === 'undefined' || !(defaultValue as string).length
                     ? localize('com_endpoint_default_blank')
@@ -87,7 +87,7 @@ function DynamicTextarea({
                 : placeholder
             }
             className={cn(
-              'flex max-h-[138px] min-h-[100px] w-full resize-none rounded-lg border border-border-light bg-surface-secondary px-3 py-2 text-sm focus:outline-none',
+              'border-border-light bg-surface-secondary flex max-h-[138px] min-h-[100px] w-full resize-none rounded-lg border px-3 py-2 text-sm focus:outline-hidden',
             )}
           />
         </HoverCardTrigger>
