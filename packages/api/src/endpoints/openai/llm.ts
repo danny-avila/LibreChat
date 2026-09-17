@@ -681,6 +681,30 @@ export function getOpenAILLMConfig({
     modelOptions,
   ) as OpenAILLMConfig;
 
+  /**
+   * Prompt caching is an administrator lever, so nothing about it may arrive
+   * through model parameters. An agent's `model_parameters` are author-owned
+   * and land on the client options wholesale, which would otherwise let any
+   * author set `promptCacheScope: 'shared'` — dropping the user from the key
+   * and opting every consumer of a shared agent into cross-user accounting,
+   * where a cache hit reveals that someone else already sent a guessable
+   * prompt — or pin a key, buy billed `24h` retention, or forge the partition
+   * identity `createRun` stamps. The policy below re-adds each of these from
+   * endpoint configuration, and `addParams` remains the administrator's route
+   * to a pinned key.
+   */
+  for (const field of [
+    'promptCacheKey',
+    'promptCacheKeyEnabled',
+    'promptCacheScope',
+    'promptCacheScopeId',
+    'promptCacheStableInstructions',
+    'promptCacheRetention',
+    'promptCacheExplicit',
+  ] as const) {
+    delete (llmConfig as Record<string, unknown>)[field];
+  }
+
   if (frequency_penalty != null) {
     llmConfig.frequencyPenalty = frequency_penalty;
   }
