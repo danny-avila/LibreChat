@@ -27,7 +27,7 @@ const Checkbox: React.ForwardRefExoticComponent<
     <CheckboxPrimitive.Root
       ref={ref}
       className={cn(
-        'peer h-4 w-4 shrink-0 rounded-sm border border-border-xheavy ring-offset-surface-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-surface-inverted data-[state=checked]:text-text-inverted',
+        'peer border-border-xheavy ring-offset-surface-primary focus-visible:ring-text-primary data-[state=checked]:bg-surface-inverted data-[state=checked]:text-text-inverted h-4 w-4 shrink-0 rounded-sm border focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50',
         className,
       )}
       {...props}
