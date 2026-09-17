@@ -14,11 +14,13 @@ export const PROMPT_CACHE_KEY_VERSION = 3;
  * Models that accept the GPT-5.6 explicit cache controls the agents SDK emits
  * (`prompt_cache_options`, `prompt_cache_breakpoint`). OpenAI rejects unknown
  * body parameters outright, so a model outside this set must never receive
- * them. GPT-6 Astra shares GPT-5.6's managed-request surface.
+ * them. GPT-6 Astra shares GPT-5.6's managed-request surface; the rest of the
+ * GPT-6 family does not, so the pattern names Astra rather than the
+ * generation.
  *
  * The dash form matches Azure deployment names, which cannot contain a dot.
  */
-const explicitPromptCachePattern = /\bgpt-(?:5[.-]6|6)\b/i;
+const explicitPromptCachePattern = /\bgpt-(?:5[.-]6|6-astra)\b/i;
 
 export function supportsExplicitPromptCache(model?: string | null): boolean {
   return typeof model === 'string' && explicitPromptCachePattern.test(model);

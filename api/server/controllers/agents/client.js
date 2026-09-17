@@ -2329,13 +2329,6 @@ class AgentClient extends BaseClient {
     const normalizeInstructions = (agent) => {
       agent.instructions = agent.instructions?.trim() || undefined;
       agent.additional_instructions = agent.additional_instructions?.trim() || undefined;
-      /**
-       * The configured half of the dynamic tail, kept before run context is
-       * appended to it below: once appended, nothing downstream can tell the
-       * author's text apart from this run's memory and file context, and the
-       * prompt cache identity has to follow the configured half.
-       */
-      agent.configuredAdditionalInstructions = agent.additional_instructions;
       return agent;
     };
 

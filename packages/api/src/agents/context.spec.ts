@@ -314,6 +314,36 @@ describe('Agent Context Utilities', () => {
       } as unknown as Logger;
     });
 
+    it('keeps the author\u2019s additional instructions apart from the run context', async () => {
+      const agent: AgentWithTools = {
+        id: 'test-agent',
+        instructions: 'Original instructions',
+        additional_instructions: 'Use company terminology',
+        tools: [],
+      };
+
+      mockMCPManager.formatInstructionsForContext.mockResolvedValue('');
+
+      await applyContextToAgent({
+        agent,
+        sharedRunContext: 'Memory: the user prefers brevity',
+        mcpManager: mockMCPManager,
+        agentId: 'test-agent',
+      });
+
+      expect(agent.additional_instructions).toBe(
+        'Use company terminology\n\nMemory: the user prefers brevity',
+      );
+      /**
+       * The prompt cache identity follows the configured half, which is
+       * unrecoverable from the joined string every caller sees afterwards.
+       */
+      expect(
+        (agent as AgentWithTools & { configuredAdditionalInstructions?: string })
+          .configuredAdditionalInstructions,
+      ).toBe('Use company terminology');
+    });
+
     it('should apply context successfully with all components', async () => {
       const agent: AgentWithTools = {
         id: 'test-agent',

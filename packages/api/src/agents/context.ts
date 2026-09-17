@@ -158,6 +158,16 @@ export async function applyContextToAgent({
 }): Promise<void> {
   const baseInstructions = agent.instructions || '';
   const additionalInstructions = agent.additional_instructions || '';
+  /**
+   * The configured half of the dynamic tail, kept before run context is joined
+   * to it below. Once joined, nothing downstream can tell the author's text
+   * apart from this run's memory, file and MCP context, and the prompt cache
+   * identity has to follow the configured half. Captured here rather than at
+   * each caller so a resumed run reports the same identity as the run it
+   * resumes.
+   */
+  const cacheable = agent as AgentWithTools & { configuredAdditionalInstructions?: string };
+  cacheable.configuredAdditionalInstructions = additionalInstructions || undefined;
 
   try {
     const mcpServers = ephemeralAgent?.mcp?.length ? ephemeralAgent.mcp : extractMCPServers(agent);
