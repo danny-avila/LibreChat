@@ -163,6 +163,7 @@ describe('delete agent resource files', () => {
     deleteAgentResourceFiles(
       {
         agentId: 'agent_1',
+        agentObjectId: '65f000000000000000000001',
         toolResource: 'file_search',
         requestedFileIds: files.map((file) => file.file_id),
         attachedFileIds: attachedFileIds ?? files.map((file) => file.file_id),
@@ -185,13 +186,13 @@ describe('delete agent resource files', () => {
     });
   });
 
-  it('asks about shared references excluding only the pair being removed', async () => {
+  it('excludes the agent by a globally unique identity, not its logical id', async () => {
     const deps = makeDeps();
     await run([input('owned', userId)], deps);
 
     expect(deps.getSharedResourceFileIds).toHaveBeenCalledWith({
       file_ids: ['owned'],
-      excludeAgentId: 'agent_1',
+      excludeAgentObjectId: '65f000000000000000000001',
       excludeToolResource: 'file_search',
     });
   });

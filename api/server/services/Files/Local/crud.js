@@ -207,11 +207,21 @@ const isValidPath = (req, base, subfolder, filepath) => {
 /**
  * @param {string} filepath
  */
+/**
+ * A file whose bytes are still on disk must not be reported as deleted: callers use the resolved
+ * promise to decide that a record may lose its metadata and its agent references. Storage that was
+ * already gone is the one benign case, and `processDeleteRequest` treats it as deleted by design.
+ */
 const unlinkFile = async (filepath) => {
   try {
     await fs.promises.unlink(filepath);
   } catch (error) {
+    if (error?.code === 'ENOENT') {
+      logger.warn('Local file was already missing during delete:', error);
+      return;
+    }
     logger.error('Error deleting file:', error);
+    throw error;
   }
 };
 

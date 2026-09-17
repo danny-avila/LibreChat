@@ -34,7 +34,7 @@ export type AgentResourceDeletionDeps<TFile> = {
   /** Which of these ids another agent still references; a shared file is never destroyed. */
   getSharedResourceFileIds: (params: {
     file_ids: string[];
-    excludeAgentId: string;
+    excludeAgentObjectId: string;
     excludeToolResource: string;
   }) => Promise<string[]>;
   removeAgentResourceFiles: (params: {
@@ -131,6 +131,7 @@ export const partitionAgentResourceFiles = <TFile>({
 export const deleteAgentResourceFiles = async <TFile>(
   {
     agentId,
+    agentObjectId,
     toolResource,
     requestedFileIds,
     attachedFileIds,
@@ -138,6 +139,8 @@ export const deleteAgentResourceFiles = async <TFile>(
     userId,
   }: {
     agentId: string;
+    /** The agent's globally unique `_id`; `id` alone repeats across tenants. */
+    agentObjectId: string;
     toolResource: string;
     requestedFileIds: string[];
     attachedFileIds: string[];
@@ -160,7 +163,7 @@ export const deleteAgentResourceFiles = async <TFile>(
       : new Set(
           await deps.getSharedResourceFileIds({
             file_ids: ownedFiles.map((input) => input.file_id),
-            excludeAgentId: agentId,
+            excludeAgentObjectId: agentObjectId,
             excludeToolResource: toolResource,
           }),
         );

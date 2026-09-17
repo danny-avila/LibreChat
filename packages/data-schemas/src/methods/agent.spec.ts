@@ -4270,7 +4270,7 @@ describe('Agent Methods', () => {
 
         const shared = await getSharedResourceFileIds({
           file_ids: [sharedFileId, soleFileId],
-          excludeAgentId: agent.id,
+          excludeAgentObjectId: String(agent._id),
         });
 
         expect(shared).toEqual([sharedFileId]);
@@ -4287,7 +4287,10 @@ describe('Agent Methods', () => {
         });
 
         expect(
-          await getSharedResourceFileIds({ file_ids: [fileId], excludeAgentId: agent.id }),
+          await getSharedResourceFileIds({
+            file_ids: [fileId],
+            excludeAgentObjectId: String(agent._id),
+          }),
         ).toEqual([]);
         expect(await getSharedResourceFileIds({ file_ids: [fileId] })).toEqual([fileId]);
       });
@@ -4310,7 +4313,7 @@ describe('Agent Methods', () => {
         expect(
           await getSharedResourceFileIds({
             file_ids: [fileId],
-            excludeAgentId: agent.id,
+            excludeAgentObjectId: String(agent._id),
             excludeToolResource: EToolResources.file_search,
           }),
         ).toEqual([fileId]);
@@ -4329,10 +4332,47 @@ describe('Agent Methods', () => {
         expect(
           await getSharedResourceFileIds({
             file_ids: [fileId],
-            excludeAgentId: agent.id,
+            excludeAgentObjectId: String(agent._id),
             excludeToolResource: EToolResources.file_search,
           }),
         ).toEqual([]);
+      });
+
+      test('does not skip another tenant’s agent that shares the logical id', async () => {
+        const sharedId = `agent_${uuidv4()}`;
+        const fileId = `file_${uuidv4()}`;
+        const tenantA = `tenant-${uuidv4()}`;
+        const tenantB = `tenant-${uuidv4()}`;
+
+        /* `id` is unique only with `tenantId`, so two tenants can hold the same logical agent id.
+           Excluding by `id` would call the file unreferenced and destroy tenant B's bytes. */
+        const agentA = await tenantStorage.run({ tenantId: tenantA }, () =>
+          createBasicAgent({ id: sharedId }),
+        );
+        await tenantStorage.run({ tenantId: tenantB }, () => createBasicAgent({ id: sharedId }));
+
+        await tenantStorage.run({ tenantId: tenantA }, () =>
+          addAgentResourceFile({
+            agent_id: sharedId,
+            tool_resource: EToolResources.file_search,
+            file_id: fileId,
+          }),
+        );
+        await tenantStorage.run({ tenantId: tenantB }, () =>
+          addAgentResourceFile({
+            agent_id: sharedId,
+            tool_resource: EToolResources.file_search,
+            file_id: fileId,
+          }),
+        );
+
+        expect(
+          await getSharedResourceFileIds({
+            file_ids: [fileId],
+            excludeAgentObjectId: String(agentA._id),
+            excludeToolResource: EToolResources.file_search,
+          }),
+        ).toEqual([fileId]);
       });
 
       test('answers without querying when given no file_ids', async () => {

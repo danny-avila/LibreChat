@@ -652,11 +652,11 @@ export function createAgentMethods(
   }) => Promise<{ matchedCount: number; modifiedCount: number }>;
   getSharedResourceFileIds: ({
     file_ids,
-    excludeAgentId,
+    excludeAgentObjectId,
     excludeToolResource,
   }: {
     file_ids: string[];
-    excludeAgentId?: string;
+    excludeAgentObjectId?: string;
     excludeToolResource?: string;
   }) => Promise<string[]>;
 } {
@@ -1248,17 +1248,20 @@ export function createAgentMethods(
    * `excludeToolResource` narrows the exclusion to the pair being removed; omitting it excludes the
    * whole agent.
    *
+   * The agent is excluded by `_id`, because `id` is unique only together with `tenantId`: matching on
+   * `id` alone would skip another tenant's agent of the same name and call its file unreferenced.
+   *
    * Duplicating an agent copies `file_ids` rather than the files behind them, so one file record
    * can back two agents; destroying its bytes on behalf of one agent would empty the other. This
    * is deliberately not scoped by tenant: a reference is a reference, whoever holds it.
    */
   async function getSharedResourceFileIds({
     file_ids,
-    excludeAgentId,
+    excludeAgentObjectId,
     excludeToolResource,
   }: {
     file_ids: string[];
-    excludeAgentId?: string;
+    excludeAgentObjectId?: string;
     excludeToolResource?: string;
   }): Promise<string[]> {
     if (!file_ids || file_ids.length === 0) {
@@ -1273,10 +1276,11 @@ export function createAgentMethods(
       })),
     };
 
-    const agents = await Agent.find(searchParameter, { id: 1, tool_resources: 1 }).lean();
+    const agents = await Agent.find(searchParameter, { _id: 1, tool_resources: 1 }).lean();
     const shared = new Set<string>();
     for (const agent of agents) {
-      const isExcludedAgent = excludeAgentId != null && agent.id === excludeAgentId;
+      const isExcludedAgent =
+        excludeAgentObjectId != null && String(agent._id) === excludeAgentObjectId;
       for (const key of TOOL_RESOURCE_KEYS) {
         if (isExcludedAgent && (excludeToolResource == null || key === excludeToolResource)) {
           continue;

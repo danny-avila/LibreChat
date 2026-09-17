@@ -249,6 +249,7 @@ router.delete('/', async (req, res) => {
       const agentDeletion = await deleteAgentResourceFiles(
         {
           agentId: req.body.agent_id,
+          agentObjectId: agent._id.toString(),
           toolResource: req.body.tool_resource,
           requestedFileIds: fileIds,
           attachedFileIds: agent.tool_resources?.[req.body.tool_resource]?.file_ids ?? [],
