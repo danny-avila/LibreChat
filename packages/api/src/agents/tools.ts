@@ -591,11 +591,50 @@ const AUTHORED_SKILL_NAME_DESCRIPTION =
  * Rewrites in place while the SDK still ships the catalog-only constraint, so
  * every other constraint it declares survives; appends otherwise, so the
  * authored-skill guidance reaches the model even if that text moves.
+ *
+ * Exported for the drift tests: appending leaves a reworded catalog-only
+ * sentence standing next to guidance that contradicts it, so both branches have
+ * to be pinned rather than inferred. `tools.spec.ts` also asserts the real SDK
+ * export still carries the sentence, which fails CI on the bump that would
+ * quietly move this onto the append branch.
  */
-function buildAuthoringSkillToolDescription(baseDescription: string): string {
+export function buildAuthoringSkillToolDescription(baseDescription: string): string {
   return baseDescription.includes(CATALOG_ONLY_SKILL_CONSTRAINT)
     ? baseDescription.replace(CATALOG_ONLY_SKILL_CONSTRAINT, AUTHORED_SKILL_CONSTRAINTS)
     : `${baseDescription}\n${AUTHORED_SKILL_CONSTRAINTS}`;
+}
+
+/** The shape the authoring variant needs from the SDK's `skill` schema. */
+interface SkillToolParametersView {
+  properties?: Record<string, { description?: string } | undefined>;
+}
+
+/**
+ * Retargets the SDK's `skillName` guidance at skills authored this run, leaving
+ * the rest of the schema alone.
+ *
+ * Takes the schema rather than reading the module import so both branches are
+ * reachable from a test. The property is non-optional in the SDK's types, so
+ * this reads it through a widened view: an installed package can disagree with
+ * the types it shipped, and this definition is built at module load, where an
+ * unguarded dereference would fail the whole `packages/api` import rather than
+ * one tool's wording.
+ */
+export function buildAuthoringSkillToolParameters(
+  baseParameters: LCTool['parameters'],
+): LCTool['parameters'] {
+  const view = baseParameters as unknown as SkillToolParametersView;
+  const skillName = view.properties?.skillName;
+  if (skillName == null) {
+    return baseParameters;
+  }
+  return {
+    ...view,
+    properties: {
+      ...view.properties,
+      skillName: { ...skillName, description: AUTHORED_SKILL_NAME_DESCRIPTION },
+    },
+  } as unknown as LCTool['parameters'];
 }
 
 const SKILL_TOOL_DEF: LCTool = Object.freeze({
@@ -607,16 +646,9 @@ const SKILL_TOOL_DEF: LCTool = Object.freeze({
 const AUTHORING_SKILL_TOOL_DEF: LCTool = Object.freeze({
   name: SkillToolDefinition.name,
   description: buildAuthoringSkillToolDescription(SkillToolDefinition.description),
-  parameters: {
-    ...SkillToolDefinition.parameters,
-    properties: {
-      ...SkillToolDefinition.parameters.properties,
-      skillName: {
-        ...SkillToolDefinition.parameters.properties.skillName,
-        description: AUTHORED_SKILL_NAME_DESCRIPTION,
-      },
-    },
-  } as unknown as LCTool['parameters'],
+  parameters: buildAuthoringSkillToolParameters(
+    SkillToolDefinition.parameters as unknown as LCTool['parameters'],
+  ),
 }) as LCTool;
 
 /**
