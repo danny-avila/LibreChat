@@ -103,7 +103,7 @@ export const PendingToolApprovalPanel = memo(function PendingToolApprovalPanel({
       aria-labelledby="pending-tool-approval-title"
       aria-live="polite"
     >
-      <div className="popover pointer-events-auto border-token-border-light flex max-h-[70vh] flex-col rounded-2xl border bg-surface-primary-alt shadow-lg">
+      <div className="popover border-token-border-light pointer-events-auto flex max-h-[70vh] flex-col rounded-2xl border bg-surface-primary-alt shadow-lg">
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border-light px-3 py-2">
           <p id="pending-tool-approval-title" className="text-sm font-medium text-text-primary">
             {localize(reviews.length === 1 ? 'com_ui_review_action' : 'com_ui_review_actions', {
