@@ -115,7 +115,7 @@ import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { buildAgentInitialToolSessions } from '~/agents/codeFilesSession';
 import { getAzureCredentials, constructAzureURL } from '~/utils/azure';
-import { buildPromptCacheKey } from '~/endpoints/openai/promptCache';
+import { buildPromptCacheKey, supportsExplicitPromptCache } from '~/endpoints/openai/promptCache';
 import { getBuiltInBaseURL } from '~/endpoints/openai/initialize';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { buildToolApprovalHooks } from '~/agents/hitl/hooks';
@@ -1460,7 +1460,7 @@ function shapeSummarizationConfig(
    * above already establishes that explicit user parameters win.
    */
   const agentParameters = agent?.model_parameters as
-    | { promptCacheKeyEnabled?: boolean }
+    | { promptCacheKeyEnabled?: boolean; promptCacheExplicit?: boolean }
     | undefined;
   if (
     provider === fallbackProvider &&
@@ -1468,6 +1468,22 @@ function shapeSummarizationConfig(
     parameters?.promptCacheKey == null
   ) {
     parameters = { ...parameters, promptCacheKey: undefined };
+  }
+  /**
+   * The explicit cache controls are model-gated, and that gate ran against the
+   * agent's model. A same-provider summarizer that selects another model
+   * inherits the flag without passing the gate, and OpenAI rejects unknown
+   * body parameters outright rather than ignoring them — so an unsupported
+   * summary model has it withheld, unless the summarization config asked for
+   * it itself.
+   */
+  if (
+    provider === fallbackProvider &&
+    agentParameters?.promptCacheExplicit === true &&
+    userParameters?.promptCacheExplicit == null &&
+    !supportsExplicitPromptCache(model)
+  ) {
+    parameters = { ...parameters, promptCacheExplicit: undefined };
   }
 
   return {
@@ -1899,12 +1915,18 @@ function handoffEdgeIdentity(edge: GraphEdge): unknown {
 }
 
 /**
- * The edges that leave one agent, which are the ones the SDK turns into
- * handoff tools on it. A grouped `from` waits on all of its sources, so any
- * member of the group carries the edge.
+ * The handoff tools that leave one agent.
+ *
+ * Only a `handoff` edge becomes an `lc_transfer_to_*` tool; a `direct` edge is
+ * automatic routing the model never sees, which is why the production tool
+ * allowlist skips it too (`agents/tools.ts`). Hashing one would give two saved
+ * teams that differ only in their routing separate identities for an identical
+ * prefix — a miss, where the whole point is reuse. A grouped `from` waits on
+ * all of its sources, so any member of the group carries the edge.
  */
 function outgoingHandoffEdges(edges: readonly GraphEdge[] | undefined, agentId: string): unknown[] {
   return (edges ?? [])
+    .filter((edge) => edge.edgeType !== 'direct')
     .filter((edge) => (Array.isArray(edge.from) ? edge.from : [edge.from]).includes(agentId))
     .map(handoffEdgeIdentity);
 }
