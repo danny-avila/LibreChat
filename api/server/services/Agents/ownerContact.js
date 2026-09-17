@@ -6,7 +6,7 @@ const attachOwnerContacts = (agents) =>
   attachAgentOwnerContacts(agents, {
     getFirstOwnerIdsByResource: (resourceType, resourceIds) =>
       db.getFirstOwnerIdsByResource(resourceType, resourceIds),
-    findUsers: (filter, select) => db.findUsers(filter, select),
+    findOwnerContactUsers: db.findOwnerContactUsers,
     logger,
   });
 

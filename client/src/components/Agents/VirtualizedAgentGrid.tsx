@@ -29,6 +29,8 @@ const isAgentUnavailableError = (error: unknown): boolean => {
   }
   return error.response.status === 403 || error.response.status === 404;
 };
+const mergeRevalidatedAgent = (agent: t.Agent, revalidatedAgent: t.Agent | undefined): t.Agent =>
+  revalidatedAgent == null ? agent : { ...agent, ...revalidatedAgent };
 
 interface VirtualizedAgentGridProps {
   agents: t.Agent[];
@@ -194,9 +196,9 @@ export default function VirtualizedAgentGrid({
   let selectedAgent: t.Agent | null = null;
   if (selection != null) {
     if (selectedIndex != null) {
-      selectedAgent = agents[selectedIndex];
+      selectedAgent = mergeRevalidatedAgent(agents[selectedIndex], selectedAgentQuery.data);
     } else if (selectedAgentQuery.data != null) {
-      selectedAgent = { ...selection.agent, ...selectedAgentQuery.data };
+      selectedAgent = mergeRevalidatedAgent(selection.agent, selectedAgentQuery.data);
     } else {
       selectedAgent = selection.agent;
     }

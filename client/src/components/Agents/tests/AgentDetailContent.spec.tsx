@@ -139,7 +139,11 @@ const renderDetail = (
      conversations a multi-conversation session left open, and the transcript the last
      new chat left behind. The dialog only asks; the host owns that state. */
   const host = { resetNewConversation: jest.fn() };
-  const tree = (phase?: 'open' | 'closing', disabled = actionsDisabled) => (
+  const tree = (
+    phase?: 'open' | 'closing',
+    disabled = actionsDisabled,
+    unavailable = actionsUnavailable,
+  ) => (
     <RecoilRoot>
       <MemoryRouter
         basename={basename}
@@ -150,7 +154,7 @@ const renderDetail = (
             <DetailDialog
               agent={agent}
               morph={phase}
-              actionsUnavailable={actionsUnavailable}
+              actionsUnavailable={unavailable}
               actionsDisabled={disabled}
             />
           </MarketplaceHostContext.Provider>
@@ -166,6 +170,8 @@ const renderDetail = (
     resetNewConversation: host.resetNewConversation,
     setMorph: (phase: 'open' | 'closing') => view.rerender(tree(phase)),
     setActionsDisabled: (disabled: boolean) => view.rerender(tree(morph, disabled)),
+    setActionsUnavailable: (unavailable: boolean) =>
+      view.rerender(tree(morph, actionsDisabled, unavailable)),
   };
 };
 
@@ -204,7 +210,7 @@ describe('AgentDetailContent', () => {
     expect(screen.queryByText('Contact:')).not.toBeInTheDocument();
   });
 
-  it('renders a rich description as sanitized markup with safe links', () => {
+  it('renders a rich description as sanitized markup outside a paragraph', () => {
     renderDetail({
       ...baseAgent,
       description:
@@ -217,6 +223,7 @@ describe('AgentDetailContent', () => {
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
     expect(document.querySelector('[onclick]')).not.toBeInTheDocument();
     expect(document.querySelector('script')).not.toBeInTheDocument();
+    expect(link.closest('p')).not.toBeInTheDocument();
   });
 
   it('renders the morphed copy word by word without reading it twice', () => {
@@ -393,6 +400,34 @@ describe('AgentDetailContent', () => {
       'true',
     );
   });
+  it.each([
+    ['a conversation starter', /Ask about the latest changes/],
+    ['the pin action', 'Pin'],
+    ['the copy-link action', 'Copy link'],
+    ['the start-chat action', 'Start chat'],
+  ])('moves focus to the unavailable status when revalidation removes %s', (_label, name) => {
+    const agent = { ...baseAgent, conversation_starters: ['Ask about the latest changes'] };
+    const rendered = renderDetail(agent);
+    const focusedAction = screen.getByRole('button', { name });
+    focusedAction.focus();
+
+    rendered.setActionsUnavailable(true);
+
+    expect(screen.getByRole('status')).toHaveFocus();
+    expect(document.body).not.toHaveFocus();
+  });
+
+  it('leaves focus elsewhere when revalidation removes unavailable actions', () => {
+    const rendered = renderDetail();
+    const title = screen.getByRole('heading', { name: 'Agent One' });
+    title.focus();
+
+    rendered.setActionsUnavailable(true);
+
+    expect(title).toHaveFocus();
+    expect(screen.getByRole('status')).not.toHaveFocus();
+  });
+
   it('keeps the captured dialog open but removes actions for an inaccessible agent', () => {
     renderDetail(baseAgent, '/app', undefined, true);
 

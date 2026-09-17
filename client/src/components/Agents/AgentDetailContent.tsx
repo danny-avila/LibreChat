@@ -1,4 +1,4 @@
-import React, { useCallback, useId, useMemo, useRef } from 'react';
+import React, { useCallback, useId, useLayoutEffect, useMemo, useRef } from 'react';
 import { useHref, useNavigate } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
@@ -72,6 +72,9 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
   const navigate = useNavigate();
   const reducedMotion = useReducedMotion();
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const unavailableRef = useRef<HTMLParagraphElement>(null);
+  const focusedActionRef = useRef<HTMLElement | null>(null);
+  const previousActionsUnavailable = useRef(actionsUnavailable);
   const id = useId();
   const { isFavoriteAgent, toggleFavoriteAgent, isUpdating } = useFavorites();
   const isFavorite = isFavoriteAgent(agent.id);
@@ -151,12 +154,41 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
     getPlainDescription(agent.description).trim() || localize('com_agents_description_empty');
   /* Nothing to morph the copy out of without the card that owns it, and a rich
      description is markup rather than the text nodes the word morph measures, so
-     it hands over as one paragraph instead of word by word. */
+     it hands over as one block instead of word by word. */
   const morphedDescription = morphing && !richDescription && descriptionSource != null;
   const readDescriptionSource = useCallback(
     () => descriptionSource?.(agent.id) ?? null,
     [agent.id, descriptionSource],
   );
+  /* One handover, two elements: the copy the card shows arrives the same way whether it
+     is markup or the text the words morph through. `relative` makes this the offset
+     parent the word morph measures against. */
+  const descriptionMotion = {
+    layout: 'position' as const,
+    layoutId: morphing ? agentMorphId('description', agent.id) : undefined,
+    style: { willChange: morphing ? 'transform' : undefined },
+    className:
+      'relative mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-text-secondary sm:text-base',
+    ...shared,
+  };
+  useLayoutEffect(() => {
+    const wasUnavailable = previousActionsUnavailable.current;
+    previousActionsUnavailable.current = actionsUnavailable;
+    if (!actionsUnavailable || wasUnavailable || focusedActionRef.current == null) {
+      return;
+    }
+    focusedActionRef.current = null;
+    unavailableRef.current?.focus();
+  }, [actionsUnavailable]);
+  const handleActionFocusCapture = useCallback((event: React.FocusEvent<HTMLElement>) => {
+    focusedActionRef.current = event.target;
+  }, []);
+  const handleActionBlurCapture = useCallback((event: React.FocusEvent<HTMLElement>) => {
+    const relatedTarget = event.relatedTarget;
+    if (!(relatedTarget instanceof Node) || !event.currentTarget.contains(relatedTarget)) {
+      focusedActionRef.current = null;
+    }
+  }, []);
 
   return (
     <OGDialogContent
@@ -270,31 +302,27 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
                     {agent.name?.trim() || localize('com_ui_agent')}
                   </OGDialogTitle>
                 </motion.div>
-                {/* The same copy the card shows, handed over rather than
-                    introduced. `relative` makes this the offset parent the word
-                    morph measures against. */}
-                <motion.p
-                  layout="position"
-                  layoutId={morphing ? agentMorphId('description', agent.id) : undefined}
-                  style={{ willChange: morphing ? 'transform' : undefined }}
-                  className="relative mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-text-secondary sm:text-base"
-                  {...shared}
-                >
-                  {morphedDescription && (
-                    <DescriptionWords
-                      text={description}
-                      source={readDescriptionSource}
-                      phase={morph === 'closing' ? 'closing' : 'open'}
-                    />
-                  )}
-                  {!morphedDescription && richDescription && (
+                {/* Sanitized markup can carry blocks of its own, so the rich branch is a
+                    block and only the plain text keeps the paragraph the words morph in. */}
+                {!morphedDescription && richDescription ? (
+                  <motion.div {...descriptionMotion}>
                     <Description
                       description={agent.description}
                       className="[&_a]:underline [&_a]:underline-offset-2 [&_img]:inline-block [&_img]:max-w-full"
                     />
-                  )}
-                  {!morphedDescription && !richDescription && description}
-                </motion.p>
+                  </motion.div>
+                ) : (
+                  <motion.p {...descriptionMotion}>
+                    {morphedDescription && (
+                      <DescriptionWords
+                        text={description}
+                        source={readDescriptionSource}
+                        phase={morph === 'closing' ? 'closing' : 'open'}
+                      />
+                    )}
+                    {!morphedDescription && !richDescription && description}
+                  </motion.p>
+                )}
               </div>
             </div>
             <OGDialogDescription className="sr-only">
@@ -303,13 +331,24 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
           </OGDialogHeader>
 
           {actionsUnavailable && (
-            <p className="mt-8 text-sm text-text-secondary" role="status">
+            <p
+              ref={unavailableRef}
+              className="mt-8 text-sm text-text-secondary"
+              role="status"
+              tabIndex={-1}
+            >
               {localize('com_agents_not_available')}
             </p>
           )}
 
           {!actionsUnavailable && conversationStarters.length > 0 && (
-            <motion.section {...detail} className="mt-8" aria-labelledby={`${id}-starters`}>
+            <motion.section
+              {...detail}
+              className="mt-8"
+              aria-labelledby={`${id}-starters`}
+              onFocusCapture={handleActionFocusCapture}
+              onBlurCapture={handleActionBlurCapture}
+            >
               <h3 id={`${id}-starters`} className="text-sm font-semibold text-text-primary">
                 {localize('com_agents_starters_heading')}
               </h3>
@@ -356,6 +395,8 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
               <motion.div
                 {...detail}
                 className="grid gap-2 sm:ms-auto sm:flex sm:items-center sm:gap-2"
+                onFocusCapture={handleActionFocusCapture}
+                onBlurCapture={handleActionBlurCapture}
               >
                 <div className="grid grid-cols-2 gap-2 sm:flex sm:gap-2">
                   <Button

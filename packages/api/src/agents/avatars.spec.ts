@@ -1,4 +1,5 @@
-import { FileSources } from 'librechat-data-provider';
+import { DEFAULT_AVATAR_REFRESH_COVERAGE_LIMIT, FileSources } from 'librechat-data-provider';
+const defaultCoverageLimit = DEFAULT_AVATAR_REFRESH_COVERAGE_LIMIT;
 import type { Agent, AgentAvatar, AgentModelParameters } from 'librechat-data-provider';
 import type {
   AvatarRefreshCacheEntry,
@@ -9,7 +10,6 @@ import type {
 import {
   AVATAR_REFRESH_BATCH_SIZE,
   MAX_AVATAR_REFRESH_AGENTS,
-  MAX_AVATAR_REFRESH_COVERAGE_IDS,
   getAvatarRefreshCoveredIds,
   mergeAvatarRefreshCacheEntry,
   refreshListAvatars,
@@ -169,7 +169,46 @@ describe('refreshListAvatars', () => {
     expect(mockUpdateAgent).toHaveBeenCalledWith({
       id: 'agent1',
       avatar: { filepath: 'new-path.jpg', source: FileSources.s3 },
+      previousAvatar: agent.avatar,
     });
+  });
+
+  it('omits a refreshed URL when the conditional avatar write is skipped', async () => {
+    const agent = createAgent();
+    const { cache } = createRefreshCache();
+    mockRefreshS3Url.mockResolvedValue('new-path.jpg');
+    mockUpdateAgent.mockResolvedValue(false);
+
+    const stats = await refreshListAvatars({
+      agents: [agent],
+      userId,
+      refreshS3Url: mockRefreshS3Url,
+      updateAgent: mockUpdateAgent,
+    });
+    const entry = await resolveAvatarRefresh({
+      agents: [agent],
+      userId,
+      cachedRefreshEntry: null,
+      cache,
+      refreshKey: 'avatars:user123',
+      cacheTtl: 30 * 60 * 1000,
+      refreshS3Url: mockRefreshS3Url,
+      updateAgent: mockUpdateAgent,
+    });
+
+    expect(stats.updated).toBe(0);
+    expect(stats.urlCache).toEqual({});
+    expect(entry?.urlCache).toEqual({});
+
+    expect(mockUpdateAgent).toHaveBeenCalledWith({
+      id: 'agent1',
+      avatar: { filepath: 'new-path.jpg', source: FileSources.s3 },
+      previousAvatar: agent.avatar,
+    });
+    expect(logger.debug).toHaveBeenCalledWith(
+      '[refreshListAvatars] Avatar refresh skipped because the stored avatar changed: %s',
+      'agent1',
+    );
   });
 
   it('should not update if S3 URL unchanged', async () => {
@@ -376,24 +415,23 @@ describe('refreshListAvatars', () => {
   });
 
   it('bounds retained coverage while keeping the newest ids covered', async () => {
-    const retainedIds = Array.from(
-      { length: MAX_AVATAR_REFRESH_COVERAGE_IDS },
-      (_, index) => `agent${index}`,
-    );
+    const retainedIds = Array.from({ length: defaultCoverageLimit }, (_, index) => `agent${index}`);
     const firstEntry = mergeAvatarRefreshCacheEntry(
       null,
       { urlCache: {}, coveredIds: retainedIds },
       30 * 60 * 1000,
+      defaultCoverageLimit,
       0,
     );
     const boundedEntry = mergeAvatarRefreshCacheEntry(
       firstEntry,
       { urlCache: {}, coveredIds: ['agent1000'] },
       30 * 60 * 1000,
+      defaultCoverageLimit,
       1,
     );
 
-    expect(Object.keys(boundedEntry.coveredIds)).toHaveLength(MAX_AVATAR_REFRESH_COVERAGE_IDS);
+    expect(Object.keys(boundedEntry.coveredIds)).toHaveLength(defaultCoverageLimit);
     expect(getAvatarRefreshCoveredIds(boundedEntry, 1)).not.toContain('agent0');
     expect(getAvatarRefreshCoveredIds(boundedEntry, 1)).toContain('agent1000');
 
@@ -414,6 +452,23 @@ describe('refreshListAvatars', () => {
     now.mockRestore();
   });
 
+  it('uses the configured coverage limit while defaulting to 1000', () => {
+    const configuredEntry = mergeAvatarRefreshCacheEntry(
+      null,
+      {
+        urlCache: {},
+        coveredIds: ['agent0', 'agent1', 'agent2', 'agent3'],
+      },
+      30 * 60 * 1000,
+      2,
+      0,
+    );
+
+    expect(Object.keys(configuredEntry.coveredIds)).toHaveLength(2);
+    expect(Object.keys(configuredEntry.coveredIds)).toEqual(['agent2', 'agent3']);
+    expect(defaultCoverageLimit).toBe(1000);
+  });
+
   it('keeps the coverage a concurrent page wrote while this one was refreshing', async () => {
     const now = jest.spyOn(Date, 'now').mockReturnValue(0);
     /* Both pages read a null snapshot before their list queries; the other page finished
@@ -423,6 +478,7 @@ describe('refreshListAvatars', () => {
       null,
       { urlCache: { agent2: 'two-new.jpg' }, coveredIds: ['agent2'] },
       30 * 60 * 1000,
+      defaultCoverageLimit,
       0,
     );
     mockRefreshS3Url.mockResolvedValue('one-new.jpg');
@@ -447,12 +503,105 @@ describe('refreshListAvatars', () => {
     now.mockRestore();
   });
 
+  it('returns refreshed URLs when persisting the cache entry fails', async () => {
+    const { cache } = createRefreshCache();
+    (cache.set as jest.MockedFunction<AvatarRefreshCache['set']>).mockRejectedValue(
+      new Error('cache down'),
+    );
+    mockRefreshS3Url.mockResolvedValue('one-new.jpg');
+    mockUpdateAgent.mockResolvedValue({});
+
+    const entry = await resolveAvatarRefresh({
+      agents: [
+        createAgent({ id: 'agent1', avatar: { source: FileSources.s3, filepath: 'one.jpg' } }),
+      ],
+      userId,
+      cachedRefreshEntry: null,
+      cache,
+      refreshKey: 'avatars:user123',
+      cacheTtl: 30 * 60 * 1000,
+      refreshS3Url: mockRefreshS3Url,
+      updateAgent: mockUpdateAgent,
+    });
+
+    expect(entry?.urlCache).toEqual({ agent1: 'one-new.jpg' });
+    expect(logger.error).toHaveBeenCalledWith(
+      '[resolveAvatarRefresh] Error writing the avatar refresh cache: %o',
+      expect.any(Error),
+    );
+  });
+
+  it('serializes refresh cache merges for the same key', async () => {
+    const stored: { entry: AvatarRefreshCacheEntry | null } = { entry: null };
+    let setCalls = 0;
+    const firstSetGate = Promise.withResolvers<void>();
+    const firstSetRelease = Promise.withResolvers<void>();
+    let cache!: AvatarRefreshCache;
+    cache = {
+      get: jest.fn(async () => stored.entry),
+      set: jest.fn(async (_key, value) => {
+        setCalls++;
+        if (setCalls === 1) {
+          firstSetGate.resolve();
+          await firstSetRelease.promise;
+        }
+        stored.entry = value;
+      }),
+    };
+    const first = createAgent({
+      id: 'agent1',
+      avatar: { source: FileSources.s3, filepath: 'one.jpg' },
+    });
+    const second = createAgent({
+      id: 'agent2',
+      avatar: { source: FileSources.s3, filepath: 'two.jpg' },
+    });
+    mockRefreshS3Url.mockImplementation((avatar) =>
+      Promise.resolve(avatar.filepath === 'one.jpg' ? 'one-new.jpg' : 'two-new.jpg'),
+    );
+    mockUpdateAgent.mockResolvedValue({});
+
+    const firstRefresh = resolveAvatarRefresh({
+      agents: [first],
+      userId,
+      cachedRefreshEntry: null,
+      cache,
+      refreshKey: 'avatars:user123',
+      cacheTtl: 30 * 60 * 1000,
+      refreshS3Url: mockRefreshS3Url,
+      updateAgent: mockUpdateAgent,
+    });
+    await firstSetGate.promise;
+    const secondRefresh = resolveAvatarRefresh({
+      agents: [second],
+      userId,
+      cachedRefreshEntry: null,
+      cache,
+      refreshKey: 'avatars:user123',
+      cacheTtl: 30 * 60 * 1000,
+      refreshS3Url: mockRefreshS3Url,
+      updateAgent: mockUpdateAgent,
+    });
+    const releaseTimer = Promise.withResolvers<void>();
+    setTimeout(releaseTimer.resolve, 0);
+    await releaseTimer.promise;
+    firstSetRelease.resolve();
+    await Promise.all([firstRefresh, secondRefresh]);
+
+    expect(Object.keys(stored.entry?.coveredIds ?? {}).sort()).toEqual(['agent1', 'agent2']);
+    expect(stored.entry?.urlCache).toEqual({
+      agent1: 'one-new.jpg',
+      agent2: 'two-new.jpg',
+    });
+  });
+
   it('falls back to the request snapshot when the cache re-read fails', async () => {
     const now = jest.spyOn(Date, 'now').mockReturnValue(0);
     const snapshot = mergeAvatarRefreshCacheEntry(
       null,
       { urlCache: { agent2: 'two-new.jpg' }, coveredIds: ['agent2'] },
       30 * 60 * 1000,
+      defaultCoverageLimit,
       0,
     );
     const { cache } = createRefreshCache();

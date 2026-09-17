@@ -39,6 +39,9 @@ export function createUserMethods(
     fieldsToSelect?: string | string[] | null,
     options?: { limit?: number; offset?: number; sort?: Record<string, 1 | -1> },
   ) => Promise<IUser[]>;
+  findOwnerContactUsers: (
+    ownerIds: string[],
+  ) => Promise<Array<Pick<IUser, '_id' | 'name' | 'username'>>>;
   countUsers: (filter?: FilterQuery<IUser>) => Promise<number>;
   createUser: (
     data: CreateUserRequest,
@@ -211,6 +214,19 @@ export function createUserMethods(
       query.limit(options.limit);
     }
     return await query.lean<IUser[]>();
+  }
+  async function findOwnerContactUsers(
+    ownerIds: string[],
+  ): Promise<Array<Pick<IUser, '_id' | 'name' | 'username'>>> {
+    if (ownerIds.length === 0) {
+      return [];
+    }
+
+    const User = mongoose.models.User as mongoose.Model<IUser>;
+    const objectIds = ownerIds.map((ownerId) => new mongoose.Types.ObjectId(ownerId));
+    return await User.find({ _id: { $in: objectIds } })
+      .select('_id name username')
+      .lean<Array<Pick<IUser, '_id' | 'name' | 'username'>>>();
   }
 
   /**
@@ -828,6 +844,7 @@ export function createUserMethods(
   return {
     findUser,
     findUsers,
+    findOwnerContactUsers,
     countUsers,
     createUser,
     updateUser,

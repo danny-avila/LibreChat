@@ -119,6 +119,11 @@ jest.mock('~/data-provider/Agents', () => ({
   useGetAgentByIdQuery: jest.fn(() => ({ error: null, isFetching: false })),
 }));
 
+/* These cases render the error card on its own, without the app's query client. */
+jest.mock('~/data-provider', () => ({
+  useGetStartupConfig: jest.fn(() => ({ data: undefined })),
+}));
+
 // Mock utility functions
 jest.mock('~/utils/agents', () => ({
   renderAgentAvatar: jest.fn(() => <div data-testid="agent-avatar" />),

@@ -5480,6 +5480,55 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
     expect(refreshed?.avatar).toEqual({ filepath: 'new-path.jpg', source: 's3' });
     expect(refreshed?.updatedAt).toEqual(originalUpdatedAt);
   });
+  test('skips a conditional avatar write when the stored avatar changed', async () => {
+    const agent = await createAgent({
+      id: `agent_${uuidv4().slice(0, 12)}`,
+      name: 'Conditional avatar maintenance',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      avatar: { filepath: 'old-path.jpg', source: 's3' },
+    });
+    const previousAvatar = { filepath: 'old-path.jpg', source: 's3' };
+    await Agent.updateOne(
+      { _id: agent._id },
+      { $set: { avatar: { filepath: 'owner-path.jpg', source: 's3' } } },
+    );
+
+    await expect(
+      updateAgentAvatar({
+        id: agent.id,
+        avatar: { filepath: 'stale-path.jpg', source: 's3' },
+        previousAvatar,
+      }),
+    ).resolves.toBe(false);
+
+    const refreshed = await Agent.findById(agent._id).select({ avatar: 1 }).lean();
+    expect(refreshed?.avatar).toEqual({ filepath: 'owner-path.jpg', source: 's3' });
+  });
+
+  test('lands a conditional avatar write when the stored avatar is unchanged', async () => {
+    const agent = await createAgent({
+      id: `agent_${uuidv4().slice(0, 12)}`,
+      name: 'Matching conditional avatar maintenance',
+      provider: 'openai',
+      model: 'gpt-4',
+      author: new mongoose.Types.ObjectId(),
+      avatar: { filepath: 'old-path.jpg', source: 's3' },
+    });
+    const previousAvatar = { filepath: 'old-path.jpg', source: 's3' };
+
+    await expect(
+      updateAgentAvatar({
+        id: agent.id,
+        avatar: { filepath: 'new-path.jpg', source: 's3' },
+        previousAvatar,
+      }),
+    ).resolves.toBe(true);
+
+    const refreshed = await Agent.findById(agent._id).select({ avatar: 1 }).lean();
+    expect(refreshed?.avatar).toEqual({ filepath: 'new-path.jpg', source: 's3' });
+  });
 
   describe('newest / oldest', () => {
     test('newest (default) orders by createdAt desc', async () => {
@@ -6908,6 +6957,7 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
         version: cursor.version,
         ...(cursor.boundary as Record<string, unknown>),
       };
+
       await expect(
         getListAgentsByAccess({
           accessibleIds,
@@ -6956,6 +7006,35 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
           after: encode({ sort: 'popular', primary: 'not-a-number', secondary: validObjectId() }),
         }),
       ).rejects.toMatchObject({ name: 'AgentSortCursorError', failure: 'unreadable' });
+    });
+    test('rejects negative, fractional, and NaN-shaped favorite counts in popular cursors', async () => {
+      const { accessibleIds } = await seedTwoAgents();
+
+      for (const primary of ['-1', '1.5', 'NaN']) {
+        await expect(
+          getListAgentsByAccess({
+            accessibleIds,
+            otherParams: {},
+            sort: 'popular',
+            after: encode({ sort: 'popular', primary, secondary: validObjectId() }),
+          }),
+        ).rejects.toMatchObject({ name: 'AgentSortCursorError', failure: 'unreadable' });
+      }
+    });
+
+    test('accepts zero and positive integer favorite counts in popular cursors', async () => {
+      const { accessibleIds } = await seedTwoAgents();
+
+      for (const primary of ['0', '2']) {
+        const result = await getListAgentsByAccess({
+          accessibleIds,
+          otherParams: {},
+          sort: 'popular',
+          after: encode({ sort: 'popular', primary, secondary: validObjectId() }),
+        });
+
+        expect(result).toHaveProperty('data');
+      }
     });
 
     test('rejects an author boundary whose primary is not a string', async () => {
