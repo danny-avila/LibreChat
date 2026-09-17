@@ -24,6 +24,10 @@ import {
 const uniqueLabel = (prefix: string) =>
   `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
 
+/** The summarizer the mock deployment's endpoints call; `delayMs` holds a
+ *  compaction open long enough to reload into it. */
+const LABEL_SERVER = `http://127.0.0.1:${process.env.E2E_LABEL_PORT || '8889'}`;
+
 const countedPrompt = (label: string) => `E2E_COUNTED_REPLY:${label}`;
 const countedReplyText = (label: string, count: number) => `E2E counted reply ${label} #${count}`;
 
@@ -61,8 +65,12 @@ async function clickSibling(page: Page, messageTextValue: string, direction: 'Pr
 }
 
 test.describe('thread fold regressions', () => {
-  test.afterEach(async ({ page }) => {
+  test.afterEach(async ({ page, request }) => {
     await page.evaluate(() => window.localStorage.removeItem('steerInterruptsByDefault'));
+    /** The summarizer fixture is shared: a test that slowed it must hand it
+     *  back whether it passed, failed, or was retried. */
+    const response = await request.post(`${LABEL_SERVER}/__e2e/reset`);
+    expect(response.ok()).toBeTruthy();
   });
 
   test('thread survives a mid-stream interrupt and matches its own post-reload rendering', async ({
@@ -180,5 +188,63 @@ test.describe('thread fold regressions', () => {
     await expect(messagesView(page).getByText(regeneratedReply)).toBeVisible();
     await expect(messagesView(page).getByText(followReply)).toBeHidden();
     await expect(siblingCounter(page)).toHaveText('2 / 2');
+  });
+
+  /**
+   * A manual compaction submits no user turn: it hangs a summarize-only response
+   * off the branch's leaf and puts that leaf in the submission's user-message
+   * slot (the server projects it the same way, identity only). Re-attaching to
+   * one — a reload, a navigation back, a dropped connection — used to adopt that
+   * projection as a ROW, rewriting the answer being summarized into an empty,
+   * parentless user message. The message tree files a parentless row as a root,
+   * so the whole thread above the compaction dropped out of the visible branch.
+   */
+  test('a compaction resumed after a reload keeps the thread it summarizes', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(180000);
+    const label = uniqueLabel('fold-compact');
+    const setupPrompt = replyPrompt(label);
+    const setupReply = replyText(label);
+
+    await openMockChat(page);
+    await sendAndExpectReply(page, setupPrompt, setupReply);
+    await expect(page).toHaveURL(/\/c\/[0-9a-fA-F-]{36}$/, { timeout: 15000 });
+
+    /** Hold the summarizer so the compaction is still running when the page
+     *  comes back and the pane resumes it. */
+    const behavior = await request.post(`${LABEL_SERVER}/__e2e/behavior`, {
+      data: { delayMs: 15000 },
+    });
+    expect(behavior.ok()).toBeTruthy();
+
+    await page.getByTestId('token-usage').click();
+    await page.getByRole('button', { name: 'Compact context' }).click();
+    await expect(page.getByRole('button', { name: 'Stop generating' })).toBeVisible({
+      timeout: 15000,
+    });
+
+    await page.reload({ timeout: 15000 });
+
+    /** The turn under compaction is still the answer it always was, on the one
+     *  branch the conversation has — a rewritten anchor would strand both rows
+     *  behind a phantom root and offer a sibling switcher to page back to them. */
+    await expect(messagesView(page).getByText(setupPrompt)).toBeVisible({ timeout: 30000 });
+    await expect(messagesView(page).getByText(setupReply)).toBeVisible();
+    await expect(page.getByRole('navigation', { name: 'Sibling message navigation' })).toHaveCount(
+      0,
+    );
+
+    /** The summary then settles under that answer, thread intact. */
+    await expect(messagesView(page).getByText('You compacted the context')).toBeVisible({
+      timeout: 60000,
+    });
+    await expect(messagesView(page).getByText(setupPrompt)).toBeVisible();
+    await expect(messagesView(page).getByText(setupReply)).toBeVisible();
+    await expect(messageTurns(page)).toHaveCount(3);
+    await expect(page.getByRole('navigation', { name: 'Sibling message navigation' })).toHaveCount(
+      0,
+    );
   });
 });

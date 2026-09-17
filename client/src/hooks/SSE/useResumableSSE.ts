@@ -610,12 +610,23 @@ const buildResumeEventSubmission = (
     currentUserMessage.conversationId ??
     currentSubmission.conversation?.conversationId;
 
-  const userMessage = {
-    ...currentUserMessage,
-    ...resumeState.userMessage,
-    conversationId,
-    isCreatedByUser: true,
-  } as TMessage;
+  /**
+   * A compaction submits no user turn: its user-message slot names the LEAF it
+   * summarizes up to, and the server projects that anchor as identity only
+   * (`projectCompactionAnchor` — no parent, no author). Adopting the projection
+   * as a user row would rewrite the leaf into an empty, parentless message, so
+   * an anchored run keeps the identity it resumed with.
+   */
+  const userMessage = (
+    currentSubmission.compact === true
+      ? { ...currentUserMessage, conversationId }
+      : {
+          ...currentUserMessage,
+          ...resumeState.userMessage,
+          conversationId,
+          isCreatedByUser: true,
+        }
+  ) as TMessage;
 
   const responseMessageId =
     resumeState.responseMessageId ??
@@ -707,12 +718,20 @@ const mergeResumeMessages = (
   userMessage: TMessage,
   responseMessage: TMessage,
   indexes: ResumeMessageIndexes,
+  /**
+   * An anchored run — a compaction — owns no user row. Its user-message slot
+   * holds the leaf the summary hangs off, a row the transcript already has:
+   * merging the slot onto it would replace that answer with an empty user
+   * message, and inserting it would duplicate its id. Either way the row loses
+   * its parent and `buildTree` files it as a phantom root, folding the thread.
+   */
+  anchoredUserMessage = false,
 ): TMessage[] => {
   const nextMessages = [...messages];
   let { userIndex, responseIndex, preliminaryResponseIndex } = indexes;
   const { preliminaryUserIndex } = indexes;
 
-  if (preliminaryUserIndex >= 0) {
+  if (preliminaryUserIndex >= 0 && !anchoredUserMessage) {
     if (userIndex >= 0) {
       nextMessages.splice(preliminaryUserIndex, 1);
       if (userIndex > preliminaryUserIndex) {
@@ -751,12 +770,16 @@ const mergeResumeMessages = (
     }
   }
 
-  if (userIndex >= 0) {
+  if (userIndex >= 0 && !anchoredUserMessage) {
     nextMessages[userIndex] = { ...nextMessages[userIndex], ...userMessage };
   }
 
   if (responseIndex >= 0) {
     nextMessages[responseIndex] = { ...nextMessages[responseIndex], ...responseMessage };
+  }
+
+  if (anchoredUserMessage) {
+    return responseIndex >= 0 ? nextMessages : [...nextMessages, responseMessage];
   }
 
   if (userIndex >= 0 && responseIndex >= 0) {
@@ -2373,6 +2396,7 @@ export default function useResumableSSE(
                   userMessage,
                   responseMessage,
                   messageIndexes,
+                  resumeSubmission.compact === true,
                 );
                 logger.log('ResumableSSE', 'SYNC updating message', {
                   messageId: responseMessage.messageId,
@@ -2399,7 +2423,15 @@ export default function useResumableSSE(
                   content: data.resumeState.aggregatedContent,
                   isCreatedByUser: false,
                 } as TMessage;
-                setMessages(mergeResumeMessages(messages, userMessage, newMessage, messageIndexes));
+                setMessages(
+                  mergeResumeMessages(
+                    messages,
+                    userMessage,
+                    newMessage,
+                    messageIndexes,
+                    resumeSubmission.compact === true,
+                  ),
+                );
                 resetContentHandler();
                 syncStepMessage(newMessage);
               }
