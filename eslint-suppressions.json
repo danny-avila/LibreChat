@@ -319,6 +319,11 @@
       "count": 1
     }
   },
+  "client/src/components/Chat/Input/Files/Table/TemplateTable.tsx": {
+    "shadcn/no-unknown-classes": {
+      "count": 2
+    }
+  },
   "client/src/components/Chat/Input/HeaderOptions.tsx": {
     "shadcn/no-restyle": {
       "count": 9
