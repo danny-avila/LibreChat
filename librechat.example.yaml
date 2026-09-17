@@ -989,6 +989,32 @@ endpoints:
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
 
+    # IO Intelligence (io.net) Example
+    - name: 'IO Intelligence' # Unique name for the endpoint
+      # For `apiKey` and `baseURL`, you can use environment variables that you define.
+      # recommended environment variables:
+      apiKey: '${IONET_API_KEY}'
+      baseURL: 'https://api.intelligence.io.solutions/api/v1'
+
+      # Models configuration
+      models:
+        # List of default models to use. At least one value is required.
+        # Model ids are `org/name` style and can be browsed at the API's `/models` route.
+        default: ['deepseek-ai/DeepSeek-V4.1-Flash', 'zai-org/GLM-5.3']
+        # Fetch option: Set to true to fetch models from API.
+        fetch: true # Defaults to false.
+
+      # Optional configurations
+
+      # Title Conversation setting
+      titleConvo: true # Set to true to enable title conversation
+
+      # Title Model: Specify the model to use for titles.
+      titleModel: 'zai-org/GLM-5.3-Flash' # Defaults to "gpt-3.5-turbo" if omitted.
+
+      # The label displayed for the AI model in messages.
+      modelDisplayLabel: 'IO Intelligence' # Default is "AI" when not set.
+
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables
   # bedrock:
