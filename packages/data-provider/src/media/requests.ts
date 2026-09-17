@@ -11,6 +11,22 @@ export const mediaApiSchema = z.enum([
   'google.interactions',
   'google.generateContent',
   'google.vertex.videos',
+  'bfl.images',
+  'bfl.videos',
+  'recraft.images',
+  'xai.images',
+  'xai.videos',
+  'runway.videos',
+  'krea.images',
+  'sourceful.images',
+  'alibaba.images',
+  'alibaba.videos',
+  'atlas.videos',
+  'seed.images',
+  'seed.videos',
+  'minimax.videos',
+  'heygen.videos',
+  'microsoft.images',
 ]);
 export const mediaInputRoleSchema = z.enum([
   'reference',
@@ -20,21 +36,81 @@ export const mediaInputRoleSchema = z.enum([
   'video',
   'audio',
 ]);
+export const mediaHostedInputRoleSchema = z.enum(['video', 'audio']);
+export const mediaSourceURLSchema = z
+  .string()
+  .url()
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === 'https:' && !url.username && !url.password && !url.hash;
+    } catch {
+      return false;
+    }
+  }, 'Media source must be an HTTPS URL without credentials or a fragment');
 export const mediaInputSchema = z
   .object({
     role: mediaInputRoleSchema,
     file_id: mediaIdSchema,
+    sourceURL: mediaSourceURLSchema.optional(),
   })
+  .strict()
+  .refine((input) => !input.sourceURL || input.role === 'audio' || input.role === 'video', {
+    path: ['sourceURL'],
+    message: 'Hosted sources are only supported for audio and video',
+  });
+export const mediaURLUploadRequestSchema = z
+  .object({ url: mediaSourceURLSchema, role: mediaHostedInputRoleSchema })
   .strict();
 export const mediaSelectionSchema = z
   .object({
     connectionId: mediaIdSchema,
     modelId: mediaIdSchema,
     catalogVersion: mediaIdSchema,
+    providerTag: mediaIdSchema.optional(),
   })
   .strict();
 
 const positiveInteger = z.number().finite().int().positive().safe();
+export type MediaOptionValue =
+  | string
+  | number
+  | boolean
+  | null
+  | MediaOptionValue[]
+  | { [key: string]: MediaOptionValue };
+/** Validate provider JSON iteratively so deep input reaches configurable depth checks safely. */
+function isMediaOptionValue(value: unknown): value is MediaOptionValue {
+  const pending: unknown[] = [value];
+  const visited = new Set<object>();
+  while (pending.length) {
+    const item = pending.pop();
+    if (item === null || typeof item === 'string' || typeof item === 'boolean') continue;
+    if (typeof item === 'number') {
+      if (!Number.isFinite(item)) return false;
+      continue;
+    }
+    if (typeof item !== 'object' || visited.has(item)) return false;
+    if (
+      !Array.isArray(item) &&
+      Object.getPrototypeOf(item) !== Object.prototype &&
+      Object.getPrototypeOf(item) !== null
+    )
+      return false;
+    visited.add(item);
+    for (const child of Object.values(item)) pending.push(child);
+  }
+  return true;
+}
+export const mediaOptionValueSchema: z.ZodType<MediaOptionValue> =
+  z.custom<MediaOptionValue>(isMediaOptionValue);
+export const mediaProviderOptionsSchema = z.record(
+  z
+    .string()
+    .regex(/^[A-Za-z][A-Za-z0-9_.-]*$/)
+    .max(128),
+  mediaOptionValueSchema,
+);
 export const mediaImageParametersSchema = z
   .object({
     count: positiveInteger.default(1),
@@ -42,9 +118,14 @@ export const mediaImageParametersSchema = z
     resolution: z.string().min(1).optional(),
     aspectRatio: z.string().min(1).optional(),
     quality: z.string().min(1).optional(),
-    format: z.enum(['png', 'jpeg', 'webp']).optional(),
+    format: z.enum(['png', 'jpeg', 'webp', 'svg']).optional(),
     background: z.enum(['auto', 'opaque', 'transparent']).optional(),
     seed: z.number().int().nonnegative().safe().optional(),
+    outputCompression: z.number().int().min(0).max(100).optional(),
+    strength: z.number().finite().min(0).max(1).optional(),
+    guidance: z.number().finite().nonnegative().optional(),
+    negativePrompt: z.string().optional(),
+    providerOptions: mediaProviderOptionsSchema.optional(),
   })
   .strict();
 export const mediaVideoParametersSchema = z
@@ -53,8 +134,13 @@ export const mediaVideoParametersSchema = z
     durationSeconds: z.number().finite().positive().optional(),
     aspectRatio: z.string().min(1).optional(),
     resolution: z.string().min(1).optional(),
+    size: z.string().min(1).optional(),
     audio: z.boolean().optional(),
     seed: z.number().int().nonnegative().safe().optional(),
+    upscaleFactor: z.number().finite().positive().optional(),
+    creativity: z.number().finite().nonnegative().optional(),
+    negativePrompt: z.string().optional(),
+    providerOptions: mediaProviderOptionsSchema.optional(),
   })
   .strict();
 
@@ -164,6 +250,7 @@ export const mediaThreadListRequestSchema = mediaPageRequestSchema.extend({
 export type MediaOperation = z.infer<typeof mediaOperationSchema>;
 export type MediaApi = z.infer<typeof mediaApiSchema>;
 export type MediaInput = z.infer<typeof mediaInputSchema>;
+export type MediaURLUploadRequest = z.infer<typeof mediaURLUploadRequestSchema>;
 export type MediaSelection = z.infer<typeof mediaSelectionSchema>;
 export type MediaImageParameters = z.infer<typeof mediaImageParametersSchema>;
 export type MediaVideoParameters = z.infer<typeof mediaVideoParametersSchema>;

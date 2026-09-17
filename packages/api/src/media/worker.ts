@@ -14,6 +14,7 @@ import type { MediaProviderContext, MediaProviderPart, MediaProviderResult } fro
 import type { MediaServices, MediaServiceDependencies, MediaContext } from './service';
 import { assertMediaAccess, mediaAccountingMode } from './service';
 import { MediaServiceError, MediaProviderError } from './errors';
+import { mediaContentExtension } from './content';
 
 export interface MediaWorker {
   start(): Promise<void>;
@@ -161,16 +162,6 @@ export function createMediaWorker(
           });
           return;
         }
-        const prepared = await services.prepare(job.request, context, false);
-        if (prepared.providerTag !== job.execution.providerTag) {
-          throw new MediaServiceError(
-            'stale_catalog',
-            409,
-            'The selected provider endpoint changed.',
-          );
-        }
-        providerContext.providerTag = job.execution.providerTag;
-        providerContext.continuation = prepared.continuation;
         const permits = [
           { kind: 'deployment' as const, capacity: context.config.execution.maxActiveTotal },
           {
@@ -196,6 +187,16 @@ export function createMediaWorker(
             return;
           }
         }
+        const prepared = await services.prepare(job.request, context, false, controller.signal);
+        if (prepared.providerTag !== job.execution.providerTag) {
+          throw new MediaServiceError(
+            'stale_catalog',
+            409,
+            'The selected provider endpoint changed.',
+          );
+        }
+        providerContext.providerTag = job.execution.providerTag;
+        providerContext.continuation = prepared.continuation;
         await deps.accounting.reserve(job, integration, context);
         await leased(async () => {
           await refresh();
@@ -264,7 +265,7 @@ export function createMediaWorker(
           }
           if (!part.url) {
             throw new MediaServiceError(
-              'storage_failed',
+              'output_expired',
               409,
               'This direct output could not be recovered.',
             );
@@ -350,7 +351,7 @@ export function createMediaWorker(
               ? Readable.from([part.data])
               : await adapter.download(part, providerContext),
             type: part.type,
-            filename: `${job.jobId}-${part.ordinal}.${part.type.split('/')[1]}`,
+            filename: `${job.jobId}-${part.ordinal}.${mediaContentExtension(part.type)}`,
             config: context.config,
             expiredAt: new Date(deps.now() + context.config.assets.orphanRetentionMs).toISOString(),
           });
@@ -432,6 +433,21 @@ export function createMediaWorker(
           error.certainty === 'rejected' &&
           job.phase === 'submitting');
       try {
+        if (
+          context &&
+          job.phase === 'ingesting' &&
+          job.provider.certainty === 'terminal' &&
+          error instanceof MediaServiceError &&
+          ['unsupported', 'invalid_request', 'output_expired'].includes(error.code)
+        ) {
+          await deps.accounting.settle(job, job.provider.recovery?.usage, context);
+          await observe({
+            phase: 'failed',
+            error: { code },
+            provider: { ...job.provider, certainty: 'terminal' },
+          });
+          return;
+        }
         if (safeRejection) {
           if (context) {
             await deps.accounting.release(job, context);

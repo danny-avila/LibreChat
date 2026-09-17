@@ -5,6 +5,7 @@ import {
   mediaInputSchema,
   mediaOperationSchema,
   mediaSelectionSchema,
+  mediaSourceURLSchema,
 } from './requests';
 
 const version = z.number().int().positive().safe();
@@ -12,6 +13,8 @@ const timestamp = z.string().datetime();
 const schemaVersion = z.literal(MEDIA_SCHEMA_VERSION);
 export const mediaErrorCodeSchema = z.enum([
   'invalid_request',
+  'reference_unavailable',
+  'reference_changed',
   'not_found',
   'forbidden',
   'disabled',
@@ -216,6 +219,9 @@ export const mediaDeletionReceiptSchema = z
   })
   .strict();
 export const mediaUploadResponseSchema = z.object({ file: mediaAssetSchema }).strict();
+export const mediaURLUploadResponseSchema = z
+  .object({ file: mediaAssetSchema, sourceURL: mediaSourceURLSchema })
+  .strict();
 export const mediaStartupConfigSchema = z
   .object({
     enabled: z.boolean(),
@@ -244,4 +250,5 @@ export type MediaOutputPage = z.infer<typeof mediaOutputPageSchema>;
 export type MediaThreadDetail = z.infer<typeof mediaThreadDetailSchema>;
 export type MediaDeletionReceipt = z.infer<typeof mediaDeletionReceiptSchema>;
 export type MediaUploadResponse = z.infer<typeof mediaUploadResponseSchema>;
+export type MediaURLUploadResponse = z.infer<typeof mediaURLUploadResponseSchema>;
 export type MediaStartupConfig = z.infer<typeof mediaStartupConfigSchema>;

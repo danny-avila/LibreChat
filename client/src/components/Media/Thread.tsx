@@ -153,6 +153,8 @@ function Job({
             </h3>
             <p className="mt-1 text-xs text-text-secondary">
               {offering?.connectionName ?? job.selection.connectionId}
+              {job.selection.providerTag &&
+                ` · ${offering?.routes?.find((route) => route.providerTag === job.selection.providerTag)?.providerName ?? job.selection.providerTag}`}
             </p>
           </div>
         </div>
@@ -300,6 +302,7 @@ function Turn({
     }),
   );
   const refine = (asset: MediaAsset) => {
+    const mediaRole = asset.type.startsWith('audio/') ? 'audio' : 'video';
     setDraft((previous) => ({
       ...previous,
       revision: previous.revision + 1,
@@ -308,10 +311,16 @@ function Turn({
       offering: turn.selection
         ? JSON.stringify([turn.selection.connectionId, turn.selection.modelId])
         : previous.offering,
+      providerTag: turn.selection?.providerTag,
+      providerOptionsText: undefined,
       parameters: turn.selection ? { count: 1 } : previous.parameters,
       operation: asset.type.startsWith('image/') ? 'image.edit' : 'video.generate',
       inputs: [
-        { file_id: asset.file_id, role: asset.type.startsWith('image/') ? 'reference' : 'video' },
+        {
+          file_id: asset.file_id,
+          role: asset.type.startsWith('image/') ? 'reference' : mediaRole,
+          sourceURL: turn.inputs.find((input) => input.file_id === asset.file_id)?.sourceURL,
+        },
       ],
       assets: [asset],
     }));
@@ -327,6 +336,8 @@ function Turn({
       offering: turn.selection
         ? JSON.stringify([turn.selection.connectionId, turn.selection.modelId])
         : previous.offering,
+      providerTag: turn.selection?.providerTag,
+      providerOptionsText: undefined,
       operation: turn.operation ?? previous.operation,
       parameters: { count: 1 },
       inputs: turn.inputs,

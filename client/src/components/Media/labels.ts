@@ -27,6 +27,13 @@ export const mediaControlLabels = {
   background: 'com_media_background',
   resolution: 'com_media_resolution',
   audio: 'com_media_audio',
+  outputCompression: 'com_media_output_compression',
+  strength: 'com_media_strength',
+  guidance: 'com_media_guidance',
+  upscaleFactor: 'com_media_upscale_factor',
+  creativity: 'com_media_creativity',
+  negativePrompt: 'com_media_negative_prompt',
+  providerOptions: 'com_media_provider_options',
 } satisfies Record<keyof MediaImageParameters | keyof MediaVideoParameters, TranslationKeys>;
 
 export const mediaInputRoleLabels = {
@@ -64,6 +71,8 @@ export const mediaJobPhaseLabels = {
 } satisfies Record<MediaJobPhase, TranslationKeys>;
 
 export const mediaErrorLabels = {
+  reference_unavailable: 'com_media_error_reference_unavailable',
+  reference_changed: 'com_media_error_reference_changed',
   invalid_request: 'com_media_error_invalid_request',
   not_found: 'com_media_error_not_found',
   forbidden: 'com_media_error_forbidden',

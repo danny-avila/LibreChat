@@ -1,0 +1,156 @@
+import { Readable } from 'node:stream';
+import { createHash, timingSafeEqual } from 'node:crypto';
+import { mergeFileConfig, mediaURLUploadRequestSchema } from 'librechat-data-provider';
+import type { MediaURLUploadRequest, MediaURLUploadResponse } from 'librechat-data-provider';
+import type { MediaTransport } from './transport';
+import type { MediaContext } from './context';
+import type { MediaStorage } from './storage';
+import { detectMediaReferenceType, mediaContentExtension, mediaInputByteLimit } from './content';
+import { isContentFilterError } from '../middleware/contentFilter';
+import { assertUploadContentAllowed } from '../files/preflight';
+import { UninspectableFileError } from '../protection/files';
+import { isMediaTransferLimitError } from './transport';
+import { MediaServiceError } from './errors';
+
+export interface MediaHostedDependencies {
+  transport: MediaTransport;
+  storage: MediaStorage;
+  now: () => number;
+  id: () => string;
+}
+
+export function parseHostedMediaReference(input: MediaURLUploadRequest): MediaURLUploadRequest {
+  const parsed = mediaURLUploadRequestSchema.safeParse(input);
+  if (parsed.success) return parsed.data;
+  if (parsed.error.issues.every((issue) => issue.path[0] === 'url')) {
+    throw new MediaServiceError(
+      'reference_unavailable',
+      422,
+      'A public HTTPS media URL is required.',
+    );
+  }
+  throw parsed.error;
+}
+
+/** Fetch only public HTTPS content, without user, provider, or application credentials. */
+export async function fetchHostedMediaReference(
+  input: MediaURLUploadRequest,
+  context: MediaContext,
+  transport: MediaTransport,
+  signal?: AbortSignal,
+): Promise<{ sourceURL: string; data: Buffer; type: string }> {
+  const request = parseHostedMediaReference(input);
+  const fileConfig = mergeFileConfig(context.appConfig.fileConfig);
+  const maxBytes = Math.min(
+    mediaInputByteLimit(request.role, context.config),
+    fileConfig.serverFileSizeLimit ?? Number.MAX_SAFE_INTEGER,
+  );
+  const sourceURL = new URL(request.url).href;
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  try {
+    const stream = await transport.stream({
+      url: sourceURL,
+      headers: {},
+      publicOnly: true,
+      signal,
+      timeoutMs: context.config.timeouts.downloadMs,
+      maxBytes,
+      maxRedirects: context.config.transfers.maxRedirects,
+    });
+    try {
+      for await (const chunk of stream) {
+        if (!Buffer.isBuffer(chunk)) {
+          throw new MediaServiceError('invalid_request', 422, 'Invalid remote media content.');
+        }
+        bytes += chunk.length;
+        if (bytes > maxBytes) {
+          throw new MediaServiceError(
+            'invalid_request',
+            413,
+            'Media exceeds the configured file limit.',
+          );
+        }
+        chunks.push(chunk);
+      }
+    } finally {
+      stream.destroy();
+    }
+  } catch (error) {
+    if (error instanceof MediaServiceError) throw error;
+    if (error instanceof Error && isMediaTransferLimitError(error, maxBytes)) {
+      throw new MediaServiceError(
+        'invalid_request',
+        413,
+        'Media exceeds the configured file limit.',
+      );
+    }
+    throw new MediaServiceError(
+      'reference_unavailable',
+      422,
+      'The media URL could not be downloaded safely.',
+    );
+  }
+  const data = Buffer.concat(chunks, bytes);
+  return { sourceURL, data, type: detectMediaReferenceType(data, request.role) };
+}
+
+export async function verifyHostedMediaReference(
+  input: MediaURLUploadRequest,
+  archived: Buffer,
+  context: MediaContext,
+  transport: MediaTransport,
+  signal?: AbortSignal,
+): Promise<string> {
+  const remote = await fetchHostedMediaReference(input, context, transport, signal);
+  if (
+    !timingSafeEqual(
+      createHash('sha256').update(remote.data).digest(),
+      createHash('sha256').update(archived).digest(),
+    )
+  ) {
+    throw new MediaServiceError(
+      'reference_changed',
+      422,
+      'The media URL no longer matches the archived reference.',
+    );
+  }
+  return remote.sourceURL;
+}
+
+export async function importHostedMediaReference(
+  input: MediaURLUploadRequest,
+  context: MediaContext,
+  deps: MediaHostedDependencies,
+): Promise<MediaURLUploadResponse> {
+  if ((context.config.assets.source ?? context.appConfig.fileStrategy) !== 'local') {
+    throw new MediaServiceError('unsupported', 422, 'This media storage adapter is not available.');
+  }
+  const { sourceURL, data, type } = await fetchHostedMediaReference(input, context, deps.transport);
+  const filename = `${input.role}-reference.${mediaContentExtension(type)}`;
+  try {
+    await assertUploadContentAllowed({
+      filters: context.appConfig.filters,
+      file: { originalname: filename, mimetype: type, size: data.length, path: sourceURL },
+      fileConfig: mergeFileConfig(context.appConfig.fileConfig),
+      ocrConfigured: false,
+      ragConfigured: false,
+      readFile: async () => data,
+    });
+  } catch (error) {
+    if (isContentFilterError(error) || error instanceof UninspectableFileError) {
+      throw new MediaServiceError('forbidden', 403, 'Media input was blocked by content policy.');
+    }
+    throw error;
+  }
+  const file = await deps.storage.publish({
+    scope: context.scope,
+    outputKey: `upload:${deps.id()}`,
+    stream: Readable.from([data]),
+    type,
+    filename,
+    config: context.config,
+    expiredAt: new Date(deps.now() + context.config.assets.orphanRetentionMs).toISOString(),
+  });
+  return { file, sourceURL };
+}

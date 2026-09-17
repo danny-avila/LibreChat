@@ -3,6 +3,123 @@ import type { AppConfig, MediaMethods } from '@librechat/data-schemas';
 import type { MediaIntegration } from 'librechat-data-provider';
 import type { MediaEnvironment } from './credentials';
 import { createMediaCredentialResolver } from './credentials';
+import { createRESTMediaAdapters } from './adapters/rest';
+
+describe('Direct provider credentials', () => {
+  const environment: MediaEnvironment = { BFL_KEY: 'test-secret', BRAND: 'brand-test' };
+  const request = {
+    scope: { ownerId: 'owner', tenantId: 'tenant' },
+    integration: {
+      id: 'bfl',
+      api: 'bfl.images',
+      endpointRef: { kind: 'direct', apiKey: '${BFL_KEY}' },
+      catalog: { kind: 'configured', models: ['black-forest-labs/flux.2-pro'] },
+      operations: ['image.generate'],
+    } satisfies MediaIntegration,
+    appConfig: {
+      config: {},
+      fileStrategy: FileSources.local,
+      imageOutputType: 'png',
+    } satisfies AppConfig,
+    minValidityMs: 100,
+  };
+  const repository: Pick<MediaMethods, 'getStoredMediaCredential'> = {
+    getStoredMediaCredential: async () => null,
+  };
+  const resolver = () =>
+    createMediaCredentialResolver({
+      environment: { ...environment },
+      repository,
+      adapters: createRESTMediaAdapters(),
+      decrypt: async (value) => value,
+      now: () => 0,
+    });
+
+  it('uses each provider authentication contract and does not leak secrets through bindings', async () => {
+    const connection = await resolver()(request);
+    expect(connection.headers).toEqual({ 'x-key': 'test-secret' });
+    expect(connection.baseURL).toBe('https://api.bfl.ai/v1');
+    expect(connection.binding).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('binds endpoint options and added headers so changing either invalidates queued work', async () => {
+    const resolve = resolver();
+    const first = await resolve(request);
+    const changed = await resolve({
+      ...request,
+      integration: {
+        ...request.integration,
+        endpointRef: {
+          ...request.integration.endpointRef,
+          options: { project: '${BRAND}' },
+          headers: { 'X-Project': '${BRAND}' },
+        },
+      },
+    });
+    expect(changed.options).toEqual({ project: 'brand-test' });
+    expect(changed.headers).toEqual({ 'X-Project': 'brand-test', 'x-key': 'test-secret' });
+    expect(changed.binding).not.toBe(first.binding);
+  });
+
+  it.each(['Host', 'Content-Length', 'Connection', 'Transfer-Encoding'])(
+    'rejects configured transport header %s',
+    async (name) => {
+      await expect(
+        resolver()({
+          ...request,
+          integration: {
+            ...request.integration,
+            endpointRef: { ...request.integration.endpointRef, headers: { [name]: 'invalid' } },
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'not_ready' });
+    },
+  );
+
+  it('rejects header injection and missing deployment credentials', async () => {
+    await expect(
+      resolver()({
+        ...request,
+        integration: {
+          ...request.integration,
+          endpointRef: { ...request.integration.endpointRef, headers: { 'X-Project': 'a\r\nb' } },
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'not_ready' });
+    await expect(
+      resolver()({
+        ...request,
+        integration: {
+          ...request.integration,
+          endpointRef: { kind: 'direct', apiKey: '${MISSING_KEY}' },
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'credentials_required' });
+  });
+
+  it('requires Sourceful brand configuration before dispatch', async () => {
+    await expect(
+      resolver()({ ...request, integration: { ...request.integration, api: 'sourceful.images' } }),
+    ).rejects.toMatchObject({ code: 'not_ready' });
+  });
+
+  it('uses scoped saved credentials with explicit direct credentialName', async () => {
+    const lookup = jest.spyOn(repository, 'getStoredMediaCredential').mockResolvedValue({
+      value: JSON.stringify({ apiKey: 'user-bfl-key' }),
+      expiresAt: null,
+      bindingRevision: 'revision',
+    });
+    const connection = await resolver()({
+      ...request,
+      integration: {
+        ...request.integration,
+        endpointRef: { kind: 'direct', apiKey: 'user_provided', credentialName: 'bfl-user' },
+      },
+    });
+    expect(lookup).toHaveBeenCalledWith({ scope: request.scope, name: 'bfl-user' });
+    expect(connection.headers).toEqual({ 'x-key': 'user-bfl-key' });
+  });
+});
 
 describe('Google media credentials', () => {
   const integration: MediaIntegration = {

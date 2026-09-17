@@ -3,9 +3,9 @@ import { createHash } from 'node:crypto';
 import { resolveMediaConfig } from 'librechat-data-provider';
 import type { AppConfig, MediaMethods, MediaOwnerScope } from '@librechat/data-schemas';
 import type { MediaIntegration } from 'librechat-data-provider';
+import type { MediaConnection, MediaProviderAdapter } from './provider';
 import type { MediaVertexCredentialProvider } from './vertexAuth';
 import type { MediaRoutingPolicy } from './routing';
-import type { MediaConnection } from './provider';
 import { mediaRoutingPolicySchema } from './routing';
 import { MediaServiceError } from './errors';
 
@@ -24,12 +24,14 @@ export function createMediaCredentialResolver({
   decrypt,
   now,
   vertexCredentials,
+  adapters = [],
 }: {
   environment: MediaEnvironment;
   repository: Pick<MediaMethods, 'getStoredMediaCredential'>;
   decrypt: (value: string) => Promise<string>;
   now: () => number;
   vertexCredentials?: MediaVertexCredentialProvider;
+  adapters?: readonly MediaProviderAdapter[];
 }) {
   const expand = (value: string): string =>
     value.replace(
@@ -84,7 +86,35 @@ export function createMediaCredentialResolver({
     let baseURL: string | undefined;
     let credentialName: string;
     let routing: MediaRoutingPolicy | undefined;
-    if (integration.endpointRef.kind === 'custom') {
+    let headers: Record<string, string> | undefined;
+    let options: Record<string, string> | undefined;
+    let keyHeader = integration.api.startsWith('google.') ? 'x-goog-api-key' : 'Authorization';
+    let keyPrefix = keyHeader === 'Authorization' ? 'Bearer ' : '';
+    const expanded = (values?: Record<string, string>) =>
+      values
+        ? Object.fromEntries(Object.entries(values).map(([name, value]) => [name, expand(value)]))
+        : undefined;
+    if (integration.endpointRef.kind === 'direct') {
+      const endpoint = integration.endpointRef;
+      const configuration = adapters.find(
+        (adapter) => adapter.api === integration.api,
+      )?.configuration;
+      if (!configuration)
+        throw new MediaServiceError('unsupported', 422, 'This direct provider is unavailable.');
+      credentialName = endpoint.credentialName ?? integration.id;
+      apiKey = expand(endpoint.apiKey);
+      baseURL = expand(endpoint.baseURL ?? configuration.baseURL);
+      options = expanded(endpoint.options);
+      headers = { ...configuration.headers, ...expanded(endpoint.headers) };
+      keyHeader = configuration.keyHeader ?? 'Authorization';
+      keyPrefix = configuration.keyPrefix ?? (keyHeader === 'Authorization' ? 'Bearer ' : '');
+      if (configuration.requiredOptions?.some((name) => !options?.[name]))
+        throw new MediaServiceError(
+          'not_ready',
+          422,
+          'The direct provider requires additional configuration.',
+        );
+    } else if (integration.endpointRef.kind === 'custom') {
       const name = integration.endpointRef.name;
       const endpoint = appConfig.endpoints?.custom?.find(
         (entry) => entry.name?.toLowerCase() === name.toLowerCase(),
@@ -99,6 +129,7 @@ export function createMediaCredentialResolver({
       credentialName = endpoint.name;
       apiKey = expand(endpoint.apiKey ?? '');
       baseURL = expand(endpoint.baseURL ?? '');
+      headers = expanded(endpoint.headers);
       if (integration.api.startsWith('openrouter.') && endpoint.addParams?.provider !== undefined) {
         const parsed = mediaRoutingPolicySchema.safeParse(endpoint.addParams.provider);
         if (!parsed.success) {
@@ -163,6 +194,16 @@ export function createMediaCredentialResolver({
         'The provider credential is missing.',
       );
     }
+    if (
+      headers &&
+      Object.entries(headers).some(
+        ([name, value]) =>
+          !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name) ||
+          /[\r\n]/.test(value) ||
+          /^(host|content-length|transfer-encoding|connection)$/i.test(name),
+      )
+    )
+      throw new MediaServiceError('not_ready', 422, 'Invalid provider headers.');
     const root = new URL(baseURL);
     if (
       !['https:', 'http:'].includes(root.protocol) ||
@@ -179,6 +220,7 @@ export function createMediaCredentialResolver({
       api: integration.api,
       baseURL: root.href,
       routing,
+      options,
       binding: createHash('sha256')
         .update(
           JSON.stringify({
@@ -186,13 +228,13 @@ export function createMediaCredentialResolver({
             root: root.href,
             api: integration.api,
             routing,
+            ...(headers && Object.keys(headers).length ? { headers } : {}),
+            ...(options ? { options } : {}),
             keyRevision: createHash('sha256').update(apiKey).digest('hex'),
           }),
         )
         .digest('hex'),
-      headers: integration.api.startsWith('google.')
-        ? { 'x-goog-api-key': apiKey }
-        : { Authorization: `Bearer ${apiKey}` },
+      headers: { ...headers, [keyHeader]: `${keyPrefix}${apiKey}` },
     };
   };
 }

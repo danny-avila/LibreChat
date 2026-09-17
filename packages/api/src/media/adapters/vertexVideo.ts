@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import sharp from 'sharp';
 import { Readable } from 'node:stream';
 import type { MediaCapability, MediaConfig } from 'librechat-data-provider';
 import type { MediaProviderAdapter, MediaProviderContext, MediaProviderResult } from '../provider';
@@ -8,11 +9,22 @@ import { mediaAPIURL } from '../provider';
 /** Protocol limits for the documented GA Veo 3.1 text-to-video models. */
 const models = new Map([
   ['veo-3.1-fast-generate-001', 'Veo 3.1 Fast'],
+  ['veo-3.1-lite-generate-001', 'Veo 3.1 Lite'],
   ['veo-3.1-generate-001', 'Veo 3.1'],
 ]);
 
+const aliases = new Map([
+  ['google/veo-3.1-fast', 'veo-3.1-fast-generate-001'],
+  ['google/veo-3.1-lite', 'veo-3.1-lite-generate-001'],
+  ['google/veo-3.1', 'veo-3.1-generate-001'],
+]);
+
+function nativeModel(modelId: string): string {
+  return aliases.get(modelId) ?? modelId;
+}
+
 export function vertexVideoModelName(modelId: string): string | undefined {
-  return models.get(modelId);
+  return models.get(nativeModel(modelId));
 }
 
 export function vertexVideoCapabilities(modelId: string, config: MediaConfig): MediaCapability[] {
@@ -20,15 +32,28 @@ export function vertexVideoCapabilities(modelId: string, config: MediaConfig): M
   return [
     {
       operation: 'video.generate',
-      inputs: { roles: [], min: 0, max: 0 },
+      inputs: {
+        roles: nativeModel(modelId).includes('lite')
+          ? ['start_frame', 'end_frame']
+          : ['start_frame', 'end_frame', 'reference'],
+        min: 0,
+        max: Math.min(nativeModel(modelId).includes('lite') ? 2 : 3, config.limits.maxInputs),
+      },
       execution: { kind: 'remote-job', cancellation: 'unsupported' },
       controls: {
         count: { min: 1, max: Math.min(4, config.limits.maxOutputs) },
         durationSeconds: { min: 4, max: 8, values: [4, 6, 8], default: 4 },
-        resolution: { values: ['720p', '1080p'], default: '720p' },
+        resolution: {
+          values:
+            nativeModel(modelId) === 'veo-3.1-generate-001'
+              ? ['720p', '1080p', '4k']
+              : ['720p', '1080p'],
+          default: '720p',
+        },
         aspectRatio: { values: ['16:9', '9:16'], default: '16:9' },
         audio: true,
         seed: { min: 0, max: 4_294_967_295 },
+        negativePrompt: true,
       },
     },
   ];
@@ -66,26 +91,87 @@ export function createVertexVideoAdapter(): MediaProviderAdapter {
   return {
     api: 'google.vertex.videos',
     operations: ['video.generate'],
+    catalog: (config) =>
+      [...aliases].map(([modelId, id]) => ({
+        modelId,
+        modelName: models.get(id)!,
+        capabilities: vertexVideoCapabilities(modelId, config),
+      })),
     async submit(request, inputs, context): Promise<MediaProviderResult> {
-      const model = request.selection.modelId;
-      if (request.operation !== 'video.generate' || inputs.length || !vertexVideoModelName(model)) {
+      const model = nativeModel(request.selection.modelId);
+      if (request.operation !== 'video.generate' || !vertexVideoModelName(model)) {
         throw new MediaProviderError('rejected');
       }
+      const references = inputs.filter((input) => input.role === 'reference');
+      const first = inputs.filter((input) => input.role === 'start_frame');
+      const last = inputs.filter((input) => input.role === 'end_frame');
       const parameters = request.parameters;
+      const duration = parameters.durationSeconds ?? 4;
+      const resolution = parameters.resolution ?? '720p';
+      if (
+        inputs.length > Math.min(3, context.config.limits.maxInputs) ||
+        inputs.some(
+          (input) =>
+            !['reference', 'start_frame', 'end_frame'].includes(input.role) ||
+            !['image/png', 'image/jpeg', 'image/webp'].includes(input.type) ||
+            input.data.length > 20 * 1024 * 1024,
+        ) ||
+        first.length > 1 ||
+        last.length > 1 ||
+        (last.length && !first.length) ||
+        (references.length &&
+          (first.length || last.length || model.includes('lite') || duration !== 8)) ||
+        ![4, 6, 8].includes(duration) ||
+        !['720p', '1080p', ...(model === 'veo-3.1-generate-001' ? ['4k'] : [])].includes(
+          resolution,
+        ) ||
+        (resolution === '4k' && duration !== 8) ||
+        Object.keys(parameters.providerOptions ?? {}).length
+      )
+        throw new MediaProviderError('rejected');
+      const image = async (input: (typeof inputs)[number] | undefined) => {
+        if (!input) return undefined;
+        const convert = input.type === 'image/webp';
+        const data = convert ? await sharp(input.data).png().toBuffer() : input.data;
+        if (data.length > Math.min(20 * 1024 * 1024, context.config.transfers.maxImageBytes)) {
+          throw new MediaProviderError('rejected');
+        }
+        return {
+          bytesBase64Encoded: data.toString('base64'),
+          mimeType: convert ? 'image/png' : input.type,
+        };
+      };
+      const [firstImage, lastImage, referenceImages] = await Promise.all([
+        image(first[0]),
+        image(last[0]),
+        Promise.all(
+          references.map(async (input) => ({ image: await image(input), referenceType: 'asset' })),
+        ),
+      ]);
+      const body = JSON.stringify({
+        instances: [
+          {
+            prompt: request.prompt,
+            image: firstImage,
+            lastFrame: lastImage,
+            referenceImages: references.length ? referenceImages : undefined,
+          },
+        ],
+        parameters: {
+          sampleCount: parameters.count,
+          durationSeconds: duration,
+          aspectRatio: parameters.aspectRatio ?? '16:9',
+          resolution,
+          generateAudio: parameters.audio ?? false,
+          seed: parameters.seed,
+          negativePrompt: parameters.negativePrompt,
+        },
+      });
       const response = await context.transport.json(
         {
           ...options(context, `models/${encodeURIComponent(model)}:predictLongRunning`),
-          body: JSON.stringify({
-            instances: [{ prompt: request.prompt }],
-            parameters: {
-              sampleCount: parameters.count,
-              durationSeconds: parameters.durationSeconds ?? 4,
-              aspectRatio: parameters.aspectRatio ?? '16:9',
-              resolution: parameters.resolution ?? '720p',
-              generateAudio: parameters.audio ?? false,
-              seed: parameters.seed,
-            },
-          }),
+          body,
+          maxBytes: Math.max(context.config.catalog.maxResponseBytes, Buffer.byteLength(body)),
         },
         z.object({ name: z.string().min(1) }),
       );

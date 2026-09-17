@@ -3,7 +3,12 @@ import { Provider, createStore } from 'jotai';
 import { dataService } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { MediaCatalog, MediaUploadResponse, MediaThreadDetail } from 'librechat-data-provider';
+import type {
+  MediaCatalog,
+  MediaUploadResponse,
+  MediaURLUploadResponse,
+  MediaThreadDetail,
+} from 'librechat-data-provider';
 import { clearMediaSessionStorage, emptyDraft, mediaDraftFamily } from '../state';
 import { MediaHostProvider } from '../host';
 import { MediaThreadView } from '../Thread';
@@ -13,7 +18,10 @@ jest.mock('~/hooks', () => ({ useLocalize: () => (key: string) => key }));
 jest.mock('librechat-data-provider', () => {
   const actual =
     jest.requireActual<typeof import('librechat-data-provider')>('librechat-data-provider');
-  return { ...actual, dataService: { ...actual.dataService, uploadMedia: jest.fn() } };
+  return {
+    ...actual,
+    dataService: { ...actual.dataService, uploadMedia: jest.fn(), uploadMediaURL: jest.fn() },
+  };
 });
 const catalog: MediaCatalog = {
   schemaVersion: 1,
@@ -31,6 +39,8 @@ const catalog: MediaCatalog = {
     maxNativeParts: 100,
     maxNativePartBytes: 1000000,
     maxNativeRecordingBytes: 10000000,
+    maxProviderOptionBytes: 32768,
+    maxProviderOptionDepth: 8,
   },
   offerings: [
     {
@@ -82,6 +92,7 @@ function setup(canCreate = true) {
 beforeEach(() => {
   clearMediaSessionStorage();
   jest.mocked(dataService.uploadMedia).mockReset();
+  jest.mocked(dataService.uploadMediaURL).mockReset();
 });
 
 test('uses catalog controls and submits a typed immutable prompt snapshot', async () => {
@@ -265,7 +276,21 @@ test('leaving an editor aborts its upload and cannot append the late file to its
       }),
   );
   const env = setup();
-  const view = render(<MediaForm catalog={catalog} send={env.send} busy={false} />, {
+  const choices: MediaCatalog = {
+    ...catalog,
+    offerings: [
+      {
+        ...catalog.offerings[0],
+        capabilities: [
+          {
+            ...catalog.offerings[0].capabilities[0],
+            inputs: { roles: ['reference'], min: 0, max: 4 },
+          },
+        ],
+      },
+    ],
+  };
+  const view = render(<MediaForm catalog={choices} send={env.send} busy={false} />, {
     wrapper: env.wrapper,
   });
   const input = view.container.querySelector<HTMLInputElement>('input[type=file]')!;
@@ -295,6 +320,7 @@ test('refining an existing result preserves its provider and parent instead of t
     connectionId: 'source-connection',
     modelId: 'source-model',
     catalogVersion: catalog.version,
+    providerTag: 'source-provider',
   };
   const asset = {
     file_id: 'source-file',
@@ -359,6 +385,21 @@ test('refining an existing result preserves its provider and parent instead of t
         ...selection,
         connectionName: 'Source connection',
         modelName: 'Source model',
+        api: 'openrouter.images',
+        routes: [
+          {
+            providerTag: 'source-provider',
+            providerName: 'Source provider',
+            capabilities: [
+              {
+                operation: 'image.edit',
+                inputs: { min: 1, max: 1, roles: ['reference'] },
+                execution: { kind: 'direct', previews: false },
+                controls: { count: { min: 1, max: 1, default: 1 } },
+              },
+            ],
+          },
+        ],
         capabilities: [
           {
             operation: 'image.edit',
@@ -401,6 +442,8 @@ test('refining an existing result preserves its provider and parent instead of t
     operation: 'image.edit',
     inputs: [{ role: 'reference', file_id: 'source-file' }],
   });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_edit_request' }));
+  expect(env.store.get(mediaDraftFamily('owner:thread')).providerTag).toBe('source-provider');
 });
 
 test('a completed image becomes the edit target without erasing a prompt typed while it was generating', async () => {
@@ -473,5 +516,729 @@ test('a model without editing support cannot silently send a follow-up without i
   expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
   expect(env.send).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: 'com_media_remove_reference' }));
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeEnabled();
+});
+
+test.each([
+  ['credentials_required', 'com_media_error_credentials_required'],
+  ['not_ready', 'com_media_provider_configuration_required'],
+] as const)(
+  'keeps unavailable models and native providers visible with a useful %s reason',
+  async (reason, label) => {
+    const env = setup();
+    const choices: MediaCatalog = {
+      ...catalog,
+      integrations: [
+        {
+          connectionId: 'native-seed',
+          connectionName: 'Seed native',
+          api: 'seed.images',
+          available: false,
+          unavailableReason: reason,
+        },
+      ],
+      offerings: [
+        ...catalog.offerings,
+        {
+          ...catalog.offerings[0],
+          modelId: 'unavailable-image',
+          modelName: 'Unavailable image',
+          available: false,
+          capabilities: [],
+          unavailableReason: 'unsupported',
+        },
+      ],
+    };
+    render(<MediaForm catalog={choices} send={env.send} busy={false} />, { wrapper: env.wrapper });
+    fireEvent.click(screen.getByRole('combobox', { name: 'com_media_connection' }));
+    const provider = await screen.findByRole('option', {
+      name: `Seed native (${label})`,
+    });
+    expect(provider).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(provider);
+    expect(env.store.get(mediaDraftFamily('owner:new')).offering).toBe(
+      '["connection","image-model"]',
+    );
+    fireEvent.keyDown(provider, { key: 'Escape' });
+    fireEvent.click(screen.getByRole('combobox', { name: 'com_media_model' }));
+    expect(
+      await screen.findByRole('option', {
+        name: 'Unavailable image (com_media_error_unsupported)',
+      }),
+    ).toHaveAttribute('aria-disabled', 'true');
+  },
+);
+
+test('shows configured integrations even when no native model is currently available', async () => {
+  const env = setup();
+  render(
+    <MediaForm
+      catalog={{
+        ...catalog,
+        offerings: [],
+        integrations: [
+          {
+            connectionId: 'minimax',
+            connectionName: 'MiniMax',
+            api: 'minimax.videos',
+            available: false,
+            unavailableReason: 'credentials_required',
+          },
+        ],
+      }}
+      send={env.send}
+      busy={false}
+    />,
+    { wrapper: env.wrapper },
+  );
+  fireEvent.click(screen.getByRole('combobox', { name: 'com_media_connection' }));
+  expect(
+    await screen.findByRole('option', { name: 'MiniMax (com_media_error_credentials_required)' }),
+  ).toHaveAttribute('aria-disabled', 'true');
+  expect(screen.queryByRole('button', { name: 'com_media_queue' })).not.toBeInTheDocument();
+});
+
+test('uses the chosen OpenRouter provider controls and blocks a stale route without changing the draft', async () => {
+  const env = setup();
+  const capability = catalog.offerings[0].capabilities[0];
+  const choices: MediaCatalog = {
+    ...catalog,
+    offerings: [
+      {
+        ...catalog.offerings[0],
+        api: 'openrouter.images',
+        defaultProviderTag: 'provider-a',
+        routes: [
+          { providerTag: 'provider-a', providerName: 'Provider A', capabilities: [capability] },
+          {
+            providerTag: 'provider-b',
+            providerName: 'Provider B',
+            capabilities: [
+              {
+                ...capability,
+                controls: {
+                  count: { min: 1, max: 1, default: 1 },
+                  resolution: { values: ['4K'], default: '4K' },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  const view = render(<MediaForm catalog={choices} send={env.send} busy={false} />, {
+    wrapper: env.wrapper,
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
+    target: { value: 'A small lake' },
+  });
+  fireEvent.click(screen.getByRole('combobox', { name: 'com_media_provider_route' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Provider B' }));
+  expect(screen.getByRole('combobox', { name: 'com_media_resolution' })).toHaveTextContent('4K');
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
+  expect(env.send.mock.calls[0][0].request).toMatchObject({
+    selection: { providerTag: 'provider-b' },
+    parameters: { count: 1, resolution: '4K' },
+  });
+  const refreshed: MediaCatalog = {
+    ...choices,
+    version: 'new',
+    offerings: [{ ...choices.offerings[0], routes: [choices.offerings[0].routes![0]] }],
+  };
+  view.rerender(<MediaForm catalog={refreshed} send={env.send} busy={false} />);
+  expect(screen.getByText('com_media_stale_provider_route')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
+  expect(env.store.get(mediaDraftFamily('owner:new')).providerTag).toBe('provider-b');
+  expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue('A small lake');
+  fireEvent.click(screen.getByRole('combobox', { name: 'com_media_provider_route' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Provider A' }));
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeEnabled();
+});
+
+test('keeps invalid provider JSON drafts and enforces allowed keys, bytes and nesting before submission', async () => {
+  const env = setup();
+  const base = catalog.offerings[0].capabilities[0];
+  const choices: MediaCatalog = {
+    ...catalog,
+    limits: { ...catalog.limits, maxProviderOptionBytes: 48, maxProviderOptionDepth: 2 },
+    offerings: [
+      {
+        ...catalog.offerings[0],
+        capabilities: [
+          { ...base, controls: { ...base.controls, providerOptions: ['watermark', 'style'] } },
+        ],
+      },
+    ],
+  };
+  const view = render(<MediaForm catalog={choices} send={env.send} busy={false} />, {
+    wrapper: env.wrapper,
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
+    target: { value: 'A small lake' },
+  });
+  fireEvent.click(screen.getByText('com_media_advanced'));
+  const editor = screen.getByRole('textbox', { name: 'com_media_provider_options' });
+  for (const value of [
+    '{',
+    '{"unknown":true}',
+    '{"style":{"nested":{"deep":1}}}',
+    JSON.stringify({ style: 'a'.repeat(50) }),
+  ]) {
+    fireEvent.change(editor, { target: { value } });
+    expect(editor).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
+    expect(env.store.get(mediaDraftFamily('owner:new')).providerOptionsText).toBe(value);
+  }
+  view.unmount();
+  render(<MediaForm catalog={choices} send={env.send} busy={false} />, { wrapper: env.wrapper });
+  fireEvent.click(screen.getByText('com_media_advanced'));
+  const restored = screen.getByRole('textbox', { name: 'com_media_provider_options' });
+  expect(restored).toHaveValue(JSON.stringify({ style: 'a'.repeat(50) }));
+  fireEvent.change(restored, { target: { value: '{"watermark":false}' } });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
+  expect(env.send.mock.calls[0][0].request.parameters.providerOptions).toEqual({
+    watermark: false,
+  });
+  fireEvent.change(restored, { target: { value: '{}' } });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(2));
+  expect(env.send.mock.calls[1][0].request.parameters).not.toHaveProperty('providerOptions');
+});
+
+test('requires an explicit quality choice without inventing a paid tier', async () => {
+  const env = setup();
+  const base = catalog.offerings[0].capabilities[0];
+  if (base.operation === 'video.generate') throw new Error('Expected an image capability');
+  const choices: MediaCatalog = {
+    ...catalog,
+    offerings: [
+      {
+        ...catalog.offerings[0],
+        capabilities: [
+          {
+            ...base,
+            controls: {
+              ...base.controls,
+              quality: { values: ['standard', 'max'], required: true },
+            },
+          },
+        ],
+      },
+    ],
+  };
+  render(<MediaForm catalog={choices} send={env.send} busy={false} />, { wrapper: env.wrapper });
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
+    target: { value: 'A lake' },
+  });
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('combobox', { name: 'com_media_quality' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'standard' }));
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
+  expect(env.send.mock.calls[0][0].request.parameters.quality).toBe('standard');
+});
+
+test('submits image edit controls and clears provider-specific JSON when changing models', async () => {
+  const env = setup();
+  const base = catalog.offerings[0].capabilities[0];
+  if (base.operation === 'video.generate') throw new Error('Expected an image capability');
+  const choices: MediaCatalog = {
+    ...catalog,
+    offerings: [
+      {
+        ...catalog.offerings[0],
+        capabilities: [
+          {
+            ...base,
+            controls: {
+              ...base.controls,
+              outputCompression: { min: 0, max: 100 },
+              strength: { min: 0, max: 1 },
+              guidance: { min: 0, max: 10 },
+              providerOptions: ['watermark'],
+            },
+          },
+        ],
+      },
+      { ...catalog.offerings[0], modelId: 'second', modelName: 'Another model' },
+    ],
+  };
+  render(<MediaForm catalog={choices} send={env.send} busy={false} />, { wrapper: env.wrapper });
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
+    target: { value: 'A lake' },
+  });
+  fireEvent.click(screen.getByText('com_media_advanced'));
+  for (const [name, value] of [
+    ['com_media_output_compression', '80'],
+    ['com_media_strength', '0.4'],
+    ['com_media_guidance', '3.5'],
+  ])
+    fireEvent.change(screen.getByRole('spinbutton', { name }), { target: { value } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_provider_options' }), {
+    target: { value: '{"watermark":false}' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
+  expect(env.send.mock.calls[0][0].request.parameters).toMatchObject({
+    outputCompression: 80,
+    strength: 0.4,
+    guidance: 3.5,
+    providerOptions: { watermark: false },
+  });
+  fireEvent.click(screen.getByRole('combobox', { name: 'com_media_model' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'Another model' }));
+  expect(env.store.get(mediaDraftFamily('owner:new')).providerOptionsText).toBeUndefined();
+  expect(env.store.get(mediaDraftFamily('owner:new')).parameters).toEqual({ count: 1 });
+  expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue('A lake');
+});
+
+test('requires an avatar recording or an explicit voice before enabling generation', () => {
+  const env = setup();
+  const choices: MediaCatalog = {
+    ...catalog,
+    offerings: [
+      {
+        ...catalog.offerings[0],
+        api: 'heygen.videos',
+        capabilities: [
+          {
+            operation: 'video.generate',
+            workflow: 'avatar',
+            inputs: { min: 1, max: 2, roles: ['reference', 'audio'], requiredRoles: ['reference'] },
+            execution: { kind: 'remote-job', cancellation: 'unsupported' },
+            controls: { count: { min: 1, max: 1, default: 1 }, providerOptions: ['voice_id'] },
+          },
+        ],
+      },
+    ],
+  };
+  env.store.set(mediaDraftFamily('owner:new'), {
+    ...emptyDraft(),
+    prompt: 'Hello',
+    offering: '["connection","image-model"]',
+    operation: 'video.generate',
+    inputs: [{ role: 'reference', file_id: 'portrait' }],
+    revision: 2,
+  });
+  render(<MediaForm catalog={choices} send={env.send} busy={false} />, { wrapper: env.wrapper });
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
+  expect(screen.getByText('com_media_avatar_voice_required')).toBeVisible();
+  fireEvent.click(screen.getByText('com_media_advanced'));
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_provider_options' }), {
+    target: { value: '{"voice_id":"selected-voice"}' },
+  });
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeEnabled();
+});
+
+test('sends one sizing method and clears conflicting defaults when dimensions change', async () => {
+  const env = setup();
+  const base = catalog.offerings[0].capabilities[0];
+  const choices: MediaCatalog = {
+    ...catalog,
+    offerings: [
+      {
+        ...catalog.offerings[0],
+        capabilities: [
+          {
+            ...base,
+            controls: {
+              ...base.controls,
+              size: { values: ['1024x1024'], default: '1024x1024' },
+              aspectRatio: { values: ['16:9'], default: '16:9' },
+            },
+          },
+        ],
+      },
+    ],
+  };
+  render(<MediaForm catalog={choices} send={env.send} busy={false} />, { wrapper: env.wrapper });
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
+    target: { value: 'A lake' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
+  expect(env.send.mock.calls[0][0].request.parameters).toMatchObject({ resolution: '2K' });
+  expect(env.send.mock.calls[0][0].request.parameters).not.toHaveProperty('size');
+  fireEvent.click(screen.getByRole('combobox', { name: 'com_media_size' }));
+  fireEvent.click(await screen.findByRole('option', { name: '1024x1024' }));
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(2));
+  expect(env.send.mock.calls[1][0].request.parameters).toMatchObject({ size: '1024x1024' });
+  expect(env.send.mock.calls[1][0].request.parameters).not.toHaveProperty('resolution');
+  expect(env.send.mock.calls[1][0].request.parameters).not.toHaveProperty('aspectRatio');
+  fireEvent.click(screen.getByRole('combobox', { name: 'com_media_resolution' }));
+  fireEvent.click(await screen.findByRole('option', { name: '1K' }));
+  expect(env.store.get(mediaDraftFamily('owner:new')).parameters.size).toBeUndefined();
+});
+
+test('supports fractional controls, automatic frame roles and required video references without a duplicate OpenRouter picker', async () => {
+  const env = setup();
+  const choices: MediaCatalog = {
+    ...catalog,
+    offerings: [
+      {
+        ...catalog.offerings[0],
+        api: 'openrouter.videos',
+        modelId: 'new/video-upscaler',
+        capabilities: [
+          {
+            operation: 'video.generate',
+            workflow: 'upscale',
+            inputs: {
+              min: 1,
+              max: 3,
+              roles: ['start_frame', 'video', 'audio'],
+              requiredRoles: ['video'],
+            },
+            execution: { kind: 'remote-job', cancellation: 'unsupported' },
+            controls: {
+              count: { min: 1, max: 1, default: 1 },
+              upscaleFactor: { min: 1, max: 4, default: 2 },
+              creativity: { min: 0, max: 1 },
+              negativePrompt: true,
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const view = render(<MediaForm catalog={choices} send={env.send} busy={false} />, {
+    wrapper: env.wrapper,
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
+    target: { value: 'Make this clearer' },
+  });
+  expect(
+    screen.queryByRole('combobox', { name: 'com_media_provider_route' }),
+  ).not.toBeInTheDocument();
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'com_media_upscale_factor' }), {
+    target: { value: '1.5' },
+  });
+  expect(screen.getByRole('spinbutton', { name: 'com_media_upscale_factor' })).toHaveAttribute(
+    'step',
+    'any',
+  );
+  fireEvent.click(screen.getByText('com_media_advanced'));
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'com_media_creativity' }), {
+    target: { value: '0.3' },
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_negative_prompt' }), {
+    target: { value: 'grain' },
+  });
+  const upload = view.container.querySelector<HTMLInputElement>('input[type=file]')!;
+  for (const [file_id, type, expectedRole] of [
+    ['frame', 'image/png', 'start_frame'],
+    ['clip', 'video/mp4', 'video'],
+  ] as const) {
+    jest.mocked(dataService.uploadMedia).mockResolvedValueOnce({
+      file: { file_id, filename: file_id, type, bytes: 10, filepath: `/media/${file_id}` },
+    });
+    fireEvent.change(upload, { target: { files: [new File(['original'], file_id, { type })] } });
+    await waitFor(() =>
+      expect(
+        env.store
+          .get(mediaDraftFamily('owner:new'))
+          .inputs.some((input) => input.role === expectedRole),
+      ).toBe(true),
+    );
+    if (expectedRole === 'start_frame')
+      expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
+  }
+  expect(screen.getByLabelText('com_media_video_preview')).toHaveAttribute('controls');
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
+  expect(env.send.mock.calls[0][0].request.parameters).toEqual({
+    count: 1,
+    upscaleFactor: 1.5,
+    creativity: 0.3,
+    negativePrompt: 'grain',
+  });
+});
+
+const hostedCatalog: MediaCatalog = {
+  ...catalog,
+  offerings: [
+    {
+      ...catalog.offerings[0],
+      api: 'openrouter.videos',
+      capabilities: [
+        {
+          operation: 'video.generate',
+          inputs: {
+            min: 1,
+            max: 3,
+            roles: ['video', 'audio', 'start_frame'],
+            hostedRoles: ['audio', 'video'],
+            requiredRoles: ['video'],
+          },
+          execution: { kind: 'remote-job', cancellation: 'unsupported' },
+          controls: { count: { min: 1, max: 1, default: 1 } },
+        },
+      ],
+    },
+  ],
+};
+const hostedReference: MediaURLUploadResponse = {
+  sourceURL: 'https://media.example.com/reference.mp4',
+  file: {
+    file_id: 'hosted-clip',
+    filename: 'reference.mp4',
+    type: 'video/mp4',
+    filepath: '/media/archived-reference.mp4',
+    bytes: 12,
+  },
+};
+
+test('validates hosted links and rejects local audio/video before making an upload request', () => {
+  const env = setup();
+  const view = render(<MediaForm catalog={hostedCatalog} send={env.send} busy={false} />, {
+    wrapper: env.wrapper,
+  });
+  const url = screen.getByRole('textbox', { name: 'com_media_reference_url' });
+  expect(screen.getByRole('combobox', { name: 'com_media_reference_url_role' })).toHaveTextContent(
+    'com_media_role_video',
+  );
+  const add = screen.getByRole('button', { name: 'com_media_add_reference_url' });
+  for (const value of [
+    'http://media.example.com/video.mp4',
+    'https://user:password@media.example.com/video.mp4',
+    'https://media.example.com/video.mp4#fragment',
+  ]) {
+    fireEvent.change(url, { target: { value } });
+    expect(url).toHaveAttribute('aria-invalid', 'true');
+    expect(add).toBeDisabled();
+  }
+  const upload = view.container.querySelector<HTMLInputElement>('input[type=file]')!;
+  for (const type of ['video/mp4', 'audio/mpeg'])
+    fireEvent.change(upload, {
+      target: { files: [new File(['original'], 'reference', { type })] },
+    });
+  expect(screen.getByRole('alert')).toHaveTextContent('com_media_reference_needs_url');
+  expect(dataService.uploadMedia).not.toHaveBeenCalled();
+  expect(dataService.uploadMediaURL).not.toHaveBeenCalled();
+});
+
+test('persists a URL draft, archives it, and submits the source URL with its owned reference', async () => {
+  const env = setup();
+  const view = render(<MediaForm catalog={hostedCatalog} send={env.send} busy={false} />, {
+    wrapper: env.wrapper,
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_reference_url' }), {
+    target: { value: ` ${hostedReference.sourceURL} ` },
+  });
+  view.unmount();
+  mediaDraftFamily.remove('owner:new');
+  const restored = setup();
+  render(<MediaForm catalog={hostedCatalog} send={restored.send} busy={false} />, {
+    wrapper: restored.wrapper,
+  });
+  expect(screen.getByRole('textbox', { name: 'com_media_reference_url' })).toHaveValue(
+    hostedReference.sourceURL,
+  );
+  jest.mocked(dataService.uploadMediaURL).mockResolvedValueOnce(hostedReference);
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_add_reference_url' }));
+  await waitFor(() =>
+    expect(restored.store.get(mediaDraftFamily('owner:new')).inputs).toEqual([
+      { file_id: 'hosted-clip', role: 'video', sourceURL: hostedReference.sourceURL },
+    ]),
+  );
+  expect(dataService.uploadMediaURL).toHaveBeenCalledWith(
+    { url: hostedReference.sourceURL, role: 'video' },
+    expect.any(AbortSignal),
+  );
+  expect(screen.getByRole('textbox', { name: 'com_media_reference_url' })).toHaveValue('');
+  expect(screen.getByLabelText('com_media_video_preview')).toHaveAttribute('controls');
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
+    target: { value: 'Upscale this video' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(restored.send).toHaveBeenCalledTimes(1));
+  expect(restored.send.mock.calls[0][0].request.inputs).toEqual([
+    { file_id: 'hosted-clip', role: 'video', sourceURL: hostedReference.sourceURL },
+  ]);
+});
+
+test('cancels a URL import without accepting a late result and retains the draft for retry', async () => {
+  let finish: (response: MediaURLUploadResponse) => void = () => {};
+  jest.mocked(dataService.uploadMediaURL).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const env = setup();
+  render(<MediaForm catalog={hostedCatalog} send={env.send} busy={false} />, {
+    wrapper: env.wrapper,
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_reference_url' }), {
+    target: { value: hostedReference.sourceURL },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_add_reference_url' }));
+  expect(screen.getByText('com_media_reference_loading')).toBeInTheDocument();
+  const signal = jest.mocked(dataService.uploadMediaURL).mock.calls[0][1];
+  fireEvent.click(screen.getByRole('button', { name: 'com_ui_cancel' }));
+  expect(signal?.aborted).toBe(true);
+  await act(async () => finish(hostedReference));
+  expect(env.store.get(mediaDraftFamily('owner:new')).inputs).toEqual([]);
+  expect(screen.getByRole('textbox', { name: 'com_media_reference_url' })).toHaveValue(
+    hostedReference.sourceURL,
+  );
+  jest
+    .mocked(dataService.uploadMediaURL)
+    .mockRejectedValueOnce({ response: { data: { error: { code: 'transfer_failed' } } } });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_add_reference_url' }));
+  await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument());
+  expect(screen.getByRole('button', { name: 'com_media_add_reference_url' })).toBeEnabled();
+  jest.mocked(dataService.uploadMediaURL).mockResolvedValueOnce(hostedReference);
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_add_reference_url' }));
+  await waitFor(() => expect(env.store.get(mediaDraftFamily('owner:new')).inputs).toHaveLength(1));
+});
+
+test('a locally uploaded video stays blocked when a refreshed model requires a hosted reference', () => {
+  const env = setup();
+  env.store.set(mediaDraftFamily('owner:new'), {
+    ...emptyDraft(),
+    operation: 'video.generate',
+    prompt: 'Edit this video',
+    inputs: [{ file_id: 'local-clip', role: 'video' }],
+    assets: [{ ...hostedReference.file, file_id: 'local-clip' }],
+  });
+  render(<MediaForm catalog={hostedCatalog} send={env.send} busy={false} />, {
+    wrapper: env.wrapper,
+  });
+  expect(screen.getByText('com_media_reference_needs_url')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
+});
+
+test.each(['reference_unavailable', 'reference_changed'] as const)(
+  'explains the %s URL failure and keeps the reference draft for correction',
+  async (code) => {
+    const env = setup();
+    render(<MediaForm catalog={hostedCatalog} send={env.send} busy={false} />, {
+      wrapper: env.wrapper,
+    });
+    jest
+      .mocked(dataService.uploadMediaURL)
+      .mockRejectedValueOnce({ response: { data: { error: { code } } } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'com_media_reference_url' }), {
+      target: { value: hostedReference.sourceURL },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'com_media_add_reference_url' }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(`com_media_error_${code}`),
+    );
+    expect(screen.getByRole('textbox', { name: 'com_media_reference_url' })).toHaveValue(
+      hostedReference.sourceURL,
+    );
+    expect(screen.getByRole('button', { name: 'com_media_add_reference_url' })).toBeEnabled();
+    expect(env.store.get(mediaDraftFamily('owner:new')).inputs).toHaveLength(0);
+  },
+);
+
+test('imports an explicitly selected hosted audio role without satisfying a mandatory video input', async () => {
+  const env = setup();
+  render(<MediaForm catalog={hostedCatalog} send={env.send} busy={false} />, {
+    wrapper: env.wrapper,
+  });
+  fireEvent.click(screen.getByRole('combobox', { name: 'com_media_reference_url_role' }));
+  fireEvent.click(await screen.findByRole('option', { name: 'com_media_role_audio' }));
+  const audio = {
+    sourceURL: 'https://media.example.com/reference.mp3',
+    file: { ...hostedReference.file, file_id: 'hosted-audio', type: 'audio/mpeg' },
+  };
+  jest.mocked(dataService.uploadMediaURL).mockResolvedValueOnce(audio);
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_reference_url' }), {
+    target: { value: audio.sourceURL },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_add_reference_url' }));
+  await waitFor(() =>
+    expect(env.store.get(mediaDraftFamily('owner:new')).inputs).toEqual([
+      { file_id: 'hosted-audio', role: 'audio', sourceURL: audio.sourceURL },
+    ]),
+  );
+  expect(screen.getByLabelText('com_media_audio_preview')).toHaveAttribute('controls');
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
+});
+
+test('refining and editing a saved hosted input preserves its source URL', async () => {
+  const env = setup();
+  const now = '2026-01-01T00:00:00.000Z';
+  const selection = {
+    connectionId: 'connection',
+    modelId: 'image-model',
+    catalogVersion: 'catalog',
+  };
+  const input = {
+    file_id: hostedReference.file.file_id,
+    role: 'video' as const,
+    sourceURL: hostedReference.sourceURL,
+  };
+  const detail: MediaThreadDetail = {
+    thread: {
+      schemaVersion: 1,
+      threadId: 'thread',
+      title: 'Video work',
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+      pendingJobCount: 0,
+      turnCount: 1,
+    },
+    turns: {
+      items: [
+        {
+          schemaVersion: 1,
+          threadId: 'thread',
+          turnId: 'parent',
+          version: 1,
+          kind: 'generation',
+          createdAt: now,
+          prompt: 'Original prompt',
+          inputs: [input],
+          selection,
+          operation: 'video.generate',
+          assets: [hostedReference.file],
+          jobs: [
+            {
+              schemaVersion: 1,
+              jobId: 'job',
+              threadId: 'thread',
+              turnId: 'parent',
+              version: 1,
+              phase: 'failed',
+              executionOwner: 'media',
+              operation: 'video.generate',
+              selection,
+              createdAt: now,
+              updatedAt: now,
+              allowedActions: { cancel: false, retry: false },
+              outputs: [],
+            },
+          ],
+        },
+      ],
+    },
+  };
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <MediaForm catalog={hostedCatalog} threadId="thread" send={env.send} busy={false} />
+      <MediaThreadView
+        detail={detail}
+        catalog={hostedCatalog}
+        send={env.send}
+        onDeleted={() => {}}
+      />
+    </QueryClientProvider>,
+    { wrapper: env.wrapper },
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_refine' }));
+  expect(env.store.get(mediaDraftFamily('owner:thread')).inputs).toEqual([input]);
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_edit_request' }));
+  expect(env.store.get(mediaDraftFamily('owner:thread')).inputs).toEqual([input]);
   expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeEnabled();
 });

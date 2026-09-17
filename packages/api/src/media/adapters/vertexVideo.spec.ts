@@ -153,16 +153,74 @@ describe('Vertex Veo adapter', () => {
     },
   );
 
-  it('does not advertise or submit an unimplemented frame-input workflow', async () => {
-    const { context, calls } = fixture();
+  it('sends first and last frame bytes through the native Vertex image fields', async () => {
+    const { context, calls } = fixture([{ name: operation }]);
+    await adapter.submit(
+      request,
+      [
+        { role: 'start_frame', file_id: 'first', type: 'image/png', data: Buffer.from('first') },
+        { role: 'end_frame', file_id: 'last', type: 'image/jpeg', data: Buffer.from('last') },
+      ],
+      context,
+    );
+    expect(JSON.parse(calls[0].body as string).instances[0]).toMatchObject({
+      image: { mimeType: 'image/png', bytesBase64Encoded: Buffer.from('first').toString('base64') },
+      lastFrame: {
+        mimeType: 'image/jpeg',
+        bytesBase64Encoded: Buffer.from('last').toString('base64'),
+      },
+    });
+  });
+
+  it('maps the canonical Lite model while preserving scoped native operation recovery', async () => {
+    const native = 'veo-3.1-lite-generate-001';
+    const id = operation.replace(model, native);
+    const { context, calls } = fixture([{ name: id }]);
+    const selected = {
+      ...request,
+      selection: { ...request.selection, modelId: 'google/veo-3.1-lite' },
+    };
+    await expect(adapter.submit(selected, [], context)).resolves.toEqual({
+      status: 'running',
+      operationId: id,
+    });
+    expect(calls[0].url).toContain(`models/${native}:predictLongRunning`);
     await expect(
       adapter.submit(
-        request,
-        [{ role: 'start_frame', file_id: 'frame', type: 'image/png', data: Buffer.from('image') }],
+        selected,
+        [{ role: 'reference', file_id: 'ref', type: 'image/png', data: Buffer.from('reference') }],
         context,
       ),
     ).rejects.toMatchObject({ certainty: 'rejected' });
-    expect(calls).toHaveLength(0);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('sends asset references only for eight-second reference-to-video requests', async () => {
+    const { context, calls } = fixture([{ name: operation }]);
+    const input = {
+      role: 'reference' as const,
+      file_id: 'ref',
+      type: 'image/png',
+      data: Buffer.from('reference'),
+    };
+    await expect(adapter.submit(request, [input], context)).rejects.toMatchObject({
+      certainty: 'rejected',
+    });
+    await adapter.submit(
+      mediaSubmissionRequestSchema.parse({
+        ...request,
+        parameters: { ...request.parameters, durationSeconds: 8 },
+      }),
+      [input],
+      context,
+    );
+    expect(JSON.parse(calls[0].body as string).instances[0].referenceImages).toEqual([
+      {
+        image: { mimeType: 'image/png', bytesBase64Encoded: input.data.toString('base64') },
+        referenceType: 'asset',
+      },
+    ]);
+    expect(calls).toHaveLength(1);
   });
 
   it('never forwards Vertex credentials to a supplied download URL', async () => {

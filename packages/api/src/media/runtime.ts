@@ -10,6 +10,7 @@ import type { Request, Router } from 'express';
 import type { MediaAccounting, MediaContext, MediaServices } from './service';
 import type { MediaChatSource, NativeMediaFactory } from './native';
 import type { MediaVertexCredentialProvider } from './vertexAuth';
+import type { MediaProviderAdapter } from './provider';
 import type { MediaEnvironment } from './credentials';
 import type { MediaTransport } from './transport';
 import type { MediaUploadFactory } from './http';
@@ -44,6 +45,7 @@ export interface MediaRuntimeDependencies {
   vertexCredentials?: MediaVertexCredentialProvider;
   decrypt(value: string): Promise<string>;
   transport: MediaTransport;
+  adapters?: readonly MediaProviderAdapter[];
   upload: MediaUploadFactory;
   accounting: MediaAccounting;
   log(error: Error): void;
@@ -65,12 +67,14 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
     throw new Error('Media storage paths are unavailable.');
   }
   const storage = createLocalMediaStorage({ repository, imageDirectory, uploadDirectory });
+  const adapters = input.adapters ?? createRESTMediaAdapters();
   const resolveConnection = createMediaCredentialResolver({
     repository,
     environment: input.environment,
     decrypt: input.decrypt,
     now: Date.now,
     vertexCredentials: input.vertexCredentials,
+    adapters,
   });
   async function actorContext(actor: MediaActor): Promise<MediaContext> {
     const [appConfig, role] = await Promise.all([
@@ -114,7 +118,7 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
         limit: config.limits.pageSize,
       });
     },
-    adapters: createRESTMediaAdapters(),
+    adapters,
     transport: input.transport,
     asSystem: input.asSystem,
     withScope: <T>(scope: MediaOwnerScope, operation: () => Promise<T>) =>

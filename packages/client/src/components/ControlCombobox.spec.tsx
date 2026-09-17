@@ -80,6 +80,30 @@ const openPopover = () => {
 };
 
 describe('ControlCombobox popover sizing', () => {
+  it('shows a restored unavailable entry without allowing selection', async () => {
+    const selected = jest.fn();
+    render(
+      <ControlCombobox
+        selectedValue="missing"
+        items={[...items, { label: 'Unavailable provider', value: 'missing', disabled: true }]}
+        setValue={selected}
+        ariaLabel="Providers"
+        searchPlaceholder="Search providers"
+        isCollapsed={false}
+      />,
+    );
+    await act(async () => {
+      await userEvent.click(screen.getByRole('combobox', { name: 'Providers' }));
+    });
+    const unavailable = await screen.findByRole('option', { name: 'Unavailable provider' });
+    expect(unavailable).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(unavailable);
+    expect(selected).not.toHaveBeenCalledWith('missing');
+    await act(async () => {
+      await userEvent.click(screen.getByRole('option', { name: 'Option B' }));
+    });
+    expect(selected).toHaveBeenCalledWith('b');
+  });
   it('uses the button width measured on mount when layout is stable', () => {
     renderCombobox(275);
     openPopover();

@@ -106,6 +106,12 @@ export function uploadMedia(
 ): Promise<media.MediaUploadResponse> {
   return request.postMultiPart(endpoints.mediaUploads(), payload, signal ? { signal } : undefined);
 }
+export function uploadMediaURL(
+  payload: media.MediaURLUploadRequest,
+  signal?: AbortSignal,
+): Promise<media.MediaURLUploadResponse> {
+  return request.post(endpoints.mediaURLUploads(), payload, signal ? { signal } : undefined);
+}
 export function updateMediaThread(
   threadId: string,
   payload: media.MediaThreadUpdate,

@@ -4,6 +4,7 @@ import {
   mediaApiSchema,
   mediaIdSchema,
   mediaInputRoleSchema,
+  mediaHostedInputRoleSchema,
 } from './requests';
 import { mediaErrorCodeSchema } from './responses';
 
@@ -28,6 +29,7 @@ export const mediaEnumControlSchema = z
   .object({
     values: z.array(z.string().min(1)).min(1),
     default: z.string().optional(),
+    required: z.boolean().optional(),
   })
   .strict()
   .refine(
@@ -44,6 +46,11 @@ export const mediaImageControlsSchema = z
     format: mediaEnumControlSchema.optional(),
     background: mediaEnumControlSchema.optional(),
     seed: mediaNumberControlSchema.optional(),
+    outputCompression: mediaNumberControlSchema.optional(),
+    strength: mediaNumberControlSchema.optional(),
+    guidance: mediaNumberControlSchema.optional(),
+    negativePrompt: z.boolean().optional(),
+    providerOptions: z.array(z.string().min(1)).min(1).optional(),
   })
   .strict();
 export const mediaVideoControlsSchema = z
@@ -52,8 +59,13 @@ export const mediaVideoControlsSchema = z
     durationSeconds: mediaNumberControlSchema.optional(),
     aspectRatio: mediaEnumControlSchema.optional(),
     resolution: mediaEnumControlSchema.optional(),
+    size: mediaEnumControlSchema.optional(),
     audio: z.boolean().optional(),
     seed: mediaNumberControlSchema.optional(),
+    upscaleFactor: mediaNumberControlSchema.optional(),
+    creativity: mediaNumberControlSchema.optional(),
+    negativePrompt: z.boolean().optional(),
+    providerOptions: z.array(z.string().min(1)).min(1).optional(),
   })
   .strict();
 export const mediaExecutionSchema = z.discriminatedUnion('kind', [
@@ -74,10 +86,13 @@ const capabilityFields = {
       roles: z.array(mediaInputRoleSchema),
       min: z.number().int().nonnegative(),
       max: z.number().int().nonnegative(),
+      requiredRoles: z.array(mediaInputRoleSchema).optional(),
+      hostedRoles: z.array(mediaHostedInputRoleSchema).optional(),
     })
     .strict()
     .refine((value) => value.min <= value.max, 'Invalid input limits'),
   execution: mediaExecutionSchema,
+  workflow: z.enum(['generate', 'edit', 'upscale', 'avatar']).optional(),
 };
 export const mediaCapabilitySchema = z.discriminatedUnion('operation', [
   z
@@ -112,6 +127,18 @@ export const mediaOfferingSchema = z
     available: z.boolean(),
     unavailableReason: mediaErrorCodeSchema.optional(),
     capabilities: z.array(mediaCapabilitySchema),
+    routes: z
+      .array(
+        z
+          .object({
+            providerTag: mediaIdSchema,
+            providerName: z.string(),
+            capabilities: z.array(mediaCapabilitySchema),
+          })
+          .strict(),
+      )
+      .optional(),
+    defaultProviderTag: mediaIdSchema.optional(),
   })
   .strict();
 export const mediaLimitsSchema = z
@@ -126,6 +153,8 @@ export const mediaLimitsSchema = z
     maxNativeParts: z.number().int().positive().max(4_096).default(1_024),
     maxNativePartBytes: z.number().int().positive().max(16_777_216).default(1_048_576),
     maxNativeRecordingBytes: z.number().int().positive().max(4_194_304).default(4_194_304),
+    maxProviderOptionBytes: z.number().int().positive().max(1_048_576).default(32_768),
+    maxProviderOptionDepth: z.number().int().positive().max(32).default(8),
   })
   .strict()
   .refine((value) => value.pageSize <= value.maxPageSize, 'Page size exceeds maximum');
@@ -137,6 +166,19 @@ export const mediaCatalogSchema = z
     limits: mediaLimitsSchema,
     clientPollIntervalMs: z.number().int().positive(),
     clientCatchUpIntervalMs: z.number().int().positive(),
+    integrations: z
+      .array(
+        z
+          .object({
+            connectionId: mediaIdSchema,
+            connectionName: z.string(),
+            api: mediaApiSchema,
+            available: z.boolean(),
+            unavailableReason: mediaErrorCodeSchema.optional(),
+          })
+          .strict(),
+      )
+      .optional(),
   })
   .strict();
 

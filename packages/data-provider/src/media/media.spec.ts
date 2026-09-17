@@ -9,6 +9,9 @@ import {
   mediaStartupConfigSchema,
   mediaNumberControlSchema,
   mediaThreadListRequestSchema,
+  mediaOptionValueSchema,
+  mediaInputSchema,
+  mediaURLUploadRequestSchema,
 } from './index';
 import { PermissionTypes, Permissions, permissionsSchema } from '../permissions';
 import { configSchema, BASE_ONLY_CONFIG_SECTIONS } from '../config';
@@ -30,6 +33,70 @@ const submission = {
 };
 
 describe('media configuration compatibility', () => {
+  it('accepts hosted audio/video sources while rejecting credentials, fragments and non-HTTPS URLs', () => {
+    const url = 'https://media.example/reference.mp4?signature=opaque';
+    expect(mediaURLUploadRequestSchema.parse({ url, role: 'video' })).toEqual({
+      url,
+      role: 'video',
+    });
+    expect(
+      mediaInputSchema.parse({ role: 'audio', file_id: 'owned-file', sourceURL: url }).sourceURL,
+    ).toBe(url);
+    for (const invalid of [
+      'not-a-url',
+      'http://media.example/video',
+      'https://user:secret@media.example/video',
+      'https://media.example/video#fragment',
+      'data:video/mp4;base64,AA==',
+    ]) {
+      expect(mediaURLUploadRequestSchema.safeParse({ url: invalid, role: 'video' }).success).toBe(
+        false,
+      );
+    }
+    expect(
+      mediaInputSchema.safeParse({ role: 'reference', file_id: 'image', sourceURL: url }).success,
+    ).toBe(false);
+    expect(mediaURLUploadRequestSchema.safeParse({ url, role: 'reference' }).success).toBe(false);
+  });
+
+  it('supports opt-in full discovery and direct provider credentials without changing curated defaults', () => {
+    const config = resolveMediaConfig({
+      enabled: true,
+      integrations: [
+        {
+          ...integration,
+          api: 'bfl.images',
+          endpointRef: { kind: 'direct', apiKey: '${BFL_API_KEY}' },
+          catalog: {
+            kind: 'discovered',
+            allModels: true,
+            excludeModels: ['black-forest-labs/flux.2-max'],
+          },
+        },
+      ],
+    });
+    expect(config.integrations[0].catalog).toEqual({
+      kind: 'discovered',
+      allModels: true,
+      allowModels: [],
+      excludeModels: ['black-forest-labs/flux.2-max'],
+    });
+    expect(
+      resolveMediaConfig({ integrations: [{ ...integration, catalog: { kind: 'discovered' } }] })
+        .integrations[0].catalog,
+    ).toEqual({ kind: 'discovered', allModels: false, allowModels: [], excludeModels: [] });
+  });
+
+  it('validates deep provider JSON without recursive parsing and rejects non-JSON/cyclic values', () => {
+    let value: object = {};
+    for (let i = 0; i < 10_000; i++) value = { nested: value };
+    expect(mediaOptionValueSchema.safeParse(value).success).toBe(true);
+    const circular: { self?: object } = {};
+    circular.self = circular;
+    expect(mediaOptionValueSchema.safeParse(circular).success).toBe(false);
+    expect(mediaOptionValueSchema.safeParse({ seed: NaN }).success).toBe(false);
+    expect(mediaOptionValueSchema.safeParse({ date: new Date() }).success).toBe(false);
+  });
   it('leaves absent YAML disabled and materializes nested defaults only on resolution', () => {
     const before = configSchema.parse({ version: '1.3.1' });
     expect(before.media).toBeUndefined();

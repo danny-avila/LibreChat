@@ -19,7 +19,9 @@ import type { MediaErrorCode } from 'librechat-data-provider';
 import type { MediaMethods } from '@librechat/data-schemas';
 import type { MediaServices, MediaContext } from './service';
 import type { MediaStorage } from './storage';
+import { mediaContentByteLimit, mediaContentExtension, normalizeMediaContentType } from './content';
 import { assertUploadContentAllowed } from '../files/preflight';
+import { parseHostedMediaReference } from './hosted';
 import { assertMediaAccess } from './service';
 import { MediaServiceError } from './errors';
 
@@ -218,6 +220,13 @@ export function createMediaRouter({
     handle((req, context) => services.commands.retire(param(req, 'threadId'), context), 202),
   );
   router.post(
+    '/uploads/url',
+    handle(
+      (req, context) => services.commands.uploadURL(parseHostedMediaReference(req.body), context),
+      201,
+    ),
+  );
+  router.post(
     '/uploads',
     handle(async (req, context) => {
       assertMediaAccess(context, true);
@@ -230,13 +239,15 @@ export function createMediaRouter({
       }
       await mkdir(tempDirectory, { recursive: true });
       const fileConfig = mergeFileConfig(context.appConfig.fileConfig);
+      const maxFileBytes = Math.max(
+        context.config.transfers.maxImageBytes,
+        context.config.transfers.maxVideoBytes,
+        context.config.transfers.maxAudioBytes,
+      );
       const receive = upload({
         dest: tempDirectory,
         limits: {
-          fileSize: Math.min(
-            context.config.transfers.maxImageBytes,
-            fileConfig.serverFileSizeLimit ?? context.config.transfers.maxImageBytes,
-          ),
+          fileSize: Math.min(maxFileBytes, fileConfig.serverFileSizeLimit ?? maxFileBytes),
           files: 1,
           fields: 1,
         },
@@ -249,16 +260,20 @@ export function createMediaRouter({
         throw new MediaServiceError('invalid_request', 422, 'Select a source file.');
       }
       try {
-        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.mimetype)) {
+        const type = normalizeMediaContentType(file.mimetype);
+        if (!mediaContentExtension(type)) {
+          throw new MediaServiceError('unsupported', 422, 'Unsupported media reference type.');
+        }
+        if (file.size > mediaContentByteLimit(type, context.config)) {
           throw new MediaServiceError(
-            'unsupported',
-            422,
-            'Only raster image references are supported.',
+            'invalid_request',
+            413,
+            'Media exceeds the configured file limit.',
           );
         }
         await assertUploadContentAllowed({
           filters: context.appConfig.filters,
-          file,
+          file: { ...file, mimetype: type },
           fileConfig,
           ocrConfigured: false,
           ragConfigured: false,
@@ -267,7 +282,7 @@ export function createMediaRouter({
           scope: context.scope,
           outputKey: `upload:${id()}`,
           stream: createReadStream(file.path),
-          type: file.mimetype,
+          type,
           filename: path.basename(file.originalname),
           config: context.config,
           expiredAt: new Date(Date.now() + context.config.assets.orphanRetentionMs).toISOString(),

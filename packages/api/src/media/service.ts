@@ -17,6 +17,8 @@ import type {
   MediaImportReceipt,
   MediaThreadListRequest,
   MediaThreadUpdate,
+  MediaURLUploadRequest,
+  MediaURLUploadResponse,
 } from 'librechat-data-provider';
 import type {
   AppConfig,
@@ -33,21 +35,17 @@ import type {
   MediaProviderPart,
   MediaProviderInput,
 } from './provider';
-import type { MediaTransport } from './transport';
-import type { MediaStorage } from './storage';
+import type { MediaHostedDependencies } from './hosted';
+import type { MediaContext } from './context';
+import { createMediaCatalog, selectMediaRoute, validateMediaOffering } from './catalog';
+import { importHostedMediaReference, verifyHostedMediaReference } from './hosted';
+import { mediaInputByteLimit, prepareMediaInputContent } from './content';
 import { assertModelBoundContent } from '../middleware/modelBoundContent';
-import { createMediaCatalog, validateMediaOffering } from './catalog';
 import { isContentFilterError } from '../middleware/contentFilter';
 import { UninspectableFileError } from '../protection/files';
 import { MediaServiceError } from './errors';
 
-export interface MediaContext {
-  scope: MediaOwnerScope;
-  appConfig: AppConfig;
-  config: MediaConfig;
-  canUse: boolean;
-  canCreate: boolean;
-}
+export type { MediaContext } from './context';
 
 export interface MediaAccounting {
   ensureReady?(): Promise<void>;
@@ -62,13 +60,11 @@ export interface MediaAccounting {
   release(job: MediaStoredJob, context: MediaContext): Promise<void>;
 }
 
-export interface MediaServiceDependencies {
+export interface MediaServiceDependencies extends MediaHostedDependencies {
   repository: MediaMethods;
   ensureReady?(): Promise<void>;
   reconcileNative?(scope: MediaOwnerScope, config: MediaConfig): Promise<void>;
-  transport: MediaTransport;
   adapters: readonly MediaProviderAdapter[];
-  storage: MediaStorage;
   resolveConnection(input: {
     scope: MediaOwnerScope;
     integration: MediaIntegration;
@@ -79,8 +75,6 @@ export interface MediaServiceDependencies {
   withScope<T>(scope: MediaOwnerScope, operation: () => Promise<T>): Promise<T>;
   asSystem<T>(operation: () => Promise<T>): Promise<T>;
   accounting: MediaAccounting;
-  now: () => number;
-  id: () => string;
   log(error: Error): void;
 }
 
@@ -105,8 +99,10 @@ export interface MediaServices {
     request: MediaSubmissionRequest,
     context: MediaContext,
     requireCatalogVersion: boolean,
+    signal?: AbortSignal,
   ): Promise<PreparedMedia>;
   commands: {
+    uploadURL(input: MediaURLUploadRequest, context: MediaContext): Promise<MediaURLUploadResponse>;
     submit(input: MediaSubmissionRequest, context: MediaContext): Promise<MediaSubmissionReceipt>;
     import(input: MediaImportRequest, context: MediaContext): Promise<MediaImportReceipt>;
     retry(
@@ -165,6 +161,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
     request: MediaSubmissionRequest,
     context: MediaContext,
     requireCatalogVersion: boolean,
+    signal?: AbortSignal,
   ) {
     assertMediaAccess(context, true);
     if ((context.config.assets.source ?? context.appConfig.fileStrategy) !== 'local') {
@@ -178,16 +175,17 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
     if (requireCatalogVersion && current.catalog.version !== request.selection.catalogVersion) {
       throw new MediaServiceError('stale_catalog', 409, 'The media model catalog changed.');
     }
-    const selected = current.resolved.get(
+    const modelOffering = current.resolved.get(
       `${request.selection.connectionId}:${request.selection.modelId}`,
     );
     const integration = context.config.integrations.find(
       (entry) => entry.id === request.selection.connectionId,
     );
-    if (!selected || !integration) {
+    if (!modelOffering || !integration) {
       throw new MediaServiceError('unsupported', 422, 'The media model is unavailable.');
     }
-    validateMediaOffering(request, selected.offering);
+    const selected = selectMediaRoute(modelOffering, request.selection.providerTag);
+    validateMediaOffering(request, selected.offering, context.config.limits);
     const connection = await resolve(context, integration);
     const assets: MediaAsset[] = [];
     const inputs = await Promise.all(
@@ -195,13 +193,25 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
         const { asset, data } = await deps.storage.read(
           context.scope,
           input.file_id,
-          context.config.transfers.maxImageBytes,
+          mediaInputByteLimit(input.role, context.config),
         );
-        if (!['image/png', 'image/jpeg', 'image/webp'].includes(asset.type)) {
-          throw new MediaServiceError('unsupported', 422, 'Unsupported input media type.');
-        }
+        const content = await prepareMediaInputContent(
+          input.role,
+          asset.type,
+          data,
+          context.config,
+        );
+        const sourceURL = input.sourceURL
+          ? await verifyHostedMediaReference(
+              { url: input.sourceURL, role: input.role === 'audio' ? 'audio' : 'video' },
+              data,
+              context,
+              deps.transport,
+              signal,
+            )
+          : undefined;
         assets.push(asset);
-        return { ...input, type: asset.type, data };
+        return { ...input, ...content, ...(sourceURL ? { sourceURL } : {}) };
       }),
     );
     let continuation: MediaProviderContext['continuation'];
@@ -235,23 +245,41 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
             part.fileId,
             context.config.transfers.maxImageBytes,
           );
+          const content = await prepareMediaInputContent(
+            'reference',
+            asset.type,
+            data,
+            context.config,
+          );
           parts.push({
             kind: 'image',
             ordinal: part.ordinal,
-            type: asset.type,
-            data,
+            ...content,
             thoughtSignature: part.thoughtSignature,
           });
         }
         const parentInputs = await Promise.all(
           parent.request.inputs.map(async (input) => {
+            if (input.role === 'audio' || input.role === 'video') {
+              throw new MediaServiceError(
+                'unsupported',
+                422,
+                'Unsupported native continuation input.',
+              );
+            }
             const { asset, data } = await deps.storage.read(
               context.scope,
               input.file_id,
               context.config.transfers.maxImageBytes,
             );
+            const content = await prepareMediaInputContent(
+              input.role,
+              asset.type,
+              data,
+              context.config,
+            );
             assets.push(asset);
-            return { ...input, type: asset.type, data };
+            return { ...input, ...content };
           }),
         );
         const imageParts = parts.filter((part) => part.kind === 'image');
@@ -316,6 +344,10 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
   return {
     prepare,
     commands: {
+      async uploadURL(input, context) {
+        assertMediaAccess(context, true);
+        return importHostedMediaReference(input, context, deps);
+      },
       async submit(
         input: MediaSubmissionRequest,
         context: MediaContext,
@@ -341,7 +373,9 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
                 bindingRevision: ready.connection.binding,
                 billing: ready.integration.billing,
                 providerTag: ready.providerTag,
-                endpointRef: ready.integration.endpointRef,
+                ...(ready.integration.endpointRef.kind === 'direct'
+                  ? {}
+                  : { endpointRef: ready.integration.endpointRef }),
                 accountingMode: mediaAccountingMode(context.appConfig),
               }
             : undefined);

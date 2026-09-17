@@ -2,7 +2,7 @@
 
 The local implementation and enablement instructions are tracked in [implementation.md](implementation.md). The research below includes longer-term design beyond the implemented first cut.
 
-**Status:** opt-in local implementation, 2026-09-16. The research and longer-term design below were prepared on 2026-09-15; [implementation.md](implementation.md) describes what is available now.
+**Status:** opt-in local implementation, 2026-09-17. The research and longer-term design below were prepared on 2026-09-15; [implementation.md](implementation.md) describes what is available now. [Native provider setup](native-providers.md) documents the current adapters, credentials and model coverage.
 **Branch:** `research/media-studio`, created from local `dev` at `385c6f8a1`.
 **Product direction:** a sidebar Media Studio with model selection, image/video creation, uploaded
 image editing, a grid of queued/completed work, and an iterable media thread behind each tile.

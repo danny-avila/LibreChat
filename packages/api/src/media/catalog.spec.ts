@@ -2,14 +2,16 @@ import { z } from 'zod';
 import {
   FileSources,
   resolveMediaConfig,
+  mediaCatalogSchema,
   mediaSubmissionRequestSchema,
 } from 'librechat-data-provider';
 import type { MediaIntegration } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { MediaTransport, MediaTransportRequest } from './transport';
 import type { MediaConnection, MediaProviderContext } from './provider';
-import { createMediaCatalog, validateMediaOffering } from './catalog';
+import { createMediaCatalog, selectMediaRoute, validateMediaOffering } from './catalog';
 import { createMediaCredentialResolver } from './credentials';
+import publicCatalog from './__fixtures__/openrouter.json';
 import { createRESTMediaAdapters } from './adapters/rest';
 
 const imageIntegration: MediaIntegration = {
@@ -25,7 +27,12 @@ const videoIntegration: MediaIntegration = {
   endpointRef: { kind: 'custom', name: 'OpenRouter' },
   catalog: {
     kind: 'configured',
-    models: ['google/video', 'bfl/edit', 'bfl/upscale', 'heygen/avatar'],
+    models: [
+      'google/video',
+      'black-forest-labs/flux-video-edit',
+      'black-forest-labs/flux-video-upscale',
+      'heygen/avatar-iv',
+    ],
   },
   operations: ['video.generate'],
 };
@@ -62,9 +69,17 @@ const videoModels = {
       supported_frame_images: ['first_frame', 'last_frame'],
       generate_audio: true,
     },
-    { id: 'bfl/edit', supported_durations: null, supported_resolutions: null },
-    { id: 'bfl/upscale', supported_durations: null, upscale_factor: { min: 1.5, max: 3 } },
-    { id: 'heygen/avatar', supported_durations: null, supported_resolutions: ['720p'] },
+    {
+      id: 'black-forest-labs/flux-video-edit',
+      supported_durations: null,
+      supported_resolutions: null,
+    },
+    {
+      id: 'black-forest-labs/flux-video-upscale',
+      supported_durations: null,
+      upscale_factor: { min: 1.5, max: 3 },
+    },
+    { id: 'heygen/avatar-iv', supported_durations: null, supported_resolutions: ['720p'] },
   ],
 };
 
@@ -80,6 +95,59 @@ function fixtureTransport(response: (request: MediaTransportRequest) => string |
     },
   };
   return { calls, transport };
+}
+
+function imageTransport(
+  response: (request: MediaTransportRequest) => string | Promise<string>,
+  models = ['google/image'],
+) {
+  return fixtureTransport((request) =>
+    new URL(request.url).pathname.endsWith('/images/models')
+      ? JSON.stringify({ data: models.map((id) => ({ id, name: id })) })
+      : response(request),
+  );
+}
+
+function videoTransport(response: () => string) {
+  return fixtureTransport((request) => {
+    const url = new URL(request.url);
+    if (url.pathname.endsWith('/videos/models')) return response();
+    if (url.searchParams.get('output_modalities') === 'video') {
+      const { data } = z
+        .object({ data: z.array(z.object({ id: z.string() })) })
+        .parse(JSON.parse(response()));
+      return JSON.stringify({
+        data: data.map(({ id }) => ({ id, architecture: { input_modalities: ['text', 'image'] } })),
+      });
+    }
+    if (url.pathname.endsWith('/endpoints'))
+      return JSON.stringify({
+        data: { endpoints: [{ tag: 'fixture-provider', provider_name: 'Fixture provider' }] },
+      });
+    throw new Error(`Unexpected discovery URL: ${request.url}`);
+  });
+}
+
+function publicTransport(override?: (request: MediaTransportRequest) => string | undefined) {
+  return fixtureTransport((request) => {
+    const overridden = override?.(request);
+    if (overridden !== undefined) return overridden;
+    const url = new URL(request.url);
+    const path = url.pathname.replace('/api/v1/', '');
+    if (path === 'images/models') return JSON.stringify(publicCatalog.images);
+    if (path === 'videos/models') return JSON.stringify(publicCatalog.videos);
+    if (path === 'models' && url.searchParams.get('output_modalities') === 'video')
+      return JSON.stringify(publicCatalog.generalVideos);
+    const image = publicCatalog.imageEndpoints.find(
+      (entry) => path === `images/models/${entry.id}/endpoints`,
+    );
+    if (image) return JSON.stringify(image);
+    const video = publicCatalog.videoEndpoints.find(
+      (entry) => path === `models/${entry.id}/endpoints`,
+    );
+    if (video) return JSON.stringify({ data: video.data });
+    throw new Error(`Unexpected public catalog URL: ${request.url}`);
+  });
 }
 
 function connection(integration: MediaIntegration): MediaConnection {
@@ -109,7 +177,7 @@ describe('media catalog provider conformance', () => {
     });
 
   it('uses the official endpoint envelope and one policy-compatible parameter intersection', async () => {
-    const fixture = fixtureTransport(() => JSON.stringify(imageEndpoints));
+    const fixture = imageTransport(() => JSON.stringify(imageEndpoints));
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
     const result = await catalog.read(
       config,
@@ -134,13 +202,14 @@ describe('media catalog provider conformance', () => {
     expect(() => validateMediaOffering(request({ quality: 'high' }), offering)).toThrow();
     expect(() => validateMediaOffering(request({ size: '1024x1024' }), offering)).toThrow();
     expect(() => validateMediaOffering(request({ count: 3 }), offering)).toThrow();
-    expect(fixture.calls[0].url).toContain('/images/models/google/image/endpoints');
+    expect(fixture.calls[1].url).toContain('/images/models/google/image/endpoints');
     expect(JSON.stringify(result.catalog)).not.toContain('Bearer');
-    expect(JSON.stringify(result.catalog)).not.toContain('google-vertex');
+    expect(offering.routes?.map((route) => route.providerTag)).toEqual(['google-vertex/global']);
+    expect(JSON.stringify(result.catalog)).not.toContain('revision');
   });
 
   it('honors ordering without routing outside a no-fallback policy', async () => {
-    const fixture = fixtureTransport(() => JSON.stringify(imageEndpoints));
+    const fixture = imageTransport(() => JSON.stringify(imageEndpoints));
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
     const result = await catalog.read(
       config,
@@ -166,19 +235,21 @@ describe('media catalog provider conformance', () => {
     'does not advertise Seedream resolutions rejected by the live provider ($values)',
     async ({ values }) => {
       const modelId = 'bytedance-seed/seedream-4.5';
-      const fixture = fixtureTransport(() =>
-        JSON.stringify({
-          id: modelId,
-          endpoints: [
-            {
-              provider_tag: 'seed',
-              supported_parameters: {
-                resolution: { type: 'enum', values },
-                input_references: { type: 'range', min: 0, max: 14 },
+      const fixture = imageTransport(
+        () =>
+          JSON.stringify({
+            id: modelId,
+            endpoints: [
+              {
+                provider_tag: 'seed',
+                supported_parameters: {
+                  resolution: { type: 'enum', values },
+                  input_references: { type: 'range', min: 0, max: 14 },
+                },
               },
-            },
-          ],
-        }),
+            ],
+          }),
+        [modelId],
       );
       const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
       const result = await catalog.read(
@@ -219,37 +290,25 @@ describe('media catalog provider conformance', () => {
     {
       id: 'google/image',
       endpoints: [
-        {
-          provider_tag: 'vector',
-          supported_parameters: { output_format: { type: 'enum', values: ['svg'] } },
-        },
-      ],
-    },
-    {
-      id: 'google/image',
-      endpoints: [
         { provider_tag: null, supported_parameters: {} },
         { provider_tag: null, supported_parameters: {} },
       ],
     },
     { id: 'another-model', endpoints: imageEndpoints.endpoints },
     { data: imageEndpoints.endpoints },
-  ])(
-    'does not offer vector-only, ambiguous, mismatched, or malformed discovery',
-    async (payload) => {
-      const fixture = fixtureTransport(() => JSON.stringify(payload));
-      const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
-      const result = await catalog.read(
-        config,
-        async (integration) => connection(integration),
-        'owner',
-      );
-      expect(result.catalog.offerings[0].available).toBe(false);
-    },
-  );
+  ])('does not offer ambiguous, mismatched, or malformed discovery', async (payload) => {
+    const fixture = imageTransport(() => JSON.stringify(payload));
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    const result = await catalog.read(
+      config,
+      async (integration) => connection(integration),
+      'owner',
+    );
+    expect(result.catalog.offerings[0].available).toBe(false);
+  });
 
-  it('admits video generation durations while excluding edit, upscale, and avatar models', async () => {
-    const fixture = fixtureTransport(() => JSON.stringify(videoModels));
+  it('admits video generation, edit, upscale, and avatar workflows with required inputs', async () => {
+    const fixture = videoTransport(() => JSON.stringify(videoModels));
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
     const videoConfig = resolveMediaConfig({ enabled: true, integrations: [videoIntegration] });
     const result = await catalog.read(
@@ -259,9 +318,9 @@ describe('media catalog provider conformance', () => {
     );
     expect(result.catalog.offerings.map((offering) => offering.available)).toEqual([
       true,
-      false,
-      false,
-      false,
+      true,
+      true,
+      true,
     ]);
     const videoRequest = mediaSubmissionRequestSchema.parse({
       clientRequestId: 'video',
@@ -271,10 +330,18 @@ describe('media catalog provider conformance', () => {
       parameters: { durationSeconds: 5 },
     });
     expect(() => validateMediaOffering(videoRequest, result.catalog.offerings[0])).toThrow();
+    expect(
+      result.catalog.offerings.slice(1).map((offering) => offering.capabilities[0].workflow),
+    ).toEqual(['edit', 'upscale', 'avatar']);
+    expect(result.catalog.offerings[1].capabilities[0].inputs.requiredRoles).toEqual(['video']);
+    expect(result.catalog.offerings[3].capabilities[0].inputs.requiredRoles).toEqual([
+      'reference',
+      'audio',
+    ]);
   });
 
   it('keeps video offerings available when optional capability flags are null', async () => {
-    const fixture = fixtureTransport(() =>
+    const fixture = videoTransport(() =>
       JSON.stringify({
         data: [
           ...videoModels.data.map((model) => ({ ...model, generate_audio: null, seed: null })),
@@ -292,9 +359,9 @@ describe('media catalog provider conformance', () => {
 
     expect(result.catalog.offerings.map((offering) => offering.available)).toEqual([
       true,
-      false,
-      false,
-      false,
+      true,
+      true,
+      true,
     ]);
     const capability = result.catalog.offerings[0].capabilities[0];
     if (capability.operation !== 'video.generate') {
@@ -308,7 +375,7 @@ describe('media catalog provider conformance', () => {
   it.each(['openai/sora-2', 'openai/sora-2-pro'])(
     'does not expose an audio toggle for %s because its audio is always enabled',
     async (modelId) => {
-      const fixture = fixtureTransport(() =>
+      const fixture = videoTransport(() =>
         JSON.stringify({ data: [...videoModels.data, { ...videoModels.data[0], id: modelId }] }),
       );
       const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
@@ -354,7 +421,7 @@ describe('media catalog provider conformance', () => {
     { only: ['google'] },
     { allow_fallbacks: false },
   ])('blocks video when required routing/privacy cannot be honored: %j', async (routing) => {
-    const fixture = fixtureTransport(() => JSON.stringify(videoModels));
+    const fixture = videoTransport(() => JSON.stringify(videoModels));
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
     const videoConfig = resolveMediaConfig({ enabled: true, integrations: [videoIntegration] });
     const result = await catalog.read(
@@ -367,7 +434,7 @@ describe('media catalog provider conformance', () => {
 
   it('evicts least recently used credential-bound entries and expires cached capabilities', async () => {
     let time = 0;
-    const fixture = fixtureTransport(() => JSON.stringify(imageEndpoints));
+    const fixture = imageTransport(() => JSON.stringify(imageEndpoints));
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => time });
     const bounded = resolveMediaConfig({
       ...config,
@@ -384,21 +451,25 @@ describe('media catalog provider conformance', () => {
     await read('a');
     await read('c');
     await read('b');
-    expect(fixture.calls).toHaveLength(4);
+    expect(fixture.calls).toHaveLength(8);
     time = config.catalog.refreshMs + 1;
     await read('b');
-    expect(fixture.calls).toHaveLength(5);
+    expect(fixture.calls).toHaveLength(10);
   });
 
   it('shares in-flight reads and bounds discovery concurrency across integrations', async () => {
     let active = 0;
     let peak = 0;
-    const fixture = fixtureTransport(async () => {
+    const fixture = fixtureTransport(async (request) => {
       active++;
       peak = Math.max(peak, active);
       await new Promise<void>((resolve) => setImmediate(resolve));
       active--;
-      return JSON.stringify(imageEndpoints);
+      return JSON.stringify(
+        new URL(request.url).pathname.endsWith('/images/models')
+          ? { data: [{ id: 'google/image' }] }
+          : imageEndpoints,
+      );
     });
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
     const bounded = resolveMediaConfig({
@@ -411,8 +482,525 @@ describe('media catalog provider conformance', () => {
       catalog.read(bounded, resolve, 'owner'),
       catalog.read(bounded, resolve, 'owner'),
     ]);
-    expect(fixture.calls).toHaveLength(3);
+    expect(fixture.calls).toHaveLength(6);
     expect(peak).toBe(2);
+  });
+});
+
+describe('OpenRouter complete public media catalog', () => {
+  const adapters = createRESTMediaAdapters();
+  const config = resolveMediaConfig({
+    enabled: true,
+    integrations: [
+      { ...imageIntegration, catalog: { kind: 'discovered', allModels: true } },
+      { ...videoIntegration, catalog: { kind: 'discovered', allModels: true } },
+    ],
+  });
+  const resolve = async (integration: MediaIntegration) => connection(integration);
+
+  it('discovers all 52 image and 29 video entries and preserves unavailable Muse without exposing credentials', async () => {
+    const fixture = publicTransport();
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    const result = await catalog.read(config, resolve, 'owner');
+    expect(() => mediaCatalogSchema.parse(result.catalog)).not.toThrow();
+    expect(publicCatalog.imageEndpoints).toHaveLength(52);
+    expect(publicCatalog.videoEndpoints).toHaveLength(29);
+    expect(result.catalog.offerings.map((offering) => offering.modelId)).toEqual([
+      ...publicCatalog.images.data.map((model) => model.id),
+      ...publicCatalog.videos.data.map((model) => model.id),
+    ]);
+    expect(result.catalog.offerings.filter((offering) => offering.available)).toHaveLength(80);
+    expect(result.catalog.offerings.filter((offering) => !offering.available)).toEqual([
+      expect.objectContaining({
+        modelId: 'meta/muse-image',
+        unavailableReason: 'unsupported',
+        capabilities: [],
+      }),
+    ]);
+    expect(fixture.calls).toHaveLength(84);
+    expect(fixture.calls.filter((call) => call.url.endsWith('/endpoints'))).toHaveLength(81);
+    expect(fixture.calls.every((call) => !call.method || call.method === 'GET')).toBe(true);
+    expect(JSON.stringify(result.catalog)).not.toMatch(
+      /Bearer fixture|revision|endpointRef|apiKey/,
+    );
+    expect(result.catalog.integrations?.every((integration) => integration.available)).toBe(true);
+  });
+
+  it('exposes the six SVG models and enforces required Recraft Styles references', async () => {
+    const fixture = publicTransport();
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    const result = await catalog.read(config, resolve, 'owner');
+    const vectors = result.catalog.offerings.filter((offering) =>
+      offering.capabilities.some(
+        (capability) =>
+          'format' in capability.controls && capability.controls.format?.values.includes('svg'),
+      ),
+    );
+    expect(vectors).toHaveLength(6);
+    expect(
+      vectors.every((offering) => offering.available && offering.modelId.startsWith('recraft/')),
+    ).toBe(true);
+    const styles = result.catalog.offerings.filter((offering) =>
+      offering.modelId.startsWith('recraft/recraft-v4-styles'),
+    );
+    expect(styles).toHaveLength(4);
+    for (const offering of styles) {
+      const submission = mediaSubmissionRequestSchema.parse({
+        clientRequestId: 'styles',
+        operation: 'image.generate',
+        prompt: 'A forest in this style',
+        selection: {
+          connectionId: offering.connectionId,
+          modelId: offering.modelId,
+          catalogVersion: result.catalog.version,
+        },
+      });
+      expect(() => validateMediaOffering(submission, offering)).toThrow();
+      expect(() =>
+        validateMediaOffering(
+          { ...submission, inputs: [{ role: 'reference', file_id: 'style-reference' }] },
+          offering,
+        ),
+      ).not.toThrow();
+    }
+  });
+
+  it('keeps image route capabilities separate and rejects values that only a different route supports', async () => {
+    const fixture = imageTransport(() => JSON.stringify(imageEndpoints));
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    const limited = resolveMediaConfig({
+      enabled: true,
+      integrations: [imageIntegration],
+      limits: { maxInputs: 5, maxOutputs: 3 },
+    });
+    const result = await catalog.read(limited, resolve, 'owner');
+    const selected = result.resolved.get('images:google/image');
+    if (!selected) throw new Error('Missing discovered image');
+    expect(selected.offering.routes?.map((route) => route.providerTag)).toEqual([
+      'google-ai-studio',
+      'google-vertex/global',
+    ]);
+    const vertex = selectMediaRoute(selected, 'google-vertex/global');
+    const request = mediaSubmissionRequestSchema.parse({
+      clientRequestId: 'route',
+      operation: 'image.generate',
+      prompt: 'A forest',
+      selection: {
+        connectionId: 'images',
+        modelId: 'google/image',
+        catalogVersion: result.catalog.version,
+        providerTag: 'google-vertex/global',
+      },
+      parameters: { count: 2, resolution: '2K' },
+    });
+    expect(vertex.providerTag).toBe('google-vertex/global');
+    expect(() => validateMediaOffering(request, vertex.offering)).not.toThrow();
+    expect(() => validateMediaOffering(request, selected.offering)).toThrow();
+    expect(() =>
+      validateMediaOffering(
+        { ...request, operation: 'image.generate', parameters: { count: 2, quality: 'high' } },
+        vertex.offering,
+      ),
+    ).toThrow();
+    expect(() => selectMediaRoute(selected, 'unpublished/provider')).toThrow();
+  });
+
+  it('pins a selected public image route and scopes its allowed options without relaxing privacy policy', async () => {
+    const modelId = 'google/gemini-2.5-flash-image';
+    const fixture = publicTransport((request) =>
+      request.url.endsWith('/images')
+        ? JSON.stringify({ data: [{ b64_json: 'YQ==' }] })
+        : undefined,
+    );
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    const limited = resolveMediaConfig({
+      enabled: true,
+      integrations: [{ ...imageIntegration, catalog: { kind: 'configured', models: [modelId] } }],
+    });
+    const routing = { only: ['google-vertex'], zdr: true, data_collection: 'deny' as const };
+    const result = await catalog.read(
+      limited,
+      async (integration) => ({ ...connection(integration), routing }),
+      'owner',
+    );
+    const discovered = result.resolved.get(`images:${modelId}`);
+    if (!discovered) throw new Error('Missing Google offering');
+    const selected = selectMediaRoute(discovered, 'google-vertex/global');
+    expect(selected.offering.routes?.map((route) => route.providerTag)).toEqual([
+      'google-vertex/global',
+    ]);
+    const submission = mediaSubmissionRequestSchema.parse({
+      clientRequestId: 'pinned',
+      operation: 'image.generate',
+      prompt: 'A forest',
+      selection: {
+        connectionId: 'images',
+        modelId,
+        catalogVersion: result.catalog.version,
+        providerTag: selected.providerTag,
+      },
+      parameters: { providerOptions: { cachedContent: 'cachedContents/fixture' } },
+    });
+    expect(() =>
+      validateMediaOffering(submission, selected.offering, limited.limits),
+    ).not.toThrow();
+    expect(() =>
+      validateMediaOffering(
+        { ...submission, parameters: { count: 1, providerOptions: { unpublished: true } } },
+        selected.offering,
+        limited.limits,
+      ),
+    ).toThrow();
+    const adapter = adapters.find((entry) => entry.api === 'openrouter.images');
+    if (!adapter) throw new Error('Missing OpenRouter image adapter');
+    await adapter.submit(submission, [], {
+      transport: fixture.transport,
+      config: limited,
+      signal: new AbortController().signal,
+      connection: { ...connection(imageIntegration), routing },
+      providerTag: selected.providerTag,
+    });
+    expect(JSON.parse(String(fixture.calls[fixture.calls.length - 1]?.body))).toMatchObject({
+      provider: {
+        only: ['google-vertex/global'],
+        allow_fallbacks: false,
+        zdr: true,
+        data_collection: 'deny',
+        options: { 'google-vertex': { cachedContent: 'cachedContents/fixture' } },
+      },
+    });
+  });
+
+  it('derives source video and audio inputs from the generic metadata and marks edit, upscale, and avatar workflows', async () => {
+    const fixture = publicTransport();
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    const result = await catalog.read(config, resolve, 'owner');
+    for (const metadata of publicCatalog.generalVideos.data) {
+      const offering = result.resolved.get(`videos:${metadata.id}`)?.offering;
+      expect(offering?.available).toBe(true);
+      if (metadata.architecture.input_modalities.includes('video'))
+        expect(offering?.capabilities[0].inputs.roles).toContain('video');
+      if (metadata.architecture.input_modalities.includes('audio'))
+        expect(offering?.capabilities[0].inputs.roles).toContain('audio');
+      expect(offering?.capabilities[0].inputs.hostedRoles).toEqual(
+        offering?.capabilities[0].inputs.roles.filter(
+          (role) => role === 'video' || role === 'audio',
+        ),
+      );
+    }
+    const workflows = result.catalog.offerings.filter(
+      (offering) =>
+        offering.api === 'openrouter.videos' && offering.capabilities[0].workflow !== 'generate',
+    );
+    expect(
+      workflows.map((offering) => [offering.modelId, offering.capabilities[0].workflow]),
+    ).toEqual([
+      ['black-forest-labs/flux-video-edit', 'edit'],
+      ['heygen/avatar-iv', 'avatar'],
+      ['black-forest-labs/flux-video-upscale', 'upscale'],
+      ['runway/aleph-2', 'edit'],
+    ]);
+    for (const offering of workflows) {
+      const submission = mediaSubmissionRequestSchema.parse({
+        clientRequestId: 'workflow',
+        operation: 'video.generate',
+        prompt: 'Improve the scene',
+        selection: {
+          connectionId: 'videos',
+          modelId: offering.modelId,
+          catalogVersion: result.catalog.version,
+        },
+      });
+      expect(() => validateMediaOffering(submission, offering)).toThrow();
+      const inputs =
+        offering.capabilities[0].inputs.requiredRoles?.map((role) => ({
+          role,
+          file_id: `${role}-input`,
+          ...(role === 'audio' || role === 'video'
+            ? { sourceURL: `https://media.example/${role}` }
+            : {}),
+        })) ?? [];
+      expect(() => validateMediaOffering({ ...submission, inputs }, offering)).not.toThrow();
+      expect(() =>
+        validateMediaOffering(
+          { ...submission, inputs: inputs.map(({ role, file_id }) => ({ role, file_id })) },
+          offering,
+        ),
+      ).toThrow();
+    }
+  });
+
+  it('scopes video provider options to the actual serving provider rather than the model author', async () => {
+    const modelId = 'kwaivgi/kling-v3.0-pro';
+    const fixture = publicTransport((request) =>
+      request.url.endsWith('/videos')
+        ? JSON.stringify({ id: 'video-job', status: 'queued' })
+        : undefined,
+    );
+    const limited = resolveMediaConfig({
+      enabled: true,
+      integrations: [{ ...videoIntegration, catalog: { kind: 'configured', models: [modelId] } }],
+    });
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    const result = await catalog.read(limited, resolve, 'owner');
+    const selected = result.resolved.get(`videos:${modelId}`);
+    if (!selected) throw new Error('Missing Kling model');
+    expect(selected.providerTag).toBe('atlas-cloud');
+    const submission = mediaSubmissionRequestSchema.parse({
+      clientRequestId: 'kling',
+      operation: 'video.generate',
+      prompt: 'A forest',
+      selection: { connectionId: 'videos', modelId, catalogVersion: result.catalog.version },
+      parameters: { providerOptions: { cfg_scale: 0.5 } },
+    });
+    expect(() =>
+      validateMediaOffering(submission, selected.offering, limited.limits),
+    ).not.toThrow();
+    const adapter = adapters.find((entry) => entry.api === 'openrouter.videos');
+    if (!adapter) throw new Error('Missing OpenRouter video adapter');
+    await adapter.submit(submission, [], {
+      transport: fixture.transport,
+      config: limited,
+      signal: new AbortController().signal,
+      connection: connection(videoIntegration),
+      providerTag: selected.providerTag,
+    });
+    expect(JSON.parse(String(fixture.calls[fixture.calls.length - 1]?.body)).provider).toEqual({
+      options: { 'atlas-cloud': { cfg_scale: 0.5 } },
+    });
+  });
+
+  it('follows same-origin generic metadata pagination and retains input roles from later pages', async () => {
+    const fixture = publicTransport((request) => {
+      const url = new URL(request.url);
+      if (url.searchParams.get('output_modalities') !== 'video') return;
+      if (url.searchParams.get('page') === '2')
+        return JSON.stringify({
+          data: publicCatalog.generalVideos.data.slice(1),
+          links: { next: null },
+        });
+      return JSON.stringify({
+        data: publicCatalog.generalVideos.data.slice(0, 1),
+        links: { next: '?output_modalities=video&page=2' },
+      });
+    });
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    const result = await catalog.read(config, resolve, 'owner');
+    expect(
+      result.catalog.offerings.filter(
+        (offering) => offering.api === 'openrouter.videos' && offering.available,
+      ),
+    ).toHaveLength(29);
+    expect(
+      result.resolved.get('videos:bytedance/seedance-2.0')?.offering.capabilities[0].inputs.roles,
+    ).toContain('audio');
+    expect(
+      fixture.calls.filter(
+        (call) => new URL(call.url).searchParams.get('output_modalities') === 'video',
+      ),
+    ).toHaveLength(2);
+  });
+
+  it.each([
+    'https://untrusted.example/models?page=2',
+    'https://untrusted:password@openrouter.example/api/v1/models?output_modalities=video&page=2',
+    '/outside-api/models?page=2',
+    '?output_modalities=video',
+  ])('rejects unsafe or cyclic pagination before forwarding credentials: %s', async (next) => {
+    const fixture = publicTransport((request) =>
+      new URL(request.url).searchParams.get('output_modalities') === 'video'
+        ? JSON.stringify({ data: publicCatalog.generalVideos.data.slice(0, 1), links: { next } })
+        : undefined,
+    );
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    const limited = resolveMediaConfig({
+      enabled: true,
+      integrations: [
+        { ...videoIntegration, catalog: { kind: 'configured', models: ['google/veo-3.1'] } },
+      ],
+    });
+    const result = await catalog.read(limited, resolve, 'owner');
+    expect(result.catalog.offerings[0]).toMatchObject({
+      available: false,
+      unavailableReason: 'not_ready',
+    });
+    expect(fixture.calls).toHaveLength(2);
+    expect(
+      fixture.calls.every((call) => new URL(call.url).origin === 'https://openrouter.example'),
+    ).toBe(true);
+  });
+
+  it('preserves curated discovery defaults and applies exclusions to all-model discovery', async () => {
+    const fixture = publicTransport();
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    const selected = ['google/gemini-2.5-flash-image', 'not-published/image'];
+    const curated = resolveMediaConfig({
+      enabled: true,
+      integrations: [
+        { ...imageIntegration, catalog: { kind: 'discovered', allowModels: selected } },
+      ],
+    });
+    const result = await catalog.read(curated, resolve, 'owner');
+    expect(result.catalog.offerings.map((offering) => offering.modelId)).toEqual(selected);
+    expect(result.catalog.offerings.map((offering) => offering.available)).toEqual([true, false]);
+    expect(fixture.calls.filter((call) => call.url.endsWith('/endpoints'))).toHaveLength(1);
+    const excluded = resolveMediaConfig({
+      enabled: true,
+      integrations: [
+        {
+          ...imageIntegration,
+          catalog: {
+            kind: 'discovered',
+            allModels: true,
+            excludeModels: ['meta/muse-image', selected[0]],
+          },
+        },
+      ],
+    });
+    const expanded = await catalog.read(excluded, resolve, 'owner');
+    expect(expanded.catalog.offerings).toHaveLength(50);
+    expect(
+      expanded.catalog.offerings.every(
+        (offering) =>
+          offering.available && !['meta/muse-image', selected[0]].includes(offering.modelId),
+      ),
+    ).toBe(true);
+  });
+
+  it.each(['openrouter.images', 'bfl.images'] as const)(
+    'honors allowModels together with allModels and exclusions for %s',
+    async (api) => {
+      const fixture = publicTransport();
+      const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+      const model = 'black-forest-labs/flux.2-pro';
+      const excluded = 'black-forest-labs/flux.2-max';
+      const limited = resolveMediaConfig({
+        enabled: true,
+        integrations: [
+          {
+            ...imageIntegration,
+            api,
+            catalog: {
+              kind: 'discovered',
+              allModels: true,
+              allowModels: [model, excluded, 'missing/model'],
+              excludeModels: [excluded],
+            },
+          },
+        ],
+      });
+      const result = await catalog.read(limited, resolve, 'owner');
+      expect(
+        result.catalog.offerings.map(({ modelId, available }) => ({ modelId, available })),
+      ).toEqual([
+        { modelId: model, available: true },
+        { modelId: 'missing/model', available: false },
+      ]);
+      const empty = resolveMediaConfig({
+        enabled: false,
+        integrations: [
+          { ...imageIntegration, api, catalog: { kind: 'discovered', allModels: false } },
+        ],
+      });
+      expect((await catalog.read(empty, resolve, 'owner')).catalog.offerings).toEqual([]);
+    },
+  );
+
+  it('discovers newly published image models without changing an application allowlist', async () => {
+    const fixture = publicTransport((request) => {
+      if (request.url.endsWith('/images/models'))
+        return JSON.stringify({
+          data: [...publicCatalog.images.data, { id: 'future/new-image', name: 'New Image' }],
+        });
+      if (request.url.endsWith('/images/models/future/new-image/endpoints'))
+        return JSON.stringify({
+          id: 'future/new-image',
+          endpoints: [
+            {
+              provider_tag: 'future-provider',
+              supported_parameters: { n: { type: 'range', min: 1, max: 1 } },
+            },
+          ],
+        });
+    });
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    const result = await catalog.read(config, resolve, 'owner');
+    expect(result.catalog.offerings).toHaveLength(82);
+    expect(result.resolved.get('images:future/new-image')?.offering).toMatchObject({
+      modelName: 'New Image',
+      available: true,
+    });
+  });
+
+  it('isolates malformed endpoint and video model metadata from unrelated offerings', async () => {
+    const fixture = publicTransport((request) => {
+      if (request.url.endsWith('/images/models/black-forest-labs/flux.2-pro/endpoints'))
+        return JSON.stringify({
+          id: 'black-forest-labs/flux.2-pro',
+          endpoints: [
+            {
+              provider_tag: 'black-forest-labs',
+              supported_parameters: { n: { type: 'range', min: 'invalid', max: 4 } },
+            },
+          ],
+        });
+      if (request.url.endsWith('/videos/models'))
+        return JSON.stringify({
+          data: publicCatalog.videos.data.map((model) =>
+            model.id === 'runway/gen-4.5' ? { ...model, supported_durations: ['invalid'] } : model,
+          ),
+        });
+    });
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    const result = await catalog.read(config, resolve, 'owner');
+    expect(result.catalog.offerings).toHaveLength(81);
+    expect(result.catalog.offerings.filter((offering) => offering.available)).toHaveLength(78);
+    expect(result.resolved.get('images:black-forest-labs/flux.2-pro')?.offering).toMatchObject({
+      available: false,
+      unavailableReason: 'not_ready',
+    });
+    expect(result.resolved.get('videos:runway/gen-4.5')?.offering).toMatchObject({
+      available: false,
+      unavailableReason: 'not_ready',
+    });
+    expect(result.resolved.get('videos:google/veo-3.1')?.offering.available).toBe(true);
+  });
+
+  it('bounds all-model discovery and reports an unavailable integration when the configured limit is exceeded', async () => {
+    const fixture = publicTransport();
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    const limited = resolveMediaConfig({
+      enabled: true,
+      catalog: { maxModels: 10 },
+      integrations: [config.integrations[0]],
+    });
+    const result = await catalog.read(limited, resolve, 'owner');
+    expect(result.catalog.offerings).toHaveLength(0);
+    expect(result.catalog.integrations).toEqual([
+      expect.objectContaining({
+        connectionId: 'images',
+        available: false,
+        unavailableReason: 'not_ready',
+      }),
+    ]);
+    expect(fixture.calls).toHaveLength(1);
+  });
+
+  it('does not advertise a required-input workflow that exceeds the configured input limit', async () => {
+    const fixture = publicTransport();
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    const limited = resolveMediaConfig({
+      enabled: true,
+      limits: { maxInputs: 1 },
+      integrations: [config.integrations[1]],
+    });
+    const result = await catalog.read(limited, resolve, 'owner');
+    expect(() => mediaCatalogSchema.parse(result.catalog)).not.toThrow();
+    expect(result.resolved.get('videos:heygen/avatar-iv')?.offering).toMatchObject({
+      available: false,
+      capabilities: [],
+    });
+    expect(result.resolved.get('videos:google/veo-3.1')?.offering.available).toBe(true);
   });
 });
 

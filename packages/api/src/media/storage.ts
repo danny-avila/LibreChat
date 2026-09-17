@@ -3,11 +3,18 @@ import path from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, open, stat, unlink } from 'node:fs/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
+import { mkdir, open, stat, unlink, readFile } from 'node:fs/promises';
 import type { MediaAssetContent, MediaMethods, MediaOwnerScope } from '@librechat/data-schemas';
 import type { MediaAsset, MediaConfig } from 'librechat-data-provider';
 import type { Readable, TransformCallback } from 'node:stream';
+import {
+  mediaContentByteLimit,
+  mediaContentExtension,
+  normalizeMediaContentType,
+  validateMediaAudio,
+  validateMediaSvg,
+} from './content';
 import { MediaServiceError } from './errors';
 
 export interface MediaStorage {
@@ -55,6 +62,28 @@ function isMissingFile(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
 }
 
+async function readHeader(location: string): Promise<Buffer> {
+  const file = await open(location, 'r');
+  const header = Buffer.alloc(12);
+  try {
+    const { bytesRead } = await file.read(header, 0, header.length, 0);
+    return header.subarray(0, bytesRead);
+  } finally {
+    await file.close();
+  }
+}
+
+function matchesRasterHeader(header: Buffer, type: string): boolean {
+  if (type === 'image/png')
+    return header.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'));
+  if (type === 'image/jpeg') return header.subarray(0, 3).equals(Buffer.from('ffd8ff', 'hex'));
+  return (
+    type === 'image/webp' &&
+    header.toString('ascii', 0, 4) === 'RIFF' &&
+    header.toString('ascii', 8, 12) === 'WEBP'
+  );
+}
+
 export function createLocalMediaStorage({
   repository,
   imageDirectory,
@@ -94,15 +123,10 @@ export function createLocalMediaStorage({
       if (!/^[A-Za-z0-9_-]+$/.test(input.scope.ownerId)) {
         throw new MediaServiceError('invalid_request', 400, 'Invalid media owner.');
       }
-      const video = input.type.startsWith('video/');
-      const extensions: Record<string, string> = {
-        'image/png': 'png',
-        'image/jpeg': 'jpg',
-        'image/webp': 'webp',
-        'video/mp4': 'mp4',
-        'video/webm': 'webm',
-      };
-      const extension = extensions[input.type];
+      const contentType = normalizeMediaContentType(input.type);
+      const video = contentType.startsWith('video/');
+      const audio = contentType.startsWith('audio/');
+      const extension = mediaContentExtension(contentType);
       if (!extension) {
         throw new MediaServiceError('unsupported', 422, 'Unsupported media content type.');
       }
@@ -118,9 +142,7 @@ export function createLocalMediaStorage({
       });
       const location = originalPath({ source: 'local', storageKey: key, filepath: `/${key}` });
       await mkdir(path.dirname(location), { recursive: true });
-      const counter = new MediaByteCounter(
-        video ? input.config.transfers.maxVideoBytes : input.config.transfers.maxImageBytes,
-      );
+      const counter = new MediaByteCounter(mediaContentByteLimit(input.type, input.config));
       let publicationAttempted = false;
       try {
         await pipeline(
@@ -130,17 +152,33 @@ export function createLocalMediaStorage({
         );
         let width: number | undefined;
         let height: number | undefined;
-        let type = input.type;
-        if (!video) {
+        let type = contentType;
+        if (audio) {
+          validateMediaAudio(await readFile(location), type);
+        } else if (!video) {
+          if (type === 'image/svg+xml') {
+            validateMediaSvg(await readFile(location));
+          } else if (!matchesRasterHeader(await readHeader(location), type)) {
+            throw new MediaServiceError(
+              'invalid_request',
+              422,
+              'Image content does not match its media type.',
+            );
+          }
           const metadata = await sharp(location).metadata();
-          const mime = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp' };
+          const mime = {
+            png: 'image/png',
+            jpeg: 'image/jpeg',
+            webp: 'image/webp',
+            svg: 'image/svg+xml',
+          };
           if (!metadata.format || !(metadata.format in mime)) {
-            throw new MediaServiceError('unsupported', 422, 'Only raster images are supported.');
+            throw new MediaServiceError('unsupported', 422, 'Unsupported image content.');
           }
           type = mime[metadata.format as keyof typeof mime];
           width = metadata.width;
           height = metadata.height;
-          if (type !== input.type) {
+          if (type !== contentType) {
             throw new MediaServiceError(
               'invalid_request',
               422,
@@ -148,17 +186,12 @@ export function createLocalMediaStorage({
             );
           }
         } else {
-          const file = await open(location, 'r');
-          const header = Buffer.alloc(12);
-          try {
-            await file.read(header, 0, header.length, 0);
-          } finally {
-            await file.close();
-          }
+          const header = await readHeader(location);
           const valid =
-            type === 'video/mp4'
+            header.length >= 12 &&
+            (type === 'video/mp4'
               ? header.toString('ascii', 4, 8) === 'ftyp'
-              : type === 'video/webm' && header.readUInt32BE(0) === 0x1a45dfa3;
+              : type === 'video/webm' && header.readUInt32BE(0) === 0x1a45dfa3);
           if (!valid) {
             throw new MediaServiceError('unsupported', 422, 'Unsupported video content.');
           }

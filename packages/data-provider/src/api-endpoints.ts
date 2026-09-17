@@ -50,6 +50,7 @@ export const mediaSubmissions = () => `${mediaRoot()}/submissions`;
 export const mediaSubmission = (clientRequestId: string) =>
   `${mediaSubmissions()}/${encodeURIComponent(clientRequestId)}`;
 export const mediaUploads = () => `${mediaRoot()}/uploads`;
+export const mediaURLUploads = () => `${mediaUploads()}/url`;
 export const mediaImports = () => `${mediaRoot()}/imports`;
 export const mediaImport = (clientRequestId: string) =>
   `${mediaImports()}/${encodeURIComponent(clientRequestId)}`;

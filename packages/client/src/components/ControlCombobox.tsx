@@ -89,6 +89,7 @@ function ControlCombobox({
     value: option.value as string | undefined,
     label: option.label,
     icon: option.icon,
+    disabled: option.disabled,
   });
 
   const combobox = Ariakit.useComboboxStore({
@@ -240,17 +241,25 @@ function ControlCombobox({
         </div>
         <div className="max-h-[300px] overflow-auto">
           <Ariakit.ComboboxList store={combobox}>
-            <SelectRenderer store={select} items={matches} itemSize={ROW_HEIGHT} overscan={5}>
-              {({ value, icon, label, ...item }) => (
+            <SelectRenderer
+              store={select}
+              items={matches}
+              itemSize={ROW_HEIGHT}
+              overscan={5}
+              persistentIndices={matches.length ? [0, matches.length - 1] : []}
+            >
+              {({ value, icon, label, disabled: itemDisabled, ...item }) => (
                 <Ariakit.ComboboxItem
                   key={item.id}
                   {...item}
+                  disabled={itemDisabled}
                   className={cn(
                     'flex w-full cursor-pointer items-center px-3 text-sm',
                     'text-text-primary hover:bg-surface-tertiary',
                     'data-[active-item]:bg-surface-tertiary',
+                    'aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
                   )}
-                  render={<Ariakit.SelectItem value={value} />}
+                  render={<Ariakit.SelectItem value={value} disabled={itemDisabled} />}
                 >
                   {icon != null && iconSide === 'left' && (
                     <div className={optionIconClassName}>{icon}</div>

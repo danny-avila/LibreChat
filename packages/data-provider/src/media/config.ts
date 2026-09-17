@@ -21,6 +21,16 @@ export const mediaIntegrationSchema = z
       z.object({ kind: z.literal('custom'), name: z.string().trim().min(1) }).strict(),
       z
         .object({
+          kind: z.literal('direct'),
+          apiKey: z.string().min(1),
+          baseURL: z.string().trim().min(1).optional(),
+          credentialName: mediaIdSchema.optional(),
+          headers: z.record(z.string(), z.string()).optional(),
+          options: z.record(z.string(), z.string()).optional(),
+        })
+        .strict(),
+      z
+        .object({
           kind: z.literal('vertex'),
           keyFile: z.string().trim().min(1),
           projectId: z.string().trim().min(1).optional(),
@@ -36,7 +46,12 @@ export const mediaIntegrationSchema = z
         .object({ kind: z.literal('configured'), models: z.array(mediaIdSchema).default([]) })
         .strict(),
       z
-        .object({ kind: z.literal('discovered'), allowModels: z.array(mediaIdSchema).default([]) })
+        .object({
+          kind: z.literal('discovered'),
+          allowModels: z.array(mediaIdSchema).default([]),
+          allModels: z.boolean().default(false),
+          excludeModels: z.array(mediaIdSchema).default([]),
+        })
         .strict(),
     ]),
     operations: z.array(mediaOperationSchema).min(1),
@@ -176,6 +191,7 @@ export const mediaConfigSchema = z
       .object({
         maxImageBytes: z.number().int().positive().max(1_073_741_824).default(20_971_520),
         maxVideoBytes: z.number().int().positive().max(10_737_418_240).default(536_870_912),
+        maxAudioBytes: z.number().int().positive().max(1_073_741_824).default(20_971_520),
         maxRedirects: z.number().int().nonnegative().max(10).default(3),
       })
       .strict()
@@ -198,12 +214,12 @@ export const mediaConfigSchema = z
       !config.integrations.some((integration) =>
         integration.catalog.kind === 'configured'
           ? integration.catalog.models.length > 0
-          : integration.catalog.allowModels.length > 0,
+          : integration.catalog.allModels || integration.catalog.allowModels.length > 0,
       )
     ) {
       fail(
         ['integrations'],
-        'Enabled media requires an integration with an explicit model allowlist',
+        'Enabled media requires configured models, an allowlist, or explicit all-model discovery',
       );
     }
     if (

@@ -42,6 +42,8 @@ const catalog: MediaCatalog = {
     maxNativeParts: 100,
     maxNativePartBytes: 1000000,
     maxNativeRecordingBytes: 4194304,
+    maxProviderOptionBytes: 32768,
+    maxProviderOptionDepth: 8,
   },
   offerings: [
     {
