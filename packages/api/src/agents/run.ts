@@ -1841,71 +1841,26 @@ export function anyAgentReplaysReasoningContent(
  * first assembled — background-task tools are registered on the parent, and
  * isolated children drop background and intent definitions they inherited.
  * Hashing earlier would let two different wire prefixes share one identity.
- * Keyed on prompt identity and never on the conversation, so one user's chats
- * share a cache entry across conversations instead of each writing their own.
- * The user stays in the key unless an administrator opts into `shared` scope,
- * which is what keeps today's per-user cache accounting — and the probing
- * boundary it provides — intact by default.
+ *
+ * *What* enters the digest is not decided here. `buildPromptCacheKey` derives
+ * it from the finished input, field by field, against a total disposition map;
+ * this function decides only *when* an input is final and which of the graph's
+ * handoff edges leave the agent it belongs to. The distinction is the point:
+ * every miss this key has had was a model-facing surface absent from a list
+ * written at a call site, so there is no longer a list at a call site.
  */
 function finalizePromptCacheKey(input: AgentInputs, handoffEdges?: readonly unknown[]): void {
-  const options = input.clientOptions as
-    | (Partial<t.OAIClientOptions> & {
-        response_format?: unknown;
-        text?: { format?: unknown };
-        modelKwargs?: { model?: unknown };
-      })
-    | undefined;
+  const options = input.clientOptions as Partial<t.OAIClientOptions> | undefined;
   if (options == null) {
     return;
   }
   if (options.promptCacheKeyEnabled === true && options.promptCacheKey == null) {
-    const { graphTools } = input as AgentInputs & { graphTools?: GenericTool[] };
-    /**
-     * Azure Astra keeps its visible identity in `model` and sends the
-     * deployment through the `modelKwargs` override, so the override is the
-     * wire model whenever it is present.
-     */
-    const wireModel =
-      typeof options.modelKwargs?.model === 'string' ? options.modelKwargs.model : options.model;
-    options.promptCacheKey = buildPromptCacheKey({
-      model: wireModel,
-      instructions: input.instructions,
-      boundTools: [
-        ...(input.toolDefinitions ?? []),
-        ...(graphTools ?? []),
-        ...(input.tools ?? []),
-        /**
-         * Delegation is a model-facing tool the SDK generates from these
-         * entries rather than one of the arrays above, so its presence and
-         * the targets it offers have to enter the identity here or enabling,
-         * disabling or retargeting subagents would not retire the key.
-         *
-         * `type` is the value the generated tool accepts as `subagent_type`,
-         * so it belongs here too: swapping a child for a different agent that
-         * happens to share a display name changes the accepted enum. The
-         * remaining fields — `agentInputs`, `maxTurns`, `allowNested` — govern
-         * execution and never reach the model.
-         */
-        ...(input.subagentConfigs ?? []).map((config) => ({
-          name: `subagent:${config.name}`,
-          description: config.description,
-          subagentType: config.type,
-        })),
-      ],
-      responseSchema: options.response_format,
-      responsesTextFormat: options.text?.format,
-      handoffEdges,
-      /**
-       * The captured marker, not the `user` field: `dropParams` and the
-       * gpt-4o search models can remove that field, which would quietly
-       * collapse every user onto one shared entry.
-       */
-      scopeId: options.promptCacheScope === 'shared' ? null : options.promptCacheScopeId,
-    });
+    options.promptCacheKey = buildPromptCacheKey(input, { handoffEdges });
   }
   delete options.promptCacheKeyEnabled;
   delete options.promptCacheScope;
   delete options.promptCacheScopeId;
+  delete options.promptCacheStableInstructions;
 }
 
 /**
@@ -1960,6 +1915,18 @@ function buildIsolatedAgentInputs(
     childInputs.additional_instructions = [childInputs.additional_instructions, skillInstructions]
       .filter((value): value is string => typeof value === 'string' && value.length > 0)
       .join('\n\n');
+    /**
+     * These bodies are configuration, not conversation, but they land in the
+     * same string as memory and file context, where nothing downstream can
+     * tell the two apart again. Record them for the cache identity here, the
+     * only place that knows which half of that string is stable: editing a
+     * skill an agent always applies changes the system prefix the model
+     * reads, and has to retire the key.
+     */
+    const childOptions = childInputs.clientOptions as Partial<t.OAIClientOptions> | undefined;
+    if (childOptions != null) {
+      childOptions.promptCacheStableInstructions = skillInstructions;
+    }
   }
   if ((child.backgroundToolNames?.length ?? 0) > 0) {
     childInputs.toolDefinitions = stripBackgroundFromToolDefinitions(
@@ -1988,6 +1955,24 @@ function buildIsolatedAgentInputs(
    * attaches them — see `sealSubagentInputs`.
    */
   return childInputs;
+}
+
+/**
+ * Gives one occurrence of an input its own mutable shell before it is sealed.
+ *
+ * Sealing writes the key onto `clientOptions` and removes the marker that
+ * allowed it, so an input object that reaches two occurrences keeps the first
+ * one's identity. That happens on two paths: `prebuiltGraphInputs` builds each
+ * saved-team member once and hands the same object to every team listing it,
+ * and the self-spawn entry starts as a shallow spread of its parent. Copying
+ * the shell — not the built tool arrays or registry under it — keeps the build
+ * shared while making the identity per occurrence.
+ */
+function ownSealableInputs(input: AgentInputs): AgentInputs {
+  return {
+    ...input,
+    clientOptions: { ...(input.clientOptions ?? {}) },
+  } as AgentInputs;
 }
 
 /**
@@ -2049,7 +2034,7 @@ function buildSubagentConfigs(
     );
     const selfChildInputs: AgentInputs | undefined =
       hasBackground || hasInjectedIntent
-        ? {
+        ? ownSealableInputs({
             ...agentInput,
             toolDefinitions: stripIntentFromToolDefinitions(
               stripBackgroundFromToolDefinitions(
@@ -2065,13 +2050,7 @@ function buildSubagentConfigs(
               detachedTasksEnabled && sanitizedToolRegistry != null
                 ? new Map(sanitizedToolRegistry)
                 : sanitizedToolRegistry,
-            /**
-             * Detach the client options too. A shallow spread shares the
-             * parent's object, so finalizing the parent's key would stamp this
-             * child with one naming the parent's unsanitized tools.
-             */
-            clientOptions: { ...agentInput.clientOptions },
-          }
+          })
         : undefined;
     if (selfChildInputs != null) {
       finalizePromptCacheKey(selfChildInputs);
@@ -2178,11 +2157,15 @@ function buildSubagentConfigs(
        * A graph member attaches no descendants — it delegates through the
        * graph's edges rather than through a delegation tool of its own — but
        * those edges are exactly what the SDK turns into its handoff tools, so
-       * each member is sealed with the ones that leave it.
+       * each member is sealed with the ones that leave it. One occurrence per
+       * team, because the same member in two teams leaves through different
+       * edges and `prebuiltGraphInputs` hands both the same object.
        */
       agents: memberConfigs.map((member) =>
         sealSubagentInputs(
-          prebuiltGraphInputs?.get(member.id) ?? buildIsolatedAgentInputs(member, toInput),
+          ownSealableInputs(
+            prebuiltGraphInputs?.get(member.id) ?? buildIsolatedAgentInputs(member, toInput),
+          ),
           [],
           outgoingHandoffEdges(definition.edges, member.id),
         ),
@@ -2560,6 +2543,19 @@ export async function createRun({
       ) as t.RunLLMConfig,
       modelCallbacks,
     );
+    /**
+     * The cache partition identity, taken from the authenticated user of this
+     * run rather than from the `user` field the request happens to carry.
+     * That field is not an identity: `addParams.user` pins it to a constant,
+     * `dropParams: ['user']` removes it, and the `gpt-4o*search` models drop
+     * it unconditionally — each of which merges every user of an agent onto
+     * one cache entry, which is exactly what the per-user default exists to
+     * prevent. Travels as a marker and is deleted before the request is sent.
+     */
+    const cacheOptions = llmConfig as Partial<t.OAIClientOptions>;
+    if (cacheOptions.promptCacheKeyEnabled === true && typeof user?.id === 'string') {
+      cacheOptions.promptCacheScopeId = user.id;
+    }
 
     const joinInstructionMap = (map?: Record<string, unknown>) =>
       Object.values(map ?? {})

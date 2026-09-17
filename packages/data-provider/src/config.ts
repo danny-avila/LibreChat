@@ -754,11 +754,16 @@ export const baseEndpointSchema = z.object({
    * a gateway or custom OpenAI-compatible endpoint shares the request shape
    * but not the caching contract.
    *
-   * `promptCacheKey` sends a deterministic `prompt_cache_key` derived from the
-   * stable instruction prefix, tool schemas and output schema, so a prefix
-   * change retires its own cache identity and older models get a stable key to
-   * route on. Default enabled; set `false` to send no key and leave routing to
-   * the `user` field alone.
+   * `promptCacheKey` sends a deterministic `prompt_cache_key` derived from
+   * everything about a request that decides what the model reads before the
+   * conversation starts — the stable instruction prefix, every bound tool
+   * schema, the generated delegation and handoff tools, the output schema and
+   * the API mode — so a prefix change retires its own cache identity and older
+   * models get a stable key to route on. What varies per conversation (the
+   * dynamic instruction tail, tools this chat discovered through tool search)
+   * is deliberately absent, because keying on it would leave nothing to reuse.
+   * Default enabled; set `false` to send no key and leave routing to the
+   * `user` field alone.
    */
   promptCacheKey: z.boolean().optional(),
   /**
