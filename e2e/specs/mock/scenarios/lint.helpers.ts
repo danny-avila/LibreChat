@@ -1,0 +1,105 @@
+import { spawnSync } from 'node:child_process';
+import { resolve } from 'node:path';
+
+/**
+ * Shared plumbing for the scenarios whose observable behaviour is what the
+ * configured tooling does rather than what the app paints. They run the real
+ * binaries from the repository root, the way a contributor and the Static
+ * Checks lane do, and they never write into the tree.
+ */
+
+/** The repository root: this file sits in e2e/specs/mock/scenarios. */
+export const repoRoot = resolve(__dirname, '../../../..');
+
+export type LintMessage = {
+  ruleId: string | null;
+  message: string;
+  line: number;
+};
+
+export type CommandResult = {
+  status: number;
+  stdout: string;
+  /** Both streams, for assertion messages: a failure is rarely on one of them. */
+  output: string;
+};
+
+/** Run a command from the repository root and collect both streams. */
+export function run(command: string, args: string[], input?: string): CommandResult {
+  const result = spawnSync(command, args, {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    input,
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  const stdout = result.stdout ?? '';
+  return {
+    status: result.status ?? 1,
+    stdout,
+    output: `${stdout}${result.stderr ?? ''}`,
+  };
+}
+
+const ESLINT = resolve(repoRoot, 'node_modules/.bin/eslint');
+
+function parseMessages(result: CommandResult): LintMessage[] {
+  /** `--format json` writes the report to stdout; ESLint's own notices go to
+   *  stderr, so the report is sliced out of stdout alone. */
+  const start = result.stdout.indexOf('[');
+  if (start === -1) {
+    throw new Error(`ESLint printed no JSON report:\n${result.output}`);
+  }
+  const report = JSON.parse(result.stdout.slice(start)) as { messages: LintMessage[] }[];
+  return report.flatMap((file) => file.messages);
+}
+
+/**
+ * Lint `source` as though it were `relativePath`, without creating the file.
+ * `--stdin-filename` is what decides which config block applies, so this asks
+ * the real flat config which rules reach that path.
+ */
+export function lintStdin(relativePath: string, source: string): LintMessage[] {
+  return parseMessages(
+    run(
+      ESLINT,
+      [
+        '--stdin',
+        '--stdin-filename',
+        relativePath,
+        '--format',
+        'json',
+        '--config',
+        'eslint.config.mjs',
+        '--no-warn-ignored',
+      ],
+      source,
+    ),
+  );
+}
+
+/** Lint a file that exists, the way the changed-file lint does. */
+export function lintFile(relativePath: string): LintMessage[] {
+  return parseMessages(
+    run(ESLINT, [
+      '--config',
+      'eslint.config.mjs',
+      '--no-warn-ignored',
+      '--format',
+      'json',
+      relativePath,
+    ]),
+  );
+}
+
+/** Only the design-system rules; the probes carry no other interesting output. */
+export function designMessages(messages: LintMessage[]): LintMessage[] {
+  return messages.filter((message) => message.ruleId?.startsWith('shadcn/'));
+}
+
+export const messagesFor = (messages: LintMessage[], ruleId: string): string[] =>
+  messages.filter((message) => message.ruleId === ruleId).map((message) => message.message);
+
+/** The local mirror of the Static Checks lane, invoked as `package.json` does. */
+export function staticChecks(args: string[]): CommandResult {
+  return run(process.execPath, [resolve(repoRoot, 'scripts/static-checks.mts'), ...args]);
+}

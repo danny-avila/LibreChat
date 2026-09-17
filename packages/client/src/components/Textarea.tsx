@@ -1,11 +1,9 @@
-/* eslint-disable */
 import * as React from 'react';
-import TextareaAutosize from 'react-textarea-autosize';
 import { fieldBase } from './Field';
 import { cn } from '~/utils';
 import './Field.css';
 
-export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {}
+export type TextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement>;
 
 const Textarea: React.ForwardRefExoticComponent<
   TextareaProps & React.RefAttributes<HTMLTextAreaElement>
