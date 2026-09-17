@@ -127,6 +127,27 @@ export function buildAgentAdditionalInstructions({
 }
 
 /**
+ * Records the author's `additional_instructions` before anything runtime-scoped
+ * joins that field, because the prompt cache identity follows the configured
+ * half and nothing downstream can separate the two again.
+ *
+ * Idempotent on purpose, and called from both places that write to the field:
+ * `initializeAgent` moves temporally resolved instructions into it (a value
+ * that changes every day and must stay out of the identity), and
+ * `applyContextToAgent` appends this run's memory, file and MCP context. The
+ * first caller wins, so whichever runs first records the configured text.
+ */
+export function captureConfiguredAdditionalInstructions(agent: {
+  additional_instructions?: string | null;
+  configuredAdditionalInstructions?: string;
+}): void {
+  if ('configuredAdditionalInstructions' in agent) {
+    return;
+  }
+  agent.configuredAdditionalInstructions = agent.additional_instructions || undefined;
+}
+
+/**
  * Applies run context and MCP instructions to an agent's configuration.
  * Mutates the agent object in place.
  *
@@ -158,16 +179,7 @@ export async function applyContextToAgent({
 }): Promise<void> {
   const baseInstructions = agent.instructions || '';
   const additionalInstructions = agent.additional_instructions || '';
-  /**
-   * The configured half of the dynamic tail, kept before run context is joined
-   * to it below. Once joined, nothing downstream can tell the author's text
-   * apart from this run's memory, file and MCP context, and the prompt cache
-   * identity has to follow the configured half. Captured here rather than at
-   * each caller so a resumed run reports the same identity as the run it
-   * resumes.
-   */
-  const cacheable = agent as AgentWithTools & { configuredAdditionalInstructions?: string };
-  cacheable.configuredAdditionalInstructions = additionalInstructions || undefined;
+  captureConfiguredAdditionalInstructions(agent);
 
   try {
     const mcpServers = ephemeralAgent?.mcp?.length ? ephemeralAgent.mcp : extractMCPServers(agent);

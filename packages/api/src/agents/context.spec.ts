@@ -10,6 +10,7 @@ import {
   buildAgentInstructions,
   buildAgentAdditionalInstructions,
   applyContextToAgent,
+  captureConfiguredAdditionalInstructions,
 } from './context';
 
 // Test schema for DynamicStructuredTool
@@ -312,6 +313,28 @@ describe('Agent Context Utilities', () => {
         debug: jest.fn(),
         error: jest.fn(),
       } as unknown as Logger;
+    });
+
+    it('keeps an earlier capture when temporally resolved instructions moved into the tail', async () => {
+      const agent: AgentWithTools & { configuredAdditionalInstructions?: string } = {
+        id: 'test-agent',
+        instructions: undefined,
+        additional_instructions: 'Today is September 17',
+        tools: [],
+      };
+      /** `initializeAgent` captures before it moves resolved instructions here. */
+      captureConfiguredAdditionalInstructions({ ...agent, additional_instructions: undefined });
+      agent.configuredAdditionalInstructions = undefined;
+
+      mockMCPManager.formatInstructionsForContext.mockResolvedValue('');
+
+      await applyContextToAgent({
+        agent,
+        sharedRunContext: 'Memory: the user prefers brevity',
+        mcpManager: mockMCPManager,
+      });
+
+      expect(agent.configuredAdditionalInstructions).toBeUndefined();
     });
 
     it('keeps the author\u2019s additional instructions apart from the run context', async () => {
