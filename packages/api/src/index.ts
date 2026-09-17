@@ -39,6 +39,7 @@ export * from './mcp/reinitialize';
 export * from './mcp/icons';
 /* Utilities */
 export * from './mcp/utils';
+export * from './mcp/domainValidation';
 export * from './mcp/context';
 export * from './utils';
 export { default as Tokenizer, countTokens } from './utils/tokenizer';

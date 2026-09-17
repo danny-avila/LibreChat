@@ -2971,7 +2971,7 @@ describe('User parameter passing tests', () => {
       );
     });
 
-    it('resolves the live session bearer for the early domain gate when the snapshot token is expired', async () => {
+    it('loads the tool when the early domain gate meets an expired OpenID snapshot token', async () => {
       const mockUser = {
         id: 'expired-token-user',
         role: 'user',
@@ -2983,13 +2983,14 @@ describe('User parameter passing tests', () => {
       };
       const mockRes = { write: jest.fn(), flush: jest.fn() };
 
-      mockRegistryInstance.getServerConfig.mockResolvedValue({
+      const serverConfig = {
         type: 'streamable-http',
         url: 'https://mcp.example.com/mcp',
         source: 'yaml',
         requiresOAuth: false,
         headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_TOKEN}}' },
-      });
+      };
+      mockRegistryInstance.getServerConfig.mockResolvedValue(serverConfig);
       mockGetAppConfig.mockResolvedValue({
         mcpSettings: { allowedDomains: ['mcp.example.com'] },
       });
@@ -3015,18 +3016,19 @@ describe('User parameter passing tests', () => {
       });
 
       expect(result).toBeDefined();
-      expect(upstreamTokenProvider).toHaveBeenCalledWith({ forceRefresh: false });
-      expect(mockIsMCPDomainAllowed).toHaveBeenCalledWith(
-        expect.objectContaining({
-          url: 'https://mcp.example.com/mcp',
-          headers: { Authorization: 'Bearer fresh-token' },
-        }),
-        ['mcp.example.com'],
-        undefined,
-      );
+      /** The gate decides from the URL, so it must not spend an IdP round trip per tool. */
+      expect(upstreamTokenProvider).not.toHaveBeenCalled();
+      const [validationConfig, domains, addresses] = mockIsMCPDomainAllowed.mock.calls[0];
+      expect(validationConfig.url).toBe('https://mcp.example.com/mcp');
+      expect(validationConfig.headers).toBeUndefined();
+      expect([domains, addresses]).toEqual([['mcp.example.com'], undefined]);
+      /** The connection path still receives the placeholder it can refresh. */
+      expect(serverConfig.headers).toEqual({
+        Authorization: 'Bearer {{LIBRECHAT_OPENID_TOKEN}}',
+      });
     });
 
-    it('still fails closed when no live session bearer is available for the early domain gate', async () => {
+    it('still fails closed when the URL itself carries an unresolvable OpenID credential', async () => {
       const { OpenIDReauthRequiredError } = require('@librechat/api');
       const mockUser = {
         id: 'no-session-user',
@@ -3041,7 +3043,7 @@ describe('User parameter passing tests', () => {
 
       mockRegistryInstance.getServerConfig.mockResolvedValue({
         type: 'streamable-http',
-        url: 'https://mcp.example.com/mcp',
+        url: 'https://mcp.example.com/mcp/{{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
         source: 'yaml',
         requiresOAuth: false,
         headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_TOKEN}}' },
@@ -3072,7 +3074,7 @@ describe('User parameter passing tests', () => {
       ).rejects.toThrow(OpenIDReauthRequiredError);
     });
 
-    it('resolves the live session bearer before the createMCPTools domain gate', async () => {
+    it('loads the batch path when the domain gate meets an expired OpenID snapshot token', async () => {
       const mockUser = {
         id: 'expired-token-batch-user',
         role: 'user',
@@ -3118,7 +3120,11 @@ describe('User parameter passing tests', () => {
       });
 
       expect(tools).toHaveLength(1);
-      expect(upstreamTokenProvider).toHaveBeenCalled();
+      expect(upstreamTokenProvider).not.toHaveBeenCalled();
+      const [validationConfig] = mockIsMCPDomainAllowed.mock.calls[0];
+      expect(validationConfig.url).toBe('https://mcp.example.com/mcp');
+      expect(validationConfig.headers).toBeUndefined();
+      /** Recovery still owns the placeholder on the connection path. */
       expect(mockReinitMCPServer).toHaveBeenCalledWith(
         expect.objectContaining({ upstreamTokenProvider }),
       );
