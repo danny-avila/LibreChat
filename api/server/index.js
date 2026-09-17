@@ -37,6 +37,8 @@ const {
   createMediaRuntime,
   createMediaTransport,
   createMediaAccounting,
+  createVertexMediaCredentialProvider,
+  createGoogleMediaAuthClient,
   initializeDeploymentSkills,
   initializeDeploymentPlugins,
   getDeploymentPluginSkills,
@@ -248,6 +250,12 @@ const startServer = async () => {
     tenantContext: tenantStorage,
     asSystem: runAsSystem,
     environment: process.env,
+    vertexCredentials: createVertexMediaCredentialProvider({
+      readFile: fs.promises.readFile,
+      createAuth: createGoogleMediaAuthClient,
+      now: Date.now,
+      maxCacheEntries: appConfig.media?.catalog.maxCacheEntries,
+    }),
     decrypt,
     transport: createMediaTransport({
       http: axios,

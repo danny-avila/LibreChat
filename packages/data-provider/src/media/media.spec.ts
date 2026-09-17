@@ -86,6 +86,50 @@ describe('media configuration compatibility', () => {
     });
     expect(parsed[PermissionTypes.MEDIA]).toEqual({ USE: true, CREATE: false });
   });
+
+  it('configures Vertex separately from API-key and OpenRouter credentials', () => {
+    const config = mediaConfigSchema.parse({
+      integrations: [
+        {
+          id: 'vertex-video',
+          api: 'google.vertex.videos',
+          endpointRef: { kind: 'vertex', keyFile: '${GOOGLE_SERVICE_KEY_FILE}' },
+          catalog: { kind: 'configured', models: ['veo-3.1-fast-generate-001'] },
+          operations: ['video.generate'],
+        },
+      ],
+    });
+    expect(config.integrations[0].endpointRef).toEqual({
+      kind: 'vertex',
+      keyFile: '${GOOGLE_SERVICE_KEY_FILE}',
+      location: 'us-central1',
+    });
+    expect(configSchema.parse({ version: '1.3.1', media: config }).media).toEqual(config);
+  });
+
+  it.each([
+    { api: 'google.vertex.videos', endpointRef: { kind: 'custom', name: 'OpenRouter' } },
+    { api: 'openrouter.videos', endpointRef: { kind: 'vertex', keyFile: 'auth.json' } },
+    { endpointRef: { kind: 'vertex', keyFile: '' } },
+    { endpointRef: { kind: 'vertex', keyFile: 'auth.json', location: 'bad/region' } },
+    { catalog: { kind: 'discovered', allowModels: ['veo-3.1-fast-generate-001'] } },
+    { operations: ['image.generate'] },
+  ])('rejects incompatible Vertex configuration %j', (override) => {
+    expect(
+      mediaConfigSchema.safeParse({
+        integrations: [
+          {
+            id: 'vertex-video',
+            api: 'google.vertex.videos',
+            endpointRef: { kind: 'vertex', keyFile: 'auth.json' },
+            catalog: { kind: 'configured', models: ['veo-3.1-fast-generate-001'] },
+            operations: ['video.generate'],
+            ...override,
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe('media command contracts', () => {

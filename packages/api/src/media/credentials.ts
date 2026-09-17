@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
+import { resolveMediaConfig } from 'librechat-data-provider';
 import type { AppConfig, MediaMethods, MediaOwnerScope } from '@librechat/data-schemas';
 import type { MediaIntegration } from 'librechat-data-provider';
+import type { MediaVertexCredentialProvider } from './vertexAuth';
 import type { MediaRoutingPolicy } from './routing';
 import type { MediaConnection } from './provider';
 import { mediaRoutingPolicySchema } from './routing';
@@ -9,6 +11,7 @@ import { MediaServiceError } from './errors';
 
 export interface MediaEnvironment {
   GOOGLE_KEY?: string;
+  GEMINI_API_KEY?: string;
   GOOGLE_REVERSE_PROXY?: string;
   OPENAI_API_KEY?: string;
   OPENAI_REVERSE_PROXY?: string;
@@ -20,11 +23,13 @@ export function createMediaCredentialResolver({
   repository,
   decrypt,
   now,
+  vertexCredentials,
 }: {
   environment: MediaEnvironment;
   repository: Pick<MediaMethods, 'getStoredMediaCredential'>;
   decrypt: (value: string) => Promise<string>;
   now: () => number;
+  vertexCredentials?: MediaVertexCredentialProvider;
 }) {
   const expand = (value: string): string =>
     value.replace(
@@ -43,6 +48,38 @@ export function createMediaCredentialResolver({
     appConfig: AppConfig;
     minValidityMs: number;
   }): Promise<MediaConnection> {
+    if (integration.endpointRef.kind === 'vertex') {
+      if (!vertexCredentials) {
+        throw new MediaServiceError('not_ready', 422, 'Vertex authentication is unavailable.');
+      }
+      const endpoint = integration.endpointRef;
+      const credential = await vertexCredentials({
+        keyFile: expand(endpoint.keyFile),
+        projectId: endpoint.projectId ? expand(endpoint.projectId) : undefined,
+        minValidityMs,
+        timeoutMs: (appConfig.media ?? resolveMediaConfig()).catalog.requestTimeoutMs,
+      });
+      const hostname =
+        endpoint.location === 'global'
+          ? 'aiplatform.googleapis.com'
+          : `${endpoint.location}-aiplatform.googleapis.com`;
+      const baseURL = `https://${hostname}/v1/projects/${encodeURIComponent(credential.projectId)}/locations/${endpoint.location}/publishers/google/`;
+      return {
+        id: integration.id,
+        api: integration.api,
+        baseURL,
+        headers: { Authorization: `Bearer ${credential.accessToken}` },
+        binding: createHash('sha256')
+          .update(
+            JSON.stringify({
+              api: integration.api,
+              baseURL,
+              revision: credential.revision,
+            }),
+          )
+          .digest('hex'),
+      };
+    }
     let apiKey: string | undefined;
     let baseURL: string | undefined;
     let credentialName: string;
@@ -76,7 +113,7 @@ export function createMediaCredentialResolver({
     } else {
       credentialName = integration.endpointRef.endpoint;
       if (credentialName === 'google') {
-        apiKey = environment.GOOGLE_KEY;
+        apiKey = environment.GOOGLE_KEY || environment.GEMINI_API_KEY;
         baseURL =
           environment.GOOGLE_REVERSE_PROXY || 'https://generativelanguage.googleapis.com/v1beta';
       } else if (credentialName === 'openAI') {

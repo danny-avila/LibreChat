@@ -39,6 +39,8 @@ const {
   createMediaRuntime,
   createMediaTransport,
   createMediaAccounting,
+  createVertexMediaCredentialProvider,
+  createGoogleMediaAuthClient,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   injectConfiguredFooterBootstrap,
@@ -515,6 +517,12 @@ if (cluster.isMaster) {
       tenantContext: tenantStorage,
       asSystem: runAsSystem,
       environment: process.env,
+      vertexCredentials: createVertexMediaCredentialProvider({
+        readFile: fs.promises.readFile,
+        createAuth: createGoogleMediaAuthClient,
+        now: Date.now,
+        maxCacheEntries: appConfig.media?.catalog.maxCacheEntries,
+      }),
       decrypt,
       transport: createMediaTransport({
         http: axios,

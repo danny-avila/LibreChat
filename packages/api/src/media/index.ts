@@ -3,6 +3,7 @@ export * from './errors';
 export * from './transport';
 export * from './provider';
 export * from './credentials';
+export * from './vertexAuth';
 export * from './catalog';
 export * from './storage';
 export * from './service';

@@ -19,6 +19,17 @@ export const mediaIntegrationSchema = z
     endpointRef: z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('builtin'), endpoint: z.nativeEnum(EModelEndpoint) }).strict(),
       z.object({ kind: z.literal('custom'), name: z.string().trim().min(1) }).strict(),
+      z
+        .object({
+          kind: z.literal('vertex'),
+          keyFile: z.string().trim().min(1),
+          projectId: z.string().trim().min(1).optional(),
+          location: z
+            .string()
+            .regex(/^[a-z][a-z0-9-]*$/)
+            .default('us-central1'),
+        })
+        .strict(),
     ]),
     catalog: z.discriminatedUnion('kind', [
       z
@@ -47,6 +58,24 @@ export const mediaIntegrationSchema = z
   })
   .strict()
   .superRefine((integration, ctx) => {
+    if (
+      (integration.api === 'google.vertex.videos' && integration.endpointRef.kind !== 'vertex') ||
+      (integration.endpointRef.kind === 'vertex' &&
+        !['google.generateContent', 'google.vertex.videos'].includes(integration.api))
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['endpointRef'],
+        message: 'Vertex credentials require a supported native Google API',
+      });
+    }
+    if (integration.endpointRef.kind === 'vertex' && integration.catalog.kind !== 'configured') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['catalog'],
+        message: 'Vertex media requires explicitly configured models',
+      });
+    }
     const videoOnly = integration.api.endsWith('.videos');
     const imageOnly =
       integration.api.endsWith('.images') || integration.api === 'google.generateContent';

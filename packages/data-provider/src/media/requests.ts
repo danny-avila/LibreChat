@@ -10,6 +10,7 @@ export const mediaApiSchema = z.enum([
   'openai.videos',
   'google.interactions',
   'google.generateContent',
+  'google.vertex.videos',
 ]);
 export const mediaInputRoleSchema = z.enum([
   'reference',

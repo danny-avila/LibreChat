@@ -15,6 +15,7 @@ import type {
 import type { MediaTransport, MediaTransportRequest } from './transport';
 import type { MediaConnection, MediaProviderAdapter } from './provider';
 import { mediaRouteAllowed, mediaRoutePriority, mediaVideoPolicySupported } from './routing';
+import { vertexVideoCapabilities, vertexVideoModelName } from './adapters/vertexVideo';
 import { MediaServiceError } from './errors';
 import { mediaAPIURL } from './provider';
 
@@ -150,6 +151,9 @@ function nativeCapabilities(
   modelId: string,
   config: MediaConfig,
 ): MediaCapability[] {
+  if (integration.api === 'google.vertex.videos') {
+    return vertexVideoCapabilities(modelId, config);
+  }
   if (integration.api === 'openai.images' && modelId.startsWith('gpt-image-')) {
     return integration.operations.flatMap((operation): MediaCapability[] =>
       operation === 'video.generate'
@@ -294,7 +298,10 @@ export function createMediaCatalog({
           .map(async (modelId) => {
             let capabilities = nativeCapabilities(integration, modelId, config);
             let providerTag: string | undefined;
-            let modelName = modelId;
+            let modelName =
+              integration.api === 'google.vertex.videos'
+                ? (vertexVideoModelName(modelId) ?? modelId)
+                : modelId;
             if (integration.api === 'openrouter.images') {
               const endpoints = await discover(
                 {

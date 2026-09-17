@@ -1,6 +1,6 @@
 # Local implementation
 
-This branch contains an opt-in implementation, alongside the research and proposed longer-term design. It has not been connected to a paid provider during development.
+This branch contains an opt-in implementation, alongside the research and proposed longer-term design.
 
 ## User experience
 
@@ -16,7 +16,7 @@ This branch contains an opt-in implementation, alongside the research and propos
 | ---------- | ------------------------------------------------------------------------------ | ------------------------------------------------------- | ---------------------------------------------------------- |
 | OpenRouter | Image API generation and reference editing                                     | Asynchronous Video API generation, polling and download | Explicit model allowlist plus live operation metadata      |
 | OpenAI     | GPT Image generation and multipart editing                                     | Sora generation, polling and download                   | Explicit configured models and supported protocol controls |
-| Google     | Gemini native text/image generation and reference editing; signed continuation | Not implemented                                         | Explicit configured image models                           |
+| Google     | Gemini native text/image generation and reference editing; signed continuation | Vertex Veo 3.1 generation, polling and inline originals | Explicit configured model profiles                         |
 
 OpenRouter image controls come from one eligible, pinned provider endpoint. Endpoint routing/privacy requirements remain in force. Video offerings that require unsupported request policy or a transformation workflow are unavailable. Unknown native model families are unavailable until their controls are described explicitly.
 
@@ -43,6 +43,17 @@ media:
         kind: configured
         models: [gpt-image-1]
       operations: [image.generate, image.edit]
+    - id: vertex-videos
+      label: Google (Vertex AI)
+      api: google.vertex.videos
+      endpointRef:
+        kind: vertex
+        keyFile: '${GOOGLE_SERVICE_KEY_FILE}'
+        location: us-central1
+      catalog:
+        kind: configured
+        models: [veo-3.1-fast-generate-001, veo-3.1-generate-001]
+      operations: [video.generate]
 
     - id: gemini-images
       label: Gemini images
@@ -56,7 +67,15 @@ media:
       operations: [image.generate, image.edit]
 ```
 
-These connections reuse the native provider credentials (`OPENAI_API_KEY` and `GOOGLE_KEY`, including the existing user-provided credential mechanism). For OpenRouter, point `endpointRef: {kind: custom, name: OpenRouter}` at an existing custom endpoint API root and use `api: openrouter.images` or `openrouter.videos` with `catalog: {kind: discovered, allowModels: [...]}`. Keep image and video integrations separate. Discovery does not authorize arbitrary models outside the allowlist.
+API-key connections reuse the native provider credentials (`OPENAI_API_KEY` and `GOOGLE_KEY`, including the existing user-provided credential mechanism). Studio's Google image connection also accepts `GEMINI_API_KEY` when `GOOGLE_KEY` is unset or empty. An explicit `GOOGLE_KEY=user_provided` still requires that user's saved key. This fallback does not change chat authentication.
+
+The Vertex connection uses the service-account JSON at `endpointRef.keyFile`, which accepts environment variable references or a literal local path. Set `GOOGLE_SERVICE_KEY_FILE` to that path for the example above. `endpointRef.projectId` can override the project in the file; `location` defaults to `us-central1`. Authentication uses renewable OAuth tokens and binds saved jobs to the service account and project rather than the current access token. API-key credentials and OpenRouter routing are independent of this connection.
+
+In Studio, select **Video → Provider → Google (Vertex AI)**. The configured GA Veo 3.1 models support text-to-video, 4/6/8-second durations, 720p/1080p output, landscape/portrait aspect ratios, and optional generated audio. Native frame inputs are not implemented. Completed video bytes are saved to the existing media store without requiring a Cloud Storage bucket. Polling retains the original Vertex operation, including across access-token renewal, server restart, and interrupted ingestion.
+
+Gemini image responses include private continuation signatures that can exceed the default 1 MiB part limit. For these models, set `media.limits.maxNativePartBytes: 4194304` while retaining the default 4 MiB `maxNativeRecordingBytes` total limit. These signatures remain server-side and enable later edits; a response above either configured limit cannot be accepted.
+
+For OpenRouter, point `endpointRef: {kind: custom, name: OpenRouter}` at an existing custom endpoint API root and use `api: openrouter.images` or `openrouter.videos` with `catalog: {kind: discovered, allowModels: [...]}`. Keep image and video integrations separate. Discovery does not authorize arbitrary models outside the allowlist.
 
 Restart the local server after changing the media configuration. Build with `npm run frontend`, then start the normal backend. The existing local file storage must be available. The pinned agents SDK patch is applied during installation; see [`patches/README.md`](../../../patches/README.md).
 
@@ -83,7 +102,7 @@ A media thread contains immutable content turns; each execution attempt is a sep
 
 - Originals use local storage. S3, Azure, Firebase and CloudFront media adapters remain to be implemented through the storage port.
 - Tile previews lazily load originals. Separate thumbnails, video posters and transcoding are not implemented.
-- Video support covers generation and documented frame inputs. Video editing, extension, upscaling, audio-only generation and native Google video are not implemented.
+- Video support covers generation and documented frame inputs. Video editing, extension, upscaling, audio-only generation and Gemini API video are not implemented; native Vertex currently supports text-to-video.
 - Cancellation is available while queued. Accepted provider work is not advertised as cancellable without a verified provider cancellation contract.
 - Generation from temporary chat is blocked; a complete temporary-retention lifecycle is required before enabling it.
 - Studio Gemini continuation includes the selected parent's user/model exchange. Ordinary native chat uses its existing conversation history.

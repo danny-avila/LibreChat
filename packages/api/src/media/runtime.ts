@@ -9,6 +9,7 @@ import type {
 import type { Request, Router } from 'express';
 import type { MediaAccounting, MediaContext, MediaServices } from './service';
 import type { MediaChatSource, NativeMediaFactory } from './native';
+import type { MediaVertexCredentialProvider } from './vertexAuth';
 import type { MediaEnvironment } from './credentials';
 import type { MediaTransport } from './transport';
 import type { MediaUploadFactory } from './http';
@@ -40,6 +41,7 @@ export interface MediaRuntimeDependencies {
   tenantContext: { run<T>(scope: { tenantId?: string }, work: () => Promise<T>): Promise<T> };
   asSystem<T>(work: () => Promise<T>): Promise<T>;
   environment: MediaEnvironment;
+  vertexCredentials?: MediaVertexCredentialProvider;
   decrypt(value: string): Promise<string>;
   transport: MediaTransport;
   upload: MediaUploadFactory;
@@ -68,6 +70,7 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
     environment: input.environment,
     decrypt: input.decrypt,
     now: Date.now,
+    vertexCredentials: input.vertexCredentials,
   });
   async function actorContext(actor: MediaActor): Promise<MediaContext> {
     const [appConfig, role] = await Promise.all([

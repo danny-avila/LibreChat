@@ -9,6 +9,7 @@ import type {
   MediaProviderResult,
 } from '../provider';
 import { mediaImageRouting, mediaVideoPolicySupported } from '../routing';
+import { createVertexVideoAdapter } from './vertexVideo';
 import { MediaProviderError } from '../errors';
 import { mediaAPIURL } from '../provider';
 
@@ -424,6 +425,7 @@ async function poll(
 
 export function createRESTMediaAdapters(): MediaProviderAdapter[] {
   return [
+    createVertexVideoAdapter(),
     {
       api: 'openrouter.images',
       operations: ['image.generate', 'image.edit'],

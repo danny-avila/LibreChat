@@ -43,6 +43,11 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
   let original: Buffer;
   let posts = 0;
   let polls = 0;
+  let vertexToken = 'access-1';
+  let vertexAuthorizations: Array<string | undefined> = [];
+  const vertexApi = 'https://us-central1-aiplatform.googleapis.com/v1';
+  const vertexModel = 'veo-3.1-fast-generate-001';
+  const vertexOperation = `projects/test-project/locations/us-central1/publishers/google/models/${vertexModel}/operations/vertex-job-1`;
   let behavior: 'image' | 'uncertain' | 'rejected' | 'video' = 'image';
   let repository: MediaMethods & MediaNativeMethods;
   let scope: MediaOwnerScope;
@@ -89,6 +94,35 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       header.write('mp42', 8);
       res.type('video/mp4').send(header);
     });
+    api.post(
+      '/v1/projects/test-project/locations/us-central1/publishers/google/models/:action',
+      (req, res) => {
+        vertexAuthorizations.push(req.headers.authorization);
+        if (req.params.action === `${vertexModel}:predictLongRunning`) {
+          posts++;
+          res.json({ name: vertexOperation });
+          return;
+        }
+        if (
+          req.params.action !== `${vertexModel}:fetchPredictOperation` ||
+          req.body.operationName !== vertexOperation
+        ) {
+          res.status(400).json({ error: 'Unexpected Vertex operation' });
+          return;
+        }
+        polls++;
+        const bytes = Buffer.alloc(32);
+        bytes.write('ftyp', 4);
+        bytes.write('mp42', 8);
+        res.json({
+          name: vertexOperation,
+          done: true,
+          response: {
+            videos: [{ mimeType: 'video/mp4', bytesBase64Encoded: bytes.toString('base64') }],
+          },
+        });
+      },
+    );
     provider = await new Promise<Server>((resolve) => {
       const server = api.listen(0, '127.0.0.1', () => resolve(server));
     });
@@ -115,6 +149,8 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     );
     posts = 0;
     polls = 0;
+    vertexToken = 'access-1';
+    vertexAuthorizations = [];
     behavior = 'image';
     userRole = 'USER';
     scope = { ownerId: new mongoose.Types.ObjectId().toString(), tenantId: null };
@@ -145,10 +181,21 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
             catalog: { kind: 'configured', models: ['sora-2'] },
             operations: ['video.generate'],
           },
+          {
+            id: 'vertex',
+            api: 'google.vertex.videos',
+            endpointRef: { kind: 'vertex', keyFile: 'fixture-auth.json' },
+            catalog: { kind: 'configured', models: [vertexModel] },
+            operations: ['video.generate'],
+          },
         ],
       }),
       endpoints: { custom: [{ name: 'Fixture', apiKey: 'fixture-secret', baseURL: root }] },
     };
+    const providerTransport = createMediaTransport({
+      http: axios.create({ proxy: false }),
+      allowedAddresses: [new URL(root).host],
+    });
     runtime = createMediaRuntime({
       appConfig: config,
       repository,
@@ -160,11 +207,25 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       tenantContext: tenantStorage,
       asSystem: runAsSystem,
       environment: { GOOGLE_KEY: 'fixture-google', GOOGLE_REVERSE_PROXY: root },
-      decrypt: async (value) => value,
-      transport: createMediaTransport({
-        http: axios.create({ proxy: false }),
-        allowedAddresses: [new URL(root).host],
+      vertexCredentials: async () => ({
+        projectId: 'test-project',
+        accessToken: vertexToken,
+        revision: 'original-service-account',
       }),
+      decrypt: async (value) => value,
+      transport: {
+        json: (input, schema) =>
+          providerTransport.json(
+            {
+              ...input,
+              url: input.url.startsWith(`${vertexApi}/`)
+                ? root + input.url.slice(vertexApi.length)
+                : input.url,
+            },
+            schema,
+          ),
+        stream: providerTransport.stream,
+      },
       upload: multer,
       accounting: createMediaAccounting({
         repository: createMediaAccountingMethods(mongoose),
@@ -302,6 +363,47 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     expect((await run(response.body.jobId))?.phase).toBe('succeeded');
     expect(posts).toBe(1);
     expect(polls).toBe(1);
+  });
+
+  it('resumes Vertex polling after token refresh and lost storage acknowledgment without a second generation', async () => {
+    const catalog = mediaCatalogSchema.parse((await request(app).get('/api/media/catalog')).body);
+    const response = await submit('vertex-video', {
+      operation: 'video.generate',
+      selection: { connectionId: 'vertex', modelId: vertexModel, catalogVersion: catalog.version },
+      parameters: { count: 1, durationSeconds: 4, resolution: '720p', audio: false },
+    });
+    expect(response.status).toBe(202);
+    const running = await run(response.body.jobId);
+    expect(running?.phase).toBe('running');
+    expect(running?.provider.operationId).toBe(vertexOperation);
+    vertexToken = 'renewed-access-2';
+    const commit = repository.commitMediaAssetWrite.bind(repository);
+    jest.spyOn(repository, 'commitMediaAssetWrite').mockImplementationOnce(async (input) => {
+      await commit(input);
+      throw new Error('Lost Vertex video storage acknowledgment');
+    });
+    expect((await run(response.body.jobId))?.phase).toBe('ingesting');
+    config.media = resolveMediaConfig();
+    const completed = await run(response.body.jobId);
+    expect(completed?.phase).toBe('succeeded');
+    const output = completed?.outputs[0];
+    expect(output).toMatchObject({
+      kind: 'video',
+      state: 'ready',
+      asset: { type: 'video/mp4', bytes: 32 },
+    });
+    expect(posts).toBe(1);
+    expect(polls).toBe(2);
+    expect(vertexAuthorizations).toEqual([
+      'Bearer access-1',
+      'Bearer renewed-access-2',
+      'Bearer renewed-access-2',
+    ]);
+    expect(
+      JSON.stringify(
+        (await request(app).get(`/api/media/jobs/${response.body.jobId}`).expect(200)).body,
+      ),
+    ).not.toMatch(/Bearer|fixture-auth|original-service-account/);
   });
 
   it('recovers a direct original committed before its acknowledgment without a second inference', async () => {
