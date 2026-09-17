@@ -132,13 +132,19 @@ describe('buildPromptCacheKey', () => {
     ).toBe(key());
   });
 
-  it('still keys on a configured tool that shares a discovered name', () => {
+  it('ignores a discovered definition that was already bound', () => {
+    /** Discovery flips `defer_loading` on a definition the agent already sends. */
     expect(
       key({
-        toolDefinitions: [searchTool],
+        toolDefinitions: [searchTool, { ...calculatorTool, defer_loading: false }],
         clientOptions: { promptCacheDiscoveredToolNames: ['calculator'] },
       }),
-    ).not.toBe(key());
+    ).toBe(
+      key({
+        toolDefinitions: [searchTool, { ...calculatorTool, defer_loading: true }],
+        clientOptions: { promptCacheDiscoveredToolNames: ['calculator'] },
+      }),
+    );
   });
 
   it('reads an absent, empty and empty-array surface as the same absent surface', () => {
