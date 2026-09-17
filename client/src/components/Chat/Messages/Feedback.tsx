@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { TFeedback, TFeedbackTag, getTagsForRating } from 'librechat-data-provider';
+import { getTagsForRating } from 'librechat-data-provider';
 import {
   AlertCircle,
   PenTool,
@@ -21,9 +21,9 @@ import {
   ThumbUpIcon,
   ThumbDownIcon,
 } from '@librechat/client';
+import type { TFeedback, TFeedbackRating, TFeedbackTag } from 'librechat-data-provider';
 import { hoverButtonClasses } from './styles';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 
 interface FeedbackProps {
   handleFeedback: ({ feedback }: { feedback: TFeedback | undefined }) => void;
@@ -46,11 +46,9 @@ const ICONS = {
 
 function FeedbackOptionButton({
   tag,
-  active,
   onClick,
 }: {
   tag: TFeedbackTag;
-  active?: boolean;
   onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
 }) {
   const localize = useLocalize();
@@ -60,15 +58,11 @@ function FeedbackOptionButton({
   return (
     <Button
       variant="ghost"
-      className={cn(
-        'h-auto w-full justify-start gap-3 rounded-xl p-2 text-text-secondary transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary',
-        active && 'bg-surface-hover font-semibold text-text-primary',
-      )}
+      className="h-auto w-full justify-start gap-3 rounded-xl p-2 text-text-secondary transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary"
       onClick={onClick}
       aria-label={label}
-      aria-pressed={active}
     >
-      <Icon size="19" bold={active} aria-hidden="true" />
+      <Icon size="19" aria-hidden="true" />
       <span>{label}</span>
     </Button>
   );
@@ -76,146 +70,101 @@ function FeedbackOptionButton({
 
 function FeedbackButtons({
   isLast,
-  feedback,
   onFeedback,
   onOther,
 }: {
   isLast: boolean;
-  feedback?: TFeedback;
   onFeedback: (fb: TFeedback | undefined) => void;
   onOther?: () => void;
 }) {
   const localize = useLocalize();
-  const upStore = Ariakit.usePopoverStore({ placement: 'bottom' });
-  const downStore = Ariakit.usePopoverStore({ placement: 'bottom' });
+  const hovercard = Ariakit.useHovercardStore({
+    placement: 'top',
+    showTimeout: 100,
+    hideTimeout: 150,
+  });
+  const isOpen = hovercard.useState('open');
+  const [rating, setRating] = useState<TFeedbackRating>();
 
   const positiveTags = useMemo(() => getTagsForRating('thumbsUp'), []);
   const negativeTags = useMemo(() => getTagsForRating('thumbsDown'), []);
+  const tags = rating === 'thumbsUp' ? positiveTags : negativeTags;
 
-  const upActive = feedback?.rating === 'thumbsUp' ? feedback.tag?.key : undefined;
-  const downActive = feedback?.rating === 'thumbsDown' ? feedback.tag?.key : undefined;
-
-  const handleThumbsUpClick = useCallback(
-    (e: React.MouseEvent<HTMLButtonElement>) => {
-      e.preventDefault();
-      if (feedback?.rating !== 'thumbsUp') {
-        upStore.toggle();
-        return;
-      }
-      onFeedback(undefined);
-    },
-    [feedback, onFeedback, upStore],
-  );
-
-  const handleUpOption = useCallback(
+  const handleOption = useCallback(
     (tag: TFeedbackTag) => (e: React.MouseEvent<HTMLButtonElement>) => {
       e.preventDefault();
-      upStore.hide();
-      onFeedback({ rating: 'thumbsUp', tag });
+      if (!rating) {
+        return;
+      }
+      hovercard.hide();
+      onFeedback({ rating, tag });
       if (tag.key === 'other') {
         onOther?.();
       }
     },
-    [onFeedback, onOther, upStore],
+    [hovercard, onFeedback, onOther, rating],
   );
 
-  const handleThumbsDownClick = useCallback(
-    (e: React.MouseEvent<HTMLButtonElement>) => {
-      e.preventDefault();
-      if (feedback?.rating !== 'thumbsDown') {
-        downStore.toggle();
-        return;
-      }
-
-      onOther?.();
-    },
-    [feedback, onOther, downStore],
-  );
-
-  const handleDownOption = useCallback(
-    (tag: TFeedbackTag) => (e: React.MouseEvent<HTMLButtonElement>) => {
-      e.preventDefault();
-      downStore.hide();
-      onFeedback({ rating: 'thumbsDown', tag });
-      if (tag.key === 'other') {
-        onOther?.();
-      }
-    },
-    [onFeedback, onOther, downStore],
-  );
+  useEffect(() => {
+    if (!isOpen) {
+      setRating(undefined);
+    }
+  }, [isOpen]);
 
   return (
-    <>
-      <Ariakit.PopoverAnchor
-        store={upStore}
+    <Ariakit.HovercardProvider store={hovercard}>
+      <Ariakit.HovercardAnchor
         render={
           <Button
             variant="ghost"
             size="icon"
-            className={buttonClasses(feedback?.rating === 'thumbsUp', isLast)}
-            onClick={handleThumbsUpClick}
-            title={localize('com_ui_feedback_positive')}
-            aria-pressed={feedback?.rating === 'thumbsUp'}
-            aria-haspopup="menu"
+            className={buttonClasses(isOpen, isLast)}
+            onClick={() => hovercard.toggle()}
+            title={localize('com_ui_feedback_rate')}
+            aria-label={localize('com_ui_feedback_rate')}
+            aria-expanded={isOpen}
+            aria-haspopup="dialog"
           >
-            <ThumbUpIcon size="19" bold={feedback?.rating === 'thumbsUp'} />
+            <span className="flex items-center -space-x-1" aria-hidden="true">
+              <ThumbUpIcon size="16" />
+              <ThumbDownIcon size="16" />
+            </span>
           </Button>
         }
       />
-      <Ariakit.Popover
-        store={upStore}
+      <Ariakit.Hovercard
         gutter={8}
         portal
         unmountOnHide
-        className="popover-animate flex w-auto flex-col gap-1.5 overflow-hidden rounded-2xl border border-border-medium bg-surface-secondary p-1.5 shadow-lg"
+        aria-label={localize('com_ui_feedback_rate')}
+        className="z-50 flex min-w-48 flex-col gap-1 overflow-hidden rounded-xl border border-border-light bg-surface-secondary p-1.5 text-text-primary shadow-lg outline-none"
       >
-        <div className="flex flex-col items-stretch justify-center">
-          {positiveTags.map((tag) => (
-            <FeedbackOptionButton
-              key={tag.key}
-              tag={tag}
-              active={upActive === tag.key}
-              onClick={handleUpOption(tag)}
-            />
-          ))}
-        </div>
-      </Ariakit.Popover>
-
-      <Ariakit.PopoverAnchor
-        store={downStore}
-        render={
-          <Button
-            variant="ghost"
-            size="icon"
-            className={buttonClasses(feedback?.rating === 'thumbsDown', isLast)}
-            onClick={handleThumbsDownClick}
-            title={localize('com_ui_feedback_negative')}
-            aria-pressed={feedback?.rating === 'thumbsDown'}
-            aria-haspopup="menu"
-          >
-            <ThumbDownIcon size="19" bold={feedback?.rating === 'thumbsDown'} />
-          </Button>
-        }
-      />
-      <Ariakit.Popover
-        store={downStore}
-        gutter={8}
-        portal
-        unmountOnHide
-        className="popover-animate flex w-auto flex-col gap-1.5 overflow-hidden rounded-2xl border border-border-medium bg-surface-secondary p-1.5 shadow-lg"
-      >
-        <div className="flex flex-col items-stretch justify-center">
-          {negativeTags.map((tag) => (
-            <FeedbackOptionButton
-              key={tag.key}
-              tag={tag}
-              active={downActive === tag.key}
-              onClick={handleDownOption(tag)}
-            />
-          ))}
-        </div>
-      </Ariakit.Popover>
-    </>
+        {rating ? (
+          tags.map((tag) => (
+            <FeedbackOptionButton key={tag.key} tag={tag} onClick={handleOption(tag)} />
+          ))
+        ) : (
+          <>
+            <Button
+              variant="ghost"
+              className="h-auto w-full justify-start gap-3 rounded-lg px-2.5 py-2 text-text-primary hover:bg-surface-hover"
+              onClick={() => setRating('thumbsUp')}
+            >
+              <ThumbUpIcon size="19" aria-hidden="true" />
+              <span>{localize('com_ui_feedback_good')}</span>
+            </Button>
+            <Button
+              variant="ghost"
+              className="h-auto w-full justify-start gap-3 rounded-lg px-2.5 py-2 text-text-primary hover:bg-surface-hover"
+              onClick={() => setRating('thumbsDown')}
+            >
+              <ThumbDownIcon size="19" aria-hidden="true" />
+              <span>{localize('com_ui_feedback_bad')}</span>
+            </Button>
+          </>
+        )}
+      </Ariakit.Hovercard>
+    </Ariakit.HovercardProvider>
   );
 }
 
@@ -311,7 +260,6 @@ export default function Feedback({
       ) : (
         <FeedbackButtons
           isLast={isLast}
-          feedback={feedback}
           onFeedback={handleButtonFeedback}
           onOther={handleOtherOpen}
         />
