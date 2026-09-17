@@ -475,7 +475,7 @@ const InFlightSteer = memo(function InFlightSteer({
           {images.map((file) => (
             <div
               key={file.file_id}
-              className="overflow-hidden rounded-xl border border-border-light"
+              className="border-border-light overflow-hidden rounded-xl border"
             >
               <ImagePreview
                 url={file.preview ?? file.filepath}
@@ -512,11 +512,11 @@ const InFlightSteer = memo(function InFlightSteer({
           className={cn(
             /* Same bubble geometry as the applied `SteerPart` and every user
              * turn, so the words don't reshape when the server injects them. */
-            'flex min-w-0 items-start gap-2 rounded-theme-surface rounded-br-theme-control',
+            'rounded-theme-surface rounded-br-theme-control flex min-w-0 items-start gap-2',
             /* Outlined, not just filled: an in-flight steer is provisional —
              * the fill alone reads as a settled message. */
-            'border border-border-medium bg-surface-secondary',
-            'px-theme-normal py-2.5 text-sm text-text-primary',
+            'border-border-medium bg-surface-secondary border',
+            'px-theme-normal text-text-primary py-2.5 text-sm',
             sending && 'opacity-70',
           )}
         >
@@ -554,7 +554,7 @@ const InFlightSteer = memo(function InFlightSteer({
               </div>
               {!expanded && overflowing && (
                 <div
-                  className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-surface-secondary to-transparent"
+                  className="from-surface-secondary pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent"
                   aria-hidden="true"
                 />
               )}
@@ -565,7 +565,7 @@ const InFlightSteer = memo(function InFlightSteer({
                 onClick={() => setExpanded((prev) => !prev)}
                 aria-expanded={expanded}
                 aria-controls={contentId}
-                className="inline-flex items-center gap-1 rounded text-xs font-medium text-text-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy"
+                className="text-text-secondary hover:text-text-primary focus-visible:ring-border-xheavy inline-flex items-center gap-1 rounded text-xs font-medium focus-visible:ring-2 focus-visible:outline-hidden"
               >
                 <MorphIcon icon={expanded ? ChevronUp : ChevronDown} className="h-3.5 w-3.5" />
                 {expanded ? localize('com_ui_show_less') : localize('com_ui_show_more')}

@@ -1,6 +1,27 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+@config '../tailwind.config.cjs';
+
+/* Tailwind v4 changed two preflight defaults this app was built against. Each rule below
+ * restores the v3 default rather than adopting the new one, so the upgrade carries no visual
+ * change; drop one only as a deliberate design decision.
+ *   - border-color: v3 used gray-200, v4 uses currentColor.
+ *   - ::placeholder: v3 used gray-400, v4 uses currentColor at 50% opacity.
+ * Both read the palette through `theme()` so they follow createTailwindColors() rather than
+ * pinning a hex here. `button { cursor: pointer }` below already covers v4's third change. */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: theme(colors.gray.200);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: theme(colors.gray.400);
+  }
+}
 
 .message-render {
   scroll-margin-top: 4rem;

@@ -78,8 +78,8 @@ function Header({
   const hiddenBehindNav = navVisible === true && 'max-md:hidden';
 
   return (
-    <div className="absolute top-0 z-10 flex h-[52px] w-full items-center gap-2 bg-gradient-to-b from-presentation via-presentation/70 to-transparent p-2 font-semibold text-text-primary md:from-presentation/80 md:via-presentation/50 2xl:from-presentation/0 2xl:via-transparent">
-      <div className="flex flex-shrink-0 items-center md:hidden">
+    <div className="from-presentation via-presentation/70 text-text-primary md:from-presentation/80 md:via-presentation/50 2xl:from-presentation/0 absolute top-0 z-10 flex h-[52px] w-full items-center gap-2 bg-gradient-to-b to-transparent p-2 font-semibold 2xl:via-transparent">
+      <div className="flex shrink-0 items-center md:hidden">
         <OpenSidebar testId="header-open-sidebar-button" />
       </div>
 
@@ -108,7 +108,7 @@ function Header({
         )}
       </div>
 
-      <div className={cn('flex flex-shrink-0 items-center gap-2', hiddenBehindNav)}>
+      <div className={cn('flex shrink-0 items-center gap-2', hiddenBehindNav)}>
         {hasAccessToTemporaryChat === true && <TemporaryChatIndicator />}
         {!isNewChat && <NewChat className="md:hidden" />}
         <HeaderMenu startupConfig={startupConfig} trace={trace} className="md:hidden" />

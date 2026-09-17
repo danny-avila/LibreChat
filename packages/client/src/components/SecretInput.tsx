@@ -81,7 +81,7 @@ const SecretInput: React.ForwardRefExoticComponent<
           id={id}
           type={isVisible ? 'text' : 'password'}
           className={cn(
-            'flex h-10 w-full rounded-lg border border-border-light bg-transparent py-2 pl-3 text-sm placeholder:text-text-secondary focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
+            'border-border-light placeholder:text-text-secondary flex h-10 w-full rounded-lg border bg-transparent py-2 pl-3 text-sm focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50',
             className ?? '',
             copyButton != null || showCopy ? 'pr-20' : 'pr-11',
           )}
@@ -112,7 +112,7 @@ const SecretInput: React.ForwardRefExoticComponent<
               onClick={handleCopy}
               disabled={disabled || !value}
               className={cn(
-                'inline-flex size-7 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary [&>svg]:block',
+                'text-text-secondary focus-visible:ring-ring-primary inline-flex size-7 shrink-0 items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-hidden [&>svg]:block',
                 disabled || !value
                   ? 'cursor-not-allowed opacity-50'
                   : 'hover:bg-surface-hover hover:text-text-primary',
@@ -128,7 +128,7 @@ const SecretInput: React.ForwardRefExoticComponent<
             onClick={toggleVisibility}
             disabled={disabled}
             className={cn(
-              'inline-flex size-7 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary [&>svg]:block',
+              'text-text-secondary focus-visible:ring-ring-primary inline-flex size-7 shrink-0 items-center justify-center rounded-md transition-colors duration-150 focus-visible:ring-2 focus-visible:outline-hidden [&>svg]:block',
               disabled
                 ? 'cursor-not-allowed opacity-50'
                 : 'hover:bg-surface-hover hover:text-text-primary',
