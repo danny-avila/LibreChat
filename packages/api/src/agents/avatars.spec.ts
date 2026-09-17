@@ -398,13 +398,15 @@ describe('refreshListAvatars', () => {
     now.mockRestore();
   });
 
-  it('skips a covered agent when its avatar filepath is unchanged', async () => {
+  it('skips a covered agent when the refresh found nothing to change', async () => {
+    /* Nothing was written, so the path the row carries is the path coverage was taken
+       for, and the next page inside the window asks S3 nothing. */
     const { cache } = createRefreshCache();
     const now = jest.spyOn(Date, 'now').mockReturnValue(0);
     const agent = createAgent({
       avatar: { source: FileSources.s3, filepath: 'stable-path.jpg' },
     });
-    mockRefreshS3Url.mockResolvedValue('stable-signed-url.jpg');
+    mockRefreshS3Url.mockResolvedValue('stable-path.jpg');
     mockUpdateAgent.mockResolvedValue({});
 
     const firstEntry = await resolveAvatarRefresh({
@@ -429,10 +431,54 @@ describe('refreshListAvatars', () => {
     });
 
     expect(mockRefreshS3Url).toHaveBeenCalledTimes(1);
-    expect(secondEntry?.urlCache.agent1).toEqual({
-      filepath: 'stable-path.jpg',
-      url: 'stable-signed-url.jpg',
+    expect(mockUpdateAgent).not.toHaveBeenCalled();
+    expect(secondEntry?.coveredIds.agent1).toBeDefined();
+    now.mockRestore();
+  });
+
+  it('covers the path it persisted, so the row it wrote is not signed again', async () => {
+    /* A successful re-sign stores the new path, which is what the next page reads. If
+       coverage still named the path the refresh started from, every window would re-sign
+       every row it had just written. */
+    const { cache } = createRefreshCache();
+    const now = jest.spyOn(Date, 'now').mockReturnValue(0);
+    const agent = createAgent({
+      avatar: { source: FileSources.s3, filepath: 'expired-url.jpg' },
     });
+    mockRefreshS3Url.mockResolvedValue('signed-url.jpg');
+    mockUpdateAgent.mockResolvedValue(true);
+
+    const firstEntry = await resolveAvatarRefresh({
+      agents: [agent],
+      userId,
+      cachedRefreshEntry: null,
+      cache,
+      refreshKey: 'avatars:user123',
+      cacheTtl: 30 * 60 * 1000,
+      refreshS3Url: mockRefreshS3Url,
+      updateAgent: mockUpdateAgent,
+    });
+    expect(firstEntry?.urlCache.agent1).toEqual({
+      filepath: 'expired-url.jpg',
+      url: 'signed-url.jpg',
+    });
+
+    const persistedAgent = createAgent({
+      avatar: { source: FileSources.s3, filepath: 'signed-url.jpg' },
+    });
+    const secondEntry = await resolveAvatarRefresh({
+      agents: [persistedAgent],
+      userId,
+      cachedRefreshEntry: firstEntry,
+      cache,
+      refreshKey: 'avatars:user123',
+      cacheTtl: 30 * 60 * 1000,
+      refreshS3Url: mockRefreshS3Url,
+      updateAgent: mockUpdateAgent,
+    });
+
+    expect(mockRefreshS3Url).toHaveBeenCalledTimes(1);
+    expect(secondEntry?.coveredIds.agent1).toBeDefined();
     now.mockRestore();
   });
 

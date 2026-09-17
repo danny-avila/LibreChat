@@ -175,6 +175,10 @@ const renderDetail = (
     setActionsDisabled: (disabled: boolean) => view.rerender(tree(morph, disabled)),
     setActionsUnavailable: (unavailable: boolean) =>
       view.rerender(tree(morph, actionsDisabled, unavailable)),
+    setIsUpdating: (updating: boolean) => {
+      mockIsUpdating = updating;
+      view.rerender(tree(morph, actionsDisabled, actionsUnavailable, agent));
+    },
   };
 };
 
@@ -404,8 +408,28 @@ describe('AgentDetailContent', () => {
     mockIsFavorite = true;
     mockIsUpdating = true;
     renderDetail();
-    expect(screen.getByRole('button', { name: 'Unpin' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Unpin' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Unpin' })).toHaveAttribute('aria-disabled', 'true');
     expect(screen.getByRole('button', { name: 'Unpin' })).toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('keeps focus on Pin while the favorite mutation is busy and ignores repeated activation', async () => {
+    const user = userEvent.setup();
+    const rendered = renderDetail();
+    const pinButton = screen.getByRole('button', { name: 'Pin' });
+    pinButton.focus();
+
+    await user.keyboard('{Enter}');
+    expect(mockToggleFavoriteAgent).toHaveBeenCalledTimes(1);
+
+    rendered.setIsUpdating(true);
+    expect(document.activeElement).toBe(pinButton);
+    expect(pinButton).toHaveFocus();
+    expect(pinButton).toHaveAttribute('aria-disabled', 'true');
+    expect(pinButton).toHaveAttribute('aria-busy', 'true');
+
+    await user.keyboard('{Enter}');
+    expect(mockToggleFavoriteAgent).toHaveBeenCalledTimes(1);
   });
 
   it('keeps controls mounted and focused while transient validation disables them', () => {
