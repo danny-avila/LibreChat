@@ -274,13 +274,41 @@ Multi-line imports count total character length across all lines. Consolidate va
   `Skeleton` takes the silhouette and footprint of the content it stands in for. Color stays with
   the theme in every case. Widen a contract when a whole category belongs to callers; do not widen
   one to clear a single call site.
-- **The existing backlog is recorded, not exempted.** `eslint-suppressions.json` holds the 3,141
+- **The existing backlog is recorded, not exempted.** `eslint-suppressions.json` holds the 3,230
   violations the tree carried when the rules landed, as a per-file, per-rule count. Adding a
   violation to a file reports every violation of that rule in it, so raising a file's count is a
   visible diff in that file — review it like any other change. `npm run lint:design:prune` drops
   entries whose violations are gone (do this after fixing some); `npm run lint:design:suppress`
-  re-records the design rules, which is what a file move needs, since suppressions are keyed by
-  path. Neither command changes which rules run; both only rewrite the recorded counts.
+  re-records the design rules and then prunes, which is what a file move needs, since
+  suppressions are keyed by path — the re-record adds the new path and only the prune removes
+  the old one. It re-baselines everything under `client/src` and `packages/client/src`, so for a
+  single move prefer a scoped re-record of just that file — the same five `--suppress-rule` flags
+  `lint:design:suppress` passes (`shadcn/no-restyle`, `no-raw-colors`, `no-arbitrary-values`,
+  `no-inline-styles`, `require-static-classes`) with `<new/path.tsx>` in place of the directories,
+  since a moved file usually carries entries for more than one rule — followed by `npm run
+  lint:design:prune`;
+  `npm run lint:design:suppress -- <file>` does not scope, because npm appends the argument to
+  the script's own directory arguments. Neither command changes which rules run; both only
+  rewrite the recorded counts. The re-record's own exit status is deliberately ignored: it lints
+  the roots under every rule, those roots carry a pre-existing error backlog, and the baseline is
+  written before ESLint reports it — so `lint:design:suppress` runs `lint:design:record` inside
+  `|| true` and lets the prune be the step that can fail. Expect the same when running a scoped
+  re-record by hand.
+- **The ratchet is on the count, not on the individual violations.** ESLint compares a file's
+  current violation count for a rule against the recorded one and suppresses when it is not
+  higher, so replacing one suppressed violation with a different violation of the same rule in
+  the same file keeps the count equal and produces no diff here. That is the cost of the count
+  format: a fingerprint per violation would churn on every reformat and every message tweak.
+  The backlog is a budget per file, and a swap still arrives as a styling change in that file's
+  own diff — review it there. `npm run static-checks` and the Static Checks lane validate the
+  baseline itself (shape, positive counts, rules the plugin defines, paths that still exist);
+  they do not and cannot detect a count-neutral swap.
+- **The design rules read JSX, not CSS.** They are AST rules over `className`, `cva` and
+  `style` in `{ts,tsx,js,jsx}`, so a `.css` file under either root — `client/src/style.css`,
+  `packages/client/src/components/Field.css` — is outside every one of them, and so is the
+  changed-file runner's selection. A raw hex in a stylesheet is caught by review, not by
+  `npm run lint`. The theme tokens are the exception: they live in CSS and carry their own
+  check.
 
 ### Data Management
 
@@ -352,7 +380,7 @@ Without it, OpenID JWT request burst caching can serve a stale `req.user` until 
 | `npm run frontend:dev` | Start frontend dev server with HMR (port 3090, requires backend running) |
 | `npm run build:data-provider` | Rebuild `packages/data-provider` after changes |
 | `npm run lint:design:prune` | Drop `eslint-suppressions.json` entries whose violations are fixed |
-| `npm run lint:design:suppress` | Re-record the design-rule backlog (needed after a file move) |
+| `npm run lint:design:suppress` | Re-record the design-rule backlog, then prune (needed after a file move) |
 
 - Node.js: v24.16.0
 - Database: MongoDB
