@@ -7,6 +7,8 @@ const mockTranslations: Record<string, string> = {
   com_ui_feedback_positive: 'Love this',
   com_ui_feedback_negative: 'Needs improvement',
   com_ui_feedback_tag_accurate_reliable: 'Accurate and Reliable',
+  com_ui_feedback_tag_not_matched: "Didn't match my request",
+  com_ui_back: 'Back',
 };
 
 jest.mock('~/hooks', () => ({
@@ -25,6 +27,13 @@ describe('Feedback', () => {
     expect(screen.getByRole('button', { name: 'Needs improvement' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Love this' }));
+    const firstReason = await screen.findByRole('button', { name: 'Accurate and Reliable' });
+    expect(firstReason).toHaveFocus();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByRole('button', { name: 'Love this' })).toHaveFocus();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Love this' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Accurate and Reliable' }));
 
     await waitFor(() =>
@@ -34,6 +43,22 @@ describe('Feedback', () => {
           tag: expect.objectContaining({ key: 'accurate_reliable' }),
         }),
       }),
+    );
+  });
+
+  it('returns focus to the trigger when Escape closes the feedback dialog', async () => {
+    render(<Feedback handleFeedback={jest.fn()} />);
+
+    const trigger = screen.getByRole('button', { name: 'Rate response' });
+    fireEvent.click(trigger);
+    fireEvent.click(await screen.findByRole('button', { name: 'Needs improvement' }));
+
+    const firstReason = await screen.findByRole('button', { name: "Didn't match my request" });
+    fireEvent.keyDown(firstReason, { key: 'Escape' });
+
+    await waitFor(() => expect(trigger).toHaveFocus());
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Rate response' })).not.toBeInTheDocument(),
     );
   });
 });

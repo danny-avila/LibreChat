@@ -8,6 +8,7 @@ import {
   Ban,
   HelpCircle,
   CheckCircle,
+  ChevronLeft,
   Lightbulb,
   Search,
 } from 'lucide-react';
@@ -44,19 +45,20 @@ const ICONS = {
   ThumbsDown: ThumbDownIcon,
 };
 
-function FeedbackOptionButton({
-  tag,
-  onClick,
-}: {
-  tag: TFeedbackTag;
-  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
-}) {
+const FeedbackOptionButton = React.forwardRef<
+  HTMLButtonElement,
+  {
+    tag: TFeedbackTag;
+    onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
+  }
+>(function FeedbackOptionButton({ tag, onClick }, ref) {
   const localize = useLocalize();
   const Icon = ICONS[tag.icon as keyof typeof ICONS] || AlertCircle;
   const label = localize(tag.label as Parameters<typeof localize>[0]);
 
   return (
     <Button
+      ref={ref}
       variant="ghost"
       className="h-auto w-full justify-start gap-3 rounded-xl p-2 text-text-secondary transition-colors duration-200 hover:bg-surface-hover hover:text-text-primary"
       onClick={onClick}
@@ -66,7 +68,7 @@ function FeedbackOptionButton({
       <span>{label}</span>
     </Button>
   );
-}
+});
 
 function FeedbackButtons({
   isLast,
@@ -85,6 +87,11 @@ function FeedbackButtons({
   });
   const isOpen = hovercard.useState('open');
   const [rating, setRating] = useState<TFeedbackRating>();
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+  const positiveRef = React.useRef<HTMLButtonElement>(null);
+  const negativeRef = React.useRef<HTMLButtonElement>(null);
+  const firstOptionRef = React.useRef<HTMLButtonElement>(null);
+  const returnFocusRef = React.useRef<TFeedbackRating>();
 
   const positiveTags = useMemo(() => getTagsForRating('thumbsUp'), []);
   const negativeTags = useMemo(() => getTagsForRating('thumbsDown'), []);
@@ -108,14 +115,32 @@ function FeedbackButtons({
   useEffect(() => {
     if (!isOpen) {
       setRating(undefined);
+      returnFocusRef.current = undefined;
+      return;
     }
-  }, [isOpen]);
+    if (rating) {
+      firstOptionRef.current?.focus();
+      return;
+    }
+    if (returnFocusRef.current === 'thumbsUp') {
+      positiveRef.current?.focus();
+    } else if (returnFocusRef.current === 'thumbsDown') {
+      negativeRef.current?.focus();
+    }
+    returnFocusRef.current = undefined;
+  }, [isOpen, rating]);
+
+  const handleBack = () => {
+    returnFocusRef.current = rating;
+    setRating(undefined);
+  };
 
   return (
     <Ariakit.HovercardProvider store={hovercard}>
       <Ariakit.HovercardAnchor
         render={
           <Button
+            ref={triggerRef}
             variant="ghost"
             size="icon"
             className={buttonClasses(isOpen, isLast)}
@@ -136,16 +161,42 @@ function FeedbackButtons({
         gutter={8}
         portal
         unmountOnHide
+        autoFocusOnHide
+        finalFocus={triggerRef}
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape') {
+            return;
+          }
+          hovercard.hide();
+          triggerRef.current?.focus();
+        }}
+        role="dialog"
         aria-label={localize('com_ui_feedback_rate')}
         className="z-50 flex min-w-48 flex-col gap-1 overflow-hidden rounded-xl border border-border-light bg-surface-secondary p-1.5 text-text-primary shadow-lg outline-none"
       >
         {rating ? (
-          tags.map((tag) => (
-            <FeedbackOptionButton key={tag.key} tag={tag} onClick={handleOption(tag)} />
-          ))
+          <>
+            <Button
+              variant="ghost"
+              className="h-auto w-full justify-start gap-2 rounded-lg px-2.5 py-2 text-text-primary hover:bg-surface-hover"
+              onClick={handleBack}
+            >
+              <ChevronLeft size="18" aria-hidden="true" />
+              <span>{localize('com_ui_back')}</span>
+            </Button>
+            {tags.map((tag, index) => (
+              <FeedbackOptionButton
+                ref={index === 0 ? firstOptionRef : undefined}
+                key={tag.key}
+                tag={tag}
+                onClick={handleOption(tag)}
+              />
+            ))}
+          </>
         ) : (
           <>
             <Button
+              ref={positiveRef}
               variant="ghost"
               className="h-auto w-full justify-start gap-3 rounded-lg px-2.5 py-2 text-text-primary hover:bg-surface-hover"
               onClick={() => setRating('thumbsUp')}
@@ -154,6 +205,7 @@ function FeedbackButtons({
               <span>{localize('com_ui_feedback_positive')}</span>
             </Button>
             <Button
+              ref={negativeRef}
               variant="ghost"
               className="h-auto w-full justify-start gap-3 rounded-lg px-2.5 py-2 text-text-primary hover:bg-surface-hover"
               onClick={() => setRating('thumbsDown')}
