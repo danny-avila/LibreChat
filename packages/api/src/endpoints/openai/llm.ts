@@ -997,6 +997,15 @@ export function getOpenAILLMConfig({
    * the run, because every field on this config can be rewritten by
    * `addParams`, removed by `dropParams`, or dropped by a model rule below.
    */
+  /**
+   * `promptCacheKey: false` is documented as sending no key at all, so it also
+   * removes one an administrator pinned through `addParams` — those are applied
+   * above, and declining to synthesize would otherwise leave the pinned value
+   * on every request.
+   */
+  if (firstPartyEndpoint && promptCacheKeyEnabled === false) {
+    delete llmConfig.promptCacheKey;
+  }
   const promptCacheKeyPinned = typeof llmConfig.promptCacheKey === 'string';
   const promptCacheKeyDropped = dropParams?.includes('promptCacheKey') === true;
   if (

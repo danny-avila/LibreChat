@@ -2059,6 +2059,20 @@ describe('prompt caching', () => {
     expect(result.llmConfig).not.toHaveProperty('promptCacheScopeId');
   });
 
+  it('sends no key at all when an endpoint opts out over a pinned one', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6' },
+      promptCacheKeyEnabled: false,
+      addParams: { promptCacheKey: 'tenant-fixed-key' },
+    });
+
+    expect(result.llmConfig).not.toHaveProperty('promptCacheKey');
+    expect(result.llmConfig).not.toHaveProperty('promptCacheKeyEnabled');
+  });
+
   it('ignores cache controls an agent author put in model parameters', () => {
     const result = getOpenAILLMConfig({
       apiKey: 'test-api-key',

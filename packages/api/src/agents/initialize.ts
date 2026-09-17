@@ -112,6 +112,7 @@ import { resolveAttachedWorkspaceCommandTimeoutMax } from '~/code/command';
 import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { isImplicitStatefulCodeRouteAvailable } from '../code/config';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
+import { captureConfiguredAdditionalInstructions } from './context';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { resolveToolRoleGrants } from '~/tools/rolePermissions';
@@ -2249,6 +2250,13 @@ export async function initializeAgent(
   if (options.configOptions) {
     (agent.model_parameters as Record<string, unknown>).configuration = options.configOptions;
   }
+
+  /**
+   * Before the temporal branch below moves a resolved instruction block into
+   * `additional_instructions`: that text carries today's date, so it belongs
+   * with the volatile tail rather than in the prompt cache identity.
+   */
+  captureConfiguredAdditionalInstructions(agent);
 
   if (agent.instructions && agent.instructions !== '') {
     const resolvedInstructions = replaceSpecialVars({
