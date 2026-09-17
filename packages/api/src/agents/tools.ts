@@ -10,6 +10,7 @@ import {
   CODE_EXECUTION_TOOLS,
   BashExecutionToolDefinition,
   ReadFileToolDefinition,
+  SkillToolDefinition,
   buildBashExecutionToolDescription,
 } from '@librechat/agents';
 import type {
@@ -123,6 +124,27 @@ export interface BuildHistoricalToolNamesConfig {
   backgroundToolsAvailable?: boolean;
 }
 
+export interface SkillToolAvailabilityConfig {
+  /** True when at least one catalog-visible (model-invocable) skill resolved for the run. */
+  modelInvocableSkillsAvailable?: boolean;
+  /** True when the model may create or edit skill files during the run. */
+  skillAuthoringAvailable?: boolean;
+}
+
+/**
+ * Single rule for whether the `skill` tool reaches the model, shared by live
+ * registration (`injectSkillCatalog`) and the lazy-history prediction below so
+ * the two cannot disagree about a run's tool names.
+ *
+ * Authoring runs register it even with an empty catalog: a skill the model
+ * creates mid-run becomes a valid invocation target, and tool definitions bind
+ * at initialization, so a run that only learned about the skill afterwards
+ * would have no way to invoke what it just wrote.
+ */
+export function isSkillToolAvailable(config: SkillToolAvailabilityConfig): boolean {
+  return config.modelInvocableSkillsAvailable === true || config.skillAuthoringAvailable === true;
+}
+
 /** Derives the model-facing names an unresolved lazy agent can expose without loading it. */
 export function buildHistoricalToolNames(config: BuildHistoricalToolNamesConfig): Set<string> {
   const configuredToolNames = [
@@ -163,8 +185,13 @@ export function buildHistoricalToolNames(config: BuildHistoricalToolNamesConfig)
     toolNames.add('set_memory');
     toolNames.add('delete_memory');
   }
-  if (config.skillsAvailable === true) {
-    toolNames.add('skill');
+  if (
+    isSkillToolAvailable({
+      modelInvocableSkillsAvailable: config.skillsAvailable,
+      skillAuthoringAvailable: config.skillAuthoringAvailable,
+    })
+  ) {
+    toolNames.add(SkillToolDefinition.name);
   }
   if ((config.skillFileAccessAvailable ?? config.skillsAvailable) === true) {
     toolNames.add('read_file');
@@ -542,6 +569,62 @@ function createAttachedWorkspaceReadFileDef(includeSkillFileInstructions: boolea
 
 const ATTACHED_CODE_READ_FILE_DEF = createAttachedWorkspaceReadFileDef(false);
 const ATTACHED_SKILL_READ_FILE_DEF = createAttachedWorkspaceReadFileDef(true);
+
+/**
+ * The SDK constraint the authoring variant rewrites. Left alone it tells the
+ * model that catalog names are the only legal `skillName`, which is false for a
+ * run that can author skills, and worst when the catalog is empty and the only
+ * reachable skill is the one the model just created.
+ */
+const CATALOG_ONLY_SKILL_CONSTRAINT =
+  '- Skill names come from the catalog only. Do not guess names.';
+
+const AUTHORED_SKILL_CONSTRAINTS = `- Skill names come from the catalog, or from a skill you created in this conversation with create_file at "skills/{skillName}/SKILL.md". Do not guess any other name.
+- Creating a skill does not load it. Invoke it here when you want to follow its instructions.`;
+
+const AUTHORED_SKILL_NAME_DESCRIPTION =
+  'The kebab-case identifier of the skill to invoke (e.g. "financial-analyzer", "meeting-notes"). Must match a name from the "Available Skills" section, or the name of a skill you created in this conversation.';
+
+/**
+ * Rewrites in place while the SDK still ships the catalog-only constraint, so
+ * every other constraint it declares survives; appends otherwise, so the
+ * authored-skill guidance reaches the model even if that text moves.
+ */
+function buildAuthoringSkillToolDescription(baseDescription: string): string {
+  return baseDescription.includes(CATALOG_ONLY_SKILL_CONSTRAINT)
+    ? baseDescription.replace(CATALOG_ONLY_SKILL_CONSTRAINT, AUTHORED_SKILL_CONSTRAINTS)
+    : `${baseDescription}\n${AUTHORED_SKILL_CONSTRAINTS}`;
+}
+
+const SKILL_TOOL_DEF: LCTool = Object.freeze({
+  name: SkillToolDefinition.name,
+  description: SkillToolDefinition.description,
+  parameters: SkillToolDefinition.parameters as unknown as LCTool['parameters'],
+}) as LCTool;
+
+const AUTHORING_SKILL_TOOL_DEF: LCTool = Object.freeze({
+  name: SkillToolDefinition.name,
+  description: buildAuthoringSkillToolDescription(SkillToolDefinition.description),
+  parameters: {
+    ...SkillToolDefinition.parameters,
+    properties: {
+      ...SkillToolDefinition.parameters.properties,
+      skillName: {
+        ...SkillToolDefinition.parameters.properties.skillName,
+        description: AUTHORED_SKILL_NAME_DESCRIPTION,
+      },
+    },
+  } as unknown as LCTool['parameters'],
+}) as LCTool;
+
+/**
+ * Model-facing `skill` definition for the run. Authoring runs get the variant
+ * whose guidance accepts a name the model created during the run; every other
+ * run gets the SDK definition untouched.
+ */
+export function getSkillToolDefinition(skillAuthoringAvailable: boolean): LCTool {
+  return skillAuthoringAvailable ? AUTHORING_SKILL_TOOL_DEF : SKILL_TOOL_DEF;
+}
 
 const SEARCH_WORKSPACE_TOOL_DEF: LCTool = Object.freeze({
   name: SEARCH_WORKSPACE_TOOL_NAME,

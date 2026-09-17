@@ -2913,6 +2913,259 @@ describe('createToolExecuteHandler', () => {
       expect(grantSkillOwner).toHaveBeenCalledWith({ req, skillId: SKILL_ID });
     });
 
+    it('invokes a skill created earlier in the same run, starting from an empty catalog', async () => {
+      /**
+       * The run-level configurable is the only carrier between tool batches:
+       * `loadTools` hands back a fresh object every call here, exactly as a
+       * real re-resolve would, so nothing can pass through shared object
+       * identity. Proves the authored skill id reaches `getSkillByName` on a
+       * later batch and that its SKILL.md body is what gets primed.
+       */
+      const createdSkill = {
+        _id: SKILL_ID,
+        name: 'fresh-skill',
+        body: '---\nname: fresh-skill\ndescription: Use for fresh tests\n---\n# Fresh skill body\n',
+        description: 'Use for fresh tests',
+        fileCount: 0,
+        version: 1,
+      };
+      let storedSkill: typeof createdSkill | null = null;
+      const createSkill = jest.fn(async () => {
+        storedSkill = createdSkill;
+        return { skill: createdSkill };
+      });
+      const getSkillByName = jest.fn(async () => storedSkill);
+      const saveSkillFileContent = jest.fn(async () => ({
+        bytes: 14,
+        relativePath: 'references/a.md',
+      }));
+      const loadedConfigurables: Record<string, unknown>[] = [];
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => {
+        const loaded = {
+          req,
+          skillAuthoringAvailable: true,
+          fileAuthoringToolNames: new Set(['create_file', 'edit_file']),
+        };
+        loadedConfigurables.push(loaded);
+        return { loadedTools: [], configurable: loaded };
+      });
+      const handler = createToolExecuteHandler({
+        loadTools,
+        canCreateSkill: jest.fn(async () => true),
+        canEditSkill: jest.fn(async () => true),
+        grantSkillOwner: jest.fn(async () => undefined),
+        getSkillByName: getSkillByName as unknown as ToolExecuteOptions['getSkillByName'],
+        createSkill: createSkill as unknown as ToolExecuteOptions['createSkill'],
+        getSkillFileByPath: jest.fn(async () => null),
+        saveSkillFileContent,
+      });
+      /** Empty catalog: nothing was accessible when the run started. */
+      const runConfigurable: Record<string, unknown> = { req, accessibleSkillIds: [] };
+
+      const [created] = await invokeHandlerWithConfig(
+        handler,
+        [
+          {
+            id: 'call_create_fresh_skill',
+            name: 'create_file',
+            args: {
+              path: 'skills/fresh-skill/SKILL.md',
+              content: createdSkill.body,
+            },
+          },
+        ],
+        runConfigurable,
+      );
+      const [bundled] = await invokeHandlerWithConfig(
+        handler,
+        [
+          {
+            id: 'call_create_fresh_reference',
+            name: 'create_file',
+            args: { path: 'skills/fresh-skill/references/a.md', content: 'reference text' },
+          },
+        ],
+        runConfigurable,
+      );
+      const [invoked] = await invokeHandlerWithConfig(
+        handler,
+        [
+          {
+            id: 'call_invoke_fresh_skill',
+            name: Constants.SKILL_TOOL,
+            args: { skillName: 'fresh-skill' },
+          },
+        ],
+        runConfigurable,
+      );
+
+      expect(created.status).toBe('success');
+      expect(created.content).toContain('Created skills/fresh-skill/SKILL.md');
+      expect(created.content).toContain('Invoke it with the skill tool');
+      expect(bundled.status).toBe('success');
+      expect(invoked.status).toBe('success');
+      expect(invoked.content).toBe('Skill "fresh-skill" loaded. Follow the instructions below.');
+      expect(JSON.stringify(invoked.injectedMessages)).toContain('# Fresh skill body');
+      /** Same document: the id resolved is the one creation returned. */
+      expect(getSkillByName).toHaveBeenLastCalledWith(
+        'fresh-skill',
+        [SKILL_ID],
+        expect.objectContaining({ preferModelInvocable: true }),
+      );
+      expect(runConfigurable.accessibleSkillIds).toEqual([SKILL_ID]);
+      expect(new Set(loadedConfigurables).size).toBe(3);
+    });
+
+    it('does not advertise invocation for a skill created with disable-model-invocation', async () => {
+      const createdSkill = {
+        _id: SKILL_ID,
+        name: 'hidden-skill',
+        body: '# Hidden skill',
+        fileCount: 0,
+        version: 1,
+      };
+      const handler = makeAuthoringHandler({
+        getSkillByName: jest.fn(async () => null),
+        createSkill: jest.fn(async () => ({
+          skill: createdSkill,
+        })) as unknown as ToolExecuteOptions['createSkill'],
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_create_hidden_skill',
+          name: 'create_file',
+          args: {
+            path: 'skills/hidden-skill/SKILL.md',
+            content:
+              '---\nname: hidden-skill\ndescription: Use for hidden tests\ndisable-model-invocation: true\n---\n# Hidden skill\n',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('success');
+      expect(result.content).toContain('Created skills/hidden-skill/SKILL.md');
+      expect(result.content).not.toContain('Invoke it with the skill tool');
+    });
+
+    it('rejects invoking a skill created with disable-model-invocation', async () => {
+      const createdSkill = {
+        _id: SKILL_ID,
+        name: 'hidden-skill',
+        body: '# Hidden skill',
+        description: 'Use for hidden tests',
+        fileCount: 0,
+        version: 1,
+        disableModelInvocation: true,
+      };
+      let storedSkill: typeof createdSkill | null = null;
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [],
+        configurable: {
+          req,
+          skillAuthoringAvailable: true,
+          fileAuthoringToolNames: new Set(['create_file', 'edit_file']),
+        },
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools,
+        canCreateSkill: jest.fn(async () => true),
+        grantSkillOwner: jest.fn(async () => undefined),
+        getSkillByName: jest.fn(
+          async () => storedSkill,
+        ) as unknown as ToolExecuteOptions['getSkillByName'],
+        createSkill: jest.fn(async () => {
+          storedSkill = createdSkill;
+          return { skill: createdSkill };
+        }) as unknown as ToolExecuteOptions['createSkill'],
+      });
+      const runConfigurable: Record<string, unknown> = { req, accessibleSkillIds: [] };
+
+      await invokeHandlerWithConfig(
+        handler,
+        [
+          {
+            id: 'call_create_hidden_then_invoke',
+            name: 'create_file',
+            args: {
+              path: 'skills/hidden-skill/SKILL.md',
+              content:
+                '---\nname: hidden-skill\ndescription: Use for hidden tests\ndisable-model-invocation: true\n---\n# Hidden skill\n',
+            },
+          },
+        ],
+        runConfigurable,
+      );
+      const [invoked] = await invokeHandlerWithConfig(
+        handler,
+        [
+          {
+            id: 'call_invoke_hidden_skill',
+            name: Constants.SKILL_TOOL,
+            args: { skillName: 'hidden-skill' },
+          },
+        ],
+        runConfigurable,
+      );
+
+      expect(invoked.status).toBe('error');
+      expect(invoked.errorMessage).toBe('Skill "hidden-skill" cannot be invoked by the model');
+    });
+
+    it('rejects invoking a skill whose creation failed', async () => {
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [],
+        configurable: {
+          req,
+          skillAuthoringAvailable: true,
+          fileAuthoringToolNames: new Set(['create_file', 'edit_file']),
+        },
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools,
+        canCreateSkill: jest.fn(async () => false),
+        grantSkillOwner: jest.fn(async () => undefined),
+        getSkillByName: jest.fn(
+          async () => null,
+        ) as unknown as ToolExecuteOptions['getSkillByName'],
+        createSkill: jest.fn() as unknown as ToolExecuteOptions['createSkill'],
+      });
+      const runConfigurable: Record<string, unknown> = { req, accessibleSkillIds: [] };
+
+      const [created] = await invokeHandlerWithConfig(
+        handler,
+        [
+          {
+            id: 'call_create_denied_skill',
+            name: 'create_file',
+            args: {
+              path: 'skills/denied-skill/SKILL.md',
+              content:
+                '---\nname: denied-skill\ndescription: Use for denied tests\n---\n# Denied\n',
+            },
+          },
+        ],
+        runConfigurable,
+      );
+      const [invoked] = await invokeHandlerWithConfig(
+        handler,
+        [
+          {
+            id: 'call_invoke_denied_skill',
+            name: Constants.SKILL_TOOL,
+            args: { skillName: 'denied-skill' },
+          },
+        ],
+        runConfigurable,
+      );
+
+      expect(created.status).toBe('error');
+      expect(created.content).not.toContain('Invoke it with the skill tool');
+      expect(invoked.status).toBe('error');
+      expect(invoked.errorMessage).toBe('Skill "denied-skill" not found or not accessible');
+      expect(runConfigurable.accessibleSkillIds).toEqual([]);
+    });
+
     it('rejects case-colliding recognized frontmatter keys in create_file', async () => {
       const createSkill = jest.fn();
       const handler = makeAuthoringHandler({
