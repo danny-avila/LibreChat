@@ -1351,29 +1351,38 @@ export class MCPConnectionFactory {
     if (!this.flowManager || !this.userId) {
       return;
     }
-    const flowId = this.getTokenFlowId();
-    try {
-      const state = await this.flowManager.getFlowState(flowId, 'mcp_get_tokens');
-      if (!state) {
-        return;
-      }
-      if (state.status === 'PENDING' && freshTokens) {
-        await this.flowManager.completeFlow(
-          flowId,
-          'mcp_get_tokens',
-          publicationGeneration
-            ? { ...freshTokens, publication_generation: publicationGeneration }
-            : freshTokens,
-        );
-        return;
-      }
-      if (state.status !== 'COMPLETED') {
-        return;
-      }
-      await this.flowManager.deleteFlow(flowId, 'mcp_get_tokens');
-    } catch {
-      logger.debug(`${this.logPrefix} Failed to invalidate mcp_get_tokens cache`);
-    }
+    const flowManager = this.flowManager;
+    // Both protocols remain valid cache readers across an enable/rollback transition.
+    const flowIds = new Set([
+      this.getBaseFlowId(),
+      MCPOAuthHandler.generateTokenFlowId(this.userId, this.serverName, this.tenantId),
+    ]);
+    await Promise.all(
+      [...flowIds].map(async (flowId) => {
+        try {
+          const state = await flowManager.getFlowState(flowId, 'mcp_get_tokens');
+          if (!state) {
+            return;
+          }
+          if (state.status === 'PENDING' && freshTokens) {
+            await flowManager.completeFlow(
+              flowId,
+              'mcp_get_tokens',
+              publicationGeneration
+                ? { ...freshTokens, publication_generation: publicationGeneration }
+                : freshTokens,
+            );
+            return;
+          }
+          if (state.status !== 'COMPLETED') {
+            return;
+          }
+          await flowManager.deleteFlow(flowId, 'mcp_get_tokens');
+        } catch {
+          logger.debug(`${this.logPrefix} Failed to invalidate mcp_get_tokens cache`);
+        }
+      }),
+    );
   }
 
   /**

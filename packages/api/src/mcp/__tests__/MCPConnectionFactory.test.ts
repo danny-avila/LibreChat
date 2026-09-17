@@ -94,6 +94,10 @@ class InspectableMCPConnectionFactory extends MCPConnectionFactory {
     return this.handleOAuthEvents(connection, 'oauthReauthenticationRequired');
   }
 
+  public async invalidateTokenFlowsForTest(tokens?: MCPOAuthTokens): Promise<void> {
+    await this.invalidateGetTokensFlow(tokens);
+  }
+
   public async handleOAuthRequiredForTest() {
     return await this.handleOAuthRequired();
   }
@@ -717,6 +721,25 @@ describe('MCPConnectionFactory', () => {
           mockFlowManager.deleteFlow.mock.invocationCallOrder[0],
         );
       });
+
+      it.each([false, true])(
+        'removes both completed token protocols before rollback (%s)',
+        async (enabled) => {
+          mockProcessMCPEnv.mockReturnValue({
+            ...mockServerConfig,
+            oauthRefreshCoordination: enabled,
+          });
+          mockMCPOAuthHandler.generateFlowId.mockReturnValue('legacy-flow');
+          mockMCPOAuthHandler.generateTokenFlowId.mockReturnValue('versioned-flow');
+          mockFlowManager.getFlowState.mockResolvedValue({ status: 'COMPLETED' });
+          await tokenLoadingFactory({}, enabled).invalidateTokenFlowsForTest();
+          expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith('legacy-flow', 'mcp_get_tokens');
+          expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith(
+            'versioned-flow',
+            'mcp_get_tokens',
+          );
+        },
+      );
 
       it('defers recovery when the re-read loses its flow as well', async () => {
         mockFlowManager.createFlowWithHandler.mockRejectedValue(
