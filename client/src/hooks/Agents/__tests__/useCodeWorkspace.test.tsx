@@ -126,7 +126,7 @@ describe('useCodeWorkspace', () => {
     expect(result.current.resolveSubmission(undefined, 'without_attached')).toBeUndefined();
   });
 
-  it('uses an agent default ahead of the last used workspace only for new chats', () => {
+  it('uses an agent default ahead of the last used workspace while a chat is undecided', () => {
     mockStatus()[0].data.workspaces.push({ id: 'project-b', name: 'Project B' });
     mockAgentPermissions().agent.code_workspace_id = 'project-b';
     mockPreference.mockReturnValue('project-a');
@@ -137,8 +137,12 @@ describe('useCodeWorkspace', () => {
       },
     );
     expect(result.current.selections?.[0].workspaceId).toBe('project-b');
+    /* Saving the chat does not seal a decision it never recorded, so the default still applies and
+     * the composer still offers the choice. */
     rerender({ id: 'existing' });
-    expect(result.current.mode).toBe('without_attached');
+    expect(result.current.locked).toBe(false);
+    expect(result.current.mode).toBe('attached');
+    expect(result.current.selections?.[0].workspaceId).toBe('project-b');
     expect(result.current.canSubmit).toBe(true);
   });
 
@@ -646,15 +650,44 @@ describe('useCodeWorkspace', () => {
       expect(result.current.relocation).toBeUndefined();
     });
 
-    it('does not auto-select a sole workspace the saved decision never covered', () => {
+    it('attaches a sole workspace to a saved chat that never recorded a decision', () => {
       const { result } = renderHook(() =>
         useCodeWorkspace({ ...conversation(), conversationId: 'existing' } as TConversation),
       );
 
-      expect(result.current.state).toBe('without_attached');
-      expect(result.current.selections).toBeUndefined();
+      expect(result.current.locked).toBe(false);
+      expect(result.current.state).toBe('ready');
+      expect(result.current.selections).toEqual([
+        { environmentId: 'personal-vm', workspaceId: 'project-a' },
+      ]);
       expect(result.current.resolveSubmission()).toEqual({
-        codeEnvironmentMode: 'without_attached',
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }],
+      });
+    });
+
+    /* Switching an existing chat to a coding agent used to leave the composer with a sealed
+     * decision its owner never made: nothing to select, and Send disabled. */
+    it.each([
+      { support: { codeEnvironmentDecisionVersion: 1, codeEnvironmentMoveVersion: 1 } },
+      { support: {} },
+    ])('lets a saved chat with several workspaces choose one', ({ support }) => {
+      mockStartupConfig.mockReturnValue(support);
+      mockStatus()[0].data.workspaces.push({ id: 'project-b', name: 'Project B' });
+      const chosen = { environmentId: 'personal-vm', workspaceId: 'project-b' };
+
+      const { result } = renderHook(() =>
+        useCodeWorkspace({ ...conversation(), conversationId: 'existing' } as TConversation),
+      );
+
+      expect(result.current.locked).toBe(false);
+      expect(result.current.state).toBe('choose');
+      expect(result.current.relocation).toBeUndefined();
+      /* `useChatFunctions` submits the conversation's latest selections and mode together, the way
+       * the menu writes both when a workspace is picked. */
+      expect(result.current.resolveSubmission([chosen], 'attached')).toEqual({
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [chosen],
       });
     });
 
