@@ -388,4 +388,53 @@ test.describe('marketplace recovery', () => {
     expect(deep.focused).toBe(true);
     expect(deep.covered).toBe(false);
   });
+
+  test('@scenario:recovery-hands-focus-back-to-the-results a keyboard retry does not leave focus on the document', async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    const agent = makeAgent('keyboard-recovery');
+    let failing = true;
+
+    await routeMarketplace(page, async (route) => {
+      if (failing) {
+        await route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'marketplace unavailable' }),
+        });
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(responseFor(agent)),
+      });
+    });
+
+    await page.goto('/agents/all');
+    const retry = page.getByRole('button', { name: translations.com_agents_error_retry });
+    await expect(retry).toBeVisible({ timeout: 30_000 });
+
+    /* The reader is on the Retry button, which is inside the card the success removes.
+       Whether the attempt that lands is theirs or the card's own backoff, the focused
+       control leaves the document and the browser drops focus on the body - and the next
+       Tab would then start at the top of the page rather than at the results. */
+    await retry.focus();
+    failing = false;
+    await retry.press('Enter');
+
+    await expect(page.getByRole('button', { name: agent.name })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    const focus = await page.evaluate(() => {
+      const active = document.activeElement;
+      const panel = document.querySelector('[role="tabpanel"]');
+      return {
+        onDocument: active === null || active === document.body,
+        inResults: panel != null && active != null && panel.contains(active),
+      };
+    });
+    expect(focus.onDocument).toBe(false);
+    expect(focus.inResults).toBe(true);
+  });
 });

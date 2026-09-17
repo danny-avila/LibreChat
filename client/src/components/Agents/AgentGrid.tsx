@@ -169,25 +169,29 @@ const AgentGrid: React.FC<AgentGridProps> = ({
     }
   }, [isPendingResults, scopeKey, scrollElementRef]);
   /**
-   * A scope change remounts the grid, which takes an open dialog with it — a debounced
-   * search or a restored history entry can commit while the reader has a card open, and
-   * the element their focus was on leaves the document in that commit. The browser then
-   * drops focus on `document.body`, so the next Tab starts at the top of the page rather
-   * than at the list they are looking at. This panel takes focus in exactly that case:
-   * focus already elsewhere — the search field they were typing in, another control — is
-   * left alone, because only `body` means nobody has it.
+   * Two removals take the reader's focus with them. A scope change remounts the grid and
+   * the dialog it hosts — a debounced search or a restored history entry can commit while
+   * a card is open — and a cleared failure removes the recovery card with the Retry button
+   * they just used inside it. Either way the focused element leaves the document and the
+   * browser drops focus on `document.body`, so the next Tab starts at the top of the page
+   * instead of at the results that are now there. This panel takes focus in exactly that
+   * case: focus already elsewhere — the search field they went back to, another control —
+   * is left alone, because only `body` means nobody has it.
    */
   const panelRef = useRef<HTMLDivElement | null>(null);
   const previousScopeKeyRef = useRef<string | null>(null);
+  const previousFailureRef = useRef(failure != null);
   useLayoutEffect(() => {
     const scopeChanged =
       previousScopeKeyRef.current != null && previousScopeKeyRef.current !== scopeKey;
+    const recovered = previousFailureRef.current && failure == null;
     previousScopeKeyRef.current = scopeKey;
-    if (!scopeChanged || document.activeElement !== document.body) {
+    previousFailureRef.current = failure != null;
+    if ((!scopeChanged && !recovered) || document.activeElement !== document.body) {
       return;
     }
     panelRef.current?.focus();
-  }, [scopeKey]);
+  }, [failure, scopeKey]);
   /**
    * Paging is suspended while a failure is held. The rows stay mounted behind the error
    * card now, so the end of the list is still reachable, and without this the virtualized
@@ -313,14 +317,6 @@ const AgentGrid: React.FC<AgentGridProps> = ({
 
   let listPlaceholder: React.ReactNode = null;
   if (failure) {
-    const handleRetry = () => {
-      if (recoveryCardRef.current?.contains(document.activeElement)) {
-        panelRef.current?.focus();
-      }
-      void (heldFailure?.kind === 'next-page' && heldFailure.pages > 0
-        ? fetchNextPage({ cancelRefetch: false })
-        : refetch({ cancelRefetch: false }));
-    };
     const errorCard = (
       <ErrorDisplay
         error={(failure as ApiError) || 'Unknown error occurred'}
@@ -329,7 +325,11 @@ const AgentGrid: React.FC<AgentGridProps> = ({
            was waiting for. `cancelRefetch: false` so a click, the card's backoff and the
            query's own reconnect refetch coalesce into one request instead of each
            restarting the previous one. */
-        onRetry={handleRetry}
+        onRetry={() =>
+          void (heldFailure?.kind === 'next-page' && heldFailure.pages > 0
+            ? fetchNextPage({ cancelRefetch: false })
+            : refetch({ cancelRefetch: false }))
+        }
         isRetrying={isFetching}
         context={{
           searchQuery,
@@ -359,8 +359,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
             card is read in is as much a part of what the rows must start below as the box
             itself. With rows already loaded the card is rendered before them so keyboard
             and reading order reach it immediately; without rows it is the whole of the
-            page, and the wrapper is there so a retry can still tell whether focus was
-            inside the card it is about to remove. */}
+            page. */}
         <div ref={recoveryCardRef} className="pointer-events-auto w-full max-w-xl pb-5">
           <div className="rounded-theme-surface border border-border-light bg-surface-secondary shadow-lg high-contrast:border-border-medium high-contrast:shadow-none">
             {errorCard}
@@ -368,7 +367,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
         </div>
       </div>
     ) : (
-      <div ref={recoveryCardRef}>{errorCard}</div>
+      errorCard
     );
   } else if (isPendingResults) {
     listPlaceholder = (
