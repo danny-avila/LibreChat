@@ -75,6 +75,24 @@ describe('fileSearch.js - tuple return validation', () => {
       expect(result[1]).toBeUndefined();
     });
 
+    it.each(['', '   ', '\n\t'])(
+      'should skip rag_api /query when the query is empty or whitespace (%j)',
+      async (query) => {
+        generateShortLivedToken.mockReturnValue('mock-jwt-token');
+
+        const fileSearchTool = await createFileSearchTool({
+          userId: 'user1',
+          files: [{ file_id: 'file-1', filename: 'test.pdf' }],
+        });
+
+        const result = await fileSearchTool.func({ query });
+
+        expect(axios.post).not.toHaveBeenCalled();
+        expect(generateShortLivedToken).not.toHaveBeenCalled();
+        expect(result).toEqual(['A non-empty query is required to search the files.', undefined]);
+      },
+    );
+
     it('should return tuple when JWT token generation fails', async () => {
       generateShortLivedToken.mockReturnValue(null);
 

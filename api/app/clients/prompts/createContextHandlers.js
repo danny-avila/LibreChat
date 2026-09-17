@@ -9,6 +9,10 @@ In your response, remember to follow these guidelines:
 - Avoid mentioning that you obtained the information from the context.
 `;
 
+function hasSearchableQuery(query) {
+  return typeof query === 'string' && query.trim().length > 0;
+}
+
 function createContextHandlers(req, userMessageContent) {
   if (!process.env.RAG_API_URL) {
     return;
@@ -19,6 +23,7 @@ function createContextHandlers(req, userMessageContent) {
   const processedIds = new Set();
   const jwtToken = generateShortLivedToken(req.user.id);
   const useFullContext = isEnabled(process.env.RAG_USE_FULL_CONTEXT);
+  const canSemanticSearch = hasSearchableQuery(userMessageContent);
 
   const query = async (file) => {
     if (useFullContext) {
@@ -46,6 +51,9 @@ function createContextHandlers(req, userMessageContent) {
   };
 
   const processFile = async (file) => {
+    if (!useFullContext && !canSemanticSearch) {
+      return;
+    }
     if (file.embedded && !processedIds.has(file.file_id)) {
       try {
         const promise = query(file);
