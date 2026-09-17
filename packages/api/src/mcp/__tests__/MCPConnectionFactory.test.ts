@@ -2227,14 +2227,14 @@ describe('MCPConnectionFactory', () => {
       await handler({ serverUrl: 'https://api.example.com' });
       await handler({
         serverUrl: 'https://api.example.com',
-        rejectedCredentialSetId: 'request-generation',
+        rejectedCredentialSetId: null,
       });
       expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledTimes(2);
       expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledWith(
         expect.objectContaining({ rejectedCredentialSetId: 'rejected-generation' }),
       );
       expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenLastCalledWith(
-        expect.objectContaining({ rejectedCredentialSetId: 'request-generation' }),
+        expect.objectContaining({ rejectedCredentialSetId: null }),
       );
       expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(tokens);
       expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();

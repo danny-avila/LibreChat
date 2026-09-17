@@ -1032,8 +1032,8 @@ export class MCPConnection extends EventEmitter {
   private lastPingTime: number;
   private lastConnectionCheckAt: number = 0;
   private lastConnectionCheckError?: unknown;
-  private lastConnectionCheckCredentialSetId?: string;
-  private transportCredentialSetId?: string;
+  private lastConnectionCheckCredentialSetId?: string | null;
+  private transportCredentialSetId: string | null = null;
   private oauthTokens?: MCPOAuthTokens | null;
   private requestHeaders?: Record<string, string> | null;
   private oauthRequired = false;
@@ -1994,7 +1994,7 @@ export class MCPConnection extends EventEmitter {
     this.emit('connectionChange', 'connecting');
 
     this.connectPromise = (async () => {
-      let rejectedCredentialSetId = this.oauthTokens?.credential_set_id;
+      let rejectedCredentialSetId = this.oauthTokens?.credential_set_id ?? null;
       try {
         if (this.transport) {
           try {
@@ -2245,7 +2245,7 @@ export class MCPConnection extends EventEmitter {
 
   private setupTransportErrorHandlers(transport: Transport): void {
     this.reportedStandaloneSseConflict = false;
-    const transportCredentialSetId = this.oauthTokens?.credential_set_id;
+    const transportCredentialSetId = this.oauthTokens?.credential_set_id ?? null;
     this.transportCredentialSetId = transportCredentialSetId;
 
     transport.onerror = (error) => {
@@ -2856,8 +2856,10 @@ export class MCPConnection extends EventEmitter {
   }
 
   /** Identifies the installed transport credential; pending replacement tokens are not sent yet. */
-  public getOAuthCredentialSetId(): string | undefined {
-    return this.transport ? this.transportCredentialSetId : this.oauthTokens?.credential_set_id;
+  public getOAuthCredentialSetId(): string | null {
+    return this.transport
+      ? this.transportCredentialSetId
+      : (this.oauthTokens?.credential_set_id ?? null);
   }
 
   public setOAuthTokens(tokens: MCPOAuthTokens): void {
@@ -2873,7 +2875,7 @@ export class MCPConnection extends EventEmitter {
     return isOAuthAuthenticationError(error);
   }
 
-  public getLastConnectionCheckCredentialSetId(): string | undefined {
+  public getLastConnectionCheckCredentialSetId(): string | null | undefined {
     return this.lastConnectionCheckCredentialSetId;
   }
 

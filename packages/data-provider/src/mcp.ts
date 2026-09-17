@@ -219,6 +219,10 @@ const BaseOptionsSchema = z.object({
    * common case this wait exists to serve. Omit the field to take the default.
    */
   oauthRefreshWaitTimeout: z.number().int().positive().optional(),
+  /** Enable only after every replica has upgraded to the coordinated OAuth writer protocol. Default: false. */
+  oauthRefreshCoordination: z.boolean().optional(),
+  /** Wait (ms) for callback/adoption persistence and publication. Default: 15_000. */
+  oauthPersistenceWaitTimeout: z.number().int().positive().optional(),
   /**
    * Whether the server is offered in chat.
    *
@@ -469,6 +473,8 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     sseReadTimeout: true,
     initTimeout: true,
     oauthRefreshWaitTimeout: true,
+    oauthRefreshCoordination: true,
+    oauthPersistenceWaitTimeout: true,
     chatMenu: true,
     serverInstructions: true,
     requiresOAuth: true,

@@ -2047,6 +2047,7 @@ describe('MCPTokenStorage', () => {
     });
 
     const refreshParams = (refreshTokens: GetTokensRefresh, serverName = 'srv1') => ({
+      coordinateRefresh: true,
       userId: 'u1',
       serverName,
       findToken: store.findToken,
@@ -2295,6 +2296,27 @@ describe('MCPTokenStorage', () => {
         expect(provider).toHaveBeenCalledTimes(1);
       });
 
+      it.each([undefined, false])(
+        'keeps the legacy refresh path until rollout is enabled (%s)',
+        async (coordinateRefresh) => {
+          const serverName = 'rollout-disabled';
+          await seedRefreshableTokens(serverName);
+          const flowManager = flightManager(async () => true);
+          const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));
+          await expect(
+            MCPTokenStorage.forceRefreshTokens({
+              ...refreshParams(refreshTokens, serverName),
+              flowManager,
+              coordinateRefresh,
+            }),
+          ).resolves.toMatchObject({ access_token: 'at-2' });
+          expect(flowManager.acquireLease.mock.calls.map(([id]) => id)).not.toContain(
+            getMCPOAuthRefreshFlightLeaseId('u1', serverName),
+          );
+          expect(refreshTokens).toHaveBeenCalledTimes(1);
+        },
+      );
+
       it('holds a flight distinct from the teardown lease and releases it after redeeming', async () => {
         await seedRefreshableTokens('flight-srv');
         const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));
@@ -2436,9 +2458,11 @@ describe('MCPTokenStorage', () => {
         });
         await waitFor(() => onTokensAdopted.mock.calls.length === 1);
         const onStoreCommitted = jest.fn();
+        const acquireSpy = jest.spyOn(flowManager, 'acquireLease');
         const callback = MCPTokenStorage.storeTokens({
           ...refreshParams(jest.fn(), serverName),
           flowManager,
+          persistenceWaitTimeoutMs: 60000,
           tokens: rotatedTokens(4),
           clientInfo: { client_id: 'cid', client_secret: 'secret' },
           metadata: storedBindingMetadata,
@@ -2446,6 +2470,9 @@ describe('MCPTokenStorage', () => {
         });
         await new Promise((resolve) => setTimeout(resolve, 25));
         expect(onStoreCommitted).not.toHaveBeenCalled();
+        expect(acquireSpy).toHaveBeenCalledWith(getMCPOAuthLeaseId('u1', serverName), {
+          waitMs: 60000,
+        });
         expect(
           await MCPTokenStorage.isCurrentAccessToken({
             userId: 'u1',
@@ -2797,13 +2824,15 @@ describe('MCPTokenStorage', () => {
       });
 
       it.each([
-        [false, false],
-        [true, false],
-        [false, true],
-        [true, true],
-      ])(
-        'adopts a newer rejected credential (contended: %s, failed snapshot: %s)',
-        async (contended, failedSnapshot) => {
+        [false, false, credentialSetId],
+        [true, false, credentialSetId],
+        [false, true, credentialSetId],
+        [true, true, credentialSetId],
+        [false, false, null],
+        [true, true, null],
+      ] as const)(
+        'adopts a newer rejected credential (contended: %s, failed snapshot: %s, rejected: %s)',
+        async (contended, failedSnapshot, rejected) => {
           const serverName = `already-stored-${contended}`;
           await seedRefreshableTokens(serverName);
           await MCPTokenStorage.storeTokens({
@@ -2824,7 +2853,7 @@ describe('MCPTokenStorage', () => {
             MCPTokenStorage.forceRefreshTokens({
               ...refreshParams(refreshTokens, serverName),
               flowManager,
-              rejectedCredentialSetId: credentialSetId,
+              rejectedCredentialSetId: rejected as string | null,
               findToken,
             }),
           ).resolves.toMatchObject({ access_token: 'at-3', refresh_token: 'rt-3' });
@@ -2832,44 +2861,47 @@ describe('MCPTokenStorage', () => {
         },
       );
 
-      it('does not coalesce adoption with a caller that rejected the adopted generation', async () => {
-        const serverName = 'different-rejected-generations';
-        await seedRefreshableTokens(serverName);
-        const current = await MCPTokenStorage.storeTokens({
-          ...refreshParams(jest.fn(), serverName),
-          tokens: rotatedTokens(3),
-          clientInfo: { client_id: 'cid', client_secret: 'secret' },
-          metadata: storedBindingMetadata,
-          expectedCredentialSetId: credentialSetId,
-        });
-        const flowManager = new FlowStateManager(
-          new Keyv({ serialize: JSON.stringify, deserialize: JSON.parse }),
-          { ttl: 30000, ci: true },
-        );
-        let finishAdoption!: () => void;
-        const onTokensAdopted = jest.fn(
-          () =>
-            new Promise<void>((resolve) => {
-              finishAdoption = resolve;
-            }),
-        );
-        const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(4));
-        const params = { ...refreshParams(refreshTokens, serverName), flowManager };
-        const adopter = MCPTokenStorage.forceRefreshTokens({
-          ...params,
-          rejectedCredentialSetId: credentialSetId,
-          onTokensAdopted,
-        });
-        await waitFor(() => onTokensAdopted.mock.calls.length === 1);
-        const rejectedCurrent = MCPTokenStorage.forceRefreshTokens({
-          ...params,
-          rejectedCredentialSetId: current.credential_set_id,
-        });
-        finishAdoption();
-        await expect(adopter).resolves.toMatchObject({ access_token: 'at-3' });
-        await expect(rejectedCurrent).resolves.toMatchObject({ access_token: 'at-4' });
-        expect(refreshTokens).toHaveBeenCalledTimes(1);
-      });
+      it.each([false, true])(
+        'separates known absence from another caller identity (unknown: %s)',
+        async (unknown) => {
+          const serverName = 'different-rejected-generations';
+          await seedRefreshableTokens(serverName);
+          const current = await MCPTokenStorage.storeTokens({
+            ...refreshParams(jest.fn(), serverName),
+            tokens: rotatedTokens(3),
+            clientInfo: { client_id: 'cid', client_secret: 'secret' },
+            metadata: storedBindingMetadata,
+            expectedCredentialSetId: credentialSetId,
+          });
+          const flowManager = new FlowStateManager(
+            new Keyv({ serialize: JSON.stringify, deserialize: JSON.parse }),
+            { ttl: 30000, ci: true },
+          );
+          let finishAdoption!: () => void;
+          const onTokensAdopted = jest.fn(
+            () =>
+              new Promise<void>((resolve) => {
+                finishAdoption = resolve;
+              }),
+          );
+          const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(4));
+          const params = { ...refreshParams(refreshTokens, serverName), flowManager };
+          const adopter = MCPTokenStorage.forceRefreshTokens({
+            ...params,
+            rejectedCredentialSetId: null,
+            onTokensAdopted,
+          });
+          await waitFor(() => onTokensAdopted.mock.calls.length === 1);
+          const rejectedCurrent = MCPTokenStorage.forceRefreshTokens({
+            ...params,
+            rejectedCredentialSetId: unknown ? undefined : current.credential_set_id,
+          });
+          finishAdoption();
+          await expect(adopter).resolves.toMatchObject({ access_token: 'at-3' });
+          await expect(rejectedCurrent).resolves.toMatchObject({ access_token: 'at-4' });
+          expect(refreshTokens).toHaveBeenCalledTimes(1);
+        },
+      );
 
       it('reuses the refresh record getTokens already loaded', async () => {
         await seedRefreshableTokens('reuse-srv');

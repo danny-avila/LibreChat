@@ -1448,14 +1448,18 @@ describe('MCPServersRegistry', () => {
       expect(result['langfuse-docs'].source).toBe('yaml');
     });
 
-    it('retains an admin override that changes only the refresh wait', async () => {
+    it.each([
+      ['oauthRefreshWaitTimeout', 25000],
+      ['oauthPersistenceWaitTimeout', 60000],
+      ['oauthRefreshCoordination', true],
+    ] as const)('retains an admin-only %s override', async (field, value) => {
       await registry['cacheConfigsRepo'].add('langfuse-docs', yamlLangfuseConfig);
       const configServers = await registry.ensureConfigServers({
-        'langfuse-docs': { ...yamlLangfuseConfig, oauthRefreshWaitTimeout: 25000 },
+        'langfuse-docs': { ...yamlLangfuseConfig, [field]: value },
       });
-      expect(configServers['langfuse-docs'].oauthRefreshWaitTimeout).toBe(25000);
+      expect(configServers['langfuse-docs'][field]).toBe(value);
       const result = await registry.getAllServerConfigs('user-1', configServers);
-      expect(result['langfuse-docs'].oauthRefreshWaitTimeout).toBe(25000);
+      expect(result['langfuse-docs'][field]).toBe(value);
     });
 
     it('preserves user-DB tier (source: "user") over config-tier overrides', async () => {

@@ -69,7 +69,7 @@ type OAuthRequiredEvent = {
   status?: number;
   statusCode?: number;
   skipSilentRefresh?: boolean;
-  rejectedCredentialSetId?: string;
+  rejectedCredentialSetId?: string | null;
 };
 
 type OAuthRecoveryPhase = 'silent-refresh' | 'interactive' | 'terminal';
@@ -950,6 +950,8 @@ export class MCPConnectionFactory {
               refreshTokens: this.createRefreshTokensFunction(),
               singleFlightScope: this.getOAuthBindingDigest(),
               refreshWaitTimeoutMs: this.serverConfig.oauthRefreshWaitTimeout,
+              coordinateRefresh: this.serverConfig.oauthRefreshCoordination,
+              persistenceWaitTimeoutMs: this.serverConfig.oauthPersistenceWaitTimeout,
               flowManager: this.flowManager,
               onRefreshSuccess: (refreshed) => this.handleOAuthRefreshSuccess(refreshed),
               onRefreshPreparing: () => this.prepareOAuthRefreshSuccess(),
@@ -1121,7 +1123,7 @@ export class MCPConnectionFactory {
    * fresh redemption.
    */
   protected async attemptSilentTokenRefresh(
-    rejectedCredentialSetId?: string,
+    rejectedCredentialSetId?: string | null,
   ): Promise<MCPOAuthTokens | null> {
     if (!this.tokenMethods?.findToken || !this.tokenMethods?.createToken) {
       return null;
@@ -1135,7 +1137,7 @@ export class MCPConnectionFactory {
       this.userId ?? '',
       this.serverName,
       bindingDigest,
-      rejectedCredentialSetId ?? '',
+      rejectedCredentialSetId === undefined ? ['unknown'] : ['known', rejectedCredentialSetId],
     ]);
     const inflight = MCPConnectionFactory.inflightSilentRefreshes.get(lockKey);
     if (inflight) {
@@ -1208,7 +1210,7 @@ export class MCPConnectionFactory {
   private async runSilentRefresh(
     signal: AbortSignal,
     singleFlightScope: string,
-    rejectedCredentialSetId?: string,
+    rejectedCredentialSetId?: string | null,
   ): Promise<MCPOAuthTokens | null> {
     try {
       const tokens = await this.runWithCapturedTenant(async () =>
@@ -1223,6 +1225,8 @@ export class MCPConnectionFactory {
           singleFlightScope,
           rejectedCredentialSetId,
           refreshWaitTimeoutMs: this.serverConfig.oauthRefreshWaitTimeout,
+          coordinateRefresh: this.serverConfig.oauthRefreshCoordination,
+          persistenceWaitTimeoutMs: this.serverConfig.oauthPersistenceWaitTimeout,
           signal,
           /**
            * Drop any previously cached `mcp_get_tokens` result so the next
@@ -1643,7 +1647,9 @@ export class MCPConnectionFactory {
       }
 
       const rejectedCredentialSetId =
-        data.rejectedCredentialSetId ?? connection.getOAuthCredentialSetId();
+        data.rejectedCredentialSetId !== undefined
+          ? data.rejectedCredentialSetId
+          : connection.getOAuthCredentialSetId();
       const oauthLeaseId = getMCPOAuthLeaseId(this.userId!, this.serverName, this.tenantId);
       let oauthLeaseGeneration: number | null;
       try {
@@ -1802,6 +1808,7 @@ export class MCPConnectionFactory {
             authorizationUrl,
             tenantId: this.tenantId,
             serverGeneration: getMCPServerGeneration(this.serverDefinition as t.ParsedServerConfig),
+            oauthPersistenceWaitTimeout: this.serverConfig.oauthPersistenceWaitTimeout,
           };
           const publicationLease = await this.flowManager!.acquireLease(oauthLeaseId, {
             expectedGeneration: oauthLeaseGeneration,
@@ -2274,6 +2281,7 @@ export class MCPConnectionFactory {
         authorizationUrl,
         tenantId: this.tenantId,
         serverGeneration: getMCPServerGeneration(this.serverDefinition as t.ParsedServerConfig),
+        oauthPersistenceWaitTimeout: this.serverConfig.oauthPersistenceWaitTimeout,
       };
       const publicationLease = await this.flowManager.acquireLease(oauthLeaseId, {
         expectedGeneration: oauthLeaseGeneration,

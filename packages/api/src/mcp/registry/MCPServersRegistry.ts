@@ -122,6 +122,8 @@ const ADMIN_CONFIGURABLE_FIELDS = [
   'timeout',
   'sseReadTimeout',
   'oauthRefreshWaitTimeout',
+  'oauthRefreshCoordination',
+  'oauthPersistenceWaitTimeout',
   'initTimeout',
 ] as const;
 

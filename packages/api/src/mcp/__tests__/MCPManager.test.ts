@@ -1557,22 +1557,23 @@ describe('MCPManager', () => {
       expect(credential).toBe('credential-b');
     });
 
-    it('uses the identity retained with a stored transport error', async () => {
-      const connection = createConnection(jest.fn().mockResolvedValue(toolResult));
-      const error = new Error('Non-200 status code (401)');
-      (connection.isConnected as jest.Mock).mockResolvedValueOnce(false);
-      (connection.getLastConnectionCheckError as jest.Mock).mockReturnValue(error);
-      connection.getOAuthCredentialSetId = jest.fn(() => 'credential-b');
-      connection.getLastConnectionCheckCredentialSetId = jest.fn(() => 'credential-a');
-      const events: unknown[] = [];
-      connection.on('oauthReauthenticationRequired', (event) => events.push(event));
-      attachOAuthHandler();
-      const manager = await createManager(connection);
-      await expect(callTool(manager)).resolves.toBeDefined();
-      expect(events).toEqual([
-        expect.objectContaining({ rejectedCredentialSetId: 'credential-a' }),
-      ]);
-    });
+    it.each(['credential-a', null])(
+      'preserves the recorded transport identity %s',
+      async (rejected) => {
+        const connection = createConnection(jest.fn().mockResolvedValue(toolResult));
+        const error = new Error('Non-200 status code (401)');
+        (connection.isConnected as jest.Mock).mockResolvedValueOnce(false);
+        (connection.getLastConnectionCheckError as jest.Mock).mockReturnValue(error);
+        connection.getOAuthCredentialSetId = jest.fn(() => 'credential-b');
+        connection.getLastConnectionCheckCredentialSetId = jest.fn(() => rejected);
+        const events: unknown[] = [];
+        connection.on('oauthReauthenticationRequired', (event) => events.push(event));
+        attachOAuthHandler();
+        const manager = await createManager(connection);
+        await expect(callTool(manager)).resolves.toBeDefined();
+        expect(events).toEqual([expect.objectContaining({ rejectedCredentialSetId: rejected })]);
+      },
+    );
 
     it('joins recovery registered between cached checkout and lease acquisition', async () => {
       const request = jest.fn().mockResolvedValue(toolResult);

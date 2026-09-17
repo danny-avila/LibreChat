@@ -48,6 +48,7 @@ export class MCPTokenRefreshUnavailableError extends Error {
 interface StoreTokensParams {
   /** Interactive writers share the persistence fence with refresh, adoption, and teardown. */
   flowManager?: Pick<FlowStateManager, 'acquireLease'>;
+  persistenceWaitTimeoutMs?: number;
   userId: string;
   serverName: string;
   tokens: OAuthTokens | ExtendedOAuthTokens | MCPOAuthTokens;
@@ -122,10 +123,13 @@ interface GetTokensParams {
    * the repository's latency budget already counts.
    */
   existingRefreshToken?: IToken | null;
-  /** Credential actually rejected by the resource server, before any peer storage reads. */
-  rejectedCredentialSetId?: string;
+  /** Rejected credential: null means known absence; undefined means no request identity was captured. */
+  rejectedCredentialSetId?: string | null;
   /** Per-server `oauthRefreshWaitTimeout`: how long to wait on another replica's redemption. */
   refreshWaitTimeoutMs?: number;
+  /** Staged capability: enable only when every writer honors the persistence fence. */
+  coordinateRefresh?: boolean;
+  persistenceWaitTimeoutMs?: number;
   /** Shared cache-backed fence used to serialize refresh persistence with server teardown. */
   flowManager?: Pick<FlowStateManager, 'getLeaseGeneration' | 'acquireLease'>;
 }
@@ -491,7 +495,10 @@ export class MCPTokenStorage {
    */
   static async storeTokens(params: StoreTokensParams): Promise<MCPOAuthTokens> {
     const lease = params.flowManager
-      ? await params.flowManager.acquireLease(getMCPOAuthLeaseId(params.userId, params.serverName))
+      ? await params.flowManager.acquireLease(
+          getMCPOAuthLeaseId(params.userId, params.serverName),
+          { waitMs: params.persistenceWaitTimeoutMs },
+        )
       : undefined;
     if (params.flowManager && !lease) {
       throw new MCPTokenStorageUnavailableError(
@@ -985,7 +992,9 @@ export class MCPTokenStorage {
       userId,
       serverName,
       singleFlightScope ?? '',
-      params.rejectedCredentialSetId ?? '',
+      params.rejectedCredentialSetId === undefined
+        ? ['unknown']
+        : ['known', params.rejectedCredentialSetId],
     ]);
     const inflight = this.inflightRefreshes.get(refreshKey);
     if (inflight) {
@@ -1028,7 +1037,7 @@ export class MCPTokenStorage {
       }
       /** Serialize with the redemptions other replicas may be running for this credential. */
       let flight: MCPRefreshFlight | null = null;
-      if (flowManager) {
+      if (flowManager && params.coordinateRefresh === true) {
         try {
           flight = await this.beginRefreshFlight({
             userId,
@@ -1055,7 +1064,9 @@ export class MCPTokenStorage {
       }
       try {
         if (flight?.adoptedTokens) {
-          const adoptionLease = await flowManager!.acquireLease(leaseId);
+          const adoptionLease = await flowManager!.acquireLease(leaseId, {
+            waitMs: params.persistenceWaitTimeoutMs,
+          });
           if (!adoptionLease) {
             throw new MCPTokenStorageUnavailableError(
               serverName,
@@ -1202,7 +1213,7 @@ export class MCPTokenStorage {
     flowManager: NonNullable<GetTokensParams['flowManager']>;
     existingRefreshToken?: IToken | null;
     existingAccessToken?: IToken | null;
-    rejectedCredentialSetId?: string;
+    rejectedCredentialSetId?: string | null;
     waitMs: number;
     /** Internal stale-abort signal owned by `forceRefreshTokens`, also fired by teardown. */
     signal: AbortSignal;
@@ -1310,7 +1321,7 @@ export class MCPTokenStorage {
     lease: FlowLease;
     observedRefreshToken: IToken | null;
     existingAccessToken?: IToken | null;
-    rejectedCredentialSetId?: string;
+    rejectedCredentialSetId?: string | null;
     logPrefix: string;
   }): Promise<MCPRefreshFlight> {
     let leasedRefreshToken: IToken | null;
@@ -1395,15 +1406,15 @@ export class MCPTokenStorage {
     /** The credential as this replica saw it before contending for the flight. */
     observedRefreshToken: IToken | null;
     existingAccessToken?: IToken | null;
-    rejectedCredentialSetId?: string;
+    rejectedCredentialSetId?: string | null;
     /** The credential as stored once the flight was held. */
     leasedRefreshToken: IToken | null;
   }): Promise<MCPOAuthTokens | null> {
-    if (!leasedRefreshToken || (!observedRefreshToken && !rejectedCredentialSetId)) {
+    if (!leasedRefreshToken || (!observedRefreshToken && rejectedCredentialSetId === undefined)) {
       return null;
     }
     const rotated =
-      (rejectedCredentialSetId != null &&
+      (rejectedCredentialSetId !== undefined &&
         rejectedCredentialSetId !== getCredentialSetId(leasedRefreshToken)) ||
       (observedRefreshToken != null &&
         (leasedRefreshToken.token !== observedRefreshToken.token ||
@@ -1785,6 +1796,8 @@ export class MCPTokenStorage {
     refreshTokens,
     singleFlightScope,
     refreshWaitTimeoutMs,
+    coordinateRefresh,
+    persistenceWaitTimeoutMs,
     flowManager,
     onRefreshSuccess,
     onRefreshPreparing,
@@ -1838,6 +1851,8 @@ export class MCPTokenStorage {
           refreshTokens,
           singleFlightScope,
           refreshWaitTimeoutMs,
+          coordinateRefresh,
+          persistenceWaitTimeoutMs,
           flowManager,
           onRefreshSuccess,
           onRefreshPreparing,

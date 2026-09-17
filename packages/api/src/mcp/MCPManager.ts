@@ -764,7 +764,7 @@ Please follow these instructions when using tools from the respective MCP server
     flowManager: FlowStateManager<MCPOAuthTokens | null>,
     signal?: AbortSignal,
     allowsTakeover = true,
-    rejectedCredentialSetId?: string,
+    rejectedCredentialSetId?: string | null,
   ): Promise<void> {
     const existingRecovery = this.oauthRecoveries.get(connection);
     if (existingRecovery) {
@@ -1418,6 +1418,7 @@ Please follow these instructions when using tools from the respective MCP server
 
         const checkedCredentialSetId = connection.getOAuthCredentialSetId?.();
         const connectionIsActive = await connection.isConnected(options?.signal);
+        const recordedCredentialSetId = connection.getLastConnectionCheckCredentialSetId?.();
         const connectionCheckError = connectionIsActive
           ? undefined
           : connection.getLastConnectionCheckError();
@@ -1492,7 +1493,9 @@ Please follow these instructions when using tools from the respective MCP server
                 flowManager,
                 options?.signal,
                 !recoveryTakeoverConsumed,
-                connection!.getLastConnectionCheckCredentialSetId?.() ?? checkedCredentialSetId,
+                recordedCredentialSetId !== undefined
+                  ? recordedCredentialSetId
+                  : checkedCredentialSetId,
               ),
             );
           } catch (recoveryError) {
