@@ -1456,6 +1456,39 @@ describe('Azure deployment alias', () => {
     },
   );
 
+  it('withholds inherited explicit cache controls from an unsupported summary model', async () => {
+    const { llmConfig, configOptions } = getOpenAIConfig(
+      'test-openai-key',
+      {
+        modelOptions: { model: 'gpt-5.6' },
+        promptCacheExplicit: true,
+      },
+      EModelEndpoint.openAI,
+    );
+    expect(llmConfig.promptCacheExplicit).toBe(true);
+    const agents = await callAndCapture({
+      agents: [
+        makeReasoningAgent({
+          provider: EModelEndpoint.openAI,
+          endpoint: EModelEndpoint.openAI,
+          model: 'gpt-5.6',
+          model_parameters: { ...llmConfig, configuration: configOptions },
+        }),
+      ],
+      summarizationConfig: { model: 'gpt-4o', parameters: { streaming: false } },
+    });
+
+    const summaryConfig = agents[0].summarizationConfig as Record<string, unknown>;
+    const parameters = summaryConfig.parameters as Record<string, unknown>;
+    /**
+     * `gpt-4o` rejects the explicit cache body parameters outright, and the
+     * model gate that withheld them ran against the agent's model, not this
+     * one.
+     */
+    expect(parameters).toHaveProperty('promptCacheExplicit', undefined);
+    expect(parameters).toHaveProperty('promptCacheKey', undefined);
+  });
+
   it('keeps the deployment alias when the summarizer runs the agent model', async () => {
     const agents = await callAndCapture({ agents: [azureAstraAgent()] });
 

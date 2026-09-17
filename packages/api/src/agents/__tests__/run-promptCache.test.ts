@@ -228,7 +228,7 @@ describe('run-level prompt cache identity', () => {
     expect(cacheKey(childForA)).not.toBe(cacheKey(childForB));
   });
 
-  it('gives one saved-team member a distinct cache key in each team occurrence', async () => {
+  it('gives one saved-team member its own sealed cache key in each team occurrence', async () => {
     const member = makeAgent({ id: 'shared-member' });
     const writer = makeAgent({ id: 'writer' });
     const reviewer = makeAgent({ id: 'reviewer' });
@@ -267,48 +267,56 @@ describe('run-level prompt cache identity', () => {
 
     expect(graphConfigs).toHaveLength(2);
     expect(memberInputs).toHaveLength(2);
-    expect(memberInputs[0]).toBeDefined();
-    expect(memberInputs[1]).toBeDefined();
-    expect(cacheKey(memberInputs[0]!)).not.toBe(cacheKey(memberInputs[1]!));
+    expect(cacheKey(memberInputs[0]!)).toEqual(expect.stringMatching(/^librechat:/));
+    expect(cacheKey(memberInputs[1]!)).toEqual(expect.stringMatching(/^librechat:/));
+    /**
+     * A saved team routes its members with direct edges, which the model never
+     * sees, so both occurrences describe one prefix and must reuse one entry.
+     */
+    expect(cacheKey(memberInputs[0]!)).toBe(cacheKey(memberInputs[1]!));
+  });
+
+  it.each([
+    ['a handoff edge the model can call', 'handoff', false],
+    ['automatic routing the model never sees', 'direct', true],
+  ])('treats %s accordingly', async (_label, edgeType, expectReuse) => {
+    const target = makeAgent({ id: 'writer' });
+    const plain = makeAgent({ id: 'supervisor' });
+    const withEdge = makeAgent({
+      id: 'supervisor',
+      edges: [{ from: 'supervisor', to: 'writer', edgeType, description: 'Hand the draft over' }],
+    });
+
+    const [plainInput] = await captureRun({ agent: plain, user: 'user-a' });
+    const [edgeInput] = await captureRun({ agent: withEdge, user: 'user-a' });
+    void target;
+
+    if (expectReuse) {
+      expect(cacheKey(edgeInput)).toBe(cacheKey(plainInput));
+    } else {
+      expect(cacheKey(edgeInput)).not.toBe(cacheKey(plainInput));
+    }
   });
 
   it('reads a spelled-out default handoff parameter name as the default', async () => {
-    const member = makeAgent({ id: 'shared-member' });
-    const writer = makeAgent({ id: 'writer' });
-    const team = (type: string, promptKey?: string) => ({
-      type,
-      name: `Team ${type}`,
-      description: 'Member writes',
-      edges: [
-        {
-          from: 'shared-member',
-          to: 'writer',
-          edgeType: 'direct',
-          prompt: 'Hand the draft over',
-          ...(promptKey != null ? { promptKey } : {}),
-        },
-      ],
-      entry_agent_id: 'shared-member',
-      result_agent_id: 'writer',
-    });
-    const root = makeAgent({
-      subagents: { enabled: true, allowSelf: false },
-      subagentGraphConfigs: [
-        { definition: team('implicit'), memberConfigs: [member, writer] },
-        { definition: team('explicit', 'instructions'), memberConfigs: [member, writer] },
-      ],
+    const edge = (promptKey?: string) => ({
+      from: 'supervisor',
+      to: 'writer',
+      edgeType: 'handoff',
+      prompt: 'Hand the draft over',
+      ...(promptKey != null ? { promptKey } : {}),
     });
 
-    const [rootInput] = await captureRun({ agent: root, user: 'user-a' });
-    const graphs = (rootInput.subagentConfigs ?? []).filter(
-      (config) => 'kind' in config && config.kind === 'graph',
-    ) as Array<{ agents: CapturedAgent[] }>;
-    const memberKeys = graphs.map((graph) =>
-      cacheKey(graph.agents.find((agent) => agent.agentId === 'shared-member')!),
-    );
+    const [implicit] = await captureRun({
+      agent: makeAgent({ id: 'supervisor', edges: [edge()] }),
+      user: 'user-a',
+    });
+    const [explicit] = await captureRun({
+      agent: makeAgent({ id: 'supervisor', edges: [edge('instructions')] }),
+      user: 'user-a',
+    });
 
-    expect(memberKeys).toHaveLength(2);
-    /** Both teams advertise the same handoff parameter, so both must reuse one entry. */
-    expect(memberKeys[0]).toBe(memberKeys[1]);
+    /** Both advertise the same handoff parameter, so both must reuse one entry. */
+    expect(cacheKey(implicit)).toBe(cacheKey(explicit));
   });
 });
