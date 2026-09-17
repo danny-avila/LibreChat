@@ -1904,7 +1904,8 @@ function handoffEdgeIdentity(edge: GraphEdge): unknown {
   return {
     to: edge.to,
     ...(typeof edge.description === 'string' ? { description: edge.description } : {}),
-    ...(edge.edgeType != null ? { edgeType: edge.edgeType } : {}),
+    /** Absent means `handoff`, so both spellings must hash alike. */
+    edgeType: edge.edgeType ?? 'handoff',
     /**
      * Resolved rather than passed through: the SDK falls back to
      * `instructions` (`MultiAgentGraph`), so an edge that spells the default
@@ -2647,28 +2648,35 @@ export async function createRun({
     let toolDefinitions = agent.toolDefinitions ?? [];
     let toolRegistry = agent.toolRegistry;
     /**
-     * Definitions promoted below come from this conversation's tool_search
-     * results, so they must not reach the cache identity: hashing them would
-     * give every conversation its own entry, which is the reuse the key
-     * exists for. Recorded by name rather than filtered here, because the
-     * model does receive them — they belong on the request, just not in the
-     * name of the prefix the agent is configured to send.
+     * Definitions this conversation discovered through `tool_search` must not
+     * reach the cache identity: hashing them would give every conversation its
+     * own entry, which is the reuse the key exists for. They are recorded by
+     * name rather than withheld from the request — the model does receive
+     * them, they are simply not part of the prefix the agent is configured to
+     * send.
+     *
+     * Recorded whether or not the definition is appended below. `toolRegistry`
+     * and `toolDefinitions` are the same objects (`classification.ts` builds
+     * the array from the registry's values), so `overrideDeferLoading` flips
+     * `defer_loading` on definitions that are already bound, which moves the
+     * digest just as an appended definition would.
      */
-    const promotedDiscoveredToolNames: string[] = [];
+    const discoveredDefinitionNames: string[] = [];
     if (!isSubagent && discoveredTools.size > 0 && agent.toolRegistry) {
       overrideDeferLoadingForDiscoveredTools(agent.toolRegistry, discoveredTools);
 
       /** Add discovered tools' definitions so the LLM can see their schemas */
       const existingToolNames = new Set(toolDefinitions.map((d) => d.name));
       for (const toolName of discoveredTools) {
+        const toolDef = agent.toolRegistry.get(toolName);
+        if (!toolDef) {
+          continue;
+        }
+        discoveredDefinitionNames.push(toolName);
         if (existingToolNames.has(toolName)) {
           continue;
         }
-        const toolDef = agent.toolRegistry.get(toolName);
-        if (toolDef) {
-          toolDefinitions = [...toolDefinitions, toolDef];
-          promotedDiscoveredToolNames.push(toolName);
-        }
+        toolDefinitions = [...toolDefinitions, toolDef];
       }
     } else if (isSubagent && agent.toolRegistry) {
       /**
@@ -2787,8 +2795,8 @@ export async function createRun({
        */
       (agentInput as AgentInputs & { graphTools?: GenericTool[] }).graphTools = graphTools;
     }
-    if (promotedDiscoveredToolNames.length > 0) {
-      cacheOptions.promptCacheDiscoveredToolNames = promotedDiscoveredToolNames;
+    if (discoveredDefinitionNames.length > 0) {
+      cacheOptions.promptCacheDiscoveredToolNames = discoveredDefinitionNames;
     }
     return agentInput;
   };

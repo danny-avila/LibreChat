@@ -298,6 +298,32 @@ describe('run-level prompt cache identity', () => {
     }
   });
 
+  it('reads an omitted edge type as the handoff the SDK creates', async () => {
+    const [implicit] = await captureRun({
+      agent: makeAgent({
+        id: 'supervisor',
+        edges: [{ from: 'supervisor', to: 'writer', description: 'Hand the draft over' }],
+      }),
+      user: 'user-a',
+    });
+    const [explicit] = await captureRun({
+      agent: makeAgent({
+        id: 'supervisor',
+        edges: [
+          {
+            from: 'supervisor',
+            to: 'writer',
+            edgeType: 'handoff',
+            description: 'Hand the draft over',
+          },
+        ],
+      }),
+      user: 'user-a',
+    });
+
+    expect(cacheKey(implicit)).toBe(cacheKey(explicit));
+  });
+
   it('reads a spelled-out default handoff parameter name as the default', async () => {
     const edge = (promptKey?: string) => ({
       from: 'supervisor',
