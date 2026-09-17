@@ -59,7 +59,7 @@ const Tab = forwardRef<ElementRef<typeof Ariakit.Tab>, Ariakit.TabProps>(functio
         else if (ref) ref.current = node;
       }}
       {...props}
-      className={`animated-tab aria-selected:text-token-text-primary flex items-center justify-center gap-2 border-none text-sm font-medium whitespace-nowrap outline-hidden transition-colors select-none aria-disabled:opacity-50 ${props.className || ''}`}
+      className={`animated-tab aria-selected:text-text-primary flex items-center justify-center gap-2 border-none text-sm font-medium whitespace-nowrap outline-hidden transition-colors select-none aria-disabled:opacity-50 ${props.className || ''}`}
     />
   );
 });

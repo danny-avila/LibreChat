@@ -38,6 +38,28 @@ test.describe('class and token existence', () => {
     expect(raw).toContain('"bg-surfce-primary" is not a declared theme color');
     expect(raw).toContain('Did you mean "bg-surface-primary"?');
 
+    /** The one variant class the tree still wrote through a hand-rolled token
+     *  rule — `aria-selected:text-token-text-primary` on the animated tabs —
+     *  now has nowhere to resolve, and the rules say so rather than leaving the
+     *  selected tab unstyled. Its semantic replacement is silent. */
+    const stale = designMessages(
+      lintStdin(
+        'client/src/__probe__.tsx',
+        'export default () => <div className="aria-selected:text-token-text-primary" />;\n',
+      ),
+    );
+    expect(messagesFor(stale, 'shadcn/no-raw-colors').join('\n')).toContain(
+      '"aria-selected:text-token-text-primary" is not a declared theme color',
+    );
+    expect(
+      designMessages(
+        lintStdin(
+          'client/src/__probe__.tsx',
+          'export default () => <div className="aria-selected:text-text-primary" />;\n',
+        ),
+      ),
+    ).toEqual([]);
+
     /** The negative control: the correctly spelled neighbours are silent, so the
      *  rules are reporting these two classes rather than the shape of the probe. */
     expect(designMessages(lintStdin('client/src/__probe__.tsx', CORRECT))).toEqual([]);

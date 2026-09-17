@@ -108,8 +108,11 @@ module.exports = {
     // tailwindcss-radix is gone: its addVariant call produces nothing under Tailwind v4, and
     // Radix sets the same attributes it keyed off, so callers use `data-[state=open]:` and
     // `data-[disabled]:` directly. Its last caller was a table mockup nothing rendered, removed
-    // with this upgrade rather than migrated. tailwindcss-animate still works under v4.
-    require('tailwindcss-animate'),
+    // with this upgrade rather than migrated.
+    //
+    // tailwindcss-animate is not listed here: the published preset above registers it, and
+    // Tailwind runs a plugin once per registration, so naming it again would emit every
+    // `animate-in`/`fade-in-*` utility twice.
     // require('@tailwindcss/typography'),
   ],
 };

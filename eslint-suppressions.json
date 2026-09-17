@@ -307,11 +307,6 @@
       "count": 1
     }
   },
-  "client/src/components/Chat/Input/Files/Table/TemplateTable.tsx": {
-    "shadcn/no-unknown-classes": {
-      "count": 2
-    }
-  },
   "client/src/components/Chat/Input/HeaderOptions.tsx": {
     "shadcn/no-restyle": {
       "count": 10
@@ -1319,11 +1314,6 @@
   },
   "client/src/components/Input/Generations/Stop.tsx": {
     "shadcn/no-restyle": {
-      "count": 1
-    }
-  },
-  "client/src/components/Input/ModelSelect/MultiSelectPop.tsx": {
-    "shadcn/no-unknown-classes": {
       "count": 1
     }
   },
@@ -2499,9 +2489,27 @@
       "count": 1
     }
   },
+  "client/src/components/ui/AdminSettingsDialog.tsx": {
+    "shadcn/no-restyle": {
+      "count": 22
+    },
+    "shadcn/require-static-classes": {
+      "count": 1
+    }
+  },
+  "client/src/components/ui/Collapse.tsx": {
+    "shadcn/no-arbitrary-values": {
+      "count": 3
+    }
+  },
   "client/src/components/ui/CustomIcon.tsx": {
     "shadcn/no-inline-styles": {
       "count": 9
+    }
+  },
+  "client/src/components/ui/LocalizedDateRangePicker.tsx": {
+    "shadcn/no-restyle": {
+      "count": 1
     }
   },
   "client/src/components/ui/TermsAndConditionsModal.tsx": {
@@ -2537,17 +2545,7 @@
       "count": 2
     }
   },
-  "packages/client/src/components/Accordion.tsx": {
-    "shadcn/no-unknown-classes": {
-      "count": 2
-    }
-  },
   "packages/client/src/components/AnimatedSearchInput.tsx": {
-    "shadcn/no-raw-colors": {
-      "count": 1
-    }
-  },
-  "packages/client/src/components/AnimatedTabs.tsx": {
     "shadcn/no-raw-colors": {
       "count": 1
     }
@@ -2599,11 +2597,6 @@
   },
   "packages/client/src/components/HoverCard.tsx": {
     "shadcn/no-inline-styles": {
-      "count": 1
-    }
-  },
-  "packages/client/src/components/InputOTP.tsx": {
-    "shadcn/no-unknown-classes": {
       "count": 1
     }
   },
