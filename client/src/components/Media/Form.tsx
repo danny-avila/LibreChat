@@ -25,6 +25,7 @@ import type {
   MediaOperation,
   MediaSelection,
 } from 'librechat-data-provider';
+import type { ReactNode } from 'react';
 import type { MediaDraft, PendingMedia } from './state';
 import {
   mediaControlLabels,
@@ -42,18 +43,24 @@ const offeringId = (
   offering: Pick<MediaCatalog['offerings'][number], 'connectionId' | 'modelId'>,
 ) => JSON.stringify([offering.connectionId, offering.modelId]);
 
+export type MediaFormParts = { settings: ReactNode; composer: ReactNode };
+
 export function MediaForm({
   catalog,
   threadId,
   initialSelection,
   send,
   busy,
+  portal = false,
+  children,
 }: {
   catalog: MediaCatalog;
   threadId?: string;
   initialSelection?: MediaSelection;
   send: (command: PendingMedia) => Promise<void>;
   busy: boolean;
+  portal?: boolean;
+  children?: (parts: MediaFormParts) => ReactNode;
 }) {
   const host = useMediaHost();
   const localize = useLocalize();
@@ -130,7 +137,7 @@ export function MediaForm({
             setValue={(next) => param(key, Number(next))}
             variant="field"
             isCollapsed={false}
-            portal={false}
+            portal={portal}
           />
         ) : (
           <Input
@@ -176,7 +183,7 @@ export function MediaForm({
           }}
           variant="field"
           isCollapsed={false}
-          portal={false}
+          portal={portal}
         />
       </div>
     );
@@ -303,8 +310,8 @@ export function MediaForm({
       if (!controller.signal.aborted && host.isCurrentSession()) setUploading(false);
     }
   }
-  if (!offering || !capability)
-    return (
+  if (!offering || !capability) {
+    const unavailable = (
       <div role="status">
         <p>{localize('com_media_no_models')}</p>
         {draft.offering && offerings.length > 0 && (
@@ -314,6 +321,8 @@ export function MediaForm({
         )}
       </div>
     );
+    return children ? children({ settings: unavailable, composer: unavailable }) : unavailable;
+  }
   const controls: MediaCapability['controls'] = capability.controls;
   const invalidSettings = Object.entries(controls).flatMap(([key, control]) => {
     const value = draft.parameters[key as keyof MediaDraft['parameters']];
@@ -358,8 +367,71 @@ export function MediaForm({
     'image.edit': 'com_media_edit_placeholder',
     'video.generate': 'com_media_video_placeholder',
   } as const;
-  return (
-    <section className="space-y-5" aria-label={localize('com_media_create')}>
+  const referenceActions = (
+    <div className="flex flex-wrap items-center gap-2">
+      <Input
+        id={`${id}-upload`}
+        type="file"
+        accept="image/*,video/*,audio/*"
+        aria-label={localize('com_media_upload')}
+        className="hidden"
+        disabled={uploading || !host.canCreate || draft.inputs.length >= catalog.limits.maxInputs}
+        onChange={(event) => {
+          void uploadFile(event.target.files?.[0]);
+          event.target.value = '';
+        }}
+      />
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={uploading || !host.canCreate || draft.inputs.length >= catalog.limits.maxInputs}
+        onClick={() => document.getElementById(`${id}-upload`)?.click()}
+      >
+        <Upload className="mr-1.5 size-4" aria-hidden="true" />
+        {localize('com_media_upload')}
+      </Button>
+      {uploading && (
+        <>
+          <Spinner className="size-4" />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              upload.current?.abort();
+              setUploading(false);
+            }}
+          >
+            {localize('com_ui_cancel')}
+          </Button>
+        </>
+      )}
+      {draft.inputs.length > 0 && (
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={busy || !host.canCreate || uploading}
+          onClick={() =>
+            void send({
+              kind: 'import',
+              request: {
+                schemaVersion: 1,
+                clientRequestId: v4(),
+                threadId,
+                inputs: draft.inputs,
+                title: draft.prompt.slice(0, catalog.limits.maxTitleChars) || undefined,
+              },
+              draftKey,
+              draftRevision: draft.revision,
+            })
+          }
+        >
+          {localize('com_media_import')}
+        </Button>
+      )}
+    </div>
+  );
+  const settings = (
+    <section className="space-y-5" aria-label={localize('com_media_settings')}>
       <div
         role="group"
         aria-label={localize('com_media_operation')}
@@ -398,7 +470,7 @@ export function MediaForm({
             ariaLabel={localize('com_media_connection')}
             variant="field"
             isCollapsed={false}
-            portal={false}
+            portal={portal}
             selectedValue={offering.connectionId}
             displayValue={offering.connectionName}
             items={connections.map(([value, label]) => ({ value, label }))}
@@ -416,7 +488,7 @@ export function MediaForm({
             ariaLabel={localize('com_media_model')}
             variant="field"
             isCollapsed={false}
-            portal={false}
+            portal={portal}
             selectedValue={offeringId(offering)}
             displayValue={offering.modelName}
             items={modeOfferings
@@ -429,185 +501,6 @@ export function MediaForm({
           />
         </div>
       </div>
-      <div className="space-y-2">
-        <Label>{localize('com_media_prompt_label')}</Label>
-        <Composer
-          value={draft.prompt}
-          onChange={(prompt) => change({ prompt })}
-          onSubmit={() => void submit()}
-          canSubmit={
-            host.canCreate &&
-            !busy &&
-            !uploading &&
-            inputsValid &&
-            invalidSettings.length === 0 &&
-            draft.prompt.trim().length > 0 &&
-            draft.prompt.length <= catalog.limits.maxPromptChars
-          }
-          submitLabel={localize('com_media_queue')}
-          submitDisplay="label"
-          ariaLabel={localize('com_media_prompt')}
-          placeholder={localize(placeholders[capability.operation])}
-          minRows={4}
-          maxRows={10}
-          maxLength={catalog.limits.maxPromptChars}
-          submitOnEnter={host.enterToSend}
-          resolveKeyVerdict={host.resolveKeyVerdict}
-          actions={
-            busy ? (
-              <span role="status" className="flex items-center gap-2 text-xs text-text-secondary">
-                <Spinner className="size-4" />
-                {localize('com_media_preparing')}
-              </span>
-            ) : undefined
-          }
-        />
-      </div>
-      {invalidSettings.length > 0 && (
-        <Alert variant="warning" id={`${id}-unsupported`}>
-          {localize('com_media_unsupported_settings', {
-            settings: invalidSettings.map((key) => localize(mediaControlLabels[key])).join(', '),
-          })}
-        </Alert>
-      )}
-      {draft.parentTurnId && (
-        <div className="flex items-start gap-2 rounded-xl bg-surface-secondary p-3">
-          <p className="text-xs leading-5 text-text-secondary">
-            {localize('com_media_pinned_parent')}
-          </p>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={localize('com_media_clear_reference')}
-            onClick={() => change({ parentTurnId: undefined, inputs: [], assets: [] })}
-          >
-            <X className="size-4" aria-hidden="true" />
-          </Button>
-        </div>
-      )}
-      {draft.inputs.length > 0 && (
-        <ul className="space-y-3" aria-label={localize('com_media_references')}>
-          {draft.inputs.map((input, index) => {
-            const asset = draft.assets.find((item) => item.file_id === input.file_id);
-            return (
-              <li
-                key={`${input.file_id}:${index}`}
-                className="flex items-center gap-2 rounded-xl border border-border-light p-2"
-              >
-                {asset && (
-                  <span className="w-14 shrink-0 overflow-hidden rounded-lg">
-                    <MediaPreview asset={asset} compact />
-                  </span>
-                )}
-                <div className="min-w-0 flex-1">
-                  <ControlCombobox
-                    showCarat
-                    ariaLabel={localize('com_media_input_role')}
-                    variant="field"
-                    isCollapsed={false}
-                    portal={false}
-                    selectedValue={input.role}
-                    displayValue={localize(mediaInputRoleLabels[input.role])}
-                    items={capability.inputs.roles.map((role) => ({
-                      value: role,
-                      label: localize(mediaInputRoleLabels[role]),
-                    }))}
-                    setValue={(value) =>
-                      change({
-                        inputs: draft.inputs.map((item, at) =>
-                          at === index ? { ...item, role: value as typeof input.role } : item,
-                        ),
-                      })
-                    }
-                  />
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={localize('com_media_remove_reference')}
-                  onClick={() =>
-                    change({
-                      inputs: draft.inputs.filter((_, at) => at !== index),
-                      assets: draft.assets.filter((item) => item.file_id !== input.file_id),
-                    })
-                  }
-                >
-                  <X className="size-4" aria-hidden="true" />
-                </Button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          id={`${id}-upload`}
-          type="file"
-          accept="image/*,video/*,audio/*"
-          aria-label={localize('com_media_upload')}
-          className="hidden"
-          disabled={uploading || !host.canCreate || draft.inputs.length >= catalog.limits.maxInputs}
-          onChange={(event) => {
-            void uploadFile(event.target.files?.[0]);
-            event.target.value = '';
-          }}
-        />
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={uploading || !host.canCreate || draft.inputs.length >= catalog.limits.maxInputs}
-          onClick={() => document.getElementById(`${id}-upload`)?.click()}
-        >
-          <Upload className="mr-1.5 size-4" aria-hidden="true" />
-          {localize('com_media_upload')}
-        </Button>
-        {uploading && (
-          <>
-            <Spinner className="size-4" />
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                upload.current?.abort();
-                setUploading(false);
-              }}
-            >
-              {localize('com_ui_cancel')}
-            </Button>
-          </>
-        )}
-        {draft.inputs.length > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={busy || !host.canCreate || uploading}
-            onClick={() =>
-              void send({
-                kind: 'import',
-                request: {
-                  schemaVersion: 1,
-                  clientRequestId: v4(),
-                  threadId,
-                  inputs: draft.inputs,
-                  title: draft.prompt.slice(0, catalog.limits.maxTitleChars) || undefined,
-                },
-                draftKey,
-                draftRevision: draft.revision,
-              })
-            }
-          >
-            {localize('com_media_import')}
-          </Button>
-        )}
-      </div>
-      {!inputsValid && (
-        <p role="status" className="text-xs leading-5 text-text-secondary">
-          {localize('com_media_reference_hint', {
-            min: capability.inputs.min,
-            max: capability.inputs.max,
-          })}
-        </p>
-      )}
       <div className="grid grid-cols-2 gap-3 border-t border-border-light pt-4">
         {numeric('count', controls.count)}
         {enumeration('aspectRatio', controls.aspectRatio)}
@@ -651,6 +544,138 @@ export function MediaForm({
           )}
         </div>
       </details>
+    </section>
+  );
+  const composer = (
+    <section className="space-y-3" aria-label={localize('com_media_create')} data-media-composer>
+      {draft.parentTurnId && (
+        <div className="flex items-start gap-2 rounded-xl bg-surface-secondary p-3">
+          <p className="text-xs leading-5 text-text-secondary">
+            {localize('com_media_pinned_parent')}
+          </p>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={localize('com_media_clear_reference')}
+            onClick={() => change({ parentTurnId: undefined, inputs: [], assets: [] })}
+          >
+            <X className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
+      )}
+      {draft.inputs.length > 0 && (
+        <ul
+          className="flex max-h-40 flex-wrap gap-2 overflow-y-auto"
+          aria-label={localize('com_media_references')}
+        >
+          {draft.inputs.map((input, index) => {
+            const asset = draft.assets.find((item) => item.file_id === input.file_id);
+            return (
+              <li
+                key={`${input.file_id}:${index}`}
+                className="flex w-full items-center gap-2 rounded-xl border border-border-light p-2 sm:w-72"
+              >
+                {asset && (
+                  <span className="w-14 shrink-0 overflow-hidden rounded-lg">
+                    <MediaPreview asset={asset} compact />
+                  </span>
+                )}
+                <div className="min-w-0 flex-1">
+                  <ControlCombobox
+                    showCarat
+                    ariaLabel={localize('com_media_input_role')}
+                    variant="field"
+                    isCollapsed={false}
+                    portal={portal}
+                    selectedValue={input.role}
+                    displayValue={localize(mediaInputRoleLabels[input.role])}
+                    items={capability.inputs.roles.map((role) => ({
+                      value: role,
+                      label: localize(mediaInputRoleLabels[role]),
+                    }))}
+                    setValue={(value) =>
+                      change({
+                        inputs: draft.inputs.map((item, at) =>
+                          at === index ? { ...item, role: value as typeof input.role } : item,
+                        ),
+                      })
+                    }
+                  />
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={localize('com_media_remove_reference')}
+                  onClick={() =>
+                    change({
+                      inputs: draft.inputs.filter((_, at) => at !== index),
+                      assets: draft.assets.filter((item) => item.file_id !== input.file_id),
+                    })
+                  }
+                >
+                  <X className="size-4" aria-hidden="true" />
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {!inputsValid && (
+        <p role="status" className="text-xs leading-5 text-text-secondary">
+          {localize('com_media_reference_hint', {
+            min: capability.inputs.min,
+            max: capability.inputs.max,
+          })}
+        </p>
+      )}
+      {invalidSettings.length > 0 && (
+        <Alert variant="warning" id={`${id}-unsupported`}>
+          {localize('com_media_unsupported_settings', {
+            settings: invalidSettings.map((key) => localize(mediaControlLabels[key])).join(', '),
+          })}
+        </Alert>
+      )}
+      <div className="space-y-2">
+        <Composer
+          value={draft.prompt}
+          onChange={(prompt) => change({ prompt })}
+          onSubmit={() => void submit()}
+          canSubmit={
+            host.canCreate &&
+            !busy &&
+            !uploading &&
+            inputsValid &&
+            invalidSettings.length === 0 &&
+            draft.prompt.trim().length > 0 &&
+            draft.prompt.length <= catalog.limits.maxPromptChars
+          }
+          submitLabel={localize('com_media_queue')}
+          ariaLabel={localize('com_media_prompt')}
+          placeholder={localize(placeholders[capability.operation])}
+          minRows={1}
+          maxRows={6}
+          maxLength={catalog.limits.maxPromptChars}
+          submitOnEnter={host.enterToSend}
+          resolveKeyVerdict={host.resolveKeyVerdict}
+          actions={
+            <>
+              {referenceActions}
+              <span
+                className="min-w-0 max-w-48 truncate px-1 text-xs text-text-secondary"
+                title={offering.modelName}
+              >
+                {offering.modelName}
+              </span>
+              {busy && (
+                <span role="status" className="flex items-center gap-2 text-xs text-text-secondary">
+                  <Spinner className="size-4" />
+                  {localize('com_media_preparing')}
+                </span>
+              )}
+            </>
+          }
+        />
+      </div>
       {error && (
         <p role="alert" className="text-sm text-text-primary">
           {error}
@@ -662,5 +687,13 @@ export function MediaForm({
         </p>
       )}
     </section>
+  );
+  return children ? (
+    children({ settings, composer })
+  ) : (
+    <div className="space-y-5">
+      {settings}
+      {composer}
+    </div>
   );
 }

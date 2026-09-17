@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
-import { useSetAtom } from 'jotai';
 import { useRecoilValue } from 'recoil';
+import { createPortal } from 'react-dom';
+import { useSetAtom, useAtomValue } from 'jotai';
+import { SlidersHorizontal } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Button,
@@ -12,8 +14,11 @@ import {
   OGDialogDescription,
 } from '@librechat/client';
 import type { MediaAsset } from 'librechat-data-provider';
+import { sidebarPortalTarget } from '~/components/UnifiedSidebar/portal';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
+import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { MediaHostProvider } from '~/components/Media/host';
+import useSidebarState from '~/hooks/Nav/useSidebarState';
 import MediaWorkspace from '~/components/Media/Workspace';
 import { mediaChatHandoff } from './mediaHandoff';
 import { useMediaShellHost } from './mediaHost';
@@ -27,6 +32,9 @@ export default function Studio() {
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const [asset, setAsset] = useState<MediaAsset>();
   const setHandoff = useSetAtom(mediaChatHandoff);
+  const sidebarTarget = useAtomValue(sidebarPortalTarget);
+  const { expanded } = useSidebarState();
+  const { toggleSidebar } = useSidebarToggle();
   const actions = useMemo(
     () => ({
       openThread: (id: string) =>
@@ -68,11 +76,25 @@ export default function Studio() {
       </div>
     );
   return (
-    <div className="h-full w-full overflow-y-auto">
+    <div className="flex h-full min-h-0 w-full flex-col bg-presentation">
       <MediaHostProvider value={host}>
         <MediaWorkspace
           threadId={threadId}
-          libraryFirst
+          settingsHost={{
+            render: (settings) => sidebarTarget && createPortal(settings, sidebarTarget),
+            toggle: (
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={localize('com_media_settings')}
+                aria-expanded={expanded}
+                onClick={toggleSidebar}
+              >
+                <SlidersHorizontal className="size-4" aria-hidden="true" />
+                <span className="ml-1.5 hidden sm:inline">{localize('com_nav_settings')}</span>
+              </Button>
+            ),
+          }}
           navigation={
             <span className="md:hidden">
               <OpenSidebar testId="studio-open-sidebar-button" />

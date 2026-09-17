@@ -107,6 +107,17 @@ function ControlCombobox({
     placement,
   });
 
+  const handleEscape = (event: React.KeyboardEvent) => {
+    if (event.key !== 'Escape' || event.nativeEvent.isComposing || !select.getState().open) {
+      return;
+    }
+    // Radix dialogs prevent Escape during capture to keep themselves open. Ariakit
+    // then skips its default dismissal, so the focused control closes its own menu.
+    event.preventDefault();
+    event.stopPropagation();
+    select.hide();
+  };
+
   const matches = useMemo(() => {
     const filteredItems = matchSorter(items, searchValue, {
       keys: ['value', 'label'],
@@ -168,6 +179,7 @@ function ControlCombobox({
         id={selectId}
         disabled={disabled}
         onBlur={onBlur}
+        onKeyDown={handleEscape}
         aria-invalid={ariaInvalid || undefined}
         aria-describedby={ariaDescribedBy}
         className={cn(
@@ -203,6 +215,7 @@ function ControlCombobox({
         store={select}
         gutter={gutter}
         portal={portal}
+        onKeyDown={handleEscape}
         className={cn(
           'overflow-hidden rounded-xl border border-border-light bg-surface-secondary shadow-lg',
           popoverClassName ?? 'animate-popover',

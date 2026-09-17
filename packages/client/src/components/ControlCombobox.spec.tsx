@@ -1,4 +1,6 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
+import userEvent from '@testing-library/user-event';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { OGDialog, OGDialogContent, OGDialogTitle } from './OriginalDialog';
 import ControlCombobox from './ControlCombobox';
 
@@ -262,4 +264,54 @@ describe('ControlCombobox portal placement', () => {
     expect(screen.getByRole('option', { name: 'Option B' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'Option A' })).not.toBeInTheDocument();
   });
+
+  it.each(['select', 'dismiss'] as const)(
+    'closes only the nested dialog on Escape after using the combobox to %s',
+    async (action) => {
+      function Settings() {
+        const [value, setValue] = useState('a');
+        return (
+          <OGDialog defaultOpen>
+            <OGDialogContent aria-describedby={undefined}>
+              <OGDialogTitle>Outer dialog</OGDialogTitle>
+              <OGDialog defaultOpen>
+                <OGDialogContent aria-describedby={undefined}>
+                  <OGDialogTitle>Settings</OGDialogTitle>
+                  <ControlCombobox
+                    selectedValue={value}
+                    displayValue={items.find((item) => item.value === value)?.label}
+                    items={items}
+                    setValue={setValue}
+                    ariaLabel="Provider"
+                    isCollapsed={false}
+                    portal={false}
+                  />
+                </OGDialogContent>
+              </OGDialog>
+            </OGDialogContent>
+          </OGDialog>
+        );
+      }
+      render(<Settings />);
+      const user = userEvent.setup();
+      const provider = screen.getByRole('combobox', { name: 'Provider' });
+      await act(async () => user.click(provider));
+      await screen.findByRole('option', { name: 'Option B' });
+      if (action === 'select') {
+        await act(async () => user.click(screen.getByRole('option', { name: 'Option B' })));
+        expect(provider).toHaveTextContent('Option B');
+      } else {
+        await act(async () => user.keyboard('{Escape}'));
+      }
+      await waitFor(() => expect(provider).toHaveAttribute('aria-expanded', 'false'));
+      expect(screen.getByRole('dialog', { name: 'Settings' })).toBeVisible();
+      act(() => provider.focus());
+
+      await act(async () => user.keyboard('{Escape}'));
+      await waitFor(() =>
+        expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument(),
+      );
+      expect(screen.getByRole('dialog', { name: 'Outer dialog' })).toBeVisible();
+    },
+  );
 });

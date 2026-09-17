@@ -4,8 +4,9 @@ This branch contains an opt-in implementation, alongside the research and propos
 
 ## User experience
 
-- **Media Studio** opens from the sidebar. A connection/model selector exposes the operations and controls supported by that offering.
-- Queue independent generations, browse tiles, open their history, and refine a selected result. Each generation records its selected parent; retries are separate attempts on the same turn.
+- **Media Studio** opens a generation conversation. Provider, model, image/video mode, and generation parameters live in the same collapsible sidebar used by the agent builder. The prompt uses the shared chat composer, with reference uploads beside the send action.
+- Prompts and results read chronologically, with the composer below the thread. Queue independent generations and refine a selected result. Each generation records its selected parent; retries are separate attempts on the same turn.
+- **History** switches the current conversation to a gallery with two, three, or four cards per row. Returning to the conversation preserves its draft and scroll position. Gallery filters, column count, and the selected view survive a page reload; older saved filters keep working.
 - Upload an image or open an existing chat image in the studio. Imports capture immutable originals before a generation can use them.
 - Open the same workspace from the chat composer, or send a studio original back to a compatible chat.
 - Configured native Google image models also work through ordinary chat. The existing chat invocation streams ordered text/image parts into durable media storage; it is not invoked or billed a second time by the media worker.

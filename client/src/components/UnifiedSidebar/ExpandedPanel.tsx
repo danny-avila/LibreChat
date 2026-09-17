@@ -77,6 +77,11 @@ const NavIconButton = memo(function NavIconButton({
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLButtonElement>) => {
       if (link.onClick) {
+        if (link.Component && isActive) {
+          if (expanded) onCollapse?.();
+          else onExpand?.();
+          return;
+        }
         link.onClick(e);
         onNavigate?.();
         return;
@@ -145,6 +150,10 @@ function ExpandedPanel({
   if (location.pathname.startsWith('/studio')) routeActiveId = 'media-studio';
   else if (location.pathname.startsWith('/insights')) routeActiveId = 'insights';
   const isInsightsRoute = routeActiveId !== undefined;
+  const expandOtherPanel = useCallback(() => {
+    if (routeActiveId === 'media-studio') onLeaveInsights?.();
+    onExpand?.();
+  }, [routeActiveId, onLeaveInsights, onExpand]);
 
   const toggleLabel = expanded ? 'com_nav_close_sidebar' : 'com_nav_open_sidebar';
   const toggleClick = expanded ? onCollapse : onExpand;
@@ -185,7 +194,7 @@ function ExpandedPanel({
             }
             expanded={expanded ?? true}
             setActive={setActive}
-            onExpand={onExpand}
+            onExpand={link.id === routeActiveId ? onExpand : expandOtherPanel}
             onCollapse={onCollapse}
             onNavigate={onNavigate}
             onLeaveInsights={isInsightsRoute ? onLeaveInsights : undefined}

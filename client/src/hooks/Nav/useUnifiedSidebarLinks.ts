@@ -13,6 +13,7 @@ import type { TEndpointsConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
 import { useGetEndpointsQuery, useGetStartupConfig, useInsightsAccessQuery } from '~/data-provider';
 import ConversationsSection from '~/components/UnifiedSidebar/ConversationsSection';
+import SidebarPortal from '~/components/UnifiedSidebar/portal';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import { useAuthContext, useHasAccess } from '~/hooks';
 import store from '~/store';
@@ -90,7 +91,10 @@ export default function useUnifiedSidebarLinks() {
         label: '',
         icon: Images,
         id: 'media-studio',
-        onClick: () => navigate('/studio'),
+        Component: SidebarPortal,
+        onClick: () => {
+          if (!location.pathname.startsWith('/studio')) navigate('/studio');
+        },
       });
     }
 

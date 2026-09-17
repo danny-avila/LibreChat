@@ -1,9 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useAtom, useAtomValue } from 'jotai';
-import { ArrowLeft, Images, Plus, X } from 'lucide-react';
-import { Button, EmptyState, Skeleton, Spinner } from '@librechat/client';
+import { ArrowLeft, History, Images, Plus, SlidersHorizontal } from 'lucide-react';
+import {
+  Button,
+  EmptyState,
+  Skeleton,
+  Spinner,
+  OGDialog,
+  OGDialogContent,
+  OGDialogTitle,
+  OGDialogDescription,
+} from '@librechat/client';
 import type { ReactNode } from 'react';
 import type { MediaReceipt } from '~/data-provider/Media';
+import type { MediaFormParts } from './Form';
 import {
   mergeMediaTiles,
   useMediaCatalog,
@@ -21,24 +31,28 @@ import { MediaForm } from './Form';
 
 export default function MediaWorkspace({
   threadId,
-  libraryFirst = false,
   navigation,
+  settingsHost,
 }: {
   threadId?: string;
-  libraryFirst?: boolean;
   navigation?: ReactNode;
+  settingsHost?: { render: (settings: ReactNode) => ReactNode; toggle: ReactNode };
 }) {
   const host = useMediaHost();
   const localize = useLocalize();
   const workspace = useRef<HTMLDivElement>(null);
-  const content = useRef<HTMLDivElement>(null);
-  const composerTrigger = useRef<HTMLButtonElement>();
-  const [composerOpen, setComposerOpen] = useState(!libraryFirst && !threadId);
-  useEffect(() => {
-    setComposerOpen(!libraryFirst && !threadId);
-    workspace.current?.scrollIntoView({ block: 'start' });
-  }, [threadId, libraryFirst]);
+  const scroll = useRef<HTMLDivElement>(null);
+  const transcript = useRef<HTMLDivElement>(null);
+  const galleryScroll = useRef<HTMLDivElement>(null);
+  const galleryPosition = useRef(0);
+  const followLatest = useRef(true);
+  const focusRequested = useRef(false);
+  const settingsTrigger = useRef<HTMLButtonElement>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [library, setLibrary] = useAtom(mediaLibraryFamily(host.scope));
+  const gallery = library.view === 'gallery' && library.threadId === threadId;
+  const setView = (view: 'thread' | 'gallery') =>
+    setLibrary((previous) => ({ ...previous, view, threadId }));
   const catalog = useMediaCatalog(host);
   const threads = useMediaThreads(host, library.filter);
   const pendingCommands = useAtomValue(mediaPendingFamily(host.scope));
@@ -62,239 +76,348 @@ export default function MediaWorkspace({
     ({ receipt }) => receipt.threadId === threadId && receipt.phase !== 'rejected',
   );
   const pendingTitle = (receipt?: MediaReceipt) =>
-    receipt?.phase === 'preparing'
-      ? localize('com_media_preparing')
-      : localize('com_media_restoring');
+    localize(receipt?.phase === 'preparing' ? 'com_media_preparing' : 'com_media_restoring');
+  const focusPrompt = useCallback(() => {
+    const prompt = workspace.current?.querySelector<HTMLTextAreaElement>(
+      '[data-media-composer] textarea',
+    );
+    if (!prompt || prompt.closest('[hidden]')) return;
+    prompt.focus();
+    focusRequested.current = false;
+  }, []);
   const focusComposer = () => {
-    if (document.activeElement instanceof HTMLButtonElement)
-      composerTrigger.current = document.activeElement;
-    setComposerOpen(true);
-    requestAnimationFrame(() => {
-      const prompt = workspace.current?.querySelector<HTMLTextAreaElement>('aside textarea');
-      prompt?.focus();
-      prompt?.scrollIntoView({ block: 'center' });
-    });
+    setView('thread');
+    focusRequested.current = true;
+    requestAnimationFrame(focusPrompt);
+  };
+  const create = () => {
+    host.openThread('');
+    focusComposer();
   };
   const latestTurn = detail.data?.turns.items.reduce(
     (latest, turn) => (!latest || turn.createdAt > latest.createdAt ? turn : latest),
     detail.data.turns.items[0],
   );
-  return (
+  const hasDetail = !!detail.data;
+  const hasCatalog = !!catalog.data;
+  useEffect(() => {
+    if (!focusRequested.current || gallery) return;
+    const frame = requestAnimationFrame(focusPrompt);
+    return () => cancelAnimationFrame(frame);
+  }, [threadId, hasDetail, hasCatalog, gallery, focusPrompt]);
+  useLayoutEffect(() => {
+    followLatest.current = true;
+  }, [threadId]);
+  useLayoutEffect(() => {
+    const viewport = scroll.current;
+    const body = transcript.current;
+    if (!viewport || !body || gallery) return;
+    const settle = () => {
+      if (followLatest.current) viewport.scrollTop = viewport.scrollHeight;
+    };
+    settle();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(settle);
+    observer.observe(body);
+    return () => observer.disconnect();
+  }, [threadId, hasDetail, hasCatalog, gallery]);
+  useEffect(() => {
+    if (gallery && galleryScroll.current) galleryScroll.current.scrollTop = galleryPosition.current;
+  }, [gallery, hasCatalog, hasDetail]);
+
+  const recovery = commands.pending.length > 0 && (
+    <section className="space-y-2" aria-label={localize('com_media_recovery')}>
+      {commands.pending.map((command, index) => {
+        const response = commands.receipts[index];
+        return (
+          <div
+            key={command.request.clientRequestId}
+            className="flex flex-wrap items-center gap-3 rounded-xl border border-border-light bg-surface-secondary p-4"
+          >
+            {response.data?.phase !== 'rejected' && <Spinner className="size-4" />}
+            <p role="status" className="text-sm">
+              {response.data?.phase === 'rejected'
+                ? localize(mediaErrorLabels[response.data.error.code])
+                : pendingTitle(response.data)}
+            </p>
+            {response.data && response.data.phase !== 'rejected' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setView('thread');
+                  host.openThread(response.data!.threadId);
+                }}
+              >
+                {localize('com_media_open_thread')}
+              </Button>
+            )}
+            {!response.data && !commands.sending.has(command.request.clientRequestId) && (
+              <>
+                <p className="text-sm text-text-secondary">{localize('com_media_uncertain')}</p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!host.canCreate}
+                  onClick={() => void commands.send(command)}
+                >
+                  {localize('com_media_recover_request')}
+                </Button>
+              </>
+            )}
+            {response.data?.phase === 'rejected' && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => commands.dismiss(command.request.clientRequestId)}
+              >
+                {localize('com_ui_dismiss')}
+              </Button>
+            )}
+          </div>
+        );
+      })}
+    </section>
+  );
+  const loading = (
+    <div role="status" className="space-y-4">
+      <span className="sr-only">{localize('com_media_loading')}</span>
+      <Skeleton className="h-10 motion-reduce:animate-none" />
+      <Skeleton className="h-24 motion-reduce:animate-none" />
+    </div>
+  );
+  const catalogStatus = catalog.isError ? (
+    <div role="alert">
+      <EmptyState
+        icon={Images}
+        description={localize('com_media_load_failed')}
+        action={
+          <Button variant="outline" onClick={() => void catalog.refetch()}>
+            {localize('com_ui_retry')}
+          </Button>
+        }
+      />
+    </div>
+  ) : (
+    loading
+  );
+  const conversation = threadId && detail.data && (
+    <MediaThreadView
+      key={threadId}
+      detail={detail.data}
+      catalog={catalog.data}
+      send={commands.send}
+      onCompose={focusComposer}
+      onDeleted={create}
+      onLoadOlder={() => {
+        followLatest.current = false;
+      }}
+    />
+  );
+  const renderWorkspace = ({ settings, composer }: MediaFormParts) => (
     <div
       ref={workspace}
       data-media-workspace
-      className="mx-auto w-full max-w-screen-2xl space-y-6 p-4 text-text-primary sm:p-6"
+      className="flex h-full min-h-0 w-full flex-col bg-presentation text-text-primary"
     >
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-border-light pb-5">
-        <div className="flex items-center gap-3">
+      {settingsHost?.render(
+        <div className="space-y-5 px-3 pb-6 pt-4">
+          <h2 className="flex items-center gap-2 text-sm font-semibold">
+            <SlidersHorizontal className="size-4" aria-hidden="true" />
+            {localize('com_media_settings')}
+          </h2>
+          {settings}
+        </div>,
+      )}
+      <header className="flex min-h-14 shrink-0 items-center justify-between gap-2 border-b border-border-light px-3 py-2 sm:px-5">
+        <div className="flex min-w-0 items-center gap-2">
           {navigation}
-          <span
-            className={
-              'size-11 items-center justify-center rounded-2xl bg-surface-secondary ' +
-              (navigation ? 'hidden md:flex' : 'flex')
-            }
-          >
-            <Images className="size-6" strokeWidth={1.5} aria-hidden="true" />
-          </span>
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {localize('com_media_studio')}
-            </h1>
-            <p className="mt-0.5 text-sm text-text-secondary">
-              {localize('com_media_studio_description')}
-            </p>
-          </div>
+          <Images
+            className="hidden size-5 shrink-0 text-text-secondary sm:block"
+            aria-hidden="true"
+          />
+          <h1 className="truncate text-base font-semibold">{localize('com_media_studio')}</h1>
         </div>
-        {threadId && (
-          <div className="flex flex-wrap gap-2">
-            <Button variant="ghost" size="sm" onClick={() => host.openThread('')}>
-              <ArrowLeft className="mr-1.5 size-4" aria-hidden="true" />
-              {localize('com_media_back_library')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                host.openThread('');
-                requestAnimationFrame(focusComposer);
-              }}
-            >
-              <Plus className="mr-1.5 size-4" aria-hidden="true" />
-              {localize('com_media_new_thread')}
-            </Button>
-          </div>
-        )}
-      </header>
-      <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(280px,340px)_minmax(0,1fr)]">
-        <aside
-          className={
-            'min-w-0 rounded-2xl border border-border-light bg-surface-primary p-4 lg:block ' +
-            (composerOpen ? 'block' : 'hidden')
-          }
-        >
-          <div className="mb-4 flex items-center justify-between gap-2">
-            <h2 className="text-base font-semibold">{localize('com_media_create')}</h2>
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            variant={gallery ? 'secondary' : 'ghost'}
+            size="sm"
+            aria-pressed={gallery}
+            aria-label={localize(gallery ? 'com_media_back_creation' : 'com_media_open_gallery')}
+            onClick={() => (gallery ? focusComposer() : setView('gallery'))}
+          >
+            {gallery ? (
+              <ArrowLeft className="size-4" aria-hidden="true" />
+            ) : (
+              <History className="size-4" aria-hidden="true" />
+            )}
+            <span className="ml-1.5 hidden sm:inline">
+              {localize(gallery ? 'com_media_back_creation' : 'com_media_history_button')}
+            </span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={localize('com_media_new_thread')}
+            onClick={create}
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            <span className="ml-1.5 hidden sm:inline">{localize('com_media_new_thread')}</span>
+          </Button>
+          {settingsHost ? (
+            settingsHost.toggle
+          ) : (
             <Button
               variant="ghost"
-              size="icon-sm"
-              className="lg:hidden"
-              aria-label={localize('com_media_close_editor')}
-              onClick={() => {
-                setComposerOpen(false);
-                requestAnimationFrame(() => {
-                  if (composerTrigger.current?.isConnected) {
-                    composerTrigger.current.focus();
-                    composerTrigger.current.scrollIntoView({ block: 'center' });
-                  } else content.current?.scrollIntoView({ block: 'start' });
-                });
-              }}
+              size="sm"
+              ref={settingsTrigger}
+              aria-label={localize('com_media_settings')}
+              aria-expanded={settingsOpen}
+              onClick={() => setSettingsOpen(true)}
             >
-              <X className="size-4" aria-hidden="true" />
+              <SlidersHorizontal className="size-4" aria-hidden="true" />
+              <span className="ml-1.5 hidden sm:inline">{localize('com_nav_settings')}</span>
             </Button>
-          </div>
-          {(catalog.isLoading || (threadId && detail.isLoading)) && (
-            <div role="status" className="space-y-4">
-              <span className="sr-only">{localize('com_media_loading')}</span>
-              <Skeleton className="h-10 motion-reduce:animate-none" />
-              <Skeleton className="h-48 motion-reduce:animate-none" />
-            </div>
           )}
-          {catalog.isError && (
-            <div role="alert">
-              <EmptyState
-                icon={Images}
-                description={localize('com_media_load_failed')}
-                action={
-                  <Button variant="outline" onClick={() => void catalog.refetch()}>
-                    {localize('com_ui_retry')}
-                  </Button>
-                }
-              />
-            </div>
-          )}
-          {catalog.data && (!threadId || detail.data) && (
-            <MediaForm
-              key={threadId ?? 'new'}
-              catalog={catalog.data}
-              threadId={threadId}
-              initialSelection={latestTurn?.selection}
-              send={commands.send}
-              busy={commands.sending.size > 0}
-            />
-          )}
-          {commands.error && (
-            <div role="alert" className="mt-4 space-y-2 text-sm">
-              <p>{localize(mediaErrorLabels[commands.error])}</p>
-              {commands.error === 'stale_catalog' && (
-                <Button variant="outline" onClick={() => void catalog.refetch()}>
-                  {localize('com_media_refresh_models')}
-                </Button>
-              )}
-            </div>
-          )}
-        </aside>
-        <div ref={content} className="min-w-0 space-y-5">
-          {commands.pending.length > 0 && (
-            <section className="space-y-2" aria-label={localize('com_media_recovery')}>
-              {commands.pending.map((command, index) => {
-                const response = commands.receipts[index];
-                return (
-                  <div
-                    key={command.request.clientRequestId}
-                    className="flex flex-wrap items-center gap-3 rounded-xl border border-border-light bg-surface-secondary p-4"
-                  >
-                    {response.data?.phase !== 'rejected' && <Spinner className="size-4" />}
-                    <p role="status" className="text-sm">
-                      {response.data?.phase === 'rejected'
-                        ? localize(mediaErrorLabels[response.data.error.code])
-                        : pendingTitle(response.data)}
-                    </p>
-                    {response.data && response.data.phase !== 'rejected' && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => host.openThread(response.data!.threadId)}
-                      >
-                        {localize('com_media_open_thread')}
-                      </Button>
-                    )}
-                    {!response.data && !commands.sending.has(command.request.clientRequestId) && (
-                      <>
-                        <p className="text-sm text-text-secondary">
-                          {localize('com_media_uncertain')}
-                        </p>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={!host.canCreate}
-                          onClick={() => void commands.send(command)}
-                        >
-                          {localize('com_media_recover_request')}
-                        </Button>
-                      </>
-                    )}
-                    {response.data?.phase === 'rejected' && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => commands.dismiss(command.request.clientRequestId)}
-                      >
-                        {localize('com_ui_dismiss')}
-                      </Button>
-                    )}
-                  </div>
-                );
-              })}
-            </section>
-          )}
-          {threadId ? (
-            <>
-              {detail.isLoading && (
-                <div role="status">
-                  <span className="sr-only">{localize('com_media_loading')}</span>
-                  <Skeleton className="aspect-square motion-reduce:animate-none" />
-                </div>
-              )}
-              {detail.isError && (
-                <div role={preparing ? 'status' : 'alert'}>
-                  <EmptyState
-                    icon={Images}
-                    description={localize(
-                      preparing ? 'com_media_preparing' : 'com_media_thread_unavailable',
-                    )}
-                    action={
-                      <Button variant="outline" onClick={() => void detail.refetch()}>
-                        {localize('com_ui_retry')}
-                      </Button>
-                    }
-                  />
-                </div>
-              )}
-              {detail.data && (
-                <MediaThreadView
-                  key={threadId}
-                  detail={detail.data}
-                  catalog={catalog.data}
-                  send={commands.send}
-                  onCompose={focusComposer}
-                  onDeleted={() => host.openThread('')}
+        </div>
+      </header>
+      <div
+        hidden={gallery}
+        className={
+          gallery
+            ? 'hidden'
+            : `flex min-h-0 flex-1 flex-col ${threadId ? '' : 'justify-end sm:justify-center'}`
+        }
+      >
+        <div
+          ref={scroll}
+          data-media-transcript
+          className={
+            'scrollbar-gutter-stable min-h-0 overflow-y-auto overscroll-contain ' +
+            (threadId ? 'flex-1' : '')
+          }
+          onScroll={() => {
+            const viewport = scroll.current;
+            if (viewport && !gallery)
+              followLatest.current =
+                viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 80;
+          }}
+        >
+          <div
+            ref={transcript}
+            className="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-6 px-4 py-6 sm:px-6 xl:max-w-4xl"
+          >
+            {recovery}
+            {!threadId && (
+              <div className="flex flex-1 flex-col items-center justify-center gap-4 py-6 text-center">
+                <Images
+                  className="size-10 text-text-secondary"
+                  strokeWidth={1.25}
+                  aria-hidden="true"
                 />
-              )}
-            </>
-          ) : (
+                <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                  {localize('com_media_welcome')}
+                </h2>
+                <p className="max-w-md text-sm leading-6 text-text-secondary">
+                  {localize('com_media_welcome_description')}
+                </p>
+              </div>
+            )}
+            {threadId && detail.isLoading && loading}
+            {threadId && detail.isError && (
+              <div role={preparing ? 'status' : 'alert'}>
+                <EmptyState
+                  icon={Images}
+                  description={localize(
+                    preparing ? 'com_media_preparing' : 'com_media_thread_unavailable',
+                  )}
+                  action={
+                    <Button variant="outline" onClick={() => void detail.refetch()}>
+                      {localize('com_ui_retry')}
+                    </Button>
+                  }
+                />
+              </div>
+            )}
+            {conversation}
+          </div>
+        </div>
+        <div className="shrink-0 bg-presentation px-4 pb-4 pt-2 sm:px-6">
+          <div className="mx-auto w-full max-w-3xl space-y-3 xl:max-w-4xl">
+            {composer}
+            {commands.error && (
+              <div role="alert" className="space-y-2 text-sm">
+                <p>{localize(mediaErrorLabels[commands.error])}</p>
+                {commands.error === 'stale_catalog' && (
+                  <Button variant="outline" onClick={() => void catalog.refetch()}>
+                    {localize('com_media_refresh_models')}
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      {gallery && (
+        <div
+          ref={galleryScroll}
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 sm:p-6"
+          onScroll={() => {
+            galleryPosition.current = galleryScroll.current?.scrollTop ?? 0;
+          }}
+        >
+          <div className="mx-auto max-w-screen-2xl space-y-5">
+            {recovery}
             <MediaGallery
               tiles={tiles}
               catalog={catalog.data}
               query={threads}
               filter={library.filter}
               search={library.search}
-              onFilter={(value) => setLibrary((previous) => ({ ...previous, filter: value }))}
-              onSearch={(value) => setLibrary((previous) => ({ ...previous, search: value }))}
-              onCreate={focusComposer}
+              columns={library.columns}
+              onFilter={(filter) => setLibrary((previous) => ({ ...previous, filter }))}
+              onSearch={(search) => setLibrary((previous) => ({ ...previous, search }))}
+              onColumns={(columns) => setLibrary((previous) => ({ ...previous, columns }))}
+              onOpen={(id) => {
+                host.openThread(id);
+                focusComposer();
+              }}
+              onCreate={create}
             />
-          )}
+          </div>
         </div>
-      </div>
+      )}
+      {!settingsHost && (
+        <OGDialog open={settingsOpen} onOpenChange={setSettingsOpen} triggerRef={settingsTrigger}>
+          <OGDialogContent className="max-h-[85dvh] max-w-lg overflow-y-auto">
+            <OGDialogTitle>{localize('com_media_settings')}</OGDialogTitle>
+            <OGDialogDescription>{localize('com_media_settings_description')}</OGDialogDescription>
+            {settings}
+          </OGDialogContent>
+        </OGDialog>
+      )}
     </div>
+  );
+  if (!catalog.data || (threadId && !detail.data)) {
+    const status =
+      catalog.data && detail.isError && !preparing ? (
+        <p className="text-sm text-text-secondary">{localize('com_media_thread_unavailable')}</p>
+      ) : (
+        catalogStatus
+      );
+    return renderWorkspace({ settings: status, composer: status });
+  }
+  return (
+    <MediaForm
+      key={threadId ?? 'new'}
+      catalog={catalog.data}
+      threadId={threadId}
+      initialSelection={latestTurn?.selection}
+      send={commands.send}
+      busy={commands.sending.size > 0}
+      portal={!!settingsHost}
+    >
+      {renderWorkspace}
+    </MediaForm>
   );
 }

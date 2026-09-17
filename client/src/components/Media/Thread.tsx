@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { v4 } from 'uuid';
 import { useSetAtom, useAtomValue } from 'jotai';
-import { Clock3, Pencil, RotateCcw, Trash2 } from 'lucide-react';
+import { Clock3, Images, Pencil, RotateCcw, Trash2 } from 'lucide-react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import {
   dataService,
@@ -143,18 +143,18 @@ function Job({
   );
   const active = !['succeeded', 'failed', 'cancelled', 'requires_attention'].includes(job.phase);
   return (
-    <section
-      className="space-y-4 rounded-2xl border border-border-light bg-surface-primary p-4 sm:p-5"
-      aria-label={localize('com_media_job')}
-    >
+    <section className="space-y-4" aria-label={localize('com_media_job')}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="break-words text-sm font-semibold">
-            {offering?.modelName ?? job.selection.modelId}
-          </h3>
-          <p className="mt-1 text-xs text-text-secondary">
-            {offering?.connectionName ?? job.selection.connectionId}
-          </p>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <Images className="size-5 shrink-0 text-text-secondary" aria-hidden="true" />
+          <div className="min-w-0">
+            <h3 className="break-words text-sm font-semibold">
+              {offering?.modelName ?? job.selection.modelId}
+            </h3>
+            <p className="mt-1 text-xs text-text-secondary">
+              {offering?.connectionName ?? job.selection.connectionId}
+            </p>
+          </div>
         </div>
         <span role="status">
           <MediaStatus phase={job.phase} />
@@ -344,22 +344,26 @@ function Turn({
         (capability.operation === 'video.generate' && capability.inputs.roles.includes('video')),
     );
   return (
-    <article className="space-y-4">
-      <p className="whitespace-pre-wrap break-words text-sm leading-6 text-text-primary">
-        {turn.prompt || localize('com_media_imported')}
-      </p>
-      <time
-        className="flex items-center gap-1.5 text-xs text-text-secondary"
-        dateTime={turn.createdAt}
-      >
-        <Clock3 className="size-3.5" aria-hidden="true" />
-        {new Date(turn.createdAt).toLocaleString(undefined, {
-          month: 'short',
-          day: 'numeric',
-          hour: 'numeric',
-          minute: '2-digit',
-        })}
-      </time>
+    <article className="space-y-6" data-media-turn={turn.turnId}>
+      <div className="flex justify-end" role="group" aria-label={localize('com_media_request')}>
+        <div className="max-w-[90%] space-y-2 sm:max-w-[85%]">
+          <p className="whitespace-pre-wrap break-words rounded-theme-surface rounded-br-theme-control bg-surface-tertiary px-theme-normal py-2.5 text-sm leading-6 text-text-primary">
+            {turn.prompt || localize('com_media_imported')}
+          </p>
+          <time
+            className="flex items-center justify-end gap-1.5 text-xs text-text-secondary"
+            dateTime={turn.createdAt}
+          >
+            <Clock3 className="size-3.5" aria-hidden="true" />
+            {new Date(turn.createdAt).toLocaleString(undefined, {
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+            })}
+          </time>
+        </div>
+      </div>
       {turn.assets.map((asset) => (
         <MediaAssetView
           key={asset.file_id}
@@ -369,7 +373,7 @@ function Turn({
         />
       ))}
       {[...jobs.values()]
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
         .map((job) => (
           <Job
             key={job.jobId}
@@ -407,12 +411,14 @@ export function MediaThreadView({
   onDeleted,
   catalog,
   onCompose,
+  onLoadOlder,
 }: {
   detail: MediaThreadDetail;
   send: (command: PendingMedia) => Promise<void>;
   onDeleted: () => void;
   catalog?: MediaCatalog;
   onCompose?: () => void;
+  onLoadOlder?: () => void;
 }) {
   const host = useMediaHost();
   const localize = useLocalize();
@@ -471,7 +477,7 @@ export function MediaThreadView({
     }
   };
   return (
-    <section className="space-y-6" aria-label={localize('com_media_history')}>
+    <section className="space-y-8" aria-label={localize('com_media_history')}>
       <div className="flex items-start justify-between gap-3 border-b border-border-light pb-4">
         <div className="min-w-0">
           <h2 className="line-clamp-2 break-words text-lg font-semibold">{detail.thread.title}</h2>
@@ -509,9 +515,27 @@ export function MediaThreadView({
         </div>
       </div>
       {error && <p role="alert">{error}</p>}
+      {detail.turns.nextCursor && (
+        <Button
+          variant="outline"
+          disabled={more.isFetching || (expanded && !more.hasNextPage && !!more.data)}
+          onClick={() => {
+            onLoadOlder?.();
+            if (!expanded) setExpanded(true);
+            else void more.fetchNextPage();
+          }}
+        >
+          {localize('com_media_more_turns')}
+        </Button>
+      )}
+      {more.isError && (
+        <Button variant="outline" onClick={() => void more.refetch()}>
+          {localize('com_ui_retry')}
+        </Button>
+      )}
       {[...turns.values()]
         .sort(
-          (a, b) => (b.sequence ?? 0) - (a.sequence ?? 0) || b.createdAt.localeCompare(a.createdAt),
+          (a, b) => (a.sequence ?? 0) - (b.sequence ?? 0) || a.createdAt.localeCompare(b.createdAt),
         )
         .map((turn) => (
           <Turn
@@ -555,23 +579,6 @@ export function MediaThreadView({
           </div>
         </OGDialogContent>
       </OGDialog>
-      {detail.turns.nextCursor && (
-        <Button
-          variant="outline"
-          disabled={more.isFetching || (expanded && !more.hasNextPage && !!more.data)}
-          onClick={() => {
-            if (!expanded) setExpanded(true);
-            else void more.fetchNextPage();
-          }}
-        >
-          {localize('com_media_more_turns')}
-        </Button>
-      )}
-      {more.isError && (
-        <Button variant="outline" onClick={() => void more.refetch()}>
-          {localize('com_ui_retry')}
-        </Button>
-      )}
       <OGDialog open={deleteOpen} onOpenChange={setDeleteOpen} triggerRef={deleteTrigger}>
         <OGDialogContent
           onCloseAutoFocus={(event) => {

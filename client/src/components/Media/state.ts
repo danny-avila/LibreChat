@@ -94,11 +94,15 @@ export const mediaPendingFamily = atomFamily((scope: string) =>
 const librarySchema = z.object({
   filter: z.enum(['all', 'pending', 'completed']),
   search: z.string(),
+  columns: z.union([z.literal(2), z.literal(3), z.literal(4)]).default(2),
+  view: z.enum(['thread', 'gallery']).default('thread'),
+  threadId: z.string().optional(),
 });
+export type MediaLibrary = z.infer<typeof librarySchema>;
 export const mediaLibraryFamily = atomFamily((scope: string) =>
   storedAtom(
     `${scope}:library`,
-    { filter: 'all', search: '' } as z.infer<typeof librarySchema>,
+    { filter: 'all', search: '', columns: 2, view: 'thread' } as MediaLibrary,
     librarySchema,
   ),
 );

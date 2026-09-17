@@ -6,6 +6,7 @@ import { cn } from '~/utils';
 
 function Sidebar({
   links,
+  activeId,
   expanded,
   width,
   minWidth,
@@ -17,6 +18,7 @@ function Sidebar({
   onResizeKeyboard,
 }: {
   links: NavLink[];
+  activeId?: string;
   expanded: boolean;
   width: number;
   minWidth: number;
@@ -49,8 +51,9 @@ function Sidebar({
           )}
           style={{ transition: expanded ? 'opacity 200ms ease 80ms' : 'opacity 150ms ease' }}
           aria-hidden={!expanded}
+          inert={!expanded ? '' : undefined}
         >
-          <SidePanelNav links={links} />
+          <SidePanelNav links={links} activeId={activeId} />
         </nav>
       </div>
       <div

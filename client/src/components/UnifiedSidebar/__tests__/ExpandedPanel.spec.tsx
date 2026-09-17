@@ -110,7 +110,9 @@ function renderPanel({
   onCollapse = jest.fn(),
   onExpand = jest.fn(),
   onNavigate,
+  onLeaveInsights,
   initialPanel = DEFAULT_PANEL,
+  path = '/',
   initializeState,
 }: {
   expanded?: boolean;
@@ -118,7 +120,9 @@ function renderPanel({
   onCollapse?: jest.Mock;
   onExpand?: jest.Mock;
   onNavigate?: jest.Mock;
+  onLeaveInsights?: jest.Mock;
   initialPanel?: string;
+  path?: string;
   initializeState?: (snapshot: MutableSnapshot) => void;
 } = {}) {
   if (initialPanel !== DEFAULT_PANEL) {
@@ -126,7 +130,7 @@ function renderPanel({
   }
 
   const result = render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <QueryClientProvider client={createQueryClient()}>
         <RecoilRoot initializeState={initializeState}>
           <ActivePanelProvider>
@@ -136,6 +140,7 @@ function renderPanel({
               onCollapse={onCollapse}
               onExpand={onExpand}
               onNavigate={onNavigate}
+              onLeaveInsights={onLeaveInsights}
             />
           </ActivePanelProvider>
         </RecoilRoot>
@@ -153,6 +158,46 @@ describe('ExpandedPanel', () => {
   });
 
   describe('NavIconButton collapse toggle', () => {
+    it.each([false, true])(
+      'leaves Studio when opening another sidebar panel (%s)',
+      async (expanded) => {
+        const onLeaveInsights = jest.fn();
+        const { onExpand } = renderPanel({
+          expanded,
+          path: '/studio/threads/saved',
+          onLeaveInsights,
+        });
+        await screen.findByTestId('account-settings');
+        fireEvent.click(screen.getByRole('button', { name: 'com_ui_prompts' }));
+        expect(onLeaveInsights).toHaveBeenCalledTimes(1);
+        expect(onExpand).toHaveBeenCalledTimes(expanded ? 0 : 1);
+        expect(localStorage.getItem('side:active-panel')).toBe('prompts');
+      },
+    );
+    it.each([false, true])(
+      'toggles the current Studio sidebar without navigating away from its thread (%s)',
+      async (expanded) => {
+        const onClick = jest.fn();
+        const { onCollapse, onExpand } = renderPanel({
+          expanded,
+          path: '/studio/threads/saved',
+          links: [
+            ...createLinks(),
+            {
+              title: 'com_media_studio',
+              icon: NotebookPen,
+              id: 'media-studio',
+              Component: () => null,
+              onClick,
+            },
+          ],
+        });
+        await screen.findByTestId('account-settings');
+        fireEvent.click(screen.getByRole('button', { name: 'com_media_studio' }));
+        expect(expanded ? onCollapse : onExpand).toHaveBeenCalledTimes(1);
+        expect(onClick).not.toHaveBeenCalled();
+      },
+    );
     it('collapses sidebar when clicking the active icon while expanded', () => {
       const { onCollapse } = renderPanel({ expanded: true });
       const activeButton = screen.getByRole('button', { name: 'com_ui_chat_history' });

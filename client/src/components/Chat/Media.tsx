@@ -142,7 +142,7 @@ export default function ChatMedia({
         </div>
       )}
       <OGDialog open={open} onOpenChange={setOpen}>
-        <OGDialogContent className="max-h-[90vh] max-w-6xl overflow-y-auto">
+        <OGDialogContent className="flex h-[90dvh] max-w-6xl flex-col overflow-hidden">
           <OGDialogTitle>{localize('com_media_create')}</OGDialogTitle>
           <OGDialogDescription>{localize('com_media_chat_description')}</OGDialogDescription>
           {temporary ? (

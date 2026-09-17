@@ -21,6 +21,7 @@ import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import useSidebarState from '~/hooks/Nav/useSidebarState';
 import { useChatHelpers, useLocalize } from '~/hooks';
 import SidePanelNav from '~/components/SidePanel/Nav';
+import { shouldCloseSidebar } from './escape';
 import Sidebar from './Sidebar';
 import { cn } from '~/utils';
 
@@ -61,7 +62,8 @@ function UnifiedSidebar() {
   let routeActiveId: string | undefined;
   if (location.pathname.startsWith('/studio')) routeActiveId = 'media-studio';
   else if (location.pathname.startsWith('/insights')) routeActiveId = 'insights';
-  const isInsightsRoute = routeActiveId !== undefined;
+  const isInsightsRoute = routeActiveId === 'insights';
+  const routePanelId = routeActiveId === 'media-studio' ? routeActiveId : undefined;
   const panelExpanded = expanded && !isInsightsRoute;
 
   /** The aside's max width is a viewport percentage, so the announced range has to track
@@ -165,22 +167,7 @@ function UnifiedSidebar() {
       return;
     }
     const handler = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') {
-        return;
-      }
-      /**
-       * Menus opened from the drawer portal out of it, so their Escape still
-       * reaches this listener. Dismissing the whole drawer would skip the level
-       * the user meant to leave.
-       *
-       * Presence alone is not the signal: not every menu unmounts when closed —
-       * the account menu stays mounted and merely `hidden` — so matching those
-       * too would suppress Escape for the drawer permanently.
-       */
-      if (document.querySelector('[role="menu"]:not([hidden])') != null) {
-        return;
-      }
-      handleCollapse();
+      if (shouldCloseSidebar(e, document)) handleCollapse();
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
@@ -220,14 +207,14 @@ function UnifiedSidebar() {
               id="chat-history-nav"
               className="min-h-0 flex-1 overflow-hidden bg-surface-primary-alt"
             >
-              <SidePanelNav links={links} />
+              <SidePanelNav links={links} activeId={routePanelId} />
             </nav>
             <MobileShortcutTargets
               links={links}
               onLeaveInsights={handleLeaveInsights}
               routeActiveId={routeActiveId}
             />
-            <MobileBottomBar links={links} onNewChat={handleCollapse} />
+            {!routePanelId && <MobileBottomBar links={links} onNewChat={handleCollapse} />}
           </ActivePanelProvider>
         </SidebarChatProvider>
       </div>
@@ -251,6 +238,7 @@ function UnifiedSidebar() {
         >
           <Sidebar
             links={links}
+            activeId={routePanelId}
             expanded={panelExpanded}
             width={resizeNow}
             minWidth={panelExpanded ? EXPANDED_MIN : COLLAPSED_WIDTH}
