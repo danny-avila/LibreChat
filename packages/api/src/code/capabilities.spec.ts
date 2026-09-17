@@ -172,6 +172,74 @@ describe('supportsProgrammaticCodeExecution', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it.each([
+    {
+      languages: ['bash'],
+      operation: 'execute_command',
+      workspaceId: 'project-a',
+      supported: true,
+    },
+    {
+      languages: undefined,
+      operation: 'execute_command',
+      workspaceId: 'project-a',
+      supported: false,
+    },
+    {
+      languages: ['python'],
+      operation: 'execute_command',
+      workspaceId: 'project-a',
+      supported: false,
+    },
+    { languages: ['bash'], operation: 'read_file', workspaceId: 'project-a', supported: false },
+    { languages: ['bash'], operation: 'execute_command', workspaceId: 'removed', supported: false },
+  ])(
+    'gates selected project PTC using the live capability: %j',
+    async ({ languages, operation, workspaceId, supported }) => {
+      process.env.TEST_CODE_CAPABILITY_TOKEN = JSON.stringify({
+        languages,
+        operation,
+        workspaceId,
+      });
+      jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            protocolVersion: 1,
+            workerId: 'worker',
+            online: true,
+            ready: true,
+            leaseExpiresInMs: 45000,
+            capabilities: {
+              statefulWorkspace: false,
+              sandboxProfile: 'anthropic-srt',
+              runtimes: [],
+              workspaceTools: {
+                protocolVersion: 1,
+                operations: ['execute_command', 'read_file'],
+                programmaticLanguages: languages,
+                workspaces: [{ id: 'project-a', operations: [operation] }],
+              },
+            },
+          }),
+        ),
+      );
+      expect(
+        await supportsProgrammaticCodeExecution(
+          {
+            ...context,
+            codeWorkspace: {
+              environmentId: 'personal',
+              workspaceId,
+              operations: ['execute_command', 'read_file'],
+            },
+          },
+          environments,
+          getAppConfig,
+        ),
+      ).toBe(supported);
+    },
+  );
+
   it('does not send credentials to a different execution route', async () => {
     process.env.TEST_CODE_CAPABILITY_TOKEN = 'route-token';
     const fetchSpy = jest

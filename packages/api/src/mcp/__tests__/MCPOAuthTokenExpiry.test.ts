@@ -276,7 +276,14 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
       const budgetMs = 2_000;
       const startedAt = Date.now();
       const discovery = ProviderRefreshFactory.discoverTools(
-        { serverName: 'test-srv', serverConfig: { type: 'streamable-http', url: server.url } },
+        {
+          serverName: 'test-srv',
+          serverConfig: {
+            type: 'streamable-http',
+            url: server.url,
+            oauthRefreshCoordination: true,
+          },
+        },
         {
           useOAuth: true,
           user: { id: 'u1' } as IUser,
@@ -384,7 +391,14 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
       >,
     ) =>
       new TokenLoadingFactory(
-        { serverName: 'test-srv', serverConfig: { type: 'streamable-http', url: server.url } },
+        {
+          serverName: 'test-srv',
+          serverConfig: {
+            type: 'streamable-http',
+            url: server.url,
+            oauthRefreshCoordination: true,
+          },
+        },
         {
           useOAuth: true,
           user: { id: 'u1' } as IUser,
@@ -1066,4 +1080,39 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
       expect(age < PENDING_STALE_MS).toBe(true);
     });
   });
+});
+
+describe('mixed-version token flow isolation', () => {
+  it.each([undefined, 'tenant/a'])(
+    'does not expose typed failures to legacy readers (%s)',
+    async (tenantId) => {
+      const manager = new FlowStateManager<MCPOAuthTokens>(new Keyv(), { ci: true, ttl: 30_000 });
+      const legacyId = MCPOAuthHandler.generateFlowId('u1', 'test-srv', tenantId);
+      const currentId = MCPOAuthHandler.generateTokenFlowId('u1', 'test-srv', tenantId);
+      expect(currentId).not.toBe(legacyId);
+      await manager.initFlow(legacyId, 'mcp_get_tokens');
+      await manager.initFlow(currentId, 'mcp_get_tokens');
+      const failure = Object.assign(new Error('retry later'), {
+        name: 'MCPTokenRefreshUnavailableError',
+      });
+      await manager.failFlow(currentId, 'mcp_get_tokens', failure);
+      expect(await manager.getFlowState(legacyId, 'mcp_get_tokens')).toMatchObject({
+        status: 'PENDING',
+      });
+      expect(await manager.getFlowState(currentId, 'mcp_get_tokens')).toMatchObject({
+        status: 'FAILED',
+        errorName: failure.name,
+      });
+      await manager.completeFlow(legacyId, 'mcp_get_tokens', {
+        access_token: 'legacy-token',
+        obtained_at: Date.now(),
+        token_type: 'Bearer',
+      });
+      expect(await manager.getFlowState(currentId, 'mcp_get_tokens')).toMatchObject({
+        status: 'FAILED',
+      });
+      await manager.deleteFlow(legacyId, 'mcp_get_tokens');
+      await manager.deleteFlow(currentId, 'mcp_get_tokens');
+    },
+  );
 });

@@ -1,6 +1,45 @@
 import type { WorkspaceToolRequest } from './workspace';
 import type { CodeBridgeFetch } from './bridge';
-import { executeWorkspaceTool } from './workspace';
+import { executeWorkspaceTool, WorkspaceToolHttpError } from './workspace';
+
+describe('workspace admission feedback', () => {
+  test('identifies definite pre-execution expiry without retrying the operation', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(
+      new Response(JSON.stringify({ code: 'WORKSPACE_QUEUE_TIMEOUT' }), {
+        status: 503,
+        headers: { 'Retry-After': '1' },
+      }),
+    );
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example/v1',
+        authHeaders: {},
+        fetchImpl,
+        request: {
+          protocolVersion: 1,
+          operation: 'execute_command',
+          workspaceId: 'primary',
+          command: 'echo test',
+        },
+      }),
+    ).rejects.toThrow('The operation was not started');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    [504, '{"code":"ASSIGNMENT_EXPIRED"}', false],
+    [503, '<html>Gateway unavailable</html>', false],
+    [503, '{"code":"WORKSPACE_QUEUE_TIMEOUT"}', true],
+    [503, 'null', false],
+  ] as const)(
+    'does not infer non-execution from an ambiguous response',
+    (status, body, truncated) => {
+      expect(new WorkspaceToolHttpError('rejected', status, body, truncated).message).not.toContain(
+        'not started',
+      );
+    },
+  );
+});
 
 describe('executeWorkspaceTool', () => {
   test.each<[WorkspaceToolRequest, number]>([

@@ -184,14 +184,31 @@ describe('createRunFileMessageEncoder', () => {
       },
     });
 
-    const [noReader, runsCode, unknown] = await Promise.all([
+    /* A tool serves a file only once it holds it, so the child that runs code keeps the file off
+     * its prompt for the copy the sandbox has, and receives the text for the one it does not. */
+    const sandboxCsv: TFile = {
+      ...csv,
+      metadata: {
+        destinationChosen: false,
+        codeEnvRef: {
+          kind: 'user',
+          id: 'user-1',
+          storage_session_id: 'session-1',
+          file_id: 'sandbox-input-csv',
+        },
+      },
+    };
+
+    const [noReader, runsCode, unprovisioned, unknown] = await Promise.all([
       harness.encode([csv], 'noReader'),
+      harness.encode([sandboxCsv], 'runsCode'),
       harness.encode([csv], 'runsCode'),
       harness.encode([csv], 'unknown'),
     ]);
 
     expect(JSON.stringify(noReader[0].content)).toContain('region,total');
     expect(runsCode).toEqual([]);
+    expect(JSON.stringify(unprovisioned[0].content)).toContain('region,total');
     expect(unknown).toEqual([]);
     expect(harness.extractText).toHaveBeenCalledWith(
       expect.objectContaining({ attachments: [{ ...csv, llmDeliveryPath: 'text' }] }),

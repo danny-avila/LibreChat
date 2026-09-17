@@ -1546,3 +1546,18 @@ it('enforces the aggregate deadline while loading the agent graph', async () => 
     name: 'TimeoutError',
   });
 });
+
+it('admits a scheduled connection when request headers shadow an unused generated user key', async () => {
+  const { check, deps } = setup();
+  deps.getServerConfigs = async () => ({
+    docs: {
+      ...server,
+      apiKey: { source: 'user', authorization_type: 'custom', custom_header: 'X-Api-Key' },
+      headers: { 'X-Api-Key': '{{MCP_API_KEY}}' },
+      requestHeaders: { 'x-api-key': 'request-secret' },
+      customUserVars: { MCP_API_KEY: { title: 'API Key', description: 'Generated key' } },
+    },
+  });
+  await check('agent', principal);
+  expect(deps.connect).toHaveBeenCalledTimes(1);
+});

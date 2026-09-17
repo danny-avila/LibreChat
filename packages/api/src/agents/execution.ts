@@ -41,6 +41,7 @@ export interface CodeExecutionContext {
   /** Live, server-validated directory selection. Never derive session reuse from this field. */
   codeWorkspace?: CodeWorkspaceSelection & {
     operations: CodeWorkspaceOperation[];
+    instructions?: CodeWorkspaceDescriptor['instructions'];
     environment?: CodeWorkspaceDescriptor['environment'];
   };
 }
