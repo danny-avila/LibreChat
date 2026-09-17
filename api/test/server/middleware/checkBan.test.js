@@ -401,6 +401,65 @@ describe('checkBan middleware', () => {
     });
   });
 
+  describe('ObjectId user keys without Redis (#16025)', () => {
+    it('stringifies ObjectId-like user._id for banCache.get when USE_REDIS is off', async () => {
+      delete process.env.USE_REDIS;
+      const objectId = {
+        toString() {
+          return '507f1f77bcf86cd799439011';
+        },
+      };
+      const next = jest.fn();
+
+      await checkBan(createReq({ user: { _id: objectId } }), createRes(), next);
+
+      expect(next).toHaveBeenCalledWith();
+      expect(mockBanCacheGet).toHaveBeenCalledWith('192.168.1.1');
+      expect(mockBanCacheGet).toHaveBeenCalledWith('507f1f77bcf86cd799439011');
+      for (const [key] of mockBanCacheGet.mock.calls) {
+        expect(typeof key).toBe('string');
+      }
+    });
+
+    it('stringifies ObjectId-like user._id in Redis-prefixed banCache keys', async () => {
+      process.env.USE_REDIS = 'true';
+      const objectId = {
+        toString() {
+          return '507f1f77bcf86cd799439011';
+        },
+      };
+
+      await checkBan(createReq({ user: { _id: objectId } }), createRes(), jest.fn());
+
+      expect(mockBanCacheGet).toHaveBeenCalledWith('ban_cache:user:507f1f77bcf86cd799439011');
+      for (const [key] of mockBanCacheGet.mock.calls) {
+        expect(typeof key).toBe('string');
+      }
+    });
+
+    it('uses stringified ObjectId for banLogs lookups and cache writes', async () => {
+      delete process.env.USE_REDIS;
+      const objectId = {
+        toString() {
+          return '507f1f77bcf86cd799439011';
+        },
+      };
+      const expiresAt = Date.now() + 3600000;
+      mockBanLogsGet
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ expiresAt, type: 'ban' });
+
+      await checkBan(createReq({ user: { _id: objectId } }), createRes(), jest.fn());
+
+      expect(mockBanLogsGet).toHaveBeenCalledWith('507f1f77bcf86cd799439011');
+      expect(mockBanCacheSet).toHaveBeenCalledWith(
+        '507f1f77bcf86cd799439011',
+        expect.any(Object),
+        expect.any(Number),
+      );
+    });
+  });
+
   describe('Redis key paths (Finding 2 regression)', () => {
     beforeEach(() => {
       process.env.USE_REDIS = 'true';

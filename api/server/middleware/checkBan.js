@@ -15,10 +15,12 @@ const AGENT_CHAT_POST_CONTROL_ROUTES = new Set(['abort', 'steer']);
 
 /** @returns {string} Cache key for ban lookups, prefixed for Redis or raw for MongoDB */
 const getBanCacheKey = (prefix, value, useRedis) => {
-  if (!value) {
+  if (value == null || value === '') {
     return '';
   }
-  return useRedis ? `ban_cache:${prefix}:${value}` : value;
+  // Keyv requires string keys; OAuth path may pass ObjectId for req.user._id (#16025)
+  const key = String(value);
+  return useRedis ? `ban_cache:${prefix}:${key}` : key;
 };
 
 /** Returns whether this request starts or resumes an interactive agent chat turn. */
@@ -92,7 +94,12 @@ const checkBan = async (req, res, next = () => {}) => {
 
     if (!userId && req?.body?.email) {
       const user = await findUser({ email: req.body.email }, '_id');
-      userId = user?._id ? user._id.toString() : userId;
+      userId = user?._id ?? userId;
+    }
+
+    // Coerce ObjectId (and other non-strings) before Keyv/banLogs lookups (#16025)
+    if (userId != null) {
+      userId = String(userId);
     }
 
     if (!userId && !req.ip) {
