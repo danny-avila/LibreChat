@@ -9,6 +9,9 @@ import { extractEnvVariable } from './utils';
  */
 export const MAX_MCP_ICON_PATH_LENGTH = 256 * 1024;
 
+/** Keep persistence admission waits below the shared lease's 15-minute lifetime. */
+export const MAX_MCP_OAUTH_PERSISTENCE_WAIT_MS = 14 * 60_000;
+
 const validateOAuthClientCredentials = (
   oauth: {
     client_id?: string;
@@ -208,6 +211,26 @@ const BaseOptionsSchema = z.object({
   /** Timeout (ms) for the long-lived SSE GET stream body before undici aborts it. Default: 300_000 (5 min). */
   sseReadTimeout: z.number().int().positive().optional(),
   initTimeout: z.number().int().nonnegative().optional(),
+  /**
+   * How long (ms) a replica waits for another replica's in-flight OAuth refresh-token redemption
+   * before failing the attempt as retryable. Raise it for a slow token endpoint; lower it to fail
+   * faster. Default when unset: 15_000. Clamped to 30_000, half the window after which a
+   * redemption aborts itself, because this wait runs inside the redemption that window governs.
+   *
+   * Positive rather than non-negative: zero would mean "never wait for a peer", which fails every
+   * contended refresh instead of adopting the rotation a peer is about to store, and that is the
+   * common case this wait exists to serve. Omit the field to take the default.
+   */
+  oauthRefreshWaitTimeout: z.number().int().positive().optional(),
+  /** Enable only after every replica has upgraded to the coordinated OAuth writer protocol. Default: false. */
+  oauthRefreshCoordination: z.boolean().optional(),
+  /** Wait (ms) for callback/adoption persistence and publication. Default: 15_000; maximum: 840_000. */
+  oauthPersistenceWaitTimeout: z
+    .number()
+    .int()
+    .positive()
+    .max(MAX_MCP_OAUTH_PERSISTENCE_WAIT_MS)
+    .optional(),
   /**
    * Whether the server is offered in chat.
    *
@@ -471,6 +494,9 @@ const omitServerManagedFields = <T extends z.ZodObject<z.ZodRawShape>>(schema: T
     timeout: true,
     sseReadTimeout: true,
     initTimeout: true,
+    oauthRefreshWaitTimeout: true,
+    oauthRefreshCoordination: true,
+    oauthPersistenceWaitTimeout: true,
     chatMenu: true,
     serverInstructions: true,
     requiresOAuth: true,

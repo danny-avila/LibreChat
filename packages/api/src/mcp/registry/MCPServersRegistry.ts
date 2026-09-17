@@ -122,6 +122,9 @@ const ADMIN_CONFIGURABLE_FIELDS = [
   'customUserVars',
   'timeout',
   'sseReadTimeout',
+  'oauthRefreshWaitTimeout',
+  'oauthRefreshCoordination',
+  'oauthPersistenceWaitTimeout',
   'initTimeout',
 ] as const;
 

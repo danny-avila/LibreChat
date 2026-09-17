@@ -514,6 +514,20 @@ actions:
 #     url: http://localhost:3001/sse
 #     # proxy: "${MCP_PROXY_URL}"  # optional outbound proxy (http/https/socks/socks5)
 #     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+#   coordinated-oauth:
+#     type: streamable-http
+#     url: https://mcp.example.com/mcp
+#     requiresOAuth: true
+#     # Stage rollout with coordination disabled (the default). Once EVERY replica is upgraded,
+#     # pause MCP traffic and drain active refreshes/callbacks on EVERY replica before changing
+#     # this flag. Apply the same value everywhere while paused, then resume. For rollback, drain,
+#     # disable everywhere, replace the replicas, then resume. Do not toggle during live traffic.
+#     # All coordinated replicas must use the same Redis cache.
+#     oauthRefreshCoordination: false
+#     # Peer refresh wait; capped at 30000 ms by the refresh execution budget.
+#     oauthRefreshWaitTimeout: 15000
+#     # Callback/adoption persistence wait; raise for longer publication budgets (max 840000 ms).
+#     oauthPersistenceWaitTimeout: 15000
 #   private-openid:
 #     type: streamable-http
 #     url: https://mcp.example.com/mcp

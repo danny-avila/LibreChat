@@ -1127,6 +1127,19 @@ describe('MCPManager', () => {
         }),
         connection,
       );
+      const generationSpy = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockResolvedValue('request-peer-generation');
+      try {
+        const oauthOptions = (MCPConnectionFactory.attachRequestOAuthHandler as jest.Mock).mock
+          .calls[0][1];
+        await expect(oauthOptions.onOAuthCredentialsInvalidated()).resolves.toBe(
+          'request-peer-generation',
+        );
+        expect(generationSpy).toHaveBeenCalledWith({ userId: mockUser.id, serverName });
+      } finally {
+        generationSpy.mockRestore();
+      }
       expect(connection.listenerCount('oauthReauthenticationRequired')).toBe(0);
     });
 
@@ -1521,6 +1534,46 @@ describe('MCPManager', () => {
       expect(request).toHaveBeenCalledTimes(2);
       expect(request.mock.calls[1]).toEqual(request.mock.calls[0]);
     });
+
+    it('carries the request credential through a delayed 401 after the connection rotates', async () => {
+      let credential = 'credential-a';
+      const request = jest
+        .fn()
+        .mockImplementationOnce(async () => {
+          credential = 'credential-b';
+          throw new Error('Non-200 status code (401)');
+        })
+        .mockResolvedValueOnce(toolResult);
+      const connection = createConnection(request);
+      connection.getOAuthCredentialSetId = jest.fn(() => credential);
+      const events: unknown[] = [];
+      connection.on('oauthReauthenticationRequired', (event) => events.push(event));
+      attachOAuthHandler();
+      const manager = await createManager(connection);
+      await expect(callTool(manager)).resolves.toBeDefined();
+      expect(events).toEqual([
+        expect.objectContaining({ rejectedCredentialSetId: 'credential-a' }),
+      ]);
+      expect(credential).toBe('credential-b');
+    });
+
+    it.each(['credential-a', null])(
+      'preserves the recorded transport identity %s',
+      async (rejected) => {
+        const connection = createConnection(jest.fn().mockResolvedValue(toolResult));
+        const error = new Error('Non-200 status code (401)');
+        (connection.isConnected as jest.Mock).mockResolvedValueOnce(false);
+        (connection.getLastConnectionCheckError as jest.Mock).mockReturnValue(error);
+        connection.getOAuthCredentialSetId = jest.fn(() => 'credential-b');
+        connection.getLastConnectionCheckCredentialSetId = jest.fn(() => rejected);
+        const events: unknown[] = [];
+        connection.on('oauthReauthenticationRequired', (event) => events.push(event));
+        attachOAuthHandler();
+        const manager = await createManager(connection);
+        await expect(callTool(manager)).resolves.toBeDefined();
+        expect(events).toEqual([expect.objectContaining({ rejectedCredentialSetId: rejected })]);
+      },
+    );
 
     it('joins recovery registered between cached checkout and lease acquisition', async () => {
       const request = jest.fn().mockResolvedValue(toolResult);
@@ -4540,6 +4593,7 @@ describe('MCPManager', () => {
       });
 
       const onDiscoveryDetached = jest.fn();
+      const onOAuthCredentialsAdopted = jest.fn();
       const manager = await MCPManager.createInstance(newMCPServersConfig());
       const result = await manager.discoverServerTools({
         serverName,
@@ -4547,6 +4601,7 @@ describe('MCPManager', () => {
         flowManager: mockFlowManager as unknown as t.ToolDiscoveryOptions['flowManager'],
         graphTokenResolver: jest.fn(),
         onDiscoveryDetached,
+        onOAuthCredentialsAdopted,
       });
 
       expect(result.tools).toEqual(mockTools);
@@ -4560,8 +4615,21 @@ describe('MCPManager', () => {
           useOAuth: true,
           graphTokenResolver: expect.any(Function),
           onDiscoveryDetached,
+          onOAuthCredentialsAdopted,
         }),
       );
+      const generationSpy = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockResolvedValue('discovery-peer-generation');
+      try {
+        const oauthOptions = (MCPConnectionFactory.discoverTools as jest.Mock).mock.calls[0][1];
+        await expect(oauthOptions.onOAuthCredentialsInvalidated()).resolves.toBe(
+          'discovery-peer-generation',
+        );
+        expect(generationSpy).toHaveBeenCalledWith({ userId: mockUser.id, serverName });
+      } finally {
+        generationSpy.mockRestore();
+      }
     });
   });
 
@@ -5896,6 +5964,29 @@ describe('MCPManager', () => {
       } finally {
         generationSpy.mockRestore();
         renewalSpy.mockRestore();
+      }
+    });
+
+    it('lets an ephemeral flow owner carry the peer generation to persistent waiters', async () => {
+      const generationSpy = jest
+        .spyOn(toolsChanged, 'getMCPToolsChangedGeneration')
+        .mockResolvedValue('peer-generation');
+      let captured: string | void;
+      const { serverConfig, flowManager } = adoptingOAuthServer(async (options) => {
+        captured = await options.onOAuthCredentialsInvalidated?.();
+      });
+      try {
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.getUserConnection({
+          serverName,
+          user: mockUser,
+          flowManager,
+          serverConfig,
+          ephemeralConnection: true,
+        });
+        expect(captured!).toBe('peer-generation');
+      } finally {
+        generationSpy.mockRestore();
       }
     });
 
