@@ -1289,25 +1289,6 @@ export class MCPConnectionFactory {
   /** Carries the peer's publication generation to every waiter without publishing it again. */
   private async handleAdoptedCredentials(adoptedTokens: MCPOAuthTokens): Promise<void> {
     const generation = await this.onOAuthCredentialsInvalidated?.();
-    // Interactive callbacks do not take the refresh-flight lease. Revalidate after capturing the
-    // publication generation so tokens superseded by a callback cannot be tagged as its result.
-    if (this.tokenMethods?.findToken) {
-      const current = await this.runWithCapturedTenant(() =>
-        MCPTokenStorage.isCurrentAccessToken({
-          userId: this.userId!,
-          serverName: this.serverName,
-          accessToken: adoptedTokens.access_token,
-          credentialSetId: adoptedTokens.credential_set_id,
-          findToken: this.tokenMethods!.findToken!,
-        }),
-      );
-      if (!current) {
-        throw new MCPTokenStorageUnavailableError(
-          this.serverName,
-          new Error('Adopted OAuth credential was superseded before publication'),
-        );
-      }
-    }
     if (generation) {
       adoptedTokens.publication_generation = generation;
     }

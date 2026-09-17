@@ -46,6 +46,8 @@ export class MCPTokenRefreshUnavailableError extends Error {
 }
 
 interface StoreTokensParams {
+  /** Interactive writers share the persistence fence with refresh, adoption, and teardown. */
+  flowManager?: Pick<FlowStateManager, 'acquireLease'>;
   userId: string;
   serverName: string;
   tokens: OAuthTokens | ExtendedOAuthTokens | MCPOAuthTokens;
@@ -487,7 +489,25 @@ export class MCPTokenStorage {
    * @param params.existingTokens - Optional: Pass existing token state to avoid duplicate DB calls.
    * This is useful when refreshing tokens, as getTokens() already has the token state.
    */
-  static async storeTokens({
+  static async storeTokens(params: StoreTokensParams): Promise<MCPOAuthTokens> {
+    const lease = params.flowManager
+      ? await params.flowManager.acquireLease(getMCPOAuthLeaseId(params.userId, params.serverName))
+      : undefined;
+    if (params.flowManager && !lease) {
+      throw new MCPTokenStorageUnavailableError(
+        params.serverName,
+        new Error('OAuth persistence fence unavailable'),
+      );
+    }
+    try {
+      return await this.storeTokensUnderLease(params);
+    } finally {
+      if (lease)
+        await this.releaseRefreshFlight(lease, this.getLogPrefix(params.userId, params.serverName));
+    }
+  }
+
+  private static async storeTokensUnderLease({
     userId,
     serverName,
     tokens,
@@ -1035,19 +1055,44 @@ export class MCPTokenStorage {
       }
       try {
         if (flight?.adoptedTokens) {
-          logger.info(`${logPrefix} Adopted tokens rotated by another replica`);
-          /**
-           * The peer's redemption did the persisting, so only this replica's view needs
-           * updating: its cached `mcp_get_tokens` result still holds the tokens it was
-           * about to replace. `onRefreshPreparing`'s publication fence is deliberately
-           * skipped — that fence exists to order writes this replica makes.
-           */
-          if (params.onTokensAdopted) {
-            await params.onTokensAdopted(flight.adoptedTokens);
-          } else {
-            await params.onRefreshSuccess?.(flight.adoptedTokens);
+          const adoptionLease = await flowManager!.acquireLease(leaseId);
+          if (!adoptionLease) {
+            throw new MCPTokenStorageUnavailableError(
+              serverName,
+              new Error('OAuth adoption fence unavailable'),
+            );
           }
-          return flight.adoptedTokens;
+          try {
+            if (
+              !(await this.isCurrentAccessToken({
+                userId,
+                serverName,
+                findToken: params.findToken,
+                accessToken: flight.adoptedTokens.access_token,
+                credentialSetId: flight.adoptedTokens.credential_set_id,
+              }))
+            ) {
+              throw new MCPTokenStorageUnavailableError(
+                serverName,
+                new Error('Adopted credential was superseded'),
+              );
+            }
+            logger.info(`${logPrefix} Adopted tokens rotated by another replica`);
+            /**
+             * The peer's redemption did the persisting, so only this replica's view needs
+             * updating: its cached `mcp_get_tokens` result still holds the tokens it was
+             * about to replace. `onRefreshPreparing`'s publication fence is deliberately
+             * skipped — that fence exists to order writes this replica makes.
+             */
+            if (params.onTokensAdopted) {
+              await params.onTokensAdopted(flight.adoptedTokens);
+            } else {
+              await params.onRefreshSuccess?.(flight.adoptedTokens);
+            }
+            return flight.adoptedTokens;
+          } finally {
+            await this.releaseRefreshFlight(adoptionLease, logPrefix);
+          }
         }
         return await this.executeTokenRefresh({
           ...params,
@@ -1584,7 +1629,9 @@ export class MCPTokenStorage {
         // Classify only provider failures here, never a similarly worded persistence failure.
         const message = error instanceof Error ? error.message : String(error);
         if (
-          /\b(unsupported_grant_type|invalid_request|invalid_scope|access_denied)\b/i.test(message)
+          /\b(unsupported_grant_type|invalid_request|invalid_scope|invalid_target|access_denied)\b/i.test(
+            message,
+          )
         ) {
           return null;
         }
@@ -1618,7 +1665,7 @@ export class MCPTokenStorage {
       let storedTokens: MCPOAuthTokens;
       try {
         let preparedRefreshCommit: ((tokens?: MCPOAuthTokens) => Promise<void>) | undefined;
-        storedTokens = await this.storeTokens({
+        storedTokens = await this.storeTokensUnderLease({
           userId,
           serverName,
           tokens: newTokens,

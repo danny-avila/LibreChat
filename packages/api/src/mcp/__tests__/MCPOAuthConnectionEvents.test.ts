@@ -133,6 +133,37 @@ describe('MCPConnection OAuth Events — Real Server', () => {
       await connectPromise.catch(() => undefined);
     });
 
+    it('retains the transport credential when its delayed error arrives after token replacement', async () => {
+      const accessToken = await exchangeCodeForToken(server.url);
+      connection = new MCPConnection({
+        serverName: 'test-server',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        userId: 'user-1',
+        oauthTokens: {
+          access_token: accessToken,
+          token_type: 'Bearer',
+          obtained_at: Date.now(),
+          credential_set_id: 'credential-a',
+        },
+      });
+      await connection.connect();
+      connection.setOAuthTokens({
+        access_token: 'new-token',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+        credential_set_id: 'credential-b',
+      });
+      const error = new Error('Error POSTing to endpoint (HTTP 401): Unauthorized');
+      const transport = (
+        connection as unknown as { transport: { onerror: (error: Error) => void } }
+      ).transport;
+      transport.onerror(error);
+      expect(await connection.isConnected()).toBe(false);
+      expect(connection.getLastConnectionCheckError()).toBe(error);
+      expect(connection.getLastConnectionCheckCredentialSetId()).toBe('credential-a');
+      expect(connection.getOAuthCredentialSetId()).toBe('credential-a');
+    });
+
     it('should not emit oauthRequired when connecting with a valid token', async () => {
       const accessToken = await exchangeCodeForToken(server.url);
 

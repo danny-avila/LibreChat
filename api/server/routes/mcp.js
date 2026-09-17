@@ -533,6 +533,7 @@ router.get('/:serverName/oauth/callback', async (req, res) => {
                 completeAuthorization: completePersistedFlow,
                 persistTokens: async (candidateTokens, onStoreCommitted) =>
                   (await MCPTokenStorage.storeTokens({
+                    flowManager,
                     userId: flowState.userId,
                     serverName,
                     tokens: candidateTokens,

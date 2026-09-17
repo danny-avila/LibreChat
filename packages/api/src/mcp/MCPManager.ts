@@ -1492,7 +1492,7 @@ Please follow these instructions when using tools from the respective MCP server
                 flowManager,
                 options?.signal,
                 !recoveryTakeoverConsumed,
-                checkedCredentialSetId,
+                connection!.getLastConnectionCheckCredentialSetId?.() ?? checkedCredentialSetId,
               ),
             );
           } catch (recoveryError) {

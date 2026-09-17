@@ -1428,6 +1428,7 @@ describe('MCP Routes', () => {
       );
       expect(MCPTokenStorage.storeTokens).toHaveBeenCalledWith(
         expect.objectContaining({
+          flowManager: mockFlowManager,
           userId: 'test-user-id',
           serverName: 'test-server',
           tokens: mockTokens,
