@@ -113,6 +113,10 @@ each token wraps them as `rgb(var(--x))` so that opacity modifiers such as
 /* Declares --color-text-primary, --color-surface-primary and the rest of the tokens as
  * `@theme inline`, so every utility resolves the custom property below at runtime. */
 @import '@librechat/client/theme.css';
+/* v4 reads no config by default: this is what loads the preset, the content globs and
+ * class-based dark mode from step 4. This app's own entry does the same
+ * (`client/src/style.css`), and so does the library's (`src/theme/theme.css`). */
+@config './tailwind.config.js';
 
 :root {
   --white: 255 255 255;
@@ -165,7 +169,9 @@ module.exports = {
 ```
 
 The colors come from the stylesheet imported in step 3, so the config carries only content,
-dark mode and the preset.
+dark mode and the preset — and it only applies through the `@config` line in that stylesheet:
+v4 loads no config file on its own, so without the directive the preset, the `content` globs
+and class-based dark mode are all silently absent.
 
 The published preset supplies the semantic appearance utilities used by theme-aware component
 variants, including `h-theme-control`, `rounded-theme-control`, `gap-theme-compact`, and
