@@ -29,11 +29,18 @@ export function supportsExplicitPromptCache(model?: string | null): boolean {
  */
 interface PromptCacheProjectionContext {
   /**
-   * Tool definitions this conversation's `tool_search` promoted onto the
-   * request. They reach the model, but the key names the prefix the agent is
-   * configured to send, so they stay out of it.
+   * Tool definitions this conversation's `tool_search` discovered. Discovery
+   * flips `defer_loading` on the definition the agent already sends, so these
+   * are hashed in their configured form instead of their current one — the key
+   * names the agent, not one conversation's search results.
    */
-  readonly promotedToolNames: ReadonlySet<string>;
+  readonly discoveredToolNames: ReadonlySet<string>;
+  /**
+   * The subset discovery added to the request rather than reshaping in place.
+   * Those definitions are no part of the configured prefix, so they leave the
+   * identity entirely.
+   */
+  readonly appendedToolNames: ReadonlySet<string>;
 }
 
 type PromptCacheProjection = (value: unknown, context: PromptCacheProjectionContext) => unknown;
@@ -126,6 +133,7 @@ const nonPrefixClientOptionKeys: ReadonlySet<string> = new Set([
   'promptCacheScopeId',
   'promptCacheStableInstructions',
   'promptCacheDiscoveredToolNames',
+  'promptCacheAppendedToolNames',
   'promptCacheRetention',
   'promptCacheExplicit',
   'promptCache',
@@ -272,15 +280,27 @@ function toolsIdentity(value: unknown): unknown {
  * independent of.
  */
 function toolDefinitionsIdentity(value: unknown, context: PromptCacheProjectionContext): unknown {
-  if (!Array.isArray(value) || context.promotedToolNames.size === 0) {
+  if (!Array.isArray(value) || context.discoveredToolNames.size === 0) {
     return toolsIdentity(value);
   }
-  return value
-    .filter((tool) => {
-      const name = (tool as { name?: unknown } | null)?.name;
-      return typeof name !== 'string' || !context.promotedToolNames.has(name);
-    })
-    .map(safeIdentity);
+  const identities: unknown[] = [];
+  for (const tool of value) {
+    const name = (tool as { name?: unknown } | null)?.name;
+    if (typeof name !== 'string' || !context.discoveredToolNames.has(name)) {
+      identities.push(safeIdentity(tool));
+      continue;
+    }
+    if (context.appendedToolNames.has(name)) {
+      continue;
+    }
+    /**
+     * Configured, and still hashed: only the flag discovery flipped is put
+     * back, so a change to this tool's schema or classification still retires
+     * the key while a conversation discovering it does not.
+     */
+    identities.push(safeIdentity({ ...(tool as Record<string, unknown>), defer_loading: true }));
+  }
+  return identities;
 }
 
 /**
@@ -336,7 +356,7 @@ const agentInputDispositions: Record<keyof AgentInputs, PromptCacheDisposition> 
   name: identity(),
 
   additional_instructions: excluded(
-    'The dynamic system tail: shared run context, memory and file context, rebuilt every turn. Hashing it would partition the cache per conversation, which is where reuse is wanted. Stable sources folded into it are hashed through the promptCacheStableInstructions marker instead.',
+    'The dynamic system tail: the author\u2019s configured text joined with shared run context, memory, file context and dynamic tool instructions, rebuilt every turn. Hashing the joined string would partition the cache per conversation, which is where reuse is wanted; the configured half and an isolated child\u2019s always-apply skill bodies are hashed through the promptCacheStableInstructions marker instead.',
   ),
   discoveredTools: excluded(
     'Tool names this conversation already discovered through tool_search. The key names the agent as configured, not one turn\u2019s deferred-tool binding; hashing per-conversation discovery would give every chat its own entry.',
@@ -415,10 +435,12 @@ export function buildPromptCacheKey(
     | (Partial<t.OAIClientOptions> & {
         promptCacheStableInstructions?: string;
         promptCacheDiscoveredToolNames?: string[];
+        promptCacheAppendedToolNames?: string[];
       })
     | undefined;
   const projection: PromptCacheProjectionContext = {
-    promotedToolNames: new Set(markers?.promptCacheDiscoveredToolNames ?? []),
+    discoveredToolNames: new Set(markers?.promptCacheDiscoveredToolNames ?? []),
+    appendedToolNames: new Set(markers?.promptCacheAppendedToolNames ?? []),
   };
   const payload: Record<string, unknown> = {
     version: PROMPT_CACHE_KEY_VERSION,
