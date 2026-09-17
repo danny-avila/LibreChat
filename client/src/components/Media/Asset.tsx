@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import type { MediaAsset } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
+import { MediaImagePixels, mediaImageFrame } from './ImagePending';
 import { toAbsoluteFilePath } from '~/utils/media';
 import { useLocalize } from '~/hooks';
 import { useMediaHost } from './host';
@@ -30,6 +31,7 @@ type PreviewProps = {
   expanded?: boolean;
   interactive?: boolean;
   onOpen?: () => void;
+  imagePendingSince?: string;
 };
 
 export function MediaPreview(props: PreviewProps) {
@@ -42,6 +44,7 @@ function Preview({
   expanded = false,
   interactive = !compact,
   onOpen,
+  imagePendingSince,
 }: PreviewProps) {
   const localize = useLocalize();
   const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
@@ -55,6 +58,8 @@ function Preview({
   if (expanded) frame = 'min-h-40';
   if (compact) frame = 'aspect-[4/3]';
   if (audio && interactive) frame = 'min-h-20 rounded-xl px-2';
+  const generatedImage = !!imagePendingSince && !video && !audio && !compact && !expanded;
+  if (generatedImage) frame = 'rounded-xl';
   let media: ReactNode;
   if (audio) {
     media = interactive ? (
@@ -111,13 +116,14 @@ function Preview({
         height={asset.height}
         onLoad={() => setStatus('ready')}
         onError={() => setStatus('failed')}
-        className={`${dimensions} object-contain`}
+        className={`${dimensions} object-contain ${generatedImage ? `transition-opacity duration-300 motion-reduce:transition-none ${status === 'ready' ? 'opacity-100' : 'opacity-0'}` : ''}`}
       />
     );
   }
   return (
     <span
       className={`relative grid w-full place-items-center overflow-hidden bg-surface-secondary ${frame}`}
+      style={generatedImage ? mediaImageFrame(asset) : undefined}
     >
       {status !== 'failed' &&
         (onOpen && !video && !audio ? (
@@ -134,7 +140,13 @@ function Preview({
         ))}
       {status === 'loading' && !(audio && !interactive) && (
         <span role="status" className="pointer-events-none absolute inset-0">
-          <Skeleton className="h-full w-full rounded-none motion-reduce:animate-none" />
+          {generatedImage ? (
+            <span aria-hidden="true" className="block h-full w-full">
+              <MediaImagePixels createdAt={imagePendingSince!} />
+            </span>
+          ) : (
+            <Skeleton className="h-full w-full rounded-none motion-reduce:animate-none" />
+          )}
           <span className="sr-only">{localize('com_media_preview_loading')}</span>
         </span>
       )}
@@ -170,10 +182,12 @@ export function MediaAssetView({
   asset,
   refine,
   cover,
+  imagePendingSince,
 }: {
   asset: MediaAsset;
   refine?: () => void;
   cover?: () => void;
+  imagePendingSince?: string;
 }) {
   const host = useMediaHost();
   const localize = useLocalize();
@@ -216,7 +230,7 @@ export function MediaAssetView({
   );
   return (
     <figure className="min-w-0 space-y-3">
-      <MediaPreview asset={asset} onOpen={openPreview} />
+      <MediaPreview asset={asset} onOpen={openPreview} imagePendingSince={imagePendingSince} />
       <figcaption className="flex flex-wrap items-center gap-2 text-xs text-text-secondary">
         <span>{asset.type.split('/')[1]?.toUpperCase()}</span>
         {asset.width && asset.height && (

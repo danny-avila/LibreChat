@@ -4,6 +4,10 @@ import type { MediaAsset } from 'librechat-data-provider';
 import { MediaPreview } from '../Asset';
 
 jest.mock('~/hooks', () => ({ useLocalize: () => (key: string) => key }));
+jest.mock('@librechat/client', () => ({
+  ...jest.requireActual('@librechat/client'),
+  PixelCard: () => <div data-testid="pixels" />,
+}));
 
 const asset: MediaAsset = {
   file_id: 'gemini-image',
@@ -77,3 +81,40 @@ test('video reference previews expose playback controls independently of compact
   fireEvent.loadedMetadata(player);
   expect(screen.queryByText('com_media_preview_loading')).not.toBeInTheDocument();
 });
+
+test('a generated image retains pixels through loading and preview retry without regenerating', () => {
+  render(
+    <MediaPreview
+      asset={{ ...asset, width: 768, height: 1024 }}
+      imagePendingSince="2026-09-17T12:00:00Z"
+    />,
+  );
+  const image = screen.getByRole('img');
+  expect(screen.getByTestId('pixels')).toBeInTheDocument();
+  expect(image).toHaveClass(
+    'object-contain',
+    'transition-opacity',
+    'opacity-0',
+    'motion-reduce:transition-none',
+  );
+  expect(image.parentElement).toHaveStyle({ aspectRatio: '0.75', maxWidth: '384px' });
+  fireEvent.error(image);
+  expect(screen.queryByTestId('pixels')).not.toBeInTheDocument();
+  expect(screen.getByText('com_media_preview_failed')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_retry_preview' }));
+  expect(screen.getByTestId('pixels')).toBeInTheDocument();
+  fireEvent.load(screen.getByRole('img'));
+  expect(screen.queryByTestId('pixels')).not.toBeInTheDocument();
+  expect(screen.getByRole('img')).toHaveClass('opacity-100');
+});
+
+test.each(['compact', 'expanded'] as const)(
+  'generated image %s views keep their existing loading behavior',
+  (mode) => {
+    render(
+      <MediaPreview asset={asset} imagePendingSince="2026-09-17T12:00:00Z" {...{ [mode]: true }} />,
+    );
+    expect(screen.queryByTestId('pixels')).not.toBeInTheDocument();
+    expect(screen.getByText('com_media_preview_loading')).toBeInTheDocument();
+  },
+);

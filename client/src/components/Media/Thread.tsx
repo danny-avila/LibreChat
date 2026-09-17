@@ -33,6 +33,7 @@ import type { PendingMedia } from './state';
 import { mediaErrorLabels, mediaJobPhaseLabels, mediaOutputStateLabels } from './labels';
 import { mediaDraftFamily, mediaPendingFamily } from './state';
 import { invalidateMedia } from '~/data-provider/Media';
+import { MediaImagePending } from './ImagePending';
 import { mediaErrorCode } from './commands';
 import { MediaAssetView } from './Asset';
 import { MediaStatus } from './Status';
@@ -43,10 +44,12 @@ function Outputs({
   outputs,
   refine,
   cover,
+  imagePendingSince,
 }: {
   outputs: MediaOutput[];
   refine?: (asset: MediaAsset) => void;
   cover: (asset: MediaAsset) => void;
+  imagePendingSince?: string;
 }) {
   const localize = useLocalize();
   return (
@@ -76,6 +79,7 @@ function Outputs({
                 asset={output.asset}
                 refine={refine ? () => refine(output.asset!) : undefined}
                 cover={() => cover(output.asset!)}
+                imagePendingSince={output.kind === 'image' ? imagePendingSince : undefined}
               />
             );
           return (
@@ -94,6 +98,7 @@ function Job({
   cover,
   catalog,
   edit,
+  imageDimensions,
 }: {
   job: MediaJob;
   send: (command: PendingMedia) => Promise<void>;
@@ -101,6 +106,7 @@ function Job({
   cover: (asset: MediaAsset) => void;
   catalog?: MediaCatalog;
   edit: () => void;
+  imageDimensions?: Pick<MediaAsset, 'width' | 'height'>;
 }) {
   const host = useMediaHost();
   const pending = useAtomValue(mediaPendingFamily(host.scope));
@@ -148,6 +154,10 @@ function Job({
       (item) => item.connectionId === job.selection.connectionId,
     );
   const active = !['succeeded', 'failed', 'cancelled', 'requires_attention'].includes(job.phase);
+  const imageJob = job.operation === 'image.generate' || job.operation === 'image.edit';
+  const outputImage = [...outputs.values()].find(
+    (output) => output.kind === 'image' && output.asset?.width && output.asset?.height,
+  );
   return (
     <section className="space-y-4" aria-label={localize('com_media_job')}>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -176,7 +186,15 @@ function Job({
           <p>{localize(mediaErrorLabels[job.error.code])}</p>
         </Alert>
       )}
-      {active && outputs.size === 0 && (
+      {active && imageJob && (
+        <MediaImagePending
+          createdAt={job.createdAt}
+          dimensions={outputImage?.kind === 'image' ? outputImage.asset : imageDimensions}
+          label={localize(mediaJobPhaseLabels[job.phase])}
+          hint={localize('com_media_generation_hint')}
+        />
+      )}
+      {active && !imageJob && outputs.size === 0 && (
         <div
           role="status"
           className="flex min-h-52 flex-col items-center justify-center gap-3 rounded-xl bg-surface-secondary p-6 text-center"
@@ -191,7 +209,12 @@ function Job({
       {job.phase === 'cancelled' && outputs.size === 0 && (
         <p className="text-sm text-text-secondary">{localize('com_media_cancelled_hint')}</p>
       )}
-      <Outputs outputs={[...outputs.values()]} refine={refine} cover={cover} />
+      <Outputs
+        outputs={[...outputs.values()]}
+        refine={refine}
+        cover={cover}
+        imagePendingSince={imageJob ? job.createdAt : undefined}
+      />
       {job.outputsNextCursor && (
         <Button
           variant="ghost"
@@ -408,6 +431,7 @@ function Turn({
             refine={canRefine ? refine : undefined}
             cover={cover}
             edit={edit}
+            imageDimensions={turn.assets.find((asset) => asset.type.startsWith('image/'))}
           />
         ))}
       {turn.jobsNextCursor && (
