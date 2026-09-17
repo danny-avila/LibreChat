@@ -629,9 +629,14 @@ const executeResponse = async (envelope, { req, res }) => {
   // Generate IDs
   const responseId = generateResponseId();
   const terminalRunError = createTerminalRunErrorObserver({
+    maxProviderErrorChars: appConfig?.endpoints?.agents?.maxProviderErrorChars,
     logger,
     responseMessageId: responseId,
     source: '[Responses API]',
+    protectionEnabled: hasModelBoundContentProtection(
+      appConfig?.filters,
+      appConfig?.messageFilter?.pii,
+    ),
   });
   const context = createResponseContext(request, responseId);
 

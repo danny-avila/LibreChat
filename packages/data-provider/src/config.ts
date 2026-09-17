@@ -1211,11 +1211,20 @@ export type CodeWorkerEnrollmentPolicy = NonNullable<
   NonNullable<z.infer<typeof agentsEndpointSchema>['statefulCodeSessions']>['principalWorkers']
 >;
 
+export const DEFAULT_MAX_PROVIDER_ERROR_CHARS = 2000;
+
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
     z.object({
       /* agents specific */
+      /** Maximum provider error characters retained in unprotected terminal failures. */
+      maxProviderErrorChars: z
+        .number()
+        .int()
+        .min(0)
+        .max(1_000_000)
+        .default(DEFAULT_MAX_PROVIDER_ERROR_CHARS),
       recursionLimit: z.number().optional(),
       disableBuilder: z.boolean().optional().default(false),
       /** Optional workspace guidance acquisition budget, separate from command execution. */
