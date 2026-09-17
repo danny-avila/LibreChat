@@ -4404,6 +4404,7 @@ class AgentClient extends BaseClient {
     let memoryPromise;
     const appConfig = this.options.req.config;
     const terminalRunError = createTerminalRunErrorObserver({
+      maxProviderErrorChars: appConfig?.endpoints?.agents?.maxProviderErrorChars,
       logger,
       responseMessageId: this.responseMessageId,
       source: '[api/server/controllers/agents/client.js #sendCompletion]',
@@ -5293,6 +5294,7 @@ class AgentClient extends BaseClient {
     let run;
     const appConfig = this.options.req.config;
     const terminalRunError = createTerminalRunErrorObserver({
+      maxProviderErrorChars: appConfig?.endpoints?.agents?.maxProviderErrorChars,
       logger,
       responseMessageId: this.responseMessageId,
       source: '[api/server/controllers/agents/client.js #resumeCompletion]',

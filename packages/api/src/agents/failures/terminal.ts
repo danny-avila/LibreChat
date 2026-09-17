@@ -64,6 +64,7 @@ export function createTerminalRunErrorObserver({
   responseMessageId,
   source,
   protectionEnabled,
+  maxProviderErrorChars,
   genericMessage = `${source} Error:`,
 }: {
   logger: TerminalRunErrorLogger;
@@ -72,9 +73,11 @@ export function createTerminalRunErrorObserver({
   /**
    * Whether a content policy inspects this deployment's traffic. A provider error body may echo
    * submitted content, so its text stays out of the failure a reader sees while one is active —
-   * the same condition every other user-facing failure text is decided by.
+   * the same condition every other user-facing failure text is decided by. Omission fails closed
+   * for JavaScript callers and older integrations.
    */
-  protectionEnabled: boolean;
+  protectionEnabled?: boolean;
+  maxProviderErrorChars?: number;
   genericMessage?: string;
 }): TerminalRunErrorObserver {
   const modelErrorTracker = createModelErrorTracker();
@@ -96,9 +99,11 @@ export function createTerminalRunErrorObserver({
       /** Unclassified: the provider's own explanation is the only account of what happened, and a
        *  rejection from a gateway or proxy carries it as the whole point of the 400. The status
        *  headlines it either way, so a deployment withholding provider text loses no taxonomy. */
-      const providerMessage = protectionEnabled
-        ? undefined
-        : (getProviderErrorMessage(upstreamModelError) ?? getProviderErrorMessage(error));
+      const providerMessage =
+        protectionEnabled !== false
+          ? undefined
+          : (getProviderErrorMessage(upstreamModelError, maxProviderErrorChars) ??
+            getProviderErrorMessage(error, maxProviderErrorChars));
       return `${UPSTREAM_MODEL_ERROR_FALLBACK}\n${JSON.stringify({
         type: ErrorTypes.UPSTREAM_MODEL_ERROR,
         ...(status != null ? { status } : {}),

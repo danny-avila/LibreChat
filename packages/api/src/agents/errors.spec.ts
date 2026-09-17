@@ -136,6 +136,22 @@ describe('LangChain provider error text', () => {
       expect(getProviderErrorMessage(error)).toBe('400 masking unavailable');
     });
 
+    it('strips a troubleshooting suffix crossing the output boundary', () => {
+      const explanation = 'x'.repeat(1990);
+      const error = new Error(`${explanation}${troubleshooting('INVALID_PROMPT_INPUT')}`);
+      expect(getProviderErrorMessage(error)).toBe(explanation);
+    });
+
+    it('bounds scanning before stripping a multi-megabyte suffix', () => {
+      const explanation = 'x'.repeat(2000);
+      const scan = jest.spyOn(String.prototype, 'indexOf');
+      expect(getProviderErrorMessage(new Error(explanation + ' '.repeat(2_000_000)))).toBe(
+        explanation,
+      );
+      expect(scan.mock.contexts.every((text) => text.length <= 2256)).toBe(true);
+      scan.mockRestore();
+    });
+
     it('bounds an unbounded provider body', () => {
       const error = new Error('x'.repeat(4096));
       expect(getProviderErrorMessage(error)).toBe('x'.repeat(2000));

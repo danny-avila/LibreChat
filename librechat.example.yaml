@@ -567,6 +567,8 @@ endpoints:
   # agents:
   #   # (optional) Default recursion depth for agents, defaults to 25
   #   recursionLimit: 50
+  #   # Maximum provider error characters retained without content protection (0 hides detail).
+  #   maxProviderErrorChars: 2000
   #   # (optional) Max recursion depth for agents, defaults to 25
   #   maxRecursionLimit: 100
   #   # (optional) Abort a run once a single streamed tool call's arguments exceed this many bytes.

@@ -98,28 +98,49 @@ describe('terminal agent-run error logging', () => {
     );
   });
 
-  it('withholds provider text while a content policy inspects the traffic', () => {
+  it.each([true, undefined])(
+    'withholds provider text when protection is %s',
+    (protectionEnabled) => {
+      const observer = createTerminalRunErrorObserver({
+        logger: { error: jest.fn() },
+        source: '[Agent API]',
+        protectionEnabled,
+      });
+      const privateValue = 'PRIVATE-SUBMITTED-CONTENT';
+      const providerError = Object.assign(new Error(`400 rejected: ${privateValue}`), {
+        status: 400,
+      });
+      observer.modelCallback.handleLLMError(providerError);
+
+      const userFacingError = observer.getUserFacingError(
+        new Error('graph failed', { cause: providerError }),
+        () => 'fallback',
+      );
+
+      expect(userFacingError).toBe(
+        'The model provider could not complete this request.\n' +
+          JSON.stringify({ type: 'upstream_model_error', status: 400 }),
+      );
+      expect(userFacingError).not.toContain(privateValue);
+    },
+  );
+
+  it.each([0, 32, 3000])('retains at most the configured %i characters', (limit) => {
     const observer = createTerminalRunErrorObserver({
       logger: { error: jest.fn() },
       source: '[Agent API]',
-      protectionEnabled: true,
+      protectionEnabled: false,
+      maxProviderErrorChars: limit,
     });
-    const privateValue = 'PRIVATE-SUBMITTED-CONTENT';
-    const providerError = Object.assign(new Error(`400 rejected: ${privateValue}`), {
-      status: 400,
-    });
-    observer.modelCallback.handleLLMError(providerError);
-
-    const userFacingError = observer.getUserFacingError(
-      new Error('graph failed', { cause: providerError }),
-      () => 'fallback',
-    );
-
-    expect(userFacingError).toBe(
+    const error = new Error('x'.repeat(4096));
+    observer.modelCallback.handleLLMError(error);
+    expect(observer.getUserFacingError(error, () => 'fallback')).toBe(
       'The model provider could not complete this request.\n' +
-        JSON.stringify({ type: 'upstream_model_error', status: 400 }),
+        JSON.stringify({
+          type: 'upstream_model_error',
+          ...(limit > 0 ? { message: 'x'.repeat(limit) } : {}),
+        }),
     );
-    expect(userFacingError).not.toContain(privateValue);
   });
 
   it('keeps unrelated terminal failures on the generic safe path', () => {

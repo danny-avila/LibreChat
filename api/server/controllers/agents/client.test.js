@@ -10085,50 +10085,58 @@ describe('AgentClient - resumeCompletion content protection', () => {
 
   /** A gateway or privacy proxy states its rejection in its own message and nowhere else, so an
    *  unclassified upstream failure carries it exactly as every other failure text does. */
-  it('keeps the provider explanation on a terminal resumed model failure', async () => {
-    const explanation = '400 Request rejected: this prompt cannot be masked safely';
-    const trackTerminalProviderError = (providerError) => {
-      mockCreateRun.mockImplementation(async (options) => {
-        const tracker = options.modelCallbacks.find(
-          (callback) => callback.name === 'librechat-upstream-model-error-tracker',
-        );
-        return {
-          resume: jest.fn(async () => {
-            tracker.handleLLMError(providerError, 'resumed-model-run');
-            throw providerError;
+  it.each([undefined, 24, 3000])(
+    'keeps the provider explanation with limit %s on a terminal resumed model failure',
+    async (maxProviderErrorChars) => {
+      const explanation = '400 Request rejected: this prompt cannot be masked safely';
+      const trackTerminalProviderError = (providerError) => {
+        mockCreateRun.mockImplementation(async (options) => {
+          const tracker = options.modelCallbacks.find(
+            (callback) => callback.name === 'librechat-upstream-model-error-tracker',
+          );
+          return {
+            resume: jest.fn(async () => {
+              tracker.handleLLMError(providerError, 'resumed-model-run');
+              throw providerError;
+            }),
+            getCalibrationRatio: jest.fn(() => 0),
+          };
+        });
+      };
+
+      trackTerminalProviderError(Object.assign(new Error(explanation), { status: 400 }));
+      const context = makeContext(undefined);
+      context.options.req.config.endpoints = { agents: { maxProviderErrorChars } };
+
+      await AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} });
+
+      expect(context.contentParts).toContainEqual({
+        type: ContentTypes.ERROR,
+        [ContentTypes.ERROR]:
+          'The model provider could not complete this request.\n' +
+          JSON.stringify({
+            type: 'upstream_model_error',
+            status: 400,
+            message: explanation.slice(0, maxProviderErrorChars),
           }),
-          getCalibrationRatio: jest.fn(() => 0),
-        };
       });
-    };
 
-    trackTerminalProviderError(Object.assign(new Error(explanation), { status: 400 }));
-    const context = makeContext(undefined);
+      /** With a policy inspecting the traffic, the body may echo submitted content: status only. */
+      trackTerminalProviderError(Object.assign(new Error(explanation), { status: 400 }));
+      const protectedContext = makeContext({
+        messages: { pii: { fields: ['text'], starterPatterns: ['email'] } },
+      });
 
-    await AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} });
+      await AgentClient.prototype.resumeCompletion.call(protectedContext, { resumeValue: {} });
 
-    expect(context.contentParts).toContainEqual({
-      type: ContentTypes.ERROR,
-      [ContentTypes.ERROR]:
-        'The model provider could not complete this request.\n' +
-        JSON.stringify({ type: 'upstream_model_error', status: 400, message: explanation }),
-    });
-
-    /** With a policy inspecting the traffic, the body may echo submitted content: status only. */
-    trackTerminalProviderError(Object.assign(new Error(explanation), { status: 400 }));
-    const protectedContext = makeContext({
-      messages: { pii: { fields: ['text'], starterPatterns: ['email'] } },
-    });
-
-    await AgentClient.prototype.resumeCompletion.call(protectedContext, { resumeValue: {} });
-
-    expect(protectedContext.contentParts).toContainEqual({
-      type: ContentTypes.ERROR,
-      [ContentTypes.ERROR]:
-        'The model provider could not complete this request.\n' +
-        JSON.stringify({ type: 'upstream_model_error', status: 400 }),
-    });
-  });
+      expect(protectedContext.contentParts).toContainEqual({
+        type: ContentTypes.ERROR,
+        [ContentTypes.ERROR]:
+          'The model provider could not complete this request.\n' +
+          JSON.stringify({ type: 'upstream_model_error', status: 400 }),
+      });
+    },
+  );
 
   it('preserves provider error detail when content protection is disabled', async () => {
     const providerMessage = 'Legacy provider detail';

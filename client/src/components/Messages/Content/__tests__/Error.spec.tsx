@@ -387,6 +387,28 @@ describe('Error — provider and model identity', () => {
     expect(document.body.textContent).not.toContain('OpenAI');
   });
 
+  it.each([
+    'Unexpected token } in JSON',
+    'gateway rejected {request',
+    'invalid "quoted }" value',
+    'path \\ {',
+  ])('renders provider punctuation: %s', (explanation) => {
+    renderError(
+      'The model provider could not complete this request.\n' +
+        JSON.stringify({
+          type: ErrorTypes.UPSTREAM_MODEL_ERROR,
+          status: 400,
+          message: explanation,
+        }),
+      providerMessage,
+    );
+    expect(
+      screen.getByText(localized('com_error_upstream_model_status', '400')),
+    ).toBeInTheDocument();
+    expect(screen.getByText(explanation)).toBeInTheDocument();
+    expectReadable();
+  });
+
   /** What a gateway or privacy proxy rejects a request with is only stated in its own message. */
   it('reads the provider explanation an upstream failure carries', () => {
     const explanation = 'Request rejected: this prompt cannot be masked safely';
