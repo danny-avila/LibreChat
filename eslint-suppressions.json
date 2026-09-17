@@ -558,7 +558,7 @@
   },
   "client/src/components/Chat/Messages/Content/FilePreviewDialog.tsx": {
     "shadcn/no-restyle": {
-      "count": 1
+      "count": 4
     }
   },
   "client/src/components/Chat/Messages/Content/Image.tsx": {
@@ -744,7 +744,7 @@
       "count": 1
     },
     "shadcn/no-restyle": {
-      "count": 21
+      "count": 27
     }
   },
   "client/src/components/Chat/Messages/Content/ToolCall.tsx": {
@@ -833,7 +833,7 @@
   },
   "client/src/components/Chat/Messages/Feedback.tsx": {
     "shadcn/no-restyle": {
-      "count": 15
+      "count": 18
     },
     "shadcn/require-static-classes": {
       "count": 3
@@ -924,7 +924,7 @@
   },
   "client/src/components/Chat/Subagents/SharedSubagentActivityDialog.tsx": {
     "shadcn/no-restyle": {
-      "count": 7
+      "count": 9
     }
   },
   "client/src/components/Chat/Subagents/SubagentActivity.tsx": {
@@ -965,7 +965,7 @@
       "count": 1
     },
     "shadcn/no-inline-styles": {
-      "count": 5
+      "count": 4
     }
   },
   "client/src/components/Chat/Trace/Timeline.tsx": {
@@ -975,7 +975,7 @@
   },
   "client/src/components/Chat/Trace/Viewer.tsx": {
     "shadcn/no-restyle": {
-      "count": 1
+      "count": 3
     }
   },
   "client/src/components/Chat/approval/Review.tsx": {
@@ -1029,7 +1029,7 @@
   },
   "client/src/components/Conversations/ConvoOptions/ShareButton.tsx": {
     "shadcn/no-restyle": {
-      "count": 8
+      "count": 11
     }
   },
   "client/src/components/Conversations/ConvoOptions/SharedLinkButton.tsx": {
@@ -1293,7 +1293,7 @@
   },
   "client/src/components/MCP/MCPConfigDialog.tsx": {
     "shadcn/no-restyle": {
-      "count": 1
+      "count": 2
     }
   },
   "client/src/components/MCP/MCPServerMenuItem.tsx": {
@@ -1311,7 +1311,7 @@
       "count": 3
     },
     "shadcn/no-restyle": {
-      "count": 5
+      "count": 9
     }
   },
   "client/src/components/MCP/StackedMCPIcons.tsx": {
@@ -1356,7 +1356,7 @@
       "count": 1
     },
     "shadcn/no-restyle": {
-      "count": 39
+      "count": 41
     }
   },
   "client/src/components/Messages/Content/RunCode.tsx": {
@@ -1389,7 +1389,7 @@
       "count": 11
     },
     "shadcn/no-restyle": {
-      "count": 12
+      "count": 14
     }
   },
   "client/src/components/Nav/NavToggle.tsx": {
@@ -1404,22 +1404,22 @@
   },
   "client/src/components/Nav/SettingsTabs/Account/Avatar.tsx": {
     "shadcn/no-restyle": {
-      "count": 4
+      "count": 7
     }
   },
   "client/src/components/Nav/SettingsTabs/Account/BackupCodesItem.tsx": {
     "shadcn/no-restyle": {
-      "count": 13
+      "count": 15
     }
   },
   "client/src/components/Nav/SettingsTabs/Account/DeleteAccount.tsx": {
     "shadcn/no-restyle": {
-      "count": 18
+      "count": 21
     }
   },
   "client/src/components/Nav/SettingsTabs/Account/TwoFactorAuthentication.tsx": {
     "shadcn/no-restyle": {
-      "count": 3
+      "count": 5
     }
   },
   "client/src/components/Nav/SettingsTabs/Account/TwoFactorPhases/BackupPhase.tsx": {
@@ -1729,7 +1729,7 @@
   },
   "client/src/components/Sharing/GenericGrantAccessDialog.tsx": {
     "shadcn/no-restyle": {
-      "count": 14
+      "count": 17
     },
     "shadcn/require-static-classes": {
       "count": 2
@@ -1755,7 +1755,7 @@
       "count": 1
     },
     "shadcn/no-restyle": {
-      "count": 23
+      "count": 25
     }
   },
   "client/src/components/SidePanel/Agents/ActionsTable/Columns.tsx": {
@@ -1947,7 +1947,7 @@
       "count": 1
     },
     "shadcn/no-restyle": {
-      "count": 7
+      "count": 13
     }
   },
   "client/src/components/SidePanel/Agents/Tools/ItemDialog/sections/McpSection.tsx": {
@@ -1976,7 +1976,7 @@
   },
   "client/src/components/SidePanel/Agents/Tools/SkillsDialog.tsx": {
     "shadcn/no-restyle": {
-      "count": 10
+      "count": 12
     }
   },
   "client/src/components/SidePanel/Agents/Tools/SkillsSection.tsx": {
@@ -2053,7 +2053,7 @@
   },
   "client/src/components/SidePanel/Builder/ActionsAuth.tsx": {
     "shadcn/no-restyle": {
-      "count": 2
+      "count": 4
     }
   },
   "client/src/components/SidePanel/Builder/ActionsPanel.tsx": {
@@ -2377,7 +2377,7 @@
       "count": 1
     },
     "shadcn/no-restyle": {
-      "count": 13
+      "count": 17
     }
   },
   "client/src/components/Tools/ToolItem.tsx": {
@@ -2423,7 +2423,7 @@
   },
   "client/src/components/Variables/Editor.tsx": {
     "shadcn/no-restyle": {
-      "count": 10
+      "count": 12
     },
     "shadcn/require-static-classes": {
       "count": 1
@@ -2445,12 +2445,30 @@
       "count": 1
     },
     "shadcn/no-restyle": {
-      "count": 55
+      "count": 59
+    }
+  },
+  "client/src/components/ui/AdminSettingsDialog.tsx": {
+    "shadcn/no-restyle": {
+      "count": 22
+    },
+    "shadcn/require-static-classes": {
+      "count": 1
+    }
+  },
+  "client/src/components/ui/Collapse.tsx": {
+    "shadcn/no-arbitrary-values": {
+      "count": 3
     }
   },
   "client/src/components/ui/CustomIcon.tsx": {
     "shadcn/no-inline-styles": {
       "count": 9
+    }
+  },
+  "client/src/components/ui/LocalizedDateRangePicker.tsx": {
+    "shadcn/no-restyle": {
+      "count": 1
     }
   },
   "client/src/routes/ChatRoute.tsx": {
