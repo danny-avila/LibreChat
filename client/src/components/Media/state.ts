@@ -19,6 +19,7 @@ const draftSchema = z.object({
   operation: mediaOperationSchema,
   offering: z.string(),
   parentTurnId: z.string().optional(),
+  autoEdit: z.boolean().optional(),
   inputs: z.array(mediaInputSchema),
   assets: z.array(mediaAssetSchema),
   parameters: mediaImageParametersSchema.merge(mediaVideoParametersSchema),

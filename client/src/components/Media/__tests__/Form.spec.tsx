@@ -374,7 +374,13 @@ test('refining an existing result preserves its provider and parent instead of t
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <MediaForm catalog={choices} threadId="thread" send={env.send} busy={false} />
+      <MediaForm
+        catalog={choices}
+        threadId="thread"
+        imageContext={{ turnId: 'newer-turn', asset: { ...asset, file_id: 'newer-image' } }}
+        send={env.send}
+        busy={false}
+      />
       <MediaThreadView detail={detail} send={env.send} onDeleted={() => {}} />
     </QueryClientProvider>,
     { wrapper: env.wrapper },
@@ -395,4 +401,77 @@ test('refining an existing result preserves its provider and parent instead of t
     operation: 'image.edit',
     inputs: [{ role: 'reference', file_id: 'source-file' }],
   });
+});
+
+test('a completed image becomes the edit target without erasing a prompt typed while it was generating', async () => {
+  const env = setup();
+  const choices: MediaCatalog = {
+    ...catalog,
+    offerings: [
+      {
+        ...catalog.offerings[0],
+        capabilities: [
+          ...catalog.offerings[0].capabilities,
+          {
+            ...catalog.offerings[0].capabilities[0],
+            operation: 'image.edit',
+            inputs: { min: 1, max: 4, roles: ['reference'] },
+          },
+        ],
+      },
+    ],
+  };
+  const props = { catalog: choices, threadId: 'thread', send: env.send, busy: false };
+  const view = render(<MediaForm {...props} />, { wrapper: env.wrapper });
+  const prompt = screen.getByRole('textbox', { name: 'com_media_prompt' });
+  fireEvent.change(prompt, { target: { value: 'Make it red' } });
+  const asset = {
+    file_id: 'completed',
+    filepath: '/images/completed.png',
+    filename: 'completed.png',
+    type: 'image/png',
+    bytes: 10,
+  };
+  view.rerender(<MediaForm {...props} imageContext={{ turnId: 'parent', asset }} />);
+  expect(prompt).toHaveValue('Make it red');
+  expect(screen.getByText('com_media_editing_latest')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
+  expect(env.send.mock.calls[0][0].request).toMatchObject({
+    operation: 'image.edit',
+    parentTurnId: 'parent',
+    prompt: 'Make it red',
+    inputs: [{ role: 'reference', file_id: 'completed' }],
+  });
+});
+
+test('a model without editing support cannot silently send a follow-up without its image', () => {
+  const env = setup();
+  render(
+    <MediaForm
+      catalog={catalog}
+      threadId="thread"
+      send={env.send}
+      busy={false}
+      imageContext={{
+        turnId: 'parent',
+        asset: {
+          file_id: 'image',
+          filepath: '/images/image.png',
+          filename: 'image.png',
+          type: 'image/png',
+          bytes: 10,
+        },
+      }}
+    />,
+    { wrapper: env.wrapper },
+  );
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
+    target: { value: 'Make it red' },
+  });
+  expect(screen.getByText('com_media_edit_model_required')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
+  expect(env.send).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_remove_reference' }));
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeEnabled();
 });

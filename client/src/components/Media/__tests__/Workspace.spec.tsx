@@ -1,10 +1,16 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { dataService } from 'librechat-data-provider';
 import { Provider, createStore, useAtomValue } from 'jotai';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { dataService, mediaSubmissionRequestSchema } from 'librechat-data-provider';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { MediaCatalog, MediaThreadDetail, MediaTurn } from 'librechat-data-provider';
+import type {
+  MediaAsset,
+  MediaCatalog,
+  MediaThreadDetail,
+  MediaTurn,
+  MediaSubmissionReceipt,
+} from 'librechat-data-provider';
 import { clearMediaSessionStorage, mediaDraftFamily, mediaLibraryFamily } from '../state';
 import SidebarPortal, { sidebarPortalTarget } from '~/components/UnifiedSidebar/portal';
 import { MediaHostProvider } from '../host';
@@ -104,6 +110,54 @@ const detail: MediaThreadDetail = {
   },
   turns: { items: [turn(2), turn(1)] },
 };
+
+const imageAsset = (sequence: number): MediaAsset => ({
+  file_id: 'image-' + sequence,
+  filename: 'image-' + sequence + '.png',
+  filepath: '/images/image-' + sequence + '.png',
+  type: 'image/png',
+  bytes: 100,
+});
+const imageTurn = (sequence: number): MediaTurn => {
+  const result = turn(sequence);
+  return {
+    ...result,
+    jobs: [
+      {
+        ...result.jobs[0],
+        outputs: [
+          {
+            kind: 'image',
+            outputId: 'output-' + sequence,
+            ordinal: 0,
+            state: 'ready',
+            asset: imageAsset(sequence),
+          },
+        ],
+      },
+    ],
+  };
+};
+const imageCatalog = (
+  api: MediaCatalog['offerings'][number]['api'] = 'openai.images',
+): MediaCatalog => ({
+  ...catalog,
+  offerings: [
+    {
+      ...catalog.offerings[0],
+      api,
+      capabilities: [
+        ...catalog.offerings[0].capabilities,
+        {
+          operation: 'image.edit',
+          inputs: { min: 1, max: 4, roles: ['reference'] },
+          execution: { kind: 'direct', previews: false },
+          controls: { count: { min: 1, max: 2, default: 1 } },
+        },
+      ],
+    },
+  ],
+});
 
 function Harness({
   initialThread,
@@ -270,4 +324,108 @@ test('recovers a catalog failure without leaving the workspace', async () => {
   await sidebar.findByText('com_media_load_failed');
   fireEvent.click(sidebar.getByRole('button', { name: 'com_ui_retry' }));
   expect(await screen.findByRole('textbox', { name: 'com_media_prompt' })).toBeVisible();
+});
+
+test.each(['openai.images', 'google.generateContent', 'openrouter.images'] as const)(
+  'continues a saved image through consecutive prompt-only edits with %s',
+  async (api) => {
+    let current: MediaThreadDetail = {
+      ...detail,
+      turns: { items: [turn(2), imageTurn(1)] },
+    };
+    const receipts = new Map<string, MediaSubmissionReceipt>();
+    jest.mocked(dataService.getMediaCatalog).mockResolvedValue(imageCatalog(api));
+    jest.mocked(dataService.getMediaThread).mockImplementation(async () => current);
+    jest.spyOn(dataService, 'getMediaSubmission').mockImplementation(async (id) => {
+      const receipt = receipts.get(id);
+      if (!receipt) throw new Error('Unexpected receipt');
+      return receipt;
+    });
+    const submit = jest.spyOn(dataService, 'submitMedia').mockImplementation(async (body) => {
+      const request = mediaSubmissionRequestSchema.parse(body);
+      const sequence = current.thread.turnCount + 1;
+      const next = imageTurn(sequence);
+      next.prompt = request.prompt;
+      next.operation = request.operation;
+      next.selection = request.selection;
+      next.parentTurnId = request.parentTurnId;
+      next.inputs = request.inputs;
+      next.assets = request.inputs.map((input) => imageAsset(Number(input.file_id.slice(6))));
+      next.jobs[0] = {
+        ...next.jobs[0],
+        operation: request.operation,
+        selection: request.selection,
+      };
+      current = {
+        ...current,
+        thread: { ...current.thread, version: current.thread.version + 1, turnCount: sequence },
+        turns: { items: [next, ...current.turns.items] },
+      };
+      const receipt: MediaSubmissionReceipt = {
+        schemaVersion: 1,
+        phase: 'accepted',
+        clientRequestId: request.clientRequestId,
+        threadId: 'thread',
+        turnId: next.turnId,
+        jobId: next.jobs[0].jobId,
+      };
+      receipts.set(request.clientRequestId, receipt);
+      return receipt;
+    });
+    mount({ initialThread: 'thread' });
+    const prompt = await screen.findByRole('textbox', { name: 'com_media_prompt' });
+    const composer = within(screen.getByRole('region', { name: 'com_media_create' }));
+    expect(composer.getByText('com_media_editing_latest')).toBeVisible();
+    expect(composer.getByRole('img')).toHaveAttribute('src', imageAsset(1).filepath);
+
+    for (const [index, text] of ['Make the boat red', 'Now make the background gray'].entries()) {
+      fireEvent.change(prompt, { target: { value: text } });
+      fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+      await waitFor(() => expect(submit).toHaveBeenCalledTimes(index + 1));
+      const parent = index === 0 ? 1 : 3;
+      expect(submit.mock.calls[index][0]).toMatchObject({
+        threadId: 'thread',
+        parentTurnId: 'turn-' + parent,
+        operation: 'image.edit',
+        prompt: text,
+        selection,
+        inputs: [{ role: 'reference', file_id: 'image-' + parent }],
+      });
+      await waitFor(() => expect(prompt).toHaveValue(''));
+      await waitFor(() =>
+        expect(composer.getByRole('img')).toHaveAttribute('src', imageAsset(index + 3).filepath),
+      );
+    }
+    expect(submit.mock.calls[0][0].inputs).toEqual([{ role: 'reference', file_id: 'image-1' }]);
+  },
+);
+
+test('removing the automatic image starts fresh and preserves that choice and the prompt on reload', async () => {
+  jest.mocked(dataService.getMediaCatalog).mockResolvedValue(imageCatalog());
+  jest
+    .mocked(dataService.getMediaThread)
+    .mockResolvedValue({ ...detail, turns: { items: [imageTurn(1)] } });
+  const view = mount({ initialThread: 'thread' });
+  const prompt = await screen.findByRole('textbox', { name: 'com_media_prompt' });
+  fireEvent.change(prompt, { target: { value: 'A different subject' } });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_remove_reference' }));
+  expect(screen.queryByText('com_media_editing_latest')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'com_media_image_generate' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  view.unmount();
+  mediaDraftFamily.remove('owner:thread');
+  mount({ initialThread: 'thread' });
+  expect(await screen.findByRole('textbox', { name: 'com_media_prompt' })).toHaveValue(
+    'A different subject',
+  );
+  expect(screen.queryByText('com_media_editing_latest')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_image_edit' }));
+  expect(screen.getByText('com_media_editing_latest')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_image_generate' }));
+  expect(screen.queryByText('com_media_editing_latest')).not.toBeInTheDocument();
+  expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue(
+    'A different subject',
+  );
 });

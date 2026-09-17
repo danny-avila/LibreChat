@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAtom, useAtomValue } from 'jotai';
 import { ArrowLeft, History, Images, Plus, SlidersHorizontal } from 'lucide-react';
 import {
@@ -21,6 +21,7 @@ import {
   useMediaThreads,
 } from '~/data-provider/Media';
 import { mediaLibraryFamily, mediaPendingFamily } from './state';
+import { mediaThreadContext } from './context';
 import { useMediaCommands } from './commands';
 import { mediaErrorLabels } from './labels';
 import { MediaThreadView } from './Thread';
@@ -94,9 +95,9 @@ export default function MediaWorkspace({
     host.openThread('');
     focusComposer();
   };
-  const latestTurn = detail.data?.turns.items.reduce(
-    (latest, turn) => (!latest || turn.createdAt > latest.createdAt ? turn : latest),
-    detail.data.turns.items[0],
+  const { latestTurn, image: imageContext } = useMemo(
+    () => mediaThreadContext(detail.data?.turns.items ?? []),
+    [detail.data?.turns.items],
   );
   const hasDetail = !!detail.data;
   const hasCatalog = !!catalog.data;
@@ -413,6 +414,7 @@ export default function MediaWorkspace({
       catalog={catalog.data}
       threadId={threadId}
       initialSelection={latestTurn?.selection}
+      imageContext={imageContext}
       send={commands.send}
       busy={commands.sending.size > 0}
       portal={!!settingsHost}

@@ -27,12 +27,14 @@ import type {
 } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type { MediaDraft, PendingMedia } from './state';
+import type { MediaEditTarget } from './context';
 import {
   mediaControlLabels,
   mediaErrorLabels,
   mediaInputRoleLabels,
   mediaOperationLabels,
 } from './labels';
+import { withImageContext } from './context';
 import { mediaErrorCode } from './commands';
 import { mediaDraftFamily } from './state';
 import { MediaPreview } from './Asset';
@@ -49,6 +51,7 @@ export function MediaForm({
   catalog,
   threadId,
   initialSelection,
+  imageContext,
   send,
   busy,
   portal = false,
@@ -57,6 +60,7 @@ export function MediaForm({
   catalog: MediaCatalog;
   threadId?: string;
   initialSelection?: MediaSelection;
+  imageContext?: MediaEditTarget;
   send: (command: PendingMedia) => Promise<void>;
   busy: boolean;
   portal?: boolean;
@@ -66,7 +70,7 @@ export function MediaForm({
   const localize = useLocalize();
   const id = useId();
   const draftKey = `${host.scope}:${threadId ?? 'new'}`;
-  const [draft, setDraft] = useAtom(mediaDraftFamily(draftKey));
+  const [savedDraft, setDraft] = useAtom(mediaDraftFamily(draftKey));
   const [error, setError] = useState<string>();
   const [uploading, setUploading] = useState(false);
   const upload = useRef<AbortController>();
@@ -81,17 +85,22 @@ export function MediaForm({
   );
   const implicitDefault =
     !!initialOffering &&
-    draft.revision === 1 &&
-    !draft.prompt &&
-    draft.inputs.length === 0 &&
-    !draft.parentTurnId;
+    savedDraft.revision === 1 &&
+    !savedDraft.prompt &&
+    savedDraft.inputs.length === 0 &&
+    !savedDraft.parentTurnId;
   const offering =
-    draft.offering && !implicitDefault
-      ? offerings.find((item) => offeringId(item) === draft.offering)
+    savedDraft.offering && !implicitDefault
+      ? offerings.find((item) => offeringId(item) === savedDraft.offering)
       : (initialOffering ?? offerings[0]);
-  const capability =
-    offering?.capabilities.find((item) => item.operation === draft.operation) ??
+  const selectedCapability =
+    offering?.capabilities.find((item) => item.operation === savedDraft.operation) ??
     offering?.capabilities[0];
+  const draft = withImageContext(savedDraft, imageContext, selectedCapability?.operation);
+  const automaticImage = draft !== savedDraft;
+  const capability =
+    offering?.capabilities.find((item) => item.operation === draft.operation) ?? selectedCapability;
+  const unsupportedContext = automaticImage && capability?.operation !== 'image.edit';
   useEffect(() => {
     if (!offering || !capability) return;
     if (draft.offering && (!implicitDefault || draft.offering === offeringId(offering))) return;
@@ -189,7 +198,15 @@ export function MediaForm({
     );
   };
   async function submit() {
-    if (!offering || !capability || !host.canCreate || busy || uploading || invalidSettings.length)
+    if (
+      !offering ||
+      !capability ||
+      !host.canCreate ||
+      busy ||
+      uploading ||
+      invalidSettings.length ||
+      unsupportedContext
+    )
       return;
     setError(undefined);
     const controls = capability.controls;
@@ -276,6 +293,12 @@ export function MediaForm({
     upload.current = controller;
     setUploading(true);
     setError(undefined);
+    change({
+      autoEdit: false,
+      parentTurnId: draft.parentTurnId,
+      inputs: draft.inputs,
+      assets: draft.assets,
+    });
     try {
       const body = new FormData();
       body.append('file', file);
@@ -343,14 +366,28 @@ export function MediaForm({
   const connections = [
     ...new Map(modeOfferings.map((item) => [item.connectionId, item.connectionName])).entries(),
   ];
-  const selectOffering = (next: typeof offering, operation: MediaOperation) => {
+  const selectOffering = (next: typeof offering, operation: MediaOperation, switchMode = false) => {
     const cap = next.capabilities.find((item) => item.operation === operation);
     if (!cap) return;
-    change({
+    const update: Partial<MediaDraft> = {
       offering: offeringId(next),
       operation,
       parameters: { count: cap.controls.count?.default ?? cap.controls.count?.min ?? 1 },
-    });
+    };
+    if (switchMode && operation === 'image.generate') {
+      update.autoEdit = false;
+      update.parentTurnId = undefined;
+      update.inputs = [];
+      update.assets = [];
+    } else if (
+      switchMode &&
+      operation === 'image.edit' &&
+      !savedDraft.inputs.length &&
+      !savedDraft.parentTurnId
+    ) {
+      update.autoEdit = true;
+    }
+    change(update);
   };
   const inputsValid =
     draft.inputs.length >= capability.inputs.min &&
@@ -452,7 +489,7 @@ export function MediaForm({
                   : offerings.find((item) =>
                       item.capabilities.some((cap) => cap.operation === operation),
                     );
-                if (next) selectOffering(next, operation);
+                if (next) selectOffering(next, operation, true);
               }}
             >
               <Icon className="mr-1.5 size-4" aria-hidden="true" />
@@ -548,7 +585,7 @@ export function MediaForm({
   );
   const composer = (
     <section className="space-y-3" aria-label={localize('com_media_create')} data-media-composer>
-      {draft.parentTurnId && (
+      {draft.parentTurnId && !automaticImage && (
         <div className="flex items-start gap-2 rounded-xl bg-surface-secondary p-3">
           <p className="text-xs leading-5 text-text-secondary">
             {localize('com_media_pinned_parent')}
@@ -557,7 +594,15 @@ export function MediaForm({
             variant="ghost"
             size="icon-sm"
             aria-label={localize('com_media_clear_reference')}
-            onClick={() => change({ parentTurnId: undefined, inputs: [], assets: [] })}
+            onClick={() =>
+              change({
+                autoEdit: false,
+                parentTurnId: undefined,
+                inputs: [],
+                assets: [],
+                operation: draft.operation === 'image.edit' ? 'image.generate' : draft.operation,
+              })
+            }
           >
             <X className="size-4" aria-hidden="true" />
           </Button>
@@ -581,26 +626,32 @@ export function MediaForm({
                   </span>
                 )}
                 <div className="min-w-0 flex-1">
-                  <ControlCombobox
-                    showCarat
-                    ariaLabel={localize('com_media_input_role')}
-                    variant="field"
-                    isCollapsed={false}
-                    portal={portal}
-                    selectedValue={input.role}
-                    displayValue={localize(mediaInputRoleLabels[input.role])}
-                    items={capability.inputs.roles.map((role) => ({
-                      value: role,
-                      label: localize(mediaInputRoleLabels[role]),
-                    }))}
-                    setValue={(value) =>
-                      change({
-                        inputs: draft.inputs.map((item, at) =>
-                          at === index ? { ...item, role: value as typeof input.role } : item,
-                        ),
-                      })
-                    }
-                  />
+                  {automaticImage ? (
+                    <p role="status" className="text-sm text-text-secondary">
+                      {localize('com_media_editing_latest')}
+                    </p>
+                  ) : (
+                    <ControlCombobox
+                      showCarat
+                      ariaLabel={localize('com_media_input_role')}
+                      variant="field"
+                      isCollapsed={false}
+                      portal={portal}
+                      selectedValue={input.role}
+                      displayValue={localize(mediaInputRoleLabels[input.role])}
+                      items={capability.inputs.roles.map((role) => ({
+                        value: role,
+                        label: localize(mediaInputRoleLabels[role]),
+                      }))}
+                      setValue={(value) =>
+                        change({
+                          inputs: draft.inputs.map((item, at) =>
+                            at === index ? { ...item, role: value as typeof input.role } : item,
+                          ),
+                        })
+                      }
+                    />
+                  )}
                 </div>
                 <Button
                   variant="ghost"
@@ -610,6 +661,12 @@ export function MediaForm({
                     change({
                       inputs: draft.inputs.filter((_, at) => at !== index),
                       assets: draft.assets.filter((item) => item.file_id !== input.file_id),
+                      parentTurnId: index === 0 ? undefined : draft.parentTurnId,
+                      autoEdit: false,
+                      operation:
+                        draft.inputs.length === 1 && draft.operation === 'image.edit'
+                          ? 'image.generate'
+                          : draft.operation,
                     })
                   }
                 >
@@ -635,6 +692,11 @@ export function MediaForm({
           })}
         </Alert>
       )}
+      {unsupportedContext && (
+        <p role="status" className="text-sm text-text-secondary">
+          {localize('com_media_edit_model_required')}
+        </p>
+      )}
       <div className="space-y-2">
         <Composer
           value={draft.prompt}
@@ -644,6 +706,7 @@ export function MediaForm({
             host.canCreate &&
             !busy &&
             !uploading &&
+            !unsupportedContext &&
             inputsValid &&
             invalidSettings.length === 0 &&
             draft.prompt.trim().length > 0 &&

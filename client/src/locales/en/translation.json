@@ -3057,5 +3057,7 @@
   "com_media_open_gallery": "Generation history",
   "com_media_back_creation": "Back to creation",
   "com_media_columns": "Cards per row",
-  "com_media_column_count": "{{count}} cards per row"
+  "com_media_column_count": "{{count}} cards per row",
+  "com_media_editing_latest": "Editing the latest image",
+  "com_media_edit_model_required": "Choose a model that supports image editing, or remove the reference to start a new image."
 }

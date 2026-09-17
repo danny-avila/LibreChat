@@ -303,6 +303,7 @@ function Turn({
     setDraft((previous) => ({
       ...previous,
       revision: previous.revision + 1,
+      autoEdit: false,
       parentTurnId: turn.turnId,
       offering: turn.selection
         ? JSON.stringify([turn.selection.connectionId, turn.selection.modelId])
@@ -320,6 +321,7 @@ function Turn({
     setDraft((previous) => ({
       ...previous,
       revision: previous.revision + 1,
+      autoEdit: false,
       prompt: turn.prompt,
       parentTurnId: turn.parentTurnId,
       offering: turn.selection
