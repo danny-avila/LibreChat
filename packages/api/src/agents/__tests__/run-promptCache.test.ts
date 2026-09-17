@@ -205,6 +205,29 @@ describe('run-level prompt cache identity', () => {
     }
   });
 
+  it('keeps a delegated child’s cache partition separate for different authenticated users', async () => {
+    const child = makeAgent({ id: 'agent-child', instructions: 'Child prefix.' });
+    const parent = makeAgent({
+      subagents: { enabled: true, allowSelf: false },
+      subagentAgentConfigs: [child],
+    });
+
+    const childOf = async (user: string): Promise<CapturedAgent> => {
+      const [rootInput] = await captureRun({ agent: parent, user });
+      const entry = (rootInput.subagentConfigs ?? []).find(
+        (config) => config.type === 'agent-child',
+      ) as { agentInputs?: CapturedAgent } | undefined;
+      expect(entry?.agentInputs).toBeDefined();
+      return entry!.agentInputs!;
+    };
+
+    const childForA = await childOf('user-a');
+    const childForB = await childOf('user-b');
+
+    expect(cacheKey(childForA)).toEqual(expect.stringMatching(/^librechat:/));
+    expect(cacheKey(childForA)).not.toBe(cacheKey(childForB));
+  });
+
   it('gives one saved-team member a distinct cache key in each team occurrence', async () => {
     const member = makeAgent({ id: 'shared-member' });
     const writer = makeAgent({ id: 'writer' });
