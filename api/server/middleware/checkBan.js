@@ -18,7 +18,8 @@ const getBanCacheKey = (prefix, value, useRedis) => {
   if (!value) {
     return '';
   }
-  return useRedis ? `ban_cache:${prefix}:${value}` : value;
+  const key = String(value);
+  return useRedis ? `ban_cache:${prefix}:${key}` : key;
 };
 
 /** Returns whether this request starts or resumes an interactive agent chat turn. */
@@ -92,7 +93,11 @@ const checkBan = async (req, res, next = () => {}) => {
 
     if (!userId && req?.body?.email) {
       const user = await findUser({ email: req.body.email }, '_id');
-      userId = user?._id ? user._id.toString() : userId;
+      userId = user?._id ?? userId;
+    }
+
+    if (userId) {
+      userId = String(userId);
     }
 
     if (!userId && !req.ip) {
