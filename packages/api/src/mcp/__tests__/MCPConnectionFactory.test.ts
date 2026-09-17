@@ -731,7 +731,12 @@ describe('MCPConnectionFactory', () => {
           });
           mockMCPOAuthHandler.generateFlowId.mockReturnValue('legacy-flow');
           mockMCPOAuthHandler.generateTokenFlowId.mockReturnValue('versioned-flow');
-          mockFlowManager.getFlowState.mockResolvedValue({ status: 'COMPLETED' });
+          mockFlowManager.getFlowState.mockResolvedValue({
+            status: 'COMPLETED',
+            type: 'mcp_get_tokens',
+            metadata: {},
+            createdAt: Date.now(),
+          });
           await tokenLoadingFactory({}, enabled).invalidateTokenFlowsForTest();
           expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith('legacy-flow', 'mcp_get_tokens');
           expect(mockFlowManager.deleteFlow).toHaveBeenCalledWith(
