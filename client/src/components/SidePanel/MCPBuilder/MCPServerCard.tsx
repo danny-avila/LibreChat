@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { MCPIcon } from '@librechat/client';
+import { MCPIcon, TooltipAnchor } from '@librechat/client';
 import { PermissionBits, hasPermissions } from 'librechat-data-provider';
 import type { MCPServerStatusIconProps } from '~/components/MCP/MCPServerStatusIcon';
 import type { MCPServerDefinition } from '~/hooks';
@@ -125,7 +125,21 @@ export default function MCPServerCard({
         {/* Server Info */}
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium text-text-primary">{displayName}</div>
-          {description && <p className="truncate text-xs text-text-secondary">{description}</p>}
+          {description && (
+            <TooltipAnchor
+              description={description}
+              side="bottom"
+              role="note"
+              tabIndex={0}
+              className={cn(
+                'cursor-default text-xs text-text-secondary',
+                /** Wrap on touch-sized viewports, where no hover reveals the tooltip. */
+                'line-clamp-2 sm:line-clamp-none sm:truncate',
+              )}
+            >
+              {description}
+            </TooltipAnchor>
+          )}
         </div>
 
         {/* Actions */}
