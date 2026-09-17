@@ -91,6 +91,14 @@ export type OAIClientOptions = Omit<OpenAIClientOptions, 'verbosity'> & {
    */
   promptCacheDiscoveredToolNames?: string[];
   /**
+   * The subset of the above this conversation added to the request rather than
+   * reshaped in place. Those definitions are not part of the configured prefix
+   * at all, so they leave the identity entirely, while a configured definition
+   * whose `defer_loading` merely flipped is hashed in its configured form.
+   * Consumed by `createRun` and never sent.
+   */
+  promptCacheAppendedToolNames?: string[];
+  /**
    * Declares that this client talks to a first-party OpenAI or Azure surface, which is
    * what gates the agents SDK's model-specific request constraints (GPT-6
    * Astra: Responses-only tool calls, rejected sampling parameters,

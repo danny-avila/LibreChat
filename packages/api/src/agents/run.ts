@@ -427,6 +427,12 @@ type RunAgent = Omit<Agent, 'tools'> & {
   imageDetail?: ImageDetail;
   toolContextMap?: Record<string, unknown>;
   dynamicToolContextMap?: Record<string, unknown>;
+  /**
+   * The author's `additional_instructions`, captured before the host appended
+   * this run's memory, file and tool context to the same field. Stable, so it
+   * belongs in the prompt cache identity; the appended remainder does not.
+   */
+  configuredAdditionalInstructions?: string;
   toolRegistry?: LCToolRegistry;
   /** Serializable tool definitions for event-driven execution */
   toolDefinitions?: LCTool[];
@@ -1890,6 +1896,7 @@ function finalizePromptCacheKey(input: AgentInputs, handoffEdges?: readonly unkn
   delete options.promptCacheScopeId;
   delete options.promptCacheStableInstructions;
   delete options.promptCacheDiscoveredToolNames;
+  delete options.promptCacheAppendedToolNames;
 }
 
 /**
@@ -1973,7 +1980,12 @@ function buildIsolatedAgentInputs(
      */
     const childOptions = childInputs.clientOptions as Partial<t.OAIClientOptions> | undefined;
     if (childOptions != null) {
-      childOptions.promptCacheStableInstructions = skillInstructions;
+      childOptions.promptCacheStableInstructions = [
+        childOptions.promptCacheStableInstructions,
+        skillInstructions,
+      ]
+        .filter((value): value is string => typeof value === 'string' && value.length > 0)
+        .join('\n\n');
     }
   }
   if ((child.backgroundToolNames?.length ?? 0) > 0) {
@@ -2604,6 +2616,15 @@ export async function createRun({
     if (cacheOptions.promptCacheKeyEnabled === true && typeof user?.id === 'string') {
       cacheOptions.promptCacheScopeId = user.id;
     }
+    /**
+     * The stable half of the dynamic tail. `additional_instructions` reaches
+     * this point already joined with the run's memory, file and dynamic tool
+     * context, so the configured text is captured by the host before that
+     * append and hashed from here instead.
+     */
+    if (typeof agent.configuredAdditionalInstructions === 'string') {
+      cacheOptions.promptCacheStableInstructions = agent.configuredAdditionalInstructions;
+    }
 
     const joinInstructionMap = (map?: Record<string, unknown>) =>
       Object.values(map ?? {})
@@ -2662,6 +2683,8 @@ export async function createRun({
      * digest just as an appended definition would.
      */
     const discoveredDefinitionNames: string[] = [];
+    /** The subset this conversation added to the request rather than reshaped in place. */
+    const appendedDefinitionNames: string[] = [];
     if (!isSubagent && discoveredTools.size > 0 && agent.toolRegistry) {
       overrideDeferLoadingForDiscoveredTools(agent.toolRegistry, discoveredTools);
 
@@ -2677,6 +2700,7 @@ export async function createRun({
           continue;
         }
         toolDefinitions = [...toolDefinitions, toolDef];
+        appendedDefinitionNames.push(toolName);
       }
     } else if (isSubagent && agent.toolRegistry) {
       /**
@@ -2797,6 +2821,9 @@ export async function createRun({
     }
     if (discoveredDefinitionNames.length > 0) {
       cacheOptions.promptCacheDiscoveredToolNames = discoveredDefinitionNames;
+    }
+    if (appendedDefinitionNames.length > 0) {
+      cacheOptions.promptCacheAppendedToolNames = appendedDefinitionNames;
     }
     return agentInput;
   };

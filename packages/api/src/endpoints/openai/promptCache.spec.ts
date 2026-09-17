@@ -117,7 +117,7 @@ describe('buildPromptCacheKey', () => {
     );
   });
 
-  it('keeps definitions this conversation discovered out of the identity', () => {
+  it('keeps definitions this conversation added out of the identity', () => {
     const deferred = {
       name: 'deferred_search',
       description: 'Discovered through tool_search',
@@ -127,12 +127,26 @@ describe('buildPromptCacheKey', () => {
     expect(
       key({
         toolDefinitions: [searchTool, calculatorTool, deferred],
-        clientOptions: { promptCacheDiscoveredToolNames: ['deferred_search'] },
+        clientOptions: {
+          promptCacheDiscoveredToolNames: ['deferred_search'],
+          promptCacheAppendedToolNames: ['deferred_search'],
+        },
       }),
     ).toBe(key());
   });
 
-  it('ignores a discovered definition that was already bound', () => {
+  it('still keys on the schema of a configured tool this conversation discovered', () => {
+    const discovered = (parameters: unknown) => ({
+      toolDefinitions: [searchTool, { ...calculatorTool, parameters, defer_loading: false }],
+      clientOptions: { promptCacheDiscoveredToolNames: ['calculator'] },
+    });
+
+    expect(
+      key(discovered({ type: 'object', properties: { expression: { type: 'string' } } })),
+    ).not.toBe(key(discovered({ type: 'object', properties: { input: { type: 'string' } } })));
+  });
+
+  it('ignores the flag discovery flips on a definition that was already bound', () => {
     /** Discovery flips `defer_loading` on a definition the agent already sends. */
     expect(
       key({
