@@ -21,6 +21,26 @@ jest.mock('@librechat/agents', () => ({
     },
     responseFormat: 'content',
   },
+  SkillToolDefinition: {
+    name: 'skill',
+    description: `Invoke a skill from the user's library.
+
+CONSTRAINTS:
+- Do not invoke a skill that is already active in this conversation.
+- Skill names come from the catalog only. Do not guess names.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        intent: { type: 'string', description: 'intent' },
+        skillName: {
+          type: 'string',
+          description: 'Must match a name from the "Available Skills" section.',
+        },
+        args: { type: 'string', description: 'Optional freeform arguments string.' },
+      },
+      required: ['skillName'],
+    },
+  },
   BashExecutionToolDefinition: {
     name: 'bash_tool',
     description: 'bash',
@@ -60,6 +80,8 @@ import {
   FILE_AUTHORING_TOOL_NAMES,
   isFileAuthoringToolDefinition,
   isCodeSessionToolName,
+  isSkillToolAvailable,
+  getSkillToolDefinition,
 } from './tools';
 
 /** Portable ceiling for OpenAI-compatible tool description validators. */
@@ -342,6 +364,16 @@ describe('buildHistoricalToolNames', () => {
     ).toEqual(new Set(['read_file']));
   });
 
+  it('exposes the skill invocation tool on an authoring run with an empty catalog', () => {
+    expect(
+      buildHistoricalToolNames({
+        skillsAvailable: false,
+        skillFileAccessAvailable: false,
+        skillAuthoringAvailable: true,
+      }),
+    ).toEqual(new Set(['skill', 'read_file', 'create_file', 'edit_file']));
+  });
+
   it('normalizes Action names and their options', () => {
     expect(
       buildHistoricalToolNames({
@@ -427,6 +459,74 @@ describe('buildHistoricalToolNames', () => {
     expect(() =>
       buildRunToolSet({ toolDefinitions: [{ name: 'web' }] }, null, null, [message]),
     ).not.toThrow();
+  });
+});
+
+describe('isSkillToolAvailable', () => {
+  it('registers for a visible catalog, for an authoring run, and for neither', () => {
+    expect(isSkillToolAvailable({ modelInvocableSkillsAvailable: true })).toBe(true);
+    expect(isSkillToolAvailable({ skillAuthoringAvailable: true })).toBe(true);
+    expect(
+      isSkillToolAvailable({ modelInvocableSkillsAvailable: true, skillAuthoringAvailable: true }),
+    ).toBe(true);
+    expect(
+      isSkillToolAvailable({
+        modelInvocableSkillsAvailable: false,
+        skillAuthoringAvailable: false,
+      }),
+    ).toBe(false);
+    expect(isSkillToolAvailable({})).toBe(false);
+  });
+});
+
+describe('getSkillToolDefinition', () => {
+  function skillNameDescription(definition: LCTool): string {
+    const parameters = definition.parameters as
+      | { properties?: { skillName?: { description?: string } } }
+      | undefined;
+    return parameters?.properties?.skillName?.description ?? '';
+  }
+
+  it('keeps the catalog-only guidance when the run cannot author skills', () => {
+    const definition = getSkillToolDefinition(false);
+
+    expect(definition.name).toBe('skill');
+    expect(definition.description).toContain('Skill names come from the catalog only');
+    expect(skillNameDescription(definition)).toBe(
+      'Must match a name from the "Available Skills" section.',
+    );
+  });
+
+  it('accepts a skill authored during the run when the run can author skills', () => {
+    const definition = getSkillToolDefinition(true);
+
+    expect(definition.description).not.toContain('Skill names come from the catalog only');
+    expect(definition.description).toContain('a skill you created in this conversation');
+    expect(definition.description).toContain('Creating a skill does not load it');
+    expect(definition.description).toContain(
+      'Do not invoke a skill that is already active in this conversation.',
+    );
+    expect(skillNameDescription(definition)).toContain(
+      'the name of a skill you created in this conversation',
+    );
+  });
+
+  it('leaves the rest of the schema and the non-authoring definition untouched', () => {
+    const authoring = getSkillToolDefinition(true);
+    const parameters = authoring.parameters as {
+      type?: string;
+      required?: string[];
+      properties?: Record<string, { description?: string }>;
+    };
+
+    expect(parameters.type).toBe('object');
+    expect(parameters.required).toEqual(['skillName']);
+    expect(Object.keys(parameters.properties ?? {})).toEqual(['intent', 'skillName', 'args']);
+    expect(parameters.properties?.args?.description).toBe('Optional freeform arguments string.');
+    expect(skillNameDescription(getSkillToolDefinition(false))).toBe(
+      'Must match a name from the "Available Skills" section.',
+    );
+    expect(getSkillToolDefinition(true)).toBe(authoring);
   });
 });
 

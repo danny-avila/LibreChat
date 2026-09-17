@@ -1,13 +1,17 @@
 import yaml from 'js-yaml';
 import { Types } from 'mongoose';
 import { GraphEvents, Constants, ToolEndHandler } from '@librechat/agents';
-import { logger, normalizeSkillFrontmatterKeys } from '@librechat/data-schemas';
 import {
   AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_DEFAULT,
   hasActivePiiFields,
   hasActivePiiPatterns,
   hasToolCallErrorPrefix,
 } from 'librechat-data-provider';
+import {
+  logger,
+  normalizeSkillFrontmatterKeys,
+  deriveStructuredFrontmatterFields,
+} from '@librechat/data-schemas';
 import type {
   LCTool,
   FileRefs,
@@ -3061,6 +3065,23 @@ function isSkillAuthoringAvailable(mergedConfigurable: Record<string, unknown>):
   return mergedConfigurable.skillAuthoringAvailable === true;
 }
 
+/**
+ * Tells the model that the skill it just created is a legal `skill` target.
+ * Creation neither loads nor activates the skill, so the run has no other
+ * signal that the name became invocable. Only reachable on runs that can
+ * author skills, which are exactly the runs where the `skill` tool is
+ * registered (see `isSkillToolAvailable`).
+ *
+ * Suppressed for `disable-model-invocation: true`, which
+ * `handleSkillToolCall` rejects — advertising it would send the model into a
+ * guaranteed error.
+ */
+function authoredSkillInvocationHint(frontmatter: Record<string, unknown> | undefined): string {
+  return deriveStructuredFrontmatterFields(frontmatter).disableModelInvocation === true
+    ? ''
+    : ' Invoke it with the skill tool when you want its instructions loaded.';
+}
+
 function getFileAuthoringToolNames(
   mergedConfigurable: Record<string, unknown>,
 ): Set<string> | undefined {
@@ -3630,9 +3651,10 @@ async function writeSkillMd({
     }
     rememberAuthoredSkill([mergedConfigurable, sourceConfigurable], result.skill);
     const surfacedWarnings = surfaceSkillAuthoringWarnings(result.warnings);
+    const invocationHint = authoredSkillInvocationHint(structured.frontmatter);
     return successResult(
       tc,
-      `Created ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} (${content.length} chars).${surfacedWarnings?.contentSuffix ?? ''}`,
+      `Created ${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD} (${content.length} chars).${surfacedWarnings?.contentSuffix ?? ''}${invocationHint}`,
       {
         path: `${SKILL_FILE_PREFIX}${skillName}/${SKILL_MD}`,
         bytes_written: Buffer.byteLength(content, 'utf8'),
