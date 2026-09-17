@@ -103,10 +103,15 @@ export function RetryableError({
       {onRetry && (
         <div className="flex flex-col items-center gap-2">
           <Button
-            onClick={retryManually}
+            onClick={() => {
+              if (!isRetrying) {
+                retryManually();
+              }
+            }}
             size="sm"
-            disabled={isRetrying}
-            className="min-w-[8rem]"
+            aria-disabled={isRetrying || undefined}
+            aria-busy={isRetrying}
+            className={cn('min-w-[8rem]', isRetrying && 'opacity-50')}
             aria-describedby={detail ? detailId : undefined}
           >
             {isRetrying ? (
