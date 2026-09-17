@@ -243,8 +243,6 @@ export type TFile = {
   height?: number;
   expiresAt?: string | Date;
   preview?: string;
-  /** Share-safe marker for a parsed document whose durable preview is extracted text. */
-  hasTextPreview?: boolean;
   text?: string;
   /**
    * Format of the `text` field. `'html'` means the backend produced
