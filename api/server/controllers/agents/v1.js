@@ -1874,13 +1874,18 @@ const getListAgentsHandler = async (req, res) => {
           agent.isPublic = true;
         }
         agent.isEditable = editableSet == null || editableSet.has(agent?._id?.toString());
+        const cachedAvatar = agent?.id && urlCache?.[agent.id];
+        /*
+         * A signed URL is valid only for the filepath it was generated from.
+         * Legacy cache values are strings without that binding, so ignore them.
+         */
         if (
-          urlCache &&
-          agent?.id &&
+          cachedAvatar?.filepath &&
+          cachedAvatar?.url &&
           agent?.avatar?.source === FileSources.s3 &&
-          urlCache[agent.id]
+          cachedAvatar.filepath === agent.avatar.filepath
         ) {
-          agent.avatar = { ...agent.avatar, filepath: urlCache[agent.id] };
+          agent.avatar = { ...agent.avatar, filepath: cachedAvatar.url };
         }
       } catch (err) {
         logger.warn('[/Agents] Error mapping agent %s for list response: %o', agent?.id, err);

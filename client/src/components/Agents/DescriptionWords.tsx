@@ -58,15 +58,32 @@ export default function DescriptionWords({ text, source, phase }: DescriptionWor
 
   useLayoutEffect(() => {
     const spans = spansRef.current;
+    const clearStyles = () => {
+      for (const span of spans) {
+        if (span != null) {
+          span.style.cssText = '';
+        }
+      }
+    };
+    const cleanup = () => {
+      window.clearTimeout(settleRef.current);
+      settleRef.current = undefined;
+      clearStyles();
+    };
     /* One run per phase, so new copy landing under an open dialog is text at
        rest rather than a second morph. A phase that comes back — a reopen
        interrupting a close — does run again: the words are on their way back to
        the card's wrapping and have to turn around, not stay there. */
     if (spans.length === 0 || animatedPhaseRef.current === phase) {
+      /* The previous effect's cleanup runs before this same-phase guard. Clear
+         again here so reused spans cannot retain compositor hints when copy
+         changed during the phase. Clearing keeps refreshed text at rest instead
+         of visibly replaying an opening morph for the new copy. */
+      cleanup();
       return;
     }
     animatedPhaseRef.current = phase;
-    window.clearTimeout(settleRef.current);
+    cleanup();
 
     const paragraph = source();
     const sourceBoxes = paragraph == null ? null : measureWords(paragraph, tokens);
@@ -104,7 +121,7 @@ export default function DescriptionWords({ text, source, phase }: DescriptionWor
           span.style.opacity = '0';
         }
       }
-      return;
+      return cleanup;
     }
 
     for (let index = 0; index < spans.length; index++) {
@@ -142,14 +159,11 @@ export default function DescriptionWords({ text, source, phase }: DescriptionWor
     }
     /* Layer promotion is worth it for the flight and a liability at rest. */
     settleRef.current = window.setTimeout(() => {
-      for (const span of spans) {
-        if (span != null) {
-          span.style.cssText = '';
-        }
-      }
+      clearStyles();
+      settleRef.current = undefined;
     }, WORD_SETTLE_MS);
 
-    return () => window.clearTimeout(settleRef.current);
+    return cleanup;
   }, [phase, source, tokens]);
 
   return (

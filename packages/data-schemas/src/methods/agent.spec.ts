@@ -5956,6 +5956,106 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
       expect(result.data.map((a) => a.id)).toEqual([agentAlice.id, agentBob.id, agentOrphan.id]);
       expect(result.data).toHaveLength(3);
     });
+    test('tolerates non-string support contact values while sorting and paging', async () => {
+      const owner = await User.create({
+        _id: new mongoose.Types.ObjectId(),
+        name: 'Alpha Owner',
+        email: `alpha-owner-${uuidv4()}@example.com`,
+        provider: 'local',
+      });
+      const malformed = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Malformed Contact',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: owner._id,
+        support_contact: { name: 42, email: { imported: true } },
+      });
+      const supported = await createAgent({
+        id: `agent_${uuidv4().slice(0, 12)}`,
+        name: 'Supported Contact',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId(),
+        support_contact: { name: 'Zulu Support', email: '' },
+      });
+
+      const page1 = await getListAgentsByAccess({
+        accessibleIds: [malformed._id, supported._id] as mongoose.Types.ObjectId[],
+        otherParams: {},
+        sort: 'author',
+        limit: 1,
+      });
+      const page2 = await getListAgentsByAccess({
+        accessibleIds: [malformed._id, supported._id] as mongoose.Types.ObjectId[],
+        otherParams: {},
+        sort: 'author',
+        limit: 1,
+        after: page1.after,
+      });
+
+      expect(page1.data.map((agent) => agent.id)).toEqual([malformed.id]);
+      expect(page2.data.map((agent) => agent.id)).toEqual([supported.id]);
+    });
+
+    test('does not resolve an owner user from another tenant during author sorting', async () => {
+      const tenantA = `tenant-a-${uuidv4().slice(0, 8)}`;
+      const tenantB = `tenant-b-${uuidv4().slice(0, 8)}`;
+      const crossTenantOwnerId = new mongoose.Types.ObjectId();
+      const crossTenantOwner = await tenantStorage.run({ tenantId: tenantB }, () =>
+        User.create({
+          _id: crossTenantOwnerId,
+          name: 'Aaa Cross Tenant Owner',
+          email: `cross-tenant-${uuidv4()}@example.com`,
+          provider: 'local',
+        }),
+      );
+      const agent = await tenantStorage.run({ tenantId: tenantA }, () =>
+        createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: 'Cross Tenant Owner Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: crossTenantOwner._id,
+        }),
+      );
+      await tenantStorage.run({ tenantId: tenantA }, () =>
+        AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalModel: PrincipalModel.USER,
+          principalId: crossTenantOwner._id,
+          resourceType: ResourceType.AGENT,
+          resourceId: agent._id,
+          permBits:
+            PermissionBits.VIEW |
+            PermissionBits.EDIT |
+            PermissionBits.DELETE |
+            PermissionBits.SHARE,
+          grantedBy: crossTenantOwner._id,
+        }),
+      );
+      const anchor = await tenantStorage.run({ tenantId: tenantA }, () =>
+        createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: 'Tenant Anchor Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: new mongoose.Types.ObjectId(),
+          support_contact: { name: 'Mmm Tenant Anchor', email: '' },
+        }),
+      );
+
+      const result = await tenantStorage.run({ tenantId: tenantA }, () =>
+        getListAgentsByAccess({
+          accessibleIds: [agent._id, anchor._id] as mongoose.Types.ObjectId[],
+          otherParams: {},
+          sort: 'author',
+        }),
+      );
+
+      expect(result.data.map((row) => row.id)).toEqual([anchor.id, agent.id]);
+      expect(result.data[1]).not.toHaveProperty('owner_contact');
+    });
 
     test('trims support contact values before author sorting', async () => {
       const padded = await createAgent({
