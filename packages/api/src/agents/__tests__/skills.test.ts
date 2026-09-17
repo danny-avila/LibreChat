@@ -1458,13 +1458,20 @@ describe('injectSkillCatalog', () => {
     expect(catalogOnlyDef?.description).toContain('Skill names come from the catalog only');
   });
 
-  it('does not duplicate a skill definition that is already registered', async () => {
+  it('replaces an already-registered skill definition instead of leaving it stale', async () => {
+    /**
+     * Counting occurrences is not enough: a surviving catalog-only definition
+     * tells an authoring run's model that a name it just created is invalid,
+     * which is the failure this registration exists to prevent. Assert the
+     * definition that survives, and assert the registry the host handler
+     * resolves agrees with the array the model reads.
+     */
     const owned = makeSkill('owned-skill', userObjectId);
     type ToolRegistryArg = NonNullable<Parameters<typeof injectSkillCatalog>[0]['toolRegistry']>;
     type ToolDef = Parameters<ToolRegistryArg['set']>[1];
     const preSkill: ToolDef = {
       name: 'skill',
-      description: 'pre',
+      description: 'pre-registered catalog-only definition',
       parameters: { type: 'object', properties: {} },
     };
     const preRegistry = new Map<string, ToolDef>() as unknown as ToolRegistryArg;
@@ -1479,8 +1486,39 @@ describe('injectSkillCatalog', () => {
       }),
     );
 
-    const names = (result.toolDefinitions ?? []).map((d) => d.name);
-    expect(names.filter((n) => n === 'skill')).toHaveLength(1);
+    const skillDefs = (result.toolDefinitions ?? []).filter((d) => d.name === 'skill');
+    expect(skillDefs).toHaveLength(1);
+    expect(skillDefs[0].description).not.toBe(preSkill.description);
+    expect(skillDefs[0].description).toContain('a skill you created in this conversation');
+    expect((preRegistry as unknown as Map<string, ToolDef>).get('skill')).toBe(skillDefs[0]);
+  });
+
+  it('keeps the non-authoring variant live when it replaces a stale definition', async () => {
+    /* Same replacement on a run that cannot author: the model must end up with
+       the SDK definition, never a leftover from an earlier registration. */
+    const owned = makeSkill('owned-skill', userObjectId);
+    type ToolRegistryArg = NonNullable<Parameters<typeof injectSkillCatalog>[0]['toolRegistry']>;
+    type ToolDef = Parameters<ToolRegistryArg['set']>[1];
+    const preSkill: ToolDef = {
+      name: 'skill',
+      description: 'stale definition from an earlier registration',
+      parameters: { type: 'object', properties: {} },
+    };
+    const preRegistry = new Map<string, ToolDef>() as unknown as ToolRegistryArg;
+    preRegistry.set('skill', preSkill);
+
+    const result = await injectSkillCatalog(
+      baseParams({
+        listSkillsByAccess: buildPager([[owned]]),
+        toolRegistry: preRegistry,
+        toolDefinitions: [preSkill],
+      }),
+    );
+
+    const skillDefs = (result.toolDefinitions ?? []).filter((d) => d.name === 'skill');
+    expect(skillDefs).toHaveLength(1);
+    expect(skillDefs[0].description).toContain('Skill names come from the catalog only');
+    expect((preRegistry as unknown as Map<string, ToolDef>).get('skill')).toBe(skillDefs[0]);
   });
 });
 
