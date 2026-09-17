@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { MAX_MCP_OAUTH_PERSISTENCE_WAIT_MS } from 'librechat-data-provider';
 import { randomUUID } from 'crypto';
 import { logger, encryptV2, decryptV2, getTenantId } from '@librechat/data-schemas';
 import type {
@@ -305,6 +306,11 @@ export class MCPTokenStorage {
     return Math.min(configured, this.MAX_REFRESH_FLIGHT_WAIT_MS);
   }
 
+  private static resolvePersistenceWaitMs(configured?: number): number {
+    if (configured == null || !Number.isFinite(configured) || configured <= 0) return 15_000;
+    return Math.min(configured, MAX_MCP_OAUTH_PERSISTENCE_WAIT_MS);
+  }
+
   static getLogPrefix(userId: string, serverName: string): string {
     return isSystemUserId(userId)
       ? `[MCP][${serverName}]`
@@ -497,7 +503,7 @@ export class MCPTokenStorage {
     const lease = params.flowManager
       ? await params.flowManager.acquireLease(
           getMCPOAuthLeaseId(params.userId, params.serverName),
-          { waitMs: params.persistenceWaitTimeoutMs },
+          { waitMs: this.resolvePersistenceWaitMs(params.persistenceWaitTimeoutMs) },
         )
       : undefined;
     if (params.flowManager && !lease) {
@@ -992,9 +998,13 @@ export class MCPTokenStorage {
       userId,
       serverName,
       singleFlightScope ?? '',
-      params.rejectedCredentialSetId === undefined
-        ? ['unknown']
-        : ['known', params.rejectedCredentialSetId],
+      ...(params.coordinateRefresh === true
+        ? [
+            params.rejectedCredentialSetId === undefined
+              ? ['unknown']
+              : ['known', params.rejectedCredentialSetId],
+          ]
+        : []),
     ]);
     const inflight = this.inflightRefreshes.get(refreshKey);
     if (inflight) {
@@ -1065,7 +1075,7 @@ export class MCPTokenStorage {
       try {
         if (flight?.adoptedTokens) {
           const adoptionLease = await flowManager!.acquireLease(leaseId, {
-            waitMs: params.persistenceWaitTimeoutMs,
+            waitMs: this.resolvePersistenceWaitMs(params.persistenceWaitTimeoutMs),
           });
           if (!adoptionLease) {
             throw new MCPTokenStorageUnavailableError(

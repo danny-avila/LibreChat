@@ -276,7 +276,14 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
       const budgetMs = 2_000;
       const startedAt = Date.now();
       const discovery = ProviderRefreshFactory.discoverTools(
-        { serverName: 'test-srv', serverConfig: { type: 'streamable-http', url: server.url } },
+        {
+          serverName: 'test-srv',
+          serverConfig: {
+            type: 'streamable-http',
+            url: server.url,
+            oauthRefreshCoordination: true,
+          },
+        },
         {
           useOAuth: true,
           user: { id: 'u1' } as IUser,
@@ -384,7 +391,14 @@ describe('MCP OAuth Token Expiry Scenarios', () => {
       >,
     ) =>
       new TokenLoadingFactory(
-        { serverName: 'test-srv', serverConfig: { type: 'streamable-http', url: server.url } },
+        {
+          serverName: 'test-srv',
+          serverConfig: {
+            type: 'streamable-http',
+            url: server.url,
+            oauthRefreshCoordination: true,
+          },
+        },
         {
           useOAuth: true,
           user: { id: 'u1' } as IUser,

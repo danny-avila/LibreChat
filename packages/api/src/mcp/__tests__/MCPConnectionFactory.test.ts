@@ -84,8 +84,10 @@ class InspectableMCPConnectionFactory extends MCPConnectionFactory {
     return await this.getOAuthTokens();
   }
 
-  public async attemptSilentTokenRefreshForTest(): Promise<MCPOAuthTokens | null> {
-    return await this.attemptSilentTokenRefresh();
+  public async attemptSilentTokenRefreshForTest(
+    rejected?: string | null,
+  ): Promise<MCPOAuthTokens | null> {
+    return await this.attemptSilentTokenRefresh(rejected);
   }
 
   public bindRequestRecoveryForTest(connection: MCPConnection): () => void {
@@ -530,7 +532,9 @@ describe('MCPConnectionFactory', () => {
 
     it('should tenant-scope mcp_get_tokens flow locks', async () => {
       mockTenantStorage.getStore.mockReturnValueOnce({ tenantId: 'tenant-a' });
-      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      mockMCPOAuthHandler.generateFlowId.mockImplementation((_user, _server, tenant) =>
+        tenant ? `tenant:${tenant}:flow123` : 'flow123',
+      );
 
       const basicOptions = {
         serverName: 'test-server',
@@ -597,9 +601,13 @@ describe('MCPConnectionFactory', () => {
           | 'onOAuthCredentialsInvalidated'
           | 'onOAuthCredentialsChanged'
         > = {},
+        oauthRefreshCoordination?: boolean,
       ) =>
         new InspectableMCPConnectionFactory(
-          { serverName: 'test-server', serverConfig: mockServerConfig },
+          {
+            serverName: 'test-server',
+            serverConfig: { ...mockServerConfig, oauthRefreshCoordination },
+          },
           {
             useOAuth: true,
             user: mockUser,
@@ -613,6 +621,26 @@ describe('MCPConnectionFactory', () => {
             ...hooks,
           },
         );
+
+      it.each([undefined, false, true])(
+        'switches token protocol only when coordination is enabled (%s)',
+        async (enabled) => {
+          mockProcessMCPEnv.mockReturnValue({
+            ...mockServerConfig,
+            oauthRefreshCoordination: enabled,
+          });
+          mockMCPOAuthHandler.generateFlowId.mockReturnValue('legacy-token-flow');
+          mockMCPOAuthHandler.generateTokenFlowId.mockReturnValue('versioned-token-flow');
+          mockFlowManager.createFlowWithHandler.mockResolvedValue(null);
+          await tokenLoadingFactory({}, enabled).getOAuthTokensForTest();
+          expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledWith(
+            enabled ? 'versioned-token-flow' : 'legacy-token-flow',
+            'mcp_get_tokens',
+            expect.any(Function),
+            undefined,
+          );
+        },
+      );
 
       it('re-reads stored tokens after the flow it waited on is invalidated by a credential change', async () => {
         const storedTokens: MCPOAuthTokens = {
@@ -2515,64 +2543,70 @@ describe('MCPConnectionFactory', () => {
       expect(mockConnectionInstance.setOAuthTokens).toHaveBeenCalledWith(refreshedTokens);
     });
 
-    it('does not coalesce silent refreshes across different server bindings', async () => {
-      const makeConfig = (url: string): t.SSEOptions => ({
-        type: 'sse',
-        url,
-        initTimeout: 15000,
-      });
-      const tokenMethods = {
-        findToken: jest.fn(),
-        createToken: jest.fn(),
-        updateToken: jest.fn(),
-        deleteTokens: jest.fn(),
-      };
-      mockProcessMCPEnv.mockImplementation(({ options }) => options as t.MCPOptions);
+    it.each([false, true])(
+      'coalesces legacy identities only within the same binding (different: %s)',
+      async (different) => {
+        const makeConfig = (url: string): t.SSEOptions => ({
+          type: 'sse',
+          url,
+          initTimeout: 15000,
+        });
+        const tokenMethods = {
+          findToken: jest.fn(),
+          createToken: jest.fn(),
+          updateToken: jest.fn(),
+          deleteTokens: jest.fn(),
+        };
+        mockProcessMCPEnv.mockImplementation(({ options }) => options as t.MCPOptions);
 
-      const factoryA = new InspectableMCPConnectionFactory(
-        { serverName: 'test-server', serverConfig: makeConfig('https://server-a.example.com/mcp') },
-        { useOAuth: true, user: mockUser, flowManager: mockFlowManager, tokenMethods },
-      );
-      const factoryB = new InspectableMCPConnectionFactory(
-        { serverName: 'test-server', serverConfig: makeConfig('https://server-b.example.com/mcp') },
-        { useOAuth: true, user: mockUser, flowManager: mockFlowManager, tokenMethods },
-      );
+        const factoryA = new InspectableMCPConnectionFactory(
+          {
+            serverName: 'test-server',
+            serverConfig: makeConfig('https://server-a.example.com/mcp'),
+          },
+          { useOAuth: true, user: mockUser, flowManager: mockFlowManager, tokenMethods },
+        );
+        const factoryB = new InspectableMCPConnectionFactory(
+          {
+            serverName: 'test-server',
+            serverConfig: makeConfig(
+              different ? 'https://server-b.example.com/mcp' : 'https://server-a.example.com/mcp',
+            ),
+          },
+          { useOAuth: true, user: mockUser, flowManager: mockFlowManager, tokenMethods },
+        );
 
-      const resolutions: Array<(tokens: MCPOAuthTokens) => void> = [];
-      mockMCPTokenStorage.forceRefreshTokens.mockImplementation(
-        () =>
-          new Promise<MCPOAuthTokens>((resolve) => {
-            resolutions.push(resolve);
-          }),
-      );
+        const resolutions: Array<(tokens: MCPOAuthTokens) => void> = [];
+        mockMCPTokenStorage.forceRefreshTokens.mockImplementation(
+          () =>
+            new Promise<MCPOAuthTokens>((resolve) => {
+              resolutions.push(resolve);
+            }),
+        );
 
-      const attemptA = factoryA.attemptSilentTokenRefreshForTest();
-      await Promise.resolve();
-      const attemptB = factoryB.attemptSilentTokenRefreshForTest();
-      await Promise.resolve();
+        const attemptA = factoryA.attemptSilentTokenRefreshForTest();
+        await Promise.resolve();
+        const attemptB = factoryB.attemptSilentTokenRefreshForTest(null);
+        await Promise.resolve();
 
-      expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledTimes(2);
-      const scopeA = mockMCPTokenStorage.forceRefreshTokens.mock.calls[0][0].singleFlightScope;
-      const scopeB = mockMCPTokenStorage.forceRefreshTokens.mock.calls[1][0].singleFlightScope;
-      expect(scopeA).toEqual(expect.any(String));
-      expect(scopeB).toEqual(expect.any(String));
-      expect(scopeA).not.toBe(scopeB);
-      const tokensA: MCPOAuthTokens = {
-        access_token: 'server-a-token',
-        token_type: 'Bearer',
-        obtained_at: Date.now(),
-      };
-      const tokensB: MCPOAuthTokens = {
-        access_token: 'server-b-token',
-        token_type: 'Bearer',
-        obtained_at: Date.now(),
-      };
-      resolutions[0](tokensA);
-      resolutions[1](tokensB);
+        expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledTimes(different ? 2 : 1);
+        const tokensA: MCPOAuthTokens = {
+          access_token: 'server-a-token',
+          token_type: 'Bearer',
+          obtained_at: Date.now(),
+        };
+        const tokensB: MCPOAuthTokens = {
+          access_token: 'server-b-token',
+          token_type: 'Bearer',
+          obtained_at: Date.now(),
+        };
+        resolutions[0](tokensA);
+        resolutions[1]?.(tokensB);
 
-      await expect(attemptA).resolves.toEqual(tokensA);
-      await expect(attemptB).resolves.toEqual(tokensB);
-    });
+        await expect(attemptA).resolves.toEqual(tokensA);
+        await expect(attemptB).resolves.toEqual(different ? tokensB : tokensA);
+      },
+    );
 
     it('should keep the in-flight silent-refresh lock until the aborted refresh settles', async () => {
       // A timed-out caller should fall back to interactive OAuth immediately,
@@ -3833,7 +3867,9 @@ describe('MCPConnectionFactory', () => {
 
       (getTenantId as jest.Mock).mockReturnValue('tenant-a');
       mockProcessMCPEnv.mockReturnValue(sseConfig);
-      mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+      mockMCPOAuthHandler.generateFlowId.mockImplementation((_user, _server, tenant) =>
+        tenant ? `tenant:${tenant}:flow123` : 'flow123',
+      );
       // Mirror the real storage contract: `onRefreshSuccess` runs inside the
       // shared redemption after the rotated tokens are persisted.
       mockMCPTokenStorage.forceRefreshTokens.mockImplementationOnce(async (params) => {

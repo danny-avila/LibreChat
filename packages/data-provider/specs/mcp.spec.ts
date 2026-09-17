@@ -858,11 +858,14 @@ describe('OAuth coordination rollout configuration', () => {
         .oauthRefreshCoordination,
     ).toBe(true);
   });
-  it.each([0, -1, 1.5])('rejects an invalid persistence wait %s', (oauthPersistenceWaitTimeout) => {
-    expect(MCPOptionsSchema.safeParse({ ...server, oauthPersistenceWaitTimeout }).success).toBe(
-      false,
-    );
-  });
+  it.each([0, -1, 1.5, 840001])(
+    'rejects an invalid persistence wait %s',
+    (oauthPersistenceWaitTimeout) => {
+      expect(MCPOptionsSchema.safeParse({ ...server, oauthPersistenceWaitTimeout }).success).toBe(
+        false,
+      );
+    },
+  );
   it('accepts a longer publication wait and keeps coordination admin-managed', () => {
     expect(
       MCPOptionsSchema.parse({ ...server, oauthPersistenceWaitTimeout: 90000 })

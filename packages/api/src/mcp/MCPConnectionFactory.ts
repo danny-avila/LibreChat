@@ -907,6 +907,9 @@ export class MCPConnectionFactory {
   }
 
   private getTokenFlowId(): string {
+    // Before activation, keep joining legacy readers: splitting their flow would permit duplicate
+    // redemption while some replicas still cannot take the coordination lease.
+    if (this.serverConfig.oauthRefreshCoordination !== true) return this.getBaseFlowId();
     return MCPOAuthHandler.generateTokenFlowId(this.userId!, this.serverName, this.tenantId);
   }
 
@@ -1137,7 +1140,9 @@ export class MCPConnectionFactory {
       this.userId ?? '',
       this.serverName,
       bindingDigest,
-      rejectedCredentialSetId === undefined ? ['unknown'] : ['known', rejectedCredentialSetId],
+      ...(this.serverConfig.oauthRefreshCoordination === true
+        ? [rejectedCredentialSetId === undefined ? ['unknown'] : ['known', rejectedCredentialSetId]]
+        : []),
     ]);
     const inflight = MCPConnectionFactory.inflightSilentRefreshes.get(lockKey);
     if (inflight) {

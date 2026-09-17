@@ -2317,6 +2317,37 @@ describe('MCPTokenStorage', () => {
         },
       );
 
+      it('coalesces different request identities while coordination is disabled', async () => {
+        const serverName = 'legacy-local-coalescing';
+        await seedRefreshableTokens(serverName);
+        let finish!: (tokens: MCPOAuthTokens) => void;
+        const refreshTokens = jest.fn(
+          () =>
+            new Promise<MCPOAuthTokens>((resolve) => {
+              finish = resolve;
+            }),
+        );
+        const params = {
+          ...refreshParams(refreshTokens, serverName),
+          coordinateRefresh: false,
+          flowManager: flightManager(async () => true),
+        };
+        const first = MCPTokenStorage.forceRefreshTokens(params);
+        await waitFor(() => refreshTokens.mock.calls.length === 1);
+        const second = MCPTokenStorage.forceRefreshTokens({
+          ...params,
+          rejectedCredentialSetId: credentialSetId,
+        });
+        const unauthenticated = MCPTokenStorage.forceRefreshTokens({
+          ...params,
+          rejectedCredentialSetId: null,
+        });
+        finish(rotatedTokens(2));
+        const results = await Promise.all([first, second, unauthenticated]);
+        expect(results.map((tokens) => tokens?.access_token)).toEqual(['at-2', 'at-2', 'at-2']);
+        expect(refreshTokens).toHaveBeenCalledTimes(1);
+      });
+
       it('holds a flight distinct from the teardown lease and releases it after redeeming', async () => {
         await seedRefreshableTokens('flight-srv');
         const refreshTokens = jest.fn().mockResolvedValue(rotatedTokens(2));
@@ -2440,53 +2471,60 @@ describe('MCPTokenStorage', () => {
         expect(refreshTokens).not.toHaveBeenCalled();
       });
 
-      it('keeps interactive callback writes behind adopted-token publication', async () => {
-        const serverName = 'callback-adoption-fence';
-        await seedRefreshableTokens(serverName);
-        await peerRotates(serverName, 3);
-        const flowManager = new FlowStateManager(new Keyv(), { ttl: 30000, ci: true });
-        let finishAdoption!: () => void;
-        const publication = new Promise<void>((resolve) => {
-          finishAdoption = resolve;
-        });
-        const onTokensAdopted = jest.fn(async () => publication);
-        const adopted = MCPTokenStorage.forceRefreshTokens({
-          ...refreshParams(jest.fn(), serverName),
-          flowManager,
-          rejectedCredentialSetId: 'before-peer-generation',
-          onTokensAdopted,
-        });
-        await waitFor(() => onTokensAdopted.mock.calls.length === 1);
-        const onStoreCommitted = jest.fn();
-        const acquireSpy = jest.spyOn(flowManager, 'acquireLease');
-        const callback = MCPTokenStorage.storeTokens({
-          ...refreshParams(jest.fn(), serverName),
-          flowManager,
-          persistenceWaitTimeoutMs: 60000,
-          tokens: rotatedTokens(4),
-          clientInfo: { client_id: 'cid', client_secret: 'secret' },
-          metadata: storedBindingMetadata,
-          onStoreCommitted,
-        });
-        await new Promise((resolve) => setTimeout(resolve, 25));
-        expect(onStoreCommitted).not.toHaveBeenCalled();
-        expect(acquireSpy).toHaveBeenCalledWith(getMCPOAuthLeaseId('u1', serverName), {
-          waitMs: 60000,
-        });
-        expect(
-          await MCPTokenStorage.isCurrentAccessToken({
-            userId: 'u1',
-            serverName,
-            findToken: store.findToken,
-            accessToken: 'at-3',
-            credentialSetId,
-          }),
-        ).toBe(true);
-        finishAdoption();
-        await expect(adopted).resolves.toMatchObject({ access_token: 'at-3' });
-        await expect(callback).resolves.toMatchObject({ access_token: 'at-4' });
-        expect(onStoreCommitted).toHaveBeenCalledTimes(1);
-      });
+      it.each([60000, 1e9])(
+        'fences callback publication with a bounded persistence wait (%s)',
+        async (waitMs) => {
+          const serverName = 'callback-adoption-fence';
+          await seedRefreshableTokens(serverName);
+          await peerRotates(serverName, 3);
+          const flowManager = new FlowStateManager(new Keyv(), { ttl: 30000, ci: true });
+          let finishAdoption!: () => void;
+          const publication = new Promise<void>((resolve) => {
+            finishAdoption = resolve;
+          });
+          const onTokensAdopted = jest.fn(async () => publication);
+          const adopted = MCPTokenStorage.forceRefreshTokens({
+            ...refreshParams(jest.fn(), serverName),
+            flowManager,
+            rejectedCredentialSetId: 'before-peer-generation',
+            onTokensAdopted,
+          });
+          await waitFor(() => onTokensAdopted.mock.calls.length === 1);
+          const onStoreCommitted = jest.fn();
+          const acquireSpy = jest.spyOn(flowManager, 'acquireLease');
+          const callback = MCPTokenStorage.storeTokens({
+            ...refreshParams(jest.fn(), serverName),
+            flowManager,
+            persistenceWaitTimeoutMs: waitMs,
+            tokens: rotatedTokens(4),
+            clientInfo: { client_id: 'cid', client_secret: 'secret' },
+            metadata: storedBindingMetadata,
+            onStoreCommitted,
+          });
+          try {
+            await new Promise((resolve) => setTimeout(resolve, 25));
+            expect(onStoreCommitted).not.toHaveBeenCalled();
+            expect(acquireSpy).toHaveBeenCalledWith(getMCPOAuthLeaseId('u1', serverName), {
+              waitMs: Math.min(waitMs, 840000),
+            });
+            expect(
+              await MCPTokenStorage.isCurrentAccessToken({
+                userId: 'u1',
+                serverName,
+                findToken: store.findToken,
+                accessToken: 'at-3',
+                credentialSetId,
+              }),
+            ).toBe(true);
+          } finally {
+            finishAdoption();
+            await Promise.allSettled([adopted, callback]);
+          }
+          await expect(adopted).resolves.toMatchObject({ access_token: 'at-3' });
+          await expect(callback).resolves.toMatchObject({ access_token: 'at-4' });
+          expect(onStoreCommitted).toHaveBeenCalledTimes(1);
+        },
+      );
 
       it('still redeems when the credential is unchanged after waiting for the flight', async () => {
         await seedRefreshableTokens('unchanged-srv');

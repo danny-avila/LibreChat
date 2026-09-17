@@ -9,6 +9,9 @@ import { extractEnvVariable } from './utils';
  */
 export const MAX_MCP_ICON_PATH_LENGTH = 256 * 1024;
 
+/** Keep persistence admission waits below the shared lease's 15-minute lifetime. */
+export const MAX_MCP_OAUTH_PERSISTENCE_WAIT_MS = 14 * 60_000;
+
 const validateOAuthClientCredentials = (
   oauth: {
     client_id?: string;
@@ -221,8 +224,13 @@ const BaseOptionsSchema = z.object({
   oauthRefreshWaitTimeout: z.number().int().positive().optional(),
   /** Enable only after every replica has upgraded to the coordinated OAuth writer protocol. Default: false. */
   oauthRefreshCoordination: z.boolean().optional(),
-  /** Wait (ms) for callback/adoption persistence and publication. Default: 15_000. */
-  oauthPersistenceWaitTimeout: z.number().int().positive().optional(),
+  /** Wait (ms) for callback/adoption persistence and publication. Default: 15_000; maximum: 840_000. */
+  oauthPersistenceWaitTimeout: z
+    .number()
+    .int()
+    .positive()
+    .max(MAX_MCP_OAUTH_PERSISTENCE_WAIT_MS)
+    .optional(),
   /**
    * Whether the server is offered in chat.
    *
