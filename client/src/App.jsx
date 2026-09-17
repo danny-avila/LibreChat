@@ -106,9 +106,7 @@ export default () => (
       allow="autoplay"
       id="audio"
       title="audio-silence"
-      style={{
-        display: 'none',
-      }}
+      className="hidden"
     />
   </ScreenshotProvider>
 );
