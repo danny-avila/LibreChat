@@ -536,8 +536,7 @@ describe('refreshListAvatars', () => {
     let setCalls = 0;
     const firstSetGate = Promise.withResolvers<void>();
     const firstSetRelease = Promise.withResolvers<void>();
-    let cache!: AvatarRefreshCache;
-    cache = {
+    const cache: AvatarRefreshCache = {
       get: jest.fn(async () => stored.entry),
       set: jest.fn(async (_key, value) => {
         setCalls++;
