@@ -2946,6 +2946,7 @@
   "com_media_pinned_parent": "Editing the selected original. Describe the changes you want in the prompt.",
   "com_media_readonly": "You can view saved media. Creating media is not currently available.",
   "com_media_no_models": "No supported media models are available. Ask your administrator to configure a connection.",
+  "com_media_selection_unavailable": "This provider or model is unavailable. Choose another provider to continue.",
   "com_media_loading": "Loading media…",
   "com_media_load_failed": "Media could not be loaded. Retry to refresh.",
   "com_media_unavailable": "Media Studio is unavailable for this account.",

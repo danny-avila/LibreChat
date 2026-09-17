@@ -105,6 +105,9 @@ export function createMediaWorker(
       const configuredIntegration = context.config.integrations.find(
         (entry) => entry.id === job.execution.connectionId,
       );
+      if (job.phase === 'queued' && configuredIntegration?.enabled === false) {
+        throw new MediaServiceError('forbidden', 403, 'This media provider is disabled.');
+      }
       const integration: MediaIntegration | undefined =
         configuredIntegration ??
         (job.phase !== 'queued' && job.execution.endpointRef

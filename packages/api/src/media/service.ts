@@ -169,6 +169,12 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
     signal?: AbortSignal,
   ) {
     assertMediaAccess(context, true);
+    const integration = context.config.integrations.find(
+      (entry) => entry.id === request.selection.connectionId,
+    );
+    if (integration?.enabled === false) {
+      throw new MediaServiceError('forbidden', 403, 'This media provider is disabled.');
+    }
     if ((context.config.assets.source ?? context.appConfig.fileStrategy) !== 'local') {
       throw new MediaServiceError(
         'unsupported',
@@ -182,9 +188,6 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
     }
     const modelOffering = current.resolved.get(
       `${request.selection.connectionId}:${request.selection.modelId}`,
-    );
-    const integration = context.config.integrations.find(
-      (entry) => entry.id === request.selection.connectionId,
     );
     if (!modelOffering || !integration) {
       throw new MediaServiceError('unsupported', 422, 'The media model is unavailable.');

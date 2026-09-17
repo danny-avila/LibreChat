@@ -11,6 +11,13 @@ export function useMediaCredentials(catalog: MediaCatalog, selectId: string) {
   const localize = useLocalize();
   const [active, setActive] = useState<MediaKeyConfiguration>();
   const keys = mergeMediaUserKeys(catalog.integrations);
+  const canConfigure = (connectionId: string) => {
+    const descriptor = catalog.integrations?.find(
+      (item) => item.connectionId === connectionId,
+    )?.userKey;
+    const key = descriptor && keys.get(descriptor.keyName);
+    return !!key && !key.conflict;
+  };
   const close = (open: boolean) => {
     if (open) return;
     setActive(undefined);
@@ -49,5 +56,5 @@ export function useMediaCredentials(catalog: MediaCatalog, selectId: string) {
         onCloseAutoFocus={restoreFocus}
       />
     ));
-  return { action, dialog };
+  return { action, dialog, canConfigure };
 }

@@ -45,6 +45,7 @@ export function createNativeMediaFactory({
     }
     const integration = context.config.integrations.find(
       (entry) =>
+        entry.enabled !== false &&
         entry.api === 'google.generateContent' &&
         entry.endpointRef.kind === 'builtin' &&
         entry.endpointRef.endpoint === 'google' &&

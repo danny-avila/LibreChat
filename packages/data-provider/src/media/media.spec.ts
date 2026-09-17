@@ -35,6 +35,26 @@ const submission = {
 };
 
 describe('media configuration compatibility', () => {
+  it('accepts explicit provider exclusions without changing existing integration defaults', () => {
+    const config = resolveMediaConfig({
+      enabled: true,
+      integrations: [
+        integration,
+        { ...integration, id: 'visible', enabled: true },
+        { ...integration, id: 'hidden', enabled: false },
+      ],
+    });
+    expect(config.integrations.map((entry) => entry.enabled)).toEqual([undefined, true, false]);
+    expect(configSchema.parse({ version: '1.3.1', media: config }).media).toEqual(config);
+    expect(
+      resolveMediaConfig({ enabled: true, integrations: [{ ...integration, enabled: false }] })
+        .integrations[0].enabled,
+    ).toBe(false);
+    expect(
+      mediaConfigSchema.safeParse({ integrations: [{ ...integration, enabled: 'false' }] }).success,
+    ).toBe(false);
+  });
+
   it('publishes only explicit user-key setup instructions without requiring model discovery', () => {
     const catalog = {
       schemaVersion: 1,

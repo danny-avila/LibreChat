@@ -163,6 +163,18 @@ export function MediaForm({
       : localize(mediaErrorLabels[reason ?? 'unsupported']);
   const id = useId();
   const credentials = useMediaCredentials(catalog, `${id}-connection`);
+  const providerRequiresKey = (connectionId: string, reason: MediaOffering['unavailableReason']) =>
+    (reason === 'credentials_required' || reason === 'credentials_expired') &&
+    credentials.canConfigure(connectionId);
+  const providerAction = (connectionId: string) => {
+    const action = credentials.action(connectionId);
+    if (!action) return;
+    const integration = catalog.integrations?.find((item) => item.connectionId === connectionId);
+    return {
+      ...action,
+      activateOnSelect: providerRequiresKey(connectionId, integration?.unavailableReason),
+    };
+  };
   const draftKey = `${host.scope}:${threadId ?? 'new'}`;
   const [savedDraft, setDraft] = useAtom(mediaDraftFamily(draftKey));
   const [error, setError] = useState<string>();
@@ -518,17 +530,125 @@ export function MediaForm({
       setError(localize(mediaErrorLabels[mediaErrorCode(failure)]));
     }
   }
+  const references = draft.inputs.length > 0 && (
+    <ul
+      className="flex max-h-40 flex-wrap gap-2 overflow-y-auto"
+      aria-label={localize('com_media_references')}
+    >
+      {draft.inputs.map((input, index) => {
+        const asset = draft.assets.find((item) => item.file_id === input.file_id);
+        const playable = asset?.type.startsWith('audio/') || asset?.type.startsWith('video/');
+        return (
+          <li
+            key={`${input.file_id}:${index}`}
+            className={`flex w-full items-center gap-2 rounded-xl border border-border-light p-2 sm:w-72 ${playable ? 'flex-wrap' : ''}`}
+          >
+            {asset && (
+              <span
+                className={`${playable ? 'w-full' : 'w-14'} shrink-0 overflow-hidden rounded-lg`}
+              >
+                <MediaPreview asset={asset} compact interactive={!!playable} />
+              </span>
+            )}
+            <div className="min-w-0 flex-1">
+              {automaticImage ? (
+                <p role="status" className="text-sm text-text-secondary">
+                  {localize('com_media_editing_latest')}
+                </p>
+              ) : (
+                <ControlCombobox
+                  showCarat
+                  ariaLabel={localize('com_media_input_role')}
+                  variant="field"
+                  isCollapsed={false}
+                  portal={portal}
+                  selectedValue={input.role}
+                  displayValue={localize(mediaInputRoleLabels[input.role])}
+                  disabled={!capability}
+                  items={(capability?.inputs.roles ?? [input.role])
+                    .filter((role) => {
+                      if (asset?.type.startsWith('audio/')) return role === 'audio';
+                      if (asset?.type.startsWith('video/')) return role === 'video';
+                      return role !== 'audio' && role !== 'video';
+                    })
+                    .map((role) => ({
+                      value: role,
+                      label: localize(mediaInputRoleLabels[role]),
+                    }))}
+                  setValue={(value) =>
+                    change({
+                      inputs: draft.inputs.map((item, at) =>
+                        at === index ? { ...item, role: value as typeof input.role } : item,
+                      ),
+                    })
+                  }
+                />
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={localize('com_media_remove_reference')}
+              onClick={() =>
+                change({
+                  inputs: draft.inputs.filter((_, at) => at !== index),
+                  assets: draft.assets.filter((item) => item.file_id !== input.file_id),
+                  parentTurnId: index === 0 ? undefined : draft.parentTurnId,
+                  autoEdit: false,
+                  operation:
+                    draft.inputs.length === 1 && draft.operation === 'image.edit'
+                      ? 'image.generate'
+                      : draft.operation,
+                })
+              }
+            >
+              <X className="size-4" aria-hidden="true" />
+            </Button>
+          </li>
+        );
+      })}
+    </ul>
+  );
   if (!offering || !capability) {
-    const integrations: NonNullable<MediaCatalog['integrations']> =
-      catalog.integrations ?? catalog.offerings;
+    const integrations: NonNullable<MediaCatalog['integrations']> = [
+      ...catalog.offerings,
+      ...(catalog.integrations ?? []),
+    ];
+    const message = localize(
+      offerings.length > 0 ? 'com_media_selection_unavailable' : 'com_media_no_models',
+    );
+    const hasDraft = !!draft.offering || !!draft.prompt || draft.inputs.length > 0;
+    const composer = (
+      <section className="space-y-3" aria-label={localize('com_media_create')} data-media-composer>
+        <p role="status" className="text-sm text-text-secondary">
+          {message}
+        </p>
+        {references}
+        {hasDraft && (
+          <Composer
+            value={draft.prompt}
+            onChange={(prompt) => change({ prompt })}
+            onSubmit={() => {}}
+            canSubmit={false}
+            submitLabel={localize('com_media_queue')}
+            ariaLabel={localize('com_media_prompt')}
+            minRows={1}
+            maxRows={6}
+            maxLength={catalog.limits.maxPromptChars}
+            submitOnEnter={host.enterToSend}
+            resolveKeyVerdict={host.resolveKeyVerdict}
+          />
+        )}
+      </section>
+    );
     const unavailable = (
       <div className="space-y-3">
-        <p role="status">{localize('com_media_no_models')}</p>
+        {!hasDraft && <p role="status">{message}</p>}
         <Label>{localize('com_media_connection')}</Label>
         <ControlCombobox
           ariaLabel={localize('com_media_connection')}
           selectId={`${id}-connection`}
-          optionAction={credentials.action}
+          optionAction={providerAction}
           selectedValue=""
           selectPlaceholder={localize('com_media_choose_model')}
           isCollapsed={false}
@@ -537,26 +657,38 @@ export function MediaForm({
           items={[...new Map(integrations.map((item) => [item.connectionId, item])).values()].map(
             (item) => ({
               value: item.connectionId,
-              label: `${item.connectionName}${item.available ? '' : ` (${unavailableProvider(item.unavailableReason)})`}`,
-              disabled: !offerings.some(
-                (candidate) => candidate.connectionId === item.connectionId,
-              ),
+              label: item.connectionName,
+              description: item.available ? undefined : unavailableProvider(item.unavailableReason),
+              disabled:
+                !offerings.some((candidate) => candidate.connectionId === item.connectionId) &&
+                !providerRequiresKey(item.connectionId, item.unavailableReason),
             }),
           )}
           setValue={(value) => {
-            const next = offerings.find((item) => item.connectionId === value);
-            if (next)
-              change({
-                offering: offeringId(next),
-                operation: next.capabilities[0].operation,
-                providerTag: next.defaultProviderTag,
-                providerOptionsText: undefined,
-                parameters: { count: 1 },
-              });
+            const next =
+              offerings.find(
+                (item) =>
+                  item.connectionId === value &&
+                  item.capabilities.some((cap) => cap.operation === draft.operation),
+              ) ?? offerings.find((item) => item.connectionId === value);
+            if (!next) return;
+            const cap =
+              next.capabilities.find((item) => item.operation === draft.operation) ??
+              next.capabilities[0];
+            change({
+              offering: offeringId(next),
+              operation: cap.operation,
+              providerTag: next.defaultProviderTag,
+              providerOptionsText: undefined,
+              parameters: { count: cap.controls.count?.default ?? cap.controls.count?.min ?? 1 },
+            });
           }}
         />
         {draft.offering && offerings.length > 0 && (
-          <Button variant="outline" onClick={() => change({ offering: '' })}>
+          <Button
+            variant="outline"
+            onClick={() => document.getElementById(`${id}-connection`)?.click()}
+          >
             {localize('com_media_choose_model')}
           </Button>
         )}
@@ -565,16 +697,17 @@ export function MediaForm({
     return (
       <>
         {credentials.dialog}
-        {children
-          ? children({
-              settings: unavailable,
-              composer: (
-                <p role="status" className="text-sm text-text-secondary">
-                  {localize('com_media_no_models')}
-                </p>
-              ),
-            })
-          : unavailable}
+        {children ? (
+          children({
+            settings: unavailable,
+            composer,
+          })
+        ) : (
+          <div className="space-y-5">
+            {unavailable}
+            {hasDraft && composer}
+          </div>
+        )}
       </>
     );
   }
@@ -766,7 +899,7 @@ export function MediaForm({
           <ControlCombobox
             showCarat
             selectId={`${id}-connection`}
-            optionAction={credentials.action}
+            optionAction={providerAction}
             ariaLabel={localize('com_media_connection')}
             variant="field"
             isCollapsed={false}
@@ -774,13 +907,14 @@ export function MediaForm({
             selectedValue={offering.connectionId}
             displayValue={offering.connectionName}
             items={[...connections.values()].map(({ value, label, unavailableReason }) => {
-              const disabled = !modeOfferings.some(
+              const unavailable = !modeOfferings.some(
                 (item) => item.connectionId === value && availableForMode(item),
               );
               return {
                 value,
-                label: disabled ? `${label} (${unavailableProvider(unavailableReason)})` : label,
-                disabled,
+                label,
+                description: unavailable ? unavailableProvider(unavailableReason) : undefined,
+                disabled: unavailable && !providerRequiresKey(value, unavailableReason),
               };
             })}
             setValue={(value) => {
@@ -806,9 +940,10 @@ export function MediaForm({
               .filter((item) => item.connectionId === offering.connectionId)
               .map((item) => ({
                 value: offeringId(item),
-                label: availableForMode(item)
-                  ? item.modelName
-                  : `${item.modelName} (${localize(mediaErrorLabels[item.unavailableReason ?? 'unsupported'])})`,
+                label: item.modelName,
+                description: availableForMode(item)
+                  ? undefined
+                  : localize(mediaErrorLabels[item.unavailableReason ?? 'unsupported']),
                 disabled: !availableForMode(item),
               }))}
             setValue={(value) => {
@@ -968,84 +1103,7 @@ export function MediaForm({
           </Button>
         </div>
       )}
-      {draft.inputs.length > 0 && (
-        <ul
-          className="flex max-h-40 flex-wrap gap-2 overflow-y-auto"
-          aria-label={localize('com_media_references')}
-        >
-          {draft.inputs.map((input, index) => {
-            const asset = draft.assets.find((item) => item.file_id === input.file_id);
-            const playable = asset?.type.startsWith('audio/') || asset?.type.startsWith('video/');
-            return (
-              <li
-                key={`${input.file_id}:${index}`}
-                className={`flex w-full items-center gap-2 rounded-xl border border-border-light p-2 sm:w-72 ${playable ? 'flex-wrap' : ''}`}
-              >
-                {asset && (
-                  <span
-                    className={`${playable ? 'w-full' : 'w-14'} shrink-0 overflow-hidden rounded-lg`}
-                  >
-                    <MediaPreview asset={asset} compact interactive={!!playable} />
-                  </span>
-                )}
-                <div className="min-w-0 flex-1">
-                  {automaticImage ? (
-                    <p role="status" className="text-sm text-text-secondary">
-                      {localize('com_media_editing_latest')}
-                    </p>
-                  ) : (
-                    <ControlCombobox
-                      showCarat
-                      ariaLabel={localize('com_media_input_role')}
-                      variant="field"
-                      isCollapsed={false}
-                      portal={portal}
-                      selectedValue={input.role}
-                      displayValue={localize(mediaInputRoleLabels[input.role])}
-                      items={capability.inputs.roles
-                        .filter((role) => {
-                          if (asset?.type.startsWith('audio/')) return role === 'audio';
-                          if (asset?.type.startsWith('video/')) return role === 'video';
-                          return role !== 'audio' && role !== 'video';
-                        })
-                        .map((role) => ({
-                          value: role,
-                          label: localize(mediaInputRoleLabels[role]),
-                        }))}
-                      setValue={(value) =>
-                        change({
-                          inputs: draft.inputs.map((item, at) =>
-                            at === index ? { ...item, role: value as typeof input.role } : item,
-                          ),
-                        })
-                      }
-                    />
-                  )}
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={localize('com_media_remove_reference')}
-                  onClick={() =>
-                    change({
-                      inputs: draft.inputs.filter((_, at) => at !== index),
-                      assets: draft.assets.filter((item) => item.file_id !== input.file_id),
-                      parentTurnId: index === 0 ? undefined : draft.parentTurnId,
-                      autoEdit: false,
-                      operation:
-                        draft.inputs.length === 1 && draft.operation === 'image.edit'
-                          ? 'image.generate'
-                          : draft.operation,
-                    })
-                  }
-                >
-                  <X className="size-4" aria-hidden="true" />
-                </Button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      {references}
       {!inputsValid && (
         <p role="status" className="text-xs leading-5 text-text-secondary">
           {localize('com_media_reference_hint', {

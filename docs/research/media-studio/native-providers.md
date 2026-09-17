@@ -55,15 +55,45 @@ Keep secrets in the server environment. These references and credentials are not
 browser. `credentialName` optionally associates a direct integration with an existing saved
 credential; `apiKey: user_provided` uses that saved credential instead of a deployment key.
 
+### Excluding a provider connection
+
+Set `enabled: false` on an existing `media.integrations` entry to exclude it. Omission or
+`enabled: true` keeps the connection enabled. For example, this retains the configuration for
+OpenRouter videos while removing it from selection:
+
+```yaml
+- id: router-videos
+  enabled: false
+  label: OpenRouter
+  api: openrouter.videos
+  endpointRef: { kind: custom, name: OpenRouter }
+  catalog: { kind: discovered, allModels: true }
+  operations: [video.generate]
+```
+
+Excluded connections have no picker entry or Media provider-key entry, and their models are not
+discovered. To exclude a provider's images and videos, disable both configured connections.
+A key shared with an enabled connection or a chat endpoint remains in Provider API keys.
+
+New submissions, retries and queued work cannot start on an excluded connection. History remains
+accessible, and already accepted provider jobs can finish polling and downloading results.
+Queued work can still be cancelled. Re-enable the entry to make it selectable again without deleting its
+configuration or saved personal keys.
+
+Media integrations control media availability. Chat's `ENDPOINTS`, model-spec menus and
+`endpoints.agents.allowedProviders` retain their existing chat and agent scopes.
+
 ### Personal provider keys
 
-Studio follows the chat endpoint credential policy. Only integrations listed in YAML appear.
+Studio follows the chat endpoint credential policy. Only enabled integrations listed in YAML appear.
 A configured deployment key makes a provider available without personal setup. An unresolved
 environment variable remains an administrator configuration problem; it does not grant a user
 permission to replace that deployment account.
 
 Set `apiKey: user_provided` to let each user supply a personal key through the provider's settings
-icon or **Settings → Provider Keys**. The dialog uses the existing encrypted, user-scoped key
+icon or **Settings → Data & Privacy → Provider API keys**. Selecting an unconfigured personal
+provider also opens its key settings, keeping the current model and draft intact.
+The dialog uses the existing encrypted, user-scoped key
 store and supports expiry, replacement and revocation. Saving or removing a key refreshes the
 Studio catalog without clearing the current prompt or generation parameters. This saves a
 credential; account entitlements and credit are checked by the provider when a request is made.

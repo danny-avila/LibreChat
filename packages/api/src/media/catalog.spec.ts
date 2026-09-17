@@ -208,6 +208,44 @@ describe('media catalog provider conformance', () => {
     expect(JSON.stringify(result.catalog)).not.toContain('revision');
   });
 
+  it('omits disabled connections and their key setup before resolving credentials or discovering models', async () => {
+    const fixture = imageTransport(() => JSON.stringify(imageEndpoints));
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    const resolve = jest.fn(async (integration: MediaIntegration) => connection(integration));
+    const describeKey = jest.fn((integration: MediaIntegration) => ({
+      keyName: integration.id,
+      encoding: 'apiKey' as const,
+      userProvideURL: false,
+    }));
+    const enabled = await catalog.read(config, resolve, 'owner', describeKey);
+    expect(enabled.catalog.integrations?.[0].userKey).toBeDefined();
+    expect(enabled.catalog.offerings).toHaveLength(1);
+    resolve.mockClear();
+    describeKey.mockClear();
+    fixture.calls.length = 0;
+    const excluded = await catalog.read(
+      { ...config, integrations: [{ ...imageIntegration, enabled: false }] },
+      resolve,
+      'owner',
+      describeKey,
+    );
+    expect(excluded.catalog.integrations).toEqual([]);
+    expect(excluded.catalog.offerings).toEqual([]);
+    expect(excluded.resolved.size).toBe(0);
+    expect(excluded.catalog.version).not.toBe(enabled.catalog.version);
+    expect(resolve).not.toHaveBeenCalled();
+    expect(describeKey).not.toHaveBeenCalled();
+    expect(fixture.calls).toEqual([]);
+    const restored = await catalog.read(
+      { ...config, integrations: [{ ...imageIntegration, enabled: true }] },
+      resolve,
+      'owner',
+      describeKey,
+    );
+    expect(restored.catalog.offerings).toHaveLength(1);
+    expect(resolve).toHaveBeenCalledTimes(1);
+  });
+
   it('honors ordering without routing outside a no-fallback policy', async () => {
     const fixture = imageTransport(() => JSON.stringify(imageEndpoints));
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });

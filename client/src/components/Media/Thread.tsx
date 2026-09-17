@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useId, useRef, useState } from 'react';
 import { v4 } from 'uuid';
 import { useSetAtom, useAtomValue } from 'jotai';
 import { Clock3, Images, Pencil, RotateCcw, Trash2 } from 'lucide-react';
@@ -109,6 +109,7 @@ function Job({
   );
   const localize = useLocalize();
   const client = useQueryClient();
+  const retryUnavailableId = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [expanded, setExpanded] = useState(false);
@@ -141,6 +142,11 @@ function Job({
     (item) =>
       item.connectionId === job.selection.connectionId && item.modelId === job.selection.modelId,
   );
+  const missingConnection =
+    !!catalog &&
+    !(catalog.integrations ?? catalog.offerings).some(
+      (item) => item.connectionId === job.selection.connectionId,
+    );
   const active = !['succeeded', 'failed', 'cancelled', 'requires_attention'].includes(job.phase);
   return (
     <section className="space-y-4" aria-label={localize('com_media_job')}>
@@ -230,7 +236,8 @@ function Job({
           <Button
             variant="outline"
             size="sm"
-            disabled={busy || retryPending || !host.canCreate}
+            disabled={busy || retryPending || !host.canCreate || missingConnection}
+            aria-describedby={missingConnection ? retryUnavailableId : undefined}
             onClick={async () => {
               setBusy(true);
               await send({
@@ -252,6 +259,11 @@ function Job({
           {localize('com_media_edit_request')}
         </Button>
       </div>
+      {job.allowedActions.retry && missingConnection && (
+        <p id={retryUnavailableId} className="text-sm text-text-secondary">
+          {localize('com_media_selection_unavailable')}
+        </p>
+      )}
       {error && <p role="alert">{error}</p>}
     </section>
   );

@@ -15,6 +15,8 @@ export const mediaIntegrationSchema = z
   .object({
     id: mediaIdSchema,
     label: z.string().trim().min(1).optional(),
+    /** Omission preserves availability; false excludes new work while retaining job recovery. */
+    enabled: z.boolean().optional(),
     api: mediaApiSchema,
     endpointRef: z.discriminatedUnion('kind', [
       z.object({ kind: z.literal('builtin'), endpoint: z.nativeEnum(EModelEndpoint) }).strict(),

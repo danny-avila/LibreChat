@@ -54,6 +54,8 @@ interface ControlComboboxProps {
         label: string;
         icon: React.ReactNode;
         onClick: () => void;
+        /** Lets setup entries open their action without changing the selected value. */
+        activateOnSelect?: boolean;
       }
     | undefined;
 }
@@ -101,6 +103,7 @@ function ControlCombobox({
     label: option.label,
     icon: option.icon,
     disabled: option.disabled,
+    description: option.description,
   });
 
   const combobox = Ariakit.useComboboxStore({
@@ -114,7 +117,15 @@ function ControlCombobox({
     combobox,
     defaultItems: items.map(getItem),
     value: selectedValue,
-    setValue,
+    setValue: (value) => {
+      const action = optionAction?.(value);
+      if (action?.activateOnSelect) {
+        openingAction.current = true;
+        action.onClick();
+        return;
+      }
+      setValue(value);
+    },
     setOpen: onOpenChange,
     placement,
   });
@@ -268,11 +279,12 @@ function ControlCombobox({
               overscan={5}
               persistentIndices={matches.length ? [0, matches.length - 1] : []}
             >
-              {({ value, icon, label, disabled: itemDisabled, ...item }) => (
+              {({ value, icon, label, description, disabled: itemDisabled, ...item }) => (
                 <Ariakit.ComboboxItem
                   key={item.id}
                   {...item}
                   disabled={itemDisabled}
+                  title={description}
                   className={cn(
                     'flex w-full cursor-pointer items-center px-3 text-sm',
                     'text-text-primary hover:bg-surface-tertiary',

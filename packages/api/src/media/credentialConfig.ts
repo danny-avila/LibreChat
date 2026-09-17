@@ -170,7 +170,7 @@ export function createMediaCredentialConfiguration({
         'This credential name belongs to a different chat credential format.',
       );
     for (const integration of input.appConfig.media?.integrations ?? []) {
-      if (integration.id === input.integration.id) continue;
+      if (integration.id === input.integration.id || integration.enabled === false) continue;
       let other: MediaUserKey | undefined;
       try {
         other = read({ ...input, integration }, false)?.userKey;

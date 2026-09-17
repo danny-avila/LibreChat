@@ -143,6 +143,32 @@ describe('Media provider key setup matches chat credential storage', () => {
     expect(repository.getStoredMediaCredential).not.toHaveBeenCalled();
   });
 
+  it('ignores disabled media slots when checking active credential format conflicts', () => {
+    const { resolve } = fixture({ environment: { GOOGLE_KEY: 'user_provided' } });
+    const google: MediaIntegration = {
+      id: 'google-images',
+      api: 'google.generateContent',
+      endpointRef: { kind: 'builtin', endpoint: EModelEndpoint.google },
+      catalog: { kind: 'configured', models: ['gemini-2.5-flash-image'] },
+      operations: ['image.generate'],
+    };
+    const incompatible = {
+      ...direct({ kind: 'direct', apiKey: 'user_provided', credentialName: 'google' }),
+      enabled: false,
+    };
+    const config = {
+      ...appConfig,
+      media: resolveMediaConfig({ integrations: [google, incompatible] }),
+    };
+    expect(resolve.describe(request(google, config))).toEqual({
+      keyName: 'google',
+      encoding: 'google',
+      userProvideURL: false,
+    });
+    config.media.integrations[1].enabled = true;
+    expect(() => resolve.describe(request(google, config))).toThrow();
+  });
+
   it.each(['bedrock', 'azureOpenAI', 'azureAssistants', 'anthropic'])(
     'preserves the incompatible chat credential slot %s',
     async (credentialName) => {

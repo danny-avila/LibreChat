@@ -80,13 +80,76 @@ const openPopover = () => {
 };
 
 describe('ControlCombobox popover sizing', () => {
+  it.each(['click', 'keyboard'] as const)(
+    'opens a setup action by %s without selecting that value',
+    async (interaction) => {
+      const selected = jest.fn();
+      const configure = jest.fn();
+      render(
+        <ControlCombobox
+          selectedValue="a"
+          items={[...items, { value: 'setup', label: 'Native provider' }]}
+          setValue={selected}
+          ariaLabel="Providers"
+          searchPlaceholder="Search providers"
+          isCollapsed={false}
+          optionAction={(value) =>
+            value === 'setup'
+              ? {
+                  label: 'Configure native provider',
+                  icon: null,
+                  activateOnSelect: true,
+                  onClick: configure,
+                }
+              : undefined
+          }
+        />,
+      );
+      await act(async () => {
+        await userEvent.click(screen.getByRole('combobox', { name: 'Providers' }));
+      });
+      await act(async () => {
+        if (interaction === 'click')
+          await userEvent.click(screen.getByRole('option', { name: 'Native provider' }));
+        else {
+          await userEvent.type(screen.getByPlaceholderText('Search providers'), 'Native');
+          await userEvent.keyboard('{Enter}');
+        }
+      });
+      expect(configure).toHaveBeenCalledTimes(1);
+      expect(selected).not.toHaveBeenCalledWith('setup');
+      expect(screen.getByRole('combobox', { name: 'Providers' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      );
+      await act(async () => {
+        await userEvent.click(screen.getByRole('combobox', { name: 'Providers' }));
+      });
+      expect(screen.getByRole('option', { name: 'Option A' })).toHaveAttribute(
+        'aria-selected',
+        'true',
+      );
+      expect(screen.getByRole('option', { name: 'Native provider' })).toHaveAttribute(
+        'aria-selected',
+        'false',
+      );
+    },
+  );
   it('exposes a keyboard action beside a disabled option without selecting it', async () => {
     const selected = jest.fn();
     const configure = jest.fn();
     render(
       <ControlCombobox
         selectedValue="a"
-        items={[...items, { label: 'Needs key', value: 'missing', disabled: true }]}
+        items={[
+          ...items,
+          {
+            label: 'Needs key',
+            value: 'missing',
+            disabled: true,
+            description: 'Configure credentials to use this provider.',
+          },
+        ]}
         setValue={selected}
         ariaLabel="Providers"
         isCollapsed={false}
@@ -110,6 +173,9 @@ describe('ControlCombobox popover sizing', () => {
     expect(screen.getByRole('option', { name: 'Needs key' })).toHaveAttribute(
       'aria-disabled',
       'true',
+    );
+    expect(screen.getByRole('option', { name: 'Needs key' })).toHaveAccessibleDescription(
+      'Configure credentials to use this provider.',
     );
     await act(async () => {
       action.focus();

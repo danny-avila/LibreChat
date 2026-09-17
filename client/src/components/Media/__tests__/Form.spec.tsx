@@ -105,61 +105,68 @@ function setup(canCreate = true) {
   );
   return { store, send, wrapper };
 }
-test('configures an unavailable native provider without replacing the active draft', async () => {
-  const env = setup();
-  const choices: MediaCatalog = {
-    ...catalog,
-    integrations: [
-      {
-        connectionId: 'connection',
-        connectionName: 'Managed',
-        api: 'openai.images',
-        available: true,
-      },
-      {
-        connectionId: 'native',
-        connectionName: 'Native Images',
-        api: 'google.generateContent',
-        available: false,
-        unavailableReason: 'credentials_required',
-        userKey: { keyName: 'SharedNative', encoding: 'google', userProvideURL: false },
-      },
-      {
-        connectionId: 'native-video',
-        connectionName: 'Native Videos',
-        api: 'google.vertex.videos',
-        available: false,
-        unavailableReason: 'credentials_required',
-        userKey: { keyName: 'SharedNative', encoding: 'google', userProvideURL: true },
-      },
-    ],
-  };
-  const view = render(<MediaForm catalog={choices} send={env.send} busy={false} />, {
-    wrapper: env.wrapper,
-  });
-  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
-    target: { value: 'Keep my prompt' },
-  });
-  const draft = env.store.get(mediaDraftFamily('owner:new'));
-  fireEvent.click(screen.getByRole('combobox', { name: 'com_media_connection' }));
-  expect(
-    screen.queryByRole('button', { name: 'com_endpoint_config_key Managed' }),
-  ).not.toBeInTheDocument();
-  fireEvent.click(
-    await screen.findByRole('button', { name: 'com_endpoint_config_key Native Images' }),
-  );
-  expect(await screen.findByRole('dialog', { name: 'Native Images' })).toHaveTextContent(
-    'SharedNative',
-  );
-  expect(screen.getByText('URL required')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Close provider settings' }));
-  view.rerender(
-    <MediaForm catalog={{ ...choices, version: 'refreshed' }} send={env.send} busy={false} />,
-  );
-  expect(env.store.get(mediaDraftFamily('owner:new'))).toEqual(draft);
-  expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue('Keep my prompt');
-  expect(env.send).not.toHaveBeenCalled();
-});
+test.each(['row', 'gear'] as const)(
+  'configures a personal-key provider from its %s without replacing the active draft',
+  async (target) => {
+    const env = setup();
+    const choices: MediaCatalog = {
+      ...catalog,
+      integrations: [
+        {
+          connectionId: 'connection',
+          connectionName: 'Managed',
+          api: 'openai.images',
+          available: true,
+        },
+        {
+          connectionId: 'native',
+          connectionName: 'Native Images',
+          api: 'google.generateContent',
+          available: false,
+          unavailableReason: 'credentials_required',
+          userKey: { keyName: 'SharedNative', encoding: 'google', userProvideURL: false },
+        },
+        {
+          connectionId: 'native-video',
+          connectionName: 'Native Videos',
+          api: 'google.vertex.videos',
+          available: false,
+          unavailableReason: 'credentials_required',
+          userKey: { keyName: 'SharedNative', encoding: 'google', userProvideURL: true },
+        },
+      ],
+    };
+    const view = render(<MediaForm catalog={choices} send={env.send} busy={false} />, {
+      wrapper: env.wrapper,
+    });
+    fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
+      target: { value: 'Keep my prompt' },
+    });
+    const draft = env.store.get(mediaDraftFamily('owner:new'));
+    fireEvent.click(screen.getByRole('combobox', { name: 'com_media_connection' }));
+    expect(
+      screen.queryByRole('button', { name: 'com_endpoint_config_key Managed' }),
+    ).not.toBeInTheDocument();
+    const provider = await screen.findByRole('option', { name: 'Native Images' });
+    expect(provider).not.toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(
+      target === 'row'
+        ? provider
+        : await screen.findByRole('button', { name: 'com_endpoint_config_key Native Images' }),
+    );
+    expect(await screen.findByRole('dialog', { name: 'Native Images' })).toHaveTextContent(
+      'SharedNative',
+    );
+    expect(screen.getByText('URL required')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close provider settings' }));
+    view.rerender(
+      <MediaForm catalog={{ ...choices, version: 'refreshed' }} send={env.send} busy={false} />,
+    );
+    expect(env.store.get(mediaDraftFamily('owner:new'))).toEqual(draft);
+    expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue('Keep my prompt');
+    expect(env.send).not.toHaveBeenCalled();
+  },
+);
 test('offers provider settings even when the catalog has no available models', async () => {
   const env = setup();
   render(
@@ -321,10 +328,94 @@ test('retains a removed model draft and requires explicit model selection', () =
     revision: 4,
   });
   render(<MediaForm catalog={catalog} send={env.send} busy={false} />, { wrapper: env.wrapper });
-  expect(screen.queryByRole('button', { name: 'com_media_queue' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
   expect(env.store.get(mediaDraftFamily('owner:new')).prompt).toBe('Keep this draft');
   fireEvent.click(screen.getByRole('button', { name: 'com_media_choose_model' }));
   expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue('Keep this draft');
+});
+
+test('keeps an excluded provider draft visible and switches to an available provider without losing references', async () => {
+  const env = setup();
+  const asset = {
+    file_id: 'reference-image',
+    filepath: '/images/reference.png',
+    filename: 'reference.png',
+    type: 'image/png',
+    bytes: 10,
+  };
+  const draft = {
+    ...emptyDraft(),
+    prompt: 'Keep my edit',
+    offering: '["excluded","old-model"]',
+    operation: 'image.edit' as const,
+    parentTurnId: 'parent-turn',
+    inputs: [{ file_id: asset.file_id, role: 'reference' as const }],
+    assets: [asset],
+    providerOptionsText: '{"preserve":"until changed"}',
+    revision: 4,
+  };
+  env.store.set(mediaDraftFamily('owner:restored'), draft);
+  const choices: MediaCatalog = {
+    ...catalog,
+    integrations: [
+      {
+        connectionId: 'connection',
+        connectionName: 'Connection',
+        api: 'openai.images',
+        available: true,
+      },
+    ],
+    offerings: [
+      catalog.offerings[0],
+      {
+        ...catalog.offerings[0],
+        modelId: 'edit-model',
+        capabilities: [
+          {
+            ...catalog.offerings[0].capabilities[0],
+            operation: 'image.edit',
+            inputs: { min: 1, max: 4, roles: ['reference'] },
+          },
+        ],
+      },
+    ],
+  };
+  render(
+    <MediaForm catalog={choices} threadId="restored" send={env.send} busy={false}>
+      {({ settings, composer }) => (
+        <>
+          <aside>{settings}</aside>
+          <main>{composer}</main>
+        </>
+      )}
+    </MediaForm>,
+    { wrapper: env.wrapper },
+  );
+  expect(screen.getByText('com_media_selection_unavailable')).toBeVisible();
+  expect(screen.queryByText('com_media_no_models')).not.toBeInTheDocument();
+  expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue('Keep my edit');
+  expect(screen.getByRole('img', { name: 'com_media_image_preview' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
+  expect(env.store.get(mediaDraftFamily('owner:restored'))).toEqual(draft);
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
+    target: { value: 'Updated edit' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_choose_model' }));
+  const provider = await screen.findByRole('option', { name: 'Connection' });
+  expect(screen.queryByRole('option', { name: 'excluded' })).not.toBeInTheDocument();
+  fireEvent.click(provider);
+  expect(env.store.get(mediaDraftFamily('owner:restored'))).toMatchObject({
+    prompt: 'Updated edit',
+    offering: '["connection","edit-model"]',
+    operation: 'image.edit',
+    inputs: draft.inputs,
+    assets: draft.assets,
+    parentTurnId: 'parent-turn',
+  });
+  expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue('Updated edit');
+  expect(screen.getByRole('img', { name: 'com_media_image_preview' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeEnabled();
+  expect(env.send).not.toHaveBeenCalled();
 });
 
 test('keeps a saved draft but blocks a resolution the refreshed catalog no longer supports', async () => {
@@ -631,7 +722,7 @@ test.each([
   ['credentials_required', 'com_media_error_credentials_required'],
   ['not_ready', 'com_media_provider_configuration_required'],
 ] as const)(
-  'keeps unavailable models and native providers visible with a useful %s reason',
+  'keeps provider and model names clean with a separate %s description',
   async (reason, label) => {
     const env = setup();
     const choices: MediaCatalog = {
@@ -660,20 +751,19 @@ test.each([
     render(<MediaForm catalog={choices} send={env.send} busy={false} />, { wrapper: env.wrapper });
     fireEvent.click(screen.getByRole('combobox', { name: 'com_media_connection' }));
     const provider = await screen.findByRole('option', {
-      name: `Seed native (${label})`,
+      name: 'Seed native',
     });
     expect(provider).toHaveAttribute('aria-disabled', 'true');
+    expect(provider).toHaveAccessibleDescription(label);
     fireEvent.click(provider);
     expect(env.store.get(mediaDraftFamily('owner:new')).offering).toBe(
       '["connection","image-model"]',
     );
     fireEvent.keyDown(provider, { key: 'Escape' });
     fireEvent.click(screen.getByRole('combobox', { name: 'com_media_model' }));
-    expect(
-      await screen.findByRole('option', {
-        name: 'Unavailable image (com_media_error_unsupported)',
-      }),
-    ).toHaveAttribute('aria-disabled', 'true');
+    const model = await screen.findByRole('option', { name: 'Unavailable image' });
+    expect(model).toHaveAttribute('aria-disabled', 'true');
+    expect(model).toHaveAccessibleDescription('com_media_error_unsupported');
   },
 );
 
@@ -700,9 +790,10 @@ test('shows configured integrations even when no native model is currently avail
     { wrapper: env.wrapper },
   );
   fireEvent.click(screen.getByRole('combobox', { name: 'com_media_connection' }));
-  expect(
-    await screen.findByRole('option', { name: 'MiniMax (com_media_error_credentials_required)' }),
-  ).toHaveAttribute('aria-disabled', 'true');
+  expect(await screen.findByRole('option', { name: 'MiniMax' })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
   expect(screen.queryByRole('button', { name: 'com_media_queue' })).not.toBeInTheDocument();
 });
 

@@ -856,6 +856,12 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       .expect(202);
     expect(retried.body.jobId).not.toBe(response.body.jobId);
     expect(retried.body.turnId).toBe(response.body.turnId);
+    config.media!.integrations.find((entry) => entry.id === 'images')!.enabled = false;
+    const excludedReplay = await request(app)
+      .post(`/api/media/jobs/${response.body.jobId}/retry`)
+      .send({ clientRequestId: 'safe-retry' })
+      .expect(202);
+    expect(excludedReplay.body.jobId).toBe(retried.body.jobId);
     config.media!.integrations = [];
     const replay = await request(app)
       .post(`/api/media/jobs/${response.body.jobId}/retry`)
@@ -880,6 +886,73 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     const mediaMethods = createMediaMethods(mongoose);
     repository = { ...mediaMethods, ...createMediaNativeMethods(mongoose, mediaMethods) };
     expect((await run(response.body.jobId))?.phase).toBe('succeeded');
+    expect(posts).toBe(1);
+    expect(polls).toBe(1);
+  });
+
+  it('hides an excluded connection and blocks fresh, retry and queued requests while preserving replay and cancellation', async () => {
+    config.media!.execution.maxActiveTotal = 1;
+    const first = await submit('before-provider-exclusion');
+    const cancellable = await submit('cancel-after-provider-exclusion');
+    expect(first.status).toBe(202);
+    expect(cancellable.status).toBe(202);
+    const queued = await repository.getMediaJob(scope, first.body.jobId);
+    if (!queued) throw new Error('Expected queued media request');
+    expect(
+      await repository.acquireMediaPermit({
+        scope,
+        jobId: first.body.jobId,
+        kind: 'deployment',
+        capacity: 1,
+      }),
+    ).toBe(true);
+    config.media!.integrations.find((entry) => entry.id === 'images')!.enabled = false;
+    const catalog = mediaCatalogSchema.parse((await request(app).get('/api/media/catalog')).body);
+    expect(catalog.integrations?.some((entry) => entry.connectionId === 'images')).toBe(false);
+    expect(catalog.offerings.some((entry) => entry.connectionId === 'images')).toBe(false);
+    await request(app)
+      .post('/api/media/submissions')
+      .send({ ...queued.request, clientRequestId: 'forbidden-provider-request' })
+      .expect(403);
+    const replay = await request(app)
+      .post('/api/media/submissions')
+      .send(queued.request)
+      .expect(202);
+    expect(replay.body.jobId).toBe(first.body.jobId);
+    await request(app).post(`/api/media/jobs/${cancellable.body.jobId}/cancel`).expect(200);
+    expect(await run(first.body.jobId)).toMatchObject({
+      phase: 'failed',
+      error: { code: 'forbidden' },
+      provider: { certainty: 'unsubmitted' },
+    });
+    await request(app)
+      .post(`/api/media/jobs/${first.body.jobId}/retry`)
+      .send({ clientRequestId: 'forbidden-provider-retry' })
+      .expect(403);
+    await request(app).get(`/api/media/threads/${first.body.threadId}`).expect(200);
+    await request(app).get(`/api/media/jobs/${first.body.jobId}`).expect(200);
+    expect(posts).toBe(0);
+    config.media!.integrations.find((entry) => entry.id === 'images')!.enabled = true;
+    const next = await submit('after-provider-reenabled');
+    expect(next.status).toBe(202);
+    expect((await run(next.body.jobId))?.phase).toBe('succeeded');
+    expect(posts).toBe(1);
+  });
+
+  it('finishes an accepted direct video after its connection is excluded without another submission', async () => {
+    const integration = config.media!.integrations.find((entry) => entry.id === 'videos')!;
+    integration.endpointRef = { kind: 'direct', baseURL: root, apiKey: 'direct-video-fixture' };
+    const catalog = mediaCatalogSchema.parse((await request(app).get('/api/media/catalog')).body);
+    const response = await submit('video-before-provider-exclusion', {
+      operation: 'video.generate',
+      selection: { connectionId: 'videos', modelId: 'sora-2', catalogVersion: catalog.version },
+      parameters: { durationSeconds: 4, resolution: '1280x720' },
+    });
+    expect(response.status).toBe(202);
+    expect((await run(response.body.jobId))?.phase).toBe('running');
+    integration.enabled = false;
+    expect((await run(response.body.jobId))?.phase).toBe('succeeded');
+    await request(app).get(`/api/media/threads/${response.body.threadId}`).expect(200);
     expect(posts).toBe(1);
     expect(polls).toBe(1);
   });
@@ -1162,6 +1235,21 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     expect(posts).toBe(1);
   });
 
+  it('recovers an already generated image after its media connection is excluded', async () => {
+    const commit = repository.commitMediaAssetWrite.bind(repository);
+    jest.spyOn(repository, 'commitMediaAssetWrite').mockImplementationOnce(async (input) => {
+      await commit(input);
+      throw new Error('Lost storage publication acknowledgment');
+    });
+    const response = await submit('image-before-provider-exclusion');
+    expect((await run(response.body.jobId))?.phase).toBe('ingesting');
+    config.media!.integrations.find((entry) => entry.id === 'images')!.enabled = false;
+    const recovered = await run(response.body.jobId);
+    expect(recovered?.phase).toBe('succeeded');
+    expect(recovered?.outputs[0]).toMatchObject({ kind: 'image', state: 'ready' });
+    expect(posts).toBe(1);
+  });
+
   it.each([
     ['unsafe-svg', 'unsupported'],
     ['mislabeled', 'invalid_request'],
@@ -1280,8 +1368,26 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     if (image.type !== 'image_file') {
       throw new Error('Expected a durable image part');
     }
+    config.media!.integrations.find((entry) => entry.id === 'google-images')!.enabled = false;
+    const selection = {
+      provider: 'google',
+      model: 'gemini-2.5-flash-image',
+      apiKey: 'fixture-google',
+      baseURL: root,
+    };
+    const textPort = await factory?.(selection);
+    expect(
+      await textPort?.start({ modelRunId: 'text-after-exclusion', model: selection.model }),
+    ).toEqual({ responseModalities: ['TEXT'] });
+    const excludedImagePort = await factory?.({
+      ...selection,
+      responseModalities: ['TEXT', 'IMAGE'],
+    });
     await expect(
-      port.restore({
+      excludedImagePort?.start({ modelRunId: 'image-after-exclusion', model: selection.model }),
+    ).rejects.toMatchObject({ code: 'unsupported' });
+    await expect(
+      textPort?.restore({
         file_id: image.image_file.file_id,
         continuationRef: image.native_media?.continuationRef,
       }),

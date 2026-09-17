@@ -160,9 +160,10 @@ export function createMediaCatalog({
       scope: string,
       describeUserKey?: (integration: MediaIntegration) => MediaUserKey | undefined,
     ): Promise<MediaCatalogSnapshot> {
+      const configured = config.integrations.filter((integration) => integration.enabled !== false);
       const resolutionErrors = new Map<string, MediaErrorCode>();
       const results = await Promise.all(
-        config.integrations.map(async (integration): Promise<ResolvedOffering[]> => {
+        configured.map(async (integration): Promise<ResolvedOffering[]> => {
           const models = selectedModels(
             integration,
             adapters
@@ -231,7 +232,7 @@ export function createMediaCatalog({
         }),
       );
       const entries = results.flat();
-      const integrations = config.integrations.map((integration, index) => {
+      const integrations = configured.map((integration, index) => {
         let userKey: MediaUserKey | undefined;
         try {
           userKey = describeUserKey?.(integration);
