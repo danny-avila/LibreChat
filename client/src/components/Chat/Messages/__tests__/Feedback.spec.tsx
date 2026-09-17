@@ -61,4 +61,17 @@ describe('Feedback', () => {
       expect(screen.queryByRole('dialog', { name: 'Rate response' })).not.toBeInTheDocument(),
     );
   });
+
+  it('keeps feedback open when the trigger is clicked after hover opens it', async () => {
+    render(<Feedback handleFeedback={jest.fn()} />);
+
+    const trigger = screen.getByRole('button', { name: 'Rate response' });
+    fireEvent.mouseMove(trigger);
+    expect(await screen.findByRole('button', { name: 'Love this' })).toBeInTheDocument();
+
+    fireEvent.click(trigger);
+
+    expect(screen.getByRole('button', { name: 'Love this' })).toBeInTheDocument();
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+  });
 });

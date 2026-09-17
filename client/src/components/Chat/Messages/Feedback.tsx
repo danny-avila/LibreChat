@@ -144,7 +144,7 @@ function FeedbackButtons({
             variant="ghost"
             size="icon"
             className={buttonClasses(isOpen, isLast)}
-            onClick={() => hovercard.toggle()}
+            onClick={() => hovercard.show()}
             title={localize('com_ui_feedback_rate')}
             aria-label={localize('com_ui_feedback_rate')}
             aria-expanded={isOpen}
