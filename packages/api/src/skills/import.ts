@@ -17,6 +17,7 @@ import type {
   CreateSkillResult,
   UpsertSkillFileInput,
 } from '@librechat/data-schemas';
+import type { TSkillImportFailedResponse } from 'librechat-data-provider';
 import type { Request, Response } from 'express';
 import type { Types } from 'mongoose';
 import type {
@@ -633,11 +634,26 @@ function preflightArchiveNames(
   return false;
 }
 
+/** A blob that reached storage, kept so a failed import can delete it again. */
+interface PersistedArchiveBlob {
+  readonly relativePath: string;
+  readonly filepath: string;
+  readonly source: string;
+  readonly storageKey?: string;
+  readonly storageRegion?: string;
+}
+
 interface ArchivePersistenceContext {
   readonly userId: string;
   readonly skillId: Types.ObjectId;
   readonly authorId: Types.ObjectId;
   readonly tenantId?: string;
+  /**
+   * Blobs written so far, in archive order. An import that loses any bundled
+   * file is rolled back whole (`rollbackArchiveImport`), and the storage writes
+   * are the only part of that no database cascade can undo.
+   */
+  readonly persisted: PersistedArchiveBlob[];
 }
 
 async function persistArchiveFile(
@@ -690,6 +706,57 @@ async function persistArchiveFile(
         );
     }
     throw dbError;
+  }
+
+  context.persisted.push({
+    relativePath: file.relativePath,
+    filepath,
+    source,
+    storageKey,
+    storageRegion,
+  });
+}
+
+/**
+ * Undo an archive import that could not persist every bundled file.
+ *
+ * `deleteSkill` cascades to the SkillFile rows, the agent allowlists and the
+ * ACL grant, so only the storage blobs written by `persistArchiveFile` need
+ * explicit cleanup. A cleanup step that itself fails is logged for the operator
+ * and does not change the response: the import is reported as failed either
+ * way, because a skill missing the files `SKILL.md` references cannot be
+ * presented as imported.
+ */
+async function rollbackArchiveImport(
+  req: ServerRequest,
+  deps: ImportSkillDeps,
+  context: ArchivePersistenceContext,
+): Promise<void> {
+  const skillId = context.skillId.toString();
+  try {
+    const { deleted } = await deps.deleteSkill(skillId);
+    if (!deleted) {
+      logger.error(`[importSkill] Rollback could not find skill ${skillId} to delete`);
+    }
+  } catch (error) {
+    logger.error(`[importSkill] Rollback delete failed for skill ${skillId}:`, error);
+  }
+
+  const { deleteFile } = deps;
+  if (deleteFile == null) {
+    return;
+  }
+  for (const blob of context.persisted) {
+    await deleteFile(req, {
+      filepath: blob.filepath,
+      storageKey: blob.storageKey,
+      storageRegion: blob.storageRegion,
+      source: blob.source,
+      user: context.authorId,
+      tenantId: context.tenantId,
+    }).catch((error) =>
+      logger.error(`[importSkill] Rollback blob cleanup failed for ${blob.relativePath}:`, error),
+    );
   }
 }
 
@@ -955,6 +1022,7 @@ async function handleZip(
     skillId: skill._id,
     authorId,
     tenantId,
+    persisted: [],
   };
   let fileResults: ImportFileResult[];
   if (preflight == null) {
@@ -995,9 +1063,30 @@ async function handleZip(
     }
   }
 
-  logger.info(
-    `[importSkill] Imported skill "${inferredName}" with ${successCount} files (${errors.length} errors)`,
-  );
+  /**
+   * A skill whose bundled files did not all persist is broken in a way the
+   * uploader cannot see: it lists, shares and attaches normally while an agent
+   * that follows `SKILL.md` cannot find the resources it names. Import is
+   * therefore atomic — any failed file rolls the whole skill back and the
+   * response says which paths failed and why.
+   */
+  if (errors.length > 0) {
+    logger.warn(
+      `[importSkill] Rolling back skill "${inferredName}" (${skill._id.toString()}): ${errors.length} of ${fileResults.length} files failed`,
+    );
+    await rollbackArchiveImport(req, deps, persistenceContext);
+    const failure: TSkillImportFailedResponse = {
+      error: 'skill_import_incomplete',
+      message: `Import canceled: ${errors.length} of ${fileResults.length} files in the archive could not be imported.`,
+      failedFiles: errors.map((entry) => ({
+        path: entry.path,
+        ...(entry.error == null ? {} : { error: entry.error }),
+      })),
+    };
+    return res.status(422).json(failure);
+  }
+
+  logger.info(`[importSkill] Imported skill "${inferredName}" with ${successCount} files`);
 
   // Re-read the skill to get the current version/fileCount (bumped by each upsertSkillFile)
   const refreshed = (await deps.getSkillById(skill._id)) ?? skill;
@@ -1007,7 +1096,7 @@ async function handleZip(
     _importSummary: {
       filesProcessed: fileResults.length,
       filesSucceeded: successCount,
-      filesFailed: errors.length,
+      filesFailed: 0,
       errors,
     },
   });

@@ -7,6 +7,7 @@ import {
   mergeFileConfig,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
+import type { TSkillImportFailedFile, TSkillImportFailedResponse } from 'librechat-data-provider';
 import { useGetFileConfig, useImportSkillMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -21,12 +22,31 @@ function formatMegabytes(bytes: number): string {
   return Number.isInteger(value) ? `${value}` : value.toFixed(1);
 }
 
+/**
+ * An import that could not persist every bundled file is rolled back whole and
+ * answered with 422 + `failedFiles`. Those paths are the only place the user
+ * learns which resources their archive lost, so they are rendered in the dialog
+ * instead of being flattened into a toast that disappears.
+ */
+function getFailedImportFiles(error: unknown): TSkillImportFailedFile[] | null {
+  const data = (error as { response?: { data?: unknown } })?.response?.data;
+  if (data == null || typeof data !== 'object') {
+    return null;
+  }
+  const body = data as Partial<TSkillImportFailedResponse>;
+  if (body.error !== 'skill_import_incomplete' || !Array.isArray(body.failedFiles)) {
+    return null;
+  }
+  return body.failedFiles;
+}
+
 export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDialogProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
   const { showToast } = useToastContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [failedFiles, setFailedFiles] = useState<TSkillImportFailedFile[]>([]);
   const {
     data: skillFileConfig = { configuredSizeLimitMb: undefined, fileConfig: defaultFileConfig },
   } = useGetFileConfig({
@@ -45,15 +65,28 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
 
   const importMutation = useImportSkillMutation({
     onSuccess: (skill) => {
+      setFailedFiles([]);
       showToast({ status: 'success', message: localize('com_ui_skill_created') });
       setIsOpen(false);
       navigate(`/skills/${skill._id}`);
     },
     onError: (error: unknown) => {
+      const failed = getFailedImportFiles(error);
+      if (failed != null) {
+        /** Keep the dialog open: the skill was rolled back and the archive has
+         *  to be fixed before a retry can succeed. */
+        setFailedFiles(failed);
+        showToast({
+          status: 'error',
+          message: localize('com_ui_skill_upload_incomplete', { 0: `${failed.length}` }),
+        });
+        return;
+      }
       const errData = (error as { response?: { data?: { error?: string; message?: string } } })
         ?.response?.data;
       const message =
         errData?.message ?? errData?.error ?? localize('com_ui_create_skill_upload_error');
+      setFailedFiles([]);
       showToast({ status: 'error', message });
     },
   });
@@ -63,6 +96,7 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
       if (importMutation.isLoading) {
         return;
       }
+      setFailedFiles([]);
       if (file.size > skillImportSizeLimit) {
         showToast({
           status: 'error',
@@ -101,7 +135,15 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
   );
 
   return (
-    <OGDialog open={isOpen} onOpenChange={setIsOpen}>
+    <OGDialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        if (!open) {
+          setFailedFiles([]);
+        }
+        setIsOpen(open);
+      }}
+    >
       <OGDialogContent className="w-11/12 max-w-lg overflow-hidden">
         <div className="flex flex-col gap-6 p-1 sm:p-2">
           <h2 className="text-lg font-bold text-text-primary">
@@ -134,6 +176,29 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
               )}
               {localize('com_ui_skill_upload_drag')}
             </button>
+
+            {failedFiles.length > 0 && (
+              <div
+                role="alert"
+                className="flex flex-col gap-1 rounded-lg border border-border-medium bg-surface-secondary p-3 text-xs"
+              >
+                <p className="font-medium text-text-destructive">
+                  {localize('com_ui_skill_upload_failed_files')}
+                </p>
+                <ul className="list-inside list-disc text-text-secondary">
+                  {failedFiles.map((failedFile) => (
+                    <li key={failedFile.path}>
+                      <span className="break-all font-medium text-text-primary">
+                        {failedFile.path}
+                      </span>
+                      {failedFile.error != null && failedFile.error !== ''
+                        ? ` — ${failedFile.error}`
+                        : ''}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
             <div className="flex flex-col gap-3 text-xs text-text-secondary">
               <div>

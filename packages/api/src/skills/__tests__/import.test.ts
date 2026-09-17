@@ -22,6 +22,12 @@ interface ImportSummary {
   errors: Array<{ path: string; status: 'ok' | 'error'; error?: string }>;
 }
 
+interface ImportFailure {
+  error: string;
+  message: string;
+  failedFiles: Array<{ path: string; error?: string }>;
+}
+
 function mockAppConfig(filters: FiltersConfig): NonNullable<ImportRequest['config']> {
   return {
     config: {},
@@ -117,6 +123,10 @@ function deeplyNestedFrontmatterMarkdown(marker: string): string {
 
 function importSummary(body: unknown): ImportSummary {
   return (body as { _importSummary: ImportSummary })._importSummary;
+}
+
+function importFailure(body: unknown): ImportFailure {
+  return body as ImportFailure;
 }
 
 async function zipWithAdditionalFiles(fileCount: number, fileBytes: number): Promise<Buffer> {
@@ -459,6 +469,23 @@ describe('createImportHandler', () => {
     );
   });
 
+  it('reports zero failed files when every archive entry persists', async () => {
+    const deps = mockImportDeps();
+    const handler = createImportHandler(deps);
+    const buffer = await zipWithAdditionalFiles(2, 128);
+    const res = mockResponse();
+
+    await handler(mockZipRequest(buffer), res);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    const summary = importSummary(res.body);
+    expect(summary.filesProcessed).toBe(2);
+    expect(summary.filesSucceeded).toBe(2);
+    expect(summary.filesFailed).toBe(0);
+    expect(summary.errors).toEqual([]);
+    expect(deps.deleteSkill).not.toHaveBeenCalled();
+  });
+
   it('counts rejected oversized zip entries toward the cumulative decompressed limit', async () => {
     const kib = 1024;
     const deps = mockImportDeps({
@@ -473,12 +500,79 @@ describe('createImportHandler', () => {
 
     await handler(mockZipRequest(buffer), res);
 
-    expect(res.status).toHaveBeenCalledWith(201);
-    const summary = importSummary(res.body);
-    expect(summary.filesProcessed).toBe(3);
-    expect(summary.filesSucceeded).toBe(0);
-    expect(summary.filesFailed).toBe(3);
-    expect(summary.errors).toHaveLength(3);
+    expect(res.status).toHaveBeenCalledWith(422);
+    const failure = importFailure(res.body);
+    expect(failure.error).toBe('skill_import_incomplete');
+    expect(failure.failedFiles).toHaveLength(3);
+    expect(failure.message).toContain('3 of 3');
+    expect(deps.deleteSkill).toHaveBeenCalledTimes(1);
+  });
+
+  it('rolls back the skill and its stored blobs when one archive file fails', async () => {
+    const deps = mockImportDeps();
+    let savedFiles = 0;
+    deps.saveBuffer = jest.fn(async () => ({
+      filepath: `/tmp/imported-${savedFiles++}`,
+      source: 'local',
+      storageKey: `key-${savedFiles}`,
+      storageRegion: 'us-east-1',
+    })) as ImportSkillDeps['saveBuffer'];
+    deps.deleteFile = jest.fn(async () => undefined);
+    const upsert = jest
+      .fn()
+      .mockResolvedValueOnce({ _id: new Types.ObjectId() })
+      .mockRejectedValueOnce(new Error('write conflict'));
+    deps.upsertSkillFile = upsert as unknown as ImportSkillDeps['upsertSkillFile'];
+    const handler = createImportHandler(deps);
+    const buffer = await zipWithAdditionalFiles(2, 64);
+    const res = mockResponse();
+
+    await handler(mockZipRequest(buffer), res);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    const failure = importFailure(res.body);
+    expect(failure.error).toBe('skill_import_incomplete');
+    expect(failure.failedFiles).toEqual([{ path: 'files/1.txt', error: 'write conflict' }]);
+    expect(deps.deleteSkill).toHaveBeenCalledTimes(1);
+    /** The blob whose row failed is cleaned up inline; the rollback removes the
+     *  one that did persist, so both writes are undone. */
+    expect(deps.deleteFile).toHaveBeenCalledTimes(2);
+    expect(deps.deleteFile).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ filepath: '/tmp/imported-0' }),
+    );
+    expect(res.body).not.toHaveProperty('_importSummary');
+  });
+
+  it('rolls back an archive whose entry path is unsafe instead of importing it partially', async () => {
+    const deps = mockImportDeps();
+    deps.deleteFile = jest.fn(async () => undefined);
+    const handler = createImportHandler(deps);
+    const zip = new JSZip();
+    zip.file(
+      'SKILL.md',
+      [
+        '---',
+        'name: tiny-limit-skill',
+        'description: A skill used by import handler tests.',
+        '---',
+        '# Test skill',
+      ].join('\n'),
+    );
+    zip.file('queries.sql', 'select 1;');
+    zip.file('references/region mapping.md', '# regions');
+    const buffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+    const res = mockResponse();
+
+    await handler(mockZipRequest(buffer), res);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    const failure = importFailure(res.body);
+    expect(failure.failedFiles).toEqual([
+      { path: 'references/region mapping.md', error: 'Invalid path' },
+    ]);
+    expect(deps.deleteSkill).toHaveBeenCalledTimes(1);
+    expect(deps.deleteFile).toHaveBeenCalledTimes(1);
   });
 
   it('bounds SKILL.md inflation even when archive headers understate its size', async () => {

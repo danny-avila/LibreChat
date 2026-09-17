@@ -348,6 +348,25 @@ export type TSkillListResponse = {
   after: string | null;
 };
 
+/** One archive entry POST `/api/skills/import` could not persist. */
+export type TSkillImportFailedFile = {
+  /** Path inside the archive, relative to `SKILL.md`. */
+  path: string;
+  /** Why the file was rejected (size limit, invalid path, storage error). */
+  error?: string;
+};
+
+/**
+ * Response from a 422 `POST /api/skills/import`: at least one bundled file
+ * failed, so the skill, its files and its ACL grant were rolled back and
+ * nothing was imported.
+ */
+export type TSkillImportFailedResponse = {
+  error: 'skill_import_incomplete';
+  message: string;
+  failedFiles: TSkillImportFailedFile[];
+};
+
 /** Response from DELETE `/api/skills/:id`. */
 export type TDeleteSkillResponse = {
   id: string;

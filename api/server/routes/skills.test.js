@@ -553,6 +553,54 @@ describe('Skill routes', () => {
       );
     });
 
+    it('rolls back the skill, files, ACL, and stored blob when a bundled file fails', async () => {
+      const saveBuffer = jest.fn().mockResolvedValue('/uploads/test/queries.sql');
+      const deleteFile = jest.fn().mockResolvedValue(undefined);
+      const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+      /** Both the write and the rollback delete resolve a strategy, so the
+       *  override outlives a single call and is restored below. */
+      const defaultStrategies = getStrategyFunctions();
+      getStrategyFunctions.mockReturnValue({ saveBuffer, deleteFile });
+
+      const zip = new JSZip();
+      zip.file(
+        'SKILL.md',
+        [
+          '---',
+          'name: partial-import',
+          'description: Imported skill that loses one bundled file.',
+          '---',
+          '# Partial Import',
+        ].join('\n'),
+      );
+      zip.file('queries.sql', 'select 1;');
+      /** A space is outside the stored path charset, so this entry can never
+       *  persist — the import must fail instead of dropping it silently. */
+      zip.file('references/region mapping.md', '# regions');
+      const buffer = await zip.generateAsync({ type: 'nodebuffer' });
+
+      const res = await request(app).post('/api/skills/import').attach('file', buffer, {
+        filename: 'partial-import.skill',
+        contentType: 'application/zip',
+      });
+      getStrategyFunctions.mockReturnValue(defaultStrategies);
+
+      expect(res.status).toBe(422);
+      expect(res.body).toEqual(
+        expect.objectContaining({
+          error: 'skill_import_incomplete',
+          failedFiles: [{ path: 'references/region mapping.md', error: 'Invalid path' }],
+        }),
+      );
+      expect(await Skill.countDocuments({ name: 'partial-import' })).toBe(0);
+      expect(await SkillFile.countDocuments()).toBe(0);
+      expect(await AclEntry.countDocuments({ resourceType: ResourceType.SKILL })).toBe(0);
+      expect(deleteFile).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ filepath: '/uploads/test/queries.sql' }),
+      );
+    });
+
     it('blocks filtered Markdown before creating the imported skill', async () => {
       mockFilters = {
         files: {

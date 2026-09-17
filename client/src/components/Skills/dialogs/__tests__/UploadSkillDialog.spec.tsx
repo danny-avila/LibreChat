@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { FileConfigInput } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import UploadSkillDialog from '../UploadSkillDialog';
@@ -7,6 +7,11 @@ const mockMutate = jest.fn();
 const mockNavigate = jest.fn();
 const mockSetIsOpen = jest.fn();
 const mockShowToast = jest.fn();
+interface ImportMutationOptions {
+  onSuccess?: (skill: { _id: string }) => void;
+  onError?: (error: unknown) => void;
+}
+let mockImportOptions: ImportMutationOptions | undefined;
 let mockFileConfigInput: FileConfigInput | undefined = {
   skills: {
     fileSizeLimit: 1,
@@ -42,10 +47,13 @@ jest.mock('~/data-provider', () => ({
   useGetFileConfig: ({ select }: { select?: (data: FileConfigInput | undefined) => unknown }) => ({
     data: select != null ? select(mockFileConfigInput) : mockFileConfigInput,
   }),
-  useImportSkillMutation: () => ({
-    mutate: mockMutate,
-    isLoading: false,
-  }),
+  useImportSkillMutation: (options?: ImportMutationOptions) => {
+    mockImportOptions = options;
+    return {
+      mutate: mockMutate,
+      isLoading: false,
+    };
+  },
 }));
 
 jest.mock('~/hooks', () => ({
@@ -63,6 +71,8 @@ jest.mock('~/hooks', () => ({
         com_ui_skill_upload_size_error: `Skill import must not exceed ${params?.[0]} MB`,
         com_ui_skill_created: 'Skill created',
         com_ui_create_skill_upload_error: 'Failed to read the uploaded file',
+        com_ui_skill_upload_failed_files: 'These files could not be imported:',
+        com_ui_skill_upload_incomplete: `Import canceled: ${params?.[0]} file(s) in the archive could not be imported. Fix the archive and upload it again.`,
       };
       return translations[key] ?? key;
     },
@@ -86,9 +96,22 @@ function getFileInput(container: HTMLElement): HTMLInputElement {
   return input;
 }
 
+function incompleteImportError(failedFiles: Array<{ path: string; error?: string }>) {
+  return {
+    response: {
+      data: {
+        error: 'skill_import_incomplete',
+        message: `Import canceled: ${failedFiles.length} of 3 files in the archive could not be imported.`,
+        failedFiles,
+      },
+    },
+  };
+}
+
 describe('UploadSkillDialog', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockImportOptions = undefined;
     mockFileConfigInput = {
       skills: {
         fileSizeLimit: 1,
@@ -162,6 +185,65 @@ describe('UploadSkillDialog', () => {
     expect(appendSpy).toHaveBeenCalledWith('file', file, file.name);
     expect(mockMutate).toHaveBeenCalledWith(expect.any(FormData));
     appendSpy.mockRestore();
+  });
+
+  it('lists the files a rolled-back import could not persist and keeps the dialog open', () => {
+    render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
+
+    act(() => {
+      mockImportOptions?.onError?.(
+        incompleteImportError([
+          { path: 'queries.sql', error: 'File too large (max 10MB)' },
+          { path: 'references/region_mapping.md', error: 'Invalid path' },
+        ]),
+      );
+    });
+
+    expect(mockShowToast).toHaveBeenCalledWith({
+      status: 'error',
+      message:
+        'Import canceled: 2 file(s) in the archive could not be imported. Fix the archive and upload it again.',
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent('These files could not be imported:');
+    expect(screen.getByText('queries.sql')).toBeInTheDocument();
+    expect(screen.getByText('references/region_mapping.md')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Invalid path');
+    expect(mockSetIsOpen).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('clears a previous import failure when a new file is selected', () => {
+    const { container } = render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
+
+    act(() => {
+      mockImportOptions?.onError?.(incompleteImportError([{ path: 'queries.sql' }]));
+    });
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+
+    fireEvent.change(getFileInput(container), {
+      target: {
+        files: [new File([new Uint8Array(1024)], 'retry.skill', { type: 'application/zip' })],
+      },
+    });
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(mockMutate).toHaveBeenCalledWith(expect.any(FormData));
+  });
+
+  it('falls back to the server message for import errors without failed files', () => {
+    render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
+
+    act(() => {
+      mockImportOptions?.onError?.({
+        response: { data: { error: 'Archive must contain a SKILL.md file' } },
+      });
+    });
+
+    expect(mockShowToast).toHaveBeenCalledWith({
+      status: 'error',
+      message: 'Archive must contain a SKILL.md file',
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('uploads files under the configured skill import limit', () => {
