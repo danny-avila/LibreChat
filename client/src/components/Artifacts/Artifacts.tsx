@@ -529,7 +529,7 @@ export default function Artifacts() {
 
             <div
               className={cn(
-                'absolute inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm transition-opacity duration-300 ease-in-out',
+                'absolute inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-xs transition-opacity duration-300 ease-in-out',
                 isRefreshing ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
               )}
               aria-hidden={!isRefreshing}

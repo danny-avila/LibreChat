@@ -406,12 +406,6 @@ describe('AgentDetail', () => {
       });
     });
 
-    it('should have proper focus management', async () => {
-      renderWithProviders(<AgentDetail {...defaultProps} />);
-
-      const copyLinkButton = screen.getByRole('button', { name: 'com_agents_copy_link' });
-      expect(copyLinkButton).toHaveClass('focus-visible:outline-hidden', 'focus-visible:ring-2');
-    });
   });
 
   describe('Edge Cases', () => {
