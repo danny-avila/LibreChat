@@ -592,3 +592,4 @@ export type {
 };
 
 export { recordAgentEventActorReceiptMetric, setAgentEventActorReceiptMetricObserver };
+export type { UserKeySnapshot, UserKeyUpdate } from './key';

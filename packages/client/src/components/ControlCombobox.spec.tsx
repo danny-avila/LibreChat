@@ -80,6 +80,59 @@ const openPopover = () => {
 };
 
 describe('ControlCombobox popover sizing', () => {
+  it('exposes a keyboard action beside a disabled option without selecting it', async () => {
+    const selected = jest.fn();
+    const configure = jest.fn();
+    render(
+      <ControlCombobox
+        selectedValue="a"
+        items={[...items, { label: 'Needs key', value: 'missing', disabled: true }]}
+        setValue={selected}
+        ariaLabel="Providers"
+        isCollapsed={false}
+        optionAction={(value) =>
+          value === 'missing'
+            ? {
+                label: 'Configure missing provider',
+                icon: <span aria-hidden="true">⚙</span>,
+                onClick: configure,
+              }
+            : undefined
+        }
+      />,
+    );
+    await act(async () => {
+      await userEvent.click(screen.getByRole('combobox', { name: 'Providers' }));
+    });
+    const action = await screen.findByRole('button', { name: 'Configure missing provider' });
+    expect(action.closest('[role="option"]')).toBeNull();
+    expect(action.closest('[role="listbox"]')).toBeNull();
+    expect(screen.getByRole('option', { name: 'Needs key' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    await act(async () => {
+      action.focus();
+      await userEvent.keyboard('{Enter}');
+    });
+    expect(configure).toHaveBeenCalledTimes(1);
+    expect(selected).not.toHaveBeenCalledWith('missing');
+    const trigger = screen.getByRole('combobox', { name: 'Providers' });
+    await act(async () => {
+      trigger.focus();
+      await userEvent.keyboard('{ArrowDown}');
+    });
+    expect(await screen.findByRole('button', { name: 'Configure missing provider' })).toBeVisible();
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole('combobox').find((element) => element.tagName === 'INPUT'),
+      ).toHaveFocus(),
+    );
+    await act(async () => {
+      await userEvent.keyboard('{Escape}');
+    });
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
   it('shows a restored unavailable entry without allowing selection', async () => {
     const selected = jest.fn();
     render(

@@ -13,6 +13,8 @@ import type {
   MediaEnumControl,
   MediaLimits,
   MediaOptionValue,
+  MediaUserKey,
+  MediaErrorCode,
 } from 'librechat-data-provider';
 import type { MediaTransport, MediaTransportRequest } from './transport';
 import type { MediaConnection, MediaProviderAdapter } from './provider';
@@ -156,7 +158,9 @@ export function createMediaCatalog({
       config: MediaConfig,
       resolve: (integration: MediaIntegration) => Promise<MediaConnection>,
       scope: string,
+      describeUserKey?: (integration: MediaIntegration) => MediaUserKey | undefined,
     ): Promise<MediaCatalogSnapshot> {
+      const resolutionErrors = new Map<string, MediaErrorCode>();
       const results = await Promise.all(
         config.integrations.map(async (integration): Promise<ResolvedOffering[]> => {
           const models = selectedModels(
@@ -210,6 +214,7 @@ export function createMediaCatalog({
                 error.code === 'unsupported')
                 ? error.code
                 : 'not_ready';
+            resolutionErrors.set(integration.id, code);
             return models.map((modelId) => ({
               offering: {
                 connectionId: integration.id,
@@ -226,8 +231,31 @@ export function createMediaCatalog({
         }),
       );
       const entries = results.flat();
+      const integrations = config.integrations.map((integration, index) => {
+        let userKey: MediaUserKey | undefined;
+        try {
+          userKey = describeUserKey?.(integration);
+        } catch {
+          /* Invalid configuration stays unavailable. */
+        }
+        return {
+          connectionId: integration.id,
+          connectionName: integration.label ?? integration.id,
+          api: integration.api,
+          ...(userKey ? { userKey } : {}),
+          available: results[index].some((entry) => entry.offering.available),
+          ...(!results[index].some((entry) => entry.offering.available)
+            ? {
+                unavailableReason:
+                  resolutionErrors.get(integration.id) ??
+                  results[index][0]?.offering.unavailableReason ??
+                  ('not_ready' as const),
+              }
+            : {}),
+        };
+      });
       const version = createHash('sha256')
-        .update(JSON.stringify({ scope, entries, limits: config.limits }))
+        .update(JSON.stringify({ scope, entries, integrations, limits: config.limits }))
         .digest('hex');
       return {
         catalog: {
@@ -237,18 +265,7 @@ export function createMediaCatalog({
           limits: config.limits,
           clientPollIntervalMs: config.polling.clientIntervalMs,
           clientCatchUpIntervalMs: config.polling.clientCatchUpIntervalMs,
-          integrations: config.integrations.map((integration, index) => ({
-            connectionId: integration.id,
-            connectionName: integration.label ?? integration.id,
-            api: integration.api,
-            available: results[index].some((entry) => entry.offering.available),
-            ...(!results[index].some((entry) => entry.offering.available)
-              ? {
-                  unavailableReason:
-                    results[index][0]?.offering.unavailableReason ?? ('not_ready' as const),
-                }
-              : {}),
-          })),
+          integrations,
         },
         resolved: new Map(
           entries.map((entry) => [

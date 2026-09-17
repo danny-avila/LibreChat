@@ -158,6 +158,16 @@ export const mediaLimitsSchema = z
   })
   .strict()
   .refine((value) => value.pageSize <= value.maxPageSize, 'Page size exceeds maximum');
+
+/** Public setup instructions only; saved credential values never belong in the catalog. */
+export const mediaUserKeySchema = z
+  .object({
+    keyName: z.string().min(1),
+    encoding: z.enum(['google', 'apiKey']),
+    userProvideURL: z.boolean(),
+  })
+  .strict();
+
 export const mediaCatalogSchema = z
   .object({
     schemaVersion: z.literal(MEDIA_SCHEMA_VERSION),
@@ -175,6 +185,7 @@ export const mediaCatalogSchema = z
             api: mediaApiSchema,
             available: z.boolean(),
             unavailableReason: mediaErrorCodeSchema.optional(),
+            userKey: mediaUserKeySchema.optional(),
           })
           .strict(),
       )
@@ -188,3 +199,4 @@ export type MediaCapability = z.infer<typeof mediaCapabilitySchema>;
 export type MediaOffering = z.infer<typeof mediaOfferingSchema>;
 export type MediaCatalog = z.infer<typeof mediaCatalogSchema>;
 export type MediaLimits = z.infer<typeof mediaLimitsSchema>;
+export type MediaUserKey = z.infer<typeof mediaUserKeySchema>;

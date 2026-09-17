@@ -35,6 +35,7 @@ const {
   agentStartupTelemetryMiddleware,
   initializeFileStorage,
   createMediaRuntime,
+  resolveConfigSecret,
   createMediaTransport,
   createMediaAccounting,
   createVertexMediaCredentialProvider,
@@ -257,6 +258,7 @@ const startServer = async () => {
       maxCacheEntries: appConfig.media?.catalog.maxCacheEntries,
     }),
     decrypt,
+    resolveConfigSecret,
     transport: createMediaTransport({
       http: axios,
       allowedAddresses: appConfig.endpoints?.allowedAddresses,

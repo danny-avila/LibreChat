@@ -215,7 +215,7 @@ export function createMediaNativeMethods(
           },
         },
         { new: true, writeConcern: durable },
-      ).lean();
+      ).lean<MediaStoredJob | null>();
       if (!job) {
         const current = await media.getMediaJob(scope, input.jobId);
         const winner = current?.nativePartKeys?.find((entry) => entry.key === key);
@@ -360,7 +360,7 @@ export function createMediaNativeMethods(
         $inc: { version: 1 },
       },
       { new: true, writeConcern: durable },
-    ).lean();
+    ).lean<MediaStoredJob | null>();
     if (!completed) {
       throw new MediaPersistenceError('conflict', 'Native recording changed during completion');
     }
@@ -406,7 +406,7 @@ export function createMediaNativeMethods(
         $inc: { version: 1 },
       },
       { new: true, writeConcern: durable },
-    ).lean();
+    ).lean<MediaStoredJob | null>();
     if (failed) {
       await refreshThread(failed);
     }
@@ -432,7 +432,7 @@ export function createMediaNativeMethods(
       })
         .sort({ updatedAt: 1, jobId: 1 })
         .limit(input.limit)
-        .lean();
+        .lean<MediaStoredJob[]>();
       for (const job of jobs) {
         if (!job.nativeLimits && job.phase === 'queued') {
           // start() never returned, so the SDK has no permission to invoke the provider.
@@ -454,7 +454,7 @@ export function createMediaNativeMethods(
               $inc: { version: 1 },
             },
             { new: true, writeConcern: durable },
-          ).lean();
+          ).lean<MediaStoredJob | null>();
           if (failed) {
             await refreshThread(failed);
           }

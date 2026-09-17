@@ -9,12 +9,14 @@ import { tmpdir } from 'node:os';
 import { Readable } from 'node:stream';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import {
   createMediaMethods,
   createMediaNativeMethods,
   createMediaAccountingMethods,
   runAsSystem,
   tenantStorage,
+  keySchema,
 } from '@librechat/data-schemas';
 import {
   EModelEndpoint,
@@ -37,6 +39,21 @@ import { createMediaAccounting } from './accounting';
 import { createLocalMediaStorage } from './storage';
 import { createMediaTransport } from './transport';
 import { createMediaRuntime } from './runtime';
+
+const fixtureEncryptionKey = randomBytes(32);
+function encryptSavedCredential(value: string): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', fixtureEncryptionKey, iv);
+  const data = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+  return `fixture:${Buffer.concat([iv, cipher.getAuthTag(), data]).toString('base64')}`;
+}
+function decryptSavedCredential(value: string): string {
+  if (!value.startsWith('fixture:')) return value;
+  const data = Buffer.from(value.slice(8), 'base64');
+  const decipher = createDecipheriv('aes-256-gcm', fixtureEncryptionKey, data.subarray(0, 12));
+  decipher.setAuthTag(data.subarray(12, 28));
+  return Buffer.concat([decipher.update(data.subarray(28)), decipher.final()]).toString('utf8');
+}
 
 describe('Media Studio HTTP and worker with standalone MongoDB', () => {
   let mongo: MongoMemoryServer;
@@ -73,6 +90,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
   beforeAll(async () => {
     mongo = await MongoMemoryServer.create();
     await mongoose.connect(mongo.getUri());
+    mongoose.model('Key', keySchema);
     const mediaMethods = createMediaMethods(mongoose);
     repository = { ...mediaMethods, ...createMediaNativeMethods(mongoose, mediaMethods) };
     await repository.ensureMediaIndexes();
@@ -328,7 +346,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
         accessToken: vertexToken,
         revision: 'original-service-account',
       }),
-      decrypt: async (value) => value,
+      decrypt: async (value) => decryptSavedCredential(value),
       transport: {
         json: (input, schema) =>
           providerTransport.json(
@@ -865,6 +883,123 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     expect(posts).toBe(1);
     expect(polls).toBe(1);
   });
+
+  it('shares saved provider keys through the HTTP catalog with strict owner and tenant isolation', async () => {
+    const integration = config.media!.integrations.find((entry) => entry.id === 'images')!;
+    integration.endpointRef = {
+      kind: 'direct',
+      apiKey: 'user_provided',
+      baseURL: root,
+      credentialName: 'My Image Account',
+    };
+    const readCatalog = async () =>
+      mediaCatalogSchema.parse((await request(app).get('/api/media/catalog').expect(200)).body);
+    const absent = await readCatalog();
+    expect(absent.integrations?.find((entry) => entry.connectionId === 'images')).toMatchObject({
+      available: false,
+      unavailableReason: 'credentials_required',
+      userKey: { keyName: 'My Image Account', encoding: 'apiKey', userProvideURL: false },
+    });
+    const plaintext = JSON.stringify({
+      apiKey: 'saved-owner-key',
+      baseURL: 'https://unused.example',
+    });
+    const value = encryptSavedCredential(plaintext);
+    expect(value).not.toContain('saved-owner-key');
+    await mongoose.models.Key.create([
+      { userId: new mongoose.Types.ObjectId(), tenantId: null, name: 'My Image Account', value },
+      { userId: scope.ownerId, tenantId: 'other-tenant', name: 'My Image Account', value },
+    ]);
+    expect(
+      (await readCatalog()).offerings.find((entry) => entry.connectionId === 'images')?.available,
+    ).toBe(false);
+    await mongoose.models.Key.create({
+      userId: scope.ownerId,
+      tenantId: null,
+      name: 'My Image Account',
+      value,
+    });
+    const ready = await readCatalog();
+    expect(ready.offerings.find((entry) => entry.connectionId === 'images')?.available).toBe(true);
+    expect(ready.version).not.toBe(absent.version);
+    expect(JSON.stringify(ready)).not.toMatch(/saved-owner-key|unused\.example|fixture:/);
+    const submitted = await submit('saved-owner-credential');
+    expect(submitted.status).toBe(202);
+    expect((await run(submitted.body.jobId))?.phase).toBe('succeeded');
+    expect(providerHeaders).toEqual([{ authorization: 'Bearer saved-owner-key' }]);
+    const stored = await repository.getMediaJob(scope, submitted.body.jobId);
+    expect(JSON.stringify(stored)).not.toContain('saved-owner-key');
+  });
+
+  it('revokes an accepted video credential without polling with another account or repeating submission', async () => {
+    const integration = config.media!.integrations.find((entry) => entry.id === 'videos')!;
+    integration.endpointRef = {
+      kind: 'direct',
+      apiKey: 'user_provided',
+      baseURL: root,
+      credentialName: 'My Video Account',
+    };
+    await mongoose.models.Key.create({
+      userId: scope.ownerId,
+      tenantId: null,
+      name: 'My Video Account',
+      value: encryptSavedCredential(JSON.stringify({ apiKey: 'saved-video-key' })),
+    });
+    const catalog = mediaCatalogSchema.parse((await request(app).get('/api/media/catalog')).body);
+    const response = await submit('saved-video-credential', {
+      operation: 'video.generate',
+      selection: { connectionId: 'videos', modelId: 'sora-2', catalogVersion: catalog.version },
+      parameters: { durationSeconds: 4, resolution: '1280x720' },
+    });
+    expect(response.status).toBe(202);
+    expect((await run(response.body.jobId))?.phase).toBe('running');
+    await mongoose.models.Key.deleteOne({
+      userId: scope.ownerId,
+      tenantId: null,
+      name: 'My Video Account',
+    });
+    expect(await run(response.body.jobId)).toMatchObject({
+      phase: 'requires_attention',
+      error: { code: 'credentials_required' },
+    });
+    expect(posts).toBe(1);
+    expect(polls).toBe(0);
+  });
+
+  it.each(['expiry', 'rotation'] as const)(
+    'rechecks saved key %s before dispatching a queued job',
+    async (change) => {
+      const integration = config.media!.integrations.find((entry) => entry.id === 'images')!;
+      integration.endpointRef = {
+        kind: 'direct',
+        apiKey: 'user_provided',
+        baseURL: root,
+        credentialName: 'My Image Account',
+      };
+      const key = await mongoose.models.Key.create({
+        userId: scope.ownerId,
+        tenantId: null,
+        name: 'My Image Account',
+        value: encryptSavedCredential(JSON.stringify({ apiKey: 'first-user-key' })),
+      });
+      const response = await submit(`saved-key-${change}`);
+      expect(response.status).toBe(202);
+      await mongoose.models.Key.updateOne(
+        { _id: key._id },
+        {
+          $set:
+            change === 'expiry'
+              ? { expiresAt: new Date(Date.now() + 500) }
+              : { value: encryptSavedCredential(JSON.stringify({ apiKey: 'second-user-key' })) },
+        },
+      );
+      expect(await run(response.body.jobId)).toMatchObject({
+        phase: 'failed',
+        error: { code: change === 'expiry' ? 'credentials_expired' : 'credentials_required' },
+      });
+      expect(posts).toBe(0);
+    },
+  );
 
   it('uses direct provider credentials without copying literal keys or secret headers into persisted jobs', async () => {
     const integration = config.media!.integrations.find((entry) => entry.id === 'images');

@@ -37,6 +37,7 @@ import {
 } from './labels';
 import { useMediaUpload } from '~/data-provider/Media/uploads';
 import { withImageContext } from './context';
+import { useMediaCredentials } from './Keys';
 import { mediaErrorCode } from './commands';
 import { mediaDraftFamily } from './state';
 import { MediaPreview } from './Asset';
@@ -161,6 +162,7 @@ export function MediaForm({
       ? localize('com_media_provider_configuration_required')
       : localize(mediaErrorLabels[reason ?? 'unsupported']);
   const id = useId();
+  const credentials = useMediaCredentials(catalog, `${id}-connection`);
   const draftKey = `${host.scope}:${threadId ?? 'new'}`;
   const [savedDraft, setDraft] = useAtom(mediaDraftFamily(draftKey));
   const [error, setError] = useState<string>();
@@ -517,13 +519,16 @@ export function MediaForm({
     }
   }
   if (!offering || !capability) {
-    const integrations = catalog.integrations ?? catalog.offerings.map((item) => ({ ...item }));
+    const integrations: NonNullable<MediaCatalog['integrations']> =
+      catalog.integrations ?? catalog.offerings;
     const unavailable = (
       <div className="space-y-3">
         <p role="status">{localize('com_media_no_models')}</p>
         <Label>{localize('com_media_connection')}</Label>
         <ControlCombobox
           ariaLabel={localize('com_media_connection')}
+          selectId={`${id}-connection`}
+          optionAction={credentials.action}
           selectedValue=""
           selectPlaceholder={localize('com_media_choose_model')}
           isCollapsed={false}
@@ -557,7 +562,21 @@ export function MediaForm({
         )}
       </div>
     );
-    return children ? children({ settings: unavailable, composer: unavailable }) : unavailable;
+    return (
+      <>
+        {credentials.dialog}
+        {children
+          ? children({
+              settings: unavailable,
+              composer: (
+                <p role="status" className="text-sm text-text-secondary">
+                  {localize('com_media_no_models')}
+                </p>
+              ),
+            })
+          : unavailable}
+      </>
+    );
   }
   const operations = (['image.generate', 'image.edit', 'video.generate'] as const).filter(
     (operation) =>
@@ -747,6 +766,7 @@ export function MediaForm({
           <ControlCombobox
             showCarat
             selectId={`${id}-connection`}
+            optionAction={credentials.action}
             ariaLabel={localize('com_media_connection')}
             variant="field"
             isCollapsed={false}
@@ -1193,12 +1213,17 @@ export function MediaForm({
       )}
     </section>
   );
-  return children ? (
-    children({ settings, composer })
-  ) : (
-    <div className="space-y-5">
-      {settings}
-      {composer}
-    </div>
+  return (
+    <>
+      {credentials.dialog}
+      {children ? (
+        children({ settings, composer })
+      ) : (
+        <div className="space-y-5">
+          {settings}
+          {composer}
+        </div>
+      )}
+    </>
   );
 }

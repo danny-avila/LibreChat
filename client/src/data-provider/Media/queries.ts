@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { isAxiosError } from 'axios';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -12,6 +12,7 @@ import type {
   MediaThreadDetail,
   MediaThreadPage,
   MediaThreadListRequest,
+  TCheckUserKeyResponse,
 } from 'librechat-data-provider';
 import { newerMediaSnapshot } from './reconcile';
 
@@ -26,12 +27,59 @@ const current = <T>(host: MediaQueryScope, value: T): T => {
   return value;
 };
 export function useMediaCatalog(host: MediaQueryScope) {
-  return useQuery(
+  const { scope, catchUpIntervalMs, isCurrentSession } = host;
+  const client = useQueryClient();
+  const query = useQuery(
     [QueryKeys.mediaCatalog, host.scope],
     async ({ signal }) =>
       current(host, mediaCatalogSchema.parse(await dataService.getMediaCatalog(signal))),
-    { retry: false },
+    {
+      retry: false,
+      refetchInterval: (data) =>
+        data?.integrations?.some((item) => item.userKey) ? host.catchUpIntervalMs : false,
+      refetchIntervalInBackground: false,
+    },
   );
+  const processed = useRef(new Map<string, string>());
+  const keyNames = JSON.stringify([
+    ...new Set(
+      query.data?.integrations?.flatMap((item) => (item.userKey ? [item.userKey.keyName] : [])) ??
+        [],
+    ),
+  ]);
+  useEffect(() => {
+    const names: string[] = JSON.parse(keyNames);
+    if (!names.length) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const schedule = () => {
+      clearTimeout(timer);
+      if (!isCurrentSession()) return;
+      let delay = Infinity;
+      let expired = false;
+      for (const name of names) {
+        const key = client.getQueryData<TCheckUserKeyResponse | null>([QueryKeys.name, name]);
+        const expiry = key?.expiresAt;
+        const time = expiry ? new Date(expiry).getTime() : NaN;
+        if (!expiry || !Number.isFinite(time) || processed.current.get(name) === expiry) continue;
+        if (time <= Date.now()) {
+          processed.current.set(name, expiry);
+          expired = true;
+        } else delay = Math.min(delay, time - Date.now());
+      }
+      if (expired) void client.invalidateQueries([QueryKeys.mediaCatalog, scope]);
+      // The existing catch-up interval also bounds browser timer limits for long expiries.
+      if (Number.isFinite(delay)) timer = setTimeout(schedule, Math.min(delay, catchUpIntervalMs));
+    };
+    schedule();
+    const unsubscribe = client.getQueryCache().subscribe((event) => {
+      if (event?.query.queryKey[0] === QueryKeys.name) schedule();
+    });
+    return () => {
+      clearTimeout(timer);
+      unsubscribe();
+    };
+  }, [client, scope, catchUpIntervalMs, isCurrentSession, keyNames]);
+  return query;
 }
 export function useMediaThreads(host: MediaQueryScope, filter: MediaThreadListRequest['filter']) {
   const client = useQueryClient();

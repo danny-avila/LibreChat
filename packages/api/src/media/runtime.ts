@@ -44,6 +44,7 @@ export interface MediaRuntimeDependencies {
   environment: MediaEnvironment;
   vertexCredentials?: MediaVertexCredentialProvider;
   decrypt(value: string): Promise<string>;
+  resolveConfigSecret?(value: string): string | undefined;
   transport: MediaTransport;
   adapters?: readonly MediaProviderAdapter[];
   upload: MediaUploadFactory;
@@ -75,6 +76,7 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
     now: Date.now,
     vertexCredentials: input.vertexCredentials,
     adapters,
+    resolveConfigSecret: input.resolveConfigSecret,
   });
   async function actorContext(actor: MediaActor): Promise<MediaContext> {
     const [appConfig, role] = await Promise.all([
@@ -107,6 +109,7 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
     repository,
     storage,
     resolveConnection,
+    describeUserKey: resolveConnection.describe,
     loadContext,
     accounting: input.accounting,
     ensureReady: () => repository.ensureMediaNativeIndexes(),

@@ -367,6 +367,7 @@ export type TUpdateUserKeyRequest = {
   name: string;
   value: string;
   expiresAt: string;
+  preserveGoogleServiceKey?: boolean;
 };
 
 export type TAgentApiKeyCreateRequest = {
@@ -803,7 +804,7 @@ export type TRefreshTokenResponse = {
 };
 
 export type TCheckUserKeyResponse = {
-  expiresAt: string;
+  expiresAt: string | null;
 };
 
 export type TRequestPasswordResetResponse = {

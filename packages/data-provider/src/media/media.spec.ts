@@ -12,6 +12,8 @@ import {
   mediaOptionValueSchema,
   mediaInputSchema,
   mediaURLUploadRequestSchema,
+  mediaCatalogSchema,
+  mediaUserKeySchema,
 } from './index';
 import { PermissionTypes, Permissions, permissionsSchema } from '../permissions';
 import { configSchema, BASE_ONLY_CONFIG_SECTIONS } from '../config';
@@ -33,6 +35,76 @@ const submission = {
 };
 
 describe('media configuration compatibility', () => {
+  it('publishes only explicit user-key setup instructions without requiring model discovery', () => {
+    const catalog = {
+      schemaVersion: 1,
+      version: 'catalog-version',
+      offerings: [],
+      limits: {},
+      clientPollIntervalMs: 5_000,
+      clientCatchUpIntervalMs: 30_000,
+      integrations: [
+        {
+          connectionId: 'router',
+          connectionName: 'OpenRouter',
+          api: 'openrouter.images',
+          available: false,
+          unavailableReason: 'credentials_required',
+          userKey: { keyName: 'My OpenRouter', encoding: 'apiKey', userProvideURL: false },
+        },
+      ],
+    };
+    expect(mediaCatalogSchema.parse(catalog).integrations?.[0].userKey).toEqual(
+      catalog.integrations[0].userKey,
+    );
+    const { userKey: _userKey, ...managed } = catalog.integrations[0];
+    expect(
+      mediaCatalogSchema.parse({ ...catalog, integrations: [managed] }).integrations?.[0].userKey,
+    ).toBeUndefined();
+    for (const secretField of ['apiKey', 'baseURL', 'headers', 'options', 'value']) {
+      expect(
+        mediaUserKeySchema.safeParse({
+          ...catalog.integrations[0].userKey,
+          [secretField]: 'private',
+        }).success,
+      ).toBe(false);
+    }
+    expect(mediaUserKeySchema.safeParse({ keyName: '', encoding: 'raw' }).success).toBe(false);
+  });
+
+  it('keeps personal credentials an explicit YAML choice and lets image/video share a saved key', () => {
+    const config = resolveMediaConfig({
+      integrations: [
+        {
+          ...integration,
+          endpointRef: {
+            kind: 'direct',
+            apiKey: 'user_provided',
+            baseURL: 'user_provided',
+            credentialName: 'router-account',
+          },
+        },
+        {
+          ...integration,
+          id: 'router-videos',
+          api: 'openrouter.videos',
+          operations: ['video.generate'],
+          endpointRef: {
+            kind: 'direct',
+            apiKey: 'user_provided',
+            credentialName: 'router-account',
+          },
+        },
+      ],
+    });
+    expect(config.integrations[0].endpointRef).toMatchObject({
+      apiKey: 'user_provided',
+      baseURL: 'user_provided',
+      credentialName: 'router-account',
+    });
+    expect(config.integrations[1].endpointRef).toMatchObject({ credentialName: 'router-account' });
+  });
+
   it('accepts hosted audio/video sources while rejecting credentials, fragments and non-HTTPS URLs', () => {
     const url = 'https://media.example/reference.mp4?signature=opaque';
     expect(mediaURLUploadRequestSchema.parse({ url, role: 'video' })).toEqual({
@@ -200,6 +272,17 @@ describe('media configuration compatibility', () => {
 });
 
 describe('media command contracts', () => {
+  it('preserves exact custom credential names in lookup and revoke URLs', () => {
+    const name = 'Media / Team & Labs?#';
+    const lookup = new URL(endpoints.userKeyQuery(name), 'http://localhost');
+    expect(lookup.searchParams.get('name')).toBe(name);
+    expect(Array.from(lookup.searchParams.keys())).toEqual(['name']);
+    const removal = new URL(endpoints.revokeUserKey(name), 'http://localhost');
+    expect(decodeURIComponent(removal.pathname.split('/').pop()!)).toBe(name);
+    expect(removal.search).toBe('');
+    expect(removal.hash).toBe('');
+  });
+
   it('opts into gallery activity over HTTP while leaving legacy requests unchanged', () => {
     const params = {
       include: 'activity' as const,

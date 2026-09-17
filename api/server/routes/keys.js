@@ -1,17 +1,28 @@
 const express = require('express');
-const { updateUserKey, deleteUserKey, getUserKeyExpiry } = require('~/models');
+const { decrypt } = require('@librechat/data-schemas');
+const { createUserKeyUpdateHandler } = require('@librechat/api');
+const {
+  updateUserKey,
+  deleteUserKey,
+  getUserKeyExpiry,
+  getUserKeySnapshot,
+  compareAndSetUserKey,
+} = require('~/models');
 const { requireJwtAuth } = require('~/server/middleware');
 
 const router = express.Router();
 
-router.put('/', requireJwtAuth, async (req, res) => {
-  if (req.body == null || typeof req.body !== 'object') {
-    return res.status(400).send({ error: 'Invalid request body.' });
-  }
-  const { name, value, expiresAt } = req.body;
-  await updateUserKey({ userId: req.user.id, name, value, expiresAt });
-  res.status(201).send();
-});
+router.put(
+  '/',
+  requireJwtAuth,
+  createUserKeyUpdateHandler({
+    updateUserKey,
+    getUserKeySnapshot,
+    compareAndSetUserKey,
+    decrypt,
+    now: Date.now,
+  }),
+);
 
 router.delete('/:name', requireJwtAuth, async (req, res) => {
   const { name } = req.params;

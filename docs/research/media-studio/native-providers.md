@@ -55,6 +55,63 @@ Keep secrets in the server environment. These references and credentials are not
 browser. `credentialName` optionally associates a direct integration with an existing saved
 credential; `apiKey: user_provided` uses that saved credential instead of a deployment key.
 
+### Personal provider keys
+
+Studio follows the chat endpoint credential policy. Only integrations listed in YAML appear.
+A configured deployment key makes a provider available without personal setup. An unresolved
+environment variable remains an administrator configuration problem; it does not grant a user
+permission to replace that deployment account.
+
+Set `apiKey: user_provided` to let each user supply a personal key through the provider's settings
+icon or **Settings → Provider Keys**. The dialog uses the existing encrypted, user-scoped key
+store and supports expiry, replacement and revocation. Saving or removing a key refreshes the
+Studio catalog without clearing the current prompt or generation parameters. This saves a
+credential; account entitlements and credit are checked by the provider when a request is made.
+
+```yaml
+media:
+  enabled: true
+  integrations:
+    - id: xai-images
+      label: xAI
+      api: xai.images
+      endpointRef:
+        kind: direct
+        apiKey: user_provided
+        credentialName: xai-account
+      catalog: { kind: discovered, allModels: true }
+      operations: [image.generate, image.edit]
+    - id: xai-videos
+      label: xAI
+      api: xai.videos
+      endpointRef:
+        kind: direct
+        apiKey: user_provided
+        credentialName: xai-account
+      catalog: { kind: discovered, allModels: true }
+      operations: [video.generate]
+```
+
+Both integrations above share one saved personal account. Without `credentialName`, a direct
+integration uses its `id`. A `custom` reference reuses the exact named chat endpoint's key and
+its `user_provided` settings; a supported `builtin` reference reuses the built-in chat key.
+Keep a shared key's encoding consistent across integrations. Native Google API-key media can
+read a Google API key saved by chat, but a service-account-only chat credential does not enable
+the Gemini Developer API. Vertex continues to use the administrator's configured service account.
+Updating that shared Google API key from Studio preserves an unexpired service-account credential
+already saved for chat. Revocation still removes the shared credential as it does in chat settings.
+
+An explicit `baseURL: user_provided` also requires the user's own API key. Deployment keys and
+configured secret headers must never be forwarded to a user-selected URL. Provider-specific
+options such as Sourceful's brand ID, Azure deployment mappings, model allowlists and routing
+policy remain controlled by YAML. They are not editable credential fields.
+Direct integrations with configured provider `options` require a fixed API root; those options
+cannot be combined with `baseURL: user_provided`.
+
+Keep the original credential valid while accepted provider jobs finish. Changing a key, its
+expiry or its configuration can require attention for those jobs; revoking a saved key does
+not cancel work already accepted by the provider.
+
 Use `catalog: { kind: configured, models: [...] }` for an explicit model list, or
 `catalog: { kind: discovered, allModels: true }` for the complete implemented native profile
 list. OpenRouter discovery reads its current image/video catalogs and routes. Native discovery

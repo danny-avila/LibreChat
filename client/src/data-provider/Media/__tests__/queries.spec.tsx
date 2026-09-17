@@ -1,14 +1,17 @@
 import React from 'react';
 import { AxiosError, AxiosHeaders } from 'axios';
-import { dataService } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useMediaThreads } from '../queries';
+import { dataService, QueryKeys, mediaCatalogSchema } from 'librechat-data-provider';
+import { useMediaThreads, useMediaCatalog } from '../queries';
 
 jest.mock('librechat-data-provider', () => {
   const actual =
     jest.requireActual<typeof import('librechat-data-provider')>('librechat-data-provider');
-  return { ...actual, dataService: { ...actual.dataService, listMediaThreads: jest.fn() } };
+  return {
+    ...actual,
+    dataService: { ...actual.dataService, listMediaThreads: jest.fn(), getMediaCatalog: jest.fn() },
+  };
 });
 
 function setup() {
@@ -41,6 +44,48 @@ function rejected(status: number) {
 }
 
 beforeEach(() => jest.mocked(dataService.listMediaThreads).mockReset());
+
+test('refreshes at a known saved-key expiry without fetching individual keys on startup', async () => {
+  const env = setup();
+  const catalog = mediaCatalogSchema.parse({
+    schemaVersion: 1,
+    version: 'catalog',
+    offerings: [],
+    limits: {},
+    clientPollIntervalMs: 60000,
+    clientCatchUpIntervalMs: 60000,
+    integrations: [
+      {
+        connectionId: 'native',
+        connectionName: 'Native',
+        api: 'bfl.images',
+        available: true,
+        userKey: { keyName: 'CaseSensitive', encoding: 'apiKey', userProvideURL: false },
+      },
+    ],
+  });
+  const load = jest.mocked(dataService.getMediaCatalog).mockReset().mockResolvedValue(catalog);
+  const hook = renderHook(() => useMediaCatalog(env.host), { wrapper: env.wrapper });
+  await waitFor(() => expect(hook.result.current.isSuccess).toBe(true));
+  expect(env.client.getQueryCache().findAll([QueryKeys.name])).toHaveLength(0);
+  jest.useFakeTimers();
+  act(() => {
+    env.client.setQueryData([QueryKeys.name, 'CaseSensitive'], {
+      expiresAt: new Date(Date.now() + 1000).toISOString(),
+    });
+  });
+  await act(async () => {
+    jest.advanceTimersByTime(1001);
+  });
+  expect(load).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    jest.advanceTimersByTime(1000);
+  });
+  expect(load).toHaveBeenCalledTimes(2);
+  hook.unmount();
+  env.client.clear();
+  jest.useRealTimers();
+});
 
 test('falls back once when an older server rejects the optional gallery view', async () => {
   const list = jest

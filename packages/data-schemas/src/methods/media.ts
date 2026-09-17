@@ -192,7 +192,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
   let indexPromise: Promise<void> | undefined;
 
   const getJob: MediaMethods['getMediaJob'] = async (scope, jobId) =>
-    Job.findOne({ ...scopeFilter(scope), jobId }).lean();
+    Job.findOne({ ...scopeFilter(scope), jobId }).lean<MediaStoredJob | null>();
 
   async function ensureMediaIndexes(): Promise<void> {
     indexPromise ??= Promise.all(
@@ -1050,7 +1050,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     const rows = await Job.find(query)
       .sort({ createdAt: 1, jobId: 1 })
       .limit(limit + 1)
-      .lean();
+      .lean<MediaStoredJob[]>();
     const last = rows[limit - 1];
     return {
       items: rows.slice(0, limit).map(jobView),
@@ -1234,7 +1234,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         $inc: { version: 1 },
       },
       { new: true, sort: { dueAt: 1, createdAt: 1, jobId: 1 }, writeConcern: durable },
-    ).lean();
+    ).lean<MediaStoredJob | null>();
     if (job?.phase === 'submitting') {
       // A lease loss is not evidence that the previous process missed the remote call.
       return Job.findOneAndUpdate(
@@ -1247,7 +1247,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
           $inc: { version: 1 },
         },
         { new: true, writeConcern: durable },
-      ).lean();
+      ).lean<MediaStoredJob | null>();
     }
     return job;
   };
@@ -1264,7 +1264,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         $inc: { version: 1 },
       },
       { new: true, writeConcern: durable },
-    ).lean();
+    ).lean<MediaStoredJob | null>();
 
   const beginMediaSubmission: MediaMethods['beginMediaSubmission'] = async (input) => {
     const job = await Job.findOne({
@@ -1311,7 +1311,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         $inc: { version: 1 },
       },
       { new: true, writeConcern: durable },
-    ).lean();
+    ).lean<MediaStoredJob | null>();
   };
 
   const recordMediaJobObservation: MediaMethods['recordMediaJobObservation'] = async (input) => {
@@ -1394,7 +1394,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         ...(Object.keys(unset).length ? { $unset: unset } : {}),
       },
       { new: true, writeConcern: durable },
-    ).lean();
+    ).lean<MediaStoredJob | null>();
     if (job && isTerminal) {
       await releaseOwnerWork(input.scope, `job:${job.jobId}`);
       await releaseMediaPermits({ scope: input.scope, jobId: job.jobId });
@@ -1418,7 +1418,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         $inc: { version: 1 },
       },
       { new: true, writeConcern: durable },
-    ).lean();
+    ).lean<MediaStoredJob | null>();
     if (cancelled) {
       await releaseOwnerWork(scope, `job:${jobId}`);
       if (cancelled.receipt.phase === 'preparing') {
@@ -2805,7 +2805,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         'receipt.phase': 'accepted',
       })
         .sort({ createdAt: -1, jobId: -1 })
-        .lean();
+        .lean<MediaStoredJob | null>();
     },
     getMediaJobView: async (scope, jobId) => {
       const job = await getJob(scope, jobId);

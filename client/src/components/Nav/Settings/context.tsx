@@ -2,7 +2,9 @@ import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { AgentCapabilities, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { SettingsContextValue } from './types';
-import useProviderKeys from '../SettingsTabs/ProviderKeys/useProviderKeys';
+import useProviderKeys, {
+  useMediaProviderKeyScope,
+} from '../SettingsTabs/ProviderKeys/useProviderKeys';
 import { useHasAccess, useAuthContext, useGetAgentsConfig } from '~/hooks';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
 import { useGetStartupConfig } from '~/data-provider';
@@ -38,7 +40,9 @@ export function useSettingsContext(): SettingsContextValue {
   const hasMultiConvoBool = hasMultiConvo === true;
   const hasPromptsBool = hasPrompts === true;
   const engineTTS = useRecoilValue<string>(store.engineTTS);
-  const hasUserProvidedEndpoints = useProviderKeys().length > 0;
+  const chatProviderKeys = useProviderKeys();
+  const mediaProviderKeyScope = useMediaProviderKeyScope();
+  const hasUserProvidedEndpoints = chatProviderKeys.length > 0 || !!mediaProviderKeyScope;
   const hasStatefulCodeSessions =
     agentsConfig?.capabilities.includes(AgentCapabilities.stateful_code_sessions) ?? false;
 

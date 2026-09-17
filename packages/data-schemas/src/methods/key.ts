@@ -3,15 +3,27 @@ import { ErrorTypes } from 'librechat-data-provider';
 import { encrypt, decrypt } from '~/crypto';
 import logger from '~/config/winston';
 
+export interface UserKeySnapshot {
+  id: string;
+  value: string;
+  expiresAt: string | null;
+}
+
+export interface UserKeyUpdate {
+  userId: string;
+  name: string;
+  value: string;
+  expiresAt?: Date | string | null;
+}
+
 /** Factory function that takes mongoose instance and returns the key methods */
 export function createKeyMethods(mongoose: typeof import('mongoose')): {
   getUserKey: (params: { userId: string; name: string }) => Promise<string>;
-  updateUserKey: (params: {
-    userId: string;
-    name: string;
-    value: string;
-    expiresAt?: Date | null;
-  }) => Promise<unknown>;
+  updateUserKey: (params: UserKeyUpdate) => Promise<unknown>;
+  getUserKeySnapshot: (params: { userId: string; name: string }) => Promise<UserKeySnapshot | null>;
+  compareAndSetUserKey: (
+    params: UserKeyUpdate & { expected: UserKeySnapshot | null; requireActive?: boolean },
+  ) => Promise<boolean>;
   deleteUserKey: (params: { userId: string; name?: string; all?: boolean }) => Promise<unknown>;
   getUserKeyValues: (params: { userId: string; name: string }) => Promise<Record<string, string>>;
   getUserKeyExpiry: (params: {
@@ -110,12 +122,7 @@ export function createKeyMethods(mongoose: typeof import('mongoose')): {
    * @description This function either updates an existing user key or inserts a new one into the database,
    *              after encrypting the provided value. It sets the provided expiry date for the key (or unsets for no expiry).
    */
-  async function updateUserKey(params: {
-    userId: string;
-    name: string;
-    value: string;
-    expiresAt?: Date | null;
-  }): Promise<unknown> {
+  async function updateUserKey(params: UserKeyUpdate): Promise<unknown> {
     const { userId, name, value, expiresAt = null } = params;
     const Key = mongoose.models.Key;
     const encryptedValue = await encrypt(value);
@@ -136,6 +143,64 @@ export function createKeyMethods(mongoose: typeof import('mongoose')): {
       upsert: true,
       new: true,
     }).lean();
+  }
+
+  async function getUserKeySnapshot(params: {
+    userId: string;
+    name: string;
+  }): Promise<UserKeySnapshot | null> {
+    const key = await mongoose.models.Key.findOne(params)
+      .select('_id value expiresAt')
+      .lean<{ _id: { toString(): string }; value: string; expiresAt?: Date }>();
+    return key
+      ? {
+          id: key._id.toString(),
+          value: key.value,
+          expiresAt: key.expiresAt?.toISOString() ?? null,
+        }
+      : null;
+  }
+
+  /** Atomically applies a merged credential only while its encrypted source is unchanged. */
+  async function compareAndSetUserKey(
+    params: UserKeyUpdate & { expected: UserKeySnapshot | null; requireActive?: boolean },
+  ): Promise<boolean> {
+    const { userId, name, value, expiresAt, expected } = params;
+    const encrypted = await encrypt(value);
+    const expiry = expiresAt ? new Date(expiresAt) : undefined;
+    const Key = mongoose.models.Key;
+    if (!expected) {
+      const result = await Key.updateOne(
+        { userId, name },
+        {
+          $setOnInsert: {
+            userId,
+            name,
+            value: encrypted,
+            ...(expiry ? { expiresAt: expiry } : {}),
+          },
+        },
+        { upsert: true },
+      );
+      return result.upsertedCount === 1;
+    }
+    const result = await Key.updateOne(
+      {
+        _id: expected.id,
+        userId,
+        name,
+        value: expected.value,
+        expiresAt: expected.expiresAt ? new Date(expected.expiresAt) : null,
+        ...(params.requireActive && expected.expiresAt
+          ? { $expr: { $gt: ['$expiresAt', '$$NOW'] } }
+          : {}),
+      },
+      {
+        $set: { value: encrypted, ...(expiry ? { expiresAt: expiry } : {}) },
+        ...(!expiry ? { $unset: { expiresAt: '' } } : {}),
+      },
+    );
+    return result.matchedCount === 1;
   }
 
   /**
@@ -168,6 +233,8 @@ export function createKeyMethods(mongoose: typeof import('mongoose')): {
     deleteUserKey,
     getUserKeyValues,
     getUserKeyExpiry,
+    getUserKeySnapshot,
+    compareAndSetUserKey,
   };
 }
 

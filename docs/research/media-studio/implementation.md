@@ -5,6 +5,7 @@ This branch contains an opt-in implementation, alongside the research and propos
 ## User experience
 
 - **Media Studio** opens a generation conversation. Provider, model, image/video mode, and generation parameters live in the same collapsible sidebar used by the agent builder. The prompt uses the shared chat composer, with reference uploads beside the send action.
+- YAML controls the visible connections and whether credentials come from the deployment or each user. Personal-key connections have a settings icon in the provider list and an entry under **Settings → Provider Keys**, using the same encrypted key storage and expiry controls as chat. Saving or revoking a key refreshes availability while preserving the draft.
 - Prompts and results read chronologically, with the composer below the thread. Queue independent generations and refine a selected result. Each generation records its selected parent; retries are separate attempts on the same turn.
 - After an image completes, a follow-up prompt edits it automatically. The composer shows the current image, carries its original into the request, and advances to the next completed result. Selecting an older result pins that image; removing the reference or choosing **Image** starts a fresh generation.
 - **History** switches the current conversation to a gallery with two, three, or four cards per row. Returning to the conversation preserves its draft and scroll position. Gallery filters, column count, and the selected view survive a page reload; older saved filters keep working.

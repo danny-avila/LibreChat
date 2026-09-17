@@ -1,5 +1,100 @@
-import { EModelEndpoint, isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
-import type { TConfig, TSpecsConfig, TEndpointsConfig } from 'librechat-data-provider';
+import {
+  alternateName,
+  EModelEndpoint,
+  isAgentsEndpoint,
+  isAssistantsEndpoint,
+} from 'librechat-data-provider';
+import type {
+  TConfig,
+  TSpecsConfig,
+  TEndpointsConfig,
+  MediaCatalog,
+  MediaUserKey,
+} from 'librechat-data-provider';
+import { mergeMediaUserKeys } from '~/components/Media/credentials';
+
+export type ProviderKeyEntry = {
+  endpoint: string;
+  keyName: string;
+  label: string;
+  conflict: boolean;
+  keyConfiguration?: MediaUserKey & { label: string };
+};
+
+function chatKeyEncoding(endpoint: string, config: TConfig | null | undefined) {
+  const type = config?.type ?? endpoint;
+  if (
+    config?.azure ||
+    type === EModelEndpoint.azureOpenAI ||
+    type === EModelEndpoint.azureAssistants
+  )
+    return 'azure';
+  if (type === EModelEndpoint.google) return 'google';
+  if (type === EModelEndpoint.bedrock) return 'bedrock';
+  if (
+    type === EModelEndpoint.custom ||
+    type === EModelEndpoint.openAI ||
+    type === EModelEndpoint.assistants
+  )
+    return 'apiKey';
+  return 'raw';
+}
+
+/** Merge by saved credential identity, preserving chat forms and detecting incompatible envelopes. */
+export function getProviderKeyEntries({
+  chatEndpoints,
+  endpointsConfig,
+  mediaIntegrations,
+}: {
+  chatEndpoints: string[];
+  endpointsConfig?: TEndpointsConfig | null;
+  mediaIntegrations?: MediaCatalog['integrations'];
+}): ProviderKeyEntry[] {
+  const entries = new Map<string, ProviderKeyEntry>();
+  for (const endpoint of chatEndpoints) {
+    const config = endpointsConfig?.[endpoint];
+    const keyName = config?.azure ? EModelEndpoint.azureOpenAI : endpoint;
+    if (!entries.has(keyName))
+      entries.set(keyName, {
+        endpoint,
+        keyName,
+        label: alternateName[endpoint] || endpoint,
+        conflict: false,
+      });
+  }
+  for (const [keyName, media] of mergeMediaUserKeys(mediaIntegrations)) {
+    const previous = entries.get(keyName);
+    if (!previous) {
+      entries.set(keyName, {
+        endpoint: keyName,
+        keyName,
+        label: media.label,
+        conflict: media.conflict,
+        keyConfiguration: media,
+      });
+      continue;
+    }
+    const config = endpointsConfig?.[previous.endpoint];
+    const conflict =
+      media.conflict || chatKeyEncoding(previous.endpoint, config) !== media.encoding;
+    const userProvideURL = media.userProvideURL || !!config?.userProvideURL;
+    entries.set(keyName, {
+      ...previous,
+      conflict,
+      ...(userProvideURL
+        ? {
+            keyConfiguration: {
+              keyName,
+              encoding: media.encoding,
+              userProvideURL,
+              label: previous.label,
+            },
+          }
+        : {}),
+    });
+  }
+  return [...entries.values()];
+}
 
 /**
  * Whether an endpoint config requires a user-provided credential — an API key or

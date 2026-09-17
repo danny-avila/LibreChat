@@ -15,6 +15,22 @@ import { MediaThreadView } from '../Thread';
 import { MediaForm } from '../Form';
 
 jest.mock('~/hooks', () => ({ useLocalize: () => (key: string) => key }));
+jest.mock('~/components/Input/SetKeyDialog/SetKeyDialog', () => ({
+  __esModule: true,
+  default: ({
+    keyConfiguration,
+    onOpenChange,
+  }: {
+    keyConfiguration: { keyName: string; label: string; userProvideURL: boolean };
+    onOpenChange: (open: boolean) => void;
+  }) => (
+    <div role="dialog" aria-label={keyConfiguration.label}>
+      <span>{keyConfiguration.keyName}</span>
+      <span>{keyConfiguration.userProvideURL ? 'URL required' : 'Key only'}</span>
+      <button onClick={() => onOpenChange(false)}>{'Close provider settings'}</button>
+    </div>
+  ),
+}));
 jest.mock('librechat-data-provider', () => {
   const actual =
     jest.requireActual<typeof import('librechat-data-provider')>('librechat-data-provider');
@@ -89,6 +105,98 @@ function setup(canCreate = true) {
   );
   return { store, send, wrapper };
 }
+test('configures an unavailable native provider without replacing the active draft', async () => {
+  const env = setup();
+  const choices: MediaCatalog = {
+    ...catalog,
+    integrations: [
+      {
+        connectionId: 'connection',
+        connectionName: 'Managed',
+        api: 'openai.images',
+        available: true,
+      },
+      {
+        connectionId: 'native',
+        connectionName: 'Native Images',
+        api: 'google.generateContent',
+        available: false,
+        unavailableReason: 'credentials_required',
+        userKey: { keyName: 'SharedNative', encoding: 'google', userProvideURL: false },
+      },
+      {
+        connectionId: 'native-video',
+        connectionName: 'Native Videos',
+        api: 'google.vertex.videos',
+        available: false,
+        unavailableReason: 'credentials_required',
+        userKey: { keyName: 'SharedNative', encoding: 'google', userProvideURL: true },
+      },
+    ],
+  };
+  const view = render(<MediaForm catalog={choices} send={env.send} busy={false} />, {
+    wrapper: env.wrapper,
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
+    target: { value: 'Keep my prompt' },
+  });
+  const draft = env.store.get(mediaDraftFamily('owner:new'));
+  fireEvent.click(screen.getByRole('combobox', { name: 'com_media_connection' }));
+  expect(
+    screen.queryByRole('button', { name: 'com_endpoint_config_key Managed' }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'com_endpoint_config_key Native Images' }),
+  );
+  expect(await screen.findByRole('dialog', { name: 'Native Images' })).toHaveTextContent(
+    'SharedNative',
+  );
+  expect(screen.getByText('URL required')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Close provider settings' }));
+  view.rerender(
+    <MediaForm catalog={{ ...choices, version: 'refreshed' }} send={env.send} busy={false} />,
+  );
+  expect(env.store.get(mediaDraftFamily('owner:new'))).toEqual(draft);
+  expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue('Keep my prompt');
+  expect(env.send).not.toHaveBeenCalled();
+});
+test('offers provider settings even when the catalog has no available models', async () => {
+  const env = setup();
+  render(
+    <MediaForm
+      catalog={{
+        ...catalog,
+        offerings: [],
+        integrations: [
+          {
+            connectionId: 'native',
+            connectionName: 'Native Images',
+            api: 'google.generateContent',
+            available: false,
+            unavailableReason: 'credentials_required',
+            userKey: { keyName: 'Native', encoding: 'google', userProvideURL: false },
+          },
+        ],
+      }}
+      send={env.send}
+      busy={false}
+    >
+      {({ settings, composer }) => (
+        <>
+          {settings}
+          {composer}
+        </>
+      )}
+    </MediaForm>,
+    { wrapper: env.wrapper },
+  );
+  expect(screen.getAllByRole('combobox', { name: 'com_media_connection' })).toHaveLength(1);
+  fireEvent.click(screen.getByRole('combobox', { name: 'com_media_connection' }));
+  fireEvent.click(
+    await screen.findByRole('button', { name: 'com_endpoint_config_key Native Images' }),
+  );
+  expect(await screen.findByRole('dialog', { name: 'Native Images' })).toBeInTheDocument();
+});
 beforeEach(() => {
   clearMediaSessionStorage();
   jest.mocked(dataService.uploadMedia).mockReset();

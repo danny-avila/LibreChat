@@ -37,6 +37,7 @@ const {
   handleJsonParseError,
   initializeFileStorage,
   createMediaRuntime,
+  resolveConfigSecret,
   createMediaTransport,
   createMediaAccounting,
   createVertexMediaCredentialProvider,
@@ -524,6 +525,7 @@ if (cluster.isMaster) {
         maxCacheEntries: appConfig.media?.catalog.maxCacheEntries,
       }),
       decrypt,
+      resolveConfigSecret,
       transport: createMediaTransport({
         http: axios,
         allowedAddresses: appConfig.endpoints?.allowedAddresses,

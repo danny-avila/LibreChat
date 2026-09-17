@@ -6,6 +6,7 @@ import { SelectRenderer } from '@ariakit/react-components/select/select-renderer
 import type { OptionWithIcon } from '~/common';
 import { usePopoverZIndex } from './OriginalDialog';
 import { fieldControl } from './Field';
+import { Button } from './Button';
 import './AnimatePopover.css';
 import { JSX } from 'react/jsx-runtime';
 import { cn } from '~/utils';
@@ -47,6 +48,14 @@ interface ControlComboboxProps {
    *  differently while it is up — e.g. a focus-trapped panel whose own Escape
    *  handler must not fire while an open popover owns the key. */
   onOpenChange?: (open: boolean) => void;
+  /** Independent actions stay outside listbox options, including disabled options. */
+  optionAction?: (value: string) =>
+    | {
+        label: string;
+        icon: React.ReactNode;
+        onClick: () => void;
+      }
+    | undefined;
 }
 
 const ROW_HEIGHT = 36;
@@ -78,9 +87,11 @@ function ControlCombobox({
   gutter = 4,
   portal = true,
   onOpenChange,
+  optionAction,
 }: ControlComboboxProps): JSX.Element {
   const [searchValue, setSearchValue] = useState('');
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const openingAction = useRef(false);
   const [buttonWidth, setButtonWidth] = useState<number | null>(null);
   const popoverZIndex = usePopoverZIndex();
 
@@ -107,6 +118,10 @@ function ControlCombobox({
     setOpen: onOpenChange,
     placement,
   });
+  const isOpen = Ariakit.useStoreState(select, 'open');
+  useEffect(() => {
+    if (isOpen) openingAction.current = false;
+  }, [isOpen]);
 
   const handleEscape = (event: React.KeyboardEvent) => {
     if (event.key !== 'Escape' || event.nativeEvent.isComposing || !select.getState().open) {
@@ -117,6 +132,7 @@ function ControlCombobox({
     event.preventDefault();
     event.stopPropagation();
     select.hide();
+    buttonRef.current?.focus();
   };
 
   const matches = useMemo(() => {
@@ -216,6 +232,9 @@ function ControlCombobox({
         store={select}
         gutter={gutter}
         portal={portal}
+        finalFocus={buttonRef}
+        hideOnEscape={false}
+        autoFocusOnHide={() => !openingAction.current}
         onKeyDown={handleEscape}
         className={cn(
           'overflow-hidden rounded-xl border border-border-light bg-surface-secondary shadow-lg',
@@ -233,13 +252,14 @@ function ControlCombobox({
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-primary" />
             <Ariakit.Combobox
               store={combobox}
+              onKeyDown={handleEscape}
               autoSelect
               placeholder={searchPlaceholder}
               className="w-full rounded-md bg-surface-secondary py-2 pl-9 pr-3 text-sm text-text-primary focus:outline-none"
             />
           </div>
         </div>
-        <div className="max-h-[300px] overflow-auto">
+        <div className="relative max-h-[300px] overflow-auto">
           <Ariakit.ComboboxList store={combobox}>
             <SelectRenderer
               store={select}
@@ -258,6 +278,7 @@ function ControlCombobox({
                     'text-text-primary hover:bg-surface-tertiary',
                     'data-[active-item]:bg-surface-tertiary',
                     'aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
+                    optionAction && 'pr-12',
                   )}
                   render={<Ariakit.SelectItem value={value} disabled={itemDisabled} />}
                 >
@@ -272,6 +293,34 @@ function ControlCombobox({
               )}
             </SelectRenderer>
           </Ariakit.ComboboxList>
+          {optionAction && (
+            <div className="absolute right-1 top-0">
+              {matches.map((item) => {
+                const action = item.value ? optionAction(item.value) : undefined;
+                return (
+                  <div key={item.id} className="flex items-center" style={{ height: ROW_HEIGHT }}>
+                    {action && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={action.label}
+                        title={action.label}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          openingAction.current = true;
+                          select.hide();
+                          action.onClick();
+                        }}
+                      >
+                        {action.icon}
+                      </Button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </Ariakit.SelectPopover>
     </div>

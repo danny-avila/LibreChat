@@ -71,6 +71,10 @@ export interface MediaServiceDependencies extends MediaHostedDependencies {
     appConfig: AppConfig;
     minValidityMs: number;
   }): Promise<MediaConnection>;
+  describeUserKey?(input: {
+    integration: MediaIntegration;
+    appConfig: AppConfig;
+  }): import('librechat-data-provider').MediaUserKey | undefined;
   loadContext(scope: MediaOwnerScope): Promise<MediaContext>;
   withScope<T>(scope: MediaOwnerScope, operation: () => Promise<T>): Promise<T>;
   asSystem<T>(operation: () => Promise<T>): Promise<T>;
@@ -155,6 +159,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
       context.config,
       (integration) => resolve(context, integration),
       `${context.scope.tenantId ?? ''}:${context.scope.ownerId}`,
+      (integration) => deps.describeUserKey?.({ integration, appConfig: context.appConfig }),
     );
 
   async function prepare(
