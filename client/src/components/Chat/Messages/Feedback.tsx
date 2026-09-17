@@ -151,7 +151,7 @@ function FeedbackButtons({
               onClick={() => setRating('thumbsUp')}
             >
               <ThumbUpIcon size="19" aria-hidden="true" />
-              <span>{localize('com_ui_feedback_good')}</span>
+              <span>{localize('com_ui_feedback_positive')}</span>
             </Button>
             <Button
               variant="ghost"
@@ -159,7 +159,7 @@ function FeedbackButtons({
               onClick={() => setRating('thumbsDown')}
             >
               <ThumbDownIcon size="19" aria-hidden="true" />
-              <span>{localize('com_ui_feedback_bad')}</span>
+              <span>{localize('com_ui_feedback_negative')}</span>
             </Button>
           </>
         )}

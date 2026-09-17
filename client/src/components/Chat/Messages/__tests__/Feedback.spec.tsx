@@ -4,8 +4,8 @@ import Feedback from '../Feedback';
 
 const mockTranslations: Record<string, string> = {
   com_ui_feedback_rate: 'Rate response',
-  com_ui_feedback_good: 'Good response',
-  com_ui_feedback_bad: 'Bad response',
+  com_ui_feedback_positive: 'Love this',
+  com_ui_feedback_negative: 'Needs improvement',
   com_ui_feedback_tag_accurate_reliable: 'Accurate and Reliable',
 };
 
@@ -21,10 +21,10 @@ describe('Feedback', () => {
     expect(screen.getAllByRole('button')).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Rate response' }));
 
-    expect(await screen.findByRole('button', { name: 'Good response' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Bad response' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Love this' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Needs improvement' })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Good response' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Love this' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Accurate and Reliable' }));
 
     await waitFor(() =>
