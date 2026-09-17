@@ -118,23 +118,23 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
       <div className="relative pr-10">
         {isJson ? (
           <pre className="max-h-[300px] overflow-auto rounded text-xs">
-            <code className="hljs language-json !whitespace-pre-wrap !break-words">
+            <code className="hljs language-json !break-words !whitespace-pre-wrap">
               {visibleText}
             </code>
           </pre>
         ) : (
           <pre
             className={cn(
-              'max-h-[300px] overflow-auto whitespace-pre-wrap break-words text-xs',
-              error && 'font-mono text-status-error',
-              !error && structured && 'font-mono text-text-secondary',
-              !error && !structured && 'font-sans text-sm text-text-primary',
+              'max-h-[300px] overflow-auto text-xs break-words whitespace-pre-wrap',
+              error && 'text-status-error font-mono',
+              !error && structured && 'text-text-secondary font-mono',
+              !error && !structured && 'text-text-primary font-sans text-sm',
             )}
           >
             {visibleText}
           </pre>
         )}
-        <div className="absolute right-0 top-1/2 -translate-y-1/2">
+        <div className="absolute top-1/2 right-0 -translate-y-1/2">
           <CopyButton
             isCopied={isCopied}
             onClick={handleCopy}
@@ -147,7 +147,7 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
         <Button
           variant="link"
           size="sm"
-          className="mt-1 h-auto p-0 text-xs text-text-secondary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+          className="text-text-secondary focus-visible:ring-border-heavy mt-1 h-auto p-0 text-xs underline focus-visible:ring-2 focus-visible:outline-hidden"
           onClick={() => setIsExpanded((prev) => !prev)}
         >
           {isExpanded ? localize('com_ui_show_less') : localize('com_ui_show_more')}
@@ -157,14 +157,14 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
         <Button
           variant="link"
           size="sm"
-          className="mt-1 block h-auto p-0 text-xs text-text-secondary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
+          className="text-text-secondary focus-visible:ring-border-heavy mt-1 block h-auto p-0 text-xs underline focus-visible:ring-2 focus-visible:outline-hidden"
           onClick={() => setShowErrorDetails((prev) => !prev)}
         >
           {localize('com_ui_details')}
         </Button>
       )}
       {showErrorDetails && rawError && (
-        <pre className="mt-2 max-h-[200px] overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-status-error">
+        <pre className="text-status-error mt-2 max-h-[200px] overflow-auto font-mono text-xs break-words whitespace-pre-wrap">
           {rawError}
         </pre>
       )}

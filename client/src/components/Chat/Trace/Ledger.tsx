@@ -411,7 +411,7 @@ function Ledger({
         onClick={() => activate(row)}
         className={cn(
           GRID,
-          'absolute inset-x-0 cursor-pointer items-center gap-2 px-2 text-sm text-text-primary hover:bg-surface-hover',
+          'text-text-primary hover:bg-surface-hover absolute inset-x-0 cursor-pointer items-center gap-2 px-2 text-sm',
           selectedId === row.key && 'bg-surface-active-alt',
           active && ACTIVE_RING,
         )}
@@ -444,21 +444,21 @@ function Ledger({
             </span>
           )}
           {record.model != null && (
-            <span className="hidden min-w-0 shrink-[4] truncate text-xs text-text-secondary sm:inline">
+            <span className="text-text-secondary hidden min-w-0 shrink-[4] truncate text-xs sm:inline">
               {record.model}
             </span>
           )}
           {record.status === 'error' && (
-            <CircleAlert aria-hidden="true" className="size-3.5 shrink-0 text-status-error" />
+            <CircleAlert aria-hidden="true" className="text-status-error size-3.5 shrink-0" />
           )}
           {running && (
-            <CircleDashed aria-hidden="true" className="size-3.5 shrink-0 text-text-secondary" />
+            <CircleDashed aria-hidden="true" className="text-text-secondary size-3.5 shrink-0" />
           )}
         </span>
-        <span className="truncate text-right text-xs tabular-nums text-text-secondary">
+        <span className="text-text-secondary truncate text-right text-xs tabular-nums">
           {duration}
         </span>
-        <span className="hidden text-right text-xs tabular-nums text-text-secondary md:block">
+        <span className="text-text-secondary hidden text-right text-xs tabular-nums md:block">
           {recordTokens(node)}
         </span>
         <span className="relative h-full overflow-hidden">
@@ -490,13 +490,13 @@ function Ledger({
         }
       }}
       data-testid="trace-ledger"
-      className="group/tree relative min-h-0 flex-1 overflow-auto focus-visible:outline-none"
+      className="group/tree relative min-h-0 flex-1 overflow-auto focus-visible:outline-hidden"
     >
       <div
         aria-hidden="true"
         className={cn(
           GRID,
-          'sticky top-0 z-10 h-7 items-center gap-2 border-b border-border-light bg-presentation px-2 text-[11px] font-medium uppercase tracking-wide text-text-secondary',
+          'border-border-light bg-presentation text-text-secondary sticky top-0 z-10 h-7 items-center gap-2 border-b px-2 text-[11px] font-medium tracking-wide uppercase',
         )}
       >
         <span>{localize('com_ui_trace_column_name')}</span>

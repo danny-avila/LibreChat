@@ -58,7 +58,7 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
         {[...Array(6)].map((_, i) => (
           <div
             key={i}
-            className="h-[36px] min-w-[80px] animate-pulse rounded-lg bg-surface-tertiary"
+            className="bg-surface-tertiary h-[36px] min-w-[80px] animate-pulse rounded-lg"
           />
         ))}
       </div>
@@ -117,7 +117,7 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
   // Early return if no categories available
   if (!isLoading && (!categories || categories.length === 0)) {
     return (
-      <div className="text-center text-text-secondary">{localize('com_ui_no_categories')}</div>
+      <div className="text-text-secondary text-center">{localize('com_ui_no_categories')}</div>
     );
   }
 
@@ -151,11 +151,11 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
             onClick={() => onChange(category.value)}
             onKeyDown={(e) => handleKeyDown(e, category.value)}
             className={cn(
-              'relative cursor-pointer select-none whitespace-nowrap px-3 py-2 transition-all duration-200',
-              isSmallScreen ? 'min-w-fit flex-shrink-0' : '',
+              'relative cursor-pointer px-3 py-2 whitespace-nowrap transition-all duration-200 select-none',
+              isSmallScreen ? 'min-w-fit shrink-0' : '',
               activeTab === category.value
-                ? 'rounded-t-lg bg-surface-hover text-text-primary'
-                : 'rounded-lg bg-surface-secondary text-text-secondary hover:bg-surface-hover hover:text-text-primary active:scale-95',
+                ? 'bg-surface-hover text-text-primary rounded-t-lg'
+                : 'bg-surface-secondary text-text-secondary hover:bg-surface-hover hover:text-text-primary rounded-lg active:scale-95',
             )}
             role="tab"
             aria-selected={activeTab === category.value}
@@ -171,7 +171,7 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
             {/* Underline for active tab */}
             {activeTab === category.value && (
               <div
-                className="absolute bottom-0 left-0 right-0 h-0.5 bg-text-primary"
+                className="bg-text-primary absolute right-0 bottom-0 left-0 h-0.5"
                 aria-hidden="true"
               />
             )}

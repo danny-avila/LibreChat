@@ -17,11 +17,11 @@ export interface SendAction {
 }
 
 const ROW_CLASS =
-  'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm text-text-primary hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy aria-disabled:cursor-not-allowed aria-disabled:opacity-50';
+  'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm text-text-primary hover:bg-surface-tertiary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-border-xheavy aria-disabled:cursor-not-allowed aria-disabled:opacity-50';
 
 function Kbd({ children }: { children: ReactNode }): JSX.Element {
   return (
-    <kbd className="ml-auto rounded-md bg-surface-tertiary px-1.5 py-0.5 font-sans text-xs text-text-secondary">
+    <kbd className="bg-surface-tertiary text-text-secondary ml-auto rounded-md px-1.5 py-0.5 font-sans text-xs">
       {children}
     </kbd>
   );
@@ -57,7 +57,7 @@ export function SendActions({
         gutter={8}
         unmountOnHide
         aria-label={label}
-        className="z-50 min-w-[12rem] rounded-xl border border-border-light bg-surface-secondary p-1.5 text-text-primary shadow-lg outline-none"
+        className="border-border-light bg-surface-secondary text-text-primary z-50 min-w-[12rem] rounded-xl border p-1.5 shadow-lg outline-hidden"
       >
         {actions.map((action) => (
           <button
