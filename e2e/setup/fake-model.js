@@ -491,15 +491,32 @@ function parseSubagentPromptCacheMarker(text) {
 }
 
 /**
- * The cache key the delegation target will send, read from the sealed child
- * inputs the run handed the SDK. A child runs in its own graph, whose agent
- * contexts this hook never sees, and its model is replaced here anyway — so
- * the entry the parent advertises is the closest observation of the identity
- * the child would carry.
+ * The cache key a delegation target sends.
+ *
+ * An eager entry already carries its sealed inputs. A lazy one — which is what
+ * a saved child agent resolves to in production — builds them on demand inside
+ * `resolveAgentInputs`, and the child then runs in its own graph whose agent
+ * contexts this hook never sees. Wrapping the resolver is therefore the only
+ * place the child's own identity is observable from the host side.
  */
 function subagentPromptCacheKeyValue(agentContext, childId) {
   const entry = (agentContext?.subagentConfigs ?? []).find((config) => config?.type === childId);
   return entry?.agentInputs?.clientOptions?.promptCacheKey ?? 'none';
+}
+
+function captureResolvedSubagentKeys(agentContext, store) {
+  for (const config of agentContext?.subagentConfigs ?? []) {
+    if (typeof config?.resolveAgentInputs !== 'function' || config.__e2ePromptCacheWrapped) {
+      continue;
+    }
+    const resolve = config.resolveAgentInputs.bind(config);
+    config.resolveAgentInputs = async (context) => {
+      const inputs = await resolve(context);
+      store.set(config.type, inputs?.clientOptions?.promptCacheKey ?? 'none');
+      return inputs;
+    };
+    config.__e2ePromptCacheWrapped = true;
+  }
 }
 
 function subagentPromptCacheResponses(text, graph) {
@@ -508,8 +525,12 @@ function subagentPromptCacheResponses(text, graph) {
     return null;
   }
 
+  const childPrompt = `E2E_ASSERT_SUBAGENT_PROMPT_CACHE_CHILD:${marker.label}`;
+  const childReply = `E2E subagent prompt cache child ${marker.label}`;
+  const resolvedChildKeys = new Map();
   return {
     responses: [''],
+    overrideSubagentModel: true,
     resolveInvocation: async (messages, options, runManager) => {
       const agentView = await getStreamAgentView({
         graph,
@@ -517,10 +538,33 @@ function subagentPromptCacheResponses(text, graph) {
         options,
         runManager,
       });
+      if (getLatestUserText(messages).includes(childPrompt)) {
+        return { response: childReply };
+      }
+      if (findLastToolMessageText(messages, childReply)) {
+        const childKey =
+          resolvedChildKeys.get(marker.childId) ??
+          subagentPromptCacheKeyValue(agentView.agentContext, marker.childId);
+        return {
+          response:
+            `PARENT_PROMPT_CACHE_KEY=${promptCacheKeyValue(agentView.agentContext)}\n` +
+            `CHILD_PROMPT_CACHE_KEY=${childKey}`,
+        };
+      }
+      captureResolvedSubagentKeys(agentView.agentContext, resolvedChildKeys);
       return {
-        response:
-          `PARENT_PROMPT_CACHE_KEY=${promptCacheKeyValue(agentView.agentContext)}\n` +
-          `CHILD_PROMPT_CACHE_KEY=${subagentPromptCacheKeyValue(agentView.agentContext, marker.childId)}`,
+        response: '',
+        toolCalls: [
+          {
+            id: `call_e2e_subagent_prompt_cache_${marker.label}`,
+            name: 'subagent',
+            args: {
+              description: childPrompt,
+              subagent_type: marker.childId,
+            },
+            type: 'tool_call',
+          },
+        ],
       };
     },
   };
