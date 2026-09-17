@@ -416,17 +416,33 @@ test.describe('marketplace recovery', () => {
     const retry = page.getByRole('button', { name: translations.com_agents_error_retry });
     await expect(retry).toBeVisible({ timeout: 30_000 });
 
-    /* The reader is on the Retry button, which is inside the card the success removes.
-       Whether the attempt that lands is theirs or the card's own backoff, the focused
-       control leaves the document and the browser drops focus on the body - and the next
-       Tab would then start at the top of the page rather than at the results. */
+    /* A retry the reader pressed has two outcomes and the browser treats them
+       differently. The attempt that fails leaves the card mounted, so focus has to stay
+       on the control they are using - a `disabled` button would be dropped from focus
+       navigation and leave them next to a card they cannot Tab back into. The attempt
+       that succeeds removes the card with the focused control inside it, and the browser
+       drops focus on the body, so the results must take it or the next Tab starts at the
+       top of the page. jsdom blurs neither, which is why this is stated here. */
     await retry.focus();
-    failing = false;
     await retry.press('Enter');
+    await expect(page.getByRole('alert')).toBeVisible();
+    const duringFailure = await page.evaluate(() => {
+      const active = document.activeElement;
+      const alert = document.querySelector('[role="alert"]');
+      return {
+        onDocument: active === null || active === document.body,
+        inRecovery: alert != null && active != null && alert.contains(active),
+      };
+    });
+    expect(duringFailure.onDocument).toBe(false);
+    expect(duringFailure.inRecovery).toBe(true);
+
+    failing = false;
+    await page.getByRole('button', { name: translations.com_agents_error_retry }).press('Enter');
 
     await expect(page.getByRole('button', { name: agent.name })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole('alert')).toHaveCount(0);
-    const focus = await page.evaluate(() => {
+    const afterRecovery = await page.evaluate(() => {
       const active = document.activeElement;
       const panel = document.querySelector('[role="tabpanel"]');
       return {
@@ -434,7 +450,7 @@ test.describe('marketplace recovery', () => {
         inResults: panel != null && active != null && panel.contains(active),
       };
     });
-    expect(focus.onDocument).toBe(false);
-    expect(focus.inResults).toBe(true);
+    expect(afterRecovery.onDocument).toBe(false);
+    expect(afterRecovery.inResults).toBe(true);
   });
 });

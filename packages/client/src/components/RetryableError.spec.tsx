@@ -92,14 +92,17 @@ describe('RetryableError', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it('reports the wait in the label and blocks a second click', () => {
+  it('keeps the retry control focusable and blocks a second activation while retrying', () => {
     const onRetry = jest.fn();
     render(
       <RetryableError title="Connection Problem" labels={labels} onRetry={onRetry} isRetrying />,
     );
 
     const button = screen.getByRole('button', { name: 'Retrying' });
-    expect(button).toBeDisabled();
+    expect(button).not.toBeDisabled();
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(button);
     fireEvent.click(button);
     expect(onRetry).not.toHaveBeenCalled();
     expect(screen.getByRole('status')).toHaveTextContent('Retrying');

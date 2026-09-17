@@ -235,8 +235,12 @@ describe('ErrorDisplay', () => {
 
       render(<ErrorDisplay error={error} onRetry={mockRetry} isRetrying />);
 
+      /* Busy, not gone: a `disabled` control leaves focus navigation, and a reader who
+         pressed this one has to still be on it when the attempt fails. */
       const retryButton = screen.getByRole('button', { name: 'Retrying' });
-      expect(retryButton).toBeDisabled();
+      expect(retryButton).not.toBeDisabled();
+      expect(retryButton).toHaveAttribute('aria-disabled', 'true');
+      expect(retryButton).toHaveAttribute('aria-busy', 'true');
 
       fireEvent.click(retryButton);
       expect(mockRetry).not.toHaveBeenCalled();

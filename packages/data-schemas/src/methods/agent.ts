@@ -2239,20 +2239,23 @@ export function createAgentMethods(
           from: 'aclentries',
           localField: '_id',
           foreignField: 'resourceId',
-          /* Aggregation lookups bypass the ACL model's tenant middleware. Match the
-           * entry's tenant to the agent's tenant, treating missing and null as one
-           * tenantless scope just like the rest of this method. */
-          let: { agentTenantId: '$tenantId' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $eq: [{ $ifNull: ['$tenantId', null] }, { $ifNull: ['$$agentTenantId', null] }],
-                },
+          /* Aggregation lookups bypass the ACL model's tenant middleware. The joined
+           * array is narrowed in the following stage because DocumentDB 5.0 does not
+           * support the `$lookup` `let`/`pipeline` form. */
+          as: '_ownerAclEntries',
+        },
+      });
+      pipeline.push({
+        $addFields: {
+          _ownerAclEntries: {
+            $filter: {
+              input: '$_ownerAclEntries',
+              as: 'e',
+              cond: {
+                $eq: [{ $ifNull: ['$$e.tenantId', null] }, { $ifNull: ['$tenantId', null] }],
               },
             },
-          ],
-          as: '_ownerAclEntries',
+          },
         },
       });
       pipeline.push({
@@ -2300,19 +2303,22 @@ export function createAgentMethods(
           from: 'users',
           localField: '_ownerId',
           foreignField: '_id',
-          /* User lookups bypass the User model's tenant middleware too. Keep an
-           * imported principal from resolving across tenant boundaries. */
-          let: { agentTenantId: '$tenantId' },
-          pipeline: [
-            {
-              $match: {
-                $expr: {
-                  $eq: [{ $ifNull: ['$tenantId', null] }, { $ifNull: ['$$agentTenantId', null] }],
-                },
+          /* User lookups bypass the User model's tenant middleware too. Filter the
+           * joined array afterwards to keep imported principals in their own tenant. */
+          as: '_ownerUser',
+        },
+      });
+      pipeline.push({
+        $addFields: {
+          _ownerUser: {
+            $filter: {
+              input: '$_ownerUser',
+              as: 'u',
+              cond: {
+                $eq: [{ $ifNull: ['$$u.tenantId', null] }, { $ifNull: ['$tenantId', null] }],
               },
             },
-          ],
-          as: '_ownerUser',
+          },
         },
       });
       pipeline.push({
