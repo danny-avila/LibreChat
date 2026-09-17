@@ -11,8 +11,9 @@ module.exports = {
   content: ['./src/**/*.{js,jsx,ts,tsx}'],
   darkMode: ['class'],
   presets: [libreChatTailwindPreset],
-  // The components here write `animate-in`, `fade-in-0`, `slide-in-from-*` and the accordion
-  // keyframes, so the plugin that generates them belongs in the library's own config rather than
-  // only in the app's.
-  plugins: [require('tailwindcss-animate')],
+  // No plugins here: the components write `animate-in`, `fade-in-0`, `slide-in-from-*` and the
+  // accordion keyframes, and the preset above is what registers the plugin generating them — for
+  // this config and for a consumer's alike. Registering it a second time emits each of those
+  // utilities twice.
+  plugins: [],
 };

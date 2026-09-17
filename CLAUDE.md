@@ -293,8 +293,9 @@ Multi-line imports count total character length across all lines. Consolidate va
   what a file move needs, since suppressions are keyed by path — the re-record adds the new
   path and only the prune removes the old one. It re-baselines everything under `client/src`
   and `packages/client/src`, so for a single move prefer a scoped re-record of just that file —
-  the same five `--suppress-rule` flags `lint:design:suppress` passes (`shadcn/no-restyle`,
-  `no-raw-colors`, `no-arbitrary-values`, `no-inline-styles`, `require-static-classes`) with
+  the same six `--suppress-rule` flags `lint:design:suppress` passes (`shadcn/no-restyle`,
+  `no-raw-colors`, `no-arbitrary-values`, `no-inline-styles`, `require-static-classes`,
+  `no-unknown-classes`) with
   `<new/path.tsx>` in place of the directories, since a moved file usually carries entries for
   more than one rule — followed by `npm run lint:design:prune`;
   `npm run lint:design:suppress -- <file>` does not scope, because npm appends the argument to

@@ -61,9 +61,45 @@ module.exports = {
         'theme-fast': 'var(--theme-motion-fast, 150ms)',
         'theme-normal': 'var(--theme-motion-normal, 200ms)',
       },
+      /**
+       * The keyframes the published components name themselves: `Accordion`
+       * writes `animate-accordion-up`/`-down` and `InputOTP` writes
+       * `animate-caret-blink`. They live here rather than only in the app's
+       * config, because a consumer loads this preset and nothing else — and an
+       * accordion that never animates its height is the kind of miss that looks
+       * like a styling opinion rather than a missing utility.
+       */
+      keyframes: {
+        'accordion-down': {
+          from: { height: '0' },
+          to: { height: 'var(--radix-accordion-content-height)' },
+        },
+        'accordion-up': {
+          from: { height: 'var(--radix-accordion-content-height)' },
+          to: { height: '0' },
+        },
+        'caret-blink': {
+          '0%,70%,100%': { opacity: '1' },
+          '20%,50%': { opacity: '0' },
+        },
+      },
+      animation: {
+        'accordion-down': 'accordion-down 0.2s ease-out',
+        'accordion-up': 'accordion-up 0.2s ease-out',
+        'caret-blink': 'caret-blink 1.25s ease-out infinite',
+      },
     },
   },
   plugins: [
+    /**
+     * The published components write `animate-in`, `fade-in-0`, `zoom-in-95` and
+     * `slide-in-from-*` (dialogs, popovers, dropdowns), which this plugin owns.
+     * It belongs in the preset rather than in the app's config alone: a consumer
+     * following the documented setup loads only this file, and without it those
+     * classes generate nothing and the surfaces appear without their motion.
+     * Declared as a peer dependency so the consumer's install provides it.
+     */
+    require('tailwindcss-animate'),
     /**
      * A bare function rather than `plugin()` from `tailwindcss/plugin`, because
      * this preset ships as a raw file through the `./tailwind-preset` export and

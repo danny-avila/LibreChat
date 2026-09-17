@@ -55,7 +55,7 @@ function MultiSelectPop({
               data-testid="select-dropdown-button"
               className={cn(
                 'border-border-light bg-surface-secondary relative flex flex-col rounded-md border py-2 pr-10 pl-3 text-left focus:ring-0 focus:ring-offset-0 focus:outline-hidden sm:text-sm',
-                'pointer-cursor font-normal',
+                'cursor-pointer font-normal',
                 'hover:bg-surface-hover data-[state=open]:bg-surface-hover',
               )}
             >

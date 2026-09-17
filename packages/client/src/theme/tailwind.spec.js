@@ -102,13 +102,18 @@ describe('LibreChat Tailwind preset', () => {
    *  reach is not a floor, so the registration is asserted, not just the value. */
   it('registers the appearance variants the utilities are written against', () => {
     const variants = {};
-    tailwindPreset.plugins.forEach((plugin) =>
-      plugin({
-        addVariant: (name, value) => {
-          variants[name] = value;
-        },
-      }),
-    );
+    /** The preset also carries `tailwindcss-animate`, which Tailwind hands an
+     *  object rather than a bare function; the variants live in the plugin this
+     *  file owns, so only the callable entries are invoked here. */
+    tailwindPreset.plugins
+      .filter((plugin) => typeof plugin === 'function')
+      .forEach((plugin) =>
+        plugin({
+          addVariant: (name, value) => {
+            variants[name] = value;
+          },
+        }),
+      );
 
     /** `any-pointer`, not `pointer`: the floor has to apply to a 2-in-1's
      *  touchscreen while its trackpad is the primary device and reports `fine`. */

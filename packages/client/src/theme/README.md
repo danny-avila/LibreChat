@@ -209,6 +209,10 @@ The package stylesheet carries the component CSS and the one preflight rule the 
 depend on — Tailwind 3 gave every `button` a pointer cursor and Tailwind 4 does not — so import
 it once, after Tailwind.
 
+`tailwindcss-animate` is a peer dependency too, and the preset registers it: the components' own
+`animate-in`, `fade-in-0`, `zoom-in-95` and `slide-in-from-*` classes are its utilities, so a
+consumer that loads the preset gets them without configuring anything.
+
 ### 5. Use Theme Colors in Components
 
 ```tsx
