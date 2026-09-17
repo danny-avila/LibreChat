@@ -128,6 +128,10 @@ function alwaysApplySkillBody(name: string, body: string): string {
   return `---\nname: ${name}\ndescription: Prompt cache child skill.\nalwaysApply: true\n---\n\n# ${name}\n\n${body}`;
 }
 
+/** Skill names are validated as kebab-case, unlike agent names. */
+const uniqueSkillName = (prefix: string) =>
+  `${prefix}-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4)}`;
+
 async function createInlineSkill(page: Page, token: string, name: string, body: string) {
   const skill = await requestJson<SkillDetail & { name: string }>(page, {
     path: '/api/skills',
@@ -161,9 +165,15 @@ test.afterEach(async ({ page }) => {
     }
   }
 
-  const token = await getAccessToken(page);
+  /**
+   * A skipped projection never navigates, so the page has no origin to resolve
+   * a token request against; only ask for one when there is something to clean.
+   */
   const skillIds = createdSkillIds.splice(0).reverse();
-  await Promise.all(skillIds.map((skillId) => deleteSkill(page, token, skillId)));
+  if (skillIds.length > 0) {
+    const token = await getAccessToken(page);
+    await Promise.all(skillIds.map((skillId) => deleteSkill(page, token, skillId)));
+  }
 
   const agentIds = createdAgentIds.splice(0).reverse();
   await Promise.all(agentIds.map((agentId) => cleanupAgent(page, agentId)));
@@ -209,7 +219,7 @@ test.describe('subagent prompt cache key', () => {
     test.setTimeout(120000);
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     const token = await getAccessToken(page);
-    const skillName = uniqueAgentName('E2E Prompt Cache Skill');
+    const skillName = uniqueSkillName('e2e-prompt-cache-skill');
     const skill = await createInlineSkill(page, token, skillName, 'Initial child skill body.');
     const child = await createAgent(page, token, uniqueAgentName('E2E Prompt Cache Skill Child'), {
       instructions: 'Use the child skill for this prompt cache scenario.',
