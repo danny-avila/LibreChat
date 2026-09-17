@@ -7,6 +7,9 @@ describe('supportsExplicitPromptCache', () => {
     ['gpt-5.6-terra', true],
     ['gpt-5.6-luna', true],
     ['gpt-6-astra', true],
+    ['gpt-6-astra-prod', true],
+    ['gpt-6-mini', false],
+    ['gpt-6', false],
     /** Azure deployment names cannot contain a dot. */
     ['gpt-5-6', true],
     ['gpt-5-6-prod', true],
