@@ -2059,6 +2059,47 @@ describe('prompt caching', () => {
     expect(result.llmConfig).not.toHaveProperty('promptCacheScopeId');
   });
 
+  it('ignores cache controls an agent author put in model parameters', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: {
+        model: 'gpt-5.6',
+        user: 'user-abc',
+        promptCacheScope: 'shared',
+        promptCacheScopeId: 'someone-else',
+        promptCacheKey: 'author-chosen-key',
+        promptCacheRetention: '24h',
+        promptCacheExplicit: true,
+      } as unknown as Parameters<typeof getOpenAILLMConfig>[0]['modelOptions'],
+    });
+
+    /** The endpoint said nothing, so the run keys per user as it would without the agent. */
+    expect(result.llmConfig).not.toHaveProperty('promptCacheScope');
+    expect(result.llmConfig).not.toHaveProperty('promptCacheScopeId');
+    expect(result.llmConfig).not.toHaveProperty('promptCacheKey');
+    expect(result.llmConfig).not.toHaveProperty('promptCacheRetention');
+    expect(result.llmConfig).not.toHaveProperty('promptCacheExplicit');
+    expect(result.llmConfig.promptCacheKeyEnabled).toBe(true);
+  });
+
+  it('still honors the same controls from endpoint configuration', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6', promptCacheScope: 'shared' } as unknown as Parameters<
+        typeof getOpenAILLMConfig
+      >[0]['modelOptions'],
+      promptCacheScope: 'user',
+      promptCacheRetention: '24h',
+    });
+
+    expect(result.llmConfig.promptCacheScope).toBe('user');
+    expect(result.llmConfig.promptCacheRetention).toBe('24h');
+  });
+
   it('withholds explicit cache controls from models that reject them', () => {
     const unsupported = getOpenAILLMConfig({
       apiKey: 'test-api-key',

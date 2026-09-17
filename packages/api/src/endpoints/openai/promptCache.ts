@@ -25,6 +25,20 @@ export function supportsExplicitPromptCache(model?: string | null): boolean {
 }
 
 /**
+ * Everything a projection needs that is not the value itself.
+ */
+interface PromptCacheProjectionContext {
+  /**
+   * Tool definitions this conversation's `tool_search` promoted onto the
+   * request. They reach the model, but the key names the prefix the agent is
+   * configured to send, so they stay out of it.
+   */
+  readonly promotedToolNames: ReadonlySet<string>;
+}
+
+type PromptCacheProjection = (value: unknown, context: PromptCacheProjectionContext) => unknown;
+
+/**
  * What one field of a finished agent input contributes to the cached prefix's
  * identity.
  *
@@ -35,10 +49,10 @@ export function supportsExplicitPromptCache(model?: string | null): boolean {
  * defect this module keeps being corrected for.
  */
 type PromptCacheDisposition =
-  | { readonly role: 'identity'; readonly project?: (value: unknown) => unknown }
+  | { readonly role: 'identity'; readonly project?: PromptCacheProjection }
   | { readonly role: 'excluded'; readonly because: string };
 
-const identity = (project?: (value: unknown) => unknown): PromptCacheDisposition => ({
+const identity = (project?: PromptCacheProjection): PromptCacheDisposition => ({
   role: 'identity',
   ...(project != null ? { project } : {}),
 });
@@ -111,6 +125,7 @@ const nonPrefixClientOptionKeys: ReadonlySet<string> = new Set([
   'promptCacheScope',
   'promptCacheScopeId',
   'promptCacheStableInstructions',
+  'promptCacheDiscoveredToolNames',
   'promptCacheRetention',
   'promptCacheExplicit',
   'promptCache',
@@ -249,6 +264,26 @@ function toolsIdentity(value: unknown): unknown {
 }
 
 /**
+ * The definitions the agent is configured to send, which is a narrower set
+ * than the ones the request carries: `buildAgentInput` promotes a deferred
+ * tool's definition onto the request once a conversation has discovered it
+ * through `tool_search`. Hashing those would make the identity follow each
+ * conversation's discovery state — the one thing the key exists to be
+ * independent of.
+ */
+function toolDefinitionsIdentity(value: unknown, context: PromptCacheProjectionContext): unknown {
+  if (!Array.isArray(value) || context.promotedToolNames.size === 0) {
+    return toolsIdentity(value);
+  }
+  return value
+    .filter((tool) => {
+      const name = (tool as { name?: unknown } | null)?.name;
+      return typeof name !== 'string' || !context.promotedToolNames.has(name);
+    })
+    .map(safeIdentity);
+}
+
+/**
  * Projects the delegation tool the SDK generates from an agent's subagent
  * entries. `type` is the value that tool accepts as `subagent_type`, so a
  * child swapped for a different agent under the same display name changes the
@@ -294,7 +329,7 @@ const agentInputDispositions: Record<keyof AgentInputs, PromptCacheDisposition> 
   clientOptions: identity(clientOptionsIdentity),
   /** Every surface the model is offered a tool from. */
   tools: identity(toolsIdentity),
-  toolDefinitions: identity(toolsIdentity),
+  toolDefinitions: identity(toolDefinitionsIdentity),
   graphTools: identity(toolsIdentity),
   subagentConfigs: identity(subagentConfigsIdentity),
   /** The SDK puts an agent's name in the handoff context the model reads. */
@@ -376,6 +411,15 @@ export function buildPromptCacheKey(
   input: AgentInputs,
   context: PromptCacheIdentityContext = {},
 ): string {
+  const markers = input.clientOptions as
+    | (Partial<t.OAIClientOptions> & {
+        promptCacheStableInstructions?: string;
+        promptCacheDiscoveredToolNames?: string[];
+      })
+    | undefined;
+  const projection: PromptCacheProjectionContext = {
+    promotedToolNames: new Set(markers?.promptCacheDiscoveredToolNames ?? []),
+  };
   const payload: Record<string, unknown> = {
     version: PROMPT_CACHE_KEY_VERSION,
     handoffEdges: (context.handoffEdges ?? []).map(safeIdentity),
@@ -392,16 +436,14 @@ export function buildPromptCacheKey(
     }
     const projected =
       disposition?.role === 'identity' && disposition.project != null
-        ? disposition.project(value)
+        ? disposition.project(value, projection)
         : safeIdentity(value);
     if (isAbsentSurface(projected)) {
       continue;
     }
     payload[key] = projected;
   }
-  const options = input.clientOptions as
-    | (Partial<t.OAIClientOptions> & { promptCacheStableInstructions?: string })
-    | undefined;
+  const options = markers;
   /**
    * Hashed with the prefix rather than appended to the key, so the user id an
    * operator sees in OpenAI's cache accounting stays opaque. `shared` opts the

@@ -84,6 +84,13 @@ export type OAIClientOptions = Omit<OpenAIClientOptions, 'verbosity'> & {
    */
   promptCacheStableInstructions?: string;
   /**
+   * Tool definitions this conversation's `tool_search` promoted onto the
+   * request. They reach the model, but not the identity of the prefix the
+   * agent is configured to send — hashing them would give every conversation
+   * its own cache entry. Consumed by `createRun` and never sent.
+   */
+  promptCacheDiscoveredToolNames?: string[];
+  /**
    * Declares that this client talks to a first-party OpenAI or Azure surface, which is
    * what gates the agents SDK's model-specific request constraints (GPT-6
    * Astra: Responses-only tool calls, rejected sampling parameters,

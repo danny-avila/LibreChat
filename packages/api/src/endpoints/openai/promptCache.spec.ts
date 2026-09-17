@@ -117,6 +117,30 @@ describe('buildPromptCacheKey', () => {
     );
   });
 
+  it('keeps definitions this conversation discovered out of the identity', () => {
+    const deferred = {
+      name: 'deferred_search',
+      description: 'Discovered through tool_search',
+      parameters: { type: 'object', properties: {} },
+    };
+
+    expect(
+      key({
+        toolDefinitions: [searchTool, calculatorTool, deferred],
+        clientOptions: { promptCacheDiscoveredToolNames: ['deferred_search'] },
+      }),
+    ).toBe(key());
+  });
+
+  it('still keys on a configured tool that shares a discovered name', () => {
+    expect(
+      key({
+        toolDefinitions: [searchTool],
+        clientOptions: { promptCacheDiscoveredToolNames: ['calculator'] },
+      }),
+    ).not.toBe(key());
+  });
+
   it('reads an absent, empty and empty-array surface as the same absent surface', () => {
     expect(key({ toolDefinitions: [], tools: [], instructions: '' })).toBe(
       key({ toolDefinitions: undefined, instructions: undefined }),
