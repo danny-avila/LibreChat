@@ -1,5 +1,5 @@
 const { Tools } = require('librechat-data-provider');
-const { ModelEndHandler } = require('~/server/controllers/agents/callbacks');
+const { collectAnnotationsFromValue } = require('~/server/controllers/agents/callbacks');
 
 // Mock all dependencies before requiring the module
 jest.mock('nanoid', () => ({
@@ -474,53 +474,151 @@ describe('createToolEndCallback', () => {
       expect(phase2.textFormat).toBe('html');
     });
 
-    it('collects annotations from output and enriches them with provider and model', () => {
-      const collectedAnnotations = [];
-      const collectedUsage = []; // Ensure this is an array
+    describe('collectAnnotationsFromValue', () => {
+      it('collects citation annotations', () => {
+        const citation = {
+          type: 'citation',
+          url: 'https://example.com',
+          title: 'Example',
+        };
 
-      const handler = new ModelEndHandler(collectedUsage, null, null, collectedAnnotations);
+        const result = collectAnnotationsFromValue({
+          annotations: [citation],
+        });
 
-      const agentContext = {
-        provider: 'openai',
-        clientOptions: { model: 'gpt-5.5' },
-      };
+        expect(result).toEqual([citation]);
+      });
 
-      const metadata = {};
+      it('collects citations from nested objects', () => {
+        const citation = {
+          type: 'citation',
+          url: 'https://example.com',
+        };
 
-      handler.handle(
-        'model_end',
-        {
+        const result = collectAnnotationsFromValue({
           output: {
+            content: {
+              annotations: [citation],
+            },
+          },
+        });
+
+        expect(result).toEqual([citation]);
+      });
+
+      it('collects citations from nested arrays', () => {
+        const firstCitation = {
+          type: 'citation',
+          url: 'https://example.com/1',
+        };
+        const secondCitation = {
+          type: 'citation',
+          url: 'https://example.com/2',
+        };
+
+        const result = collectAnnotationsFromValue([
+          {
+            annotations: [firstCitation],
+          },
+          {
             content: [
               {
-                type: 'text',
-                text: 'Hello',
-                annotations: [
-                  {
-                    type: 'url_citation',
-                    url: 'https://example.com',
-                    title: 'Example',
-                  },
-                ],
+                annotations: [secondCitation],
               },
             ],
           },
-        },
-        metadata,
-        {
-          getAgentContext: () => agentContext,
+        ]);
+
+        expect(result).toEqual([firstCitation, secondCitation]);
+      });
+
+      it('ignores annotations with a different type', () => {
+        const result = collectAnnotationsFromValue({
+          annotations: [
+            {
+              type: 'url_citation',
+              url: 'https://example.com',
+            },
+            {
+              type: 'other',
+            },
+          ],
+        });
+
+        expect(result).toEqual([]);
+      });
+
+      it('ignores invalid annotation values', () => {
+        const result = collectAnnotationsFromValue({
+          annotations: [null, undefined, 'citation', 123],
+        });
+
+        expect(result).toEqual([]);
+      });
+
+      it('does not add the same annotation object more than once', () => {
+        const citation = {
+          type: 'citation',
+          url: 'https://example.com',
+        };
+
+        const result = collectAnnotationsFromValue({
+          first: {
+            annotations: [citation],
+          },
+          second: {
+            annotations: [citation],
+          },
+        });
+
+        expect(result).toEqual([citation]);
+      });
+
+      it('preserves distinct citation objects with identical values', () => {
+        const firstCitation = {
+          type: 'citation',
+          url: 'https://example.com',
+        };
+        const secondCitation = {
+          type: 'citation',
+          url: 'https://example.com',
+        };
+
+        const result = collectAnnotationsFromValue({
+          annotations: [firstCitation, secondCitation],
+        });
+
+        expect(result).toEqual([firstCitation, secondCitation]);
+      });
+
+      it.each([null, undefined, 'text', 123, true])(
+        'returns an empty array for non-object input: %p',
+        (value) => {
+          expect(collectAnnotationsFromValue(value)).toEqual([]);
         },
       );
 
-      expect(collectedAnnotations).toEqual([
-        {
-          type: 'url_citation',
-          url: 'https://example.com',
-          title: 'Example',
-          provider: 'openai',
-          model: 'gpt-5.5',
-        },
-      ]);
+      it('adds citations to an existing collection', () => {
+        const existingCitation = {
+          type: 'citation',
+          url: 'https://example.com/existing',
+        };
+        const newCitation = {
+          type: 'citation',
+          url: 'https://example.com/new',
+        };
+        const collected = [existingCitation];
+
+        const result = collectAnnotationsFromValue(
+          {
+            annotations: [newCitation],
+          },
+          collected,
+        );
+
+        expect(result).toBe(collected);
+        expect(result).toEqual([existingCitation, newCitation]);
+      });
     });
 
     it('the preview update emit is skipped when finalize resolves to null (no DB update happened)', async () => {

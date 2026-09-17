@@ -1303,4 +1303,5 @@ module.exports = {
   markSummarizationUsage,
   buildSummarizationHandlers,
   createResponsesToolEndCallback,
+  collectAnnotationsFromValue,
 };
