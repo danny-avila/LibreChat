@@ -2478,6 +2478,7 @@ describe('MCPTokenStorage', () => {
           await seedRefreshableTokens(serverName);
           await peerRotates(serverName, 3);
           const flowManager = new FlowStateManager(new Keyv(), { ttl: 30000, ci: true });
+          const acquireSpy = jest.spyOn(flowManager, 'acquireLease');
           let finishAdoption!: () => void;
           const publication = new Promise<void>((resolve) => {
             finishAdoption = resolve;
@@ -2486,12 +2487,12 @@ describe('MCPTokenStorage', () => {
           const adopted = MCPTokenStorage.forceRefreshTokens({
             ...refreshParams(jest.fn(), serverName),
             flowManager,
+            persistenceWaitTimeoutMs: waitMs,
             rejectedCredentialSetId: 'before-peer-generation',
             onTokensAdopted,
           });
           await waitFor(() => onTokensAdopted.mock.calls.length === 1);
           const onStoreCommitted = jest.fn();
-          const acquireSpy = jest.spyOn(flowManager, 'acquireLease');
           const callback = MCPTokenStorage.storeTokens({
             ...refreshParams(jest.fn(), serverName),
             flowManager,
@@ -2504,6 +2505,9 @@ describe('MCPTokenStorage', () => {
           try {
             await new Promise((resolve) => setTimeout(resolve, 25));
             expect(onStoreCommitted).not.toHaveBeenCalled();
+            expect(acquireSpy).toHaveBeenCalledWith(getMCPOAuthLeaseId('u1', serverName), {
+              waitMs: 30000,
+            });
             expect(acquireSpy).toHaveBeenCalledWith(getMCPOAuthLeaseId('u1', serverName), {
               waitMs: Math.min(waitMs, 840000),
             });

@@ -526,7 +526,8 @@ actions:
 #     oauthRefreshCoordination: false
 #     # Peer refresh wait; capped at 30000 ms by the refresh execution budget.
 #     oauthRefreshWaitTimeout: 15000
-#     # Callback/adoption persistence wait; raise for longer publication budgets (max 840000 ms).
+#     # Persistence wait: callbacks allow up to 840000 ms; adoption caps at 30000 ms
+#     # because it runs inside the shorter refresh flight.
 #     oauthPersistenceWaitTimeout: 15000
 #   private-openid:
 #     type: streamable-http

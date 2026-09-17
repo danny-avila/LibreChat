@@ -224,7 +224,7 @@ const BaseOptionsSchema = z.object({
   oauthRefreshWaitTimeout: z.number().int().positive().optional(),
   /** Enable only after every replica has upgraded to the coordinated OAuth writer protocol. Default: false. */
   oauthRefreshCoordination: z.boolean().optional(),
-  /** Wait (ms) for callback/adoption persistence and publication. Default: 15_000; maximum: 840_000. */
+  /** Wait (ms) for callback/adoption persistence. Default: 15_000; callback maximum: 840_000; adoption caps at 30_000 to stay within its refresh flight. */
   oauthPersistenceWaitTimeout: z
     .number()
     .int()

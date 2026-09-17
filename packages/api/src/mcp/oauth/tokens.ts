@@ -1075,7 +1075,11 @@ export class MCPTokenStorage {
       try {
         if (flight?.adoptedTokens) {
           const adoptionLease = await flowManager!.acquireLease(leaseId, {
-            waitMs: this.resolvePersistenceWaitMs(params.persistenceWaitTimeoutMs),
+            // Adoption is part of the stale-bounded refresh flight, unlike an interactive callback.
+            waitMs: Math.min(
+              this.resolvePersistenceWaitMs(params.persistenceWaitTimeoutMs),
+              this.MAX_REFRESH_FLIGHT_WAIT_MS,
+            ),
           });
           if (!adoptionLease) {
             throw new MCPTokenStorageUnavailableError(
@@ -1084,6 +1088,12 @@ export class MCPTokenStorage {
             );
           }
           try {
+            if (executionController.signal.aborted) {
+              throw new MCPTokenRefreshUnavailableError(
+                serverName,
+                new Error('OAuth adoption budget expired'),
+              );
+            }
             if (
               !(await this.isCurrentAccessToken({
                 userId,
