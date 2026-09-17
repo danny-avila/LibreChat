@@ -67,11 +67,22 @@ export type OAIClientOptions = Omit<OpenAIClientOptions, 'verbosity'> & {
    */
   promptCacheScope?: OpenAIPromptCacheScope;
   /**
-   * Partition identity captured when the policy was resolved, because the
-   * `user` field it comes from can be removed from the request afterwards.
-   * Consumed by `createRun` and, like the other markers, never sent.
+   * Partition identity, stamped by `createRun` from the authenticated user of
+   * the run. Not resolved with the policy above and never read back off the
+   * request: `addParams` can pin the `user` field to a constant, `dropParams`
+   * can remove it, and some models drop it on their own, each of which would
+   * merge every user onto one cache entry. Consumed by `createRun` and, like
+   * the other markers, never sent.
    */
   promptCacheScopeId?: string;
+  /**
+   * Stable instruction sources the host folds into the dynamic system tail —
+   * an isolated child's always-apply skill bodies. Recorded where they are
+   * still distinguishable from the memory and file context in the same
+   * string, so the identity covers them without partitioning per conversation.
+   * Consumed by `createRun` and never sent.
+   */
+  promptCacheStableInstructions?: string;
   /**
    * Declares that this client talks to a first-party OpenAI or Azure surface, which is
    * what gates the agents SDK's model-specific request constraints (GPT-6

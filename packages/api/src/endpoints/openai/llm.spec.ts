@@ -2031,7 +2031,7 @@ describe('prompt caching', () => {
     expect(result.llmConfig).not.toHaveProperty('promptCacheScope');
   });
 
-  it('keeps the partition identity when dropParams removes the user field', () => {
+  it('opts into a cache key but leaves partition identity to createRun when dropParams removes the user field', () => {
     const result = getOpenAILLMConfig({
       apiKey: 'test-api-key',
       streaming: true,
@@ -2042,10 +2042,11 @@ describe('prompt caching', () => {
 
     /** Dropping the wire field must not collapse every user onto one entry. */
     expect(result.llmConfig).not.toHaveProperty('user');
-    expect(result.llmConfig.promptCacheScopeId).toBe('user-abc');
+    expect(result.llmConfig.promptCacheKeyEnabled).toBe(true);
+    expect(result.llmConfig).not.toHaveProperty('promptCacheScopeId');
   });
 
-  it('keeps it for a search model that drops the user field on its own', () => {
+  it('opts into a cache key but leaves partition identity to createRun for a search model that drops the user field', () => {
     const result = getOpenAILLMConfig({
       apiKey: 'test-api-key',
       streaming: true,
@@ -2054,7 +2055,8 @@ describe('prompt caching', () => {
     });
 
     expect(result.llmConfig).not.toHaveProperty('user');
-    expect(result.llmConfig.promptCacheScopeId).toBe('user-abc');
+    expect(result.llmConfig.promptCacheKeyEnabled).toBe(true);
+    expect(result.llmConfig).not.toHaveProperty('promptCacheScopeId');
   });
 
   it('withholds explicit cache controls from models that reject them', () => {

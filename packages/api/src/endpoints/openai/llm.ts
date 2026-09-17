@@ -968,7 +968,10 @@ export function getOpenAILLMConfig({
    *
    * The scope rides along with the marker: it only describes a key `createRun`
    * is going to build, so carrying it when no key is coming would leave a
-   * setting on the request that nothing reads.
+   * setting on the request that nothing reads. The partition *identity* is not
+   * resolved here at all — `createRun` takes it from the authenticated user of
+   * the run, because every field on this config can be rewritten by
+   * `addParams`, removed by `dropParams`, or dropped by a model rule below.
    */
   const promptCacheKeyPinned = typeof llmConfig.promptCacheKey === 'string';
   const promptCacheKeyDropped = dropParams?.includes('promptCacheKey') === true;
@@ -981,15 +984,6 @@ export function getOpenAILLMConfig({
     llmConfig.promptCacheKeyEnabled = true;
     if (promptCacheScope != null) {
       llmConfig.promptCacheScope = promptCacheScope;
-    }
-    /**
-     * Capture the partition identity here rather than reading `user` back at
-     * finalization: `dropParams` can remove that field, and the gpt-4o search
-     * models drop it unconditionally further down, which would silently turn
-     * per-user accounting into one shared entry.
-     */
-    if (typeof llmConfig.user === 'string') {
-      llmConfig.promptCacheScopeId = llmConfig.user;
     }
   }
   if (firstPartyEndpoint && promptCacheRetention != null) {

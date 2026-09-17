@@ -1,5 +1,5 @@
-import { Providers, initializeModel } from '@librechat/agents';
 import { EModelEndpoint, ReasoningEffort } from 'librechat-data-provider';
+import { Providers, initializeModel, type AgentInputs } from '@librechat/agents';
 import type { OpenAI } from 'openai';
 import type { OpenAIConfiguration } from '~/types';
 import type * as t from '~/types';
@@ -269,12 +269,17 @@ describe('prompt cache parameters', () => {
     );
     const options = llmConfig as t.OAIClientOptions;
     expect(options.promptCacheKeyEnabled).toBe(true);
-    delete options.promptCacheKeyEnabled;
     options.promptCacheKey = buildPromptCacheKey({
-      model: options.model,
+      agentId: 'request-test-agent',
+      provider: Providers.OPENAI,
+      clientOptions: options,
       instructions,
-      boundTools: toolDefinitions,
+      toolDefinitions: toolDefinitions as unknown as AgentInputs['toolDefinitions'],
     });
+    /** `createRun` drops the markers once it has consumed them, so neither can reach the wire. */
+    delete options.promptCacheKeyEnabled;
+    delete options.promptCacheScope;
+    delete options.promptCacheScopeId;
     return {
       ...options,
       verbosity: undefined,
@@ -287,14 +292,12 @@ describe('prompt cache parameters', () => {
       surface: 'OpenAI Chat Completions',
       endpoint: EModelEndpoint.openAI,
       provider: Providers.OPENAI,
-      wireModel: 'gpt-5.6',
     },
     {
       surface: 'OpenAI Responses',
       endpoint: EModelEndpoint.openAI,
       provider: Providers.OPENAI,
       useResponsesApi: true,
-      wireModel: 'gpt-5.6',
     },
     {
       /** Azure serves the deployment, so the deployment alias is the cached identity. */
@@ -302,7 +305,6 @@ describe('prompt cache parameters', () => {
       endpoint: EModelEndpoint.azureOpenAI,
       provider: Providers.AZURE,
       azure,
-      wireModel: 'gpt-5-6',
     },
     {
       surface: 'Azure Responses',
@@ -310,11 +312,10 @@ describe('prompt cache parameters', () => {
       provider: Providers.OPENAI,
       azure,
       useResponsesApi: true,
-      wireModel: 'gpt-5-6',
     },
   ])(
     'reuses one cache identity across differing user turns on $surface',
-    async ({ provider, wireModel, ...surface }) => {
+    async ({ provider, ...surface }) => {
       const bodies: Record<string, unknown>[] = [];
       const fetch: NonNullable<NonNullable<OpenAIConfiguration>['fetch']> = async (_url, init) => {
         bodies.push(JSON.parse(String(init?.body)));
@@ -339,9 +340,10 @@ describe('prompt cache parameters', () => {
           usage: { prompt_tokens: 5, completion_tokens: 1, input_tokens: 5, output_tokens: 1 },
         });
       };
+      const clientOptions = buildClientOptions(surface, fetch);
       const model = initializeModel({
         provider,
-        clientOptions: buildClientOptions(surface, fetch),
+        clientOptions,
       });
 
       await model.invoke('What is 2 + 2?');
@@ -350,7 +352,13 @@ describe('prompt cache parameters', () => {
       expect(bodies).toHaveLength(2);
       const [first, second] = bodies;
       expect(first.prompt_cache_key).toBe(
-        buildPromptCacheKey({ model: wireModel, instructions, boundTools: toolDefinitions }),
+        buildPromptCacheKey({
+          agentId: 'request-test-agent',
+          provider,
+          clientOptions,
+          instructions,
+          toolDefinitions: toolDefinitions as unknown as AgentInputs['toolDefinitions'],
+        }),
       );
       expect(second.prompt_cache_key).toBe(first.prompt_cache_key);
       expect(first.prompt_cache_retention).toBe('24h');

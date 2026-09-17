@@ -1,3 +1,4 @@
+import type { AgentInputs } from '@librechat/agents';
 import { buildPromptCacheKey, supportsExplicitPromptCache } from './promptCache';
 
 describe('supportsExplicitPromptCache', () => {
@@ -33,48 +34,70 @@ describe('buildPromptCacheKey', () => {
     description: 'Compute arithmetic',
     parameters: { type: 'object', properties: { input: { type: 'string' } } },
   };
-  const base = {
-    model: 'gpt-5.6',
-    instructions: 'You are a helpful assistant.',
-    boundTools: [searchTool, calculatorTool],
+
+  type InputOverrides = Record<string, unknown> & { clientOptions?: Record<string, unknown> };
+
+  /** A finished input as `createRun` hands it to the key: first-party, per-user scope. */
+  const input = (overrides: InputOverrides = {}): AgentInputs => {
+    const { clientOptions, ...rest } = overrides;
+    return {
+      agentId: 'agent-1',
+      provider: 'openAI',
+      instructions: 'You are a helpful assistant.',
+      toolDefinitions: [searchTool, calculatorTool],
+      ...rest,
+      clientOptions: {
+        model: 'gpt-5.6',
+        promptCacheScopeId: 'user-a',
+        ...(clientOptions ?? {}),
+      },
+    } as unknown as AgentInputs;
   };
 
-  it('ignores the key order tool schemas happen to be serialized in', () => {
-    const reordered = {
-      ...base,
-      boundTools: [
-        {
-          parameters: { properties: { query: { type: 'string' } }, type: 'object' },
-          description: 'Search the web',
-          name: 'search',
-        },
-        calculatorTool,
-      ],
-    };
+  const key = (overrides: InputOverrides = {}, handoffEdges?: readonly unknown[]) =>
+    buildPromptCacheKey(input(overrides), handoffEdges != null ? { handoffEdges } : {});
 
-    expect(buildPromptCacheKey(reordered)).toBe(buildPromptCacheKey(base));
+  it('ignores the key order tool schemas happen to be serialized in', () => {
+    expect(
+      key({
+        toolDefinitions: [
+          {
+            parameters: { properties: { query: { type: 'string' } }, type: 'object' },
+            description: 'Search the web',
+            name: 'search',
+          },
+          calculatorTool,
+        ],
+      }),
+    ).toBe(key());
   });
 
   it('separates toolsets that reach the model in a different order', () => {
-    const swapped = { ...base, boundTools: [calculatorTool, searchTool] };
-
-    expect(buildPromptCacheKey(swapped)).not.toBe(buildPromptCacheKey(base));
+    expect(key({ toolDefinitions: [calculatorTool, searchTool] })).not.toBe(key());
   });
 
   it.each([
     ['instructions', { instructions: 'You are a terse assistant.' }],
-    ['model', { model: 'gpt-5.6-terra' }],
-    ['tool schemas', { boundTools: [searchTool] }],
-    ['output schema', { responseSchema: { type: 'json_schema', name: 'answer' } }],
-    ['Responses output format', { responsesTextFormat: { type: 'json_schema', name: 'answer' } }],
+    ['wire model', { clientOptions: { model: 'gpt-5.6-terra' } }],
+    ['tool schemas', { toolDefinitions: [searchTool] }],
+    ['agent name the handoff context carries', { name: 'Researcher' }],
+    ['Chat Completions output schema', { clientOptions: { response_format: { type: 'json' } } }],
+    ['Responses output format', { clientOptions: { text: { format: { type: 'json' } } } }],
+    ['API mode', { clientOptions: { useResponsesApi: true } }],
   ])('retires the cache identity when the %s changes', (_label, change) => {
-    expect(buildPromptCacheKey({ ...base, ...change })).not.toBe(buildPromptCacheKey(base));
+    expect(key(change)).not.toBe(key());
+  });
+
+  it('keys on the deployment Azure Astra actually addresses, not its visible name', () => {
+    const astra = { model: 'gpt-6-astra', modelKwargs: { model: 'astra-prod' } };
+
+    expect(key({ clientOptions: astra })).not.toBe(
+      key({ clientOptions: { ...astra, modelKwargs: { model: 'astra-canary' } } }),
+    );
   });
 
   it('separates a provider-native tool that carries no schema of its own', () => {
-    const withWebSearch = { ...base, boundTools: [...base.boundTools, { type: 'web_search' }] };
-
-    expect(buildPromptCacheKey(withWebSearch)).not.toBe(buildPromptCacheKey(base));
+    expect(key({ tools: [{ type: 'web_search' }] })).not.toBe(key());
   });
 
   it('distinguishes runtime tool instances whose schemas cannot be serialized', () => {
@@ -88,16 +111,15 @@ describe('buildPromptCacheKey', () => {
       invoke: () => undefined,
     });
 
-    const withAsk = { ...base, boundTools: [...base.boundTools, instance('ask_user_question')] };
-    const withOther = { ...base, boundTools: [...base.boundTools, instance('list_run_files')] };
-
-    expect(buildPromptCacheKey(withAsk)).not.toBe(buildPromptCacheKey(base));
-    expect(buildPromptCacheKey(withAsk)).not.toBe(buildPromptCacheKey(withOther));
+    expect(key({ graphTools: [instance('ask_user_question')] })).not.toBe(key());
+    expect(key({ graphTools: [instance('ask_user_question')] })).not.toBe(
+      key({ graphTools: [instance('list_run_files')] }),
+    );
   });
 
-  it('omits an absent tool schema rather than treating it as an empty toolset', () => {
-    expect(buildPromptCacheKey({ model: 'gpt-5.6' })).toBe(
-      buildPromptCacheKey({ model: 'gpt-5.6', boundTools: [], instructions: '' }),
+  it('reads an absent, empty and empty-array surface as the same absent surface', () => {
+    expect(key({ toolDefinitions: [], tools: [], instructions: '' })).toBe(
+      key({ toolDefinitions: undefined, instructions: undefined }),
     );
   });
 
@@ -105,21 +127,44 @@ describe('buildPromptCacheKey', () => {
     ['defer_loading', { defer_loading: true }],
     ['allowed_callers', { allowed_callers: ['code_execution'] }],
   ])('retires the key when a definition\u2019s %s changes', (_label, classification) => {
-    const reclassified = {
-      ...base,
-      boundTools: [{ ...searchTool, ...classification }, calculatorTool],
-    };
+    expect(
+      key({ toolDefinitions: [{ ...searchTool, ...classification }, calculatorTool] }),
+    ).not.toBe(key());
+  });
 
-    expect(buildPromptCacheKey(reclassified)).not.toBe(buildPromptCacheKey(base));
+  describe('generated delegation tool', () => {
+    const child = { type: 'child-agent-id', name: 'Researcher', description: 'Researches things' };
+
+    it('separates an agent that can delegate from one that cannot', () => {
+      expect(key({ subagentConfigs: [child] })).not.toBe(key());
+    });
+
+    it.each([
+      ['the enum value the tool accepts', { type: 'other-agent-id' }],
+      ['its display name', { name: 'Analyst' }],
+      ['its description', { description: 'Analyzes things' }],
+    ])('retires the key when a target changes %s', (_label, change) => {
+      expect(key({ subagentConfigs: [{ ...child, ...change }] })).not.toBe(
+        key({ subagentConfigs: [child] }),
+      );
+    });
+
+    it('ignores the child inputs an entry carries, which hold the child\u2019s own key', () => {
+      expect(
+        key({
+          subagentConfigs: [
+            { ...child, agentInputs: { clientOptions: { promptCacheKey: 'child-key' } } },
+          ],
+        }),
+      ).toBe(key({ subagentConfigs: [child] }));
+    });
   });
 
   describe('handoff edges', () => {
-    const edge = { from: 'supervisor', to: 'researcher', description: 'Hand off research' };
+    const edge = { to: 'researcher', description: 'Hand off research' };
 
     it('separates an agent that can hand off from one that cannot', () => {
-      expect(buildPromptCacheKey({ ...base, handoffEdges: [edge] })).not.toBe(
-        buildPromptCacheKey(base),
-      );
+      expect(key({}, [edge])).not.toBe(key());
     });
 
     it.each([
@@ -127,35 +172,92 @@ describe('buildPromptCacheKey', () => {
       ['description', { description: 'Hand off drafting' }],
       ['input parameter name', { promptKey: 'brief' }],
     ])('retires the key when an edge\u2019s %s changes', (_label, change) => {
-      expect(buildPromptCacheKey({ ...base, handoffEdges: [{ ...edge, ...change }] })).not.toBe(
-        buildPromptCacheKey({ ...base, handoffEdges: [edge] }),
-      );
+      expect(key({}, [{ ...edge, ...change }])).not.toBe(key({}, [edge]));
     });
   });
 
   describe('cache-accounting scope', () => {
     it('separates two users running the same agent', () => {
-      expect(buildPromptCacheKey({ ...base, scopeId: 'user-a' })).not.toBe(
-        buildPromptCacheKey({ ...base, scopeId: 'user-b' }),
+      expect(key({ clientOptions: { promptCacheScopeId: 'user-a' } })).not.toBe(
+        key({ clientOptions: { promptCacheScopeId: 'user-b' } }),
       );
     });
 
     it('keeps one user stable across their conversations', () => {
-      expect(buildPromptCacheKey({ ...base, scopeId: 'user-a' })).toBe(
-        buildPromptCacheKey({ ...base, scopeId: 'user-a' }),
+      expect(key({ clientOptions: { promptCacheScopeId: 'user-a' } })).toBe(
+        key({ clientOptions: { promptCacheScopeId: 'user-a' } }),
       );
     });
 
-    it('collapses users onto one entry once the scope is dropped', () => {
-      expect(buildPromptCacheKey({ ...base, scopeId: null })).toBe(
-        buildPromptCacheKey({ ...base, scopeId: undefined }),
-      );
+    it('serves every user one entry once an administrator opts into sharing', () => {
+      expect(
+        key({ clientOptions: { promptCacheScope: 'shared', promptCacheScopeId: 'user-a' } }),
+      ).toBe(key({ clientOptions: { promptCacheScope: 'shared', promptCacheScopeId: 'user-b' } }));
     });
 
     it('still retires a shared key when the prefix changes', () => {
-      expect(buildPromptCacheKey({ ...base, scopeId: null, instructions: 'Other.' })).not.toBe(
-        buildPromptCacheKey({ ...base, scopeId: null }),
+      expect(
+        key({ clientOptions: { promptCacheScope: 'shared' }, instructions: 'Other.' }),
+      ).not.toBe(key({ clientOptions: { promptCacheScope: 'shared' } }));
+    });
+  });
+
+  describe('stable instruction sources folded into the dynamic tail', () => {
+    it('retires the key when a skill the agent always applies is edited', () => {
+      expect(
+        key({ clientOptions: { promptCacheStableInstructions: '# Always-apply skill: a\nfirst' } }),
+      ).not.toBe(
+        key({
+          clientOptions: { promptCacheStableInstructions: '# Always-apply skill: a\nrewritten' },
+        }),
       );
     });
+  });
+
+  /**
+   * The exclusions are the claims this module has to keep being right about: a
+   * key that followed any of these would give every conversation, every turn
+   * or every slider position its own entry, and there would be nothing left to
+   * reuse.
+   */
+  describe('what the identity deliberately ignores', () => {
+    it.each([
+      [
+        'the dynamic system tail of memory and file context',
+        { additional_instructions: 'Memory: the user prefers brevity.\nFile: report.pdf' },
+      ],
+      ['tools this conversation discovered through tool_search', { discoveredTools: ['search'] }],
+      ['the tool-search corpus behind the binding', { toolRegistry: new Map([['deferred', {}]]) }],
+      [
+        'a cross-run summary of an earlier conversation',
+        { initialSummary: { text: 'a', tokenCount: 1 } },
+      ],
+      ['the context budget', { maxContextTokens: 4096 }],
+      ['sampling parameters', { clientOptions: { temperature: 0.2, topP: 0.5, maxTokens: 900 } }],
+      [
+        'reasoning effort and verbosity',
+        { clientOptions: { modelKwargs: { verbosity: 'low', reasoning: { effort: 'high' } } } },
+      ],
+      [
+        'per-request transport resolved from the conversation',
+        { clientOptions: { configuration: { defaultHeaders: { 'X-Conversation': 'abc-123' } } } },
+      ],
+      ['credentials', { clientOptions: { apiKey: 'sk-rotated' } }],
+    ])('ignores %s', (_label, change) => {
+      expect(key(change)).toBe(key());
+    });
+
+    it('ignores the key it is about to write', () => {
+      expect(key({ clientOptions: { promptCacheKey: 'librechat:3:stale' } })).toBe(key());
+    });
+  });
+
+  /**
+   * A field this module has never seen is hashed rather than dropped, so a
+   * newer SDK than these types partitions the cache (a miss) instead of
+   * pointing two different prefixes at one entry (a wrong identity).
+   */
+  it('partitions on an input field it does not know', () => {
+    expect(key({ someFutureModelFacingField: 'value' })).not.toBe(key());
   });
 });

@@ -1,6 +1,9 @@
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { APIRequestContext, BrowserContext, Page } from '@playwright/test';
 import type { TMessage } from 'librechat-data-provider';
+import type { User } from '../../../types';
+import cleanupUser from '../../../setup/cleanupUser';
+import { getSecondaryE2EUser } from '../../../setup/users.mock';
 import { cleanupAgent, openAgentBuilder, uniqueAgentName } from '../agents.helpers';
 import {
   NEW_CHAT_PATH,
@@ -17,6 +20,30 @@ const CUSTOM_PROVIDER = 'Mock Provider A';
 const CUSTOM_MODEL = 'mock-model-a';
 const PROMPT_CACHE_MARKER = 'E2E_ASSERT_PROMPT_CACHE:';
 
+async function getIsolatedStorageState(request: APIRequestContext, user: User) {
+  await cleanupUser(user);
+
+  const registerResponse = await request.post('/api/auth/register', {
+    data: {
+      email: user.email,
+      name: user.name,
+      password: user.password,
+      confirm_password: user.password,
+    },
+  });
+  expect(registerResponse.ok()).toBeTruthy();
+
+  const loginResponse = await request.post('/api/auth/login', {
+    data: {
+      email: user.email,
+      password: user.password,
+    },
+  });
+  expect(loginResponse.ok()).toBeTruthy();
+
+  return request.storageState();
+}
+
 const createdAgentIds: string[] = [];
 const cleanupConversationIds: string[] = [];
 
@@ -31,8 +58,9 @@ async function createAgent(
   provider: string,
   model: string,
   instructions: string,
+  agentName?: string,
 ): Promise<CreatedAgent> {
-  const name = uniqueAgentName('E2E Prompt Cache Agent');
+  const name = agentName ?? uniqueAgentName('E2E Prompt Cache Agent');
   const agent = await requestJson<CreatedAgent>(page, {
     path: '/api/agents',
     token,
@@ -195,5 +223,129 @@ test.describe('prompt cache key', () => {
 
     const key = await sendAssertion(page, agent.name, 'custom gateway request');
     expect(key).toBe('none');
+  });
+  test('retires the cache key when switching from Chat Completions to Responses API @scenario:responses-api-switch-retires-the-cache-key', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    const token = await getAccessToken(page);
+    const agent = await createAgent(
+      page,
+      token,
+      OPENAI_PROVIDER,
+      OPENAI_MODEL,
+      'Use the stable instructions for this Responses API cache scenario.',
+    );
+
+    const chatCompletionsKey = await sendAssertion(page, agent.name, 'before Responses API switch');
+    expect(chatCompletionsKey).not.toBe('');
+    expect(chatCompletionsKey).not.toBe('none');
+
+    /**
+     * Verified Chat Completions -> Responses for gpt-5.6: with no reasoning
+     * parameters, the default gate stays off because
+     * requiresResponsesApiForReasoning requires a non-empty effort (llm.ts:180-195,
+     * 923-930); the patched true value is honored by OpenAI routing (llm.ts:510-514).
+     */
+    await requestJson(page, {
+      path: `/api/agents/${encodeURIComponent(agent.id)}`,
+      token,
+      method: 'PATCH',
+      body: { model_parameters: { useResponsesApi: true } },
+    });
+
+    const responsesKey = await sendAssertion(page, agent.name, 'after Responses API switch');
+    expect(responsesKey).not.toBe('');
+    expect(responsesKey).not.toBe('none');
+    expect(responsesKey).not.toBe(chatCompletionsKey);
+  });
+
+  test('separates cache keys for identical agents owned by different users @scenario:two-users-of-one-agent-get-separate-cache-keys', async ({
+    page,
+    browser,
+    request,
+    baseURL,
+  }) => {
+    test.setTimeout(120000);
+    if (typeof baseURL !== 'string') {
+      throw new Error('baseURL must be configured for mock prompt cache tests');
+    }
+
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    const primaryToken = await getAccessToken(page);
+    const instructions =
+      'Use the same byte-identical instructions for this user isolation scenario.';
+    const sharedAgentName = uniqueAgentName('E2E Prompt Cache Shared Agent');
+    const primaryAgent = await createAgent(
+      page,
+      primaryToken,
+      OPENAI_PROVIDER,
+      OPENAI_MODEL,
+      instructions,
+      sharedAgentName,
+    );
+    const primaryKey = await sendAssertion(page, primaryAgent.name, 'primary user prompt');
+    expect(primaryKey).not.toBe('');
+    expect(primaryKey).not.toBe('none');
+
+    const secondaryUser = getSecondaryE2EUser();
+    const secondaryConversationStart = cleanupConversationIds.length;
+    let secondaryContext: BrowserContext | undefined;
+    let secondaryPage: Page | undefined;
+    let secondaryAgent: CreatedAgent | undefined;
+
+    try {
+      secondaryContext = await browser.newContext({
+        storageState: await getIsolatedStorageState(request, secondaryUser),
+        baseURL,
+      });
+      secondaryPage = await secondaryContext.newPage();
+      await secondaryPage.goto(NEW_CHAT_PATH, { timeout: 10000 });
+      const secondaryToken = await getAccessToken(secondaryPage);
+      secondaryAgent = await createAgent(
+        secondaryPage,
+        secondaryToken,
+        OPENAI_PROVIDER,
+        OPENAI_MODEL,
+        instructions,
+        sharedAgentName,
+      );
+
+      const secondaryKey = await sendAssertion(
+        secondaryPage,
+        secondaryAgent.name,
+        'secondary user prompt',
+      );
+      expect(secondaryKey).not.toBe('');
+      expect(secondaryKey).not.toBe('none');
+      expect(secondaryKey).not.toBe(primaryKey);
+    } finally {
+      const secondaryConversationIds = cleanupConversationIds.splice(secondaryConversationStart);
+      try {
+        if (secondaryConversationIds.length > 0) {
+          try {
+            await deleteMessagesByConversation(secondaryConversationIds);
+          } finally {
+            await deleteConversations(secondaryConversationIds);
+          }
+        }
+      } finally {
+        try {
+          if (secondaryAgent && secondaryPage) {
+            const createdAgentIndex = createdAgentIds.indexOf(secondaryAgent.id);
+            if (createdAgentIndex >= 0) {
+              createdAgentIds.splice(createdAgentIndex, 1);
+            }
+            await cleanupAgent(secondaryPage, secondaryAgent.id);
+          }
+        } finally {
+          if (secondaryContext) {
+            await secondaryContext.close().catch(() => undefined);
+          }
+          await cleanupUser(secondaryUser);
+        }
+      }
+    }
   });
 });

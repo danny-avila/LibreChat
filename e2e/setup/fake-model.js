@@ -29,6 +29,7 @@ const CREATE_SKILL_MARKER = 'E2E_CREATE_SKILL:';
 const EDIT_SKILL_MARKER = 'E2E_EDIT_SKILL:';
 const ASSERT_SKILLS_MARKER = 'E2E_ASSERT_SKILLS:';
 const ASSERT_PROMPT_CACHE_MARKER = 'E2E_ASSERT_PROMPT_CACHE:';
+const ASSERT_SUBAGENT_PROMPT_CACHE_MARKER = 'E2E_ASSERT_SUBAGENT_PROMPT_CACHE:';
 const ASSERT_MANUAL_SKILL_MARKER = 'E2E_ASSERT_MANUAL_SKILL:';
 const INVOKE_SKILL_MARKER = 'E2E_INVOKE_SKILL:';
 const ASSERT_PROVIDER_FILE_MARKER = 'E2E_ASSERT_PROVIDER_FILE:';
@@ -467,10 +468,72 @@ function quoteAssertionResponses({ messages, text }) {
   };
 }
 
+function promptCacheKeyValue(agentContext) {
+  return agentContext?.clientOptions?.promptCacheKey ?? 'none';
+}
+
 function promptCacheAssertionResponses(agentContext) {
-  const promptCacheKey = agentContext?.clientOptions?.promptCacheKey;
   return {
-    responses: [`PROMPT_CACHE_KEY=${promptCacheKey ?? 'none'}`],
+    responses: [`PROMPT_CACHE_KEY=${promptCacheKeyValue(agentContext)}`],
+  };
+}
+
+function parseSubagentPromptCacheMarker(text) {
+  const value = getMarkerValue(text, ASSERT_SUBAGENT_PROMPT_CACHE_MARKER);
+  const separator = value.indexOf(':');
+  if (separator <= 0 || separator === value.length - 1) {
+    return null;
+  }
+  return {
+    childId: value.slice(0, separator),
+    label: value.slice(separator + 1),
+  };
+}
+
+function subagentPromptCacheResponses(text, graph) {
+  const marker = parseSubagentPromptCacheMarker(text);
+  if (!marker) {
+    return null;
+  }
+
+  const childPrompt = `E2E_ASSERT_SUBAGENT_PROMPT_CACHE_CHILD:${marker.label}`;
+  return {
+    responses: [''],
+    overrideSubagentModel: true,
+    resolveInvocation: async (messages, options, runManager) => {
+      const agentView = await getStreamAgentView({
+        graph,
+        messages,
+        options,
+        runManager,
+      });
+      if (getLatestUserText(messages).includes(childPrompt)) {
+        return {
+          response: `CHILD_PROMPT_CACHE_KEY=${promptCacheKeyValue(agentView.agentContext)}`,
+        };
+      }
+
+      if (findLastToolMessageText(messages, 'CHILD_PROMPT_CACHE_KEY=')) {
+        return {
+          response: `PARENT_PROMPT_CACHE_KEY=${promptCacheKeyValue(agentView.agentContext)}`,
+        };
+      }
+
+      return {
+        response: '',
+        toolCalls: [
+          {
+            id: `call_e2e_subagent_prompt_cache_${marker.label}`,
+            name: 'subagent',
+            args: {
+              description: childPrompt,
+              subagent_type: marker.childId,
+            },
+            type: 'tool_call',
+          },
+        ],
+      };
+    },
   };
 }
 
@@ -2784,6 +2847,11 @@ function resolveResponses({ graph, messages, text, toolNames }) {
   const subagentResult = subagentResultResponses(text);
   if (subagentResult) {
     return subagentResult;
+  }
+
+  const subagentPromptCache = subagentPromptCacheResponses(text, graph);
+  if (subagentPromptCache) {
+    return subagentPromptCache;
   }
 
   const batchApprovalLabel = getMarkerValue(text, TOOL_APPROVAL_BATCH_MARKER);
