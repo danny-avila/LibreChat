@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import { v4 } from 'uuid';
 import { useAtom } from 'jotai';
-import { Film, ImagePlus, Link, Pencil, SlidersHorizontal, Upload, X } from 'lucide-react';
+import { Film, ImagePlus, Pencil, SlidersHorizontal, X } from 'lucide-react';
 import {
   Button,
   Alert,
@@ -36,6 +36,7 @@ import {
   mediaOperationLabels,
 } from './labels';
 import { useMediaUpload } from '~/data-provider/Media/uploads';
+import { MediaReferenceUpload } from './Reference';
 import { withImageContext } from './context';
 import { useMediaCredentials } from './Keys';
 import { mediaErrorCode } from './commands';
@@ -209,16 +210,17 @@ export function MediaForm({
   const automaticImage = draft !== savedDraft;
   const capability =
     capabilities?.find((item) => item.operation === draft.operation) ?? selectedCapability;
-  const uploads = useMediaUpload(
-    host,
-    JSON.stringify([
-      draftKey,
-      offering?.connectionId,
-      offering?.modelId,
-      providerTag,
-      capability?.operation,
-    ]),
-  );
+  const referenceOwner = JSON.stringify([
+    draftKey,
+    offering?.connectionId,
+    offering?.modelId,
+    providerTag,
+    capability?.operation,
+  ]);
+  const uploads = useMediaUpload(host, referenceOwner);
+  useEffect(() => {
+    setError(undefined);
+  }, [referenceOwner]);
   const { uploading } = uploads;
   const hostedRoles = capability?.inputs.hostedRoles ?? [];
   const referenceURLRole =
@@ -448,8 +450,8 @@ export function MediaForm({
       draftRevision: draft.revision,
     });
   }
-  async function uploadFile(file?: File) {
-    if (!file || !host.canCreate || !capability || uploading) return;
+  async function uploadFile(file?: File): Promise<boolean> {
+    if (!file || !host.canCreate || !capability || uploading) return false;
     const imageCapabilities = capabilities?.find((item) => item.operation === 'image.edit');
     const roles =
       file.type.startsWith('image/') && imageCapabilities
@@ -464,11 +466,11 @@ export function MediaForm({
       );
     if (!role || !roles.includes(role)) {
       setError(localize('com_media_upload_unsupported'));
-      return;
+      return false;
     }
     if (hostedRoles.some((hostedRole) => hostedRole === role)) {
       setError(localize('com_media_reference_needs_url'));
-      return;
+      return false;
     }
     setError(undefined);
     change({
@@ -481,7 +483,7 @@ export function MediaForm({
       const body = new FormData();
       body.append('file', file);
       const response = await uploads.uploadFile(body);
-      if (!response) return;
+      if (!response) return false;
       setDraft((previous) => ({
         ...previous,
         revision: previous.revision + 1,
@@ -496,11 +498,13 @@ export function MediaForm({
         operation:
           file.type.startsWith('image/') && imageCapabilities ? 'image.edit' : previous.operation,
       }));
+      return true;
     } catch (failure) {
       setError(localize(mediaErrorLabels[mediaErrorCode(failure)]));
+      return false;
     }
   }
-  async function uploadURL() {
+  async function uploadURL(): Promise<boolean> {
     if (
       !host.canCreate ||
       !capability ||
@@ -509,13 +513,13 @@ export function MediaForm({
       !hostedRoles.includes(referenceURL.data.role) ||
       draft.inputs.length >= Math.min(catalog.limits.maxInputs, capability.inputs.max)
     )
-      return;
+      return false;
     setError(undefined);
     const payload = referenceURL.data;
     change({ autoEdit: false, inputs: draft.inputs, assets: draft.assets });
     try {
       const response = await uploads.uploadURL(payload);
-      if (!response) return;
+      if (!response) return false;
       setDraft((previous) => ({
         ...previous,
         revision: previous.revision + 1,
@@ -526,8 +530,10 @@ export function MediaForm({
           { file_id: response.file.file_id, role: payload.role, sourceURL: response.sourceURL },
         ],
       }));
+      return true;
     } catch (failure) {
       setError(localize(mediaErrorLabels[mediaErrorCode(failure)]));
+      return false;
     }
   }
   const references = draft.inputs.length > 0 && (
@@ -795,6 +801,19 @@ export function MediaForm({
       capabilities?.find((item) => item.operation === 'image.edit')?.inputs.max ?? 0,
     ),
   );
+  const imageRoles =
+    capabilities?.find((item) => item.operation === 'image.edit')?.inputs.roles ?? [];
+  const localAccept = [
+    [...capability.inputs.roles, ...imageRoles].some((role) =>
+      ['reference', 'start_frame', 'end_frame'].includes(role),
+    )
+      ? 'image/*'
+      : '',
+    capability.inputs.roles.includes('video') && !hostedRoles.includes('video') ? 'video/*' : '',
+    capability.inputs.roles.includes('audio') && !hostedRoles.includes('audio') ? 'audio/*' : '',
+  ]
+    .filter(Boolean)
+    .join(',');
   const icons = { 'image.generate': ImagePlus, 'image.edit': Pencil, 'video.generate': Film };
   const operationLabels = {
     'image.generate': 'com_media_image',
@@ -808,35 +827,23 @@ export function MediaForm({
   } as const;
   const referenceActions = (
     <div className="flex flex-wrap items-center gap-2">
-      <Input
-        id={`${id}-upload`}
-        type="file"
-        accept="image/*,video/*,audio/*"
-        aria-label={localize('com_media_upload')}
-        className="hidden"
-        disabled={uploading || !host.canCreate || draft.inputs.length >= uploadLimit}
-        onChange={(event) => {
-          void uploadFile(event.target.files?.[0]);
-          event.target.value = '';
-        }}
+      <MediaReferenceUpload
+        id={id}
+        ownerKey={referenceOwner}
+        hostedRoles={hostedRoles}
+        localAccept={localAccept}
+        disabled={!host.canCreate || draft.inputs.length >= uploadLimit}
+        uploading={uploading}
+        url={draft.referenceURL ?? ''}
+        role={referenceURLRole}
+        valid={referenceURL.success}
+        error={error}
+        onURLChange={(referenceURL) => change({ referenceURL })}
+        onRoleChange={(referenceURLRole) => change({ referenceURLRole })}
+        uploadURL={uploadURL}
+        uploadFile={uploadFile}
+        cancel={uploads.cancel}
       />
-      <Button
-        variant="outline"
-        size="sm"
-        disabled={uploading || !host.canCreate || draft.inputs.length >= uploadLimit}
-        onClick={() => document.getElementById(`${id}-upload`)?.click()}
-      >
-        <Upload className="mr-1.5 size-4" aria-hidden="true" />
-        {localize('com_media_upload')}
-      </Button>
-      {uploading && (
-        <>
-          <Spinner className="size-4" />
-          <Button variant="ghost" size="sm" onClick={uploads.cancel}>
-            {localize('com_ui_cancel')}
-          </Button>
-        </>
-      )}
       {draft.inputs.length > 0 && (
         <Button
           variant="ghost"
@@ -1154,65 +1161,6 @@ export function MediaForm({
         <p role="status" className="text-sm text-text-secondary">
           {localize('com_media_edit_model_required')}
         </p>
-      )}
-      {hostedRoles.length > 0 && (
-        <div className="space-y-2 rounded-xl border border-border-light p-3">
-          <Label htmlFor={`${id}-reference-url`}>{localize('com_media_reference_url')}</Label>
-          <p id={`${id}-reference-url-hint`} className="text-xs text-text-secondary">
-            {localize('com_media_reference_url_hint')}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            {hostedRoles.length > 1 && (
-              <ControlCombobox
-                showCarat
-                ariaLabel={localize('com_media_reference_url_role')}
-                variant="field"
-                isCollapsed={false}
-                portal={portal}
-                selectedValue={referenceURLRole}
-                displayValue={
-                  referenceURLRole ? localize(mediaInputRoleLabels[referenceURLRole]) : undefined
-                }
-                items={hostedRoles.map((role) => ({
-                  value: role,
-                  label: localize(mediaInputRoleLabels[role]),
-                }))}
-                setValue={(value) => {
-                  if (value === 'video' || value === 'audio') change({ referenceURLRole: value });
-                }}
-              />
-            )}
-            <Input
-              id={`${id}-reference-url`}
-              type="url"
-              className="min-w-0 flex-1"
-              value={draft.referenceURL ?? ''}
-              disabled={uploading || !host.canCreate}
-              aria-invalid={(!!draft.referenceURL?.trim() && !referenceURL.success) || undefined}
-              aria-describedby={`${id}-reference-url-hint`}
-              onChange={(event) => change({ referenceURL: event.target.value })}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={
-                uploading ||
-                !host.canCreate ||
-                !referenceURL.success ||
-                draft.inputs.length >= uploadLimit
-              }
-              onClick={() => void uploadURL()}
-            >
-              <Link className="mr-1.5 size-4" aria-hidden="true" />
-              {localize('com_media_add_reference_url')}
-            </Button>
-          </div>
-          {uploading && (
-            <p role="status" className="text-xs text-text-secondary">
-              {localize('com_media_reference_loading')}
-            </p>
-          )}
-        </div>
       )}
       <div className="space-y-2">
         <Composer

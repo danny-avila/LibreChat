@@ -80,8 +80,9 @@ accessible, and already accepted provider jobs can finish polling and downloadin
 Queued work can still be cancelled. Re-enable the entry to make it selectable again without deleting its
 configuration or saved personal keys.
 
-Media integrations control media availability. Chat's `ENDPOINTS`, model-spec menus and
-`endpoints.agents.allowedProviders` retain their existing chat and agent scopes.
+This is a Media Studio configuration field, separate from chat endpoint configuration.
+Chat's `ENDPOINTS`, model-spec menus and `endpoints.agents.allowedProviders` retain their
+existing chat and agent scopes.
 
 ### Personal provider keys
 
@@ -152,11 +153,20 @@ are also available; the provider can still reject unavailable deployments or exh
 Keep a direct integration configured until its accepted jobs finish. Jobs do not store its API
 key or secret headers; removing that integration leaves unfinished work requiring attention.
 
-### OpenRouter video and audio references
+### Uploading reference files and URLs
 
-OpenRouter requires provider-accessible HTTPS URLs for video and audio references. Use the
-reference URL control for those input roles. Images can still use ordinary uploads. Native
-connections use their documented upload or inline-media APIs and their own credentials.
+OpenRouter requires provider-accessible HTTPS URLs for video and audio references. Click
+**Upload reference** to enter a URL in a dialog; URL fields stay hidden until this action.
+Models that also support local image references offer a file choice in the same dialog.
+Models with only local-file input support open the normal file chooser. Native connections
+use their documented upload or inline-media APIs and their own credentials.
+
+For direct BytePlus Seedance connections, video references also use the URL dialog. Its
+[video-generation contract](https://docs.byteplus.com/en/docs/ModelArk/1520757) documents video
+URLs or asset IDs; Studio uses validated HTTPS URLs. Image and audio references still accept
+local files as inline data. The absence of a multipart upload endpoint does not by itself make
+a provider URL-only: APIs such as [Runway](https://docs.dev.runwayml.com/assets/inputs/)
+also accept inline data or provide their own upload step.
 
 Supply a direct HTTPS link to the media bytes that needs no LibreChat cookie or authorization
 header. A public object URL or a suitably scoped signed storage URL works; it must remain valid

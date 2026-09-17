@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { mediaSourceURLSchema } from 'librechat-data-provider';
 import type { MediaConfig } from 'librechat-data-provider';
 import type { MediaModelProfile, MediaProviderAdapter, MediaProviderResult } from '../provider';
 import {
@@ -89,6 +90,7 @@ function videos(config: MediaConfig): MediaModelProfile[] {
           operation: 'video.generate',
           inputs: {
             roles: ['reference', 'start_frame', 'end_frame', 'video', 'audio'],
+            hostedRoles: ['video'],
             min: 0,
             max: Math.min(latest ? 50 : 15, config.limits.maxInputs),
           },
@@ -234,7 +236,11 @@ export function createSeedMediaAdapters(): MediaProviderAdapter[] {
         if (
           !model ||
           request.operation !== 'video.generate' ||
-          inputs.some((input) => input.role === 'mask')
+          inputs.some(
+            (input) =>
+              input.role === 'mask' ||
+              (input.role === 'video' && !mediaSourceURLSchema.safeParse(input.sourceURL).success),
+          )
         )
           throw new MediaProviderError('rejected');
         const latest = request.selection.modelId.endsWith('2.5');
@@ -290,7 +296,11 @@ export function createSeedMediaAdapters(): MediaProviderAdapter[] {
               let type = 'image_url';
               if (input.role === 'video') type = 'video_url';
               else if (input.role === 'audio') type = 'audio_url';
-              return { type, [type]: { url: dataURI(input) }, role: roles[input.role] };
+              return {
+                type,
+                [type]: { url: input.role === 'video' ? input.sourceURL : dataURI(input) },
+                role: roles[input.role],
+              };
             }),
           ],
           duration: editing ? -1 : request.parameters.durationSeconds,

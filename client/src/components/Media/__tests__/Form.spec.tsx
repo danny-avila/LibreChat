@@ -1191,11 +1191,180 @@ const hostedReference: MediaURLUploadResponse = {
   },
 };
 
+test('a URL-only model opens its reference dialog without any local file input', () => {
+  const env = setup();
+  const choices: MediaCatalog = {
+    ...hostedCatalog,
+    offerings: [
+      {
+        ...hostedCatalog.offerings[0],
+        capabilities: [
+          {
+            ...hostedCatalog.offerings[0].capabilities[0],
+            inputs: {
+              min: 1,
+              max: 1,
+              roles: ['video'],
+              hostedRoles: ['video'],
+              requiredRoles: ['video'],
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const view = render(<MediaForm catalog={choices} send={env.send} busy={false} />, {
+    wrapper: env.wrapper,
+  });
+  expect(view.container.querySelector('input[type=file]')).toBeNull();
+  expect(
+    screen.queryByRole('textbox', { name: 'com_media_reference_url' }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_upload' }));
+  expect(screen.getByRole('dialog', { name: 'com_media_upload' })).toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: 'com_media_local_reference' }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('combobox', { name: 'com_media_reference_url_role' }),
+  ).not.toBeInTheDocument();
+});
+
+test('a native model requiring hosted video still accepts local images and audio', async () => {
+  const env = setup();
+  const choices: MediaCatalog = {
+    ...hostedCatalog,
+    offerings: [
+      {
+        ...hostedCatalog.offerings[0],
+        api: 'seed.videos',
+        capabilities: [
+          {
+            ...hostedCatalog.offerings[0].capabilities[0],
+            inputs: {
+              min: 0,
+              max: 3,
+              roles: ['video', 'audio', 'start_frame'],
+              hostedRoles: ['video'],
+            },
+          },
+        ],
+      },
+    ],
+  };
+  const view = render(<MediaForm catalog={choices} send={env.send} busy={false} />, {
+    wrapper: env.wrapper,
+  });
+  const input = view.container.querySelector<HTMLInputElement>('input[type=file]')!;
+  expect(input).toHaveAttribute('accept', 'image/*,audio/*');
+  for (const [type, role] of [
+    ['image/png', 'start_frame'],
+    ['audio/mpeg', 'audio'],
+  ] as const) {
+    fireEvent.click(screen.getByRole('button', { name: 'com_media_upload' }));
+    const choose = jest.spyOn(input, 'click');
+    fireEvent.click(screen.getByRole('button', { name: 'com_media_local_reference' }));
+    expect(choose).toHaveBeenCalled();
+    const file = { ...hostedReference.file, file_id: role, type };
+    jest.mocked(dataService.uploadMedia).mockResolvedValueOnce({ file });
+    fireEvent.change(input, { target: { files: [new File(['reference'], role, { type })] } });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(env.store.get(mediaDraftFamily('owner:new')).inputs).toContainEqual({
+      file_id: role,
+      role,
+    });
+  }
+  expect(dataService.uploadMediaURL).not.toHaveBeenCalled();
+});
+
+test('an image generation model retains the direct file chooser and switches to its edit capability', async () => {
+  const env = setup();
+  const choices: MediaCatalog = {
+    ...catalog,
+    offerings: [
+      {
+        ...catalog.offerings[0],
+        capabilities: [
+          catalog.offerings[0].capabilities[0],
+          {
+            ...catalog.offerings[0].capabilities[0],
+            operation: 'image.edit',
+            inputs: { min: 1, max: 2, roles: ['reference'] },
+          },
+        ],
+      },
+    ],
+  };
+  const view = render(<MediaForm catalog={choices} send={env.send} busy={false} />, {
+    wrapper: env.wrapper,
+  });
+  const input = view.container.querySelector<HTMLInputElement>('input[type=file]')!;
+  expect(input).toHaveAttribute('accept', 'image/*');
+  const choose = jest.spyOn(input, 'click');
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_upload' }));
+  expect(choose).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  jest.mocked(dataService.uploadMedia).mockResolvedValueOnce({
+    file: { ...hostedReference.file, type: 'image/png', file_id: 'local-image' },
+  });
+  fireEvent.change(input, {
+    target: { files: [new File(['image'], 'image.png', { type: 'image/png' })] },
+  });
+  await waitFor(() =>
+    expect(env.store.get(mediaDraftFamily('owner:new')).operation).toBe('image.edit'),
+  );
+  expect(env.store.get(mediaDraftFamily('owner:new')).inputs).toEqual([
+    { file_id: 'local-image', role: 'reference' },
+  ]);
+});
+
+test('switching editors closes and aborts a hosted import, preserves its draft, and ignores its late response', async () => {
+  let finish!: (response: MediaURLUploadResponse) => void;
+  jest.mocked(dataService.uploadMediaURL).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const env = setup();
+  const view = render(<MediaForm catalog={hostedCatalog} send={env.send} busy={false} />, {
+    wrapper: env.wrapper,
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
+    target: { value: 'Keep my prompt' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_upload' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_reference_url' }), {
+    target: { value: hostedReference.sourceURL },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_add_reference_url' }));
+  const signal = jest.mocked(dataService.uploadMediaURL).mock.calls[0][1];
+  view.rerender(
+    <MediaForm catalog={hostedCatalog} threadId="second" send={env.send} busy={false} />,
+  );
+  expect(signal?.aborted).toBe(true);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  await act(async () => finish(hostedReference));
+  expect(env.store.get(mediaDraftFamily('owner:new')).inputs).toEqual([]);
+  expect(env.store.get(mediaDraftFamily('owner:second')).inputs).toEqual([]);
+  view.rerender(<MediaForm catalog={hostedCatalog} send={env.send} busy={false} />);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue('Keep my prompt');
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_upload' }));
+  expect(screen.getByRole('textbox', { name: 'com_media_reference_url' })).toHaveValue(
+    hostedReference.sourceURL,
+  );
+});
+
 test('validates hosted links and rejects local audio/video before making an upload request', () => {
   const env = setup();
   const view = render(<MediaForm catalog={hostedCatalog} send={env.send} busy={false} />, {
     wrapper: env.wrapper,
   });
+  expect(
+    screen.queryByRole('textbox', { name: 'com_media_reference_url' }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_upload' }));
   const url = screen.getByRole('textbox', { name: 'com_media_reference_url' });
   expect(screen.getByRole('combobox', { name: 'com_media_reference_url_role' })).toHaveTextContent(
     'com_media_role_video',
@@ -1211,6 +1380,7 @@ test('validates hosted links and rejects local audio/video before making an uplo
     expect(add).toBeDisabled();
   }
   const upload = view.container.querySelector<HTMLInputElement>('input[type=file]')!;
+  expect(upload).toHaveAttribute('accept', 'image/*');
   for (const type of ['video/mp4', 'audio/mpeg'])
     fireEvent.change(upload, {
       target: { files: [new File(['original'], 'reference', { type })] },
@@ -1225,6 +1395,7 @@ test('persists a URL draft, archives it, and submits the source URL with its own
   const view = render(<MediaForm catalog={hostedCatalog} send={env.send} busy={false} />, {
     wrapper: env.wrapper,
   });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_upload' }));
   fireEvent.change(screen.getByRole('textbox', { name: 'com_media_reference_url' }), {
     target: { value: ` ${hostedReference.sourceURL} ` },
   });
@@ -1234,6 +1405,10 @@ test('persists a URL draft, archives it, and submits the source URL with its own
   render(<MediaForm catalog={hostedCatalog} send={restored.send} busy={false} />, {
     wrapper: restored.wrapper,
   });
+  expect(
+    screen.queryByRole('textbox', { name: 'com_media_reference_url' }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_upload' }));
   expect(screen.getByRole('textbox', { name: 'com_media_reference_url' })).toHaveValue(
     hostedReference.sourceURL,
   );
@@ -1248,7 +1423,8 @@ test('persists a URL draft, archives it, and submits the source URL with its own
     { url: hostedReference.sourceURL, role: 'video' },
     expect.any(AbortSignal),
   );
-  expect(screen.getByRole('textbox', { name: 'com_media_reference_url' })).toHaveValue('');
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(restored.store.get(mediaDraftFamily('owner:new')).referenceURL).toBe('');
   expect(screen.getByLabelText('com_media_video_preview')).toHaveAttribute('controls');
   fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
     target: { value: 'Upscale this video' },
@@ -1272,6 +1448,7 @@ test('cancels a URL import without accepting a late result and retains the draft
   render(<MediaForm catalog={hostedCatalog} send={env.send} busy={false} />, {
     wrapper: env.wrapper,
   });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_upload' }));
   fireEvent.change(screen.getByRole('textbox', { name: 'com_media_reference_url' }), {
     target: { value: hostedReference.sourceURL },
   });
@@ -1280,6 +1457,8 @@ test('cancels a URL import without accepting a late result and retains the draft
   const signal = jest.mocked(dataService.uploadMediaURL).mock.calls[0][1];
   fireEvent.click(screen.getByRole('button', { name: 'com_ui_cancel' }));
   expect(signal?.aborted).toBe(true);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_upload' }));
   await act(async () => finish(hostedReference));
   expect(env.store.get(mediaDraftFamily('owner:new')).inputs).toEqual([]);
   expect(screen.getByRole('textbox', { name: 'com_media_reference_url' })).toHaveValue(
@@ -1319,6 +1498,7 @@ test.each(['reference_unavailable', 'reference_changed'] as const)(
     render(<MediaForm catalog={hostedCatalog} send={env.send} busy={false} />, {
       wrapper: env.wrapper,
     });
+    fireEvent.click(screen.getByRole('button', { name: 'com_media_upload' }));
     jest
       .mocked(dataService.uploadMediaURL)
       .mockRejectedValueOnce({ response: { data: { error: { code } } } });
@@ -1342,6 +1522,7 @@ test('imports an explicitly selected hosted audio role without satisfying a mand
   render(<MediaForm catalog={hostedCatalog} send={env.send} busy={false} />, {
     wrapper: env.wrapper,
   });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_upload' }));
   fireEvent.click(screen.getByRole('combobox', { name: 'com_media_reference_url_role' }));
   fireEvent.click(await screen.findByRole('option', { name: 'com_media_role_audio' }));
   const audio = {

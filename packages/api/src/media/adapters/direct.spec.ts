@@ -83,7 +83,7 @@ function request(
     operation,
     prompt: 'Change the sky to blue',
     parameters,
-    inputs: inputs.map(({ role, file_id }) => ({ role, file_id })),
+    inputs: inputs.map(({ role, file_id, sourceURL }) => ({ role, file_id, sourceURL })),
     selection: { connectionId: 'native', modelId, catalogVersion: 'fixture' },
   });
 }
@@ -330,7 +330,7 @@ describe('direct media provider contracts', () => {
       '{"id":"seed-task"}',
       '{"id":"seed-task","status":"succeeded","content":{"video_url":"https://results.example/seed.mp4"}}',
     ]);
-    const refs = [input('video')];
+    const refs = [{ ...input('video'), sourceURL: 'https://media.example/original.mp4' }];
     const result = await adapter.submit(
       request(
         'bytedance/seedance-2.5',
@@ -345,12 +345,91 @@ describe('direct media provider contracts', () => {
       duration: -1,
       ratio: 'adaptive',
       omni_reference_task_type: 'edit',
-      content: [{ type: 'text' }, { type: 'video_url', role: 'reference_video' }],
+      content: [
+        { type: 'text' },
+        {
+          type: 'video_url',
+          role: 'reference_video',
+          video_url: { url: refs[0].sourceURL },
+        },
+      ],
     });
     if (result.status !== 'running') throw new Error('Expected operation');
     expect(await adapter.poll!(result.operationId, context)).toMatchObject({ status: 'completed' });
     expect(calls[1].url).toContain('/contents/generations/tasks/seed-task');
   });
+
+  it.each([
+    'bytedance/seedance-2.5',
+    'bytedance/seedance-2.0',
+    'bytedance/seedance-2.0-fast',
+    'bytedance/seedance-2.0-mini',
+  ])(
+    'requires hosted video but preserves local image and audio references for %s',
+    async (modelId) => {
+      const { adapter, context, calls } = fixture('seed.videos', ['{"id":"seed-task"}']);
+      const profile = adapter.catalog?.(context.config).find((entry) => entry.modelId === modelId);
+      if (!profile) throw new Error('Missing native profile');
+      expect(profile.capabilities[0].inputs.hostedRoles).toEqual(['video']);
+      const offering = {
+        connectionId: 'native',
+        connectionName: 'Native',
+        api: adapter.api,
+        available: true,
+        ...profile,
+      };
+      expect(() =>
+        validateMediaOffering(request(modelId, {}, [input('video')]), offering),
+      ).toThrow();
+      const refs = [
+        input('reference'),
+        input('audio'),
+        { ...input('video'), sourceURL: 'https://media.example/original.mp4?version=1' },
+      ];
+      const submission = request(modelId, {}, refs);
+      expect(() => validateMediaOffering(submission, offering)).not.toThrow();
+      await adapter.submit(submission, refs, context);
+      expect(body(calls[0]).content).toEqual([
+        { type: 'text', text: submission.prompt },
+        {
+          type: 'image_url',
+          image_url: { url: `data:image/png;base64,${refs[0].data.toString('base64')}` },
+          role: 'reference_image',
+        },
+        {
+          type: 'audio_url',
+          audio_url: { url: `data:audio/mpeg;base64,${refs[1].data.toString('base64')}` },
+          role: 'reference_audio',
+        },
+        {
+          type: 'video_url',
+          video_url: { url: refs[2].sourceURL },
+          role: 'reference_video',
+        },
+      ]);
+    },
+  );
+
+  it.each([
+    undefined,
+    'data:video/mp4;base64,dmlkZW8=',
+    'http://media.example/original.mp4',
+    'https://user:secret@media.example/original.mp4',
+    'https://media.example/original.mp4#fragment',
+  ])(
+    'rejects an unhosted or unsafe native Seedance video before dispatch: %s',
+    async (sourceURL) => {
+      const { adapter, context, calls } = fixture('seed.videos');
+      await expect(
+        adapter.submit(
+          request('bytedance/seedance-2.5', {}, [input('video')]),
+          [{ ...input('video'), sourceURL }],
+          context,
+        ),
+      ).rejects.toMatchObject({ certainty: 'rejected' });
+      expect(calls).toHaveLength(0);
+    },
+  );
 
   it('maps MiniMax H3 Max references into V2 and reads task-wrapped results', async () => {
     const { adapter, context, calls } = fixture('minimax.videos', [
