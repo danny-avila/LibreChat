@@ -177,6 +177,28 @@ describe('VirtualizedAgentGrid', () => {
     expect(within(dialog).queryByText(agents[0].description ?? '')).not.toBeInTheDocument();
     expect(within(dialog).getByText('general')).toBeInTheDocument();
   });
+  it('renders revalidated fields over the loaded row while its dialog stays open', async () => {
+    const agents = makeAgents(3);
+    const view = render(<Harness agents={agents} />);
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Agent 0' }));
+    expect(await screen.findByRole('dialog', { name: 'Agent 0' })).toBeInTheDocument();
+
+    const { category: _omitted, ...withoutCategory } = agents[0];
+    mockQueriedAgent = {
+      ...withoutCategory,
+      description: 'Fresh description from the agent endpoint.',
+      conversation_starters: ['Fresh starter'],
+    };
+    view.rerender(<Harness agents={agents} />);
+
+    const dialog = screen.getByRole('dialog');
+    expect(
+      await screen.findByText('Fresh description from the agent endpoint.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Fresh starter')).toBeInTheDocument();
+    expect(within(dialog).queryByText(agents[0].description ?? '')).not.toBeInTheDocument();
+    expect(within(dialog).getByText('general')).toBeInTheDocument();
+  });
 
   it('tabs to the next logical agent even when its row is not currently mounted', async () => {
     const user = userEvent.setup();

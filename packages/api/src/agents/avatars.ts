@@ -1,13 +1,11 @@
 import { logger } from '@librechat/data-schemas';
-import { FileSources } from 'librechat-data-provider';
+import { DEFAULT_AVATAR_REFRESH_COVERAGE_LIMIT, FileSources } from 'librechat-data-provider';
 import type { Agent, AgentAvatar } from 'librechat-data-provider';
 
 const MAX_AVATAR_REFRESH_AGENTS: number = 1000;
 const AVATAR_REFRESH_BATCH_SIZE: number = 20;
-/** Maximum number of per-agent coverage deadlines retained for one user. */
-const MAX_AVATAR_REFRESH_COVERAGE_IDS: number = MAX_AVATAR_REFRESH_AGENTS;
 
-export { MAX_AVATAR_REFRESH_AGENTS, AVATAR_REFRESH_BATCH_SIZE, MAX_AVATAR_REFRESH_COVERAGE_IDS };
+export { MAX_AVATAR_REFRESH_AGENTS, AVATAR_REFRESH_BATCH_SIZE };
 
 /**
  * Selects the agents whose S3 avatar URLs should be refreshed for one list response.
@@ -81,7 +79,11 @@ const getAvatarRefreshCacheTtl = (
 
 export type RefreshS3UrlFn = (avatar: AgentAvatar) => Promise<string | undefined>;
 
-export type UpdateAgentFn = (params: { id: string; avatar: AgentAvatar }) => Promise<unknown>;
+export type UpdateAgentFn = (params: {
+  id: string;
+  avatar: AgentAvatar;
+  previousAvatar?: AgentAvatar | null;
+}) => Promise<unknown>;
 
 export type AvatarRefreshCache = {
   get: (key: string) => Promise<unknown>;
@@ -107,6 +109,32 @@ const readLatestRefreshEntry = async (
   }
 };
 
+/** In-flight merge per refresh key, so one user's pages queue instead of racing. */
+const avatarRefreshMergeChains = new Map<string, Promise<unknown>>();
+
+/**
+ * Runs one read-merge-write for a refresh key at a time. Two pages that both read
+ * before either wrote would each persist their own view and drop the other's coverage,
+ * so the next visit re-signs avatars the window says are covered. Within a process this
+ * queue prevents that outright; across processes the re-read inside the critical section
+ * is what makes them converge, and what is lost there is repeated work, not correctness.
+ */
+const serializeAvatarRefreshMerge = async <T>(
+  refreshKey: string,
+  operation: () => Promise<T>,
+): Promise<T> => {
+  const previous = avatarRefreshMergeChains.get(refreshKey) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(operation);
+  avatarRefreshMergeChains.set(refreshKey, current);
+  try {
+    return await current;
+  } finally {
+    if (avatarRefreshMergeChains.get(refreshKey) === current) {
+      avatarRefreshMergeChains.delete(refreshKey);
+    }
+  }
+};
+
 export type ResolveAvatarRefreshParams = {
   agents: Agent[];
   userId: string;
@@ -114,6 +142,7 @@ export type ResolveAvatarRefreshParams = {
   cache: AvatarRefreshCache;
   refreshKey: string;
   cacheTtl: number;
+  coverageLimit?: number;
   refreshS3Url: RefreshS3UrlFn;
   updateAgent: UpdateAgentFn;
 };
@@ -150,6 +179,7 @@ export const resolveAvatarRefresh = async ({
   cache,
   refreshKey,
   cacheTtl,
+  coverageLimit = DEFAULT_AVATAR_REFRESH_COVERAGE_LIMIT,
   refreshS3Url,
   updateAgent,
 }: ResolveAvatarRefreshParams): Promise<AvatarRefreshCacheEntry | null> => {
@@ -183,18 +213,26 @@ export const resolveAvatarRefresh = async ({
       refreshS3Url,
       updateAgent,
     });
-    const latestEntry = await readLatestRefreshEntry(cache, refreshKey, cachedRefreshEntry);
-    const refreshEntry = mergeAvatarRefreshCacheEntry(
-      latestEntry,
-      { urlCache, coveredIds },
-      cacheTtl,
-    );
-    const refreshedAt = Date.now();
-    await cache.set(
-      refreshKey,
-      refreshEntry,
-      getAvatarRefreshCacheTtl(refreshEntry, refreshedAt, cacheTtl),
-    );
+    const refreshEntry = await serializeAvatarRefreshMerge(refreshKey, async () => {
+      const latestEntry = await readLatestRefreshEntry(cache, refreshKey, cachedRefreshEntry);
+      const mergedEntry = mergeAvatarRefreshCacheEntry(
+        latestEntry,
+        { urlCache, coveredIds },
+        cacheTtl,
+        coverageLimit,
+      );
+      const refreshedAt = Date.now();
+      try {
+        await cache.set(
+          refreshKey,
+          mergedEntry,
+          getAvatarRefreshCacheTtl(mergedEntry, refreshedAt, cacheTtl),
+        );
+      } catch (err) {
+        logger.error('[resolveAvatarRefresh] Error writing the avatar refresh cache: %o', err);
+      }
+      return mergedEntry;
+    });
     return refreshEntry;
   } catch (err) {
     logger.error('[resolveAvatarRefresh] Error refreshing avatars for list page: %o', err);
@@ -206,6 +244,7 @@ export const mergeAvatarRefreshCacheEntry = (
   previous: unknown,
   stats: Pick<RefreshStats, 'urlCache' | 'coveredIds'>,
   coverageTtl: number = 30 * 60 * 1000,
+  coverageLimit: number = DEFAULT_AVATAR_REFRESH_COVERAGE_LIMIT,
   now: number = Date.now(),
 ): AvatarRefreshCacheEntry => {
   const previousEntry =
@@ -218,12 +257,12 @@ export const mergeAvatarRefreshCacheEntry = (
     delete coverage[id];
     coverage[id] = expiresAt;
   }
-  // Expired entries are removed first; when full, retain the furthest deadlines.
-
+  /* Expired deadlines go first; past the limit the furthest ones are kept, because they
+     are the coverage a reader still browsing is about to need. */
   const retainedCoverage = Object.entries(coverage)
     .filter(([, deadline]) => deadline > now)
     .sort(([, firstDeadline], [, secondDeadline]) => firstDeadline - secondDeadline)
-    .slice(-MAX_AVATAR_REFRESH_COVERAGE_IDS);
+    .slice(-coverageLimit);
   const coveredIds = Object.fromEntries(retainedCoverage);
   const retainedIds = new Set(Object.keys(coveredIds));
   const urlCache = Object.fromEntries(
@@ -304,10 +343,19 @@ export const refreshListAvatars = async ({
           stats.urlCache[agent.id] = newPath;
 
           try {
-            await updateAgent({
+            const persisted = await updateAgent({
               id: agent.id,
               avatar: { filepath: newPath, source: agent.avatar.source },
+              previousAvatar: agent.avatar,
             });
+            if (persisted === false) {
+              delete stats.urlCache[agent.id];
+              logger.debug(
+                '[refreshListAvatars] Avatar refresh skipped because the stored avatar changed: %s',
+                agent.id,
+              );
+              return;
+            }
             stats.updated++;
           } catch (persistErr) {
             logger.error('[refreshListAvatars] Avatar refresh persist error: %o', persistErr);

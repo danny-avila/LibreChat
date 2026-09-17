@@ -2,6 +2,12 @@ import React from 'react';
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { ErrorDisplay } from '../ErrorDisplay';
 
+jest.mock('~/data-provider', () => ({
+  useGetStartupConfig: jest.fn(() => ({ data: undefined })),
+}));
+const mockUseGetStartupConfig = jest.requireMock('~/data-provider')
+  .useGetStartupConfig as jest.Mock;
+
 // Mock matchMedia
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
@@ -53,6 +59,8 @@ jest.mock('~/hooks/useLocalize', () => () => mockLocalize);
 describe('ErrorDisplay', () => {
   beforeEach(() => {
     mockLocalize.mockClear();
+    mockUseGetStartupConfig.mockReset();
+    mockUseGetStartupConfig.mockReturnValue({ data: undefined });
   });
 
   describe('Backend error responses', () => {
@@ -258,6 +266,51 @@ describe('ErrorDisplay', () => {
         jest.advanceTimersByTime(2000);
       });
 
+      expect(mockRetry).toHaveBeenCalledTimes(1);
+    });
+    it('uses configured retry delays for automatic recovery', () => {
+      const mockRetry = jest.fn();
+      mockUseGetStartupConfig.mockReturnValue({
+        data: { interface: { marketplace: { retryDelaysMs: [50] } } },
+      });
+
+      render(<ErrorDisplay error={networkError} onRetry={mockRetry} />);
+
+      expect(screen.getByText('Retrying automatically in 0s')).toBeInTheDocument();
+      act(() => {
+        jest.advanceTimersByTime(49);
+      });
+      expect(mockRetry).not.toHaveBeenCalled();
+
+      act(() => {
+        jest.advanceTimersByTime(1);
+      });
+      expect(mockRetry).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves only manual retry when automatic delays are empty', () => {
+      const mockRetry = jest.fn();
+      mockUseGetStartupConfig.mockReturnValue({
+        data: { interface: { marketplace: { retryDelaysMs: [] } } },
+      });
+
+      render(<ErrorDisplay error={networkError} onRetry={mockRetry} />);
+
+      expect(screen.queryByText(/Retrying automatically/)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Refresh page' })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Try Again' }));
+      expect(mockRetry).toHaveBeenCalledTimes(1);
+    });
+
+    it('uses shipped retry delays when startup config is unavailable', () => {
+      const mockRetry = jest.fn();
+
+      render(<ErrorDisplay error={networkError} onRetry={mockRetry} />);
+
+      expect(screen.getByText('Retrying automatically in 2s')).toBeInTheDocument();
+      act(() => {
+        jest.advanceTimersByTime(2000);
+      });
       expect(mockRetry).toHaveBeenCalledTimes(1);
     });
 

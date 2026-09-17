@@ -392,7 +392,38 @@ describe('AgentGrid pagination', () => {
       await screen.findByRole('button', { name: 'Agent 0', hidden: true }),
     ).toBeInTheDocument();
   });
+  it('leaves focus on document body on the initial marketplace mount', async () => {
+    const pending = Promise.withResolvers<t.AgentListResponse>();
+    marketplace.mockReturnValueOnce(pending.promise);
 
+    document.body.focus();
+
+    renderGrid();
+
+    expect(document.activeElement).toBe(document.body);
+    await act(async () => pending.resolve(page(makeAgents(1))));
+  });
+
+  it('returns focus to the results panel when retry removes the focused recovery card', async () => {
+    marketplace
+      .mockRejectedValueOnce(new Error('Agents unavailable'))
+      .mockRejectedValueOnce(new Error('Agents unavailable'))
+      .mockRejectedValueOnce(new Error('Agents unavailable'))
+      .mockResolvedValueOnce(page(makeAgents(1)));
+
+    renderGrid();
+    expect(await screen.findByRole('alert', {}, { timeout: 5000 })).toHaveTextContent(
+      'Agents unavailable',
+    );
+
+    const retry = screen.getByRole('button', { name: 'Retry' });
+    retry.focus();
+    expect(retry).toHaveFocus();
+    fireEvent.click(retry);
+
+    expect(await screen.findByRole('button', { name: 'Agent 0' })).toBeInTheDocument();
+    expect(screen.getByRole('tabpanel')).toHaveFocus();
+  });
   it('takes focus back when a scope change remounts the rows under an open dialog', async () => {
     // A debounced search or a restored history entry commits while a card is open. The new
     // scope's grid is a different list, so the dialog goes with the rows it belonged to -

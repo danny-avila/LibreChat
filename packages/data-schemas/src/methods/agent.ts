@@ -339,8 +339,9 @@ function decodeAgentSortCursor(
     const { valueType } = AGENT_SORT_CONFIG[sort];
     /* Coercion is not validation: `String(undefined)` is `'undefined'`, which compares as a
        perfectly ordinary author key and would resume the walk partway through the alphabet
-       instead of failing closed. The date and number modes are caught by their own casts;
-       the string mode has no cast to fail, so its boundary has to arrive as a string. */
+       instead of failing closed. The date mode is caught by its cast; the numeric mode also
+       requires a non-negative integer because favorite counts are discrete. The string mode
+       has no cast to fail, so its boundary has to arrive as a string. */
     if (valueType === 'string' && typeof decoded.primary !== 'string') {
       return { kind: 'unreadable' };
     }
@@ -349,8 +350,11 @@ function decodeAgentSortCursor(
       if (primary !== '' && Number.isNaN(new Date(primary).getTime())) {
         return { kind: 'unreadable' };
       }
-    } else if (valueType === 'number' && (primary === '' || !Number.isFinite(Number(primary)))) {
-      return { kind: 'unreadable' };
+    } else if (valueType === 'number') {
+      const numericPrimary = Number(primary);
+      if (primary === '' || !Number.isInteger(numericPrimary) || numericPrimary < 0) {
+        return { kind: 'unreadable' };
+      }
     }
     return { kind: 'usable', cursor: { primary, secondary: decoded.secondary } };
   } catch {
@@ -1049,6 +1053,9 @@ export function createAgentMethods(
   updateAgentAvatar: (params: {
     id: string;
     avatar: { filepath: string; source: string };
+    /** The avatar the caller read. When given, the write only lands while the stored avatar
+     *  still matches it. */
+    previousAvatar?: { filepath: string; source: string } | null;
   }) => Promise<boolean>;
   deleteAgent: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent | null>;
   deleteUserAgents: (userId: string) => Promise<void>;
@@ -1589,12 +1596,25 @@ export function createAgentMethods(
   async function updateAgentAvatar({
     id,
     avatar,
+    previousAvatar,
   }: {
     id: string;
     avatar: { filepath: string; source: string };
+    previousAvatar?: { filepath: string; source: string } | null;
   }): Promise<boolean> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    const result = await Agent.updateOne({ id }, { $set: { avatar } }, { timestamps: false });
+    const searchParameter: FilterQuery<IAgent> = { id };
+    if (previousAvatar === null) {
+      searchParameter.avatar = null;
+    } else if (previousAvatar !== undefined) {
+      searchParameter['avatar.filepath'] = previousAvatar.filepath;
+      searchParameter['avatar.source'] = previousAvatar.source;
+    }
+    const result = await Agent.updateOne(
+      searchParameter,
+      { $set: { avatar } },
+      { timestamps: false },
+    );
     return result.matchedCount > 0;
   }
 

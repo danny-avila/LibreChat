@@ -27,10 +27,7 @@ export interface AgentOwnerContactDeps {
     resourceType: string,
     resourceIds: string[],
   ) => Promise<Map<string, string>>;
-  findUsers: (
-    filter: { _id: { $in: string[] } },
-    select: string,
-  ) => Promise<AgentOwnerContactUser[]>;
+  findOwnerContactUsers: (ownerIds: string[]) => Promise<AgentOwnerContactUser[]>;
   logger: Pick<Console, 'warn'>;
 }
 
@@ -89,7 +86,7 @@ export async function attachAgentOwnerContacts<T extends AgentOwnerContactRow>(
   const ownersById = new Map<string, AgentOwnerContactUser>();
   if (ownerIds.length > 0) {
     try {
-      const users = await deps.findUsers({ _id: { $in: ownerIds } }, 'name username');
+      const users = await deps.findOwnerContactUsers(ownerIds);
       for (const user of users) {
         const id = idOf(user?._id);
         if (id) {

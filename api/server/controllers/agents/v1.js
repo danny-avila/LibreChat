@@ -1846,6 +1846,7 @@ const getListAgentsHandler = async (req, res) => {
       cache,
       refreshKey,
       cacheTtl: Time.THIRTY_MINUTES,
+      coverageLimit: req.config?.endpoints?.[EModelEndpoint.agents]?.avatarRefresh?.coverageLimit,
       refreshS3Url,
       updateAgent: db.updateAgentAvatar,
     });

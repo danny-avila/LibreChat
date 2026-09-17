@@ -2,6 +2,7 @@ import React from 'react';
 import { RetryableError } from '@librechat/client';
 import { Hourglass, SearchX, ServerCrash, Timer, TriangleAlert, WifiOff } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import { useGetStartupConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
 /** Fields the API attaches to a failure, at whichever level the client sees it. */
@@ -91,8 +92,13 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({
   isRetrying = false,
   context,
 }) => {
+  const { data: startupConfig } = useGetStartupConfig();
+  /* Operators own the recovery cadence (`interface.marketplace.retryDelaysMs`); anything
+     that is not an array leaves the shipped sequence in place, and an empty one is a
+     deliberate "ask only when I click". */
+  const configured = startupConfig?.interface?.marketplace?.retryDelaysMs;
+  const retryDelaysMs = Array.isArray(configured) ? configured : undefined;
   const localize = useLocalize();
-
   /**
    * Get contextual title based on current operation
    */
@@ -232,11 +238,13 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({
       onRetry={onRetry}
       isRetrying={isRetrying}
       autoRetry={transient}
+      retryDelaysMs={retryDelaysMs}
       labels={{
         retry: localize('com_agents_error_retry'),
         retrying: localize('com_agents_error_retrying'),
         countdown: (seconds) => localize('com_agents_error_retry_countdown', { seconds }),
-        reload: localize('com_ui_refresh_page'),
+        // An empty sequence means manual-only recovery, not a stale page that needs reloading.
+        reload: retryDelaysMs?.length === 0 ? undefined : localize('com_ui_refresh_page'),
       }}
     />
   );

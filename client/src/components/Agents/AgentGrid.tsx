@@ -178,10 +178,15 @@ const AgentGrid: React.FC<AgentGridProps> = ({
    * left alone, because only `body` means nobody has it.
    */
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const previousScopeKeyRef = useRef<string | null>(null);
   useLayoutEffect(() => {
-    if (document.activeElement === document.body) {
-      panelRef.current?.focus();
+    const scopeChanged =
+      previousScopeKeyRef.current != null && previousScopeKeyRef.current !== scopeKey;
+    previousScopeKeyRef.current = scopeKey;
+    if (!scopeChanged || document.activeElement !== document.body) {
+      return;
     }
+    panelRef.current?.focus();
   }, [scopeKey]);
   /**
    * Paging is suspended while a failure is held. The rows stay mounted behind the error
@@ -304,14 +309,18 @@ const AgentGrid: React.FC<AgentGridProps> = ({
    * of its own, so a viewport of placeholders would push the card's status, countdown and
    * action below the fold and hide the recovery it is reporting. The card owns the waiting
    * state for the request it describes.
-   *
-   * With rows already loaded the recovery card is rendered before them so keyboard and
-   * reading order reach it immediately, in a band it reserves at the top of the scroll
-   * frame; without rows it is the whole of the page.
    */
 
   let listPlaceholder: React.ReactNode = null;
   if (failure) {
+    const handleRetry = () => {
+      if (recoveryCardRef.current?.contains(document.activeElement)) {
+        panelRef.current?.focus();
+      }
+      void (heldFailure?.kind === 'next-page' && heldFailure.pages > 0
+        ? fetchNextPage({ cancelRefetch: false })
+        : refetch({ cancelRefetch: false }));
+    };
     const errorCard = (
       <ErrorDisplay
         error={(failure as ApiError) || 'Unknown error occurred'}
@@ -320,11 +329,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
            was waiting for. `cancelRefetch: false` so a click, the card's backoff and the
            query's own reconnect refetch coalesce into one request instead of each
            restarting the previous one. */
-        onRetry={() =>
-          void (heldFailure?.kind === 'next-page' && heldFailure.pages > 0
-            ? fetchNextPage({ cancelRefetch: false })
-            : refetch({ cancelRefetch: false }))
-        }
+        onRetry={handleRetry}
         isRetrying={isFetching}
         context={{
           searchQuery,
@@ -350,6 +355,12 @@ const AgentGrid: React.FC<AgentGridProps> = ({
         className="pointer-events-none sticky top-0 z-30 flex items-start justify-center"
         style={{ height: recoveryInset }}
       >
+        {/* The band is measured from this element, its bottom gap included: the space the
+            card is read in is as much a part of what the rows must start below as the box
+            itself. With rows already loaded the card is rendered before them so keyboard
+            and reading order reach it immediately; without rows it is the whole of the
+            page, and the wrapper is there so a retry can still tell whether focus was
+            inside the card it is about to remove. */}
         <div ref={recoveryCardRef} className="pointer-events-auto w-full max-w-xl pb-5">
           <div className="rounded-theme-surface border border-border-light bg-surface-secondary shadow-lg high-contrast:border-border-medium high-contrast:shadow-none">
             {errorCard}
@@ -357,7 +368,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
         </div>
       </div>
     ) : (
-      errorCard
+      <div ref={recoveryCardRef}>{errorCard}</div>
     );
   } else if (isPendingResults) {
     listPlaceholder = (
