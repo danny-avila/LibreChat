@@ -823,8 +823,19 @@ export async function injectSkillCatalog(
    */
   let workingDefs: LCTool[] = [...(inputDefs ?? [])];
   if (skillToolAvailable) {
-    const alreadyDefined = workingDefs.some((def) => def.name === skillToolDef.name);
-    if (!alreadyDefined) {
+    /**
+     * Replace rather than skip, so the registry the host handler resolves and
+     * the array the model reads never disagree about which variant is live.
+     * Skipping would leave an earlier catalog-only definition telling an
+     * authoring run's model that a skill it just created is an invalid name —
+     * the exact failure this registration exists to prevent — while the
+     * registry claimed otherwise. Mirrors how `registerCodeExecutionTools`
+     * upgrades a code-only `read_file` in place instead of suppressing it.
+     */
+    const existingIndex = workingDefs.findIndex((def) => def.name === skillToolDef.name);
+    if (existingIndex >= 0) {
+      workingDefs[existingIndex] = skillToolDef;
+    } else {
       workingDefs.push(skillToolDef);
     }
     toolRegistry?.set(skillToolDef.name, skillToolDef);
