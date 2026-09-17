@@ -490,16 +490,26 @@ function parseSubagentPromptCacheMarker(text) {
   };
 }
 
+/**
+ * The cache key the delegation target will send, read from the sealed child
+ * inputs the run handed the SDK. A child runs in its own graph, whose agent
+ * contexts this hook never sees, and its model is replaced here anyway — so
+ * the entry the parent advertises is the closest observation of the identity
+ * the child would carry.
+ */
+function subagentPromptCacheKeyValue(agentContext, childId) {
+  const entry = (agentContext?.subagentConfigs ?? []).find((config) => config?.type === childId);
+  return entry?.agentInputs?.clientOptions?.promptCacheKey ?? 'none';
+}
+
 function subagentPromptCacheResponses(text, graph) {
   const marker = parseSubagentPromptCacheMarker(text);
   if (!marker) {
     return null;
   }
 
-  const childPrompt = `E2E_ASSERT_SUBAGENT_PROMPT_CACHE_CHILD:${marker.label}`;
   return {
     responses: [''],
-    overrideSubagentModel: true,
     resolveInvocation: async (messages, options, runManager) => {
       const agentView = await getStreamAgentView({
         graph,
@@ -507,38 +517,10 @@ function subagentPromptCacheResponses(text, graph) {
         options,
         runManager,
       });
-      if (getLatestUserText(messages).includes(childPrompt)) {
-        return {
-          response: `CHILD_PROMPT_CACHE_KEY=${promptCacheKeyValue(agentView.agentContext)}`,
-        };
-      }
-
-      /**
-       * The child answers inside a subagent tool result, which the
-       * conversation stores as tool output rather than assistant text. Echo it
-       * on the parent's turn so one persisted reply carries both keys.
-       */
-      const childResult = findLastToolMessageText(messages, 'CHILD_PROMPT_CACHE_KEY=');
-      if (childResult) {
-        const childKey = /CHILD_PROMPT_CACHE_KEY=([^\s"\\]*)/.exec(childResult)?.[1] ?? 'none';
-        return {
-          response: `PARENT_PROMPT_CACHE_KEY=${promptCacheKeyValue(agentView.agentContext)}\nCHILD_PROMPT_CACHE_KEY=${childKey}`,
-        };
-      }
-
       return {
-        response: '',
-        toolCalls: [
-          {
-            id: `call_e2e_subagent_prompt_cache_${marker.label}`,
-            name: 'subagent',
-            args: {
-              description: childPrompt,
-              subagent_type: marker.childId,
-            },
-            type: 'tool_call',
-          },
-        ],
+        response:
+          `PARENT_PROMPT_CACHE_KEY=${promptCacheKeyValue(agentView.agentContext)}\n` +
+          `CHILD_PROMPT_CACHE_KEY=${subagentPromptCacheKeyValue(agentView.agentContext, marker.childId)}`,
       };
     },
   };
