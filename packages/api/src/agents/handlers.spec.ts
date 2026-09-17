@@ -8,6 +8,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
+import { tool } from '@librechat/agents/langchain/tools';
 import type {
   ToolExecuteBatchRequest,
   ToolExecuteResult,
@@ -1777,6 +1778,41 @@ describe('createToolExecuteHandler', () => {
       );
     });
 
+    it('returns actionable schema feedback and distinct log identity for a misrouted poll', async () => {
+      const execute = jest.fn(async () => 'executed');
+      const bash = tool(execute, {
+        name: 'bash_tool',
+        description: 'Starts a command',
+        schema: {
+          type: 'object',
+          properties: { command: { type: 'string' } },
+          required: ['command'],
+        },
+      });
+      const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
+      const [result] = await invokeHandler(
+        createToolExecuteHandler({
+          loadTools: async () => ({ loadedTools: [bash] }),
+        }),
+        [{ id: 'misrouted-poll', name: 'bash_tool', args: { background_task_id: 'private-task' } }],
+      );
+      expect(execute).not.toHaveBeenCalled();
+      expect(result.errorMessage).toContain('Missing required fields: command');
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[ON_TOOL_EXECUTE] Tool bash_tool error',
+        expect.objectContaining({
+          toolName: 'bash_tool',
+          toolCallId: 'misrouted-poll',
+          errorName: 'Error',
+          errorMessage: result.errorMessage,
+        }),
+      );
+      const logged = JSON.stringify(errorSpy.mock.calls);
+      expect(logged).not.toContain('"message":');
+      expect(logged).not.toContain('"name":');
+      expect(logged).not.toContain('private-task');
+    });
+
     it('truncates oversized tool errors in the result and log context', async () => {
       const oversizedMessage = `tool failed: ${'x'.repeat(15_000)}`;
       const thrown = new Error(oversizedMessage);
@@ -1851,7 +1887,7 @@ describe('createToolExecuteHandler', () => {
         expect(errorSpy).toHaveBeenCalledWith(
           '[ON_TOOL_EXECUTE] Tool bad_to_string_tool error',
           expect.objectContaining({
-            name: 'object',
+            errorName: 'object',
             messageTruncated: false,
           }),
         );
@@ -1888,7 +1924,7 @@ describe('createToolExecuteHandler', () => {
         expect(errorSpy).toHaveBeenCalledWith(
           '[ON_TOOL_EXECUTE] Tool plain_object_tool error',
           expect.objectContaining({
-            message: 'plain object timeout',
+            errorMessage: 'plain object timeout',
             messageTruncated: false,
           }),
         );
@@ -5908,7 +5944,7 @@ describe('createToolExecuteHandler', () => {
         expect(errorSpy).toHaveBeenCalledWith(
           '[ON_TOOL_EXECUTE] Tool list_workspace_files error',
           expect.objectContaining({
-            name: 'WorkspaceToolHttpError',
+            errorName: 'WorkspaceToolHttpError',
             upstreamStatus: status,
             upstreamBody: body,
             upstreamBodyTruncated: false,

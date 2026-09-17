@@ -1787,7 +1787,7 @@ export function buildBackgroundHandleContent(
     background_task_id: task.id,
     tool: task.toolName,
     status: task.status,
-    message,
+    message: `${message} The tool field identifies the originating tool, not the polling tool. Status request: ${JSON.stringify({ name: CHECK_BACKGROUND_TASK_NAME, arguments: { background_task_id: task.id } })}`,
   });
 }
 

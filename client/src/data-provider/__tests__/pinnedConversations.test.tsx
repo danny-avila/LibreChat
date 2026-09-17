@@ -605,6 +605,37 @@ describe('bookmark mutations invalidate the pinned cache', () => {
 });
 
 describe('unpinning a pin that is not on a loaded chats page', () => {
+  it('does not let an older list refresh restore a successfully removed pin', async () => {
+    const queryClient = createQueryClient();
+    const queryKey = [QueryKeys.allConversations];
+    const stalePage = { pages: [listResponse([pinnedConvo])], pageParams: [undefined] };
+    queryClient.setQueryData(queryKey, stalePage);
+    queryClient.setQueryData([QueryKeys.pinnedConversations], listResponse([pinnedConvo]));
+    let finishRefresh!: (data: typeof stalePage) => void;
+    const refresh = queryClient
+      .fetchQuery(
+        queryKey,
+        () =>
+          new Promise<typeof stalePage>((resolve) => {
+            finishRefresh = resolve;
+          }),
+      )
+      .catch(() => undefined);
+    pinConversation.mockResolvedValue({ ...pinnedConvo, pinned: false });
+    const { result } = renderHook(() => usePinConversationMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({ conversationId: pinnedConversationId, pinned: false });
+      finishRefresh(stalePage);
+      await refresh;
+    });
+    expect(
+      queryClient.getQueryData<typeof stalePage>(queryKey)?.pages[0].conversations[0].pinned,
+    ).toBe(false);
+    queryClient.clear();
+  });
+
   it('inserts the unpinned conversation at the top of the chats list', async () => {
     const unpinned = { ...pinnedConvo, pinned: false } as TConversation;
     pinConversation.mockResolvedValue(unpinned);

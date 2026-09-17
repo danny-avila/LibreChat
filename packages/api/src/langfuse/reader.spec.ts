@@ -1081,6 +1081,7 @@ describe('createLangfuseTraceReader', () => {
           startTime: '2026-09-12T11:30:00.000Z',
           endTime: '2026-09-12T11:30:05.000Z',
           status: 'ok',
+          origin: 'title',
         },
       ]);
     });
