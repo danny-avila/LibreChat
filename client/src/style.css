@@ -458,10 +458,21 @@ html.high-contrast ::-webkit-scrollbar-track {
 }
 html.high-contrast * {
   scrollbar-color: rgb(var(--border-heavy)) rgb(var(--surface-primary));
-  /* Controls that halve their own ring (`ring-opacity-50`, `ring-opacity-20`)
-   * keep it at full strength here. The outline rules below cover the controls
-   * that blank it outright. */
-  --tw-ring-opacity: 1;
+}
+/* Controls that halve their own ring (`focus-visible:ring-text-primary/50` on the
+ * composer's collapse, tools, attach-file and attach-file-menu buttons,
+ * `focus:ring-text-primary/20` in `defaultTextProps`) keep it at full strength
+ * here. v4 has no ring-opacity variable — the slash bakes the alpha into
+ * `--tw-ring-color` as a `color-mix(...)` — so restoring full strength means
+ * re-declaring the colour rather than resetting an opacity.
+ *
+ * Matched by the class the caller wrote, not by `*`: a control that names its own
+ * ring colour means it, and `ring-current` on the toast close button is the ink
+ * that contrasts with a status fill, where `--text-primary` would be black on
+ * the light fills and white on the dark ones. The `:focus-visible` rule below
+ * carries the mode's 3px perimeter for everything either way. */
+html.high-contrast [class*='ring-text-primary/'] {
+  --tw-ring-color: rgb(var(--text-primary));
 }
 /* `.dark body`/`.dark html` pin the page to #212121, which would leave a
  * near-black canvas behind the pure black surfaces. */
@@ -1330,9 +1341,16 @@ pre[class*='language-'] {
   color: rgb(var(--syntax-title));
 }
 
-[role='button'],
-button {
-  cursor: pointer;
+/* Tailwind 3 gave every button a pointer cursor and Tailwind 4 leaves the
+ * platform default, so this shim is what keeps the affordance. It belongs in
+ * `base`: unlayered it would outrank every utility in the sheet, and
+ * `cursor-default` on `SelectDropDown` or `disabled:cursor-not-allowed` on a
+ * disabled button would stop meaning anything. */
+@layer base {
+  [role='button'],
+  button {
+    cursor: pointer;
+  }
 }
 
 .btn {

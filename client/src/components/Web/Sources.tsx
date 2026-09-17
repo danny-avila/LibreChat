@@ -156,7 +156,7 @@ function ImageItem({ image }: { image: ImageResult }) {
             className="size-full object-cover"
           />
           {image.title && (
-            <div className="absolute right-0 bottom-0 left-0 w-full border-none bg-gray-900/80 p-1 text-xs font-medium text-white backdrop-blur-sm">
+            <div className="absolute right-0 bottom-0 left-0 w-full border-none bg-gray-900/80 p-1 text-xs font-medium text-white backdrop-blur-xs">
               <span className="truncate">{image.title}</span>
             </div>
           )}

@@ -29,7 +29,7 @@ export function Toast(): JSX.Element {
     >
       <div className="w-full p-1 text-center md:w-auto md:text-justify">
         <div
-          className={`alert-root text-text-on-status pointer-events-auto inline-flex flex-row gap-2 rounded-md border px-3 py-2 font-bold ${
+          className={`alert-root text-text-on-status border-border-light pointer-events-auto inline-flex flex-row gap-2 rounded-md border px-3 py-2 font-bold ${
             severityClassName[toast.severity]
           }`}
         >

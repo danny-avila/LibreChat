@@ -125,7 +125,7 @@ function EnvironmentWorkspaces({
                 <p className="text-text-secondary truncate text-xs">{descriptor.id}</p>
               )}
               {descriptor.instructions !== undefined && (
-                <p className="truncate text-xs text-text-secondary">
+                <p className="text-text-secondary truncate text-xs">
                   {descriptor.instructions.length === 0
                     ? localize('com_ui_repository_instructions_none')
                     : descriptor.instructions

@@ -144,7 +144,7 @@ const BackupCodesItem: React.FC = () => {
                           });
                           document.dispatchEvent(announcement);
                         }}
-                        className={`focus-visible:ring-text-primary flex flex-col rounded-xl border p-4 backdrop-blur-sm transition-colors focus-visible:ring-2 focus-visible:outline-hidden ${
+                        className={`focus-visible:ring-text-primary flex flex-col rounded-xl border p-4 backdrop-blur-xs transition-colors focus-visible:ring-2 focus-visible:outline-hidden ${
                           isUsed
                             ? 'border-status-error-border bg-status-error-subtle'
                             : 'border-status-success-border bg-status-success-subtle'
