@@ -271,4 +271,44 @@ describe('run-level prompt cache identity', () => {
     expect(memberInputs[1]).toBeDefined();
     expect(cacheKey(memberInputs[0]!)).not.toBe(cacheKey(memberInputs[1]!));
   });
+
+  it('reads a spelled-out default handoff parameter name as the default', async () => {
+    const member = makeAgent({ id: 'shared-member' });
+    const writer = makeAgent({ id: 'writer' });
+    const team = (type: string, promptKey?: string) => ({
+      type,
+      name: `Team ${type}`,
+      description: 'Member writes',
+      edges: [
+        {
+          from: 'shared-member',
+          to: 'writer',
+          edgeType: 'direct',
+          prompt: 'Hand the draft over',
+          ...(promptKey != null ? { promptKey } : {}),
+        },
+      ],
+      entry_agent_id: 'shared-member',
+      result_agent_id: 'writer',
+    });
+    const root = makeAgent({
+      subagents: { enabled: true, allowSelf: false },
+      subagentGraphConfigs: [
+        { definition: team('implicit'), memberConfigs: [member, writer] },
+        { definition: team('explicit', 'instructions'), memberConfigs: [member, writer] },
+      ],
+    });
+
+    const [rootInput] = await captureRun({ agent: root, user: 'user-a' });
+    const graphs = (rootInput.subagentConfigs ?? []).filter(
+      (config) => 'kind' in config && config.kind === 'graph',
+    ) as Array<{ agents: CapturedAgent[] }>;
+    const memberKeys = graphs.map((graph) =>
+      cacheKey(graph.agents.find((agent) => agent.agentId === 'shared-member')!),
+    );
+
+    expect(memberKeys).toHaveLength(2);
+    /** Both teams advertise the same handoff parameter, so both must reuse one entry. */
+    expect(memberKeys[0]).toBe(memberKeys[1]);
+  });
 });

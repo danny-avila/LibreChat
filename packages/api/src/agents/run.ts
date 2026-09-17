@@ -1876,11 +1876,23 @@ function handoffEdgeIdentity(edge: GraphEdge): unknown {
     to: edge.to,
     ...(typeof edge.description === 'string' ? { description: edge.description } : {}),
     ...(edge.edgeType != null ? { edgeType: edge.edgeType } : {}),
-    ...(edge.promptKey != null ? { promptKey: edge.promptKey } : {}),
+    /**
+     * Resolved rather than passed through: the SDK falls back to
+     * `instructions` (`MultiAgentGraph`), so an edge that spells the default
+     * out and one that leaves it unset advertise the same parameter and must
+     * not land in different cache partitions.
+     */
+    promptKey: typeof edge.promptKey === 'string' ? edge.promptKey : 'instructions',
     /**
      * A string prompt becomes the handoff parameter's description and is
      * hashed verbatim; a function one is resolved per turn, so only its
      * presence — which is what decides whether the parameter exists — counts.
+     * An agent whose callback returns different text per turn therefore has no
+     * stable prefix to name: its requests share one identity across those
+     * texts, which mixes their accounting and gains no reuse. Resolving the
+     * callback here is not possible — it needs the turn's messages — and
+     * hashing its output would partition the cache per turn, so the cost is
+     * carried rather than traded for a key that changes every request.
      */
     prompt: typeof edge.prompt === 'string' ? edge.prompt : edge.prompt != null,
   };

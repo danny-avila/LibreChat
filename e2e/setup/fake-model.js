@@ -513,9 +513,16 @@ function subagentPromptCacheResponses(text, graph) {
         };
       }
 
-      if (findLastToolMessageText(messages, 'CHILD_PROMPT_CACHE_KEY=')) {
+      /**
+       * The child answers inside a subagent tool result, which the
+       * conversation stores as tool output rather than assistant text. Echo it
+       * on the parent's turn so one persisted reply carries both keys.
+       */
+      const childResult = findLastToolMessageText(messages, 'CHILD_PROMPT_CACHE_KEY=');
+      if (childResult) {
+        const childKey = /CHILD_PROMPT_CACHE_KEY=([^\s"\\]*)/.exec(childResult)?.[1] ?? 'none';
         return {
-          response: `PARENT_PROMPT_CACHE_KEY=${promptCacheKeyValue(agentView.agentContext)}`,
+          response: `PARENT_PROMPT_CACHE_KEY=${promptCacheKeyValue(agentView.agentContext)}\nCHILD_PROMPT_CACHE_KEY=${childKey}`,
         };
       }
 
