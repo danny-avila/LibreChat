@@ -339,15 +339,17 @@ export const mergeAvatarRefreshCacheEntry = (
       ([id, filepath]) => retainedIds.has(id) && typeof filepath === 'string',
     ),
   );
-  /* A URL is only worth keeping while the filepath it was signed for is the one coverage
-     was taken for; anything else is a link to a file the agent no longer shows. Entries
-     written before that binding existed carry a bare string and cannot be checked, so
-     they are dropped and the next page signs again. */
+  /* A cached URL says which filepath it was signed for, and it is applied only to a row
+     that still carries that filepath - a page read before the refresh landed. It is
+     deliberately not required to match the coverage path, which names what is stored now:
+     a successful re-sign moves the stored path forward while pages already in flight keep
+     the old one. Entries written before that binding existed carry a bare string and
+     cannot be checked at all, so they are dropped and the next page signs again. */
   const urlCache: Record<string, AvatarRefreshUrl> = {};
   for (const source of [previousEntry?.urlCache ?? {}, stats.urlCache]) {
     for (const id of Object.keys(source)) {
       const value = getCachedAvatarUrl({ urlCache: source }, id);
-      if (retainedIds.has(id) && value?.filepath === coveredFilepaths[id]) {
+      if (retainedIds.has(id) && value != null) {
         urlCache[id] = value;
       }
     }
@@ -437,6 +439,10 @@ export const refreshListAvatars = async ({
               );
               return;
             }
+            /* Coverage answers "has this avatar been checked", so it has to name the path a
+               later page will read - which is the one just written. The URL keeps the path
+               the page in hand still carries, because that is the row it applies to. */
+            stats.coveredFilepaths[agent.id] = newPath;
             stats.updated++;
           } catch (persistErr) {
             logger.error('[refreshListAvatars] Avatar refresh persist error: %o', persistErr);

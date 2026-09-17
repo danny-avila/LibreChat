@@ -404,14 +404,13 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
                     aria-label={favoriteLabel}
                     aria-pressed={isFavorite}
                     aria-busy={isUpdating}
-                    disabled={isUpdating}
-                    aria-disabled={actionsDisabled || undefined}
+                    aria-disabled={actionsDisabled || isUpdating || undefined}
                     onClick={() => {
-                      if (!actionsDisabled) {
+                      if (!actionsDisabled && !isUpdating) {
                         toggleFavoriteAgent(agent.id);
                       }
                     }}
-                    className="min-w-0 px-3"
+                    className={cn('min-w-0 px-3', isUpdating && 'opacity-50')}
                   >
                     {isUpdating ? (
                       <Spinner className="size-4 shrink-0" aria-hidden="true" />
