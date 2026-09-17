@@ -404,7 +404,11 @@ describe('AgentGrid pagination', () => {
     await act(async () => pending.resolve(page(makeAgents(1))));
   });
 
-  it('returns focus to the results panel when retry removes the focused recovery card', async () => {
+  it('returns focus to the results panel when recovery removes the focused retry', async () => {
+    // The reader activated Retry from the keyboard, so the control they were on is inside
+    // the card the success removes. The browser drops focus on the document in that
+    // commit, which would start their next Tab at the top of the page rather than at the
+    // results that just arrived.
     marketplace
       .mockRejectedValueOnce(new Error('Agents unavailable'))
       .mockRejectedValueOnce(new Error('Agents unavailable'))
@@ -422,7 +426,29 @@ describe('AgentGrid pagination', () => {
     fireEvent.click(retry);
 
     expect(await screen.findByRole('button', { name: 'Agent 0' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.getByRole('tabpanel')).toHaveFocus();
+  });
+
+  it('leaves the retry focused when the attempt fails again', async () => {
+    // Recovery moves focus because a removal took it, not because a request went out: the
+    // card is still there and the reader is still on its button, so taking focus away
+    // would cost them the control they are using.
+    marketplace.mockRejectedValue(new Error('Agents unavailable'));
+
+    renderGrid();
+    expect(await screen.findByRole('alert', {}, { timeout: 5000 })).toHaveTextContent(
+      'Agents unavailable',
+    );
+
+    const retry = screen.getByRole('button', { name: 'Retry' });
+    retry.focus();
+    await act(async () => {
+      fireEvent.click(retry);
+    });
+
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toHaveFocus();
   });
   it('takes focus back when a scope change remounts the rows under an open dialog', async () => {
     // A debounced search or a restored history entry commits while a card is open. The new
