@@ -2090,6 +2090,22 @@ describe('prompt caching', () => {
     expect(kwargs).not.toHaveProperty('prompt_cache_key');
   });
 
+  it('leaves retention alone when only the key is switched off', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6' },
+      promptCacheKeyEnabled: false,
+      addParams: { prompt_cache_key: 'tenant-fixed-key', prompt_cache_retention: '24h' },
+    });
+
+    const kwargs = (result.llmConfig.modelKwargs ?? {}) as Record<string, unknown>;
+    expect(kwargs).not.toHaveProperty('prompt_cache_key');
+    /** `promptCacheKey: false` disables the key, not the other two levers. */
+    expect(kwargs).toHaveProperty('prompt_cache_retention', '24h');
+  });
+
   it('ignores raw wire cache controls an agent author put in modelKwargs', () => {
     const result = getOpenAILLMConfig({
       apiKey: 'test-api-key',
