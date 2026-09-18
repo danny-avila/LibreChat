@@ -148,18 +148,33 @@ export function captureConfiguredAdditionalInstructions(agent: {
 }
 
 /**
- * Adds a later stable contribution to the captured configured instructions.
+ * Appends to an agent's dynamic instruction tail, recording the contribution
+ * as part of the prompt cache identity unless it is explicitly request-scoped.
  *
- * Used for text the initializer appends to the dynamic tail that is
- * configuration rather than conversation — the artifact prompt an agent's
- * artifact mode selects — so changing that mode retires the cache identity
- * while the run context beside it still does not.
+ * Stable by default on purpose. The identity has to cover every
+ * configuration-derived addition to this field — the artifact prompt, the
+ * skill catalog, the memory-tool guard — and the recurring defect was an
+ * addition that nobody remembered to record, which silently reused a key for
+ * a different system prefix. Forgetting the flag now over-partitions (a cache
+ * miss) instead, and only three writers pass `stable: false`: the temporally
+ * resolved instruction block, this run's context, and the per-run dynamic tool
+ * instructions.
  */
-export function appendConfiguredAdditionalInstructions(
-  agent: { configuredAdditionalInstructions?: string },
+export function appendAgentInstructionTail(
+  agent: {
+    additional_instructions?: string | null;
+    configuredAdditionalInstructions?: string;
+  },
   text?: string | null,
+  options: { stable?: boolean } = {},
 ): void {
   if (text == null || text === '') {
+    return;
+  }
+  agent.additional_instructions = [agent.additional_instructions ?? '', text]
+    .filter(Boolean)
+    .join('\n\n');
+  if (options.stable === false) {
     return;
   }
   agent.configuredAdditionalInstructions = [agent.configuredAdditionalInstructions, text]

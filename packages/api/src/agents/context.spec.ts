@@ -10,6 +10,7 @@ import {
   buildAgentInstructions,
   buildAgentAdditionalInstructions,
   applyContextToAgent,
+  appendAgentInstructionTail,
   captureConfiguredAdditionalInstructions,
 } from './context';
 
@@ -313,6 +314,31 @@ describe('Agent Context Utilities', () => {
         debug: jest.fn(),
         error: jest.fn(),
       } as unknown as Logger;
+    });
+
+    it('records a configuration-derived addition to the tail by default', () => {
+      const agent = {
+        additional_instructions: 'Use company terminology',
+        configuredAdditionalInstructions: 'Use company terminology',
+      };
+
+      appendAgentInstructionTail(agent, '# Skills\nreports: Create weekly reports');
+
+      expect(agent.additional_instructions).toContain('Create weekly reports');
+      /** A catalog edit has to retire the cache identity. */
+      expect(agent.configuredAdditionalInstructions).toContain('Create weekly reports');
+    });
+
+    it('leaves a request-scoped addition out of the recorded configuration', () => {
+      const agent = {
+        additional_instructions: 'Use company terminology',
+        configuredAdditionalInstructions: 'Use company terminology',
+      };
+
+      appendAgentInstructionTail(agent, 'Today is September 18', { stable: false });
+
+      expect(agent.additional_instructions).toContain('Today is September 18');
+      expect(agent.configuredAdditionalInstructions).toBe('Use company terminology');
     });
 
     it('keeps an earlier capture when temporally resolved instructions moved into the tail', async () => {
