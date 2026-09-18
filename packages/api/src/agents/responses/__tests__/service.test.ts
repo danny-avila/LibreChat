@@ -661,3 +661,63 @@ describe('tool call arguments from the completed model message', () => {
     expect(aggregator.usage.inputTokens).toBe(10);
   });
 });
+
+/**
+ * The continuation a caller-executed tool needs. `previous_response_id` cannot
+ * carry a tool exchange — a turn is persisted as text, so neither item of the
+ * pair survives it — which leaves replaying both items in `input` as the only
+ * supported shape. See the `clientTools` module docstring.
+ */
+describe('client tool continuation replay', () => {
+  const CALL_ID = 'call_submit_1';
+
+  it('pairs a replayed function_call with its output, adjacently', () => {
+    const input: InputItem[] = [
+      { type: 'message', role: 'user', content: 'Run the query' },
+      {
+        type: 'function_call',
+        id: 'fc_1',
+        call_id: CALL_ID,
+        name: 'submit_sql',
+        arguments: '{"sql":"SELECT 1"}',
+      },
+      { type: 'function_call_output', call_id: CALL_ID, output: 'submitted' },
+    ];
+
+    expect(convertInputToMessages(input)).toEqual([
+      { role: 'user', content: 'Run the query' },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          {
+            id: CALL_ID,
+            type: 'function',
+            function: { name: 'submit_sql', arguments: '{"sql":"SELECT 1"}' },
+          },
+        ],
+      },
+      { role: 'tool', content: 'submitted', tool_call_id: CALL_ID },
+    ]);
+  });
+
+  /**
+   * What a caller gets wrong by following the OpenAI habit of sending only the
+   * output: the tool result arrives with no call to answer, which providers
+   * reject. Pinned so the replay requirement is not silently relaxed.
+   */
+  it('leaves a bare function_call_output without a call to answer', () => {
+    const messages = convertInputToMessages([
+      { type: 'function_call_output', call_id: CALL_ID, output: 'submitted' },
+    ]);
+
+    expect(messages).toEqual([{ role: 'tool', content: 'submitted', tool_call_id: CALL_ID }]);
+    expect(
+      messages.some((message) =>
+        (message as { tool_calls?: Array<{ id: string }> }).tool_calls?.some(
+          (toolCall) => toolCall.id === CALL_ID,
+        ),
+      ),
+    ).toBe(false);
+  });
+});
