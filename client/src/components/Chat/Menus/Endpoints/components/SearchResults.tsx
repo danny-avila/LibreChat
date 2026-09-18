@@ -1,16 +1,89 @@
-import React, { Fragment } from 'react';
+import React, { Fragment, useCallback, useMemo } from 'react';
+import { CheckCircle2 } from 'lucide-react';
 import { VisuallyHidden } from '@ariakit/react';
-import { CheckCircle2, EarthIcon } from 'lucide-react';
 import { isAgentsEndpoint, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint } from '~/common';
+import { EndpointModelItem, VIRTUALIZE_THRESHOLD } from './EndpointModelItem';
 import MarketplaceItem, { marketplaceSearchMatches } from './Marketplace';
 import { useModelSelectorContext } from '../ModelSelectorContext';
 import { CustomMenuItem as MenuItem } from '../CustomMenu';
+import VirtualizedModelList from './VirtualizedModelList';
 import { shouldRenderEndpointOption } from '../utils';
 import { cn, getSpecAgentAvatarURL } from '~/utils';
 import SpecDescription from './SpecDescription';
+import { useFavorites } from '~/hooks';
 import SpecIcon from './SpecIcon';
+
+type SearchModel = { name: string; isGlobal?: boolean };
+
+/**
+ * Renders search matches with the same row component as the endpoint list. The
+ * virtualized branch only changes how many rows are mounted, not the row
+ * affordances or selection/favorite behavior.
+ */
+function SearchModelRows({
+  endpoint,
+  filteredModels,
+  precedingOptionCount,
+  searchValue,
+}: {
+  endpoint: Endpoint;
+  filteredModels: SearchModel[];
+  precedingOptionCount: number;
+  searchValue: string;
+}) {
+  const { isFavoriteModel, toggleFavoriteModel, isFavoriteAgent, toggleFavoriteAgent } =
+    useFavorites();
+  const isAgent = isAgentsEndpoint(endpoint.value);
+
+  const isFavorite = useCallback(
+    (modelId: string) =>
+      isAgent ? isFavoriteAgent(modelId) : isFavoriteModel(modelId, endpoint.value),
+    [isAgent, isFavoriteAgent, isFavoriteModel, endpoint.value],
+  );
+  const onToggleFavorite = useCallback(
+    (modelId: string) => {
+      if (isAgent) {
+        toggleFavoriteAgent(modelId);
+      } else {
+        toggleFavoriteModel({ model: modelId, endpoint: endpoint.value });
+      }
+    },
+    [isAgent, toggleFavoriteAgent, toggleFavoriteModel, endpoint.value],
+  );
+
+  const modelIds = useMemo(() => filteredModels.map((model) => model.name), [filteredModels]);
+  const globalByName = useMemo(
+    () => new Map(filteredModels.map((model) => [model.name, model.isGlobal ?? false])),
+    [filteredModels],
+  );
+
+  if (filteredModels.length > VIRTUALIZE_THRESHOLD) {
+    return (
+      <VirtualizedModelList
+        key={searchValue}
+        endpoint={endpoint}
+        modelIds={modelIds}
+        globalByName={globalByName}
+        isFavorite={isFavorite}
+        onToggleFavorite={onToggleFavorite}
+        precedingOptionCount={precedingOptionCount}
+      />
+    );
+  }
+
+  return modelIds.map((modelId) => (
+    <EndpointModelItem
+      key={`${endpoint.value}-${modelId}-search`}
+      modelId={modelId}
+      endpoint={endpoint}
+      isGlobal={globalByName.get(modelId) ?? false}
+      isFavorite={isFavorite(modelId)}
+      onToggleFavorite={onToggleFavorite}
+    />
+  ));
+}
 
 interface SearchResultsProps {
   results: (TModelSpec | Endpoint)[] | null;
@@ -19,20 +92,9 @@ interface SearchResultsProps {
 }
 
 export function SearchResults({ results, localize, searchValue }: SearchResultsProps) {
-  const {
-    selectedValues,
-    handleSelectSpec,
-    handleSelectModel,
-    handleSelectEndpoint,
-    endpointsConfig,
-    agentsMap,
-  } = useModelSelectorContext();
-
-  const {
-    modelSpec: selectedSpec,
-    endpoint: selectedEndpoint,
-    model: selectedModel,
-  } = selectedValues;
+  const { selectedValues, handleSelectSpec, handleSelectEndpoint, endpointsConfig, agentsMap } =
+    useModelSelectorContext();
+  const { modelSpec: selectedSpec, endpoint: selectedEndpoint } = selectedValues;
 
   if (!results) {
     return null;
@@ -57,7 +119,7 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
           ? localize('com_files_result_found', { count: results.length })
           : localize('com_files_results_found', { count: results.length })}
       </div>
-      {results.map((item, i) => {
+      {results.map((item) => {
         if ('name' in item && 'label' in item) {
           // Render model spec
           const spec = item as TModelSpec;
@@ -144,7 +206,7 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
             }
 
             return (
-              <Fragment key={`endpoint-${endpoint.value}-search-${i}`}>
+              <Fragment key={`endpoint-${endpoint.value}-search`}>
                 <div className="flex items-center gap-2 px-3 py-1 text-sm font-medium">
                   {endpoint.icon && (
                     <div className="flex items-center justify-center overflow-hidden rounded-full p-1">
@@ -159,68 +221,12 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                     label={localize('com_agents_marketplace')}
                   />
                 )}
-                {filteredModels.map((model) => {
-                  const modelId = model.name;
-
-                  let isGlobal = false;
-                  let modelName = modelId;
-                  if (
-                    isAgentsEndpoint(endpoint.value) &&
-                    endpoint.agentNames &&
-                    endpoint.agentNames[modelId]
-                  ) {
-                    modelName = endpoint.agentNames[modelId];
-                    const modelInfo = endpoint?.models?.find((m) => m.name === modelId);
-                    isGlobal = modelInfo?.isGlobal ?? false;
-                  } else if (
-                    isAssistantsEndpoint(endpoint.value) &&
-                    endpoint.assistantNames &&
-                    endpoint.assistantNames[modelId]
-                  ) {
-                    modelName = endpoint.assistantNames[modelId];
-                  }
-
-                  const isModelSelected =
-                    !selectedSpec &&
-                    selectedEndpoint === endpoint.value &&
-                    selectedModel === modelId;
-                  return (
-                    <MenuItem
-                      key={`${endpoint.value}-${modelId}-search-${i}`}
-                      onClick={() => handleSelectModel(endpoint, modelId)}
-                      aria-selected={isModelSelected || undefined}
-                      className="flex w-full cursor-pointer items-center justify-start rounded-lg px-3 py-2 pl-6 text-sm"
-                    >
-                      <div className="flex items-center gap-2">
-                        {endpoint.modelIcons?.[modelId] && (
-                          <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
-                            <img
-                              src={endpoint.modelIcons[modelId]}
-                              alt={modelName}
-                              className="h-full w-full object-cover"
-                            />
-                          </div>
-                        )}
-                        <span>{modelName}</span>
-                      </div>
-                      {isGlobal && (
-                        <EarthIcon
-                          className="ml-auto size-4 text-accent-primary"
-                          aria-hidden="true"
-                        />
-                      )}
-                      {isModelSelected && (
-                        <>
-                          <CheckCircle2
-                            className="size-4 shrink-0 text-text-primary"
-                            aria-hidden="true"
-                          />
-                          <VisuallyHidden>{localize('com_a11y_selected')}</VisuallyHidden>
-                        </>
-                      )}
-                    </MenuItem>
-                  );
-                })}
+                <SearchModelRows
+                  endpoint={endpoint}
+                  filteredModels={filteredModels}
+                  precedingOptionCount={showMarketplace ? 1 : 0}
+                  searchValue={searchValue}
+                />
               </Fragment>
             );
           } else {
@@ -269,7 +275,7 @@ export function renderSearchResults(
 ) {
   return (
     <SearchResults
-      key={`search-results-${searchValue}`}
+      key="search-results"
       results={results}
       localize={localize}
       searchValue={searchValue}
