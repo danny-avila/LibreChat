@@ -15,6 +15,7 @@ describe('workspace admission feedback', () => {
         baseURL: 'https://code.example/v1',
         authHeaders: {},
         fetchImpl,
+        maxQueueWaitMs: 0,
         request: {
           protocolVersion: 1,
           operation: 'execute_command',
@@ -23,6 +24,107 @@ describe('workspace admission feedback', () => {
         },
       }),
     ).rejects.toThrow('The operation was not started');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test('keeps one tool call queued when capacity expires before admission', async () => {
+    const unavailable = () =>
+      new Response(JSON.stringify({ code: 'WORKSPACE_QUEUE_TIMEOUT' }), {
+        status: 503,
+        headers: { 'Retry-After': '0' },
+      });
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValueOnce(unavailable())
+      .mockResolvedValueOnce(unavailable())
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            protocolVersion: 1,
+            operation: 'edit_file',
+            workspaceId: 'primary',
+            path: 'src/app.ts',
+            replacements: 1,
+            bytesWritten: 24,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example/v1',
+        authHeaders: {},
+        fetchImpl,
+        request: {
+          protocolVersion: 1,
+          operation: 'edit_file',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          edits: [{ oldText: 'const old = true;', newText: 'const ready = true;' }],
+        },
+      }),
+    ).resolves.toMatchObject({ operation: 'edit_file', replacements: 1 });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(fetchImpl.mock.calls.map((call) => call[1]?.body)).toEqual([
+      fetchImpl.mock.calls[0][1]?.body,
+      fetchImpl.mock.calls[0][1]?.body,
+      fetchImpl.mock.calls[0][1]?.body,
+    ]);
+  });
+
+  test('stops waiting for capacity when the chat is cancelled', async () => {
+    const controller = new AbortController();
+    const reason = new DOMException('Stopped', 'AbortError');
+    const fetchImpl = jest.fn().mockResolvedValue(
+      new Response(JSON.stringify({ code: 'WORKSPACE_QUEUE_TIMEOUT' }), {
+        status: 503,
+        headers: { 'Retry-After': '1' },
+      }),
+    );
+    const request = executeWorkspaceTool({
+      baseURL: 'https://code.example/v1',
+      authHeaders: {},
+      fetchImpl,
+      signal: controller.signal,
+      request: {
+        protocolVersion: 1,
+        operation: 'read_file',
+        workspaceId: 'primary',
+        path: 'src/app.ts',
+      },
+    });
+    while (fetchImpl.mock.calls.length === 0) await Promise.resolve();
+    controller.abort(reason);
+
+    await expect(request).rejects.toBe(reason);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test('never retries an ambiguous capacity-looking failure', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(
+      new Response('<html>Gateway unavailable</html>', {
+        status: 503,
+        headers: { 'Retry-After': '0' },
+      }),
+    );
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example/v1',
+        authHeaders: {},
+        fetchImpl,
+        request: {
+          protocolVersion: 1,
+          operation: 'edit_file',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          edits: [{ oldText: 'const old = true;', newText: 'const ready = true;' }],
+        },
+      }),
+    ).rejects.toMatchObject({ upstreamStatus: 503 });
+
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
