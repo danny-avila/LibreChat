@@ -2059,6 +2059,22 @@ describe('prompt caching', () => {
     expect(result.llmConfig).not.toHaveProperty('promptCacheScopeId');
   });
 
+  it('sends no key at all when an endpoint opts out over a raw pinned one', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6' },
+      promptCacheKeyEnabled: false,
+      addParams: { prompt_cache_key: 'tenant-fixed-key' },
+    });
+
+    const kwargs = (result.llmConfig.modelKwargs ?? {}) as Record<string, unknown>;
+    expect(result.llmConfig).not.toHaveProperty('promptCacheKey');
+    /** `addParams` routes the raw spelling into the kwargs the request forwards. */
+    expect(kwargs).not.toHaveProperty('prompt_cache_key');
+  });
+
   it('ignores raw wire cache controls an agent author put in modelKwargs', () => {
     const result = getOpenAILLMConfig({
       apiKey: 'test-api-key',
