@@ -60,6 +60,30 @@ describe('buildPromptCacheKey', () => {
   const key = (overrides: InputOverrides = {}, handoffEdges?: readonly unknown[]) =>
     buildPromptCacheKey(input(overrides), handoffEdges != null ? { handoffEdges } : {});
 
+  it('retires the key when a runtime action edits its parameter schema', () => {
+    const action = (fields: Record<string, unknown>) => {
+      /** What makes an action's schema unserializable: it points back at itself. */
+      const schema: Record<string, unknown> = {
+        _def: { typeName: 'ZodObject' },
+        shape: fields,
+      };
+      schema.self = schema;
+      return { name: 'lookup_order', description: 'Look up an order', schema };
+    };
+    const field = (typeName: string) => ({ _def: { typeName } });
+    const before = action({ orderId: field('ZodString') });
+    const after = action({ orderId: field('ZodString'), includeHistory: field('ZodBoolean') });
+
+    /** A runtime instance arrives on `tools`, not as a serializable definition. */
+    expect(key({ tools: [after] })).not.toBe(key({ tools: [before] }));
+    /** And the same schema twice is the same key. */
+    expect(key({ tools: [after] })).toBe(
+      key({
+        tools: [action({ orderId: field('ZodString'), includeHistory: field('ZodBoolean') })],
+      }),
+    );
+  });
+
   it('ignores the key order tool schemas happen to be serialized in', () => {
     expect(
       key({
