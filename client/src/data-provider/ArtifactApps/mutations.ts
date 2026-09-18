@@ -135,6 +135,8 @@ export const useWithdrawArtifactVersionMutation = (): UseMutationResult<
       dataService.withdrawArtifactAppVersion(artifactAppId, versionId),
     {
       onSuccess: (_data, { artifactAppId }) => {
+        queryClient.invalidateQueries([QueryKeys.artifactApps]);
+        queryClient.invalidateQueries([QueryKeys.artifactApp]);
         queryClient.invalidateQueries([QueryKeys.artifactAppVersions, artifactAppId]);
       },
     },

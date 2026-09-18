@@ -7,9 +7,13 @@ import {
   QueryKeys,
   dataService,
 } from 'librechat-data-provider';
+import type { TArtifactAppWithVersion } from 'librechat-data-provider';
+import type { QueryClient } from '@tanstack/react-query';
 import {
   completeArtifactSync,
+  getCurrentArtifactSyncEntry,
   listArtifactSyncQueue,
+  recordArtifactSyncBaseline,
   rescheduleArtifactSync,
   subscribeToArtifactSyncQueue,
 } from './queue';
@@ -24,7 +28,39 @@ interface SyncHttpError {
 
 function shouldDiscardSyncError(error: unknown): boolean {
   const status = (error as SyncHttpError | null)?.response?.status;
-  return status === 400 || status === 403 || status === 410 || status === 413 || status === 422;
+  return (
+    status === 400 ||
+    status === 403 ||
+    status === 409 ||
+    status === 410 ||
+    status === 413 ||
+    status === 422
+  );
+}
+
+/**
+ * Recovers a baseline that failed to resolve when the entry was enqueued. Only ever runs for an
+ * entry that has no baseline yet — one that already has one is sent unchanged, never re-derived,
+ * so a concurrent update can't make stale content look like it were based on a newer version.
+ */
+async function resolveBasedOnVersionNumber(
+  queryClient: QueryClient,
+  conversationId: string,
+  sourceKey: string,
+): Promise<number> {
+  try {
+    const resolved = await queryClient.fetchQuery<TArtifactAppWithVersion>(
+      [QueryKeys.artifactApp, 'source', conversationId, sourceKey],
+      () => dataService.getArtifactAppBySource(conversationId, sourceKey),
+      { retry: false },
+    );
+    return resolved.app.latestVersionNumber;
+  } catch (error) {
+    if ((error as SyncHttpError | null)?.response?.status === 404) {
+      return 0;
+    }
+    throw error;
+  }
 }
 
 /** Flushes the persistent registration queue for the signed-in user across route changes. */
@@ -75,8 +111,33 @@ export default function ArtifactSyncWorker() {
         if (entry.nextAttemptAt > Date.now()) {
           continue;
         }
+        const current = getCurrentArtifactSyncEntry(entry.id);
+        if (!current || current.signature !== entry.signature) {
+          // Another tab already completed, replaced, or removed this snapshot since the
+          // batch was read; the fresh entry (if any) will be picked up on its own schedule.
+          continue;
+        }
         try {
-          const result = await dataService.syncArtifactApp(entry.request);
+          // entry.request carries the baseline observed when this snapshot was captured
+          // (ArtifactCatalogRegistrar.tsx) and is sent unchanged — re-deriving it here from the
+          // server's current state would describe what's current now, not what this (possibly
+          // older, still-queued) content was actually written against. A still-missing baseline
+          // means that first observation failed; resolve and lock it in now, before ever sending,
+          // rather than send an unchecked write.
+          let requestToSend = entry.request;
+          if (entry.request.basedOnVersionNumber == null) {
+            const basedOnVersionNumber = await resolveBasedOnVersionNumber(
+              queryClient,
+              entry.request.source.conversationId,
+              entry.request.source.sourceKey,
+            );
+            if (!sessionIsActive()) {
+              return null;
+            }
+            await recordArtifactSyncBaseline(entry.id, entry.signature, basedOnVersionNumber);
+            requestToSend = { ...entry.request, basedOnVersionNumber };
+          }
+          const result = await dataService.syncArtifactApp(requestToSend);
           if (!sessionIsActive()) {
             return null;
           }

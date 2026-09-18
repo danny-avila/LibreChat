@@ -1,12 +1,15 @@
 import { useEffect, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Constants,
+  QueryKeys,
+  dataService,
   DEFAULT_ARTIFACT_APPS_CONFIG,
   Permissions,
   PermissionTypes,
 } from 'librechat-data-provider';
-import type { TSyncArtifactAppRequest } from 'librechat-data-provider';
+import type { TSyncArtifactAppRequest, TArtifactAppWithVersion } from 'librechat-data-provider';
 import { enqueueArtifactSync } from '~/components/ArtifactApps/sync/queue';
 import { toLatestArtifactSyncRequests } from '~/utils/artifactCatalog';
 import { useGetStartupConfig } from '~/data-provider';
@@ -24,11 +27,23 @@ function getRequestSignature(request: TSyncArtifactAppRequest): string {
   return JSON.stringify(request);
 }
 
-/** Detects artifacts created by completed generations and persists work for the global worker. */
+interface SourceLookupError {
+  response?: { status?: number };
+}
+
+/**
+ * Observes the baseline once, at the moment this content is captured, and persists it alongside
+ * the request. Worker.tsx sends that pairing unchanged on every attempt, including retries — a
+ * baseline re-derived later would describe the server's state at send time, not the state this
+ * (possibly older, still-queued) content was actually written against, which would let stale
+ * content pass the server's conflict check under a basis it never had.
+ */
 export default function ArtifactCatalogRegistrar() {
   const artifacts = useRecoilValue(store.artifactsState);
-  const { conversationId, isSubmitting, latestMessageId } = useArtifactsContext();
+  const { conversationId, isSubmitting, latestMessageId, latestMessageError } =
+    useArtifactsContext();
   const { user } = useAuthContext();
+  const queryClient = useQueryClient();
   const { data: startupConfig } = useGetStartupConfig();
   const syncSettleDelayMs =
     startupConfig?.artifactApps?.clientSyncSettleDelayMs ??
@@ -92,7 +107,7 @@ export default function ArtifactCatalogRegistrar() {
       activeGenerationConversationRef.current === validConversation
     ) {
       const completedMessageId = latestMessageId ?? activeGenerationMessageRef.current;
-      if (completedMessageId) {
+      if (completedMessageId && !latestMessageError) {
         completedGenerationMessagesRef.current.add(completedMessageId);
       }
       activeGenerationConversationRef.current = null;
@@ -118,7 +133,37 @@ export default function ArtifactCatalogRegistrar() {
         !request.artifact.preview && request.artifact.type !== 'code'
           ? syncSettleDelayMs + previewCaptureTimeoutMs
           : syncSettleDelayMs;
-      void enqueueArtifactSync(user.id, request, signature, delayMs).catch((error) => {
+      void (async () => {
+        // A 404 confirms no app exists yet for this source — a real, observed absence, distinct
+        // from a lookup that simply failed. Only the latter falls back to an unresolved baseline.
+        let basedOnVersionNumber: number | undefined;
+        try {
+          const resolved = await queryClient.fetchQuery<TArtifactAppWithVersion>(
+            [
+              QueryKeys.artifactApp,
+              'source',
+              request.source.conversationId,
+              request.source.sourceKey,
+            ],
+            () =>
+              dataService.getArtifactAppBySource(
+                request.source.conversationId,
+                request.source.sourceKey,
+              ),
+            { retry: false },
+          );
+          basedOnVersionNumber = resolved.app.latestVersionNumber;
+        } catch (error) {
+          if ((error as SourceLookupError)?.response?.status === 404) {
+            basedOnVersionNumber = 0;
+          } else {
+            logger.error('artifacts', 'Failed to resolve artifact baseline before sync', error);
+          }
+        }
+        const requestToPersist =
+          basedOnVersionNumber != null ? { ...request, basedOnVersionNumber } : request;
+        await enqueueArtifactSync(user.id, requestToPersist, signature, delayMs);
+      })().catch((error) => {
         if (observedSignaturesRef.current.get(syncKey) === signature) {
           observedSignaturesRef.current.delete(syncKey);
         }
@@ -130,8 +175,10 @@ export default function ArtifactCatalogRegistrar() {
     canCreate,
     conversationId,
     isSubmitting,
+    latestMessageError,
     latestMessageId,
     previewCaptureTimeoutMs,
+    queryClient,
     syncSettleDelayMs,
     user?.id,
   ]);

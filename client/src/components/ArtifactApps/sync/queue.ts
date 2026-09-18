@@ -21,10 +21,27 @@ const listeners = new Set<QueueListener>();
 let hydrationPromise: Promise<void> | null = null;
 let persistencePromise: Promise<void> = Promise.resolve();
 
-/** Order operations before opening IndexedDB; connection timing must not reorder snapshots. */
+/**
+ * Sub-millisecond `updatedAt` so two writes issued back-to-back (e.g. a rapid edit followed by
+ * another) never tie under Date.now()'s 1ms resolution, which would make the "keep the newer
+ * write" merge in hydration and broadcast handling silently favor whichever arrived first.
+ */
+function now(): number {
+  return typeof performance !== 'undefined'
+    ? performance.timeOrigin + performance.now()
+    : Date.now();
+}
+
+/**
+ * Order operations before opening IndexedDB; connection timing must not reorder snapshots.
+ * The internal chain always recovers so one failed write doesn't wedge every later write behind
+ * a permanently-rejected promise, but the caller gets the operation's own outcome, unmasked, so a
+ * real IndexedDB failure surfaces instead of being reported as successful persistence.
+ */
 function persistQueueChange(operation: () => Promise<void>): Promise<void> {
-  persistencePromise = persistencePromise.then(operation).catch(() => undefined);
-  return persistencePromise;
+  const attempt = persistencePromise.then(operation);
+  persistencePromise = attempt.catch(() => undefined);
+  return attempt;
 }
 
 function notifyListeners(): void {
@@ -35,6 +52,39 @@ function notifyListeners(): void {
 
 function hasIndexedDb(): boolean {
   return typeof window !== 'undefined' && typeof window.indexedDB !== 'undefined';
+}
+
+function hasBroadcastChannel(): boolean {
+  return typeof window !== 'undefined' && typeof window.BroadcastChannel !== 'undefined';
+}
+
+type QueueBroadcastMessage =
+  | { type: 'upsert'; entry: ArtifactSyncQueueEntry }
+  | { type: 'delete'; id: string; signature: string };
+
+/** Propagates writes/deletes to other tabs so a stale in-memory snapshot never outsurvives its source. */
+const syncChannel: BroadcastChannel | null = hasBroadcastChannel()
+  ? new window.BroadcastChannel('librechat-artifact-sync')
+  : null;
+
+function broadcast(message: QueueBroadcastMessage): void {
+  syncChannel?.postMessage(message);
+}
+
+if (syncChannel) {
+  syncChannel.onmessage = (event: MessageEvent<QueueBroadcastMessage>) => {
+    const message = event.data;
+    if (message.type === 'upsert') {
+      const current = memoryQueue.get(message.entry.id);
+      if (!current || current.updatedAt < message.entry.updatedAt) {
+        memoryQueue.set(message.entry.id, message.entry);
+        notifyListeners();
+      }
+    } else if (memoryQueue.get(message.id)?.signature === message.signature) {
+      memoryQueue.delete(message.id);
+      notifyListeners();
+    }
+  };
 }
 
 function openDatabase(): Promise<IDBDatabase | null> {
@@ -168,17 +218,27 @@ export async function enqueueArtifactSync(
     signature,
     failures: current?.signature === signature ? current.failures : 0,
     nextAttemptAt: Date.now() + delayMs,
-    updatedAt: Date.now(),
+    updatedAt: now(),
   };
   memoryQueue.set(id, entry);
   const persisted = persistQueueChange(() => writeStoredEntry(entry));
   notifyListeners();
+  broadcast({ type: 'upsert', entry });
   await persisted;
 }
 
 export async function listArtifactSyncQueue(ownerId: string): Promise<ArtifactSyncQueueEntry[]> {
   await hydrateQueue();
   return Array.from(memoryQueue.values()).filter((entry) => entry.ownerId === ownerId);
+}
+
+/**
+ * Re-reads the in-memory snapshot for one entry. Other tabs keep this current via
+ * {@link broadcast}, so a caller can check it immediately before sending or activating a
+ * queued request to reject one superseded since it was read off {@link listArtifactSyncQueue}.
+ */
+export function getCurrentArtifactSyncEntry(id: string): ArtifactSyncQueueEntry | undefined {
+  return memoryQueue.get(id);
 }
 
 export async function completeArtifactSync(id: string, signature: string): Promise<void> {
@@ -189,6 +249,36 @@ export async function completeArtifactSync(id: string, signature: string): Promi
   memoryQueue.delete(id);
   const persisted = persistQueueChange(() => deleteStoredEntry(id, signature));
   notifyListeners();
+  broadcast({ type: 'delete', id, signature });
+  await persisted;
+}
+
+/**
+ * Locks in a baseline that failed to resolve when this entry was enqueued, once the worker
+ * manages to resolve it before a later send attempt. Applies only while the entry still has no
+ * baseline and is still the exact request it was resolved for (same signature) — an
+ * already-resolved baseline, or one superseded by a newer edit since the resolve started, is
+ * left alone.
+ */
+export async function recordArtifactSyncBaseline(
+  id: string,
+  signature: string,
+  basedOnVersionNumber: number,
+): Promise<void> {
+  await hydrateQueue();
+  const current = memoryQueue.get(id);
+  if (!current || current.signature !== signature || current.request.basedOnVersionNumber != null) {
+    return;
+  }
+  const updated: ArtifactSyncQueueEntry = {
+    ...current,
+    request: { ...current.request, basedOnVersionNumber },
+    updatedAt: now(),
+  };
+  memoryQueue.set(id, updated);
+  const persisted = persistQueueChange(() => writeStoredEntry(updated, true));
+  notifyListeners();
+  broadcast({ type: 'upsert', entry: updated });
   await persisted;
 }
 
@@ -206,17 +296,23 @@ export async function rescheduleArtifactSync(
     ...current,
     failures: current.failures + 1,
     nextAttemptAt: Date.now() + delayMs,
-    updatedAt: Date.now(),
+    updatedAt: now(),
   };
   memoryQueue.set(id, updated);
   const persisted = persistQueueChange(() => writeStoredEntry(updated, true));
   notifyListeners();
+  broadcast({ type: 'upsert', entry: updated });
   await persisted;
 }
 
 export function subscribeToArtifactSyncQueue(listener: QueueListener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
+}
+
+/** Test-only: releases this module instance's broadcast channel handle. */
+export function closeArtifactSyncChannelForTests(): void {
+  syncChannel?.close();
 }
 
 /** Test-only reset; production callers must retain queued registrations. */
