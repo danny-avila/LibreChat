@@ -1,4 +1,5 @@
 import { Readable } from 'stream';
+import { finished } from 'stream/promises';
 import type { TFile } from 'librechat-data-provider';
 import type { CloudFrontFullConfig } from '~/cdn/cloudfront';
 import type { ServerRequest } from '~/types';
@@ -617,6 +618,132 @@ describe('CloudFront CRUD', () => {
   });
 
   describe('getCloudFrontFileStream', () => {
+    const remoteKey = 'i/r/eu-west-1/images/u/f.webp';
+    const responseFor = (body: Readable) =>
+      new Response(Readable.toWeb(body) as unknown as BodyInit);
+
+    beforeEach(() => {
+      mockExtractKeyFromS3Url.mockReturnValue(remoteKey);
+      mockParseS3Key.mockReturnValue({ storageRegion: 'eu-west-1' });
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('forwards a body error to the returned stream', async () => {
+      const body = new Readable({ read() {} });
+      jest.spyOn(global, 'fetch').mockResolvedValue(responseFor(body));
+      const { getCloudFrontFileStream } = await import('~/storage/cloudfront/crud');
+      const stream = await getCloudFrontFileStream({} as ServerRequest, remoteKey);
+      const result = finished(stream);
+      body.destroy(new Error('terminated'));
+      await expect(result).rejects.toThrow('terminated');
+    });
+
+    it('forwards caller cancellation after headers and cancels the body', async () => {
+      const body = new Readable({ read() {} });
+      const controller = new AbortController();
+      jest.spyOn(global, 'fetch').mockResolvedValue(responseFor(body));
+      const { getCloudFrontFileStream } = await import('~/storage/cloudfront/crud');
+      const stream = await getCloudFrontFileStream({} as ServerRequest, remoteKey, {
+        signal: controller.signal,
+      });
+      const result = finished(stream);
+      controller.abort();
+      await expect(result).rejects.toMatchObject({ name: 'AbortError' });
+      expect(body.destroyed).toBe(true);
+    });
+
+    it('cancels the body when the returned stream is destroyed', async () => {
+      const body = new Readable({ read() {} });
+      jest.spyOn(global, 'fetch').mockResolvedValue(responseFor(body));
+      const { getCloudFrontFileStream } = await import('~/storage/cloudfront/crud');
+      const stream = await getCloudFrontFileStream({} as ServerRequest, remoteKey);
+      const result = finished(stream);
+      stream.destroy();
+      await expect(result).rejects.toThrow('Premature close');
+      expect(body.destroyed).toBe(true);
+    });
+
+    it('cancels the body when the streamed byte limit is exceeded', async () => {
+      const limits = await import('~/storage/url');
+      jest.spyOn(limits, 'getRemoteFileFetchMaxBytes').mockReturnValue(3);
+      const body = new Readable({ read() {} });
+      jest.spyOn(global, 'fetch').mockResolvedValue(responseFor(body));
+      const { getCloudFrontFileStream } = await import('~/storage/cloudfront/crud');
+      const stream = await getCloudFrontFileStream({} as ServerRequest, remoteKey);
+      const result = finished(stream);
+      stream.resume();
+      body.push('large');
+      await expect(result).rejects.toThrow('Remote file response too large');
+      expect(body.destroyed).toBe(true);
+    });
+
+    it('preserves caller cancellation before headers and clears the timeout', async () => {
+      jest.useFakeTimers();
+      jest.spyOn(global, 'fetch').mockImplementation(
+        (_url, init) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
+              once: true,
+            });
+          }),
+      );
+      const { getCloudFrontFileStream } = await import('~/storage/cloudfront/crud');
+      const controller = new AbortController();
+      const result = getCloudFrontFileStream({} as ServerRequest, remoteKey, {
+        signal: controller.signal,
+      });
+      controller.abort();
+      await expect(result).rejects.toMatchObject({ name: 'AbortError' });
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    it.each([false, true])(
+      'times out response headers with caller signal=%s',
+      async (withSignal) => {
+        jest.useFakeTimers();
+        jest.spyOn(global, 'fetch').mockImplementation(
+          (_url, init) =>
+            new Promise((_resolve, reject) => {
+              init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
+                once: true,
+              });
+            }),
+        );
+        const { getCloudFrontFileStream } = await import('~/storage/cloudfront/crud');
+        const { getRemoteFileFetchTimeoutMs } = await import('~/storage/url');
+        const controller = new AbortController();
+        const result = getCloudFrontFileStream(
+          {} as ServerRequest,
+          remoteKey,
+          withSignal ? { signal: controller.signal } : undefined,
+        );
+        await Promise.all([
+          expect(result).rejects.toMatchObject({ name: 'AbortError' }),
+          jest.advanceTimersByTimeAsync(getRemoteFileFetchTimeoutMs()),
+        ]);
+        expect(controller.signal.aborted).toBe(false);
+        expect(jest.getTimerCount()).toBe(0);
+      },
+    );
+
+    it('clears the header timeout while the body is still streaming', async () => {
+      jest.useFakeTimers();
+      const body = new Readable({ read() {} });
+      jest.spyOn(global, 'fetch').mockResolvedValue(responseFor(body));
+      const { getCloudFrontFileStream } = await import('~/storage/cloudfront/crud');
+      const stream = await getCloudFrontFileStream({} as ServerRequest, remoteKey);
+      expect(jest.getTimerCount()).toBe(0);
+      jest.useRealTimers();
+      const result = finished(stream);
+      stream.resume();
+      body.push('remote');
+      body.push(null);
+      await result;
+    });
+
     it('reads a local-region key directly from S3', async () => {
       const readable = new Readable();
       mockGetS3FileStream.mockResolvedValue(readable);

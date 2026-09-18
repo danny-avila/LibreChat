@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { Readable } from 'stream';
+import { Readable, pipeline } from 'stream';
 import { logger } from '@librechat/data-schemas';
 import { getSignedUrl } from '@aws-sdk/cloudfront-signer';
 import { CloudFrontClient, CreateInvalidationCommand } from '@aws-sdk/client-cloudfront';
@@ -293,17 +293,16 @@ export async function getCloudFrontFileStream(
   const unsignedUrl = buildCloudFrontUrl(key);
   const config = getCloudFrontConfig();
   const url = config?.privateKey && config.keyPairId ? signUrl(unsignedUrl) : unsignedUrl;
-  const controller = options?.signal ? null : new AbortController();
-  const timeout = controller
-    ? setTimeout(() => controller.abort(), getRemoteFileFetchTimeoutMs())
-    : null;
+  const controller = new AbortController();
+  const signal = options?.signal
+    ? AbortSignal.any([options.signal, controller.signal])
+    : controller.signal;
+  const timeout = setTimeout(() => controller.abort(), getRemoteFileFetchTimeoutMs());
   let response: Response;
   try {
-    response = await fetch(url, { signal: options?.signal ?? controller?.signal });
+    response = await fetch(url, { signal });
   } finally {
-    if (timeout) {
-      clearTimeout(timeout);
-    }
+    clearTimeout(timeout);
   }
 
   if (!response.ok) {
@@ -324,9 +323,17 @@ export async function getCloudFrontFileStream(
     await response.body.cancel().catch(() => undefined);
     throw error;
   }
-  return Readable.fromWeb(response.body as unknown as Parameters<typeof Readable.fromWeb>[0]).pipe(
-    createRemoteFileByteLimitTransform(maxBytes),
+  const stream = createRemoteFileByteLimitTransform(maxBytes);
+  pipeline(
+    Readable.fromWeb(response.body as unknown as Parameters<typeof Readable.fromWeb>[0], {
+      signal,
+    }),
+    stream,
+    () => {
+      /** Pipeline forwards failures to the returned stream and closes both ends. */
+    },
   );
+  return stream;
 }
 
 /** Get a signed CloudFront URL for an authorized file download. */
