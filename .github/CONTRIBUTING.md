@@ -4,7 +4,7 @@ Thank you to all the contributors who have helped make this project possible! We
 
 ## Contributing Guidelines
 
-If the feature you would like to contribute has not already received prior approval from the project maintainers (i.e., the feature is currently on the [roadmap](https://github.com/users/danny-avila/projects/2)), please submit a request in the [Feature Requests & Suggestions category](https://github.com/danny-avila/LibreChat/discussions/new?category=feature-requests-suggestions) of the discussions board before beginning work on it. The requests should include specific implementation details, including areas of the application that will be affected by the change (including designs if applicable), and any other relevant information that might be required for a speedy review. However, proposals are not required for small changes, bug fixes, or documentation improvements. Small changes and bug fixes should be tied to an [issue](https://github.com/danny-avila/LibreChat/issues) and included in the corresponding pull request for tracking purposes.
+If the feature you would like to contribute has not already received prior approval from the project maintainers (i.e., the feature is currently on the [roadmap](https://github.com/users/danny-avila/projects/2)), please submit a request in the [Feature Requests & Suggestions category](https://github.com/LibreChat-AI/LibreChat/discussions/new?category=feature-requests-suggestions) of the discussions board before beginning work on it. The requests should include specific implementation details, including areas of the application that will be affected by the change (including designs if applicable), and any other relevant information that might be required for a speedy review. However, proposals are not required for small changes, bug fixes, or documentation improvements. Small changes and bug fixes should be tied to an [issue](https://github.com/LibreChat-AI/LibreChat/issues) and included in the corresponding pull request for tracking purposes.
 
 Please note that a pull request involving a feature that has not been reviewed and approved by the project maintainers may be rejected. We appreciate your understanding and cooperation.
 
@@ -45,7 +45,7 @@ Project maintainers have the right and responsibility to remove, edit, or reject
 
 1. Before starting work, sync `dev` from this repository. You are working in a fork, so `origin` is
    your fork — add the canonical remote once and sync from it:
-    - `git remote add upstream https://github.com/danny-avila/LibreChat.git`
+    - `git remote add upstream https://github.com/LibreChat-AI/LibreChat.git`
     - `git fetch upstream dev && git checkout -B dev upstream/dev`
     - `npm run update` is the self-host deployment updater — it checks out `main` and rebuilds your
       containers. Do not use it to refresh a development branch.

@@ -726,7 +726,7 @@ describe('Tool Handlers', () => {
     });
 
     it('resolves an MCP tool whose raw name itself contains the delimiter substring', async () => {
-      // Regression test for https://github.com/danny-avila/LibreChat/issues/14440:
+      // Regression test for https://github.com/LibreChat-AI/LibreChat/issues/14440:
       // gateways that prefix aggregated tool names by server (e.g. LiteLLM's
       // MCP proxy) can produce a raw tool name that already contains "_mcp_"
       // (e.g. GitLab's own "get_mcp_server_version" tool becomes
