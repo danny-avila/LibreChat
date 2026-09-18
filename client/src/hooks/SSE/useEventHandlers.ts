@@ -1286,7 +1286,15 @@ export default function useEventHandlers({
           submission,
           error,
         });
-        setMessages([...submission.messages, submission.userMessage, errorResponse]);
+        /** A compaction has no user row: its `userMessage` slot names the leaf
+         *  the turn hangs off, which `messages` already holds. Writing it here
+         *  would duplicate that id as an empty, self-parented user message —
+         *  a phantom root the thread then folds into. */
+        setMessages(
+          submission.compact === true
+            ? [...submission.messages, errorResponse]
+            : [...submission.messages, submission.userMessage, errorResponse],
+        );
         recoverConversation(conversationId || errorResponse.conversationId || v4(), submission);
         setIsSubmitting(false);
       }
