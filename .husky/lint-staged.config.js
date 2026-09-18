@@ -25,11 +25,11 @@ module.exports = {
     'node scripts/static-checks.mts --only eslint',
   ],
   '*.json': ['prettier --write'],
-  // A commit that only lowers a recorded count, or only narrows a rule, touches
-  // no source file at all, so the group above never runs and the first thing to
-  // notice the capacity it freed would be CI. This is the same check the lane
-  // runs — it reaches for the whole record on either of these paths — which is
-  // what keeps the commit and the lane agreeing.
-  '{eslint-suppressions.json,eslint.config.mjs,package.json,package-lock.json,packages/*/eslint-suppressions.json,packages/client/package.json,packages/client/tsdown.config.mjs}':
+  // A commit that only lowers a recorded count, only narrows a rule, or only
+  // changes the gate that reads them touches no source file at all, so the group
+  // above never runs and the first thing to notice the capacity it freed would be
+  // CI. This is the same check the lane runs — it reaches for the whole record on
+  // any of these paths — which is what keeps the commit and the lane agreeing.
+  '{eslint-suppressions.json,eslint.config.mjs,package.json,package-lock.json,packages/*/eslint-suppressions.json,packages/client/package.json,packages/client/tsdown.config.mjs,scripts/static-checks.mts}':
     [() => 'node scripts/static-checks.mts --only suppressions'],
 };

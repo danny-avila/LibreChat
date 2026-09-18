@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { designMessages, lintFile, lintStdin, messagesFor } from './lint.helpers';
+import { designMessages, inOneProject, lintFile, lintStdin, messagesFor } from './lint.helpers';
 
 /**
  * `CLAUDE.md` asks callers to compose the library's primitives and keep colour on
@@ -29,6 +29,7 @@ const UNFORMATTED_INLINE_DISPLAY = [
 
 test.describe('design-system rules', () => {
   test('a colour override on a primitive names the variant to use instead @scenario:a-color-override-on-button-names-the-variant-to-use', () => {
+    inOneProject();
     test.setTimeout(60_000);
 
     const messages = designMessages(lintStdin('client/src/__probe__.tsx', BUTTON_OVERRIDE));
@@ -57,6 +58,7 @@ test.describe('design-system rules', () => {
   });
 
   test('a jsx client file is checked by the design rules @scenario:a-jsx-client-file-is-checked-by-the-design-rules', () => {
+    inOneProject();
     test.setTimeout(60_000);
 
     /** The rules reached only `.ts`/`.tsx`, so the client's `.jsx` entry points —
