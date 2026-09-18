@@ -66,19 +66,19 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
                 /** Headless UI panel, so it bypasses the shared dialog primitives
                  *  and needs the contrast edge declared here. `shadow-2xl` is a
                  *  black shadow with nothing to separate against on a black canvas. */
-                'flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl bg-surface-dialog shadow-2xl high-contrast:border high-contrast:border-solid high-contrast:border-border-medium high-contrast:shadow-none',
+                'bg-surface-dialog high-contrast:border high-contrast:border-solid high-contrast:border-border-medium high-contrast:shadow-none flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl shadow-2xl',
                 'md:h-[85vh] md:w-[900px]',
               )}
             >
               <DialogTitle
                 as="div"
-                className="flex items-center justify-between border-b border-border-light p-5"
+                className="border-border-light flex items-center justify-between border-b p-5"
               >
                 {inDetail ? (
                   <button
                     type="button"
                     onClick={() => setMobileDetail(false)}
-                    className="-ml-1 flex items-center gap-1 rounded-lg p-1 text-text-primary transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-border-xheavy"
+                    className="text-text-primary hover:bg-surface-hover focus:ring-border-xheavy -ml-1 flex items-center gap-1 rounded-lg p-1 transition-colors focus:ring-2 focus:outline-hidden"
                     aria-label={localize('com_ui_back')}
                   >
                     <ChevronLeft className="h-5 w-5" aria-hidden="true" />
@@ -87,7 +87,7 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
                     </span>
                   </button>
                 ) : (
-                  <h2 className="text-lg font-medium text-text-primary">
+                  <h2 className="text-text-primary text-lg font-medium">
                     {localize('com_nav_settings')}
                   </h2>
                 )}
@@ -96,7 +96,7 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
                   size="icon"
                   onClick={() => onOpenChange(false)}
                   aria-label={localize('com_ui_close_settings')}
-                  className="h-auto w-auto rounded-lg p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-border-xheavy"
+                  className="text-text-secondary hover:bg-surface-hover hover:text-text-primary focus:ring-border-xheavy h-auto w-auto rounded-lg p-1 transition-colors focus:ring-2 focus:outline-hidden"
                 >
                   <X className="h-5 w-5" aria-hidden="true" />
                 </Button>
@@ -125,7 +125,7 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
                       <Tabs.Content
                         value={effectiveTab}
                         tabIndex={-1}
-                        className="focus:outline-none"
+                        className="focus:outline-hidden"
                       >
                         <Content activeTab={effectiveTab} query={query} ctx={ctx} />
                       </Tabs.Content>

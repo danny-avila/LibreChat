@@ -49,8 +49,8 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
         <div
           className={cn(
             'group relative flex h-32 gap-5 overflow-hidden rounded-xl',
-            'cursor-pointer select-none px-6 py-4',
-            'bg-surface-tertiary transition-colors duration-150 hover:bg-surface-hover',
+            'cursor-pointer px-6 py-4 select-none',
+            'bg-surface-tertiary hover:bg-surface-hover transition-colors duration-150',
             'md:h-36 lg:h-40',
             '[&_*]:cursor-pointer',
             className,
@@ -71,13 +71,13 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
         >
           {/* Category badge - top right */}
           {categoryLabel && (
-            <span className="absolute right-4 top-3 rounded-md bg-surface-hover px-2 py-0.5 text-xs text-text-secondary">
+            <span className="bg-surface-hover text-text-secondary absolute top-3 right-4 rounded-md px-2 py-0.5 text-xs">
               {categoryLabel}
             </span>
           )}
 
           {/* Avatar */}
-          <div className="flex-shrink-0 self-center">
+          <div className="shrink-0 self-center">
             <div className="overflow-hidden rounded-full shadow-[0_0_15px_rgba(0,0,0,0.3)] dark:shadow-[0_0_15px_rgba(0,0,0,0.5)]">
               {renderAgentAvatar(agent, { size: 'sm', showBorder: false })}
             </div>
@@ -86,7 +86,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
           {/* Content */}
           <div className="flex min-w-0 flex-1 flex-col justify-center overflow-hidden">
             {/* Agent name */}
-            <Label className="line-clamp-2 text-base font-semibold text-text-primary md:text-lg">
+            <Label className="text-text-primary line-clamp-2 text-base font-semibold md:text-lg">
               {agent.name}
             </Label>
 
@@ -95,7 +95,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
               <Description
                 as="p"
                 id={`agent-${agent.id}-description`}
-                className="mt-0.5 line-clamp-2 text-sm leading-snug text-text-secondary md:line-clamp-5"
+                className="text-text-secondary mt-0.5 line-clamp-2 text-sm leading-snug md:line-clamp-5"
                 aria-label={localize('com_agents_description_card', {
                   description,
                 })}
@@ -106,7 +106,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent, onSelect, className = '' }
 
             <AgentContact
               agent={agent}
-              className="mt-1 text-xs text-text-secondary [&_a]:font-normal [&_a]:text-text-secondary"
+              className="text-text-secondary [&_a]:text-text-secondary mt-1 text-xs [&_a]:font-normal"
             />
           </div>
         </div>

@@ -1,10 +1,10 @@
 import React from 'react';
-import FileList from './FileList';
+import { ListFilter } from 'lucide-react';
 import { Button, Input } from '@librechat/client';
 import { TFile } from 'librechat-data-provider/dist/types';
 import UploadFileButton from './UploadFileButton';
-import { ListFilter } from 'lucide-react';
 import { useLocalize } from '~/hooks';
+import FileList from './FileList';
 
 const fakeFiles = [
   {
@@ -148,7 +148,7 @@ export default function FileSidePanel() {
   };
 
   return (
-    <div className="w-30">
+    <div>
       <h2 className="m-3 text-lg">
         <strong>{localize('com_ui_files')}</strong>
       </h2>
@@ -163,7 +163,7 @@ export default function FileSidePanel() {
             onChange={() => {
               console.log('changed');
             }}
-            className="max-w-sm border-border-light placeholder:text-text-secondary"
+            className="border-border-light placeholder:text-text-secondary max-w-sm"
           />
         </div>
         <div className="w-1/3">

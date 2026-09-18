@@ -12,7 +12,7 @@ type ChipVariantProps = {
 };
 
 const chipVariants: (props?: ChipVariantProps & ClassProp) => string = cva(
-  'inline-flex max-w-full items-center gap-1 border text-xs font-medium transition-colors duration-theme-fast',
+  'inline-flex max-w-full items-center gap-1 border border-border-light text-xs font-medium transition-colors duration-theme-fast',
   {
     variants: {
       tone: {
@@ -76,7 +76,7 @@ const Chip: React.ForwardRefExoticComponent<ChipProps & React.RefAttributes<HTML
             label={removeLabel}
             size="xs"
             shape={shape === 'theme' ? 'theme' : 'round'}
-            className="-mr-1 text-current hover:bg-surface-hover/50"
+            className="hover:bg-surface-hover/50 -mr-1 text-current"
             onClick={(event) => {
               event.stopPropagation();
               onRemove(event);

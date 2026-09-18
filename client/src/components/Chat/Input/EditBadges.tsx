@@ -34,9 +34,9 @@ const EditBadgesComponent = ({
   }
 
   return (
-    <div className="m-1.5 flex flex-col overflow-hidden rounded-b-lg rounded-t-2xl bg-surface-secondary-alt">
-      <div className="flex items-center gap-4 py-2 pl-3 pr-1.5 text-sm">
-        <span className="mt-0 flex size-6 flex-shrink-0 items-center justify-center">
+    <div className="bg-surface-secondary-alt m-1.5 flex flex-col overflow-hidden rounded-t-2xl rounded-b-lg">
+      <div className="flex items-center gap-4 py-2 pr-1.5 pl-3 text-sm">
+        <span className="mt-0 flex size-6 shrink-0 items-center justify-center">
           <div className="icon-md">
             <Edit3 className="icon-md" aria-hidden="true" />
           </div>
@@ -59,7 +59,7 @@ const EditBadgesComponent = ({
             variant="submit"
             aria-label="Save changes"
             onClick={handleSaveBadges}
-            className="h-8 rounded-b-lg rounded-tr-xl"
+            className="h-8 rounded-tr-xl rounded-b-lg"
           >
             <Check className="icon-md" aria-hidden="true" />
           </Button>

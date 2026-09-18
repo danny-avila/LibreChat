@@ -86,8 +86,8 @@ function WakeupTaskCard({
   }, [openPanel, selection]);
 
   return (
-    <div className="my-1.5 rounded-lg border border-border-light bg-surface-secondary/40 p-3">
-      <div className="flex min-h-6 items-center gap-1.5 text-xs text-text-secondary">
+    <div className="border-border-light bg-surface-secondary/40 my-1.5 rounded-lg border p-3">
+      <div className="text-text-secondary flex min-h-6 items-center gap-1.5 text-xs">
         <StatusIcon
           size={13}
           aria-hidden
@@ -113,7 +113,7 @@ function WakeupTaskCard({
         )}
       </div>
       {hasResult && (
-        <div className="markdown prose prose-sm message-content light dark:prose-invert mt-2 max-h-96 w-full max-w-none overflow-y-auto break-words pr-1 text-text-primary">
+        <div className="markdown prose prose-sm message-content light dark:prose-invert text-text-primary mt-2 max-h-96 w-full max-w-none overflow-y-auto pr-1 break-words">
           <MarkdownLite content={task.result} codeExecution={false} />
         </div>
       )}
@@ -187,18 +187,18 @@ const Wakeup = memo(function Wakeup({
   );
 
   return (
-    <div className="mb-2 mt-1 w-full">
+    <div className="mt-1 mb-2 w-full">
       <Button
         variant="ghost"
         type="button"
-        className="inline-flex h-auto w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-text-secondary hover:bg-transparent hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy focus-visible:ring-offset-0"
+        className="text-text-secondary hover:text-text-secondary focus-visible:ring-border-heavy inline-flex h-auto w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 hover:bg-transparent focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:outline-hidden"
         onClick={handleToggle}
         aria-expanded={isExpanded}
         aria-label={headerLabel}
       >
         {display.kind === 'subagent' ? (
           <div
-            className="flex h-5 w-5 shrink-0 items-center justify-center text-text-secondary"
+            className="text-text-secondary flex h-5 w-5 shrink-0 items-center justify-center"
             aria-hidden="true"
           >
             <Users size={14} />
@@ -217,13 +217,13 @@ const Wakeup = memo(function Wakeup({
           {headerLabel}
         </span>
         {nameSummary !== '' && (
-          <span className="min-w-0 max-w-[40%] truncate text-xs font-normal text-text-secondary">
+          <span className="text-text-secondary max-w-[40%] min-w-0 truncate text-xs font-normal">
             · {nameSummary}
           </span>
         )}
         <ChevronDown
           className={cn(
-            'size-4 shrink-0 text-text-secondary transition-transform duration-200 ease-out',
+            'text-text-secondary size-4 shrink-0 transition-transform duration-200 ease-out',
             isExpanded && 'rotate-180',
           )}
           aria-hidden="true"
@@ -238,7 +238,7 @@ const Wakeup = memo(function Wakeup({
         {shouldRenderBody && (
           <div className="overflow-hidden" ref={expandRef}>
             <div className="py-0.5 pl-4">
-              <div className="mt-1 text-xs text-text-secondary">
+              <div className="text-text-secondary mt-1 text-xs">
                 {localize('com_ui_wakeup_explainer')}
               </div>
               {display.tasks.map((task) => (

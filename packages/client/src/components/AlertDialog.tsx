@@ -26,7 +26,7 @@ const AlertDialogOverlay = React.forwardRef<
 >(({ className = '', ...props }, ref) => (
   <AlertDialogPrimitive.Overlay
     className={cn(
-      'fixed inset-0 z-50 bg-surface-overlay/90 transition-opacity animate-in fade-in',
+      'bg-surface-overlay/90 animate-in fade-in fixed inset-0 z-50 transition-opacity',
       className,
     )}
     {...props}
@@ -49,7 +49,7 @@ const AlertDialogContent: React.ForwardRefExoticComponent<
       className={cn(
         /** The dialog surface is otherwise borderless: in high contrast it sits on
          *  a canvas of its own colour, so it needs a drawn edge. */
-        'fixed z-50 grid w-full max-w-lg scale-100 gap-4 bg-surface-dialog p-6 opacity-100 animate-in fade-in-90 slide-in-from-bottom-10 high-contrast:border high-contrast:border-solid high-contrast:border-border-medium sm:rounded-lg sm:zoom-in-90 sm:slide-in-from-bottom-0 md:w-full',
+        'bg-surface-dialog animate-in fade-in-90 slide-in-from-bottom-10 high-contrast:border high-contrast:border-solid high-contrast:border-border-medium sm:zoom-in-90 sm:slide-in-from-bottom-0 fixed z-50 grid w-full max-w-lg scale-100 gap-4 p-6 opacity-100 sm:rounded-lg md:w-full',
         className,
       )}
       {...props}
@@ -89,7 +89,7 @@ const AlertDialogTitle: React.ForwardRefExoticComponent<
 >(({ className = '', ...props }, ref) => (
   <AlertDialogPrimitive.Title
     ref={ref}
-    className={cn('text-lg font-semibold text-text-primary', className)}
+    className={cn('text-text-primary text-lg font-semibold', className)}
     {...props}
   />
 ));
@@ -107,7 +107,7 @@ const AlertDialogDescription: React.ForwardRefExoticComponent<
 >(({ className = '', ...props }, ref) => (
   <AlertDialogPrimitive.Description
     ref={ref}
-    className={cn('text-sm text-text-secondary', className)}
+    className={cn('text-text-secondary text-sm', className)}
     {...props}
   />
 ));
@@ -126,7 +126,7 @@ const AlertDialogAction: React.ForwardRefExoticComponent<
   <AlertDialogPrimitive.Action
     ref={ref}
     className={cn(
-      'inline-flex h-10 items-center justify-center rounded-md bg-surface-inverted px-4 py-2 text-sm font-semibold text-text-inverted transition-colors hover:bg-surface-inverted-hover focus:outline-none focus:ring-2 focus:ring-text-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+      'bg-surface-inverted text-text-inverted hover:bg-surface-inverted-hover focus:ring-text-primary inline-flex h-10 items-center justify-center rounded-md px-4 py-2 text-sm font-semibold transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:cursor-not-allowed disabled:opacity-50',
       className,
     )}
     {...props}
@@ -147,7 +147,7 @@ const AlertDialogCancel: React.ForwardRefExoticComponent<
   <AlertDialogPrimitive.Cancel
     ref={ref}
     className={cn(
-      'mt-2 inline-flex h-10 items-center justify-center rounded-md border border-border-light bg-transparent px-4 py-2 text-sm font-semibold text-text-primary transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-text-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:mt-0',
+      'border-border-light text-text-primary hover:bg-surface-hover focus:ring-text-primary mt-2 inline-flex h-10 items-center justify-center rounded-md border bg-transparent px-4 py-2 text-sm font-semibold transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:cursor-not-allowed disabled:opacity-50 sm:mt-0',
       className,
     )}
     {...props}

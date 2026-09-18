@@ -10,7 +10,7 @@ const alertVariants: (
         variant?: 'info' | 'success' | 'warning' | 'error' | 'neutral' | null | undefined;
       } & ClassProp)
     | undefined,
-) => string = cva('relative flex gap-3 rounded-xl border px-4 py-3 text-sm', {
+) => string = cva('relative flex gap-3 rounded-xl border border-border-light px-4 py-3 text-sm', {
   variants: {
     variant: {
       info: 'border-status-info-border bg-status-info-subtle text-status-info',

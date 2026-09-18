@@ -169,12 +169,44 @@ The published preset supplies the semantic appearance utilities used by theme-aw
 variants, including `h-theme-control`, `rounded-theme-control`, `gap-theme-compact`, and
 `duration-theme-fast`. Keep the preset enabled even when defining additional project utilities.
 
+The package requires Tailwind v4 and declares `tailwindcss: ^4.3.3` as a peer dependency: the
+published components emit v4-only utilities such as `outline-hidden`, `shadow-xs` and
+`origin-(--radix-…)`, which Tailwind 3 silently generates nothing for.
+
+Tailwind 4 is also a different build integration. `tailwindcss` no longer exports a PostCSS
+plugin, so a host on the classic PostCSS setup installs `@tailwindcss/postcss` and names that
+instead — the SPA's `postcss.config.cjs` is the shape:
+
+```js
+module.exports = { plugins: { '@tailwindcss/postcss': {} } };
+```
+
+A Vite host can use `@tailwindcss/vite` in place of both. Without one of the two, the directives
+below are never compiled and the import fails with Tailwind's direct-plugin error.
+
+Tailwind 4 does not look for a JavaScript config on its own, so writing the file above is not
+enough: the stylesheet has to load it, next to the import that pulls Tailwind in. Without the
+directive the preset, the package content glob, the semantic colors and the `high-contrast:`
+variant are all absent, and the published components render with most of their classes
+ungenerated. The SPA does exactly this at the top of `client/src/style.css`:
+
+```css
+@import 'tailwindcss';
+@config '../tailwind.config.js';
+
+@import '@librechat/client/style.css';
+```
+
+The package stylesheet carries the component CSS and the one preflight rule the primitives
+depend on — Tailwind 3 gave every `button` a pointer cursor and Tailwind 4 does not — so import
+it once, after Tailwind.
+
 ### 5. Use Theme Colors in Components
 
 ```tsx
 function MyComponent() {
   return (
-    <div className="border border-border-light bg-surface-primary text-text-primary">
+    <div className="border-border-light bg-surface-primary text-text-primary border">
       <h1 className="text-text-secondary">Hello World</h1>
       <button className="bg-surface-submit text-text-on-status hover:bg-surface-submit-hover">
         Submit

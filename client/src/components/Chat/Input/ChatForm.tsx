@@ -671,7 +671,7 @@ const ChatForm = memo(function ChatForm({
               data-testid="composer-context-rail"
               className={cn(
                 'mx-4 -mb-3 flex min-w-0 flex-wrap items-center gap-1 rounded-t-2xl',
-                'border border-border-light bg-surface-secondary px-2 pb-4 pt-1',
+                'border-border-light bg-surface-secondary border px-2 pt-1 pb-4',
                 isRTL && 'flex-row-reverse',
               )}
             >
@@ -724,7 +724,7 @@ const ChatForm = memo(function ChatForm({
                    squared off at the bottom (`rounded-t-3xl`) and no disclaimer
                    follows it — so the action row is the last thing in it, with no
                    band of padding under the buttons. */
-                'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl sm:rounded-3xl',
+                'relative flex w-full grow flex-col overflow-hidden rounded-t-3xl sm:rounded-3xl',
                 composerSurfaceClasses(),
                 isTextAreaFocused ? composerSurfaceShadow.focused : composerSurfaceShadow.blurred,
                 /* Temporary-chat accent is a ChatForm-only override, not part of
@@ -827,7 +827,7 @@ const ChatForm = memo(function ChatForm({
                       )}
                     />
                   </div>
-                  <div className="flex flex-col items-start justify-start pr-2.5 pt-1.5">
+                  <div className="flex flex-col items-start justify-start pt-1.5 pr-2.5">
                     <CollapseChat
                       isCollapsed={isCollapsed}
                       isScrollable={isMoreThanThreeRows}
@@ -838,7 +838,7 @@ const ChatForm = memo(function ChatForm({
               )}
               <div
                 className={cn(
-                  '@container flex flex-wrap items-center gap-2 px-2 pb-2',
+                  'flex flex-wrap items-center gap-2 px-2 pb-2',
                   isRTL ? 'flex-row-reverse' : 'flex-row',
                 )}
               >
