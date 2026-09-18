@@ -160,6 +160,27 @@ export function captureConfiguredAdditionalInstructions(agent: {
  * resolved instruction block, this run's context, and the per-run dynamic tool
  * instructions.
  */
+/**
+ * Records text as part of the prompt cache identity without adding it to the
+ * request, for a contribution the model receives in another form.
+ *
+ * One caller: instructions carrying temporal variables, whose resolved text is
+ * moved into the dynamic tail so today's date cannot enter the cached prefix.
+ * The template behind it is still configuration, and editing it has to retire
+ * the identity.
+ */
+export function recordStableInstructionText(
+  agent: { configuredAdditionalInstructions?: string },
+  text?: string | null,
+): void {
+  if (text == null || text === '') {
+    return;
+  }
+  agent.configuredAdditionalInstructions = [agent.configuredAdditionalInstructions, text]
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .join('\n\n');
+}
+
 export function appendAgentInstructionTail(
   agent: {
     additional_instructions?: string | null;

@@ -12,6 +12,7 @@ import {
   applyContextToAgent,
   appendAgentInstructionTail,
   captureConfiguredAdditionalInstructions,
+  recordStableInstructionText,
 } from './context';
 
 // Test schema for DynamicStructuredTool
@@ -314,6 +315,19 @@ describe('Agent Context Utilities', () => {
         debug: jest.fn(),
         error: jest.fn(),
       } as unknown as Logger;
+    });
+
+    it('records instruction text for the identity without adding it to the request', () => {
+      const agent: { additional_instructions: string; configuredAdditionalInstructions?: string } =
+        {
+          additional_instructions: 'Today is September 18',
+        };
+
+      recordStableInstructionText(agent, 'Answer as of {{current_date}}');
+
+      /** The resolved text is already in the tail; only the template is recorded. */
+      expect(agent.additional_instructions).toBe('Today is September 18');
+      expect(agent.configuredAdditionalInstructions).toBe('Answer as of {{current_date}}');
     });
 
     it('records a configuration-derived addition to the tail by default', () => {

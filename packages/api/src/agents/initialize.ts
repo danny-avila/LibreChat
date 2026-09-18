@@ -96,6 +96,11 @@ import {
   isFileAuthoringToolDefinition,
 } from './tools';
 import {
+  appendAgentInstructionTail,
+  captureConfiguredAdditionalInstructions,
+  recordStableInstructionText,
+} from './context';
+import {
   normalizeServerName,
   requiresEphemeralUserConnection,
   splitMCPToolKey,
@@ -105,7 +110,6 @@ import {
   createStatefulCodeEnvironmentPolicyError,
   isFatalAgentInitializationError,
 } from './errors';
-import { appendAgentInstructionTail, captureConfiguredAdditionalInstructions } from './context';
 import { extractAgentContent, extractSkillContent } from '../protection/adapters/submissions';
 import { createConfiguredContentInspector, inspectContent } from '../protection/runtime';
 import { assertAgentAttachmentLimits, isModelBoundAttachmentFile } from './attachments';
@@ -2268,9 +2272,20 @@ export async function initializeAgent(
       timezone: runtime.requestBody.timezone,
     });
     if (hasTemporalSpecialVars(agent.instructions)) {
+      /**
+       * The template, before resolution. Moving the resolved text into the
+       * dynamic tail is what keeps today's date out of the cached prefix, but
+       * the instructions themselves are still configuration: recording the
+       * unresolved form means editing them retires the identity while the
+       * clock does not move it.
+       */
+      const instructionTemplate = agent.instructions;
       agent.instructions = undefined;
-      /** Resolved per run — today's date — so it is not part of the identity. */
       appendAdditionalInstructions(agent, resolvedInstructions, { stable: false });
+      recordStableInstructionText(
+        agent as Agent & { configuredAdditionalInstructions?: string },
+        instructionTemplate,
+      );
     } else {
       agent.instructions = resolvedInstructions;
     }
