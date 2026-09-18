@@ -2090,6 +2090,20 @@ describe('prompt caching', () => {
     expect(kwargs).not.toHaveProperty('prompt_cache_key');
   });
 
+  it('honors a wire-spelled retention drop', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6' },
+      promptCacheRetention: '24h',
+      dropParams: ['prompt_cache_retention'],
+    });
+
+    /** LangChain serializes the constructor field back to the excluded name. */
+    expect(result.llmConfig).not.toHaveProperty('promptCacheRetention');
+  });
+
   it('leaves retention alone when only the key is switched off', () => {
     const result = getOpenAILLMConfig({
       apiKey: 'test-api-key',
