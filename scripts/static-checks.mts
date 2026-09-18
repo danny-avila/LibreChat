@@ -1295,8 +1295,13 @@ async function introducedWithinAllowance(
   for (const file of subjects) {
     const relative = reportedPath(file.filePath);
     const source = before.get(relative) ?? '';
+    /** A file the change adds owes everything in it: the record may not grow to
+     *  cover a violation written in the same commit as its entry, or the rules
+     *  would police nothing but the tree they landed on. A file that existed at
+     *  the base — renamed or not — brings its allowance and may grow it. */
+    const inherited = source !== '';
     const had = new Map<string, number>();
-    if (source !== '') {
+    if (inherited) {
       for (const signature of signatures(await lintText(source, { filePath: file.filePath }))) {
         had.set(signature, (had.get(signature) ?? 0) + 1);
       }
@@ -1313,12 +1318,14 @@ async function introducedWithinAllowance(
       const rule = signature.slice(0, signature.indexOf(':'));
       const key = `${relative}\u0000${rule}`;
       const spent = allowed.get(key) ?? 0;
-      if (spent < (growth.get(key) ?? 0)) {
+      if (inherited && spent < (growth.get(key) ?? 0)) {
         allowed.set(key, spent + 1);
         continue;
       }
       problems.push(
-        `${relative}: ${signature} is new here and the record did not grow to cover it; fix it, or record what this change owes with \`npm run lint:design:suppress\` so the count says so`,
+        inherited
+          ? `${relative}: ${signature} is new here and the record did not grow to cover it; fix it, or record what this change owes with \`npm run lint:design:suppress\` so the count says so`
+          : `${relative}: ${signature} is in a file this change adds; the backlog records what the tree owed when the rules landed, not what a new file brings, so fix it`,
       );
     }
   }
