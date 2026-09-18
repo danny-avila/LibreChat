@@ -146,7 +146,7 @@
   },
   "client/src/components/Chat/AddMultiConvo.tsx": {
     "shadcn/no-restyle": {
-      "count": 10
+      "count": 9
     }
   },
   "client/src/components/Chat/ChatView.tsx": {
@@ -1135,17 +1135,6 @@
     },
     "shadcn/no-restyle": {
       "count": 40
-    }
-  },
-  "client/src/components/Files/FileList/FileListItem.tsx": {
-    "shadcn/no-arbitrary-values": {
-      "count": 1
-    },
-    "shadcn/no-raw-colors": {
-      "count": 4
-    },
-    "shadcn/no-restyle": {
-      "count": 5
     }
   },
   "client/src/components/Files/FileList/FileListItem2.tsx": {

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { computedStyles, normalizeColor, themeValue } from './style.helpers';
+import { computedStyles, normalizeColor, themeValue, useStoredTheme } from './style.helpers';
 import type { Page } from '@playwright/test';
 
 /**
@@ -98,5 +98,20 @@ test.describe('Tailwind v4 focus treatment', () => {
     expect(outline.outlineWidth).not.toBe('0px');
 
     await page.emulateMedia({ forcedColors: null });
+  });
+  test('a focused control shows only its focus ring @scenario:a-focused-control-shows-only-its-focus-ring', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await useStoredTheme(page, 'light');
+    await page.goto('/c/new', { timeout: 30000 });
+    await tabToAttachTrigger(page);
+
+    const focused = await computedStyles(page.locator(ATTACH_TRIGGER), [
+      'outlineStyle',
+      'boxShadow',
+    ]);
+    expect(focused.outlineStyle).toBe('none');
+    expect(focused.boxShadow).not.toBe('none');
   });
 });
