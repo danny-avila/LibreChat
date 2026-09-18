@@ -5,7 +5,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { getRemarkPlugins, getRehypePlugins, getMarkdownComponents } from '../markdownConfig';
-import { ArtifactProvider, CodeBlockProvider } from '~/Providers';
+import { MessageContext, ArtifactProvider, CodeBlockProvider } from '~/Providers';
+import { splitMarkdownIntoBlocks } from '../splitMarkdown';
 import Markdown from '../Markdown';
 
 /**
@@ -31,17 +32,32 @@ jest.mock('~/components/Messages/Content/Mermaid', () => ({
   MermaidErrorBoundary: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+const mockCodeBlockMounts = { count: 0 };
+
 /**
  * Stub CodeBlock so we can read the blockIndex each executable code block
  * receives, while still exercising the real `code` override's skip/single-line
- * decision (which decides whether a CodeBlock renders at all).
+ * decision (which decides whether a CodeBlock renders at all). It also counts
+ * mounts, which is how a remount of an already-rendered block shows up.
  */
 jest.mock('~/components/Messages/Content/CodeBlock', () => ({
   __esModule: true,
-  default: ({ lang, blockIndex }: { lang?: string; blockIndex?: number }) => (
-    <div data-testid="cb" data-block-index={String(blockIndex)} data-lang={String(lang)} />
-  ),
+  default: function MockCodeBlock({ lang, blockIndex }: { lang?: string; blockIndex?: number }) {
+    const { useEffect } = jest.requireActual<typeof import('react')>('react');
+    useEffect(() => {
+      mockCodeBlockMounts.count += 1;
+    }, []);
+    return <div data-testid="cb" data-block-index={String(blockIndex)} data-lang={String(lang)} />;
+  },
 }));
+
+/** The real splitter, observed: whether a render paid for the block-boundary parse. */
+jest.mock('../splitMarkdown', () => {
+  const actual = jest.requireActual<typeof import('../splitMarkdown')>('../splitMarkdown');
+  return { ...actual, splitMarkdownIntoBlocks: jest.fn(actual.splitMarkdownIntoBlocks) };
+});
+
+const splitSpy = jest.mocked(splitMarkdownIntoBlocks);
 
 /** The previous whole-message renderer: a single ReactMarkdown under one set of providers. */
 const OldMarkdown = ({ content }: { content: string }) => (
@@ -58,6 +74,29 @@ const OldMarkdown = ({ content }: { content: string }) => (
       </ReactMarkdown>
     </CodeBlockProvider>
   </ArtifactProvider>
+);
+
+/** The latest message of a conversation, generating while `submitting` holds. */
+const LiveMarkdown = ({ content, submitting }: { content: string; submitting: boolean }) => (
+  <MessageContext.Provider
+    value={{
+      messageId: 'live',
+      isExpanded: false,
+      isSubmitting: submitting,
+      isLatestMessage: true,
+    }}
+  >
+    <Markdown content={content} isLatestMessage={true} />
+  </MessageContext.Provider>
+);
+
+const StreamingMarkdown = ({ content }: { content: string }) => (
+  <LiveMarkdown content={content} submitting={true} />
+);
+
+/** A message the conversation opened with, already finished. */
+const SettledMarkdown = ({ content }: { content: string }) => (
+  <Markdown content={content} isLatestMessage={false} />
 );
 
 /**
@@ -93,6 +132,22 @@ const streamThrough = (
     );
   }
   return container;
+};
+
+/** Streams a message line by line as the latest one, then finishes it. */
+const streamAndFinish = (content: string) => {
+  const view = (value: string, submitting: boolean) => (
+    <TestProviders>
+      <LiveMarkdown content={value} submitting={submitting} />
+    </TestProviders>
+  );
+  const lines = content.split('\n');
+  const rendered = render(view(lines[0], true));
+  for (let i = 2; i <= lines.length; i += 1) {
+    rendered.rerender(view(lines.slice(0, i).join('\n'), true));
+  }
+  rendered.rerender(view(content, false));
+  return rendered;
 };
 
 const MIXED = [
@@ -135,9 +190,10 @@ const EXPECTED = [
   { idx: '3', lang: 'ts' },
 ];
 
-const NewMarkdown = ({ content }: { content: string }) => (
-  <Markdown content={content} isLatestMessage={false} />
-);
+beforeEach(() => {
+  splitSpy.mockClear();
+  mockCodeBlockMounts.count = 0;
+});
 
 describe('MarkdownBlocks code-block index parity', () => {
   it('assigns document-order indices on a direct render (matches whole-message renderer)', () => {
@@ -148,7 +204,7 @@ describe('MarkdownBlocks code-block index parity', () => {
     );
     const { container: newC } = render(
       <TestProviders>
-        <Markdown content={MIXED} isLatestMessage={false} />
+        <SettledMarkdown content={MIXED} />
       </TestProviders>,
     );
 
@@ -158,43 +214,123 @@ describe('MarkdownBlocks code-block index parity', () => {
 
   it('keeps indices correct across a simulated stream (no drift under memoization)', () => {
     const oldC = streamThrough(OldMarkdown, MIXED);
-    const newC = streamThrough(NewMarkdown, MIXED);
+    const newC = streamThrough(StreamingMarkdown, MIXED);
 
     expect(indicesIn(oldC)).toEqual(EXPECTED);
     expect(indicesIn(newC)).toEqual(EXPECTED);
   });
 
   it('streamed indices match a fresh direct render (stable for stored execution results)', () => {
-    const streamed = streamThrough(NewMarkdown, MIXED);
+    const streamed = streamThrough(StreamingMarkdown, MIXED);
     const { container: fresh } = render(
       <TestProviders>
-        <Markdown content={MIXED} isLatestMessage={false} />
+        <SettledMarkdown content={MIXED} />
       </TestProviders>,
     );
     expect(indicesIn(streamed)).toEqual(indicesIn(fresh));
   });
 
-  it('refreshes indices when an in-place edit inserts a code block before existing ones', () => {
-    const before = 'intro\n\n```js\na\n```';
-    const after = '```py\nx\n```\n\n```js\na\n```';
-    const { container, rerender } = render(
-      <TestProviders>
-        <Markdown content={before} isLatestMessage={false} />
-      </TestProviders>,
-    );
-    expect(indicesIn(container)).toEqual([{ idx: '0', lang: 'js' }]);
+  /**
+   * Code blocks capture their index when they mount. A finished message remounts
+   * on an edit because its single block is keyed on its source; one that streamed
+   * in this view stays per-block and remounts only the blocks whose base shifted.
+   */
+  it.each([
+    ['a finished', false],
+    ['a streamed', true],
+  ])(
+    'refreshes indices when an in-place edit to %s message inserts a code block before existing ones',
+    (_label, streamedFirst) => {
+      const before = 'intro\n\n```js\na\n```';
+      const after = '```py\nx\n```\n\n```js\na\n```';
+      const view = (content: string, submitting: boolean) => (
+        <TestProviders>
+          <LiveMarkdown content={content} submitting={submitting} />
+        </TestProviders>
+      );
+      const { container, rerender } = render(view(before, streamedFirst));
+      rerender(view(before, false));
+      expect(indicesIn(container)).toEqual([{ idx: '0', lang: 'js' }]);
 
-    rerender(
+      rerender(view(after, false));
+      // The js block's index shifted 0 -> 1; without forcing a remount its ref-cached
+      // index would stay 0 (duplicating py). It must become 1.
+      expect(indicesIn(container)).toEqual([
+        { idx: '0', lang: 'py' },
+        { idx: '1', lang: 'js' },
+      ]);
+    },
+  );
+});
+
+describe('MarkdownBlocks finished and streamed messages', () => {
+  const PROSE = '# H\n\nPara with `code`.\n\n| x | y |\n| - | - |\n| 1 | 2 |\n\n- a\n- b';
+
+  it('renders a finished message through one pipeline, without the block-boundary parse', () => {
+    const { container: oldC } = render(
       <TestProviders>
-        <Markdown content={after} isLatestMessage={false} />
+        <OldMarkdown content={PROSE} />
       </TestProviders>,
     );
-    // The js block's base shifted 0 -> 1; without forcing a remount its ref-cached
-    // index would stay 0 (duplicating py). It must become 1.
-    expect(indicesIn(container)).toEqual([
-      { idx: '0', lang: 'py' },
-      { idx: '1', lang: 'js' },
-    ]);
+    const { container: settledC } = render(
+      <TestProviders>
+        <SettledMarkdown content={PROSE} />
+      </TestProviders>,
+    );
+
+    expect(splitSpy).not.toHaveBeenCalled();
+    // One pipeline reproduces the whole-message renderer exactly, down to the
+    // whitespace between blocks that separately parsed blocks cannot carry.
+    expect(settledC.innerHTML).toBe(oldC.innerHTML);
+  });
+
+  it('splits the message that is generating, so only its last block re-parses', () => {
+    render(
+      <TestProviders>
+        <StreamingMarkdown content={PROSE} />
+      </TestProviders>,
+    );
+
+    expect(splitSpy).toHaveBeenCalledWith(PROSE);
+  });
+
+  it('keeps a streamed message split once it finishes, so no block remounts', () => {
+    const view = (content: string, submitting: boolean) => (
+      <TestProviders>
+        <LiveMarkdown content={content} submitting={submitting} />
+      </TestProviders>
+    );
+    const lines = MIXED.split('\n');
+    const { container, rerender } = render(view(lines[0], true));
+    for (let i = 2; i <= lines.length; i += 1) {
+      rerender(view(lines.slice(0, i).join('\n'), true));
+    }
+    const mountsWhileStreaming = mockCodeBlockMounts.count;
+    splitSpy.mockClear();
+
+    rerender(view(MIXED, false));
+
+    expect(mockCodeBlockMounts.count).toBe(mountsWhileStreaming);
+    expect(splitSpy).not.toHaveBeenCalled();
+    expect(indicesIn(container)).toEqual(EXPECTED);
+  });
+
+  it('switches a finished message to per-block rendering when it starts generating again', () => {
+    const view = (content: string, submitting: boolean) => (
+      <TestProviders>
+        <LiveMarkdown content={content} submitting={submitting} />
+      </TestProviders>
+    );
+    const opening = MIXED.split('\n').slice(0, 12).join('\n');
+    const { container, rerender } = render(view(opening, false));
+    expect(splitSpy).not.toHaveBeenCalled();
+
+    rerender(view(MIXED, true));
+    expect(splitSpy).toHaveBeenCalledWith(MIXED);
+    expect(indicesIn(container)).toEqual(EXPECTED);
+
+    rerender(view(MIXED, false));
+    expect(indicesIn(container)).toEqual(EXPECTED);
   });
 });
 
@@ -216,12 +352,14 @@ describe('MarkdownBlocks DOM equivalence (non-code blocks)', () => {
         <OldMarkdown content={content} />
       </TestProviders>,
     );
-    const { container: newC } = render(
+    const { container: settledC } = render(
       <TestProviders>
-        <Markdown content={content} isLatestMessage={false} />
+        <SettledMarkdown content={content} />
       </TestProviders>,
     );
-    expect(normalizeHtml(newC.innerHTML)).toBe(normalizeHtml(oldC.innerHTML));
+    const { container: streamedC } = streamAndFinish(content);
+    expect(normalizeHtml(settledC.innerHTML)).toBe(normalizeHtml(oldC.innerHTML));
+    expect(normalizeHtml(streamedC.innerHTML)).toBe(normalizeHtml(oldC.innerHTML));
   });
 });
 
@@ -238,7 +376,7 @@ describe('MarkdownBlocks rendering smoke', () => {
   it('renders executable code blocks for a multi-code message', () => {
     render(
       <TestProviders>
-        <Markdown content={MIXED} isLatestMessage={false} />
+        <SettledMarkdown content={MIXED} />
       </TestProviders>,
     );
     expect(screen.getAllByTestId('cb')).toHaveLength(4);
@@ -252,7 +390,7 @@ describe('MarkdownBlocks document-level definitions', () => {
     render(
       <QueryClientProvider client={queryClient}>
         <TestProviders>
-          <Markdown content={content} isLatestMessage={false} />
+          <SettledMarkdown content={content} />
         </TestProviders>
       </QueryClientProvider>,
     );

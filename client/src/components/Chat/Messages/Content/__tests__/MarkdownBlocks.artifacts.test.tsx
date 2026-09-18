@@ -95,21 +95,49 @@ describe('MarkdownBlocks artifact-index parity (e2e)', () => {
     ]);
   });
 
-  it('refreshes artifact indices when an in-place edit inserts an artifact before another', async () => {
-    const before = `Intro.\n\n${artifact('b', 'B')}`;
-    const after = `${artifact('a', 'A')}\n\n${artifact('b', 'B')}`;
+  /**
+   * A finished message renders as one block keyed on its source, so an edit
+   * remounts it; one that streamed in this view stays per-block, and its
+   * base-aware block keys remount only the blocks whose index shifted.
+   */
+  it.each([
+    ['a finished', false],
+    ['a streamed', true],
+  ])(
+    'refreshes artifact indices when an in-place edit to %s message inserts an artifact before another',
+    async (_label, streamedFirst) => {
+      const before = `Intro.\n\n${artifact('b', 'B')}`;
+      const after = `${artifact('a', 'A')}\n\n${artifact('b', 'B')}`;
+      const view = (content: string, submitting: boolean) => (
+        <MemoryRouter>
+          <RecoilRoot>
+            <MessageContext.Provider
+              value={{
+                messageId: 'm1',
+                isExpanded: true,
+                isSubmitting: submitting,
+                isLatestMessage: true,
+              }}
+            >
+              <Markdown content={content} isLatestMessage={true} />
+            </MessageContext.Provider>
+          </RecoilRoot>
+        </MemoryRouter>
+      );
 
-    const { rerender } = render(wrap(<Markdown content={before} isLatestMessage={false} />));
-    expect(await readArtifacts()).toEqual([{ idx: '0', id: 'b' }]);
+      const { rerender } = render(view(before, streamedFirst));
+      rerender(view(before, false));
+      expect(await readArtifacts()).toEqual([{ idx: '0', id: 'b' }]);
 
-    rerender(wrap(<Markdown content={after} isLatestMessage={false} />));
-    // 'b' was index 0; inserting 'a' before it shifts its base to 1. Without the
-    // base-aware block key its ref-cached index would stay 0 (duplicating 'a').
-    expect(await readArtifacts()).toEqual([
-      { idx: '0', id: 'a' },
-      { idx: '1', id: 'b' },
-    ]);
-  });
+      rerender(view(after, false));
+      // 'b' was index 0; inserting 'a' before it shifts it to 1. Without a remount
+      // its ref-cached index would stay 0 (duplicating 'a').
+      expect(await readArtifacts()).toEqual([
+        { idx: '0', id: 'a' },
+        { idx: '1', id: 'b' },
+      ]);
+    },
+  );
 
   it('does not consume an index for inline text artifact directives', async () => {
     // `:artifact{}` (text directive) renders as literal text, not an Artifact, so
