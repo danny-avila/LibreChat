@@ -22,8 +22,12 @@ import type {
   StreamEventData,
   ToolEndCallback as SdkToolEndCallback,
 } from '@librechat/agents';
+import type {
+  BackgroundToolResultClaim,
+  DeleteSkillResult,
+  ValidationIssue,
+} from '@librechat/data-schemas';
 import type { CodeEnvRef, CodeWorkspaceOperation, PtcToolCallEvent } from 'librechat-data-provider';
-import type { BackgroundToolResultClaim, ValidationIssue } from '@librechat/data-schemas';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { CodeEnvFile, CodeSessionContext } from '@librechat/agents';
 import type {
@@ -117,6 +121,7 @@ import {
 import { buildSkillPrimeMessage, isSkillFilePath, SKILL_FILE_PREFIX } from './skills';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
 import { mergeCodeFilesIntoContext } from './codeFilesSession';
+import { deleteSkillWithRetry } from '~/skills/deleteCleanup';
 import { toolValidationFeedback } from './validationFeedback';
 import { createSkillContentDigest } from './compatibility';
 import { isMissingSandboxPathError } from '~/files/code';
@@ -453,7 +458,7 @@ export interface ToolExecuteOptions {
     skillId: Types.ObjectId | string;
   }) => Promise<void>;
   /** Deletes a freshly-created skill if owner-permission setup fails. */
-  deleteSkill?: (id: string) => Promise<{ deleted: boolean }>;
+  deleteSkill?: (id: string) => Promise<DeleteSkillResult>;
   /** Saves or replaces a bundled skill file in configured storage and metadata. */
   saveSkillFileContent?: (params: {
     req: ServerRequest;
@@ -3571,11 +3576,20 @@ async function writeSkillMd({
       await options.grantSkillOwner({ req, skillId: result.skill._id });
     } catch (error) {
       if (options.deleteSkill) {
-        await options.deleteSkill(result.skill._id.toString()).catch((rollbackError: unknown) => {
-          logger.error('[create_file] Failed to roll back skill after permission error', {
-            rollbackError,
+        await deleteSkillWithRetry(options.deleteSkill, result.skill._id.toString())
+          .then((deletion) => {
+            if (!deletion.cleanupComplete) {
+              logger.error('[create_file] Skill rollback left dependent cleanup incomplete', {
+                skillId: result.skill._id.toString(),
+                failedCleanupSteps: deletion.failedCleanupSteps,
+              });
+            }
+          })
+          .catch((rollbackError: unknown) => {
+            logger.error('[create_file] Failed to roll back skill after permission error', {
+              rollbackError,
+            });
           });
-        });
       }
       throw error;
     }

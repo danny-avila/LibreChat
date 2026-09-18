@@ -1648,6 +1648,7 @@
   "com_ui_skill_created": "Yetenek oluşturuldu",
   "com_ui_skill_delete_confirm": "\"{{0}}\" adlı öğeyi silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.",
   "com_ui_skill_delete_error": "Yetenek silinemedi",
+  "com_ui_skill_delete_partial": "Yetenek silindi, ancak ilgili temizliğin bir kısmı tamamlanamadı",
   "com_ui_skill_deleted": "Yetenek silindi",
   "com_ui_skill_description_field_hint": "Bu yeteneğin ne zaman uygulanması gerektiği konusunda net olun.",
   "com_ui_skill_description_placeholder": "Acme Corp marka yönergelerini sunumlara ve belgelere uygula...",

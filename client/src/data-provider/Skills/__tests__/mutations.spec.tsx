@@ -160,6 +160,11 @@ describe('skill creation cache updates', () => {
       },
     });
     const invalidateQueries = jest.spyOn(queryClient, 'invalidateQueries');
+    const staleListKey = [QueryKeys.skills, 'infinite', '', '', 100];
+    queryClient.setQueryData(staleListKey, {
+      pages: [{ skills: [makeSkill('leftover-skill', 'leftover')], has_more: false, after: null }],
+      pageParams: [undefined],
+    });
     mockImportSkill.mockRejectedValue({
       response: {
         data: {
@@ -179,6 +184,7 @@ describe('skill creation cache updates', () => {
     });
 
     expect(invalidateQueries).toHaveBeenCalledWith([QueryKeys.skills]);
+    expect(queryClient.getQueryData(staleListKey)).toBeUndefined();
     queryClient.clear();
   });
 

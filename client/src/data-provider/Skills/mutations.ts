@@ -169,6 +169,7 @@ export const useImportSkillMutation = (
         body?.error === 'skill_import_rollback_failed' ||
         body?.error === 'skill_import_cleanup_incomplete'
       ) {
+        queryClient.removeQueries([QueryKeys.skills], { type: 'inactive' });
         void queryClient.invalidateQueries([QueryKeys.skills]);
       }
       if (onError) onError(error, variables, context);

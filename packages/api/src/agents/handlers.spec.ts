@@ -2913,6 +2913,49 @@ describe('createToolExecuteHandler', () => {
       expect(grantSkillOwner).toHaveBeenCalledWith({ req, skillId: SKILL_ID });
     });
 
+    it('retries dependent cleanup when create_file cannot grant ownership', async () => {
+      const createSkill = jest.fn(async () => ({
+        skill: { _id: SKILL_ID, name: 'permission-failure', body: '# Test', version: 1 },
+      }));
+      const deleteSkill = jest
+        .fn()
+        .mockResolvedValueOnce({
+          deleted: true,
+          skillAbsent: true,
+          cleanupComplete: false,
+          failedCleanupSteps: ['permissions'],
+        })
+        .mockResolvedValueOnce({
+          deleted: false,
+          skillAbsent: true,
+          cleanupComplete: true,
+          failedCleanupSteps: [],
+        });
+      const handler = makeAuthoringHandler({
+        getSkillByName: jest.fn(async () => null),
+        createSkill: createSkill as unknown as ToolExecuteOptions['createSkill'],
+        grantSkillOwner: jest.fn(async () => {
+          throw new Error('permission unavailable');
+        }),
+        deleteSkill,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_permission_failure',
+          name: 'create_file',
+          args: {
+            path: 'skills/permission-failure/SKILL.md',
+            content:
+              '---\nname: permission-failure\ndescription: Permission rollback test\n---\n# Test\n',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(deleteSkill).toHaveBeenCalledTimes(2);
+    });
+
     it('rejects case-colliding recognized frontmatter keys in create_file', async () => {
       const createSkill = jest.fn();
       const handler = makeAuthoringHandler({

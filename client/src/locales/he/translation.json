@@ -1768,6 +1768,7 @@
   "com_ui_skill_created": "המיומנות (skill) נוצרה",
   "com_ui_skill_delete_confirm": "האם אתה בטוח שברצונך למחוק את \"{{0}}\"? לא ניתן לבטל פעולה זו.",
   "com_ui_skill_delete_error": "מחיקת המיומנות (skill) נכשלה",
+  "com_ui_skill_delete_partial": "המיומנות נמחקה, אך חלק מהניקוי הקשור לא הושלם",
   "com_ui_skill_deleted": "המיומנות (skill) נמחקה",
   "com_ui_skill_description_field_hint": "תהיה ספציפי לגבי מתי המיומנות (skill) זו אמורה להיות מופעלת.",
   "com_ui_skill_description_placeholder": "החל את הנחיות המיתוג של Acme Corp על מצגות ומסמכים...",

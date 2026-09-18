@@ -2301,6 +2301,7 @@
   "com_ui_skill_created": "Skill created",
   "com_ui_skill_delete_confirm": "Are you sure you want to delete \"{{0}}\"? This action cannot be undone.",
   "com_ui_skill_delete_error": "Failed to delete skill",
+  "com_ui_skill_delete_partial": "Skill deleted, but some related cleanup did not finish",
   "com_ui_skill_deleted": "Skill deleted",
   "com_ui_skill_description_field_hint": "Be specific about when this skill should apply.",
   "com_ui_skill_description_placeholder": "Apply Acme Corp brand guidelines to presentations and documents...",

@@ -1799,6 +1799,7 @@
   "com_ui_skill_created": "スキルを作成しました",
   "com_ui_skill_delete_confirm": "次の項目を本当に削除しますか？{{0}}この操作を取り消すことはできません。",
   "com_ui_skill_delete_error": "スキルの削除に失敗しました",
+  "com_ui_skill_delete_partial": "スキルは削除されましたが、関連するクリーンアップの一部が完了しませんでした",
   "com_ui_skill_deleted": "スキルが削除されました",
   "com_ui_skill_description_field_hint": "このスキルがいつ適用されるかについて具体的に記述してください。",
   "com_ui_skill_description_placeholder": "プレゼンテーションやドキュメントにACME Corpのブランドガイドラインを適用する...",

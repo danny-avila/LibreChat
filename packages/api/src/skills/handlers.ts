@@ -35,8 +35,8 @@ import type { Response } from 'express';
 import type { Types } from 'mongoose';
 import type { ServerRequest, StrategyFunctions } from '~/types';
 import { extractSkillContent, inspectContentWithTraversal } from '~/protection';
+import { deleteSkillWithRetry, mergeDeleteSkillResults } from './deleteCleanup';
 import { contentFilterBlockResponse } from '~/middleware/contentFilter';
-import { mergeDeleteSkillResults } from './deleteCleanup';
 import { getDeploymentSkillIds } from './deployment';
 import { resolveDownloadPath } from '~/storage/path';
 import { resolveSkillFilePathParam } from './path';
@@ -473,7 +473,12 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
           permissionError,
         );
         try {
-          await deleteSkill(skill._id.toString());
+          const deletion = await deleteSkillWithRetry(deleteSkill, skill._id.toString());
+          if (!deletion.cleanupComplete) {
+            logger.error(
+              `[POST /skills] Compensating delete incomplete for orphaned skill ${skill._id.toString()}: ${deletion.failedCleanupSteps.join(', ')}`,
+            );
+          }
         } catch (rollbackError) {
           logger.error(
             `[POST /skills] Compensating delete failed for orphaned skill ${skill._id.toString()}:`,
@@ -609,24 +614,35 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
       /** Once SkillFile cleanup succeeds, the records loaded above are the
        * only remaining references to their blobs. Use them even if an
        * independent allowlist or permission cleanup step needs a retry. */
+      let blobCleanupComplete = true;
       if (!result.failedCleanupSteps.includes('skill_files')) {
-        for (const file of files) {
+        const blobDeletions = files.map(async (file) => {
           const { deleteFile: deleteBlob } = getStrategyFunctions(file.source);
-          if (deleteBlob) {
-            deleteBlob(req, {
-              filepath: file.filepath,
-              storageKey: file.storageKey,
-              storageRegion: file.storageRegion,
-              user: file.author?.toString?.(),
-              tenantId: file.tenantId?.toString?.(),
-            }).catch((e) =>
-              logger.error(`[deleteSkill] Blob cleanup failed for ${file.relativePath}:`, e),
+          if (!deleteBlob) {
+            throw new Error(`No delete strategy for ${file.source}`);
+          }
+          await deleteBlob(req, {
+            filepath: file.filepath,
+            storageKey: file.storageKey,
+            storageRegion: file.storageRegion,
+            user: file.author?.toString?.(),
+            tenantId: file.tenantId?.toString?.(),
+          });
+        });
+        const blobResults = await Promise.allSettled(blobDeletions);
+        for (const [index, blobResult] of blobResults.entries()) {
+          if (blobResult.status === 'rejected') {
+            blobCleanupComplete = false;
+            logger.error(
+              `[deleteSkill] Blob cleanup failed for ${files[index].relativePath}:`,
+              blobResult.reason,
             );
           }
         }
       }
 
-      if (!result.cleanupComplete) {
+      const cleanupComplete = result.cleanupComplete && blobCleanupComplete;
+      if (!cleanupComplete) {
         if (result.skillAbsent) {
           /** The client must evict the now-missing skill even though dependent
            * cleanup still needs repair. A 2xx response reaches the mutation's
@@ -640,7 +656,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
         return res.status(404).json({ error: 'Skill not found' });
       }
 
-      const response: TDeleteSkillResponse = { id, deleted: true, cleanupComplete: true };
+      const response: TDeleteSkillResponse = { id, deleted: true, cleanupComplete };
       return res.status(200).json(response);
     } catch (error) {
       logger.error('[DELETE /skills/:id] Error deleting skill', error);

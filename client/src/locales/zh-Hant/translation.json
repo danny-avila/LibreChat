@@ -1753,6 +1753,7 @@
   "com_ui_skill_created": "技能已建立",
   "com_ui_skill_delete_confirm": "確定要刪除「{{0}}」嗎？此動作無法復原。",
   "com_ui_skill_delete_error": "無法刪除技能",
+  "com_ui_skill_delete_partial": "技能已刪除，但部分相關清理尚未完成",
   "com_ui_skill_deleted": "技能已刪除",
   "com_ui_skill_description_field_hint": "請明確說明何時應套用此技能。",
   "com_ui_skill_description_placeholder": "將 Acme Corp 的品牌規範套用到簡報與文件…",

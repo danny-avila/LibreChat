@@ -601,6 +601,67 @@ describe('createImportHandler', () => {
     );
   });
 
+  it('retries an orphan blob after SkillFile cleanup remains incomplete', async () => {
+    const deps = mockImportDeps();
+    deps.deleteSkill = jest.fn(async () => ({
+      deleted: true,
+      skillAbsent: true,
+      cleanupComplete: false,
+      failedCleanupSteps: ['skill_files'],
+    })) as ImportSkillDeps['deleteSkill'];
+    deps.deleteFile = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('storage unavailable'))
+      .mockResolvedValueOnce(undefined) as ImportSkillDeps['deleteFile'];
+    deps.upsertSkillFile = jest
+      .fn()
+      .mockRejectedValueOnce(
+        new Error('write conflict'),
+      ) as unknown as ImportSkillDeps['upsertSkillFile'];
+    const handler = createImportHandler(deps);
+    const res = mockResponse();
+
+    await handler(mockZipRequest(await zipWithAdditionalFiles(1, 64)), res);
+
+    expect(deps.deleteSkill).toHaveBeenCalledTimes(2);
+    expect(deps.deleteFile).toHaveBeenCalledTimes(2);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(importFailure(res.body).error).toBe('skill_import_cleanup_incomplete');
+  });
+
+  it('retries dependent cleanup after owner permission setup fails', async () => {
+    const deps = mockImportDeps();
+    deps.grantPermission = jest.fn(async () => {
+      throw new Error('permission unavailable');
+    });
+    deps.deleteSkill = jest
+      .fn()
+      .mockResolvedValueOnce({
+        deleted: true,
+        skillAbsent: true,
+        cleanupComplete: false,
+        failedCleanupSteps: ['permissions'],
+      })
+      .mockResolvedValueOnce({
+        deleted: false,
+        skillAbsent: true,
+        cleanupComplete: true,
+        failedCleanupSteps: [],
+      }) as ImportSkillDeps['deleteSkill'];
+    const handler = createImportHandler(deps);
+    const res = mockResponse();
+
+    await handler(
+      mockMarkdownRequest(
+        '---\nname: permission-failure\ndescription: Permission rollback test\n---\n# Test',
+      ),
+      res,
+    );
+
+    expect(deps.deleteSkill).toHaveBeenCalledTimes(2);
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+
   it('retries idempotent database cleanup before deleting stored blobs', async () => {
     const deps = mockImportDeps();
     deps.deleteSkill = jest

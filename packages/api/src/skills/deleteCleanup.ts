@@ -25,3 +25,15 @@ export function mergeDeleteSkillResults(
     failedCleanupSteps,
   };
 }
+
+/** Retry an idempotent cascade once when the skill row is already gone. */
+export async function deleteSkillWithRetry(
+  deleteSkill: (id: string) => Promise<DeleteSkillResult>,
+  id: string,
+): Promise<DeleteSkillResult> {
+  const result = await deleteSkill(id);
+  if (!result.skillAbsent || result.cleanupComplete) {
+    return result;
+  }
+  return mergeDeleteSkillResults(result, await deleteSkill(id));
+}

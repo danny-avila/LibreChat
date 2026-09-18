@@ -1,5 +1,5 @@
 import type { DeleteSkillResult } from '@librechat/data-schemas';
-import { mergeDeleteSkillResults } from './deleteCleanup';
+import { deleteSkillWithRetry, mergeDeleteSkillResults } from './deleteCleanup';
 
 function incomplete(...failedCleanupSteps: DeleteSkillResult['failedCleanupSteps']) {
   return {
@@ -29,5 +29,20 @@ describe('mergeDeleteSkillResults', () => {
       cleanupComplete: false,
       failedCleanupSteps: ['permissions'],
     });
+  });
+});
+
+describe('deleteSkillWithRetry', () => {
+  it('retries and preserves settled cleanup steps', async () => {
+    const deleteSkill = jest
+      .fn()
+      .mockResolvedValueOnce(incomplete('permissions'))
+      .mockResolvedValueOnce(incomplete('skill_files'));
+
+    await expect(deleteSkillWithRetry(deleteSkill, 'skill-id')).resolves.toMatchObject({
+      cleanupComplete: true,
+      failedCleanupSteps: [],
+    });
+    expect(deleteSkill).toHaveBeenCalledTimes(2);
   });
 });

@@ -1579,6 +1579,7 @@
   "com_ui_skill_create_error": "Não foi possível criar a competência",
   "com_ui_skill_delete_confirm": "Tem a certeza de que pretende eliminar \"{{0}}\"? Esta ação não pode ser desfeita.",
   "com_ui_skill_delete_error": "Não foi possível eliminar a competência",
+  "com_ui_skill_delete_partial": "A competência foi eliminada, mas parte da limpeza relacionada não foi concluída",
   "com_ui_skill_description_field_hint": "Seja específico quanto às situações em que esta competência se deve aplicar.",
   "com_ui_skill_file_binary": "Ficheiro binário — não é possível pré-visualizar em linha",
   "com_ui_skill_file_load_error": "Não foi possível carregar o conteúdo do ficheiro",

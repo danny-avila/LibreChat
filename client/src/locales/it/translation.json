@@ -1923,6 +1923,7 @@
   "com_ui_skill_created": "Skill creata",
   "com_ui_skill_delete_confirm": "Sei sicuro di voler eliminare \"{{0}}\"? Questa azione non può essere annullata.",
   "com_ui_skill_delete_error": "Impossibile eliminare skill",
+  "com_ui_skill_delete_partial": "Skill eliminata, ma alcune operazioni di pulizia correlate non sono state completate",
   "com_ui_skill_deleted": "Skill eliminata",
   "com_ui_skill_description_field_hint": "Sii specifico su quando questa skill dovrebbe applicarsi.",
   "com_ui_skill_description_placeholder": "Applica le linee guida del brand Acme Corp a presentazioni e documenti...",

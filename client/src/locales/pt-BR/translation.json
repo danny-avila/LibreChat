@@ -1830,6 +1830,7 @@
   "com_ui_skill_created": "Habilidade criada",
   "com_ui_skill_delete_confirm": "Tem certeza que deseja excluir \"{{0}}\"? Esta ação não pode ser desfeita.",
   "com_ui_skill_delete_error": "Falha ao excluir habilidade",
+  "com_ui_skill_delete_partial": "A habilidade foi excluída, mas parte da limpeza relacionada não foi concluída",
   "com_ui_skill_deleted": "Habilidade excluída",
   "com_ui_skill_description_field_hint": "Seja específico sobre quando esta habilidade deve ser aplicada.",
   "com_ui_skill_description_placeholder": "Aplicar diretrizes de marca da Acme Corp em apresentações e documentos...",

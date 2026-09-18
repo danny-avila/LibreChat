@@ -39,9 +39,9 @@ import {
   contentFilterUninspectableResponse,
   getBlockedUninspectableSkillFileField,
 } from '~/protection';
+import { deleteSkillWithRetry, mergeDeleteSkillResults } from './deleteCleanup';
 import { contentFilterBlockResponse } from '~/middleware/contentFilter';
 import { resolveRequestTenantId } from '~/middleware/tenant';
-import { mergeDeleteSkillResults } from './deleteCleanup';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from './limits';
 import { isSafeSkillFilePath } from './path';
 import { parseSkillMarkdown } from './parse';
@@ -368,7 +368,12 @@ async function grantOwnership(
   } catch (error) {
     logger.error(`[importSkill] Failed to grant SKILL_OWNER for ${skillId}, rolling back:`, error);
     try {
-      await deps.deleteSkill(skillId.toString());
+      const deletion = await deleteSkillWithRetry(deps.deleteSkill, skillId.toString());
+      if (!deletion.cleanupComplete) {
+        logger.error(
+          `[importSkill] Compensating delete incomplete for ${skillId}: ${deletion.failedCleanupSteps.join(', ')}`,
+        );
+      }
     } catch (rollbackError) {
       logger.error(`[importSkill] Compensating delete failed for ${skillId}:`, rollbackError);
     }
@@ -709,6 +714,8 @@ interface PersistedArchiveBlob {
   readonly source: string;
   readonly storageKey?: string;
   readonly storageRegion?: string;
+  /** Whether a SkillFile row can still reference this blob. */
+  readonly rowPersisted: boolean;
 }
 
 interface ArchivePersistenceContext {
@@ -747,6 +754,7 @@ async function persistArchiveFile(
     source,
     storageKey,
     storageRegion,
+    rowPersisted: false,
   };
 
   try {
@@ -790,7 +798,38 @@ async function persistArchiveFile(
     throw dbError;
   }
 
-  context.persisted.push(persistedBlob);
+  context.persisted.push({ ...persistedBlob, rowPersisted: true });
+}
+
+async function cleanupArchiveBlobs(
+  req: ServerRequest,
+  deps: ImportSkillDeps,
+  context: ArchivePersistenceContext,
+  blobs: PersistedArchiveBlob[],
+): Promise<boolean> {
+  const { deleteFile } = deps;
+  if (blobs.length === 0) {
+    return true;
+  }
+  if (deleteFile == null) {
+    return false;
+  }
+
+  let complete = true;
+  for (const blob of blobs) {
+    await deleteFile(req, {
+      filepath: blob.filepath,
+      storageKey: blob.storageKey,
+      storageRegion: blob.storageRegion,
+      source: blob.source,
+      user: context.authorId,
+      tenantId: context.tenantId,
+    }).catch((error) => {
+      complete = false;
+      logger.error(`[importSkill] Rollback blob cleanup failed for ${blob.relativePath}:`, error);
+    });
+  }
+  return complete;
 }
 
 /**
@@ -819,7 +858,13 @@ async function rollbackArchiveImport(
   } catch (error) {
     logger.error(`[importSkill] Rollback delete failed for skill ${skillId}:`, error);
     logger.error(
-      `[importSkill] Rollback incomplete for skill ${skillId}: leaving ${context.persisted.length} stored file(s) in place because the skill row was not removed`,
+      `[importSkill] Rollback incomplete for skill ${skillId}: retaining row-backed files because the skill row was not removed`,
+    );
+    await cleanupArchiveBlobs(
+      req,
+      deps,
+      context,
+      context.persisted.filter((blob) => !blob.rowPersisted),
     );
     return { skillRemoved: false, cleanupComplete: false };
   }
@@ -834,6 +879,12 @@ async function rollbackArchiveImport(
 
   if (!deletion.skillAbsent) {
     logger.error(`[importSkill] Rollback could not confirm removal of skill ${skillId}`);
+    await cleanupArchiveBlobs(
+      req,
+      deps,
+      context,
+      context.persisted.filter((blob) => !blob.rowPersisted),
+    );
     return { skillRemoved: false, cleanupComplete: false };
   }
   const databaseCleanupComplete = deletion.cleanupComplete;
@@ -845,32 +896,14 @@ async function rollbackArchiveImport(
      * blobs, so retain them for the idempotent database retry. When only an
      * independent cleanup step failed, the captured records are now the last
      * blob references and must be consumed before returning the 500. */
-    if (deletion.failedCleanupSteps.includes('skill_files')) {
-      return { skillRemoved: true, cleanupComplete: false };
-    }
   }
 
-  const { deleteFile } = deps;
-  if (deleteFile == null) {
-    return {
-      skillRemoved: true,
-      cleanupComplete: databaseCleanupComplete && context.persisted.length === 0,
-    };
-  }
-  let blobCleanupComplete = true;
-  for (const blob of context.persisted) {
-    await deleteFile(req, {
-      filepath: blob.filepath,
-      storageKey: blob.storageKey,
-      storageRegion: blob.storageRegion,
-      source: blob.source,
-      user: context.authorId,
-      tenantId: context.tenantId,
-    }).catch((error) => {
-      blobCleanupComplete = false;
-      logger.error(`[importSkill] Rollback blob cleanup failed for ${blob.relativePath}:`, error);
-    });
-  }
+  const skillFileCleanupIncomplete = deletion.failedCleanupSteps.includes('skill_files');
+  const blobsToDelete = skillFileCleanupIncomplete
+    ? context.persisted.filter((blob) => !blob.rowPersisted)
+    : context.persisted;
+
+  const blobCleanupComplete = await cleanupArchiveBlobs(req, deps, context, blobsToDelete);
   return {
     skillRemoved: true,
     cleanupComplete: databaseCleanupComplete && blobCleanupComplete,
