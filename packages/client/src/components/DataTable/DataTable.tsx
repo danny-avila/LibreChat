@@ -570,7 +570,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
       aria-label={localize('com_ui_data_table')}
     >
       {showToolbar && (
-        <div className="flex w-full shrink-0 items-center gap-2 border-b border-border-light pr-2 md:gap-3">
+        <div className="border-border-light flex w-full shrink-0 items-center gap-2 border-b pr-2 md:gap-3">
           {shouldShowSearch && <DataTableSearch value={searchTerm} onChange={setSearchTerm} />}
           {customActionsRenderer &&
             customActionsRenderer({
@@ -582,7 +582,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
       )}
       <div
         ref={tableContainerRef}
-        className="overflow-anchor-none relative flex min-h-0 flex-1 flex-col overflow-auto will-change-scroll"
+        className="relative flex min-h-0 flex-1 flex-col overflow-auto will-change-scroll"
         style={
           {
             WebkitOverflowScrolling: 'touch',
@@ -652,7 +652,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                       <Button
                         type="button"
                         variant="ghost"
-                        className="group h-auto w-full justify-start gap-1 px-0 py-0 text-xs font-medium uppercase tracking-wide text-text-secondary hover:bg-transparent hover:text-text-primary md:gap-1.5"
+                        className="group text-text-secondary hover:text-text-primary h-auto w-full justify-start gap-1 px-0 py-0 text-xs font-medium tracking-wide uppercase hover:bg-transparent md:gap-1.5"
                         onClick={header.column.getToggleSortingHandler()}
                       >
                         {renderedHeader}
@@ -677,7 +677,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                     );
                   } else {
                     headerContent = (
-                      <div className="flex items-center text-xs font-medium uppercase tracking-wide text-text-secondary">
+                      <div className="text-text-secondary flex items-center text-xs font-medium tracking-wide uppercase">
                         {renderedHeader}
                       </div>
                     );
@@ -691,7 +691,7 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
                         /* Stuck per cell rather than on <thead>, which does not stay
                            put once the table uses separated borders. The fill has to
                            be opaque or virtualized rows show through it. */
-                        'sticky top-0 z-10 h-9 border-b border-border-light bg-surface-dialog px-3 py-2 md:px-4',
+                        'border-border-light bg-surface-dialog sticky top-0 z-10 h-9 border-b px-3 py-2 md:px-4',
                         isSelectHeader && 'px-0 text-center',
                         canSort && 'cursor-pointer',
                         meta?.className,
@@ -736,14 +736,14 @@ function DataTable<TData extends Record<string, unknown>, TValue>({
             role="status"
             aria-live="polite"
           >
-            <span className="flex size-11 items-center justify-center rounded-full bg-surface-tertiary text-text-tertiary">
+            <span className="bg-surface-tertiary text-text-tertiary flex size-11 items-center justify-center rounded-full">
               {searchTerm ? (
                 <SearchX className="size-5" aria-hidden="true" />
               ) : (
                 <Inbox className="size-5" aria-hidden="true" />
               )}
             </span>
-            <Label className="text-center text-sm text-text-secondary">
+            <Label className="text-text-secondary text-center text-sm">
               {searchTerm ? localize('com_ui_no_search_results') : localize('com_ui_no_data')}
             </Label>
           </div>

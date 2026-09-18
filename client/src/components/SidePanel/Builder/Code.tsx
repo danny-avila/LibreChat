@@ -46,7 +46,7 @@ export default function Code({ version }: { version: number | string }) {
           >
             <label
               id={Capabilities.code_interpreter}
-              className="form-check-label text-token-text-primary w-full cursor-pointer"
+              className="form-check-label text-text-primary w-full cursor-pointer"
               htmlFor={Capabilities.code_interpreter}
             >
               {localize('com_assistants_code_interpreter')}

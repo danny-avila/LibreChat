@@ -12,7 +12,7 @@ import { isImageURL } from '~/utils/icons';
 const artScale = 2 / 3;
 
 const entityAvatarClassName =
-  'bg-token-surface-secondary h-full w-full rounded-full object-cover dark:bg-surface-tertiary';
+  'bg-surface-secondary h-full w-full rounded-full object-cover dark:bg-surface-tertiary';
 
 function AgentAvatar({
   avatar,
