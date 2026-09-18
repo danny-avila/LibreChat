@@ -4,6 +4,7 @@ import {
   Button,
   Checkbox,
   Chip,
+  ControlCombobox,
   Input,
   Label,
   Spinner,
@@ -24,12 +25,17 @@ export function MediaPresets({
   catalog,
   presets,
   current,
+  activePresetId,
+  portal,
   onApply,
 }: {
   catalog: MediaCatalog;
   presets: UseQueryResult<MediaPreset[]>;
   /** The settings a new preset captures; absent while no model is selected. */
   current?: MediaPresetSettings;
+  /** The preset the current settings still match, so the field can name it. */
+  activePresetId?: string;
+  portal: boolean;
   /** Restores a preset into the draft; false when its model is unavailable. */
   onApply: (settings: MediaPresetSettings) => boolean;
 }) {
@@ -42,14 +48,21 @@ export function MediaPresets({
   const [asDefault, setAsDefault] = useState(false);
   const [confirming, setConfirming] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  const [fieldNotice, setFieldNotice] = useState<string>();
   const { create, update, remove } = useMediaPresetMutations(host);
   const busy = create.isLoading || update.isLoading || remove.isLoading;
   const items = presets.data ?? [];
-  const fallback = items.find((preset) => preset.isDefault);
+  const active = items.find((preset) => preset.presetId === activePresetId);
   const modelName = (settings: MediaPresetSettings) =>
     catalog.offerings.find(
       (item) => item.connectionId === settings.connectionId && item.modelId === settings.modelId,
     )?.modelName ?? settings.modelId;
+  const describe = (preset: MediaPreset) =>
+    [
+      modelName(preset.settings),
+      localize(mediaOperationLabels[preset.settings.operation]),
+      ...(preset.isDefault ? [localize('com_ui_default')] : []),
+    ].join(' · ');
   const close = (next: boolean) => {
     setOpen(next);
     if (next) return;
@@ -76,22 +89,57 @@ export function MediaPresets({
     }
     setNotice(localize('com_media_preset_unavailable'));
   };
+  let displayValue: string | undefined;
+  if (active) displayValue = active.title;
+  else if (items.length > 0) displayValue = localize('com_ui_custom');
   return (
-    <>
-      <Button
-        ref={trigger}
-        variant="outline"
-        size="sm"
-        className="w-full justify-start gap-2 font-normal"
-        aria-haspopup="dialog"
-        onClick={() => setOpen(true)}
-      >
-        <BookCopy className="size-4 shrink-0" aria-hidden="true" />
-        <span className="truncate">{localize('com_media_presets')}</span>
-        {fallback && (
-          <span className="ml-auto truncate text-xs text-text-secondary">{fallback.title}</span>
+    <div className="space-y-1">
+      <div className="flex items-center justify-between gap-2">
+        <Label variant="section" htmlFor={`${id}-preset`} className="min-w-0 truncate">
+          {localize('com_media_presets')}
+        </Label>
+        <Button
+          ref={trigger}
+          variant="ghost"
+          className="-mr-2 h-7 shrink-0 gap-1.5 px-2 text-xs font-medium text-text-secondary hover:text-text-primary"
+          aria-haspopup="dialog"
+          onClick={() => setOpen(true)}
+        >
+          <BookCopy className="size-3.5" aria-hidden="true" />
+          {localize('com_ui_manage')}
+        </Button>
+      </div>
+      <ControlCombobox
+        showCarat
+        selectId={`${id}-preset`}
+        ariaLabel={localize('com_media_presets')}
+        variant="field"
+        isCollapsed={false}
+        portal={portal}
+        disabled={items.length === 0}
+        selectedValue={active?.presetId ?? ''}
+        displayValue={displayValue}
+        selectPlaceholder={localize(
+          items.length > 0 ? 'com_media_preset_choose' : 'com_media_presets_none',
         )}
-      </Button>
+        items={items.map((preset) => ({
+          value: preset.presetId,
+          label: preset.title,
+          description: describe(preset),
+        }))}
+        setValue={(value) => {
+          const preset = items.find((item) => item.presetId === value);
+          if (!preset) return;
+          setFieldNotice(
+            onApply(preset.settings) ? undefined : localize('com_media_preset_unavailable'),
+          );
+        }}
+      />
+      {fieldNotice && (
+        <p role="status" className="text-xs text-text-secondary">
+          {fieldNotice}
+        </p>
+      )}
       <OGDialog open={open} onOpenChange={close} triggerRef={trigger}>
         <OGDialogContent
           className="max-h-[85dvh] w-11/12 max-w-lg overflow-y-auto"
@@ -111,8 +159,10 @@ export function MediaPresets({
                 void save();
               }}
             >
-              <div className="space-y-1.5">
-                <Label htmlFor={`${id}-title`}>{localize('com_media_preset_name')}</Label>
+              <div className="space-y-1">
+                <Label variant="section" htmlFor={`${id}-title`}>
+                  {localize('com_media_preset_name')}
+                </Label>
                 <Input
                   id={`${id}-title`}
                   value={title}
@@ -265,6 +315,6 @@ export function MediaPresets({
           )}
         </OGDialogContent>
       </OGDialog>
-    </>
+    </div>
   );
 }

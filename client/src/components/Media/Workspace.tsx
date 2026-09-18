@@ -11,6 +11,7 @@ import {
   OGDialogTitle,
   OGDialogDescription,
   TooltipAnchor,
+  labelVariants,
 } from '@librechat/client';
 import type { ReactNode } from 'react';
 import type { MediaReceipt } from '~/data-provider/Media';
@@ -231,23 +232,24 @@ export default function MediaWorkspace({
       className="flex h-full min-h-0 w-full flex-col bg-presentation text-text-primary"
     >
       {settingsHost?.render(
-        <div className="space-y-5 px-3 pb-6 pt-4">
-          <Button
-            variant="outline"
-            className="w-full justify-start gap-2"
-            onClick={() => (gallery ? create() : setView('gallery'))}
-          >
-            {gallery ? (
-              <Plus className="size-4" aria-hidden="true" />
-            ) : (
-              <History className="size-4" aria-hidden="true" />
-            )}
-            {localize(gallery ? 'com_media_new_thread' : 'com_media_open_gallery')}
-          </Button>
-          <h2 className="flex items-center gap-2 text-sm font-semibold">
-            <SlidersHorizontal className="size-4" aria-hidden="true" />
-            {localize('com_media_settings')}
-          </h2>
+        <div className="space-y-4 px-3 pb-6 pt-3">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className={cn(labelVariants({ variant: 'section' }), 'min-w-0 truncate')}>
+              {localize('com_media_settings')}
+            </h2>
+            <Button
+              variant="ghost"
+              className="-mr-2 h-7 shrink-0 gap-1.5 px-2 text-xs font-medium text-text-secondary hover:text-text-primary"
+              onClick={() => (gallery ? create() : setView('gallery'))}
+            >
+              {gallery ? (
+                <Plus className="size-3.5" aria-hidden="true" />
+              ) : (
+                <History className="size-3.5" aria-hidden="true" />
+              )}
+              {localize(gallery ? 'com_media_new_thread' : 'com_media_open_gallery')}
+            </Button>
+          </div>
           {settings}
         </div>,
       )}

@@ -419,8 +419,8 @@ test('removing the automatic image starts fresh and preserves that choice and th
   fireEvent.change(prompt, { target: { value: 'A different subject' } });
   fireEvent.click(screen.getByRole('button', { name: 'com_media_remove_reference' }));
   expect(screen.queryByText('com_media_editing_latest')).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'com_media_image_generate' })).toHaveAttribute(
-    'aria-pressed',
+  expect(screen.getByRole('radio', { name: 'com_media_image' })).toHaveAttribute(
+    'aria-checked',
     'true',
   );
   view.unmount();
@@ -430,9 +430,9 @@ test('removing the automatic image starts fresh and preserves that choice and th
     'A different subject',
   );
   expect(screen.queryByText('com_media_editing_latest')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'com_media_image_edit' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'com_media_edit' }));
   expect(screen.getByText('com_media_editing_latest')).toBeVisible();
-  fireEvent.click(screen.getByRole('button', { name: 'com_media_image_generate' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'com_media_image' }));
   expect(screen.queryByText('com_media_editing_latest')).not.toBeInTheDocument();
   expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue(
     'A different subject',

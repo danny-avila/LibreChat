@@ -1,15 +1,7 @@
 import { useEffect, useId, useState } from 'react';
 import { v4 } from 'uuid';
 import { useAtom } from 'jotai';
-import {
-  Film,
-  HatGlasses,
-  ImagePlus,
-  Pencil,
-  PlusCircle,
-  SlidersHorizontal,
-  X,
-} from 'lucide-react';
+import { ChevronDown, Film, HatGlasses, ImagePlus, Pencil, Plus, X } from 'lucide-react';
 import {
   mediaSubmissionRequestSchema,
   mediaURLUploadRequestSchema,
@@ -23,6 +15,7 @@ import {
   ControlCombobox,
   Input,
   Label,
+  Radio,
   Spinner,
   Textarea,
   TooltipAnchor,
@@ -39,12 +32,7 @@ import type {
 import type { ReactNode } from 'react';
 import type { MediaDraft, MediaSend } from './state';
 import type { MediaEditTarget } from './context';
-import {
-  mediaControlLabels,
-  mediaErrorLabels,
-  mediaInputRoleLabels,
-  mediaOperationLabels,
-} from './labels';
+import { mediaControlLabels, mediaErrorLabels, mediaInputRoleLabels } from './labels';
 import { useMediaUpload } from '~/data-provider/Media/uploads';
 import { useMediaPresets } from '~/data-provider/Media';
 import { emptyDraft, mediaDraftFamily } from './state';
@@ -138,6 +126,19 @@ function readProviderOptions(text: string, allowed: string[] | undefined, catalo
 }
 
 type MediaCapability = MediaOffering['capabilities'][number];
+
+const canonical = (value: unknown): string =>
+  JSON.stringify(value, (_key, item: unknown) =>
+    item && typeof item === 'object' && !Array.isArray(item)
+      ? Object.fromEntries(
+          Object.entries(item as Record<string, unknown>)
+            .filter(([, entry]) => entry !== undefined)
+            .sort(([a], [b]) => a.localeCompare(b)),
+        )
+      : item,
+  );
+const sameParameters = (left: MediaDraft['parameters'], right: MediaDraft['parameters']) =>
+  canonical(left) === canonical(right);
 
 /** A comparison run keeps the batch size and otherwise takes the other model's own defaults. */
 function comparisonParameters(capability: MediaCapability, count: number) {
@@ -399,7 +400,9 @@ export function MediaForm({
           (control.values != null && !control.values.includes(value))));
     return (
       <div key={key} className="space-y-1">
-        <Label htmlFor={`${id}-${key}`}>{label}</Label>
+        <Label variant="section" htmlFor={`${id}-${key}`}>
+          {label}
+        </Label>
         {control.values ? (
           <ControlCombobox
             showCarat
@@ -444,7 +447,9 @@ export function MediaForm({
     const invalid = value ? !control.values.includes(value) : !!control.required;
     return (
       <div key={key} className="space-y-1">
-        <Label>{label}</Label>
+        <Label variant="section" id={`${id}-${key}-label`}>
+          {label}
+        </Label>
         <ControlCombobox
           showCarat
           ariaLabel={label}
@@ -924,6 +929,17 @@ export function MediaForm({
     providerTag,
     parameters,
   };
+  const activePresetId = presets.data?.find(
+    (preset) =>
+      preset.settings.operation === activeOperation &&
+      preset.settings.connectionId === offering.connectionId &&
+      preset.settings.modelId === offering.modelId &&
+      (preset.settings.providerTag ?? undefined) === (providerTag ?? undefined) &&
+      sameParameters(
+        defaultParameters({ ...emptyDraft(), parameters: preset.settings.parameters }, controls),
+        parameters,
+      ),
+  )?.presetId;
   const uploadLimit = Math.min(
     catalog.limits.maxInputs,
     Math.max(
@@ -999,48 +1015,50 @@ export function MediaForm({
       )}
     </div>
   );
+  const chooseOperation = (value: string) => {
+    const operation = operations.find((item) => item === value);
+    if (!operation) return;
+    const next = offering.capabilities.some((cap) => cap.operation === operation)
+      ? offering
+      : offerings.find((item) => item.capabilities.some((cap) => cap.operation === operation));
+    if (next) selectOffering(next, operation, true);
+  };
   const settings = (
-    <section className="space-y-5" aria-label={localize('com_media_settings')}>
+    <section className="space-y-4" aria-label={localize('com_media_settings')}>
       {features.presets && (
         <MediaPresets
           catalog={catalog}
           presets={presets}
           current={currentSettings}
+          activePresetId={activePresetId}
+          portal={portal}
           onApply={applyPreset}
         />
       )}
-      <div
-        role="group"
-        aria-label={localize('com_media_operation')}
-        className="flex flex-wrap gap-1"
-      >
-        {operations.map((operation) => {
-          const Icon = icons[operation];
-          return (
-            <Button
-              key={operation}
-              variant={operation === activeOperation ? 'secondary' : 'ghost'}
-              size="sm"
-              aria-label={localize(mediaOperationLabels[operation])}
-              aria-pressed={operation === activeOperation}
-              onClick={() => {
-                const next = offering.capabilities.some((cap) => cap.operation === operation)
-                  ? offering
-                  : offerings.find((item) =>
-                      item.capabilities.some((cap) => cap.operation === operation),
-                    );
-                if (next) selectOffering(next, operation, true);
-              }}
-            >
-              <Icon className="mr-1.5 size-4" aria-hidden="true" />
-              {localize(operationLabels[operation])}
-            </Button>
-          );
-        })}
+      <div className="space-y-1">
+        <Label variant="section" id={`${id}-operation`}>
+          {localize('com_media_operation')}
+        </Label>
+        <Radio
+          fullWidth
+          aria-labelledby={`${id}-operation`}
+          value={activeOperation}
+          onChange={chooseOperation}
+          options={operations.map((operation) => {
+            const Icon = icons[operation];
+            return {
+              value: operation,
+              label: localize(operationLabels[operation]),
+              icon: <Icon className="size-4" aria-hidden="true" />,
+            };
+          })}
+        />
       </div>
       <div className="space-y-3">
-        <div className="space-y-1.5">
-          <Label htmlFor={`${id}-connection`}>{localize('com_media_connection')}</Label>
+        <div className="space-y-1">
+          <Label variant="section" htmlFor={`${id}-connection`}>
+            {localize('com_media_connection')}
+          </Label>
           <ControlCombobox
             showCarat
             selectId={`${id}-connection`}
@@ -1070,8 +1088,10 @@ export function MediaForm({
             }}
           />
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor={`${id}-model`}>{localize('com_media_model')}</Label>
+        <div className="space-y-1">
+          <Label variant="section" htmlFor={`${id}-model`}>
+            {localize('com_media_model')}
+          </Label>
           <ControlCombobox
             showCarat
             selectId={`${id}-model`}
@@ -1098,8 +1118,10 @@ export function MediaForm({
           />
         </div>
         {offering.api === 'openrouter.images' && (offering.routes?.length || staleRoute) && (
-          <div className="space-y-1.5">
-            <Label htmlFor={`${id}-route`}>{localize('com_media_provider_route')}</Label>
+          <div className="space-y-1">
+            <Label variant="section" htmlFor={`${id}-route`}>
+              {localize('com_media_provider_route')}
+            </Label>
             <ControlCombobox
               showCarat
               selectId={`${id}-route`}
@@ -1133,25 +1155,46 @@ export function MediaForm({
         )}
       </div>
       {features.compare && (
-        <div className="space-y-1.5">
-          {draft.compare ? (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between gap-2">
+            <Label variant="section" htmlFor={`${id}-compare`} className="min-w-0 truncate">
+              {localize('com_media_compare')}
+            </Label>
+            {draft.compare ? (
+              <TooltipAnchor
+                description={localize('com_media_compare_remove')}
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    className="-mr-1.5 text-text-secondary hover:text-text-primary"
+                    aria-label={localize('com_media_compare_remove')}
+                    onClick={() => change({ compare: undefined })}
+                  >
+                    <X className="size-3.5" aria-hidden="true" />
+                  </Button>
+                }
+              />
+            ) : (
+              <Button
+                variant="ghost"
+                className="-mr-2 h-7 shrink-0 gap-1.5 px-2 text-xs font-medium text-text-secondary hover:text-text-primary"
+                disabled={compareCandidates.length === 0}
+                onClick={() => {
+                  const next = compareCandidates[0];
+                  if (next)
+                    change({
+                      compare: { offering: offeringId(next), providerTag: next.defaultProviderTag },
+                    });
+                }}
+              >
+                <Plus className="size-3.5" aria-hidden="true" />
+                {localize('com_media_compare_add')}
+              </Button>
+            )}
+          </div>
+          {draft.compare && (
             <>
-              <div className="flex items-center justify-between gap-2">
-                <Label htmlFor={`${id}-compare`}>{localize('com_media_compare_model')}</Label>
-                <TooltipAnchor
-                  description={localize('com_media_compare_remove')}
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={localize('com_media_compare_remove')}
-                      onClick={() => change({ compare: undefined })}
-                    >
-                      <X className="size-4" aria-hidden="true" />
-                    </Button>
-                  }
-                />
-              </div>
               <ControlCombobox
                 showCarat
                 selectId={`${id}-compare`}
@@ -1183,23 +1226,6 @@ export function MediaForm({
                 )}
               </p>
             </>
-          ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="-ml-3"
-              disabled={compareCandidates.length === 0}
-              onClick={() => {
-                const next = compareCandidates[0];
-                if (next)
-                  change({
-                    compare: { offering: offeringId(next), providerTag: next.defaultProviderTag },
-                  });
-              }}
-            >
-              <PlusCircle className="size-4" aria-hidden="true" />
-              {localize('com_media_compare_add')}
-            </Button>
           )}
         </div>
       )}
@@ -1222,9 +1248,12 @@ export function MediaForm({
         )}
       </div>
       <details className="group border-t border-border-light pt-3">
-        <summary className="flex cursor-pointer items-center gap-2 rounded-lg py-1 text-sm font-medium focus-visible:outline">
-          <SlidersHorizontal className="size-4" aria-hidden="true" />
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 rounded-lg py-1 text-[11px] font-medium uppercase tracking-wide text-text-secondary hover:text-text-primary focus-visible:outline [&::-webkit-details-marker]:hidden">
           {localize('com_media_advanced')}
+          <ChevronDown
+            className="size-4 shrink-0 transition-transform duration-200 group-open:rotate-180 motion-reduce:transition-none"
+            aria-hidden="true"
+          />
         </summary>
         <div className="mt-3 grid grid-cols-2 gap-3">
           {numeric('seed', controls.seed)}
@@ -1241,7 +1270,9 @@ export function MediaForm({
                   checked={draft.parameters.audio ?? false}
                   onCheckedChange={(checked) => param('audio', checked === true)}
                 />
-                <Label htmlFor={`${id}-audio`}>{localize(mediaControlLabels.audio)}</Label>
+                <Label variant="section" htmlFor={`${id}-audio`}>
+                  {localize(mediaControlLabels.audio)}
+                </Label>
               </div>
             )
           ) : (
@@ -1254,7 +1285,7 @@ export function MediaForm({
           )}
           {controls.negativePrompt && (
             <div className="col-span-2 space-y-1.5">
-              <Label htmlFor={`${id}-negative-prompt`}>
+              <Label variant="section" htmlFor={`${id}-negative-prompt`}>
                 {localize('com_media_negative_prompt')}
               </Label>
               <Textarea
@@ -1268,7 +1299,7 @@ export function MediaForm({
           )}
           {(controls.providerOptions?.length || providerOptionsText) && (
             <div className="col-span-2 space-y-1.5">
-              <Label htmlFor={`${id}-provider-options`}>
+              <Label variant="section" htmlFor={`${id}-provider-options`}>
                 {localize('com_media_provider_options')}
               </Label>
               <p

@@ -1651,7 +1651,7 @@ test('presets apply saved settings and capture the current ones', async () => {
     .spyOn(dataService, 'createMediaPreset')
     .mockResolvedValue({ ...preset, presetId: 'preset-2', title: 'Studio look' });
   render(<MediaForm catalog={catalog} send={env.send} busy={false} />, { wrapper: env.wrapper });
-  fireEvent.click(await screen.findByRole('button', { name: 'com_media_presets' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'com_ui_manage' }));
   const dialog = await screen.findByRole('dialog', { name: 'com_media_presets' });
   fireEvent.click(await within(dialog).findByRole('button', { name: 'com_media_preset_apply' }));
   await waitFor(() =>
@@ -1663,7 +1663,7 @@ test('presets apply saved settings and capture the current ones', async () => {
   await waitFor(() =>
     expect(screen.queryByRole('dialog', { name: 'com_media_presets' })).not.toBeInTheDocument(),
   );
-  fireEvent.click(screen.getByRole('button', { name: 'com_media_presets' }));
+  fireEvent.click(screen.getByRole('button', { name: 'com_ui_manage' }));
   const reopened = await screen.findByRole('dialog', { name: 'com_media_presets' });
   fireEvent.change(within(reopened).getByRole('textbox', { name: 'com_media_preset_name' }), {
     target: { value: 'Studio look' },
@@ -1693,7 +1693,7 @@ test('a default preset seeds an untouched draft', async () => {
   await waitFor(() =>
     expect(env.store.get(mediaDraftFamily('owner:new')).parameters.count).toBe(2),
   );
-  expect(screen.getByRole('button', { name: /com_media_presets/ })).toHaveTextContent(
+  expect(screen.getByRole('combobox', { name: 'com_media_presets' })).toHaveTextContent(
     'Quick draft',
   );
 });
