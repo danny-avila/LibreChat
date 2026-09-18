@@ -276,6 +276,12 @@ function clientOptionsIdentity(value: unknown): unknown {
   }
   projected.model =
     typeof options.modelKwargs?.model === 'string' ? options.modelKwargs.model : options.model;
+  /**
+   * Two states, not three: `false` and absent both select Chat Completions, so
+   * an agent that spells the default out must reuse the entry of one that does
+   * not.
+   */
+  projected.useResponsesApi = options.useResponsesApi === true ? 'responses' : 'chat-completions';
   return projected;
 }
 

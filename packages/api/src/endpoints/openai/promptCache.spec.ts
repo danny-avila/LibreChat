@@ -95,6 +95,10 @@ describe('buildPromptCacheKey', () => {
     expect(key(change)).not.toBe(key());
   });
 
+  it('reads a spelled-out Chat Completions mode as the default mode', () => {
+    expect(key({ clientOptions: { useResponsesApi: false } })).toBe(key());
+  });
+
   it('keys on the deployment Azure Astra actually addresses, not its visible name', () => {
     const astra = { model: 'gpt-6-astra', modelKwargs: { model: 'astra-prod' } };
 
