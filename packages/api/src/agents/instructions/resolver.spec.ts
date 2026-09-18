@@ -263,6 +263,38 @@ describe('agent instruction prompt resolver', () => {
     });
   });
 
+  it('clears the compatibility snapshot when detaching without inline instructions', async () => {
+    const agent: Parameters<typeof persistAgentInstructionPromptFallback>[0]['agent'] = {
+      instruction_prompt: null,
+    };
+    const resolver = { resolve: jest.fn() };
+
+    await persistAgentInstructionPromptFallback({
+      agent,
+      existingInstructionPrompt: {
+        source: 'librechat',
+        promptId: 'group-1',
+        name: 'Support policy',
+      },
+      context: { userId: 'user-1' },
+      resolver,
+    });
+
+    expect(agent).toEqual({ instructions: '', instruction_prompt: null });
+    expect(resolver.resolve).not.toHaveBeenCalled();
+  });
+
+  it('keeps explicit inline instructions when detaching a prompt', async () => {
+    const agent = { instructions: 'replacement', instruction_prompt: null };
+
+    await persistAgentInstructionPromptFallback({
+      agent,
+      context: { userId: 'user-1' },
+    });
+
+    expect(agent).toEqual({ instructions: 'replacement', instruction_prompt: null });
+  });
+
   it('persists the resolved Langfuse destination binding', async () => {
     const agent: Parameters<typeof persistAgentInstructionPromptFallback>[0]['agent'] = {
       instructions: '',

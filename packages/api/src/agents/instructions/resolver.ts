@@ -232,7 +232,13 @@ export async function persistAgentInstructionPromptFallback({
   context: AgentInstructionPromptContext;
   resolver?: AgentInstructionPromptProvider;
 }): Promise<void> {
-  let reference = agent.instruction_prompt;
+  if (agent.instruction_prompt === null) {
+    if (agent.instructions === undefined) {
+      agent.instructions = '';
+    }
+    return;
+  }
+  let reference: AgentInstructionPrompt | null | undefined = agent.instruction_prompt;
   if (reference === undefined && agent.instructions !== undefined) {
     reference = existingInstructionPrompt;
   }

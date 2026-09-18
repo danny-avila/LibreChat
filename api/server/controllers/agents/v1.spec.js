@@ -1636,6 +1636,31 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.instruction_prompt).toMatchObject(instructionPrompt);
     });
 
+    test('clears a protected fallback when detaching without inline instructions', async () => {
+      const instructionPrompt = {
+        source: 'librechat',
+        promptId: new mongoose.Types.ObjectId().toString(),
+        name: 'Protected policy',
+      };
+      await Agent.updateOne(
+        { id: existingAgentId },
+        { instructions: 'protected snapshot', instruction_prompt: instructionPrompt },
+      );
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = { instruction_prompt: null };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockInstructionPromptResolve).not.toHaveBeenCalled();
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.instructions).toBe('');
+      expect(response.instruction_prompt).toBeNull();
+      const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+      expect(agentInDb.instructions).toBe('');
+      expect(agentInDb.instruction_prompt).toBeNull();
+    });
+
     test('removes newly added programmatic options when Code Interpreter capability is disabled', async () => {
       await Agent.updateOne(
         { id: existingAgentId },
