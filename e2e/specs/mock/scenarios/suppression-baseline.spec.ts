@@ -693,6 +693,17 @@ test.describe('the recorded design-rule backlog', () => {
       const afterManifest = checks(['packages/client/package.json']);
       expect(existsSync(marker), 'a manifest change kept the old metadata').toBe(true);
       expect(afterManifest.status, afterManifest.output).not.toBe(0);
+
+      /** And the root manifests, which say what `build:client-package` runs and
+       *  which toolchain runs it: they already select this check, and a build
+       *  made under the previous definition is not the current one. */
+      for (const entry of entries) at(join('packages/client', entry), 300);
+      at('packages/client/dist', 300);
+      rmSync(marker, { force: true });
+      at('package-lock.json', 360);
+      const afterToolchain = checks(['package-lock.json']);
+      expect(existsSync(marker), 'a toolchain change kept the old metadata').toBe(true);
+      expect(afterToolchain.status, afterToolchain.output).not.toBe(0);
     } finally {
       rmSync(root, { force: true, recursive: true });
     }
