@@ -1316,10 +1316,12 @@ function editedEntries(target: string, context: CheckContext): string[] {
  * manifest declares has to be there: the build empties `dist` before it writes,
  * so a build that failed halfway leaves a recent directory over a bundle that
  * no longer has an entry point, and the newest mtime under it would read as
- * proof. And the build has to be newer than everything it is built from —
- * including the manifest, the build config and the compiler options, which
- * decide what is emitted while every file under `src` stays older than the last
- * build. CI always builds, so either divergence would only appear locally.
+ * proof. And the build has to be newer than everything it is built from — the
+ * library's manifest, build config and compiler options, which decide what is
+ * emitted, and the root manifests, which decide what `build:client-package`
+ * runs and which toolchain it runs with — while every file under `src` stays
+ * older than the last build. CI always builds, so either divergence would only
+ * appear locally.
  */
 function designMetadataIsFresh(): boolean {
   const dist = resolve(ROOT, 'packages/client/dist');
@@ -1329,7 +1331,7 @@ function designMetadataIsFresh(): boolean {
   }
   const builtAt = newestModification(dist);
   let sourcedAt = newestModification(resolve(ROOT, 'packages/client/src'));
-  for (const file of DESIGN_METADATA_FILES) {
+  for (const file of [...DESIGN_METADATA_FILES, 'package.json', 'package-lock.json']) {
     const path = resolve(ROOT, file);
     if (existsSync(path)) sourcedAt = Math.max(sourcedAt, statSync(path).mtimeMs);
   }
