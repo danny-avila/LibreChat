@@ -372,6 +372,11 @@ test.describe('the recorded design-rule backlog', () => {
         '/* eslint shadcn/no-raw-colors: "warn" */',
         'shadcn/no-raw-colors',
       ],
+      [
+        'a quoted rule configuration',
+        '/* eslint "shadcn/no-raw-colors": off */',
+        'shadcn/no-raw-colors',
+      ],
     ];
     try {
       for (const [label, comment, named] of directives) {
