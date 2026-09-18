@@ -84,6 +84,27 @@ export default function Instructions() {
     );
   };
 
+  const selectLibreChatVersion = (value: string) => {
+    if (reference?.source !== 'librechat') {
+      return;
+    }
+    if (value === 'latest') {
+      updateReference({ ...reference, version: undefined, versionId: undefined });
+      return;
+    }
+
+    const index = prompts.findIndex((prompt) => prompt._id === value);
+    if (index < 0) {
+      return;
+    }
+    updateReference({
+      ...reference,
+      version:
+        value === reference.versionId && reference.version != null ? reference.version : index + 1,
+      versionId: value,
+    });
+  };
+
   const updateLangfuse = (name: string, version = langfuseVersion) => {
     updateReference(name.trim().length > 0 ? { source: 'langfuse', name, version } : undefined);
   };
@@ -237,26 +258,32 @@ export default function Instructions() {
               </Select>
               <Select
                 disabled={!groupId || prompts.length === 0}
-                value={String(reference?.version ?? 'latest')}
-                onValueChange={(value) =>
-                  reference?.source === 'librechat' &&
-                  updateReference({
-                    ...reference,
-                    version: value === 'latest' ? undefined : Number(value),
-                    versionId: value === 'latest' ? undefined : prompts[Number(value) - 1]?._id,
-                  })
+                value={
+                  reference?.source === 'librechat' ? (reference.versionId ?? 'latest') : 'latest'
                 }
+                onValueChange={selectLibreChatVersion}
               >
                 <SelectTrigger aria-label={localize('com_agents_prompt_version')}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="latest">{localize('com_agents_prompt_latest')}</SelectItem>
-                  {prompts.map((prompt, index) => (
-                    <SelectItem key={prompt._id ?? index} value={String(index + 1)}>
-                      {localize('com_agents_prompt_version_number', { version: index + 1 })}
-                    </SelectItem>
-                  ))}
+                  {prompts.map((prompt, index) => {
+                    if (prompt._id == null) {
+                      return null;
+                    }
+                    const version =
+                      reference?.source === 'librechat' &&
+                      prompt._id === reference.versionId &&
+                      reference.version != null
+                        ? reference.version
+                        : index + 1;
+                    return (
+                      <SelectItem key={prompt._id} value={prompt._id}>
+                        {localize('com_agents_prompt_version_number', { version })}
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>

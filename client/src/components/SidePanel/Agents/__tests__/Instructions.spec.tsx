@@ -6,7 +6,8 @@ import type { AgentForm } from '~/common';
 import Instructions from '../Instructions';
 
 jest.mock('~/hooks', () => ({
-  useLocalize: () => (key: string) => key,
+  useLocalize: () => (key: string, values?: Record<string, string | number>) =>
+    key === 'com_agents_prompt_version_number' ? `${key}:${values?.version}` : key,
   useDebounce: (value: string) => value,
   useGetAgentsConfig: () => ({ agentsConfig: { capabilities: mockAgentCapabilities } }),
 }));
@@ -136,6 +137,36 @@ describe('Agent Instructions', () => {
 
     expect(screen.getByLabelText('com_agents_prompt_name')).toHaveValue('support-policy');
     expect(screen.getAllByLabelText('com_agents_prompt_version')[1]).toHaveValue(3);
+  });
+
+  it('keeps a pinned LibreChat version selected after an earlier version is deleted', () => {
+    mockPromptGroups.push({ _id: 'group-1', name: 'Support' });
+    mockPrompts.push({
+      _id: 'prompt-2',
+      groupId: 'group-1',
+      prompt: 'current instructions',
+      type: 'text',
+      createdAt: '2026-09-18T00:00:00.000Z',
+    });
+
+    render(
+      <InstructionsHarness
+        defaultValues={{
+          instructions: '',
+          instruction_prompt: {
+            source: 'librechat',
+            promptId: 'group-1',
+            name: 'Support',
+            version: 2,
+            versionId: 'prompt-2',
+          },
+        }}
+      />,
+    );
+
+    const versionSelect = screen.getByRole('combobox', { name: 'com_agents_prompt_version' });
+    expect(versionSelect).toHaveTextContent('com_agents_prompt_version_number:2');
+    expect(screen.getByDisplayValue('com_agents_prompt_version_number:2')).toHaveValue('prompt-2');
   });
 
   it('allows an agent to save without inline instructions', async () => {
