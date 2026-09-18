@@ -1,6 +1,6 @@
 import { Check } from 'lucide-react';
 import * as Ariakit from '@ariakit/react';
-import { MCPIcon } from '@librechat/client';
+import { MCPIcon, TooltipAnchor } from '@librechat/client';
 import type { MCPServerDefinition } from '~/hooks/MCP/useMCPServerManager';
 import type { MCPServerStatusIconProps } from './MCPServerStatusIcon';
 import {
@@ -85,7 +85,21 @@ export default function MCPServerMenuItem({
           <span className="truncate text-sm font-medium text-text-primary">{displayName}</span>
         </div>
         {server.config?.description && (
-          <p className="truncate text-xs text-text-secondary">{server.config.description}</p>
+          /** No tabIndex: the parent MenuItemCheckbox owns focus, and an extra stop
+           *  would break arrow-key navigation through the menu. The description is
+           *  already reachable for screen readers via the item's aria-label. */
+          <TooltipAnchor
+            description={server.config.description}
+            side="bottom"
+            role="note"
+            className={cn(
+              'cursor-pointer text-xs text-text-secondary',
+              /** Wrap on touch-sized viewports, where no hover reveals the tooltip. */
+              'line-clamp-2 sm:line-clamp-none sm:truncate',
+            )}
+          >
+            {server.config.description}
+          </TooltipAnchor>
         )}
       </div>
 
