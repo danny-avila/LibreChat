@@ -63,6 +63,21 @@ async function blurAndMovePointer(page: Page): Promise<void> {
   await page.mouse.move(0, 0);
 }
 
+/** The dialog's close button is absolutely positioned over the search row, so the
+ *  field has to stop short of it at every width. */
+async function expectClearOfCloseButton(page: Page, dialog: Locator): Promise<void> {
+  const close = page.getByRole('dialog').locator('button.absolute.right-4');
+  if ((await close.count()) === 0) {
+    return;
+  }
+  const field = await dialog.getByRole('textbox', { name: 'Search tools…' }).boundingBox();
+  const button = await close.first().boundingBox();
+  expect(field).not.toBeNull();
+  expect(button).not.toBeNull();
+  const sameRow = field!.y < button!.y + button!.height && button!.y < field!.y + field!.height;
+  expect(sameRow && field!.x + field!.width > button!.x).toBe(false);
+}
+
 test.describe('tool library on a touch viewport', () => {
   test.use({ viewport: devices['Pixel 7'].viewport, hasTouch: true });
 
@@ -91,6 +106,10 @@ test.describe('tool library on a touch viewport', () => {
       expect(cardBox!.x + cardBox!.width).toBeLessThanOrEqual(viewport!.width + EDGE_TOLERANCE);
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(viewport!.width);
+
+    /** The close button is absolutely positioned over this row, so the search
+     *  field owes it clearance; a responsive padding utility silently reset it. */
+    await expectClearOfCloseButton(page, dialog);
   });
 
   test('@scenario:tool-library-filter-chips-narrow-the-catalog filter chips narrow the catalog and expose an empty favorites state', async ({
@@ -214,5 +233,6 @@ test.describe('tool library on a mouse viewport', () => {
       ).toBeVisible();
     }
     await expect(dialog.getByRole('group', { name: TOOL_LIBRARY })).toHaveCount(0);
+    await expectClearOfCloseButton(page, dialog);
   });
 });
