@@ -169,7 +169,11 @@ async function createApprovalAgent(
       instructions: 'Use the approval probe and report the result.',
       provider: MOCK_ENDPOINTS[0].label,
       model: MOCK_ENDPOINTS[0].model,
-      tools: [MCP_SERVER_TOOL_ID, APPROVAL_TOOL_ID],
+      /** `file_search` is what admits the project corpus into a run, and these
+       *  scenarios pause a run whose context references a project file — an agent
+       *  that cannot search never resolves those files, so their change would not
+       *  be material to its resume. */
+      tools: ['file_search', MCP_SERVER_TOOL_ID, APPROVAL_TOOL_ID],
     },
   });
   // api/server/routes/agents/management.js:153 and createAgentManagementCreateHandler return 201.
