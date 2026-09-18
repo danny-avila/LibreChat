@@ -155,6 +155,7 @@ export const mediaLimitsSchema = z
     maxNativeRecordingBytes: z.number().int().positive().max(4_194_304).default(4_194_304),
     maxProviderOptionBytes: z.number().int().positive().max(1_048_576).default(32_768),
     maxProviderOptionDepth: z.number().int().positive().max(32).default(8),
+    maxPresets: z.number().int().positive().max(1_000).default(50),
   })
   .strict()
   .refine((value) => value.pageSize <= value.maxPageSize, 'Page size exceeds maximum');

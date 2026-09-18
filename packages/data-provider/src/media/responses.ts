@@ -122,6 +122,8 @@ export const mediaThreadSchema = z
     pendingJobCount: z.number().int().nonnegative(),
     turnCount: z.number().int().nonnegative(),
     cover: mediaAssetSchema.optional(),
+    /** Present on temporary creations; the thread retires itself at this time. */
+    expiresAt: timestamp.optional(),
     activity: z
       .object({
         readyOutputs: z.number().int().nonnegative(),
@@ -156,6 +158,7 @@ export const mediaTurnSchema = z
     jobs: z.array(mediaJobSchema),
     jobsNextCursor: mediaIdSchema.optional(),
     assets: z.array(mediaAssetSchema),
+    comparisonId: mediaIdSchema.optional(),
   })
   .strict();
 

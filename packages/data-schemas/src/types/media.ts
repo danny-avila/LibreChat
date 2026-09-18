@@ -30,7 +30,12 @@ export type MediaStoredOwner = MediaOwnerScope & {
   updatedAt: string;
 };
 export type MediaPage<T> = { items: T[]; nextCursor?: string };
-export type MediaPublicationOptions = { maxRetainers: number; maxTitleChars: number };
+export type MediaPublicationOptions = {
+  maxRetainers: number;
+  maxTitleChars: number;
+  /** When set, a new thread published from a temporary request expires this long after creation. */
+  temporaryRetentionMs?: number;
+};
 export type MediaPageInput = { scope: MediaOwnerScope; limit: number; cursor?: string };
 export type MediaExecutionSnapshot = {
   connectionId: string;
@@ -238,6 +243,13 @@ export interface MediaMethods {
     title?: string;
     coverFileId?: string | null;
   }): Promise<MediaThread | null>;
+  /** Swaps a prompt-derived title for a generated one only while the title is still unchanged. */
+  replaceMediaThreadTitle(input: {
+    scope: MediaOwnerScope;
+    threadId: string;
+    expectedTitle: string;
+    title: string;
+  }): Promise<boolean>;
   claimMediaJob(input: {
     scope: MediaOwnerScope;
     workerId: string;
@@ -260,6 +272,12 @@ export interface MediaMethods {
     maxPendingTotal: number;
   }): Promise<MediaSubmissionReceipt>;
   retireMediaThread(scope: MediaOwnerScope, threadId: string): Promise<boolean>;
+  /** Retires temporary threads whose `expiresAt` has passed; returns how many were retired. */
+  retireExpiredMediaThreads(input: {
+    scope: MediaOwnerScope;
+    now: string;
+    limit: number;
+  }): Promise<number>;
   /** Only call in an explicit system tenant context. Returns identities, never content. */
   listDueMediaScopes(input: {
     now: string;

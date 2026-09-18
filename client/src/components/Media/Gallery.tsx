@@ -1,13 +1,24 @@
 import { useId, useMemo } from 'react';
-import { Film, Image, Images, Search, ArrowUpRight } from 'lucide-react';
-import { Button, Chip, EmptyState, Input, Skeleton } from '@librechat/client';
+import { useTranslation } from 'react-i18next';
+import { Film, Image, Images, Play, Search } from 'lucide-react';
+import { Button, Chip, EmptyState, Input, Radio, Skeleton } from '@librechat/client';
 import type { MediaCatalog, MediaThreadListRequest } from 'librechat-data-provider';
 import type { MediaTile, useMediaThreads } from '~/data-provider/Media';
 import type { MediaLibrary } from './state';
 import { mediaThreadFilterLabels } from './labels';
+import { getMessageTimestamp } from '~/utils';
 import { MediaPreview } from './Asset';
 import { MediaStatus } from './Status';
 import { useLocalize } from '~/hooks';
+
+const densities = [2, 3, 4] as const;
+/** Phones keep two tiles per row; the density choice applies once the page is wide enough. */
+const grids = {
+  2: 'grid grid-cols-2 gap-4 sm:gap-5',
+  3: 'grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4',
+  4: 'grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4',
+} satisfies Record<MediaLibrary['columns'], string>;
+const settled = new Set(['succeeded', 'failed', 'cancelled']);
 
 export function MediaGallery({
   tiles,
@@ -35,12 +46,9 @@ export function MediaGallery({
   onOpen: (threadId: string) => void;
 }) {
   const localize = useLocalize();
+  const { i18n } = useTranslation();
   const id = useId();
-  const grid = {
-    2: 'grid grid-cols-2 gap-3 sm:gap-4',
-    3: 'grid grid-cols-3 gap-3 sm:gap-4',
-    4: 'grid grid-cols-4 gap-3 sm:gap-4',
-  }[columns];
+  const grid = grids[columns];
   const offerings = useMemo(
     () =>
       new Map(
@@ -49,6 +57,7 @@ export function MediaGallery({
     [catalog],
   );
   const needle = search.trim().toLocaleLowerCase();
+  const filtered = needle || filter !== 'all';
   const visible = tiles.flatMap((tile) => {
     const latest = tile.thread?.activity?.latestJob;
     const offering =
@@ -61,39 +70,30 @@ export function MediaGallery({
       ![tile.title, model, connection].some((value) => value?.toLocaleLowerCase().includes(needle))
     )
       return [];
-    return [{ tile, latest, model, connection }];
+    return [{ tile, latest, model: model ?? connection }];
   });
   return (
     <section className="min-w-0 space-y-5" aria-label={localize('com_media_threads')}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold">{localize('com_media_gallery')}</h2>
           <p className="mt-1 text-sm text-text-secondary">
             {localize('com_media_library_description')}
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div
-            role="group"
-            aria-label={localize('com_media_columns')}
-            className="flex items-center gap-1"
-          >
-            <span className="mr-1 hidden text-xs text-text-secondary sm:inline">
-              {localize('com_media_columns')}
-            </span>
-            {([2, 3, 4] as const).map((value) => (
-              <Button
-                key={value}
-                variant={columns === value ? 'secondary' : 'ghost'}
-                size="icon-sm"
-                aria-label={localize('com_media_column_count', { count: value })}
-                aria-pressed={columns === value}
-                onClick={() => onColumns(value)}
-              >
-                {value}
-              </Button>
-            ))}
-          </div>
+        <div className="flex items-center gap-2">
+          <span id={`${id}-columns`} className="text-xs text-text-secondary">
+            {localize('com_media_columns')}
+          </span>
+          <Radio
+            aria-labelledby={`${id}-columns`}
+            value={String(columns)}
+            options={densities.map((value) => ({ value: String(value), label: String(value) }))}
+            onChange={(value) => {
+              const next = densities.find((density) => String(density) === value);
+              if (next) onColumns(next);
+            }}
+          />
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -132,8 +132,12 @@ export function MediaGallery({
       {query.isLoading && (
         <div role="status" className={grid}>
           <span className="sr-only">{localize('com_media_loading')}</span>
-          {[0, 1, 2, 3].map((item) => (
-            <Skeleton key={item} className="aspect-square motion-reduce:animate-none" />
+          {Array.from({ length: columns * 2 }, (_, item) => (
+            <div key={item} className="space-y-2">
+              <Skeleton className="aspect-square rounded-xl motion-reduce:animate-none" />
+              <Skeleton className="h-4 w-3/4 motion-reduce:animate-none" />
+              <Skeleton className="h-3 w-1/2 motion-reduce:animate-none" />
+            </div>
           ))}
         </div>
       )}
@@ -153,14 +157,10 @@ export function MediaGallery({
       {!query.isLoading && !query.isError && visible.length === 0 && (
         <EmptyState
           icon={Images}
-          title={localize(
-            needle || filter !== 'all' ? 'com_media_no_matches' : 'com_media_empty_title',
-          )}
-          description={localize(
-            needle || filter !== 'all' ? 'com_media_no_matches_hint' : 'com_media_empty',
-          )}
+          title={localize(filtered ? 'com_media_no_matches' : 'com_media_empty_title')}
+          description={localize(filtered ? 'com_media_no_matches_hint' : 'com_media_empty')}
           action={
-            needle || filter !== 'all' ? (
+            filtered ? (
               <Button
                 variant="outline"
                 onClick={() => {
@@ -178,94 +178,69 @@ export function MediaGallery({
         />
       )}
       <ul className={grid} data-media-gallery data-columns={columns}>
-        {visible.map(({ tile, latest, model, connection }) => {
+        {visible.map(({ tile, latest, model }) => {
           const cover = tile.thread?.cover;
+          const pending = (tile.thread?.pendingJobCount ?? 0) > 0;
           const phase =
-            (tile.thread?.pendingJobCount ?? 0) > 0 &&
-            (!latest || ['succeeded', 'failed', 'cancelled'].includes(latest.phase))
-              ? 'running'
-              : latest?.phase;
+            pending && (!latest || settled.has(latest.phase)) ? 'running' : latest?.phase;
           const video = cover?.type.startsWith('video/') || latest?.operation === 'video.generate';
           const Icon = video ? Film : Image;
-          const status = phase ?? (cover ? 'succeeded' : undefined);
+          const when = getMessageTimestamp(
+            tile.thread?.updatedAt ?? tile.thread?.createdAt,
+            i18n.language,
+          );
           let emptyLabel = localize('com_media_open_thread');
           if (phase === 'failed') emptyLabel = localize('com_media_no_output');
           else if (phase === 'cancelled') emptyLabel = localize('com_media_phase_cancelled');
           else if (phase === 'requires_attention')
             emptyLabel = localize('com_media_phase_requires_attention');
-          else if ((tile.thread?.pendingJobCount ?? 0) > 0)
-            emptyLabel = localize('com_media_phase_running');
+          else if (pending) emptyLabel = localize('com_media_phase_running');
           return (
-            <li key={tile.threadId}>
-              <Button
-                variant="outline"
-                className="group h-full w-full flex-col items-stretch justify-start gap-0 overflow-hidden whitespace-normal rounded-2xl bg-surface-primary p-0 text-start"
+            <li key={tile.threadId} className="min-w-0">
+              <button
+                type="button"
+                className="group flex w-full flex-col gap-2 rounded-xl text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 focus-visible:ring-offset-presentation"
                 onClick={() => onOpen(tile.threadId)}
                 aria-label={localize('com_media_open_named', { title: tile.title })}
                 aria-describedby={`${id}-${tile.threadId}`}
               >
-                <span className="relative block w-full">
+                <span className="relative block w-full overflow-hidden rounded-xl border border-border-light bg-surface-secondary shadow-sm transition-shadow duration-theme-fast group-hover:border-border-medium group-hover:shadow-md motion-reduce:transition-none">
                   {cover ? (
                     <MediaPreview asset={cover} compact />
                   ) : (
-                    <span className="flex aspect-[4/3] flex-col items-center justify-center gap-3 bg-surface-secondary text-text-secondary">
-                      <Icon className="size-9" strokeWidth={1.25} aria-hidden="true" />
-                      <span className="text-sm">{emptyLabel}</span>
+                    <span className="flex aspect-square flex-col items-center justify-center gap-3 p-4 text-center text-text-secondary">
+                      <Icon className="size-8" strokeWidth={1.25} aria-hidden="true" />
+                      <span className="text-xs">{emptyLabel}</span>
                     </span>
                   )}
-                  {video && (
-                    <span
-                      className={`absolute left-3 top-3 ${columns > 2 ? 'hidden sm:block' : ''}`}
-                    >
-                      <Chip leading={<Film className="size-3.5" aria-hidden="true" />}>
-                        {localize('com_media_video')}
-                      </Chip>
-                    </span>
-                  )}
-                </span>
-                <span
-                  id={`${id}-${tile.threadId}`}
-                  className={`flex flex-1 flex-col gap-3 sm:p-4 ${columns > 2 ? 'p-2' : 'p-3'}`}
-                >
-                  <span className="flex items-start justify-between gap-2">
-                    <span
-                      className={`break-words text-sm font-medium leading-6 ${columns > 2 ? 'line-clamp-1 sm:line-clamp-2' : 'line-clamp-2'}`}
-                    >
-                      {tile.title}
-                    </span>
-                    <ArrowUpRight
-                      className={`mt-1 size-4 shrink-0 text-text-tertiary ${columns > 2 ? 'hidden sm:block' : ''}`}
-                      aria-hidden="true"
-                    />
-                  </span>
-                  {(model || connection) && (
-                    <span
-                      className={`min-w-0 text-xs text-text-secondary ${columns > 2 ? 'hidden sm:block' : 'block'}`}
-                    >
-                      <span className="block truncate">{connection}</span>
-                      <span className="block truncate">{model}</span>
-                    </span>
-                  )}
-                  <span
-                    className={`mt-auto flex-wrap items-center justify-between gap-2 pt-1 ${columns > 2 ? 'hidden sm:flex' : 'flex'}`}
-                  >
-                    {status ? (
-                      <MediaStatus phase={status} />
-                    ) : (
-                      <Chip>
-                        {localize(tile.receipt ? 'com_media_preparing' : 'com_media_saved_thread')}
-                      </Chip>
-                    )}
-                    {(tile.thread?.activity?.readyOutputs ?? 0) > 0 && (
-                      <span className="text-xs text-text-secondary">
-                        {localize('com_media_result_count', {
-                          count: tile.thread!.activity!.readyOutputs,
-                        })}
+                  {video && cover && (
+                    <span className="pointer-events-none absolute inset-0 grid place-items-center">
+                      <span className="grid size-10 place-items-center rounded-full bg-surface-primary/80 text-text-primary shadow-md">
+                        <Play className="ml-0.5 size-4" aria-hidden="true" />
                       </span>
+                    </span>
+                  )}
+                </span>
+                <span id={`${id}-${tile.threadId}`} className="flex min-w-0 flex-col gap-1 px-0.5">
+                  <span className="line-clamp-2 text-sm font-medium leading-5 text-text-primary">
+                    {tile.title}
+                  </span>
+                  <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-text-secondary">
+                    {phase && phase !== 'succeeded' ? (
+                      <MediaStatus phase={phase} />
+                    ) : (
+                      !tile.thread && tile.receipt && <Chip>{localize('com_media_preparing')}</Chip>
+                    )}
+                    {model && <span className="truncate">{model}</span>}
+                    {model && when && <span aria-hidden="true">·</span>}
+                    {when && (
+                      <time dateTime={when.iso} title={when.absolute} className="shrink-0">
+                        {when.relative}
+                      </time>
                     )}
                   </span>
                 </span>
-              </Button>
+              </button>
             </li>
           );
         })}

@@ -55,3 +55,4 @@ export * from './mcpAuthority';
 export type * from './media';
 export type * from './mediaAccounting';
 export type * from './mediaNative';
+export type * from './mediaPreset';

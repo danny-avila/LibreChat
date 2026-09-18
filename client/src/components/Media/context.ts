@@ -3,7 +3,7 @@ import type { MediaDraft } from './state';
 
 export type MediaEditTarget = { turnId: string; asset: MediaAsset };
 
-const compareTurns = (left: MediaTurn, right: MediaTurn) =>
+export const compareTurns = (left: MediaTurn, right: MediaTurn) =>
   (left.sequence ?? 0) - (right.sequence ?? 0) || left.createdAt.localeCompare(right.createdAt);
 
 export function mediaThreadContext(turns: MediaTurn[]) {

@@ -11,6 +11,7 @@ import type {
   MediaTurn,
   MediaSubmissionReceipt,
 } from 'librechat-data-provider';
+import type { MediaHost } from '../host';
 import { clearMediaSessionStorage, mediaDraftFamily, mediaLibraryFamily } from '../state';
 import SidebarPortal, { sidebarPortalTarget } from '~/components/UnifiedSidebar/portal';
 import { MediaHostProvider } from '../host';
@@ -44,6 +45,7 @@ const catalog: MediaCatalog = {
     maxNativeRecordingBytes: 4194304,
     maxProviderOptionBytes: 32768,
     maxProviderOptionDepth: 8,
+    maxPresets: 50,
   },
   offerings: [
     {
@@ -161,12 +163,15 @@ const imageCatalog = (
   ],
 });
 
+const header = () => within(screen.getByRole('banner'));
 function Harness({
   initialThread,
   embedded = false,
+  features,
 }: {
   initialThread?: string;
   embedded?: boolean;
+  features?: MediaHost['features'];
 }) {
   const [threadId, setThreadId] = useState(initialThread);
   const target = useAtomValue(sidebarPortalTarget);
@@ -180,6 +185,7 @@ function Harness({
         enterToSend: false,
         isCurrentSession: () => true,
         openThread: (id) => setThreadId(id || undefined),
+        features,
       }}
     >
       {!embedded && (
@@ -202,7 +208,9 @@ function Harness({
   );
 }
 const clients: QueryClient[] = [];
-function mount(props: { initialThread?: string; embedded?: boolean } = {}) {
+function mount(
+  props: { initialThread?: string; embedded?: boolean; features?: MediaHost['features'] } = {},
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, cacheTime: 0 } },
     logger: { log: console.log, warn: console.warn, error: jest.fn() },
@@ -236,33 +244,35 @@ test('keeps parameters in the sidebar and restores the prompt and gallery densit
   );
   expect(sidebar.queryByRole('textbox', { name: 'com_media_prompt' })).not.toBeInTheDocument();
   fireEvent.change(prompt, { target: { value: 'A paper boat on a lake' } });
-  fireEvent.click(screen.getByRole('button', { name: 'com_media_open_gallery' }));
+  fireEvent.click(header().getByRole('button', { name: 'com_media_open_gallery' }));
   await screen.findByRole('heading', { name: 'com_media_gallery' });
   expect(prompt).not.toBeVisible();
+  const density = within(screen.getByRole('radiogroup', { name: 'com_media_columns' }));
   for (const columns of [2, 3, 4]) {
-    const option = screen.getByRole('button', { name: 'com_media_column_count:' + columns });
+    const option = density.getByRole('radio', { name: String(columns) });
     fireEvent.click(option);
-    expect(option).toHaveAttribute('aria-pressed', 'true');
+    expect(option).toHaveAttribute('aria-checked', 'true');
+    expect(document.querySelector('[data-media-gallery]')).toHaveAttribute(
+      'data-columns',
+      String(columns),
+    );
   }
-  fireEvent.click(screen.getByRole('button', { name: 'com_media_back_creation' }));
+  fireEvent.click(header().getByRole('button', { name: 'com_media_back_creation' }));
   expect(prompt).toBeVisible();
   expect(prompt).toHaveValue('A paper boat on a lake');
-  fireEvent.click(screen.getByRole('button', { name: 'com_media_open_gallery' }));
+  fireEvent.click(header().getByRole('button', { name: 'com_media_open_gallery' }));
   view.unmount();
   mediaLibraryFamily.remove('owner');
   mediaDraftFamily.remove('owner:new');
   mount();
   await screen.findByRole('heading', { name: 'com_media_gallery' });
-  expect(screen.getByRole('button', { name: 'com_media_column_count:4' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+  expect(screen.getByRole('radio', { name: '4' })).toHaveAttribute('aria-checked', 'true');
   await waitFor(() =>
     expect(document.querySelector('[data-media-composer] textarea')).toHaveValue(
       'A paper boat on a lake',
     ),
   );
-  fireEvent.click(screen.getByRole('button', { name: 'com_media_back_creation' }));
+  fireEvent.click(header().getByRole('button', { name: 'com_media_back_creation' }));
   expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue(
     'A paper boat on a lake',
   );
@@ -275,16 +285,13 @@ test('preserves older saved filters while applying the new gallery defaults', as
   );
   mount();
   await screen.findByRole('textbox', { name: 'com_media_prompt' });
-  fireEvent.click(screen.getByRole('button', { name: 'com_media_open_gallery' }));
+  fireEvent.click(header().getByRole('button', { name: 'com_media_open_gallery' }));
   expect(screen.getByRole('button', { name: 'com_media_filter_pending' })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
   expect(screen.getByRole('searchbox', { name: 'com_media_search' })).toHaveValue('boats');
-  expect(screen.getByRole('button', { name: 'com_media_column_count:2' })).toHaveAttribute(
-    'aria-pressed',
-    'true',
-  );
+  expect(screen.getByRole('radio', { name: '2' })).toHaveAttribute('aria-checked', 'true');
 });
 
 test('shows a saved thread chronologically and returns to that thread when its gallery card is selected', async () => {
@@ -297,7 +304,7 @@ test('shows a saved thread chronologically and returns to that thread when its g
   ]);
   const prompt = screen.getByRole('textbox', { name: 'com_media_prompt' });
   fireEvent.change(prompt, { target: { value: 'Make the boat blue' } });
-  fireEvent.click(screen.getByRole('button', { name: 'com_media_open_gallery' }));
+  fireEvent.click(header().getByRole('button', { name: 'com_media_open_gallery' }));
   fireEvent.click(await screen.findByRole('button', { name: 'com_media_open_named' }));
   expect(screen.getByText('Result 2')).toBeVisible();
   expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue(
@@ -430,4 +437,38 @@ test('removing the automatic image starts fresh and preserves that choice and th
   expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue(
     'A different subject',
   );
+});
+
+test('the sidebar offers history while creating and a new creation while browsing', async () => {
+  mount({ initialThread: 'thread' });
+  await screen.findByText('Result 2');
+  const sidebar = () => within(screen.getByRole('complementary', { name: 'Studio sidebar' }));
+  expect(sidebar().queryByRole('button', { name: 'com_media_new_thread' })).not.toBeInTheDocument();
+  fireEvent.click(sidebar().getByRole('button', { name: 'com_media_open_gallery' }));
+  await screen.findByRole('heading', { name: 'com_media_gallery' });
+  expect(
+    sidebar().queryByRole('button', { name: 'com_media_open_gallery' }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(sidebar().getByRole('button', { name: 'com_media_new_thread' }));
+  await waitFor(() =>
+    expect(screen.queryByRole('heading', { name: 'com_media_gallery' })).not.toBeInTheDocument(),
+  );
+  expect(screen.getByRole('heading', { name: 'com_media_welcome' })).toBeVisible();
+  expect(sidebar().getByRole('button', { name: 'com_media_open_gallery' })).toBeInTheDocument();
+});
+
+test('temporary creations are a header toggle for new work only and mark the draft', async () => {
+  mount({ features: { temporary: true } });
+  await screen.findByRole('textbox', { name: 'com_media_prompt' });
+  const toggle = header().getByRole('button', { name: 'com_media_temporary_creation' });
+  expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  expect(screen.queryByText('com_media_temporary_hint')).not.toBeInTheDocument();
+  fireEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByText('com_media_temporary_hint')).toBeVisible();
+  fireEvent.click(header().getByRole('button', { name: 'com_media_open_gallery' }));
+  await screen.findByRole('heading', { name: 'com_media_gallery' });
+  expect(
+    header().queryByRole('button', { name: 'com_media_temporary_creation' }),
+  ).not.toBeInTheDocument();
 });

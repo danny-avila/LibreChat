@@ -5,9 +5,12 @@ import { createMediaNativeMethods } from './mediaNative';
 export { createMediaNativeMethods };
 import type { MediaAccountingMethods } from '~/types/mediaAccounting';
 export { createMediaAccountingMethods, MediaAccountingError };
-import { createMediaMethods, MediaPersistenceError } from './media';
+import { createMediaMethods, deriveMediaThreadTitle, MediaPersistenceError } from './media';
 import type { MediaMethods } from '~/types/media';
-export { createMediaMethods, MediaPersistenceError };
+export { createMediaMethods, deriveMediaThreadTitle, MediaPersistenceError };
+import { createMediaPresetMethods } from './mediaPreset';
+import type { MediaPresetMethods } from '~/types/mediaPreset';
+export { createMediaPresetMethods };
 import {
   createOpenIDRefreshFlightMethods,
   type OpenIDRefreshFlightMethods,
@@ -229,6 +232,7 @@ export {
 
 export type AllMethods = MediaNativeMethods &
   MediaAccountingMethods &
+  MediaPresetMethods &
   MediaMethods &
   UserMethods &
   SessionMethods &
@@ -457,6 +461,7 @@ export function createMethods(
     ...mediaMethods,
     ...createMediaNativeMethods(mongoose, mediaMethods),
     ...createMediaAccountingMethods(mongoose),
+    ...createMediaPresetMethods(mongoose),
     ...createUserMethods(mongoose, { getCache: deps.getCache }),
     ...createSessionMethods(mongoose),
     ...createTokenMethods(mongoose),

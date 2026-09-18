@@ -265,6 +265,24 @@ const startServer = async () => {
     }),
     upload: multer,
     accounting: createMediaAccounting({ repository: agentEventMethods, now: Date.now }),
+    titles: {
+      db: {
+        getUserKey: agentEventMethods.getUserKey,
+        getUserKeyValues: agentEventMethods.getUserKeyValues,
+      },
+      usage: {
+        spendTokens: agentEventMethods.spendTokens,
+        spendStructuredTokens: agentEventMethods.spendStructuredTokens,
+        pricing: {
+          getMultiplier: agentEventMethods.getMultiplier,
+          getCacheMultiplier: agentEventMethods.getCacheMultiplier,
+        },
+        bulkWriteOps: {
+          insertMany: agentEventMethods.bulkInsertTransactions,
+          updateBalance: agentEventMethods.updateBalance,
+        },
+      },
+    },
     log: logger.error.bind(logger),
   });
   app.locals.mediaRuntime = mediaRuntime;

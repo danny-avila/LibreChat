@@ -152,6 +152,10 @@ const submissionFields = {
   selection: mediaSelectionSchema,
   prompt: z.string().trim().min(1),
   inputs: z.array(mediaInputSchema).default([]),
+  /** A new thread that retires itself after the temporary retention window. */
+  temporary: z.boolean().optional(),
+  /** Turns submitted together for a side-by-side model comparison share one identifier. */
+  comparisonId: mediaIdSchema.optional(),
 };
 export const mediaSubmissionRequestSchema = z
   .discriminatedUnion('operation', [
@@ -183,6 +187,13 @@ export const mediaSubmissionRequestSchema = z
         code: 'custom',
         path: ['parentTurnId'],
         message: 'A parent requires a thread',
+      });
+    }
+    if (request.temporary && request.threadId) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['temporary'],
+        message: 'Only a new thread can be temporary',
       });
     }
     if (

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAtom, useAtomValue } from 'jotai';
-import { ArrowLeft, History, Images, Plus, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, HatGlasses, History, Images, Plus, SlidersHorizontal } from 'lucide-react';
 import {
   Button,
   EmptyState,
@@ -10,6 +10,7 @@ import {
   OGDialogContent,
   OGDialogTitle,
   OGDialogDescription,
+  TooltipAnchor,
 } from '@librechat/client';
 import type { ReactNode } from 'react';
 import type { MediaReceipt } from '~/data-provider/Media';
@@ -20,14 +21,15 @@ import {
   useMediaThread,
   useMediaThreads,
 } from '~/data-provider/Media';
-import { mediaLibraryFamily, mediaPendingFamily } from './state';
+import { mediaDraftFamily, mediaLibraryFamily, mediaPendingFamily } from './state';
+import { mediaFeatures, useMediaHost } from './host';
 import { mediaThreadContext } from './context';
+import { cn, setDocumentTitle } from '~/utils';
 import { useMediaCommands } from './commands';
 import { mediaErrorLabels } from './labels';
 import { MediaThreadView } from './Thread';
 import { MediaGallery } from './Gallery';
 import { useLocalize } from '~/hooks';
-import { useMediaHost } from './host';
 import { MediaForm } from './Form';
 
 export default function MediaWorkspace({
@@ -40,6 +42,7 @@ export default function MediaWorkspace({
   settingsHost?: { render: (settings: ReactNode) => ReactNode; toggle: ReactNode };
 }) {
   const host = useMediaHost();
+  const features = mediaFeatures(host);
   const localize = useLocalize();
   const workspace = useRef<HTMLDivElement>(null);
   const scroll = useRef<HTMLDivElement>(null);
@@ -51,6 +54,7 @@ export default function MediaWorkspace({
   const settingsTrigger = useRef<HTMLButtonElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [library, setLibrary] = useAtom(mediaLibraryFamily(host.scope));
+  const [newDraft, setNewDraft] = useAtom(mediaDraftFamily(`${host.scope}:new`));
   const gallery = library.view === 'gallery' && library.threadId === threadId;
   const setView = (view: 'thread' | 'gallery') =>
     setLibrary((previous) => ({ ...previous, view, threadId }));
@@ -101,6 +105,11 @@ export default function MediaWorkspace({
   );
   const hasDetail = !!detail.data;
   const hasCatalog = !!catalog.data;
+  const studioTitle = localize('com_media_studio');
+  const threadTitle = detail.data?.thread.title;
+  useEffect(() => {
+    setDocumentTitle(threadTitle ? `${threadTitle} | ${studioTitle}` : studioTitle);
+  }, [threadTitle, studioTitle]);
   useEffect(() => {
     if (!focusRequested.current || gallery) return;
     const frame = requestAnimationFrame(focusPrompt);
@@ -223,6 +232,18 @@ export default function MediaWorkspace({
     >
       {settingsHost?.render(
         <div className="space-y-5 px-3 pb-6 pt-4">
+          <Button
+            variant="outline"
+            className="w-full justify-start gap-2"
+            onClick={() => (gallery ? create() : setView('gallery'))}
+          >
+            {gallery ? (
+              <Plus className="size-4" aria-hidden="true" />
+            ) : (
+              <History className="size-4" aria-hidden="true" />
+            )}
+            {localize(gallery ? 'com_media_new_thread' : 'com_media_open_gallery')}
+          </Button>
           <h2 className="flex items-center gap-2 text-sm font-semibold">
             <SlidersHorizontal className="size-4" aria-hidden="true" />
             {localize('com_media_settings')}
@@ -239,46 +260,84 @@ export default function MediaWorkspace({
           />
           <h1 className="truncate text-base font-semibold">{localize('com_media_studio')}</h1>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <Button
-            variant={gallery ? 'secondary' : 'ghost'}
-            size="sm"
-            aria-pressed={gallery}
-            aria-label={localize(gallery ? 'com_media_back_creation' : 'com_media_open_gallery')}
-            onClick={() => (gallery ? focusComposer() : setView('gallery'))}
-          >
-            {gallery ? (
-              <ArrowLeft className="size-4" aria-hidden="true" />
-            ) : (
-              <History className="size-4" aria-hidden="true" />
-            )}
-            <span className="ml-1.5 hidden sm:inline">
-              {localize(gallery ? 'com_media_back_creation' : 'com_media_history_button')}
-            </span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-label={localize('com_media_new_thread')}
-            onClick={create}
-          >
-            <Plus className="size-4" aria-hidden="true" />
-            <span className="ml-1.5 hidden sm:inline">{localize('com_media_new_thread')}</span>
-          </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          {features.temporary && !threadId && !gallery && (
+            <TooltipAnchor
+              description={localize('com_media_temporary_creation')}
+              render={
+                <Button
+                  size="icon"
+                  variant="header-action"
+                  className={cn('size-9', newDraft.temporary && 'bg-surface-active')}
+                  aria-pressed={!!newDraft.temporary}
+                  aria-label={localize('com_media_temporary_creation')}
+                  onClick={() =>
+                    setNewDraft((previous) => ({
+                      ...previous,
+                      temporary: !previous.temporary,
+                      revision: previous.revision + 1,
+                    }))
+                  }
+                >
+                  <HatGlasses className="icon-md" aria-hidden="true" />
+                </Button>
+              }
+            />
+          )}
+          <TooltipAnchor
+            description={localize(gallery ? 'com_media_back_creation' : 'com_media_open_gallery')}
+            render={
+              <Button
+                size="icon"
+                variant="header-action"
+                className={cn('size-9', gallery && 'bg-surface-active-alt')}
+                aria-pressed={gallery}
+                aria-label={localize(
+                  gallery ? 'com_media_back_creation' : 'com_media_open_gallery',
+                )}
+                onClick={() => (gallery ? focusComposer() : setView('gallery'))}
+              >
+                {gallery ? (
+                  <ArrowLeft className="icon-md" aria-hidden="true" />
+                ) : (
+                  <History className="icon-md" aria-hidden="true" />
+                )}
+              </Button>
+            }
+          />
+          <TooltipAnchor
+            description={localize('com_media_new_thread')}
+            render={
+              <Button
+                size="icon"
+                variant="header-action"
+                className="size-9"
+                aria-label={localize('com_media_new_thread')}
+                onClick={create}
+              >
+                <Plus className="icon-md" aria-hidden="true" />
+              </Button>
+            }
+          />
           {settingsHost ? (
             settingsHost.toggle
           ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              ref={settingsTrigger}
-              aria-label={localize('com_media_settings')}
-              aria-expanded={settingsOpen}
-              onClick={() => setSettingsOpen(true)}
-            >
-              <SlidersHorizontal className="size-4" aria-hidden="true" />
-              <span className="ml-1.5 hidden sm:inline">{localize('com_nav_settings')}</span>
-            </Button>
+            <TooltipAnchor
+              description={localize('com_media_settings')}
+              render={
+                <Button
+                  size="icon"
+                  variant="header-action"
+                  className="size-9"
+                  ref={settingsTrigger}
+                  aria-label={localize('com_media_settings')}
+                  aria-expanded={settingsOpen}
+                  onClick={() => setSettingsOpen(true)}
+                >
+                  <SlidersHorizontal className="icon-md" aria-hidden="true" />
+                </Button>
+              }
+            />
           )}
         </div>
       </header>

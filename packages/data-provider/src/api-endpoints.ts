@@ -54,6 +54,9 @@ export const mediaURLUploads = () => `${mediaUploads()}/url`;
 export const mediaImports = () => `${mediaRoot()}/imports`;
 export const mediaImport = (clientRequestId: string) =>
   `${mediaImports()}/${encodeURIComponent(clientRequestId)}`;
+export const mediaPresets = () => `${mediaRoot()}/presets`;
+export const mediaPreset = (presetId: string) =>
+  `${mediaPresets()}/${encodeURIComponent(presetId)}`;
 
 // Testing this buildQuery function
 const buildQuery = (params: Record<string, unknown>): string => {

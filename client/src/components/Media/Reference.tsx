@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, Upload } from 'lucide-react';
+import { Link, Paperclip, Upload } from 'lucide-react';
 import {
   Button,
   ControlCombobox,
@@ -12,6 +12,7 @@ import {
   OGDialogTitle,
   OGDialogDescription,
   OGDialogFooter,
+  TooltipAnchor,
 } from '@librechat/client';
 import type { MediaURLUploadRequest } from 'librechat-data-provider';
 import { mediaInputRoleLabels } from './labels';
@@ -102,18 +103,25 @@ export function MediaReferenceUpload({
           }}
         />
       )}
-      <Button
-        ref={trigger}
-        variant="outline"
-        size="sm"
-        disabled={disabled || uploading || (!localAccept && !hostedRoles.length)}
-        onClick={() =>
-          hostedRoles.length ? setDialogOwner(contextKey) : fileInput.current?.click()
+      <TooltipAnchor
+        description={localize('com_media_upload')}
+        render={
+          <Button
+            ref={trigger}
+            variant="ghost"
+            size="icon-theme"
+            shape="round"
+            className="hover:bg-surface-composer-hover"
+            aria-label={localize('com_media_upload')}
+            disabled={disabled || uploading || (!localAccept && !hostedRoles.length)}
+            onClick={() =>
+              hostedRoles.length ? setDialogOwner(contextKey) : fileInput.current?.click()
+            }
+          >
+            <Paperclip className="icon-md" aria-hidden="true" />
+          </Button>
         }
-      >
-        <Upload className="mr-1.5 size-4" aria-hidden="true" />
-        {localize('com_media_upload')}
-      </Button>
+      />
       {uploading && !open && (
         <>
           <Spinner className="size-4" />

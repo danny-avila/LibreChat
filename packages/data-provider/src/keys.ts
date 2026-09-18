@@ -8,6 +8,7 @@ export enum QueryKeys {
   mediaJobOutputs = 'mediaJobOutputs',
   mediaSubmission = 'mediaSubmission',
   mediaImport = 'mediaImport',
+  mediaPresets = 'mediaPresets',
   messages = 'messages',
   sharedMessages = 'sharedMessages',
   sharedStartupConfig = 'sharedStartupConfig',

@@ -26,6 +26,7 @@ import {
   createMediaJobModel,
   createMediaThreadModel,
   createMediaTurnModel,
+  createMediaPresetModel,
 } from '~/models/media';
 import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { createMediaNativePartModel } from '~/models/mediaNativePart';
@@ -95,6 +96,11 @@ function positive(value: number): number {
     throw new MediaPersistenceError('invalid_input', 'A positive media limit is required');
   }
   return value;
+}
+
+/** Bounds a title to `maxTitleChars` UTF-16 units without splitting a surrogate pair. */
+export function deriveMediaThreadTitle(prompt: string, maxTitleChars: number): string {
+  return prompt.slice(0, positive(maxTitleChars)).replace(/[\uD800-\uDBFF]$/, '');
 }
 function cursorOf(time: string, id: string): string {
   return Buffer.from(JSON.stringify([time, id])).toString('base64url');
@@ -176,7 +182,19 @@ function threadView(thread: MediaStoredThread): MediaThread {
     turnCount: thread.turnCount,
     ...(thread.cover ? { cover: assetView(thread.cover) } : {}),
     ...(thread.retiredAt ? { retiredAt: thread.retiredAt } : {}),
+    ...(thread.expiresAt ? { expiresAt: thread.expiresAt } : {}),
   };
+}
+/** A temporary creation expires a fixed interval after the thread's own creation time. */
+function temporaryExpiry(
+  turn: MediaStoredTurn,
+  temporary: boolean | undefined,
+  retentionMs: number | undefined,
+): string | undefined {
+  if (!turn.newThread || temporary !== true || retentionMs === undefined) {
+    return undefined;
+  }
+  return new Date(new Date(turn.createdAt).getTime() + positive(retentionMs)).toISOString();
 }
 
 /** Storage-native protocol; no transactions, in-process locks, or provider calls. */
@@ -189,6 +207,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
   const Permit = createMediaPermitModel(mongoose);
   const Activation = createMediaActivationModel(mongoose);
   const Owner = createMediaOwnerModel(mongoose);
+  const Preset = createMediaPresetModel(mongoose);
   let indexPromise: Promise<void> | undefined;
 
   const getJob: MediaMethods['getMediaJob'] = async (scope, jobId) =>
@@ -196,7 +215,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
 
   async function ensureMediaIndexes(): Promise<void> {
     indexPromise ??= Promise.all(
-      [Thread, Turn, Job, AssetWrite, File, Permit, Activation, Owner].map((model) =>
+      [Thread, Turn, Job, AssetWrite, File, Permit, Activation, Owner, Preset].map((model) =>
         model.createIndexes(),
       ),
     )
@@ -413,7 +432,11 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     return (await getJob(job, job.jobId))!.receipt;
   }
 
-  async function ensureThread(turn: MediaStoredTurn, title: string): Promise<MediaStoredThread> {
+  async function ensureThread(
+    turn: MediaStoredTurn,
+    title: string,
+    expiresAt?: string,
+  ): Promise<MediaStoredThread> {
     const scope = scopeFilter(turn);
     if (turn.newThread) {
       await Thread.updateOne(
@@ -432,6 +455,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
             updatedAt: turn.createdAt,
             nextTurnSequence: 0,
             dispatchJobIds: [],
+            ...(expiresAt ? { expiresAt } : {}),
           },
         },
         { upsert: true, writeConcern: durable },
@@ -531,11 +555,10 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     turn: MediaStoredTurn,
     maxRetainers: number,
     maxTitleChars: number,
+    expiresAt?: string,
   ): Promise<void> {
-    const title = (turn.importRequest?.title ?? turn.prompt)
-      .slice(0, positive(maxTitleChars))
-      .replace(/[\uD800-\uDBFF]$/, '');
-    await ensureThread(turn, title);
+    const title = deriveMediaThreadTitle(turn.importRequest?.title ?? turn.prompt, maxTitleChars);
+    await ensureThread(turn, title, expiresAt);
     await Turn.updateOne(
       { ...scopeFilter(turn), turnId: turn.turnId },
       { $setOnInsert: turn },
@@ -602,6 +625,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
       selection: job.selection,
       operation: job.operation,
       parentTurnId: job.request.parentTurnId,
+      ...(job.request.comparisonId ? { comparisonId: job.request.comparisonId } : {}),
       sourceJobId: job.jobId,
       newThread: job.newThread,
       publicationPhase: 'preparing',
@@ -610,7 +634,12 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
       if (!(await admitOwnerWork(scope, `job:${jobId}`))) {
         throw new MediaPersistenceError('retired', 'Media account is being deleted');
       }
-      await publishTurn(turn, options.maxRetainers, options.maxTitleChars);
+      await publishTurn(
+        turn,
+        options.maxRetainers,
+        options.maxTitleChars,
+        temporaryExpiry(turn, job.request.temporary, options.temporaryRetentionMs),
+      );
       await Turn.updateOne(
         { ...scope, turnId: job.turnId },
         { $set: { publicationPhase: 'accepted' } },
@@ -878,7 +907,12 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
   }) => {
     positive(limit);
     const after = cursorParts(cursor);
-    const query: FilterQuery<MediaStoredThread> = { ...scopeFilter(scope), status: 'active' };
+    // Temporary creations stay reachable by id but never appear in the library.
+    const query: FilterQuery<MediaStoredThread> = {
+      ...scopeFilter(scope),
+      status: 'active',
+      expiresAt: { $exists: false },
+    };
     if (after) {
       query.$or = [
         { createdAt: { $lt: after[0] } },
@@ -1180,6 +1214,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         createdAt: turn.createdAt,
         prompt: turn.prompt,
         parentTurnId: turn.parentTurnId,
+        ...(turn.comparisonId ? { comparisonId: turn.comparisonId } : {}),
         inputs: turn.inputs,
         selection: turn.selection,
         operation: turn.operation,
@@ -1510,6 +1545,23 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     return true;
   };
 
+  const retireExpiredMediaThreads: MediaMethods['retireExpiredMediaThreads'] = async ({
+    scope: inputScope,
+    now,
+    limit,
+  }) => {
+    const scope = scopeFilter(inputScope);
+    const due = await Thread.find({ ...scope, status: 'active', expiresAt: { $lte: iso(now) } })
+      .sort({ expiresAt: 1, threadId: 1 })
+      .limit(positive(limit))
+      .select({ threadId: 1 })
+      .lean();
+    for (const thread of due) {
+      await retireMediaThread(scope, thread.threadId);
+    }
+    return due.length;
+  };
+
   async function globalScopes(
     kind: 'job' | 'turn' | 'thread' | 'file' | 'owner' | 'write',
     query: PipelineStage.Match['$match'],
@@ -1649,6 +1701,20 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
           }),
         }
       : null;
+  };
+
+  const replaceMediaThreadTitle: MediaMethods['replaceMediaThreadTitle'] = async (input) => {
+    const result = await Thread.updateOne(
+      {
+        ...scopeFilter(input.scope),
+        threadId: input.threadId,
+        status: 'active',
+        title: input.expectedTitle,
+      },
+      { $set: { title: input.title, updatedAt: new Date().toISOString() }, $inc: { version: 1 } },
+      { writeConcern: durable },
+    );
+    return result.matchedCount > 0;
   };
 
   const updateMediaThread: MediaMethods['updateMediaThread'] = async (input) => {
@@ -2531,6 +2597,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
       },
       { writeConcern: durable },
     );
+    await Preset.deleteMany(scopeFilter(scope), { writeConcern: durable });
   };
 
   const reconcileMediaAccountDeletion: MediaMethods['reconcileMediaAccountDeletion'] = async ({
@@ -2713,8 +2780,13 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
           ],
         }
       : {};
-    const [threads, files, nativeJobs, deletedOwners, assetWrites] = await Promise.all([
+    const [threads, expiring, files, nativeJobs, deletedOwners, assetWrites] = await Promise.all([
       globalScopes('thread', { status: 'retiring', ...threadAfter }, limit),
+      globalScopes(
+        'thread',
+        { status: 'active', expiresAt: { $lte: iso(now) }, ...threadAfter },
+        limit,
+      ),
       globalScopes(
         'file',
         {
@@ -2750,7 +2822,14 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         limit,
       ),
     ]);
-    const scopes = [...threads, ...nativeJobs, ...deletedOwners, ...assetWrites, ...files];
+    const scopes = [
+      ...threads,
+      ...expiring,
+      ...nativeJobs,
+      ...deletedOwners,
+      ...assetWrites,
+      ...files,
+    ];
     const rows = [...new Map(scopes.map((scope) => [canonical(scope), scope])).values()].sort(
       (a, b) =>
         a.ownerId.localeCompare(b.ownerId) || (a.tenantId ?? '').localeCompare(b.tenantId ?? ''),
@@ -2762,6 +2841,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
       ...(last &&
       (rows.length > limit ||
         threads.length > limit ||
+        expiring.length > limit ||
         files.length > limit ||
         nativeJobs.length > limit ||
         deletedOwners.length > limit ||
@@ -2815,6 +2895,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         : null;
     },
     updateMediaThread,
+    replaceMediaThreadTitle,
     claimMediaJob,
     renewMediaJob,
     beginMediaSubmission,
@@ -2846,6 +2927,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     reconcileMediaPermits,
     listMediaCleanupScopes,
     reconcileMediaRetirements,
+    retireExpiredMediaThreads,
     listMediaExpiredAssets,
   };
 }

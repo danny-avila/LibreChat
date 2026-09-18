@@ -6,6 +6,7 @@ import {
   createMediaJobModel,
   createMediaThreadModel,
   createMediaTurnModel,
+  createMediaPresetModel,
 } from './media';
 import { createAgentQueuedTurnModel, createAgentQueuedTurnSequenceModel } from './queuedTurn';
 import { createAgentTriggerLaneSequenceModel } from './triggerLaneSequence';
@@ -70,6 +71,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
   MediaActivation: ReturnType<typeof createMediaActivationModel>;
   MediaSettlement: ReturnType<typeof createMediaSettlementModel>;
   MediaNativePart: ReturnType<typeof createMediaNativePartModel>;
+  MediaPreset: ReturnType<typeof createMediaPresetModel>;
   Token: ReturnType<typeof createTokenModel>;
   Session: ReturnType<typeof createSessionModel>;
   Balance: ReturnType<typeof createBalanceModel>;
@@ -127,6 +129,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
     MediaActivation: createMediaActivationModel(mongoose),
     MediaSettlement: createMediaSettlementModel(mongoose),
     MediaNativePart: createMediaNativePartModel(mongoose),
+    MediaPreset: createMediaPresetModel(mongoose),
     User: createUserModel(mongoose),
     Token: createTokenModel(mongoose),
     Session: createSessionModel(mongoose),

@@ -13,7 +13,9 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import {
   createMediaMethods,
   createMediaNativeMethods,
+  createMediaPresetMethods,
   createMediaAccountingMethods,
+  getTempChatRetentionHours,
   runAsSystem,
   tenantStorage,
   keySchema,
@@ -23,6 +25,9 @@ import {
   FileSources,
   resolveMediaConfig,
   mediaCatalogSchema,
+  mediaPresetSchema,
+  mediaPresetListSchema,
+  mediaThreadSchema,
   mediaSubmissionRequestSchema,
   mediaSubmissionReceiptSchema,
   mediaURLUploadResponseSchema,
@@ -31,6 +36,7 @@ import type {
   AppConfig,
   MediaMethods,
   MediaNativeMethods,
+  MediaPresetMethods,
   MediaOwnerScope,
 } from '@librechat/data-schemas';
 import type { Server } from 'node:http';
@@ -68,6 +74,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
   let remoteReference: Buffer;
   let referenceReads = 0;
   let referenceHeaders: Array<{ authorization?: string; cookie?: string }> = [];
+  let chatBodies: Array<{ model?: string; messages?: Array<{ content?: string }> }> = [];
   let chunkedReference = false;
   let referenceStatus = 200;
   let holdReference: ((response: express.Response) => void) | undefined;
@@ -80,7 +87,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
   let behavior: 'image' | 'uncertain' | 'rejected' | 'video' | 'unsafe-svg' | 'mislabeled' =
     'image';
   let accounting: ReturnType<typeof createMediaAccounting>;
-  let repository: MediaMethods & MediaNativeMethods;
+  let repository: MediaMethods & MediaNativeMethods & MediaPresetMethods;
   let scope: MediaOwnerScope;
   let config: AppConfig;
   let runtime: ReturnType<typeof createMediaRuntime>;
@@ -92,8 +99,13 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     await mongoose.connect(mongo.getUri());
     mongoose.model('Key', keySchema);
     const mediaMethods = createMediaMethods(mongoose);
-    repository = { ...mediaMethods, ...createMediaNativeMethods(mongoose, mediaMethods) };
+    repository = {
+      ...mediaMethods,
+      ...createMediaNativeMethods(mongoose, mediaMethods),
+      ...createMediaPresetMethods(mongoose),
+    };
     await repository.ensureMediaIndexes();
+    await repository.ensureMediaPresetIndexes();
     directory = await mkdtemp(path.join(tmpdir(), 'librechat-media-'));
     original = await sharp({ create: { width: 24, height: 16, channels: 4, background: '#cde' } })
       .png()
@@ -189,6 +201,23 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       }
       res.json({ data: [{ b64_json: original.toString('base64') }] });
     });
+    api.post('/v1/chat/completions', (req, res) => {
+      chatBodies.push(req.body);
+      res.json({
+        id: 'chatcmpl-1',
+        object: 'chat.completion',
+        created: 0,
+        model: req.body.model,
+        choices: [
+          {
+            index: 0,
+            message: { role: 'assistant', content: '"Small Observatory."' },
+            finish_reason: 'stop',
+          },
+        ],
+        usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 },
+      });
+    });
     api.post('/v1/videos', (req, res) => {
       posts++;
       routedBodies.push(JSON.stringify(req.body));
@@ -276,6 +305,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     remoteReference.writeUInt32LE(2, 40);
     referenceReads = 0;
     referenceHeaders = [];
+    chatBodies = [];
     chunkedReference = false;
     referenceStatus = 200;
     holdReference = undefined;
@@ -367,6 +397,16 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       },
       upload: multer,
       accounting,
+      titles: {
+        db: {
+          getUserKey: async () => {
+            throw new Error('unexpected user key lookup');
+          },
+          getUserKeyValues: async () => {
+            throw new Error('unexpected user key lookup');
+          },
+        },
+      },
       log: (error) => {
         throw error;
       },
@@ -478,6 +518,37 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
         token: 'delete',
       }),
     ).toBeNull();
+  });
+
+  it('names a new thread with the configured title model after the receipt, never on replay or follow-up', async () => {
+    config.media!.titles.endpoint = 'Fixture';
+    config.media!.titles.model = 'fixture-title';
+    const response = await submit('generated-title');
+    expect(response.status).toBe(202);
+    const receipt = mediaSubmissionReceiptSchema.parse(response.body);
+    const deadline = Date.now() + 10_000;
+    let title: string | undefined;
+    while (Date.now() < deadline) {
+      title = (await repository.getMediaThread(scope, receipt.threadId))?.title;
+      if (title === 'Small Observatory') break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(title).toBe('Small Observatory');
+    expect(chatBodies).toHaveLength(1);
+    expect(chatBodies[0].model).toBe('fixture-title');
+    expect(JSON.stringify(chatBodies[0].messages)).toContain('A small observatory');
+    const replay = await submit('generated-title');
+    expect(replay.body.threadId).toBe(receipt.threadId);
+    const followUp = await submit('generated-title-follow-up', {
+      threadId: receipt.threadId,
+      parentTurnId: receipt.turnId,
+    });
+    expect(followUp.status).toBe(202);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(chatBodies).toHaveLength(1);
+    expect((await repository.getMediaThread(scope, receipt.threadId))?.title).toBe(
+      'Small Observatory',
+    );
   });
 
   it('uploads a safe SVG original and prepares a raster reference for the selected image API', async () => {
@@ -884,7 +955,11 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     expect((await run(response.body.jobId))?.phase).toBe('running');
     config.media = resolveMediaConfig();
     const mediaMethods = createMediaMethods(mongoose);
-    repository = { ...mediaMethods, ...createMediaNativeMethods(mongoose, mediaMethods) };
+    repository = {
+      ...mediaMethods,
+      ...createMediaNativeMethods(mongoose, mediaMethods),
+      ...createMediaPresetMethods(mongoose),
+    };
     expect((await run(response.body.jobId))?.phase).toBe('succeeded');
     expect(posts).toBe(1);
     expect(polls).toBe(1);
@@ -1464,5 +1539,127 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     scope = { ...scope, ownerId: new mongoose.Types.ObjectId().toString() };
     await request(app).get(`/api/media/jobs/${response.body.jobId}`).expect(404);
     await request(app).get(`/api/media/threads/${response.body.threadId}`).expect(404);
+  });
+
+  it('keeps a temporary creation out of the library and never asks the title model to name it', async () => {
+    config.media!.titles.endpoint = 'Fixture';
+    config.media!.titles.model = 'fixture-title';
+    const response = await submit('temporary-creation', { temporary: true });
+    expect(response.status).toBe(202);
+    const receipt = mediaSubmissionReceiptSchema.parse(response.body);
+    expect(receipt.phase).toBe('accepted');
+    await request(app).get(`/api/media/threads/${receipt.threadId}`).expect(200);
+    const opened = await request(app).get(`/api/media/threads/${receipt.threadId}`).expect(200);
+    const thread = mediaThreadSchema.parse(opened.body.thread);
+    const retentionMs = getTempChatRetentionHours(config.interfaceConfig) * 3_600_000;
+    expect(thread.expiresAt).toBe(
+      new Date(new Date(thread.createdAt).getTime() + retentionMs).toISOString(),
+    );
+    for (const query of ['', '?include=activity']) {
+      const listed = await request(app).get(`/api/media/threads${query}`).expect(200);
+      expect(listed.body.items).toEqual([]);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(chatBodies).toHaveLength(0);
+
+    const durable = mediaSubmissionReceiptSchema.parse((await submit('durable-creation')).body);
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline && chatBodies.length === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(chatBodies).toHaveLength(1);
+    expect(JSON.stringify(chatBodies[0].messages)).not.toContain('temporary');
+    const listed = await request(app).get('/api/media/threads').expect(200);
+    expect(listed.body.items.map((item: { threadId: string }) => item.threadId)).toEqual([
+      durable.threadId,
+    ]);
+    expect(listed.body.items[0]).not.toHaveProperty('expiresAt');
+    await request(app)
+      .post('/api/media/submissions')
+      .send({
+        clientRequestId: 'temporary-follow-up',
+        prompt: 'A small observatory',
+        operation: 'image.generate',
+        temporary: true,
+        threadId: durable.threadId,
+        selection: { connectionId: 'images', modelId: 'gpt-image-1', catalogVersion: 'v1' },
+      })
+      .expect(422);
+  });
+
+  it('saves, lists, promotes and deletes Studio presets over HTTP with role and limit guards', async () => {
+    const settings = {
+      operation: 'image.generate',
+      connectionId: 'images',
+      modelId: 'gpt-image-1',
+      parameters: { quality: 'high' },
+    };
+    const first = mediaPresetSchema.parse(
+      (
+        await request(app)
+          .post('/api/media/presets')
+          .send({ title: 'Bright', settings })
+          .expect(201)
+      ).body,
+    );
+    expect(first).toMatchObject({ title: 'Bright', isDefault: false });
+    expect(first.settings).toMatchObject(settings);
+    const second = mediaPresetSchema.parse(
+      (
+        await request(app)
+          .post('/api/media/presets')
+          .send({ title: 'Alpha', isDefault: true, settings })
+          .expect(201)
+      ).body,
+    );
+    const ids = async () =>
+      mediaPresetListSchema
+        .parse((await request(app).get('/api/media/presets').expect(200)).body)
+        .items.map((preset) => [preset.presetId, preset.isDefault]);
+    expect(await ids()).toEqual([
+      [second.presetId, true],
+      [first.presetId, false],
+    ]);
+    const promoted = mediaPresetSchema.parse(
+      (
+        await request(app)
+          .patch(`/api/media/presets/${first.presetId}`)
+          .send({ isDefault: true })
+          .expect(200)
+      ).body,
+    );
+    expect(promoted).toMatchObject({ presetId: first.presetId, isDefault: true, title: 'Bright' });
+    expect(await ids()).toEqual([
+      [first.presetId, true],
+      [second.presetId, false],
+    ]);
+    await request(app).patch(`/api/media/presets/${first.presetId}`).send({}).expect(422);
+    await request(app)
+      .patch(`/api/media/presets/${first.presetId}`)
+      .send({ title: 'x'.repeat(config.media!.limits.maxTitleChars + 1) })
+      .expect(422);
+    await request(app).patch('/api/media/presets/missing').send({ title: 'Ghost' }).expect(404);
+    expect(
+      (await request(app).delete(`/api/media/presets/${first.presetId}`).expect(200)).body,
+    ).toEqual({ presetId: first.presetId });
+    await request(app).delete(`/api/media/presets/${first.presetId}`).expect(404);
+    expect(await ids()).toEqual([[second.presetId, false]]);
+
+    config.media!.limits.maxPresets = 1;
+    const over = await request(app).post('/api/media/presets').send({ title: 'Over', settings });
+    expect(over.status).toBe(429);
+    expect(over.body).toEqual({ error: { code: 'quota_exceeded' } });
+
+    const stranger = { ...scope, ownerId: new mongoose.Types.ObjectId().toString() };
+    expect(await repository.listMediaPresets(stranger)).toEqual([]);
+
+    userRole = 'READ_ONLY';
+    await request(app).post('/api/media/presets').send({ title: 'Nope', settings }).expect(403);
+    await request(app)
+      .patch(`/api/media/presets/${second.presetId}`)
+      .send({ title: 'Nope' })
+      .expect(403);
+    await request(app).delete(`/api/media/presets/${second.presetId}`).expect(403);
+    expect(await ids()).toEqual([[second.presetId, false]]);
   });
 });

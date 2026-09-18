@@ -1,8 +1,10 @@
 import { useId, useRef, useState } from 'react';
 import { v4 } from 'uuid';
+import * as Ariakit from '@ariakit/react';
+import { useTranslation } from 'react-i18next';
 import { useSetAtom, useAtomValue } from 'jotai';
-import { Clock3, Images, Pencil, RotateCcw, Trash2 } from 'lucide-react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { Clock3, Ellipsis, HatGlasses, Images, Pen, Pencil, RotateCcw, Trash } from 'lucide-react';
 import {
   dataService,
   QueryKeys,
@@ -13,6 +15,7 @@ import {
 import {
   Button,
   Alert,
+  Chip,
   Spinner,
   Input,
   Label,
@@ -20,6 +23,8 @@ import {
   OGDialogContent,
   OGDialogTitle,
   OGDialogDescription,
+  DropdownPopup,
+  TooltipAnchor,
 } from '@librechat/client';
 import type {
   MediaAsset,
@@ -29,12 +34,15 @@ import type {
   MediaThreadDetail,
   MediaTurn,
 } from 'librechat-data-provider';
-import type { PendingMedia } from './state';
+import type { MenuItemProps } from '~/common';
+import type { MediaSend } from './state';
 import { mediaErrorLabels, mediaJobPhaseLabels, mediaOutputStateLabels } from './labels';
 import { mediaDraftFamily, mediaPendingFamily } from './state';
 import { invalidateMedia } from '~/data-provider/Media';
 import { MediaImagePending } from './ImagePending';
+import { getMessageTimestamp } from '~/utils';
 import { mediaErrorCode } from './commands';
+import { compareTurns } from './context';
 import { MediaAssetView } from './Asset';
 import { MediaStatus } from './Status';
 import { useLocalize } from '~/hooks';
@@ -101,7 +109,7 @@ function Job({
   imageDimensions,
 }: {
   job: MediaJob;
-  send: (command: PendingMedia) => Promise<void>;
+  send: MediaSend;
   refine?: (asset: MediaAsset) => void;
   cover: (asset: MediaAsset) => void;
   catalog?: MediaCatalog;
@@ -291,18 +299,54 @@ function Job({
     </section>
   );
 }
+function TurnPrompt({ turn }: { turn: MediaTurn }) {
+  const localize = useLocalize();
+  return (
+    <div className="flex justify-end" role="group" aria-label={localize('com_media_request')}>
+      <div className="max-w-[90%] space-y-2 sm:max-w-[85%]">
+        <p className="whitespace-pre-wrap break-words rounded-theme-surface rounded-br-theme-control bg-surface-tertiary px-theme-normal py-2.5 text-sm leading-6 text-text-primary">
+          {turn.prompt || localize('com_media_imported')}
+        </p>
+        <time
+          className="flex items-center justify-end gap-1.5 text-xs text-text-secondary"
+          dateTime={turn.createdAt}
+        >
+          <Clock3 className="size-3.5" aria-hidden="true" />
+          {new Date(turn.createdAt).toLocaleString(undefined, {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+          })}
+        </time>
+      </div>
+    </div>
+  );
+}
+/** Turns submitted together for a comparison share a prompt and render side by side. */
+function groupTurns(turns: MediaTurn[]): MediaTurn[][] {
+  const blocks: MediaTurn[][] = [];
+  for (const turn of [...turns].sort(compareTurns)) {
+    const last = blocks[blocks.length - 1];
+    if (turn.comparisonId && last?.[0].comparisonId === turn.comparisonId) last.push(turn);
+    else blocks.push([turn]);
+  }
+  return blocks;
+}
 function Turn({
   turn,
   send,
   cover,
   catalog,
   onCompose,
+  showPrompt = true,
 }: {
   turn: MediaTurn;
-  send: (command: PendingMedia) => Promise<void>;
+  send: MediaSend;
   cover: (asset: MediaAsset) => void;
   catalog?: MediaCatalog;
   onCompose?: () => void;
+  showPrompt?: boolean;
 }) {
   const host = useMediaHost();
   const localize = useLocalize();
@@ -393,25 +437,7 @@ function Turn({
     );
   return (
     <article className="space-y-6" data-media-turn={turn.turnId}>
-      <div className="flex justify-end" role="group" aria-label={localize('com_media_request')}>
-        <div className="max-w-[90%] space-y-2 sm:max-w-[85%]">
-          <p className="whitespace-pre-wrap break-words rounded-theme-surface rounded-br-theme-control bg-surface-tertiary px-theme-normal py-2.5 text-sm leading-6 text-text-primary">
-            {turn.prompt || localize('com_media_imported')}
-          </p>
-          <time
-            className="flex items-center justify-end gap-1.5 text-xs text-text-secondary"
-            dateTime={turn.createdAt}
-          >
-            <Clock3 className="size-3.5" aria-hidden="true" />
-            {new Date(turn.createdAt).toLocaleString(undefined, {
-              month: 'short',
-              day: 'numeric',
-              hour: 'numeric',
-              minute: '2-digit',
-            })}
-          </time>
-        </div>
-      </div>
+      {showPrompt && <TurnPrompt turn={turn} />}
       {turn.assets.map((asset) => (
         <MediaAssetView
           key={asset.file_id}
@@ -463,7 +489,7 @@ export function MediaThreadView({
   onLoadOlder,
 }: {
   detail: MediaThreadDetail;
-  send: (command: PendingMedia) => Promise<void>;
+  send: MediaSend;
   onDeleted: () => void;
   catalog?: MediaCatalog;
   onCompose?: () => void;
@@ -471,12 +497,14 @@ export function MediaThreadView({
 }) {
   const host = useMediaHost();
   const localize = useLocalize();
+  const { i18n } = useTranslation();
   const client = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
-  const renameTrigger = useRef<HTMLButtonElement>(null);
-  const deleteTrigger = useRef<HTMLButtonElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuId = useId();
+  const menuTrigger = useRef<HTMLButtonElement>(null);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [title, setTitle] = useState(detail.thread.title);
@@ -525,43 +553,70 @@ export function MediaThreadView({
       if (host.isCurrentSession()) setBusy(false);
     }
   };
+  const expires = getMessageTimestamp(detail.thread.expiresAt, i18n.language);
+  const menuItems: MenuItemProps[] = [
+    {
+      label: localize('com_media_rename'),
+      icon: <Pen className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+      disabled: busy,
+      onClick: () => {
+        setTitle(detail.thread.title);
+        setError(undefined);
+        setRenameOpen(true);
+      },
+    },
+    { separate: true },
+    {
+      label: localize('com_ui_delete'),
+      icon: <Trash className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+      disabled: busy,
+      onClick: () => setDeleteOpen(true),
+    },
+  ];
   return (
     <section className="space-y-8" aria-label={localize('com_media_history')}>
       <div className="flex items-start justify-between gap-3 border-b border-border-light pb-4">
         <div className="min-w-0">
           <h2 className="line-clamp-2 break-words text-lg font-semibold">{detail.thread.title}</h2>
-          <p className="mt-1 text-xs text-text-secondary">
-            {localize('com_media_revision_count', { count: detail.thread.turnCount })}
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-text-secondary">
+            <span>{localize('com_media_revision_count', { count: detail.thread.turnCount })}</span>
+            {expires && (
+              <Chip
+                role="status"
+                title={expires.absolute}
+                leading={<HatGlasses className="size-3.5 shrink-0" aria-hidden="true" />}
+              >
+                {localize('com_media_temporary_creation')} ·{' '}
+                {localize('com_media_temporary_expires', { when: expires.relative })}
+              </Chip>
+            )}
           </p>
         </div>
-        <div className="flex shrink-0 gap-1">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={localize('com_media_rename')}
-            ref={renameTrigger}
-            title={localize('com_media_rename')}
-            disabled={busy}
-            onClick={() => {
-              setTitle(detail.thread.title);
-              setError(undefined);
-              setRenameOpen(true);
-            }}
-          >
-            <Pencil className="size-4" aria-hidden="true" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={localize('com_ui_delete')}
-            ref={deleteTrigger}
-            title={localize('com_ui_delete')}
-            disabled={busy}
-            onClick={() => setDeleteOpen(true)}
-          >
-            <Trash2 className="size-4" aria-hidden="true" />
-          </Button>
-        </div>
+        <DropdownPopup
+          portal
+          focusLoop
+          unmountOnHide
+          menuId={menuId}
+          isOpen={menuOpen}
+          setIsOpen={setMenuOpen}
+          items={menuItems}
+          trigger={
+            <TooltipAnchor
+              description={localize('com_media_thread_options')}
+              render={
+                <Ariakit.MenuButton
+                  ref={menuTrigger}
+                  id={`${menuId}-trigger`}
+                  aria-label={localize('com_media_thread_options')}
+                  aria-expanded={menuOpen}
+                  render={<Button variant="ghost" size="icon-sm" className="shrink-0" />}
+                >
+                  <Ellipsis className="size-4" aria-hidden="true" />
+                </Ariakit.MenuButton>
+              }
+            />
+          }
+        />
       </div>
       {error && <p role="alert">{error}</p>}
       {detail.turns.nextCursor && (
@@ -582,25 +637,45 @@ export function MediaThreadView({
           {localize('com_ui_retry')}
         </Button>
       )}
-      {[...turns.values()]
-        .sort(
-          (a, b) => (a.sequence ?? 0) - (b.sequence ?? 0) || a.createdAt.localeCompare(b.createdAt),
-        )
-        .map((turn) => (
+      {groupTurns([...turns.values()]).map((block) =>
+        block.length === 1 ? (
           <Turn
-            key={turn.turnId}
-            turn={turn}
+            key={block[0].turnId}
+            turn={block[0]}
             send={send}
             catalog={catalog}
             onCompose={onCompose}
             cover={(asset) => void update({ coverFileId: asset.file_id })}
           />
-        ))}
-      <OGDialog open={renameOpen} onOpenChange={setRenameOpen} triggerRef={renameTrigger}>
+        ) : (
+          <section
+            key={block[0].comparisonId}
+            className="space-y-6"
+            aria-label={localize('com_media_comparison')}
+            data-media-comparison={block[0].comparisonId}
+          >
+            <TurnPrompt turn={block[0]} />
+            <div className="grid gap-6 lg:grid-cols-2">
+              {block.map((turn) => (
+                <Turn
+                  key={turn.turnId}
+                  turn={turn}
+                  send={send}
+                  catalog={catalog}
+                  onCompose={onCompose}
+                  showPrompt={false}
+                  cover={(asset) => void update({ coverFileId: asset.file_id })}
+                />
+              ))}
+            </div>
+          </section>
+        ),
+      )}
+      <OGDialog open={renameOpen} onOpenChange={setRenameOpen} triggerRef={menuTrigger}>
         <OGDialogContent
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            renameTrigger.current?.focus();
+            menuTrigger.current?.focus();
           }}
         >
           <OGDialogTitle>{localize('com_media_rename')}</OGDialogTitle>
@@ -628,11 +703,11 @@ export function MediaThreadView({
           </div>
         </OGDialogContent>
       </OGDialog>
-      <OGDialog open={deleteOpen} onOpenChange={setDeleteOpen} triggerRef={deleteTrigger}>
+      <OGDialog open={deleteOpen} onOpenChange={setDeleteOpen} triggerRef={menuTrigger}>
         <OGDialogContent
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            deleteTrigger.current?.focus();
+            menuTrigger.current?.focus();
           }}
         >
           <OGDialogTitle>{localize('com_media_delete_title')}</OGDialogTitle>

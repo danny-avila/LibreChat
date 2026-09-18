@@ -206,6 +206,25 @@ export const mediaConfigSchema = z
       })
       .strict()
       .default({}),
+    /**
+     * LLM-generated Studio thread titles. A new thread first receives the prompt bounded to
+     * `limits.maxTitleChars`; when a text model is configured, the server then asks it for a short
+     * title in the background and replaces the prompt-derived one unless the user renamed the
+     * thread first. `endpoint` falls back to `endpoints.all.titleEndpoint`, and `model` to
+     * `endpoints.all.titleModel`, then the resolved endpoint's own `titleModel`. Without an
+     * endpoint or model the prompt-derived title stands, so an unconfigured deployment keeps
+     * today's behavior even though `enabled` defaults on.
+     */
+    titles: z
+      .object({
+        enabled: z.boolean().default(true),
+        endpoint: z.string().trim().min(1).optional(),
+        model: z.string().trim().min(1).optional(),
+        prompt: z.string().trim().min(1).optional(),
+        timeoutMs: milliseconds.default(45_000),
+      })
+      .strict()
+      .default({}),
   })
   .strict()
   .superRefine((config, ctx) => {

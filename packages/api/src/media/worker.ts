@@ -556,6 +556,11 @@ export function createMediaWorker(
             limit: baseConfig.limits.pageSize,
           });
           await deps.reconcileNative?.(scope, baseConfig);
+          await deps.repository.retireExpiredMediaThreads({
+            scope,
+            now,
+            limit: baseConfig.limits.pageSize,
+          });
           await deps.repository.reconcileMediaRetirements({
             scope,
             limit: baseConfig.limits.pageSize,
@@ -580,6 +585,7 @@ export function createMediaWorker(
             limit: baseConfig.limits.pageSize,
             maxRetainers: baseConfig.limits.maxAssetRetainers,
             maxTitleChars: baseConfig.limits.maxTitleChars,
+            temporaryRetentionMs: deps.temporaryRetentionMs,
           });
           const job = await deps.repository.claimMediaJob({
             scope,

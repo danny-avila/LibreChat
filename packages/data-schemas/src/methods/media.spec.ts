@@ -7,6 +7,7 @@ import {
   mediaJobSchema,
   mediaSubmissionRequestSchema,
   mediaThreadSchema,
+  mediaTurnSchema,
 } from 'librechat-data-provider';
 import type {
   MediaMethods,
@@ -14,9 +15,9 @@ import type {
   MediaStoredJob,
   StageMediaSubmissionInput,
 } from '~/types/media';
+import { createMediaMethods, deriveMediaThreadTitle } from './media';
 import { runAsSystem, tenantStorage } from '~/config/tenantContext';
 import { createKeyModel } from '~/models/key';
-import { createMediaMethods } from './media';
 import { createFileMethods } from './file';
 
 describe('media persistence on standalone MongoDB', () => {
@@ -89,6 +90,55 @@ describe('media persistence on standalone MongoDB', () => {
       ).items[0].prompt,
     ).toBe(prompt);
     expect((await methods.stageMediaSubmission(input)).jobId).toBe(receipt.jobId);
+  });
+
+  it('replaces a prompt-derived title once and never after the owner renames the thread', async () => {
+    const job = await accepted('generated-title');
+    const before = (await methods.getMediaThread(scope, job.threadId))!;
+    expect(before.title).toBe(deriveMediaThreadTitle('A quiet observatory', options.maxTitleChars));
+    expect(
+      await methods.replaceMediaThreadTitle({
+        scope,
+        threadId: job.threadId,
+        expectedTitle: before.title,
+        title: 'Quiet Observatory',
+      }),
+    ).toBe(true);
+    const generated = (await methods.getMediaThread(scope, job.threadId))!;
+    expect(generated.title).toBe('Quiet Observatory');
+    expect(generated.version).toBe(before.version + 1);
+    expect(generated.updatedAt >= before.updatedAt).toBe(true);
+    await methods.updateMediaThread({
+      scope,
+      threadId: job.threadId,
+      expectedVersion: generated.version,
+      title: 'My observatory',
+    });
+    expect(
+      await methods.replaceMediaThreadTitle({
+        scope,
+        threadId: job.threadId,
+        expectedTitle: 'Quiet Observatory',
+        title: 'Late Generated Title',
+      }),
+    ).toBe(false);
+    expect((await methods.getMediaThread(scope, job.threadId))?.title).toBe('My observatory');
+    expect(
+      await methods.replaceMediaThreadTitle({
+        scope,
+        threadId: 'missing-thread',
+        expectedTitle: 'anything',
+        title: 'Generated',
+      }),
+    ).toBe(false);
+    expect(
+      await methods.replaceMediaThreadTitle({
+        scope: { ...scope, ownerId: new mongoose.Types.ObjectId().toString() },
+        threadId: job.threadId,
+        expectedTitle: 'My observatory',
+        title: 'Stolen',
+      }),
+    ).toBe(false);
   });
 
   it('applies configured title bounds while recovering a preparing submission', async () => {
@@ -1280,5 +1330,101 @@ describe('media persistence on standalone MongoDB', () => {
     const repaired = await methods.getMediaThread(scope, job.threadId);
     expect(repaired?.pendingJobCount).toBe(0);
     expect(repaired?.cover).toBeUndefined();
+  });
+
+  it('hides a temporary creation from the library and retires it once its retention passes', async () => {
+    const retention = 60_000;
+    const receipt = await methods.stageMediaSubmission(
+      submission('temporary', { temporary: true }),
+    );
+    const published = await methods.publishMediaSubmission(scope, receipt.jobId, {
+      ...options,
+      temporaryRetentionMs: retention,
+    });
+    expect(published?.phase).toBe('accepted');
+    const thread = mediaThreadSchema.parse(await methods.getMediaThread(scope, receipt.threadId));
+    expect(thread.expiresAt).toBe(
+      new Date(new Date(thread.createdAt).getTime() + retention).toISOString(),
+    );
+    const followUp = await methods.stageMediaSubmission(
+      submission('temporary-follow-up', {
+        threadId: receipt.threadId,
+        parentTurnId: receipt.turnId,
+      }),
+    );
+    expect(
+      (
+        await methods.publishMediaSubmission(scope, followUp.jobId, {
+          ...options,
+          temporaryRetentionMs: 1,
+        })
+      )?.phase,
+    ).toBe('accepted');
+    expect((await methods.getMediaThread(scope, receipt.threadId))?.expiresAt).toBe(
+      thread.expiresAt,
+    );
+    const durable = await accepted('durable');
+    expect((await methods.getMediaThread(scope, durable.threadId))?.expiresAt).toBeUndefined();
+    for (const include of [undefined, 'activity'] as const) {
+      const listed = await methods.listMediaThreads({ scope, limit: 10, include });
+      expect(listed.items.map((item) => item.threadId)).toEqual([durable.threadId]);
+    }
+    expect(
+      await methods.retireExpiredMediaThreads({ scope, now: thread.createdAt, limit: 10 }),
+    ).toBe(0);
+    expect(
+      (
+        await runAsSystem(() =>
+          methods.listMediaCleanupScopes({ limit: 10, now: thread.createdAt }),
+        )
+      ).items,
+    ).toEqual([]);
+    expect(
+      (
+        await runAsSystem(() =>
+          methods.listMediaCleanupScopes({ limit: 10, now: thread.expiresAt! }),
+        )
+      ).items,
+    ).toEqual([scope]);
+    expect(
+      await methods.retireExpiredMediaThreads({ scope, now: thread.expiresAt!, limit: 10 }),
+    ).toBe(1);
+    expect(await methods.getMediaThread(scope, receipt.threadId)).toBeNull();
+    expect(
+      await mongoose.models.MediaThread.findOne({ threadId: receipt.threadId }).lean(),
+    ).toMatchObject({ status: 'retiring', epoch: 2 });
+    expect((await methods.getMediaJob(scope, receipt.jobId))?.phase).toBe('cancelled');
+    expect((await methods.getMediaThread(scope, durable.threadId))?.retiredAt).toBeUndefined();
+    expect(
+      await methods.retireExpiredMediaThreads({ scope, now: thread.expiresAt!, limit: 10 }),
+    ).toBe(0);
+  });
+
+  it('keeps a temporary request durable when no retention window is configured', async () => {
+    const receipt = await methods.stageMediaSubmission(
+      submission('temporary-unbounded', { temporary: true }),
+    );
+    await methods.publishMediaSubmission(scope, receipt.jobId, options);
+    const thread = await methods.getMediaThread(scope, receipt.threadId);
+    expect(thread).not.toHaveProperty('expiresAt');
+    expect((await methods.listMediaThreads({ scope, limit: 10 })).items).toHaveLength(1);
+  });
+
+  it('carries a comparison marker onto the published turn view', async () => {
+    const compared = await accepted('compare-a', { comparisonId: 'comparison-1' });
+    const plain = await accepted('plain');
+    const [turn] = (
+      await methods.listMediaTurns({
+        scope,
+        threadId: compared.threadId,
+        limit: 10,
+        jobsPerTurn: 10,
+      })
+    ).items;
+    expect(mediaTurnSchema.parse(turn).comparisonId).toBe('comparison-1');
+    const [plainTurn] = (
+      await methods.listMediaTurns({ scope, threadId: plain.threadId, limit: 10, jobsPerTurn: 10 })
+    ).items;
+    expect(plainTurn).not.toHaveProperty('comparisonId');
   });
 });

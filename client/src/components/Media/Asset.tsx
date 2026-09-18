@@ -1,14 +1,6 @@
 import { useRef, useState } from 'react';
 import { apiBaseUrl } from 'librechat-data-provider';
 import {
-  Button,
-  Skeleton,
-  OGDialog,
-  OGDialogContent,
-  OGDialogTitle,
-  OGDialogDescription,
-} from '@librechat/client';
-import {
   Download,
   Expand,
   ImageOff,
@@ -18,8 +10,17 @@ import {
   Image,
   AudioLines,
 } from 'lucide-react';
+import {
+  Button,
+  Skeleton,
+  OGDialog,
+  OGDialogContent,
+  OGDialogTitle,
+  OGDialogDescription,
+  TooltipAnchor,
+} from '@librechat/client';
 import type { MediaAsset } from 'librechat-data-provider';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { MediaImagePixels, mediaImageFrame } from './ImagePending';
 import { toAbsoluteFilePath } from '~/utils/media';
 import { useLocalize } from '~/hooks';
@@ -52,14 +53,26 @@ function Preview({
   const source = toAbsoluteFilePath(asset.filepath, apiBaseUrl());
   const video = asset.type.startsWith('video/');
   const audio = asset.type.startsWith('audio/');
+  const fit = compact ? 'object-cover' : 'object-contain';
   const dimensions = expanded ? 'max-h-[75vh] w-auto max-w-full' : 'absolute inset-0 h-full w-full';
-  let frame = 'aspect-square max-h-[32rem] rounded-xl';
-  if (video) frame = 'aspect-video rounded-xl';
-  if (expanded) frame = 'min-h-40';
-  if (compact) frame = 'aspect-[4/3]';
-  if (audio && interactive) frame = 'min-h-20 rounded-xl px-2';
   const generatedImage = !!imagePendingSince && !video && !audio && !compact && !expanded;
-  if (generatedImage) frame = 'rounded-xl';
+  /** Chat sizes its images by their real proportions up to 512px; known originals match it. */
+  const sizedImage =
+    !video &&
+    !audio &&
+    !compact &&
+    !expanded &&
+    (generatedImage || (!!asset.width && !!asset.height));
+  let frame = 'aspect-square max-h-[32rem] rounded-xl border border-border-light';
+  let style: CSSProperties | undefined;
+  if (video) frame = 'aspect-video rounded-xl border border-border-light';
+  if (expanded) frame = 'min-h-40';
+  if (compact) frame = 'aspect-square';
+  if (audio && interactive) frame = 'min-h-20 rounded-xl px-2';
+  if (sizedImage) {
+    frame = 'rounded-xl border border-border-light';
+    style = mediaImageFrame(asset);
+  }
   let media: ReactNode;
   if (audio) {
     media = interactive ? (
@@ -101,7 +114,7 @@ function Preview({
           }
         }}
         onError={() => setStatus('failed')}
-        className={`${dimensions} object-contain`}
+        className={`${dimensions} ${fit}`}
       />
     );
   } else {
@@ -116,14 +129,14 @@ function Preview({
         height={asset.height}
         onLoad={() => setStatus('ready')}
         onError={() => setStatus('failed')}
-        className={`${dimensions} object-contain ${generatedImage ? `transition-opacity duration-300 motion-reduce:transition-none ${status === 'ready' ? 'opacity-100' : 'opacity-0'}` : ''}`}
+        className={`${dimensions} ${fit} ${generatedImage ? `transition-opacity duration-300 motion-reduce:transition-none ${status === 'ready' ? 'opacity-100' : 'opacity-0'}` : ''}`}
       />
     );
   }
   return (
     <span
       className={`relative grid w-full place-items-center overflow-hidden bg-surface-secondary ${frame}`}
-      style={generatedImage ? mediaImageFrame(asset) : undefined}
+      style={style}
     >
       {status !== 'failed' &&
         (onOpen && !video && !audio ? (
@@ -178,6 +191,23 @@ function Preview({
   );
 }
 
+function formatBytes(bytes: number) {
+  let unit = 'byte';
+  let divisor = 1;
+  if (bytes >= 1000000) {
+    unit = 'megabyte';
+    divisor = 1000000;
+  } else if (bytes >= 1000) {
+    unit = 'kilobyte';
+    divisor = 1000;
+  }
+  return new Intl.NumberFormat(undefined, {
+    style: 'unit',
+    unit,
+    maximumFractionDigits: 1,
+  }).format(bytes / divisor);
+}
+
 export function MediaAssetView({
   asset,
   refine,
@@ -206,55 +236,27 @@ export function MediaAssetView({
       trigger.current = document.activeElement;
     setOpen(true);
   };
-  let unit = 'byte';
-  let divisor = 1;
-  if (asset.bytes >= 1000000) {
-    unit = 'megabyte';
-    divisor = 1000000;
-  } else if (asset.bytes >= 1000) {
-    unit = 'kilobyte';
-    divisor = 1000;
-  }
-  const size = new Intl.NumberFormat(undefined, {
-    style: 'unit',
-    unit,
-    maximumFractionDigits: 1,
-  }).format(asset.bytes / divisor);
-  const download = (
-    <Button variant="secondary" size="sm" asChild>
-      <a href={toAbsoluteFilePath(asset.filepath, apiBaseUrl())} download={asset.filename}>
-        <Download className="mr-1.5 size-4" aria-hidden="true" />
-        {localize('com_media_download')}
-      </a>
-    </Button>
-  );
+  const source = toAbsoluteFilePath(asset.filepath, apiBaseUrl());
+  const details = [
+    asset.type.split('/')[1]?.toUpperCase(),
+    asset.width && asset.height ? `${asset.width} × ${asset.height}` : undefined,
+    formatBytes(asset.bytes),
+  ].filter((value): value is string => !!value);
   return (
-    <figure className="min-w-0 space-y-3">
+    <figure className="min-w-0 space-y-2">
       <MediaPreview asset={asset} onOpen={openPreview} imagePendingSince={imagePendingSince} />
-      <figcaption className="flex flex-wrap items-center gap-2 text-xs text-text-secondary">
-        <span>{asset.type.split('/')[1]?.toUpperCase()}</span>
-        {asset.width && asset.height && (
-          <span>
-            {asset.width} × {asset.height}
+      <figcaption className="flex flex-wrap items-center gap-x-1.5 text-xs text-text-secondary">
+        {details.map((value, index) => (
+          <span key={value} className="flex items-center gap-x-1.5">
+            {index > 0 && <span aria-hidden="true">·</span>}
+            {value}
           </span>
-        )}
-        <span>{size}</span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="ml-auto"
-          aria-label={localize('com_media_expand')}
-          title={localize('com_media_expand')}
-          onClick={openPreview}
-        >
-          <Expand className="size-4" aria-hidden="true" />
-        </Button>
+        ))}
       </figcaption>
-      <div className="flex flex-wrap gap-2">
-        {download}
+      <div className="flex flex-wrap items-center gap-1.5">
         {refine && (
           <Button variant="outline" size="sm" disabled={!host.canCreate} onClick={refine}>
-            <WandSparkles className="mr-1.5 size-4" aria-hidden="true" />
+            <WandSparkles className="size-4" aria-hidden="true" />
             {localize('com_media_refine')}
           </Button>
         )}
@@ -275,21 +277,54 @@ export function MediaAssetView({
               }
             }}
           >
-            <MessageSquare className="mr-1.5 size-4" aria-hidden="true" />
+            <MessageSquare className="size-4" aria-hidden="true" />
             {localize('com_media_use_chat')}
           </Button>
         )}
-        {cover && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={localize('com_media_set_cover')}
-            title={localize('com_media_set_cover')}
-            onClick={cover}
-          >
-            <Image className="size-4" aria-hidden="true" />
-          </Button>
-        )}
+        <span className="ml-auto flex items-center gap-0.5">
+          <TooltipAnchor
+            description={localize('com_media_download')}
+            render={
+              <Button variant="ghost" size="icon-sm" asChild>
+                <a
+                  href={source}
+                  download={asset.filename}
+                  aria-label={localize('com_media_download')}
+                >
+                  <Download className="size-4" aria-hidden="true" />
+                </a>
+              </Button>
+            }
+          />
+          <TooltipAnchor
+            description={localize('com_media_expand')}
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={localize('com_media_expand')}
+                onClick={openPreview}
+              >
+                <Expand className="size-4" aria-hidden="true" />
+              </Button>
+            }
+          />
+          {cover && (
+            <TooltipAnchor
+              description={localize('com_media_set_cover')}
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={localize('com_media_set_cover')}
+                  onClick={cover}
+                >
+                  <Image className="size-4" aria-hidden="true" />
+                </Button>
+              }
+            />
+          )}
+        </span>
       </div>
       {error && (
         <p role="alert" className="text-sm text-text-secondary">
@@ -307,7 +342,14 @@ export function MediaAssetView({
           <OGDialogTitle>{localize(previewLabel)}</OGDialogTitle>
           <OGDialogDescription>{localize('com_media_preview_description')}</OGDialogDescription>
           <MediaPreview asset={asset} expanded />
-          <div className="flex justify-end">{download}</div>
+          <div className="flex justify-end">
+            <Button variant="secondary" size="sm" asChild>
+              <a href={source} download={asset.filename}>
+                <Download className="size-4" aria-hidden="true" />
+                {localize('com_media_download')}
+              </a>
+            </Button>
+          </div>
         </OGDialogContent>
       </OGDialog>
     </figure>

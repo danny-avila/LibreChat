@@ -1,7 +1,20 @@
 import { useEffect, useId, useState } from 'react';
 import { v4 } from 'uuid';
 import { useAtom } from 'jotai';
-import { Film, ImagePlus, Pencil, SlidersHorizontal, X } from 'lucide-react';
+import {
+  Film,
+  HatGlasses,
+  ImagePlus,
+  Pencil,
+  PlusCircle,
+  SlidersHorizontal,
+  X,
+} from 'lucide-react';
+import {
+  mediaSubmissionRequestSchema,
+  mediaURLUploadRequestSchema,
+  mediaProviderOptionsSchema,
+} from 'librechat-data-provider';
 import {
   Button,
   Alert,
@@ -12,22 +25,19 @@ import {
   Label,
   Spinner,
   Textarea,
+  TooltipAnchor,
 } from '@librechat/client';
-import {
-  mediaSubmissionRequestSchema,
-  mediaURLUploadRequestSchema,
-  mediaProviderOptionsSchema,
-} from 'librechat-data-provider';
 import type {
   MediaCatalog,
   MediaEnumControl,
   MediaNumberControl,
   MediaOperation,
+  MediaPresetSettings,
   MediaSelection,
   MediaOffering,
 } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import type { MediaDraft, PendingMedia } from './state';
+import type { MediaDraft, MediaSend } from './state';
 import type { MediaEditTarget } from './context';
 import {
   mediaControlLabels,
@@ -36,14 +46,16 @@ import {
   mediaOperationLabels,
 } from './labels';
 import { useMediaUpload } from '~/data-provider/Media/uploads';
+import { useMediaPresets } from '~/data-provider/Media';
+import { emptyDraft, mediaDraftFamily } from './state';
+import { mediaFeatures, useMediaHost } from './host';
 import { MediaReferenceUpload } from './Reference';
 import { withImageContext } from './context';
 import { useMediaCredentials } from './Keys';
 import { mediaErrorCode } from './commands';
-import { mediaDraftFamily } from './state';
+import { MediaPresets } from './Presets';
 import { MediaPreview } from './Asset';
 import { useLocalize } from '~/hooks';
-import { useMediaHost } from './host';
 
 const offeringId = (
   offering: Pick<MediaCatalog['offerings'][number], 'connectionId' | 'modelId'>,
@@ -125,6 +137,18 @@ function readProviderOptions(text: string, allowed: string[] | undefined, catalo
   }
 }
 
+type MediaCapability = MediaOffering['capabilities'][number];
+
+/** A comparison run keeps the batch size and otherwise takes the other model's own defaults. */
+function comparisonParameters(capability: MediaCapability, count: number) {
+  const min = capability.controls.count?.min ?? 1;
+  const max = capability.controls.count?.max ?? count;
+  return defaultParameters(
+    { ...emptyDraft(), parameters: { count: Math.min(Math.max(count, min), max) } },
+    capability.controls,
+  );
+}
+
 function supportsMode(offering: MediaOffering, operation: MediaOperation) {
   return (
     offering.capabilities.some(
@@ -151,12 +175,14 @@ export function MediaForm({
   threadId?: string;
   initialSelection?: MediaSelection;
   imageContext?: MediaEditTarget;
-  send: (command: PendingMedia) => Promise<void>;
+  send: MediaSend;
   busy: boolean;
   portal?: boolean;
   children?: (parts: MediaFormParts) => ReactNode;
 }) {
   const host = useMediaHost();
+  const features = mediaFeatures(host);
+  const presets = useMediaPresets(host, features.presets);
   const localize = useLocalize();
   const unavailableProvider = (reason: MediaOffering['unavailableReason']) =>
     reason === 'not_ready'
@@ -236,8 +262,9 @@ export function MediaForm({
   });
   const unsupportedContext =
     draft.operation === 'image.edit' && capability?.operation !== 'image.edit';
+  const presetsPending = features.presets && presets.isLoading && presets.fetchStatus !== 'idle';
   useEffect(() => {
-    if (!offering || !capability) return;
+    if (!offering || !capability || presetsPending) return;
     if (draft.offering && (!implicitDefault || draft.offering === offeringId(offering))) return;
     setDraft((previous) =>
       previous.offering && !(implicitDefault && previous.revision === 1)
@@ -253,9 +280,55 @@ export function MediaForm({
             revision: previous.revision + 1,
           },
     );
-  }, [draft.offering, implicitDefault, offering, capability, providerTag, setDraft]);
+  }, [
+    draft.offering,
+    implicitDefault,
+    offering,
+    capability,
+    providerTag,
+    setDraft,
+    presetsPending,
+  ]);
   const change = (update: Partial<MediaDraft>) =>
     setDraft((previous) => ({ ...previous, ...update, revision: previous.revision + 1 }));
+  const applyPreset = (settings: MediaPresetSettings) => {
+    const next = offerings.find(
+      (item) => item.connectionId === settings.connectionId && item.modelId === settings.modelId,
+    );
+    const route = next?.routes?.find((item) => item.providerTag === settings.providerTag);
+    const cap = (route?.capabilities ?? next?.capabilities)?.find(
+      (item) => item.operation === settings.operation,
+    );
+    if (!next || !cap) return false;
+    const update: Partial<MediaDraft> = {
+      offering: offeringId(next),
+      providerTag: route?.providerTag ?? next.defaultProviderTag,
+      providerOptionsText: undefined,
+      operation: settings.operation,
+      parameters: settings.parameters,
+    };
+    if (settings.operation === 'image.generate') {
+      update.autoEdit = false;
+      update.parentTurnId = undefined;
+      update.inputs = [];
+      update.assets = [];
+    } else if (
+      settings.operation === 'image.edit' &&
+      !savedDraft.inputs.length &&
+      !savedDraft.parentTurnId
+    ) {
+      update.autoEdit = true;
+    }
+    change(update);
+    return true;
+  };
+  const defaultPreset = presets.data?.find((preset) => preset.isDefault);
+  useEffect(() => {
+    if (savedDraft.offering || initialOffering || !defaultPreset) return;
+    applyPreset(defaultPreset.settings);
+    // A default preset seeds only an untouched draft; the apply logic itself is not memoized.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultPreset, savedDraft.offering, initialOffering]);
   const param = <K extends keyof MediaDraft['parameters']>(
     key: K,
     value: MediaDraft['parameters'][K],
@@ -408,10 +481,12 @@ export function MediaForm({
       staleRoute ||
       !inputsValid ||
       avatarVoiceMissing ||
-      unsupportedContext
+      unsupportedContext ||
+      compareInvalid
     )
       return;
     setError(undefined);
+    const comparing = !!compareOffering && !!compareCapability;
     const parsed = mediaSubmissionRequestSchema.safeParse({
       schemaVersion: 1,
       clientRequestId: v4(),
@@ -427,6 +502,8 @@ export function MediaForm({
       prompt: draft.prompt,
       inputs: draft.inputs,
       parameters,
+      temporary: !threadId && draft.temporary ? true : undefined,
+      comparisonId: comparing ? v4() : undefined,
     });
     if (
       !parsed.success ||
@@ -443,12 +520,37 @@ export function MediaForm({
       setError(localize('com_media_error_invalid_request'));
       return;
     }
-    await send({
+    const receipt = await send({
       kind: 'submission',
       request: parsed.data,
       draftKey,
       draftRevision: draft.revision,
     });
+    if (!comparing || !receipt || receipt.phase === 'rejected') return;
+    const comparison = mediaSubmissionRequestSchema.safeParse({
+      schemaVersion: 1,
+      clientRequestId: v4(),
+      threadId: receipt.threadId,
+      parentTurnId: threadId ? draft.parentTurnId : undefined,
+      selection: {
+        connectionId: compareOffering.connectionId,
+        modelId: compareOffering.modelId,
+        catalogVersion: catalog.version,
+        providerTag: compareRoute?.providerTag ?? compareOffering.defaultProviderTag,
+      },
+      operation: compareCapability.operation,
+      prompt: draft.prompt,
+      inputs: draft.inputs,
+      parameters: comparisonParameters(compareCapability, parameters.count),
+      comparisonId: parsed.data.comparisonId,
+    });
+    if (comparison.success)
+      await send({
+        kind: 'submission',
+        request: comparison.data,
+        draftKey,
+        draftRevision: draft.revision,
+      });
   }
   async function uploadFile(file?: File): Promise<boolean> {
     if (!file || !host.canCreate || !capability || uploading) return false;
@@ -794,6 +896,34 @@ export function MediaForm({
     !draft.inputs.some((input) => input.role === 'audio') &&
     (typeof parameters.providerOptions?.voice_id !== 'string' ||
       !parameters.providerOptions.voice_id.trim());
+  const compareCandidates = features.compare
+    ? modeOfferings.filter(
+        (item) => availableForMode(item) && offeringId(item) !== offeringId(offering),
+      )
+    : [];
+  const compareOffering = draft.compare
+    ? compareCandidates.find((item) => offeringId(item) === draft.compare?.offering)
+    : undefined;
+  const compareRoute = compareOffering?.routes?.find(
+    (route) =>
+      route.providerTag === (draft.compare?.providerTag ?? compareOffering.defaultProviderTag),
+  );
+  const compareCapability = (compareRoute?.capabilities ?? compareOffering?.capabilities)?.find(
+    (item) => item.operation === activeOperation,
+  );
+  const compareInputsValid =
+    !!compareCapability &&
+    draft.inputs.length >= compareCapability.inputs.min &&
+    draft.inputs.length <= compareCapability.inputs.max &&
+    draft.inputs.every((input) => compareCapability.inputs.roles.includes(input.role));
+  const compareInvalid = features.compare && !!draft.compare && !compareInputsValid;
+  const currentSettings: MediaPresetSettings = {
+    operation: activeOperation,
+    connectionId: offering.connectionId,
+    modelId: offering.modelId,
+    providerTag,
+    parameters,
+  };
   const uploadLimit = Math.min(
     catalog.limits.maxInputs,
     Math.max(
@@ -871,6 +1001,14 @@ export function MediaForm({
   );
   const settings = (
     <section className="space-y-5" aria-label={localize('com_media_settings')}>
+      {features.presets && (
+        <MediaPresets
+          catalog={catalog}
+          presets={presets}
+          current={currentSettings}
+          onApply={applyPreset}
+        />
+      )}
       <div
         role="group"
         aria-label={localize('com_media_operation')}
@@ -994,6 +1132,77 @@ export function MediaForm({
           </div>
         )}
       </div>
+      {features.compare && (
+        <div className="space-y-1.5">
+          {draft.compare ? (
+            <>
+              <div className="flex items-center justify-between gap-2">
+                <Label htmlFor={`${id}-compare`}>{localize('com_media_compare_model')}</Label>
+                <TooltipAnchor
+                  description={localize('com_media_compare_remove')}
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={localize('com_media_compare_remove')}
+                      onClick={() => change({ compare: undefined })}
+                    >
+                      <X className="size-4" aria-hidden="true" />
+                    </Button>
+                  }
+                />
+              </div>
+              <ControlCombobox
+                showCarat
+                selectId={`${id}-compare`}
+                ariaLabel={localize('com_media_compare_model')}
+                ariaInvalid={compareInvalid}
+                variant="field"
+                isCollapsed={false}
+                portal={portal}
+                selectedValue={draft.compare.offering}
+                displayValue={compareOffering?.modelName}
+                selectPlaceholder={localize('com_media_choose_model')}
+                items={compareCandidates.map((item) => ({
+                  value: offeringId(item),
+                  label: item.modelName,
+                  description: item.connectionName,
+                }))}
+                setValue={(value) => {
+                  const next = compareCandidates.find((item) => offeringId(item) === value);
+                  if (next)
+                    change({ compare: { offering: value, providerTag: next.defaultProviderTag } });
+                }}
+              />
+              <p
+                role={compareInvalid ? 'status' : undefined}
+                className="text-xs leading-5 text-text-secondary"
+              >
+                {localize(
+                  compareInvalid ? 'com_media_compare_unsupported' : 'com_media_compare_hint',
+                )}
+              </p>
+            </>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="-ml-3"
+              disabled={compareCandidates.length === 0}
+              onClick={() => {
+                const next = compareCandidates[0];
+                if (next)
+                  change({
+                    compare: { offering: offeringId(next), providerTag: next.defaultProviderTag },
+                  });
+              }}
+            >
+              <PlusCircle className="size-4" aria-hidden="true" />
+              {localize('com_media_compare_add')}
+            </Button>
+          )}
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3 border-t border-border-light pt-4">
         {numeric('count', controls.count)}
         {controls.quality?.required && enumeration('quality', controls.quality)}
@@ -1162,6 +1371,12 @@ export function MediaForm({
           {localize('com_media_edit_model_required')}
         </p>
       )}
+      {!threadId && draft.temporary && (
+        <p role="status" className="flex items-center gap-1.5 text-xs text-text-secondary">
+          <HatGlasses className="size-3.5 shrink-0" aria-hidden="true" />
+          {localize('com_media_temporary_hint')}
+        </p>
+      )}
       <div className="space-y-2">
         <Composer
           value={draft.prompt}
@@ -1175,6 +1390,7 @@ export function MediaForm({
             !staleRoute &&
             !options.invalid &&
             !avatarVoiceMissing &&
+            !compareInvalid &&
             inputsValid &&
             invalidSettings.length === 0 &&
             draft.prompt.trim().length > 0 &&

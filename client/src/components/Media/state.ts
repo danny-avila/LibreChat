@@ -11,6 +11,7 @@ import {
   mediaSubmissionRequestSchema,
   mediaRetryRequestSchema,
 } from 'librechat-data-provider';
+import type { MediaImportReceipt, MediaSubmissionReceipt } from 'librechat-data-provider';
 import type { SetStateAction } from 'react';
 
 const prefix = 'librechat:media:';
@@ -24,6 +25,8 @@ const draftSchema = z.object({
   providerOptionsText: z.string().optional(),
   referenceURL: z.string().optional(),
   referenceURLRole: z.enum(['video', 'audio']).optional(),
+  temporary: z.boolean().optional(),
+  compare: z.object({ offering: z.string(), providerTag: z.string().optional() }).optional(),
   inputs: z.array(mediaInputSchema),
   assets: z.array(mediaAssetSchema),
   parameters: mediaImageParametersSchema.merge(mediaVideoParametersSchema),
@@ -62,6 +65,9 @@ const pendingSchema = z.discriminatedUnion('kind', [
   }),
 ]);
 export type PendingMedia = z.infer<typeof pendingSchema>;
+export type MediaSend = (
+  command: PendingMedia,
+) => Promise<MediaSubmissionReceipt | MediaImportReceipt | undefined>;
 
 function storedAtom<T>(key: string, fallback: T, schema: z.ZodType<T, z.ZodTypeDef, unknown>) {
   let initial = fallback;

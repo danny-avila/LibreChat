@@ -2,13 +2,14 @@ import React from 'react';
 import { Provider, createStore } from 'jotai';
 import { dataService } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type {
   MediaCatalog,
   MediaUploadResponse,
   MediaURLUploadResponse,
   MediaThreadDetail,
 } from 'librechat-data-provider';
+import type { MediaHost } from '../host';
 import { clearMediaSessionStorage, emptyDraft, mediaDraftFamily } from '../state';
 import { MediaHostProvider } from '../host';
 import { MediaThreadView } from '../Thread';
@@ -57,6 +58,7 @@ const catalog: MediaCatalog = {
     maxNativeRecordingBytes: 10000000,
     maxProviderOptionBytes: 32768,
     maxProviderOptionDepth: 8,
+    maxPresets: 50,
   },
   offerings: [
     {
@@ -83,24 +85,28 @@ const catalog: MediaCatalog = {
     },
   ],
 };
-function setup(canCreate = true) {
+function setup(canCreate = true, features?: MediaHost['features']) {
   const store = createStore();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const send = jest.fn().mockResolvedValue(undefined);
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <Provider store={store}>
-      <MediaHostProvider
-        value={{
-          scope: 'owner',
-          canCreate,
-          pollIntervalMs: 5000,
-          catchUpIntervalMs: 60000,
-          enterToSend: false,
-          isCurrentSession: () => true,
-          openThread: () => {},
-        }}
-      >
-        {children}
-      </MediaHostProvider>
+      <QueryClientProvider client={client}>
+        <MediaHostProvider
+          value={{
+            scope: 'owner',
+            canCreate,
+            pollIntervalMs: 5000,
+            catchUpIntervalMs: 60000,
+            enterToSend: false,
+            isCurrentSession: () => true,
+            openThread: () => {},
+            features,
+          }}
+        >
+          {children}
+        </MediaHostProvider>
+      </QueryClientProvider>
     </Provider>
   );
   return { store, send, wrapper };
@@ -1621,4 +1627,143 @@ test('refining and editing a saved hosted input preserves its source URL', async
   fireEvent.click(screen.getByRole('button', { name: 'com_media_edit_request' }));
   expect(env.store.get(mediaDraftFamily('owner:thread')).inputs).toEqual([input]);
   expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeEnabled();
+});
+
+const preset = {
+  schemaVersion: 1 as const,
+  presetId: 'preset-1',
+  title: 'Quick draft',
+  isDefault: false,
+  settings: {
+    operation: 'image.generate' as const,
+    connectionId: 'connection',
+    modelId: 'image-model',
+    parameters: { count: 2, quality: 'low' },
+  },
+  createdAt: '2026-09-17T12:00:00.000Z',
+  updatedAt: '2026-09-17T12:00:00.000Z',
+};
+
+test('presets apply saved settings and capture the current ones', async () => {
+  const env = setup(true, { presets: true });
+  jest.spyOn(dataService, 'listMediaPresets').mockResolvedValue({ items: [preset] });
+  const create = jest
+    .spyOn(dataService, 'createMediaPreset')
+    .mockResolvedValue({ ...preset, presetId: 'preset-2', title: 'Studio look' });
+  render(<MediaForm catalog={catalog} send={env.send} busy={false} />, { wrapper: env.wrapper });
+  fireEvent.click(await screen.findByRole('button', { name: 'com_media_presets' }));
+  const dialog = await screen.findByRole('dialog', { name: 'com_media_presets' });
+  fireEvent.click(await within(dialog).findByRole('button', { name: 'com_media_preset_apply' }));
+  await waitFor(() =>
+    expect(env.store.get(mediaDraftFamily('owner:new')).parameters).toMatchObject({
+      count: 2,
+      quality: 'low',
+    }),
+  );
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog', { name: 'com_media_presets' })).not.toBeInTheDocument(),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_presets' }));
+  const reopened = await screen.findByRole('dialog', { name: 'com_media_presets' });
+  fireEvent.change(within(reopened).getByRole('textbox', { name: 'com_media_preset_name' }), {
+    target: { value: 'Studio look' },
+  });
+  fireEvent.click(within(reopened).getByRole('button', { name: 'com_media_preset_save' }));
+  await waitFor(() =>
+    expect(create).toHaveBeenCalledWith({
+      title: 'Studio look',
+      isDefault: false,
+      settings: expect.objectContaining({
+        operation: 'image.generate',
+        connectionId: 'connection',
+        modelId: 'image-model',
+        parameters: expect.objectContaining({ count: 2, quality: 'low' }),
+      }),
+    }),
+  );
+  expect(await within(reopened).findByText('com_media_preset_saved')).toBeVisible();
+});
+
+test('a default preset seeds an untouched draft', async () => {
+  const env = setup(true, { presets: true });
+  jest
+    .spyOn(dataService, 'listMediaPresets')
+    .mockResolvedValue({ items: [{ ...preset, isDefault: true }] });
+  render(<MediaForm catalog={catalog} send={env.send} busy={false} />, { wrapper: env.wrapper });
+  await waitFor(() =>
+    expect(env.store.get(mediaDraftFamily('owner:new')).parameters.count).toBe(2),
+  );
+  expect(screen.getByRole('button', { name: /com_media_presets/ })).toHaveTextContent(
+    'Quick draft',
+  );
+});
+
+test('comparing sends the same prompt to a second model in the created thread', async () => {
+  const env = setup(true, { compare: true });
+  const comparable: MediaCatalog = {
+    ...catalog,
+    offerings: [
+      catalog.offerings[0],
+      {
+        ...catalog.offerings[0],
+        modelId: 'other-model',
+        modelName: 'Other model',
+        capabilities: [
+          {
+            ...catalog.offerings[0].capabilities[0],
+            controls: { count: { min: 1, max: 1, default: 1 } },
+          },
+        ],
+      },
+    ],
+  };
+  env.send.mockResolvedValueOnce({
+    schemaVersion: 1,
+    clientRequestId: 'first',
+    threadId: 'thread-9',
+    turnId: 'turn-9',
+    jobId: 'job-9',
+    phase: 'accepted',
+  });
+  render(<MediaForm catalog={comparable} send={env.send} busy={false} />, {
+    wrapper: env.wrapper,
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_compare_add' }));
+  expect(screen.getByRole('combobox', { name: 'com_media_compare_model' })).toHaveTextContent(
+    'Other model',
+  );
+  expect(screen.getByText('com_media_compare_hint')).toBeInTheDocument();
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
+    target: { value: 'A lighthouse at dusk' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(2));
+  const [first, second] = env.send.mock.calls.map(([command]) => command.request);
+  expect(first.threadId).toBeUndefined();
+  expect(first.comparisonId).toEqual(expect.any(String));
+  expect(second).toMatchObject({
+    threadId: 'thread-9',
+    comparisonId: first.comparisonId,
+    prompt: 'A lighthouse at dusk',
+    selection: expect.objectContaining({ modelId: 'other-model' }),
+    parameters: { count: 1 },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_compare_remove' }));
+  expect(
+    screen.queryByRole('combobox', { name: 'com_media_compare_model' }),
+  ).not.toBeInTheDocument();
+});
+
+test('a temporary draft flags only the submission that creates the thread', async () => {
+  const env = setup();
+  env.store.set(mediaDraftFamily('owner:new'), { ...emptyDraft(), temporary: true, revision: 1 });
+  render(<MediaForm catalog={catalog} send={env.send} busy={false} />, { wrapper: env.wrapper });
+  expect(screen.getByText('com_media_temporary_hint')).toBeVisible();
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
+    target: { value: 'Ephemeral sketch' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
+  expect(env.send.mock.calls[0][0].request).toMatchObject({ temporary: true });
+  expect(env.send.mock.calls[0][0].request.comparisonId).toBeUndefined();
 });

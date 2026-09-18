@@ -7,6 +7,7 @@ import type {
   MediaStoredThread,
   MediaStoredTurn,
 } from '~/types/media';
+import type { MediaStoredPreset } from '~/types/mediaPreset';
 import {
   mediaOwnerSchema,
   mediaActivationSchema,
@@ -17,6 +18,7 @@ import {
   mediaTurnSchema,
 } from '~/schema/media';
 import { applyTenantIsolation } from './plugins/tenantIsolation';
+import mediaPresetSchema from '~/schema/mediaPreset';
 
 export function createMediaOwnerModel(
   mongoose: typeof import('mongoose'),
@@ -51,6 +53,16 @@ export function createMediaAssetWriteModel(
   return (
     mongoose.models.MediaAssetWrite ||
     mongoose.model<MediaAssetWrite>('MediaAssetWrite', mediaAssetWriteSchema)
+  );
+}
+
+export function createMediaPresetModel(
+  mongoose: typeof import('mongoose'),
+): Model<MediaStoredPreset> {
+  applyTenantIsolation(mediaPresetSchema);
+  return (
+    mongoose.models.MediaPreset ||
+    mongoose.model<MediaStoredPreset>('MediaPreset', mediaPresetSchema)
   );
 }
 

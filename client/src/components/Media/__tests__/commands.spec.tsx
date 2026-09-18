@@ -157,7 +157,7 @@ test('an account change discards a late receipt and leaves the next session cach
   jest.mocked(dataService.getMediaSubmission).mockRejectedValue(new Error('pending'));
   const env = setup();
   const hook = renderHook(() => useMediaCommands([]), { wrapper: env.wrapper });
-  let sending: Promise<void>;
+  let sending: ReturnType<typeof hook.result.current.send>;
   act(() => {
     sending = hook.result.current.send(command);
   });

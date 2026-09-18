@@ -121,6 +121,23 @@ export function updateMediaThread(
 export function deleteMediaThread(threadId: string): Promise<media.MediaDeletionReceipt> {
   return request.delete(endpoints.mediaThread(threadId));
 }
+export function listMediaPresets(signal?: AbortSignal): Promise<media.MediaPresetList> {
+  return request.get(endpoints.mediaPresets(), signal ? { signal } : undefined);
+}
+export function createMediaPreset(
+  payload: media.MediaPresetWriteInput,
+): Promise<media.MediaPreset> {
+  return request.post(endpoints.mediaPresets(), payload);
+}
+export function updateMediaPreset(
+  presetId: string,
+  payload: media.MediaPresetUpdate,
+): Promise<media.MediaPreset> {
+  return request.patch(endpoints.mediaPreset(presetId), payload);
+}
+export function deleteMediaPreset(presetId: string): Promise<{ presetId: string }> {
+  return request.delete(endpoints.mediaPreset(presetId));
+}
 
 export function getInsights(params: TInsightsParams = {}): Promise<TInsightsResponse> {
   const query = new URLSearchParams();

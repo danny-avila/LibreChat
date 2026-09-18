@@ -12,6 +12,7 @@ import {
   OGDialogContent,
   OGDialogTitle,
   OGDialogDescription,
+  TooltipAnchor,
 } from '@librechat/client';
 import type { MediaAsset } from 'librechat-data-provider';
 import { sidebarPortalTarget } from '~/components/UnifiedSidebar/portal';
@@ -83,16 +84,21 @@ export default function Studio() {
           settingsHost={{
             render: (settings) => sidebarTarget && createPortal(settings, sidebarTarget),
             toggle: (
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-label={localize('com_media_settings')}
-                aria-expanded={expanded}
-                onClick={toggleSidebar}
-              >
-                <SlidersHorizontal className="size-4" aria-hidden="true" />
-                <span className="ml-1.5 hidden sm:inline">{localize('com_nav_settings')}</span>
-              </Button>
+              <TooltipAnchor
+                description={localize('com_media_settings')}
+                render={
+                  <Button
+                    size="icon"
+                    variant="header-action"
+                    className="size-9"
+                    aria-label={localize('com_media_settings')}
+                    aria-expanded={expanded}
+                    onClick={toggleSidebar}
+                  >
+                    <SlidersHorizontal className="icon-md" aria-hidden="true" />
+                  </Button>
+                }
+              />
             ),
           }}
           navigation={

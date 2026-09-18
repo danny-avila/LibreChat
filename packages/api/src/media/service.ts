@@ -1,7 +1,14 @@
 import {
+  deriveMediaThreadTitle,
+  getTempChatRetentionHours,
+  MediaPersistenceError,
+} from '@librechat/data-schemas';
+import {
   messageFilterPiiSchema,
   createMediaSubmissionSchema,
   createMediaImportSchema,
+  createMediaPresetSchema,
+  createMediaPresetUpdateSchema,
 } from 'librechat-data-provider';
 import type {
   MediaAsset,
@@ -11,6 +18,9 @@ import type {
   MediaCatalog,
   MediaConfig,
   MediaIntegration,
+  MediaPreset,
+  MediaPresetUpdate,
+  MediaPresetWrite,
   MediaSubmissionRequest,
   MediaImportRequest,
   MediaSubmissionReceipt,
@@ -25,6 +35,8 @@ import type {
   MediaPage,
   MediaMethods,
   MediaOwnerScope,
+  MediaPresetMethods,
+  MediaPublicationOptions,
   MediaStoredJob,
 } from '@librechat/data-schemas';
 import type {
@@ -36,6 +48,7 @@ import type {
   MediaProviderInput,
 } from './provider';
 import type { MediaHostedDependencies } from './hosted';
+import type { MediaTitleGenerator } from './title';
 import type { MediaContext } from './context';
 import { createMediaCatalog, selectMediaRoute, validateMediaOffering } from './catalog';
 import { importHostedMediaReference, verifyHostedMediaReference } from './hosted';
@@ -61,8 +74,10 @@ export interface MediaAccounting {
 }
 
 export interface MediaServiceDependencies extends MediaHostedDependencies {
-  repository: MediaMethods;
+  repository: MediaMethods & MediaPresetMethods;
   ensureReady?(): Promise<void>;
+  /** Retention window for temporary creations recovered outside a request; derived from the host config. */
+  temporaryRetentionMs?: number;
   reconcileNative?(scope: MediaOwnerScope, config: MediaConfig): Promise<void>;
   adapters: readonly MediaProviderAdapter[];
   resolveConnection(input: {
@@ -79,6 +94,8 @@ export interface MediaServiceDependencies extends MediaHostedDependencies {
   withScope<T>(scope: MediaOwnerScope, operation: () => Promise<T>): Promise<T>;
   asSystem<T>(operation: () => Promise<T>): Promise<T>;
   accounting: MediaAccounting;
+  /** Names new threads in the background after the submission receipt is returned. */
+  titles?: MediaTitleGenerator;
   log(error: Error): void;
 }
 
@@ -89,6 +106,25 @@ export function assertMediaAccess(context: MediaContext, create = false): void {
   if (create && !context.config.enabled) {
     throw new MediaServiceError('disabled', 403, 'Media generation is disabled.');
   }
+}
+
+const HOUR_MS = 3_600_000;
+/** Temporary creations share the chat retention policy so one setting governs both surfaces. */
+export function mediaTemporaryRetentionMs(interfaceConfig: AppConfig['interfaceConfig']): number {
+  return getTempChatRetentionHours(interfaceConfig) * HOUR_MS;
+}
+function publicationOptions(context: MediaContext): MediaPublicationOptions {
+  return {
+    maxRetainers: context.config.limits.maxAssetRetainers,
+    maxTitleChars: context.config.limits.maxTitleChars,
+    temporaryRetentionMs: mediaTemporaryRetentionMs(context.appConfig.interfaceConfig),
+  };
+}
+function presetError(error: unknown): never {
+  if (error instanceof MediaPersistenceError && error.code === 'capacity') {
+    throw new MediaServiceError('quota_exceeded', 429, 'The preset limit has been reached.');
+  }
+  throw error;
 }
 
 export interface PreparedMedia {
@@ -138,6 +174,16 @@ export interface MediaServices {
       limit: number | undefined,
       context: MediaContext,
     ): Promise<MediaPage<MediaTurn>>;
+  };
+  presets: {
+    list(context: MediaContext): Promise<{ items: MediaPreset[] }>;
+    create(presetId: string, input: MediaPresetWrite, context: MediaContext): Promise<MediaPreset>;
+    update(
+      presetId: string,
+      update: MediaPresetUpdate,
+      context: MediaContext,
+    ): Promise<MediaPreset>;
+    remove(presetId: string, context: MediaContext): Promise<{ presetId: string }>;
   };
 }
 
@@ -390,19 +436,42 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
         if (!execution) {
           throw new MediaServiceError('not_found', 404, 'Submission is unavailable.');
         }
-        const receipt = await deps.repository.stageMediaSubmission({
+        const staged = await deps.repository.stageMediaSubmission({
           scope: context.scope,
           request,
           execution,
           maxActiveJobs: context.config.queue.maxPendingPerUser,
           maxPendingTotal: context.config.queue.maxPendingTotal,
         });
-        return (
-          (await deps.repository.publishMediaSubmission(context.scope, receipt.jobId, {
-            maxRetainers: context.config.limits.maxAssetRetainers,
-            maxTitleChars: context.config.limits.maxTitleChars,
-          })) ?? receipt
-        );
+        const receipt =
+          (await deps.repository.publishMediaSubmission(
+            context.scope,
+            staged.jobId,
+            publicationOptions(context),
+          )) ?? staged;
+        if (
+          !replay &&
+          !request.threadId &&
+          !request.temporary &&
+          receipt.phase === 'accepted' &&
+          deps.titles
+        ) {
+          void deps
+            .titles({
+              context,
+              threadId: receipt.threadId,
+              prompt: request.prompt,
+              operation: request.operation,
+              currentTitle: deriveMediaThreadTitle(
+                request.prompt,
+                context.config.limits.maxTitleChars,
+              ),
+            })
+            .catch((error: unknown) =>
+              deps.log(error instanceof Error ? error : new Error(String(error))),
+            );
+        }
+        return receipt;
       },
       async import(input: MediaImportRequest, context: MediaContext): Promise<MediaImportReceipt> {
         assertMediaAccess(context, true);
@@ -432,10 +501,11 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
           identityRequest: parsed,
         });
         return (
-          (await deps.repository.publishMediaImport(context.scope, receipt.turnId, {
-            maxRetainers: context.config.limits.maxAssetRetainers,
-            maxTitleChars: context.config.limits.maxTitleChars,
-          })) ?? receipt
+          (await deps.repository.publishMediaImport(
+            context.scope,
+            receipt.turnId,
+            publicationOptions(context),
+          )) ?? receipt
         );
       },
       async retry(jobId: string, clientRequestId: string, context: MediaContext) {
@@ -456,10 +526,11 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
           maxPendingTotal: context.config.queue.maxPendingTotal,
         });
         return (
-          (await deps.repository.publishMediaSubmission(context.scope, receipt.jobId, {
-            maxRetainers: context.config.limits.maxAssetRetainers,
-            maxTitleChars: context.config.limits.maxTitleChars,
-          })) ?? receipt
+          (await deps.repository.publishMediaSubmission(
+            context.scope,
+            receipt.jobId,
+            publicationOptions(context),
+          )) ?? receipt
         );
       },
       async cancel(jobId: string, context: MediaContext) {
@@ -559,6 +630,44 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
           limit: pageLimit(context, limit),
           jobsPerTurn: pageLimit(context),
         });
+      },
+    },
+    presets: {
+      async list(context: MediaContext) {
+        assertMediaAccess(context);
+        return { items: await deps.repository.listMediaPresets(context.scope) };
+      },
+      async create(presetId: string, input: MediaPresetWrite, context: MediaContext) {
+        assertMediaAccess(context, true);
+        const write = createMediaPresetSchema(context.config.limits).parse(input);
+        return deps.repository
+          .createMediaPreset({
+            scope: context.scope,
+            presetId,
+            write,
+            maxPresets: context.config.limits.maxPresets,
+          })
+          .catch(presetError);
+      },
+      async update(presetId: string, input: MediaPresetUpdate, context: MediaContext) {
+        assertMediaAccess(context, true);
+        const update = createMediaPresetUpdateSchema(context.config.limits).parse(input);
+        const preset = await deps.repository.updateMediaPreset({
+          scope: context.scope,
+          presetId,
+          update,
+        });
+        if (!preset) {
+          throw new MediaServiceError('not_found', 404, 'The preset is unavailable.');
+        }
+        return preset;
+      },
+      async remove(presetId: string, context: MediaContext) {
+        assertMediaAccess(context, true);
+        if (!(await deps.repository.deleteMediaPreset(context.scope, presetId))) {
+          throw new MediaServiceError('not_found', 404, 'The preset is unavailable.');
+        }
+        return { presetId };
       },
     },
   };

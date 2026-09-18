@@ -3,7 +3,9 @@ import { resolveMediaConfig } from 'librechat-data-provider';
 import type {
   MediaMethods,
   MediaNativeMethods,
+  MediaPresetMethods,
   AppConfig,
+  IUser,
   MediaOwnerScope,
 } from '@librechat/data-schemas';
 import type { Request, Router } from 'express';
@@ -12,14 +14,17 @@ import type { MediaChatSource, NativeMediaFactory } from './native';
 import type { MediaVertexCredentialProvider } from './vertexAuth';
 import type { MediaProviderAdapter } from './provider';
 import type { MediaEnvironment } from './credentials';
+import type { RecordUsageDeps } from '~/agents/usage';
 import type { MediaTransport } from './transport';
 import type { MediaUploadFactory } from './http';
+import type { EndpointDbMethods } from '~/types';
 import type { MediaWorker } from './worker';
+import { createMediaTitleGenerator, createMediaTitleModelResolver } from './title';
+import { createMediaServices, mediaTemporaryRetentionMs } from './service';
 import { createMediaCredentialResolver } from './credentials';
 import { createRESTMediaAdapters } from './adapters/rest';
 import { createLocalMediaStorage } from './storage';
 import { createNativeMediaFactory } from './native';
-import { createMediaServices } from './service';
 import { createMediaWorker } from './worker';
 import { MediaServiceError } from './errors';
 import { createMediaRouter } from './http';
@@ -27,7 +32,9 @@ import { createMediaRouter } from './http';
 type MediaActor = { id: string; role?: string; tenantId?: string; idOnTheSource?: string | null };
 export interface MediaRuntimeDependencies {
   appConfig: AppConfig;
-  repository: MediaMethods & MediaNativeMethods;
+  repository: MediaMethods & MediaNativeMethods & MediaPresetMethods;
+  /** Enables LLM-generated thread titles; provider credentials and billing come from the host. */
+  titles?: { db: EndpointDbMethods; usage?: RecordUsageDeps };
   getUserById(id: string, select: string): Promise<Omit<MediaActor, 'id'> | null>;
   getRoleByName(
     name: string,
@@ -105,6 +112,17 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
     }
     return actorContext({ ...actor, id: scope.ownerId });
   };
+  const withScope = <T>(scope: MediaOwnerScope, operation: () => Promise<T>) =>
+    input.tenantContext.run({ tenantId: scope.tenantId ?? undefined }, operation);
+  const titles = input.titles
+    ? createMediaTitleGenerator({
+        repository,
+        resolveModel: createMediaTitleModelResolver({ db: input.titles.db }),
+        usage: input.titles.usage,
+        withScope,
+        log: input.log,
+      })
+    : undefined;
   const deps = {
     repository,
     storage,
@@ -112,7 +130,14 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
     describeUserKey: resolveConnection.describe,
     loadContext,
     accounting: input.accounting,
-    ensureReady: () => repository.ensureMediaNativeIndexes(),
+    titles,
+    temporaryRetentionMs: mediaTemporaryRetentionMs(input.appConfig.interfaceConfig),
+    ensureReady: async () => {
+      await Promise.all([
+        repository.ensureMediaNativeIndexes(),
+        repository.ensureMediaPresetIndexes(),
+      ]);
+    },
     reconcileNative: async (scope: MediaOwnerScope, config: typeof baseConfig) => {
       await repository.reconcileMediaNativeRecordings({
         scope,
@@ -124,8 +149,7 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
     adapters,
     transport: input.transport,
     asSystem: input.asSystem,
-    withScope: <T>(scope: MediaOwnerScope, operation: () => Promise<T>) =>
-      input.tenantContext.run({ tenantId: scope.tenantId ?? undefined }, operation),
+    withScope,
     now: Date.now,
     id: randomUUID,
     log: input.log,
@@ -140,11 +164,11 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
     tempDirectory: `${uploadDirectory}/media-staging`,
     id: randomUUID,
     resolveContext: async (request: Request) => {
-      const user = (request as Request & { user?: MediaActor }).user;
+      const user = (request as Request & { user?: IUser }).user;
       if (!user?.id) {
         throw new MediaServiceError('forbidden', 401, 'Authentication is required.');
       }
-      return actorContext(user);
+      return { ...(await actorContext(user)), user };
     },
   });
   return {

@@ -49,11 +49,16 @@ export const mediaThreadSchema: Schema<MediaStoredThread> = new Schema(
     pendingJobCount: { type: Number, default: 0 },
     turnCount: { type: Number, default: 0 },
     retiredAt: String,
+    expiresAt: String,
   },
   options,
 );
 mediaThreadSchema.index({ tenantId: 1, ownerId: 1, threadId: 1 }, { unique: true });
 mediaThreadSchema.index({ tenantId: 1, ownerId: 1, status: 1, createdAt: -1, threadId: -1 });
+mediaThreadSchema.index(
+  { tenantId: 1, ownerId: 1, status: 1, expiresAt: 1 },
+  { partialFilterExpression: { expiresAt: { $exists: true } } },
+);
 
 export const mediaTurnSchema: Schema<MediaStoredTurn> = new Schema(
   {
@@ -64,6 +69,7 @@ export const mediaTurnSchema: Schema<MediaStoredTurn> = new Schema(
     sequence: Number,
     kind: { type: String, enum: ['generation', 'import'], required: true },
     parentTurnId: String,
+    comparisonId: String,
     prompt: { type: String, default: '' },
     inputs: { type: Schema.Types.Mixed, default: [] },
     selection: Schema.Types.Mixed,

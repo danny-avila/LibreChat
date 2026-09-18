@@ -7,6 +7,7 @@ export * from './vertexAuth';
 export * from './catalog';
 export * from './storage';
 export * from './service';
+export * from './title';
 export * from './worker';
 export * from './http';
 export * from './runtime';

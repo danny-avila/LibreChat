@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useRecoilValue } from 'recoil';
-import { Permissions, PermissionTypes } from 'librechat-data-provider';
+import { getConfigDefaults, Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { ComposerProps } from '@librechat/client';
 import type { MediaHost } from '~/components/Media/host';
 import useComposerBindings from '~/hooks/Input/useComposerBindings';
@@ -9,6 +9,8 @@ import { useAuthContext, useHasAccess } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
 import { mediaSessionScope } from './mediaHandoff';
 import store from '~/store';
+
+const defaultInterface = getConfigDefaults().interface;
 
 /** Shell preferences and identity cross the feature boundary through this host adapter. */
 export function useMediaShellHost(actions: Pick<MediaHost, 'openThread' | 'useInChat'>) {
@@ -23,6 +25,15 @@ export function useMediaShellHost(actions: Pick<MediaHost, 'openThread' | 'useIn
     permissionType: PermissionTypes.MEDIA,
     permission: Permissions.CREATE,
   });
+  const canTemporary = useHasAccess({
+    permissionType: PermissionTypes.TEMPORARY_CHAT,
+    permission: Permissions.USE,
+  });
+  const canCompare = useHasAccess({
+    permissionType: PermissionTypes.MULTI_CONVO,
+    permission: Permissions.USE,
+  });
+  const presets = (startup?.interface?.presets ?? defaultInterface.presets) !== false;
   const enterToSend = useRecoilValue(store.enterToSend);
   const { shortcutsEnabled, submitOverride, yieldedChords } = useComposerBindings();
   const scope = user ? mediaSessionScope(user) : undefined;
@@ -70,6 +81,7 @@ export function useMediaShellHost(actions: Pick<MediaHost, 'openThread' | 'useIn
             enterToSend,
             resolveKeyVerdict,
             isCurrentSession,
+            features: { presets, temporary: canTemporary, compare: canCompare },
             ...actions,
           }
         : undefined,
@@ -79,6 +91,9 @@ export function useMediaShellHost(actions: Pick<MediaHost, 'openThread' | 'useIn
       isAuthenticated,
       canUse,
       canCreate,
+      canTemporary,
+      canCompare,
+      presets,
       enterToSend,
       resolveKeyVerdict,
       isCurrentSession,

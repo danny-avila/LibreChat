@@ -14,6 +14,12 @@ import {
   mediaURLUploadRequestSchema,
   mediaCatalogSchema,
   mediaUserKeySchema,
+  mediaThreadSchema,
+  mediaTurnSchema,
+  mediaPresetSchema,
+  mediaPresetWriteSchema,
+  mediaPresetUpdateSchema,
+  createMediaPresetSchema,
 } from './index';
 import { PermissionTypes, Permissions, permissionsSchema } from '../permissions';
 import { configSchema, BASE_ONLY_CONFIG_SECTIONS } from '../config';
@@ -216,8 +222,26 @@ describe('media configuration compatibility', () => {
     expect(config.integrations[0].billing).toBeUndefined();
   });
 
+  it('keeps generated titles on by default while deferring the model choice to configuration', () => {
+    expect(resolveMediaConfig().titles).toEqual({ enabled: true, timeoutMs: 45_000 });
+    const config = mediaConfigSchema.parse({
+      titles: { endpoint: ' openAI ', model: 'gpt-4o-mini', prompt: 'Name this: {prompt}' },
+    });
+    expect(config.titles).toEqual({
+      enabled: true,
+      endpoint: 'openAI',
+      model: 'gpt-4o-mini',
+      prompt: 'Name this: {prompt}',
+      timeoutMs: 45_000,
+    });
+    expect(mediaConfigSchema.parse({ titles: { enabled: false } }).titles.enabled).toBe(false);
+  });
+
   it.each([
     { enabled: true },
+    { titles: { arbitrary: 'ignored' } },
+    { titles: { endpoint: '' } },
+    { titles: { timeoutMs: 0 } },
     { integrations: [integration, integration] },
     { worker: { leaseMs: 1_000, renewEveryMs: 1_000 } },
     { execution: { maxActiveTotal: 1 } },
@@ -316,6 +340,85 @@ describe('media command contracts', () => {
     expect(new URL(endpoints.mediaThreads(), 'http://localhost').searchParams.has('include')).toBe(
       false,
     );
+  });
+
+  it('accepts temporary and comparison markers only where they mean something', () => {
+    expect(mediaSubmissionRequestSchema.parse({ ...submission, temporary: true }).temporary).toBe(
+      true,
+    );
+    expect(
+      mediaSubmissionRequestSchema.safeParse({
+        ...submission,
+        temporary: true,
+        threadId: 'thread-1',
+      }).success,
+    ).toBe(false);
+    expect(
+      mediaSubmissionRequestSchema.parse({ ...submission, comparisonId: 'compare-1' }).comparisonId,
+    ).toBe('compare-1');
+    const thread = {
+      schemaVersion: 1,
+      threadId: 'thread-1',
+      version: 1,
+      title: 'Lake',
+      createdAt: '2026-09-17T12:00:00.000Z',
+      updatedAt: '2026-09-17T12:00:00.000Z',
+      pendingJobCount: 0,
+      turnCount: 1,
+    };
+    expect(mediaThreadSchema.parse(thread).expiresAt).toBeUndefined();
+    expect(
+      mediaThreadSchema.parse({ ...thread, expiresAt: '2026-10-17T12:00:00.000Z' }).expiresAt,
+    ).toBe('2026-10-17T12:00:00.000Z');
+    expect(
+      mediaTurnSchema.parse({
+        schemaVersion: 1,
+        threadId: 'thread-1',
+        turnId: 'turn-1',
+        version: 1,
+        kind: 'generation',
+        createdAt: '2026-09-17T12:00:00.000Z',
+        prompt: 'A lake',
+        inputs: [],
+        jobs: [],
+        assets: [],
+        comparisonId: 'compare-1',
+      }).comparisonId,
+    ).toBe('compare-1');
+  });
+
+  it('defines Studio presets as named, restorable generation settings', () => {
+    const settings = {
+      operation: 'image.generate' as const,
+      connectionId: 'router',
+      modelId: 'publisher/model',
+      parameters: { count: 2, size: '1024x1024' },
+    };
+    const write = mediaPresetWriteSchema.parse({ title: ' Studio look ', settings });
+    expect(write.title).toBe('Studio look');
+    expect(write.isDefault).toBeUndefined();
+    expect(mediaPresetWriteSchema.safeParse({ title: '', settings }).success).toBe(false);
+    expect(mediaPresetWriteSchema.safeParse({ title: 'x', settings, extra: 1 }).success).toBe(
+      false,
+    );
+    expect(
+      createMediaPresetSchema({ maxTitleChars: 3 }).safeParse({ title: 'Long', settings }).success,
+    ).toBe(false);
+    expect(mediaPresetUpdateSchema.safeParse({}).success).toBe(false);
+    expect(mediaPresetUpdateSchema.parse({ isDefault: true })).toEqual({ isDefault: true });
+    expect(
+      mediaPresetSchema.parse({
+        schemaVersion: 1,
+        presetId: 'preset-1',
+        title: 'Studio look',
+        isDefault: false,
+        settings,
+        createdAt: '2026-09-17T12:00:00.000Z',
+        updatedAt: '2026-09-17T12:00:00.000Z',
+      }).settings.parameters.count,
+    ).toBe(2);
+    expect(resolveMediaConfig().limits.maxPresets).toBe(50);
+    expect(endpoints.mediaPreset('a b')).toBe('/api/media/presets/a%20b');
   });
 
   it('canonicalizes omitted version, inputs and parameters', () => {

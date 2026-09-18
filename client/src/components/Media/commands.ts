@@ -69,8 +69,8 @@ export function useMediaCommands(visibleThreadIds: string[]) {
     })),
   });
   const send = useCallback(
-    async (command: PendingMedia) => {
-      if (!host.canCreate || !host.isCurrentSession()) return;
+    async (command: PendingMedia): Promise<MediaReceipt | undefined> => {
+      if (!host.canCreate || !host.isCurrentSession()) return undefined;
       const id = command.request.clientRequestId;
       setPending((previous) =>
         previous.some((p) => p.request.clientRequestId === id) ? previous : [...previous, command],
@@ -89,12 +89,22 @@ export function useMediaCommands(visibleThreadIds: string[]) {
           );
         else
           receipt = mediaImportReceiptSchema.parse(await dataService.importMedia(command.request));
-        if (!host.isCurrentSession()) return;
+        if (!host.isCurrentSession()) return undefined;
+        const carried =
+          command.kind === 'submission' && !command.request.threadId && receipt.phase !== 'rejected'
+            ? store.get(mediaDraftFamily(command.draftKey)).compare
+            : undefined;
+        if (carried) {
+          const target = mediaDraftFamily(`${host.scope}:${receipt.threadId}`);
+          const current = store.get(target);
+          store.set(target, { ...current, compare: carried, revision: current.revision + 1 });
+        }
         client.setQueryData(receiptKey(host.scope, command), receipt);
         if (receipt.phase === 'rejected') setError(receipt.error.code);
         else if (command.kind !== 'retry' && !command.request.threadId)
           host.openThread(receipt.threadId);
         await invalidateMedia(client, host.scope);
+        return receipt;
       } catch (failure) {
         if (host.isCurrentSession()) {
           setError(mediaErrorCode(failure));
@@ -104,6 +114,7 @@ export function useMediaCommands(visibleThreadIds: string[]) {
               previous.filter((item) => item.request.clientRequestId !== id),
             );
         }
+        return undefined;
       } finally {
         if (host.isCurrentSession())
           setSending((previous) => {
@@ -113,7 +124,7 @@ export function useMediaCommands(visibleThreadIds: string[]) {
           });
       }
     },
-    [host, client, setPending],
+    [host, client, setPending, store],
   );
   useEffect(() => {
     if (!host.isCurrentSession()) return;
@@ -128,7 +139,11 @@ export function useMediaCommands(visibleThreadIds: string[]) {
       const draftAtom = mediaDraftFamily(command.draftKey);
       const draft = store.get(draftAtom);
       if (mayClearMediaDraft(draft.revision, command.draftRevision, receipt.phase)) {
-        store.set(draftAtom, { ...emptyDraft(), revision: draft.revision + 1 });
+        store.set(draftAtom, {
+          ...emptyDraft(),
+          compare: draft.compare,
+          revision: draft.revision + 1,
+        });
       }
       if (visibleThreadIds.includes(receipt.threadId))
         published.add(command.request.clientRequestId);

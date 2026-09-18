@@ -1,7 +1,8 @@
 import { Provider, createStore } from 'jotai';
-import { mediaCatalogSchema } from 'librechat-data-provider';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { dataService, mediaCatalogSchema } from 'librechat-data-provider';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { MediaCatalog, MediaThreadDetail, MediaJob } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import { clearMediaSessionStorage, mediaDraftFamily } from '../state';
@@ -9,6 +10,11 @@ import { MediaHostProvider } from '../host';
 import { MediaThreadView } from '../Thread';
 
 jest.mock('~/hooks', () => ({ useLocalize: () => (key: string) => key }));
+jest.mock('librechat-data-provider', () => {
+  const actual =
+    jest.requireActual<typeof import('librechat-data-provider')>('librechat-data-provider');
+  return { ...actual, dataService: { ...actual.dataService } };
+});
 jest.mock('@librechat/client', () => ({
   ...jest.requireActual('@librechat/client'),
   PixelCard: ({ progress, noFocus }: { progress: number; noFocus: boolean }) => (
@@ -291,4 +297,125 @@ test('a new retry shows a fresh image animation while video keeps the existing p
   env.rerenderDetail(withJob({ phase: 'running', operation: 'video.generate' }));
   expect(screen.queryByTestId('pixels')).not.toBeInTheDocument();
   expect(screen.getByText('com_media_generation_hint')).toBeInTheDocument();
+});
+
+test('the creation menu holds rename and delete, and rename saves against the thread version', async () => {
+  const update = jest
+    .spyOn(dataService, 'updateMediaThread')
+    .mockResolvedValue({ ...detail.thread, title: 'Harbor study', version: 2 });
+  setup(configured);
+  expect(screen.queryByRole('button', { name: 'com_media_rename' })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'com_media_thread_options' }));
+  await userEvent.click(await screen.findByRole('menuitem', { name: 'com_media_rename' }));
+  const dialog = await screen.findByRole('dialog', { name: 'com_media_rename' });
+  const field = within(dialog).getByRole('textbox', { name: 'com_media_title' });
+  expect(field).toHaveValue('Saved image request');
+  fireEvent.change(field, { target: { value: 'Harbor study' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'com_ui_save' }));
+  await waitFor(() =>
+    expect(update).toHaveBeenCalledWith('thread', { expectedVersion: 1, title: 'Harbor study' }),
+  );
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog', { name: 'com_media_rename' })).not.toBeInTheDocument(),
+  );
+  update.mockRestore();
+});
+
+test('deleting from the creation menu confirms first and reports back to the host', async () => {
+  const remove = jest
+    .spyOn(dataService, 'deleteMediaThread')
+    .mockResolvedValue({ threadId: 'thread', phase: 'retiring' });
+  const onDeleted = jest.fn();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <Provider store={createStore()}>
+      <QueryClientProvider client={client}>
+        <MediaHostProvider
+          value={{
+            scope: 'owner',
+            canCreate: true,
+            pollIntervalMs: 5000,
+            catchUpIntervalMs: 60000,
+            enterToSend: false,
+            isCurrentSession: () => true,
+            openThread: () => {},
+          }}
+        >
+          <MediaThreadView detail={detail} send={jest.fn()} onDeleted={onDeleted} />
+        </MediaHostProvider>
+      </QueryClientProvider>
+    </Provider>,
+  );
+  await userEvent.click(screen.getByRole('button', { name: 'com_media_thread_options' }));
+  await userEvent.click(await screen.findByRole('menuitem', { name: 'com_ui_delete' }));
+  const dialog = await screen.findByRole('dialog', { name: 'com_media_delete_title' });
+  expect(remove).not.toHaveBeenCalled();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'com_ui_delete' }));
+  await waitFor(() => expect(remove).toHaveBeenCalledWith('thread'));
+  await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1));
+  remove.mockRestore();
+});
+
+test('result actions sit in one row: labeled refine, then icon download, expand, and cover', async () => {
+  const update = jest
+    .spyOn(dataService, 'updateMediaThread')
+    .mockResolvedValue({ ...detail.thread, version: 2 });
+  const outputs: MediaJob['outputs'] = [
+    { outputId: 'first', kind: 'image', ordinal: 0, state: 'ready', asset },
+  ];
+  setup(undefined, withJob({ phase: 'succeeded', outputs }));
+  const figure = screen.getByRole('figure');
+  expect(within(figure).getByRole('button', { name: 'com_media_refine' })).toHaveTextContent(
+    'com_media_refine',
+  );
+  expect(within(figure).getByRole('link', { name: 'com_media_download' })).toHaveAttribute(
+    'download',
+    asset.filename,
+  );
+  const expanders = within(figure).getAllByRole('button', { name: 'com_media_expand' });
+  expect(expanders).toHaveLength(2);
+  expect(expanders[1]).not.toHaveTextContent('com_media_expand');
+  fireEvent.click(within(figure).getByRole('button', { name: 'com_media_set_cover' }));
+  await waitFor(() =>
+    expect(update).toHaveBeenCalledWith('thread', {
+      expectedVersion: 1,
+      coverFileId: asset.file_id,
+    }),
+  );
+  update.mockRestore();
+});
+
+test('turns that share a comparison render one prompt with their results side by side', () => {
+  const other = { ...selection, modelId: 'other-model' };
+  const second: MediaThreadDetail['turns']['items'][number] = {
+    ...detail.turns.items[0],
+    turnId: 'turn-b',
+    sequence: 2,
+    selection: other,
+    jobs: [{ ...detail.turns.items[0].jobs[0], jobId: 'job-b', selection: other }],
+  };
+  setup(undefined, {
+    ...detail,
+    turns: {
+      items: [
+        { ...detail.turns.items[0], comparisonId: 'compare-1' },
+        { ...second, comparisonId: 'compare-1' },
+        { ...second, turnId: 'turn-c', sequence: 3, jobs: [], comparisonId: undefined },
+      ],
+    },
+  });
+  const comparison = screen.getByRole('region', { name: 'com_media_comparison' });
+  expect(within(comparison).getAllByRole('group', { name: 'com_media_request' })).toHaveLength(1);
+  expect(within(comparison).getAllByRole('region', { name: 'com_media_job' })).toHaveLength(2);
+  expect(screen.getAllByRole('group', { name: 'com_media_request' })).toHaveLength(2);
+});
+
+test('a temporary creation announces its expiry next to the title', () => {
+  setup(undefined, {
+    ...detail,
+    thread: { ...detail.thread, expiresAt: new Date(Date.now() + 86_400_000 * 3).toISOString() },
+  });
+  const status = screen.getByText(/com_media_temporary_creation/).closest('[role="status"]');
+  expect(status).toHaveTextContent('com_media_temporary_expires');
+  expect(status).toHaveAttribute('title');
 });

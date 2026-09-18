@@ -12,6 +12,8 @@ import {
   mediaThreadUpdateSchema,
   mediaPageRequestSchema,
   mediaThreadListRequestSchema,
+  mediaPresetWriteSchema,
+  mediaPresetUpdateSchema,
   mergeFileConfig,
 } from 'librechat-data-provider';
 import type { Request, Response, RequestHandler } from 'express';
@@ -218,6 +220,32 @@ export function createMediaRouter({
   router.delete(
     '/threads/:threadId',
     handle((req, context) => services.commands.retire(param(req, 'threadId'), context), 202),
+  );
+  router.get(
+    '/presets',
+    handle((_req, context) => services.presets.list(context)),
+  );
+  router.post(
+    '/presets',
+    handle(
+      (req, context) =>
+        services.presets.create(id(), mediaPresetWriteSchema.parse(req.body), context),
+      201,
+    ),
+  );
+  router.patch(
+    '/presets/:presetId',
+    handle((req, context) =>
+      services.presets.update(
+        param(req, 'presetId'),
+        mediaPresetUpdateSchema.parse(req.body),
+        context,
+      ),
+    ),
+  );
+  router.delete(
+    '/presets/:presetId',
+    handle((req, context) => services.presets.remove(param(req, 'presetId'), context)),
   );
   router.post(
     '/uploads/url',
