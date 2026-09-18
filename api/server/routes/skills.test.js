@@ -589,7 +589,7 @@ describe('Skill routes', () => {
       expect(res.body).toEqual(
         expect.objectContaining({
           error: 'skill_import_incomplete',
-          failedFiles: [{ path: 'references/region mapping.md', error: 'Invalid path' }],
+          failedFiles: [{ path: 'references/region mapping.md', reason: 'invalid_path' }],
         }),
       );
       expect(await Skill.countDocuments({ name: 'partial-import' })).toBe(0);

@@ -12,6 +12,8 @@ interface ImportMutationOptions {
   onError?: (error: unknown) => void;
 }
 let mockImportOptions: ImportMutationOptions | undefined;
+/** Captured from OGDialog so a test can dismiss the dialog the way Escape does. */
+let mockOnOpenChange: ((open: boolean) => void) | undefined;
 let mockFileConfigInput: FileConfigInput | undefined = {
   skills: {
     fileSizeLimit: 1,
@@ -27,13 +29,23 @@ jest.mock('@librechat/client', () => {
   const React = jest.requireActual<typeof import('react')>('react');
   const ReactDOM = jest.requireActual<typeof import('react-dom')>('react-dom');
   return {
-    OGDialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
-      open
+    OGDialog: ({
+      open,
+      onOpenChange,
+      children,
+    }: {
+      open: boolean;
+      onOpenChange?: (next: boolean) => void;
+      children: ReactNode;
+    }) => {
+      mockOnOpenChange = onOpenChange;
+      return open
         ? ReactDOM.createPortal(
             React.createElement('div', null, children),
             globalThis.document.body,
           )
-        : null,
+        : null;
+    },
     OGDialogContent: ({ children }: { children: ReactNode }) =>
       React.createElement('div', { role: 'dialog', 'data-state': 'open' }, children),
     Spinner: () => React.createElement('div', { 'data-testid': 'spinner' }),
@@ -73,6 +85,15 @@ jest.mock('~/hooks', () => ({
         com_ui_create_skill_upload_error: 'Failed to read the uploaded file',
         com_ui_skill_upload_failed_files: 'These files could not be imported:',
         com_ui_skill_upload_incomplete: `Import canceled: ${params?.[0]} file(s) in the archive could not be imported. Fix the archive and upload it again.`,
+        com_ui_skill_upload_reason_invalid_path: 'Unsupported file path',
+        com_ui_skill_upload_reason_file_too_large: `Exceeds the ${params?.[0]} MB file size limit`,
+        com_ui_skill_upload_reason_archive_too_large: `Not imported: the archive exceeds the ${params?.[0]} MB total size limit`,
+        com_ui_skill_upload_reason_archive_entry_changed:
+          'Changed while the archive was being read',
+        com_ui_skill_upload_reason_persistence_failed: 'Could not be saved',
+        com_ui_skill_upload_rollback_failed: `Import failed for ${params?.[0]} file(s), and the incomplete skill could not be removed automatically. Delete it before trying again.`,
+        com_ui_skill_upload_rollback_failed_files:
+          'Import failed for these files, and the incomplete skill was left behind:',
       };
       return translations[key] ?? key;
     },
@@ -96,11 +117,13 @@ function getFileInput(container: HTMLElement): HTMLInputElement {
   return input;
 }
 
-function incompleteImportError(failedFiles: Array<{ path: string; error?: string }>) {
+type FailedFile = { path: string; reason: string; limitMb?: number };
+
+function incompleteImportError(failedFiles: FailedFile[], code = 'skill_import_incomplete') {
   return {
     response: {
       data: {
-        error: 'skill_import_incomplete',
+        error: code,
         message: `Import canceled: ${failedFiles.length} of 3 files in the archive could not be imported.`,
         failedFiles,
       },
@@ -108,10 +131,19 @@ function incompleteImportError(failedFiles: Array<{ path: string; error?: string
   };
 }
 
+function uploadArchive(container: HTMLElement, name = 'retry.skill') {
+  fireEvent.change(getFileInput(container), {
+    target: {
+      files: [new File([new Uint8Array(1024)], name, { type: 'application/zip' })],
+    },
+  });
+}
+
 describe('UploadSkillDialog', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockImportOptions = undefined;
+    mockOnOpenChange = undefined;
     mockFileConfigInput = {
       skills: {
         fileSizeLimit: 1,
@@ -187,14 +219,14 @@ describe('UploadSkillDialog', () => {
     appendSpy.mockRestore();
   });
 
-  it('lists the files a rolled-back import could not persist and keeps the dialog open', () => {
+  it('lists the files a rolled-back import could not persist, localized, and keeps the dialog open', () => {
     render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
 
     act(() => {
       mockImportOptions?.onError?.(
         incompleteImportError([
-          { path: 'queries.sql', error: 'File too large (max 10MB)' },
-          { path: 'references/region_mapping.md', error: 'Invalid path' },
+          { path: 'queries.sql', reason: 'file_too_large', limitMb: 10 },
+          { path: 'references/region_mapping.md', reason: 'invalid_path' },
         ]),
       );
     });
@@ -204,30 +236,95 @@ describe('UploadSkillDialog', () => {
       message:
         'Import canceled: 2 file(s) in the archive could not be imported. Fix the archive and upload it again.',
     });
-    expect(screen.getByRole('alert')).toHaveTextContent('These files could not be imported:');
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('These files could not be imported:');
     expect(screen.getByText('queries.sql')).toBeInTheDocument();
     expect(screen.getByText('references/region_mapping.md')).toBeInTheDocument();
-    expect(screen.getByRole('alert')).toHaveTextContent('Invalid path');
+    /** Localized from the reason code, with the limit interpolated — never the
+     *  server's own English text. */
+    expect(alert).toHaveTextContent('Exceeds the 10 MB file size limit');
+    expect(alert).toHaveTextContent('Unsupported file path');
     expect(mockSetIsOpen).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('keeps a long failure list scrollable inside the dialog', () => {
+    render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
+    const manyFiles = Array.from({ length: 60 }, (_, index) => ({
+      path: `files/entry-${index}.txt`,
+      reason: 'invalid_path',
+    }));
+
+    act(() => {
+      mockImportOptions?.onError?.(incompleteImportError(manyFiles));
+    });
+
+    const list = screen.getByRole('alert').querySelector('ul');
+    expect(list).not.toBeNull();
+    expect(list?.className).toContain('overflow-y-auto');
+    expect(list?.className).toMatch(/max-h-/);
+    expect(list?.querySelectorAll('li')).toHaveLength(60);
+  });
+
+  it('tells the user to delete the leftover skill when rollback failed', () => {
+    render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
+
+    act(() => {
+      mockImportOptions?.onError?.(
+        incompleteImportError(
+          [{ path: 'queries.sql', reason: 'persistence_failed' }],
+          'skill_import_rollback_failed',
+        ),
+      );
+    });
+
+    expect(mockShowToast).toHaveBeenCalledWith({
+      status: 'error',
+      message:
+        'Import failed for 1 file(s), and the incomplete skill could not be removed automatically. Delete it before trying again.',
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Import failed for these files, and the incomplete skill was left behind:',
+    );
   });
 
   it('clears a previous import failure when a new file is selected', () => {
     const { container } = render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
 
     act(() => {
-      mockImportOptions?.onError?.(incompleteImportError([{ path: 'queries.sql' }]));
+      mockImportOptions?.onError?.(
+        incompleteImportError([{ path: 'queries.sql', reason: 'persistence_failed' }]),
+      );
     });
     expect(screen.getByRole('alert')).toBeInTheDocument();
 
-    fireEvent.change(getFileInput(container), {
-      target: {
-        files: [new File([new Uint8Array(1024)], 'retry.skill', { type: 'application/zip' })],
-      },
-    });
+    uploadArchive(container);
 
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(mockMutate).toHaveBeenCalledWith(expect.any(FormData));
+  });
+
+  it('ignores a failure that resolves after the dialog was dismissed', () => {
+    /** The dialog is permanently mounted by CreateSkillMenu, so a 422 can land
+     *  after the user closed it; reopening must not show the stale archive. */
+    const { container, rerender } = render(
+      <UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />,
+    );
+    uploadArchive(container, 'abandoned.skill');
+
+    act(() => {
+      mockOnOpenChange?.(false);
+    });
+    rerender(<UploadSkillDialog isOpen={false} setIsOpen={mockSetIsOpen} />);
+    act(() => {
+      mockImportOptions?.onError?.(
+        incompleteImportError([{ path: 'queries.sql', reason: 'persistence_failed' }]),
+      );
+    });
+    rerender(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(mockShowToast).not.toHaveBeenCalled();
   });
 
   it('falls back to the server message for import errors without failed files', () => {

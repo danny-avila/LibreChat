@@ -17,7 +17,7 @@ import type {
   CreateSkillResult,
   UpsertSkillFileInput,
 } from '@librechat/data-schemas';
-import type { TSkillImportFailedResponse } from 'librechat-data-provider';
+import type { SkillImportFailureReason, TSkillImportFailedResponse } from 'librechat-data-provider';
 import type { Request, Response } from 'express';
 import type { Types } from 'mongoose';
 import type {
@@ -469,8 +469,29 @@ async function handleMarkdown(
 type ImportFileResult = {
   path: string;
   status: 'ok' | 'error';
+  /** Stable code the client localizes; set on every failure. */
+  reason?: SkillImportFailureReason;
+  /** Limit in MB, when `reason` names a size limit. */
+  limitMb?: number;
+  /**
+   * Human-readable detail for the server log only. Storage and database
+   * messages can name buckets, hosts and driver internals, so this never
+   * reaches the client — `reason` does.
+   */
   error?: string;
 };
+
+/**
+ * Limits are reported to the user in MB. Two decimals, and never 0 for a
+ * positive limit: a deployment configured in kilobytes would otherwise render
+ * as "exceeds the 0 MB limit".
+ */
+function bytesToMb(bytes: number): number {
+  if (bytes <= 0) {
+    return 0;
+  }
+  return Math.max(0.01, Math.round((bytes / (1024 * 1024)) * 100) / 100);
+}
 
 interface ArchiveFileDescriptor {
   readonly entryPath: string;
@@ -527,6 +548,42 @@ async function readZipEntry(
   };
 }
 
+/**
+ * Record every archive entry the scan never reached.
+ *
+ * The decompression budget stops the loop mid-archive, and an import that
+ * reported only the entries it happened to read would tell the user they had
+ * seen the whole failure set: they would fix those paths, retry, and meet the
+ * next batch. `startIndex` is the entry the loop stopped on, inclusive.
+ */
+function pushUnprocessedEntries(
+  results: ImportFileResult[],
+  entries: readonly [string, JSZip.JSZipObject][],
+  startIndex: number,
+  prefix: string,
+  limitMb: number,
+): void {
+  for (let index = startIndex; index < entries.length; index++) {
+    const [entryPath, zipEntry] = entries[index];
+    if (zipEntry.dir) {
+      continue;
+    }
+    const normalized = entryPath.replace(/\\/g, '/');
+    const relativePath =
+      prefix && normalized.startsWith(prefix) ? normalized.slice(prefix.length) : normalized;
+    if (relativePath.toUpperCase() === SKILL_MD.toUpperCase()) {
+      continue;
+    }
+    results.push({
+      path: relativePath || normalized,
+      status: 'error',
+      reason: 'archive_too_large',
+      limitMb,
+      error: 'Not processed: cumulative decompressed size exceeded limit',
+    });
+  }
+}
+
 async function scanArchiveFiles(
   zip: JSZip,
   prefix: string,
@@ -540,7 +597,11 @@ async function scanArchiveFiles(
   let totalDecompressed = initialDecompressedBytes;
   let cumulativeLimitExceeded = false;
 
-  for (const [entryPath, zipEntry] of Object.entries(zip.files)) {
+  const entries = Object.entries(zip.files);
+  const budgetMb = bytesToMb(maxDecompressedBytes);
+
+  for (let index = 0; index < entries.length; index++) {
+    const [entryPath, zipEntry] = entries[index];
     if (zipEntry.dir) {
       continue;
     }
@@ -554,7 +615,12 @@ async function scanArchiveFiles(
       return { files, results, blocked: true, cumulativeLimitExceeded };
     }
     if (!relativePath || !isSafeSkillFilePath(relativePath)) {
-      results.push({ path: normalized, status: 'error', error: 'Invalid path' });
+      results.push({
+        path: normalized,
+        status: 'error',
+        reason: 'invalid_path',
+        error: 'Invalid path',
+      });
       continue;
     }
 
@@ -563,26 +629,25 @@ async function scanArchiveFiles(
       const effectiveLimit = Math.min(limits.maxSingleFileBytes, cumulativeLimit);
       if (effectiveLimit <= 0) {
         cumulativeLimitExceeded = true;
-        results.push({
-          path: relativePath,
-          status: 'error',
-          error: 'Cumulative decompressed size exceeds limit',
-        });
+        pushUnprocessedEntries(results, entries, index, prefix, budgetMb);
         break;
       }
 
       const { buffer, bytesRead } = await readZipEntry(zipEntry, effectiveLimit);
       totalDecompressed += bytesRead;
       if (buffer == null) {
-        const reason =
-          bytesRead > limits.maxSingleFileBytes
-            ? `File too large (max ${limits.maxSingleFileBytes / 1024 / 1024}MB)`
-            : 'Cumulative decompressed size exceeds limit';
-        results.push({ path: relativePath, status: 'error', error: reason });
         if (bytesRead > cumulativeLimit) {
           cumulativeLimitExceeded = true;
+          pushUnprocessedEntries(results, entries, index, prefix, budgetMb);
           break;
         }
+        results.push({
+          path: relativePath,
+          status: 'error',
+          reason: 'file_too_large',
+          limitMb: bytesToMb(limits.maxSingleFileBytes),
+          error: `File too large (max ${limits.maxSingleFileBytes / 1024 / 1024}MB)`,
+        });
         continue;
       }
 
@@ -604,6 +669,7 @@ async function scanArchiveFiles(
       results.push({
         path: relativePath,
         status: 'error',
+        reason: 'persistence_failed',
         error: (error as Error).message,
       });
     }
@@ -722,19 +788,25 @@ async function persistArchiveFile(
  *
  * `deleteSkill` cascades to the SkillFile rows, the agent allowlists and the
  * ACL grant, so only the storage blobs written by `persistArchiveFile` need
- * explicit cleanup. A cleanup step that itself fails is logged for the operator
- * and does not change the response: the import is reported as failed either
- * way, because a skill missing the files `SKILL.md` references cannot be
- * presented as imported.
+ * explicit cleanup.
+ *
+ * Order matters: the blobs are deleted only once the cascade has confirmed the
+ * skill is gone. If the delete throws or finds nothing, the SkillFile rows may
+ * still reference those blobs, and deleting them anyway would leave a visible,
+ * shareable skill whose files 404 — a worse version of the bug this rollback
+ * exists to prevent. Unreferenced storage is reclaimable; a broken skill is
+ * not, so the blobs stay and the caller reports the rollback as incomplete.
  */
 async function rollbackArchiveImport(
   req: ServerRequest,
   deps: ImportSkillDeps,
   context: ArchivePersistenceContext,
-): Promise<void> {
+): Promise<{ skillRemoved: boolean }> {
   const skillId = context.skillId.toString();
+  let skillRemoved = false;
   try {
     const { deleted } = await deps.deleteSkill(skillId);
+    skillRemoved = deleted;
     if (!deleted) {
       logger.error(`[importSkill] Rollback could not find skill ${skillId} to delete`);
     }
@@ -742,9 +814,16 @@ async function rollbackArchiveImport(
     logger.error(`[importSkill] Rollback delete failed for skill ${skillId}:`, error);
   }
 
+  if (!skillRemoved) {
+    logger.error(
+      `[importSkill] Rollback incomplete for skill ${skillId}: leaving ${context.persisted.length} stored file(s) in place because the skill row was not removed`,
+    );
+    return { skillRemoved: false };
+  }
+
   const { deleteFile } = deps;
   if (deleteFile == null) {
-    return;
+    return { skillRemoved: true };
   }
   for (const blob of context.persisted) {
     await deleteFile(req, {
@@ -758,6 +837,7 @@ async function rollbackArchiveImport(
       logger.error(`[importSkill] Rollback blob cleanup failed for ${blob.relativePath}:`, error),
     );
   }
+  return { skillRemoved: true };
 }
 
 async function persistPreflightedArchiveFiles(
@@ -771,8 +851,10 @@ async function persistPreflightedArchiveFiles(
 ): Promise<ImportFileResult[]> {
   const results: ImportFileResult[] = [];
   let totalDecompressed = initialDecompressedBytes;
+  const budgetMb = bytesToMb(limits.maxDecompressedBytes);
 
-  for (const file of files) {
+  for (let index = 0; index < files.length; index++) {
+    const file = files[index];
     try {
       const zipEntry = zip.file(file.entryPath);
       if (zipEntry == null) {
@@ -781,11 +863,18 @@ async function persistPreflightedArchiveFiles(
       const cumulativeLimit = limits.maxDecompressedBytes - totalDecompressed;
       const effectiveLimit = Math.min(limits.maxSingleFileBytes, cumulativeLimit);
       if (effectiveLimit <= 0) {
-        results.push({
-          path: file.relativePath,
-          status: 'error',
-          error: 'Cumulative decompressed size exceeds limit',
-        });
+        /** Same reasoning as `pushUnprocessedEntries`: the remaining files were
+         *  never attempted, and omitting them would understate the failure set
+         *  the user has to fix before a retry can succeed. */
+        for (const skipped of files.slice(index)) {
+          results.push({
+            path: skipped.relativePath,
+            status: 'error',
+            reason: 'archive_too_large',
+            limitMb: budgetMb,
+            error: 'Not processed: cumulative decompressed size exceeded limit',
+          });
+        }
         break;
       }
       const { buffer, bytesRead } = await readZipEntry(zipEntry, effectiveLimit);
@@ -794,6 +883,7 @@ async function persistPreflightedArchiveFiles(
         results.push({
           path: file.relativePath,
           status: 'error',
+          reason: 'archive_entry_changed',
           error: 'Archive entry changed after content inspection',
         });
         continue;
@@ -808,6 +898,7 @@ async function persistPreflightedArchiveFiles(
       results.push({
         path: file.relativePath,
         status: 'error',
+        reason: 'persistence_failed',
         error: (error as Error).message,
       });
     }
@@ -1074,14 +1165,27 @@ async function handleZip(
     logger.warn(
       `[importSkill] Rolling back skill "${inferredName}" (${skill._id.toString()}): ${errors.length} of ${fileResults.length} files failed`,
     );
-    await rollbackArchiveImport(req, deps, persistenceContext);
+    const { skillRemoved } = await rollbackArchiveImport(req, deps, persistenceContext);
+    /** Reasons are codes, not prose: the client localizes them, and the
+     *  underlying storage and database messages stay in the server log where
+     *  they cannot leak infrastructure detail to the uploader. */
+    const failedFiles = errors.map((entry) => ({
+      path: entry.path,
+      reason: entry.reason ?? 'persistence_failed',
+      ...(entry.limitMb == null ? {} : { limitMb: entry.limitMb }),
+    }));
+    if (!skillRemoved) {
+      const rollbackFailure: TSkillImportFailedResponse = {
+        error: 'skill_import_rollback_failed',
+        message: `Import failed for ${errors.length} of ${fileResults.length} files and the partially created skill could not be removed automatically.`,
+        failedFiles,
+      };
+      return res.status(500).json(rollbackFailure);
+    }
     const failure: TSkillImportFailedResponse = {
       error: 'skill_import_incomplete',
       message: `Import canceled: ${errors.length} of ${fileResults.length} files in the archive could not be imported.`,
-      failedFiles: errors.map((entry) => ({
-        path: entry.path,
-        ...(entry.error == null ? {} : { error: entry.error }),
-      })),
+      failedFiles,
     };
     return res.status(422).json(failure);
   }

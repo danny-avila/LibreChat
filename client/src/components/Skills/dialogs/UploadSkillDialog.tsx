@@ -7,7 +7,12 @@ import {
   mergeFileConfig,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
-import type { TSkillImportFailedFile, TSkillImportFailedResponse } from 'librechat-data-provider';
+import type {
+  SkillImportFailureReason,
+  TSkillImportFailedFile,
+  TSkillImportFailedResponse,
+} from 'librechat-data-provider';
+import type { TranslationKeys } from '~/hooks';
 import { useGetFileConfig, useImportSkillMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
@@ -22,22 +27,40 @@ function formatMegabytes(bytes: number): string {
   return Number.isInteger(value) ? `${value}` : value.toFixed(1);
 }
 
+/** Localization key per failure reason; `limitMb` fills `{{0}}` where present. */
+const FAILURE_REASON_KEYS: Record<SkillImportFailureReason, TranslationKeys> = {
+  invalid_path: 'com_ui_skill_upload_reason_invalid_path',
+  file_too_large: 'com_ui_skill_upload_reason_file_too_large',
+  archive_too_large: 'com_ui_skill_upload_reason_archive_too_large',
+  archive_entry_changed: 'com_ui_skill_upload_reason_archive_entry_changed',
+  persistence_failed: 'com_ui_skill_upload_reason_persistence_failed',
+};
+
+type ImportFailure = {
+  /** `skill_import_rollback_failed` also means the leftover skill needs deleting. */
+  code: TSkillImportFailedResponse['error'];
+  files: TSkillImportFailedFile[];
+};
+
 /**
  * An import that could not persist every bundled file is rolled back whole and
- * answered with 422 + `failedFiles`. Those paths are the only place the user
- * learns which resources their archive lost, so they are rendered in the dialog
+ * answered with `failedFiles`. Those paths are the only place the user learns
+ * which resources their archive lost, so they are rendered in the dialog
  * instead of being flattened into a toast that disappears.
  */
-function getFailedImportFiles(error: unknown): TSkillImportFailedFile[] | null {
+function getImportFailure(error: unknown): ImportFailure | null {
   const data = (error as { response?: { data?: unknown } })?.response?.data;
   if (data == null || typeof data !== 'object') {
     return null;
   }
   const body = data as Partial<TSkillImportFailedResponse>;
-  if (body.error !== 'skill_import_incomplete' || !Array.isArray(body.failedFiles)) {
+  if (
+    (body.error !== 'skill_import_incomplete' && body.error !== 'skill_import_rollback_failed') ||
+    !Array.isArray(body.failedFiles)
+  ) {
     return null;
   }
-  return body.failedFiles;
+  return { code: body.error, files: body.failedFiles };
 }
 
 export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDialogProps) {
@@ -46,7 +69,15 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
   const { showToast } = useToastContext();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [failedFiles, setFailedFiles] = useState<TSkillImportFailedFile[]>([]);
+  const [failure, setFailure] = useState<ImportFailure | null>(null);
+  /**
+   * The dialog outlives any single upload: `CreateSkillMenu` keeps it mounted
+   * and only toggles `isOpen`. Closing it mid-import cannot cancel the request,
+   * so each session is numbered and a response that resolves after its own
+   * session ended is dropped rather than repopulating a dismissed panel.
+   */
+  const dialogSessionRef = useRef(0);
+  const requestSessionRef = useRef(0);
   const {
     data: skillFileConfig = { configuredSizeLimitMb: undefined, fileConfig: defaultFileConfig },
   } = useGetFileConfig({
@@ -65,20 +96,28 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
 
   const importMutation = useImportSkillMutation({
     onSuccess: (skill) => {
-      setFailedFiles([]);
+      setFailure(null);
       showToast({ status: 'success', message: localize('com_ui_skill_created') });
       setIsOpen(false);
       navigate(`/skills/${skill._id}`);
     },
     onError: (error: unknown) => {
-      const failed = getFailedImportFiles(error);
-      if (failed != null) {
-        /** Keep the dialog open: the skill was rolled back and the archive has
-         *  to be fixed before a retry can succeed. */
-        setFailedFiles(failed);
+      if (requestSessionRef.current !== dialogSessionRef.current) {
+        return;
+      }
+      const importFailure = getImportFailure(error);
+      if (importFailure != null) {
+        /** Keep the dialog open: the archive has to be fixed before a retry can
+         *  succeed, and the failed paths are only listed here. */
+        setFailure(importFailure);
         showToast({
           status: 'error',
-          message: localize('com_ui_skill_upload_incomplete', { 0: `${failed.length}` }),
+          message: localize(
+            importFailure.code === 'skill_import_rollback_failed'
+              ? 'com_ui_skill_upload_rollback_failed'
+              : 'com_ui_skill_upload_incomplete',
+            { 0: `${importFailure.files.length}` },
+          ),
         });
         return;
       }
@@ -86,7 +125,7 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
         ?.response?.data;
       const message =
         errData?.message ?? errData?.error ?? localize('com_ui_create_skill_upload_error');
-      setFailedFiles([]);
+      setFailure(null);
       showToast({ status: 'error', message });
     },
   });
@@ -96,7 +135,7 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
       if (importMutation.isLoading) {
         return;
       }
-      setFailedFiles([]);
+      setFailure(null);
       if (file.size > skillImportSizeLimit) {
         showToast({
           status: 'error',
@@ -106,6 +145,7 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
       }
       const formData = new FormData();
       formData.append('file', file, file.name);
+      requestSessionRef.current = dialogSessionRef.current;
       importMutation.mutate(formData);
     },
     [displayedSizeLimit, importMutation, localize, showToast, skillImportSizeLimit],
@@ -139,7 +179,8 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
       open={isOpen}
       onOpenChange={(open) => {
         if (!open) {
-          setFailedFiles([]);
+          dialogSessionRef.current += 1;
+          setFailure(null);
         }
         setIsOpen(open);
       }}
@@ -177,22 +218,30 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
               {localize('com_ui_skill_upload_drag')}
             </button>
 
-            {failedFiles.length > 0 && (
+            {failure != null && failure.files.length > 0 && (
               <div
                 role="alert"
                 className="flex flex-col gap-1 rounded-lg border border-border-medium bg-surface-secondary p-3 text-xs"
               >
                 <p className="font-medium text-text-destructive">
-                  {localize('com_ui_skill_upload_failed_files')}
+                  {localize(
+                    failure.code === 'skill_import_rollback_failed'
+                      ? 'com_ui_skill_upload_rollback_failed_files'
+                      : 'com_ui_skill_upload_failed_files',
+                  )}
                 </p>
-                <ul className="list-inside list-disc text-text-secondary">
-                  {failedFiles.map((failedFile) => (
+                {/* An archive may hold up to 500 entries, and the dialog's own
+                    overflow-hidden would clip a long list past the viewport. */}
+                <ul className="max-h-40 list-inside list-disc overflow-y-auto text-text-secondary">
+                  {failure.files.map((failedFile) => (
                     <li key={failedFile.path}>
                       <span className="break-all font-medium text-text-primary">
                         {failedFile.path}
                       </span>
-                      {failedFile.error != null && failedFile.error !== ''
-                        ? ` — ${failedFile.error}`
+                      {FAILURE_REASON_KEYS[failedFile.reason] != null
+                        ? ` — ${localize(FAILURE_REASON_KEYS[failedFile.reason], {
+                            0: `${failedFile.limitMb ?? ''}`,
+                          })}`
                         : ''}
                     </li>
                   ))}

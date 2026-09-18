@@ -25,7 +25,7 @@ interface ImportSummary {
 interface ImportFailure {
   error: string;
   message: string;
-  failedFiles: Array<{ path: string; error?: string }>;
+  failedFiles: Array<{ path: string; reason: string; limitMb?: number }>;
 }
 
 function mockAppConfig(filters: FiltersConfig): NonNullable<ImportRequest['config']> {
@@ -503,9 +503,94 @@ describe('createImportHandler', () => {
     expect(res.status).toHaveBeenCalledWith(422);
     const failure = importFailure(res.body);
     expect(failure.error).toBe('skill_import_incomplete');
-    expect(failure.failedFiles).toHaveLength(3);
-    expect(failure.message).toContain('3 of 3');
+    /** All four bundled files are reported, including the one the scan never
+     *  reached once the cumulative budget was exhausted. */
+    expect(failure.failedFiles).toHaveLength(4);
+    expect(failure.failedFiles.map((entry) => entry.path)).toEqual([
+      'files/0.txt',
+      'files/1.txt',
+      'files/2.txt',
+      'files/3.txt',
+    ]);
+    expect(failure.message).toContain('4 of 4');
     expect(deps.deleteSkill).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports unprocessed archive entries once the decompression budget is exhausted', async () => {
+    const kib = 1024;
+    const deps = mockImportDeps({
+      maxZipBytes: 1024 * kib,
+      maxEntries: 10,
+      maxSingleFileBytes: 8 * kib,
+      maxDecompressedBytes: 12 * kib,
+    });
+    const handler = createImportHandler(deps);
+    /** The first entry fits the per-file limit and consumes most of the budget,
+     *  so the second exhausts it and the third is never attempted. */
+    const buffer = await zipWithAdditionalFiles(3, 7 * kib);
+    const res = mockResponse();
+
+    await handler(mockZipRequest(buffer), res);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    const failure = importFailure(res.body);
+    expect(failure.failedFiles).toEqual([
+      { path: 'files/1.txt', reason: 'archive_too_large', limitMb: 0.01 },
+      { path: 'files/2.txt', reason: 'archive_too_large', limitMb: 0.01 },
+    ]);
+    expect(deps.deleteSkill).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a size-limit rejection as a code with the limit, not a server message', async () => {
+    const kib = 1024;
+    const deps = mockImportDeps({
+      maxZipBytes: 1024 * kib,
+      maxEntries: 10,
+      maxSingleFileBytes: 1024 * kib,
+      maxDecompressedBytes: 4096 * kib,
+    });
+    const handler = createImportHandler(deps);
+    const buffer = await zipWithAdditionalFiles(1, 1025 * kib);
+    const res = mockResponse();
+
+    await handler(mockZipRequest(buffer), res);
+
+    expect(res.status).toHaveBeenCalledWith(422);
+    const failure = importFailure(res.body);
+    expect(failure.failedFiles).toEqual([
+      { path: 'files/0.txt', reason: 'file_too_large', limitMb: 1 },
+    ]);
+  });
+
+  it('leaves stored blobs in place and reports 500 when the skill cannot be deleted', async () => {
+    const deps = mockImportDeps();
+    deps.deleteSkill = jest.fn(async () => {
+      throw new Error('replica set stepped down');
+    }) as ImportSkillDeps['deleteSkill'];
+    deps.deleteFile = jest.fn(async () => undefined);
+    const upsert = jest
+      .fn()
+      .mockResolvedValueOnce({ _id: new Types.ObjectId() })
+      .mockRejectedValueOnce(new Error('write conflict'));
+    deps.upsertSkillFile = upsert as unknown as ImportSkillDeps['upsertSkillFile'];
+    const handler = createImportHandler(deps);
+    const buffer = await zipWithAdditionalFiles(2, 64);
+    const res = mockResponse();
+
+    await handler(mockZipRequest(buffer), res);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    const failure = importFailure(res.body);
+    expect(failure.error).toBe('skill_import_rollback_failed');
+    expect(failure.failedFiles).toEqual([{ path: 'files/1.txt', reason: 'persistence_failed' }]);
+    /** Only the inline cleanup for the row that failed runs. The blob whose row
+     *  survived stays, because SkillFile rows may still reference it and a
+     *  visible skill with missing files is worse than unreferenced storage. */
+    expect(deps.deleteFile).toHaveBeenCalledTimes(1);
+    expect(deps.deleteFile).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ filepath: '/tmp/imported-0' }),
+    );
   });
 
   it('rolls back the skill and its stored blobs when one archive file fails', async () => {
@@ -532,7 +617,7 @@ describe('createImportHandler', () => {
     expect(res.status).toHaveBeenCalledWith(422);
     const failure = importFailure(res.body);
     expect(failure.error).toBe('skill_import_incomplete');
-    expect(failure.failedFiles).toEqual([{ path: 'files/1.txt', error: 'write conflict' }]);
+    expect(failure.failedFiles).toEqual([{ path: 'files/1.txt', reason: 'persistence_failed' }]);
     expect(deps.deleteSkill).toHaveBeenCalledTimes(1);
     /** The blob whose row failed is cleaned up inline; the rollback removes the
      *  one that did persist, so both writes are undone. */
@@ -569,7 +654,7 @@ describe('createImportHandler', () => {
     expect(res.status).toHaveBeenCalledWith(422);
     const failure = importFailure(res.body);
     expect(failure.failedFiles).toEqual([
-      { path: 'references/region mapping.md', error: 'Invalid path' },
+      { path: 'references/region mapping.md', reason: 'invalid_path' },
     ]);
     expect(deps.deleteSkill).toHaveBeenCalledTimes(1);
     expect(deps.deleteFile).toHaveBeenCalledTimes(1);

@@ -348,21 +348,42 @@ export type TSkillListResponse = {
   after: string | null;
 };
 
+/**
+ * Why one archive entry could not be imported. A stable code rather than a
+ * message, so the client localizes the reason and server-side storage and
+ * database text never reaches the uploader.
+ */
+export type SkillImportFailureReason =
+  /** Path is absolute, traverses, or uses characters skills cannot store. */
+  | 'invalid_path'
+  /** Entry alone exceeds the per-file decompression limit. */
+  | 'file_too_large'
+  /** Archive exhausted the cumulative decompression budget at or before this entry. */
+  | 'archive_too_large'
+  /** Entry no longer matches what content inspection read. */
+  | 'archive_entry_changed'
+  /** Storage write or database row failed. */
+  | 'persistence_failed';
+
 /** One archive entry POST `/api/skills/import` could not persist. */
 export type TSkillImportFailedFile = {
   /** Path inside the archive, relative to `SKILL.md`. */
   path: string;
-  /** Why the file was rejected (size limit, invalid path, storage error). */
-  error?: string;
+  reason: SkillImportFailureReason;
+  /** Limit in MB, when `reason` names a size limit. */
+  limitMb?: number;
 };
 
 /**
- * Response from a 422 `POST /api/skills/import`: at least one bundled file
- * failed, so the skill, its files and its ACL grant were rolled back and
- * nothing was imported.
+ * Response from a failed `POST /api/skills/import` of an archive.
+ *
+ * `skill_import_incomplete` (422) means at least one bundled file failed and
+ * everything the import created was rolled back. `skill_import_rollback_failed`
+ * (500) means the same failure occurred but the partially created skill could
+ * not be removed, so it may still be listed and needs deleting by hand.
  */
 export type TSkillImportFailedResponse = {
-  error: 'skill_import_incomplete';
+  error: 'skill_import_incomplete' | 'skill_import_rollback_failed';
   message: string;
   failedFiles: TSkillImportFailedFile[];
 };
