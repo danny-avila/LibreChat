@@ -53,11 +53,7 @@ const {
   renewBalanceReservation,
   releaseBalanceReservation,
   getChatProject,
-<<<<<<< HEAD
-=======
-  createAutoRefillTransaction,
   getProjectFiles,
->>>>>>> 4f206b20f8 (fix: honor review round 7 findings on Chat Projects)
   getFiles,
 } = require('~/models');
 const { logViolation, getLogStores } = require('~/cache');
