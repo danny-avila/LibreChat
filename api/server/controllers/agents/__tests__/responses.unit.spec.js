@@ -241,15 +241,13 @@ jest.mock('@librechat/api', () => ({
   buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
   applyContextToAgent: (...args) => mockApplyContextToAgent(...args),
   buildRunToolSet: jest.fn().mockReturnValue(new Set()),
-  /** No fixture declares a caller-executed tool, so these stay inert. */
-  buildClientToolDefinitions: jest.fn(() => []),
-  mergeClientToolDefinitions: jest.fn((toolDefinitions) => ({
-    toolDefinitions,
-    names: new Set(),
-    shadowed: [],
+  /** No fixture declares a caller-executed tool, so the handoff stays inert. */
+  createClientToolHandoff: jest.fn(({ agentDefinitions }) => ({
+    toolDefinitions: agentDefinitions,
+    appliedTools: [],
+    wrapRunStep: (delegate) => delegate,
+    wrapToolExecute: (delegate) => delegate,
   })),
-  createClientToolRunStepHandler: jest.fn(({ delegate }) => delegate),
-  createClientToolExecuteHandler: jest.fn(({ delegate }) => delegate),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
   resolveConversationCodeEnvironmentDecision: ({

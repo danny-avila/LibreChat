@@ -76,11 +76,7 @@ const {
   sendResponsesErrorResponse,
   createResponsesEventHandlers,
   createAggregatorEventHandlers,
-  // Client-side tool execution
-  buildClientToolDefinitions,
-  mergeClientToolDefinitions,
-  createClientToolRunStepHandler,
-  createClientToolExecuteHandler,
+  createClientToolHandoff,
   getLangfuseTraceMessageFields,
   stripActivityLabelParts,
   stripUnusableSummaryParts,
@@ -543,14 +539,6 @@ const executeResponse = async (envelope, { req, res }) => {
   const isStreaming = request.stream === true;
   const summarizationConfig = appConfig?.summarization;
 
-  /** Function tools the caller declares and executes itself, already validated
-   *  by `validateResponseRequest` at ingress. Empty for the common request,
-   *  which skips every client-tool step below. */
-  const declaredClientTools =
-    Array.isArray(request.tools) && request.tools.length > 0
-      ? buildClientToolDefinitions(request.tools)
-      : [];
-
   const uninspectableField = getBlockedOpaqueFileField(appConfig?.filters, request.input);
   if (uninspectableField != null) {
     const blockResponse = contentFilterUninspectableResponse(uninspectableField);
@@ -906,42 +894,16 @@ const executeResponse = async (envelope, { req, res }) => {
         dbMethods,
       );
 
-      /**
-       * Declare the caller's tools to the model, without a server-side
-       * executor. A name the agent already owns is not overridden -- the
-       * server's tool wins and the caller's is dropped -- so a request cannot
-       * shadow a tool the agent is configured to run.
-       */
-      let clientToolNames = new Set();
-      if (declaredClientTools.length > 0) {
-        const merged = mergeClientToolDefinitions(
-          primaryConfig.toolDefinitions,
-          declaredClientTools,
-        );
-        primaryConfig.toolDefinitions = merged.toolDefinitions;
-        clientToolNames = merged.names;
-        if (merged.shadowed.length > 0) {
-          logger.warn(
-            `[Responses API] Request ${responseId} declared tool(s) the agent already provides; ` +
-              `the server-side tool is used: ${merged.shadowed.join(', ')}`,
-          );
-        }
-      }
-
-      /** Ends the run on a caller-declared tool call, handing it back to the
-       *  caller; the delegate as-is when no client tools were declared. */
-      const withClientToolHandoff = (delegate) =>
-        clientToolNames.size === 0
-          ? delegate
-          : createClientToolRunStepHandler({ delegate, clientToolNames });
-
-      /** Answers a caller-declared tool call that still reached execution --
-       *  only a batch that also holds a server tool does -- by asking the model
-       *  to call it alone, instead of failing it as an unknown tool. */
-      const withClientToolDeferral = (delegate) =>
-        clientToolNames.size === 0
-          ? delegate
-          : createClientToolExecuteHandler({ delegate, clientToolNames, responseId });
+      /** The caller's function tools: declared to the model with no server-side
+       *  executor, handed back when the model calls one, and reported on the
+       *  response as the subset that was actually applied. */
+      const clientTools = createClientToolHandoff({
+        tools: request.tools,
+        agentDefinitions: primaryConfig.toolDefinitions,
+        responseId,
+      });
+      primaryConfig.toolDefinitions = clientTools.toolDefinitions;
+      context.tools = clientTools.appliedTools;
 
       /**
        * Per-agent tool-execution context map, keyed by agentId. Ensures the
@@ -1292,7 +1254,7 @@ const executeResponse = async (envelope, { req, res }) => {
         const handlers = {
           on_message_delta: responsesHandlers.on_message_delta,
           on_reasoning_delta: responsesHandlers.on_reasoning_delta,
-          on_run_step: withClientToolHandoff(responsesHandlers.on_run_step),
+          on_run_step: clientTools.wrapRunStep(responsesHandlers.on_run_step),
           on_run_step_delta: responsesHandlers.on_run_step_delta,
           on_chat_model_end: {
             handle: (event, data, metadata, graph) => {
@@ -1311,7 +1273,9 @@ const executeResponse = async (envelope, { req, res }) => {
           on_chain_end: { handle: () => {} },
           on_agent_update: { handle: () => {} },
           on_custom_event: { handle: () => {} },
-          on_tool_execute: withClientToolDeferral(createToolExecuteHandler(toolExecuteOptions)),
+          on_tool_execute: clientTools.wrapToolExecute(
+            createToolExecuteHandler(toolExecuteOptions),
+          ),
           on_agent_log: agentLogHandlerObj,
           ...(summarizationConfig?.enabled !== false
             ? buildSummarizationHandlers({ isStreaming: actuallyStreaming, res })
@@ -1521,7 +1485,7 @@ const executeResponse = async (envelope, { req, res }) => {
         const handlers = {
           on_message_delta: aggregatorHandlers.on_message_delta,
           on_reasoning_delta: aggregatorHandlers.on_reasoning_delta,
-          on_run_step: withClientToolHandoff(aggregatorHandlers.on_run_step),
+          on_run_step: clientTools.wrapRunStep(aggregatorHandlers.on_run_step),
           on_run_step_delta: aggregatorHandlers.on_run_step_delta,
           on_chat_model_end: {
             handle: (event, data, metadata, graph) => {
@@ -1540,7 +1504,9 @@ const executeResponse = async (envelope, { req, res }) => {
           on_chain_end: { handle: () => {} },
           on_agent_update: { handle: () => {} },
           on_custom_event: { handle: () => {} },
-          on_tool_execute: withClientToolDeferral(createToolExecuteHandler(toolExecuteOptions)),
+          on_tool_execute: clientTools.wrapToolExecute(
+            createToolExecuteHandler(toolExecuteOptions),
+          ),
           on_agent_log: agentLogHandlerObj,
           ...(summarizationConfig?.enabled !== false
             ? buildSummarizationHandlers({ isStreaming: false, res })

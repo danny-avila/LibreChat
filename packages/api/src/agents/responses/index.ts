@@ -184,10 +184,4 @@ export {
 } from './service';
 
 // Client-side tool execution
-export {
-  buildClientToolDefinitions,
-  mergeClientToolDefinitions,
-  clientToolDeferralContent,
-  createClientToolRunStepHandler,
-  createClientToolExecuteHandler,
-} from './clientTools';
+export { createClientToolHandoff, type ClientToolHandoff } from './clientTools';

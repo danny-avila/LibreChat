@@ -346,8 +346,6 @@ export function createResponseContext(
     createdAt: Math.floor(Date.now() / 1000),
     previousResponseId: request.previous_response_id,
     instructions: request.instructions,
-    tools: request.tools,
-    toolChoice: request.tool_choice,
   };
 }
 
@@ -380,7 +378,7 @@ interface StreamState {
   reasoningContentStarted: boolean;
   activeToolCalls: Set<string>;
   completedToolCalls: Set<string>;
-  argumentedToolCalls: Set<string>;
+  toolCallsWithArgs: Set<string>;
 }
 
 /** One streamed argument fragment, as the agents SDK forwards LangChain tool call chunks. */
@@ -481,7 +479,7 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
     reasoningContentStarted: false,
     activeToolCalls: new Set(),
     completedToolCalls: new Set(),
-    argumentedToolCalls: new Set(),
+    toolCallsWithArgs: new Set(),
   };
 
   const chunkResolver = createToolCallChunkResolver();
@@ -656,7 +654,7 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
               continue;
             }
 
-            state.argumentedToolCalls.add(callId);
+            state.toolCallsWithArgs.add(callId);
             emitFunctionCallArgumentsDelta(config, callId, args);
           }
         }
@@ -702,10 +700,10 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
         }
 
         for (const { id, args } of completedToolCallArguments(data)) {
-          if (!state.activeToolCalls.has(id) || state.argumentedToolCalls.has(id)) {
+          if (!state.activeToolCalls.has(id) || state.toolCallsWithArgs.has(id)) {
             continue;
           }
-          state.argumentedToolCalls.add(id);
+          state.toolCallsWithArgs.add(id);
           emitFunctionCallArgumentsDelta(config, id, args);
         }
       },
@@ -854,7 +852,8 @@ export function buildAggregatedResponse(
     output,
     error: null,
     tools: context.tools ?? [],
-    tool_choice: context.toolChoice ?? 'auto',
+    /** Not forwarded to the model, so reporting the request's ask would misstate the run. */
+    tool_choice: 'auto',
     truncation: 'disabled',
     parallel_tool_calls: true,
     text: { format: { type: 'text' } },

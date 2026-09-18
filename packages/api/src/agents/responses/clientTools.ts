@@ -77,11 +77,26 @@ function isFunctionTool(tool: Tool | undefined | null): tool is FunctionTool {
 }
 
 /**
+ * A declarable tool entry: an object carrying a non-empty string `type`.
+ *
+ * Checked so that a malformed entry is rejected at ingress rather than being
+ * mistaken for a hosted tool and skipped.
+ */
+function isToolObject(value: unknown): value is Tool {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const { type } = value as { type?: unknown };
+  return typeof type === 'string' && type !== '';
+}
+
+/**
  * Why the request's `tools` cannot be declared, or undefined when they can.
  *
- * Only `type: 'function'` entries are treated as client tools. Other entries are
- * hosted/provider tools that the server owns, and are left alone so that adding
- * a client tool to a request cannot quietly disable them.
+ * Every entry must be an object with a string `type`. Only `type: 'function'`
+ * entries are treated as client tools; the rest are hosted/provider tools that
+ * the server owns, and are left alone so that adding a client tool to a request
+ * cannot quietly disable them.
  */
 export function validateClientTools(tools: unknown): string | undefined {
   if (tools === undefined) {
@@ -92,7 +107,11 @@ export function validateClientTools(tools: unknown): string | undefined {
   }
 
   const names = new Set<string>();
-  for (const tool of tools as Tool[]) {
+  for (let i = 0; i < tools.length; i++) {
+    const tool: unknown = tools[i];
+    if (!isToolObject(tool)) {
+      return `tools[${i}] must be an object with a string type`;
+    }
     if (!isFunctionTool(tool)) {
       continue;
     }
@@ -177,7 +196,7 @@ export function mergeClientToolDefinitions(
   return { toolDefinitions: [...existing, ...accepted], names, shadowed };
 }
 
-interface RunStepHandler {
+export interface RunStepHandler {
   handle: (event: string, data: unknown, metadata?: unknown, graph?: StandardGraph) => void;
 }
 
@@ -253,7 +272,7 @@ export function clientToolDeferralContent(name: string): string {
   return `"${name}" is executed by the caller, not by this server, so it cannot run in the same turn as another tool. Call "${name}" again as the only tool call of its turn.`;
 }
 
-interface ToolExecuteHandler {
+export interface ToolExecuteHandler {
   handle: (event: string, data: ToolExecuteBatchRequest) => void | Promise<void>;
 }
 
@@ -330,5 +349,75 @@ export function createClientToolExecuteHandler({
         resolve: (executed: ToolExecuteResult[]): void => data.resolve([...executed, ...results]),
       });
     },
+  };
+}
+
+/** Everything a run needs in order to honor the caller's function tools. */
+export interface ClientToolHandoff {
+  /** The agent's model-visible definitions with the accepted client tools appended. */
+  toolDefinitions: LCTool[];
+  /**
+   * The caller's `function` entries that reached the model, as the caller sent
+   * them. Hosted entries the server ignores, and entries it dropped because the
+   * agent already owns the name, are absent -- so echoing this on the response
+   * describes the tools the run actually ran with rather than the request's ask.
+   */
+  appliedTools: FunctionTool[];
+  wrapRunStep: (delegate: RunStepHandler) => RunStepHandler;
+  wrapToolExecute: (delegate: ToolExecuteHandler) => ToolExecuteHandler;
+}
+
+const identity = <T>(delegate: T): T => delegate;
+
+/**
+ * Assembles the client-tool handoff for one request: what the model sees, what
+ * the response should report, and the two handler wrappers that hand a call
+ * back to the caller.
+ *
+ * Built in one place so a request path only wires it in. A request that
+ * declares no function tool gets the agent's definitions unchanged and identity
+ * wrappers, so the common request pays nothing.
+ *
+ * Assumes {@link validateClientTools} already passed at ingress.
+ */
+export function createClientToolHandoff({
+  tools,
+  agentDefinitions,
+  responseId,
+}: {
+  tools?: Tool[] | null;
+  agentDefinitions?: LCTool[];
+  responseId: string;
+}): ClientToolHandoff {
+  const declared = buildClientToolDefinitions(tools);
+  if (declared.length === 0) {
+    return {
+      toolDefinitions: agentDefinitions ?? [],
+      appliedTools: [],
+      wrapRunStep: identity,
+      wrapToolExecute: identity,
+    };
+  }
+
+  const { toolDefinitions, names, shadowed } = mergeClientToolDefinitions(
+    agentDefinitions,
+    declared,
+  );
+
+  if (shadowed.length > 0) {
+    logger.warn(
+      `[Responses API] Request ${responseId} declared tool(s) the agent already provides; ` +
+        `the server-side tool is used: ${shadowed.join(', ')}`,
+    );
+  }
+
+  return {
+    toolDefinitions,
+    appliedTools: (tools ?? []).filter(
+      (tool): tool is FunctionTool => isFunctionTool(tool) && names.has(tool.name),
+    ),
+    wrapRunStep: (delegate) => createClientToolRunStepHandler({ delegate, clientToolNames: names }),
+    wrapToolExecute: (delegate) =>
+      createClientToolExecuteHandler({ delegate, clientToolNames: names, responseId }),
   };
 }

@@ -783,10 +783,11 @@ export interface ResponseContext {
   previousResponseId?: string;
   /** Instructions */
   instructions?: string;
-  /** Tools the request declared, echoed back on the response as sent. */
-  tools?: Tool[];
-  /** Tool choice the request declared, echoed back on the response as sent. */
-  toolChoice?: ToolChoice;
+  /**
+   * The caller's function tools that were actually declared to the model,
+   * echoed back on the response. Absent until the run resolves them.
+   */
+  tools?: FunctionTool[];
 }
 
 /** Validation result for requests */

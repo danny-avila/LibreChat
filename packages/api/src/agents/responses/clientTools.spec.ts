@@ -5,9 +5,11 @@ import type {
   ToolExecuteResult,
   ToolExecuteBatchRequest,
 } from '@librechat/agents';
-import type { Tool } from './types';
+import type { RunStepHandler, ToolExecuteHandler } from './clientTools';
+import type { FunctionTool, Tool } from './types';
 import {
   validateClientTools,
+  createClientToolHandoff,
   buildClientToolDefinitions,
   mergeClientToolDefinitions,
   clientToolDeferralContent,
@@ -15,8 +17,11 @@ import {
   createClientToolExecuteHandler,
 } from './clientTools';
 
-const fnTool = (name: string, overrides: Partial<Tool> = {}): Tool =>
-  ({ type: 'function', name, ...overrides }) as Tool;
+const fnTool = (name: string, overrides: Partial<FunctionTool> = {}): FunctionTool => ({
+  type: 'function',
+  name,
+  ...overrides,
+});
 
 describe('validateClientTools', () => {
   it('accepts an absent, empty, or hosted-only tools list', () => {
@@ -25,17 +30,23 @@ describe('validateClientTools', () => {
     expect(validateClientTools([{ type: 'librechat:web_search' }])).toBeUndefined();
   });
 
-  it.each([
+  it.each<[string, unknown, string]>([
     ['a missing name', [{ type: 'function' }], 'requires a name'],
     ['an empty name', [fnTool('')], 'requires a name'],
     ['an illegal character', [fnTool('open service page')], 'may contain only'],
     ['a duplicate name', [fnTool('dup'), fnTool('dup')], 'duplicate function tool name'],
-    ['array parameters', [fnTool('bad', { parameters: [] as never })], 'must be a JSON Schema'],
+    ['array parameters', [{ type: 'function', name: 'bad', parameters: [] }], 'JSON Schema'],
     [
       'a non-string description',
-      [fnTool('bad', { description: 7 as unknown as string })],
+      [{ type: 'function', name: 'bad', description: 7 }],
       'description must be a string',
     ],
+    ['a string entry', ['open_service_page'], 'tools[0] must be an object'],
+    ['a null entry', [null], 'tools[0] must be an object'],
+    ['an array entry', [[]], 'tools[0] must be an object'],
+    ['an entry without a type', [{ name: 'no_type' }], 'tools[0] must be an object'],
+    ['a non-string type', [{ type: 7 }], 'tools[0] must be an object'],
+    ['a later malformed entry', [fnTool('ok'), 'nope'], 'tools[1] must be an object'],
   ])('rejects %s', (_label, tools, expected) => {
     expect(validateClientTools(tools)).toContain(expected);
   });
@@ -133,6 +144,83 @@ describe('mergeClientToolDefinitions', () => {
   it('handles an agent with no definitions of its own', () => {
     const merged = mergeClientToolDefinitions(undefined, [{ name: 'refresh' }]);
     expect(merged.toolDefinitions.map((d) => d.name)).toEqual(['refresh']);
+  });
+});
+
+describe('createClientToolHandoff', () => {
+  const serverTool: LCTool = { name: 'run_query', parameters: { type: 'object' } };
+  const runStep: RunStepHandler = { handle: () => {} };
+  const toolExecute: ToolExecuteHandler = { handle: () => {} };
+
+  it('declares the caller’s function tools after the agent’s own', () => {
+    const handoff = createClientToolHandoff({
+      tools: [fnTool('open_service_page')],
+      agentDefinitions: [serverTool],
+      responseId: 'resp_1',
+    });
+
+    expect(handoff.toolDefinitions.map((d) => d.name)).toEqual(['run_query', 'open_service_page']);
+  });
+
+  it('reports the applied tools as the caller sent them, without the notice', () => {
+    const declared = fnTool('open_service_page', { description: 'Open a service page' });
+    const handoff = createClientToolHandoff({
+      tools: [declared],
+      agentDefinitions: [serverTool],
+      responseId: 'resp_1',
+    });
+
+    expect(handoff.appliedTools).toEqual([declared]);
+    expect(handoff.appliedTools[0].description).toBe('Open a service page');
+  });
+
+  it('omits a hosted tool from the applied tools, since the server ignores it', () => {
+    const handoff = createClientToolHandoff({
+      tools: [{ type: 'librechat:web_search' } as Tool, fnTool('open_service_page')],
+      agentDefinitions: [],
+      responseId: 'resp_1',
+    });
+
+    expect(handoff.appliedTools.map((t) => t.name)).toEqual(['open_service_page']);
+  });
+
+  it('omits a tool the agent already owns, since that one was dropped', () => {
+    const handoff = createClientToolHandoff({
+      tools: [fnTool('run_query'), fnTool('open_service_page')],
+      agentDefinitions: [serverTool],
+      responseId: 'resp_1',
+    });
+
+    expect(handoff.toolDefinitions).toEqual([
+      serverTool,
+      expect.objectContaining({ name: 'open_service_page' }),
+    ]);
+    expect(handoff.appliedTools.map((t) => t.name)).toEqual(['open_service_page']);
+  });
+
+  it('wraps both handlers once a client tool is in play', () => {
+    const handoff = createClientToolHandoff({
+      tools: [fnTool('open_service_page')],
+      agentDefinitions: [serverTool],
+      responseId: 'resp_1',
+    });
+
+    expect(handoff.wrapRunStep(runStep)).not.toBe(runStep);
+    expect(handoff.wrapToolExecute(toolExecute)).not.toBe(toolExecute);
+  });
+
+  it.each([
+    ['no tools at all', undefined],
+    ['hosted tools only', [{ type: 'librechat:web_search' } as Tool]],
+    ['a tool the agent already owns', [fnTool('run_query')]],
+  ])('stays inert with %s', (_label, tools) => {
+    const agentDefinitions = [serverTool];
+    const handoff = createClientToolHandoff({ tools, agentDefinitions, responseId: 'resp_1' });
+
+    expect(handoff.toolDefinitions).toEqual(agentDefinitions);
+    expect(handoff.appliedTools).toEqual([]);
+    expect(handoff.wrapRunStep(runStep)).toBe(runStep);
+    expect(handoff.wrapToolExecute(toolExecute)).toBe(toolExecute);
   });
 });
 

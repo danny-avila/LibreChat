@@ -6,9 +6,11 @@ import {
   createAggregatorEventHandlers,
   createResponseAggregator,
   createResponsesEventHandlers,
+  validateResponseRequest,
+  createResponseContext,
   buildResponsesUsage,
 } from '../service';
-import { createResponseTracker } from '../handlers';
+import { buildResponse, createResponseTracker } from '../handlers';
 
 describe('response usage aggregation', () => {
   const context: ResponseContext = {
@@ -719,5 +721,66 @@ describe('client tool continuation replay', () => {
         ),
       ),
     ).toBe(false);
+  });
+});
+
+describe('reported tools and tool_choice', () => {
+  const context: ResponseContext = {
+    responseId: 'resp_test',
+    model: 'agent_test',
+    createdAt: 1778317637,
+  };
+
+  /**
+   * `tool_choice` is never forwarded to the model, so echoing the request's ask
+   * would tell the caller a directive was applied when the run ignored it.
+   */
+  it.each([
+    ['required', 'required'],
+    ['none', 'none'],
+    ['a specific function', { type: 'function', name: 'submit_sql' }],
+  ])('reports tool_choice as auto when the request asked for %s', (_label, toolChoice) => {
+    const { request } = validateResponseRequest({
+      model: 'agent_test',
+      input: 'hi',
+      tool_choice: toolChoice,
+    });
+    const built = createResponseContext(request!, 'resp_test');
+
+    expect(built).not.toHaveProperty('toolChoice');
+    expect(buildAggregatedResponse(built, createResponseAggregator()).tool_choice).toBe('auto');
+    expect(buildResponse(built, createResponseTracker(), 'completed').tool_choice).toBe('auto');
+  });
+
+  it('does not report a request tool until the run resolves which ones applied', () => {
+    const { request } = validateResponseRequest({
+      model: 'agent_test',
+      input: 'hi',
+      tools: [{ type: 'function', name: 'submit_sql' }],
+    });
+    const built = createResponseContext(request!, 'resp_test');
+
+    expect(built.tools).toBeUndefined();
+    expect(buildAggregatedResponse(built, createResponseAggregator()).tools).toEqual([]);
+  });
+
+  it('reports the applied tools the run recorded on the context', () => {
+    const applied: ResponseContext = {
+      ...context,
+      tools: [{ type: 'function', name: 'submit_sql' }],
+    };
+
+    expect(buildAggregatedResponse(applied, createResponseAggregator()).tools).toEqual([
+      { type: 'function', name: 'submit_sql' },
+    ]);
+    expect(buildResponse(applied, createResponseTracker(), 'completed').tools).toEqual([
+      { type: 'function', name: 'submit_sql' },
+    ]);
+  });
+
+  it('rejects a malformed tools entry at ingress', () => {
+    expect(
+      validateResponseRequest({ model: 'agent_test', input: 'hi', tools: ['submit_sql'] }),
+    ).toEqual({ valid: false, error: expect.stringContaining('tools[0] must be an object') });
   });
 });

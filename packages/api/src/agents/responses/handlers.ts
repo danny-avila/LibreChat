@@ -143,7 +143,7 @@ export function buildResponse(
     output: tracker.items,
     error: null,
     tools: context.tools ?? [],
-    tool_choice: context.toolChoice ?? 'auto',
+    tool_choice: 'auto',
     truncation: 'disabled',
     parallel_tool_calls: true,
     text: { format: { type: 'text' } },
