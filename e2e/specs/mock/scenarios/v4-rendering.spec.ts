@@ -36,6 +36,9 @@ const ARTIFACT_TEXT = [
   '```',
   ':::',
 ].join('\n');
+const TWO_PARAGRAPHS = 'The first paragraph.\n\nThe second paragraph.';
+const BUILDER_SELECT_CLASSES =
+  'rounded-lg border border-token-border-medium bg-transparent px-2 py-0 text-sm';
 
 /** Seed one assistant turn carrying an artifact and open its panel. */
 async function openArtifactPanel(page: Page, conversationId: string): Promise<void> {
@@ -133,9 +136,14 @@ test.describe('Tailwind v4 rendering', () => {
 
     /** v4's preflight would paint an uncoloured border with `currentColor`. The
      *  app restores v3's gray-200 through `theme()`, so a bare `border` has to
-     *  match what the `border-gray-200` utility paints out of the same CSS. */
+     *  match the palette entry the shim names. The reference is the root
+     *  `--gray-200` triplet the app declares in its own stylesheet, not a
+     *  `border-gray-200` probe: no source under `client/src` or
+     *  `packages/client/src` writes that class, so Tailwind never generates it
+     *  and a probe carrying it would read back the shim's own value — passing
+     *  even if the shim named the wrong gray. */
     const bare = await probeStyle(page, 'border', 'border-top-color');
-    const gray200 = await probeStyle(page, 'border border-gray-200', 'border-top-color');
+    const gray200 = await normalizeColor(page, `rgb(${await themeValue(page, '--gray-200')})`);
     const inherited = await probeStyle(page, 'border', 'color');
     expect(bare).toBe(gray200);
     expect(bare).not.toBe(inherited);
@@ -158,5 +166,153 @@ test.describe('Tailwind v4 rendering', () => {
     const overridden = await probeStyle(page, 'cursor-default', 'cursor', 'button');
     expect(button).toBe('pointer');
     expect(overridden).toBe('default');
+  });
+
+  test('a paragraph keeps its margin utility @scenario:a-paragraph-keeps-its-margin-utility', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    const conversationId = randomUUID();
+    const userEmail = getE2EUser().email;
+    const message: SeedMessage = {
+      messageId: randomUUID(),
+      parentMessageId: ROOT_PARENT,
+      text: TWO_PARAGRAPHS,
+      isCreatedByUser: false,
+      sender: 'Assistant',
+      model: 'mock-model-a',
+    };
+
+    await useStoredTheme(page, 'light');
+    try {
+      await seedConversations(userEmail, [
+        { conversationId, title: 'Tailwind v4 paragraph margins', updatedAt: new Date() },
+      ]);
+      await seedMessages(userEmail, conversationId, [message]);
+      await page.goto(`/c/${conversationId}`, { timeout: 30000 });
+
+      const utilityTop = await probeStyle(page, 'my-4', 'margin-top', 'p');
+      const utilityBottom = await probeStyle(page, 'my-4', 'margin-bottom', 'p');
+      expect(utilityTop).toBe('16px');
+      expect(utilityBottom).toBe('16px');
+
+      /** A real rendered element whose margin utility the reset would zero. The
+       *  markdown body is not that element: its paragraphs sit inside `.prose`,
+       *  whose own unlayered `:where(p)` rules outrank `mb-2` under either
+       *  Tailwind, and its last child is zeroed on purpose. The assistant row's
+       *  name header carries `mb-1` with nothing else claiming its margin. */
+      const header = messagesView(page).locator('h2:not(.sr-only)').first();
+      await expect(header).toBeVisible({ timeout: 30000 });
+      const rendered = await computedStyles(header, ['marginBottom']);
+      expect(rendered.marginBottom).toBe('4px');
+    } finally {
+      await deleteMessagesByConversation([conversationId]);
+      await deleteConversations([conversationId]);
+    }
+  });
+
+  test('a native select keeps its token styling @scenario:a-native-select-keeps-its-token-styling', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await useStoredTheme(page, 'light');
+    await page.goto('/c/new', { timeout: 30000 });
+
+    const expectedRadius = await probeStyle(page, 'rounded-lg', 'border-radius');
+    const expectedBackground = await probeStyle(page, 'bg-transparent', 'background-color');
+    const expectedFontSize = await probeStyle(page, 'text-sm', 'font-size');
+    const expectedPaddingRight = await probeStyle(page, 'px-2', 'padding-right');
+    const white = await normalizeColor(page, 'white');
+    const select = await page.evaluate((className) => {
+      const probe = document.createElement('select');
+      probe.className = className;
+      probe.innerHTML = '<option>Probe</option>';
+      document.body.append(probe);
+      const style = getComputedStyle(probe);
+      const values = {
+        borderRadius: style.borderRadius,
+        backgroundColor: style.backgroundColor,
+        fontSize: style.fontSize,
+        paddingRight: style.paddingRight,
+      };
+      probe.remove();
+      return values;
+    }, BUILDER_SELECT_CLASSES);
+
+    expect(select.borderRadius).toBe(expectedRadius);
+    expect(select.backgroundColor).toBe(expectedBackground);
+    expect(select.backgroundColor).not.toBe(white);
+    expect(select.fontSize).toBe(expectedFontSize);
+    expect(select.paddingRight).toBe(expectedPaddingRight);
+  });
+
+  test('classes ignored by Tailwind 3 stay inert @scenario:classes-tailwind-3-ignored-stay-inert', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    const conversationId = randomUUID();
+    try {
+      await openArtifactPanel(page, conversationId);
+
+      const panel = await computedStyles(page.locator('#artifact-viewer'), ['transitionDuration']);
+      const transitionMs = panel.transitionDuration.endsWith('ms')
+        ? Number.parseFloat(panel.transitionDuration)
+        : Number.parseFloat(panel.transitionDuration) * 1000;
+      expect(transitionMs).toBe(150);
+
+      const forbidden = await page.evaluate(() => {
+        const tokens = [
+          'duration-250',
+          'duration-350',
+          'h-19',
+          'w-19',
+          'w-30',
+          'w-100',
+          'max-w-11/12',
+          'border-1',
+          'scrollbar-none',
+          '@container',
+        ];
+        const selectors: string[] = [];
+        const visit = (rules: CSSRuleList) => {
+          for (const rule of Array.from(rules)) {
+            if ('selectorText' in rule) {
+              selectors.push((rule as CSSStyleRule).selectorText);
+            }
+            if ('cssRules' in rule) {
+              visit((rule as CSSGroupingRule).cssRules);
+            }
+          }
+        };
+
+        for (const sheet of Array.from(document.styleSheets)) {
+          try {
+            visit(sheet.cssRules);
+          } catch {
+            // Cross-origin stylesheets cannot expose cssRules; app stylesheets do.
+          }
+        }
+
+        return tokens.map((token) => {
+          const needle = `.${CSS.escape(token)}`;
+          const found = selectors.some((selector) => {
+            let start = selector.indexOf(needle);
+            while (start !== -1) {
+              const next = selector[start + needle.length];
+              if (!next || !/[A-Za-z0-9_-]/.test(next)) return true;
+              start = selector.indexOf(needle, start + needle.length);
+            }
+            return false;
+          });
+          return { token, found };
+        });
+      });
+      for (const { token, found } of forbidden) {
+        expect(found, `unexpected generated selector for .${token}`).toBe(false);
+      }
+    } finally {
+      await deleteMessagesByConversation([conversationId]);
+      await deleteConversations([conversationId]);
+    }
   });
 });

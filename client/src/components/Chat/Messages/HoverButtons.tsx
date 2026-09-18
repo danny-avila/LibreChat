@@ -309,7 +309,7 @@ const HoverButtons = ({
         <HoverButton
           onClick={(e) => e && handleContinue(e)}
           title={localize('com_ui_continue')}
-          icon={<ContinueIcon className="h-19 w-19 -rotate-180" />}
+          icon={<ContinueIcon className="-rotate-180" />}
           isLast={isLast}
           dataTestId={isLast ? 'continue-generation-button' : undefined}
           className="active"
