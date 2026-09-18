@@ -1048,8 +1048,18 @@ export function getOpenAILLMConfig({
       delete modelKwargs[field];
     }
   }
-  const promptCacheKeyPinned = typeof llmConfig.promptCacheKey === 'string';
-  const promptCacheKeyDropped = dropParams?.includes('promptCacheKey') === true;
+  /**
+   * Both spellings count as an administrator's decision. `addParams` routes the
+   * raw `prompt_cache_key` into the request kwargs, which the request forwards
+   * verbatim, so treating only the constructor field as pinned would let
+   * `createRun` synthesize a second key over the operator's own.
+   */
+  const promptCacheKeyPinned =
+    typeof llmConfig.promptCacheKey === 'string' ||
+    typeof modelKwargs.prompt_cache_key === 'string';
+  const promptCacheKeyDropped =
+    dropParams?.includes('promptCacheKey') === true ||
+    dropParams?.includes('prompt_cache_key') === true;
   if (
     firstPartyEndpoint &&
     promptCacheKeyEnabled !== false &&
