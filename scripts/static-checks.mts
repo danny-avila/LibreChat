@@ -1325,10 +1325,14 @@ async function introducedWithinAllowance(
      *  the base — renamed or not — brings its allowance and may grow it, and a
      *  rename's allowance is the one recorded under the name it had. */
     const inherited = inheritedFrom !== undefined;
-    const source = inheritedFrom?.source ?? '';
     const had = new Map<string, number>();
-    if (inherited) {
-      for (const signature of signatures(await lintText(source, { filePath: file.filePath }))) {
+    if (inheritedFrom !== undefined) {
+      /** Linted as the path it had, not the one it has: moving a component out
+       *  of the library and into the app enters a stricter scope, and reading
+       *  the old contents under the new path would let the destination's own
+       *  diagnostics appear on both sides and pass as inherited. */
+      const was = resolve(ROOT, inheritedFrom.path);
+      for (const signature of signatures(await lintText(inheritedFrom.source, { filePath: was }))) {
         had.set(signature, (had.get(signature) ?? 0) + 1);
       }
     }
@@ -1365,15 +1369,23 @@ async function introducedWithinAllowance(
 
 /**
  * The commit this change is measured against: the merge base of the requested
- * base and `HEAD`, or `HEAD` itself for a staged run. A pull request's diff
- * starts at the merge base, so reading prior content from the base branch's tip
- * instead would call a violation that branch added since the divergence this
- * change's doing, and forgive one this change added that the tip happens to
- * carry. Resolved once, because two checks ask and they have to agree.
+ * base and `HEAD` for a range, the checked commit's parent when one commit is
+ * named, and `HEAD` for a staged run. A pull request's diff starts at the
+ * merge base, so reading prior content from the base branch's tip instead
+ * would call a violation that branch added since the divergence this change's
+ * doing, and forgive one this change added that the tip happens to carry; and
+ * `--commit HEAD` compared against `HEAD` would be the commit against itself,
+ * which forgives everything. Resolved once, because two checks ask and they
+ * have to agree.
  */
 let resolvedBase: string | undefined;
 function baseCommit(): string {
   if (resolvedBase !== undefined) return resolvedBase;
+  if (OPTIONS.commit !== undefined) {
+    const parent = runCommand(GIT, ['rev-parse', `${OPTIONS.commit}^`]);
+    resolvedBase = parent.status === 0 ? parent.stdout.trim() : OPTIONS.commit;
+    return resolvedBase;
+  }
   const requested = OPTIONS.against ?? 'HEAD';
   const merged = runCommand(GIT, ['merge-base', requested, 'HEAD']);
   resolvedBase = merged.status === 0 ? merged.stdout.trim() : requested;
