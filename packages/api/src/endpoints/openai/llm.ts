@@ -19,7 +19,11 @@ import {
   constructAzureChatBasePath,
   constructAzureInstanceBasePath,
 } from '~/utils/azure';
-import { PROMPT_CACHE_ADMIN_FIELDS, supportsExplicitPromptCache } from './promptCache';
+import {
+  PROMPT_CACHE_ADMIN_FIELDS,
+  PROMPT_CACHE_WIRE_FIELDS,
+  supportsExplicitPromptCache,
+} from './promptCache';
 import { isEnabled } from '~/utils/common';
 
 type OpenAILLMConfig = Omit<Partial<t.OAIClientOptions>, 'verbosity'> &
@@ -628,6 +632,20 @@ export function applyDefaultParams(
 function stripPromptCacheControls(options: Record<string, unknown>): void {
   for (const field of PROMPT_CACHE_ADMIN_FIELDS) {
     delete options[field];
+  }
+  /**
+   * The wire spellings too, wherever they can ride along. `modelKwargs` is
+   * forwarded to the request body verbatim, so an author who writes
+   * `prompt_cache_key` there reaches the provider without passing any of the
+   * policy above — the same hole as the camelCase fields, one layer down.
+   */
+  for (const record of [options, options.modelKwargs]) {
+    if (record == null || typeof record !== 'object') {
+      continue;
+    }
+    for (const field of PROMPT_CACHE_WIRE_FIELDS) {
+      delete (record as Record<string, unknown>)[field];
+    }
   }
   const fallbacks = options.fallbacks;
   if (!Array.isArray(fallbacks)) {

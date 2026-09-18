@@ -57,6 +57,17 @@ export const PROMPT_CACHE_MARKER_FIELDS = [
 ] as const;
 
 /**
+ * The request-body spellings of the same controls, which `modelKwargs` would
+ * otherwise forward verbatim. Administrator levers in another alphabet.
+ */
+export const PROMPT_CACHE_WIRE_FIELDS = [
+  'prompt_cache_key',
+  'prompt_cache_retention',
+  'prompt_cache_options',
+  'prompt_cache_breakpoint',
+] as const;
+
+/**
  * Everything prompt caching is configured with, which is an administrator's
  * decision alone: the markers above plus the three wire levers. Stripped from
  * author-owned model parameters before policy resolution.
@@ -165,6 +176,7 @@ const nonPrefixClientOptionKeys: ReadonlySet<string> = new Set([
   'azureOpenAIBasePath',
   'azureOpenAIEndpoint',
   'azureADTokenProvider',
+  ...PROMPT_CACHE_WIRE_FIELDS,
   'firstPartyEndpoint',
   'useLegacyContent',
   'provider',
@@ -192,12 +204,12 @@ const nonPrefixModelKwargsKeys: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * `applyResponsesVerbosity` moves verbosity onto `modelKwargs.text`, the same
- * object a Responses agent's output schema can arrive on through model
- * parameters. Only the verbosity leaves; a different JSON schema there is a
- * different prefix.
+ * `applyResponsesVerbosity` moves verbosity onto `modelKwargs.text`, and a
+ * Responses agent can supply the native shape on the top-level `text` — both
+ * carry the output schema and the verbosity on one object. Only the verbosity
+ * leaves; a different JSON schema there is a different prefix.
  */
-function modelKwargsTextIdentity(value: unknown): unknown {
+function responsesTextIdentity(value: unknown): unknown {
   if (value == null || typeof value !== 'object') {
     return safeIdentity(value);
   }
@@ -241,7 +253,7 @@ function modelKwargsIdentity(value: unknown): unknown {
     if (nonPrefixModelKwargsKeys.has(key)) {
       continue;
     }
-    const value = key === 'text' ? modelKwargsTextIdentity(kwargs[key]) : safeIdentity(kwargs[key]);
+    const value = key === 'text' ? responsesTextIdentity(kwargs[key]) : safeIdentity(kwargs[key]);
     if (isAbsentSurface(value)) {
       continue;
     }
@@ -249,6 +261,16 @@ function modelKwargsIdentity(value: unknown): unknown {
   }
   return projected;
 }
+
+/**
+ * Fields whose own shape decides what belongs in the identity: the request
+ * kwargs and the Responses `text` object, which carry the output schema
+ * alongside settings that do not reach the prefix.
+ */
+const clientOptionProjections: Record<string, ((value: unknown) => unknown) | undefined> = {
+  modelKwargs: modelKwargsIdentity,
+  text: responsesTextIdentity,
+};
 
 /**
  * The finalized wire identity of one request's prefix.
@@ -275,7 +297,7 @@ function clientOptionsIdentity(value: unknown): unknown {
       continue;
     }
     const projectedValue =
-      key === 'modelKwargs' ? modelKwargsIdentity(options[key]) : safeIdentity(options[key]);
+      clientOptionProjections[key]?.(options[key]) ?? safeIdentity(options[key]);
     if (isAbsentSurface(projectedValue)) {
       continue;
     }

@@ -86,6 +86,10 @@ describe('buildPromptCacheKey', () => {
     ['agent name the handoff context carries', { name: 'Researcher' }],
     ['Chat Completions output schema', { clientOptions: { response_format: { type: 'json' } } }],
     ['Responses output format', { clientOptions: { text: { format: { type: 'json' } } } }],
+    [
+      'Responses output format beside a verbosity setting',
+      { clientOptions: { text: { format: { type: 'json_schema' }, verbosity: 'low' } } },
+    ],
     ['API mode', { clientOptions: { useResponsesApi: true } }],
     [
       'Responses output schema an agent set under modelKwargs',
@@ -343,6 +347,10 @@ describe('buildPromptCacheKey', () => {
       ],
       ['credentials', { clientOptions: { apiKey: 'sk-rotated' } }],
       ['the service tier a request is scheduled on', { clientOptions: { service_tier: 'flex' } }],
+      [
+        'Responses verbosity on the native text object',
+        { clientOptions: { text: { verbosity: 'low' } } },
+      ],
       ['a rotated Azure resource key', { clientOptions: { azureOpenAIApiKey: 'az-rotated' } }],
       [
         'the Responses output budget',
