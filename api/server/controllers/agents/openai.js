@@ -144,7 +144,7 @@ function createToolLoader({ req, res, signal, definitionsOnly = true }) {
         streamId: null, // No resumable stream for OpenAI compat
       });
     } catch (error) {
-      if (isFatalAgentInitializationError(error) || isContentFilterError(error)) {
+      if (isFatalAgentInitializationError(error, { signal }) || isContentFilterError(error)) {
         throw error;
       }
       logger.error('Error loading tools for agent ' + agentId, getSafeErrorMetadata(error));
@@ -380,9 +380,14 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
 
   const responseId = `chatcmpl-${nanoid()}`;
   const terminalRunError = createTerminalRunErrorObserver({
+    maxProviderErrorChars: appConfig?.endpoints?.agents?.maxProviderErrorChars,
     logger,
     responseMessageId: responseId,
     source: '[OpenAI API]',
+    protectionEnabled: hasModelBoundContentProtection(
+      appConfig?.filters,
+      appConfig?.messageFilter?.pii,
+    ),
   });
   const created = Math.floor(Date.now() / 1000);
 
@@ -627,6 +632,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
           skillStates,
           defaultActiveOnShare,
           manualSkills,
+          signal: execution.signal,
         },
         dbMethods,
       );
@@ -663,6 +669,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         const discoveryParams = {
           req,
           res,
+          signal: execution.signal,
           primaryConfig,
           endpointOption,
           allowedProviders,

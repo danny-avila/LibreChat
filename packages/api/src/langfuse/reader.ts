@@ -67,7 +67,9 @@ const pageSchema = z.object({
 });
 
 type LangfuseObservation = z.infer<typeof observationSchema>;
-type OwnedObservation = { observation: LangfuseObservation; messageId: string };
+/** The response that owns a trace, and whether the trace is its title run rather than the run itself. */
+type TraceOwner = { messageId: string; origin?: 'title' };
+type OwnedObservation = { observation: LangfuseObservation } & TraceOwner;
 
 export interface LangfuseTraceReaderDeps {
   getConversationTraceRefs: (input: {
@@ -168,7 +170,11 @@ function toCost(observation: LangfuseObservation): number | undefined {
   return cost != null && Number.isFinite(cost) && cost >= 0 ? cost : undefined;
 }
 
-function toRecord(observation: LangfuseObservation, messageId: string): TTraceRecord {
+function toRecord(
+  observation: LangfuseObservation,
+  messageId: string,
+  origin?: 'title',
+): TTraceRecord {
   const type = observation.type.toUpperCase();
   /** An event is a point in time and is never given an end, so a missing end is not "running". */
   const endTime = observation.endTime ?? (type === 'EVENT' ? observation.startTime : null);
@@ -197,6 +203,7 @@ function toRecord(observation: LangfuseObservation, messageId: string): TTraceRe
       : {}),
     ...(usage ? { usage } : {}),
     ...(cost != null ? { cost } : {}),
+    ...(origin ? { origin } : {}),
   };
 }
 
@@ -235,12 +242,12 @@ function traceIdsOf(message: SampledTraceMessage): string[] {
  * unique per user rather than globally, so a record whose trace is not in this
  * map is never returned.
  */
-function buildTraceOwners(messages: SampledTraceMessage[]): Map<string, string> {
-  const owners = new Map<string, string>();
+function buildTraceOwners(messages: SampledTraceMessage[]): Map<string, TraceOwner> {
+  const owners = new Map<string, TraceOwner>();
   for (const message of messages) {
-    for (const traceId of traceIdsOf(message)) {
-      owners.set(traceId, message.messageId);
-    }
+    const [run, title] = traceIdsOf(message);
+    owners.set(run, { messageId: message.messageId });
+    owners.set(title, { messageId: message.messageId, origin: 'title' });
   }
   return owners;
 }
@@ -527,7 +534,7 @@ export function createLangfuseTraceReader({
     return parsed.data;
   }
 
-  function parseRows(rows: unknown[], owners: Map<string, string>): OwnedObservation[] {
+  function parseRows(rows: unknown[], owners: Map<string, TraceOwner>): OwnedObservation[] {
     const observations: OwnedObservation[] = [];
     let malformed = 0;
     for (const row of rows) {
@@ -536,9 +543,9 @@ export function createLangfuseTraceReader({
         malformed++;
         continue;
       }
-      const messageId = owners.get(parsed.data.traceId);
-      if (messageId != null) {
-        observations.push({ observation: parsed.data, messageId });
+      const owner = owners.get(parsed.data.traceId);
+      if (owner != null) {
+        observations.push({ observation: parsed.data, ...owner });
       }
     }
     if (malformed > 0) {
@@ -890,8 +897,8 @@ export function createLangfuseTraceReader({
             params.set('cursor', cursor);
           }
           const page = await requestPage(destination, params, query, cursor != null);
-          for (const { observation, messageId } of parseRows(page.data, owners)) {
-            records.push(toRecord(observation, messageId));
+          for (const { observation, messageId, origin } of parseRows(page.data, owners)) {
+            records.push(toRecord(observation, messageId, origin));
           }
           remaining -= page.data.length;
           const next = page.meta?.cursor || undefined;
@@ -1072,8 +1079,8 @@ export function createLangfuseTraceReader({
         }
         return null;
       }
-      const { observation, messageId } = match;
-      const record = toRecord(observation, messageId);
+      const { observation, messageId, origin } = match;
+      const record = toRecord(observation, messageId, origin);
       if (!includeContent) {
         return { record, contentAvailable: false };
       }

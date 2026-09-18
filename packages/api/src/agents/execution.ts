@@ -4,6 +4,7 @@ import { Constants, getCodeBaseURL } from '@librechat/agents';
 import type {
   Agents,
   CodeWorkspaceOperation,
+  CodeWorkspaceDescriptor,
   CodeWorkspaceSelection,
   CodeEnvironmentUserConfigSchema,
   CodeEnvironmentUserSettings,
@@ -38,7 +39,11 @@ export interface CodeExecutionContext {
   codeEnvironmentConfigSchema?: CodeEnvironmentUserConfigSchema;
   codeEnvironmentSettings?: CodeEnvironmentUserSettings;
   /** Live, server-validated directory selection. Never derive session reuse from this field. */
-  codeWorkspace?: CodeWorkspaceSelection & { operations: CodeWorkspaceOperation[] };
+  codeWorkspace?: CodeWorkspaceSelection & {
+    operations: CodeWorkspaceOperation[];
+    instructions?: CodeWorkspaceDescriptor['instructions'];
+    environment?: CodeWorkspaceDescriptor['environment'];
+  };
 }
 
 /** Removes live capability data before a workspace binding is persisted. */
@@ -109,6 +114,9 @@ export function captureCodeExecutionApprovalBinding(
                 environmentId: context.codeWorkspace.environmentId,
                 workspaceId: context.codeWorkspace.workspaceId,
                 operations: [...new Set(context.codeWorkspace.operations)].sort(),
+                ...(context.codeWorkspace.environment
+                  ? { definitionFingerprint: context.codeWorkspace.environment.fingerprint }
+                  : {}),
               },
         ]),
       )

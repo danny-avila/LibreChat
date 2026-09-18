@@ -1,4 +1,4 @@
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import {
   megabyte,
   Constants,
@@ -17,6 +17,7 @@ type MockUploadMutationOptions = {
       filename: string;
       source: string;
       embedded: boolean;
+      llmDeliveryPath?: string;
       height?: number;
       width?: number;
     },
@@ -209,6 +210,40 @@ describe('useFileHandling', () => {
   });
 
   const loadHook = async () => (await import('../useFileHandling')).default;
+
+  it('removes rejected provider audio and localizes the upload error before retry', async () => {
+    const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    const useFileHandling = await loadHook();
+    const { result } = renderHook(() => useFileHandling());
+    const recovery = jest.fn();
+    await act(async () => {
+      await result.current.handleFiles(
+        [new File(['audio'], 'clip.wma', { type: 'audio/wma' })],
+        undefined,
+        { onError: recovery },
+      );
+    });
+    const body = mockMutate.mock.calls[0][0] as FormData;
+    const fileId = body.get('file_id');
+    act(() =>
+      mockUploadOptions.onError?.(
+        {
+          response: { status: 415, data: { message: 'com_error_files_provider_audio_format' } },
+        },
+        body,
+      ),
+    );
+    expect(mockDeleteFileById).toHaveBeenCalledWith(fileId);
+    await waitFor(() =>
+      expect(mockLocalize).toHaveBeenCalledWith('com_error_files_provider_audio_format'),
+    );
+    expect(recovery).toHaveBeenCalledWith(fileId);
+    await act(async () => {
+      await result.current.handleFiles([new File(['audio'], 'clip.wav', { type: 'audio/wav' })]);
+    });
+    expect(mockMutate).toHaveBeenCalledTimes(2);
+    consoleLog.mockRestore();
+  });
 
   describe('endpointOverride', () => {
     it('clears the loading state when file validation throws', async () => {
@@ -1529,6 +1564,45 @@ describe('useFileHandling', () => {
       });
 
       expect(onSuccess).toHaveBeenCalledWith(fileId);
+    });
+
+    it('keeps the upload delivery path on the completed attachment', async () => {
+      jest.useFakeTimers();
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([
+          new File(['hello'], 'notes.docx', {
+            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          }),
+        ]);
+      });
+
+      const uploadBody = mockMutate.mock.calls[0][0] as FormData;
+      act(() => {
+        mockUploadOptions.onSuccess?.(
+          {
+            temp_file_id: uploadBody.get('file_id') as string,
+            file_id: 'saved-file-id',
+            filepath: '/files/notes.docx',
+            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            filename: 'notes.docx',
+            source: 'local',
+            embedded: false,
+            llmDeliveryPath: 'text',
+          },
+          uploadBody,
+        );
+        jest.runAllTimers();
+      });
+      jest.useRealTimers();
+
+      const [, completion] = mockUpdateFileById.mock.calls.at(-1) as [
+        string,
+        { llmDeliveryPath?: string },
+      ];
+      expect(completion.llmDeliveryPath).toBe('text');
     });
 
     it('resolves false when every file fails preprocessing', async () => {

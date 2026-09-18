@@ -204,7 +204,7 @@ const getPartToolCall = (part: TMessageContentParts): Agents.ToolCall | undefine
 /** Slots the persistence compaction leaves nothing behind for: the
  * dual-message `type: ''` placeholders, text/think parts that never received a
  * delta, and tool calls missing their `tool_call` payload. */
-const isEmptyContentPart = (part: TMessageContentParts): boolean => {
+export const isEmptyContentPart = (part: TMessageContentParts): boolean => {
   if (!part.type) {
     return true;
   }

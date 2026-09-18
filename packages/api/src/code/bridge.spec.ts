@@ -5,6 +5,76 @@ import {
 } from './bridge';
 
 describe('getCodeBridgeWorkerStatus', () => {
+  test.each([
+    [['bash'], ['bash']],
+    [['bash', 'python'], ['bash']],
+    [['python'], undefined],
+    [['bash', 123], undefined],
+  ])(
+    'preserves recognized programmatic capability from %j',
+    async (programmaticLanguages, expected) => {
+      const status = await getCodeBridgeWorkerStatus({
+        baseURL: 'https://code.example.com/v1',
+        token: 'token',
+        workerId: 'personal-vm',
+        fetchImpl: jest.fn().mockResolvedValue(
+          Response.json({
+            protocolVersion: 1,
+            workerId: 'personal-vm',
+            online: true,
+            ready: true,
+            leaseExpiresInMs: 45_000,
+            capabilities: {
+              statefulWorkspace: false,
+              runtimes: [],
+              sandboxProfile: 'native-srt',
+              workspaceTools: {
+                protocolVersion: 1,
+                operations: ['execute_command'],
+                workspaces: [{ id: 'project-a' }],
+                programmaticLanguages,
+              },
+            },
+          }),
+        ),
+      });
+      expect(status.programmaticLanguages).toEqual(expected);
+    },
+  );
+  test('accepts the maximum declared environment metadata population', async () => {
+    const workspaces = Array.from({ length: 32 }, (_, index) => ({
+      id: `root-${index}`,
+      name: 'n'.repeat(128),
+      environment: {
+        fingerprint: 'a'.repeat(64),
+        repo: `a/${'b'.repeat(254)}`,
+        ref: '\t'.repeat(255) + 'x',
+        actions: Array.from({ length: 32 }, (_, action) => `${action}${'a'.repeat(62)}`),
+      },
+    }));
+    const payload = {
+      protocolVersion: 1,
+      workerId: 'personal-vm',
+      online: true,
+      ready: true,
+      leaseExpiresInMs: 45000,
+      capabilities: {
+        statefulWorkspace: false,
+        sandboxProfile: 'native-srt',
+        runtimes: [],
+        workspaceTools: { protocolVersion: 1, operations: ['execute_command'], workspaces },
+      },
+    };
+    expect(Buffer.byteLength(JSON.stringify(payload))).toBeGreaterThan(64 * 1024);
+    await expect(
+      getCodeBridgeWorkerStatus({
+        baseURL: 'https://code.example.com/v1',
+        token: 'token',
+        workerId: 'personal-vm',
+        fetchImpl: jest.fn().mockResolvedValue(Response.json(payload)),
+      }),
+    ).resolves.toMatchObject({ status: 'ready', workspaces });
+  });
   test('normalizes a ready worker while exposing only bounded capability metadata', async () => {
     const fetchImpl = jest.fn().mockResolvedValue(
       new Response(
@@ -171,10 +241,10 @@ describe('getCodeBridgeWorkerStatus', () => {
     );
   });
 
-  test('rejects an upstream response before buffering more than 64 KiB', async () => {
+  test('rejects an upstream response before buffering more than 256 KiB', async () => {
     const fetchImpl = jest
       .fn()
-      .mockResolvedValue(new Response(JSON.stringify({ ignored: 'x'.repeat(65 * 1024) })));
+      .mockResolvedValue(new Response(JSON.stringify({ ignored: 'x'.repeat(257 * 1024) })));
 
     await expect(
       getCodeBridgeWorkerStatus({
