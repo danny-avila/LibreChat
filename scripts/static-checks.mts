@@ -1217,14 +1217,34 @@ async function introducedWithinAllowance(
   const subjects = head.filter((file) => changed.has(reportedPath(file.filePath)));
   if (subjects.length === 0) return [];
 
-  const baseRef = OPTIONS.against ?? 'HEAD';
+  /** The range's merge base, not the base branch's tip: with `--against` the
+   *  changed-file set is `base...HEAD`, so reading prior sources from the tip
+   *  would call a violation the base branch added since the branch diverged
+   *  this change's doing, and would forgive one this change added that the tip
+   *  happens to carry. */
+  const requested = OPTIONS.against ?? 'HEAD';
+  const merged = runCommand(GIT, ['merge-base', requested, 'HEAD']);
+  const baseRef = merged.status === 0 ? merged.stdout.trim() : requested;
+
+  /** Where each file came from: a rename carries its violations with it, and
+   *  asking for the new path at the base would call every one of them new. */
+  const renames = new Map<string, string>();
+  const renamed = runCommand(GIT, ['diff', '--name-status', '-M', baseRef, '--']);
+  if (renamed.status === 0) {
+    for (const line of renamed.stdout.split('\n')) {
+      const [status, from, to] = line.split('\t');
+      if (status?.startsWith('R') && from && to) renames.set(to, from);
+    }
+  }
+
+  /** A file with no version at the base has no allowance to inherit: every
+   *  design violation in it is this change's, however the record reads. */
   const before = new Map<string, string>();
   for (const file of subjects) {
     const relative = reportedPath(file.filePath);
-    const source = runCommand(GIT, ['show', `${baseRef}:${relative}`]);
-    if (source.status === 0) before.set(relative, source.stdout);
+    const source = runCommand(GIT, ['show', `${baseRef}:${renames.get(relative) ?? relative}`]);
+    before.set(relative, source.status === 0 ? source.stdout : '');
   }
-  if (before.size === 0) return [];
 
   let lintText: (source: string, options: { filePath: string }) => Promise<LintReport[]>;
   try {
@@ -1252,11 +1272,12 @@ async function introducedWithinAllowance(
   const problems: string[] = [];
   for (const file of subjects) {
     const relative = reportedPath(file.filePath);
-    const source = before.get(relative);
-    if (source === undefined) continue;
+    const source = before.get(relative) ?? '';
     const had = new Map<string, number>();
-    for (const signature of signatures(await lintText(source, { filePath: file.filePath }))) {
-      had.set(signature, (had.get(signature) ?? 0) + 1);
+    if (source !== '') {
+      for (const signature of signatures(await lintText(source, { filePath: file.filePath }))) {
+        had.set(signature, (had.get(signature) ?? 0) + 1);
+      }
     }
     for (const signature of signatures([file])) {
       const remaining = had.get(signature) ?? 0;
@@ -1265,7 +1286,7 @@ async function introducedWithinAllowance(
         continue;
       }
       problems.push(
-        `${relative}: ${signature} is new here; the recorded count already covers it, so record what this change owes with \`npm run lint:design:suppress\` or fix it`,
+        `${relative}: ${signature} is new here; a recorded count does not cover what this change adds, so fix it or say why the record has to grow`,
       );
     }
   }

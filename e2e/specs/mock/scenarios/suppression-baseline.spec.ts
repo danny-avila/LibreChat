@@ -608,6 +608,57 @@ test.describe('the recorded design-rule backlog', () => {
       expect(swapped.status, 'a swap inside the allowance passed').not.toBe(0);
       expect(swapped.output).toContain('bg-lime-400');
       expect(swapped.output).toContain('is new here');
+
+      /** A file the change adds has no allowance to inherit, whatever the
+       *  record says about it: recording a new violation at the same time as
+       *  writing it is the same debt by another route. */
+      writeFileSync(join(root, caller), 'export default () => <div className="bg-pink-500" />;\n');
+      const added = 'client/src/Added.tsx';
+      writeFileSync(join(root, added), 'export default () => <div className="bg-lime-400" />;\n');
+      writeFileSync(
+        join(root, SUPPRESSIONS_FILE),
+        `${JSON.stringify(
+          {
+            'client/src/Clean.tsx': { 'shadcn/no-restyle': { count: 2 } },
+            [caller]: { 'shadcn/no-raw-colors': { count: 1 } },
+            [added]: { 'shadcn/no-raw-colors': { count: 1 } },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      const recordedAtOnce = run(
+        process.execPath,
+        [join(root, 'scripts/static-checks.mts'), added, '--only', 'suppressions'],
+        { cwd: root },
+      );
+      expect(recordedAtOnce.status, 'a new file arrived with its own allowance').not.toBe(0);
+      expect(recordedAtOnce.output).toContain('is new here');
+
+      /** A move is not an addition: the violations came with the file, so the
+       *  documented re-record of a moved path stays a green commit. */
+      rmSync(join(root, added), { force: true });
+      const moved2 = 'client/src/Renamed.tsx';
+      writeFileSync(join(root, moved2), readFileSync(join(root, caller), 'utf8'));
+      rmSync(join(root, caller), { force: true });
+      writeFileSync(
+        join(root, SUPPRESSIONS_FILE),
+        `${JSON.stringify(
+          {
+            'client/src/Clean.tsx': { 'shadcn/no-restyle': { count: 2 } },
+            [moved2]: { 'shadcn/no-raw-colors': { count: 1 } },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      expect(run('git', ['add', '-A'], { cwd: root }).status).toBe(0);
+      const renamed = run(
+        process.execPath,
+        [join(root, 'scripts/static-checks.mts'), moved2, '--only', 'suppressions'],
+        { cwd: root },
+      );
+      expect(renamed.status, `a rename was read as new debt: ${renamed.output}`).toBe(0);
     } finally {
       rmSync(root, { force: true, recursive: true });
     }
