@@ -1,10 +1,18 @@
-import type { StandardGraph, LCTool } from '@librechat/agents';
+import type {
+  LCTool,
+  StandardGraph,
+  ToolCallRequest,
+  ToolExecuteResult,
+  ToolExecuteBatchRequest,
+} from '@librechat/agents';
 import type { Tool } from './types';
 import {
   validateClientTools,
   buildClientToolDefinitions,
   mergeClientToolDefinitions,
+  clientToolDeferralContent,
   createClientToolRunStepHandler,
+  createClientToolExecuteHandler,
 } from './clientTools';
 
 const fnTool = (name: string, overrides: Partial<Tool> = {}): Tool =>
@@ -52,11 +60,25 @@ describe('buildClientToolDefinitions', () => {
     ).toEqual([
       {
         name: 'open_service_page',
-        description: 'Open a service page',
+        description: expect.stringMatching(/^Open a service page /),
         parameters,
         allowed_callers: ['direct'],
       },
     ]);
+  });
+
+  it('asks the model to call the tool alone, keeping the caller’s description', () => {
+    const [definition] = buildClientToolDefinitions([
+      fnTool('open_service_page', { description: 'Open a service page' }),
+    ]);
+
+    expect(definition.description).toContain('Open a service page');
+    expect(definition.description).toContain('only tool call of its turn');
+  });
+
+  it('carries the notice alone when the caller declared no description', () => {
+    const [definition] = buildClientToolDefinitions([fnTool('refresh')]);
+    expect(definition.description).toContain('only tool call of its turn');
   });
 
   it('defaults a parameterless tool to an empty JSON Schema object', () => {
@@ -181,5 +203,126 @@ describe('createClientToolRunStepHandler', () => {
 
     expect(delegate.handle).toHaveBeenCalledTimes(4);
     expect(graph.invokedToolIds?.size ?? 0).toBe(0);
+  });
+});
+
+describe('createClientToolExecuteHandler', () => {
+  const clientToolNames = new Set(['submit_sql']);
+  const responseId = 'resp_1';
+
+  const toolCall = (id: string, name: string): ToolCallRequest => ({ id, name, args: {} });
+
+  const makeBatch = (toolCalls: ToolCallRequest[]) => {
+    const resolve = jest.fn();
+    const onResult = jest.fn();
+    const data = { toolCalls, resolve, onResult } as unknown as ToolExecuteBatchRequest;
+    return { data, resolve, onResult };
+  };
+
+  /** Stands in for the host executor: answers whatever batch it is handed. */
+  const makeDelegate = (results: ToolExecuteResult[] = []) => ({
+    handle: jest.fn((_event: string, data: ToolExecuteBatchRequest) => data.resolve(results)),
+  });
+
+  it('returns the delegate untouched when nothing was declared', () => {
+    const delegate = makeDelegate();
+    expect(
+      createClientToolExecuteHandler({
+        delegate,
+        clientToolNames: new Set(),
+        responseId,
+      }),
+    ).toBe(delegate);
+  });
+
+  it('passes a server-only batch through without touching it', () => {
+    const delegate = makeDelegate();
+    const handler = createClientToolExecuteHandler({ delegate, clientToolNames, responseId });
+    const { data, onResult } = makeBatch([toolCall('call_1', 'list_tables')]);
+
+    handler.handle('on_tool_execute', data);
+
+    expect(delegate.handle).toHaveBeenCalledWith('on_tool_execute', data);
+    expect(onResult).not.toHaveBeenCalled();
+  });
+
+  it('executes the server call and defers the client call of a mixed batch', () => {
+    const executed: ToolExecuteResult = {
+      toolCallId: 'call_1',
+      status: 'success',
+      content: 'default, analytics',
+    };
+    const delegate = makeDelegate([executed]);
+    const handler = createClientToolExecuteHandler({ delegate, clientToolNames, responseId });
+    const { data, resolve, onResult } = makeBatch([
+      toolCall('call_1', 'list_tables'),
+      toolCall('call_2', 'submit_sql'),
+    ]);
+
+    handler.handle('on_tool_execute', data);
+
+    const delegated = delegate.handle.mock.calls[0][1] as ToolExecuteBatchRequest;
+    expect(delegated.toolCalls).toEqual([toolCall('call_1', 'list_tables')]);
+
+    const deferral: ToolExecuteResult = {
+      toolCallId: 'call_2',
+      status: 'success',
+      content: clientToolDeferralContent('submit_sql'),
+    };
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledWith([executed, deferral]);
+    expect(onResult).toHaveBeenCalledWith(deferral);
+  });
+
+  it('tells the model to call the tool alone rather than reporting a failure', () => {
+    const delegate = makeDelegate();
+    const handler = createClientToolExecuteHandler({ delegate, clientToolNames, responseId });
+    const { data, resolve } = makeBatch([
+      toolCall('call_1', 'list_tables'),
+      toolCall('call_2', 'submit_sql'),
+    ]);
+
+    handler.handle('on_tool_execute', data);
+
+    const [[deferral]] = resolve.mock.calls as [[ToolExecuteResult[]]];
+    const content = deferral.find((result) => result.toolCallId === 'call_2');
+    expect(content?.status).toBe('success');
+    expect(content?.content).toContain('submit_sql');
+    expect(content?.content).toContain('only tool call of its turn');
+  });
+
+  it('answers a client-only batch without reaching the delegate', () => {
+    const delegate = makeDelegate();
+    const handler = createClientToolExecuteHandler({ delegate, clientToolNames, responseId });
+    const { data, resolve } = makeBatch([toolCall('call_2', 'submit_sql')]);
+
+    handler.handle('on_tool_execute', data);
+
+    expect(delegate.handle).not.toHaveBeenCalled();
+    expect(resolve).toHaveBeenCalledWith([
+      {
+        toolCallId: 'call_2',
+        status: 'success',
+        content: clientToolDeferralContent('submit_sql'),
+      },
+    ]);
+  });
+
+  it('keeps the batch fields the delegate depends on', () => {
+    const delegate = makeDelegate();
+    const handler = createClientToolExecuteHandler({ delegate, clientToolNames, responseId });
+    const { data } = makeBatch([
+      toolCall('call_1', 'list_tables'),
+      toolCall('call_2', 'submit_sql'),
+    ]);
+    (data as ToolExecuteBatchRequest & { agentId?: string }).agentId = 'agent_7';
+
+    handler.handle('on_tool_execute', data);
+
+    const delegated = delegate.handle.mock.calls[0][1] as ToolExecuteBatchRequest & {
+      agentId?: string;
+    };
+    expect(delegated.agentId).toBe('agent_7');
+    expect(delegated.onResult).toBe(data.onResult);
   });
 });

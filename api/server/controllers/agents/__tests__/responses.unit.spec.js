@@ -249,6 +249,7 @@ jest.mock('@librechat/api', () => ({
     shadowed: [],
   })),
   createClientToolRunStepHandler: jest.fn(({ delegate }) => delegate),
+  createClientToolExecuteHandler: jest.fn(({ delegate }) => delegate),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
   resolveConversationCodeEnvironmentDecision: ({

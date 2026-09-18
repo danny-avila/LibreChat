@@ -80,6 +80,7 @@ const {
   buildClientToolDefinitions,
   mergeClientToolDefinitions,
   createClientToolRunStepHandler,
+  createClientToolExecuteHandler,
   getLangfuseTraceMessageFields,
   stripActivityLabelParts,
   stripUnusableSummaryParts,
@@ -934,6 +935,14 @@ const executeResponse = async (envelope, { req, res }) => {
           ? delegate
           : createClientToolRunStepHandler({ delegate, clientToolNames });
 
+      /** Answers a caller-declared tool call that still reached execution --
+       *  only a batch that also holds a server tool does -- by asking the model
+       *  to call it alone, instead of failing it as an unknown tool. */
+      const withClientToolDeferral = (delegate) =>
+        clientToolNames.size === 0
+          ? delegate
+          : createClientToolExecuteHandler({ delegate, clientToolNames, responseId });
+
       /**
        * Per-agent tool-execution context map, keyed by agentId. Ensures the
        * ON_TOOL_EXECUTE callback routes each sub-agent's tool calls to the
@@ -1302,7 +1311,7 @@ const executeResponse = async (envelope, { req, res }) => {
           on_chain_end: { handle: () => {} },
           on_agent_update: { handle: () => {} },
           on_custom_event: { handle: () => {} },
-          on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
+          on_tool_execute: withClientToolDeferral(createToolExecuteHandler(toolExecuteOptions)),
           on_agent_log: agentLogHandlerObj,
           ...(summarizationConfig?.enabled !== false
             ? buildSummarizationHandlers({ isStreaming: actuallyStreaming, res })
@@ -1531,7 +1540,7 @@ const executeResponse = async (envelope, { req, res }) => {
           on_chain_end: { handle: () => {} },
           on_agent_update: { handle: () => {} },
           on_custom_event: { handle: () => {} },
-          on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
+          on_tool_execute: withClientToolDeferral(createToolExecuteHandler(toolExecuteOptions)),
           on_agent_log: agentLogHandlerObj,
           ...(summarizationConfig?.enabled !== false
             ? buildSummarizationHandlers({ isStreaming: false, res })

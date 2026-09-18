@@ -17,8 +17,19 @@
  *
  * This is the stateless shape OpenAI defines: no run is suspended, nothing is
  * checkpointed, and no per-caller state is held between the two requests.
+ *
+ * The handoff needs the client call to be the turn's only call, so each tool's
+ * description asks the model for that shape, and a batch that mixes one with a
+ * server tool is answered with the same instruction rather than executed.
  */
-import type { StandardGraph, LCTool } from '@librechat/agents';
+import { logger } from '@librechat/data-schemas';
+import type {
+  LCTool,
+  StandardGraph,
+  ToolCallRequest,
+  ToolExecuteResult,
+  ToolExecuteBatchRequest,
+} from '@librechat/agents';
 import type { FunctionTool, Tool } from './types';
 
 /** JSON Schema stand-in for a tool that declares no parameters. */
@@ -29,6 +40,17 @@ const EMPTY_PARAMETERS = { type: 'object', properties: {} } as const;
  * works against their API works here without renaming.
  */
 const CLIENT_TOOL_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
+
+/**
+ * Told to the model in every client tool's description.
+ *
+ * A batch that mixes a client tool with a server tool still enters the tool
+ * node (`toolsCondition` treats a turn as invoked only when *every* call on it
+ * is), so the handoff cannot happen from such a batch. This asks the model for
+ * the shape that can hand off; {@link createClientToolExecuteHandler} handles
+ * the batch that arrives anyway.
+ */
+const SINGLE_CALL_NOTICE = 'Call this tool on its own: it must be the only tool call of its turn.';
 
 /** A tool entry the caller will execute itself. */
 function isFunctionTool(tool: Tool | undefined | null): tool is FunctionTool {
@@ -81,6 +103,9 @@ export function validateClientTools(tools: unknown): string | undefined {
 /**
  * The request's function tools as model-visible definitions, with no
  * server-side executor. Assumes {@link validateClientTools} already passed.
+ *
+ * The caller's description carries {@link SINGLE_CALL_NOTICE} appended as its
+ * own sentence, and a tool that declared no description gets the notice alone.
  */
 export function buildClientToolDefinitions(tools: Tool[] | undefined | null): LCTool[] {
   if (tools == null) {
@@ -88,7 +113,10 @@ export function buildClientToolDefinitions(tools: Tool[] | undefined | null): LC
   }
   return tools.filter(isFunctionTool).map(({ name, description, parameters }) => ({
     name,
-    ...(typeof description === 'string' && description !== '' ? { description } : {}),
+    description:
+      typeof description === 'string' && description !== ''
+        ? `${description} ${SINGLE_CALL_NOTICE}`
+        : SINGLE_CALL_NOTICE,
     parameters: (parameters ?? EMPTY_PARAMETERS) as LCTool['parameters'],
     /** Callable by the model itself, and by nothing else. */
     allowed_callers: ['direct' as const],
@@ -153,9 +181,11 @@ interface RunStepHandler {
  * unit tests cannot prove — it needs an integration test against the pinned SDK
  * build.
  *
- * Known gap: `toolsCondition` marks a turn invoked only when *every* call on it
- * is, so a model that calls a client tool and a server tool in the same batch
- * still enters the tool node and the client call fails there as an unknown tool.
+ * `toolsCondition` marks a turn invoked only when *every* call on it is, so a
+ * model that calls a client tool and a server tool in the same batch still
+ * enters the tool node and cannot hand off from that turn.
+ * {@link createClientToolExecuteHandler} answers the client call there with an
+ * instruction to call it alone, which the next turn can hand off.
  */
 export function createClientToolRunStepHandler({
   delegate,
@@ -187,6 +217,99 @@ export function createClientToolRunStepHandler({
         }
       }
       graph.invokedToolIds = invoked;
+    },
+  };
+}
+
+/**
+ * What the model is told when it calls a client tool in a batch that also holds
+ * a server tool.
+ *
+ * Returned as a successful tool result rather than an error: the call did not
+ * execute, but nothing failed, and `status: 'error'` would reach the model
+ * wrapped in the SDK's `Error: … Please fix your mistakes.` framing and count
+ * as a tool failure. The wording asks for the one shape that can hand off.
+ */
+export function clientToolDeferralContent(name: string): string {
+  return `"${name}" is executed by the caller, not by this server, so it cannot run in the same turn as another tool. Call "${name}" again as the only tool call of its turn.`;
+}
+
+interface ToolExecuteHandler {
+  handle: (event: string, data: ToolExecuteBatchRequest) => void | Promise<void>;
+}
+
+/**
+ * Wraps the tool-execution handler so a caller-declared tool call that reached
+ * the tool node is answered with {@link clientToolDeferralContent} instead of
+ * the host's generic `Tool <name> not found`.
+ *
+ * Only a mixed batch gets here: a batch holding client calls alone is marked
+ * invoked in `on_run_step` and routes to END, so the tool node never sees it.
+ * The client-only branch below is therefore defensive, covering a batch that
+ * reaches execution despite the marking.
+ *
+ * The batch's server calls go to the delegate untouched and their results are
+ * merged with ours, because `resolve` is authoritative for the whole batch and
+ * must carry a result for every call the SDK dispatched. Results are matched by
+ * `toolCallId` rather than position, so the merge order does not matter.
+ *
+ * Deliberately uncapped: a model that keeps repeating the mixed batch is
+ * already bounded by the run's `recursionLimit`, so a counter here would add
+ * run state for a bound that exists. The warning is what makes the frequency
+ * measurable if that assumption turns out to be wrong.
+ */
+export function createClientToolExecuteHandler({
+  delegate,
+  clientToolNames,
+  responseId,
+}: {
+  delegate: ToolExecuteHandler;
+  clientToolNames: Set<string>;
+  responseId: string;
+}): ToolExecuteHandler {
+  if (clientToolNames.size === 0) {
+    return delegate;
+  }
+
+  return {
+    handle: (event, data) => {
+      const executable: ToolCallRequest[] = [];
+      const results: ToolExecuteResult[] = [];
+      const deferredNames: string[] = [];
+      for (const toolCall of data.toolCalls) {
+        if (!clientToolNames.has(toolCall.name)) {
+          executable.push(toolCall);
+          continue;
+        }
+        results.push({
+          toolCallId: toolCall.id,
+          status: 'success',
+          content: clientToolDeferralContent(toolCall.name),
+        });
+        deferredNames.push(toolCall.name);
+      }
+
+      if (results.length === 0) {
+        return delegate.handle(event, data);
+      }
+
+      logger.warn(
+        `[Responses API] Request ${responseId} called caller-executed tool(s) alongside server tools, which cannot hand off; asked the model to call them alone: ${deferredNames.join(', ')}`,
+      );
+      for (const result of results) {
+        data.onResult?.(result);
+      }
+
+      if (executable.length === 0) {
+        data.resolve(results);
+        return;
+      }
+
+      return delegate.handle(event, {
+        ...data,
+        toolCalls: executable,
+        resolve: (executed: ToolExecuteResult[]): void => data.resolve([...executed, ...results]),
+      });
     },
   };
 }

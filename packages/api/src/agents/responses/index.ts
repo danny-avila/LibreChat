@@ -187,5 +187,7 @@ export {
 export {
   buildClientToolDefinitions,
   mergeClientToolDefinitions,
+  clientToolDeferralContent,
   createClientToolRunStepHandler,
+  createClientToolExecuteHandler,
 } from './clientTools';
