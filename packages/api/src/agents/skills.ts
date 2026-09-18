@@ -11,6 +11,7 @@ import type { LCToolRegistry, LCTool, InjectedMessage } from '@librechat/agents'
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { Types } from 'mongoose';
 import { createSkillContentDigest } from './compatibility';
+import { appendAgentInstructionTail } from './context';
 import { registerCodeExecutionTools } from './tools';
 import { logAxiosError } from '~/utils';
 
@@ -782,9 +783,15 @@ export async function injectSkillCatalog(
             : `[injectSkillCatalog] skill "${s.name}" description reached the model truncated to ${reached} of ${s.description.length} chars`,
         );
       }
-      agent.additional_instructions = agent.additional_instructions
-        ? `${agent.additional_instructions}\n\n${catalog}`
-        : catalog;
+      /**
+       * Configuration, not conversation: a skill's name or description in this
+       * catalog is model-visible system text, so editing it has to retire the
+       * prompt cache identity.
+       */
+      appendAgentInstructionTail(
+        agent as typeof agent & { configuredAdditionalInstructions?: string },
+        catalog,
+      );
     }
   }
 
