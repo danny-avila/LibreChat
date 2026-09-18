@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { test } from '@playwright/test';
 
@@ -126,6 +127,61 @@ export function designMessages(messages: LintMessage[]): LintMessage[] {
 
 export const messagesFor = (messages: LintMessage[], ruleId: string): string[] =>
   messages.filter((message) => message.ruleId === ruleId).map((message) => message.message);
+
+/**
+ * The severity the resolved flat config gives each design rule at every path,
+ * which is what says whether the rules are asked about a path at all — a report
+ * cannot, since a file with nothing to report looks the same either way. The
+ * paths need not exist; ESLint resolves a configuration for a name.
+ *
+ * Asked through ESLint's own API in one process: `--print-config` answers for
+ * one path per run, and a directory-by-directory sweep of both roots is more
+ * than a thousand of them — eleven minutes of subprocesses against under a
+ * second in here.
+ */
+export function designRuleSeverities(paths: string[]): Record<string, Record<string, number>> {
+  const query = `
+    const { ESLint } = require('eslint');
+    (async () => {
+      const eslint = new ESLint({ overrideConfigFile: 'eslint.config.mjs' });
+      const answer = {};
+      for (const path of process.argv.slice(1)) {
+        const config = await eslint.calculateConfigForFile(path);
+        const severities = {};
+        for (const [rule, setting] of Object.entries(config.rules ?? {})) {
+          if (rule.startsWith('shadcn/')) {
+            severities[rule] = Array.isArray(setting) ? setting[0] : setting;
+          }
+        }
+        answer[path] = severities;
+      }
+      process.stdout.write(JSON.stringify(answer));
+    })();
+  `;
+  const answered = run(process.execPath, ['-e', query, '--', ...paths]);
+  if (answered.status !== 0) throw new Error(`no resolved config: ${answered.output}`);
+  return JSON.parse(answered.stdout) as Record<string, Record<string, number>>;
+}
+
+/**
+ * `root` and every directory under it that holds a source file, so a coverage
+ * assertion reaches the subtree a narrowing config would drop rather than a
+ * list someone remembered to update.
+ */
+export function sourceDirectories(root: string): string[] {
+  const found: string[] = [];
+  const walk = (directory: string): void => {
+    const entries = readdirSync(resolve(repoRoot, directory), { withFileTypes: true });
+    if (entries.some((entry) => entry.isFile() && /\.(ts|tsx|js|jsx)$/.test(entry.name))) {
+      found.push(directory);
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory() && !entry.name.startsWith('.')) walk(`${directory}/${entry.name}`);
+    }
+  };
+  walk(root);
+  return found;
+}
 
 /** The local mirror of the Static Checks lane, invoked as `package.json` does. */
 export function staticChecks(args: string[]): CommandResult {
