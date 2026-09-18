@@ -656,6 +656,32 @@ describe('createImportHandler', () => {
     expect(importFailure(res.body).error).toBe('skill_import_cleanup_incomplete');
   });
 
+  it('deletes unreferenced blobs while reporting incomplete non-file cleanup', async () => {
+    const deps = mockImportDeps();
+    deps.deleteSkill = jest.fn(async () => ({
+      deleted: true,
+      skillAbsent: true,
+      cleanupComplete: false,
+      failedCleanupSteps: ['permissions'],
+    }));
+    deps.deleteFile = jest.fn(async () => undefined);
+    deps.upsertSkillFile = jest
+      .fn()
+      .mockResolvedValueOnce({ _id: new Types.ObjectId() })
+      .mockRejectedValueOnce(
+        new Error('write conflict'),
+      ) as unknown as ImportSkillDeps['upsertSkillFile'];
+    const handler = createImportHandler(deps);
+    const res = mockResponse();
+
+    await handler(mockZipRequest(await zipWithAdditionalFiles(2, 64)), res);
+
+    expect(deps.deleteSkill).toHaveBeenCalledTimes(2);
+    expect(deps.deleteFile).toHaveBeenCalledTimes(2);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(importFailure(res.body).error).toBe('skill_import_cleanup_incomplete');
+  });
+
   it('rolls back the skill and its stored blobs when one archive file fails', async () => {
     const deps = mockImportDeps();
     let savedFiles = 0;

@@ -836,18 +836,28 @@ async function rollbackArchiveImport(
     logger.error(`[importSkill] Rollback could not confirm removal of skill ${skillId}`);
     return { skillRemoved: false, cleanupComplete: false };
   }
+  const databaseCleanupComplete = deletion.cleanupComplete;
   if (!deletion.cleanupComplete) {
     logger.error(
       `[importSkill] Rollback database cleanup incomplete for skill ${skillId}: ${deletion.failedCleanupSteps.join(', ')}`,
     );
-    return { skillRemoved: true, cleanupComplete: false };
+    /** If SkillFile cleanup failed, those rows can still reference the stored
+     * blobs, so retain them for the idempotent database retry. When only an
+     * independent cleanup step failed, the captured records are now the last
+     * blob references and must be consumed before returning the 500. */
+    if (deletion.failedCleanupSteps.includes('skill_files')) {
+      return { skillRemoved: true, cleanupComplete: false };
+    }
   }
 
   const { deleteFile } = deps;
   if (deleteFile == null) {
-    return { skillRemoved: true, cleanupComplete: context.persisted.length === 0 };
+    return {
+      skillRemoved: true,
+      cleanupComplete: databaseCleanupComplete && context.persisted.length === 0,
+    };
   }
-  let cleanupComplete = true;
+  let blobCleanupComplete = true;
   for (const blob of context.persisted) {
     await deleteFile(req, {
       filepath: blob.filepath,
@@ -857,11 +867,14 @@ async function rollbackArchiveImport(
       user: context.authorId,
       tenantId: context.tenantId,
     }).catch((error) => {
-      cleanupComplete = false;
+      blobCleanupComplete = false;
       logger.error(`[importSkill] Rollback blob cleanup failed for ${blob.relativePath}:`, error);
     });
   }
-  return { skillRemoved: true, cleanupComplete };
+  return {
+    skillRemoved: true,
+    cleanupComplete: databaseCleanupComplete && blobCleanupComplete,
+  };
 }
 
 async function persistPreflightedArchiveFiles(
