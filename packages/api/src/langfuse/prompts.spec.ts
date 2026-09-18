@@ -119,6 +119,34 @@ describe('Langfuse agent instruction prompts', () => {
       }),
     );
   });
+  it('accepts the credential identity while project discovery stabilizes', async () => {
+    let destinations = [destination];
+    const fetch = jest.fn().mockResolvedValue(response(200, prompt));
+    const provider = createLangfusePromptProvider({
+      resolveDestinations: async () => destinations,
+      fetch,
+      cacheTtlMs: 0,
+    });
+
+    const saved = await provider.resolve(
+      { source: 'langfuse', name: 'agent-policy' },
+      { userId: 'author' },
+    );
+    expect(saved.destinationId).toMatch(/^[a-f0-9]{64}$/);
+
+    destinations = [{ ...destination, id: 'c'.repeat(64) }];
+    await expect(
+      provider.resolve(
+        {
+          source: 'langfuse',
+          name: 'agent-policy',
+          destinationId: saved.destinationId,
+        },
+        { userId: 'reader' },
+      ),
+    ).resolves.toMatchObject({ destinationId: 'c'.repeat(64) });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
 
   it('returns a fresh cached value without another request', async () => {
     const fetch = jest.fn().mockResolvedValue(response(200, prompt));

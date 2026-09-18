@@ -24,6 +24,8 @@ const {
   normalizeAgentUpdateData,
   getRequestRoleCache,
   persistAgentInstructionPromptFallback,
+  redactAgentInstructionPromptFallback,
+  redactAgentInstructionPromptFallbacks,
   stripFileIdsFromToolResources,
   inspectContent,
   inspectContentWithTraversal,
@@ -952,7 +954,7 @@ const createAgentHandler = async (req, res) => {
       );
     }
 
-    res.status(201).json(agent);
+    res.status(201).json(redactAgentInstructionPromptFallback(agent));
   } catch (error) {
     if (error instanceof z.ZodError) {
       logger.error('[/Agents] Validation error', error.errors);
@@ -1049,7 +1051,7 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
     }
 
     // EDIT permission: Full agent details including sensitive configuration
-    return res.status(200).json(agent);
+    return res.status(200).json(redactAgentInstructionPromptFallback(agent));
   } catch (error) {
     logger.error('[/Agents/:id] Error retrieving agent', error);
     res.status(500).json({ error: error.message });
@@ -1075,7 +1077,7 @@ const getAgentVersionsHandler = async (req, res) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    return res.status(200).json(versions);
+    return res.status(200).json(redactAgentInstructionPromptFallbacks(versions));
   } catch (error) {
     logger.error('[/Agents/:id/versions] Error retrieving agent versions', error);
     res.status(500).json({ error: error.message });
@@ -1387,7 +1389,7 @@ const updateAgentHandler = async (req, res) => {
       delete updatedAgent.author;
     }
 
-    return res.json(updatedAgent);
+    return res.json(redactAgentInstructionPromptFallback(updatedAgent));
   } catch (error) {
     if (error instanceof z.ZodError) {
       logger.error('[/Agents/:id] Validation error', error.errors);
@@ -1674,7 +1676,7 @@ const duplicateAgentHandler = async (req, res) => {
     }
 
     return res.status(201).json({
-      agent: newAgent,
+      agent: redactAgentInstructionPromptFallback(newAgent),
       actions: newActionsList,
     });
   } catch (error) {
@@ -2025,7 +2027,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       logger.error('[/:agent_id/avatar] Error invalidating avatar refresh cache', cacheErr);
     }
 
-    res.status(201).json(updatedAgent);
+    res.status(201).json(redactAgentInstructionPromptFallback(updatedAgent));
   } catch (error) {
     const message = 'An error occurred while updating the Agent Avatar';
     logger.error(
@@ -2216,7 +2218,7 @@ const revertAgentVersionHandler = async (req, res) => {
       delete updatedAgent.author;
     }
 
-    return res.json(updatedAgent);
+    return res.json(redactAgentInstructionPromptFallback(updatedAgent));
   } catch (error) {
     logger.error('[/agents/:id/revert] Error reverting Agent version', error);
     if (error?.statusCode === 409) {

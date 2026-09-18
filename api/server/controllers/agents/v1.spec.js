@@ -471,8 +471,13 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
 
       expect(mockRes.status).toHaveBeenCalledWith(201);
       const createdAgent = mockRes.json.mock.calls[0][0];
-      expect(createdAgent.instructions).toBe('resolved instructions');
+      expect(createdAgent.instructions).toBeUndefined();
       expect(createdAgent.instruction_prompt).toMatchObject(mockReq.body.instruction_prompt);
+      expect(createdAgent.versions[0].instructions).toBeUndefined();
+      const persistedAgent = await Agent.findOne({ id: createdAgent.id }).lean();
+      expect(persistedAgent.instructions).toBe('resolved instructions');
+      expect(persistedAgent.versions[0].instructions).toBe('resolved instructions');
+
       expect(mockInstructionPromptResolve).toHaveBeenCalledWith(
         mockReq.body.instruction_prompt,
         expect.objectContaining({ userId: mockReq.user.id, role: mockReq.user.role }),
@@ -1373,6 +1378,29 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(response.model_parameters.temperature).toBeUndefined();
       expect(response.model_parameters.apiKey).toBeUndefined();
     });
+    test('redacts prompt snapshots from the expanded editor response', async () => {
+      const instructionPrompt = {
+        source: 'librechat',
+        promptId: new mongoose.Types.ObjectId().toString(),
+        name: 'Protected policy',
+      };
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Prompt Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: mockReq.user.id,
+        instructions: 'protected snapshot',
+        instruction_prompt: instructionPrompt,
+      });
+      mockReq.params = { id: agent.id };
+
+      await getAgentHandler(mockReq, mockRes, true);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.instructions).toBeUndefined();
+      expect(response.instruction_prompt).toMatchObject(instructionPrompt);
+    });
 
     test('should return owner_contact from the first ACL owner when support_contact is missing', async () => {
       const owner = await createOwner({
@@ -1480,8 +1508,21 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         model: 'gpt-4',
         author: mockReq.user.id,
         versions: [
-          { name: 'V1', provider: 'openai', model: 'gpt-4', updatedAt: new Date() },
-          { name: 'V2', provider: 'openai', model: 'gpt-4', updatedAt: new Date() },
+          {
+            name: 'V1',
+            provider: 'openai',
+            model: 'gpt-4',
+            instructions: 'protected snapshot',
+            instruction_prompt: { source: 'langfuse', name: 'protected-policy' },
+            updatedAt: new Date(),
+          },
+          {
+            name: 'V2',
+            provider: 'openai',
+            model: 'gpt-4',
+            instructions: 'visible inline instructions',
+            updatedAt: new Date(),
+          },
         ],
       });
       mockReq.params = { id: agent.id };
@@ -1499,6 +1540,8 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(Array.isArray(versions)).toBe(true);
       expect(versions).toHaveLength(2);
       expect(versions.map((v) => v.name)).toEqual(['V1', 'V2']);
+      expect(versions[0].instructions).toBeUndefined();
+      expect(versions[1].instructions).toBe('visible inline instructions');
     });
 
     test('returns 404 when the agent does not exist', async () => {

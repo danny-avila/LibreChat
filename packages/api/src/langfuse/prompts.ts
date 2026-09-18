@@ -183,7 +183,11 @@ export function createLangfusePromptProvider({
       const destination =
         reference.destinationId == null
           ? destinations[0]
-          : destinations.find((candidate) => destinationId(candidate) === reference.destinationId);
+          : destinations.find(
+              (candidate) =>
+                destinationId(candidate) === reference.destinationId ||
+                cacheDestinationIdentity(candidate) === reference.destinationId,
+            );
       if (!destination) {
         throw new AgentInstructionPromptError(
           'not_configured',

@@ -4,6 +4,7 @@ import {
   AgentInstructionPromptError,
   createAgentInstructionPromptResolver,
   resolveAgentInstructionPrompt,
+  redactAgentInstructionPromptFallback,
   persistAgentInstructionPromptFallback,
 } from './resolver';
 
@@ -299,6 +300,28 @@ describe('agent instruction prompt resolver', () => {
         destinationId,
       },
     });
+  });
+
+  it('redacts compatibility snapshots from current and historical projections', () => {
+    const agent = {
+      instructions: 'current secret',
+      instruction_prompt: { source: 'langfuse', name: 'current' },
+      versions: [
+        {
+          instructions: 'historical secret',
+          instruction_prompt: { source: 'langfuse', name: 'historical' },
+        },
+        { instructions: 'visible inline instructions' },
+      ],
+    };
+
+    const redacted = redactAgentInstructionPromptFallback(agent);
+
+    expect(redacted).not.toHaveProperty('instructions');
+    expect(redacted.versions[0]).not.toHaveProperty('instructions');
+    expect(redacted.versions[1].instructions).toBe('visible inline instructions');
+    expect(agent.instructions).toBe('current secret');
+    expect(agent.versions[0].instructions).toBe('historical secret');
   });
 
   it('fails clearly when a referenced version was deleted', async () => {

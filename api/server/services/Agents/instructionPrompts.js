@@ -13,8 +13,14 @@ const langfuse = createLangfusePromptProvider({
   fetch,
 });
 
+let canUseLibreChatPrompts;
 const instructionPromptResolver = createAgentInstructionPromptResolver({
-  canUseLibreChatPrompts: createPromptUseChecker(db.getRoleByName),
+  canUseLibreChatPrompts: (context) => {
+    if (canUseLibreChatPrompts == null) {
+      canUseLibreChatPrompts = createPromptUseChecker(db.getRoleByName);
+    }
+    return canUseLibreChatPrompts(context);
+  },
   getLibreChatPromptPermissions: ({ userId, role, promptId }) =>
     getEffectivePermissions({
       userId,

@@ -266,7 +266,7 @@ export function projectAgentManagementResponse(
     updatedAt: toTimestamp(source.updatedAt),
     name: source.name,
     description: source.description,
-    instructions: source.instructions,
+    instructions: source.instruction_prompt == null ? source.instructions : undefined,
     avatar: typeof source.avatar === 'string' ? undefined : source.avatar,
     model_parameters: source.model_parameters,
     tools: source.tools,

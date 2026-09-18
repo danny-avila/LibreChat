@@ -267,3 +267,34 @@ export async function persistAgentInstructionPromptFallback({
         }
       : reference;
 }
+
+/**
+ * Compatibility snapshots remain persisted for old execution nodes, but prompt-backed
+ * instructions are not part of editor-facing projections because prompt authorization
+ * is evaluated only when the reference is resolved.
+ */
+export function redactAgentInstructionPromptFallback<T>(agent: T): T {
+  if (agent == null || typeof agent !== 'object') {
+    return agent;
+  }
+  const source = agent as Record<string, unknown>;
+  const versions = Array.isArray(source.versions)
+    ? source.versions.map(redactAgentInstructionPromptFallback)
+    : source.versions;
+  const hasSnapshot = source.instruction_prompt != null && 'instructions' in source;
+  if (!hasSnapshot && versions === source.versions) {
+    return agent;
+  }
+  const redacted = { ...source };
+  if (hasSnapshot) {
+    delete redacted.instructions;
+  }
+  if (Array.isArray(source.versions)) {
+    redacted.versions = versions;
+  }
+  return redacted as T;
+}
+
+export function redactAgentInstructionPromptFallbacks<T>(agents: T[]): T[] {
+  return agents.map(redactAgentInstructionPromptFallback);
+}
