@@ -741,10 +741,12 @@ export function createAgentMethods(
 
   /**
    * Get an agent document based on the provided search parameter.
+   * Without an explicit projection, the unbounded `versions` history is excluded;
+   * pass `{}` (or a projection including `versions`) to read the full history.
    */
   async function getAgent(
     searchParameter: FilterQuery<IAgent>,
-    projection?: ProjectionType<IAgent>,
+    projection: ProjectionType<IAgent> = { versions: 0 },
   ): Promise<IAgent | null> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
     return await Agent.findOne(searchParameter, projection).lean<IAgent>();
