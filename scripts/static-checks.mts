@@ -1104,8 +1104,11 @@ async function unusedCapacity(target: string, context: CheckContext): Promise<st
         [...new Set([...Object.keys(recorded), ...touched])]
       : wholeRecord
         ? [...new Set([...DESIGN_ROOTS, ...touched])]
-        : touched.size === 0 && context.files.includes(target)
-          ? Object.keys(recorded)
+        : context.files.includes(target)
+          ? /** The baseline is in the diff: what it silences is its whole
+             *  purpose, so every path it records is read, not only the entries
+             *  the diff moved. */
+            [...new Set([...Object.keys(recorded), ...touched])]
           : [...touched]
   ).filter((file) => existsSync(resolve(ROOT, file)));
   if (files.length === 0) return [];
@@ -1114,7 +1117,9 @@ async function unusedCapacity(target: string, context: CheckContext): Promise<st
    *  ESLint then says nothing about is an entry that silences nothing, which is
    *  checked once the report is in. */
   const asked = (
-    target === SUPPRESSIONS_FILE && wholeRecord ? Object.keys(recorded) : files
+    (target === SUPPRESSIONS_FILE && wholeRecord) || context.files.includes(target)
+      ? Object.keys(recorded)
+      : files
   ).filter((file) => recorded[file] && existsSync(resolve(ROOT, file)));
 
   const eslint = resolveBin('eslint');
@@ -1242,7 +1247,9 @@ async function introducedWithinAllowance(
   const renamed = runCommand(GIT, ['diff', '--name-status', '-M', baseRef, '--']);
   if (renamed.status === 0) {
     for (const line of renamed.stdout.split('\n')) {
-      const [status, from, to] = line.split('\t');
+      /** Trimmed: git's output carries CRLF on some checkouts, and a `\r` would
+       *  key the map on a path no report ever names. */
+      const [status, from, to] = line.trim().split('\t');
       if (status?.startsWith('R') && from && to) renames.set(to, from);
     }
   }
