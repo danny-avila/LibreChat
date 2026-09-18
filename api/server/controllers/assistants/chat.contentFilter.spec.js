@@ -148,7 +148,6 @@ jest.mock('./helpers', () => ({
 const chatV1 = require('./chatV1');
 const chatV2 = require('./chatV2');
 const { logger } = require('@librechat/data-schemas');
-const { checkBalance, getBalanceConfig } = require('@librechat/api');
 const { ImageVisionTool } = require('librechat-data-provider');
 
 describe.each([
@@ -260,8 +259,8 @@ describe.each([
   it('releases a balance reservation that settles after thread initialization fails', async () => {
     req.config.filters = {};
     const release = jest.fn().mockResolvedValue(undefined);
-    getBalanceConfig.mockReturnValue({ enabled: true });
-    checkBalance.mockImplementation(
+    mockGetBalanceConfig.mockReturnValue({ enabled: true });
+    mockCheckBalance.mockImplementation(
       () => new Promise((resolve) => setTimeout(() => resolve({ release }), 50)),
     );
     mockInitThread.mockRejectedValueOnce(new Error('stop after initThread'));
@@ -269,7 +268,7 @@ describe.each([
     await chatController(req, res);
 
     expect(mockInitThread).toHaveBeenCalledTimes(1);
-    expect(checkBalance).toHaveBeenCalledTimes(1);
+    expect(mockCheckBalance).toHaveBeenCalledTimes(1);
     expect(release).toHaveBeenCalledTimes(1);
   });
 
@@ -696,8 +695,8 @@ describe.each([
     it('keeps the balance reservation until a run that continued in the background settles', async () => {
       req.config.filters = {};
       const release = jest.fn().mockResolvedValue(undefined);
-      getBalanceConfig.mockReturnValue({ enabled: true });
-      checkBalance.mockResolvedValue({ release });
+      mockGetBalanceConfig.mockReturnValue({ enabled: true });
+      mockCheckBalance.mockResolvedValue({ release });
       mockInitThread.mockResolvedValueOnce({ thread_id: 'thread-existing' });
       let finishBackgroundRun = () => undefined;
       const usage = { prompt_tokens: 1, completion_tokens: 1 };
