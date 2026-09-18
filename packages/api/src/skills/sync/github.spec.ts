@@ -1891,60 +1891,83 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
-  it('fails the source when stale mirror deletion can leave partial persisted state', async () => {
-    const staleId = new Types.ObjectId();
-    const existingId = new Types.ObjectId();
-    const author = makeSourceAuthorId();
-    const makeExisting = (
-      upstreamId: string,
-      _id: Types.ObjectId,
-      name: string,
-    ): ISkill & { _id: Types.ObjectId } => {
-      const skill = makeSkill({
-        name,
-        description: `${name} skill`,
-        author,
-        authorName: 'GitHub Sync',
-        source: 'github',
-        sourceMetadata: { provider: 'github', sourceId: 'librechat-skills', upstreamId },
+  it.each([
+    { failedStep: 'skill_files' as const, expectedBlobDeletes: 0 },
+    { failedStep: 'permissions' as const, expectedBlobDeletes: 1 },
+  ])(
+    'fails the source and safely handles blobs when stale deletion leaves $failedStep incomplete',
+    async ({ failedStep, expectedBlobDeletes }) => {
+      const staleId = new Types.ObjectId();
+      const existingId = new Types.ObjectId();
+      const author = makeSourceAuthorId();
+      const makeExisting = (
+        upstreamId: string,
+        _id: Types.ObjectId,
+        name: string,
+      ): ISkill & { _id: Types.ObjectId } => {
+        const skill = makeSkill({
+          name,
+          description: `${name} skill`,
+          author,
+          authorName: 'GitHub Sync',
+          source: 'github',
+          sourceMetadata: { provider: 'github', sourceId: 'librechat-skills', upstreamId },
+        });
+        skill._id = _id;
+        return skill;
+      };
+      const staleSkill = makeExisting('librechat-skills:skills/removed', staleId, 'renamed');
+      const syncedSkill = makeExisting('librechat-skills:skills/research', existingId, 'research');
+      const deleteSkill = jest.fn(async (id: string) => {
+        if (id === staleId.toString()) {
+          return incompleteSkillDeletion([failedStep]);
+        }
+        return completeSkillDeletion(true);
       });
-      skill._id = _id;
-      return skill;
-    };
-    const staleSkill = makeExisting('librechat-skills:skills/removed', staleId, 'renamed');
-    const syncedSkill = makeExisting('librechat-skills:skills/research', existingId, 'research');
-    const deleteSkill = jest.fn(async (id: string) => {
-      if (id === staleId.toString()) {
-        return incompleteSkillDeletion(['skill_files']);
-      }
-      return completeSkillDeletion(true);
-    });
-    const deps = createDeps({
-      fetchFn: githubFetch('---\nname: renamed\ndescription: Renamed skill\n---\nBody'),
-      findSkillBySourceIdentity: jest.fn(async ({ upstreamId }) =>
-        upstreamId === 'librechat-skills:skills/research' ? syncedSkill : null,
-      ),
-      getSkillById: jest.fn(async (id) =>
-        id.toString() === existingId.toString() ? syncedSkill : null,
-      ),
-      listSkillsBySource: jest.fn(async () => [staleSkill, syncedSkill]),
-      deleteSkill,
-      updateSkill: jest.fn(),
-    });
-    const runner = createGitHubSkillSyncRunner(deps);
-    const result = await runner.runOnce();
+      const staleFile = {
+        _id: new Types.ObjectId(),
+        skillId: staleId,
+        relativePath: 'references/stale.md',
+        filepath: '/uploads/stale.md',
+        source: 'local',
+        author,
+      } as ISkillFile & { _id: Types.ObjectId };
+      const deleteFile = jest.fn(async () => undefined);
+      const deps = createDeps({
+        fetchFn: githubFetch('---\nname: renamed\ndescription: Renamed skill\n---\nBody'),
+        findSkillBySourceIdentity: jest.fn(async ({ upstreamId }) =>
+          upstreamId === 'librechat-skills:skills/research' ? syncedSkill : null,
+        ),
+        getSkillById: jest.fn(async (id) =>
+          id.toString() === existingId.toString() ? syncedSkill : null,
+        ),
+        listSkillsBySource: jest.fn(async () => [staleSkill, syncedSkill]),
+        listSkillFiles: jest.fn(async (id) =>
+          id.toString() === staleId.toString() ? [staleFile] : [],
+        ),
+        deleteFile,
+        deleteSkill,
+        updateSkill: jest.fn(),
+      });
+      const runner = createGitHubSkillSyncRunner(deps);
+      const result = await runner.runOnce();
 
-    expect(result.status).toBe('failed');
-    expect(deleteSkill).toHaveBeenCalledWith(staleId.toString());
-    expect(deps.updateSkill).not.toHaveBeenCalled();
-    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        status: 'failed',
-        errorCode: 'SYNC_ROLLBACK_FAILED',
-        errorMessage: 'Stale mirror deletion failed: Skill cleanup did not finish: skill_files',
-      }),
-    );
-  });
+      expect(result.status).toBe('failed');
+      expect(deleteSkill).toHaveBeenCalledWith(staleId.toString());
+      const staleBlobCalls = deleteFile.mock.calls.filter(
+        ([file]) => file.filepath === staleFile.filepath,
+      );
+      expect(staleBlobCalls).toHaveLength(expectedBlobDeletes);
+      expect(deps.updateSkill).not.toHaveBeenCalled();
+      expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          status: 'failed',
+          errorCode: 'SYNC_ROLLBACK_FAILED',
+          errorMessage: `Stale mirror deletion failed: Skill cleanup did not finish: ${failedStep}`,
+        }),
+      );
+    },
+  );
 
   it("does not mirror-delete another tenant's skills from an ambient source run", async () => {
     const ambientStaleId = new Types.ObjectId();
