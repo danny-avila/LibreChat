@@ -609,6 +609,46 @@ test.describe('the recorded design-rule backlog', () => {
       expect(swapped.output).toContain('bg-lime-400');
       expect(swapped.output).toContain('is new here');
 
+      /** And the sanctioned way to add one: the violation stays and the record
+       *  grows to say so, which is a line in the diff a reviewer can see. The
+       *  gate reports what the growth does not cover, not the act of adding. */
+      writeFileSync(
+        join(root, caller),
+        'export default () => <div className="bg-pink-500 text-lime-400" />;\n',
+      );
+      writeFileSync(
+        join(root, SUPPRESSIONS_FILE),
+        `${JSON.stringify(
+          {
+            'client/src/Clean.tsx': { 'shadcn/no-restyle': { count: 2 } },
+            [caller]: { 'shadcn/no-raw-colors': { count: 2 } },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      const recordedGrowth = checks();
+      expect(
+        recordedGrowth.status,
+        `recording what the change owes was rejected: ${recordedGrowth.output}`,
+      ).toBe(0);
+
+      /** The same violation without the growth is the debt arriving unsaid. */
+      writeFileSync(
+        join(root, SUPPRESSIONS_FILE),
+        `${JSON.stringify(
+          {
+            'client/src/Clean.tsx': { 'shadcn/no-restyle': { count: 2 } },
+            [caller]: { 'shadcn/no-raw-colors': { count: 1 } },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      const unsaid = checks();
+      expect(unsaid.status, 'a new violation passed without the record growing').not.toBe(0);
+      expect(unsaid.output).toContain('text-lime-400');
+
       /** A file the change adds has no allowance to inherit, whatever the
        *  record says about it: recording a new violation at the same time as
        *  writing it is the same debt by another route. */

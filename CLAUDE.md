@@ -300,11 +300,14 @@ Multi-line imports count total character length across all lines. Consolidate va
   so replacing one suppressed violation with a different violation of the same rule in the same
   file keeps the count equal and ESLint reports nothing. The backlog is a budget per file, but it is
   not a budget you may respend: for every file a diff touches, the runner lints that file's version
-  at the base and reports a design-rule message the head has and the base did not, even when the
-  total is unchanged — so a swap arrives as a failure naming the new violation, and a violation that
-  merely moved does not. `npm run static-checks` and the Static Checks lane also validate the
-  baseline itself (shape, positive counts, rules the plugin defines, paths that still exist, paths a
-  design-rule lint actually reports on, and counts that match the file's violations).
+  at the merge base and reports a design-rule message the head has that the base did not, beyond
+  whatever that entry's count grew by. So a swap arrives as a failure naming the new violation, a
+  violation that merely moved does not, adding one with the count raised to cover it is the
+  documented `npm run lint:design:suppress` path and stays green — the raised count is the line a
+  reviewer reads — and a file the change adds brings no allowance with it, while a renamed one
+  keeps what its violations came with. `npm run static-checks` and the Static Checks lane also
+  validate the baseline itself (shape, positive counts, rules the plugin defines, paths that still
+  exist, paths a design-rule lint actually reports on, and counts that match the file's violations).
 - **The design rules read JSX, not CSS.** They are AST rules over `className`, `cva` and
   `style` in `{ts,tsx,js,jsx}`, so a `.css` file under either root — `client/src/style.css`,
   `packages/client/src/components/Field.css` — is outside every one of them, and so is the
