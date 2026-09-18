@@ -1217,15 +1217,7 @@ async function introducedWithinAllowance(
   const subjects = head.filter((file) => changed.has(reportedPath(file.filePath)));
   if (subjects.length === 0) return [];
 
-  /** The range's merge base, not the base branch's tip: with `--against` the
-   *  changed-file set is `base...HEAD`, so reading prior sources from the tip
-   *  would call a violation the base branch added since the branch diverged
-   *  this change's doing, and would forgive one this change added that the tip
-   *  happens to carry. */
-  const requested = OPTIONS.against ?? 'HEAD';
-  const merged = runCommand(GIT, ['merge-base', requested, 'HEAD']);
-  const baseRef = merged.status === 0 ? merged.stdout.trim() : requested;
-
+  const baseRef = baseCommit();
   /** Where each file came from: a rename carries its violations with it, and
    *  asking for the new path at the base would call every one of them new. */
   const renames = new Map<string, string>();
@@ -1294,21 +1286,32 @@ async function introducedWithinAllowance(
 }
 
 /**
+ * The commit this change is measured against: the merge base of the requested
+ * base and `HEAD`, or `HEAD` itself for a staged run. A pull request's diff
+ * starts at the merge base, so reading prior content from the base branch's tip
+ * instead would call a violation that branch added since the divergence this
+ * change's doing, and forgive one this change added that the tip happens to
+ * carry. Resolved once, because two checks ask and they have to agree.
+ */
+let resolvedBase: string | undefined;
+function baseCommit(): string {
+  if (resolvedBase !== undefined) return resolvedBase;
+  const requested = OPTIONS.against ?? 'HEAD';
+  const merged = runCommand(GIT, ['merge-base', requested, 'HEAD']);
+  resolvedBase = merged.status === 0 ? merged.stdout.trim() : requested;
+  return resolvedBase;
+}
+
+/**
  * The files whose recorded entries this diff edits, read by comparing the
  * baseline against the merge base. A mixed diff that leaves a file alone while
  * loosening its entry would otherwise be checked by nothing.
  */
 function editedEntries(target: string, context: CheckContext): string[] {
   if (!context.files.includes(target)) return [];
-  /** Which version of the record this edit is measured against: the range when
-   *  one was given — that is CI — and `HEAD` otherwise, which is what the
-   *  pre-commit run needs. Without the fallback a staged diff that also touches
-   *  one recorded source would narrow the check to that source and let every
-   *  other count edit through to CI. */
-  const baseRef = OPTIONS.against ?? 'HEAD';
-  /** The base ref may not carry the baseline at all — the change that adds it is
-   *  exactly one such diff — so this read must not be fatal. */
-  const base = runCommand(GIT, ['show', `${baseRef}:${target}`]);
+  const base = runCommand(GIT, ['show', `${baseCommit()}:${target}`]);
+  /** The base commit may not carry the baseline at all — the change that adds
+   *  it is exactly one such diff — so this read must not be fatal. */
   if (base.status !== 0) return [];
   let previous: SuppressionsFile;
   try {
