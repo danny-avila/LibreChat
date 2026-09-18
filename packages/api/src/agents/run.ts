@@ -1477,12 +1477,30 @@ function shapeSummarizationConfig(
         modelKwargs?: Record<string, unknown>;
       }
     | undefined;
-  if (
-    provider === fallbackProvider &&
-    agentParameters?.promptCacheKeyEnabled === true &&
-    parameters?.promptCacheKey == null
-  ) {
-    parameters = { ...parameters, promptCacheKey: undefined };
+  /** Already resolved above, and only when the summarizer shares the provider. */
+  const ownKwargs = isPlainObject(userParameters?.modelKwargs)
+    ? userParameters.modelKwargs
+    : undefined;
+  if (provider === fallbackProvider && parameters?.promptCacheKey == null) {
+    if (agentParameters?.promptCacheKeyEnabled === true) {
+      parameters = { ...parameters, promptCacheKey: undefined };
+    }
+    /**
+     * And the wire spelling of it, which an administrator can pin through
+     * `addParams`: the agent's request kwargs are inherited whole, so that key
+     * arrives on a request that does not send the prefix it names. A key the
+     * summarization config pinned for itself is a decision about this
+     * request's own routing and stays.
+     */
+    if (inheritedKwargs?.prompt_cache_key != null && ownKwargs?.prompt_cache_key == null) {
+      parameters = {
+        ...parameters,
+        modelKwargs: {
+          ...(isPlainObject(parameters?.modelKwargs) ? parameters.modelKwargs : {}),
+          prompt_cache_key: undefined,
+        },
+      };
+    }
   }
   /**
    * The explicit cache controls are model-gated, and that gate ran against the
@@ -1515,36 +1533,27 @@ function shapeSummarizationConfig(
       parameters = { ...parameters, promptCacheExplicit: undefined };
     }
     /**
-     * And in the wire spelling, which an administrator sets through
+     * And in the wire spellings, which an administrator sets through
      * `addParams`: the agent's request kwargs are inherited whole, so the
      * controls reach a summary request that cannot accept them without ever
-     * passing through the field above. Anything the summarization config set
-     * for itself is left alone.
+     * passing through the field above. Compared against what the
+     * summarization configuration itself supplied rather than against the
+     * merged result — `resolveAzureSummarization` spreads the agent's kwargs
+     * in, so testing the merge would preserve exactly the inherited field
+     * this is meant to withhold.
      */
-    const inheritedKwargs = isPlainObject(agentParameters?.modelKwargs)
-      ? agentParameters.modelKwargs
-      : undefined;
-    const inheritedRawFields = PROMPT_CACHE_WIRE_FIELDS.filter(
-      (field) => field !== 'prompt_cache_key' && inheritedKwargs?.[field] != null,
+    const inheritedExplicitFields = PROMPT_CACHE_WIRE_FIELDS.filter(
+      (field) =>
+        field !== 'prompt_cache_key' &&
+        inheritedKwargs?.[field] != null &&
+        ownKwargs?.[field] == null,
     );
-    if (inheritedRawFields.length > 0) {
-      /**
-       * Compared against what the summarization configuration itself supplied,
-       * not against the merged result: `resolveAzureSummarization` spreads the
-       * agent's kwargs into the summary's, so an inherited value is already
-       * sitting there and testing the merge would preserve exactly the field
-       * this is meant to withhold.
-       */
-      const ownKwargs = isPlainObject(userParameters?.modelKwargs)
-        ? userParameters.modelKwargs
-        : undefined;
+    if (inheritedExplicitFields.length > 0) {
       const summaryKwargs = isPlainObject(parameters?.modelKwargs)
         ? { ...parameters.modelKwargs }
         : {};
-      for (const field of inheritedRawFields) {
-        if (ownKwargs?.[field] == null) {
-          summaryKwargs[field] = undefined;
-        }
+      for (const field of inheritedExplicitFields) {
+        summaryKwargs[field] = undefined;
       }
       parameters = { ...parameters, modelKwargs: summaryKwargs };
     }
