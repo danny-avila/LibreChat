@@ -349,88 +349,98 @@ func TestJSONTraceProxyAddsRoutingAttributesFromPath(t *testing.T) {
 func TestMediaUploadFansOutToCentralAndTenant(t *testing.T) {
 	t.Parallel()
 
-	var mu sync.Mutex
-	uploads := map[string]string{}
-	upstream := func(name string) *httptest.Server {
-		return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch {
-			case r.Method == http.MethodPost && r.URL.Path == mediaPath:
-				uploadURL := "https://" + r.Host + "/upload/" + name
-				writeJSON(w, http.StatusCreated, mediaUploadResponse{
-					MediaID:   "same-media-id",
-					UploadURL: &uploadURL,
-				})
-			case r.Method == http.MethodPut && r.URL.Path == "/upload/"+name:
-				body, _ := io.ReadAll(r.Body)
-				mu.Lock()
-				uploads[name] = string(body)
-				mu.Unlock()
-				w.WriteHeader(http.StatusOK)
-			case r.Method == http.MethodPatch && r.URL.Path == mediaPath+"/same-media-id":
-				w.WriteHeader(http.StatusNoContent)
-			default:
-				http.NotFound(w, r)
+	for _, contentType := range []string{"image/png", "text/plain", "text/plain; charset=utf-8", "application/json", "Application/JSON; charset=utf-8"} {
+		t.Run(contentType, func(t *testing.T) {
+			t.Parallel()
+			var mu sync.Mutex
+			uploads := map[string]string{}
+			uploadContentTypes := map[string]string{}
+			upstream := func(name string) *httptest.Server {
+				return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					switch {
+					case r.Method == http.MethodPost && r.URL.Path == mediaPath:
+						uploadURL := "https://" + r.Host + "/upload/" + name
+						writeJSON(w, http.StatusCreated, mediaUploadResponse{
+							MediaID:   "same-media-id",
+							UploadURL: &uploadURL,
+						})
+					case r.Method == http.MethodPut && r.URL.Path == "/upload/"+name:
+						body, _ := io.ReadAll(r.Body)
+						mu.Lock()
+						uploads[name] = string(body)
+						uploadContentTypes[name] = r.Header.Get("Content-Type")
+						mu.Unlock()
+						w.WriteHeader(http.StatusOK)
+					case r.Method == http.MethodPatch && r.URL.Path == mediaPath+"/same-media-id":
+						w.WriteHeader(http.StatusNoContent)
+					default:
+						http.NotFound(w, r)
+					}
+				}))
 			}
-		}))
-	}
-	central := upstream("central")
-	defer central.Close()
-	tenant := upstream("tenant")
-	defer tenant.Close()
+			central := upstream("central")
+			defer central.Close()
+			tenant := upstream("tenant")
+			defer tenant.Close()
 
-	store := newFakeUploadPlanStore()
-	createGateway := newTestGatewayWithStore(central.URL, map[string]string{"eu": tenant.URL}, store)
-	uploadGateway := newTestGatewayWithStore(central.URL, map[string]string{"eu": tenant.URL}, store)
-	createGateway.cfg.client = central.Client()
-	uploadGateway.cfg.client = central.Client()
-	createBody := `{"traceId":"trace","contentType":"image/png","contentLength":5,"sha256Hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","field":"input"}`
-	req := httptest.NewRequest(http.MethodPost, tenantPrefix+"eu"+mediaPath, strings.NewReader(createBody))
-	req.Header.Set("Authorization", "Basic tenant")
-	resp := httptest.NewRecorder()
+			store := newFakeUploadPlanStore()
+			createGateway := newTestGatewayWithStore(central.URL, map[string]string{"eu": tenant.URL}, store)
+			uploadGateway := newTestGatewayWithStore(central.URL, map[string]string{"eu": tenant.URL}, store)
+			createGateway.cfg.client = central.Client()
+			uploadGateway.cfg.client = central.Client()
+			createBody := fmt.Sprintf(`{"traceId":"trace","contentType":%q,"contentLength":5,"sha256Hash":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","field":"input"}`, contentType)
+			req := httptest.NewRequest(http.MethodPost, tenantPrefix+"eu"+mediaPath, strings.NewReader(createBody))
+			req.Header.Set("Authorization", "Basic tenant")
+			resp := httptest.NewRecorder()
 
-	createGateway.handle(resp, req)
-	if resp.Code != http.StatusCreated {
-		t.Fatalf("create status = %d, body = %s", resp.Code, resp.Body.String())
-	}
-	var create mediaUploadResponse
-	if err := json.NewDecoder(resp.Body).Decode(&create); err != nil {
-		t.Fatal(err)
-	}
-	if create.MediaID != "same-media-id" || create.UploadURL == nil || !strings.Contains(*create.UploadURL, mediaUploadProxyPath) {
-		t.Fatalf("unexpected create response: %#v", create)
-	}
-	uploadID := strings.TrimPrefix(newUploadURLPath(t, *create.UploadURL), mediaUploadProxyPath)
-	store.mu.Lock()
-	storedPlan := store.plans[uploadID]
-	store.mu.Unlock()
-	storedPlanJSON, err := json.Marshal(storedPlan)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(storedPlanJSON), "Basic ") {
-		t.Fatalf("stored upload plan leaked authorization: %s", storedPlanJSON)
-	}
+			createGateway.handle(resp, req)
+			if resp.Code != http.StatusCreated {
+				t.Fatalf("create status = %d, body = %s", resp.Code, resp.Body.String())
+			}
+			var create mediaUploadResponse
+			if err := json.NewDecoder(resp.Body).Decode(&create); err != nil {
+				t.Fatal(err)
+			}
+			if create.MediaID != "same-media-id" || create.UploadURL == nil || !strings.Contains(*create.UploadURL, mediaUploadProxyPath) {
+				t.Fatalf("unexpected create response: %#v", create)
+			}
+			uploadID := strings.TrimPrefix(newUploadURLPath(t, *create.UploadURL), mediaUploadProxyPath)
+			store.mu.Lock()
+			storedPlan := store.plans[uploadID]
+			store.mu.Unlock()
+			storedPlanJSON, err := json.Marshal(storedPlan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(string(storedPlanJSON), "Basic ") {
+				t.Fatalf("stored upload plan leaked authorization: %s", storedPlanJSON)
+			}
 
-	uploadReq := httptest.NewRequest(http.MethodPut, *create.UploadURL, strings.NewReader("hello"))
-	uploadReq.Header.Set("Content-Type", "image/png")
-	uploadResp := httptest.NewRecorder()
-	uploadGateway.handle(uploadResp, uploadReq)
-	if uploadResp.Code != http.StatusOK {
-		t.Fatalf("upload status = %d, body = %s", uploadResp.Code, uploadResp.Body.String())
-	}
+			uploadReq := httptest.NewRequest(http.MethodPut, *create.UploadURL, strings.NewReader("hello"))
+			uploadReq.Header.Set("Content-Type", contentType)
+			uploadResp := httptest.NewRecorder()
+			uploadGateway.handle(uploadResp, uploadReq)
+			if uploadResp.Code != http.StatusOK {
+				t.Fatalf("upload status = %d, body = %s", uploadResp.Code, uploadResp.Body.String())
+			}
 
-	patchReq := httptest.NewRequest(http.MethodPatch, tenantPrefix+"eu"+mediaPath+"/same-media-id", strings.NewReader(`{"uploadHttpStatus":200}`))
-	patchReq.Header.Set("Authorization", "Basic tenant")
-	patchResp := httptest.NewRecorder()
-	uploadGateway.handle(patchResp, patchReq)
-	if patchResp.Code != http.StatusNoContent {
-		t.Fatalf("patch status = %d, body = %s", patchResp.Code, patchResp.Body.String())
-	}
+			patchReq := httptest.NewRequest(http.MethodPatch, tenantPrefix+"eu"+mediaPath+"/same-media-id", strings.NewReader(`{"uploadHttpStatus":200}`))
+			patchReq.Header.Set("Authorization", "Basic tenant")
+			patchResp := httptest.NewRecorder()
+			uploadGateway.handle(patchResp, patchReq)
+			if patchResp.Code != http.StatusNoContent {
+				t.Fatalf("patch status = %d, body = %s", patchResp.Code, patchResp.Body.String())
+			}
 
-	mu.Lock()
-	defer mu.Unlock()
-	if uploads["central"] != "hello" || uploads["tenant"] != "hello" {
-		t.Fatalf("uploads = %#v", uploads)
+			mu.Lock()
+			defer mu.Unlock()
+			if uploads["central"] != "hello" || uploads["tenant"] != "hello" {
+				t.Fatalf("uploads = %#v", uploads)
+			}
+			if uploadContentTypes["central"] != contentType || uploadContentTypes["tenant"] != contentType {
+				t.Fatalf("upload content types = %#v", uploadContentTypes)
+			}
+		})
 	}
 }
 

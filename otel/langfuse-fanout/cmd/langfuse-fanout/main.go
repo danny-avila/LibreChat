@@ -1286,6 +1286,8 @@ func allowedUploadContentType(value string) bool {
 	mediaType := strings.ToLower(strings.TrimSpace(strings.Split(value, ";")[0]))
 	return mediaType == "application/octet-stream" ||
 		mediaType == "application/pdf" ||
+		mediaType == "application/json" ||
+		mediaType == "text/plain" ||
 		strings.HasPrefix(mediaType, "image/") ||
 		strings.HasPrefix(mediaType, "audio/") ||
 		strings.HasPrefix(mediaType, "video/")
