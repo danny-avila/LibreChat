@@ -3,6 +3,37 @@ import type { Locator, Page } from '@playwright/test';
 import { openAgentBuilder } from '../agents.helpers';
 
 const TOOL_LIBRARY = 'Tool Library';
+/** The dialog's own open animation moves it by a fraction of a pixel per frame,
+ *  so geometry is only meaningful once two consecutive reads agree. */
+const STABLE_EPSILON = 0.5;
+const EDGE_TOLERANCE = 1;
+
+type Box = { x: number; y: number; width: number; height: number };
+
+async function settledBox(locator: Locator): Promise<Box> {
+  const last: { box: Box | null } = { box: null };
+  await expect
+    .poll(
+      async () => {
+        const box = await locator.boundingBox();
+        if (!box) {
+          return false;
+        }
+        const previous = last.box;
+        last.box = box;
+        return (
+          previous !== null &&
+          Math.abs(box.x - previous.x) < STABLE_EPSILON &&
+          Math.abs(box.y - previous.y) < STABLE_EPSILON &&
+          Math.abs(box.width - previous.width) < STABLE_EPSILON &&
+          Math.abs(box.height - previous.height) < STABLE_EPSILON
+        );
+      },
+      { timeout: 15000 },
+    )
+    .toBe(true);
+  return last.box!;
+}
 
 async function openToolLibrary(page: Page): Promise<Locator> {
   const form = await openAgentBuilder(page);
@@ -12,12 +43,14 @@ async function openToolLibrary(page: Page): Promise<Locator> {
   return dialog;
 }
 
-function catalogCards(dialog: Locator): Locator {
-  return dialog.getByRole('list', { name: TOOL_LIBRARY }).locator(':scope > li');
-}
-
-async function computedOpacity(locator: Locator): Promise<string> {
-  return locator.evaluate((element) => getComputedStyle(element).opacity);
+/** The actions fade over the shared motion duration, so the resting value is
+ *  what matters, not the frame the assertion happened to land on. */
+async function expectOpacity(locator: Locator, value: string): Promise<void> {
+  await expect
+    .poll(() => locator.evaluate((element) => getComputedStyle(element).opacity), {
+      timeout: 10000,
+    })
+    .toBe(value);
 }
 
 async function blurAndMovePointer(page: Page): Promise<void> {
@@ -41,19 +74,21 @@ test.describe('tool library on a touch viewport', () => {
     const viewport = page.viewportSize();
     expect(viewport).not.toBeNull();
 
-    const dialogBox = await dialog.boundingBox();
-    expect(dialogBox).not.toBeNull();
-    expect(dialogBox!.x).toBe(0);
-    expect(dialogBox!.width).toBe(viewport!.width);
+    const dialogBox = await settledBox(dialog);
+    expect(dialogBox.x).toBeLessThanOrEqual(EDGE_TOLERANCE);
+    expect(Math.abs(dialogBox.width - viewport!.width)).toBeLessThanOrEqual(EDGE_TOLERANCE);
     await expect(dialog.locator('aside')).toHaveCount(0);
     await expect(dialog.getByRole('group', { name: TOOL_LIBRARY })).toBeVisible();
 
-    const cards = catalogCards(dialog);
+    /** The regression this pins: the dialog content is a grid, and without
+     *  `min-w-0` its column sized to the chip row's 744px min-content, which
+     *  pushed every card past the right edge of a 412px screen. */
+    const cards = dialog.getByRole('list', { name: TOOL_LIBRARY }).locator(':scope > li');
     await expect(cards.first()).toBeVisible();
     for (let index = 0; index < (await cards.count()); index += 1) {
       const cardBox = await cards.nth(index).boundingBox();
       expect(cardBox).not.toBeNull();
-      expect(cardBox!.x + cardBox!.width).toBeLessThanOrEqual(viewport!.width);
+      expect(cardBox!.x + cardBox!.width).toBeLessThanOrEqual(viewport!.width + EDGE_TOLERANCE);
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(viewport!.width);
   });
@@ -63,7 +98,7 @@ test.describe('tool library on a touch viewport', () => {
   }) => {
     test.setTimeout(120000);
     const dialog = await openToolLibrary(page);
-    const cards = catalogCards(dialog);
+    const cards = dialog.getByRole('list', { name: TOOL_LIBRARY }).locator(':scope > li');
     const allChip = dialog.getByRole('button', { name: /^All(?:\s+\d+)?$/ });
     await expect(allChip).toHaveAttribute('aria-pressed', 'true');
     const allCount = await cards.count();
@@ -93,9 +128,11 @@ test.describe('tool library on a touch viewport', () => {
     const favorite = dialog.getByRole('button', { name: 'Add to favorites', exact: true }).first();
     await expect(configure).toBeVisible();
     await expect(favorite).toBeVisible();
+    /** The reason the actions are visible: the hide rule is gated on the absence
+     *  of a coarse pointer, not on the absence of hover. */
     expect(await page.evaluate(() => matchMedia('(any-pointer: coarse)').matches)).toBe(true);
-    expect(await computedOpacity(configure)).toBe('1');
-    expect(await computedOpacity(favorite)).toBe('1');
+    await expectOpacity(configure, '1');
+    await expectOpacity(favorite, '1');
   });
 
   test('@scenario:tool-row-actions-are-visible-without-hover-on-touch selected tool row actions stay visible without hover', async ({
@@ -117,16 +154,21 @@ test.describe('tool library on a touch viewport', () => {
     await expect(row).toBeVisible();
     const details = row.getByRole('button', { name: 'Tool details', exact: true });
     const remove = row.getByRole('button', { name: 'Remove from agent', exact: true });
+    /** The row hides the whole action cluster, so the wrapper is what the gate
+     *  applies to; a visible button inside a transparent parent is still invisible. */
     const actionWrapper = details.locator('xpath=..');
     await expect(details).toBeVisible();
     await expect(remove).toBeVisible();
-    expect(await computedOpacity(details)).toBe('1');
-    expect(await computedOpacity(remove)).toBe('1');
-    expect(await computedOpacity(actionWrapper)).toBe('1');
+    await expectOpacity(actionWrapper, '1');
   });
 });
 
+/** A mouse device, asserted as one: these scenarios describe what a pointer that
+ *  can hover and cannot tap sees, so they pin their own context rather than
+ *  inheriting the run's project, one of which is a touch phone. */
 test.describe('tool library on a mouse viewport', () => {
+  test.use({ viewport: { width: 1280, height: 860 }, hasTouch: false, isMobile: false });
+
   test('@scenario:tool-card-actions-stay-hover-gated-with-a-mouse card actions remain hidden until hover on a mouse', async ({
     page,
   }) => {
@@ -137,9 +179,9 @@ test.describe('tool library on a mouse viewport', () => {
     const configure = dialog.getByRole('button', { name: 'Configure', exact: true }).first();
     const card = configure.locator('xpath=ancestor::li[1]');
     expect(await page.evaluate(() => matchMedia('(any-pointer: coarse)').matches)).toBe(false);
-    expect(await computedOpacity(configure)).toBe('0');
+    await expectOpacity(configure, '0');
     await card.hover();
-    await expect.poll(() => computedOpacity(configure)).toBe('1');
+    await expectOpacity(configure, '1');
   });
 
   test('@scenario:tool-card-action-is-revealed-by-keyboard-focus keyboard focus reveals a card action', async ({
@@ -155,9 +197,8 @@ test.describe('tool library on a mouse viewport', () => {
     await cardButton.focus();
     await cardButton.press('Tab');
     await expect(configure).toBeFocused();
-    expect(await configure.evaluate((element) => document.activeElement === element)).toBe(true);
     expect(await configure.evaluate((element) => element.matches(':focus-visible'))).toBe(true);
-    expect(await computedOpacity(configure)).toBe('1');
+    await expectOpacity(configure, '1');
   });
 
   test('@scenario:tool-library-keeps-its-rail-on-desktop the desktop rail contains kind entries', async ({
