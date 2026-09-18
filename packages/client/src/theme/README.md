@@ -161,8 +161,8 @@ module.exports = {
   presets: [libreChatTailwindPreset],
   content: [
     './src/**/*.{js,jsx,ts,tsx}',
-    // Include component library files
-    './node_modules/@librechat/client/dist/**/*.js',
+    // Include component library files: tsdown emits .mjs/.cjs, never .js
+    './node_modules/@librechat/client/dist/**/*.{js,mjs,cjs}',
   ],
   darkMode: ['class'],
 };
