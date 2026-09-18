@@ -413,7 +413,35 @@ describe('ToolCall', () => {
 
         expect(click).toHaveBeenCalledTimes(1);
         expect((click.mock.instances[0] as unknown as HTMLAnchorElement).href).toBe(mcpAuth);
-        expect(dataService.bindMCPOAuth).toHaveBeenCalledTimes(1);
+        expect(dataService.bindMCPOAuth).toHaveBeenCalledTimes(2);
+        expect(dataService.bindMCPOAuth).toHaveBeenLastCalledWith('clickhouse');
+      });
+
+      it('claims the shared CSRF binding for the prompt the user taps', async () => {
+        (dataService.bindMCPOAuth as jest.Mock).mockResolvedValue({ success: true });
+        const notionCallback = 'https://chat.example.com/api/mcp/notion/oauth/callback';
+        const notionAuth = `https://notion.example.com/authorize?redirect_uri=${encodeURIComponent(notionCallback)}`;
+        const notionButton = () =>
+          screen.getByRole('button', { name: 'Sign in to notion.example.com' });
+        renderWithRecoil(
+          <>
+            <ToolCall {...mcpProps} />
+            <ToolCall
+              {...mcpProps}
+              name={`oauth${Constants.mcp_delimiter}notion`}
+              auth={notionAuth}
+            />
+          </>,
+        );
+        await waitFor(() => expect(signInButton()).toBeEnabled());
+        await waitFor(() => expect(notionButton()).toBeEnabled());
+        expect(dataService.bindMCPOAuth).toHaveBeenLastCalledWith('notion');
+
+        fireEvent.click(signInButton());
+
+        expect(click).toHaveBeenCalledTimes(1);
+        expect((click.mock.instances[0] as unknown as HTMLAnchorElement).href).toBe(mcpAuth);
+        expect(dataService.bindMCPOAuth).toHaveBeenLastCalledWith('clickhouse');
       });
 
       it('keeps sign-in disabled until the bind lands', async () => {

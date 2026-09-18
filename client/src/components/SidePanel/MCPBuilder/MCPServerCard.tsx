@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { MCPIcon } from '@librechat/client';
 import { PermissionBits, hasPermissions } from 'librechat-data-provider';
 import type { MCPServerStatusIconProps } from '~/components/MCP/MCPServerStatusIcon';
@@ -34,7 +34,7 @@ export default function MCPServerCard({
   const triggerRef = useRef<HTMLDivElement>(null);
   const { initializeServer, revokeOAuthForServer, getOAuthUrl } = useMCPServerManager();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [oauthUrl, setOauthUrl] = useState<string | null>(null);
+  const [awaitingOAuth, setAwaitingOAuth] = useState(false);
 
   const statusIconProps = getServerStatusIconProps(server.serverName);
   const {
@@ -51,6 +51,14 @@ export default function MCPServerCard({
   const description = server.config?.description;
   const statusDotColor = getStatusDotColor(serverStatus, isInitializing);
   const canEdit = canCreateEditMCPs && canEditThisServer;
+  /** The shared flow URL is cleared when its initialization ends, so it can never be stale. */
+  const sharedOAuthUrl = getOAuthUrl(server.serverName);
+
+  useEffect(() => {
+    if (!isInitializing) {
+      setAwaitingOAuth(false);
+    }
+  }, [isInitializing]);
 
   /**
    * `autoOpenOAuth=false` surfaces the authorization URL in the OAuth dialog, whose Continue opens
@@ -64,9 +72,10 @@ export default function MCPServerCard({
       onConfigClick({ stopPropagation: () => {}, preventDefault: () => {} } as React.MouseEvent);
       return;
     }
+    setAwaitingOAuth(false);
     const response = await initializeServer(server.serverName, false);
     if (response?.oauthRequired && response.oauthUrl) {
-      setOauthUrl(response.oauthUrl);
+      setAwaitingOAuth(true);
     }
   };
 
@@ -166,14 +175,14 @@ export default function MCPServerCard({
         />
       )}
       <McpOAuthDialog
-        open={oauthUrl != null && isInitializing}
+        open={awaitingOAuth && isInitializing && sharedOAuthUrl != null}
         onOpenChange={(open) => {
           if (!open) {
-            setOauthUrl(null);
+            setAwaitingOAuth(false);
           }
         }}
         serverName={server.serverName}
-        oauthUrl={oauthUrl ?? getOAuthUrl(server.serverName) ?? ''}
+        oauthUrl={sharedOAuthUrl ?? ''}
         iconUrl={server.config?.iconPath}
       />
     </>

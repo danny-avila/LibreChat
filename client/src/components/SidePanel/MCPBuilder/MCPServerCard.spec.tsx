@@ -6,13 +6,14 @@ import type { MCPServerDefinition } from '~/hooks';
 import MCPServerCard from './MCPServerCard';
 
 const mockInitializeServer = jest.fn();
+const mockGetOAuthUrl = jest.fn();
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useMCPServerManager: () => ({
     initializeServer: mockInitializeServer,
     revokeOAuthForServer: jest.fn(),
-    getOAuthUrl: () => null,
+    getOAuthUrl: mockGetOAuthUrl,
   }),
 }));
 
@@ -44,8 +45,10 @@ const server = {
   effectivePermissions: 0,
 } as unknown as MCPServerDefinition;
 
-const statusProps = (isInitializing: boolean) =>
-  ({
+/** Mirrors the manager's shared state: the flow URL exists only while initializing. */
+const renderCard = (isInitializing: boolean, sharedOAuthUrl: string | null = null) => {
+  mockGetOAuthUrl.mockReturnValue(sharedOAuthUrl);
+  const statusProps = {
     serverName: 'clickhouse',
     serverStatus: { connectionState: 'disconnected', requiresOAuth: true },
     onConfigClick: jest.fn(),
@@ -53,15 +56,17 @@ const statusProps = (isInitializing: boolean) =>
     canCancel: true,
     onCancel: jest.fn(),
     hasCustomUserVars: false,
-  }) as unknown as MCPServerStatusIconProps;
+  } as unknown as MCPServerStatusIconProps;
+  return (
+    <MCPServerCard
+      server={server}
+      getServerStatusIconProps={() => statusProps}
+      canCreateEditMCPs={false}
+    />
+  );
+};
 
-const renderCard = (isInitializing: boolean) => (
-  <MCPServerCard
-    server={server}
-    getServerStatusIconProps={() => statusProps(isInitializing)}
-    canCreateEditMCPs={false}
-  />
-);
+const firstUrl = 'https://auth.example/authorize?flow=1';
 
 describe('MCPServerCard', () => {
   afterEach(() => {
@@ -73,15 +78,15 @@ describe('MCPServerCard', () => {
     mockInitializeServer.mockResolvedValue({
       success: true,
       oauthRequired: true,
-      oauthUrl: 'https://auth.example/authorize',
+      oauthUrl: firstUrl,
     });
     const { rerender } = render(renderCard(false));
 
     fireEvent.click(screen.getByText('com_nav_mcp_connect'));
     await waitFor(() => expect(mockInitializeServer).toHaveBeenCalledWith('clickhouse', false));
-    rerender(renderCard(true));
+    rerender(renderCard(true, firstUrl));
 
-    expect(await screen.findByRole('dialog')).toHaveTextContent('https://auth.example/authorize');
+    expect(await screen.findByRole('dialog')).toHaveTextContent(firstUrl);
     expect(open).not.toHaveBeenCalled();
 
     rerender(renderCard(false));
@@ -97,6 +102,50 @@ describe('MCPServerCard', () => {
     await waitFor(() => expect(mockInitializeServer).toHaveBeenCalled());
     rerender(renderCard(true));
 
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  test('stays closed for flows it did not start once its own flow ended', async () => {
+    mockInitializeServer.mockResolvedValueOnce({
+      success: true,
+      oauthRequired: true,
+      oauthUrl: firstUrl,
+    });
+    const { rerender } = render(renderCard(false));
+    fireEvent.click(screen.getByText('com_nav_mcp_connect'));
+    rerender(renderCard(true, firstUrl));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    rerender(renderCard(false));
+
+    /** Another surface, such as the chat's MCP menu, initializes the same server. */
+    rerender(renderCard(true, 'https://auth.example/authorize?flow=2'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  test('does not reopen a previous flow while the next connect is pending', async () => {
+    mockInitializeServer.mockResolvedValueOnce({
+      success: true,
+      oauthRequired: true,
+      oauthUrl: firstUrl,
+    });
+    const { rerender } = render(renderCard(false));
+    fireEvent.click(screen.getByText('com_nav_mcp_connect'));
+    rerender(renderCard(true, firstUrl));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    rerender(renderCard(false));
+
+    let finishSecond: ((value: { success: boolean; oauthRequired: boolean }) => void) | undefined;
+    mockInitializeServer.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishSecond = resolve;
+      }),
+    );
+    fireEvent.click(screen.getByText('com_nav_mcp_connect'));
+    rerender(renderCard(true));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    finishSecond!({ success: true, oauthRequired: false });
+    await waitFor(() => expect(mockInitializeServer).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 });

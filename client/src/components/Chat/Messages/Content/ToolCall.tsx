@@ -259,6 +259,14 @@ export default function ToolCall({
     if (oauthBinding === 'bound') {
       setOAuthError(null);
       openInNewTab(auth);
+      /**
+       * Live prompts share one CSRF cookie per callback path, so the last prompt to bind owns it.
+       * The tapped prompt claims it again after opening; the provider cannot redirect back before
+       * the user signs in, and the session cookie from the earlier bind covers a faster callback.
+       */
+      bindOAuth()?.catch((error: unknown) => {
+        logger.error('Failed to bind OAuth CSRF cookie', error);
+      });
       return;
     }
     setOAuthError(localize('com_ui_oauth_error_generic'));
