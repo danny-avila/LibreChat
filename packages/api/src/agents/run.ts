@@ -2684,7 +2684,9 @@ export async function createRun({
      * `defer_loading` on definitions that are already bound, which moves the
      * digest just as an appended definition would.
      */
-    const configuredToolState: Record<string, { appended?: true; deferLoading?: boolean }> = {};
+    /** Null-prototype, so a tool named `__proto__` records an entry rather than a prototype. */
+    const configuredToolState: Record<string, { appended?: true; deferLoading?: boolean }> =
+      Object.create(null) as Record<string, { appended?: true; deferLoading?: boolean }>;
     if (!isSubagent && discoveredTools.size > 0 && agent.toolRegistry) {
       const existingToolNames = new Set(toolDefinitions.map((d) => d.name));
       /**
