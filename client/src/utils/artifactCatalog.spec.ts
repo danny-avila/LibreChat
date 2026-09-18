@@ -42,6 +42,36 @@ describe('artifact catalog identity', () => {
     ).toBe('artifact:v1:file:tool-artifact-file-123');
   });
 
+  it('avoids collisions when two long identifiers share a truncation-length prefix', () => {
+    const longPrefix = 'x'.repeat(600);
+    const first = artifact({ identifier: `${longPrefix}-first` });
+    const second = artifact({ identifier: `${longPrefix}-second` });
+
+    const firstKey = getArtifactSourceKey(first);
+    const secondKey = getArtifactSourceKey(second);
+    expect(firstKey).not.toBeNull();
+    expect(firstKey).not.toBe(secondKey);
+    expect(firstKey?.length).toBeLessThanOrEqual(500);
+    expect(secondKey?.length).toBeLessThanOrEqual(500);
+  });
+
+  it('keeps a bounded key stable for the same overlong identifier', () => {
+    const identifier = `${'y'.repeat(600)}-stable`;
+    const first = getArtifactSourceKey(artifact({ identifier }));
+    const second = getArtifactSourceKey(artifact({ identifier }));
+
+    expect(first).toBe(second);
+  });
+
+  it('includes the former truncated key when hashing an overlong identity', () => {
+    const identifier = `${'z'.repeat(600)}-existing`;
+    const request = toArtifactSyncRequest(artifact({ identifier }), 'conversation-1');
+    const previousKey = `artifact:v1:identifier:${identifier}`.slice(0, 500);
+
+    expect(request?.source.sourceKey).not.toBe(previousKey);
+    expect(request?.source.legacySourceKey).toBe(previousKey);
+  });
+
   it('maps every renderable office and text family to a stored runtime', () => {
     expect(getArtifactRuntimeType('text/markdown')).toBe('markdown');
     expect(getArtifactRuntimeType('image/svg+xml')).toBe('svg');

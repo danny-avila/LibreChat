@@ -1,5 +1,9 @@
 const express = require('express');
-const { createArtifactAppHandlers, generateCheckAccess } = require('@librechat/api');
+const {
+  createArtifactAppHandlers,
+  createSourceConversationExistsCheck,
+  generateCheckAccess,
+} = require('@librechat/api');
 const { ResourceCapabilityMap } = require('@librechat/data-schemas');
 const {
   Permissions,
@@ -78,10 +82,7 @@ const handlers = createArtifactAppHandlers({
   hasResourceManagementCapability: (user) =>
     hasCapability(user, ResourceCapabilityMap[ResourceType.ARTIFACT_APP]),
   recordAuditEntry,
-  sourceConversationExists: async ({ userId, conversationId }) => {
-    const conversation = await getConvo(userId, conversationId);
-    return conversation != null;
-  },
+  sourceConversationExists: createSourceConversationExistsCheck(getConvo),
   getConfig: (req) => req.config?.artifactApps,
 });
 

@@ -176,7 +176,7 @@ describe('artifact sync queue', () => {
     await enqueueArtifactSync('user-1', request, 'signature-1', 0);
     const id = getArtifactSyncQueueId('user-1', request);
 
-    await recordArtifactSyncBaseline(id, 'signature-1', 7);
+    await expect(recordArtifactSyncBaseline(id, 'signature-1', 7)).resolves.toBe(true);
 
     expect(await listArtifactSyncQueue('user-1')).toEqual([
       expect.objectContaining({
@@ -190,7 +190,7 @@ describe('artifact sync queue', () => {
     await enqueueArtifactSync('user-1', { ...request, basedOnVersionNumber: 1 }, 'signature-1', 0);
     const id = getArtifactSyncQueueId('user-1', request);
 
-    await recordArtifactSyncBaseline(id, 'signature-1', 7);
+    await expect(recordArtifactSyncBaseline(id, 'signature-1', 7)).resolves.toBe(false);
 
     expect(await listArtifactSyncQueue('user-1')).toEqual([
       expect.objectContaining({
@@ -206,7 +206,7 @@ describe('artifact sync queue', () => {
     await enqueueArtifactSync('user-1', updated, 'signature-2', 0);
     const id = getArtifactSyncQueueId('user-1', request);
 
-    await recordArtifactSyncBaseline(id, 'signature-1', 7);
+    await expect(recordArtifactSyncBaseline(id, 'signature-1', 7)).resolves.toBe(false);
 
     expect(await listArtifactSyncQueue('user-1')).toEqual([
       expect.objectContaining({

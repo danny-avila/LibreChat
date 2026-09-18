@@ -11,6 +11,7 @@ import type {
 import {
   ArtifactAppDeletedError,
   ArtifactAppRestoreNotFoundError,
+  ArtifactSyncConflictError,
   createArtifactAppMethods,
   computeSourceHash,
   type ArtifactAppMethods,
@@ -609,6 +610,88 @@ describe('syncArtifactAppWithVersion', () => {
     expect(await ArtifactVersion.countDocuments({ artifactAppId: first.app.artifactAppId })).toBe(
       2,
     );
+  });
+
+  test('rejects a sync whose baseline is already behind another tab’s completed edit', async () => {
+    const input = baseInput({ sourceMetadata });
+    const first = await methods.syncArtifactAppWithVersion(input);
+    const staleBaseline = first.app.latestVersionNumber;
+
+    const second = await methods.syncArtifactAppWithVersion({
+      ...input,
+      version: { ...input.version, sourceSnapshot: 'export default () => <div>v2</div>;' },
+    });
+    expect(second.version.versionNumber).toBe(2);
+
+    await expect(
+      methods.syncArtifactAppWithVersion(
+        {
+          ...input,
+          version: { ...input.version, sourceSnapshot: 'export default () => <div>stale</div>;' },
+        },
+        { basedOnVersionNumber: staleBaseline },
+      ),
+    ).rejects.toThrow(ArtifactSyncConflictError);
+
+    expect(await ArtifactVersion.countDocuments({ artifactAppId: first.app.artifactAppId })).toBe(
+      2,
+    );
+    const app = await ArtifactApp.findOne({ artifactAppId: first.app.artifactAppId }).lean();
+    expect(app?.latestVersionNumber).toBe(2);
+    expect(app?.activeVersionId).toBe(second.version.artifactVersionId);
+  });
+
+  test('accepts a sync whose baseline matches the current latest version', async () => {
+    const input = baseInput({ sourceMetadata });
+    const first = await methods.syncArtifactAppWithVersion(input);
+
+    const second = await methods.syncArtifactAppWithVersion(
+      {
+        ...input,
+        version: { ...input.version, sourceSnapshot: 'export default () => <div>v2</div>;' },
+      },
+      { basedOnVersionNumber: first.app.latestVersionNumber },
+    );
+
+    expect(second.versionCreated).toBe(true);
+    expect(second.version.versionNumber).toBe(2);
+  });
+
+  test('migrates an existing truncated source identity to its hashed key without duplicating it', async () => {
+    const sharedPrefix = `artifact:v1:identifier:${'x'.repeat(
+      491 - 'artifact:v1:identifier:'.length,
+    )}`;
+    const legacySourceKey = `${sharedPrefix}old-tail!`;
+    const sourceKey = `${sharedPrefix}:deadbeef`;
+    const initial = await methods.createArtifactAppWithVersion(
+      baseInput({
+        sourceMetadata: {
+          ...sourceMetadata,
+          sourceKey: legacySourceKey,
+        },
+      }),
+    );
+
+    const synced = await methods.syncArtifactAppWithVersion(
+      baseInput({
+        sourceMetadata: {
+          ...sourceMetadata,
+          sourceKey,
+        },
+        version: {
+          ...baseInput().version,
+          sourceSnapshot: 'export default () => <div>updated</div>;',
+        },
+      }),
+      { basedOnVersionNumber: 1, legacySourceKey },
+    );
+
+    expect(synced.app.artifactAppId).toBe(initial.app.artifactAppId);
+    expect(await ArtifactApp.countDocuments({ createdBy: 'user-1' })).toBe(1);
+    expect(
+      (await ArtifactApp.findOne({ artifactAppId: initial.app.artifactAppId }))?.sourceMetadata
+        ?.sourceKey,
+    ).toBe(sourceKey);
   });
 
   test('concurrent first syncs resolve to one fully initialized app and version', async () => {
@@ -1531,6 +1614,107 @@ describe('version lifecycle', () => {
     expect(activated?.app.activeVersionId).toBe(version.artifactVersionId);
   });
 
+  test('activating a version with no preview clears the app’s existing preview', async () => {
+    const preview = {
+      type: 'image' as const,
+      imageUrl:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      alt: 'First preview',
+    };
+    const sourceMetadata = {
+      conversationId: 'conversation-preview-clear',
+      messageId: 'message-1',
+      originalArtifactId: 'artifact-preview-clear',
+      sourceKey: 'identifier:preview-clear',
+    };
+    const first = await methods.syncArtifactAppWithVersion(
+      baseInput({ sourceMetadata, version: { ...baseInput().version, preview } }),
+    );
+    await methods.releaseArtifactVersion({ artifactAppId: first.app.artifactAppId }, 'user-1');
+    await methods.activateArtifactVersion({
+      artifactAppId: first.app.artifactAppId,
+      versionNumber: 1,
+    });
+    const withPreview = await ArtifactApp.findOne({ artifactAppId: first.app.artifactAppId })
+      .lean()
+      .orFail();
+    expect(withPreview.preview).toEqual(preview);
+
+    const second = await methods.syncArtifactAppWithVersion(
+      baseInput({
+        sourceMetadata: { ...sourceMetadata, messageId: 'message-2' },
+        version: { ...baseInput().version, sourceSnapshot: 'no preview here' },
+      }),
+    );
+    expect(second.version.versionNumber).toBe(2);
+    await methods.releaseArtifactVersion(
+      { artifactAppId: first.app.artifactAppId, versionNumber: 2 },
+      'user-1',
+    );
+
+    // `sync` already clears the preview correctly when it auto-activates v2 (line ~1683), so
+    // roll back to v1 first — restoring the preview through the very function under test —
+    // before re-activating v2, to isolate whether *activate* itself clears a stale preview
+    // rather than piggybacking on sync's already-correct behavior.
+    await methods.activateArtifactVersion({
+      artifactAppId: first.app.artifactAppId,
+      versionNumber: 1,
+    });
+    const rolledBack = await ArtifactApp.findOne({ artifactAppId: first.app.artifactAppId })
+      .lean()
+      .orFail();
+    expect(rolledBack.preview).toEqual(preview);
+
+    const activated = await methods.activateArtifactVersion({
+      artifactAppId: first.app.artifactAppId,
+      versionNumber: 2,
+    });
+    expect(activated?.app.preview).toBeUndefined();
+    const withoutPreview = await ArtifactApp.findOne({ artifactAppId: first.app.artifactAppId })
+      .lean()
+      .orFail();
+    expect(withoutPreview.preview).toBeUndefined();
+  });
+
+  test('activating in standalone mode self-heals if the version is withdrawn between the app write and the recheck', async () => {
+    const { app, version } = await methods.createArtifactAppWithVersion(baseInput());
+    await methods.releaseArtifactVersion({ artifactAppId: app.artifactAppId }, 'user-1');
+
+    const spy = jest.spyOn(ArtifactVersion, 'findOne').mockImplementationOnce(
+      () =>
+        ({
+          exec: async () => {
+            await ArtifactVersion.updateOne(
+              { artifactVersionId: version.artifactVersionId },
+              { $set: { 'publication.state': 'withdrawn' } },
+            );
+            return null;
+          },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        }) as any,
+    );
+
+    try {
+      await expect(
+        methods.activateArtifactVersion({ artifactAppId: app.artifactAppId, versionNumber: 1 }),
+      ).rejects.toThrow(/Only released versions/);
+    } finally {
+      spy.mockRestore();
+    }
+
+    const finalApp = await ArtifactApp.findOne({ artifactAppId: app.artifactAppId })
+      .lean()
+      .orFail();
+    expect(finalApp.activeVersionId).toBeUndefined();
+    expect(finalApp.preview).toBeUndefined();
+    const finalVersion = await ArtifactVersion.findOne({
+      artifactVersionId: version.artifactVersionId,
+    })
+      .lean()
+      .orFail();
+    expect(finalVersion.publication.state).toBe('withdrawn');
+  });
+
   test('rollback: activate an older released version', async () => {
     const sourceMetadata = {
       conversationId: 'conversation-rollback',
@@ -1629,6 +1813,62 @@ describe('version lifecycle', () => {
     });
     expect(reread?.integrity.sourceHash).toBe(hashAtRelease);
     expect(reread?.publication.state).toBe('withdrawn');
+  });
+
+  test('withdrawing the active version clears the app pointer so viewers stop seeing it', async () => {
+    const { app, version } = await methods.createArtifactAppWithVersion(baseInput());
+    await methods.releaseArtifactVersion({ artifactAppId: app.artifactAppId }, 'user-1');
+    const beforeWithdraw = await methods.getArtifactAppByAppId({
+      artifactAppId: app.artifactAppId,
+    });
+    expect(beforeWithdraw?.activeVersionId).toBe(version.artifactVersionId);
+
+    await methods.withdrawArtifactVersion({ artifactAppId: app.artifactAppId, versionNumber: 1 });
+
+    const afterWithdraw = await methods.getArtifactAppByAppId({
+      artifactAppId: app.artifactAppId,
+    });
+    expect(afterWithdraw?.activeVersionId).toBeUndefined();
+  });
+
+  test('withdrawing an inactive version leaves the app pointer untouched', async () => {
+    const sourceMetadata = {
+      conversationId: 'conversation-withdraw-inactive',
+      messageId: 'message-1',
+      originalArtifactId: 'artifact-withdraw-inactive',
+      sourceKey: 'identifier:withdraw-inactive',
+    };
+    const first = await methods.syncArtifactAppWithVersion(baseInput({ sourceMetadata }));
+    const { app, version: v1 } = first;
+    await methods.releaseArtifactVersion(
+      { artifactAppId: app.artifactAppId, versionNumber: 1 },
+      'user-1',
+    );
+    const second = await methods.syncArtifactAppWithVersion(
+      baseInput({
+        sourceMetadata: { ...sourceMetadata, messageId: 'message-2' },
+        version: { ...baseInput().version, sourceSnapshot: 'v2' },
+      }),
+    );
+    const v2 = second.version;
+    await methods.releaseArtifactVersion(
+      { artifactAppId: app.artifactAppId, versionNumber: 2 },
+      'user-1',
+    );
+    await methods.activateArtifactVersion({ artifactAppId: app.artifactAppId, versionNumber: 2 });
+
+    await methods.withdrawArtifactVersion({ artifactAppId: app.artifactAppId, versionNumber: 1 });
+
+    const afterWithdraw = await methods.getArtifactAppByAppId({
+      artifactAppId: app.artifactAppId,
+    });
+    expect(afterWithdraw?.activeVersionId).toBe(v2.artifactVersionId);
+    const withdrawn = await methods.getArtifactVersion({
+      artifactAppId: app.artifactAppId,
+      versionNumber: 1,
+    });
+    expect(withdrawn?.publication.state).toBe('withdrawn');
+    expect(v1.versionNumber).toBe(1);
   });
 });
 

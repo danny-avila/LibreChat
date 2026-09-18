@@ -47,11 +47,27 @@ async function resolveBasedOnVersionNumber(
   queryClient: QueryClient,
   conversationId: string,
   sourceKey: string,
+  legacySourceKey?: string,
 ): Promise<number> {
   try {
     const resolved = await queryClient.fetchQuery<TArtifactAppWithVersion>(
       [QueryKeys.artifactApp, 'source', conversationId, sourceKey],
       () => dataService.getArtifactAppBySource(conversationId, sourceKey),
+      { retry: false },
+    );
+    return resolved.app.latestVersionNumber;
+  } catch (error) {
+    if ((error as SyncHttpError | null)?.response?.status !== 404) {
+      throw error;
+    }
+  }
+  if (!legacySourceKey) {
+    return 0;
+  }
+  try {
+    const resolved = await queryClient.fetchQuery<TArtifactAppWithVersion>(
+      [QueryKeys.artifactApp, 'source', conversationId, legacySourceKey],
+      () => dataService.getArtifactAppBySource(conversationId, legacySourceKey),
       { retry: false },
     );
     return resolved.app.latestVersionNumber;
@@ -130,11 +146,23 @@ export default function ArtifactSyncWorker() {
               queryClient,
               entry.request.source.conversationId,
               entry.request.source.sourceKey,
+              entry.request.source.legacySourceKey,
             );
             if (!sessionIsActive()) {
               return null;
             }
-            await recordArtifactSyncBaseline(entry.id, entry.signature, basedOnVersionNumber);
+            const baselineRecorded = await recordArtifactSyncBaseline(
+              entry.id,
+              entry.signature,
+              basedOnVersionNumber,
+            );
+            if (!baselineRecorded) {
+              continue;
+            }
+            const currentAfterBaseline = getCurrentArtifactSyncEntry(entry.id);
+            if (!currentAfterBaseline || currentAfterBaseline.signature !== entry.signature) {
+              continue;
+            }
             requestToSend = { ...entry.request, basedOnVersionNumber };
           }
           const result = await dataService.syncArtifactApp(requestToSend);

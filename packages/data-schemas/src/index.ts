@@ -34,6 +34,7 @@ export {
   ARTIFACT_SCHEMA_VERSION,
   ArtifactAppDeletedError,
   ArtifactAppRestoreNotFoundError,
+  ArtifactSyncConflictError,
   recordArtifactSourceTombstones,
   hasArtifactSourceTombstone,
   AUDIT_SCHEMA_VERSION,

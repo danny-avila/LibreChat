@@ -3,6 +3,43 @@ import type { ArtifactRuntimeType, TSyncArtifactAppRequest } from 'librechat-dat
 import type { Artifact } from '~/common';
 
 const INLINE_DEFAULT_IDENTIFIER = 'lc-no-identifier';
+const MAX_SOURCE_KEY_LENGTH = 500;
+
+function fnv1aHex(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+/**
+ * Truncating a key that overflows the index budget can collide two different
+ * long identifiers sharing a common prefix onto the same string. Replacing
+ * the cut tail with a hash of the full, untruncated key keeps the result
+ * within budget while remaining collision-resistant.
+ */
+function boundSourceKey(key: string): string {
+  if (key.length <= MAX_SOURCE_KEY_LENGTH) {
+    return key;
+  }
+  const suffix = `:${fnv1aHex(key)}`;
+  return `${key.slice(0, MAX_SOURCE_KEY_LENGTH - suffix.length)}${suffix}`;
+}
+
+function getUnboundedArtifactSourceKey(artifact: Artifact): string | null {
+  if (artifact.id.startsWith('tool-artifact-')) {
+    return `${ARTIFACT_SOURCE_KEY_PREFIX}file:${artifact.id}`;
+  }
+  if (artifact.identifier && artifact.identifier !== INLINE_DEFAULT_IDENTIFIER) {
+    return `${ARTIFACT_SOURCE_KEY_PREFIX}identifier:${artifact.identifier}`;
+  }
+  if (!artifact.messageId) {
+    return null;
+  }
+  return `${ARTIFACT_SOURCE_KEY_PREFIX}message:${artifact.messageId}:${artifact.index ?? 0}:${artifact.type}`;
+}
 
 const runtimeByMime: Record<string, ArtifactRuntimeType> = {
   'application/vnd.react': 'react',
@@ -39,31 +76,22 @@ export function getArtifactSourceKey(artifact: Artifact | null | undefined): str
   if (!artifact?.type) {
     return null;
   }
-  if (artifact.id.startsWith('tool-artifact-')) {
-    return `${ARTIFACT_SOURCE_KEY_PREFIX}file:${artifact.id}`.slice(0, 500);
-  }
-  if (artifact.identifier && artifact.identifier !== INLINE_DEFAULT_IDENTIFIER) {
-    return `${ARTIFACT_SOURCE_KEY_PREFIX}identifier:${artifact.identifier}`.slice(0, 500);
-  }
-  if (!artifact.messageId) {
-    return null;
-  }
-  return `${ARTIFACT_SOURCE_KEY_PREFIX}message:${artifact.messageId}:${artifact.index ?? 0}:${artifact.type}`.slice(
-    0,
-    500,
-  );
+  const sourceKey = getUnboundedArtifactSourceKey(artifact);
+  return sourceKey ? boundSourceKey(sourceKey) : null;
 }
 
 export function toArtifactSyncRequest(
   artifact: Artifact,
   conversationId: string,
 ): TSyncArtifactAppRequest | null {
-  const sourceKey = getArtifactSourceKey(artifact);
+  const unboundedSourceKey = artifact.type ? getUnboundedArtifactSourceKey(artifact) : null;
+  const sourceKey = unboundedSourceKey ? boundSourceKey(unboundedSourceKey) : null;
   const runtimeType = getArtifactRuntimeType(artifact.type);
   const content = artifact.content?.trim();
   if (!sourceKey || !runtimeType || !content) {
     return null;
   }
+  const legacySourceKey = unboundedSourceKey?.slice(0, MAX_SOURCE_KEY_LENGTH);
 
   const generatedTitle = artifact.title?.trim();
   const fallbackTitle = `Artifact ${(artifact.index ?? 0) + 1}`;
@@ -81,6 +109,7 @@ export function toArtifactSyncRequest(
       messageId: artifact.messageId,
       originalArtifactId: artifact.id,
       sourceKey,
+      ...(legacySourceKey !== sourceKey ? { legacySourceKey } : {}),
     },
   };
 }

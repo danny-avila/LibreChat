@@ -1,6 +1,7 @@
 import {
   ArtifactAppDeletedError,
   ArtifactAppRestoreNotFoundError,
+  ArtifactSyncConflictError,
   logger,
 } from '@librechat/data-schemas';
 import {
@@ -58,6 +59,8 @@ export interface ArtifactAppHandlersDeps {
     input: CreateArtifactAppInput,
     options?: Partial<ArtifactAppSyncOptions> & {
       assertSourceAvailable?: () => Promise<void>;
+      basedOnVersionNumber?: number;
+      legacySourceKey?: string;
     },
   ) => Promise<SyncArtifactAppResult>;
   restoreArtifactAppWithVersion: (
@@ -249,6 +252,23 @@ function requireUser(req: ServerRequest, res: Response): ServerRequest['user'] |
 }
 
 /**
+ * Builds the `sourceConversationExists` check `sync`/`restore` use to gate automatic
+ * registration. Artifact apps/versions have no expiration, so a temporary chat's source must
+ * not auto-register — it would outlive the conversation it was minted from.
+ */
+export function createSourceConversationExistsCheck(
+  getConvo: (userId: string, conversationId: string) => Promise<{ isTemporary?: boolean } | null>,
+): (params: { userId: string; conversationId: string }) => Promise<boolean> {
+  return async ({ userId, conversationId }) => {
+    const conversation = await getConvo(userId, conversationId);
+    if (conversation == null) {
+      return false;
+    }
+    return !conversation.isTemporary;
+  };
+}
+
+/**
  * Factory for the typed Express handlers served at `/api/artifact-apps`.
  * The legacy route file passes in concrete deps from `~/models` and
  * `PermissionService`; §8.7 mandates the server derives actor identity and
@@ -300,6 +320,40 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
     recordAuditEntry(input).catch((err) =>
       logger.error(`[artifactApps] audit write failed for ${input.action}`, err),
     );
+  }
+
+  /**
+   * A viewer with only VIEW access must not be able to fetch a withdrawn version by id even
+   * though it once existed — that endpoint is what `activateArtifactVersion`'s pointer clear
+   * cannot reach on its own. EDIT is the bit that already gates release/activate/withdraw, so
+   * anyone who could have withdrawn this version can also still inspect it.
+   */
+  async function canManageArtifactVersion(
+    user: NonNullable<ServerRequest['user']>,
+    artifactAppId: string,
+  ): Promise<boolean> {
+    try {
+      if ((await hasResourceManagementCapability?.(user)) === true) {
+        return true;
+      }
+    } catch (error) {
+      logger.warn(`[artifactApps] capability check failed for ${user.id as string}`, error);
+    }
+    const app = await getArtifactAppByAppId({ artifactAppId });
+    if (!app) {
+      return false;
+    }
+    if (app.createdBy === user.id) {
+      return true;
+    }
+    const permissions = await getResourcePermissionsMap({
+      userId: user.id as string,
+      role: user.role,
+      resourceType: ResourceType.ARTIFACT_APP,
+      resourceIds: [app.id],
+    });
+    const permissionBits = permissions.get(app.id) ?? 0;
+    return (permissionBits & PermissionBits.EDIT) === PermissionBits.EDIT;
   }
 
   async function serializeDetail(app: ArtifactAppRecord, viewerId: string) {
@@ -441,6 +495,7 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
       };
       await assertSourceAvailable();
       const config = artifactAppsConfigSchema.parse(getConfig?.(req));
+      const { legacySourceKey, ...sourceMetadata } = data.source;
       const result = await syncArtifactAppWithVersion(
         {
           tenantId: user.tenantId,
@@ -448,10 +503,15 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
           title: data.title,
           visibility: 'private',
           marketplace: { listed: true },
-          sourceMetadata: data.source,
+          sourceMetadata,
           version: toVersionInput(data.artifact, undefined, undefined, userId),
         },
-        { ...config, assertSourceAvailable },
+        {
+          ...config,
+          assertSourceAvailable,
+          basedOnVersionNumber: data.basedOnVersionNumber,
+          legacySourceKey,
+        },
       );
 
       try {
@@ -494,6 +554,9 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
     } catch (error) {
       if (error instanceof ArtifactAppDeletedError) {
         return res.status(410).json({ error: 'Artifact was deleted and will not be synchronized' });
+      }
+      if (error instanceof ArtifactSyncConflictError) {
+        return res.status(409).json({ error: error.message });
       }
       logger.error('[POST /artifact-apps/sync] Error syncing artifact', error);
       return res.status(500).json({ error: 'Error syncing artifact' });
@@ -611,6 +674,15 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
       }
       let scanCursor = parsed.data.cursor;
       const userId = user.id as string;
+      let isManager = false;
+      try {
+        isManager = (await hasResourceManagementCapability?.(user)) === true;
+      } catch (error) {
+        logger.warn(
+          `[GET /artifact-apps] Capability check failed for ${userId}; falling back to ACL`,
+          error,
+        );
+      }
       const ownership: Pick<ArtifactAppListOptions, 'createdBy' | 'excludeCreatedBy'> = {};
       if (parsed.data.scope === 'personal') {
         ownership.createdBy = userId;
@@ -651,6 +723,22 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
           offset += config.aclBatchSize
         ) {
           const aclEntries = candidatePage.entries.slice(offset, offset + config.aclBatchSize);
+          if (isManager) {
+            for (const entry of aclEntries) {
+              accessibleEntries.push(entry);
+              permissionById.set(
+                entry.id,
+                PermissionBits.VIEW |
+                  PermissionBits.EDIT |
+                  PermissionBits.DELETE |
+                  PermissionBits.SHARE,
+              );
+              if (accessibleEntries.length > parsed.data.limit) {
+                break;
+              }
+            }
+            continue;
+          }
           const permissions = await getResourcePermissionsMap({
             userId,
             role: user.role,
@@ -857,6 +945,10 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
   async function listVersions(req: ServerRequest, res: Response) {
     try {
       const { id } = req.params as { id: string };
+      const user = requireUser(req, res);
+      if (!user) {
+        return res as Response;
+      }
       const config = artifactAppsConfigSchema.parse(getConfig?.(req));
       const parsed = artifactVersionListRequestSchema.safeParse({
         ...req.query,
@@ -865,9 +957,14 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
       if (!parsed.success) {
         return res.status(400).json({ error: 'Invalid artifact version list request' });
       }
+      const canManage = await canManageArtifactVersion(user, id);
       let page: ArtifactVersionListPage;
       try {
-        page = await listArtifactVersions({ artifactAppId: id, ...parsed.data });
+        page = await listArtifactVersions({
+          artifactAppId: id,
+          ...parsed.data,
+          excludeWithdrawn: !canManage,
+        });
       } catch (error) {
         if (error instanceof Error && error.message === 'Invalid artifact version cursor') {
           return res.status(400).json({ error: 'Invalid artifact version cursor' });
@@ -894,6 +991,15 @@ export function createArtifactAppHandlers(deps: ArtifactAppHandlersDeps): {
       });
       if (!version) {
         return res.status(404).json({ error: 'Artifact version not found' });
+      }
+      if (version.publication.state === 'withdrawn') {
+        const user = requireUser(req, res);
+        if (!user) {
+          return res as Response;
+        }
+        if (!(await canManageArtifactVersion(user, id))) {
+          return res.status(404).json({ error: 'Artifact version not found' });
+        }
       }
       return res.status(200).json(serializeVersion(version));
     } catch (error) {

@@ -87,6 +87,7 @@ describe('ArtifactSyncWorker', () => {
     jest.mocked(subscribeToArtifactSyncQueue).mockReturnValue(() => undefined);
     jest.mocked(listArtifactSyncQueue).mockResolvedValueOnce([entry]).mockResolvedValue([]);
     jest.mocked(getCurrentArtifactSyncEntry).mockReturnValue(entry);
+    jest.mocked(recordArtifactSyncBaseline).mockResolvedValue(true);
     jest.mocked(dataService.syncArtifactApp).mockResolvedValue({
       app: { artifactAppId: 'app-1', latestVersionNumber: 4 },
       version: { artifactVersionId: 'version-1' },
@@ -149,6 +150,28 @@ describe('ArtifactSyncWorker', () => {
     });
   });
 
+  it('does not send a snapshot superseded while its baseline was resolving', async () => {
+    const entryWithoutBaseline = {
+      ...entry,
+      request: { ...entry.request, basedOnVersionNumber: undefined },
+    };
+    jest
+      .mocked(listArtifactSyncQueue)
+      .mockReset()
+      .mockResolvedValueOnce([entryWithoutBaseline])
+      .mockResolvedValue([]);
+    jest.mocked(getCurrentArtifactSyncEntry).mockReturnValue(entryWithoutBaseline);
+    jest.mocked(recordArtifactSyncBaseline).mockResolvedValueOnce(false);
+    mockFetchQuery.mockResolvedValueOnce({ app: { latestVersionNumber: 7 } });
+
+    render(<ArtifactSyncWorker />);
+    await act(flushWorker);
+
+    expect(recordArtifactSyncBaseline).toHaveBeenCalledWith(entry.id, entry.signature, 7);
+    expect(dataService.syncArtifactApp).not.toHaveBeenCalled();
+    expect(completeArtifactSync).not.toHaveBeenCalled();
+  });
+
   it('locks in a confirmed-absence baseline of 0 when recovery finds no app exists (404)', async () => {
     const entryWithoutBaseline = {
       ...entry,
@@ -169,6 +192,39 @@ describe('ArtifactSyncWorker', () => {
     expect(dataService.syncArtifactApp).toHaveBeenCalledWith({
       ...entryWithoutBaseline.request,
       basedOnVersionNumber: 0,
+    });
+  });
+
+  it('resolves the baseline from a legacy truncated key before migrating a long identity', async () => {
+    const entryWithoutBaseline = {
+      ...entry,
+      request: {
+        ...entry.request,
+        basedOnVersionNumber: undefined,
+        source: {
+          ...entry.request.source,
+          sourceKey: `${'x'.repeat(491)}:deadbeef`,
+          legacySourceKey: `${'x'.repeat(491)}old-tail!`,
+        },
+      },
+    };
+    jest
+      .mocked(listArtifactSyncQueue)
+      .mockReset()
+      .mockResolvedValueOnce([entryWithoutBaseline])
+      .mockResolvedValue([]);
+    jest.mocked(getCurrentArtifactSyncEntry).mockReturnValue(entryWithoutBaseline);
+    mockFetchQuery
+      .mockRejectedValueOnce({ response: { status: 404 } })
+      .mockResolvedValueOnce({ app: { latestVersionNumber: 5 } });
+
+    render(<ArtifactSyncWorker />);
+    await act(flushWorker);
+
+    expect(recordArtifactSyncBaseline).toHaveBeenCalledWith(entry.id, entry.signature, 5);
+    expect(dataService.syncArtifactApp).toHaveBeenCalledWith({
+      ...entryWithoutBaseline.request,
+      basedOnVersionNumber: 5,
     });
   });
 

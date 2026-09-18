@@ -65,6 +65,14 @@ export type SyncArtifactAppCallOptions = Partial<ArtifactAppSyncOptions> & {
   assertSourceAvailable?: () => Promise<void>;
   /** Test hook: runs after the final source/tombstone check and before the mutating write. */
   afterSourceCheck?: () => Promise<void>;
+  /**
+   * The `latestVersionNumber` the caller observed when it queued this edit. If the app has
+   * already moved past it by write time, the edit is stale relative to a newer one that landed
+   * first — reject rather than create a version that resurrects superseded content.
+   */
+  basedOnVersionNumber?: number;
+  /** Truncated source key used before overlong identities gained a hash suffix. */
+  legacySourceKey?: string;
 };
 
 export class ArtifactAppDeletedError extends Error {
@@ -78,6 +86,13 @@ export class ArtifactAppRestoreNotFoundError extends Error {
   constructor() {
     super('Deleted artifact app source was not found');
     this.name = 'ArtifactAppRestoreNotFoundError';
+  }
+}
+
+export class ArtifactSyncConflictError extends Error {
+  constructor() {
+    super('Artifact was edited elsewhere since this change was queued');
+    this.name = 'ArtifactSyncConflictError';
   }
 }
 
@@ -889,14 +904,11 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
           createdBy: input.createdBy,
           'sourceMetadata.conversationId': sourceQuery.conversationId,
         },
-        [
-          {
-            $set: {
-              'sourceMetadata.detachedConversationId': '$sourceMetadata.conversationId',
-            },
+        {
+          $rename: {
+            'sourceMetadata.conversationId': 'sourceMetadata.detachedConversationId',
           },
-          { $unset: 'sourceMetadata.conversationId' },
-        ],
+        },
       );
       if (session) {
         detachQuery.session(session);
@@ -1127,6 +1139,76 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
       })
       .lean<ArtifactAppIdentityRecord>()
       .exec();
+    const legacyBoundedSourceKey = options.legacySourceKey
+      ? canonicalizeArtifactSourceKey(options.legacySourceKey)
+      : null;
+    if (!existing && legacyBoundedSourceKey && legacyBoundedSourceKey !== canonicalSourceKey) {
+      const legacySourceQuery = { ...sourceQuery, sourceKey: legacyBoundedSourceKey };
+      const legacyExisting = await getApp()
+        .findOne(buildSourceFilter(legacySourceQuery))
+        .select({
+          _id: 1,
+          artifactAppId: 1,
+          status: 1,
+          deletion: 1,
+          'sourceMetadata.detachedConversationId': 1,
+        })
+        .lean<ArtifactAppIdentityRecord>()
+        .exec();
+      const legacyDetached = await getApp()
+        .findOne(buildDetachedSourceFilter(legacySourceQuery))
+        .select({ deletion: 1, 'sourceMetadata.detachedConversationId': 1 })
+        .lean<ArtifactAppAvailabilityRecord>()
+        .exec();
+      if (
+        legacyExisting?.deletion ||
+        legacyExisting?.status === 'archived' ||
+        sourceWasRemoved(legacyExisting) ||
+        sourceWasRemoved(legacyDetached)
+      ) {
+        throw new ArtifactAppDeletedError();
+      }
+      if (legacyExisting) {
+        try {
+          existing = await getApp()
+            .findOneAndUpdate(
+              {
+                _id: legacyExisting._id,
+                'sourceMetadata.sourceKey': legacyBoundedSourceKey,
+              },
+              { $set: { 'sourceMetadata.sourceKey': canonicalSourceKey } },
+              { new: true },
+            )
+            .select({
+              _id: 1,
+              artifactAppId: 1,
+              status: 1,
+              deletion: 1,
+              'sourceMetadata.detachedConversationId': 1,
+            })
+            .lean<ArtifactAppIdentityRecord>()
+            .exec();
+        } catch (error) {
+          if (!isRetryableWriteError(error)) {
+            throw error;
+          }
+        }
+        existing ??= await getApp()
+          .findOne(filter)
+          .select({
+            _id: 1,
+            artifactAppId: 1,
+            status: 1,
+            deletion: 1,
+            'sourceMetadata.detachedConversationId': 1,
+          })
+          .lean<ArtifactAppIdentityRecord>()
+          .exec();
+        if (existing) {
+          filter = { _id: existing._id };
+        }
+      }
+    }
     if (existing?.deletion || existing?.status === 'archived' || sourceWasRemoved(existing)) {
       throw new ArtifactAppDeletedError();
     }
@@ -1172,14 +1254,11 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
                 createdBy: input.createdBy,
                 'sourceMetadata.conversationId': sourceQuery.conversationId,
               },
-              [
-                {
-                  $set: {
-                    'sourceMetadata.detachedConversationId': '$sourceMetadata.conversationId',
-                  },
+              {
+                $rename: {
+                  'sourceMetadata.conversationId': 'sourceMetadata.detachedConversationId',
                 },
-                { $unset: 'sourceMetadata.conversationId' },
-              ],
+              },
             )
             .exec();
           await deleteArtifactApp({ artifactAppId });
@@ -1520,6 +1599,13 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
           };
         }
 
+        if (
+          options.basedOnVersionNumber != null &&
+          options.basedOnVersionNumber < app.latestVersionNumber
+        ) {
+          throw new ArtifactSyncConflictError();
+        }
+
         const nextVersionNumber = app.latestVersionNumber + 1;
         const versionSeed = buildVersionDoc(
           app.artifactAppId,
@@ -1631,6 +1717,13 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
           created: false,
           versionCreated: false,
         };
+      }
+
+      if (
+        options.basedOnVersionNumber != null &&
+        options.basedOnVersionNumber < app.latestVersionNumber
+      ) {
+        throw new ArtifactSyncConflictError();
       }
 
       const nextNumber = app.latestVersionNumber + 1;
@@ -1954,6 +2047,7 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
     const filter: FilterQuery<IArtifactVersion> = {
       artifactAppId: options.artifactAppId,
       ...(beforeVersion != null ? { versionNumber: { $lt: beforeVersion } } : {}),
+      ...(options.excludeWithdrawn ? { 'publication.state': { $ne: 'withdrawn' } } : {}),
     };
     const versions = await getVersion()
       .find(filter)
@@ -1995,33 +2089,138 @@ export function createArtifactAppMethods(mongoose: typeof import('mongoose')): A
   async function activateArtifactVersion(
     query: ArtifactVersionQuery,
   ): Promise<ArtifactAppWithVersion | null> {
-    const version = await getVersion().findOne(buildVersionFilter(query)).exec();
-    if (!version) {
-      return null;
+    const versionFilter = buildVersionFilter(query);
+    const activate = async (session?: ClientSession): Promise<ArtifactAppWithVersion | null> => {
+      // Re-asserting 'released' as a $set (not just a filter) makes this a real write to the
+      // version document, so a concurrent withdraw's write to that same document collides with
+      // it under a transaction instead of racing silently — one side aborts and retries, and
+      // the retry sees the other's committed result instead of activating stale state.
+      const versionQuery = getVersion().findOneAndUpdate(
+        { ...versionFilter, 'publication.state': 'released' },
+        { $set: { 'publication.state': 'released' } },
+        { new: true },
+      );
+      if (session) {
+        versionQuery.session(session);
+      }
+      const version = await versionQuery.exec();
+      if (!version) {
+        const existingQuery = getVersion().findOne(versionFilter);
+        if (session) {
+          existingQuery.session(session);
+        }
+        const existing = await existingQuery.exec();
+        if (!existing) {
+          return null;
+        }
+        throw new Error('[activateArtifactVersion] Only released versions can be activated');
+      }
+      const appQuery = getApp().findOneAndUpdate(
+        { artifactAppId: query.artifactAppId },
+        version.preview
+          ? { $set: { activeVersionId: version.artifactVersionId, preview: version.preview } }
+          : {
+              $set: { activeVersionId: version.artifactVersionId },
+              $unset: { preview: 1 },
+            },
+        { new: true },
+      );
+      if (session) {
+        appQuery.session(session);
+      }
+      const app = await appQuery.exec();
+      if (!app) {
+        return null;
+      }
+      return { app: toAppRecord(app), version: toVersionRecord(version) };
+    };
+
+    if (!(await supportsTransactions(mongoose))) {
+      const result = await activate();
+      if (!result) {
+        return result;
+      }
+      // Standalone mode has no cross-document atomicity, so the version-write and the
+      // app-write below can straddle a concurrent withdraw with nothing to collide with —
+      // verify the version is still released immediately after, and self-heal by reverting
+      // the pointer (mirroring withdrawArtifactVersion's own CAS-guarded clear) if not.
+      const stillReleased = await getVersion()
+        .findOne({
+          artifactVersionId: result.version.artifactVersionId,
+          'publication.state': 'released',
+        })
+        .exec();
+      if (!stillReleased) {
+        await getApp()
+          .updateOne(
+            {
+              artifactAppId: query.artifactAppId,
+              activeVersionId: result.version.artifactVersionId,
+            },
+            { $unset: { activeVersionId: 1, preview: 1 } },
+          )
+          .exec();
+        throw new Error('[activateArtifactVersion] Only released versions can be activated');
+      }
+      return result;
     }
-    if (version.publication.state !== 'released') {
-      throw new Error('[activateArtifactVersion] Only released versions can be activated');
+    const session = await mongoose.startSession();
+    try {
+      let result: ArtifactAppWithVersion | null = null;
+      await session.withTransaction(async () => {
+        result = await activate(session);
+      });
+      return result;
+    } finally {
+      await session.endSession();
     }
-    const app = await getApp().findOne({ artifactAppId: query.artifactAppId }).exec();
-    if (!app) {
-      return null;
-    }
-    app.activeVersionId = version.artifactVersionId;
-    app.preview = version.preview;
-    await app.save();
-    return { app: toAppRecord(app), version: toVersionRecord(version) };
   }
 
   async function withdrawArtifactVersion(
     query: ArtifactVersionQuery,
   ): Promise<ArtifactVersionRecord | null> {
-    const version = await getVersion().findOne(buildVersionFilter(query)).exec();
-    if (!version) {
-      return null;
+    const withdraw = async (session?: ClientSession): Promise<IArtifactVersion | null> => {
+      const versionQuery = getVersion().findOneAndUpdate(
+        buildVersionFilter(query),
+        { $set: { 'publication.state': 'withdrawn' } },
+        { new: true },
+      );
+      if (session) {
+        versionQuery.session(session);
+      }
+      const version = await versionQuery.exec();
+      if (!version) {
+        return null;
+      }
+      // A withdrawn version must stop being served as the app's active snapshot, or shared
+      // viewers keep executing it via the detail endpoint's activeVersionId lookup. The
+      // preview thumbnail is sourced from that same version, so it comes down with it —
+      // otherwise catalog listings keep publicly showing a snapshot of withdrawn content.
+      const appQuery = getApp().updateOne(
+        { artifactAppId: query.artifactAppId, activeVersionId: version.artifactVersionId },
+        { $unset: { activeVersionId: 1, preview: 1 } },
+      );
+      if (session) {
+        appQuery.session(session);
+      }
+      await appQuery.exec();
+      return version;
+    };
+
+    if (!(await supportsTransactions(mongoose))) {
+      const version = await withdraw();
+      return version ? toVersionRecord(version) : null;
     }
-    version.publication = { ...version.publication, state: 'withdrawn' };
-    await version.save();
-    return toVersionRecord(version);
+    const session = await mongoose.startSession();
+    try {
+      let version: IArtifactVersion | null = null;
+      await session.withTransaction(async () => {
+        version = await withdraw(session);
+      });
+      return version ? toVersionRecord(version) : null;
+    } finally {
+      await session.endSession();
+    }
   }
 
   async function deleteUserArtifactApps(

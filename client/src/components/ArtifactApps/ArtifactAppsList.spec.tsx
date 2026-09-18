@@ -6,7 +6,11 @@ import { useSetAtom } from 'jotai';
 import { PermissionBits } from 'librechat-data-provider';
 import type { TArtifactApp } from 'librechat-data-provider';
 import type { MenuItemProps } from '~/common';
-import { useDeleteArtifactAppMutation, useListArtifactAppsQuery } from '~/data-provider';
+import {
+  useDeleteArtifactAppMutation,
+  useListArtifactAppsQuery,
+  useWithdrawArtifactVersionMutation,
+} from '~/data-provider';
 import ArtifactAppsList from './ArtifactAppsList';
 
 const mockShowToast = jest.fn();
@@ -22,6 +26,7 @@ const getViewedStorageKey = (userId: string, tenantId = '__default__') =>
 jest.mock('~/data-provider', () => ({
   useDeleteArtifactAppMutation: jest.fn(),
   useListArtifactAppsQuery: jest.fn(),
+  useWithdrawArtifactVersionMutation: jest.fn(),
 }));
 
 jest.mock('jotai', () => ({
@@ -55,6 +60,10 @@ jest.mock('~/hooks', () => ({
       com_ui_artifact_delete_confirm: `Delete "${values?.[0] ?? ''}"? This action cannot be undone.`,
       com_ui_artifact_delete_error: "Couldn't delete the artifact. Try again.",
       com_ui_artifact_delete_success: 'Artifact deleted',
+      com_ui_artifact_withdraw: 'Withdraw active version?',
+      com_ui_artifact_withdraw_confirm: `Withdraw the active version of "${values?.[0] ?? ''}"?`,
+      com_ui_artifact_withdraw_error: "Couldn't withdraw the active version. Try again.",
+      com_ui_artifact_withdraw_success: 'Active version withdrawn',
       com_ui_artifact_apps_view_mode: 'Artifact view mode',
       com_ui_artifact_apps_list_view: 'List view',
       com_ui_artifact_apps_grid_view: 'Grid view',
@@ -64,6 +73,7 @@ jest.mock('~/hooks', () => ({
       com_ui_copy_failed: 'Failed to copy to clipboard',
       com_ui_copy_link: 'Copy link',
       com_ui_delete: 'Delete',
+      com_ui_withdraw: 'Withdraw',
       com_ui_share: 'Share',
       com_ui_options: 'options',
       com_ui_pin: 'Pin',
@@ -149,8 +159,10 @@ jest.mock('~/components/Sharing', () => ({
 
 const mockUseListArtifactAppsQuery = jest.mocked(useListArtifactAppsQuery);
 const mockUseDeleteArtifactAppMutation = jest.mocked(useDeleteArtifactAppMutation);
+const mockUseWithdrawArtifactVersionMutation = jest.mocked(useWithdrawArtifactVersionMutation);
 const mockSetArtifactNavigationRequest = jest.fn();
 const mockDeleteArtifact = jest.fn();
+const mockWithdrawVersion = jest.fn();
 
 type ArtifactAppsListQueryResult = ReturnType<typeof useListArtifactAppsQuery>;
 type ArtifactAppsListSuccessResult = Extract<ArtifactAppsListQueryResult, { status: 'success' }>;
@@ -255,6 +267,11 @@ describe('ArtifactAppsList', () => {
       isLoading: false,
     } as unknown as ReturnType<typeof useDeleteArtifactAppMutation>);
     mockDeleteArtifact.mockReset();
+    mockUseWithdrawArtifactVersionMutation.mockReturnValue({
+      mutate: mockWithdrawVersion,
+      isLoading: false,
+    } as unknown as ReturnType<typeof useWithdrawArtifactVersionMutation>);
+    mockWithdrawVersion.mockReset();
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText: jest.fn().mockResolvedValue(undefined) },
@@ -541,6 +558,66 @@ describe('ArtifactAppsList', () => {
     );
 
     expect(screen.getAllByRole('button', { name: 'Delete' })).toHaveLength(1);
+  });
+
+  it('withdraws the active version of an owned artifact after confirmation', () => {
+    mockWithdrawVersion.mockImplementation((_variables, options) => options?.onSuccess?.());
+
+    render(
+      <BrowserRouter>
+        <ArtifactAppsList />
+      </BrowserRouter>,
+    );
+
+    expect(screen.getAllByRole('button', { name: 'Withdraw' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw' }));
+    expect(
+      screen.getByText('Withdraw the active version of "Quarterly Report"?'),
+    ).toBeInTheDocument();
+
+    fireEvent.click(within(screen.getByRole('dialog')).getByText('Withdraw'));
+
+    expect(mockWithdrawVersion).toHaveBeenCalledWith(
+      { artifactAppId: 'quarterly-report', versionId: 'quarterly-version-2' },
+      expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
+    );
+    expect(mockShowToast).toHaveBeenLastCalledWith({
+      status: 'success',
+      message: 'Active version withdrawn',
+    });
+  });
+
+  it('shows withdraw only when the viewer can manage the version and one is active', () => {
+    mockUseListArtifactAppsQuery.mockReturnValue(
+      makeListQueryResult({
+        data: {
+          pages: [
+            {
+              apps: [
+                apps[1],
+                {
+                  ...apps[1],
+                  artifactAppId: 'withdrawable',
+                  activeVersionId: 'withdrawable-version-1',
+                  permissionBits: PermissionBits.EDIT,
+                },
+              ],
+              has_more: false,
+              after: null,
+            },
+          ],
+          pageParams: [undefined],
+        },
+      }),
+    );
+
+    render(
+      <BrowserRouter>
+        <ArtifactAppsList />
+      </BrowserRouter>,
+    );
+
+    expect(screen.queryAllByRole('button', { name: 'Withdraw' })).toHaveLength(1);
   });
 
   it('shows recent activity as ago text and older activity as a date', () => {

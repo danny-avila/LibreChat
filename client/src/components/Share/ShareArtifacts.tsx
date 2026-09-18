@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
+import { Constants } from 'librechat-data-provider';
 import {
   useMediaQuery,
   ResizablePanel,
@@ -75,6 +76,10 @@ export function ShareArtifactsContainer({
       isSubmitting: false,
       latestMessageId: latestMessage.messageId ?? null,
       latestMessageText,
+      latestMessageError:
+        latestMessage.error === true ||
+        (latestMessage.unfinished === true &&
+          latestMessage.finish_reason !== Constants.TOOL_CALL_LIMIT_FINISH_REASON),
       conversationId: conversationId ?? null,
     };
   }, [messages, conversationId]);

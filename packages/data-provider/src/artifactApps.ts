@@ -257,23 +257,48 @@ export type TPublishArtifactAppRequest = z.infer<typeof publishArtifactAppSchema
 export const syncArtifactAppSchema = z.object({
   title: z.string().min(1).max(200),
   artifact: artifactSnapshotInputSchema,
-  source: artifactSourceMetadataSchema.extend({
-    conversationId: z.string().min(1),
-    /**
-     * `artifact:v1:` keys are the unambiguous current format. The three
-     * unversioned prefixes remain accepted while older browser bundles drain
-     * during rolling deployments. The server maps them into the v1 namespace
-     * and removes the MIME suffix used by the original identifier format.
-     */
-    sourceKey: z
-      .string()
-      .min(1)
-      .max(500)
-      .refine(
-        (value) => /^(?:artifact:v1:)?(?:identifier|file|message):.+$/.test(value),
-        'Invalid artifact source key',
-      ),
-  }),
+  /**
+   * The `latestVersionNumber` this edit was made against, per the client's local catalog
+   * cache. The server rejects the write as a conflict (409) if that baseline is already behind
+   * its own `latestVersionNumber` — otherwise a request queued from stale tab state could still
+   * create and activate a new version after a newer one from another tab has already landed.
+   */
+  basedOnVersionNumber: z.number().int().nonnegative().optional(),
+  source: artifactSourceMetadataSchema
+    .extend({
+      conversationId: z.string().min(1),
+      /**
+       * `artifact:v1:` keys are the unambiguous current format. The three
+       * unversioned prefixes remain accepted while older browser bundles drain
+       * during rolling deployments. The server maps them into the v1 namespace
+       * and removes the MIME suffix used by the original identifier format.
+       */
+      sourceKey: z
+        .string()
+        .min(1)
+        .max(500)
+        .refine(
+          (value) => /^(?:artifact:v1:)?(?:identifier|file|message):.+$/.test(value),
+          'Invalid artifact source key',
+        ),
+      /** Pre-hash truncated key emitted only while migrating an overlong source identity. */
+      legacySourceKey: z.string().min(1).max(500).optional(),
+    })
+    .superRefine((source, context) => {
+      if (
+        source.legacySourceKey &&
+        (source.sourceKey.length !== 500 ||
+          source.legacySourceKey.length !== 500 ||
+          !/:[0-9a-f]{8}$/.test(source.sourceKey) ||
+          source.sourceKey.slice(0, 491) !== source.legacySourceKey.slice(0, 491))
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['legacySourceKey'],
+          message: 'Legacy artifact source key does not match the hashed source key',
+        });
+      }
+    }),
 });
 export type TSyncArtifactAppRequest = z.infer<typeof syncArtifactAppSchema>;
 

@@ -15,6 +15,7 @@ import {
   LayoutGrid,
   List,
   Trash2,
+  FolderMinus,
 } from 'lucide-react';
 import {
   Button,
@@ -33,7 +34,11 @@ import {
   type ArtifactAppListScope,
 } from 'librechat-data-provider';
 import type { MenuItemProps } from '~/common';
-import { useDeleteArtifactAppMutation, useListArtifactAppsQuery } from '~/data-provider';
+import {
+  useDeleteArtifactAppMutation,
+  useListArtifactAppsQuery,
+  useWithdrawArtifactVersionMutation,
+} from '~/data-provider';
 import ArtifactAppShareDialog, { useCanShareArtifactApp } from './Share';
 import ArtifactAppsAdminSettings from './ArtifactAppsAdminSettings';
 import { useAuthContext, useDebounce, useLocalize } from '~/hooks';
@@ -262,10 +267,17 @@ function ArtifactAppMenu({
     app.createdBy === user?.id ||
     user?.role === SystemRoles.ADMIN ||
     hasPermissions(app.permissionBits ?? 0, PermissionBits.DELETE);
+  const canManageVersion =
+    app.createdBy === user?.id ||
+    user?.role === SystemRoles.ADMIN ||
+    hasPermissions(app.permissionBits ?? 0, PermissionBits.EDIT);
+  const canWithdraw = canManageVersion && Boolean(app.activeVersionId);
   const deleteArtifact = useDeleteArtifactAppMutation();
+  const withdrawVersion = useWithdrawArtifactVersionMutation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
 
   const copyLink = async () => {
     try {
@@ -301,6 +313,15 @@ function ArtifactAppMenu({
     });
   }
 
+  if (canWithdraw) {
+    items.push({
+      id: `artifact-withdraw-${app.artifactAppId}`,
+      label: localize('com_ui_withdraw'),
+      icon: <FolderMinus className="size-4" />,
+      onClick: () => setWithdrawOpen(true),
+    });
+  }
+
   if (canDelete) {
     items.push({ id: `artifact-delete-separator-${app.artifactAppId}`, separate: true });
     items.push({
@@ -327,6 +348,24 @@ function ArtifactAppMenu({
         showToast({ status: 'error', message: localize('com_ui_artifact_delete_error') });
       },
     });
+  };
+
+  const confirmWithdraw = () => {
+    if (withdrawVersion.isLoading || !app.activeVersionId) {
+      return;
+    }
+    withdrawVersion.mutate(
+      { artifactAppId: app.artifactAppId, versionId: app.activeVersionId },
+      {
+        onSuccess: () => {
+          setWithdrawOpen(false);
+          showToast({ status: 'success', message: localize('com_ui_artifact_withdraw_success') });
+        },
+        onError: () => {
+          showToast({ status: 'error', message: localize('com_ui_artifact_withdraw_error') });
+        },
+      },
+    );
   };
 
   return (
@@ -362,6 +401,27 @@ function ArtifactAppMenu({
                 <Spinner className="size-4" />
               ) : (
                 localize('com_ui_delete')
+              )}
+            </Button>
+          }
+        />
+      </OGDialog>
+      <OGDialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
+        <OGDialogTemplate
+          showCloseButton={false}
+          title={localize('com_ui_artifact_withdraw')}
+          className="max-w-[450px]"
+          main={
+            <p className="text-left text-sm text-text-primary">
+              {localize('com_ui_artifact_withdraw_confirm', { 0: app.title })}
+            </p>
+          }
+          selection={
+            <Button disabled={withdrawVersion.isLoading} onClick={confirmWithdraw}>
+              {withdrawVersion.isLoading ? (
+                <Spinner className="size-4" />
+              ) : (
+                localize('com_ui_withdraw')
               )}
             </Button>
           }

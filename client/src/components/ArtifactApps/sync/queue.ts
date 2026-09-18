@@ -38,9 +38,12 @@ function now(): number {
  * a permanently-rejected promise, but the caller gets the operation's own outcome, unmasked, so a
  * real IndexedDB failure surfaces instead of being reported as successful persistence.
  */
-function persistQueueChange(operation: () => Promise<void>): Promise<void> {
+function persistQueueChange<T>(operation: () => Promise<T>): Promise<T> {
   const attempt = persistencePromise.then(operation);
-  persistencePromise = attempt.catch(() => undefined);
+  persistencePromise = attempt.then(
+    () => undefined,
+    () => undefined,
+  );
   return attempt;
 }
 
@@ -152,24 +155,26 @@ async function hydrateQueue(): Promise<void> {
   await hydrationPromise;
 }
 
-async function writeStoredEntry(entry: ArtifactSyncQueueEntry, retry = false): Promise<void> {
+async function writeStoredEntry(entry: ArtifactSyncQueueEntry, retry = false): Promise<boolean> {
   const database = await openDatabase();
   if (!database) {
-    return;
+    return true;
   }
-  await new Promise<void>((resolve, reject) => {
+  return new Promise<boolean>((resolve, reject) => {
     const transaction = database.transaction(STORE_NAME, 'readwrite');
     const store = transaction.objectStore(STORE_NAME);
     const readRequest = store.get(entry.id);
+    let written = false;
     readRequest.onsuccess = () => {
       const stored = readRequest.result;
       if (!retry || !isQueueEntry(stored) || stored.signature === entry.signature) {
         store.put(entry);
+        written = true;
       }
     };
     transaction.oncomplete = () => {
       database.close();
-      resolve();
+      resolve(written);
     };
     transaction.onerror = () => reject(transaction.error ?? new Error('Unable to save sync item'));
   });
@@ -264,11 +269,11 @@ export async function recordArtifactSyncBaseline(
   id: string,
   signature: string,
   basedOnVersionNumber: number,
-): Promise<void> {
+): Promise<boolean> {
   await hydrateQueue();
   const current = memoryQueue.get(id);
   if (!current || current.signature !== signature || current.request.basedOnVersionNumber != null) {
-    return;
+    return false;
   }
   const updated: ArtifactSyncQueueEntry = {
     ...current,
@@ -276,10 +281,19 @@ export async function recordArtifactSyncBaseline(
     updatedAt: now(),
   };
   memoryQueue.set(id, updated);
-  const persisted = persistQueueChange(() => writeStoredEntry(updated, true));
+  const persisted = await persistQueueChange(() => writeStoredEntry(updated, true));
+  if (!persisted) {
+    if (memoryQueue.get(id) === updated) {
+      memoryQueue.delete(id);
+    }
+    return false;
+  }
   notifyListeners();
   broadcast({ type: 'upsert', entry: updated });
-  await persisted;
+  const latest = memoryQueue.get(id);
+  return (
+    latest?.signature === signature && latest.request.basedOnVersionNumber === basedOnVersionNumber
+  );
 }
 
 export async function rescheduleArtifactSync(

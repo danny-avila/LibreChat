@@ -1,73 +1,96 @@
 import React from 'react';
-import { act, render, screen } from '@testing-library/react';
-import type { SandpackPreviewRef } from '@codesandbox/sandpack-react/unstyled';
+import { render, screen } from '@testing-library/react';
+import type {
+  SandpackProviderProps,
+  SandpackPreviewRef,
+} from '@codesandbox/sandpack-react/unstyled';
+import { ARTIFACT_PREVIEW_BRIDGE_SCRIPT } from '~/utils/artifactPreviewCapture';
 import { ArtifactPreview } from './ArtifactPreview';
 
 const mockSandpackPreview = jest.fn(() => <div data-testid="sandpack-preview" />);
-const mockLocalize = jest.fn((key: string) =>
-  key === 'com_ui_artifact_app_preview' ? 'Aperçu de l’artéfact' : key,
-);
+const mockSandpackProvider = jest.fn((props: SandpackProviderProps) => (
+  <div data-testid="sandpack-provider">{props.children}</div>
+));
 
 jest.mock('@codesandbox/sandpack-react/unstyled', () => ({
   SandpackPreview: () => mockSandpackPreview(),
-  SandpackProvider: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="sandpack-provider">{children}</div>
-  ),
+  SandpackProvider: (props: SandpackProviderProps) => mockSandpackProvider(props),
 }));
-jest.mock('~/hooks', () => ({ useLocalize: () => mockLocalize }));
 
 describe('ArtifactPreview', () => {
   beforeEach(() => {
     mockSandpackPreview.mockClear();
-    mockLocalize.mockClear();
+    mockSandpackProvider.mockClear();
   });
 
-  it('renders static HTML artifacts in a local iframe without Sandpack', () => {
-    const previewRef = { current: undefined } as React.MutableRefObject<
-      SandpackPreviewRef | undefined
-    >;
+  it('renders static HTML artifacts through the isolated Sandpack preview, not a local iframe', () => {
+    const previewRef = {
+      current: undefined,
+    } as unknown as React.MutableRefObject<SandpackPreviewRef>;
 
-    render(
+    const { container } = render(
       <ArtifactPreview
         files={{ 'index.html': '<html><body><h1>Hello World!</h1></body></html>' }}
         fileKey="index.html"
         template="static"
         sharedProps={{}}
-        previewRef={previewRef as React.MutableRefObject<SandpackPreviewRef>}
+        previewRef={previewRef}
       />,
     );
 
-    const iframe = screen.getByTitle('Aperçu de l’artéfact');
-    expect(iframe).toHaveAttribute('srcdoc', expect.stringContaining('Hello World!'));
-    expect(iframe).toHaveAttribute(
-      'srcdoc',
-      expect.stringContaining('librechat:artifact-preview:request'),
-    );
-    expect(mockLocalize).toHaveBeenCalledWith('com_ui_artifact_app_preview');
-    expect(mockSandpackPreview).not.toHaveBeenCalled();
+    expect(screen.getByTestId('sandpack-provider')).toBeInTheDocument();
+    expect(mockSandpackPreview).toHaveBeenCalled();
+    expect(container.querySelector('iframe')).toBeNull();
+    const providerProps = mockSandpackProvider.mock.calls[0][0];
+    expect(providerProps.template).toBe('static');
+    const indexFile = providerProps.files?.['index.html'];
+    const code = typeof indexFile === 'string' ? indexFile : indexFile?.code;
+    expect(code).toContain('<h1>Hello World!</h1>');
   });
 
-  it('keeps the toolbar refresh action working for local static previews', () => {
-    const previewRef = { current: undefined } as React.MutableRefObject<
-      SandpackPreviewRef | undefined
-    >;
+  it('injects the preview-capture bridge into the artifact’s own index.html for the static template', () => {
+    const previewRef = {
+      current: undefined,
+    } as unknown as React.MutableRefObject<SandpackPreviewRef>;
 
     render(
       <ArtifactPreview
-        files={{ 'index.html': '<html><body><h1>Hello World!</h1></body></html>' }}
+        files={{ 'index.html': '<html><head></head><body><h1>Hello</h1></body></html>' }}
         fileKey="index.html"
         template="static"
         sharedProps={{}}
-        previewRef={previewRef as React.MutableRefObject<SandpackPreviewRef>}
+        previewRef={previewRef}
       />,
     );
 
-    const firstIframe = screen.getByTitle('Aperçu de l’artéfact');
+    const providerProps = mockSandpackProvider.mock.calls[0][0];
+    const indexFile = providerProps.files?.['index.html'];
+    const code = typeof indexFile === 'string' ? indexFile : indexFile?.code;
+    expect(code).toContain(ARTIFACT_PREVIEW_BRIDGE_SCRIPT);
+    expect(code).toContain('<h1>Hello</h1>');
+    expect(code).toBeDefined();
+    expect((code as string).indexOf(ARTIFACT_PREVIEW_BRIDGE_SCRIPT)).toBeLessThan(
+      (code as string).indexOf('</head>'),
+    );
+  });
 
-    act(() => {
-      previewRef.current?.getClient()?.dispatch({ type: 'refresh' });
-    });
+  it('does not inject the bridge script for non-static (bundler-based) templates', () => {
+    const previewRef = {
+      current: undefined,
+    } as unknown as React.MutableRefObject<SandpackPreviewRef>;
 
-    expect(screen.getByTitle('Aperçu de l’artéfact')).not.toBe(firstIframe);
+    render(
+      <ArtifactPreview
+        files={{ 'App.tsx': 'export default () => <div />;' }}
+        fileKey="App.tsx"
+        template="react"
+        sharedProps={{}}
+        previewRef={previewRef}
+      />,
+    );
+
+    const providerProps = mockSandpackProvider.mock.calls[0][0];
+    expect(providerProps.files).not.toHaveProperty('index.html');
+    expect(providerProps.files).toMatchObject({ 'App.tsx': 'export default () => <div />;' });
   });
 });

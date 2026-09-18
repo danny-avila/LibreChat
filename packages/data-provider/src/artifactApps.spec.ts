@@ -48,6 +48,27 @@ describe('syncArtifactAppSchema source identity', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('accepts only a matching truncated predecessor for a hashed source key', () => {
+    const sharedPrefix = `artifact:v1:identifier:${'x'.repeat(
+      491 - 'artifact:v1:identifier:'.length,
+    )}`;
+    const sourceKey = `${sharedPrefix}:deadbeef`;
+    const legacySourceKey = `${sharedPrefix}old-tail!`;
+
+    expect(
+      syncArtifactAppSchema.safeParse({
+        ...request,
+        source: { ...request.source, sourceKey, legacySourceKey },
+      }).success,
+    ).toBe(true);
+    expect(
+      syncArtifactAppSchema.safeParse({
+        ...request,
+        source: { ...request.source, sourceKey, legacySourceKey: 'x'.repeat(500) },
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe('artifact snapshot previews', () => {

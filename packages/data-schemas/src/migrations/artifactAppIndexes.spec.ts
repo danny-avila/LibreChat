@@ -62,6 +62,29 @@ describe('ensureArtifactAppIndexes', () => {
     ).toBe(true);
   });
 
+  test('accepts the source index definition already present in existing deployments', async () => {
+    const collection = mongoose.connection.db!.collection('artifactapps');
+    await collection.createIndex(
+      {
+        tenantId: 1,
+        createdBy: 1,
+        'sourceMetadata.conversationId': 1,
+        'sourceMetadata.sourceKey': 1,
+      },
+      {
+        unique: true,
+        partialFilterExpression: {
+          'sourceMetadata.conversationId': { $type: 'string' },
+          'sourceMetadata.sourceKey': { $type: 'string' },
+        },
+      },
+    );
+
+    await expect(ensureArtifactAppIndexes(mongoose.connection)).resolves.toMatchObject({
+      errors: [],
+    });
+  });
+
   test('rejects startup when existing data violates a required unique index', async () => {
     await mongoose.connection.db!.collection('artifactapps').insertMany([
       {

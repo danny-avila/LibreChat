@@ -5,7 +5,7 @@ import { ResourceType, AccessRoleIds, PermissionBits } from 'librechat-data-prov
 import type { IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
-import { createArtifactAppHandlers } from '../handlers';
+import { createArtifactAppHandlers, createSourceConversationExistsCheck } from '../handlers';
 
 let mongoServer: MongoMemoryServer;
 let methods: ReturnType<typeof createArtifactAppMethods>;
@@ -144,6 +144,23 @@ beforeEach(async () => {
   accessibleIds = [];
   permissionBatchSizes = [];
   removedPermissionIds = [];
+});
+
+describe('createSourceConversationExistsCheck', () => {
+  test('returns false when the conversation does not exist', async () => {
+    const check = createSourceConversationExistsCheck(async () => null);
+    expect(await check({ userId: 'user-1', conversationId: 'conversation-1' })).toBe(false);
+  });
+
+  test('excludes a temporary chat, since artifact apps/versions have no expiration', async () => {
+    const check = createSourceConversationExistsCheck(async () => ({ isTemporary: true }));
+    expect(await check({ userId: 'user-1', conversationId: 'conversation-1' })).toBe(false);
+  });
+
+  test('allows a permanent, existing conversation', async () => {
+    const check = createSourceConversationExistsCheck(async () => ({ isTemporary: false }));
+    expect(await check({ userId: 'user-1', conversationId: 'conversation-1' })).toBe(true);
+  });
 });
 
 describe('publish', () => {
@@ -332,6 +349,88 @@ describe('automatic catalog sync', () => {
       versionCreated: false,
     });
     expect(grants).toHaveLength(2);
+  });
+
+  test('reuses a catalog record created with the former truncated long source key', async () => {
+    const sharedPrefix = `artifact:v1:identifier:${'x'.repeat(
+      491 - 'artifact:v1:identifier:'.length,
+    )}`;
+    const legacySourceKey = `${sharedPrefix}old-tail!`;
+    const sourceKey = `${sharedPrefix}:deadbeef`;
+    const existing = await methods.createArtifactAppWithVersion({
+      createdBy: 'user-1',
+      title: syncBody.title,
+      visibility: 'private',
+      marketplace: { listed: true },
+      sourceMetadata: { ...syncBody.source, sourceKey: legacySourceKey },
+      version: {
+        artifactType: syncBody.artifact.type,
+        sourceSnapshot: syncBody.artifact.content,
+        createdBy: 'user-1',
+      },
+    });
+    const res = makeRes();
+
+    await handlers.sync(
+      makeReq({
+        body: {
+          ...syncBody,
+          source: { ...syncBody.source, sourceKey, legacySourceKey },
+        },
+      }),
+      res,
+    );
+
+    expect(res.statusCode).toBe(200);
+    expect((res.body as { app: { artifactAppId: string } }).app.artifactAppId).toBe(
+      existing.app.artifactAppId,
+    );
+    expect(
+      await methods.getArtifactAppBySource({
+        createdBy: 'user-1',
+        conversationId: 'conversation-1',
+        sourceKey,
+      }),
+    ).not.toBeNull();
+  });
+
+  test('rejects a sync whose basedOnVersionNumber is already behind the current latest', async () => {
+    const first = makeRes();
+    await handlers.sync(makeReq({ body: syncBody }), first);
+    const staleBaseline = (first.body as { app: { latestVersionNumber: number } }).app
+      .latestVersionNumber;
+
+    const second = makeRes();
+    await handlers.sync(
+      makeReq({
+        body: {
+          ...syncBody,
+          artifact: { ...syncBody.artifact, content: 'export default () => <div>v2</div>;' },
+          source: { ...syncBody.source, messageId: 'message-2', originalArtifactId: 'render-2' },
+        },
+      }),
+      second,
+    );
+    expect(second.statusCode).toBe(200);
+
+    const third = makeRes();
+    await handlers.sync(
+      makeReq({
+        body: {
+          ...syncBody,
+          artifact: { ...syncBody.artifact, content: 'export default () => <div>stale</div>;' },
+          source: { ...syncBody.source, messageId: 'message-3', originalArtifactId: 'render-3' },
+          basedOnVersionNumber: staleBaseline,
+        },
+      }),
+      third,
+    );
+    expect(third.statusCode).toBe(409);
+
+    const app = await methods.getArtifactAppByAppId({
+      artifactAppId: (second.body as { app: { artifactAppId: string } }).app.artifactAppId,
+    });
+    expect(app?.latestVersionNumber).toBe(2);
   });
 
   test('returns an owner-only source lookup for the share button', async () => {
@@ -573,6 +672,34 @@ describe('get / list', () => {
     expect(
       (res.body as { apps: Array<{ sourceMetadata?: unknown }> }).apps[0]?.sourceMetadata,
     ).toBeUndefined();
+  });
+
+  test('lets resource managers discover apps without needing an explicit ACL grant', async () => {
+    const created = makeRes();
+    await handlers.publish(
+      makeReq({
+        user: makeUser({ id: 'user-2', name: 'User Two', email: 'user-two@example.com' }),
+        body: { ...samplePublish, title: 'Owned by someone else' },
+      }),
+      created,
+    );
+    accessibleIds = [];
+
+    const managerHandlers = createArtifactAppHandlers({
+      ...methods,
+      hasResourceManagementCapability: async () => true,
+      getResourcePermissionsMap: async () => new Map(),
+      grantPermission: async () => undefined,
+      removeAllPermissions: async () => undefined,
+      recordAuditEntry: async () => undefined,
+    });
+
+    const res = makeRes();
+    await managerHandlers.list(makeReq({ query: { scope: 'shared' } }), res);
+
+    expect((res.body as { apps: Array<{ title: string }> }).apps).toEqual([
+      expect.objectContaining({ title: 'Owned by someone else' }),
+    ]);
   });
 
   test('list rejects malformed cursors', async () => {
@@ -1054,6 +1181,41 @@ describe('version reads', () => {
     expect((res.body as { versions: unknown[] }).versions).toHaveLength(0);
   });
 
+  test('listVersions hides withdrawn versions from a plain viewer but keeps them for the owner', async () => {
+    const { appId } = await createSyncedVersions(2);
+    await handlers.releaseVersion(
+      makeReq({ params: { id: appId, versionId: await getActiveVersionId(appId) } as never }),
+      makeRes(),
+    );
+    await handlers.withdrawVersion(
+      makeReq({ params: { id: appId, versionId: await getActiveVersionId(appId) } as never }),
+      makeRes(),
+    );
+
+    const app = await methods.getArtifactAppByAppId({ artifactAppId: appId });
+    accessibleIds = [app?.id ?? ''];
+    const viewer = makeUser({ id: 'viewer-1' });
+
+    const viewerRes = makeRes();
+    await handlers.listVersions(
+      makeReq({ params: { id: appId } as never, user: viewer }),
+      viewerRes,
+    );
+    expect(
+      (viewerRes.body as { versions: Array<{ versionNumber: number }> }).versions.map(
+        (v) => v.versionNumber,
+      ),
+    ).toEqual([1]);
+
+    const ownerRes = makeRes();
+    await handlers.listVersions(makeReq({ params: { id: appId } as never }), ownerRes);
+    expect(
+      (ownerRes.body as { versions: Array<{ versionNumber: number }> }).versions.map(
+        (v) => v.versionNumber,
+      ),
+    ).toEqual([2, 1]);
+  });
+
   test('getVersion returns the requested version', async () => {
     const appId = await publishAppId();
     const versionId = await getActiveVersionId(appId);
@@ -1113,5 +1275,47 @@ describe('withdrawVersion', () => {
       res,
     );
     expect(res.statusCode).toBe(404);
+  });
+
+  test('a withdrawn version is no longer reachable by a plain viewer', async () => {
+    const appId = await publishAppId();
+    const versionId = await getActiveVersionId(appId);
+    await handlers.releaseVersion(
+      makeReq({ params: { id: appId, versionId } as never }),
+      makeRes(),
+    );
+    await handlers.withdrawVersion(
+      makeReq({ params: { id: appId, versionId } as never }),
+      makeRes(),
+    );
+
+    const app = await methods.getArtifactAppByAppId({ artifactAppId: appId });
+    accessibleIds = [app?.id ?? ''];
+    const viewer = makeUser({ id: 'viewer-1' });
+
+    const res = makeRes();
+    await handlers.getVersion(
+      makeReq({ params: { id: appId, versionId } as never, user: viewer }),
+      res,
+    );
+    expect(res.statusCode).toBe(404);
+  });
+
+  test('a withdrawn version stays reachable by the app owner for re-release', async () => {
+    const appId = await publishAppId();
+    const versionId = await getActiveVersionId(appId);
+    await handlers.releaseVersion(
+      makeReq({ params: { id: appId, versionId } as never }),
+      makeRes(),
+    );
+    await handlers.withdrawVersion(
+      makeReq({ params: { id: appId, versionId } as never }),
+      makeRes(),
+    );
+
+    const res = makeRes();
+    await handlers.getVersion(makeReq({ params: { id: appId, versionId } as never }), res);
+    expect(res.statusCode).toBe(200);
+    expect((res.body as { artifactVersionId: string }).artifactVersionId).toBe(versionId);
   });
 });

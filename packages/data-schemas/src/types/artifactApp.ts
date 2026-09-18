@@ -194,6 +194,8 @@ export type ArtifactVersionSummaryRecord = Omit<
 export interface ArtifactVersionListOptions extends ArtifactAppQuery {
   cursor?: string;
   limit: number;
+  /** Viewer-only callers must not see a version history entry for withdrawn content. */
+  excludeWithdrawn?: boolean;
 }
 
 export interface ArtifactVersionListPage {
