@@ -255,14 +255,16 @@ test.describe('the recorded design-rule backlog', () => {
      * are swept at full scale by the committed-baseline scenario below.
      */
     const root = syntheticRoot();
-    /** The copied runner, so its `ROOT` is the miniature tree. */
+    /** The copied runner, invoked from the miniature tree: it derives the
+     *  repository from its own location and relativizes its file arguments
+     *  against the working directory, so asking it about `eslint.config.mjs`
+     *  from anywhere else names a path outside its tree and selects nothing. */
     const checks = (files: string[]) =>
-      run(process.execPath, [
-        join(root, 'scripts/static-checks.mts'),
-        ...files,
-        '--only',
-        'suppressions',
-      ]);
+      run(
+        process.execPath,
+        [join(root, 'scripts/static-checks.mts'), ...files, '--only', 'suppressions'],
+        { cwd: root },
+      );
     try {
       const triggers = [
         'eslint.config.mjs',
@@ -420,12 +422,11 @@ test.describe('the recorded design-rule backlog', () => {
     );
     copyFileSync(resolve(repoRoot, 'package.json'), join(emptyRoot, 'package.json'));
     symlinkSync(resolve(repoRoot, 'node_modules'), join(emptyRoot, 'node_modules'), 'dir');
-    const deleted = run(process.execPath, [
-      join(emptyRoot, 'scripts/static-checks.mts'),
-      SUPPRESSIONS_FILE,
-      '--only',
-      'suppressions',
-    ]);
+    const deleted = run(
+      process.execPath,
+      [join(emptyRoot, 'scripts/static-checks.mts'), SUPPRESSIONS_FILE, '--only', 'suppressions'],
+      { cwd: emptyRoot },
+    );
     expect(deleted.status, 'a deleted baseline passed validation').not.toBe(0);
     expect(deleted.output).toContain('is missing');
     rmSync(emptyRoot, { force: true, recursive: true });

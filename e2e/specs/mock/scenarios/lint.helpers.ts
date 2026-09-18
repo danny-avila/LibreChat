@@ -42,12 +42,22 @@ export type CommandResult = {
   output: string;
 };
 
-/** Run a command from the repository root and collect both streams. */
-export function run(command: string, args: string[], input?: string): CommandResult {
+/**
+ * Run a command from the repository root and collect both streams. `cwd` names
+ * another root when the command under test derives the repository from where it
+ * is invoked: the static-checks runner relativizes its file arguments against
+ * the working directory, so a copy of it asked about `eslint.config.mjs` from
+ * elsewhere sees a path outside its own tree and selects nothing.
+ */
+export function run(
+  command: string,
+  args: string[],
+  options: { input?: string; cwd?: string } = {},
+): CommandResult {
   const result = spawnSync(command, args, {
-    cwd: repoRoot,
+    cwd: options.cwd ?? repoRoot,
     encoding: 'utf8',
-    input,
+    input: options.input,
     maxBuffer: 64 * 1024 * 1024,
   });
   const stdout = result.stdout ?? '';
@@ -90,7 +100,7 @@ export function lintStdin(relativePath: string, source: string): LintMessage[] {
         'eslint.config.mjs',
         '--no-warn-ignored',
       ],
-      source,
+      { input: source },
     ),
   );
 }
