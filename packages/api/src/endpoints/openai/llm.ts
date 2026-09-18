@@ -19,7 +19,7 @@ import {
   constructAzureChatBasePath,
   constructAzureInstanceBasePath,
 } from '~/utils/azure';
-import { supportsExplicitPromptCache } from './promptCache';
+import { PROMPT_CACHE_ADMIN_FIELDS, supportsExplicitPromptCache } from './promptCache';
 import { isEnabled } from '~/utils/common';
 
 type OpenAILLMConfig = Omit<Partial<t.OAIClientOptions>, 'verbosity'> &
@@ -693,15 +693,7 @@ export function getOpenAILLMConfig({
    * endpoint configuration, and `addParams` remains the administrator's route
    * to a pinned key.
    */
-  for (const field of [
-    'promptCacheKey',
-    'promptCacheKeyEnabled',
-    'promptCacheScope',
-    'promptCacheScopeId',
-    'promptCacheStableInstructions',
-    'promptCacheRetention',
-    'promptCacheExplicit',
-  ] as const) {
+  for (const field of PROMPT_CACHE_ADMIN_FIELDS) {
     delete (llmConfig as Record<string, unknown>)[field];
   }
 

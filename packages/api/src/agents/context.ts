@@ -148,6 +148,26 @@ export function captureConfiguredAdditionalInstructions(agent: {
 }
 
 /**
+ * Adds a later stable contribution to the captured configured instructions.
+ *
+ * Used for text the initializer appends to the dynamic tail that is
+ * configuration rather than conversation — the artifact prompt an agent's
+ * artifact mode selects — so changing that mode retires the cache identity
+ * while the run context beside it still does not.
+ */
+export function appendConfiguredAdditionalInstructions(
+  agent: { configuredAdditionalInstructions?: string },
+  text?: string | null,
+): void {
+  if (text == null || text === '') {
+    return;
+  }
+  agent.configuredAdditionalInstructions = [agent.configuredAdditionalInstructions, text]
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .join('\n\n');
+}
+
+/**
  * Applies run context and MCP instructions to an agent's configuration.
  * Mutates the agent object in place.
  *
