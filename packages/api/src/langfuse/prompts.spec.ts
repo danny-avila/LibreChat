@@ -73,6 +73,39 @@ describe('Langfuse agent instruction prompts', () => {
     ).resolves.toMatchObject({ cached: true, version: 7 });
     expect(fetch).toHaveBeenCalledTimes(1);
   });
+  it('evaluates cached freshness with the current request cache TTL', async () => {
+    let now = 0;
+    const fetch = jest
+      .fn()
+      .mockResolvedValueOnce(response(200, { ...prompt, prompt: 'First response' }))
+      .mockResolvedValueOnce(response(200, { ...prompt, prompt: 'Second response' }));
+    const provider = createLangfusePromptProvider({
+      resolveDestinations: jest.fn().mockResolvedValue([destination]),
+      fetch,
+      cacheTtlMs: 100,
+      now: () => now,
+    });
+    const longLivedContext = {
+      userId: 'user-1',
+      appConfig: {
+        langfuse: { prompts: { cacheTtlMs: 100, requestTimeoutMs: 25 } },
+      } as AppConfig,
+    };
+    const noCacheContext = {
+      userId: 'user-1',
+      appConfig: {
+        langfuse: { prompts: { cacheTtlMs: 0, requestTimeoutMs: 25 } },
+      } as AppConfig,
+    };
+
+    await provider.resolve({ source: 'langfuse', name: 'agent-policy' }, longLivedContext);
+    now = 1;
+
+    await expect(
+      provider.resolve({ source: 'langfuse', name: 'agent-policy' }, noCacheContext),
+    ).resolves.toMatchObject({ prompt: 'Second response' });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
 
   it('restores an expired cached value only after a transient failure', async () => {
     let now = 0;

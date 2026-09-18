@@ -31,6 +31,7 @@ const langfusePromptSchema = z.object({
 
 type CacheEntry = {
   expiresAt: number;
+  fetchedAt: number;
   value: AgentInstructionPromptResult;
 };
 
@@ -182,13 +183,13 @@ export function createLangfusePromptProvider({
 
       const key = cacheKey(destination, reference.name, reference.version);
       const currentTime = now();
-      pruneExpiredEntries(cache, key, currentTime);
-      const cached = cache.get(key);
-      if (cached && cached.expiresAt > currentTime) {
-        return { ...cached.value, cached: true };
-      }
       const promptConfig = context.appConfig?.langfuse?.prompts;
       const effectiveCacheTtlMs = promptConfig?.cacheTtlMs ?? cacheTtlMs;
+      pruneExpiredEntries(cache, key, currentTime);
+      const cached = cache.get(key);
+      if (cached && currentTime - cached.fetchedAt < effectiveCacheTtlMs) {
+        return { ...cached.value, cached: true };
+      }
       const effectiveTimeoutMs = promptConfig?.requestTimeoutMs ?? timeoutMs;
       const timeoutSignal = AbortSignal.timeout(effectiveTimeoutMs);
       const signal = context.signal
@@ -207,7 +208,12 @@ export function createLangfusePromptProvider({
           throw statusError(response.status);
         }
         const result = parsePrompt(await response.json());
-        cache.set(key, { value: result, expiresAt: now() + effectiveCacheTtlMs });
+        const fetchedAt = now();
+        cache.set(key, {
+          value: result,
+          fetchedAt,
+          expiresAt: fetchedAt + effectiveCacheTtlMs,
+        });
         return result;
       } catch (error) {
         if (context.signal?.aborted) {
