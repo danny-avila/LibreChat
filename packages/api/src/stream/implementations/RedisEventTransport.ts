@@ -15,6 +15,7 @@ import {
 import { registerChunkPublicationCapability } from '~/stream/internal/chunkPublication';
 import { GenerationPublicationFencedError } from '~/stream/interfaces/IJobStore';
 import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
+import { evalScript } from '~/cache/redisScript';
 
 /**
  * Redis key prefixes for pub/sub channels
@@ -352,7 +353,8 @@ export class RedisEventTransport implements IEventTransport {
        * commits but its promise never settles, the marker timeout still releases attachment
        * admission instead of leaving every surviving local subscriber deferred forever. */
       const operation = Promise.all([
-        this.publisher.eval(
+        evalScript(
+          this.publisher,
           CAPTURE_SUBSCRIPTION_FRONTIER_LUA,
           1,
           KEYS.sequence(streamId),
@@ -471,7 +473,8 @@ export class RedisEventTransport implements IEventTransport {
     allowRetainedEpoch = false,
     requireActiveJob = false,
   ): Promise<number> {
-    const seq = await this.publisher.eval(
+    const seq = await evalScript(
+      this.publisher,
       PUBLISH_SEQ_LUA,
       3,
       KEYS.sequence(streamId),
@@ -1372,7 +1375,8 @@ export class RedisEventTransport implements IEventTransport {
       data: event,
       generationId: replacedGenerationId,
     });
-    const result = await this.publisher.eval(
+    const result = await evalScript(
+      this.publisher,
       PUBLISH_REPLACED_DONE_LUA,
       2,
       KEYS.sequence(streamId),

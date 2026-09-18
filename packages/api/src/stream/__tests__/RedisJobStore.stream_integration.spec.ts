@@ -8,7 +8,7 @@ import {
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
   STEER_ENQUEUE_RECEIPT_FULL,
 } from '../interfaces/IJobStore';
-import { clearRedisTestPrefix } from './helpers/redis';
+import { clearRedisTestPrefix, flushScriptCache } from './helpers/redis';
 
 /** Suppress winston Console transport output (survives jest.resetModules) */
 jest.spyOn(console, 'log').mockImplementation();
@@ -492,6 +492,7 @@ describe('RedisJobStore Integration Tests', () => {
       const streamId = `terminal-epoch-${Date.now()}`;
       const userId = 'terminal-epoch-user';
       const now = jest.spyOn(Date, 'now').mockReturnValue(1000);
+      await flushScriptCache(ioredisClient);
       const originalEval = ioredisClient.eval.bind(ioredisClient) as (
         script: string | Buffer,
         numberOfKeys: number,
@@ -1632,7 +1633,7 @@ describe('RedisJobStore Integration Tests', () => {
       store.setCollectedUsage(streamId, [{ input_tokens: 1, output_tokens: 2 }]);
 
       const evalSpy = jest
-        .spyOn(ioredisClient, 'eval')
+        .spyOn(ioredisClient, 'evalsha')
         .mockRejectedValueOnce(new Error('replacement write failed'));
       try {
         await expect(store.createJob(streamId, 'user-1', streamId)).rejects.toThrow(
@@ -4084,6 +4085,7 @@ describe('RedisJobStore Integration Tests', () => {
         String(Date.now() - 10_000),
       );
 
+      await flushScriptCache(ioredisClient);
       const originalEval = ioredisClient.eval.bind(ioredisClient) as (
         script: string | Buffer,
         numberOfKeys: number,
