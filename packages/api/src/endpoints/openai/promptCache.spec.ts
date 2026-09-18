@@ -362,6 +362,10 @@ describe('buildPromptCacheKey', () => {
         { clientOptions: { stream: false, stream_options: { include_usage: true } } },
       ],
       [
+        'which bound tool the model may call this turn',
+        { clientOptions: { tool_choice: 'required', parallel_tool_calls: false } },
+      ],
+      [
         'sampling in its provider spelling',
         {
           clientOptions: {

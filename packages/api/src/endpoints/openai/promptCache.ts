@@ -202,6 +202,13 @@ const nonPrefixClientOptionNames: readonly string[] = [
   'streamOptions',
   /** The Responses output cap, which a stored agent can set at the top level. */
   'maxOutputTokens',
+  /**
+   * Which of the bound tools the model may call this turn. The schemas it
+   * chooses among are hashed above; the choice policy is not part of the
+   * prefix they form.
+   */
+  'toolChoice',
+  'parallelToolCalls',
 ];
 
 const nonPrefixClientOptionKeys = normalizedKeySet(nonPrefixClientOptionNames);
