@@ -11,6 +11,7 @@ import {
   OGDialogTitle,
   OGDialogContent,
   OGDialogDescription,
+  useMediaQuery,
 } from '@librechat/client';
 import type { TSkill, TSkillSummary } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks/useLocalize';
@@ -27,6 +28,7 @@ import ItemDialog from './ItemDialog/ItemDialog';
 import { applyFilter } from './items/filtering';
 import CategoryFilter from './CategoryFilter';
 import { itemKey } from './items/selectors';
+import { cn } from '~/utils';
 
 interface SkillsDialogProps {
   open: boolean;
@@ -46,6 +48,9 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
   const localize = useLocalize();
   const { user } = useAuthContext();
   const { control, getValues, setValue } = useFormContext<AgentForm>();
+  /** The header's two layouts read in different orders, so the breakpoint selects
+   *  which DOM order renders; same query as the marketplace dialog's rail. */
+  const isDesktop = useMediaQuery('(min-width: 768px)');
 
   const hasSkillsAccess = useHasAccess({
     permissionType: PermissionTypes.SKILLS,
@@ -180,6 +185,56 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
       ? 'com_ui_no_skills_found'
       : undefined;
 
+  /** The header is one row from md and two below it, and the two read in different
+   *  orders, so the breakpoint picks the DOM order rather than `order-*` reshuffling
+   *  one. Each control is built once and placed by whichever branch renders. */
+  const viewRadio = (
+    <Radio
+      wrap
+      options={viewOptions}
+      value={view}
+      onChange={(value) => {
+        setView(value as SkillView);
+        setCategory('all');
+      }}
+      className="p-1"
+      aria-labelledby="skills-view-label"
+    />
+  );
+  const createButton = hasCreateAccess ? (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      onClick={() => setCreateOpen(true)}
+      aria-label={localize('com_ui_create_skill')}
+      className={cn('h-[42px] w-[42px] shrink-0 p-0', !isDesktop && 'ml-auto')}
+    >
+      <Plus className="size-4" aria-hidden="true" />
+    </Button>
+  ) : null;
+  const filterField = (
+    <div
+      className={cn('flex items-center gap-2', isDesktop ? 'min-w-0 grow basis-0' : 'basis-full')}
+    >
+      <div className="relative min-w-0 flex-1">
+        <Search
+          className="pointer-events-none absolute left-3 top-1/2 z-[1] size-4 -translate-y-1/2 text-text-tertiary"
+          aria-hidden="true"
+        />
+        <Input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={localize('com_ui_search_skills')}
+          aria-label={localize('com_ui_search_skills')}
+          className="h-[42px] bg-transparent pl-9"
+        />
+      </div>
+      <CategoryFilter options={categoryOptions} value={category} onChange={setCategory} />
+    </div>
+  );
+
   return (
     <OGDialog open={open} onOpenChange={onOpenChange}>
       <OGDialogContent className="w-11/12 max-w-[900px] overflow-hidden rounded-2xl border-border-medium p-0 shadow-xl md:max-h-[92vh]">
@@ -194,65 +249,28 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
               </OGDialogTitle>
             </div>
 
-            {/* From md this is the single row the header has always had: create
-                button, filter field, category, view radio. Below md the radio and
-                the create button take the first line and the field the second,
-                because a `flex-1` field beside the `shrink-0` radio collapsed to
-                50px on a 390px screen. `order-*` rather than two subtrees, so the
-                radio and the create button each exist once in the DOM. */}
+            {/* DOM order is the order each breakpoint reads in, so tab order follows
+                the eye: from md the row is create, field, radio, exactly as before;
+                below md the radio and the create button take the first line and the
+                field the second. `order-*` would have kept one subtree, but it left
+                desktop tabbing from the rightmost radio back to the create button. */}
             <div className="flex flex-wrap items-center gap-2">
               <Label id="skills-view-label" className="sr-only">
                 {localize('com_ui_skills_filter')}
               </Label>
-              {/* `wrap`, and no `shrink-0`: every segment carries whitespace-nowrap
-                  and px-4, so the group has a hard 261px minimum in English and more
-                  in longer locales. On a 360px phone that plus the create button
-                  exceeds the dialog, which is overflow-hidden, and the trailing
-                  option becomes unreachable. Shrinking lets the segments flow onto a
-                  second row instead; at 390px they still occupy one. */}
-              <Radio
-                wrap
-                options={viewOptions}
-                value={view}
-                onChange={(value) => {
-                  setView(value as SkillView);
-                  setCategory('all');
-                }}
-                className="order-1 p-1 md:order-3"
-                aria-labelledby="skills-view-label"
-              />
-              {hasCreateAccess && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCreateOpen(true)}
-                  aria-label={localize('com_ui_create_skill')}
-                  className="order-2 ml-auto h-[42px] w-[42px] shrink-0 p-0 md:order-1 md:ml-0"
-                >
-                  <Plus className="size-4" aria-hidden="true" />
-                </Button>
+              {isDesktop ? (
+                <>
+                  {createButton}
+                  {filterField}
+                  {viewRadio}
+                </>
+              ) : (
+                <>
+                  {viewRadio}
+                  {createButton}
+                  {filterField}
+                </>
               )}
-              {/* basis-full below md puts the field on its own line; md:basis-0 with
-                  md:grow restores the flexible middle column. Not `flex-1`, whose
-                  shorthand would reset the basis and re-collapse the field. */}
-              <div className="order-3 flex basis-full items-center gap-2 md:order-2 md:min-w-0 md:grow md:basis-0">
-                <div className="relative min-w-0 flex-1">
-                  <Search
-                    className="pointer-events-none absolute left-3 top-1/2 z-[1] size-4 -translate-y-1/2 text-text-tertiary"
-                    aria-hidden="true"
-                  />
-                  <Input
-                    type="text"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    placeholder={localize('com_ui_search_skills')}
-                    aria-label={localize('com_ui_search_skills')}
-                    className="h-[42px] bg-transparent pl-9"
-                  />
-                </div>
-                <CategoryFilter options={categoryOptions} value={category} onChange={setCategory} />
-              </div>
             </div>
           </div>
 

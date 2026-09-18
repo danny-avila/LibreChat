@@ -118,6 +118,14 @@ test.describe('skills picker header on a phone', () => {
     expect(Math.abs(filterBox.x + filterBox.width - (rowBox.x + rowBox.width))).toBeLessThanOrEqual(
       TOLERANCE,
     );
+
+    /** DOM order is tab order, so it has to read the way this layout does:
+     *  radio, then create, then the field on the line below. */
+    await view.getByRole('radio', { name: 'All', exact: true }).focus();
+    await page.keyboard.press('Tab');
+    await expect(create).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(filter).toBeFocused();
     await expectNoHeaderOverflow(header);
   });
 });
@@ -193,5 +201,14 @@ test.describe('skills picker header on a desktop viewport', () => {
     expect(filterBox.x).toBeLessThan(viewBox.x);
     expect(filterBox.width).toBeGreaterThan(createBox.width);
     expect(filterBox.width).toBeGreaterThan(viewBox.width);
+
+    /** Tab order follows the eye here too: create, then the field, then the radio.
+     *  A visual-only reorder left desktop tabbing from the rightmost radio back to
+     *  the create button. */
+    await create.focus();
+    await page.keyboard.press('Tab');
+    await expect(filter).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(view.getByRole('radio', { name: 'All', exact: true })).toBeFocused();
   });
 });

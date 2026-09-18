@@ -250,9 +250,12 @@ export function MarketplaceFilterBar(props: MarketplaceSidebarProps) {
   const createItems = useCreateItems(props.onCreateNew);
 
   return (
+    /* The scrollbar hides only where a finger can drag the row instead. A narrow
+       desktop window is below md too, and there a wheel scrolls the page rather
+       than this row, so the bar is the only way to reach the trailing views. */
     <div
       role="group"
-      className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border-light px-4 pb-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="flex shrink-0 items-center gap-1.5 overflow-x-auto border-b border-border-light px-4 pb-2.5 touch:[scrollbar-width:none] touch:[&::-webkit-scrollbar]:hidden"
       aria-label={localize('com_ui_tools_marketplace')}
     >
       {createItems.length > 0 && (

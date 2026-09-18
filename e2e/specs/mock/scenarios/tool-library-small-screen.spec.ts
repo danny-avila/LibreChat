@@ -236,3 +236,34 @@ test.describe('tool library on a mouse viewport', () => {
     await expectClearOfCloseButton(page, dialog);
   });
 });
+
+/** A narrow desktop window is below md as well, so it gets the chip row without
+ *  getting a finger to drag it. */
+test.describe('tool library in a narrow mouse window', () => {
+  test.use({ viewport: { width: 520, height: 900 }, hasTouch: false, isMobile: false });
+
+  test('@scenario:tool-library-chips-stay-scrollable-with-a-mouse the overflowing chip row keeps a scrollbar without touch', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    const dialog = await openToolLibrary(page);
+    const chips = dialog.getByRole('group', { name: TOOL_LIBRARY });
+    await expect(chips).toBeVisible();
+    expect(await page.evaluate(() => matchMedia('(any-pointer: coarse)').matches)).toBe(false);
+
+    const row = await chips.evaluate((element) => ({
+      overflows: element.scrollWidth > element.clientWidth,
+      scrollbar: element.offsetHeight - element.clientHeight,
+    }));
+    expect(row.overflows).toBe(true);
+    /** The affordance itself: with the scrollbar hidden this is 0 and a wheel
+     *  scrolls the page instead, so the trailing views cannot be reached. */
+    expect(row.scrollbar).toBeGreaterThan(0);
+
+    /** And it does scroll: the last view has to become reachable. */
+    const favorites = chips.getByRole('button', { name: 'Favorites', exact: true });
+    await favorites.scrollIntoViewIfNeeded();
+    await favorites.click();
+    await expect(favorites).toHaveAttribute('aria-pressed', 'true');
+  });
+});
