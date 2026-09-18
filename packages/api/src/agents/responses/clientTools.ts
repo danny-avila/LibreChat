@@ -10,10 +10,29 @@
  *
  * Such a tool is made visible to the model but is never executed on the server.
  * When the model calls one, the run ends and the call is handed back as a
- * `function_call` output item. The caller executes it and continues the
- * conversation by sending a `function_call_output` input item alongside
- * `previous_response_id` — the inbound conversion for which already exists
- * (`convertInputToMessages`).
+ * `function_call` output item. The caller executes it and continues by replaying
+ * *both* items in the next request's `input` — the `function_call` it received
+ * and the `function_call_output` it produced:
+ *
+ *   POST /v1/responses
+ *   { "model": "...", "tools": [...],
+ *     "input": [ ...earlier items,
+ *                { "type": "function_call", "call_id": "call_1",
+ *                  "name": "open_service_page", "arguments": "{...}" },
+ *                { "type": "function_call_output", "call_id": "call_1",
+ *                  "output": "..." } ] }
+ *
+ * `convertInputToMessages` turns that pair into an assistant message carrying
+ * the tool call and a matching tool result, which is the adjacency providers
+ * require.
+ *
+ * Replay is the only continuation this endpoint supports for a tool exchange.
+ * `previous_response_id` does not carry one: the server persists a turn as
+ * text (`saveResponseOutput` keeps `output_text`, `saveInputMessages` keeps
+ * `role: 'user'`), so neither item survives, and the id is rejected outright
+ * with 404 unless the first request also asked for `store: true`. Sending
+ * `previous_response_id` with a bare `function_call_output` therefore produces
+ * a tool result whose call is missing.
  *
  * This is the stateless shape OpenAI defines: no run is suspended, nothing is
  * checkpointed, and no per-caller state is held between the two requests.
