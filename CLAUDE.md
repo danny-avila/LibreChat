@@ -295,16 +295,16 @@ Multi-line imports count total character length across all lines. Consolidate va
   `|| node -e ""` (`true` is not a command under `cmd.exe`, where npm runs scripts on Windows)
   and lets the prune be the step that can fail. Expect the same when running a scoped re-record
   by hand.
-- **The ratchet is on the count, not on the individual violations.** ESLint compares a file's
-  current violation count for a rule against the recorded one and suppresses when it is not
-  higher, so replacing one suppressed violation with a different violation of the same rule in
-  the same file keeps the count equal and produces no diff here. That is the cost of the count
-  format: a fingerprint per violation would churn on every reformat and every message tweak.
-  The backlog is a budget per file, and a swap still arrives as a styling change in that file's
-  own diff — review it there. `npm run static-checks` and the Static Checks lane validate the
-  baseline itself (shape, positive counts, rules the plugin defines, paths that still exist,
-  paths a design-rule lint actually reports on, and counts that match the file's violations);
-  they do not and cannot detect a count-neutral swap.
+- **The ratchet is on the count, and on what the count stands for.** ESLint compares a file's
+  current violation count for a rule against the recorded one and suppresses when it is not higher,
+  so replacing one suppressed violation with a different violation of the same rule in the same
+  file keeps the count equal and ESLint reports nothing. The backlog is a budget per file, but it is
+  not a budget you may respend: for every file a diff touches, the runner lints that file's version
+  at the base and reports a design-rule message the head has and the base did not, even when the
+  total is unchanged — so a swap arrives as a failure naming the new violation, and a violation that
+  merely moved does not. `npm run static-checks` and the Static Checks lane also validate the
+  baseline itself (shape, positive counts, rules the plugin defines, paths that still exist, paths a
+  design-rule lint actually reports on, and counts that match the file's violations).
 - **The design rules read JSX, not CSS.** They are AST rules over `className`, `cva` and
   `style` in `{ts,tsx,js,jsx}`, so a `.css` file under either root — `client/src/style.css`,
   `packages/client/src/components/Field.css` — is outside every one of them, and so is the
