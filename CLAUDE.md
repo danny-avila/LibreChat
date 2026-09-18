@@ -292,8 +292,9 @@ Multi-line imports count total character length across all lines. Consolidate va
   rewrite the recorded counts. The re-record's own exit status is deliberately ignored: it lints
   the roots under every rule, those roots carry a pre-existing error backlog, and the baseline is
   written before ESLint reports it — so `lint:design:suppress` runs `lint:design:record` inside
-  `|| true` and lets the prune be the step that can fail. Expect the same when running a scoped
-  re-record by hand.
+  `|| node -e ""` (`true` is not a command under `cmd.exe`, where npm runs scripts on Windows)
+  and lets the prune be the step that can fail. Expect the same when running a scoped re-record
+  by hand.
 - **The ratchet is on the count, not on the individual violations.** ESLint compares a file's
   current violation count for a rule against the recorded one and suppresses when it is not
   higher, so replacing one suppressed violation with a different violation of the same rule in
@@ -301,7 +302,8 @@ Multi-line imports count total character length across all lines. Consolidate va
   format: a fingerprint per violation would churn on every reformat and every message tweak.
   The backlog is a budget per file, and a swap still arrives as a styling change in that file's
   own diff — review it there. `npm run static-checks` and the Static Checks lane validate the
-  baseline itself (shape, positive counts, rules the plugin defines, paths that still exist);
+  baseline itself (shape, positive counts, rules the plugin defines, paths that still exist,
+  paths a design-rule lint actually reports on, and counts that match the file's violations);
   they do not and cannot detect a count-neutral swap.
 - **The design rules read JSX, not CSS.** They are AST rules over `className`, `cva` and
   `style` in `{ts,tsx,js,jsx}`, so a `.css` file under either root — `client/src/style.css`,

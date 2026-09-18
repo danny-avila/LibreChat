@@ -110,7 +110,7 @@
     "lint:fix": "npm run build:client-package && eslint . --fix --pass-on-unpruned-suppressions",
     "lint": "npm run build:client-package && eslint . --pass-on-unpruned-suppressions",
     "lint:design:record": "eslint --no-warn-ignored --suppress-rule shadcn/no-restyle --suppress-rule shadcn/no-raw-colors --suppress-rule shadcn/no-arbitrary-values --suppress-rule shadcn/no-inline-styles --suppress-rule shadcn/require-static-classes client/src packages/client/src",
-    "lint:design:suppress": "npm run build:client-package && (npm run --silent lint:design:record || true) && npm run lint:design:prune",
+    "lint:design:suppress": "npm run build:client-package && (npm run --silent lint:design:record || node -e \"\") && npm run lint:design:prune",
     "lint:design:prune": "npm run build:client-package && eslint --no-warn-ignored --prune-suppressions client/src packages/client/src",
     "sort-imports": "node scripts/sort-imports.mts",
     "sort-imports:check": "node scripts/sort-imports.mts --check",
