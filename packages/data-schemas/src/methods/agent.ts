@@ -1675,6 +1675,7 @@ export function createAgentMethods(
       'code_workspace_id',
       'repositoryInstructions',
       'git_identity',
+      'instruction_prompt',
       'skills_scope',
       'skill_authoring_enabled',
     ]) {

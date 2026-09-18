@@ -144,8 +144,12 @@ export default function Instructions() {
       name="instructions"
       control={control}
       rules={{
-        validate: (value) =>
-          reference != null || value?.trim() ? true : localize('com_ui_field_required'),
+        validate: (value) => {
+          if (source === 'inline') {
+            return value?.trim() ? true : localize('com_ui_field_required');
+          }
+          return reference?.source === source ? true : localize('com_ui_field_required');
+        },
       }}
       render={({ field, fieldState: { error } }) => (
         <div className="mb-3 flex flex-col gap-2">
