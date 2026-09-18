@@ -4,10 +4,16 @@
  * Core service for processing Open Responses API requests.
  * Handles input conversion, message formatting, and request validation.
  */
-import { isCodeEnvironmentMode, isCodeWorkspaceSelections } from 'librechat-data-provider';
+import {
+  ContentTypes,
+  isCodeEnvironmentMode,
+  isCodeWorkspaceSelections,
+} from 'librechat-data-provider';
 import type { Response as ServerResponse } from 'express';
 import type {
+  FunctionCallOutputItemParam,
   RequestValidationResult,
+  FunctionCallItemParam,
   ResponseRequest,
   ResponseContext,
   InputContent,
@@ -142,7 +148,88 @@ export function validateResponseRequest(body: unknown): RequestValidationResult 
     return { valid: false, error: clientToolsError };
   }
 
+  if (Array.isArray(request.input)) {
+    const toolExchangeError = validateInputToolExchanges(request.input as InputItem[]);
+    if (toolExchangeError !== undefined) {
+      return { valid: false, error: toolExchangeError };
+    }
+  }
+
   return { valid: true, request: request as unknown as ResponseRequest };
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value !== '';
+}
+
+/**
+ * Validates the replayed tool exchanges in `input`.
+ *
+ * A turn is persisted as text, so `previous_response_id` does not carry a tool
+ * exchange: replaying the `function_call` together with its
+ * `function_call_output` is the only supported continuation. Both halves are
+ * therefore required, and an unpaired half is the caller's error rather than
+ * something to drop silently or to hand to the provider — an unanswered tool
+ * call reaches the model as a malformed conversation and comes back as an
+ * opaque upstream failure.
+ *
+ * @returns An error message, or `undefined` when every exchange is well formed.
+ */
+export function validateInputToolExchanges(input: InputItem[]): string | undefined {
+  const callIds = new Set<string>();
+  const outputCallIds = new Set<string>();
+
+  for (const item of input) {
+    if (item == null || typeof item !== 'object') {
+      continue;
+    }
+
+    if (item.type === 'function_call') {
+      const call = item as Partial<FunctionCallItemParam>;
+      if (!isNonEmptyString(call.call_id)) {
+        return 'each function_call requires a non-empty string call_id';
+      }
+      if (!isNonEmptyString(call.name)) {
+        return `function_call ${call.call_id} requires a non-empty string name`;
+      }
+      if (typeof call.arguments !== 'string') {
+        return `function_call ${call.call_id} requires arguments as a JSON string`;
+      }
+      if (callIds.has(call.call_id)) {
+        return `duplicate function_call call_id: ${call.call_id}`;
+      }
+      callIds.add(call.call_id);
+      continue;
+    }
+
+    if (item.type === 'function_call_output') {
+      const output = item as Partial<FunctionCallOutputItemParam>;
+      if (!isNonEmptyString(output.call_id)) {
+        return 'each function_call_output requires a non-empty string call_id';
+      }
+      if (typeof output.output !== 'string') {
+        return `function_call_output ${output.call_id} requires output as a string`;
+      }
+      if (outputCallIds.has(output.call_id)) {
+        return `duplicate function_call_output call_id: ${output.call_id}`;
+      }
+      outputCallIds.add(output.call_id);
+    }
+  }
+
+  for (const callId of callIds) {
+    if (!outputCallIds.has(callId)) {
+      return `function_call ${callId} has no function_call_output in input; replay both items to continue a tool exchange`;
+    }
+  }
+
+  for (const callId of outputCallIds) {
+    if (!callIds.has(callId)) {
+      return `function_call_output ${callId} has no matching function_call in input`;
+    }
+  }
+
+  return undefined;
 }
 
 /**
@@ -158,17 +245,34 @@ export function isValidationFailure(
  * INPUT CONVERSION
  * ============================================================================= */
 
-/** Internal message format (LibreChat-compatible) */
-export interface InternalMessage {
-  role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | Array<{ type: string; text?: string; image_url?: unknown }>;
-  name?: string;
-  tool_call_id?: string;
-  tool_calls?: Array<{
+/** A replayed tool exchange, in the content-part shape LibreChat persists. */
+export interface InternalToolCallPart {
+  type: ContentTypes.TOOL_CALL;
+  tool_call: {
     id: string;
-    type: 'function';
-    function: { name: string; arguments: string };
-  }>;
+    name: string;
+    /** Raw JSON string as the caller sent it; `formatAgentMessages` parses it. */
+    args: string;
+    /** The caller's result for this call. Present on every replayed pair. */
+    output: string;
+  };
+}
+
+/**
+ * Internal message format (LibreChat-compatible).
+ *
+ * There is deliberately no `tool` role and no `tool_call_id`: a tool result
+ * belongs to the `tool_call` part of the assistant turn that made the call.
+ * `formatMessage` has no branch for a tool role, so such a message formats as a
+ * SystemMessage and breaks the conversation for providers that accept a system
+ * message only in first position.
+ */
+export interface InternalMessage {
+  role: 'system' | 'user' | 'assistant';
+  content:
+    | string
+    | Array<{ type: string; text?: string; image_url?: unknown } | InternalToolCallPart>;
+  name?: string;
 }
 
 /**
@@ -182,11 +286,23 @@ export function convertInputToMessages(input: string | InputItem[]): InternalMes
   }
 
   const messages: InternalMessage[] = [];
+  const outputsByCallId = collectFunctionCallOutputs(input);
+  /**
+   * The assistant message collecting the current run of consecutive
+   * `function_call` items. A parallel batch arrives as several calls in a row
+   * and belongs on ONE assistant turn, so providers that pair tool results
+   * against the calls of a single turn see the batch as it was issued.
+   */
+  let pendingToolCallMessage: InternalMessage | null = null;
 
   for (const item of input) {
     if (item.type === 'item_reference') {
       // Skip item references - they're handled by previous_response_id
       continue;
+    }
+
+    if (item.type !== 'function_call') {
+      pendingToolCallMessage = null;
     }
 
     if (item.type === 'message') {
@@ -247,38 +363,38 @@ export function convertInputToMessages(input: string | InputItem[]): InternalMes
       messages.push({ role, content });
     }
 
+    /**
+     * A replayed call and its result become ONE `tool_call` content part on an
+     * assistant message, which is how LibreChat persists a tool exchange and
+     * the only shape `formatAgentMessages` reads: it emits the provider's
+     * tool-use block from the part and the paired tool result from
+     * `tool_call.output`. The OpenAI-style `{ role: 'tool' }` message this
+     * used to produce has no branch in `formatMessage`, which turned it into a
+     * SystemMessage mid-conversation — rejected outright by providers that
+     * allow a system message only as the first one.
+     *
+     * `function_call_output` items are consumed here through `outputsByCallId`,
+     * not emitted on their own; ingress validation has already established
+     * that every call has exactly one output and vice versa.
+     */
     if (item.type === 'function_call') {
-      // Function call items represent prior tool calls from assistant
-      const fcItem = item as {
-        type: 'function_call';
-        call_id: string;
-        name: string;
-        arguments: string;
+      const fcItem = item as FunctionCallItemParam;
+      const part: InternalToolCallPart = {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: fcItem.call_id,
+          name: fcItem.name,
+          args: fcItem.arguments,
+          output: outputsByCallId.get(fcItem.call_id) ?? '',
+        },
       };
 
-      // Add as assistant message with tool_calls
-      messages.push({
-        role: 'assistant',
-        content: '',
-        tool_calls: [
-          {
-            id: fcItem.call_id,
-            type: 'function',
-            function: { name: fcItem.name, arguments: fcItem.arguments },
-          },
-        ],
-      });
-    }
-
-    if (item.type === 'function_call_output') {
-      // Function call output items represent tool results
-      const fcoItem = item as { type: 'function_call_output'; call_id: string; output: string };
-
-      messages.push({
-        role: 'tool',
-        content: fcoItem.output,
-        tool_call_id: fcoItem.call_id,
-      });
+      if (pendingToolCallMessage != null && Array.isArray(pendingToolCallMessage.content)) {
+        pendingToolCallMessage.content.push(part);
+      } else {
+        pendingToolCallMessage = { role: 'assistant', content: [part] };
+        messages.push(pendingToolCallMessage);
+      }
     }
 
     // Reasoning items are typically not passed back as input
@@ -286,6 +402,18 @@ export function convertInputToMessages(input: string | InputItem[]): InternalMes
   }
 
   return messages;
+}
+
+/** Indexes every `function_call_output` in the input by its `call_id`. */
+function collectFunctionCallOutputs(input: InputItem[]): Map<string, string> {
+  const outputs = new Map<string, string>();
+  for (const item of input) {
+    if (item.type === 'function_call_output') {
+      const fcoItem = item as FunctionCallOutputItemParam;
+      outputs.set(fcoItem.call_id, fcoItem.output);
+    }
+  }
+  return outputs;
 }
 
 /**
@@ -379,6 +507,8 @@ interface StreamState {
   activeToolCalls: Set<string>;
   completedToolCalls: Set<string>;
   toolCallsWithArgs: Set<string>;
+  /** Calls to a caller-executed tool — the subset the run has to terminate itself. */
+  clientToolCalls: Set<string>;
 }
 
 /** One streamed argument fragment, as the agents SDK forwards LangChain tool call chunks. */
@@ -480,6 +610,7 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
     activeToolCalls: new Set(),
     completedToolCalls: new Set(),
     toolCallsWithArgs: new Set(),
+    clientToolCalls: new Set(),
   };
 
   const chunkResolver = createToolCallChunkResolver();
@@ -527,6 +658,42 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
   };
 
   /**
+   * Terminate the still-open calls to a caller-executed tool.
+   *
+   * `on_tool_end` terminates a call the server ran, which a caller-executed
+   * tool never is — the whole point is that the server hands it back. Without
+   * this, a streaming caller gets `output_item.added` plus argument deltas and
+   * then `response.completed`, with no `function_call_arguments.done` to mark
+   * the arguments final, and the item it is expected to act on stays
+   * `in_progress` inside a response that claims to be completed. A caller that
+   * waits for the terminating event before running the tool, as the streaming
+   * lifecycle tells it to, would wait forever.
+   *
+   * Deliberately limited to those calls. A server tool left open is the
+   * separate, pre-existing symptom of `on_tool_end` never reaching this module
+   * (the controller replaces the handler rather than composing with it); fixing
+   * that belongs at the wiring, not here, and closing such calls from
+   * finalization would change the event stream of every request that declares
+   * no client tool.
+   *
+   * Idempotent in both directions: a call already closed by `on_tool_end` is
+   * skipped, and marking it closed keeps `on_tool_end` from emitting a second
+   * pair afterwards. Arguments are complete by this point — `on_chat_model_end`
+   * backfills a delta for any call whose arguments the provider sent whole
+   * rather than streamed.
+   */
+  const closeOpenClientToolCalls = (): void => {
+    for (const callId of state.clientToolCalls) {
+      if (state.completedToolCalls.has(callId)) {
+        continue;
+      }
+      state.completedToolCalls.add(callId);
+      emitFunctionCallArgumentsDone(config, callId);
+      emitFunctionCallItemDone(config, callId);
+    }
+  };
+
+  /**
    * Close any open content streams
    */
   const closeOpenStreams = (): void => {
@@ -555,6 +722,10 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
       emitReasoningItemDone(config);
       state.reasoningStarted = false;
     }
+
+    /* Last, so the events every existing consumer already receives keep their
+       exact relative order and the terminating pair is strictly additive. */
+    closeOpenClientToolCalls();
   };
 
   const handlers = {
@@ -626,6 +797,12 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
             stepCallIds.push(callId);
             if (!state.activeToolCalls.has(callId)) {
               state.activeToolCalls.add(callId);
+              /* Recorded at announcement, while the name is in hand: the
+                 terminating events are emitted much later, from finalization,
+                 where only the call id is available. */
+              if (config.clientToolNames?.has(name) === true) {
+                state.clientToolCalls.add(callId);
+              }
               emitFunctionCallItemAdded(config, callId, name);
             }
           }

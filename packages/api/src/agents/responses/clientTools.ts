@@ -363,6 +363,12 @@ export interface ClientToolHandoff {
    * describes the tools the run actually ran with rather than the request's ask.
    */
   appliedTools: FunctionTool[];
+  /**
+   * The names the model sees as caller-executed. The streaming lifecycle needs
+   * them to recognize a call the server will never run, and so never close
+   * through `on_tool_end`. Empty when the request declared none.
+   */
+  clientToolNames: ReadonlySet<string>;
   wrapRunStep: (delegate: RunStepHandler) => RunStepHandler;
   wrapToolExecute: (delegate: ToolExecuteHandler) => ToolExecuteHandler;
 }
@@ -394,6 +400,7 @@ export function createClientToolHandoff({
     return {
       toolDefinitions: agentDefinitions ?? [],
       appliedTools: [],
+      clientToolNames: new Set<string>(),
       wrapRunStep: identity,
       wrapToolExecute: identity,
     };
@@ -416,6 +423,7 @@ export function createClientToolHandoff({
     appliedTools: (tools ?? []).filter(
       (tool): tool is FunctionTool => isFunctionTool(tool) && names.has(tool.name),
     ),
+    clientToolNames: names,
     wrapRunStep: (delegate) => createClientToolRunStepHandler({ delegate, clientToolNames: names }),
     wrapToolExecute: (delegate) =>
       createClientToolExecuteHandler({ delegate, clientToolNames: names, responseId }),

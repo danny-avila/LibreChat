@@ -209,6 +209,21 @@ describe('createClientToolHandoff', () => {
     expect(handoff.wrapToolExecute(toolExecute)).not.toBe(toolExecute);
   });
 
+  /**
+   * The streaming lifecycle terminates a caller-executed call's item itself,
+   * which it can only do for names it can recognize. A name the agent already
+   * owns is served by the server tool, so it is not one of them.
+   */
+  it('names the caller-executed tools, excluding one the agent owns', () => {
+    const handoff = createClientToolHandoff({
+      tools: [fnTool('run_query'), fnTool('open_service_page')],
+      agentDefinitions: [serverTool],
+      responseId: 'resp_1',
+    });
+
+    expect([...handoff.clientToolNames]).toEqual(['open_service_page']);
+  });
+
   it.each([
     ['no tools at all', undefined],
     ['hosted tools only', [{ type: 'librechat:web_search' } as Tool]],
@@ -219,6 +234,7 @@ describe('createClientToolHandoff', () => {
 
     expect(handoff.toolDefinitions).toEqual(agentDefinitions);
     expect(handoff.appliedTools).toEqual([]);
+    expect([...handoff.clientToolNames]).toEqual([]);
     expect(handoff.wrapRunStep(runStep)).toBe(runStep);
     expect(handoff.wrapToolExecute(toolExecute)).toBe(toolExecute);
   });

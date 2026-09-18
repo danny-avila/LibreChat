@@ -1179,6 +1179,9 @@ const executeResponse = async (envelope, { req, res }) => {
           res,
           context,
           tracker,
+          /* The run terminates a caller-executed call's item itself: the server
+             never executes one, so `on_tool_end` cannot. */
+          clientToolNames: clientTools.clientToolNames,
         };
 
         // Emit response.created then response.in_progress per Open Responses spec

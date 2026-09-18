@@ -1,3 +1,4 @@
+import { formatAgentMessages, Providers } from '@librechat/agents';
 import type { Response as ServerResponse } from 'express';
 import type { InputItem, ResponseContext } from '../types';
 import {
@@ -10,7 +11,9 @@ import {
   createResponseContext,
   buildResponsesUsage,
 } from '../service';
+import { extractMessageContent } from '~/protection/adapters/messages';
 import { buildResponse, createResponseTracker } from '../handlers';
+import { buildRunToolSet } from '~/agents/tools';
 
 describe('response usage aggregation', () => {
   const context: ResponseContext = {
@@ -98,6 +101,156 @@ describe('response usage aggregation', () => {
 
     const completed = writes.find((chunk) => chunk.startsWith('data: {'));
     expect(JSON.parse(completed?.slice(6) ?? '{}').response.usage).toEqual(usage);
+  });
+});
+
+/**
+ * A caller-executed tool is never run by the server, so `on_tool_end` — where a
+ * server-run call gets its terminating events — cannot fire for it. The
+ * streaming lifecycle still has to end the item, otherwise the caller that must
+ * run the tool is handed an item that never closes.
+ */
+describe('streaming lifecycle of a caller-executed tool call', () => {
+  const context: ResponseContext = {
+    responseId: 'resp_test',
+    model: 'agent_test',
+    createdAt: 1778317637,
+  };
+  const CALL_ID = 'toolu_stream_1';
+  const CLIENT_TOOL = 'submit_sql';
+
+  /** Collects the events one streamed run writes, as parsed payloads. */
+  function recorder(): { res: ServerResponse; events: Array<Record<string, unknown>> } {
+    const events: Array<Record<string, unknown>> = [];
+    const res = {
+      write: (chunk: string) => {
+        if (chunk.startsWith('data: ') && !chunk.includes('[DONE]')) {
+          events.push(JSON.parse(chunk.slice(6)));
+        }
+      },
+    } as unknown as ServerResponse;
+    return { res, events };
+  }
+
+  /** The terminating events for the call itself; the tool result is its own
+   *  `function_call_output` item and closes separately. */
+  function terminatingEvents(events: Array<Record<string, unknown>>): string[] {
+    return events
+      .filter(
+        (event) =>
+          event.type === 'response.function_call_arguments.done' ||
+          (event.type === 'response.output_item.done' &&
+            (event.item as { type?: string } | undefined)?.type === 'function_call'),
+      )
+      .map((event) => event.type as string);
+  }
+
+  /** Streams one call to `toolName`, then ends the run as the graph would. */
+  function streamToolCall(toolName: string): Array<Record<string, unknown>> {
+    const { res, events } = recorder();
+    const { handlers, finalizeStream } = createResponsesEventHandlers({
+      res,
+      context,
+      tracker: createResponseTracker(),
+      clientToolNames: new Set([CLIENT_TOOL]),
+    });
+
+    handlers.on_run_step.handle('on_run_step', {
+      id: 'step_1',
+      stepDetails: { type: 'tool_calls', tool_calls: [{ id: CALL_ID, name: toolName }] },
+    });
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_1',
+      delta: { type: 'tool_calls', tool_calls: [{ id: CALL_ID, index: 0, args: '{"sql":' }] },
+    });
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_1',
+      delta: { type: 'tool_calls', tool_calls: [{ index: 0, args: '"SELECT 1"}' }] },
+    });
+    finalizeStream();
+
+    return events;
+  }
+
+  const streamClientToolCall = (): Array<Record<string, unknown>> => streamToolCall(CLIENT_TOOL);
+
+  it('terminates the arguments and the item before the response completes', () => {
+    const types = streamClientToolCall().map((event) => event.type);
+
+    expect(types).toEqual([
+      'response.output_item.added',
+      'response.function_call_arguments.delta',
+      'response.function_call_arguments.delta',
+      'response.function_call_arguments.done',
+      'response.output_item.done',
+      'response.completed',
+    ]);
+  });
+
+  it('reports the assembled arguments on the terminating events', () => {
+    const events = streamClientToolCall();
+    const argumentsDone = events.find(
+      (event) => event.type === 'response.function_call_arguments.done',
+    );
+
+    expect(argumentsDone).toMatchObject({
+      call_id: CALL_ID,
+      arguments: '{"sql":"SELECT 1"}',
+    });
+  });
+
+  it('leaves no item in progress inside a completed response', () => {
+    const events = streamClientToolCall();
+    const completed = events.find((event) => event.type === 'response.completed') as {
+      response: { status: string; output: Array<{ type: string; status?: string }> };
+    };
+
+    expect(completed.response.status).toBe('completed');
+    expect(completed.response.output).toEqual([
+      expect.objectContaining({ type: 'function_call', status: 'completed' }),
+    ]);
+  });
+
+  /**
+   * A mixed batch answers the client call server-side, which can terminate it
+   * through `on_tool_end` after all. Finalization must not emit a second pair
+   * for a call that already closed.
+   */
+  it('does not re-terminate a call on_tool_end already closed', () => {
+    const { res, events } = recorder();
+    const { handlers, finalizeStream } = createResponsesEventHandlers({
+      res,
+      context,
+      tracker: createResponseTracker(),
+      clientToolNames: new Set([CLIENT_TOOL]),
+    });
+
+    handlers.on_run_step.handle('on_run_step', {
+      id: 'step_1',
+      stepDetails: { type: 'tool_calls', tool_calls: [{ id: CALL_ID, name: CLIENT_TOOL }] },
+    });
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_1',
+      delta: { type: 'tool_calls', tool_calls: [{ id: CALL_ID, index: 0, args: '{}' }] },
+    });
+    handlers.on_tool_end.handle('on_tool_end', { tool_call_id: CALL_ID, output: 'done' });
+    finalizeStream();
+
+    expect(terminatingEvents(events)).toEqual([
+      'response.function_call_arguments.done',
+      'response.output_item.done',
+    ]);
+  });
+
+  /**
+   * Scoping, pinned: a server tool's call is `on_tool_end`'s to terminate, and
+   * this module never sees that event because the controller replaces the
+   * handler instead of composing with it. Terminating such a call from
+   * finalization would paper over that separate bug AND change the event stream
+   * of every request that declares no client tool, so it deliberately does not.
+   */
+  it('leaves a server tool call to on_tool_end', () => {
+    expect(terminatingEvents(streamToolCall('bash_tool'))).toEqual([]);
   });
 });
 
@@ -343,7 +496,7 @@ describe('convertInputToMessages', () => {
   });
 
   // ── Function call items ────────────────────────────────────────────
-  it('converts function_call items to assistant messages with tool_calls', () => {
+  it('pairs a function_call with its output into one assistant tool_call part', () => {
     const input: InputItem[] = [
       {
         type: 'function_call',
@@ -352,40 +505,68 @@ describe('convertInputToMessages', () => {
         name: 'get_weather',
         arguments: '{"city":"NYC"}',
       },
+      { type: 'function_call_output', call_id: 'call_abc', output: '{"temp":72}' },
     ];
     const result = convertInputToMessages(input);
     expect(result).toEqual([
       {
         role: 'assistant',
-        content: '',
-        tool_calls: [
+        content: [
           {
-            id: 'call_abc',
-            type: 'function',
-            function: { name: 'get_weather', arguments: '{"city":"NYC"}' },
+            type: 'tool_call',
+            tool_call: {
+              id: 'call_abc',
+              name: 'get_weather',
+              args: '{"city":"NYC"}',
+              output: '{"temp":72}',
+            },
           },
         ],
       },
     ]);
   });
 
-  // ── Function call output items ─────────────────────────────────────
-  it('converts function_call_output items to tool messages', () => {
+  it('never emits a tool-role message, which formats as a stray SystemMessage', () => {
     const input: InputItem[] = [
+      { type: 'message', role: 'user', content: 'Run it' },
       {
-        type: 'function_call_output',
+        type: 'function_call',
+        id: 'fc_1',
         call_id: 'call_abc',
-        output: '{"temp":72}',
+        name: 'get_weather',
+        arguments: '{}',
       },
+      { type: 'function_call_output', call_id: 'call_abc', output: 'ok' },
     ];
     const result = convertInputToMessages(input);
-    expect(result).toEqual([
-      {
-        role: 'tool',
-        content: '{"temp":72}',
-        tool_call_id: 'call_abc',
-      },
+    expect(result.map((message) => message.role)).toEqual(['user', 'assistant']);
+  });
+
+  it('keeps a parallel batch on a single assistant turn', () => {
+    const input: InputItem[] = [
+      { type: 'function_call', id: 'fc_1', call_id: 'call_a', name: 'first', arguments: '{}' },
+      { type: 'function_call', id: 'fc_2', call_id: 'call_b', name: 'second', arguments: '{}' },
+      { type: 'function_call_output', call_id: 'call_a', output: 'a' },
+      { type: 'function_call_output', call_id: 'call_b', output: 'b' },
+    ];
+    const result = convertInputToMessages(input);
+    expect(result).toHaveLength(1);
+    expect(result[0].content).toEqual([
+      { type: 'tool_call', tool_call: { id: 'call_a', name: 'first', args: '{}', output: 'a' } },
+      { type: 'tool_call', tool_call: { id: 'call_b', name: 'second', args: '{}', output: 'b' } },
     ]);
+  });
+
+  it('starts a new assistant turn when a message separates two calls', () => {
+    const input: InputItem[] = [
+      { type: 'function_call', id: 'fc_1', call_id: 'call_a', name: 'first', arguments: '{}' },
+      { type: 'function_call_output', call_id: 'call_a', output: 'a' },
+      { type: 'message', role: 'user', content: 'And again' },
+      { type: 'function_call', id: 'fc_2', call_id: 'call_b', name: 'second', arguments: '{}' },
+      { type: 'function_call_output', call_id: 'call_b', output: 'b' },
+    ];
+    const result = convertInputToMessages(input);
+    expect(result.map((message) => message.role)).toEqual(['assistant', 'user', 'assistant']);
   });
 
   // ── Item references are skipped ────────────────────────────────────
@@ -672,55 +853,143 @@ describe('tool call arguments from the completed model message', () => {
  */
 describe('client tool continuation replay', () => {
   const CALL_ID = 'call_submit_1';
+  const TOOL_NAME = 'submit_sql';
 
-  it('pairs a replayed function_call with its output, adjacently', () => {
-    const input: InputItem[] = [
-      { type: 'message', role: 'user', content: 'Run the query' },
-      {
-        type: 'function_call',
-        id: 'fc_1',
-        call_id: CALL_ID,
-        name: 'submit_sql',
-        arguments: '{"sql":"SELECT 1"}',
-      },
-      { type: 'function_call_output', call_id: CALL_ID, output: 'submitted' },
-    ];
+  const replayInput: InputItem[] = [
+    { type: 'message', role: 'user', content: 'Run the query' },
+    {
+      type: 'function_call',
+      id: 'fc_1',
+      call_id: CALL_ID,
+      name: TOOL_NAME,
+      arguments: '{"sql":"SELECT 1"}',
+    },
+    { type: 'function_call_output', call_id: CALL_ID, output: 'submitted' },
+  ];
 
-    expect(convertInputToMessages(input)).toEqual([
+  it('pairs a replayed function_call with its output on one assistant turn', () => {
+    expect(convertInputToMessages(replayInput)).toEqual([
       { role: 'user', content: 'Run the query' },
       {
         role: 'assistant',
-        content: '',
-        tool_calls: [
+        content: [
           {
-            id: CALL_ID,
-            type: 'function',
-            function: { name: 'submit_sql', arguments: '{"sql":"SELECT 1"}' },
+            type: 'tool_call',
+            tool_call: {
+              id: CALL_ID,
+              name: TOOL_NAME,
+              args: '{"sql":"SELECT 1"}',
+              output: 'submitted',
+            },
           },
         ],
       },
-      { role: 'tool', content: 'submitted', tool_call_id: CALL_ID },
     ]);
   });
 
   /**
-   * What a caller gets wrong by following the OpenAI habit of sending only the
-   * output: the tool result arrives with no call to answer, which providers
-   * reject. Pinned so the replay requirement is not silently relaxed.
+   * The conversion is only half the contract: the controller hands these
+   * messages to `formatAgentMessages`, which reads a tool exchange ONLY from a
+   * `tool_call` content part. Asserting the converted shape in isolation is
+   * what let the earlier OpenAI-style `{ role: 'tool' }` message pass its unit
+   * test and still fail every live replay — `formatMessage` has no branch for
+   * that role, so it became a SystemMessage mid-conversation and Anthropic
+   * rejected the payload ("System messages are only permitted as the first
+   * passed message"). This test formats what the controller formats.
    */
-  it('leaves a bare function_call_output without a call to answer', () => {
-    const messages = convertInputToMessages([
-      { type: 'function_call_output', call_id: CALL_ID, output: 'submitted' },
-    ]);
+  it('formats the replay into a paired tool_use and tool result', () => {
+    const toolSet = buildRunToolSet({
+      toolDefinitions: [{ name: TOOL_NAME, description: 'caller-executed', schema: {} }],
+    } as never);
+    expect(toolSet.has(TOOL_NAME)).toBe(true);
 
-    expect(messages).toEqual([{ role: 'tool', content: 'submitted', tool_call_id: CALL_ID }]);
-    expect(
-      messages.some((message) =>
-        (message as { tool_calls?: Array<{ id: string }> }).tool_calls?.some(
-          (toolCall) => toolCall.id === CALL_ID,
-        ),
-      ),
-    ).toBe(false);
+    const { messages } = formatAgentMessages(
+      convertInputToMessages(replayInput) as never,
+      {},
+      toolSet,
+      undefined,
+      { provider: Providers.ANTHROPIC },
+    );
+
+    /** The invariant `_convertMessagesToAnthropicPayload` enforces before it
+     *  throws: nothing past the first message may be a system message. */
+    expect(messages.slice(1).map((message) => message._getType())).not.toContain('system');
+    expect(messages.map((message) => message._getType())).toEqual(['human', 'ai', 'tool']);
+
+    /** The call rides on the AIMessage as a parsed `tool_calls` entry — the
+     *  provider integration renders it as the tool-use block. */
+    const toolCalls = (messages[1] as unknown as { tool_calls?: Array<Record<string, unknown>> })
+      .tool_calls;
+    expect(toolCalls).toEqual([{ id: CALL_ID, name: TOOL_NAME, args: { sql: 'SELECT 1' } }]);
+
+    const toolResult = messages[2] as unknown as { tool_call_id: string; content: unknown };
+    expect(toolResult.tool_call_id).toBe(CALL_ID);
+    expect(toolResult.content).toBe('submitted');
+  });
+
+  /**
+   * The replayed arguments and result moved out of a message's own `content`
+   * and into a `tool_call` part, and the controller runs the content filter
+   * over these same messages (`extractMessageContent`) before the run starts.
+   * Caller-supplied text must stay reachable by that traversal: a shape the
+   * filter cannot see is a filter that silently stops covering the replay.
+   */
+  it('keeps replayed tool text visible to the content-filter traversal', () => {
+    const fragments = [...extractMessageContent(convertInputToMessages(replayInput) as never)].map(
+      (fragment) => fragment.text,
+    );
+
+    expect(fragments).toContain('{"sql":"SELECT 1"}');
+    expect(fragments).toContain('submitted');
+  });
+
+  /**
+   * What a caller gets wrong by following the OpenAI habit of sending only the
+   * output: the tool result arrives with no call to answer. Rejected at ingress
+   * with a message that names the item, rather than reaching the provider and
+   * coming back as an opaque upstream failure.
+   */
+  it('rejects a bare function_call_output', () => {
+    const result = validateResponseRequest({
+      model: 'agent_test',
+      input: [{ type: 'function_call_output', call_id: CALL_ID, output: 'submitted' }],
+    });
+
+    expect(result.valid).toBe(false);
+    expect((result as { error: string }).error).toContain(
+      `function_call_output ${CALL_ID} has no matching function_call`,
+    );
+  });
+
+  it('rejects a function_call whose output was not replayed', () => {
+    const result = validateResponseRequest({
+      model: 'agent_test',
+      input: replayInput.slice(0, 2),
+    });
+
+    expect(result.valid).toBe(false);
+    expect((result as { error: string }).error).toContain(
+      `function_call ${CALL_ID} has no function_call_output`,
+    );
+  });
+
+  it.each([
+    ['a duplicate call_id', [replayInput[1], replayInput[1]], 'duplicate function_call call_id'],
+    [
+      'non-string arguments',
+      [{ type: 'function_call', id: 'fc_1', call_id: CALL_ID, name: TOOL_NAME, arguments: {} }],
+      'requires arguments as a JSON string',
+    ],
+    [
+      'a missing call_id',
+      [{ type: 'function_call', id: 'fc_1', name: TOOL_NAME, arguments: '{}' }],
+      'requires a non-empty string call_id',
+    ],
+  ])('rejects %s', (_label, input, expected) => {
+    const result = validateResponseRequest({ model: 'agent_test', input });
+
+    expect(result.valid).toBe(false);
+    expect((result as { error: string }).error).toContain(expected as string);
   });
 });
 
