@@ -2280,7 +2280,19 @@ export async function initializeAgent(
        * unresolved form means editing them retires the identity while the
        * clock does not move it.
        */
-      const instructionTemplate = agent.instructions;
+      /**
+       * Resolved against a fixed instant, so the temporal placeholders
+       * collapse to one constant while every other substitution — the user's
+       * name, for one — resolves as the model will see it. Recording the raw
+       * template instead would give two users the same identity under
+       * `promptCacheScope: shared` despite different text.
+       */
+      const instructionTemplate = replaceSpecialVars({
+        text: agent.instructions,
+        user: user ? (user as unknown as TUser) : null,
+        now: new Date(0),
+        timezone: runtime.requestBody.timezone,
+      });
       agent.instructions = undefined;
       appendAdditionalInstructions(agent, resolvedInstructions, { stable: false });
       recordStableInstructionText(
