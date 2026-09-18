@@ -24,6 +24,7 @@ const {
   normalizeAgentUpdateData,
   getRequestRoleCache,
   persistAgentInstructionPromptFallback,
+  prepareAgentInstructionPromptRestore,
   redactAgentInstructionPromptFallback,
   redactAgentInstructionPromptFallbacks,
   stripFileIdsFromToolResources,
@@ -100,6 +101,19 @@ const persistInstructionPromptSnapshot = async (req, agent, existingAgent) => {
     agent,
     resolver: instructionPromptResolver,
     existingInstructionPrompt: existingAgent?.instruction_prompt,
+    context: {
+      userId: req.user.id,
+      role: req.user.role,
+      appConfig: req.config,
+      ...(roleCache ? { roleCache } : {}),
+    },
+  });
+};
+const prepareInstructionPromptRestore = (req, version) => {
+  const roleCache = getRequestRoleCache(req) ?? undefined;
+  return prepareAgentInstructionPromptRestore({
+    version,
+    resolver: instructionPromptResolver,
     context: {
       userId: req.user.id,
       role: req.user.role,
@@ -2138,15 +2152,17 @@ const revertAgentVersionHandler = async (req, res) => {
       actionIds.length > 0
         ? ((await db.getActions({ agentId: id, actionId: actionIds }, true)) ?? [])
         : [];
+    const { version: resolvedRevertVersion, restoreOverrides: promptRestore } =
+      await prepareInstructionPromptRestore(req, revertVersion);
 
     if (
-      (await blockFilteredAgentContent(req, res, revertVersion)) ||
+      (await blockFilteredAgentContent(req, res, resolvedRevertVersion)) ||
       blockFilteredActionContent(req, res, actions)
     ) {
       return;
     }
 
-    let updatedAgent = await db.revertAgentVersion({ id }, version_index);
+    let updatedAgent = await db.revertAgentVersion({ id }, version_index, promptRestore);
     const revertUpdates = {};
     if (
       revertVersion &&
@@ -2221,8 +2237,8 @@ const revertAgentVersionHandler = async (req, res) => {
     return res.json(redactAgentInstructionPromptFallback(updatedAgent));
   } catch (error) {
     logger.error('[/agents/:id/revert] Error reverting Agent version', error);
-    if (error?.statusCode === 409) {
-      return res.status(409).json({ error: error.message });
+    if (Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 600) {
+      return res.status(error.statusCode).json({ error: error.message });
     }
     res.status(500).json({ error: error.message });
   }

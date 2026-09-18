@@ -2945,6 +2945,100 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(createAgentSpy).not.toHaveBeenCalled();
     });
 
+    test('re-resolves a prompt snapshot before restoring a version', async () => {
+      const authorId = new mongoose.Types.ObjectId();
+      const instructionPrompt = {
+        source: 'librechat',
+        promptId: new mongoose.Types.ObjectId().toString(),
+        name: 'Restored policy',
+      };
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Current Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        instructions: 'current inline instructions',
+        versions: [
+          {
+            name: 'Historical Prompt Agent',
+            provider: 'openai',
+            model: 'gpt-4',
+            instructions: 'stale snapshot',
+            instruction_prompt: instructionPrompt,
+          },
+        ],
+      });
+      mockReq.config = {
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.instruction_prompts] },
+        },
+      };
+      mockReq.user.id = authorId.toString();
+      mockReq.params.id = agent.id;
+      mockReq.body = { version_index: 0 };
+
+      await revertAgentVersionHandler(mockReq, mockRes);
+
+      expect(mockInstructionPromptResolve).toHaveBeenCalledWith(
+        instructionPrompt,
+        expect.objectContaining({ userId: mockReq.user.id }),
+      );
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.instructions).toBeUndefined();
+      expect(response.instruction_prompt).toMatchObject(instructionPrompt);
+      const agentInDb = await Agent.findOne({ id: agent.id }).lean();
+      expect(agentInDb.instructions).toBe('resolved instructions');
+      expect(agentInDb.instruction_prompt).toMatchObject(instructionPrompt);
+    });
+
+    test('does not restore a version when prompt resolution fails', async () => {
+      const authorId = new mongoose.Types.ObjectId();
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Current Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        instructions: 'current inline instructions',
+        versions: [
+          {
+            name: 'Historical Prompt Agent',
+            provider: 'openai',
+            model: 'gpt-4',
+            instructions: 'stale snapshot',
+            instruction_prompt: {
+              source: 'librechat',
+              promptId: new mongoose.Types.ObjectId().toString(),
+              name: 'Revoked policy',
+            },
+          },
+        ],
+      });
+      const db = require('~/models');
+      const revertSpy = jest.spyOn(db, 'revertAgentVersion');
+      mockInstructionPromptResolve.mockRejectedValueOnce(
+        Object.assign(new Error('Prompt access denied'), { statusCode: 403 }),
+      );
+      mockReq.config = {
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.instruction_prompts] },
+        },
+      };
+      mockReq.user.id = authorId.toString();
+      mockReq.params.id = agent.id;
+      mockReq.body = { version_index: 0 };
+
+      await revertAgentVersionHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Prompt access denied' });
+      expect(revertSpy).not.toHaveBeenCalled();
+      const agentInDb = await Agent.findOne({ id: agent.id }).lean();
+      expect(agentInDb.instructions).toBe('current inline instructions');
+      expect(agentInDb.instruction_prompt).toBeUndefined();
+    });
+
     test('revertAgentVersionHandler should block selected content before persistence', async () => {
       const agentAuthorId = new mongoose.Types.ObjectId();
       const agent = await Agent.create({

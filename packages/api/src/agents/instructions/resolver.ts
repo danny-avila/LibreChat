@@ -273,6 +273,40 @@ export async function persistAgentInstructionPromptFallback({
         }
       : reference;
 }
+export async function prepareAgentInstructionPromptRestore<
+  T extends {
+    instructions?: string | null;
+    instruction_prompt?: AgentInstructionPrompt | null;
+  },
+>({
+  version,
+  context,
+  resolver,
+}: {
+  version: T | null | undefined;
+  context: AgentInstructionPromptContext;
+  resolver?: AgentInstructionPromptProvider;
+}): Promise<{
+  version: T | null | undefined;
+  restoreOverrides?: Pick<T, 'instructions' | 'instruction_prompt'>;
+}> {
+  if (version?.instruction_prompt == null) {
+    return { version };
+  }
+  const restoreOverrides = {
+    instructions: version.instructions,
+    instruction_prompt: version.instruction_prompt,
+  } as Pick<T, 'instructions' | 'instruction_prompt'>;
+  await persistAgentInstructionPromptFallback({
+    agent: restoreOverrides,
+    context,
+    resolver,
+  });
+  return {
+    version: { ...version, ...restoreOverrides },
+    restoreOverrides,
+  };
+}
 
 /**
  * Compatibility snapshots remain persisted for old execution nodes, but prompt-backed
