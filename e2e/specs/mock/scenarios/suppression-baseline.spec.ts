@@ -7,7 +7,7 @@ import {
   readFileSync,
   rmSync,
   symlinkSync,
-  writeFileSync,
+  utimesSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -494,9 +494,18 @@ test.describe('the recorded design-rule backlog', () => {
         { cwd: root },
       );
 
+    /** Freshness is an mtime comparison, and a file written in the same
+     *  millisecond as the build reads as not newer than it. The times are set
+     *  here rather than raced for, so what the scenario asserts is the rule and
+     *  not the filesystem's clock. */
+    const at = (relative: string, secondsFromNow: number): void => {
+      const when = new Date(Date.now() + secondsFromNow * 1000);
+      utimesSync(join(root, relative), when, when);
+    };
+
     try {
       /** A build newer than every source and every build input: no rebuild. */
-      writeFileSync(join(root, 'packages/client/dist/index.js'), 'export {};\n');
+      at('packages/client/dist/index.js', 60);
       rmSync(marker, { force: true });
       const fresh = checks(['eslint.config.mjs']);
       expect(fresh.status, fresh.output).not.toBe(0);
@@ -504,20 +513,16 @@ test.describe('the recorded design-rule backlog', () => {
 
       /** The build config moves, the sources do not: the build has to be asked
        *  for, because what `dist` holds was emitted under the old one. */
-      writeFileSync(
-        join(root, 'packages/client/tsdown.config.mjs'),
-        `${readFileSync(join(root, 'packages/client/tsdown.config.mjs'), 'utf8')}\n// touched\n`,
-      );
+      at('packages/client/tsdown.config.mjs', 120);
       const afterConfig = checks(['packages/client/tsdown.config.mjs']);
       expect(existsSync(marker), 'a build-config change kept the old metadata').toBe(true);
       expect(afterConfig.status, afterConfig.output).not.toBe(0);
 
       /** And the library's manifest, which names the entry point the rules
        *  resolve `@librechat/client` through. */
-      writeFileSync(join(root, 'packages/client/dist/index.js'), 'export {};\n');
+      at('packages/client/dist/index.js', 180);
       rmSync(marker, { force: true });
-      const packageJson = join(root, 'packages/client/package.json');
-      writeFileSync(packageJson, readFileSync(packageJson, 'utf8'));
+      at('packages/client/package.json', 240);
       const afterManifest = checks(['packages/client/package.json']);
       expect(existsSync(marker), 'a manifest change kept the old metadata').toBe(true);
       expect(afterManifest.status, afterManifest.output).not.toBe(0);
