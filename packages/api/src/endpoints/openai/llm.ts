@@ -1105,10 +1105,18 @@ export function getOpenAILLMConfig({
      * and a deployment alias fronting a supported one must.
      */
     const wireModel = (llmConfig.modelKwargs as { model?: unknown } | undefined)?.model;
+    /**
+     * By precedence, not by agreement: the `modelKwargs` override is the model
+     * the request addresses, so it decides alone when present — permitting a
+     * supported deployment behind an unsupported visible name, and vetoing the
+     * reverse. Without one, an Azure deployment name is the next most specific
+     * name, and the visible model is the fallback.
+     */
     const supported =
-      (supportsExplicitPromptCache(llmConfig.model) ||
-        supportsExplicitPromptCache(deploymentName)) &&
-      (typeof wireModel !== 'string' || supportsExplicitPromptCache(wireModel));
+      typeof wireModel === 'string'
+        ? supportsExplicitPromptCache(wireModel)
+        : supportsExplicitPromptCache(llmConfig.model) ||
+          supportsExplicitPromptCache(deploymentName);
     if (
       firstPartyEndpoint &&
       promptCacheExplicit === true &&
