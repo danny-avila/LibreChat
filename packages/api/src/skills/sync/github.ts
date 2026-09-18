@@ -23,6 +23,7 @@ import type {
   SkillSyncProvider,
   SkillSyncCredentialSummary,
   SkillSyncStatusInput,
+  DeleteSkillResult,
 } from '@librechat/data-schemas';
 import type { SkillSyncConfig, SkillSyncGitHubSourceConfig } from 'librechat-data-provider';
 import type {
@@ -206,7 +207,7 @@ export type GitHubSkillSyncDeps = {
     skillId: string | Types.ObjectId,
     relativePath: string,
   ) => Promise<{ deleted: boolean }>;
-  deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
+  deleteSkill: (id: string) => Promise<DeleteSkillResult>;
   saveBuffer: (params: {
     userId: string;
     buffer: Buffer;
@@ -1072,7 +1073,12 @@ async function deleteSyncedSkillForRestore(
   skill: ISkill & { _id: Types.ObjectId },
 ): Promise<{ deletedFileCount: number; deletedSkill: DeletedSyncedSkillJournal }> {
   const files = await deps.listSkillFiles(skill._id);
-  await deps.deleteSkill(skill._id.toString());
+  const deletion = await deps.deleteSkill(skill._id.toString());
+  if (!deletion.cleanupComplete) {
+    throw new Error(
+      `Skill cleanup did not finish: ${deletion.failedCleanupSteps.join(', ') || 'unknown step'}`,
+    );
+  }
   return {
     deletedFileCount: files.length,
     deletedSkill: { skill, files },
@@ -1405,7 +1411,12 @@ async function deleteSyncedSkill(
     });
     deletedFiles++;
   }
-  await deps.deleteSkill(skill._id.toString());
+  const deletion = await deps.deleteSkill(skill._id.toString());
+  if (!deletion.cleanupComplete) {
+    throw new Error(
+      `Skill cleanup did not finish: ${deletion.failedCleanupSteps.join(', ') || 'unknown step'}`,
+    );
+  }
   if (cleanupErrors.length > 0) {
     throw cleanupErrors[0];
   }

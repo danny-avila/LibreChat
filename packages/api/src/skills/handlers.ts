@@ -598,27 +598,31 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
       const files = await listSkillFiles(id);
 
       const result = await deleteSkill(id);
+      /** Once SkillFile cleanup succeeds, the records loaded above are the
+       * only remaining references to their blobs. Use them even if an
+       * independent allowlist or permission cleanup step needs a retry. */
+      if (!result.failedCleanupSteps.includes('skill_files')) {
+        for (const file of files) {
+          const { deleteFile: deleteBlob } = getStrategyFunctions(file.source);
+          if (deleteBlob) {
+            deleteBlob(req, {
+              filepath: file.filepath,
+              storageKey: file.storageKey,
+              storageRegion: file.storageRegion,
+              user: file.author?.toString?.(),
+              tenantId: file.tenantId?.toString?.(),
+            }).catch((e) =>
+              logger.error(`[deleteSkill] Blob cleanup failed for ${file.relativePath}:`, e),
+            );
+          }
+        }
+      }
+
       if (!result.cleanupComplete) {
         return res.status(500).json({ error: 'Skill deletion cleanup did not finish' });
       }
       if (!result.deleted && files.length === 0) {
         return res.status(404).json({ error: 'Skill not found' });
-      }
-
-      // Fire-and-forget blob cleanup for each file
-      for (const file of files) {
-        const { deleteFile: deleteBlob } = getStrategyFunctions(file.source);
-        if (deleteBlob) {
-          deleteBlob(req, {
-            filepath: file.filepath,
-            storageKey: file.storageKey,
-            storageRegion: file.storageRegion,
-            user: file.author?.toString?.(),
-            tenantId: file.tenantId?.toString?.(),
-          }).catch((e) =>
-            logger.error(`[deleteSkill] Blob cleanup failed for ${file.relativePath}:`, e),
-          );
-        }
       }
 
       const response: TDeleteSkillResponse = { id, deleted: true };
