@@ -2059,6 +2059,54 @@ describe('prompt caching', () => {
     expect(result.llmConfig).not.toHaveProperty('promptCacheScopeId');
   });
 
+  it('ignores cache controls an agent author hid in a fallback client', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: {
+        model: 'gpt-5.6',
+        fallbacks: [
+          {
+            provider: 'openAI',
+            clientOptions: {
+              model: 'gpt-5.6',
+              promptCacheKey: 'author-chosen-key',
+              promptCacheRetention: '24h',
+              promptCacheScope: 'shared',
+            },
+          },
+        ],
+      } as unknown as Parameters<typeof getOpenAILLMConfig>[0]['modelOptions'],
+    });
+
+    const fallback = (
+      result.llmConfig as unknown as {
+        fallbacks?: Array<{ clientOptions?: Record<string, unknown> }>;
+      }
+    ).fallbacks?.[0]?.clientOptions;
+    /** A fallback client is built from these, so the policy has to reach them too. */
+    expect(fallback).not.toHaveProperty('promptCacheKey');
+    expect(fallback).not.toHaveProperty('promptCacheRetention');
+    expect(fallback).not.toHaveProperty('promptCacheScope');
+    expect(fallback).toHaveProperty('model', 'gpt-5.6');
+  });
+
+  it('withholds explicit cache controls when the wire override is unsupported', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6', modelKwargs: { model: 'gpt-4o' } } as unknown as Parameters<
+        typeof getOpenAILLMConfig
+      >[0]['modelOptions'],
+      promptCacheExplicit: true,
+    });
+
+    /** `modelKwargs.model` is the model the request addresses, and gpt-4o rejects them. */
+    expect(result.llmConfig).not.toHaveProperty('promptCacheExplicit');
+  });
+
   it('sends no key at all when an endpoint opts out over a pinned one', () => {
     const result = getOpenAILLMConfig({
       apiKey: 'test-api-key',

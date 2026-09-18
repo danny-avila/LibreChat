@@ -158,6 +158,19 @@ describe('buildPromptCacheKey', () => {
     ).not.toBe(key(discovered({ type: 'object', properties: { input: { type: 'string' } } })));
   });
 
+  it('keeps a tool named after an inherited property out of the discovered set', () => {
+    const shadow = { name: 'toString', description: 'Render', parameters: { type: 'object' } };
+    const withState = (deferLoading: boolean) => ({
+      toolDefinitions: [{ ...shadow, defer_loading: deferLoading }, calculatorTool],
+      clientOptions: {
+        promptCacheConfiguredToolState: { search: { deferLoading: true } },
+      },
+    });
+
+    /** No state was recorded for this tool, so its own classification still keys. */
+    expect(key(withState(true))).not.toBe(key(withState(false)));
+  });
+
   it('agrees with a conversation that has not discovered the same tool', () => {
     const deferred = { ...calculatorTool, defer_loading: true };
 
@@ -316,6 +329,7 @@ describe('buildPromptCacheKey', () => {
         { clientOptions: { configuration: { defaultHeaders: { 'X-Conversation': 'abc-123' } } } },
       ],
       ['credentials', { clientOptions: { apiKey: 'sk-rotated' } }],
+      ['the service tier a request is scheduled on', { clientOptions: { service_tier: 'flex' } }],
       ['a rotated Azure resource key', { clientOptions: { azureOpenAIApiKey: 'az-rotated' } }],
       [
         'the Responses output budget',
