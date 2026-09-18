@@ -1109,8 +1109,19 @@ export function getOpenAILLMConfig({
    * spelling — and it is applied before this point, so overwriting it would
    * bill a group at the endpoint's rate against its explicit instruction.
    */
-  const retentionSuppliedByParams =
-    llmConfig.promptCacheRetention != null || modelKwargs.prompt_cache_retention != null;
+  /**
+   * Moved onto the constructor field for the same reason the pinned key is:
+   * the serializer spreads the kwargs first and then writes its own
+   * `promptCacheRetention`, so a raw value left behind is overwritten with
+   * undefined and no retention is sent at all — while still counting as a
+   * parameter-supplied value that suppresses the endpoint default.
+   */
+  if (firstPartyEndpoint && typeof modelKwargs.prompt_cache_retention === 'string') {
+    llmConfig.promptCacheRetention =
+      modelKwargs.prompt_cache_retention as typeof llmConfig.promptCacheRetention;
+    delete modelKwargs.prompt_cache_retention;
+  }
+  const retentionSuppliedByParams = llmConfig.promptCacheRetention != null;
   if (
     firstPartyEndpoint &&
     promptCacheRetention != null &&
