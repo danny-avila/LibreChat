@@ -7,7 +7,13 @@ import type { Locator } from '@playwright/test';
  * dark mode, under a custom theme, and across a Tailwind major.
  */
 
-/** Read several computed properties off a rendered element in one round trip. */
+/**
+ * Read several computed properties off a rendered element in one round trip.
+ * Names are written the way the callers read them back (`touchAction`);
+ * `getPropertyValue` only answers to the CSS spelling, so the hyphenation
+ * happens here rather than at each call site — and a name it does not know
+ * comes back empty, which fails the assertion instead of passing it.
+ */
 export function computedStyles<K extends string>(
   locator: Locator,
   properties: readonly K[],
@@ -16,7 +22,8 @@ export function computedStyles<K extends string>(
     const style = getComputedStyle(node as HTMLElement);
     const result: Record<string, string> = {};
     for (const name of names) {
-      result[name] = (style.getPropertyValue(name) || style[name as never] || '').trim();
+      const property = name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+      result[name] = style.getPropertyValue(property).trim();
     }
     return result;
   }, properties) as Promise<Record<K, string>>;
