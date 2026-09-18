@@ -273,6 +273,7 @@ test.describe('the recorded design-rule backlog', () => {
         'package-lock.json',
         'packages/client/package.json',
         'packages/client/tsdown.config.mjs',
+        'packages/client/tsconfig.json',
         'scripts/static-checks.mts',
         'packages/client/src/Primitive.tsx',
         'client/src/components/ui/Thing.tsx',
@@ -312,61 +313,64 @@ test.describe('the recorded design-rule backlog', () => {
 
     /** An inline comment is the one way to silence a design rule that leaves
      *  nothing behind to review, and a file with no entry could otherwise carry
-     *  one past every other check. The check lints the diff's design sources
-     *  twice — with and without `--no-inline-config` — so every spelling is
-     *  caught, including a description after `--`, and text that only looks like
-     *  a directive is not. A directive over a file that does not violate the
-     *  rule silences nothing yet, so the two runs agree; that one is caught by
-     *  asking the same run for unused directives. */
+     *  one past every other check. Two halves answer for it: the diff's design
+     *  sources are linted twice — with and without `--no-inline-config` — so
+     *  anything a comment is silencing today shows up whatever its spelling, and
+     *  the comments themselves are read out of the parser, so a directive that
+     *  silences nothing yet is caught as well and a string that reads like one
+     *  is not. */
     const probe = 'client/src/__directive_probe__.tsx';
     const probePath = join(repoRoot, probe);
-    const silenced = [
-      ['a named disable', '/* eslint-disable shadcn/no-raw-colors */'],
-      ['a justified disable', '/* eslint-disable shadcn/no-raw-colors -- because */'],
-      ['a blanket disable', '/* eslint-disable */'],
-      ['a described blanket disable', '/* eslint-disable -- temporary */'],
-      ['a described next-line disable', '// eslint-disable-next-line -- temporary'],
-      ['rule configuration', '/* eslint shadcn/no-raw-colors: off */'],
+    const violating = 'export default () => <div className="bg-pink-500" />;\n';
+    const clean = 'export default () => <div className="bg-surface-primary" />;\n';
+    /** Each directive is rejected over a file that violates the rule and over
+     *  one that does not: a comment waiting for its first violation is the same
+     *  hole a day later. */
+    const directives: [string, string, string][] = [
+      ['a named disable', '/* eslint-disable shadcn/no-raw-colors */', 'shadcn/no-raw-colors'],
+      [
+        'a justified disable',
+        '/* eslint-disable shadcn/no-raw-colors -- because */',
+        'shadcn/no-raw-colors',
+      ],
+      [
+        'a next-line disable',
+        '// eslint-disable-next-line shadcn/no-raw-colors',
+        'shadcn/no-raw-colors',
+      ],
+      ['a blanket disable', '/* eslint-disable */', 'a blanket'],
+      ['a described blanket disable', '/* eslint-disable -- temporary */', 'a blanket'],
+      ['a described next-line disable', '// eslint-disable-next-line -- temporary', 'a blanket'],
+      ['rule configuration', '/* eslint shadcn/no-raw-colors: off */', 'shadcn/no-raw-colors'],
+      [
+        'rule configuration to warn',
+        '/* eslint shadcn/no-raw-colors: "warn" */',
+        'shadcn/no-raw-colors',
+      ],
     ];
     try {
-      for (const [label, comment] of silenced) {
-        writeFileSync(
-          probePath,
-          `${comment}\nexport default () => <div className="bg-pink-500" />;\n`,
-        );
-        const report = staticChecks([probe, '--only', 'suppressions']);
-        expect(report.status, `${label} passed`).not.toBe(0);
-        expect(report.output, label).toContain(
-          'shadcn/no-raw-colors is silenced by an inline comment',
-        );
+      for (const [label, comment, named] of directives) {
+        for (const [state, body] of [
+          ['over a violation', violating],
+          ['over a clean file', clean],
+        ]) {
+          writeFileSync(probePath, `${comment}\n${body}`);
+          const report = staticChecks([probe, '--only', 'suppressions']);
+          expect(report.status, `${label} ${state} passed`).not.toBe(0);
+          expect(report.output, `${label} ${state}`).toContain(named);
+        }
       }
 
-      /** The dormant case: a directive in a clean file, which would otherwise
-       *  land unseen and then silence the first violation anyone adds. */
-      const dormant = [
-        ['a dormant named disable', '/* eslint-disable shadcn/no-raw-colors */'],
-        ['a dormant justified disable', '/* eslint-disable shadcn/no-raw-colors -- later */'],
-        ['a dormant next-line disable', '// eslint-disable-next-line shadcn/no-raw-colors'],
-      ];
-      for (const [label, comment] of dormant) {
-        writeFileSync(
-          probePath,
-          `${comment}\nexport default () => <div className="bg-surface-primary" />;\n`,
-        );
-        const report = staticChecks([probe, '--only', 'suppressions']);
-        expect(report.status, `${label} passed`).not.toBe(0);
-        expect(report.output, label).toContain('would silence the first violation anyone adds');
-      }
-
-      /** A blanket one covers the design rules whatever else it covers, so a
-       *  dormant blanket disable inside a design root is rejected too. */
+      /** A blanket disable busy silencing some other rule is the case ESLint's
+       *  own unused-directive report cannot see: it is used, so it is not
+       *  unused, and it still covers every design rule. */
       writeFileSync(
         probePath,
-        '/* eslint-disable */\nexport default () => <div className="bg-surface-primary" />;\n',
+        '/* eslint-disable */\nconst unused = 1;\nexport default () => <div className="bg-surface-primary" />;\n',
       );
-      const blanket = staticChecks([probe, '--only', 'suppressions']);
-      expect(blanket.status, 'a dormant blanket disable passed').not.toBe(0);
-      expect(blanket.output).toContain('a blanket eslint-disable silences nothing here');
+      const used = staticChecks([probe, '--only', 'suppressions']);
+      expect(used.status, 'a blanket disable silencing another rule passed').not.toBe(0);
+      expect(used.output).toContain('a blanket');
 
       /** And two things that are not a silenced rule: a directive naming another
        *  rule — the tree carries forty of them — and a string that reads like
@@ -460,6 +464,48 @@ test.describe('the recorded design-rule backlog', () => {
     expect(deleted.status, 'a deleted baseline passed validation').not.toBe(0);
     expect(deleted.output).toContain('is missing');
     rmSync(emptyRoot, { force: true, recursive: true });
+
+    /** A diff may carry a baseline that is not the repository's, and dropping an
+     *  entry from one is the same hole as raising a count: the source it spoke
+     *  for still violates the rule, and the changed-file lint never sees it
+     *  because the source did not change. Exercised in a miniature repository
+     *  with a history of its own, since what the entry used to say is read from
+     *  the diff. */
+    const nestedRoot = syntheticRoot();
+    const nested = 'packages/client/eslint-suppressions.json';
+    try {
+      writeFileSync(
+        join(nestedRoot, nested),
+        `${JSON.stringify({ 'client/src/Caller.tsx': { 'shadcn/no-raw-colors': { count: 1 } } }, null, 2)}\n`,
+      );
+      for (const args of [
+        ['init', '-q'],
+        ['add', '-A'],
+        [
+          '-c',
+          'user.email=scenario@librechat',
+          '-c',
+          'user.name=scenario',
+          'commit',
+          '-qm',
+          'base',
+        ],
+      ]) {
+        const step = run('git', args, { cwd: nestedRoot });
+        expect(step.status, `git ${args[0]}: ${step.output}`).toBe(0);
+      }
+      writeFileSync(join(nestedRoot, nested), `${JSON.stringify({}, null, 2)}\n`);
+      const removed = run(
+        process.execPath,
+        [join(nestedRoot, 'scripts/static-checks.mts'), nested, '--only', 'suppressions'],
+        { cwd: nestedRoot },
+      );
+      expect(removed.status, 'a nested baseline dropped an entry its file still needs').not.toBe(0);
+      expect(removed.output).toContain('client/src/Caller.tsx');
+      expect(removed.output).toContain('records nothing but the file has');
+    } finally {
+      rmSync(nestedRoot, { force: true, recursive: true });
+    }
 
     /** Nothing in the checkout moved while that ran. */
     expect(readFileSync(suppressionsPath, 'utf8')).toBe(baselineText);
@@ -564,6 +610,7 @@ function syntheticRoot(): string {
     'eslint.config.mjs',
     'packages/client/package.json',
     'packages/client/tsdown.config.mjs',
+    'packages/client/tsconfig.json',
   ]) {
     copy(file);
   }
