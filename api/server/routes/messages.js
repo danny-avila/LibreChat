@@ -4,6 +4,7 @@ const {
   logger,
   CLIENT_MESSAGE_SELECT,
   MEILI_SEARCH_LIMIT,
+  TenantIsolationError,
   buildMeiliUserTenantFilter,
 } = require('@librechat/data-schemas');
 const {
@@ -218,6 +219,9 @@ router.get('/', async (req, res) => {
 
     res.status(200).json(response);
   } catch (error) {
+    if (error instanceof TenantIsolationError) {
+      return res.status(403).json({ error: 'Tenant context required in strict isolation mode' });
+    }
     logger.error('Error fetching messages:', error);
     res.status(500).json({ error: 'Internal server error' });
   }

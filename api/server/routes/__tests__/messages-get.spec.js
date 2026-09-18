@@ -703,7 +703,10 @@ describe('message route conversation ownership filters', () => {
 
     const response = await request(app).get('/api/messages?search=needle');
 
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({
+      error: 'Tenant context required in strict isolation mode',
+    });
     expect(searchMessages).not.toHaveBeenCalled();
   });
 
