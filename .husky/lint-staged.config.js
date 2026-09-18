@@ -30,6 +30,6 @@ module.exports = {
   // above never runs and the first thing to notice the capacity it freed would be
   // CI. This is the same check the lane runs — it reaches for the whole record on
   // any of these paths — which is what keeps the commit and the lane agreeing.
-  '{eslint-suppressions.json,eslint.config.mjs,package.json,package-lock.json,packages/*/eslint-suppressions.json,packages/client/package.json,packages/client/tsdown.config.mjs,scripts/static-checks.mts}':
+  '{eslint-suppressions.json,eslint.config.mjs,package.json,package-lock.json,packages/*/eslint-suppressions.json,packages/client/package.json,packages/client/tsdown.config.mjs,packages/client/tsconfig.json,scripts/static-checks.mts}':
     [() => 'node scripts/static-checks.mts --only suppressions'],
 };

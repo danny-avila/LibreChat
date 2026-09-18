@@ -72,9 +72,11 @@ jobs:
               - 'client/src/**'
               - 'packages/client/src/**'
               # The bundle the rules resolve primitives through is named by the
-              # library's manifest and produced by its build config.
+              # library's manifest, produced by its build config and shaped by
+              # its compiler options.
               - 'packages/client/package.json'
               - 'packages/client/tsdown.config.mjs'
+              - 'packages/client/tsconfig.json'
               - 'eslint.config.mjs'
               # The plugin is a dependency: a bump changes what the rules
               # classify and a removal takes them with it, and neither touches a
