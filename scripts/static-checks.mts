@@ -229,13 +229,18 @@ const GATE_SOURCE = 'scripts/static-checks.mts';
  */
 type SuppressionsFile = Record<string, Record<string, { count?: unknown }>>;
 
-/** One file's entry in ESLint's JSON report, as the capacity check reads it. */
+/**
+ * One file's entry in ESLint's JSON report, as the checks here read it. A
+ * suppressed message carries its text too: the swap check compares messages,
+ * and what the baseline silences is exactly what it has to see.
+ */
 type LintReport = {
   filePath: string;
-  /** `message` carries ESLint's unused-directive text, where `ruleId` is null. */
+  /** `message` also carries ESLint's unused-directive text, where `ruleId` is null. */
   messages: { ruleId: string | null; message?: string }[];
   suppressedMessages?: {
     ruleId: string | null;
+    message?: string;
     suppressions?: { kind: string; justification?: string }[];
   }[];
 };
