@@ -209,6 +209,25 @@ describe('run-level prompt cache identity', () => {
     }
   });
 
+  it('sends no key at all when the run has no identity to partition by', async () => {
+    const createMock = Run.create as jest.Mock;
+    createMock.mockClear();
+    await createRun({
+      agents: [makeAgent()] as never,
+      signal: new AbortController().signal,
+      user: {} as IUser,
+      streaming: true,
+      streamUsage: true,
+    });
+    const [agent] = createMock.mock.calls[0][0].graphConfig.agents as CapturedAgent[];
+
+    /** An unscoped key would file every such run under one entry. */
+    expect(agent.clientOptions).not.toHaveProperty('promptCacheKey');
+    for (const marker of CACHE_MARKERS) {
+      expect(agent.clientOptions).not.toHaveProperty(marker);
+    }
+  });
+
   it('separates two users whose caller only carries the document id', async () => {
     const agent = makeAgent();
     const [forA] = await captureRun({ agent, user: 'user-a', leanUser: true });

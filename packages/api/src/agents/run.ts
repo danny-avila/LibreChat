@@ -2691,8 +2691,18 @@ export async function createRun({
       typeof user?.id === 'string' && user.id.length > 0
         ? user.id
         : ((user as { _id?: unknown } | undefined)?._id?.toString() ?? undefined);
-    if (cacheOptions.promptCacheKeyEnabled === true && isNonEmptyString(scopeUserId)) {
-      cacheOptions.promptCacheScopeId = scopeUserId;
+    if (cacheOptions.promptCacheKeyEnabled === true) {
+      if (isNonEmptyString(scopeUserId)) {
+        cacheOptions.promptCacheScopeId = scopeUserId;
+      } else if (cacheOptions.promptCacheScope !== 'shared') {
+        /**
+         * No identity, no key. The per-user default cannot be honored without
+         * one, and falling back to an unscoped identity would file every such
+         * run under a single entry — the boundary this scope exists to keep.
+         * Only an administrator who asked for one shared entry gets one.
+         */
+        delete cacheOptions.promptCacheKeyEnabled;
+      }
     }
     /**
      * The stable half of the dynamic tail. `additional_instructions` reaches
