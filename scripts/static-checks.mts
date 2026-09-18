@@ -99,6 +99,9 @@ const FILTERS = {
      *  removal takes the rules with it, neither of which touches a source file. */
     'package.json',
     'package-lock.json',
+    /** This runner is the gate: `validateSuppressions` is what a recorded count
+     *  is measured against, so a change to it has to run against the record. */
+    'scripts/static-checks.mts',
     '.github/workflows/static-checks.yml',
     '!**.md',
   ],
@@ -202,6 +205,15 @@ const DESIGN_METADATA_FILES = ['packages/client/package.json', 'packages/client/
 const DESIGN_ROOTS = ['client/src', 'packages/client/src'];
 
 /**
+ * This runner is the gate the record is measured against: `unusedCapacity` and
+ * `inlineDirectives` decide which files a recorded count is compared with and
+ * what counts as a hole. A change to them moves that verdict for every entry
+ * while touching no source file and no config, so it revalidates the whole
+ * record — the only way the change is exercised at all.
+ */
+const GATE_SOURCE = 'scripts/static-checks.mts';
+
+/**
  * ESLint's on-disk suppressions shape, which the recorded baseline claims to be:
  * a count per file, per rule. `validateSuppressions` is what checks the claim, so
  * the leaf stays `unknown` — a string or a float there is one of the failures.
@@ -217,6 +229,15 @@ type LintReport = {
     suppressions?: { kind: string; justification?: string }[];
   }[];
 };
+
+/** A path in ESLint's report, as the repository names it. */
+const reportedPath = (filePath: string): string =>
+  filePath.startsWith(ROOT)
+    ? filePath
+        .slice(ROOT.length + 1)
+        .split('\\')
+        .join('/')
+    : filePath;
 
 /** `@shadcn/lint`'s rule map, the authority on which recorded rule names exist. */
 type SuppressionsPlugin = { plugin: { rules: Record<string, unknown> } };
@@ -842,12 +863,7 @@ async function inlineDirectives(context: CheckContext): Promise<string[]> {
     rmSync(directory, { force: true, recursive: true });
     const counts = new Map<string, number>();
     for (const file of report) {
-      const relative = file.filePath.startsWith(ROOT)
-        ? file.filePath
-            .slice(ROOT.length + 1)
-            .split('\\')
-            .join('/')
-        : file.filePath;
+      const relative = reportedPath(file.filePath);
       const suppressed = (file.suppressedMessages ?? []).filter((message) =>
         baselineOnly
           ? message.suppressions?.every((suppression) => suppression.kind === 'file')
@@ -928,16 +944,18 @@ async function suppressionProblems(target: string, known: Set<string>): Promise<
  * violation of the same rule in the same file is silenced by the slack. Lower
  * than the file's violations only fails while the file is in the changed-file
  * lint's scope; recorded against an untouched file it is a lint that starts
- * failing for whoever edits it next.
+ * failing for whoever edits it next. A count against a path no design-rule lint
+ * reaches at all is the third shape of the same hole: nothing spends it, the
+ * prune never sees it, and it silences whatever is linted at that path later.
  *
  * The set checked is the files this diff touches plus the files whose entries it
  * edits — and everything recorded when the baseline is the only thing that
  * changed, since that edit is precisely the one nothing else re-reads, or when
- * the diff changes a component-library source, the rules' own config, or the
- * manifests the plugin is installed from — a primitive's variants, the config's
- * contracts and the plugin's version all decide what the rules report in every
- * caller. A baseline named in the diff is always checked in full: what it
- * silences is its whole purpose.
+ * the diff changes a component-library source, the rules' own config, the
+ * manifests the plugin is installed from, or this runner: a primitive's
+ * variants, the config's contracts, the plugin's version and the gate's own
+ * rules each decide what every recorded count stands for. A baseline named in
+ * the diff is always checked in full: what it silences is its whole purpose.
  */
 async function unusedCapacity(target: string, context: CheckContext): Promise<string[]> {
   let recorded: SuppressionsFile;
@@ -954,14 +972,16 @@ async function unusedCapacity(target: string, context: CheckContext): Promise<st
    *  while the file still violates the rule is the same hole wearing the other
    *  hat, and the changed-file lint only sees it if the file itself changed. */
   for (const file of editedEntries(target, context)) touched.add(file);
-  /** Two kinds of change move counts in files the diff never touches, and
+  /** Three kinds of change move counts in files the diff never touches, and
    *  nothing else re-reads those entries — the changed-file lint is scoped to
    *  the diff and the caller rules are off inside the library. A primitive's
    *  `cva` variants are what `no-restyle` compares a caller's className
-   *  against; the config decides which classes each rule can classify at all.
-   *  Either one validates the whole record. */
+   *  against; the config decides which classes each rule can classify at all;
+   *  and this runner decides what a count has to match. Any of them validates
+   *  the whole record. */
   const wholeRecord = context.files.some(
     (file) =>
+      file === GATE_SOURCE ||
       DESIGN_INPUTS.includes(file) ||
       DESIGN_METADATA_FILES.includes(file) ||
       (DESIGN_SOURCE.test(file) && DESIGN_METADATA_ROOTS.some((root) => file.startsWith(root))),
@@ -981,6 +1001,13 @@ async function unusedCapacity(target: string, context: CheckContext): Promise<st
           : [...touched]
   ).filter((file) => existsSync(resolve(ROOT, file)));
   if (files.length === 0) return [];
+  /** The recorded paths this run put a question to. A root sweep asks about
+   *  every one of them; otherwise it is the explicit list. Either way an entry
+   *  ESLint then says nothing about is an entry that silences nothing, which is
+   *  checked once the report is in. */
+  const asked = (
+    target === SUPPRESSIONS_FILE && wholeRecord ? Object.keys(recorded) : files
+  ).filter((file) => recorded[file] && existsSync(resolve(ROOT, file)));
 
   const eslint = resolveBin('eslint');
   if (!eslint) return [`${target}: ESLint is not installed, so recorded counts cannot be checked`];
@@ -1022,13 +1049,19 @@ async function unusedCapacity(target: string, context: CheckContext): Promise<st
     rmSync(directory, { force: true, recursive: true });
   }
   const problems: string[] = [];
+  const reported = new Set(report.map((file) => reportedPath(file.filePath)));
+  /** A recorded path ESLint does not report on is dormant, not clean: the flat
+   *  config ignores it, or it lies outside the roots the rules police. Nothing
+   *  spends that count today and nothing prunes it, so it is waiting for
+   *  whatever is next linted at that path. */
+  for (const file of asked) {
+    if (reported.has(file)) continue;
+    problems.push(
+      `${file}: recorded but no design-rule lint reports on it — the flat config ignores it, or it is outside ${DESIGN_ROOTS.join(' and ')} — so the entry silences nothing and would silence whatever is linted at this path later`,
+    );
+  }
   for (const file of report) {
-    const relative = file.filePath.startsWith(ROOT)
-      ? file.filePath
-          .slice(ROOT.length + 1)
-          .split('\\')
-          .join('/')
-      : file.filePath;
+    const relative = reportedPath(file.filePath);
     const actual = new Map<string, number>();
     for (const message of [...file.messages, ...(file.suppressedMessages ?? [])]) {
       if (message.ruleId?.startsWith('shadcn/')) {

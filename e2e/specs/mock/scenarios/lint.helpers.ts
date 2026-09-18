@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
+import { test } from '@playwright/test';
 
 /**
  * Shared plumbing for the scenarios whose observable behaviour is what the
@@ -10,6 +11,23 @@ import { resolve } from 'node:path';
 
 /** The repository root: this file sits in e2e/specs/mock/scenarios. */
 export const repoRoot = resolve(__dirname, '../../../..');
+
+/**
+ * A lint gate has no viewport. These scenarios spawn ESLint and the static-checks
+ * runner over the checkout itself, so a second project would repeat minutes of
+ * subprocess work for the same verdict and two of them would share one
+ * `packages/client/dist` and one scratch tree. The repository's mock lane defines
+ * a single project; a harness that adds colour-scheme or device projects runs
+ * these in the first one.
+ */
+export function inOneProject(): void {
+  const info = test.info();
+  const primary = info.config.projects[0]?.name;
+  test.skip(
+    primary !== undefined && info.project.name !== primary,
+    `the lint gate has no viewport; it runs in ${primary ?? 'the first project'}`,
+  );
+}
 
 export type LintMessage = {
   ruleId: string | null;

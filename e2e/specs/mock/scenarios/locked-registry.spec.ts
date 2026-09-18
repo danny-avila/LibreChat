@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { repoRoot, run } from './lint.helpers';
+import { inOneProject, repoRoot, run } from './lint.helpers';
 
 /**
  * Every job on this pull request died in `npm ci`: the lockfile entries the stack
@@ -36,6 +36,7 @@ const tarballHost = (entry: LockEntry): string | undefined => {
 
 test.describe('the locked dependency set', () => {
   test('every locked package resolves from the public registry @scenario:every-locked-package-resolves-from-the-public-registry', () => {
+    inOneProject();
     test.setTimeout(180_000);
 
     const head = JSON.parse(
@@ -58,9 +59,12 @@ test.describe('the locked dependency set', () => {
 
     /** Every entry the branch introduces is held to the same host, named rather
      *  than counted, so a lockfile written against a private mirror says which
-     *  package brought it. When the base ref is not fetched — the mock lane
-     *  clones shallow — there is nothing to compare against and the sweep above
-     *  has already covered the whole file. */
+     *  package brought it. A package this repository already installs from an
+     *  inherited host keeps it across a version bump — upgrading `xlsx` is not
+     *  the same act as introducing a second vendor host, which is what this
+     *  assertion is for. When the base ref is not fetched — the mock lane clones
+     *  shallow — there is nothing to compare against and the sweep above has
+     *  already covered the whole file. */
     const base = run('git', ['show', 'origin/dev:package-lock.json']);
     if (base.status === 0) {
       const previous = (JSON.parse(base.stdout) as Lockfile).packages;
@@ -69,7 +73,12 @@ test.describe('the locked dependency set', () => {
           Boolean(entry.resolved) && (!previous[name] || previous[name].version !== entry.version),
       );
       const offRegistry = introduced
-        .filter(([, entry]) => tarballHost(entry) !== PUBLIC_REGISTRY)
+        .filter(([name, entry]) => {
+          const host = tarballHost(entry);
+          if (host === PUBLIC_REGISTRY) return false;
+          const before = previous[name] ? tarballHost(previous[name]) : undefined;
+          return !(host !== undefined && host === before && INHERITED_HOSTS.includes(host));
+        })
         .map(([name, entry]) => `${name} -> ${entry.resolved}`);
       expect(offRegistry, 'a package this branch adds resolves from somewhere else').toEqual([]);
     }
