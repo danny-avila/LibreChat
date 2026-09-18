@@ -663,7 +663,7 @@ describe('createImportHandler', () => {
       skillAbsent: true,
       cleanupComplete: false,
       failedCleanupSteps: ['permissions'],
-    }));
+    })) as ImportSkillDeps['deleteSkill'];
     deps.deleteFile = jest.fn(async () => undefined);
     deps.upsertSkillFile = jest
       .fn()
