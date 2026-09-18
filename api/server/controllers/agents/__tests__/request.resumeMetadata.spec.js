@@ -3999,6 +3999,44 @@ describe('ResumableAgentController resume metadata', () => {
         expect.objectContaining({ initialAgentId: null }),
       );
     });
+
+    it('records the decision a failed turn of a saved chat ran under', async () => {
+      const codeWorkspaces = [{ environmentId: 'personal-vm', workspaceId: 'project-a' }];
+      const initializeClient = jest.fn().mockImplementation(async ({ req: request }) => {
+        request._codeEnvironmentDecision = { mode: 'attached', codeWorkspaces };
+        throw new Error('model unavailable');
+      });
+
+      await AgentController(
+        createFailedRequest(),
+        createResumableResponse(),
+        jest.fn(),
+        initializeClient,
+        null,
+      );
+
+      expect(mockSaveConvo).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        { conversationId, codeEnvironmentMode: 'attached', codeWorkspaces },
+        expect.objectContaining({ noUpsert: true }),
+      );
+    });
+
+    it('leaves a saved chat undecided when the turn resolved no decision', async () => {
+      await AgentController(
+        createFailedRequest(),
+        createResumableResponse(),
+        jest.fn(),
+        jest.fn().mockRejectedValue(new Error('model unavailable')),
+        null,
+      );
+
+      expect(mockSaveConvo).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        { conversationId },
+        expect.objectContaining({ noUpsert: true }),
+      );
+    });
   });
 
   it('finalizes the failed job before releasing the idempotency claim', async () => {

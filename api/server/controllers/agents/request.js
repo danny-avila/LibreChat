@@ -503,6 +503,19 @@ async function saveErrorTurn(
     const chatProjectId = endpointOption?.chatProjectId ?? req.body?.chatProjectId;
     const seedConvo = isNewConvo || req.resolvedConversation === null;
     const codeEnvironmentDecision = req._codeEnvironmentDecision;
+    /** A stored turn seals the decision it ran under, on a saved chat as much as on a new one: the
+     * error turn below enters the conversation, so leaving its validated decision out would let a
+     * retry choose a different workspace than the failure already recorded. `saveConvo` only fills
+     * a chat that holds no decision, so this can never replace one. */
+    const decisionFields =
+      codeEnvironmentDecision?.mode != null
+        ? {
+            codeEnvironmentMode: codeEnvironmentDecision.mode,
+            ...(codeEnvironmentDecision.codeWorkspaces != null && {
+              codeWorkspaces: codeEnvironmentDecision.codeWorkspaces,
+            }),
+          }
+        : {};
     const convoFields = seedConvo
       ? {
           ...(endpoint != null && { endpoint }),
@@ -514,14 +527,9 @@ async function saveErrorTurn(
           ...(endpointOption?.spec != null && { spec: endpointOption.spec }),
           ...(agentId != null && { agent_id: agentId }),
           ...(typeof chatProjectId === 'string' && chatProjectId.length > 0 && { chatProjectId }),
-          ...(codeEnvironmentDecision?.mode != null && {
-            codeEnvironmentMode: codeEnvironmentDecision.mode,
-            ...(codeEnvironmentDecision.codeWorkspaces != null && {
-              codeWorkspaces: codeEnvironmentDecision.codeWorkspaces,
-            }),
-          }),
+          ...decisionFields,
         }
-      : {};
+      : decisionFields;
     await saveConvo(
       reqCtx,
       { conversationId, ...convoFields },
