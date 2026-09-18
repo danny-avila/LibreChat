@@ -21,6 +21,7 @@ const {
   collectModelBoundHistoricalFileIdState,
   projectModelBoundSourceFiles,
   isModelBoundAttachmentFile,
+  isToolOwnedAttachment,
   withBalanceReservations,
   findCheckpointSummaryPart,
   getSummaryPartText,
@@ -1844,13 +1845,7 @@ class BaseClient {
       /* An explicit `provider` path is authoritative: lazy provisioning stamps
        * `embedded`/`codeEnvRef` on files that are still meant for the model, so the
        * legacy tool-provisioning exclusion only applies to records without one. */
-      if (
-        deliveryPath !== 'provider' &&
-        (file.embedded === true ||
-          file.metadata?.codeEnvRef != null ||
-          file.metadata?.codeEnvRefs != null ||
-          file.metadata?.fileIdentifier != null)
-      ) {
+      if (deliveryPath !== 'provider' && isToolOwnedAttachment(file)) {
         allFiles.push(file);
         continue;
       }

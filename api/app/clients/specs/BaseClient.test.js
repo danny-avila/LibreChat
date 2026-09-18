@@ -3584,13 +3584,13 @@ describe('BaseClient', () => {
       expect(TestClient.getTextContextAttachments([file])).toEqual([]);
     });
 
-    test('delivers the text when the tool that would read the file has yet to receive it', () => {
-      /* An upload that named no destination is filed under no tool, so the enabled tool alone
-       * cannot serve it and withholding the text left it readable by nothing. */
+    test('delivers the text when File Search has yet to receive the file', () => {
+      /* An upload that named no destination is filed under no tool, so an enabled search tool
+       * alone cannot serve it and withholding the text left it readable by nothing. */
       routeCsvToTools();
       TestClient.options.agent = {
         provider: EModelEndpoint.openAI,
-        fileConsumers: { executeCode: true, fileSearch: true },
+        fileConsumers: { executeCode: false, fileSearch: true },
       };
       TestClient.options.agent.deliveryRouting = resolveTurnDeliveryRouting({
         agent: TestClient.options.agent,
@@ -3612,6 +3612,32 @@ describe('BaseClient', () => {
       expect(TestClient.resolveTurnAttachments([file])).toEqual([
         { ...file, llmDeliveryPath: 'text' },
       ]);
+    });
+
+    test('leaves a file Run Code can read with Run Code before the sandbox holds it', () => {
+      /* Run Code uploads the file on its first call, so the text stays off the prompt, where it
+       * would otherwise count toward the history limits until that call. */
+      routeCsvToTools();
+      TestClient.options.agent = {
+        provider: EModelEndpoint.openAI,
+        fileConsumers: { executeCode: true, fileSearch: true },
+      };
+      TestClient.options.agent.deliveryRouting = resolveTurnDeliveryRouting({
+        agent: TestClient.options.agent,
+        config: TestClient.options.req?.config,
+      });
+      const file = {
+        file_id: 'unprovisioned-csv',
+        filename: 'sales.csv',
+        type: 'text/csv',
+        text: 'region,total',
+        llmDeliveryPath: 'none',
+        metadata: { destinationChosen: false },
+      };
+
+      expect(TestClient.getAttachmentDeliveryPath(file)).toBe('none');
+      expect(TestClient.getTextContextAttachments([file])).toEqual([]);
+      expect(TestClient.resolveTurnAttachments([file])).toEqual([file]);
     });
 
     test('does not fall back on an endpoint that has not enabled it', () => {
@@ -3929,6 +3955,29 @@ describe('BaseClient', () => {
 
       expect(TestClient.addImageURLs).toHaveBeenCalled();
       expect(message.image_urls).toEqual(['encoded-image']);
+    });
+
+    test('keeps a code output out of the prompt once its expired sandbox reference is cleared', async () => {
+      /* Priming clears a dead sandbox reference on the turn's copy of the record so the file
+       * is re-provisioned. The output still belongs to the sandbox that wrote it. */
+      const message = {};
+      const file = {
+        user: 'user1',
+        file_id: 'code-output-chart',
+        filename: 'chart.png',
+        filepath: '/uploads/chart.png',
+        type: 'image/png',
+        bytes: 100,
+        source: 'local',
+        context: 'execute_code',
+        metadata: {},
+      };
+
+      const result = await TestClient.processAttachments(message, [file]);
+
+      expect(result).toEqual([file]);
+      expect(TestClient.addImageURLs).not.toHaveBeenCalled();
+      expect(message.image_urls).toBeUndefined();
     });
 
     test('keeps excluding embedded legacy files that have no delivery path', async () => {
