@@ -8260,6 +8260,8 @@ describe('AgentClient - titleConvo', () => {
       mockCreateMemoryProcessor.mockResolvedValue([undefined, jest.fn()]);
 
       client = new AgentClient(mockOptions);
+      const abortController = new AbortController();
+      client.abortController = abortController;
       client.conversationId = 'convo-123';
       client.responseMessageId = 'response-123';
 
@@ -8269,6 +8271,7 @@ describe('AgentClient - titleConvo', () => {
       expect(mockInitializeAgent).toHaveBeenCalledWith(
         expect.objectContaining({
           agent: mockAgent,
+          signal: abortController.signal,
         }),
         expect.objectContaining({ instructionPromptResolver: mockInstructionPromptResolver }),
       );

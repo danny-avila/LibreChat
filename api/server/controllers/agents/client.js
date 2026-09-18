@@ -3306,6 +3306,7 @@ class AgentClient extends BaseClient {
       {
         req: this.options.req,
         res: this.options.res,
+        signal: this.abortController?.signal,
         agent: prelimAgent,
         allowedProviders,
         endpointOption: {

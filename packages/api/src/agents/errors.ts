@@ -5,6 +5,7 @@ import {
   stripLangChainTroubleshootingUrl,
 } from 'librechat-data-provider';
 import { isOwnedAbortError } from '~/utils/errors';
+import { AgentInstructionPromptError } from './instructions';
 
 export const AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE = 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE';
 export const AGENT_ATTACHMENT_LIMIT_EXCEEDED = 'AGENT_ATTACHMENT_LIMIT_EXCEEDED';
@@ -58,6 +59,7 @@ export function isFatalAgentInitializationError(
 ): boolean {
   const code = getErrorCode(error);
   return (
+    error instanceof AgentInstructionPromptError ||
     isOwnedAbortError(error, options.signal) ||
     FATAL_AGENT_INITIALIZATION_CODES.has(code as string) ||
     (code === AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE && options.allowExpectedMCPFallback !== true)

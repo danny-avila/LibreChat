@@ -45,6 +45,7 @@ jest.mock('~/server/services/MCP', () => ({
 jest.mock('~/server/services/ToolService', () => ({
   isFatalAgentInitializationError: (error, { signal } = {}) =>
     (signal?.aborted === true && (error === signal.reason || error?.name === 'AbortError')) ||
+    error?.name === 'AgentInstructionPromptError' ||
     ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
 }));
 
@@ -183,6 +184,15 @@ describe('processAddedConvo', () => {
     mockInitializeAgent.mockRejectedValueOnce(toolError);
 
     await expect(processAddedConvo(baseParams())).rejects.toBe(toolError);
+  });
+
+  it('propagates instruction prompt resolution failures from an added agent', async () => {
+    const promptError = Object.assign(new Error('Prompt missing'), {
+      name: 'AgentInstructionPromptError',
+    });
+    mockInitializeAgent.mockRejectedValueOnce(promptError);
+
+    await expect(processAddedConvo(baseParams())).rejects.toBe(promptError);
   });
 
   it('forwards and propagates owning-run cancellation from added-agent initialization', async () => {

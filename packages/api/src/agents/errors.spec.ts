@@ -11,6 +11,7 @@ import {
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
   isStepLimitError,
 } from './errors';
+import { AgentInstructionPromptError } from './instructions';
 
 describe('isFatalAgentInitializationError', () => {
   it('propagates cancellation even when optional MCP fallback is allowed', () => {
@@ -35,6 +36,11 @@ describe('isFatalAgentInitializationError', () => {
     ].filter((code): code is string => typeof code === 'string'),
   )('classifies %s as fatal', (code) => {
     expect(isFatalAgentInitializationError({ code })).toBe(true);
+  });
+  it('classifies instruction prompt resolution failures as fatal', () => {
+    const error = new AgentInstructionPromptError('not_found', 'Prompt missing', 404);
+
+    expect(isFatalAgentInitializationError(error)).toBe(true);
   });
 
   it('allows skill-added MCP tools to fall back while keeping resource recovery fatal', () => {
