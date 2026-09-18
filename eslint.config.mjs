@@ -5,6 +5,7 @@ import { fixupConfigRules, fixupPluginRules } from '@eslint/compat';
 import reactHooks from 'eslint-plugin-react-hooks';
 import tsParser from '@typescript-eslint/parser';
 import importPlugin from 'eslint-plugin-import';
+import { plugin as shadcn } from '@shadcn/lint';
 import prettier from 'eslint-plugin-prettier';
 import { FlatCompat } from '@eslint/eslintrc';
 import jsxA11Y from 'eslint-plugin-jsx-a11y';
@@ -188,6 +189,95 @@ export default [
       'jsx-a11y/img-redundant-alt': 'off',
     },
   },
+  // @shadcn/lint: design-system enforcement for the two client surfaces. The linter treats
+  // `@librechat/client` — plus the app-local `~/components/ui` re-exports — as the design
+  // system, reads each primitive's cva variants, and reports a className that overrides what
+  // the primitive owns, naming the variants and sizes to use instead. The tree's existing
+  // violations are recorded in eslint-suppressions.json, so these rules gate new and edited
+  // code without a tree-wide migration; see CLAUDE.md, "Theming and styling".
+  //
+  // `no-unknown-classes` is deliberately not enabled: it asks the installed Tailwind whether a
+  // class generates CSS and needs Tailwind v4, while this repo runs tailwindcss 3.4 with a JS
+  // preset. Its grammar fallback would report every preset utility (`duration-theme-fast`,
+  // `rounded-theme-control`, `icon-md`) as a typo.
+  //
+  // The client's entry points and helpers are `.jsx`/`.js` — App.jsx among them — so the globs
+  // name those extensions too: the rules have to see them.
+  {
+    files: ['client/src/**/*.{ts,tsx,js,jsx}', 'packages/client/src/**/*.{ts,tsx,js,jsx}'],
+    plugins: { shadcn },
+    settings: {
+      shadcn: {
+        ui: '@librechat/client',
+        componentImports: ['^~/components/ui(/|$)'],
+        note: 'See CLAUDE.md, "Theming and styling".',
+      },
+    },
+    rules: {
+      'shadcn/no-restyle': [
+        'error',
+        {
+          // `icon-*` is a sizing utility from client/src/style.css (height, width, stroke-width),
+          // so it belongs with layout rather than with a primitive's own appearance.
+          allow: ['layout', 'icon-*'],
+          // A contract replaces `allow` rather than extending it, so each one restates the
+          // baseline. These record policy, not debt: the categories below are the caller's to
+          // set, which is why they are not in eslint-suppressions.json.
+          contracts: [
+            // A text primitive renders the caller's text, so the caller owns its size, weight
+            // and leading. Color is still the theme's: it stays reported here.
+            {
+              pattern: '^(Label|Description|DialogTitle|DialogDescription)$',
+              allow: ['layout', 'icon-*', 'typography'],
+            },
+            // A skeleton stands in for the caller's content, so it takes that content's
+            // silhouette and footprint.
+            { pattern: '^Skeleton$', allow: ['layout', 'icon-*', 'shape', 'spacing'] },
+          ],
+        },
+      ],
+      'shadcn/no-raw-colors': 'error',
+      'shadcn/no-arbitrary-values': ['error', { allow: ['layout'] }],
+      'shadcn/no-inline-styles': [
+        'error',
+        {
+          // Geometry that carries a measured or animated number — a virtual row's height, a
+          // floating panel's offset, a drag transform — has no class form. Everything else
+          // (color, display, transition, spacing) does, and stays reported.
+          allow: [
+            'width',
+            'height',
+            'minWidth',
+            'minHeight',
+            'maxWidth',
+            'maxHeight',
+            'top',
+            'right',
+            'bottom',
+            'left',
+            'transform',
+            'transformOrigin',
+            'zIndex',
+          ],
+        },
+      ],
+      'shadcn/require-static-classes': 'error',
+    },
+  },
+  {
+    // A primitive owns its own internals, so the rules that police callers are off inside the
+    // component library. `no-raw-colors` and `no-inline-styles` stay on: the primitives are
+    // where theme tokens matter most. `client/src/components/ui` is deliberately not here:
+    // `componentImports` marks it as a place primitives are imported from, but what it holds
+    // are app composites — a dialog, a collapse, a date-range picker — and their overrides of a
+    // shared primitive are exactly what `no-restyle` exists to report.
+    files: ['packages/client/src/**/*.{ts,tsx,js,jsx}'],
+    rules: {
+      'shadcn/no-restyle': 'off',
+      'shadcn/no-arbitrary-values': 'off',
+      'shadcn/require-static-classes': 'off',
+    },
+  },
   {
     files: ['**/.eslintrc.js', '**/jest.config.js', 'client/vite.config.ts'],
     languageOptions: {
@@ -223,6 +313,12 @@ export default [
       'jest/no-conditional-expect': 'off',
       'jest/no-disabled-tests': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
+      // A spec's fixture markup is an assertion, not a design surface.
+      'shadcn/no-restyle': 'off',
+      'shadcn/no-raw-colors': 'off',
+      'shadcn/no-arbitrary-values': 'off',
+      'shadcn/no-inline-styles': 'off',
+      'shadcn/require-static-classes': 'off',
     },
   },
   ...compat
