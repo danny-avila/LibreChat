@@ -6,7 +6,7 @@ import { useLocalize } from '~/hooks';
 
 export function NoImage() {
   return (
-    <div className="border-border-medium flex h-full w-full items-center justify-center rounded-full border-2 border-dashed border-black">
+    <div className="border-border-medium flex h-full w-full items-center justify-center rounded-full border-2 border-dashed">
       <svg
         stroke="currentColor"
         fill="none"
