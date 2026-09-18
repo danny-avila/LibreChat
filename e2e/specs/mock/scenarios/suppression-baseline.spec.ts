@@ -536,6 +536,83 @@ test.describe('the recorded design-rule backlog', () => {
     expect(readFileSync(suppressionsPath, 'utf8')).toBe(baselineText);
   });
 
+  test('a violation swapped inside the recorded allowance is rejected @scenario:a-swap-inside-the-recorded-allowance-is-rejected', () => {
+    inOneProject();
+    test.setTimeout(180_000);
+
+    /**
+     * The record is a budget per file and rule, so a change that removes one
+     * raw colour and adds a different one keeps the count equal: the
+     * changed-file lint silences the new violation inside the old allowance and
+     * the count checks see nothing moved. What the totals cannot tell apart the
+     * diagnostics can, so each changed file's version at the base is linted as
+     * itself and a message the head reports that the base did not is new debt.
+     *
+     * A miniature repository with a history of its own, because the question is
+     * what this file used to say.
+     */
+    const root = syntheticRoot();
+    const caller = 'client/src/Caller.tsx';
+    const checks = () =>
+      run(
+        process.execPath,
+        [join(root, 'scripts/static-checks.mts'), caller, '--only', 'suppressions'],
+        { cwd: root },
+      );
+    try {
+      writeFileSync(join(root, caller), 'export default () => <div className="bg-pink-500" />;\n');
+      writeFileSync(
+        join(root, SUPPRESSIONS_FILE),
+        `${JSON.stringify(
+          {
+            'client/src/Clean.tsx': { 'shadcn/no-restyle': { count: 2 } },
+            [caller]: { 'shadcn/no-raw-colors': { count: 1 } },
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      for (const args of [
+        ['init', '-q'],
+        ['add', '-A'],
+        [
+          '-c',
+          'user.email=scenario@librechat',
+          '-c',
+          'user.name=scenario',
+          'commit',
+          '-qm',
+          'base',
+        ],
+      ]) {
+        const step = run('git', args, { cwd: root });
+        expect(step.status, `git ${args[0]}: ${step.output}`).toBe(0);
+      }
+
+      /** The recorded state passes: one violation, one recorded. */
+      const recorded = checks();
+      expect(recorded.status, recorded.output).toBe(0);
+
+      /** The same violation somewhere else in the file is a move, not new debt:
+       *  the message is the message, so the count and the diagnostics agree. */
+      writeFileSync(
+        join(root, caller),
+        'const spacer = null;\nexport default () => <div className="bg-pink-500" />;\n',
+      );
+      const moved = checks();
+      expect(moved.status, `a move was reported as new debt: ${moved.output}`).toBe(0);
+
+      /** A different raw colour at the same count is the swap. */
+      writeFileSync(join(root, caller), 'export default () => <div className="bg-lime-400" />;\n');
+      const swapped = checks();
+      expect(swapped.status, 'a swap inside the allowance passed').not.toBe(0);
+      expect(swapped.output).toContain('bg-lime-400');
+      expect(swapped.output).toContain('is new here');
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
   test('a change to how the primitives are built rebuilds them before the backlog is read @scenario:a-build-config-change-rebuilds-the-primitives-before-validation', () => {
     inOneProject();
     test.setTimeout(180_000);
