@@ -60,32 +60,35 @@ type Point = { x: number; y: number };
 test.use({ viewport: { width: 1280, height: 800 } });
 
 /**
- * The stored mode is what the client reads, and it outranks the browser's own
- * color scheme, so a project running dark cannot pull a light scenario with it.
+ * The client reads its mode out of storage before it mounts, so the mode has to
+ * be there before the first navigation, and a stored mode outranks the
+ * browser's own color scheme — which is what keeps a project running dark from
+ * dragging a light scenario with it. An init script stays registered for the
+ * life of the page and would overwrite any later switch, so the mode rides in
+ * the URL and the script copies whatever the current navigation asks for.
  */
-async function installTheme(page: Page, mode: ThemeMode, definition?: unknown) {
-  await page.addInitScript(
-    (stored) => {
-      localStorage.setItem('color-theme', stored.mode);
-      /** The legacy pair would win over a definition; keep them out of the way. */
-      localStorage.removeItem('theme-colors');
-      localStorage.removeItem('theme-name');
-      if (stored.definition) {
-        localStorage.setItem('theme-definition', JSON.stringify(stored.definition));
-        localStorage.setItem('theme-source', 'definition');
-      } else {
-        localStorage.removeItem('theme-definition');
-        localStorage.removeItem('theme-source');
-      }
-    },
-    { mode, definition },
-  );
+const THEME_PARAM = 'e2eThemeMode';
+
+async function installThemeBridge(page: Page, definition?: unknown) {
+  await page.addInitScript((stored) => {
+    const mode = new URL(location.href).searchParams.get('e2eThemeMode');
+    if (mode) {
+      localStorage.setItem('color-theme', mode);
+    }
+    /** The legacy pair would win over a definition; keep them out of the way. */
+    localStorage.removeItem('theme-colors');
+    localStorage.removeItem('theme-name');
+    if (stored) {
+      localStorage.setItem('theme-definition', JSON.stringify(stored));
+      localStorage.setItem('theme-source', 'definition');
+    } else {
+      localStorage.removeItem('theme-definition');
+      localStorage.removeItem('theme-source');
+    }
+  }, definition ?? null);
 }
 
-async function switchMode(page: Page, mode: ThemeMode) {
-  await page.evaluate((stored) => localStorage.setItem('color-theme', stored), mode);
-  await page.reload({ timeout: 15000 });
-}
+const chatIn = (mode: ThemeMode): string => `${NEW_CHAT_PATH}?${THEME_PARAM}=${mode}`;
 
 async function seedConversation(title: string): Promise<string> {
   const conversationId = randomUUID();
@@ -210,11 +213,11 @@ test.describe('OGDialog scrim', () => {
     page,
   }) => {
     test.setTimeout(90000);
-    await installTheme(page, 'light', SCRIM_THEME);
+    await installThemeBridge(page, SCRIM_THEME);
     const conversationId = await seedConversation(CONVERSATION_TITLE);
 
     try {
-      await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+      await page.goto(chatIn('light'), { timeout: 10000 });
       await expect(page.locator('html')).toHaveAttribute('data-theme', SCRIM_THEME.name);
 
       await openConversationDeleteDialog(page, CONVERSATION_TITLE);
@@ -230,16 +233,12 @@ test.describe('OGDialog scrim', () => {
     page,
   }) => {
     test.setTimeout(120000);
-    await installTheme(page, 'dark');
+    await installThemeBridge(page);
     const conversationId = await seedConversation(CONVERSATION_TITLE);
 
     try {
-      await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
-
       for (const [mode, applied] of Object.entries(BLACK_OVERLAY_MODES)) {
-        if (mode !== 'dark') {
-          await switchMode(page, mode as ThemeMode);
-        }
+        await page.goto(chatIn(mode as ThemeMode), { timeout: 15000 });
         await expect(page.locator(applied)).toHaveCount(1, { timeout: 15000 });
 
         await openConversationDeleteDialog(page, CONVERSATION_TITLE);
@@ -257,11 +256,11 @@ test.describe('OGDialog scrim', () => {
     page,
   }) => {
     test.setTimeout(90000);
-    await installTheme(page, 'light');
+    await installThemeBridge(page);
     const conversationId = await seedConversation(CONVERSATION_TITLE);
 
     try {
-      await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+      await page.goto(chatIn('light'), { timeout: 10000 });
       await openConversationDeleteDialog(page, CONVERSATION_TITLE);
 
       expect(await scrimColor(page)).toBe(LIGHT_SCRIM);
@@ -277,9 +276,9 @@ test.describe('OGDialog scrim', () => {
     page,
   }) => {
     test.setTimeout(90000);
-    await installTheme(page, 'light');
+    await installThemeBridge(page);
 
-    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await page.goto(chatIn('light'), { timeout: 10000 });
     await openDeleteAccountDialog(page);
 
     /** The settings modal paints its own scrim; this one is still the role. */
