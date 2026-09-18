@@ -31,21 +31,42 @@ export function supportsExplicitPromptCache(model?: string | null): boolean {
  */
 interface PromptCacheProjectionContext {
   /**
-   * Tool definitions this conversation's `tool_search` discovered. Discovery
-   * flips `defer_loading` on the definition the agent already sends, so these
-   * are hashed in their configured form instead of their current one — the key
-   * names the agent, not one conversation's search results.
+   * What each tool definition this conversation discovered looked like before
+   * discovery touched it, keyed by name. `appended` means the definition was
+   * not part of the configured request at all and leaves the identity;
+   * otherwise `deferLoading` is the configured value discovery overwrote, put
+   * back so a discovering and a fresh conversation hash the same agent.
    */
-  readonly discoveredToolNames: ReadonlySet<string>;
-  /**
-   * The subset discovery added to the request rather than reshaping in place.
-   * Those definitions are no part of the configured prefix, so they leave the
-   * identity entirely.
-   */
-  readonly appendedToolNames: ReadonlySet<string>;
+  readonly configuredToolState: t.PromptCacheConfiguredToolState | undefined;
 }
 
 type PromptCacheProjection = (value: unknown, context: PromptCacheProjectionContext) => unknown;
+
+/**
+ * Fields `createRun` writes for its own use and removes before the request is
+ * sent. Declared once: a marker that reaches the digest, the wire, or an
+ * agent author's reach is a defect, and three separate hand-kept lists is how
+ * one gets there.
+ */
+export const PROMPT_CACHE_MARKER_FIELDS = [
+  'promptCacheKeyEnabled',
+  'promptCacheScope',
+  'promptCacheScopeId',
+  'promptCacheStableInstructions',
+  'promptCacheConfiguredToolState',
+] as const;
+
+/**
+ * Everything prompt caching is configured with, which is an administrator's
+ * decision alone: the markers above plus the three wire levers. Stripped from
+ * author-owned model parameters before policy resolution.
+ */
+export const PROMPT_CACHE_ADMIN_FIELDS = [
+  'promptCacheKey',
+  'promptCacheRetention',
+  'promptCacheExplicit',
+  ...PROMPT_CACHE_MARKER_FIELDS,
+] as const;
 
 /**
  * What one field of a finished agent input contributes to the cached prefix's
@@ -129,17 +150,18 @@ const nonPrefixClientOptionKeys: ReadonlySet<string> = new Set([
   'reasoningKey',
   'user',
   /** Cache levers. The key cannot hash itself, and the rest only route it. */
-  'promptCacheKey',
-  'promptCacheKeyEnabled',
-  'promptCacheScope',
-  'promptCacheScopeId',
-  'promptCacheStableInstructions',
-  'promptCacheDiscoveredToolNames',
-  'promptCacheAppendedToolNames',
-  'promptCacheRetention',
-  'promptCacheExplicit',
+  ...PROMPT_CACHE_ADMIN_FIELDS,
   'promptCache',
   'promptCacheTtl',
+  /**
+   * Azure credentials. `getOpenAILLMConfig` copies the resource key onto the
+   * Chat Completions options, and rotating a key changes nothing the model
+   * reads — the deployment below is what identifies the request.
+   */
+  'azureOpenAIApiKey',
+  'azureOpenAIBasePath',
+  'azureOpenAIEndpoint',
+  'azureADTokenProvider',
   'firstPartyEndpoint',
   'useLegacyContent',
   'provider',
@@ -155,8 +177,6 @@ const nonPrefixClientOptionKeys: ReadonlySet<string> = new Set([
  */
 const nonPrefixModelKwargsKeys: ReadonlySet<string> = new Set([
   'verbosity',
-  /** `applyResponsesVerbosity` moves verbosity here; the output schema lives on the top-level `text`. */
-  'text',
   'reasoning',
   'reasoning_effort',
   'reasoning_summary',
@@ -164,7 +184,23 @@ const nonPrefixModelKwargsKeys: ReadonlySet<string> = new Set([
   'reasoning_context',
   'max_tokens',
   'max_completion_tokens',
+  'max_output_tokens',
+  'maxOutputTokens',
 ]);
+
+/**
+ * `applyResponsesVerbosity` moves verbosity onto `modelKwargs.text`, the same
+ * object a Responses agent's output schema can arrive on through model
+ * parameters. Only the verbosity leaves; a different JSON schema there is a
+ * different prefix.
+ */
+function modelKwargsTextIdentity(value: unknown): unknown {
+  if (value == null || typeof value !== 'object') {
+    return safeIdentity(value);
+  }
+  const { verbosity: _verbosity, ...rest } = value as Record<string, unknown>;
+  return safeIdentity(rest);
+}
 
 /**
  * An absent field, an empty string, an empty list and an empty object all
@@ -198,7 +234,11 @@ function modelKwargsIdentity(value: unknown): unknown {
     if (nonPrefixModelKwargsKeys.has(key)) {
       continue;
     }
-    projected[key] = safeIdentity(kwargs[key]);
+    const value = key === 'text' ? modelKwargsTextIdentity(kwargs[key]) : safeIdentity(kwargs[key]);
+    if (isAbsentSurface(value)) {
+      continue;
+    }
+    projected[key] = value;
   }
   return projected;
 }
@@ -282,25 +322,34 @@ function toolsIdentity(value: unknown): unknown {
  * independent of.
  */
 function toolDefinitionsIdentity(value: unknown, context: PromptCacheProjectionContext): unknown {
-  if (!Array.isArray(value) || context.discoveredToolNames.size === 0) {
+  const state = context.configuredToolState;
+  if (!Array.isArray(value) || state == null) {
     return toolsIdentity(value);
   }
   const identities: unknown[] = [];
   for (const tool of value) {
     const name = (tool as { name?: unknown } | null)?.name;
-    if (typeof name !== 'string' || !context.discoveredToolNames.has(name)) {
+    const configured = typeof name === 'string' ? state[name] : undefined;
+    if (configured == null) {
       identities.push(safeIdentity(tool));
       continue;
     }
-    if (context.appendedToolNames.has(name)) {
+    if (configured.appended === true) {
       continue;
     }
     /**
-     * Configured, and still hashed: only the flag discovery flipped is put
-     * back, so a change to this tool's schema or classification still retires
-     * the key while a conversation discovering it does not.
+     * Configured, and still hashed: only the flag discovery overwrote is put
+     * back — to its recorded value, which may be `false` or absent after an
+     * administrator changed it — so a change to this tool's schema or
+     * classification still retires the key while discovering it does not.
      */
-    identities.push(safeIdentity({ ...(tool as Record<string, unknown>), defer_loading: true }));
+    const restored: Record<string, unknown> = { ...(tool as Record<string, unknown>) };
+    if (configured.deferLoading === undefined) {
+      delete restored.defer_loading;
+    } else {
+      restored.defer_loading = configured.deferLoading;
+    }
+    identities.push(safeIdentity(restored));
   }
   return identities;
 }
@@ -433,16 +482,9 @@ export function buildPromptCacheKey(
   input: AgentInputs,
   context: PromptCacheIdentityContext = {},
 ): string {
-  const markers = input.clientOptions as
-    | (Partial<t.OAIClientOptions> & {
-        promptCacheStableInstructions?: string;
-        promptCacheDiscoveredToolNames?: string[];
-        promptCacheAppendedToolNames?: string[];
-      })
-    | undefined;
+  const markers = input.clientOptions as Partial<t.OAIClientOptions> | undefined;
   const projection: PromptCacheProjectionContext = {
-    discoveredToolNames: new Set(markers?.promptCacheDiscoveredToolNames ?? []),
-    appendedToolNames: new Set(markers?.promptCacheAppendedToolNames ?? []),
+    configuredToolState: markers?.promptCacheConfiguredToolState,
   };
   const payload: Record<string, unknown> = {
     version: PROMPT_CACHE_KEY_VERSION,

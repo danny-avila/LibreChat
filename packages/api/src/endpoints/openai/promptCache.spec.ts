@@ -87,6 +87,10 @@ describe('buildPromptCacheKey', () => {
     ['Chat Completions output schema', { clientOptions: { response_format: { type: 'json' } } }],
     ['Responses output format', { clientOptions: { text: { format: { type: 'json' } } } }],
     ['API mode', { clientOptions: { useResponsesApi: true } }],
+    [
+      'Responses output schema an agent set under modelKwargs',
+      { clientOptions: { modelKwargs: { text: { format: { type: 'json_schema' } } } } },
+    ],
   ])('retires the cache identity when the %s changes', (_label, change) => {
     expect(key(change)).not.toBe(key());
   });
@@ -131,8 +135,7 @@ describe('buildPromptCacheKey', () => {
       key({
         toolDefinitions: [searchTool, calculatorTool, deferred],
         clientOptions: {
-          promptCacheDiscoveredToolNames: ['deferred_search'],
-          promptCacheAppendedToolNames: ['deferred_search'],
+          promptCacheConfiguredToolState: { deferred_search: { appended: true } },
         },
       }),
     ).toBe(key());
@@ -141,7 +144,9 @@ describe('buildPromptCacheKey', () => {
   it('still keys on the schema of a configured tool this conversation discovered', () => {
     const discovered = (parameters: unknown) => ({
       toolDefinitions: [searchTool, { ...calculatorTool, parameters, defer_loading: false }],
-      clientOptions: { promptCacheDiscoveredToolNames: ['calculator'] },
+      clientOptions: {
+        promptCacheConfiguredToolState: { calculator: { deferLoading: true } },
+      },
     });
 
     expect(
@@ -149,17 +154,34 @@ describe('buildPromptCacheKey', () => {
     ).not.toBe(key(discovered({ type: 'object', properties: { input: { type: 'string' } } })));
   });
 
-  it('ignores the flag discovery flips on a definition that was already bound', () => {
-    /** Discovery flips `defer_loading` on a definition the agent already sends. */
+  it('agrees with a conversation that has not discovered the same tool', () => {
+    const deferred = { ...calculatorTool, defer_loading: true };
+
+    /** Discovery overwrote `defer_loading`; the recorded configured value goes back. */
+    expect(
+      key({
+        toolDefinitions: [searchTool, { ...deferred, defer_loading: false }],
+        clientOptions: {
+          promptCacheConfiguredToolState: { calculator: { deferLoading: true } },
+        },
+      }),
+    ).toBe(key({ toolDefinitions: [searchTool, deferred] }));
+  });
+
+  it('follows an administrator who made a discovered tool eager', () => {
+    const state = { promptCacheConfiguredToolState: { calculator: { deferLoading: false } } };
+
     expect(
       key({
         toolDefinitions: [searchTool, { ...calculatorTool, defer_loading: false }],
-        clientOptions: { promptCacheDiscoveredToolNames: ['calculator'] },
+        clientOptions: state,
       }),
-    ).toBe(
+    ).not.toBe(
       key({
-        toolDefinitions: [searchTool, { ...calculatorTool, defer_loading: true }],
-        clientOptions: { promptCacheDiscoveredToolNames: ['calculator'] },
+        toolDefinitions: [searchTool, { ...calculatorTool, defer_loading: false }],
+        clientOptions: {
+          promptCacheConfiguredToolState: { calculator: { deferLoading: true } },
+        },
       }),
     );
   });
@@ -290,6 +312,11 @@ describe('buildPromptCacheKey', () => {
         { clientOptions: { configuration: { defaultHeaders: { 'X-Conversation': 'abc-123' } } } },
       ],
       ['credentials', { clientOptions: { apiKey: 'sk-rotated' } }],
+      ['a rotated Azure resource key', { clientOptions: { azureOpenAIApiKey: 'az-rotated' } }],
+      [
+        'the Responses output budget',
+        { clientOptions: { modelKwargs: { max_output_tokens: 4096 } } },
+      ],
     ])('ignores %s', (_label, change) => {
       expect(key(change)).toBe(key());
     });

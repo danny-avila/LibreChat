@@ -89,6 +89,11 @@ import {
   isSteerTerminalContinuationSupported,
 } from '~/agents/steering/runtime';
 import {
+  buildPromptCacheKey,
+  PROMPT_CACHE_MARKER_FIELDS,
+  supportsExplicitPromptCache,
+} from '~/endpoints/openai/promptCache';
+import {
   resolveToolApprovalPolicy,
   healToolApprovalPolicy,
   exemptAskUserQuestionFromApproval,
@@ -108,7 +113,6 @@ import {
   resolveRecursionLimit,
 } from '~/agents/config';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
-import { buildPromptCacheKey, supportsExplicitPromptCache } from '~/endpoints/openai/promptCache';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
 import { resolveConfigHeaders, resolveModelHeaders, mergeHeaders } from '~/utils/headers';
 import { extractDefaultParams, resolveReasoningParams } from '~/endpoints/openai/llm';
@@ -1891,12 +1895,9 @@ function finalizePromptCacheKey(input: AgentInputs, handoffEdges?: readonly unkn
   if (options.promptCacheKeyEnabled === true && options.promptCacheKey == null) {
     options.promptCacheKey = buildPromptCacheKey(input, { handoffEdges });
   }
-  delete options.promptCacheKeyEnabled;
-  delete options.promptCacheScope;
-  delete options.promptCacheScopeId;
-  delete options.promptCacheStableInstructions;
-  delete options.promptCacheDiscoveredToolNames;
-  delete options.promptCacheAppendedToolNames;
+  for (const field of PROMPT_CACHE_MARKER_FIELDS) {
+    delete options[field];
+  }
 }
 
 /**
@@ -1914,12 +1915,16 @@ function handoffEdgeIdentity(edge: GraphEdge): unknown {
     /** Absent means `handoff`, so both spellings must hash alike. */
     edgeType: edge.edgeType ?? 'handoff',
     /**
-     * Resolved rather than passed through: the SDK falls back to
+     * Only when the edge has a prompt, because that is what creates the
+     * handoff input parameter this names; an inert `promptKey` reaches no
+     * tool. Resolved rather than passed through: the SDK falls back to
      * `instructions` (`MultiAgentGraph`), so an edge that spells the default
      * out and one that leaves it unset advertise the same parameter and must
      * not land in different cache partitions.
      */
-    promptKey: typeof edge.promptKey === 'string' ? edge.promptKey : 'instructions',
+    ...(edge.prompt != null
+      ? { promptKey: typeof edge.promptKey === 'string' ? edge.promptKey : 'instructions' }
+      : {}),
     /**
      * A string prompt becomes the handoff parameter's description and is
      * hashed verbatim; a function one is resolved per turn, so only its
@@ -2682,25 +2687,37 @@ export async function createRun({
      * `defer_loading` on definitions that are already bound, which moves the
      * digest just as an appended definition would.
      */
-    const discoveredDefinitionNames: string[] = [];
-    /** The subset this conversation added to the request rather than reshaped in place. */
-    const appendedDefinitionNames: string[] = [];
+    const configuredToolState: Record<string, { appended?: true; deferLoading?: boolean }> = {};
     if (!isSubagent && discoveredTools.size > 0 && agent.toolRegistry) {
-      overrideDeferLoadingForDiscoveredTools(agent.toolRegistry, discoveredTools);
-
-      /** Add discovered tools' definitions so the LLM can see their schemas */
       const existingToolNames = new Set(toolDefinitions.map((d) => d.name));
+      /**
+       * Read before the override below, which rewrites `defer_loading` on the
+       * definitions themselves — `toolDefinitions` is built from the
+       * registry's own values, so those are the same objects the identity
+       * hashes. The recorded value may be `false` or absent when an
+       * administrator has since made the tool eager.
+       */
       for (const toolName of discoveredTools) {
         const toolDef = agent.toolRegistry.get(toolName);
         if (!toolDef) {
           continue;
         }
-        discoveredDefinitionNames.push(toolName);
+        configuredToolState[toolName] = existingToolNames.has(toolName)
+          ? { deferLoading: toolDef.defer_loading }
+          : { appended: true };
+      }
+
+      overrideDeferLoadingForDiscoveredTools(agent.toolRegistry, discoveredTools);
+
+      /** Add discovered tools' definitions so the LLM can see their schemas */
+      for (const toolName of discoveredTools) {
         if (existingToolNames.has(toolName)) {
           continue;
         }
-        toolDefinitions = [...toolDefinitions, toolDef];
-        appendedDefinitionNames.push(toolName);
+        const toolDef = agent.toolRegistry.get(toolName);
+        if (toolDef) {
+          toolDefinitions = [...toolDefinitions, toolDef];
+        }
       }
     } else if (isSubagent && agent.toolRegistry) {
       /**
@@ -2819,11 +2836,8 @@ export async function createRun({
        */
       (agentInput as AgentInputs & { graphTools?: GenericTool[] }).graphTools = graphTools;
     }
-    if (discoveredDefinitionNames.length > 0) {
-      cacheOptions.promptCacheDiscoveredToolNames = discoveredDefinitionNames;
-    }
-    if (appendedDefinitionNames.length > 0) {
-      cacheOptions.promptCacheAppendedToolNames = appendedDefinitionNames;
+    if (Object.keys(configuredToolState).length > 0) {
+      cacheOptions.promptCacheConfiguredToolState = configuredToolState;
     }
     return agentInput;
   };

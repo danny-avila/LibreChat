@@ -25,6 +25,17 @@ export type OpenAIPromptCacheScope = 'user' | 'shared';
 /**
  * Configuration options for the getLLMConfig function
  */
+/**
+ * What one discovered tool definition looked like before this conversation's
+ * `tool_search` results reshaped it: `appended` for a definition the
+ * configured request never carried, otherwise the `defer_loading` value
+ * discovery overwrote.
+ */
+export type PromptCacheConfiguredToolState = Record<
+  string,
+  { appended?: true; deferLoading?: boolean }
+>;
+
 export interface OpenAIConfigOptions {
   modelOptions?: OpenAIModelOptions;
   directEndpoint?: boolean;
@@ -84,20 +95,13 @@ export type OAIClientOptions = Omit<OpenAIClientOptions, 'verbosity'> & {
    */
   promptCacheStableInstructions?: string;
   /**
-   * Tool definitions this conversation's `tool_search` promoted onto the
-   * request. They reach the model, but not the identity of the prefix the
-   * agent is configured to send — hashing them would give every conversation
-   * its own cache entry. Consumed by `createRun` and never sent.
+   * What each tool definition this conversation discovered looked like before
+   * discovery reshaped it: `appended` for one the configured request did not
+   * carry at all, otherwise the `defer_loading` value discovery overwrote. The
+   * definitions reach the model either way; the identity names the configured
+   * agent. Consumed by `createRun` and never sent.
    */
-  promptCacheDiscoveredToolNames?: string[];
-  /**
-   * The subset of the above this conversation added to the request rather than
-   * reshaped in place. Those definitions are not part of the configured prefix
-   * at all, so they leave the identity entirely, while a configured definition
-   * whose `defer_loading` merely flipped is hashed in its configured form.
-   * Consumed by `createRun` and never sent.
-   */
-  promptCacheAppendedToolNames?: string[];
+  promptCacheConfiguredToolState?: PromptCacheConfiguredToolState;
   /**
    * Declares that this client talks to a first-party OpenAI or Azure surface, which is
    * what gates the agents SDK's model-specific request constraints (GPT-6
