@@ -182,6 +182,7 @@ const ProjectItem = memo(
     const [expanded, setExpanded] = useState(defaultExpanded);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+    const deleteMenuRef = useRef<HTMLButtonElement>(null);
     const projectChatPath = `/c/${Constants.NEW_CONVO}?projectId=${encodeURIComponent(project._id)}`;
 
     /* The whole item, header plus its expanded chats, is the drop target for
@@ -274,6 +275,9 @@ const ProjectItem = memo(
           label: localize('com_ui_delete'),
           icon: <Trash2 className="size-4 text-text-secondary" aria-hidden="true" />,
           onClick: () => setIsDeleteOpen(true),
+          hideOnClick: false,
+          ref: deleteMenuRef,
+          render: (props) => <button {...props} />,
         },
       ],
       [localize, menuId, navigate, openProject, project._id, toggleNav],
@@ -366,7 +370,12 @@ const ProjectItem = memo(
             onShowAll={openProject}
           />
         </Collapse>
-        <ProjectDeleteDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} project={project} />
+        <ProjectDeleteDialog
+          open={isDeleteOpen}
+          onOpenChange={setIsDeleteOpen}
+          project={project}
+          triggerRef={deleteMenuRef}
+        />
       </li>
     );
   },

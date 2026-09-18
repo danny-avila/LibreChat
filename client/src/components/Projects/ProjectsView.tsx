@@ -38,6 +38,7 @@ function ProjectCard({
   const menuId = useId();
   const navigationButtonRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const deleteMenuRef = useRef<HTMLButtonElement>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
@@ -55,6 +56,9 @@ function ProjectCard({
         label: localize('com_ui_delete'),
         icon: <Trash2 className="size-4 text-text-secondary" aria-hidden="true" />,
         onClick: () => setIsDeleteOpen(true),
+        hideOnClick: false,
+        ref: deleteMenuRef,
+        render: (props) => <button {...props} />,
       },
     ],
     [localize, menuId],
@@ -145,7 +149,12 @@ function ProjectCard({
           items={menuItems}
         />
       </div>
-      <ProjectDeleteDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen} project={project} />
+      <ProjectDeleteDialog
+        open={isDeleteOpen}
+        onOpenChange={setIsDeleteOpen}
+        project={project}
+        triggerRef={deleteMenuRef}
+      />
     </article>
   );
 }
