@@ -1,8 +1,97 @@
-import { splitMarkdownIntoBlocks } from '../splitMarkdown';
+import { splitMarkdownIntoBlocks, splitMarkdownIntoBlocksUncached } from '../splitMarkdown';
 
 const raws = (content: string) => splitMarkdownIntoBlocks(content).map((block) => block.raw);
 
 describe('splitMarkdownIntoBlocks', () => {
+  describe('incremental append-only streaming', () => {
+    /** Splits every prefix in order (incremental) and from scratch (reference). */
+    const streamed = (content: string) => {
+      splitMarkdownIntoBlocks('unrelated content to reset the cache');
+      const prefixes = Array.from({ length: content.length }, (_, i) => content.slice(0, i + 1));
+      return {
+        incremental: prefixes.map((prefix) => splitMarkdownIntoBlocks(prefix)),
+        reference: prefixes.map((prefix) => splitMarkdownIntoBlocksUncached(prefix)),
+      };
+    };
+
+    it('matches a full parse at every prefix of a mixed document', () => {
+      const { incremental, reference } = streamed(
+        [
+          '# Title',
+          '',
+          'Para one with `code` and **bold**.',
+          '',
+          '```js',
+          'const a = 1;',
+          '',
+          'const b = 2;',
+          '```',
+          '',
+          '| a | b |',
+          '| - | - |',
+          '| 1 | 2 |',
+          '',
+          '- one',
+          '- two',
+          '',
+          '  nested para',
+          '',
+          '$$',
+          'E = mc^2',
+          '$$',
+          '',
+          ':::artifact{title="t"}',
+          'inner',
+          '',
+          '```mermaid',
+          'graph TD; A-->B;',
+          '```',
+          ':::',
+          '',
+          'Setext',
+          '===',
+          '',
+          '> quote',
+          'lazy continuation',
+          '',
+          '    indented',
+          '',
+          '    code continues',
+          '',
+          'Final.',
+        ].join('\n'),
+      );
+      expect(incremental).toEqual(reference);
+    });
+
+    it('matches a full parse when a streamed definition forces whole-message rendering', () => {
+      const { incremental, reference } = streamed(
+        'See [docs][d] for details.\n\nMore text.\n\n[d]: https://example.com/docs\n\nEnd.',
+      );
+      expect(incremental).toEqual(reference);
+    });
+
+    it('matches a full parse when a streamed footnote definition nests in a list item', () => {
+      const { incremental, reference } = streamed('Claim.[^1]\n\n- item\n\n  [^1]: note\n\nEnd.');
+      expect(incremental).toEqual(reference);
+    });
+
+    it('matches a full parse when a streamed HTML block forces whole-message rendering', () => {
+      const { incremental, reference } = streamed(
+        'Intro.\n\n<div>a</div>\n\n<div>b</div>\n\nOutro.',
+      );
+      expect(incremental).toEqual(reference);
+    });
+
+    it('matches a full parse after non-append edits', () => {
+      splitMarkdownIntoBlocks('First.\n\nSecond.');
+      const edited = 'First.\n\nChanged.\n\nThird.';
+      expect(splitMarkdownIntoBlocks(edited)).toEqual(splitMarkdownIntoBlocksUncached(edited));
+      const shorter = 'First.';
+      expect(splitMarkdownIntoBlocks(shorter)).toEqual(splitMarkdownIntoBlocksUncached(shorter));
+    });
+  });
+
   it('returns [] for empty content', () => {
     expect(splitMarkdownIntoBlocks('')).toEqual([]);
   });
