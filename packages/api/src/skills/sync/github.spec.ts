@@ -1932,7 +1932,9 @@ describe('createGitHubSkillSyncRunner', () => {
         source: 'local',
         author,
       } as ISkillFile & { _id: Types.ObjectId };
-      const deleteFile = jest.fn(async () => undefined);
+      const deleteFile = jest.fn(
+        async (_file: Parameters<NonNullable<GitHubSkillSyncDeps['deleteFile']>>[0]) => undefined,
+      );
       const deps = createDeps({
         fetchFn: githubFetch('---\nname: renamed\ndescription: Renamed skill\n---\nBody'),
         findSkillBySourceIdentity: jest.fn(async ({ upstreamId }) =>
