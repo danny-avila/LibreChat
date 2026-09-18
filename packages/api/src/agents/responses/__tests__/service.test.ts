@@ -429,3 +429,235 @@ describe('convertInputToMessages', () => {
     ]);
   });
 });
+
+describe('tool call argument attribution', () => {
+  /** Reproduces the SQL Console construct run: an MCP lookup, then a caller-declared submit_sql. */
+  it('keeps arguments with their own call when a run makes two calls in separate steps', () => {
+    const aggregator = createResponseAggregator();
+    const handlers = createAggregatorEventHandlers(aggregator);
+
+    handlers.on_run_step.handle('on_run_step', {
+      id: 'step_1',
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'toolu_lookup', name: 'list_tables' }],
+      },
+    });
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_1',
+      delta: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'toolu_lookup', index: 1, args: '{"database":' }],
+      },
+    });
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_1',
+      delta: { type: 'tool_calls', tool_calls: [{ index: 1, args: '"default"}' }] },
+    });
+
+    handlers.on_run_step.handle('on_run_step', {
+      id: 'step_2',
+      stepDetails: { type: 'tool_calls', tool_calls: [{ id: 'toolu_submit', name: 'submit_sql' }] },
+    });
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_2',
+      delta: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'toolu_submit', index: 1, args: '{"sql":' }],
+      },
+    });
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_2',
+      delta: { type: 'tool_calls', tool_calls: [{ index: 1, args: '"SELECT 1"}' }] },
+    });
+
+    expect(aggregator.toolCalls.get('toolu_lookup')?.arguments).toBe('{"database":"default"}');
+    expect(aggregator.toolCalls.get('toolu_submit')?.arguments).toBe('{"sql":"SELECT 1"}');
+  });
+
+  it('separates two calls made in one step under provider content-block indexes', () => {
+    const aggregator = createResponseAggregator();
+    const handlers = createAggregatorEventHandlers(aggregator);
+
+    handlers.on_run_step.handle('on_run_step', {
+      id: 'step_1',
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [
+          { id: 'toolu_a', name: 'list_tables' },
+          { id: 'toolu_b', name: 'submit_sql' },
+        ],
+      },
+    });
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_1',
+      delta: {
+        type: 'tool_calls',
+        tool_calls: [
+          { id: 'toolu_a', index: 1, args: '{"a":1}' },
+          { id: 'toolu_b', index: 2, args: '{"sql":' },
+        ],
+      },
+    });
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_1',
+      delta: { type: 'tool_calls', tool_calls: [{ index: 2, args: '"SELECT 2"}' }] },
+    });
+
+    expect(aggregator.toolCalls.get('toolu_a')?.arguments).toBe('{"a":1}');
+    expect(aggregator.toolCalls.get('toolu_b')?.arguments).toBe('{"sql":"SELECT 2"}');
+  });
+
+  it('attributes an index-less chunk to the only call in the step', () => {
+    const aggregator = createResponseAggregator();
+    const handlers = createAggregatorEventHandlers(aggregator);
+
+    handlers.on_run_step.handle('on_run_step', {
+      id: 'step_1',
+      stepDetails: { type: 'tool_calls', tool_calls: [{ id: 'toolu_only', name: 'submit_sql' }] },
+    });
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_1',
+      delta: { type: 'tool_calls', tool_calls: [{ args: '{"sql":"SELECT 3"}' }] },
+    });
+
+    expect(aggregator.toolCalls.get('toolu_only')?.arguments).toBe('{"sql":"SELECT 3"}');
+  });
+
+  it('drops an unattributable chunk rather than guessing between two calls', () => {
+    const aggregator = createResponseAggregator();
+    const handlers = createAggregatorEventHandlers(aggregator);
+
+    handlers.on_run_step.handle('on_run_step', {
+      id: 'step_1',
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [
+          { id: 'toolu_a', name: 'list_tables' },
+          { id: 'toolu_b', name: 'submit_sql' },
+        ],
+      },
+    });
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_1',
+      delta: { type: 'tool_calls', tool_calls: [{ index: 7, args: '{"sql":"nope"}' }] },
+    });
+
+    expect(aggregator.toolCalls.get('toolu_a')?.arguments).toBe('');
+    expect(aggregator.toolCalls.get('toolu_b')?.arguments).toBe('');
+  });
+
+  it('seeds arguments a provider delivers on the step instead of as deltas', () => {
+    const aggregator = createResponseAggregator();
+    const handlers = createAggregatorEventHandlers(aggregator);
+
+    handlers.on_run_step.handle('on_run_step', {
+      id: 'step_1',
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'toolu_whole', name: 'submit_sql', args: '{"sql":"SELECT 4"}' }],
+      },
+    });
+
+    expect(aggregator.toolCalls.get('toolu_whole')?.arguments).toBe('{"sql":"SELECT 4"}');
+  });
+
+  it('ignores a non-string args object rather than stringifying it', () => {
+    const aggregator = createResponseAggregator();
+    const handlers = createAggregatorEventHandlers(aggregator);
+
+    handlers.on_run_step.handle('on_run_step', {
+      id: 'step_1',
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'toolu_obj', name: 'submit_sql', args: {} }],
+      },
+    });
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_1',
+      delta: { type: 'tool_calls', tool_calls: [{ id: 'toolu_obj', args: { sql: 'SELECT 5' } }] },
+    });
+
+    expect(aggregator.toolCalls.get('toolu_obj')?.arguments).toBe('');
+  });
+});
+
+describe('tool call arguments from the completed model message', () => {
+  const SQL = 'SELECT\n    created_at\nFROM default.analytics_test_v2\nLIMIT 100';
+
+  /**
+   * The SQL Console construct run: the provider sent list_tables as fragments and submit_sql
+   * whole, so only the completed message carries the query.
+   */
+  it('fills arguments for a call the provider delivered without fragments', () => {
+    const aggregator = createResponseAggregator();
+    const handlers = createAggregatorEventHandlers(aggregator);
+
+    handlers.on_run_step.handle('on_run_step', {
+      id: 'step_1',
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'toolu_lookup', name: 'list_tables' }],
+      },
+    });
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_1',
+      delta: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'toolu_lookup', index: 1, args: '{"database":"default"}' }],
+      },
+    });
+    handlers.on_chat_model_end.handle('on_chat_model_end', {
+      output: {
+        tool_calls: [{ id: 'toolu_lookup', args: { database: 'default' } }],
+      },
+    });
+
+    handlers.on_run_step.handle('on_run_step', {
+      id: 'step_2',
+      stepDetails: { type: 'tool_calls', tool_calls: [{ id: 'toolu_submit', name: 'submit_sql' }] },
+    });
+    handlers.on_chat_model_end.handle('on_chat_model_end', {
+      output: { tool_calls: [{ id: 'toolu_submit', args: { sql: SQL } }] },
+    });
+
+    expect(aggregator.toolCalls.get('toolu_lookup')?.arguments).toBe('{"database":"default"}');
+    expect(JSON.parse(aggregator.toolCalls.get('toolu_submit')?.arguments ?? '{}')).toEqual({
+      sql: SQL,
+    });
+  });
+
+  it('leaves fragment-accumulated arguments untouched', () => {
+    const aggregator = createResponseAggregator();
+    const handlers = createAggregatorEventHandlers(aggregator);
+
+    handlers.on_run_step.handle('on_run_step', {
+      id: 'step_1',
+      stepDetails: { type: 'tool_calls', tool_calls: [{ id: 'toolu_a', name: 'submit_sql' }] },
+    });
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_1',
+      delta: { type: 'tool_calls', tool_calls: [{ id: 'toolu_a', args: '{"sql":"SELECT 1"}' }] },
+    });
+    handlers.on_chat_model_end.handle('on_chat_model_end', {
+      output: { tool_calls: [{ id: 'toolu_a', args: { sql: 'SELECT 999' } }] },
+    });
+
+    expect(aggregator.toolCalls.get('toolu_a')?.arguments).toBe('{"sql":"SELECT 1"}');
+  });
+
+  it('ignores completed calls the run never announced, and usage still accumulates', () => {
+    const aggregator = createResponseAggregator();
+    const handlers = createAggregatorEventHandlers(aggregator);
+
+    handlers.on_chat_model_end.handle('on_chat_model_end', {
+      output: {
+        usage_metadata: { input_tokens: 10, output_tokens: 2 },
+        tool_calls: [{ id: 'toolu_unknown', args: { sql: 'SELECT 1' } }],
+      },
+    });
+
+    expect(aggregator.toolCalls.size).toBe(0);
+    expect(aggregator.usage.inputTokens).toBe(10);
+  });
+});

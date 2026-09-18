@@ -76,6 +76,10 @@ const {
   sendResponsesErrorResponse,
   createResponsesEventHandlers,
   createAggregatorEventHandlers,
+  // Client-side tool execution
+  buildClientToolDefinitions,
+  mergeClientToolDefinitions,
+  createClientToolRunStepHandler,
   getLangfuseTraceMessageFields,
   stripActivityLabelParts,
   stripUnusableSummaryParts,
@@ -538,6 +542,14 @@ const executeResponse = async (envelope, { req, res }) => {
   const isStreaming = request.stream === true;
   const summarizationConfig = appConfig?.summarization;
 
+  /** Function tools the caller declares and executes itself, already validated
+   *  by `validateResponseRequest` at ingress. Empty for the common request,
+   *  which skips every client-tool step below. */
+  const declaredClientTools =
+    Array.isArray(request.tools) && request.tools.length > 0
+      ? buildClientToolDefinitions(request.tools)
+      : [];
+
   const uninspectableField = getBlockedOpaqueFileField(appConfig?.filters, request.input);
   if (uninspectableField != null) {
     const blockResponse = contentFilterUninspectableResponse(uninspectableField);
@@ -894,6 +906,35 @@ const executeResponse = async (envelope, { req, res }) => {
       );
 
       /**
+       * Declare the caller's tools to the model, without a server-side
+       * executor. A name the agent already owns is not overridden -- the
+       * server's tool wins and the caller's is dropped -- so a request cannot
+       * shadow a tool the agent is configured to run.
+       */
+      let clientToolNames = new Set();
+      if (declaredClientTools.length > 0) {
+        const merged = mergeClientToolDefinitions(
+          primaryConfig.toolDefinitions,
+          declaredClientTools,
+        );
+        primaryConfig.toolDefinitions = merged.toolDefinitions;
+        clientToolNames = merged.names;
+        if (merged.shadowed.length > 0) {
+          logger.warn(
+            `[Responses API] Request ${responseId} declared tool(s) the agent already provides; ` +
+              `the server-side tool is used: ${merged.shadowed.join(', ')}`,
+          );
+        }
+      }
+
+      /** Ends the run on a caller-declared tool call, handing it back to the
+       *  caller; the delegate as-is when no client tools were declared. */
+      const withClientToolHandoff = (delegate) =>
+        clientToolNames.size === 0
+          ? delegate
+          : createClientToolRunStepHandler({ delegate, clientToolNames });
+
+      /**
        * Per-agent tool-execution context map, keyed by agentId. Ensures the
        * ON_TOOL_EXECUTE callback routes each sub-agent's tool calls to the
        * correct toolRegistry / userMCPAuthMap / tool_resources.
@@ -1242,7 +1283,7 @@ const executeResponse = async (envelope, { req, res }) => {
         const handlers = {
           on_message_delta: responsesHandlers.on_message_delta,
           on_reasoning_delta: responsesHandlers.on_reasoning_delta,
-          on_run_step: responsesHandlers.on_run_step,
+          on_run_step: withClientToolHandoff(responsesHandlers.on_run_step),
           on_run_step_delta: responsesHandlers.on_run_step_delta,
           on_chat_model_end: {
             handle: (event, data, metadata, graph) => {
@@ -1471,7 +1512,7 @@ const executeResponse = async (envelope, { req, res }) => {
         const handlers = {
           on_message_delta: aggregatorHandlers.on_message_delta,
           on_reasoning_delta: aggregatorHandlers.on_reasoning_delta,
-          on_run_step: aggregatorHandlers.on_run_step,
+          on_run_step: withClientToolHandoff(aggregatorHandlers.on_run_step),
           on_run_step_delta: aggregatorHandlers.on_run_step_delta,
           on_chat_model_end: {
             handle: (event, data, metadata, graph) => {

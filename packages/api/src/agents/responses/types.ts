@@ -783,6 +783,10 @@ export interface ResponseContext {
   previousResponseId?: string;
   /** Instructions */
   instructions?: string;
+  /** Tools the request declared, echoed back on the response as sent. */
+  tools?: Tool[];
+  /** Tool choice the request declared, echoed back on the response as sent. */
+  toolChoice?: ToolChoice;
 }
 
 /** Validation result for requests */

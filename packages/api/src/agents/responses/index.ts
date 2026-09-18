@@ -182,3 +182,10 @@ export {
   createAggregatorEventHandlers,
   type ResponseAggregator,
 } from './service';
+
+// Client-side tool execution
+export {
+  buildClientToolDefinitions,
+  mergeClientToolDefinitions,
+  createClientToolRunStepHandler,
+} from './clientTools';

@@ -39,6 +39,7 @@ import {
   emitReasoningItemDone,
   type StreamHandlerConfig,
 } from './handlers';
+import { validateClientTools } from './clientTools';
 import { aggregateCollectedUsage } from '../usage';
 
 interface ResponseUsageAccumulator {
@@ -134,6 +135,11 @@ export function validateResponseRequest(body: unknown): RequestValidationResult 
     typeof request.previous_response_id !== 'string'
   ) {
     return { valid: false, error: 'previous_response_id must be a string' };
+  }
+
+  const clientToolsError = validateClientTools(request.tools);
+  if (clientToolsError !== undefined) {
+    return { valid: false, error: clientToolsError };
   }
 
   return { valid: true, request: request as unknown as ResponseRequest };
@@ -340,6 +346,8 @@ export function createResponseContext(
     createdAt: Math.floor(Date.now() / 1000),
     previousResponseId: request.previous_response_id,
     instructions: request.instructions,
+    tools: request.tools,
+    toolChoice: request.tool_choice,
   };
 }
 
@@ -372,6 +380,90 @@ interface StreamState {
   reasoningContentStarted: boolean;
   activeToolCalls: Set<string>;
   completedToolCalls: Set<string>;
+  argumentedToolCalls: Set<string>;
+}
+
+/** One streamed argument fragment, as the agents SDK forwards LangChain tool call chunks. */
+interface ToolCallChunk {
+  id?: string;
+  index?: number;
+  args?: string;
+}
+
+/**
+ * Arguments as they appear on a completed model message, keyed by call id.
+ *
+ * The agents SDK only streams argument fragments when the provider sends the call in pieces; a
+ * call that arrives whole is dispatched with its arguments already parsed and no deltas follow.
+ * The completed message carries both cases, so it is the reliable source for any call whose
+ * arguments never arrived as fragments.
+ */
+function completedToolCallArguments(data: unknown): Array<{ id: string; args: string }> {
+  const endData = data as { output?: { tool_calls?: Array<{ id?: string; args?: unknown }> } };
+  const toolCalls = endData?.output?.tool_calls;
+  if (!Array.isArray(toolCalls)) {
+    return [];
+  }
+
+  const resolved: Array<{ id: string; args: string }> = [];
+  for (const tc of toolCalls) {
+    const id = tc.id ?? '';
+    if (!id || tc.args == null) {
+      continue;
+    }
+    resolved.push({ id, args: typeof tc.args === 'string' ? tc.args : JSON.stringify(tc.args) });
+  }
+  return resolved;
+}
+
+interface ToolCallChunkResolver {
+  registerStep: (stepId: string, callIds: string[]) => void;
+  resolve: (stepId: string, chunk: ToolCallChunk) => string | undefined;
+}
+
+/**
+ * Matches a streamed argument fragment to the tool call it belongs to.
+ *
+ * A chunk's `index` is provider-relative: Anthropic numbers content blocks, so thinking and text
+ * blocks consume values, and the numbering restarts on every step. It is therefore not an offset
+ * into the run's tool calls, and using it as one appends arguments to the wrong call as soon as a
+ * run makes more than one. Chunks are matched by id, falling back to the index recorded alongside
+ * that id within the same step, and finally to a step that holds exactly one call.
+ */
+function createToolCallChunkResolver(): ToolCallChunkResolver {
+  const indexToCallId = new Map<string, Map<number, string>>();
+  const stepCallIds = new Map<string, string[]>();
+
+  return {
+    registerStep: (stepId: string, callIds: string[]): void => {
+      stepCallIds.set(stepId, callIds);
+    },
+
+    resolve: (stepId: string, chunk: ToolCallChunk): string | undefined => {
+      let byIndex = indexToCallId.get(stepId);
+      if (!byIndex) {
+        byIndex = new Map<number, string>();
+        indexToCallId.set(stepId, byIndex);
+      }
+
+      if (chunk.id != null && chunk.id !== '') {
+        if (chunk.index != null) {
+          byIndex.set(chunk.index, chunk.id);
+        }
+        return chunk.id;
+      }
+
+      if (chunk.index != null) {
+        const mapped = byIndex.get(chunk.index);
+        if (mapped != null) {
+          return mapped;
+        }
+      }
+
+      const callIds = stepCallIds.get(stepId);
+      return callIds?.length === 1 ? callIds[0] : undefined;
+    },
+  };
 }
 
 /**
@@ -389,7 +481,10 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
     reasoningContentStarted: false,
     activeToolCalls: new Set(),
     completedToolCalls: new Set(),
+    argumentedToolCalls: new Set(),
   };
+
+  const chunkResolver = createToolCallChunkResolver();
 
   /**
    * Ensure message item is started
@@ -512,6 +607,7 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
     on_run_step: {
       handle: (_event: string, data: unknown): void => {
         const stepData = data as {
+          id?: string;
           stepDetails?: { type: string; tool_calls?: Array<{ id?: string; name?: string }> };
         };
         const stepDetails = stepData?.stepDetails;
@@ -520,15 +616,22 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
           // Close any open message/reasoning before tool calls
           closeOpenStreams();
 
+          const stepCallIds: string[] = [];
           for (const tc of stepDetails.tool_calls) {
             const callId = tc.id ?? '';
             const name = tc.name ?? '';
 
-            if (callId && !state.activeToolCalls.has(callId)) {
+            if (!callId) {
+              continue;
+            }
+
+            stepCallIds.push(callId);
+            if (!state.activeToolCalls.has(callId)) {
               state.activeToolCalls.add(callId);
               emitFunctionCallItemAdded(config, callId, name);
             }
           }
+          chunkResolver.registerStep(stepData?.id ?? '', stepCallIds);
         }
       },
     },
@@ -539,24 +642,22 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
     on_run_step_delta: {
       handle: (_event: string, data: unknown): void => {
         const deltaData = data as {
-          delta?: { type: string; tool_calls?: Array<{ index?: number; args?: string }> };
+          id?: string;
+          delta?: { type: string; tool_calls?: ToolCallChunk[] };
         };
         const delta = deltaData?.delta;
 
         if (delta?.type === 'tool_calls' && delta.tool_calls) {
           for (const tc of delta.tool_calls) {
-            const args = tc.args ?? '';
-            if (!args) {
+            // Resolved before the empty-args check so an id-bearing opening chunk is recorded.
+            const callId = chunkResolver.resolve(deltaData?.id ?? '', tc);
+            const args = typeof tc.args === 'string' ? tc.args : '';
+            if (!args || !callId) {
               continue;
             }
 
-            // Find the call_id for this tool call by index
-            const toolCallsArray = Array.from(state.activeToolCalls);
-            const callId = toolCallsArray[tc.index ?? 0];
-
-            if (callId) {
-              emitFunctionCallArgumentsDelta(config, callId, args);
-            }
+            state.argumentedToolCalls.add(callId);
+            emitFunctionCallArgumentsDelta(config, callId, args);
           }
         }
       },
@@ -598,6 +699,14 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
         const usage = endData?.output?.usage_metadata;
         if (usage) {
           accumulateResponseUsage(config.tracker.usage, usage);
+        }
+
+        for (const { id, args } of completedToolCallArguments(data)) {
+          if (!state.activeToolCalls.has(id) || state.argumentedToolCalls.has(id)) {
+            continue;
+          }
+          state.argumentedToolCalls.add(id);
+          emitFunctionCallArgumentsDelta(config, id, args);
         }
       },
     },
@@ -744,8 +853,8 @@ export function buildAggregatedResponse(
     instructions: context.instructions ?? null,
     output,
     error: null,
-    tools: [],
-    tool_choice: 'auto',
+    tools: context.tools ?? [],
+    tool_choice: context.toolChoice ?? 'auto',
     truncation: 'disabled',
     parallel_tool_calls: true,
     text: { format: { type: 'text' } },
@@ -808,6 +917,7 @@ export function createAggregatorEventHandlers(aggregator: ResponseAggregator): R
   }
 > {
   const activeToolCalls = new Set<string>();
+  const chunkResolver = createToolCallChunkResolver();
 
   return {
     on_message_delta: {
@@ -846,20 +956,33 @@ export function createAggregatorEventHandlers(aggregator: ResponseAggregator): R
     on_run_step: {
       handle: (_event: string, data: unknown): void => {
         const stepData = data as {
-          stepDetails?: { type: string; tool_calls?: Array<{ id?: string; name?: string }> };
+          id?: string;
+          stepDetails?: {
+            type: string;
+            tool_calls?: Array<{ id?: string; name?: string; args?: unknown }>;
+          };
         };
         const stepDetails = stepData?.stepDetails;
 
         if (stepDetails?.type === 'tool_calls' && stepDetails.tool_calls) {
+          const stepCallIds: string[] = [];
           for (const tc of stepDetails.tool_calls) {
             const callId = tc.id ?? '';
             const name = tc.name ?? '';
 
-            if (callId && !activeToolCalls.has(callId)) {
+            if (!callId) {
+              continue;
+            }
+
+            stepCallIds.push(callId);
+            if (!activeToolCalls.has(callId)) {
               activeToolCalls.add(callId);
-              aggregator.toolCalls.set(callId, { id: callId, name, arguments: '' });
+              // A provider that does not stream its arguments delivers them here instead.
+              const seeded = typeof tc.args === 'string' ? tc.args : '';
+              aggregator.toolCalls.set(callId, { id: callId, name, arguments: seeded });
             }
           }
+          chunkResolver.registerStep(stepData?.id ?? '', stepCallIds);
         }
       },
     },
@@ -867,25 +990,23 @@ export function createAggregatorEventHandlers(aggregator: ResponseAggregator): R
     on_run_step_delta: {
       handle: (_event: string, data: unknown): void => {
         const deltaData = data as {
-          delta?: { type: string; tool_calls?: Array<{ index?: number; args?: string }> };
+          id?: string;
+          delta?: { type: string; tool_calls?: ToolCallChunk[] };
         };
         const delta = deltaData?.delta;
 
         if (delta?.type === 'tool_calls' && delta.tool_calls) {
           for (const tc of delta.tool_calls) {
-            const args = tc.args ?? '';
-            if (!args) {
+            // Resolved before the empty-args check so an id-bearing opening chunk is recorded.
+            const callId = chunkResolver.resolve(deltaData?.id ?? '', tc);
+            const args = typeof tc.args === 'string' ? tc.args : '';
+            if (!args || !callId) {
               continue;
             }
 
-            const toolCallsArray = Array.from(activeToolCalls);
-            const callId = toolCallsArray[tc.index ?? 0];
-
-            if (callId) {
-              const existing = aggregator.toolCalls.get(callId);
-              if (existing) {
-                existing.arguments += args;
-              }
+            const existing = aggregator.toolCalls.get(callId);
+            if (existing) {
+              existing.arguments += args;
             }
           }
         }
@@ -915,6 +1036,13 @@ export function createAggregatorEventHandlers(aggregator: ResponseAggregator): R
         const usage = endData?.output?.usage_metadata;
         if (usage) {
           accumulateResponseUsage(aggregator.usage, usage);
+        }
+
+        for (const { id, args } of completedToolCallArguments(data)) {
+          const existing = aggregator.toolCalls.get(id);
+          if (existing && existing.arguments === '') {
+            existing.arguments = args;
+          }
         }
       },
     },
