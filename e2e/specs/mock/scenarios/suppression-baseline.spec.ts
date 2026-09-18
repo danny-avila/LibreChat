@@ -463,6 +463,68 @@ test.describe('the recorded design-rule backlog', () => {
     /** Nothing in the checkout moved while that ran. */
     expect(readFileSync(suppressionsPath, 'utf8')).toBe(baselineText);
   });
+
+  test('a change to how the primitives are built rebuilds them before the backlog is read @scenario:a-build-config-change-rebuilds-the-primitives-before-validation', () => {
+    inOneProject();
+    test.setTimeout(180_000);
+
+    /** The design rules classify against `packages/client/dist`, which is build
+     *  output and not in the tree. The runner rebuilds it when it is older than
+     *  the library's sources — and the library's manifest and build config are
+     *  sources in that sense too: they decide what is emitted and which entry
+     *  point the rules resolve primitives through, while every file under `src`
+     *  stays older than the last build. CI always builds, so a local run that
+     *  trusted the old output would be the only one disagreeing.
+     *
+     *  The build is made observable rather than real: the miniature repository's
+     *  `build:client-package` writes a marker, so the assertion is whether the
+     *  runner asked for a build at all. */
+    const root = syntheticRoot();
+    const marker = join(root, 'built.marker');
+    const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    manifest.scripts['build:client-package'] =
+      `node -e "require('fs').writeFileSync('built.marker','1')"`;
+    writeFileSync(join(root, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    const checks = (files: string[]) =>
+      run(
+        process.execPath,
+        [join(root, 'scripts/static-checks.mts'), ...files, '--only', 'suppressions'],
+        { cwd: root },
+      );
+
+    try {
+      /** A build newer than every source and every build input: no rebuild. */
+      writeFileSync(join(root, 'packages/client/dist/index.js'), 'export {};\n');
+      rmSync(marker, { force: true });
+      const fresh = checks(['eslint.config.mjs']);
+      expect(fresh.status, fresh.output).not.toBe(0);
+      expect(existsSync(marker), 'a current build was rebuilt anyway').toBe(false);
+
+      /** The build config moves, the sources do not: the build has to be asked
+       *  for, because what `dist` holds was emitted under the old one. */
+      writeFileSync(
+        join(root, 'packages/client/tsdown.config.mjs'),
+        `${readFileSync(join(root, 'packages/client/tsdown.config.mjs'), 'utf8')}\n// touched\n`,
+      );
+      const afterConfig = checks(['packages/client/tsdown.config.mjs']);
+      expect(existsSync(marker), 'a build-config change kept the old metadata').toBe(true);
+      expect(afterConfig.status, afterConfig.output).not.toBe(0);
+
+      /** And the library's manifest, which names the entry point the rules
+       *  resolve `@librechat/client` through. */
+      writeFileSync(join(root, 'packages/client/dist/index.js'), 'export {};\n');
+      rmSync(marker, { force: true });
+      const packageJson = join(root, 'packages/client/package.json');
+      writeFileSync(packageJson, readFileSync(packageJson, 'utf8'));
+      const afterManifest = checks(['packages/client/package.json']);
+      expect(existsSync(marker), 'a manifest change kept the old metadata').toBe(true);
+      expect(afterManifest.status, afterManifest.output).not.toBe(0);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
 });
 
 /**

@@ -1170,12 +1170,22 @@ function editedEntries(target: string, context: CheckContext): string[] {
  * is the obvious case; a stale one is the quiet case — it reports variants that
  * no longer exist and misses the ones that do, which is a lint that disagrees
  * with CI while looking clean.
+ *
+ * The library's manifest and build config count as sources here: they decide
+ * which modules are emitted and which entry point the rules resolve primitives
+ * through, so a `dist` built before either one changed describes the old
+ * contract while every file under `src` still looks older than it. CI always
+ * builds, so that divergence would only ever appear locally.
  */
 function designMetadataIsFresh(): boolean {
   const dist = resolve(ROOT, 'packages/client/dist');
   if (!existsSync(dist)) return false;
   const builtAt = newestModification(dist);
-  const sourcedAt = newestModification(resolve(ROOT, 'packages/client/src'));
+  let sourcedAt = newestModification(resolve(ROOT, 'packages/client/src'));
+  for (const file of DESIGN_METADATA_FILES) {
+    const path = resolve(ROOT, file);
+    if (existsSync(path)) sourcedAt = Math.max(sourcedAt, statSync(path).mtimeMs);
+  }
   return builtAt >= sourcedAt;
 }
 
