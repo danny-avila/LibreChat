@@ -48,5 +48,31 @@ describe('skill delete handler', () => {
     expect(deleteSkill).toHaveBeenCalledTimes(2);
     expect(deleteBlob).toHaveBeenCalledTimes(1);
     expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ id, deleted: true, cleanupComplete: true });
+  });
+
+  it('returns an evictable response when only non-file cleanup remains incomplete', async () => {
+    const id = new Types.ObjectId().toString();
+    const incomplete: DeleteSkillResult = {
+      deleted: true,
+      skillAbsent: true,
+      cleanupComplete: false,
+      failedCleanupSteps: ['permissions'],
+    };
+    const deleteSkill = jest.fn(async () => incomplete);
+    const handlers = createSkillsHandlers({
+      deleteSkill,
+      listSkillFiles: jest.fn(async () => []),
+      getStrategyFunctions: jest.fn(),
+      isValidObjectIdString: jest.fn(() => true),
+    } as unknown as SkillsHandlersDeps);
+    const req = { params: { id } } as unknown as ServerRequest;
+    const res = mockResponse();
+
+    await handlers.delete(req, res);
+
+    expect(deleteSkill).toHaveBeenCalledTimes(2);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ id, deleted: true, cleanupComplete: false });
   });
 });

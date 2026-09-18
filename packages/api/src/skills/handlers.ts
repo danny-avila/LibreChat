@@ -627,13 +627,20 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
       }
 
       if (!result.cleanupComplete) {
+        if (result.skillAbsent) {
+          /** The client must evict the now-missing skill even though dependent
+           * cleanup still needs repair. A 2xx response reaches the mutation's
+           * cache reconciliation path; the flag preserves the warning. */
+          const response: TDeleteSkillResponse = { id, deleted: true, cleanupComplete: false };
+          return res.status(200).json(response);
+        }
         return res.status(500).json({ error: 'Skill deletion cleanup did not finish' });
       }
       if (!result.deleted && files.length === 0) {
         return res.status(404).json({ error: 'Skill not found' });
       }
 
-      const response: TDeleteSkillResponse = { id, deleted: true };
+      const response: TDeleteSkillResponse = { id, deleted: true, cleanupComplete: true };
       return res.status(200).json(response);
     } catch (error) {
       logger.error('[DELETE /skills/:id] Error deleting skill', error);
