@@ -1061,6 +1061,26 @@ export function getOpenAILLMConfig({
   const promptCacheKeyDropped =
     dropParams?.includes('promptCacheKey') === true ||
     dropParams?.includes('prompt_cache_key') === true;
+  /**
+   * Moved onto the constructor field, not left where it landed: LangChain
+   * spreads `modelKwargs` before writing its own `promptCacheKey` on Chat
+   * Completions, so a raw pinned key left in the kwargs is overwritten with
+   * `undefined` and never sent — recognizing it as pinned would otherwise
+   * mean withholding synthesis and sending nothing at all.
+   */
+  if (firstPartyEndpoint && typeof modelKwargs.prompt_cache_key === 'string') {
+    llmConfig.promptCacheKey = modelKwargs.prompt_cache_key;
+    delete modelKwargs.prompt_cache_key;
+  }
+  /**
+   * A host-only control that no request body accepts. `addParams` routes an
+   * unknown name into the request kwargs, so a model group that scopes its
+   * own caching would otherwise send `promptCacheScope` to the provider; it
+   * is lifted out and treated as the more specific value instead.
+   */
+  const groupPromptCacheScope =
+    typeof modelKwargs.promptCacheScope === 'string' ? modelKwargs.promptCacheScope : undefined;
+  delete modelKwargs.promptCacheScope;
   if (
     firstPartyEndpoint &&
     promptCacheKeyEnabled !== false &&
@@ -1068,8 +1088,9 @@ export function getOpenAILLMConfig({
     !promptCacheKeyDropped
   ) {
     llmConfig.promptCacheKeyEnabled = true;
-    if (promptCacheScope != null) {
-      llmConfig.promptCacheScope = promptCacheScope;
+    const scope = groupPromptCacheScope ?? promptCacheScope;
+    if (scope != null) {
+      llmConfig.promptCacheScope = scope as typeof promptCacheScope;
     }
   }
   /**
@@ -1135,13 +1156,28 @@ export function getOpenAILLMConfig({
         ? supportsExplicitPromptCache(wireModel)
         : supportsExplicitPromptCache(llmConfig.model) ||
           supportsExplicitPromptCache(deploymentName);
+    /**
+     * A default, like retention: `addParams` is the most specific layer, so a
+     * model group that opted out of explicit breakpoints keeps its own value
+     * rather than having the endpoint's turn them back on.
+     */
+    const explicitSuppliedByParams = typeof llmConfig.promptCacheExplicit === 'boolean';
     if (
       firstPartyEndpoint &&
       promptCacheExplicit === true &&
       supported &&
-      !promptCacheExplicitDropped
+      !promptCacheExplicitDropped &&
+      !explicitSuppliedByParams
     ) {
       llmConfig.promptCacheExplicit = true;
+      return;
+    }
+    if (
+      firstPartyEndpoint &&
+      explicitSuppliedByParams &&
+      supported &&
+      !promptCacheExplicitDropped
+    ) {
       return;
     }
     /**
