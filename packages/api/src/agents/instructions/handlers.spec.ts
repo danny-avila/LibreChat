@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { Request, Response } from 'express';
+import type { AgentInstructionPromptProvider } from './resolver';
 import { createAgentInstructionPromptPreviewHandler } from './handlers';
 
 function createResponse() {
@@ -57,15 +58,18 @@ describe('agent instruction prompt preview handler', () => {
   });
   it('aborts prompt resolution when the client disconnects', async () => {
     let resolverSignal: AbortSignal | undefined;
-    const resolver = {
-      resolve: jest.fn((_reference: unknown, context: { signal: AbortSignal }) => {
+    const resolver: AgentInstructionPromptProvider = {
+      resolve: async (_reference, context) => {
+        if (!context.signal) {
+          throw new Error('Expected preview cancellation signal');
+        }
         resolverSignal = context.signal;
-        return new Promise((_resolve, reject) => {
-          context.signal.addEventListener('abort', () => reject(context.signal.reason), {
+        return await new Promise<never>((_resolve, reject) => {
+          context.signal?.addEventListener('abort', () => reject(context.signal?.reason), {
             once: true,
           });
         });
-      }),
+      },
     };
     const handler = createAgentInstructionPromptPreviewHandler({ resolver });
     const response = createResponse();
