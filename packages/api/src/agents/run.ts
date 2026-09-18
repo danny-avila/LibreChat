@@ -1985,11 +1985,12 @@ function handoffEdgeIdentity(edge: GraphEdge): unknown {
      * changes nothing in this tool.
      */
     /**
-     * One `lc_transfer_to_<destination>` tool per target, so the set is what
-     * the model sees: a single target and a one-element list advertise the same
-     * tool, and two orders of the same targets advertise the same tools.
+     * One `lc_transfer_to_<destination>` tool per target, pushed in the order
+     * the targets are listed — so the order is part of the serialized tool
+     * prefix and stays in the identity, while a single target and a
+     * one-element list, which advertise the same tool, hash alike.
      */
-    to: (Array.isArray(edge.to) ? [...edge.to] : [edge.to]).sort(),
+    to: Array.isArray(edge.to) ? [...edge.to] : [edge.to],
     ...(typeof edge.description === 'string' ? { description: edge.description } : {}),
     /** Absent means `handoff`, so both spellings must hash alike. */
     edgeType: edge.edgeType ?? 'handoff',
