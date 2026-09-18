@@ -16,8 +16,11 @@ function makeInputs(overrides: Partial<AgentInputs> = {}): AgentInputs {
 
 describe('foldSubagentDynamicInstructionsForPromptCache', () => {
   it('folds the dynamic tail so the SDK can place one body cache marker', () => {
-    const inputs = foldSubagentDynamicInstructionsForPromptCache(makeInputs());
+    const original = makeInputs();
+    const inputs = foldSubagentDynamicInstructionsForPromptCache(original);
 
+    expect(inputs).not.toBe(original);
+    expect(original.additional_instructions).toBe('Conversation Date & Time: 2026-09-17');
     expect(inputs.additional_instructions).toBeUndefined();
     expect(inputs.instructions).toBe(
       'You are a researcher.\nConversation Date & Time: 2026-09-17',
@@ -25,10 +28,10 @@ describe('foldSubagentDynamicInstructionsForPromptCache', () => {
   });
 
   it('leaves the parent-style split intact when promptCache is off', () => {
-    const inputs = foldSubagentDynamicInstructionsForPromptCache(
-      makeInputs({ clientOptions: { promptCache: false } }),
-    );
+    const original = makeInputs({ clientOptions: { promptCache: false } });
+    const inputs = foldSubagentDynamicInstructionsForPromptCache(original);
 
+    expect(inputs).toBe(original);
     expect(inputs.instructions).toBe('You are a researcher.');
     expect(inputs.additional_instructions).toBe('Conversation Date & Time: 2026-09-17');
   });

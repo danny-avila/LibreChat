@@ -27,7 +27,9 @@ export function foldSubagentDynamicInstructionsForPromptCache(inputs: AgentInput
     return inputs;
   }
 
-  inputs.instructions = `${stable}\n${dynamic}`;
-  inputs.additional_instructions = undefined;
-  return inputs;
+  return {
+    ...inputs,
+    instructions: `${stable}\n${dynamic}`,
+    additional_instructions: undefined,
+  };
 }
