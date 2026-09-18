@@ -767,6 +767,11 @@ html.high-contrast.dark .btn-neutral:hover {
   }
 }
 
+/* `overflow-*-auto` deliberately overrides the utility of the same name with `overlay`, so it
+ * stays unlayered and keeps beating it; no source pairs it with a variant that would need to win
+ * back. `.hidden` had no such reason to exist — Tailwind emits the identical rule — and unlayered
+ * it outranked every responsive variant that reveals an element, so `hidden md:block` stayed
+ * hidden at every width and the composer's MCP button lost its accessible name. */
 .overflow-y-auto {
   overflow-y: overlay;
 }
@@ -783,10 +788,6 @@ html.high-contrast.dark .btn-neutral:hover {
 
 .reset-rc-number-input-text-right input {
   text-align: right;
-}
-
-.hidden {
-  display: none;
 }
 
 p > small {
