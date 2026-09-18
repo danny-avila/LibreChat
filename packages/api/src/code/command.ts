@@ -19,6 +19,7 @@ import {
   executeWorkspaceTool,
   WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS,
   WORKSPACE_COMMAND_MAX_TIMEOUT_MS,
+  WORKSPACE_QUEUE_MAX_WAIT_MS,
 } from './workspace';
 
 const DEFAULT_OUTPUT_BYTES = 256 * 1024;
@@ -91,6 +92,21 @@ export function resolveAttachedWorkspaceCommandTimeoutMax(
   return configured == null
     ? WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS
     : normalizeAttachedWorkspaceCommandTimeoutMax(configured);
+}
+
+/**
+ * How long one capacity-blocked invocation stays queued. Omitting the field
+ * keeps the built-in admission budget; `0` surfaces the first capacity expiry
+ * to the model instead of waiting.
+ */
+export function resolveAttachedWorkspaceQueueWaitMs(
+  configSchema?: CodeEnvironmentUserConfigSchema,
+): number {
+  const configured = configSchema?.limits?.maxQueueWaitMs;
+  if (configured == null || !Number.isSafeInteger(configured) || configured < 0) {
+    return WORKSPACE_QUEUE_MAX_WAIT_MS;
+  }
+  return Math.min(WORKSPACE_QUEUE_MAX_WAIT_MS, configured);
 }
 
 export function buildAttachedWorkspaceBashSchema(
@@ -235,6 +251,7 @@ export function createAttachedWorkspaceBashTool({
   environment,
   gitIdentity,
   maxTimeoutMs = WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS,
+  maxQueueWaitMs,
   fetchImpl,
 }: {
   baseUrl: string;
@@ -244,6 +261,8 @@ export function createAttachedWorkspaceBashTool({
   gitIdentity?: AgentGitIdentity | null;
   /** Deployment ceiling already intersected with the protocol hard cap. */
   maxTimeoutMs?: number;
+  /** Deployment admission budget; omitted keeps the built-in default. */
+  maxQueueWaitMs?: number;
   fetchImpl?: CodeBridgeFetch;
 }): DynamicStructuredTool {
   const effectiveMaxTimeoutMs = normalizeAttachedWorkspaceCommandTimeoutMax(maxTimeoutMs);
@@ -301,7 +320,8 @@ export function createAttachedWorkspaceBashTool({
       try {
         const result = await executeWorkspaceTool({
           baseURL: baseUrl,
-          authHeaders: await authHeaders(),
+          /** Passed as a supplier: a queued call outlives its minted token. */
+          authHeaders,
           request: {
             protocolVersion: 1,
             operation: 'execute_command',
@@ -316,6 +336,7 @@ export function createAttachedWorkspaceBashTool({
           },
           signal,
           fetchImpl,
+          ...(maxQueueWaitMs == null ? {} : { maxQueueWaitMs }),
         });
         if (result.operation !== 'execute_command') {
           throw new Error('Attached workspace returned an unexpected command result.');

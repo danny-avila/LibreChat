@@ -1131,13 +1131,13 @@ async function readWorkspaceFile({
   req,
   signal,
 }) {
-  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
   return executeWorkspaceTool({
     baseURL: codeApiBaseUrl,
-    authHeaders: {
-      ...authHeaders,
+    /** Minted per admission attempt: a queued call outlives one token TTL. */
+    authHeaders: async () => ({
+      ...(await getCodeApiAuthHeaders(req, bridgeWorkerId)),
       ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
-    },
+    }),
     request: {
       protocolVersion: 1,
       operation: 'read_file',
@@ -1175,13 +1175,13 @@ async function searchWorkspace({
   req,
   signal,
 }) {
-  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
   return executeWorkspaceTool({
     baseURL: codeApiBaseUrl,
-    authHeaders: {
-      ...authHeaders,
+    /** Minted per admission attempt: a queued call outlives one token TTL. */
+    authHeaders: async () => ({
+      ...(await getCodeApiAuthHeaders(req, bridgeWorkerId)),
       ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
-    },
+    }),
     request: {
       protocolVersion: 1,
       operation: 'search_text',
@@ -1219,13 +1219,13 @@ async function listWorkspaceFiles({
   req,
   signal,
 }) {
-  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
   return executeWorkspaceTool({
     baseURL: codeApiBaseUrl,
-    authHeaders: {
-      ...authHeaders,
+    /** Minted per admission attempt: a queued call outlives one token TTL. */
+    authHeaders: async () => ({
+      ...(await getCodeApiAuthHeaders(req, bridgeWorkerId)),
       ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
-    },
+    }),
     request: {
       protocolVersion: 1,
       operation: 'list_files',
@@ -1250,13 +1250,13 @@ async function writeWorkspaceFile({
   req,
   signal,
 }) {
-  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
   return executeWorkspaceTool({
     baseURL: codeApiBaseUrl,
-    authHeaders: {
-      ...authHeaders,
+    /** Minted per admission attempt: a queued call outlives one token TTL. */
+    authHeaders: async () => ({
+      ...(await getCodeApiAuthHeaders(req, bridgeWorkerId)),
       ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
-    },
+    }),
     request: {
       protocolVersion: 1,
       operation: 'write_file',
@@ -1281,13 +1281,13 @@ async function editWorkspaceFile({
   req,
   signal,
 }) {
-  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
   return executeWorkspaceTool({
     baseURL: codeApiBaseUrl,
-    authHeaders: {
-      ...authHeaders,
+    /** Minted per admission attempt: a queued call outlives one token TTL. */
+    authHeaders: async () => ({
+      ...(await getCodeApiAuthHeaders(req, bridgeWorkerId)),
       ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
-    },
+    }),
     request: {
       protocolVersion: 1,
       operation: 'edit_file',
@@ -1311,13 +1311,13 @@ async function previewWorkspaceEdit({
   req,
   signal,
 }) {
-  const authHeaders = await getCodeApiAuthHeaders(req, bridgeWorkerId);
   return executeWorkspaceTool({
     baseURL: codeApiBaseUrl,
-    authHeaders: {
-      ...authHeaders,
+    /** Minted per admission attempt: a queued call outlives one token TTL. */
+    authHeaders: async () => ({
+      ...(await getCodeApiAuthHeaders(req, bridgeWorkerId)),
       ...codeExecutionHeaders({ executionProfile, bridgeWorkerId }),
-    },
+    }),
     request: {
       protocolVersion: 1,
       operation: 'preview_edit',

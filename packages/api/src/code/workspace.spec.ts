@@ -74,6 +74,85 @@ describe('workspace admission feedback', () => {
     ]);
   });
 
+  test('mints fresh credentials for every admission attempt', async () => {
+    let minted = 0;
+    const authHeaders = jest.fn(async () => ({ Authorization: `Bearer token-${++minted}` }));
+    const fetchImpl = jest
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ code: 'WORKSPACE_QUEUE_TIMEOUT' }), {
+          status: 503,
+          headers: { 'Retry-After': '0' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            protocolVersion: 1,
+            operation: 'edit_file',
+            workspaceId: 'primary',
+            path: 'src/app.ts',
+            replacements: 1,
+            bytesWritten: 24,
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example/v1',
+        authHeaders,
+        fetchImpl,
+        request: {
+          protocolVersion: 1,
+          operation: 'edit_file',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          edits: [{ oldText: 'const old = true;', newText: 'const ready = true;' }],
+        },
+      }),
+    ).resolves.toMatchObject({ operation: 'edit_file' });
+
+    // A token minted before the first capacity window expires within the
+    // admission budget, so reusing it would fail the retry with a 401.
+    expect(authHeaders).toHaveBeenCalledTimes(2);
+    expect(
+      fetchImpl.mock.calls.map(
+        (call) => (call[1]?.headers as Record<string, string>).Authorization,
+      ),
+    ).toEqual(['Bearer token-1', 'Bearer token-2']);
+  });
+
+  test('never opens another admission window once the queue budget is spent', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(
+      new Response(JSON.stringify({ code: 'WORKSPACE_QUEUE_TIMEOUT' }), {
+        status: 503,
+        headers: { 'Retry-After': '1' },
+      }),
+    );
+
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example/v1',
+        authHeaders: {},
+        fetchImpl,
+        maxQueueWaitMs: 150,
+        request: {
+          protocolVersion: 1,
+          operation: 'edit_file',
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          edits: [{ oldText: 'const old = true;', newText: 'const ready = true;' }],
+        },
+      }),
+    ).rejects.toThrow('The operation was not started');
+
+    // The clamped wait lands on the deadline: a further dispatch could still be
+    // admitted and run a long command after the budget expired.
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   test('stops waiting for capacity when the chat is cancelled', async () => {
     const controller = new AbortController();
     const reason = new DOMException('Stopped', 'AbortError');

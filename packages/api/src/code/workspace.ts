@@ -20,8 +20,12 @@ const MAX_COMMAND_SIGNAL_LENGTH = 32;
 const WORKSPACE_COMMAND_TRANSPORT_GRACE_MS = 5_000;
 /** Matches Code API's bounded admission wait and command settlement allowance. */
 const WORKSPACE_QUEUE_TIMEOUT_MS = 30_000;
-/** Keep a single model tool call queued across bounded Code API admission windows. */
-const WORKSPACE_QUEUE_MAX_WAIT_MS = 5 * 60_000;
+/**
+ * Keep a single model tool call queued across bounded Code API admission
+ * windows. Keep aligned with data-provider's deployment schema default and
+ * hard cap (`limits.maxQueueWaitMs`).
+ */
+export const WORKSPACE_QUEUE_MAX_WAIT_MS: number = 5 * 60_000;
 const WORKSPACE_QUEUE_RETRY_DELAY_MS = 1_000;
 const WORKSPACE_COMMAND_SETTLEMENT_GRACE_MS = 5_000;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
@@ -730,6 +734,15 @@ function getWorkspaceToolTimeoutMs(request: WorkspaceToolRequest): number {
   return WORKSPACE_QUEUE_TIMEOUT_MS + executionBudgetMs + WORKSPACE_COMMAND_TRANSPORT_GRACE_MS;
 }
 
+/**
+ * Credentials for one admission attempt. A supplier is minted per attempt, so a
+ * call that stays queued past the Code API token TTL presents a fresh token
+ * instead of failing permanently with 401 while capacity is still pending.
+ */
+export type WorkspaceToolAuthHeaders =
+  | Record<string, string>
+  | (() => Promise<Record<string, string>> | Record<string, string>);
+
 export async function executeWorkspaceTool({
   baseURL,
   authHeaders,
@@ -739,7 +752,7 @@ export async function executeWorkspaceTool({
   maxQueueWaitMs = WORKSPACE_QUEUE_MAX_WAIT_MS,
 }: {
   baseURL: string;
-  authHeaders: Record<string, string>;
+  authHeaders: WorkspaceToolAuthHeaders;
   request: WorkspaceToolRequest;
   signal?: AbortSignal;
   fetchImpl?: CodeBridgeFetch;
@@ -761,12 +774,13 @@ export async function executeWorkspaceTool({
         signal != null && typeof AbortSignal.any === 'function'
           ? AbortSignal.any([signal, timeoutSignal])
           : timeoutSignal;
+      const attemptHeaders = typeof authHeaders === 'function' ? await authHeaders() : authHeaders;
       const response = await fetchImpl(
         `${baseURL.trim().replace(/\/+$/, '')}/workspace-tools/execute`,
         {
           method: 'POST',
           headers: {
-            ...authHeaders,
+            ...attemptHeaders,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(request),
@@ -789,6 +803,11 @@ export async function executeWorkspaceTool({
           queueDeadlineAt - Date.now(),
         );
         await waitForWorkspaceAdmission(delayMs, signal);
+        /** A clamped delay can land exactly on the deadline: the budget is spent,
+         * so never open another admission window that could still be admitted. */
+        if (Date.now() >= queueDeadlineAt) {
+          throw rejection;
+        }
         continue;
       }
       const result = await readBoundedJson(response, requestSignal);

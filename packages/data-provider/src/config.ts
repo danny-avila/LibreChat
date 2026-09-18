@@ -1160,6 +1160,12 @@ const codeEnvironmentPermissionFieldSchema = z
 export const CODE_ENVIRONMENT_COMMAND_TIMEOUT_DEFAULT_MS = 30_000;
 /** Protocol-level ceiling; deployments may only lower this value. */
 export const CODE_ENVIRONMENT_COMMAND_TIMEOUT_HARD_MAX_MS = 5 * 60_000;
+/**
+ * How long a capacity-blocked attached tool call stays queued across Code API
+ * admission windows. Also the protocol-level ceiling: deployments may only
+ * lower it, and `0` disables queueing entirely.
+ */
+export const CODE_ENVIRONMENT_QUEUE_WAIT_DEFAULT_MS = 5 * 60_000;
 
 /**
  * Typed user-tunable surface for one attached code environment. Omitted fields
@@ -1184,6 +1190,15 @@ export const codeEnvironmentUserConfigSchema = z
           .int()
           .min(1)
           .max(CODE_ENVIRONMENT_COMMAND_TIMEOUT_HARD_MAX_MS)
+          .optional(),
+        /** How long a tool call whose workspace is busy waits for admission
+         * before the model is told the operation never started. `0` fails on
+         * the first capacity expiry. Omission keeps the five-minute budget. */
+        maxQueueWaitMs: z
+          .number()
+          .int()
+          .min(0)
+          .max(CODE_ENVIRONMENT_QUEUE_WAIT_DEFAULT_MS)
           .optional(),
       })
       .strict()

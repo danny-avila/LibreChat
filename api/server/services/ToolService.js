@@ -51,6 +51,7 @@ const {
   createRepositoryInstructionSource,
   createRepositoryInstructionLoader,
   resolveAttachedWorkspaceCommandTimeoutMax,
+  resolveAttachedWorkspaceQueueWaitMs,
   createContextProgrammaticBashTool,
   resolveCodeExecutionContext,
   resolveCodeExecutionWorkspaceContext,
@@ -2298,6 +2299,9 @@ async function loadToolsForExecution({
               environment: codeExecutionContext.codeWorkspace.environment,
               gitIdentity: agent?.git_identity,
               maxTimeoutMs: resolveAttachedWorkspaceCommandTimeoutMax(
+                codeExecutionContext.codeEnvironmentConfigSchema,
+              ),
+              maxQueueWaitMs: resolveAttachedWorkspaceQueueWaitMs(
                 codeExecutionContext.codeEnvironmentConfigSchema,
               ),
             })
