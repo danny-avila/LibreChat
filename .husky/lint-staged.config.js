@@ -28,8 +28,12 @@ module.exports = {
   // A commit that only lowers a recorded count, only narrows a rule, or only
   // changes the gate that reads them touches no source file at all, so the group
   // above never runs and the first thing to notice the capacity it freed would be
-  // CI. This is the same check the lane runs — it reaches for the whole record on
-  // any of these paths — which is what keeps the commit and the lane agreeing.
-  '{eslint-suppressions.json,eslint.config.mjs,package.json,package-lock.json,packages/*/eslint-suppressions.json,packages/client/package.json,packages/client/tsdown.config.mjs,packages/client/tsconfig.json,scripts/static-checks.mts}':
+  // CI. The same is true from the other side: a primitive or an app-local
+  // component decides what the rules report in callers nobody staged, and CI
+  // sweeps the whole record for it. This list is the Static Checks lane's
+  // `suppressions` paths-filter, pattern for pattern — the scenario
+  // `a-count-edit-riding-along-with-a-recorded-source-is-rejected` fails if the
+  // two drift — which is what keeps the commit and the lane agreeing.
+  '{eslint-suppressions.json,**/eslint-suppressions.json,client/src/**,packages/client/src/**,packages/client/package.json,packages/client/tsdown.config.mjs,packages/client/tsconfig.json,eslint.config.mjs,package.json,package-lock.json,scripts/static-checks.mts,.github/workflows/static-checks.yml}':
     [() => 'node scripts/static-checks.mts --only suppressions'],
 };

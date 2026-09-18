@@ -1228,15 +1228,21 @@ function editedEntries(target: string, context: CheckContext): string[] {
  * no longer exist and misses the ones that do, which is a lint that disagrees
  * with CI while looking clean.
  *
- * The library's manifest and build config count as sources here: they decide
- * which modules are emitted and which entry point the rules resolve primitives
- * through, so a `dist` built before either one changed describes the old
- * contract while every file under `src` still looks older than it. CI always
- * builds, so that divergence would only ever appear locally.
+ * Two things are asked, because a timestamp alone answers neither. What the
+ * manifest declares has to be there: the build empties `dist` before it writes,
+ * so a build that failed halfway leaves a recent directory over a bundle that
+ * no longer has an entry point, and the newest mtime under it would read as
+ * proof. And the build has to be newer than everything it is built from —
+ * including the manifest, the build config and the compiler options, which
+ * decide what is emitted while every file under `src` stays older than the last
+ * build. CI always builds, so either divergence would only appear locally.
  */
 function designMetadataIsFresh(): boolean {
   const dist = resolve(ROOT, 'packages/client/dist');
   if (!existsSync(dist)) return false;
+  if (declaredBundleFiles().some((file) => !existsSync(resolve(ROOT, 'packages/client', file)))) {
+    return false;
+  }
   const builtAt = newestModification(dist);
   let sourcedAt = newestModification(resolve(ROOT, 'packages/client/src'));
   for (const file of DESIGN_METADATA_FILES) {
@@ -1244,6 +1250,35 @@ function designMetadataIsFresh(): boolean {
     if (existsSync(path)) sourcedAt = Math.max(sourcedAt, statSync(path).mtimeMs);
   }
   return builtAt >= sourcedAt;
+}
+
+/**
+ * The bundle paths `packages/client/package.json` promises: its entry fields and
+ * every string leaf of `exports`, kept to the ones inside `dist`. These are what
+ * a caller — and so the design rules, resolving `@librechat/client` — actually
+ * loads, which is what makes their absence a build that did not happen rather
+ * than a build that is merely old.
+ */
+function declaredBundleFiles(): string[] {
+  let manifest: Record<string, unknown>;
+  try {
+    manifest = JSON.parse(
+      readFileSync(resolve(ROOT, 'packages/client/package.json'), 'utf8'),
+    ) as Record<string, unknown>;
+  } catch {
+    return [];
+  }
+  const declared: string[] = [];
+  const collect = (value: unknown): void => {
+    if (typeof value === 'string') {
+      const path = value.replace(/^\.\//, '');
+      if (path.startsWith('dist/')) declared.push(path);
+      return;
+    }
+    if (typeof value === 'object' && value !== null) Object.values(value).forEach(collect);
+  };
+  for (const field of ['main', 'module', 'types', 'exports']) collect(manifest[field]);
+  return [...new Set(declared)];
 }
 
 /**
