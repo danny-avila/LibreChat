@@ -374,49 +374,60 @@ function clientOptionsIdentity(value: unknown): unknown {
  * key that stayed still. The shape is walked instead, guarded against the
  * cycles that made the schema unserializable in the first place.
  */
-const RUNTIME_SHAPE_DEPTH = 8;
+const RUNTIME_SHAPE_DEPTH = 12;
 
 /**
- * The declared shape of a Zod schema: its type, its keys, and their types,
- * which is what a schema edit changes. Reading `_def` is reading an internal,
- * and that is the safe direction — a Zod release that renames it changes
- * every digest at once, which retires keys rather than colliding them.
+ * The whole declared definition of a Zod schema, not a list of the fields
+ * that seemed to matter: a constraint lives in `_def.checks`, a literal's
+ * value in `_def.value`, a union's members in `_def.options`, and each of
+ * those changes the schema the model is shown. Enumerating them by hand
+ * means the next one is a collision, so every own entry is walked and the
+ * type carries no privilege.
+ *
+ * Reading `_def` is reading an internal, and that is the safe direction — a
+ * Zod release that reshapes it changes every digest at once, which retires
+ * keys rather than colliding them. Functions are recorded as their presence
+ * only: a refinement body cannot be hashed stably and does not reach the
+ * wire.
  */
 function runtimeSchemaShape(value: unknown, seen: Set<object>, depth = 0): unknown {
+  if (typeof value === 'function') {
+    return '[fn]';
+  }
   if (value == null || typeof value !== 'object') {
     return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
       ? value
       : null;
   }
-  if (seen.has(value) || depth >= RUNTIME_SHAPE_DEPTH) {
+  if (seen.has(value)) {
     return '[cycle]';
+  }
+  if (depth >= RUNTIME_SHAPE_DEPTH) {
+    return '[depth]';
   }
   seen.add(value);
   try {
     if (Array.isArray(value)) {
       return value.map((entry) => runtimeSchemaShape(entry, seen, depth + 1));
     }
-    const node = value as {
-      _def?: { typeName?: unknown; values?: unknown; innerType?: unknown; type?: unknown };
-      shape?: unknown;
-    };
-    const def = node._def;
-    const shape = typeof node.shape === 'function' ? undefined : node.shape;
-    const inner = def?.innerType ?? def?.type;
+    const node = value as { _def?: unknown; shape?: unknown };
+    const walk = (entry: unknown): unknown => runtimeSchemaShape(entry, seen, depth + 1);
+    const entries = (source: unknown): unknown =>
+      source != null && typeof source === 'object' && !Array.isArray(source)
+        ? Object.keys(source as Record<string, unknown>)
+            .sort()
+            .map((key) => [key, walk((source as Record<string, unknown>)[key])])
+        : walk(source);
+    /**
+     * `shape` is a getter on a Zod object and its keys are the schema the
+     * model reads, so it is taken from the instance rather than from `_def`,
+     * where it hides behind a thunk.
+     */
+    const shape = typeof node.shape === 'object' && node.shape != null ? node.shape : undefined;
     return {
-      type: typeof def?.typeName === 'string' ? def.typeName : null,
-      ...(def?.values != null ? { values: runtimeSchemaShape(def.values, seen, depth + 1) } : {}),
-      ...(inner != null ? { inner: runtimeSchemaShape(inner, seen, depth + 1) } : {}),
-      ...(shape != null && typeof shape === 'object'
-        ? {
-            keys: Object.keys(shape)
-              .sort()
-              .map((key) => [
-                key,
-                runtimeSchemaShape((shape as Record<string, unknown>)[key], seen, depth + 1),
-              ]),
-          }
-        : {}),
+      ...(node._def != null ? { def: entries(node._def) } : {}),
+      ...(shape != null ? { shape: entries(shape) } : {}),
+      ...(node._def == null && shape == null ? { value: entries(value) } : {}),
     };
   } finally {
     seen.delete(value);

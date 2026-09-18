@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import type { AgentInputs } from '@librechat/agents';
 import { buildPromptCacheKey, supportsExplicitPromptCache } from './promptCache';
 
@@ -60,28 +61,65 @@ describe('buildPromptCacheKey', () => {
   const key = (overrides: InputOverrides = {}, handoffEdges?: readonly unknown[]) =>
     buildPromptCacheKey(input(overrides), handoffEdges != null ? { handoffEdges } : {});
 
-  it('retires the key when a runtime action edits its parameter schema', () => {
-    const action = (fields: Record<string, unknown>) => {
-      /** What makes an action's schema unserializable: it points back at itself. */
-      const schema: Record<string, unknown> = {
-        _def: { typeName: 'ZodObject' },
-        shape: fields,
-      };
-      schema.self = schema;
+  describe('a runtime action whose schema is edited', () => {
+    /** An action's schema is self-referential, which is what sends it to the fallback. */
+    const action = (schema: z.ZodTypeAny) => {
+      (schema as unknown as { self?: unknown }).self = schema;
       return { name: 'lookup_order', description: 'Look up an order', schema };
     };
-    const field = (typeName: string) => ({ _def: { typeName } });
-    const before = action({ orderId: field('ZodString') });
-    const after = action({ orderId: field('ZodString'), includeHistory: field('ZodBoolean') });
+    const base = z.object({
+      orderId: z.string().min(2),
+      mode: z.literal('full'),
+      filter: z.union([z.string(), z.number()]),
+    });
 
-    /** A runtime instance arrives on `tools`, not as a serializable definition. */
-    expect(key({ tools: [after] })).not.toBe(key({ tools: [before] }));
-    /** And the same schema twice is the same key. */
-    expect(key({ tools: [after] })).toBe(
-      key({
-        tools: [action({ orderId: field('ZodString'), includeHistory: field('ZodBoolean') })],
-      }),
-    );
+    it.each([
+      [
+        'a new field',
+        z.object({
+          orderId: z.string().min(2),
+          mode: z.literal('full'),
+          filter: z.union([z.string(), z.number()]),
+          history: z.boolean(),
+        }),
+      ],
+      [
+        'a tightened constraint',
+        z.object({
+          orderId: z.string().min(10),
+          mode: z.literal('full'),
+          filter: z.union([z.string(), z.number()]),
+        }),
+      ],
+      [
+        'a changed literal value',
+        z.object({
+          orderId: z.string().min(2),
+          mode: z.literal('summary'),
+          filter: z.union([z.string(), z.number()]),
+        }),
+      ],
+      [
+        'a different union member',
+        z.object({
+          orderId: z.string().min(2),
+          mode: z.literal('full'),
+          filter: z.union([z.string(), z.boolean()]),
+        }),
+      ],
+    ])('retires the key for %s', (_label, edited) => {
+      expect(key({ tools: [action(edited)] })).not.toBe(key({ tools: [action(base)] }));
+    });
+
+    it('keeps one key for an unchanged schema', () => {
+      const unchanged = () =>
+        z.object({
+          orderId: z.string().min(2),
+          mode: z.literal('full'),
+          filter: z.union([z.string(), z.number()]),
+        });
+      expect(key({ tools: [action(unchanged())] })).toBe(key({ tools: [action(unchanged())] }));
+    });
   });
 
   it('ignores the key order tool schemas happen to be serialized in', () => {
