@@ -294,6 +294,17 @@ describe('agent instruction prompt resolver', () => {
 
     expect(agent).toEqual({ instructions: 'replacement', instruction_prompt: null });
   });
+  it('leaves inline instructions unchanged when null is already a no-op', async () => {
+    const agent = { instruction_prompt: null };
+
+    await persistAgentInstructionPromptFallback({
+      agent,
+      existingInstructionPrompt: null,
+      context: { userId: 'user-1' },
+    });
+
+    expect(agent).toEqual({ instruction_prompt: null });
+  });
 
   it('persists the resolved Langfuse destination binding', async () => {
     const agent: Parameters<typeof persistAgentInstructionPromptFallback>[0]['agent'] = {

@@ -233,7 +233,7 @@ export async function persistAgentInstructionPromptFallback({
   resolver?: AgentInstructionPromptProvider;
 }): Promise<void> {
   if (agent.instruction_prompt === null) {
-    if (agent.instructions === undefined) {
+    if (existingInstructionPrompt != null && agent.instructions === undefined) {
       agent.instructions = '';
     }
     return;

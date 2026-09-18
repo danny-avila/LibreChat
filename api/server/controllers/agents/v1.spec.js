@@ -1660,6 +1660,22 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agentInDb.instructions).toBe('');
       expect(agentInDb.instruction_prompt).toBeNull();
     });
+    test('keeps inline instructions when clearing an already-empty prompt reference', async () => {
+      await Agent.updateOne({ id: existingAgentId }, { instructions: 'inline instructions' });
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = { instruction_prompt: null };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockInstructionPromptResolve).not.toHaveBeenCalled();
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.instructions).toBe('inline instructions');
+      expect(response.instruction_prompt).toBeNull();
+      const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+      expect(agentInDb.instructions).toBe('inline instructions');
+      expect(agentInDb.instruction_prompt).toBeNull();
+    });
 
     test('removes newly added programmatic options when Code Interpreter capability is disabled', async () => {
       await Agent.updateOne(
@@ -2893,6 +2909,40 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agent.author.toString()).toBe(cloneAuthorId.toString());
       expect(agent.tool_resources.context.file_ids).toEqual([cloneAuthorFileId]);
       expect(agent.tool_resources.context.files).toBeUndefined();
+    });
+
+    test('duplicateAgentHandler preserves prompt resolution error statuses', async () => {
+      const sourceAgent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Prompt Source Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId(),
+        instructions: 'protected snapshot',
+        instruction_prompt: {
+          source: 'librechat',
+          promptId: new mongoose.Types.ObjectId().toString(),
+          name: 'Protected policy',
+        },
+      });
+      const db = require('~/models');
+      jest.spyOn(db, 'getActions').mockResolvedValueOnce([]);
+      const createAgentSpy = jest.spyOn(db, 'createAgent');
+      mockInstructionPromptResolve.mockRejectedValueOnce(
+        Object.assign(new Error('Prompt access denied'), { statusCode: 403 }),
+      );
+      mockReq.config = {
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.instruction_prompts] },
+        },
+      };
+      mockReq.params.id = sourceAgent.id;
+
+      await duplicateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Prompt access denied' });
+      expect(createAgentSpy).not.toHaveBeenCalled();
     });
 
     test('revertAgentVersionHandler should block selected content before persistence', async () => {

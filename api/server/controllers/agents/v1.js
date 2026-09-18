@@ -1681,8 +1681,8 @@ const duplicateAgentHandler = async (req, res) => {
     });
   } catch (error) {
     logger.error('[/Agents/:id/duplicate] Error duplicating Agent:', error);
-    if (error?.statusCode === 409) {
-      return res.status(409).json({ error: error.message });
+    if (Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 600) {
+      return res.status(error.statusCode).json({ error: error.message });
     }
     res.status(500).json({ error: error.message });
   }
