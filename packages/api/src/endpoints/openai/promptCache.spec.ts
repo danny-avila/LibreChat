@@ -158,6 +158,19 @@ describe('buildPromptCacheKey', () => {
     ).not.toBe(key(discovered({ type: 'object', properties: { input: { type: 'string' } } })));
   });
 
+  it('keys on a schema field named after the prototype setter', () => {
+    /** An own `__proto__` property, as a parsed JSON schema can carry. */
+    const properties = JSON.parse('{"__proto__":{"type":"string"}}') as Record<string, unknown>;
+    const withField = (props: Record<string, unknown>) => ({
+      toolDefinitions: [
+        { ...searchTool, parameters: { type: 'object', properties: props } },
+        calculatorTool,
+      ],
+    });
+
+    expect(key(withField(properties))).not.toBe(key(withField({})));
+  });
+
   it('keeps a tool named after an inherited property out of the discovered set', () => {
     const shadow = { name: 'toString', description: 'Render', parameters: { type: 'object' } };
     const withState = (deferLoading: boolean) => ({

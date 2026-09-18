@@ -221,8 +221,12 @@ function isAbsentSurface(value: unknown): boolean {
   if (Array.isArray(value)) {
     return value.length === 0;
   }
-  if (typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype) {
-    return Object.keys(value).length === 0;
+  if (typeof value === 'object') {
+    const prototype = Object.getPrototypeOf(value);
+    /** Plain records, including the null-prototype ones the projections build. */
+    if (prototype === Object.prototype || prototype === null) {
+      return Object.keys(value).length === 0;
+    }
   }
   return false;
 }
@@ -232,7 +236,7 @@ function modelKwargsIdentity(value: unknown): unknown {
     return safeIdentity(value);
   }
   const kwargs = value as Record<string, unknown>;
-  const projected: Record<string, unknown> = {};
+  const projected: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   for (const key of Object.keys(kwargs)) {
     if (nonPrefixModelKwargsKeys.has(key)) {
       continue;
@@ -265,7 +269,7 @@ function clientOptionsIdentity(value: unknown): unknown {
     modelKwargs?: { model?: unknown };
     [key: string]: unknown;
   };
-  const projected: Record<string, unknown> = {};
+  const projected: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   for (const key of Object.keys(options)) {
     if (nonPrefixClientOptionKeys.has(key)) {
       continue;
@@ -498,10 +502,10 @@ export function buildPromptCacheKey(
   const projection: PromptCacheProjectionContext = {
     configuredToolState: markers?.promptCacheConfiguredToolState,
   };
-  const payload: Record<string, unknown> = {
+  const payload: Record<string, unknown> = Object.assign(Object.create(null), {
     version: PROMPT_CACHE_KEY_VERSION,
     handoffEdges: (context.handoffEdges ?? []).map(safeIdentity),
-  };
+  }) as Record<string, unknown>;
   const fields = input as unknown as Record<string, unknown>;
   for (const key of Object.keys(fields)) {
     const disposition = (agentInputDispositions as Record<string, PromptCacheDisposition>)[key];

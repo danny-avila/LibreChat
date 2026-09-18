@@ -24,7 +24,13 @@ export function canonicalize(value: unknown, seen: WeakSet<object> = new WeakSet
   }
   seen.add(value);
   const record = value as Record<string, unknown>;
-  const normalized: Record<string, unknown> = {};
+  /**
+   * Null-prototype: a key named `__proto__` assigned onto an ordinary object
+   * invokes the legacy prototype setter instead of becoming an own property,
+   * so a schema carrying that field would vanish from the digest and hash like
+   * one without it.
+   */
+  const normalized: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   for (const key of Object.keys(record).sort()) {
     const item = canonicalize(record[key], seen);
     if (item !== undefined) {
