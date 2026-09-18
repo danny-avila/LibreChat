@@ -349,7 +349,20 @@ func TestJSONTraceProxyAddsRoutingAttributesFromPath(t *testing.T) {
 func TestMediaUploadFansOutToCentralAndTenant(t *testing.T) {
 	t.Parallel()
 
-	for _, contentType := range []string{"image/png", "text/plain", "text/plain; charset=utf-8", "application/json", "Application/JSON; charset=utf-8"} {
+	for _, contentType := range []string{
+		"image/png", "audio/wav", "video/mp4",
+		"text/plain", "text/plain; charset=utf-8", "text/html", "text/css", "text/csv",
+		"text/markdown", "text/x-python", "text/x-typescript",
+		"application/javascript", "application/x-yaml", "application/pdf", "application/msword",
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		"application/vnd.ms-excel",
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+		"application/rtf", "application/json", "Application/JSON; charset=utf-8",
+		"application/x-ndjson", "application/xml", "application/vnd.apache.parquet",
+		"application/zip", "application/gzip", "application/x-tar",
+		"application/x-7z-compressed", "application/octet-stream",
+	} {
 		t.Run(contentType, func(t *testing.T) {
 			t.Parallel()
 			var mu sync.Mutex
@@ -752,6 +765,17 @@ func TestMediaUploadOversizeRestoresPlanForRetry(t *testing.T) {
 	}
 }
 
+func TestUploadContentTypeRejectsUnsupportedTypes(t *testing.T) {
+	t.Parallel()
+	for _, contentType := range []string{"", "text/x-unsupported", "application/x-unsupported", "application/jsonp", "text/plain-invalid", "multipart/form-data"} {
+		t.Run(contentType, func(t *testing.T) {
+			if allowedUploadContentType(contentType) {
+				t.Fatalf("unsupported content type accepted: %q", contentType)
+			}
+		})
+	}
+}
+
 func TestMediaUploadUnsupportedContentTypeRestoresPlanForRetry(t *testing.T) {
 	t.Parallel()
 
@@ -780,7 +804,7 @@ func TestMediaUploadUnsupportedContentTypeRestoresPlanForRetry(t *testing.T) {
 	gw.cfg.client = upstream.Client()
 
 	badReq := httptest.NewRequest(http.MethodPut, mediaUploadProxyPath+uploadID, strings.NewReader("hello"))
-	badReq.Header.Set("Content-Type", "text/html")
+	badReq.Header.Set("Content-Type", "application/x-unsupported")
 	badResp := httptest.NewRecorder()
 	gw.handle(badResp, badReq)
 	if badResp.Code != http.StatusBadGateway {
