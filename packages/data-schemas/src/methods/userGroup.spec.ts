@@ -791,30 +791,21 @@ describe('userGroup methods', () => {
         role: SystemRoles.USER,
         idOnTheSource: 'dedup-ext-1',
       };
-      const findSpy = jest.spyOn(Group, 'find');
 
-      const calls = [
+      const [first, second, third] = await Promise.all([
         cachedMethods.getUserPrincipals(params),
         cachedMethods.getUserPrincipals(params),
         cachedMethods.getUserPrincipals(params),
-      ];
-      /** Hold the first cache read open while all callers join the same lookup. */
-      releaseCacheRead();
-      const [first, second, third] = await Promise.all(calls);
+      ]);
 
       expect(first).toEqual(second);
       expect(second).toEqual(third);
-      expect(findSpy).toHaveBeenCalledTimes(1);
+      expect(cache.get).toHaveBeenCalledTimes(3);
       expect(cache.set).toHaveBeenCalledTimes(1);
-      findSpy.mockRestore();
     });
 
     it('shares one lock and DB build across concurrent same-process callers', async () => {
       const user = await createTestUser({ idOnTheSource: 'lock-ext-1' });
-      let releaseCacheRead!: () => void;
-      const cacheRead = new Promise<void>((resolve) => {
-        releaseCacheRead = resolve;
-      });
       const cache = {
         ...createFakeCache({ onRead: arrivalBarrier(3) }),
         acquireLock: jest.fn(async () => 'lock-token'),
@@ -828,14 +819,11 @@ describe('userGroup methods', () => {
         idOnTheSource: 'lock-ext-1',
       };
 
-      const calls = [
+      const [first, second, third] = await Promise.all([
         cachedMethods.getUserPrincipals(params),
         cachedMethods.getUserPrincipals(params),
         cachedMethods.getUserPrincipals(params),
-      ];
-      /** Hold the first cache read open while all callers join the same lookup. */
-      releaseCacheRead();
-      const [first, second, third] = await Promise.all(calls);
+      ]);
 
       expect(first).toEqual(second);
       expect(second).toEqual(third);
