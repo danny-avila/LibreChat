@@ -297,7 +297,16 @@ async function rejectChangedProjectContext({
         job.createdAt,
       )) === true;
   } catch (error) {
-    logger.warn('[ResumeAgentController] Failed to finalize stale project-context resume', error);
+    /* The approval CAS already moved this generation back to `running`, and this branch
+     * stops the continuation. Swallowing a storage failure would leave that generation
+     * running with no provider owner while the caller got a non-retryable 409, so the
+     * failure goes to the resume catch, which owns the replacement-guarded
+     * running -> error transition and its checkpoint cleanup. */
+    logger.error(
+      '[ResumeAgentController] Failed to finalize stale project-context resume',
+      getSafeErrorMetadata(error),
+    );
+    throw error;
   }
   if (finalized) {
     await deleteResumedGenerationCheckpoint({

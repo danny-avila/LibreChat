@@ -2390,6 +2390,23 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockGenerationJobManager.beginProviderExecution).not.toHaveBeenCalled();
     });
 
+    it('does not answer PROJECT_CONTEXT_CHANGED when terminalization itself fails', async () => {
+      withProject(4, 3);
+      mockGenerationJobManager.completeJob.mockRejectedValueOnce(new Error('redis unavailable'));
+
+      const res = await post(approveBody());
+      await settled;
+
+      /* The approval CAS already moved this generation back to running, so a swallowed
+       * storage failure would leave it running with no provider owner behind a
+       * non-retryable 409. The failure has to reach the resume failure path instead. */
+      expect(res.status).toBe(500);
+      expect(res.body).not.toMatchObject({ code: 'PROJECT_CONTEXT_CHANGED' });
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledTimes(2);
+      expect(mockInitializeClient).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.beginProviderExecution).not.toHaveBeenCalled();
+    });
+
     it('rejects legacy unscoped resumes when current project context is model-facing', async () => {
       withProject(3, undefined);
       const res = await post(approveBody());

@@ -564,12 +564,22 @@ async function main() {
       return;
     }
 
-    /* A crash leaves conversations and files behind for whichever projects were mid-flight; the
-     * project document itself is written last, so those rows have no owner. Clean them first. */
+    /* A crash leaves conversations, their messages and files behind for whichever projects were
+     * mid-flight; the project document itself is written last, so those rows have no owner.
+     * Messages are reachable only through their conversation, so collect the ids first. */
     const state = readState(statePath);
     if (state.pending?.length) {
       console.log(`[seed] Clearing ${state.pending.length} interrupted project(s)...`);
       for (const entry of state.pending) {
+        const orphanIds = await conversations.distinct('conversationId', {
+          user: userId,
+          chatProjectId: entry.projectId,
+        });
+        for (let offset = 0; offset < orphanIds.length; offset += 5000) {
+          await messagesCollection.deleteMany({
+            conversationId: { $in: orphanIds.slice(offset, offset + 5000) },
+          });
+        }
         await conversations.deleteMany({ user: userId, chatProjectId: entry.projectId });
         if (entry.fileIds?.length) {
           await filesCollection.deleteMany({ file_id: { $in: entry.fileIds } });
