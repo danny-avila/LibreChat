@@ -171,11 +171,22 @@
   outline: none !important;
 }
 
-p.whitespace-pre-wrap a,
-li a {
+/* `p.whitespace-pre-wrap a` (0,1,2) outranked a utility under v3 too, so it stays unlayered and
+ * keeps doing so. `li a` is two element selectors: a class beat it under v3, and unlayered under
+ * v4's layers it would beat every utility instead — `no-underline` on a link inside a list stopped
+ * working. Layered, it loses to a utility again and still styles an unclassed list link. */
+p.whitespace-pre-wrap a {
   color: #0066cc;
   text-decoration: underline;
   font-weight: bold;
+}
+
+@layer base {
+  li a {
+    color: #0066cc;
+    text-decoration: underline;
+    font-weight: bold;
+  }
 }
 
 .dark p.whitespace-pre-wrap a,
