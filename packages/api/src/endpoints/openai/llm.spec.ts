@@ -2192,8 +2192,12 @@ describe('prompt caching', () => {
 
     const kwargs = (result.llmConfig.modelKwargs ?? {}) as Record<string, unknown>;
     expect(kwargs).not.toHaveProperty('prompt_cache_key');
-    /** `promptCacheKey: false` disables the key, not the other two levers. */
-    expect(kwargs).toHaveProperty('prompt_cache_retention', '24h');
+    /**
+     * `promptCacheKey: false` disables the key, not the other two levers — and
+     * retention rides on the constructor field, which is what the request
+     * serializer writes last.
+     */
+    expect(result.llmConfig.promptCacheRetention).toBe('24h');
   });
 
   it('ignores cache controls an agent author nested in modelKwargs in either spelling', () => {
