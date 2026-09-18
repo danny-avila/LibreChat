@@ -167,6 +167,9 @@ function SidebarItem({ icon, label, active, onClick, count }: SidebarEntry) {
   );
 }
 
+/** The chip row is this layout's primary navigation, and it only exists where a
+ *  finger is what reaches it, so the chips carry the shared tap-target floor
+ *  rather than the compact height a mouse would be happy with. */
 function SidebarChip({ icon, label, active, onClick, count }: SidebarEntry) {
   return (
     <button
@@ -175,6 +178,7 @@ function SidebarChip({ icon, label, active, onClick, count }: SidebarEntry) {
       aria-pressed={active}
       className={cn(
         'flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors',
+        'touch:min-h-theme-control-touch touch:px-4',
         active
           ? 'border-border-medium bg-surface-active font-medium text-text-primary'
           : 'border-border-light text-text-secondary hover:bg-surface-hover hover:text-text-primary',
@@ -273,7 +277,7 @@ export function MarketplaceFilterBar(props: MarketplaceSidebarProps) {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-8 w-8 shrink-0 justify-center p-0"
+                  className="h-8 w-8 shrink-0 justify-center p-0 touch:size-theme-control-touch"
                   aria-label={localize('com_ui_tools_create_new')}
                 >
                   <Plus className="size-4" aria-hidden="true" />

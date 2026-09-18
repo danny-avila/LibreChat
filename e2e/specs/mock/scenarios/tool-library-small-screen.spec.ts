@@ -107,6 +107,15 @@ test.describe('tool library on a touch viewport', () => {
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(viewport!.width);
 
+    /** The chip row is this layout's primary navigation and only a finger reaches
+     *  it, so every chip owes the shared 44px tap-target floor. */
+    const chips = dialog.getByRole('group', { name: TOOL_LIBRARY }).getByRole('button');
+    for (let index = 0; index < (await chips.count()); index += 1) {
+      const chipBox = await chips.nth(index).boundingBox();
+      expect(chipBox).not.toBeNull();
+      expect(chipBox!.height).toBeGreaterThanOrEqual(44);
+    }
+
     /** The close button is absolutely positioned over this row, so the search
      *  field owes it clearance; a responsive padding utility silently reset it. */
     await expectClearOfCloseButton(page, dialog);
@@ -152,6 +161,22 @@ test.describe('tool library on a touch viewport', () => {
     expect(await page.evaluate(() => matchMedia('(any-pointer: coarse)').matches)).toBe(true);
     await expectOpacity(configure, '1');
     await expectOpacity(favorite, '1');
+
+    /** The actions rest over the card's content, and on touch they never fade out,
+     *  so the card has to keep its description clear of them. */
+    const overlap = await dialog
+      .locator('ul > li')
+      .first()
+      .evaluate((card) => {
+        const cluster = card.querySelector('div.absolute')?.getBoundingClientRect();
+        const paragraphs = Array.from(card.querySelectorAll('p'));
+        const description = paragraphs[paragraphs.length - 1]?.getBoundingClientRect();
+        if (!cluster || !description) {
+          return null;
+        }
+        return description.bottom > cluster.top && description.right > cluster.left;
+      });
+    expect(overlap).toBe(false);
   });
 
   test('@scenario:tool-row-actions-are-visible-without-hover-on-touch selected tool row actions stay visible without hover', async ({

@@ -105,9 +105,13 @@ function ToolCardImpl({
   const DetailIcon = canConfigure ? Settings : Info;
 
   return (
+    /* touch:h-36 with touch:pb-9 on the content: where a coarse pointer exists the
+     action cluster below is permanent rather than revealed on hover, so the card
+     owes it a strip of its own. Without that the last line of a three-line
+     description sits under the buttons for as long as the card is on screen. */
     <div
       className={cn(
-        'group relative flex h-32 w-full flex-col overflow-hidden rounded-2xl border',
+        'group relative flex h-32 w-full flex-col overflow-hidden rounded-2xl border touch:h-36',
         selected
           ? 'border-status-success bg-status-success/10 shadow-sm'
           : 'border-border-light bg-transparent hover:border-border-medium hover:bg-surface-tertiary hover:shadow-sm',
@@ -118,7 +122,7 @@ function ToolCardImpl({
         onClick={() => onToggle(item)}
         aria-pressed={selected}
         className={cn(
-          'flex h-full w-full cursor-pointer flex-col gap-2 rounded-2xl p-4 text-left',
+          'flex h-full w-full cursor-pointer flex-col gap-2 rounded-2xl p-4 text-left touch:pb-9',
           'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
         )}
       >
