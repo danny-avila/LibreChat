@@ -1238,13 +1238,23 @@ async function introducedWithinAllowance(
     }
   }
 
-  /** A file with no version at the base has no allowance to inherit: every
-   *  design violation in it is this change's, however the record reads. */
-  const before = new Map<string, string>();
+  /** Whether a file existed at the base, and under which name — asked of git,
+   *  not inferred from its contents: a tracked empty file reads the same as a
+   *  missing one, and a rename means both the source and the entry that speaks
+   *  for it lived under the old path. A base commit that is not in this clone
+   *  cannot answer at all, and saying so is better than calling every changed
+   *  file new. */
+  if (runCommand(GIT, ['cat-file', '-e', `${baseRef}^{commit}`]).status !== 0) {
+    return [
+      `the violations this change introduces could not be read: ${baseRef} is not in this clone, so nothing says what these files held before`,
+    ];
+  }
+  const before = new Map<string, { path: string; source: string } | undefined>();
   for (const file of subjects) {
     const relative = reportedPath(file.filePath);
-    const source = runCommand(GIT, ['show', `${baseRef}:${renames.get(relative) ?? relative}`]);
-    before.set(relative, source.status === 0 ? source.stdout : '');
+    const path = renames.get(relative) ?? relative;
+    const source = runCommand(GIT, ['show', `${baseRef}:${path}`]);
+    before.set(relative, source.status === 0 ? { path, source: source.stdout } : undefined);
   }
 
   let lintText: (source: string, options: { filePath: string }) => Promise<LintReport[]>;
@@ -1270,36 +1280,36 @@ async function introducedWithinAllowance(
       .filter((message) => message.ruleId?.startsWith('shadcn/'))
       .map((message) => `${message.ruleId}: ${message.message ?? ''}`);
 
-  /** What the record allows this change to add: how much each entry grew
-   *  between the base and here. A count that goes up is a line in the diff and
-   *  the recipe CLAUDE.md documents; a count that stands still is the swap. */
-  const growth = new Map<string, number>();
-  const recordedBefore = runCommand(GIT, ['show', `${baseRef}:${target}`]);
-  if (recordedBefore.status === 0) {
+  /** The record as the base held it: how much an entry grew between there and
+   *  here is what this change may add. A count that goes up is a line in the
+   *  diff and the recipe CLAUDE.md documents; a count that stands still is the
+   *  swap. A baseline the base cannot parse grants nothing, and the shape
+   *  checks say why. */
+  let recordedBefore: SuppressionsFile = {};
+  const previousRecord = runCommand(GIT, ['show', `${baseRef}:${target}`]);
+  if (previousRecord.status === 0) {
     try {
-      const previous = JSON.parse(recordedBefore.stdout) as SuppressionsFile;
-      for (const [file, rules] of Object.entries(recorded)) {
-        for (const [rule, entry] of Object.entries(rules ?? {})) {
-          const now = typeof entry === 'object' && entry !== null ? entry.count : undefined;
-          const then = previous[file]?.[rule]?.count;
-          if (typeof now !== 'number') continue;
-          growth.set(`${file}\u0000${rule}`, now - (typeof then === 'number' ? then : 0));
-        }
-      }
+      recordedBefore = JSON.parse(previousRecord.stdout) as SuppressionsFile;
     } catch {
-      // A baseline the base cannot parse grants no growth; the shape checks say so.
+      recordedBefore = {};
     }
   }
+  const countOf = (record: SuppressionsFile, file: string, rule: string): number => {
+    const entry = record[file]?.[rule]?.count;
+    return typeof entry === 'number' ? entry : 0;
+  };
 
   const problems: string[] = [];
   for (const file of subjects) {
     const relative = reportedPath(file.filePath);
-    const source = before.get(relative) ?? '';
+    const inheritedFrom = before.get(relative);
     /** A file the change adds owes everything in it: the record may not grow to
      *  cover a violation written in the same commit as its entry, or the rules
      *  would police nothing but the tree they landed on. A file that existed at
-     *  the base — renamed or not — brings its allowance and may grow it. */
-    const inherited = source !== '';
+     *  the base — renamed or not — brings its allowance and may grow it, and a
+     *  rename's allowance is the one recorded under the name it had. */
+    const inherited = inheritedFrom !== undefined;
+    const source = inheritedFrom?.source ?? '';
     const had = new Map<string, number>();
     if (inherited) {
       for (const signature of signatures(await lintText(source, { filePath: file.filePath }))) {
@@ -1313,12 +1323,17 @@ async function introducedWithinAllowance(
         had.set(signature, remaining - 1);
         continue;
       }
-      /** Beyond what the base held: chargeable to this change unless the record
-       *  grew for that rule, and only as far as it grew. */
+      /** Beyond what the base held: chargeable to this change unless the entry
+       *  grew for that rule, and only as far as it grew. A renamed file's
+       *  allowance is the one recorded under the name it had, or the move
+       *  itself would read as room to spend. */
       const rule = signature.slice(0, signature.indexOf(':'));
+      const grew =
+        countOf(recorded, relative, rule) -
+        countOf(recordedBefore, inheritedFrom?.path ?? relative, rule);
       const key = `${relative}\u0000${rule}`;
       const spent = allowed.get(key) ?? 0;
-      if (inherited && spent < (growth.get(key) ?? 0)) {
+      if (inherited && spent < grew) {
         allowed.set(key, spent + 1);
         continue;
       }
