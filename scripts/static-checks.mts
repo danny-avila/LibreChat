@@ -1154,6 +1154,8 @@ async function unusedCapacity(target: string, context: CheckContext): Promise<st
       `${file}: recorded but no design-rule lint reports on it — the flat config ignores it, or it is outside ${DESIGN_ROOTS.join(' and ')} — so the entry silences nothing and would silence whatever is linted at this path later`,
     );
   }
+  const introduced = await introducedWithinAllowance(context, report);
+  problems.push(...introduced);
   for (const file of report) {
     const relative = reportedPath(file.filePath);
     const actual = new Map<string, number>();
@@ -1183,6 +1185,88 @@ async function unusedCapacity(target: string, context: CheckContext): Promise<st
           `${relative}: ${rule} records ${count} but the file now has ${now}; the ${now - count} beyond the record fail the lint for whoever edits it next`,
         );
       }
+    }
+  }
+  return problems;
+}
+
+/**
+ * The design-rule violations this diff adds to a file that already records some,
+ * even when the count does not move. The record is a budget per file and rule,
+ * so swapping one raw colour for another keeps the total equal and the
+ * changed-file lint suppresses the new one inside the old allowance — the debt
+ * changes hands and nothing says so.
+ *
+ * What the count cannot distinguish, the diagnostics can: each file's version at
+ * the base is linted as itself, through ESLint's API so one process answers for
+ * the whole diff, and a message the head reports that the base did not is a
+ * violation this change introduced. A violation that only moved keeps its
+ * message and is not reported; a file with no version at the base has no
+ * allowance to hide in and is already answered by the count checks above.
+ */
+async function introducedWithinAllowance(
+  context: CheckContext,
+  head: LintReport[],
+): Promise<string[]> {
+  const changed = new Set(
+    context.sourceFiles.filter(
+      (file) =>
+        DESIGN_SOURCE.test(file) && DESIGN_ROOTS.some((root) => file.startsWith(`${root}/`)),
+    ),
+  );
+  const subjects = head.filter((file) => changed.has(reportedPath(file.filePath)));
+  if (subjects.length === 0) return [];
+
+  const baseRef = OPTIONS.against ?? 'HEAD';
+  const before = new Map<string, string>();
+  for (const file of subjects) {
+    const relative = reportedPath(file.filePath);
+    const source = runCommand(GIT, ['show', `${baseRef}:${relative}`]);
+    if (source.status === 0) before.set(relative, source.stdout);
+  }
+  if (before.size === 0) return [];
+
+  let lintText: (source: string, options: { filePath: string }) => Promise<LintReport[]>;
+  try {
+    const { ESLint } = createRequire(import.meta.url)('eslint') as {
+      ESLint: new (options: Record<string, unknown>) => {
+        lintText: (source: string, options: { filePath: string }) => Promise<LintReport[]>;
+      };
+    };
+    const instance = new ESLint({
+      cwd: ROOT,
+      overrideConfigFile: resolve(ROOT, 'eslint.config.mjs'),
+      warnIgnored: false,
+    });
+    lintText = (source, options) => instance.lintText(source, options);
+  } catch (error) {
+    return [`the base versions could not be linted: ${(error as Error).message}`];
+  }
+
+  const signatures = (reports: LintReport[]): string[] =>
+    reports
+      .flatMap((file) => [...file.messages, ...(file.suppressedMessages ?? [])])
+      .filter((message) => message.ruleId?.startsWith('shadcn/'))
+      .map((message) => `${message.ruleId}: ${message.message ?? ''}`);
+
+  const problems: string[] = [];
+  for (const file of subjects) {
+    const relative = reportedPath(file.filePath);
+    const source = before.get(relative);
+    if (source === undefined) continue;
+    const had = new Map<string, number>();
+    for (const signature of signatures(await lintText(source, { filePath: file.filePath }))) {
+      had.set(signature, (had.get(signature) ?? 0) + 1);
+    }
+    for (const signature of signatures([file])) {
+      const remaining = had.get(signature) ?? 0;
+      if (remaining > 0) {
+        had.set(signature, remaining - 1);
+        continue;
+      }
+      problems.push(
+        `${relative}: ${signature} is new here; the recorded count already covers it, so record what this change owes with \`npm run lint:design:suppress\` or fix it`,
+      );
     }
   }
   return problems;
