@@ -79,12 +79,6 @@ import {
   stripBackgroundFromToolDefinitions,
 } from '~/agents/background';
 import {
-  buildPromptCacheKey,
-  PROMPT_CACHE_MARKER_FIELDS,
-  PROMPT_CACHE_WIRE_FIELDS,
-  supportsExplicitPromptCache,
-} from '~/endpoints/openai/promptCache';
-import {
   createSubagentWakeupHandleHook,
   agentUsesSubagentCompletionWakeups,
   usesSubagentCompletionWakeups,
@@ -94,6 +88,11 @@ import {
   isSteerPreemptSupported,
   isSteerTerminalContinuationSupported,
 } from '~/agents/steering/runtime';
+import {
+  buildPromptCacheKey,
+  PROMPT_CACHE_MARKER_FIELDS,
+  supportsExplicitPromptCache,
+} from '~/endpoints/openai/promptCache';
 import {
   resolveToolApprovalPolicy,
   healToolApprovalPolicy,
@@ -1473,6 +1472,7 @@ function shapeSummarizationConfig(
   const agentParameters = agent?.model_parameters as
     | {
         promptCacheKeyEnabled?: boolean;
+        promptCacheKey?: string;
         promptCacheExplicit?: boolean;
         modelKwargs?: Record<string, unknown>;
       }
@@ -1482,7 +1482,15 @@ function shapeSummarizationConfig(
     ? userParameters.modelKwargs
     : undefined;
   if (provider === fallbackProvider && parameters?.promptCacheKey == null) {
-    if (agentParameters?.promptCacheKeyEnabled === true) {
+    /**
+     * Whether `createRun` is going to synthesize one or an administrator
+     * already pinned it: either way the value names the agent's stable prefix,
+     * which this request does not send.
+     */
+    if (
+      agentParameters?.promptCacheKeyEnabled === true ||
+      agentParameters?.promptCacheKey != null
+    ) {
       parameters = { ...parameters, promptCacheKey: undefined };
     }
     /**
@@ -1536,18 +1544,17 @@ function shapeSummarizationConfig(
      * And in the wire spellings, which an administrator sets through
      * `addParams`: the agent's request kwargs are inherited whole, so the
      * controls reach a summary request that cannot accept them without ever
-     * passing through the field above. Compared against what the
-     * summarization configuration itself supplied rather than against the
-     * merged result — `resolveAzureSummarization` spreads the agent's kwargs
-     * in, so testing the merge would preserve exactly the inherited field
-     * this is meant to withhold.
+     * passing through the field above. Only the two explicit controls — the
+     * retention beside them is independently supported and independently
+     * configured, and this gate says nothing about it. Compared against what
+     * the summarization configuration itself supplied rather than against the
+     * merged result, because `resolveAzureSummarization` spreads the agent's
+     * kwargs in and testing the merge would preserve exactly the inherited
+     * field this is meant to withhold.
      */
-    const inheritedExplicitFields = PROMPT_CACHE_WIRE_FIELDS.filter(
-      (field) =>
-        field !== 'prompt_cache_key' &&
-        inheritedKwargs?.[field] != null &&
-        ownKwargs?.[field] == null,
-    );
+    const inheritedExplicitFields = (
+      ['prompt_cache_options', 'prompt_cache_breakpoint'] as const
+    ).filter((field) => inheritedKwargs?.[field] != null && ownKwargs?.[field] == null);
     if (inheritedExplicitFields.length > 0) {
       const summaryKwargs = isPlainObject(parameters?.modelKwargs)
         ? { ...parameters.modelKwargs }
