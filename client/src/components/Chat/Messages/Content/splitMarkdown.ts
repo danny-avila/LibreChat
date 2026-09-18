@@ -102,6 +102,18 @@ const parseToMdast = (content: string): MdastNode =>
   }) as MdastNode;
 
 /**
+ * Where the line holding a top-level block begins, when only indentation precedes
+ * the block on it. mdast starts a node after its indentation, but that indentation
+ * carries meaning: it is stripped from an indented fence's code lines, and it
+ * decides which list item a later indented line belongs to. A block parsed on its
+ * own has to keep it to parse the way it does inside the whole message.
+ */
+const lineStartOf = (content: string, offset: number): number => {
+  const lineStart = content.lastIndexOf('\n', offset - 1) + 1;
+  return /^[ \t]*$/.test(content.slice(lineStart, offset)) ? lineStart : offset;
+};
+
+/**
  * Split a markdown string into its top-level blocks, returning the exact source
  * slice for each block plus the index counts it consumes. Completed blocks
  * produce byte-identical slices (and stable counts) across streamed updates,
@@ -149,7 +161,7 @@ export function splitMarkdownIntoBlocks(content: string): MarkdownBlock[] {
     const counts = { code: 0, artifact: 0, mermaid: 0 };
     countWithin(node, counts);
     blocks.push({
-      raw: content.slice(start, end),
+      raw: content.slice(lineStartOf(content, start), end),
       codeBlockCount: counts.code,
       artifactCount: counts.artifact,
       mermaidCount: counts.mermaid,

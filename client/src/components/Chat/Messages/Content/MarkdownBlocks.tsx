@@ -93,7 +93,8 @@ type MarkdownBlocksProps = SharedProps & {
 type BlockEntry = {
   /**
    * Code and artifact blocks capture their index in a ref when they mount, so a
-   * block has to remount whenever an index it holds could shift.
+   * block has to remount whenever an index it holds could shift, and must not
+   * remount otherwise.
    */
   key: string;
   raw: string;
@@ -129,12 +130,12 @@ const toBlockEntries = (content: string): BlockEntry[] => {
 
 /**
  * The whole message as one block, which numbers its code and artifacts from zero
- * itself. Keyed on its source, so an in-place edit remounts it and every index is
- * assigned afresh.
+ * itself. It only ever renders the message exactly as it mounted, so no index it
+ * assigns can go stale and its key never has to change.
  */
 const toWholeMessage = (content: string): BlockEntry[] =>
   content
-    ? [{ key: content, raw: content, codeBaseIndex: 0, artifactBaseIndex: 0, mermaidBaseIndex: 0 }]
+    ? [{ key: 'whole', raw: content, codeBaseIndex: 0, artifactBaseIndex: 0, mermaidBaseIndex: 0 }]
     : [];
 
 /**
@@ -145,11 +146,16 @@ const toWholeMessage = (content: string): BlockEntry[] =>
  * block's executable code and artifact indices stay in document order through
  * per-block providers seeded with prefix-summed base indices.
  *
- * A message that was never streamed in this view renders as one pipeline
- * instead. Splitting it would buy memoization nothing will use, at the price of
- * a whole extra parse to find block boundaries and one pipeline per block,
- * which is most of the cost of opening a long conversation. A message keeps the
- * split once it has streamed, so finishing an answer never remounts its blocks.
+ * A message that mounts finished renders as one pipeline instead, for as long as
+ * it stays exactly as it mounted. Splitting it would buy memoization nothing
+ * uses, at the price of a whole extra parse to find block boundaries and one
+ * pipeline per block, which is most of the cost of opening a long conversation.
+ *
+ * Once the message generates or its content changes, it moves to the split for
+ * good. Code and artifact blocks capture their index at mount, and per block only
+ * the blocks a change touches re-render, so finishing an answer never remounts its
+ * blocks and neither do repeated edits such as artifact saves. The move itself
+ * remounts the message once.
  */
 const MarkdownBlocks = memo(function MarkdownBlocks({
   content,
@@ -160,11 +166,13 @@ const MarkdownBlocks = memo(function MarkdownBlocks({
   animate,
   hydrated,
 }: MarkdownBlocksProps) {
-  const [hasStreamed, setHasStreamed] = useState(streaming);
-  if (streaming && !hasStreamed) {
-    setHasStreamed(true);
+  const [mountedContent] = useState(content);
+  const [hasChanged, setHasChanged] = useState(streaming);
+  const changing = streaming || content !== mountedContent;
+  if (changing && !hasChanged) {
+    setHasChanged(true);
   }
-  const perBlock = streaming || hasStreamed;
+  const perBlock = hasChanged || changing;
   const blocks = useMemo(
     () => (perBlock ? toBlockEntries(content) : toWholeMessage(content)),
     [content, perBlock],

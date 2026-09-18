@@ -2,7 +2,7 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import ReactMarkdown from 'react-markdown';
 import { MemoryRouter } from 'react-router-dom';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { getRemarkPlugins, getRehypePlugins, getMarkdownComponents } from '../markdownConfig';
 import { MessageContext, ArtifactProvider, CodeBlockProvider } from '~/Providers';
@@ -14,10 +14,14 @@ import Markdown from '../Markdown';
  * router the same way it has one in the app — without it the diagram throws into its
  * error boundary and the assertions compare two fallbacks instead of two renderers.
  */
+const queryClient = new QueryClient();
+
 const TestProviders = ({ children }: { children: React.ReactNode }) => (
-  <MemoryRouter>
-    <RecoilRoot>{children}</RecoilRoot>
-  </MemoryRouter>
+  <QueryClientProvider client={queryClient}>
+    <MemoryRouter>
+      <RecoilRoot>{children}</RecoilRoot>
+    </MemoryRouter>
+  </QueryClientProvider>
 );
 
 /**
@@ -42,12 +46,27 @@ const mockCodeBlockMounts = { count: 0 };
  */
 jest.mock('~/components/Messages/Content/CodeBlock', () => ({
   __esModule: true,
-  default: function MockCodeBlock({ lang, blockIndex }: { lang?: string; blockIndex?: number }) {
+  default: function MockCodeBlock({
+    lang,
+    blockIndex,
+    codeChildren,
+  }: {
+    lang?: string;
+    blockIndex?: number;
+    codeChildren?: React.ReactNode;
+  }) {
     const { useEffect } = jest.requireActual<typeof import('react')>('react');
     useEffect(() => {
       mockCodeBlockMounts.count += 1;
     }, []);
-    return <div data-testid="cb" data-block-index={String(blockIndex)} data-lang={String(lang)} />;
+    return (
+      <div
+        data-testid="cb"
+        data-block-index={String(blockIndex)}
+        data-lang={String(lang)}
+        data-code={String(codeChildren)}
+      />
+    );
   },
 }));
 
@@ -231,9 +250,11 @@ describe('MarkdownBlocks code-block index parity', () => {
   });
 
   /**
-   * Code blocks capture their index when they mount. A finished message remounts
-   * on an edit because its single block is keyed on its source; one that streamed
-   * in this view stays per-block and remounts only the blocks whose base shifted.
+   * Code blocks capture their index when they mount. A finished message moves to
+   * per-block rendering on its first edit, and per block the base-aware keys
+   * remount the blocks an edit shifted. The fixture turns a Mermaid fence, which
+   * takes no code index, into an executable one, so the js block keeps a stale
+   * index unless it really remounts.
    */
   it.each([
     ['a finished', false],
@@ -241,7 +262,7 @@ describe('MarkdownBlocks code-block index parity', () => {
   ])(
     'refreshes indices when an in-place edit to %s message inserts a code block before existing ones',
     (_label, streamedFirst) => {
-      const before = 'intro\n\n```js\na\n```';
+      const before = '```mermaid\ngraph TD\n```\n\n```js\na\n```';
       const after = '```py\nx\n```\n\n```js\na\n```';
       const view = (content: string, submitting: boolean) => (
         <TestProviders>
@@ -315,7 +336,12 @@ describe('MarkdownBlocks finished and streamed messages', () => {
     expect(indicesIn(container)).toEqual(EXPECTED);
   });
 
-  it('switches a finished message to per-block rendering when it starts generating again', () => {
+  /**
+   * Moving to per-block rendering remounts the message once, since the two paths
+   * build different trees; it happens as generation starts, so the fade baseline
+   * is set on the blocks it mounts. After that the message never remounts again.
+   */
+  it('moves a finished message to per-block rendering once when it starts generating again', () => {
     const view = (content: string, submitting: boolean) => (
       <TestProviders>
         <LiveMarkdown content={content} submitting={submitting} />
@@ -324,17 +350,49 @@ describe('MarkdownBlocks finished and streamed messages', () => {
     const opening = MIXED.split('\n').slice(0, 12).join('\n');
     const { container, rerender } = render(view(opening, false));
     expect(splitSpy).not.toHaveBeenCalled();
+    const mountsAtOpen = mockCodeBlockMounts.count;
 
+    rerender(view(opening, true));
+    expect(splitSpy).toHaveBeenCalledWith(opening);
+    expect(mockCodeBlockMounts.count).toBe(mountsAtOpen * 2);
+
+    // A generation that stops before producing anything must not move it back.
+    rerender(view(opening, false));
+    expect(mockCodeBlockMounts.count).toBe(mountsAtOpen * 2);
+
+    const mountsOnceSplit = mockCodeBlockMounts.count;
     rerender(view(MIXED, true));
-    expect(splitSpy).toHaveBeenCalledWith(MIXED);
-    expect(indicesIn(container)).toEqual(EXPECTED);
-
     rerender(view(MIXED, false));
+    expect(indicesIn(container)).toEqual(EXPECTED);
+    expect(mockCodeBlockMounts.count - mountsOnceSplit).toBe(EXPECTED.length - mountsAtOpen);
+  });
+
+  /**
+   * An artifact editor saves the message it lives in every few hundred
+   * milliseconds while the user types. Only the first save may remount the
+   * message; after it, a save re-renders just the block it touched.
+   */
+  it('moves a finished message to per-block rendering on its first edit, and edits in place after it', () => {
+    const view = (content: string) => (
+      <TestProviders>
+        <SettledMarkdown content={content} />
+      </TestProviders>
+    );
+    const { container, rerender } = render(view(MIXED));
+    expect(splitSpy).not.toHaveBeenCalled();
+    const mountsAtOpen = mockCodeBlockMounts.count;
+
+    rerender(view(MIXED.replace('Intro paragraph.', 'Intro paragraph, edited.')));
+    expect(mockCodeBlockMounts.count).toBe(mountsAtOpen * 2);
+
+    rerender(view(MIXED.replace('Intro paragraph.', 'Intro paragraph, edited twice.')));
+    rerender(view(MIXED.replace('Some `inline` code here.', 'Some edited `inline` code.')));
+    expect(mockCodeBlockMounts.count).toBe(mountsAtOpen * 2);
     expect(indicesIn(container)).toEqual(EXPECTED);
   });
 });
 
-describe('MarkdownBlocks DOM equivalence (non-code blocks)', () => {
+describe('MarkdownBlocks DOM equivalence', () => {
   const cases: Array<[string, string]> = [
     ['paragraphs', 'First paragraph.\n\nSecond paragraph.'],
     ['gfm table', ['| a | b |', '| - | - |', '| 1 | 2 |', '| 3 | 4 |'].join('\n')],
@@ -344,6 +402,37 @@ describe('MarkdownBlocks DOM equivalence (non-code blocks)', () => {
     ['blockquote', '> quoted line one\n> quoted line two'],
     ['inline code', 'Use the `useMemo` hook for memoization.'],
     ['mixed', '# H\n\nPara with `code`.\n\n| x | y |\n| - | - |\n| 1 | 2 |\n\n- a\n- b'],
+    /* A fence indented too little to belong to item 10 is a top-level block whose
+     * indentation the whole-message parse strips from every code line. */
+    [
+      'fence indented under a two-digit list item',
+      [
+        '9. Build:',
+        '',
+        '   make',
+        '',
+        '10. Run the tests:',
+        '',
+        '   ```python',
+        '   def test():',
+        '       assert True',
+        '   ```',
+      ].join('\n'),
+    ],
+    [
+      'list indented by two spaces',
+      [
+        '  - Step one',
+        '',
+        '      Note: run this',
+        '',
+        '  - Step two',
+        '',
+        '    ```python',
+        '    print(1)',
+        '    ```',
+      ].join('\n'),
+    ],
   ];
 
   it.each(cases)('renders identical DOM to the whole-message renderer: %s', (_label, content) => {
@@ -383,20 +472,41 @@ describe('MarkdownBlocks rendering smoke', () => {
   });
 });
 
-describe('MarkdownBlocks document-level definitions', () => {
+/**
+ * Constructs that need the whole document render as one block on both paths: a
+ * finished message always does, and the splitter falls back to it for a message
+ * that streamed.
+ */
+describe.each([
+  ['a finished', false],
+  ['a streamed', true],
+])('MarkdownBlocks document-level constructs in %s message', (_label, streamed) => {
+  const renderMessage = (content: string) =>
+    streamed
+      ? streamAndFinish(content)
+      : render(
+          <TestProviders>
+            <SettledMarkdown content={content} />
+          </TestProviders>,
+        );
+
   it('resolves a reference-style link whose definition is in a separate block', () => {
-    const queryClient = new QueryClient();
     const content = 'See [docs][d] for details.\n\n[d]: https://example.com/docs';
-    render(
-      <QueryClientProvider client={queryClient}>
-        <TestProviders>
-          <SettledMarkdown content={content} />
-        </TestProviders>
-      </QueryClientProvider>,
-    );
-    expect(screen.getByRole('link', { name: 'docs' })).toHaveAttribute(
+    const { container } = renderMessage(content);
+    expect(within(container).getByRole('link', { name: 'docs' })).toHaveAttribute(
       'href',
       'https://example.com/docs',
     );
+  });
+
+  it('keeps the separator between adjacent raw HTML blocks', () => {
+    const content = '<div>one</div>\n\n<div>two</div>';
+    const { container: oldC } = render(
+      <TestProviders>
+        <OldMarkdown content={content} />
+      </TestProviders>,
+    );
+    const { container } = renderMessage(content);
+    expect(container.innerHTML).toBe(oldC.innerHTML);
   });
 });
