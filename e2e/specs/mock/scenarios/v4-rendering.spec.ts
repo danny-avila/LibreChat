@@ -263,6 +263,39 @@ test.describe('Tailwind v4 rendering', () => {
     expect(await probeStyle(page, 'hidden md:flex', 'display')).toBe('none');
   });
 
+  test('a list link keeps its no-underline utility @scenario:a-list-link-keeps-its-no-underline-utility', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await useStoredTheme(page, 'light');
+    await page.goto('/c/new', { timeout: 30000 });
+
+    /** `mobile.css` paints every list link blue, bold and underlined. It is two
+     *  element selectors, so a class beat it under v3 — which is how the source
+     *  and skill cards that carry `no-underline` looked. Unlayered under v4 it
+     *  outranked the utility instead. Layered, the utility wins again while an
+     *  unclassed list link keeps the treatment. */
+    const decorated = await page.evaluate(() => {
+      const list = document.createElement('ul');
+      list.innerHTML =
+        '<li><a id="probe-plain" href="#">plain</a></li>' +
+        '<li><a id="probe-utility" class="no-underline" href="#">carded</a></li>';
+      document.body.append(list);
+      const read = (id: string) => {
+        const style = getComputedStyle(document.getElementById(id) as HTMLElement);
+        return { decoration: style.textDecorationLine, weight: style.fontWeight };
+      };
+      const result = { plain: read('probe-plain'), utility: read('probe-utility') };
+      list.remove();
+      return result;
+    });
+
+    expect(decorated.utility.decoration).toBe('none');
+    expect(decorated.plain.decoration).toBe('underline');
+    /** The rule still owns what no utility claims. */
+    expect(decorated.utility.weight).toBe('700');
+  });
+
   test('a native select keeps its token styling @scenario:a-native-select-keeps-its-token-styling', async ({
     page,
   }) => {
