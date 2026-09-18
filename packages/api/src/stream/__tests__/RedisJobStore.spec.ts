@@ -7,6 +7,11 @@ jest.mock('~/cache/redisTelemetry', () => ({
   instrumentIORedisClient: (client: unknown) => client,
 }));
 
+/** Cold script cache: every EVALSHA reports NOSCRIPT so the store falls back to EVAL. */
+function evalshaNoScript(): jest.Mock {
+  return jest.fn().mockRejectedValue(new Error('NOSCRIPT No matching script. Please use EVAL.'));
+}
+
 type Deferred<T> = {
   promise: Promise<T>;
   resolve: (value: T) => void;
@@ -48,6 +53,7 @@ describe('RedisJobStore', () => {
     const evalDrain = jest.fn().mockResolvedValue(1);
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: evalDrain,
     } as unknown as Cluster;
     const store = new RedisJobStore(redis);
@@ -72,6 +78,7 @@ describe('RedisJobStore', () => {
     const evalBegin = jest.fn().mockResolvedValue(1);
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: evalBegin,
     } as unknown as Cluster;
     const store = new RedisJobStore(redis);
@@ -97,6 +104,7 @@ describe('RedisJobStore', () => {
     const evalTransition = jest.fn().mockResolvedValue(0);
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: evalTransition,
       hgetall: jest.fn().mockResolvedValue({}),
     } as unknown as Cluster;
@@ -174,6 +182,7 @@ describe('RedisJobStore', () => {
     const evalTransition = jest.fn().mockResolvedValue(0);
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: evalTransition,
       hgetall: jest.fn().mockResolvedValue({
         streamId: 'stream-terminal-barrier',
@@ -207,6 +216,7 @@ describe('RedisJobStore', () => {
     const evalTransition = jest.fn().mockResolvedValue(0);
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: evalTransition,
     } as unknown as Cluster;
     const store = new RedisJobStore(redis, { requiresActionTtl: 4321 });
@@ -231,6 +241,7 @@ describe('RedisJobStore', () => {
     const evalCommand = jest.fn().mockResolvedValue(1);
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: evalCommand,
       hgetall: jest
         .fn()
@@ -285,6 +296,7 @@ describe('RedisJobStore', () => {
     const lrange = jest.fn();
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: evalPeek,
       lrange,
     } as unknown as Cluster;
@@ -310,6 +322,7 @@ describe('RedisJobStore', () => {
       .mockImplementation((...args: unknown[]) => ['', '', args[Number(args[1]) + 3]]);
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: evalJobCreation,
       hgetall: jest.fn(() => jobHashFromCreationCall(evalJobCreation.mock.calls[0])),
       sadd: jest.fn().mockResolvedValue(1),
@@ -584,6 +597,7 @@ describe('RedisJobStore', () => {
       ]);
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: evalJobCreation,
       hgetall: jest.fn(() => jobHashFromCreationCall(evalJobCreation.mock.calls[0])),
       sadd: jest.fn().mockResolvedValue(1),
@@ -639,6 +653,7 @@ describe('RedisJobStore', () => {
     const now = jest.spyOn(Date, 'now').mockReturnValue(100);
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: jest.fn().mockResolvedValue(['user-1', '', '100']),
       hgetall: jest.fn().mockResolvedValue({
         streamId: 'stream-overlap',
@@ -669,6 +684,7 @@ describe('RedisJobStore', () => {
   test('rejects creation when its durable epoch is already terminal', async () => {
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: jest.fn().mockResolvedValue(['', '', '100']),
       hgetall: jest.fn().mockResolvedValue({
         streamId: 'stream-terminal-create',
@@ -692,6 +708,7 @@ describe('RedisJobStore', () => {
     const evalRedis = jest.fn().mockResolvedValue(false);
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: evalRedis,
     } as unknown as Cluster;
     const store = new RedisJobStore(redis);
@@ -770,6 +787,7 @@ describe('RedisJobStore', () => {
     });
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: evalJobCreation,
       sadd: jest.fn((key: string) => {
         if (key === 'stream:running') {
@@ -800,6 +818,7 @@ describe('RedisJobStore', () => {
       return job;
     });
 
+    await waitFor(() => started.length === 1);
     expect(started).toEqual(['job']);
     evalResult.resolve(1);
     await waitFor(() => started.length === 6);
@@ -879,6 +898,7 @@ describe('RedisJobStore', () => {
     });
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: jest.fn(async (_script: string, keyCount: number, ...args: string[]) => {
         if (keyCount === 10) {
           durableHash = { ...durableHash, status: 'requires_action' };
@@ -922,6 +942,7 @@ describe('RedisJobStore', () => {
     const evalCommand = jest.fn().mockResolvedValue(0);
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: evalCommand,
       hgetall: jest.fn().mockResolvedValue({
         streamId: 'stream-guarded',
@@ -957,6 +978,7 @@ describe('RedisJobStore', () => {
     const evalCommand = jest.fn().mockResolvedValue(0);
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: evalCommand,
     } as unknown as Cluster;
     const store = new RedisJobStore(redis);
@@ -995,6 +1017,7 @@ describe('RedisJobStore', () => {
     const evalCommand = jest.fn().mockResolvedValue(0);
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: evalCommand,
     } as unknown as Cluster;
     const store = new RedisJobStore(redis);
@@ -1026,6 +1049,7 @@ describe('RedisJobStore', () => {
     const sadd = jest.fn().mockResolvedValue(1);
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: evalTransition,
       sadd,
       srem: jest.fn().mockResolvedValue(1),
@@ -1083,6 +1107,7 @@ describe('RedisJobStore', () => {
     };
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: evalTransition,
       sadd,
       srem: jest.fn().mockResolvedValue(1),
@@ -1144,6 +1169,7 @@ describe('RedisJobStore', () => {
     const srem = jest.fn().mockResolvedValue(1);
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: jest.fn().mockResolvedValue(1),
       smembers: jest.fn().mockResolvedValue([member]),
       srem,
@@ -1191,6 +1217,7 @@ describe('RedisJobStore', () => {
     const srem = jest.fn().mockResolvedValue(1);
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: evalClear,
       srem,
       hgetall: jest.fn().mockResolvedValue({}),
@@ -1233,6 +1260,7 @@ describe('RedisJobStore', () => {
     const evalCommand = jest.fn().mockResolvedValue(0);
     const redis = {
       isCluster: true,
+      evalsha: evalshaNoScript(),
       eval: evalCommand,
     } as unknown as Cluster;
     const store = new RedisJobStore(redis);
