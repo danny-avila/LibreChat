@@ -314,7 +314,9 @@ test.describe('the recorded design-rule backlog', () => {
      *  one past every other check. The check lints the diff's design sources
      *  twice — with and without `--no-inline-config` — so every spelling is
      *  caught, including a description after `--`, and text that only looks like
-     *  a directive is not. */
+     *  a directive is not. A directive over a file that does not violate the
+     *  rule silences nothing yet, so the two runs agree; that one is caught by
+     *  asking the same run for unused directives. */
     const probe = 'client/src/__directive_probe__.tsx';
     const probePath = join(repoRoot, probe);
     const silenced = [
@@ -337,6 +339,33 @@ test.describe('the recorded design-rule backlog', () => {
           'shadcn/no-raw-colors is silenced by an inline comment',
         );
       }
+
+      /** The dormant case: a directive in a clean file, which would otherwise
+       *  land unseen and then silence the first violation anyone adds. */
+      const dormant = [
+        ['a dormant named disable', '/* eslint-disable shadcn/no-raw-colors */'],
+        ['a dormant justified disable', '/* eslint-disable shadcn/no-raw-colors -- later */'],
+        ['a dormant next-line disable', '// eslint-disable-next-line shadcn/no-raw-colors'],
+      ];
+      for (const [label, comment] of dormant) {
+        writeFileSync(
+          probePath,
+          `${comment}\nexport default () => <div className="bg-surface-primary" />;\n`,
+        );
+        const report = staticChecks([probe, '--only', 'suppressions']);
+        expect(report.status, `${label} passed`).not.toBe(0);
+        expect(report.output, label).toContain('would silence the first violation anyone adds');
+      }
+
+      /** A blanket one covers the design rules whatever else it covers, so a
+       *  dormant blanket disable inside a design root is rejected too. */
+      writeFileSync(
+        probePath,
+        '/* eslint-disable */\nexport default () => <div className="bg-surface-primary" />;\n',
+      );
+      const blanket = staticChecks([probe, '--only', 'suppressions']);
+      expect(blanket.status, 'a dormant blanket disable passed').not.toBe(0);
+      expect(blanket.output).toContain('a blanket eslint-disable silences nothing here');
 
       /** And two things that are not a silenced rule: a directive naming another
        *  rule — the tree carries forty of them — and a string that reads like

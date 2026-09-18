@@ -223,7 +223,8 @@ type SuppressionsFile = Record<string, Record<string, { count?: unknown }>>;
 /** One file's entry in ESLint's JSON report, as the capacity check reads it. */
 type LintReport = {
   filePath: string;
-  messages: { ruleId: string | null }[];
+  /** `message` carries ESLint's unused-directive text, where `ruleId` is null. */
+  messages: { ruleId: string | null; message?: string }[];
   suppressedMessages?: {
     ruleId: string | null;
     suppressions?: { kind: string; justification?: string }[];
@@ -789,6 +790,14 @@ async function validateSuppressions(context: CheckContext): Promise<CheckOutcome
     return { ok: false, output: `@shadcn/lint did not load: ${(error as Error).message}` };
   }
 
+  /** Every lint below classifies against the primitives' `cva` variants, which
+   *  the rules read through `packages/client/dist`. Built here rather than
+   *  inside the capacity scan: the directive check lints first, and without the
+   *  metadata it reports strictly fewer design diagnostics — so a comment
+   *  silencing a `no-restyle` violation would be invisible in both of its runs. */
+  const built = buildClientPackage();
+  if (built) return built;
+
   problems.push(...(await inlineDirectives(context)));
   for (const target of targets) {
     problems.push(...(await suppressionProblems(target, known)));
@@ -818,6 +827,12 @@ async function validateSuppressions(context: CheckContext): Promise<CheckOutcome
  * which suppresses nothing and simply switches the rule off. Text that merely
  * looks like a directive, inside a string or a JSX attribute, changes neither
  * run.
+ *
+ * A directive in a file that does not violate the rule yet silences nothing, so
+ * the two runs agree and it would land unseen — and then silence the first
+ * violation anyone adds. The configured run therefore also asks for unused
+ * directives, which is how ESLint names a disable with nothing behind it; there
+ * are none under either root today, so what this rejects is new ones.
  */
 async function inlineDirectives(context: CheckContext): Promise<string[]> {
   const files = context.sourceFiles.filter(
@@ -833,12 +848,13 @@ async function inlineDirectives(context: CheckContext): Promise<string[]> {
   /** A directive-suppressed diagnostic is still reported, under
    *  `suppressedMessages`, so the configured run counts only what the baseline
    *  silenced; everything an inline comment took out of play is then exactly the
-   *  difference against the run that ignores inline configuration. */
+   *  difference against the run that ignores inline configuration. The same run
+   *  carries ESLint's unused-directive reports, which is the dormant case. */
   const count = (
     chunk: string[],
     extra: string[],
     baselineOnly: boolean,
-  ): Map<string, number> | string => {
+  ): { counts: Map<string, number>; dormant: string[] } | string => {
     const directory = mkdtempSync(join(tmpdir(), 'librechat-directives-'));
     const reportPath = join(directory, 'report.json');
     const result = runCommand(eslint, [
@@ -862,6 +878,7 @@ async function inlineDirectives(context: CheckContext): Promise<string[]> {
     const report = JSON.parse(readFileSync(reportPath, 'utf8')) as LintReport[];
     rmSync(directory, { force: true, recursive: true });
     const counts = new Map<string, number>();
+    const dormant: string[] = [];
     for (const file of report) {
       const relative = reportedPath(file.filePath);
       const suppressed = (file.suppressedMessages ?? []).filter((message) =>
@@ -874,19 +891,39 @@ async function inlineDirectives(context: CheckContext): Promise<string[]> {
         const key = `${relative}\u0000${message.ruleId}`;
         counts.set(key, (counts.get(key) ?? 0) + 1);
       }
+      for (const message of file.messages) {
+        if (message.ruleId !== null) continue;
+        const unused =
+          /Unused eslint-disable directive \(no problems were reported(?: from '([^']+)')?/.exec(
+            message.message ?? '',
+          );
+        if (!unused) continue;
+        /** A named directive is this check's business only when it names a
+         *  design rule; a blanket one covers them whatever else it covers. */
+        if (unused[1] === undefined) {
+          dormant.push(
+            `${relative}: a blanket eslint-disable silences nothing here, the design rules among them; remove it and record what is owed in ${SUPPRESSIONS_FILE} instead`,
+          );
+        } else if (unused[1].startsWith('shadcn/')) {
+          dormant.push(
+            `${relative}: ${unused[1]} is disabled by an inline comment the file does not need; it would silence the first violation anyone adds, so remove it and record what is owed in ${SUPPRESSIONS_FILE} instead`,
+          );
+        }
+      }
     }
-    return counts;
+    return { counts, dormant };
   };
 
   const problems: string[] = [];
   for (let index = 0; index < files.length; index += SUPPRESSION_LINT_CHUNK) {
     const chunk = files.slice(index, index + SUPPRESSION_LINT_CHUNK);
-    const configured = count(chunk, [], true);
+    const configured = count(chunk, ['--report-unused-disable-directives'], true);
     if (typeof configured === 'string') return [configured];
     const ignored = count(chunk, ['--no-inline-config'], false);
     if (typeof ignored === 'string') return [ignored];
-    for (const [key, total] of ignored) {
-      if (total <= (configured.get(key) ?? 0)) continue;
+    problems.push(...configured.dormant);
+    for (const [key, total] of ignored.counts) {
+      if (total <= (configured.counts.get(key) ?? 0)) continue;
       const [file, rule] = key.split('\u0000');
       problems.push(
         `${file}: ${rule} is silenced by an inline comment; record it in ${SUPPRESSIONS_FILE} instead, where the count is reviewable and \`npm run lint:design:prune\` can retire it`,
