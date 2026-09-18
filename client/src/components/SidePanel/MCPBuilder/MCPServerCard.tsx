@@ -3,6 +3,7 @@ import { MCPIcon } from '@librechat/client';
 import { PermissionBits, hasPermissions } from 'librechat-data-provider';
 import type { MCPServerStatusIconProps } from '~/components/MCP/MCPServerStatusIcon';
 import type { MCPServerDefinition } from '~/hooks';
+import McpOAuthDialog from '~/components/MCP/McpOAuthDialog';
 import { useMCPServerManager, useLocalize } from '~/hooks';
 import { getStatusDotColor } from './MCPStatusBadge';
 import CustomIcon from '~/components/ui/CustomIcon';
@@ -31,8 +32,9 @@ export default function MCPServerCard({
 }: MCPServerCardProps) {
   const localize = useLocalize();
   const triggerRef = useRef<HTMLDivElement>(null);
-  const { initializeServer, revokeOAuthForServer } = useMCPServerManager();
+  const { initializeServer, revokeOAuthForServer, getOAuthUrl } = useMCPServerManager();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [oauthUrl, setOauthUrl] = useState<string | null>(null);
 
   const statusIconProps = getServerStatusIconProps(server.serverName);
   const {
@@ -50,7 +52,11 @@ export default function MCPServerCard({
   const statusDotColor = getStatusDotColor(serverStatus, isInitializing);
   const canEdit = canCreateEditMCPs && canEditThisServer;
 
-  const handleInitialize = () => {
+  /**
+   * `autoOpenOAuth=false` surfaces the authorization URL in the OAuth dialog, whose Continue opens
+   * it inside the tap. A tab opened after the initialize request is blocked on iOS home-screen apps.
+   */
+  const handleInitialize = async () => {
     /** If server has custom user vars and is not already connected, show config dialog first
      *  This ensures users can enter credentials before initialization attempts
      */
@@ -58,7 +64,10 @@ export default function MCPServerCard({
       onConfigClick({ stopPropagation: () => {}, preventDefault: () => {} } as React.MouseEvent);
       return;
     }
-    initializeServer(server.serverName);
+    const response = await initializeServer(server.serverName, false);
+    if (response?.oauthRequired && response.oauthUrl) {
+      setOauthUrl(response.oauthUrl);
+    }
   };
 
   const handleRevoke = () => {
@@ -156,6 +165,17 @@ export default function MCPServerCard({
           server={server}
         />
       )}
+      <McpOAuthDialog
+        open={oauthUrl != null && isInitializing}
+        onOpenChange={(open) => {
+          if (!open) {
+            setOauthUrl(null);
+          }
+        }}
+        serverName={server.serverName}
+        oauthUrl={oauthUrl ?? getOAuthUrl(server.serverName) ?? ''}
+        iconUrl={server.config?.iconPath}
+      />
     </>
   );
 }

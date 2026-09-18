@@ -401,16 +401,39 @@ describe('ToolCall', () => {
         click.mockRestore();
       });
 
+      const signInButton = () => screen.getByRole('button', { name: 'Sign in to mcp.example.com' });
+
       it('binds when the prompt appears and opens the provider within the tap', async () => {
         (dataService.bindMCPOAuth as jest.Mock).mockResolvedValue({ success: true });
         renderWithRecoil(<ToolCall {...mcpProps} />);
-        await waitFor(() => expect(dataService.bindMCPOAuth).toHaveBeenCalledWith('clickhouse'));
+        expect(dataService.bindMCPOAuth).toHaveBeenCalledWith('clickhouse');
+        await waitFor(() => expect(signInButton()).toBeEnabled());
 
-        fireEvent.click(screen.getByText('Sign in to mcp.example.com'));
+        fireEvent.click(signInButton());
 
         expect(click).toHaveBeenCalledTimes(1);
         expect((click.mock.instances[0] as unknown as HTMLAnchorElement).href).toBe(mcpAuth);
         expect(dataService.bindMCPOAuth).toHaveBeenCalledTimes(1);
+      });
+
+      it('keeps sign-in disabled until the bind lands', async () => {
+        let finishBind: (() => void) | undefined;
+        (dataService.bindMCPOAuth as jest.Mock).mockReturnValue(
+          new Promise((resolve) => {
+            finishBind = () => resolve({ success: true });
+          }),
+        );
+        renderWithRecoil(<ToolCall {...mcpProps} />);
+
+        expect(signInButton()).toBeDisabled();
+        expect(signInButton()).toHaveAttribute('aria-busy', 'true');
+        fireEvent.click(signInButton());
+        expect(click).not.toHaveBeenCalled();
+
+        finishBind!();
+        await waitFor(() => expect(signInButton()).toBeEnabled());
+        fireEvent.click(signInButton());
+        expect(click).toHaveBeenCalledTimes(1);
       });
 
       it('retries a failed bind on tap instead of opening the provider', async () => {
@@ -419,15 +442,17 @@ describe('ToolCall', () => {
           .mockResolvedValue({ success: true });
         renderWithRecoil(<ToolCall {...mcpProps} />);
         await waitFor(() => expect(logger.error).toHaveBeenCalled());
+        await waitFor(() => expect(signInButton()).toBeEnabled());
 
-        fireEvent.click(screen.getByText('Sign in to mcp.example.com'));
+        fireEvent.click(signInButton());
 
         expect(click).not.toHaveBeenCalled();
         expect(screen.getByRole('alert')).toHaveTextContent('com_ui_oauth_error_generic');
         await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
         expect(dataService.bindMCPOAuth).toHaveBeenCalledTimes(2);
+        await waitFor(() => expect(signInButton()).toBeEnabled());
 
-        fireEvent.click(screen.getByText('Sign in to mcp.example.com'));
+        fireEvent.click(signInButton());
         expect(click).toHaveBeenCalledTimes(1);
       });
     });
