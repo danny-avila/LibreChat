@@ -224,40 +224,42 @@ test.describe('the recorded design-rule backlog', () => {
     expect(alongside.output).toContain(caller);
     expect(alongside.output).toContain('would silence a later violation');
 
-    /** And the commit reaches it too, on every path the lane does. A diff that
-     *  lowers a count touches no source file, so the hook's source group never
+    /** And the commit reaches it on every path the lane does. A count edit
+     *  touches no source file, so the hook's `*.{js,jsx,ts,tsx}` group never
      *  runs; a primitive decides what the rules report in callers nobody
-     *  staged, and the lane sweeps the record for it. The hook's own group has
-     *  to select exactly what the lane's `suppressions` paths-filter selects —
-     *  asserted against the workflow rather than against a copy of it here, so
-     *  the two cannot drift apart silently, which is how the local run and CI
-     *  started disagreeing before. */
-    const hook = loadHookConfig(resolve(repoRoot, '.husky/lint-staged.config.js'), [
-      SUPPRESSIONS_FILE,
-    ]);
-    const baselineGroup = Object.entries(hook).find(([pattern]) =>
-      pattern.includes(SUPPRESSIONS_FILE),
+     *  staged. Both arrive through the runner, which `.husky/pre-commit` runs
+     *  over the staged diff after lint-staged, so what has to hold is that the
+     *  runner selects this check on every path the lane's `suppressions`
+     *  paths-filter names — asked of the runner, and read from the workflow
+     *  rather than from a copy of it, so the two cannot drift apart silently. */
+    const hookScript = readFileSync(resolve(repoRoot, '.husky/pre-commit'), 'utf8');
+    expect(hookScript, 'the hook no longer runs the CI mirror over the staged diff').toContain(
+      'scripts/static-checks.mts --skip eslint,prettier,imports',
     );
-    expect(baselineGroup, 'no hook group matches the baseline').toBeDefined();
-    expect(baselineGroup?.[1].join(' ')).toContain('--only suppressions');
 
     const workflow = readFileSync(resolve(repoRoot, '.github/workflows/static-checks.yml'), 'utf8');
-    const block = workflow.split(/^ {12}suppressions:$/m)[1] ?? '';
-    const lane = block
+    const lane = (workflow.split(/^ {12}suppressions:$/m)[1] ?? '')
       .split(/^ {12}\S/m)[0]
       .split('\n')
       .map((line) => /^ {14}- '([^']+)'$/.exec(line)?.[1])
       .filter((pattern): pattern is string => Boolean(pattern) && !pattern.startsWith('!'));
     expect(lane.length, 'the lane declares no suppressions filter').toBeGreaterThan(5);
 
-    /** A path the lane selects on and the hook does not is a commit that passes
-     *  locally and fails in CI; the other way round is a commit that pays for a
-     *  check the lane will not run. The hook's key is a brace list, so the two
-     *  are the same set written twice — compared here rather than trusted. */
-    const staged = (baselineGroup?.[0] ?? '').replace(/^\{|\}$/g, '').split(',');
-    expect(staged.slice().sort(), 'the hook and the lane select different paths').toEqual(
-      lane.slice().sort(),
-    );
+    const unselected = lane.filter((pattern) => {
+      const probe = pattern.replace('**/', 'packages/client/').replace('/**', '/Probe.tsx');
+      const listed = staticChecks([probe, '--list', '--skip', 'eslint,prettier,imports']);
+      return !/Design-rule suppressions.*would run/.test(listed.output);
+    });
+    expect(unselected, 'the runner does not select what the lane selects').toEqual([]);
+
+    /** And it is a selection, not a default: a path outside both roots is not. */
+    const outside = staticChecks([
+      'api/server/index.js',
+      '--list',
+      '--skip',
+      'eslint,prettier,imports',
+    ]);
+    expect(outside.output).toMatch(/Design-rule suppressions.*not affected/);
   });
 
   test('changing what the design rules read revalidates every recorded count @scenario:changing-what-the-design-rules-read-revalidates-every-recorded-count', () => {
