@@ -183,6 +183,9 @@ describe('File Methods', () => {
       expect(second.nextCursor).toBeNull();
       expect(first.files[0]).not.toHaveProperty('text');
       expect(second.files[0]).not.toHaveProperty('storageKey');
+      /** The picker's rows reach `@librechat/api` and the client, so the identifiers must
+       *  already be plain strings rather than driver objects. */
+      expect(first.files[0]).toMatchObject({ _id: expect.any(String), user: userId });
       const literalMatch = await fileMethods.getAvailableProjectFiles({
         userId,
         tenantId: 'tenant-a',

@@ -19,8 +19,26 @@ import logger from '../config/winston';
 export const DEFAULT_AVAILABLE_PROJECT_FILES_LIMIT = 20;
 export const MAX_AVAILABLE_PROJECT_FILES_LIMIT = 50;
 
-export type AvailableProjectFileRecord = Pick<
+/** Plain projection of a candidate file. The picker's response crosses into `@librechat/api`
+ * and the client, so this names no Mongoose type: `_id` and `user` are already strings here. */
+export type AvailableProjectFileRecord = {
+  _id: string;
+  file_id: string;
+  filename: string;
+  filepath: string;
+  object: 'file';
+  type: string;
+  bytes: number;
+  usage: number;
+  embedded?: boolean;
+  context?: string;
+  user: string;
+  tenantId?: string;
+};
+
+type AvailableProjectFileRecordSource = Pick<
   IMongoFile,
+  | '_id'
   | 'file_id'
   | 'filename'
   | 'filepath'
@@ -32,9 +50,26 @@ export type AvailableProjectFileRecord = Pick<
   | 'context'
   | 'user'
   | 'tenantId'
-> & {
-  _id: Types.ObjectId;
-};
+>;
+
+function normalizeAvailableProjectFileRecord(
+  file: AvailableProjectFileRecordSource,
+): AvailableProjectFileRecord {
+  return {
+    _id: file._id.toString(),
+    file_id: file.file_id,
+    filename: file.filename,
+    filepath: file.filepath,
+    object: file.object,
+    type: file.type,
+    bytes: file.bytes,
+    usage: file.usage,
+    ...(file.embedded !== undefined ? { embedded: file.embedded } : {}),
+    ...(file.context !== undefined ? { context: file.context } : {}),
+    user: file.user.toString(),
+    ...(file.tenantId !== undefined ? { tenantId: file.tenantId } : {}),
+  };
+}
 
 export type AvailableProjectFilesOptions = FileOwnerScope & {
   excludedFileIds?: string[];
@@ -605,7 +640,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       })
       .sort({ _id: -1 })
       .limit(limit + 1)
-      .lean<AvailableProjectFileRecord[]>();
+      .lean<AvailableProjectFileRecordSource[]>();
 
     let nextCursor: string | null = null;
     if (files.length > limit) {
@@ -615,7 +650,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         nextCursor = lastFile._id.toString();
       }
     }
-    return { files, nextCursor };
+    return { files: files.map(normalizeAvailableProjectFileRecord), nextCursor };
   }
 
   /**
