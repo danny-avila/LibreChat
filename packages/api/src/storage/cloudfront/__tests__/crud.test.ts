@@ -10,17 +10,20 @@ const mockSaveURLToS3WithMetadata = jest.fn();
 const mockUploadFileToS3 = jest.fn();
 const mockDeleteFileFromS3 = jest.fn();
 const mockGetS3FileStream = jest.fn();
+const mockParseS3Key = jest.fn();
 const mockExtractKeyFromS3Url = jest.fn<string, [string]>();
 const mockResolveStoredS3Key = jest.fn<string, [TFile]>();
 const mockCloudFrontSend = jest.fn();
 const mockGetSignedUrl = jest.fn<string, [object]>();
 const mockLogger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+const originalFetch = global.fetch;
 
 jest.mock('~/cdn/cloudfront', () => ({
   getCloudFrontConfig: mockGetCloudFrontConfig,
 }));
 
 jest.mock('~/storage/s3/crud', () => ({
+  parseS3Key: mockParseS3Key,
   getS3Key: mockGetS3Key,
   saveBufferToS3: mockSaveBufferToS3,
   saveURLToS3WithMetadata: mockSaveURLToS3WithMetadata,
@@ -62,6 +65,10 @@ function makeConfig(overrides: Partial<CloudFrontFullConfig> = {}): CloudFrontFu
 }
 
 describe('CloudFront CRUD', () => {
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetS3Key.mockImplementation(
@@ -610,9 +617,11 @@ describe('CloudFront CRUD', () => {
   });
 
   describe('getCloudFrontFileStream', () => {
-    it('delegates to getS3FileStream', async () => {
+    it('reads a local-region key directly from S3', async () => {
       const readable = new Readable();
       mockGetS3FileStream.mockResolvedValue(readable);
+      mockExtractKeyFromS3Url.mockReturnValue('r/us-east-1/images/u/f.webp');
+      mockParseS3Key.mockReturnValue({ storageRegion: 'us-east-1' });
 
       const mockReq = { user: { id: 'u' } } as ServerRequest;
       const { getCloudFrontFileStream } = await import('~/storage/cloudfront/crud');
@@ -623,10 +632,84 @@ describe('CloudFront CRUD', () => {
 
       expect(mockGetS3FileStream).toHaveBeenCalledWith(
         mockReq,
-        'https://d123.cloudfront.net/images/u/f.webp',
+        'r/us-east-1/images/u/f.webp',
         undefined,
       );
       expect(result).toBe(readable);
+    });
+
+    it('reads a cross-region key through CloudFront', async () => {
+      mockGetCloudFrontConfig.mockReturnValue(
+        makeConfig({ privateKey: 'pk-secret', keyPairId: 'K123' }),
+      );
+      mockExtractKeyFromS3Url.mockReturnValue('i/r/eu-west-1/images/u/f.webp');
+      mockParseS3Key.mockReturnValue({ storageRegion: 'eu-west-1' });
+      mockGetSignedUrl.mockReturnValue(
+        'https://d123.cloudfront.net/i/r/eu-west-1/images/u/f.webp?Policy=abc',
+      );
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        headers: { get: () => '6' },
+        body: Readable.toWeb(Readable.from('remote')),
+      }) as unknown as typeof fetch;
+
+      const { getCloudFrontFileStream } = await import('~/storage/cloudfront/crud');
+      const stream = await getCloudFrontFileStream(
+        { user: { id: 'u' } } as ServerRequest,
+        'i/r/eu-west-1/images/u/f.webp',
+      );
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) {
+        chunks.push(Buffer.from(chunk));
+      }
+
+      expect(Buffer.concat(chunks).toString()).toBe('remote');
+      expect(mockGetS3FileStream).not.toHaveBeenCalled();
+      expect(global.fetch).toHaveBeenCalledWith(
+        'https://d123.cloudfront.net/i/r/eu-west-1/images/u/f.webp?Policy=abc',
+        expect.objectContaining({ signal: expect.any(Object) }),
+      );
+    });
+
+    it('preserves a cross-region CloudFront 404 for missing-attachment handling', async () => {
+      mockExtractKeyFromS3Url.mockReturnValue('i/r/eu-west-1/images/u/missing.webp');
+      mockParseS3Key.mockReturnValue({ storageRegion: 'eu-west-1' });
+      const cancel = jest.fn().mockResolvedValue(undefined);
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        body: { cancel },
+      }) as unknown as typeof fetch;
+
+      const { getCloudFrontFileStream } = await import('~/storage/cloudfront/crud');
+      await expect(
+        getCloudFrontFileStream(
+          { user: { id: 'u' } } as ServerRequest,
+          'i/r/eu-west-1/images/u/missing.webp',
+        ),
+      ).rejects.toMatchObject({ status: 404 });
+      expect(cancel).toHaveBeenCalled();
+    });
+
+    it('cancels an oversized cross-region response', async () => {
+      mockExtractKeyFromS3Url.mockReturnValue('i/r/eu-west-1/images/u/large.webp');
+      mockParseS3Key.mockReturnValue({ storageRegion: 'eu-west-1' });
+      const cancel = jest.fn().mockResolvedValue(undefined);
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        headers: { get: () => String(513 * 1024 * 1024) },
+        body: { cancel },
+      }) as unknown as typeof fetch;
+
+      const { getCloudFrontFileStream } = await import('~/storage/cloudfront/crud');
+      await expect(
+        getCloudFrontFileStream(
+          { user: { id: 'u' } } as ServerRequest,
+          'i/r/eu-west-1/images/u/large.webp',
+        ),
+      ).rejects.toThrow('Remote file response too large');
+      expect(cancel).toHaveBeenCalled();
     });
   });
 
