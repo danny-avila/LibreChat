@@ -22,6 +22,8 @@ const {
   convertOcrToContextInPlace,
   normalizeToolResourceFiles,
   normalizeAgentUpdateData,
+  getRequestRoleCache,
+  persistAgentInstructionPromptFallback,
   stripFileIdsFromToolResources,
   inspectContent,
   inspectContentWithTraversal,
@@ -86,9 +88,23 @@ const {
   userCanUseMCPServers,
 } = require('~/server/services/MCP');
 const { attachOwnerContacts } = require('~/server/services/Agents/ownerContact');
+const instructionPromptResolver = require('~/server/services/Agents/instructionPrompts');
 const { getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
+const persistInstructionPromptSnapshot = async (req, agent) => {
+  const roleCache = getRequestRoleCache(req) ?? undefined;
+  await persistAgentInstructionPromptFallback({
+    agent,
+    resolver: instructionPromptResolver,
+    context: {
+      userId: req.user.id,
+      role: req.user.role,
+      appConfig: req.config,
+      ...(roleCache ? { roleCache } : {}),
+    },
+  });
+};
 
 const systemTools = {
   [Tools.execute_code]: true,
@@ -829,6 +845,7 @@ const createAgentHandler = async (req, res) => {
       });
     }
 
+    await persistInstructionPromptSnapshot(req, agentData);
     if (await blockFilteredAgentContent(req, res, agentData)) {
       return;
     }
@@ -941,8 +958,8 @@ const createAgentHandler = async (req, res) => {
       return res.status(400).json({ error: 'Invalid request data', details: error.errors });
     }
     logger.error('[/Agents] Error creating agent', error);
-    if (error?.statusCode === 409) {
-      return res.status(409).json({ error: error.message });
+    if (Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 600) {
+      return res.status(error.statusCode).json({ error: error.message });
     }
     res.status(500).json({ error: error.message });
   }
@@ -1245,6 +1262,7 @@ const updateAgentHandler = async (req, res) => {
       });
     }
 
+    await persistInstructionPromptSnapshot(req, updateData);
     if (await blockFilteredAgentContent(req, res, updateData)) {
       return;
     }
@@ -1377,8 +1395,8 @@ const updateAgentHandler = async (req, res) => {
 
     logger.error('[/Agents/:id] Error updating Agent', error);
 
-    if (error.statusCode === 409) {
-      return res.status(409).json({
+    if (Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 600) {
+      return res.status(error.statusCode).json({
         error: error.message,
         details: error.details,
       });
@@ -1570,6 +1588,7 @@ const duplicateAgentHandler = async (req, res) => {
       newAgentData.tool_options = removeCodeExecutionCaller(newAgentData.tool_options);
     }
 
+    await persistInstructionPromptSnapshot(req, newAgentData);
     if (
       (await blockFilteredAgentContent(req, res, newAgentData)) ||
       blockFilteredActionContent(req, res, sanitizedActions)

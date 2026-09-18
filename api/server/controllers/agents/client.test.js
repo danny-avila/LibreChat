@@ -222,6 +222,7 @@ jest.mock('@librechat/api', () => ({
   recordCollectedUsage: (...args) => mockRecordCollectedUsage(...args),
   getAgentCheckpointer: mockGetAgentCheckpointer,
   hasDurableAgentInterruptCheckpoint: (...args) => mockHasDurableAgentInterruptCheckpoint(...args),
+  resolveAgentInstructionPromptError: jest.fn(),
   stripActivityLabelParts: (...args) => mockStripActivityLabelParts(...args),
 }));
 

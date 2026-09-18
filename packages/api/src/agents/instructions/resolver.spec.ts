@@ -1,8 +1,10 @@
-import { PermissionBits } from 'librechat-data-provider';
+import { AgentCapabilities, PermissionBits } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
 import {
   AgentInstructionPromptError,
   createAgentInstructionPromptResolver,
   resolveAgentInstructionPrompt,
+  persistAgentInstructionPromptFallback,
 } from './resolver';
 
 function createResolver(overrides: Record<string, unknown> = {}) {
@@ -169,6 +171,68 @@ describe('agent instruction prompt resolver', () => {
     });
   });
 
+  it('rejects prompt-backed saves until the rollout capability is enabled', async () => {
+    await expect(
+      persistAgentInstructionPromptFallback({
+        agent: {
+          instruction_prompt: {
+            source: 'librechat',
+            promptId: 'group-1',
+            name: 'Support policy',
+          },
+        },
+        context: {
+          userId: 'user-1',
+          appConfig: {
+            endpoints: { agents: { capabilities: [] } },
+          } as unknown as AppConfig,
+        },
+        resolver: createResolver(),
+      }),
+    ).rejects.toMatchObject({
+      code: 'not_configured',
+      status: 409,
+      statusCode: 409,
+    });
+  });
+
+  it('persists resolved instructions as a compatibility snapshot', async () => {
+    const agent = {
+      instructions: '',
+      instruction_prompt: {
+        source: 'librechat' as const,
+        promptId: 'group-1',
+        name: 'Support policy',
+        version: 1,
+        versionId: 'a',
+      },
+    };
+
+    await persistAgentInstructionPromptFallback({
+      agent,
+      context: {
+        userId: 'user-1',
+        appConfig: {
+          endpoints: {
+            agents: { capabilities: [AgentCapabilities.instruction_prompts] },
+          },
+        } as unknown as AppConfig,
+      },
+      resolver: createResolver(),
+    });
+
+    expect(agent).toEqual({
+      instructions: 'version one',
+      instruction_prompt: {
+        source: 'librechat',
+        promptId: 'group-1',
+        name: 'Support policy',
+        version: 1,
+        versionId: 'a',
+      },
+    });
+  });
+
   it('fails clearly when a referenced version was deleted', async () => {
     const resolver = createResolver();
 
@@ -195,6 +259,6 @@ describe('agent instruction prompt resolver', () => {
         },
         { userId: 'user-1' },
       ),
-    ).rejects.toMatchObject({ code: 'not_found', statusCode: 404 });
+    ).rejects.toMatchObject({ code: 'not_found', status: 404, statusCode: 404 });
   });
 });

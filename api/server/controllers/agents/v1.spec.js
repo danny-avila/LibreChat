@@ -6,6 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const { createModels, tenantStorage } = require('@librechat/data-schemas');
 const {
   Tools,
+  AgentCapabilities,
   SkillsScope,
   FileSources,
   Permissions,
@@ -17,6 +18,11 @@ const {
   actionDelimiter,
 } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const mockInstructionPromptResolve = jest.fn();
+
+jest.mock('~/server/services/Agents/instructionPrompts', () => ({
+  resolve: (...args) => mockInstructionPromptResolve(...args),
+}));
 
 // Only mock the dependencies that are not database-related
 jest.mock('~/server/services/Config', () => ({
@@ -185,6 +191,12 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
     jest.clearAllMocks();
     mergeDeploymentSkillIds.mockImplementation((ids) => ids);
 
+    mockInstructionPromptResolve.mockResolvedValue({
+      prompt: 'resolved instructions',
+      source: 'librechat',
+      name: 'Support policy',
+      version: 1,
+    });
     // Setup mock request and response objects
     mockReq = {
       user: {
@@ -414,6 +426,57 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         }),
       );
       await expect(Agent.countDocuments()).resolves.toBe(0);
+    });
+
+    test('rejects prompt references until the rollout capability is enabled', async () => {
+      mockReq.config = { endpoints: { agents: { capabilities: [] } } };
+      mockReq.body = {
+        name: 'Prompt Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        instructions: '',
+        instruction_prompt: {
+          source: 'librechat',
+          promptId: new mongoose.Types.ObjectId().toString(),
+          name: 'Support policy',
+        },
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(409);
+      await expect(Agent.countDocuments()).resolves.toBe(0);
+      expect(mockInstructionPromptResolve).not.toHaveBeenCalled();
+    });
+
+    test('persists a resolved instruction snapshot with the prompt reference', async () => {
+      mockReq.config = {
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.instruction_prompts] },
+        },
+      };
+      mockReq.body = {
+        name: 'Prompt Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        instructions: '',
+        instruction_prompt: {
+          source: 'librechat',
+          promptId: new mongoose.Types.ObjectId().toString(),
+          name: 'Support policy',
+        },
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      const createdAgent = mockRes.json.mock.calls[0][0];
+      expect(createdAgent.instructions).toBe('resolved instructions');
+      expect(createdAgent.instruction_prompt).toMatchObject(mockReq.body.instruction_prompt);
+      expect(mockInstructionPromptResolve).toHaveBeenCalledWith(
+        mockReq.body.instruction_prompt,
+        expect.objectContaining({ userId: mockReq.user.id, role: mockReq.user.role }),
+      );
     });
 
     test('should create agent with allowed fields only', async () => {

@@ -1,4 +1,4 @@
-import { PermissionBits } from 'librechat-data-provider';
+import { AgentCapabilities, PermissionBits } from 'librechat-data-provider';
 import type {
   AgentInstructionPrompt,
   ResolvedAgentInstructionPrompt,
@@ -19,6 +19,8 @@ export type AgentInstructionPromptContext = {
 };
 
 export class AgentInstructionPromptError extends Error {
+  public readonly status: number;
+
   constructor(
     public readonly code:
       | 'access_denied'
@@ -33,6 +35,7 @@ export class AgentInstructionPromptError extends Error {
   ) {
     super(message);
     this.name = 'AgentInstructionPromptError';
+    this.status = statusCode;
   }
 }
 
@@ -207,4 +210,46 @@ export async function resolveAgentInstructionPrompt({
   const { prompt, ...resolution } = await resolver.resolve(reference, context);
   agent.instructions = prompt;
   agent.resolved_instruction_prompt = resolution;
+}
+
+/**
+ * Keep a resolved snapshot in `instructions` for rolling-deployment
+ * compatibility while preserving the reference used by prompt-aware nodes.
+ */
+export async function persistAgentInstructionPromptFallback({
+  agent,
+  context,
+  resolver,
+}: {
+  agent: {
+    instructions?: string | null;
+    instruction_prompt?: AgentInstructionPrompt | null;
+  };
+  context: AgentInstructionPromptContext;
+  resolver?: AgentInstructionPromptProvider;
+}): Promise<void> {
+  const reference = agent.instruction_prompt;
+  if (!reference) {
+    return;
+  }
+  const capabilities = context.appConfig?.endpoints?.agents?.capabilities;
+  if (!capabilities?.includes(AgentCapabilities.instruction_prompts)) {
+    throw new AgentInstructionPromptError(
+      'not_configured',
+      'Agent instruction prompt references are not enabled for this deployment',
+      409,
+      true,
+    );
+  }
+  if (!resolver) {
+    throw new AgentInstructionPromptError(
+      'not_configured',
+      'Agent instruction prompt resolution is not configured',
+      503,
+      true,
+    );
+  }
+
+  const { prompt } = await resolver.resolve(reference, context);
+  agent.instructions = prompt;
 }

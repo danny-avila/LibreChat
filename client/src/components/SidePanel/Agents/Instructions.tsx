@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { AgentCapabilities } from 'librechat-data-provider';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
 import {
   Input,
@@ -16,8 +17,8 @@ import {
   useGetAllPromptGroups,
   useGetPrompts,
 } from '~/data-provider';
+import { useDebounce, useGetAgentsConfig, useLocalize } from '~/hooks';
 import { VariableEditor } from '~/components/Variables';
-import { useDebounce, useLocalize } from '~/hooks';
 
 type InstructionSource = 'inline' | AgentInstructionPrompt['source'];
 
@@ -28,6 +29,9 @@ function promptTime(prompt: TPrompt): number {
 
 export default function Instructions() {
   const localize = useLocalize();
+  const { agentsConfig } = useGetAgentsConfig();
+  const promptReferencesEnabled =
+    agentsConfig?.capabilities?.includes(AgentCapabilities.instruction_prompts) ?? false;
   const { control, getValues, setValue } = useFormContext<AgentForm>();
   const agentId = useWatch({ control, name: 'id' });
   const reference = useWatch({ control, name: 'instruction_prompt' });
@@ -45,7 +49,11 @@ export default function Instructions() {
     { enabled: source === 'librechat' && groupId.length > 0 },
   );
   const prompts = useMemo(
-    () => [...(promptsQuery.data ?? [])].sort((a, b) => promptTime(a) - promptTime(b)),
+    () =>
+      [...(promptsQuery.data ?? [])].sort((a, b) => {
+        const byTime = promptTime(a) - promptTime(b);
+        return byTime !== 0 ? byTime : String(a._id ?? '').localeCompare(String(b._id ?? ''));
+      }),
     [promptsQuery.data],
   );
   const selectedPrompt =
@@ -145,11 +153,22 @@ export default function Instructions() {
       name="instructions"
       control={control}
       rules={{
-        validate: (value) => {
+        validate: () => {
           if (source === 'inline') {
-            return value?.trim() ? true : localize('com_ui_field_required');
+            return true;
           }
-          return reference?.source === source ? true : localize('com_ui_field_required');
+          if (reference?.source !== source) {
+            return localize('com_ui_field_required');
+          }
+          if (source === 'librechat') {
+            if (selectedPrompt == null) {
+              return localize('com_agents_prompt_missing');
+            }
+            if (selectedPrompt.type != null && selectedPrompt.type !== 'text') {
+              return localize('com_agents_prompt_unsupported');
+            }
+          }
+          return true;
         },
       }}
       render={({ field, fieldState: { error } }) => (
@@ -172,12 +191,16 @@ export default function Instructions() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="inline">{localize('com_agents_prompt_source_inline')}</SelectItem>
-              <SelectItem value="librechat">
-                {localize('com_agents_prompt_source_librechat')}
-              </SelectItem>
-              <SelectItem value="langfuse">
-                {localize('com_agents_prompt_source_langfuse')}
-              </SelectItem>
+              {promptReferencesEnabled && (
+                <>
+                  <SelectItem value="librechat">
+                    {localize('com_agents_prompt_source_librechat')}
+                  </SelectItem>
+                  <SelectItem value="langfuse">
+                    {localize('com_agents_prompt_source_langfuse')}
+                  </SelectItem>
+                </>
+              )}
             </SelectContent>
           </Select>
           {source === 'inline' && (
@@ -279,7 +302,7 @@ export default function Instructions() {
               className="mt-1 text-xs text-text-destructive transition duration-300 ease-in-out"
               role="alert"
             >
-              {localize('com_ui_field_required')}
+              {error.message ?? localize('com_ui_field_required')}
             </span>
           )}
         </div>
