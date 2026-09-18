@@ -1487,18 +1487,20 @@ function shapeSummarizationConfig(
    * summary model has it withheld, unless the summarization config asked for
    * it itself.
    *
-   * Read from the deployment the summary request addresses, not only from the
-   * visible model: on Azure an alias such as `production-chat` can front a
-   * supported deployment, and clearing the flag there would disable caching an
-   * administrator configured. `resolveAzureSummarization` puts the resolved
-   * deployment on `modelKwargs.model`, the same override the wire uses.
+   * Decided by the deployment the summary request addresses whenever it has
+   * one: on Azure an alias such as `production-chat` can front a supported
+   * deployment, and it can equally front an unsupported one, so the override
+   * has to be able to veto as well as to permit — the same precedence
+   * `applyExplicitPromptCache` uses. `resolveAzureSummarization` puts the
+   * resolved deployment on `modelKwargs.model`, which is what the wire sends.
    */
   const summaryWireModel = isPlainObject(parameters?.modelKwargs)
     ? parameters.modelKwargs.model
     : undefined;
   const summarySupportsExplicitCache =
-    supportsExplicitPromptCache(model) ||
-    (typeof summaryWireModel === 'string' && supportsExplicitPromptCache(summaryWireModel));
+    typeof summaryWireModel === 'string'
+      ? supportsExplicitPromptCache(summaryWireModel)
+      : supportsExplicitPromptCache(model);
   if (
     provider === fallbackProvider &&
     agentParameters?.promptCacheExplicit === true &&

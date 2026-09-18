@@ -1456,6 +1456,33 @@ describe('Azure deployment alias', () => {
     },
   );
 
+  it('withholds inherited explicit cache controls when the summary deployment is unsupported', async () => {
+    const { llmConfig, configOptions } = getOpenAIConfig(
+      'test-openai-key',
+      { modelOptions: { model: 'gpt-5.6' }, promptCacheExplicit: true },
+      EModelEndpoint.openAI,
+    );
+    const agents = await callAndCapture({
+      agents: [
+        makeReasoningAgent({
+          provider: EModelEndpoint.openAI,
+          endpoint: EModelEndpoint.openAI,
+          model: 'gpt-5.6',
+          model_parameters: { ...llmConfig, configuration: configOptions },
+        }),
+      ],
+      summarizationConfig: {
+        model: 'gpt-5.6',
+        parameters: { streaming: false, modelKwargs: { model: 'gpt-4o' } },
+      },
+    });
+
+    const summaryConfig = agents[0].summarizationConfig as Record<string, unknown>;
+    const parameters = summaryConfig.parameters as Record<string, unknown>;
+    /** The override is what the request addresses, so it decides — and vetoes. */
+    expect(parameters).toHaveProperty('promptCacheExplicit', undefined);
+  });
+
   it('withholds inherited explicit cache controls from an unsupported summary model', async () => {
     const { llmConfig, configOptions } = getOpenAIConfig(
       'test-openai-key',
