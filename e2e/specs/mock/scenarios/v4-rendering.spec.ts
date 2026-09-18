@@ -211,6 +211,58 @@ test.describe('Tailwind v4 rendering', () => {
     }
   });
 
+  test('a desktop-only control is revealed at desktop width @scenario:a-desktop-only-control-is-revealed-at-desktop-width', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await useStoredTheme(page, 'light');
+    await page.goto('/c/new', { timeout: 30000 });
+
+    /** `hidden … md:flex` is how the SPA reveals a control on desktop — the
+     *  header's trace, export/share and temporary-chat cluster, the composer's
+     *  MCP label. The app's stylesheet declared its own `.hidden`, a duplicate
+     *  of the utility, and unlayered it outranked every layered variant, so
+     *  those controls computed `display: none` at every width. Every `.hidden`
+     *  rule the page loads now comes from the utilities layer, where a
+     *  responsive variant can still win. */
+    const unlayered = await page.evaluate(() => {
+      const offenders: string[] = [];
+      const visit = (rules: CSSRuleList, layered: boolean) => {
+        for (const rule of Array.from(rules)) {
+          const grouping = rule as CSSGroupingRule & { name?: string; selectorText?: string };
+          const inLayer =
+            layered ||
+            (rule.constructor.name === 'CSSLayerBlockRule' && grouping.name === 'utilities');
+          if (grouping.selectorText === '.hidden' && !layered) {
+            offenders.push(grouping.cssText.slice(0, 80));
+          }
+          if (grouping.cssRules) {
+            visit(grouping.cssRules, inLayer);
+          }
+        }
+      };
+      for (const sheet of Array.from(document.styleSheets)) {
+        try {
+          visit(sheet.cssRules, false);
+        } catch {
+          // Cross-origin stylesheets cannot expose cssRules; the app's own can.
+        }
+      }
+      return offenders;
+    });
+    expect(unlayered).toEqual([]);
+
+    expect(await probeStyle(page, 'hidden md:flex', 'display')).toBe('flex');
+    expect(await probeStyle(page, 'hidden md:block', 'display')).toBe('block');
+
+    /** A class with no reveal beside it still hides, and below `md` the
+     *  desktop-only control goes back to hidden, which is what a phone saw
+     *  under Tailwind 3. */
+    expect(await probeStyle(page, 'hidden', 'display')).toBe('none');
+    await page.setViewportSize({ width: 500, height: 900 });
+    expect(await probeStyle(page, 'hidden md:flex', 'display')).toBe('none');
+  });
+
   test('a native select keeps its token styling @scenario:a-native-select-keeps-its-token-styling', async ({
     page,
   }) => {
