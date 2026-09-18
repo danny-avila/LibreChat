@@ -81,6 +81,10 @@ jobs:
               # source file.
               - 'package.json'
               - 'package-lock.json'
+              # The runner is the gate: `validateSuppressions` is what a recorded
+              # count is measured against, so a change to it has to run against
+              # the record — the ESLint step above only ever sees sources.
+              - 'scripts/static-checks.mts'
               - '.github/workflows/static-checks.yml'
               - '!**.md'
             config:

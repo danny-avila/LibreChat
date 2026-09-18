@@ -10,18 +10,21 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { repoRoot, run, staticChecks } from './lint.helpers';
+import { inOneProject, repoRoot, run, staticChecks } from './lint.helpers';
 
 /**
  * `eslint-suppressions.json` records what the tree already owed when the design
- * rules landed, as a count per file and rule. Three things about that record are
- * behaviour a contributor meets: the commit that FIXES one of those violations
- * must not be rejected for leaving the count too high, a file move must not leave
- * the old path silencing a future file that reuses it, and a diff that edits only
- * the record must still be looked at by something. None of the three needs the
- * browser; each runs the configured command and reads what it does.
+ * rules landed, as a count per file and rule. What a contributor meets is one
+ * scenario each: the commit that FIXES one of those violations must not be
+ * rejected for leaving the count too high; a file move must not leave the old
+ * path silencing a future file that reuses it; a count edit must be read even
+ * when it rides along with a source change; a change to what the rules read must
+ * revalidate counts in files it never touches; an inline comment must not be a
+ * way to silence a design rule; and a record that no longer says what it claims
+ * must be rejected. None of them needs the browser — each runs the configured
+ * command and reads what it does.
  */
 
 type Suppressions = Record<string, Record<string, { count: number }>>;
@@ -32,9 +35,10 @@ const ESLINT = resolve(repoRoot, 'node_modules/.bin/eslint');
 const readBaseline = (): Suppressions =>
   JSON.parse(readFileSync(suppressionsPath, 'utf8')) as Suppressions;
 
-/** A scratch baseline; ESLint takes its location as an argument. */
-function writeBaseline(name: string, content: unknown): string {
-  const path = join(mkdtempSync(join(tmpdir(), 'lc-suppressions-')), name);
+/** A scratch baseline in its own directory; ESLint and the runner both take a
+ *  baseline's location as an argument, so nothing here writes into the tree. */
+function writeBaseline(content: unknown): string {
+  const path = join(mkdtempSync(join(tmpdir(), 'lc-suppressions-')), SUPPRESSIONS_FILE);
   writeFileSync(path, `${JSON.stringify(content, null, 2)}\n`);
   return path;
 }
@@ -58,6 +62,7 @@ const loadHookConfig = (path: string, staged: string[]): Record<string, string[]
 
 test.describe('the recorded design-rule backlog', () => {
   test('fixing a recorded violation keeps the configured lint runs green @scenario:fixing-a-recorded-violation-keeps-the-configured-lint-runs-green', () => {
+    inOneProject();
     test.setTimeout(180_000);
 
     /** Pick a real recorded file and claim one more violation than it has, which
@@ -65,9 +70,7 @@ test.describe('the recorded design-rule backlog', () => {
     const baseline = readBaseline();
     const [file, rules] = Object.entries(baseline)[0];
     const [rule, { count }] = Object.entries(rules)[0];
-    const overCounted = writeBaseline(SUPPRESSIONS_FILE, {
-      [file]: { [rule]: { count: count + 1 } },
-    });
+    const overCounted = writeBaseline({ [file]: { [rule]: { count: count + 1 } } });
     const baselineText = readFileSync(suppressionsPath, 'utf8');
 
     /** The real pre-commit commands, read by executing the hook's own config:
@@ -107,27 +110,15 @@ test.describe('the recorded design-rule backlog', () => {
       'the hook no longer runs the CI mirror',
     ).toBe(true);
 
-    /** The runner and the CI step pass the same flag, and what that is worth is
-     *  what the two runs above measure. Reading it back out of their source text
-     *  would pin wiring, so it is not asserted here; the flag's absence shows up
-     *  as the exit 2 above, and `npm run static-checks` on a real fixing diff is
-     *  the run that exercises the runner's own copy. */
-
     /** The other half of the policy: the commit stays possible, and the lane
      *  then asks for the prune. Capacity a fix freed is capacity the next change
      *  could spend, so the suppressions check rejects a count higher than the
      *  file's violations and names the command that tightens it. */
-    const scratch = resolve(repoRoot, 'e2e/specs/.test-results/unused-capacity');
-    mkdirSync(scratch, { recursive: true });
-    writeFileSync(
-      join(scratch, SUPPRESSIONS_FILE),
-      `${JSON.stringify({ [file]: { [rule]: { count: count + 3 } } }, null, 2)}\n`,
-    );
-    const capacity = staticChecks([join(scratch, SUPPRESSIONS_FILE), '--only', 'suppressions']);
+    const slack = writeBaseline({ [file]: { [rule]: { count: count + 3 } } });
+    const capacity = staticChecks([slack, '--only', 'suppressions']);
     expect(capacity.status, 'unused suppression capacity passed the lane').not.toBe(0);
     expect(capacity.output).toContain('would silence a later violation');
     expect(capacity.output).toContain('npm run lint:design:prune');
-    rmSync(scratch, { force: true, recursive: true });
 
     /** The re-record has to survive the backlog it is recording. `--suppress-rule`
      *  names the design rules, but the run still reports every other rule in the
@@ -135,7 +126,7 @@ test.describe('the recorded design-rule backlog', () => {
      *  re-record exits non-zero on a perfectly good write. What matters is that
      *  the write happened, which is why the documented chain does not gate the
      *  prune on that status. */
-    const recorded = join(mkdtempSync(join(tmpdir(), 'lc-record-')), SUPPRESSIONS_FILE);
+    const recorded = writeBaseline({});
     const debt = Object.keys(baseline).find((path) => path.endsWith('.tsx')) ?? file;
     const write = run(ESLINT, [
       '--no-warn-ignored',
@@ -159,6 +150,7 @@ test.describe('the recorded design-rule backlog', () => {
   });
 
   test('re-recording a moved file drops its old path @scenario:re-recording-a-moved-file-drops-its-old-path', () => {
+    inOneProject();
     test.setTimeout(180_000);
 
     /** Suppressions are keyed by path, so a move records the new path and leaves
@@ -178,7 +170,7 @@ test.describe('the recorded design-rule backlog', () => {
     const phantom = `${directory}/ThisFileMovedAway.tsx`;
     expect(existsSync(resolve(repoRoot, phantom))).toBe(false);
 
-    const scratch = writeBaseline(SUPPRESSIONS_FILE, {
+    const scratch = writeBaseline({
       [linted]: baseline[linted],
       [phantom]: { 'shadcn/no-restyle': { count: 4 } },
       [outside]: baseline[outside],
@@ -201,54 +193,35 @@ test.describe('the recorded design-rule backlog', () => {
     expect(after[linted]).toEqual(baseline[linted]);
   });
 
-  test('a suppressions-only change is selected and validated by static checks @scenario:a-suppressions-only-change-is-selected-and-validated-by-static-checks', () => {
+  test('a count edit riding along with a recorded source is still read @scenario:a-count-edit-riding-along-with-a-recorded-source-is-rejected', () => {
+    inOneProject();
     test.setTimeout(180_000);
 
-    /** The two ways a diff reaches this check are asserted by running them, not
-     *  by reading the lane's YAML: the baseline itself, and the config that
-     *  decides what every recorded count stands for. A config-only target has
-     *  no recorded file of its own, so the check has to reach for the whole
-     *  record, and an inflated count on an untouched caller is what proves it
-     *  did. Which CI paths select it is the lane's own business — and the lane
-     *  running green on this pull request is the evidence for it. */
-
-    const caller = Object.keys(readBaseline()).find((path) => path.startsWith('client/src/'));
+    /** A count edit is measured against `HEAD` when no range is given, which is
+     *  the pre-commit case. Without that fallback a diff that also touches one
+     *  recorded source would narrow the check to that source and let every other
+     *  count edit through to CI, so the shape under test is the baseline passed
+     *  alongside a recorded source. */
+    const baseline = readBaseline();
+    const caller = Object.keys(baseline).find((path) => path.startsWith('client/src/'));
     if (!caller) {
       throw new Error('the baseline records no client/src caller; pick another fixture');
     }
-    const callerRule = Object.keys(readBaseline()[caller])[0];
-    const slack = writeBaseline(SUPPRESSIONS_FILE, {
-      [caller]: { [callerRule]: { count: readBaseline()[caller][callerRule].count + 4 } },
+    const callerRule = Object.keys(baseline[caller])[0];
+    const slack = writeBaseline({
+      [caller]: { [callerRule]: { count: baseline[caller][callerRule].count + 4 } },
     });
-    const configOnly = staticChecks([slack, 'eslint.config.mjs', '--only', 'suppressions']);
-    expect(configOnly.status, 'a config-only change validated no recorded file').not.toBe(0);
-    expect(configOnly.output).toContain(caller);
-    expect(configOnly.output).toContain('would silence a later violation');
-
-    /** The plugin arrives through the manifests, so a dependency-only diff is
-     *  the third way the rules' own behaviour changes without a source file
-     *  moving — an upgrade that classifies one more class leaves every recorded
-     *  count standing for something else. */
-    /** And the edit is measured against `HEAD` when no range is given, which is
-     *  the pre-commit case: a diff that also touches one recorded source would
-     *  otherwise narrow the check to that source and let every other count edit
-     *  through. Passing the recorded source alongside the baseline is that
-     *  shape. */
-    const recordedSource = Object.keys(readBaseline()).find(
+    const recordedSource = Object.keys(baseline).find(
       (path) => path !== caller && path.startsWith('client/src/'),
     );
     if (!recordedSource) {
       throw new Error('the baseline records only one client/src file; pick another fixture');
     }
+
     const alongside = staticChecks([slack, recordedSource, '--only', 'suppressions']);
     expect(alongside.status, 'a count edit rode along with a recorded source').not.toBe(0);
     expect(alongside.output).toContain(caller);
-
-    const dependencyOnly = staticChecks([slack, 'package-lock.json', '--only', 'suppressions']);
-    expect(dependencyOnly.status, 'a dependency-only change validated no recorded file').not.toBe(
-      0,
-    );
-    expect(dependencyOnly.output).toContain(caller);
+    expect(alongside.output).toContain('would silence a later violation');
 
     /** And the commit reaches it too: a diff that lowers a count or narrows a
      *  rule touches no source file, so the hook's source group never runs — the
@@ -261,30 +234,102 @@ test.describe('the recorded design-rule backlog', () => {
     );
     expect(baselineGroup, 'no hook group matches the baseline').toBeDefined();
     expect(baselineGroup?.[1].join(' ')).toContain('--only suppressions');
+  });
+
+  test('changing what the design rules read revalidates every recorded count @scenario:changing-what-the-design-rules-read-revalidates-every-recorded-count', () => {
+    inOneProject();
+    test.setTimeout(240_000);
+
+    /**
+     * A count stands for what the rules report, and several things move that
+     * without touching the file the count belongs to: the flat config, the
+     * manifests the plugin is installed from, the library's own manifest and
+     * build config, a primitive's `cva` variants, an app-local component source,
+     * and this runner, which decides what a count has to match. Each has to
+     * revalidate the record for files the diff never names.
+     *
+     * Run against a miniature tree rather than the checkout: the real roots are
+     * ~2,500 files and each sweep costs minutes, while what is under test is
+     * which files the gate asks about — the real runner, the real flat config and
+     * the real plugin, over two sources. The checkout's own 437 recorded paths
+     * are swept at full scale by the committed-baseline scenario below.
+     */
+    const root = syntheticRoot();
+    /** The copied runner, so its `ROOT` is the miniature tree. */
+    const checks = (files: string[]) =>
+      run(process.execPath, [
+        join(root, 'scripts/static-checks.mts'),
+        ...files,
+        '--only',
+        'suppressions',
+      ]);
+    try {
+      const triggers = [
+        'eslint.config.mjs',
+        'package.json',
+        'package-lock.json',
+        'packages/client/package.json',
+        'packages/client/tsdown.config.mjs',
+        'scripts/static-checks.mts',
+        'packages/client/src/Primitive.tsx',
+        'client/src/components/ui/Thing.tsx',
+      ];
+      for (const trigger of triggers) {
+        const report = checks([trigger]);
+        expect(report.status, `${trigger} revalidated nothing`).not.toBe(0);
+        /** A violation in a file the diff never named and the record never
+         *  mentioned: only a sweep of the roots can see it. */
+        expect(report.output, `${trigger} missed an unrecorded caller`).toContain(
+          'client/src/Caller.tsx',
+        );
+        /** And slack recorded against a file the diff never touched. */
+        expect(report.output, `${trigger} missed an untouched over-count`).toContain(
+          'client/src/Clean.tsx',
+        );
+      }
+
+      /** The reach is conditional, which is what makes the runs above evidence:
+       *  an ordinary source change checks that file and stops there. */
+      const unrecorded = checks(['client/src/Other.tsx']);
+      expect(unrecorded.status, unrecorded.output).toBe(0);
+      const ordinary = checks(['client/src/Clean.tsx']);
+      expect(ordinary.status, 'a recorded source with slack passed').not.toBe(0);
+      expect(ordinary.output).toContain('client/src/Clean.tsx');
+      expect(ordinary.output, 'an ordinary source change swept the roots').not.toContain(
+        'client/src/Caller.tsx',
+      );
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  test('silencing a design rule with an inline comment is rejected @scenario:silencing-a-design-rule-with-an-inline-comment-is-rejected', () => {
+    inOneProject();
+    test.setTimeout(180_000);
 
     /** An inline comment is the one way to silence a design rule that leaves
      *  nothing behind to review, and a file with no entry could otherwise carry
      *  one past every other check. The check lints the diff's design sources
      *  twice — with and without `--no-inline-config` — so every spelling is
-     *  caught and text that only looks like a directive is not. */
-    const directive = join(repoRoot, 'client/src/__directive_probe__.tsx');
+     *  caught, including a description after `--`, and text that only looks like
+     *  a directive is not. */
+    const probe = 'client/src/__directive_probe__.tsx';
+    const probePath = join(repoRoot, probe);
     const silenced = [
       ['a named disable', '/* eslint-disable shadcn/no-raw-colors */'],
       ['a justified disable', '/* eslint-disable shadcn/no-raw-colors -- because */'],
       ['a blanket disable', '/* eslint-disable */'],
+      ['a described blanket disable', '/* eslint-disable -- temporary */'],
+      ['a described next-line disable', '// eslint-disable-next-line -- temporary'],
       ['rule configuration', '/* eslint shadcn/no-raw-colors: off */'],
     ];
     try {
       for (const [label, comment] of silenced) {
         writeFileSync(
-          directive,
+          probePath,
           `${comment}\nexport default () => <div className="bg-pink-500" />;\n`,
         );
-        const report = staticChecks([
-          'client/src/__directive_probe__.tsx',
-          '--only',
-          'suppressions',
-        ]);
+        const report = staticChecks([probe, '--only', 'suppressions']);
         expect(report.status, `${label} passed`).not.toBe(0);
         expect(report.output, label).toContain(
           'shadcn/no-raw-colors is silenced by an inline comment',
@@ -304,28 +349,35 @@ test.describe('the recorded design-rule backlog', () => {
           'export default () => <div className="bg-surface-primary" title="/* eslint-disable shadcn/no-raw-colors */" />;\n',
         ],
       ]) {
-        writeFileSync(directive, source);
-        const report = staticChecks([
-          'client/src/__directive_probe__.tsx',
-          '--only',
-          'suppressions',
-        ]);
+        writeFileSync(probePath, source);
+        const report = staticChecks([probe, '--only', 'suppressions']);
         expect(report.status, `${label}: ${report.output}`).toBe(0);
       }
     } finally {
-      rmSync(directive, { force: true });
+      rmSync(probePath, { force: true });
     }
+  });
 
-    /** Part two: the record is actually read. The committed baseline passes. */
+  test('a backlog that no longer says what it claims is rejected @scenario:a-backlog-that-no-longer-says-what-it-claims-is-rejected', () => {
+    inOneProject();
+    test.setTimeout(240_000);
+
+    /** The record is data the lint reads, so a diff that edits it alone reaches
+     *  no lintable file and nothing else would read it. Start from the positive
+     *  control: the committed backlog passes its own gate — every recorded path
+     *  exists, is reported on by a design-rule lint, and records the count that
+     *  file actually has. */
+    const baselineText = readFileSync(suppressionsPath, 'utf8');
     const passing = staticChecks([SUPPRESSIONS_FILE, '--only', 'suppressions']);
     expect(passing.status, passing.output).toBe(0);
 
     /** And each way it can stop saying what it claims fails, naming the key. The
      *  check validates every suppressions file the target names, so the invalid
-     *  ones live under the lane's own ignored results directory and the
-     *  repository's baseline is never written to. */
-    const scratchDir = resolve(repoRoot, 'e2e/specs/.test-results/suppression-probe');
-    const baselineText = readFileSync(suppressionsPath, 'utf8');
+     *  ones live in their own scratch directories and the repository's baseline
+     *  is never written to. A count against a path no design-rule lint reports on
+     *  is the quiet one: `client/src/style.css` is committed, inside a design
+     *  root, and outside every AST rule, so the entry silences nothing and waits
+     *  for whatever is linted at that path later. */
     const invalid: [string, unknown, string][] = [
       ['a shape ESLint cannot load', [], 'expected an object keyed by file path'],
       [
@@ -343,16 +395,18 @@ test.describe('the recorded design-rule backlog', () => {
         { 'client/src/Gone.tsx': { 'shadcn/no-restyle': { count: 1 } } },
         'recorded path no longer exists',
       ],
+      [
+        'a path no design-rule lint reports on',
+        { 'client/src/style.css': { 'shadcn/no-restyle': { count: 1 } } },
+        'recorded but no design-rule lint reports on it',
+      ],
     ];
-    mkdirSync(scratchDir, { recursive: true });
     for (const [label, content, expected] of invalid) {
-      const probe = join(scratchDir, SUPPRESSIONS_FILE);
-      writeFileSync(probe, `${JSON.stringify(content, null, 2)}\n`);
+      const probe = writeBaseline(content);
       const rejected = staticChecks([probe, '--only', 'suppressions']);
       expect(rejected.status, `${label} was accepted`).toBe(1);
       expect(rejected.output, label).toContain(expected);
     }
-    rmSync(scratchDir, { force: true, recursive: true });
 
     /** And a diff that deletes the baseline outright is the same kind of
      *  failure: the group still activates, the changed-file lint has no source
@@ -376,17 +430,59 @@ test.describe('the recorded design-rule backlog', () => {
     expect(deleted.output).toContain('is missing');
     rmSync(emptyRoot, { force: true, recursive: true });
 
-    /** A primitive's variants decide what the caller rules report, so a diff
-     *  that changes a component-library source has to revalidate the record for
-     *  files it never touches — the same reach the config-only run above
-     *  proves, from the other entry point. */
-    const primitive = 'packages/client/src/components/Textarea.tsx';
-    expect(existsSync(resolve(repoRoot, primitive))).toBe(true);
-    const fanOut = staticChecks([slack, primitive, '--only', 'suppressions']);
-    expect(fanOut.status, 'a library change skipped the recorded callers').not.toBe(0);
-    expect(fanOut.output).toContain(caller);
-
     /** Nothing in the checkout moved while that ran. */
     expect(readFileSync(suppressionsPath, 'utf8')).toBe(baselineText);
   });
 });
+
+/**
+ * A miniature repository the runner can be pointed at: its own copy of this
+ * script, the real flat config, the real manifests and a symlinked
+ * `node_modules`, over two client sources and one library source. `ROOT` is
+ * derived from the script's own location, so the copy treats this tree as the
+ * repository — which is what makes a roots sweep affordable to assert.
+ *
+ * `packages/client/dist` is written last so the runner reads the design metadata
+ * as fresh and does not rebuild the library; the rules still resolve the real
+ * primitives through the symlinked `node_modules`.
+ */
+function syntheticRoot(): string {
+  const root = mkdtempSync(join(tmpdir(), 'lc-synthetic-root-'));
+  const write = (relative: string, content: string): void => {
+    const path = join(root, relative);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, content);
+  };
+  const copy = (relative: string): void => {
+    const path = join(root, relative);
+    mkdirSync(dirname(path), { recursive: true });
+    copyFileSync(resolve(repoRoot, relative), path);
+  };
+
+  for (const file of [
+    'scripts/static-checks.mts',
+    'package.json',
+    'package-lock.json',
+    'eslint.config.mjs',
+    'packages/client/package.json',
+    'packages/client/tsdown.config.mjs',
+  ]) {
+    copy(file);
+  }
+  symlinkSync(resolve(repoRoot, 'node_modules'), join(root, 'node_modules'), 'dir');
+
+  /** One caller that violates a design rule and is recorded nowhere, one that is
+   *  clean and recorded with slack: between them, a sweep of the roots is the
+   *  only run that can report both. */
+  write('client/src/Caller.tsx', 'export default () => <div className="bg-pink-500" />;\n');
+  write('client/src/Clean.tsx', 'export default () => <div className="bg-surface-primary" />;\n');
+  write('client/src/Other.tsx', 'export default () => <div className="bg-surface-primary" />;\n');
+  write('client/src/components/ui/Thing.tsx', 'export const Thing = () => null;\n');
+  write('packages/client/src/Primitive.tsx', 'export const Primitive = () => null;\n');
+  write('packages/client/dist/index.js', 'export {};\n');
+  write(
+    SUPPRESSIONS_FILE,
+    `${JSON.stringify({ 'client/src/Clean.tsx': { 'shadcn/no-restyle': { count: 2 } } }, null, 2)}\n`,
+  );
+  return root;
+}
