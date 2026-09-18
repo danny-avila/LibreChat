@@ -991,7 +991,10 @@ async function directiveComments(files: string[]): Promise<string[]> {
       /** `/* eslint rule: severity *\/` does not suppress a violation, it turns
        *  the rule off for the file — dormant or not, that is the same hole. */
       if (!/^eslint\s/.test(body)) continue;
-      for (const [, rule] of body.matchAll(/(shadcn\/[\w-]+)\s*:/g)) {
+      /** `/* eslint "shadcn/no-raw-colors": off *\/` is the same directive as
+       *  the unquoted one — ESLint reads the key either way — so the quotes
+       *  cannot be what decides whether the gate sees it. */
+      for (const [, rule] of body.matchAll(/["']?(shadcn\/[\w-]+)["']?\s*:/g)) {
         problems.push(
           `${file}: ${rule} is configured by an inline comment; the record is where a design rule is answered, not the file that owes it`,
         );
