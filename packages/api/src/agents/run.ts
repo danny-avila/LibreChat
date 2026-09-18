@@ -1528,11 +1528,21 @@ function shapeSummarizationConfig(
       (field) => field !== 'prompt_cache_key' && inheritedKwargs?.[field] != null,
     );
     if (inheritedRawFields.length > 0) {
+      /**
+       * Compared against what the summarization configuration itself supplied,
+       * not against the merged result: `resolveAzureSummarization` spreads the
+       * agent's kwargs into the summary's, so an inherited value is already
+       * sitting there and testing the merge would preserve exactly the field
+       * this is meant to withhold.
+       */
+      const ownKwargs = isPlainObject(userParameters?.modelKwargs)
+        ? userParameters.modelKwargs
+        : undefined;
       const summaryKwargs = isPlainObject(parameters?.modelKwargs)
         ? { ...parameters.modelKwargs }
         : {};
       for (const field of inheritedRawFields) {
-        if (summaryKwargs[field] == null) {
+        if (ownKwargs?.[field] == null) {
           summaryKwargs[field] = undefined;
         }
       }
