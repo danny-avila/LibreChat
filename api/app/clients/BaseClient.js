@@ -907,6 +907,7 @@ class BaseClient {
         });
       };
       if (this.shouldDeferUserMessagePersistence()) {
+        await this.ensureConversationRow(conversationId, saveOptions);
         let state = 'pending';
         let startPersistence = startUserMessagePersistence;
         let resolvePersistence;
@@ -1302,6 +1303,156 @@ class BaseClient {
   }
 
   /**
+   * Retention and identity for conversation writes. Callers that must not yield
+   * before `saveMessage` (Stop abort) look up retention themselves only when needed.
+   * @param {object} options
+   * @param {object | null} [resolvedRetention]
+   */
+  getConversationReqCtx(options, resolvedRetention = null) {
+    const req = options?.req;
+    return {
+      userId: req?.user?.id,
+      isTemporary:
+        req?._agentEventBindingRetention?.isTemporary ??
+        resolvedRetention?.isTemporary ??
+        req?.body?.isTemporary,
+      expiredAt: req?._agentEventBindingRetention?.expiredAt ?? resolvedRetention?.expiredAt,
+      interfaceConfig: req?.config?.interfaceConfig,
+    };
+  }
+
+  async resolveConversationRetention(options, conversationId) {
+    const req = options?.req;
+    if (
+      req?.config?.interfaceConfig?.retentionMode === 'all' &&
+      req?.config?.interfaceConfig?.generalChatRetention !== undefined &&
+      !Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')
+    ) {
+      req.resolvedConversation = await db.getConvo(req.user.id, conversationId);
+    }
+    const hasResolvedConversation =
+      req != null && Object.prototype.hasOwnProperty.call(req, 'resolvedConversation');
+    return hasResolvedConversation ? req.resolvedConversation : null;
+  }
+
+  /**
+   * Upserts the conversation document for this client. `options` must be the
+   * snapshot taken before any await — disposeClient may null `this.options`
+   * while a paired message save is in flight.
+   * @param {object} options
+   * @param {string} conversationId
+   * @param {Partial<TConversation>} endpointOptions
+   * @param {object} reqCtx
+   * @param {{ appendMessageIds?: import('mongoose').Types.ObjectId[], context?: string }} [metadata]
+   */
+  async saveConversationToDatabase(
+    options,
+    conversationId,
+    endpointOptions,
+    reqCtx,
+    metadata = {},
+  ) {
+    if (!options || this.skipSaveConvo) {
+      return null;
+    }
+
+    const req = options.req;
+    const hasResolvedConversation =
+      req != null && Object.prototype.hasOwnProperty.call(req, 'resolvedConversation');
+    const fieldsToKeep = {
+      conversationId,
+      endpoint: options.endpoint,
+      endpointType: options.endpointType,
+      ...endpointOptions,
+    };
+    const conversationCreatedAt = options?.req?.conversationCreatedAt;
+    const createdAtOnInsert =
+      conversationCreatedAt != null ? new Date(conversationCreatedAt) : undefined;
+    const validCreatedAtOnInsert =
+      createdAtOnInsert && !Number.isNaN(createdAtOnInsert.getTime())
+        ? createdAtOnInsert
+        : undefined;
+
+    const skippedExistingConvoLookup = this.fetchedConvo === true;
+    let existingConvo = null;
+    if (!skippedExistingConvoLookup && hasResolvedConversation) {
+      existingConvo = req.resolvedConversation;
+    } else if (!skippedExistingConvoLookup) {
+      existingConvo = await db.getConvo(req?.user?.id, conversationId);
+    }
+    const shouldSetCreatedAtOnInsert = !skippedExistingConvoLookup && existingConvo == null;
+
+    const unsetFields = {};
+    const exceptions = new Set(['spec', 'iconURL']);
+    const hasNonEphemeralAgent =
+      isAgentsEndpoint(options.endpoint) &&
+      endpointOptions?.agent_id &&
+      !isEphemeralAgentId(endpointOptions.agent_id);
+    if (hasNonEphemeralAgent) {
+      exceptions.add('model');
+    }
+    if (existingConvo != null) {
+      this.fetchedConvo = true;
+      for (const key in existingConvo) {
+        if (!key) {
+          continue;
+        }
+        if (excludedKeys.has(key) && !exceptions.has(key)) {
+          continue;
+        }
+
+        if (endpointOptions?.[key] === undefined) {
+          unsetFields[key] = 1;
+        }
+      }
+    }
+
+    const appendMessageIds = metadata.appendMessageIds;
+    const conversation = await db.saveConvo(reqCtx, fieldsToKeep, {
+      context:
+        metadata.context ?? 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
+      unsetFields,
+      noUpsert: req?._agentEventBindingParentConversationId != null,
+      initialAgentId: hasNonEphemeralAgent ? options.agent?.id : null,
+      createdAtOnInsert: shouldSetCreatedAtOnInsert ? validCreatedAtOnInsert : undefined,
+      ...(appendMessageIds != null && appendMessageIds.length > 0 ? { appendMessageIds } : {}),
+    });
+
+    if (req != null && conversation != null) {
+      req.resolvedConversation = conversation;
+    }
+
+    return conversation;
+  }
+
+  /**
+   * Writes the conversation row before a deferred parent-message save so list
+   * refetches and `GET /api/convos/:id` keep an in-progress attachment chat.
+   * Does not persist the user message; model-bound admission still gates that.
+   * @param {string} conversationId
+   * @param {Partial<TConversation>} endpointOptions
+   */
+  async ensureConversationRow(conversationId, endpointOptions) {
+    const options = this.options;
+    if (!options || this.skipSaveConvo) {
+      return;
+    }
+
+    try {
+      const resolvedRetention = await this.resolveConversationRetention(options, conversationId);
+      const reqCtx = this.getConversationReqCtx(options, resolvedRetention);
+      await this.saveConversationToDatabase(options, conversationId, endpointOptions, reqCtx, {
+        context: 'api/app/clients/BaseClient.js - ensureConversationRow #saveConvo',
+      });
+    } catch (error) {
+      logger.error(
+        '[BaseClient] Failed to persist conversation row before deferred user-message write:',
+        error,
+      );
+    }
+  }
+
+  /**
    * Save a message to the database.
    * @param {TMessage} message
    * @param {Partial<TConversation>} endpointOptions
@@ -1333,15 +1484,7 @@ class BaseClient {
     const hasResolvedConversation =
       req != null && Object.prototype.hasOwnProperty.call(req, 'resolvedConversation');
     const resolvedRetention = hasResolvedConversation ? req.resolvedConversation : null;
-    const reqCtx = {
-      userId: req?.user?.id,
-      isTemporary:
-        req?._agentEventBindingRetention?.isTemporary ??
-        resolvedRetention?.isTemporary ??
-        req?.body?.isTemporary,
-      expiredAt: req?._agentEventBindingRetention?.expiredAt ?? resolvedRetention?.expiredAt,
-      interfaceConfig: req?.config?.interfaceConfig,
-    };
+    const reqCtx = this.getConversationReqCtx(options, resolvedRetention);
     const savedMessage = await db.saveMessage(
       reqCtx,
       {
@@ -1358,68 +1501,16 @@ class BaseClient {
       return { message: savedMessage };
     }
 
-    const fieldsToKeep = {
-      conversationId: message.conversationId,
-      endpoint: options.endpoint,
-      endpointType: options.endpointType,
-      ...endpointOptions,
-    };
-    const conversationCreatedAt = options?.req?.conversationCreatedAt;
-    const createdAtOnInsert =
-      conversationCreatedAt != null ? new Date(conversationCreatedAt) : undefined;
-    const validCreatedAtOnInsert =
-      createdAtOnInsert && !Number.isNaN(createdAtOnInsert.getTime())
-        ? createdAtOnInsert
-        : undefined;
-
-    const skippedExistingConvoLookup = this.fetchedConvo === true;
-    let existingConvo = null;
-    if (!skippedExistingConvoLookup && hasResolvedConversation) {
-      existingConvo = req.resolvedConversation;
-    } else if (!skippedExistingConvoLookup) {
-      existingConvo = await db.getConvo(req?.user?.id, message.conversationId);
-    }
-    // Keep the authenticated conversation available for response, abort, and retry saves.
-    // fetchedConvo already prevents repeating the conversation initialization work.
-    const shouldSetCreatedAtOnInsert = !skippedExistingConvoLookup && existingConvo == null;
-
-    const unsetFields = {};
-    const exceptions = new Set(['spec', 'iconURL']);
-    const hasNonEphemeralAgent =
-      isAgentsEndpoint(options.endpoint) &&
-      endpointOptions?.agent_id &&
-      !isEphemeralAgentId(endpointOptions.agent_id);
-    if (hasNonEphemeralAgent) {
-      exceptions.add('model');
-    }
-    if (existingConvo != null) {
-      this.fetchedConvo = true;
-      for (const key in existingConvo) {
-        if (!key) {
-          continue;
-        }
-        if (excludedKeys.has(key) && !exceptions.has(key)) {
-          continue;
-        }
-
-        if (endpointOptions?.[key] === undefined) {
-          unsetFields[key] = 1;
-        }
-      }
-    }
-
-    const conversation = await db.saveConvo(reqCtx, fieldsToKeep, {
-      context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
-      unsetFields,
-      noUpsert: req?._agentEventBindingParentConversationId != null,
-      initialAgentId: hasNonEphemeralAgent ? options.agent?.id : null,
-      createdAtOnInsert: shouldSetCreatedAtOnInsert ? validCreatedAtOnInsert : undefined,
-      ...(savedMessage?._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
-    });
-
-    if (req != null && conversation != null) {
-      req.resolvedConversation = conversation;
-    }
+    const conversation = await this.saveConversationToDatabase(
+      options,
+      message.conversationId,
+      endpointOptions,
+      reqCtx,
+      {
+        context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
+        ...(savedMessage?._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
+      },
+    );
 
     return { message: savedMessage, conversation };
   }

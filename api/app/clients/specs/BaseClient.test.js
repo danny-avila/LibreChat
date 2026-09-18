@@ -818,9 +818,55 @@ describe('BaseClient', () => {
       abortController.abort();
 
       expect(saveMessage).not.toHaveBeenCalled();
-      expect(saveConvo).not.toHaveBeenCalled();
+      expect(saveConvo).toHaveBeenCalledTimes(1);
+      expect(saveConvo).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.objectContaining({ conversationId: expect.any(String) }),
+        expect.objectContaining({
+          context: 'api/app/clients/BaseClient.js - ensureConversationRow #saveConvo',
+        }),
+      );
       const persistenceCall = getReqData.mock.calls.find(([data]) => data.userMessagePromise);
       await expect(persistenceCall[0].userMessagePromise).resolves.toEqual({});
+    });
+
+    test('persists the conversation row before a deferred user-message write starts', async () => {
+      saveMessage.mockClear();
+      saveConvo.mockClear();
+      TestClient.shouldDeferUserMessagePersistence = jest.fn(() => true);
+      TestClient.sendCompletion.mockImplementation(async () => {
+        expect(saveMessage).not.toHaveBeenCalled();
+        expect(saveConvo).toHaveBeenCalledTimes(1);
+        expect(saveConvo).toHaveBeenCalledWith(
+          expect.any(Object),
+          expect.objectContaining({ conversationId: expect.any(String) }),
+          expect.objectContaining({
+            context: 'api/app/clients/BaseClient.js - ensureConversationRow #saveConvo',
+          }),
+        );
+        return { completion: 'Safe response', metadata: undefined };
+      });
+
+      await TestClient.sendMessage('Safe new message');
+
+      expect(saveMessage.mock.calls.some(([, message]) => message.isCreatedByUser === true)).toBe(
+        true,
+      );
+    });
+
+    test('does not seed a conversation row when skipSaveConvo is set for a deferred write', async () => {
+      saveMessage.mockClear();
+      saveConvo.mockClear();
+      TestClient.skipSaveConvo = true;
+      TestClient.shouldDeferUserMessagePersistence = jest.fn(() => true);
+      TestClient.sendCompletion.mockImplementation(async () => {
+        expect(saveConvo).not.toHaveBeenCalled();
+        return { completion: 'Safe response', metadata: undefined };
+      });
+
+      await TestClient.sendMessage('Safe new message');
+
+      expect(saveConvo).not.toHaveBeenCalled();
     });
 
     test('starts a deferred user-message write after a safe no-model completion', async () => {
