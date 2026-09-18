@@ -2281,17 +2281,19 @@ export async function initializeAgent(
        * clock does not move it.
        */
       /**
-       * Resolved against a fixed instant, so the temporal placeholders
-       * collapse to one constant while every other substitution — the user's
-       * name, for one — resolves as the model will see it. Recording the raw
-       * template instead would give two users the same identity under
-       * `promptCacheScope: shared` despite different text.
+       * Resolved against a fixed instant in a fixed zone, so the temporal
+       * placeholders collapse to one constant while every other substitution
+       * — the user's name, for one — resolves as the model will see it.
+       * Recording the raw template would give two users one identity for
+       * different text under `promptCacheScope: shared`; resolving with the
+       * request's timezone would make the identity follow a per-request
+       * setting whose effect is excluded from the cached prefix anyway.
        */
       const instructionTemplate = replaceSpecialVars({
         text: agent.instructions,
         user: user ? (user as unknown as TUser) : null,
         now: new Date(0),
-        timezone: runtime.requestBody.timezone,
+        timezone: 'UTC',
       });
       agent.instructions = undefined;
       appendAdditionalInstructions(agent, resolvedInstructions, { stable: false });
