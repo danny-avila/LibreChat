@@ -205,7 +205,7 @@ function ToolCardImpl({
               className={cn(
                 'flex size-7 items-center justify-center rounded-lg text-text-secondary',
                 'transition duration-150 hover:bg-surface-hover hover:text-text-primary',
-                'group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0',
+                'group-focus-within:opacity-100 group-hover:opacity-100 no-touch:opacity-0',
                 'focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary',
               )}
             >
@@ -226,7 +226,7 @@ function ToolCardImpl({
                 'transition duration-150 hover:bg-surface-hover hover:text-text-primary',
                 'group-focus-within:opacity-100 group-hover:opacity-100',
                 'focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary',
-                !isFavorited && '[@media(hover:hover)]:opacity-0',
+                !isFavorited && 'no-touch:opacity-0',
                 isFavorited && 'text-series-4 hover:text-series-4',
               )}
             >

@@ -76,7 +76,7 @@ function ToolRowImpl({ item, onInfo, onRemove }: Props) {
       <div
         className={cn(
           'flex shrink-0 items-center gap-0.5',
-          'group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0',
+          'group-focus-within:opacity-100 group-hover:opacity-100 no-touch:opacity-0',
         )}
       >
         <Button
