@@ -17,7 +17,7 @@ import {
   useGetPrompts,
 } from '~/data-provider';
 import { VariableEditor } from '~/components/Variables';
-import { useLocalize } from '~/hooks';
+import { useDebounce, useLocalize } from '~/hooks';
 
 type InstructionSource = 'inline' | AgentInstructionPrompt['source'];
 
@@ -53,9 +53,10 @@ export default function Instructions() {
       ? prompts.find((prompt) => prompt._id === reference.versionId)
       : prompts.at(-1);
   const langfuseName = reference?.source === 'langfuse' ? reference.name : '';
+  const debouncedLangfuseName = useDebounce(langfuseName, 300);
   const langfuseVersion = reference?.source === 'langfuse' ? reference.version : undefined;
-  const langfuseQuery = useAgentInstructionPromptPreview(langfuseName, langfuseVersion, {
-    enabled: source === 'langfuse' && langfuseName.trim().length > 0,
+  const langfuseQuery = useAgentInstructionPromptPreview(debouncedLangfuseName, langfuseVersion, {
+    enabled: source === 'langfuse' && debouncedLangfuseName.trim().length > 0,
   });
 
   const updateReference = (next: AgentInstructionPrompt | undefined) =>

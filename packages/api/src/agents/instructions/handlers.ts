@@ -14,6 +14,26 @@ type PromptPreviewRequest = Request & {
   config?: AppConfig;
 };
 
+function requestAbortSignal(
+  req: PromptPreviewRequest,
+  res: Response,
+): { signal: AbortSignal; cleanup: () => void } {
+  const controller = new AbortController();
+  const abort = () => controller.abort(new Error('Prompt preview request closed'));
+  const cleanup = () => {
+    req.off?.('aborted', abort);
+    res.off?.('close', abort);
+    res.off?.('finish', cleanup);
+  };
+  req.once?.('aborted', abort);
+  res.once?.('close', abort);
+  res.once?.('finish', cleanup);
+  if (req.aborted === true || res.destroyed === true) {
+    abort();
+  }
+  return { signal: controller.signal, cleanup };
+}
+
 export function createAgentInstructionPromptPreviewHandler({
   resolver,
 }: {
@@ -30,6 +50,7 @@ export function createAgentInstructionPromptPreviewHandler({
       });
     }
 
+    const requestSignal = requestAbortSignal(req, res);
     try {
       const { prompt: _prompt, ...result } = await resolver.resolve(
         { source: 'langfuse', name: query.data.name, version: query.data.version },
@@ -37,6 +58,7 @@ export function createAgentInstructionPromptPreviewHandler({
           userId: req.user?.id ?? '',
           role: req.user?.role,
           appConfig: req.config,
+          signal: requestSignal.signal,
         },
       );
       return res.status(200).json(result);
@@ -53,6 +75,8 @@ export function createAgentInstructionPromptPreviewHandler({
           retryable: true,
         },
       });
+    } finally {
+      requestSignal.cleanup();
     }
   };
 }

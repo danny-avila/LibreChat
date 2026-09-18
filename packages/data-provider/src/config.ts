@@ -3674,6 +3674,10 @@ export enum ErrorTypes {
    */
   GOOGLE_ERROR = 'google_error',
   /**
+   * Agent instruction prompt resolution failed before model invocation.
+   */
+  AGENT_INSTRUCTION_PROMPT = 'agent_instruction_prompt',
+  /**
    * Google provider does not allow custom tools with built-in tools
    */
   GOOGLE_TOOL_CONFLICT = 'google_tool_conflict',

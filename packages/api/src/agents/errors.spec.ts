@@ -5,6 +5,7 @@ import {
   getLangChainErrorCode,
   getProviderErrorMessage,
   resolveLangChainError,
+  resolveAgentInstructionPromptError,
   getUserFacingProviderError,
   isFatalAgentInitializationError,
   AGENT_ATTACHMENT_LIMIT_EXCEEDED,
@@ -107,6 +108,17 @@ describe('LangChain provider error text', () => {
     it('leaves codes without localized copy to the provider message', () => {
       const error = Object.assign(new Error('failed'), { lc_error_code: 'OUTPUT_PARSING_FAILURE' });
       expect(resolveLangChainError(error)).toBeUndefined();
+    });
+  });
+
+  describe('resolveAgentInstructionPromptError', () => {
+    it('returns a typed payload without exposing the backend message', () => {
+      const error = new AgentInstructionPromptError('not_found', 'Prompt missing', 404);
+
+      expect(resolveAgentInstructionPromptError(error)).toBe(
+        JSON.stringify({ type: ErrorTypes.AGENT_INSTRUCTION_PROMPT, reason: 'not_found' }),
+      );
+      expect(resolveAgentInstructionPromptError(new Error('ordinary failure'))).toBeUndefined();
     });
   });
 

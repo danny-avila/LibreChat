@@ -7,6 +7,7 @@ import Instructions from '../Instructions';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
+  useDebounce: (value: string) => value,
 }));
 
 const mockRefetch = jest.fn();

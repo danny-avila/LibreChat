@@ -151,6 +151,7 @@ const {
   appendYouTubeVideoParts,
   resolveGoogleVideoError,
   resolveLangChainError,
+  resolveAgentInstructionPromptError,
   resolveYouTubeInjectionConfig,
   decrementPendingRequest,
   maybePrewarmCodeSandbox,
@@ -338,6 +339,10 @@ function getUserFacingRequestError(baseMessage, error, appConfig) {
   /** Carries no model or user content, so it is safe under every filter. */
   if (error?.name === 'ManualSummarizationSkippedError') {
     return JSON.stringify({ type: ErrorTypes.COMPACTION_SKIPPED, reason: error.reason });
+  }
+  const instructionPromptError = resolveAgentInstructionPromptError(error);
+  if (instructionPromptError != null) {
+    return instructionPromptError;
   }
   const protectionEnabled = hasModelBoundContentProtection(
     appConfig?.filters,

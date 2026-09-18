@@ -58,6 +58,7 @@ export interface AgentInstructionPromptResolverDeps {
     role?: string;
     promptId: string;
   }) => Promise<number>;
+  canUseLibreChatPrompts: (input: { userId: string; role?: string }) => Promise<boolean>;
   getLibreChatPromptGroup: (promptId: string) => Promise<LibreChatPromptGroup | null>;
   getLibreChatPrompts: (promptId: string) => Promise<LibreChatPrompt[]>;
   langfuse: AgentInstructionPromptProvider;
@@ -90,11 +91,20 @@ export function createAgentInstructionPromptResolver(
         return deps.langfuse.resolve(reference, context);
       }
 
-      const permissions = await deps.getLibreChatPromptPermissions({
-        userId: context.userId,
-        role: context.role,
-        promptId: reference.promptId,
-      });
+      const [canUsePrompts, permissions] = await Promise.all([
+        deps.canUseLibreChatPrompts({
+          userId: context.userId,
+          role: context.role,
+        }),
+        deps.getLibreChatPromptPermissions({
+          userId: context.userId,
+          role: context.role,
+          promptId: reference.promptId,
+        }),
+      ]);
+      if (!canUsePrompts) {
+        throw new AgentInstructionPromptError('access_denied', 'Prompt use is disabled', 403);
+      }
       if ((permissions & PermissionBits.VIEW) !== PermissionBits.VIEW) {
         throw new AgentInstructionPromptError(
           'access_denied',

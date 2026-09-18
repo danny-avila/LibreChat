@@ -7,6 +7,7 @@ import {
 
 function createResolver(overrides: Record<string, unknown> = {}) {
   return createAgentInstructionPromptResolver({
+    canUseLibreChatPrompts: jest.fn().mockResolvedValue(true),
     getLibreChatPromptPermissions: jest.fn().mockResolvedValue(PermissionBits.VIEW),
     getLibreChatPromptGroup: jest.fn().mockResolvedValue({ name: 'Support policy' }),
     getLibreChatPrompts: jest.fn().mockResolvedValue([
@@ -90,6 +91,25 @@ describe('agent instruction prompt resolver', () => {
         { userId: 'user-1' },
       ),
     ).rejects.toMatchObject({ code: 'unsupported_type', statusCode: 422 });
+  });
+
+  it('requires role-level prompt use before reading prompt content', async () => {
+    const getLibreChatPromptGroup = jest.fn();
+    const getLibreChatPrompts = jest.fn();
+    const resolver = createResolver({
+      canUseLibreChatPrompts: jest.fn().mockResolvedValue(false),
+      getLibreChatPromptGroup,
+      getLibreChatPrompts,
+    });
+
+    await expect(
+      resolver.resolve(
+        { source: 'librechat', promptId: 'group-1', name: 'Support policy' },
+        { userId: 'user-1', role: 'USER' },
+      ),
+    ).rejects.toMatchObject({ code: 'access_denied', statusCode: 403 });
+    expect(getLibreChatPromptGroup).not.toHaveBeenCalled();
+    expect(getLibreChatPrompts).not.toHaveBeenCalled();
   });
 
   it('checks current view permission before reading prompt content', async () => {

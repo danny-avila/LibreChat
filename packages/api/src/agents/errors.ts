@@ -102,6 +102,16 @@ export function resolveLangChainError(error: unknown): string | undefined {
   const type = code == null ? undefined : LANGCHAIN_ERROR_TYPES[code];
   return type == null ? undefined : JSON.stringify({ type });
 }
+/**
+ * Converts instruction-prompt failures to a typed payload so the client renders localized copy
+ * instead of exposing backend English messages.
+ */
+export function resolveAgentInstructionPromptError(error: unknown): string | undefined {
+  if (!(error instanceof AgentInstructionPromptError)) {
+    return undefined;
+  }
+  return JSON.stringify({ type: ErrorTypes.AGENT_INSTRUCTION_PROMPT, reason: error.code });
+}
 
 /**
  * Provider failure text for OpenAI-compatible responses, which carry raw strings rather than the

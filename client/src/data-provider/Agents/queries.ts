@@ -150,7 +150,7 @@ export const useAgentInstructionPromptPreview = (
   const normalizedName = name.trim();
   return useQuery<t.ResolvedAgentInstructionPrompt>(
     [QueryKeys.agentInstructionPrompt, normalizedName, version ?? 'latest'],
-    () => dataService.previewAgentInstructionPrompt(normalizedName, version),
+    ({ signal }) => dataService.previewAgentInstructionPrompt(normalizedName, version, signal),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,

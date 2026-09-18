@@ -714,8 +714,9 @@ export const updateAgent = ({
 export const previewAgentInstructionPrompt = (
   name: string,
   version?: number,
+  signal?: AbortSignal,
 ): Promise<ag.ResolvedAgentInstructionPrompt> => {
-  return request.get(endpoints.previewAgentInstructionPrompt(name, version));
+  return request.get(endpoints.previewAgentInstructionPrompt(name, version), { signal });
 };
 
 export const duplicateAgent = ({
