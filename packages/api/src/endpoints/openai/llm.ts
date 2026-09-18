@@ -1081,8 +1081,25 @@ export function getOpenAILLMConfig({
   const promptCacheRetentionDropped =
     dropParams?.includes('promptCacheRetention') === true ||
     dropParams?.includes('prompt_cache_retention') === true;
-  if (firstPartyEndpoint && promptCacheRetention != null && !promptCacheRetentionDropped) {
+  /**
+   * The endpoint value is a default, not an override. `addParams` is the most
+   * specific layer an operator has — a model group's own retention, in either
+   * spelling — and it is applied before this point, so overwriting it would
+   * bill a group at the endpoint's rate against its explicit instruction.
+   */
+  const retentionSuppliedByParams =
+    llmConfig.promptCacheRetention != null || modelKwargs.prompt_cache_retention != null;
+  if (
+    firstPartyEndpoint &&
+    promptCacheRetention != null &&
+    !promptCacheRetentionDropped &&
+    !retentionSuppliedByParams
+  ) {
     llmConfig.promptCacheRetention = promptCacheRetention;
+  }
+  if (promptCacheRetentionDropped) {
+    delete llmConfig.promptCacheRetention;
+    delete modelKwargs.prompt_cache_retention;
   }
   /**
    * Explicit cache controls require a model that accepts them, because OpenAI

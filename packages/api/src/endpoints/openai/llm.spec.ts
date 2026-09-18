@@ -2090,6 +2090,20 @@ describe('prompt caching', () => {
     expect(kwargs).not.toHaveProperty('prompt_cache_key');
   });
 
+  it('lets a model group override the endpoint retention', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6' },
+      promptCacheRetention: '24h',
+      addParams: { promptCacheRetention: 'in-memory' },
+    });
+
+    /** The endpoint value is a default; the group's own is the instruction. */
+    expect(result.llmConfig.promptCacheRetention).toBe('in-memory');
+  });
+
   it('withholds raw explicit controls from a model that rejects them', () => {
     const result = getOpenAILLMConfig({
       apiKey: 'test-api-key',
