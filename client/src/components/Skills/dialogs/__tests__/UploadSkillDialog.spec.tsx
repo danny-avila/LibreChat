@@ -327,6 +327,21 @@ describe('UploadSkillDialog', () => {
     expect(mockShowToast).not.toHaveBeenCalled();
   });
 
+  it('ignores a success that resolves after the dialog was dismissed', () => {
+    const { container } = render(
+      <UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />,
+    );
+    uploadArchive(container, 'abandoned.skill');
+
+    act(() => {
+      mockOnOpenChange?.(false);
+      mockImportOptions?.onSuccess?.({ _id: 'late-skill' });
+    });
+
+    expect(mockShowToast).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
   it('falls back to the server message for import errors without failed files', () => {
     render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
 

@@ -96,6 +96,9 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
 
   const importMutation = useImportSkillMutation({
     onSuccess: (skill) => {
+      if (requestSessionRef.current !== dialogSessionRef.current) {
+        return;
+      }
       setFailure(null);
       showToast({ status: 'success', message: localize('com_ui_skill_created') });
       setIsOpen(false);
