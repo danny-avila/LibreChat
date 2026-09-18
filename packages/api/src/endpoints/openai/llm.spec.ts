@@ -2161,6 +2161,28 @@ describe('prompt caching', () => {
     expect(kwargs).toHaveProperty('prompt_cache_retention', '24h');
   });
 
+  it('ignores cache controls an agent author nested in modelKwargs in either spelling', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: {
+        model: 'gpt-5.6',
+        modelKwargs: {
+          promptCacheScopeId: 'someone-else',
+          promptCacheKey: 'author-chosen-key',
+          prompt_cache_retention: '24h',
+        },
+      } as unknown as Parameters<typeof getOpenAILLMConfig>[0]['modelOptions'],
+    });
+
+    const kwargs = (result.llmConfig.modelKwargs ?? {}) as Record<string, unknown>;
+    /** These are forwarded verbatim, so an unknown one fails the request outright. */
+    expect(kwargs).not.toHaveProperty('promptCacheScopeId');
+    expect(kwargs).not.toHaveProperty('promptCacheKey');
+    expect(kwargs).not.toHaveProperty('prompt_cache_retention');
+  });
+
   it('ignores raw wire cache controls an agent author put in modelKwargs', () => {
     const result = getOpenAILLMConfig({
       apiKey: 'test-api-key',

@@ -639,13 +639,14 @@ function stripPromptCacheControls(options: Record<string, unknown>): void {
    * `prompt_cache_key` there reaches the provider without passing any of the
    * policy above — the same hole as the camelCase fields, one layer down.
    */
-  for (const record of [options, options.modelKwargs]) {
-    if (record == null || typeof record !== 'object') {
-      continue;
+  const nested = options.modelKwargs;
+  if (nested != null && typeof nested === 'object') {
+    for (const field of [...PROMPT_CACHE_WIRE_FIELDS, ...PROMPT_CACHE_ADMIN_FIELDS]) {
+      delete (nested as Record<string, unknown>)[field];
     }
-    for (const field of PROMPT_CACHE_WIRE_FIELDS) {
-      delete (record as Record<string, unknown>)[field];
-    }
+  }
+  for (const field of PROMPT_CACHE_WIRE_FIELDS) {
+    delete options[field];
   }
   const fallbacks = options.fallbacks;
   if (!Array.isArray(fallbacks)) {
