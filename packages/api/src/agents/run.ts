@@ -2652,8 +2652,18 @@ export async function createRun({
      * prevent. Travels as a marker and is deleted before the request is sent.
      */
     const cacheOptions = llmConfig as Partial<t.OAIClientOptions>;
-    if (cacheOptions.promptCacheKeyEnabled === true && typeof user?.id === 'string') {
-      cacheOptions.promptCacheScopeId = user.id;
+    /**
+     * `_id` as well as `id`: a caller that took its user from a lean query or
+     * a token payload has only the document id, and dropping the partition
+     * there would merge every user of an agent onto one entry — the failure
+     * this scope exists to prevent, arrived at from the other direction.
+     */
+    const scopeUserId =
+      typeof user?.id === 'string' && user.id.length > 0
+        ? user.id
+        : ((user as { _id?: unknown } | undefined)?._id?.toString() ?? undefined);
+    if (cacheOptions.promptCacheKeyEnabled === true && isNonEmptyString(scopeUserId)) {
+      cacheOptions.promptCacheScopeId = scopeUserId;
     }
     /**
      * The stable half of the dynamic tail. `additional_instructions` reaches

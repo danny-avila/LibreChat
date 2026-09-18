@@ -128,6 +128,8 @@ function makeAgent(overrides: Partial<TestAgent> & Record<string, unknown> = {})
 async function captureRun(options: {
   agent: TestAgent;
   user: string;
+  /** A caller whose user came from a lean query carries only the document id. */
+  leanUser?: boolean;
   conversationId?: string;
   messages?: HumanMessage[];
 }): Promise<CapturedAgent[]> {
@@ -139,7 +141,9 @@ async function captureRun(options: {
     conversationId: options.conversationId,
     messages: options.messages,
     requestBody: options.conversationId ? { conversationId: options.conversationId } : undefined,
-    user: { id: options.user } as IUser,
+    user: (options.leanUser === true
+      ? { _id: options.user }
+      : { id: options.user }) as unknown as IUser,
     streaming: true,
     streamUsage: true,
   });
@@ -203,6 +207,18 @@ describe('run-level prompt cache identity', () => {
       }
       expect(cacheKey(agent)).toEqual(expect.stringMatching(/^librechat:/));
     }
+  });
+
+  it('separates two users whose caller only carries the document id', async () => {
+    const agent = makeAgent();
+    const [forA] = await captureRun({ agent, user: 'user-a', leanUser: true });
+    const [forB] = await captureRun({ agent, user: 'user-b', leanUser: true });
+
+    expect(cacheKey(forA)).toEqual(expect.stringMatching(/^librechat:/));
+    expect(cacheKey(forA)).not.toBe(cacheKey(forB));
+    /** And it is the same partition the virtual `id` would have produced. */
+    const [viaVirtual] = await captureRun({ agent, user: 'user-a' });
+    expect(cacheKey(forA)).toBe(cacheKey(viaVirtual));
   });
 
   it('keeps a delegated child’s cache partition separate for different authenticated users', async () => {
