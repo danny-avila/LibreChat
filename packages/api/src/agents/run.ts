@@ -1924,7 +1924,12 @@ function handoffEdgeIdentity(edge: GraphEdge): unknown {
      * whole of the destination's contribution — renaming the destination agent
      * changes nothing in this tool.
      */
-    to: edge.to,
+    /**
+     * One `lc_transfer_to_<destination>` tool per target, so the set is what
+     * the model sees: a single target and a one-element list advertise the same
+     * tool, and two orders of the same targets advertise the same tools.
+     */
+    to: (Array.isArray(edge.to) ? [...edge.to] : [edge.to]).sort(),
     ...(typeof edge.description === 'string' ? { description: edge.description } : {}),
     /** Absent means `handoff`, so both spellings must hash alike. */
     edgeType: edge.edgeType ?? 'handoff',

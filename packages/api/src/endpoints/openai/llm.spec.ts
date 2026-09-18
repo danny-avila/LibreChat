@@ -2059,6 +2059,21 @@ describe('prompt caching', () => {
     expect(result.llmConfig).not.toHaveProperty('promptCacheScopeId');
   });
 
+  it('leaves a raw administrator-supplied cache key for createRun to honor', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6' },
+      addParams: { prompt_cache_key: 'tenant-fixed-key' },
+    });
+
+    const kwargs = (result.llmConfig.modelKwargs ?? {}) as Record<string, unknown>;
+    expect(kwargs).toHaveProperty('prompt_cache_key', 'tenant-fixed-key');
+    /** Withholding the marker is what stops createRun synthesizing over it. */
+    expect(result.llmConfig).not.toHaveProperty('promptCacheKeyEnabled');
+  });
+
   it('sends no key at all when an endpoint opts out over a raw pinned one', () => {
     const result = getOpenAILLMConfig({
       apiKey: 'test-api-key',
