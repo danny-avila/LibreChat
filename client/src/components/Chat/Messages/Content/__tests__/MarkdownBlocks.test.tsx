@@ -419,6 +419,26 @@ describe('MarkdownBlocks DOM equivalence', () => {
         '   ```',
       ].join('\n'),
     ],
+    /* After indented code, a list starting past 1 or opening with an empty item is
+     * refused, so these parse as paragraphs in the whole message. */
+    [
+      'list starting at two after indented code',
+      [
+        'Run:',
+        '',
+        '    npm install',
+        '',
+        '2. Then run:',
+        '    ```bash',
+        '    npm start',
+        '    ```',
+        '',
+        '```py',
+        'print(1)',
+        '```',
+      ].join('\n'),
+    ],
+    ['list with an empty first item after indented code', '    code\n\n-\n  foo'],
     [
       'list indented by two spaces',
       [

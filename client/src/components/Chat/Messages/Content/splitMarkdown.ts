@@ -114,6 +114,14 @@ const lineStartOf = (content: string, offset: number): number => {
 };
 
 /**
+ * Whether a top-level code node is indented rather than fenced. After indented
+ * code, micromark refuses a list that starts at a number other than 1 or opens
+ * with an empty item, so the block that follows parses differently on its own.
+ */
+const isIndentedCode = (node: MdastNode, raw: string): boolean =>
+  node.type === 'code' && !/^[ \t]*(```|~~~)/.test(raw);
+
+/**
  * Split a markdown string into its top-level blocks, returning the exact source
  * slice for each block plus the index counts it consumes. Completed blocks
  * produce byte-identical slices (and stable counts) across streamed updates,
@@ -122,7 +130,9 @@ const lineStartOf = (content: string, offset: number): number => {
  *
  * Inter-block whitespace (blank lines) is not part of any node's span and is
  * dropped; block-level elements carry their own margins, so rendering each
- * slice independently is visually equivalent to rendering the whole string.
+ * slice independently is visually equivalent to rendering the whole string. The
+ * one block that parses differently without its predecessor, the block after an
+ * indented code block, stays in that code block's slice instead.
  */
 export function splitMarkdownIntoBlocks(content: string): MarkdownBlock[] {
   if (!content) {
@@ -151,6 +161,8 @@ export function splitMarkdownIntoBlocks(content: string): MarkdownBlock[] {
   }
 
   const blocks: MarkdownBlock[] = [];
+  let blockStart = 0;
+  let joinNext = false;
 
   for (const node of children) {
     const start = node.position?.start?.offset;
@@ -160,12 +172,26 @@ export function splitMarkdownIntoBlocks(content: string): MarkdownBlock[] {
     }
     const counts = { code: 0, artifact: 0, mermaid: 0 };
     countWithin(node, counts);
+    const previous = blocks[blocks.length - 1];
+    if (joinNext && previous != null) {
+      blocks[blocks.length - 1] = {
+        raw: content.slice(blockStart, end),
+        codeBlockCount: previous.codeBlockCount + counts.code,
+        artifactCount: previous.artifactCount + counts.artifact,
+        mermaidCount: previous.mermaidCount + counts.mermaid,
+      };
+      joinNext = false;
+      continue;
+    }
+    blockStart = lineStartOf(content, start);
+    const raw = content.slice(blockStart, end);
     blocks.push({
-      raw: content.slice(lineStartOf(content, start), end),
+      raw,
       codeBlockCount: counts.code,
       artifactCount: counts.artifact,
       mermaidCount: counts.mermaid,
     });
+    joinNext = isIndentedCode(node, raw);
   }
 
   return blocks;

@@ -45,6 +45,22 @@ describe('splitMarkdownIntoBlocks', () => {
     expect(raws(content)).toEqual([content.slice(0, content.indexOf('\n\n   ```')), fence]);
   });
 
+  it('keeps the block after an indented code block in its slice, since it parses in that context', () => {
+    const lead = 'Run:';
+    const pair = [
+      '    npm install',
+      '',
+      '2. Then run:',
+      '    ```bash',
+      '    npm start',
+      '    ```',
+    ].join('\n');
+    const fence = '```py\nprint(1)\n```';
+    const blocks = splitMarkdownIntoBlocks([lead, pair, fence].join('\n\n'));
+    expect(blocks.map((block) => block.raw)).toEqual([lead, pair, fence]);
+    expect(blocks.map((block) => block.codeBlockCount)).toEqual([0, 1, 1]);
+  });
+
   it('keeps a list as one block (does not split items)', () => {
     const list = '- one\n- two\n- three';
     expect(raws(list)).toEqual([list]);
