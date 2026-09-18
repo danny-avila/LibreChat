@@ -1159,8 +1159,7 @@ async function unusedCapacity(target: string, context: CheckContext): Promise<st
       `${file}: recorded but no design-rule lint reports on it — the flat config ignores it, or it is outside ${DESIGN_ROOTS.join(' and ')} — so the entry silences nothing and would silence whatever is linted at this path later`,
     );
   }
-  const introduced = await introducedWithinAllowance(context, report);
-  problems.push(...introduced);
+  problems.push(...(await introducedWithinAllowance(target, recorded, context, report)));
   for (const file of report) {
     const relative = reportedPath(file.filePath);
     const actual = new Map<string, number>();
@@ -1196,20 +1195,25 @@ async function unusedCapacity(target: string, context: CheckContext): Promise<st
 }
 
 /**
- * The design-rule violations this diff adds to a file that already records some,
- * even when the count does not move. The record is a budget per file and rule,
- * so swapping one raw colour for another keeps the total equal and the
- * changed-file lint suppresses the new one inside the old allowance — the debt
- * changes hands and nothing says so.
+ * The design-rule violations this diff adds to a file that already records some
+ * and does not grow its record to cover them. The record is a budget per file
+ * and rule, so swapping one raw colour for another keeps the total equal and
+ * the changed-file lint suppresses the new one inside the old allowance — the
+ * debt changes hands and nothing says so.
  *
  * What the count cannot distinguish, the diagnostics can: each file's version at
  * the base is linted as itself, through ESLint's API so one process answers for
  * the whole diff, and a message the head reports that the base did not is a
- * violation this change introduced. A violation that only moved keeps its
- * message and is not reported; a file with no version at the base has no
- * allowance to hide in and is already answered by the count checks above.
+ * violation this change introduced. Introducing one is allowed when the record
+ * says so out loud — the recipe in CLAUDE.md is to record what a change owes,
+ * and a count that grows is a visible line in the diff — so what is reported is
+ * the violations beyond that growth. A violation that only moved keeps its
+ * message and is not reported; a file with no version at the base brings no
+ * allowance with it; a renamed file brings the one its violations came with.
  */
 async function introducedWithinAllowance(
+  target: string,
+  recorded: SuppressionsFile,
   context: CheckContext,
   head: LintReport[],
 ): Promise<string[]> {
@@ -1266,6 +1270,27 @@ async function introducedWithinAllowance(
       .filter((message) => message.ruleId?.startsWith('shadcn/'))
       .map((message) => `${message.ruleId}: ${message.message ?? ''}`);
 
+  /** What the record allows this change to add: how much each entry grew
+   *  between the base and here. A count that goes up is a line in the diff and
+   *  the recipe CLAUDE.md documents; a count that stands still is the swap. */
+  const growth = new Map<string, number>();
+  const recordedBefore = runCommand(GIT, ['show', `${baseRef}:${target}`]);
+  if (recordedBefore.status === 0) {
+    try {
+      const previous = JSON.parse(recordedBefore.stdout) as SuppressionsFile;
+      for (const [file, rules] of Object.entries(recorded)) {
+        for (const [rule, entry] of Object.entries(rules ?? {})) {
+          const now = typeof entry === 'object' && entry !== null ? entry.count : undefined;
+          const then = previous[file]?.[rule]?.count;
+          if (typeof now !== 'number') continue;
+          growth.set(`${file}\u0000${rule}`, now - (typeof then === 'number' ? then : 0));
+        }
+      }
+    } catch {
+      // A baseline the base cannot parse grants no growth; the shape checks say so.
+    }
+  }
+
   const problems: string[] = [];
   for (const file of subjects) {
     const relative = reportedPath(file.filePath);
@@ -1276,14 +1301,24 @@ async function introducedWithinAllowance(
         had.set(signature, (had.get(signature) ?? 0) + 1);
       }
     }
+    const allowed = new Map<string, number>();
     for (const signature of signatures([file])) {
       const remaining = had.get(signature) ?? 0;
       if (remaining > 0) {
         had.set(signature, remaining - 1);
         continue;
       }
+      /** Beyond what the base held: chargeable to this change unless the record
+       *  grew for that rule, and only as far as it grew. */
+      const rule = signature.slice(0, signature.indexOf(':'));
+      const key = `${relative}\u0000${rule}`;
+      const spent = allowed.get(key) ?? 0;
+      if (spent < (growth.get(key) ?? 0)) {
+        allowed.set(key, spent + 1);
+        continue;
+      }
       problems.push(
-        `${relative}: ${signature} is new here; a recorded count does not cover what this change adds, so fix it or say why the record has to grow`,
+        `${relative}: ${signature} is new here and the record did not grow to cover it; fix it, or record what this change owes with \`npm run lint:design:suppress\` so the count says so`,
       );
     }
   }
