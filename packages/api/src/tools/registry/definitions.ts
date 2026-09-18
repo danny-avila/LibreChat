@@ -1,6 +1,7 @@
 import { WebSearchToolDefinition, CalculatorToolDefinition } from '@librechat/agents';
 import type { ExtendedJsonSchema } from './schema';
 import { AskUserQuestionToolDefinition } from '~/agents/hitl/askUserQuestionTool';
+import { OPEN_WEATHER_TOOL_DESCRIPTION } from '~/tools/weather';
 import { geminiToolkit } from '~/tools/toolkits/gemini';
 import { oaiToolkit } from '~/tools/toolkits/oai';
 
@@ -354,8 +355,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   },
   open_weather: {
     name: 'open_weather',
-    description:
-      'Provides weather data from OpenWeather One Call API 3.0. Actions: help, current_forecast, timestamp, daily_aggregation, overview. If lat/lon not provided, specify "city" for geocoding. Units: "Celsius", "Kelvin", or "Fahrenheit" (default: Celsius). For timestamp action, use "date" in YYYY-MM-DD format.',
+    description: OPEN_WEATHER_TOOL_DESCRIPTION,
     schema: openWeatherSchema,
     toolType: 'builtin',
   },
