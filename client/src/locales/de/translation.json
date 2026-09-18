@@ -1919,7 +1919,6 @@
   "com_ui_skill_created": "Skill erstellt",
   "com_ui_skill_delete_confirm": "Möchtest du „{{0}}“ wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.",
   "com_ui_skill_delete_error": "Skill konnte nicht gelöscht werden",
-  "com_ui_skill_delete_partial": "Skill gelöscht, aber einige zugehörige Bereinigungen wurden nicht abgeschlossen",
   "com_ui_skill_deleted": "Skill gelöscht",
   "com_ui_skill_description_field_hint": "Beschreibe genau, wann dieser Skill angewendet werden soll.",
   "com_ui_skill_description_placeholder": "Abcd-Corp-Markenrichtlinien auf Präsentationen und Dokumente anwenden …",

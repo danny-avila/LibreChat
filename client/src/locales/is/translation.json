@@ -1770,7 +1770,6 @@
   "com_ui_skill_created": "Færni búin til",
   "com_ui_skill_delete_confirm": "Ertu viss um að þú viljir eyða „{{0}}“? Þessa aðgerð er ekki hægt að afturkalla.",
   "com_ui_skill_delete_error": "Gat ekki eytt færni",
-  "com_ui_skill_delete_partial": "Færni var eytt en tengd hreinsun kláraðist ekki að fullu",
   "com_ui_skill_deleted": "Færni eytt",
   "com_ui_skill_description_field_hint": "Tilgreindu nákvæmlega hvenær þessi færni á að vera virkjuð.",
   "com_ui_skill_description_placeholder": "Fylgdu vörumerkjaleiðbeiningum Acme Corp við gerð kynninga og skjala...",

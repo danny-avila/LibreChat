@@ -1768,7 +1768,6 @@
   "com_ui_skill_created": "Utworzono umiejętność",
   "com_ui_skill_delete_confirm": "Czy na pewno chcesz usunąć „{{0}}”? Tej akcji nie można cofnąć.",
   "com_ui_skill_delete_error": "Nie udało się usunąć umiejętności",
-  "com_ui_skill_delete_partial": "Umiejętność została usunięta, ale część powiązanego czyszczenia nie została ukończona",
   "com_ui_skill_deleted": "Umiejętność usunięta",
   "com_ui_skill_description_field_hint": "Określ konkretnie, kiedy ta umiejętność powinna mieć zastosowanie.",
   "com_ui_skill_description_placeholder": "Zastosuj wytyczne marki Acme Corp do prezentacji i dokumentów...",

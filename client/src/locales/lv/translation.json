@@ -1776,7 +1776,6 @@
   "com_ui_skill_created": "Prasme izveidota",
   "com_ui_skill_delete_confirm": "Vai tiešām vēlaties dzēst \"{{0}}\"? Šo darbību nevar atsaukt.",
   "com_ui_skill_delete_error": "Neizdevās dzēst prasmi",
-  "com_ui_skill_delete_partial": "Prasme tika izdzēsta, bet daļa saistītās tīrīšanas netika pabeigta",
   "com_ui_skill_deleted": "Prasme izdzēsta",
   "com_ui_skill_description_field_hint": "Konkrēti nosakiet, kad šī prasme jāpiemēro.",
   "com_ui_skill_description_placeholder": "Pielietot Acme Corp zīmola vadlīnijas prezentācijām un dokumentiem...",

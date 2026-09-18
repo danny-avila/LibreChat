@@ -1652,7 +1652,6 @@
   "com_ui_skill_created": "Įgūdis sukurtas",
   "com_ui_skill_delete_confirm": "Ar tikrai norite ištrinti „{{0}}\"? Šio veiksmo anuliuoti neįmanoma.",
   "com_ui_skill_delete_error": "Nepavyko ištrinti įgūdžio",
-  "com_ui_skill_delete_partial": "Įgūdis ištrintas, bet dalis susijusio valymo nebuvo baigta",
   "com_ui_skill_deleted": "Įgūdis ištrintas",
   "com_ui_skill_description_field_hint": "Tiksliai nurodykite, kada šis įgūdis turėtų būti taikomas.",
   "com_ui_skill_description_placeholder": "Taikyti „Acme Corp\" prekės ženklo gaires pristatymams ir dokumentams...",

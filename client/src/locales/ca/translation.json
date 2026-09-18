@@ -1521,7 +1521,6 @@
   "com_ui_skill_created": "Habilitat creada",
   "com_ui_skill_delete_confirm": "Segur que vols eliminar \"{{0}}\"? Aquesta acció no es pot desfer.",
   "com_ui_skill_delete_error": "Error en eliminar l'habilitat",
-  "com_ui_skill_delete_partial": "S'ha eliminat l'habilitat, però no s'ha completat tota la neteja relacionada",
   "com_ui_skill_deleted": "Habilitat eliminada",
   "com_ui_skill_description_field_hint": "Sigues específic sobre quan s'ha d'aplicar aquesta habilitat.",
   "com_ui_skill_description_placeholder": "Aplica les directrius de marca d'Acme Corp a presentacions i documents...",
