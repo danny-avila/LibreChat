@@ -1,4 +1,5 @@
 import { render } from '@testing-library/react';
+import { OGDialog, OGDialogContent, OGDialogTitle } from '@librechat/client';
 import SharePointPickerDialog from '../SharePointPickerDialog';
 
 /**
@@ -22,14 +23,32 @@ jest.mock('~/hooks', () => ({
 /** The overlay is the only full-bleed layer while no download is in flight. */
 const scrims = () => Array.from(document.querySelectorAll<HTMLElement>('div.inset-0'));
 
+/** What any OGDialog scrims with, read from the primitive rather than pinned. */
+const REFERENCE_TITLE = 'reference dialog';
+
+function appScrim(): string {
+  const { unmount } = render(
+    <OGDialog open={true}>
+      <OGDialogContent>
+        <OGDialogTitle>{REFERENCE_TITLE}</OGDialogTitle>
+      </OGDialogContent>
+    </OGDialog>,
+  );
+  const [scrim, ...extra] = scrims();
+  expect(extra).toEqual([]);
+  const painted = scrim.className;
+  unmount();
+  return painted;
+}
+
 describe('SharePoint picker dialog', () => {
   it('paints the app scrim once, and none of its own', () => {
+    const expected = appScrim();
     render(<SharePointPickerDialog isOpen={true} onOpenChange={jest.fn()} />);
 
     const [scrim, ...extra] = scrims();
     expect(extra).toEqual([]);
-    expect(scrim).toHaveClass('bg-surface-overlay/80');
-    expect(scrim.className).not.toContain('bg-black');
+    expect(scrim.className).toBe(expected);
   });
 
   it('paints no backdrop while closed', () => {
