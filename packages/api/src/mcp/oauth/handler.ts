@@ -1476,9 +1476,13 @@ export class MCPOAuthHandler {
     };
   }
 
-  /** Same shape as `generateFlowId`; kept distinct so token-fetch flows can diverge from OAuth flows */
+  /**
+   * Token readers using typed retryable outcomes cannot share pending work with legacy readers,
+   * which reconstruct every serialized failure as an untyped Error and initiate consent. Keep
+   * OAuth callback IDs stable, but isolate this version of the token-read protocol in its own key.
+   */
   public static generateTokenFlowId(userId: string, serverName: string, tenantId?: string): string {
-    return this.generateFlowId(userId, serverName, tenantId);
+    return `tokens-v2:${this.generateFlowId(userId, serverName, tenantId)}`;
   }
 
   /**

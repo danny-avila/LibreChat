@@ -39,6 +39,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  SCARF_ANALYTICS: 'false'
   NODE_ENV: CI
   NODE_OPTIONS: '--max-old-space-size=${{ secrets.NODE_MAX_OLD_SPACE_SIZE || 6144 }}'
 
@@ -124,7 +125,6 @@ jobs:
           name: build-api
           path: packages/api/dist
           retention-days: 2
-
 
   # Codegraph test selection — the GATE (stage 1: backend jest only).
   #
@@ -307,6 +307,12 @@ jobs:
 
       - name: Type check @librechat/api
         run: npx tsc --noEmit -p packages/api/tsconfig.json
+
+      - name: OpenAPI spec drift check
+        run: npm run -w @librechat/api openapi:check
+
+      - name: OpenAPI built documentation smoke test
+        run: npm run -w @librechat/api openapi:test
 
       - name: Type check @librechat/client
         run: npx tsc --noEmit -p packages/client/tsconfig.json

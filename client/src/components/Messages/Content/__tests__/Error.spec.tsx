@@ -388,6 +388,59 @@ describe('Error — provider and model identity', () => {
   });
 
   it.each([
+    'Unexpected token } in JSON',
+    'gateway rejected {request',
+    'invalid "quoted }" value',
+    'path \\ {',
+  ])('renders provider punctuation: %s', (explanation) => {
+    renderError(
+      'The model provider could not complete this request.\n' +
+        JSON.stringify({
+          type: ErrorTypes.UPSTREAM_MODEL_ERROR,
+          status: 400,
+          message: explanation,
+        }),
+      providerMessage,
+    );
+    expect(
+      screen.getByText(localized('com_error_upstream_model_status', '400')),
+    ).toBeInTheDocument();
+    expect(screen.getByText(explanation)).toBeInTheDocument();
+    expectReadable();
+  });
+
+  /** What a gateway or privacy proxy rejects a request with is only stated in its own message. */
+  it('reads the provider explanation an upstream failure carries', () => {
+    const explanation = 'Request rejected: this prompt cannot be masked safely';
+    const { unmount } = renderError(
+      { type: ErrorTypes.UPSTREAM_MODEL_ERROR, status: 400, message: explanation },
+      providerMessage,
+    );
+
+    expect(
+      screen.getByText(localized('com_error_upstream_model_status', '400')),
+    ).toBeInTheDocument();
+    expect(screen.getByText(explanation)).toBeInTheDocument();
+    expectReadable();
+    unmount();
+
+    const body = `Upstream rejection\n${JSON.stringify({ reason: 'masking_unavailable' })}`.padEnd(
+      400,
+      '.',
+    );
+    renderError(
+      { type: ErrorTypes.UPSTREAM_MODEL_ERROR, status: 400, message: body },
+      providerMessage,
+    );
+
+    const disclosure = screen.getByRole('button', { name: catalog.com_error_details_provider });
+    expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(disclosure);
+    expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+    expect(document.body.textContent).toContain(body);
+  });
+
+  it.each([
     ['required', 'com_error_code_workspace_required'],
     ['invalid', 'com_error_code_workspace_invalid'],
     ['worker_unavailable', 'com_error_code_workspace_worker_unavailable'],

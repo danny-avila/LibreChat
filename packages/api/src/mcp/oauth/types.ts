@@ -99,6 +99,8 @@ export interface MCPOAuthFlowMetadata extends FlowMetadata {
   serverUrl: string;
   /** Identity of the effective server definition that admitted this authorization attempt. */
   serverGeneration?: string;
+  /** Persistence wait admitted with the server configuration; preserved across the OAuth redirect. */
+  oauthPersistenceWaitTimeout?: number;
   state: string;
   codeVerifier?: string;
   clientInfo?: OAuthClientInformation;

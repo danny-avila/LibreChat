@@ -1448,6 +1448,20 @@ describe('MCPServersRegistry', () => {
       expect(result['langfuse-docs'].source).toBe('yaml');
     });
 
+    it.each([
+      ['oauthRefreshWaitTimeout', 25000],
+      ['oauthPersistenceWaitTimeout', 60000],
+      ['oauthRefreshCoordination', true],
+    ] as const)('retains an admin-only %s override', async (field, value) => {
+      await registry['cacheConfigsRepo'].add('langfuse-docs', yamlLangfuseConfig);
+      const configServers = await registry.ensureConfigServers({
+        'langfuse-docs': { ...yamlLangfuseConfig, [field]: value },
+      });
+      expect(configServers['langfuse-docs'][field]).toBe(value);
+      const result = await registry.getAllServerConfigs('user-1', configServers);
+      expect(result['langfuse-docs'][field]).toBe(value);
+    });
+
     it('preserves user-DB tier (source: "user") over config-tier overrides', async () => {
       const userDbEntry: t.ParsedServerConfig = {
         type: 'streamable-http',
