@@ -30,9 +30,7 @@ function DeleteSkill({ skillId, skillName, disabled, onDelete }: DeleteSkillProp
       const cleanupComplete = response.cleanupComplete !== false;
       showToast({
         status: cleanupComplete ? 'success' : 'error',
-        message: localize(
-          cleanupComplete ? 'com_ui_skill_deleted' : 'com_ui_skill_delete_error',
-        ),
+        message: localize(cleanupComplete ? 'com_ui_skill_deleted' : 'com_ui_skill_delete_error'),
       });
       onDelete?.();
     },

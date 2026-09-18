@@ -1,10 +1,6 @@
 import type { DeleteSkillCleanupStep, DeleteSkillResult } from '@librechat/data-schemas';
 
-const CLEANUP_STEPS: DeleteSkillCleanupStep[] = [
-  'agent_allowlists',
-  'skill_files',
-  'permissions',
-];
+const CLEANUP_STEPS: DeleteSkillCleanupStep[] = ['agent_allowlists', 'skill_files', 'permissions'];
 
 /**
  * Cleanup is monotonic across idempotent deletion attempts. Once any attempt

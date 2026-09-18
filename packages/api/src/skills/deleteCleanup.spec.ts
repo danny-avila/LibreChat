@@ -12,9 +12,7 @@ function incomplete(...failedCleanupSteps: DeleteSkillResult['failedCleanupSteps
 
 describe('mergeDeleteSkillResults', () => {
   it('keeps steps settled when alternating retries fail independently', () => {
-    expect(
-      mergeDeleteSkillResults(incomplete('permissions'), incomplete('skill_files')),
-    ).toEqual({
+    expect(mergeDeleteSkillResults(incomplete('permissions'), incomplete('skill_files'))).toEqual({
       deleted: true,
       skillAbsent: true,
       cleanupComplete: true,
@@ -24,10 +22,7 @@ describe('mergeDeleteSkillResults', () => {
 
   it('retains a step that failed in every attempt', () => {
     expect(
-      mergeDeleteSkillResults(
-        incomplete('permissions', 'skill_files'),
-        incomplete('permissions'),
-      ),
+      mergeDeleteSkillResults(incomplete('permissions', 'skill_files'), incomplete('permissions')),
     ).toEqual({
       deleted: true,
       skillAbsent: true,
