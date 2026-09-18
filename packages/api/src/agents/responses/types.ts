@@ -275,8 +275,8 @@ export type OutputItem = MessageItem | FunctionCallItem | FunctionCallOutputItem
 export interface FunctionTool {
   type: 'function';
   name: string;
-  description?: string;
-  parameters?: Record<string, unknown>;
+  description?: string | null;
+  parameters?: Record<string, unknown> | null;
   strict?: boolean;
 }
 

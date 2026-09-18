@@ -30,6 +30,14 @@ describe('validateClientTools', () => {
     expect(validateClientTools([{ type: 'librechat:web_search' }])).toBeUndefined();
   });
 
+  it('accepts the explicit nulls OpenAI clients send for an argumentless tool', () => {
+    expect(
+      validateClientTools([
+        { type: 'function', name: 'refresh', description: null, parameters: null },
+      ]),
+    ).toBeUndefined();
+  });
+
   it.each<[string, unknown, string]>([
     ['a missing name', [{ type: 'function' }], 'requires a name'],
     ['an empty name', [fnTool('')], 'requires a name'],
@@ -95,6 +103,15 @@ describe('buildClientToolDefinitions', () => {
   it('defaults a parameterless tool to an empty JSON Schema object', () => {
     const [definition] = buildClientToolDefinitions([fnTool('refresh')]);
     expect(definition.parameters).toEqual({ type: 'object', properties: {} });
+  });
+
+  it('treats null parameters and description the same as absent ones', () => {
+    const [definition] = buildClientToolDefinitions([
+      fnTool('refresh', { description: null, parameters: null }),
+    ]);
+
+    expect(definition.parameters).toEqual({ type: 'object', properties: {} });
+    expect(definition.description).toContain('only tool call of its turn');
   });
 
   it('ignores hosted tools, which the server owns', () => {

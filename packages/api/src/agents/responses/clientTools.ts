@@ -126,6 +126,7 @@ export function validateClientTools(tools: unknown): string | undefined {
     if (names.has(name)) {
       return `duplicate function tool name: ${name}`;
     }
+    /** OpenAI clients send `null` for an absent description or parameter schema. */
     if (description != null && typeof description !== 'string') {
       return `function tool description must be a string: ${name}`;
     }
