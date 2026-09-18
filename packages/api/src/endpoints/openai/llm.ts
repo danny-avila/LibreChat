@@ -1038,6 +1038,15 @@ export function getOpenAILLMConfig({
    */
   if (firstPartyEndpoint && promptCacheKeyEnabled === false) {
     delete llmConfig.promptCacheKey;
+    /**
+     * And the wire spelling: `addParams` runs after the sanitizer above, so an
+     * administrator's raw `prompt_cache_key` is sitting in the request kwargs
+     * by now, and Responses forwards them verbatim. "Send no key at all" has
+     * to mean that in both alphabets.
+     */
+    for (const field of PROMPT_CACHE_WIRE_FIELDS) {
+      delete modelKwargs[field];
+    }
   }
   const promptCacheKeyPinned = typeof llmConfig.promptCacheKey === 'string';
   const promptCacheKeyDropped = dropParams?.includes('promptCacheKey') === true;
