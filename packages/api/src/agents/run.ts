@@ -1532,34 +1532,36 @@ function shapeSummarizationConfig(
     typeof summaryWireModel === 'string'
       ? supportsExplicitPromptCache(summaryWireModel)
       : supportsExplicitPromptCache(model);
-  if (
-    provider === fallbackProvider &&
-    userParameters?.promptCacheExplicit == null &&
-    !summarySupportsExplicitCache
-  ) {
-    if (agentParameters?.promptCacheExplicit === true) {
+  if (provider === fallbackProvider && !summarySupportsExplicitCache) {
+    /**
+     * Regardless of who asked for it. This is not a preference the
+     * summarization configuration can outvote: a model that does not accept
+     * the explicit controls rejects the request outright, so a value set for
+     * such a model is a misconfiguration rather than a choice, and a failed
+     * compaction is a worse outcome than caching less.
+     */
+    if (
+      agentParameters?.promptCacheExplicit === true ||
+      userParameters?.promptCacheExplicit != null
+    ) {
       parameters = { ...parameters, promptCacheExplicit: undefined };
     }
     /**
-     * And in the wire spellings, which an administrator sets through
-     * `addParams`: the agent's request kwargs are inherited whole, so the
-     * controls reach a summary request that cannot accept them without ever
-     * passing through the field above. Only the two explicit controls — the
-     * retention beside them is independently supported and independently
-     * configured, and this gate says nothing about it. Compared against what
-     * the summarization configuration itself supplied rather than against the
-     * merged result, because `resolveAzureSummarization` spreads the agent's
-     * kwargs in and testing the merge would preserve exactly the inherited
-     * field this is meant to withhold.
+     * And in the wire spellings, which `addParams` can set on either side:
+     * the agent's request kwargs are inherited whole and the summarization
+     * config can add its own, and neither passes the field above. Only the
+     * two explicit controls — the retention beside them is independently
+     * supported and independently configured, and this gate says nothing
+     * about it.
      */
-    const inheritedExplicitFields = (
+    const unsupportedExplicitFields = (
       ['prompt_cache_options', 'prompt_cache_breakpoint'] as const
-    ).filter((field) => inheritedKwargs?.[field] != null && ownKwargs?.[field] == null);
-    if (inheritedExplicitFields.length > 0) {
+    ).filter((field) => inheritedKwargs?.[field] != null || ownKwargs?.[field] != null);
+    if (unsupportedExplicitFields.length > 0) {
       const summaryKwargs = isPlainObject(parameters?.modelKwargs)
         ? { ...parameters.modelKwargs }
         : {};
-      for (const field of inheritedExplicitFields) {
+      for (const field of unsupportedExplicitFields) {
         summaryKwargs[field] = undefined;
       }
       parameters = { ...parameters, modelKwargs: summaryKwargs };
