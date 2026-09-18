@@ -224,9 +224,14 @@ test.describe('the recorded design-rule backlog', () => {
     expect(alongside.output).toContain(caller);
     expect(alongside.output).toContain('would silence a later violation');
 
-    /** And the commit reaches it too: a diff that lowers a count or narrows a
-     *  rule touches no source file, so the hook's source group never runs — the
-     *  baseline and the config have a group of their own that runs this check. */
+    /** And the commit reaches it too, on every path the lane does. A diff that
+     *  lowers a count touches no source file, so the hook's source group never
+     *  runs; a primitive decides what the rules report in callers nobody
+     *  staged, and the lane sweeps the record for it. The hook's own group has
+     *  to select exactly what the lane's `suppressions` paths-filter selects —
+     *  asserted against the workflow rather than against a copy of it here, so
+     *  the two cannot drift apart silently, which is how the local run and CI
+     *  started disagreeing before. */
     const hook = loadHookConfig(resolve(repoRoot, '.husky/lint-staged.config.js'), [
       SUPPRESSIONS_FILE,
     ]);
@@ -235,6 +240,24 @@ test.describe('the recorded design-rule backlog', () => {
     );
     expect(baselineGroup, 'no hook group matches the baseline').toBeDefined();
     expect(baselineGroup?.[1].join(' ')).toContain('--only suppressions');
+
+    const workflow = readFileSync(resolve(repoRoot, '.github/workflows/static-checks.yml'), 'utf8');
+    const block = workflow.split(/^ {12}suppressions:$/m)[1] ?? '';
+    const lane = block
+      .split(/^ {12}\S/m)[0]
+      .split('\n')
+      .map((line) => /^ {14}- '([^']+)'$/.exec(line)?.[1])
+      .filter((pattern): pattern is string => Boolean(pattern) && !pattern.startsWith('!'));
+    expect(lane.length, 'the lane declares no suppressions filter').toBeGreaterThan(5);
+
+    /** A path the lane selects on and the hook does not is a commit that passes
+     *  locally and fails in CI; the other way round is a commit that pays for a
+     *  check the lane will not run. The hook's key is a brace list, so the two
+     *  are the same set written twice — compared here rather than trusted. */
+    const staged = (baselineGroup?.[0] ?? '').replace(/^\{|\}$/g, '').split(',');
+    expect(staged.slice().sort(), 'the hook and the lane select different paths').toEqual(
+      lane.slice().sort(),
+    );
   });
 
   test('changing what the design rules read revalidates every recorded count @scenario:changing-what-the-design-rules-read-revalidates-every-recorded-count', () => {
@@ -551,12 +574,29 @@ test.describe('the recorded design-rule backlog', () => {
     };
 
     try {
-      /** A build newer than every source and every build input: no rebuild. */
-      at('packages/client/dist/index.js', 60);
+      /** A build that holds everything the manifest promises and is newer than
+       *  every source and build input: no rebuild. */
+      const entries = bundleEntries();
+      for (const entry of entries) at(join('packages/client', entry), 60);
+      at('packages/client/dist', 60);
       rmSync(marker, { force: true });
       const fresh = checks(['eslint.config.mjs']);
       expect(fresh.status, fresh.output).not.toBe(0);
       expect(existsSync(marker), 'a current build was rebuilt anyway').toBe(false);
+
+      /** The build empties `dist` before it writes, so a build that failed
+       *  halfway leaves a recent directory over a bundle with no entry point.
+       *  A timestamp cannot tell that apart from a finished build; what the
+       *  manifest promises can. */
+      rmSync(join(root, 'packages/client', entries[0]), { force: true });
+      at('packages/client/dist', 90);
+      const partial = checks(['eslint.config.mjs']);
+      expect(existsSync(marker), 'a half-written bundle was trusted').toBe(true);
+      expect(partial.status, partial.output).not.toBe(0);
+      writeFileSync(join(root, 'packages/client', entries[0]), 'export {};\n');
+      for (const entry of entries) at(join('packages/client', entry), 100);
+      at('packages/client/dist', 100);
+      rmSync(marker, { force: true });
 
       /** The build config moves, the sources do not: the build has to be asked
        *  for, because what `dist` holds was emitted under the old one. */
@@ -567,7 +607,8 @@ test.describe('the recorded design-rule backlog', () => {
 
       /** And the library's manifest, which names the entry point the rules
        *  resolve `@librechat/client` through. */
-      at('packages/client/dist/index.js', 180);
+      for (const entry of entries) at(join('packages/client', entry), 180);
+      at('packages/client/dist', 180);
       rmSync(marker, { force: true });
       at('packages/client/package.json', 240);
       const afterManifest = checks(['packages/client/package.json']);
@@ -586,9 +627,10 @@ test.describe('the recorded design-rule backlog', () => {
  * derived from the script's own location, so the copy treats this tree as the
  * repository — which is what makes a roots sweep affordable to assert.
  *
- * `packages/client/dist` is written last so the runner reads the design metadata
- * as fresh and does not rebuild the library; the rules still resolve the real
- * primitives through the symlinked `node_modules`.
+ * The bundle is written last, holding exactly what the library's manifest
+ * promises, so the runner reads the design metadata as current and does not
+ * rebuild; the rules still resolve the real primitives through the symlinked
+ * `node_modules`.
  */
 function syntheticRoot(): string {
   const root = mkdtempSync(join(tmpdir(), 'lc-synthetic-root-'));
@@ -624,10 +666,33 @@ function syntheticRoot(): string {
   write('client/src/Other.tsx', 'export default () => <div className="bg-surface-primary" />;\n');
   write('client/src/components/ui/Thing.tsx', 'export const Thing = () => null;\n');
   write('packages/client/src/Primitive.tsx', 'export const Primitive = () => null;\n');
-  write('packages/client/dist/index.js', 'export {};\n');
+  for (const entry of bundleEntries()) write(join('packages/client', entry), 'export {};\n');
   write(
     SUPPRESSIONS_FILE,
     `${JSON.stringify({ 'client/src/Clean.tsx': { 'shadcn/no-restyle': { count: 2 } } }, null, 2)}\n`,
   );
   return root;
+}
+
+/**
+ * What `packages/client/package.json` promises inside `dist`: its entry fields
+ * and every string leaf of `exports`. A build is only finished when these are
+ * there, which is what the runner checks and what the miniature repository has
+ * to reproduce to stand in for one.
+ */
+function bundleEntries(): string[] {
+  const manifest = JSON.parse(
+    readFileSync(resolve(repoRoot, 'packages/client/package.json'), 'utf8'),
+  ) as Record<string, unknown>;
+  const declared: string[] = [];
+  const collect = (value: unknown): void => {
+    if (typeof value === 'string') {
+      const path = value.replace(/^\.\//, '');
+      if (path.startsWith('dist/')) declared.push(path);
+      return;
+    }
+    if (typeof value === 'object' && value !== null) Object.values(value).forEach(collect);
+  };
+  for (const field of ['main', 'module', 'types', 'exports']) collect(manifest[field]);
+  return [...new Set(declared)];
 }
