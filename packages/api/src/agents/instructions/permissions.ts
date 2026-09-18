@@ -1,20 +1,27 @@
 import { Permissions, PermissionTypes, SystemRoles } from 'librechat-data-provider';
+import type { CheckAccessParams, RequestRoleCache } from '../../middleware/access';
+import { getRoleForAccess } from '../../middleware/access';
 
-type PromptRole = {
-  permissions?: Partial<Record<PermissionTypes, Partial<Record<Permissions, boolean>>>>;
-};
-
-type GetRoleByName = (role: string) => Promise<PromptRole | null | undefined>;
-
-export function createPromptUseChecker(getRoleByName: GetRoleByName) {
-  return async ({ role }: { userId: string; role?: string }): Promise<boolean> => {
+export function createPromptUseChecker(getRoleByName: CheckAccessParams['getRoleByName']) {
+  return async ({
+    role,
+    roleCache,
+  }: {
+    userId: string;
+    role?: string;
+    roleCache?: RequestRoleCache;
+  }): Promise<boolean> => {
     if (role === SystemRoles.ADMIN) {
       return true;
     }
     if (!role) {
       return false;
     }
-    const roleRecord = await getRoleByName(role);
+    const roleRecord = await getRoleForAccess({
+      roleName: role,
+      roleCache,
+      getRoleByName,
+    });
     return roleRecord?.permissions?.[PermissionTypes.PROMPTS]?.[Permissions.USE] === true;
   };
 }

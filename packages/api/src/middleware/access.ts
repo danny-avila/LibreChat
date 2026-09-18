@@ -42,17 +42,17 @@ export type CheckAccessWithRequestCacheParams = Omit<
 >;
 
 type RequestPermissionCache = Map<string, Promise<boolean>>;
-type RequestRoleCache = Map<string, Promise<IRole | null>>;
+export type RequestRoleCache = Map<string, Promise<IRole | null>>;
 
 const requestPermissionCacheKey = '__librechatRequestPermissionCache';
 const requestRoleCacheKey = '__librechatRequestRoleCache';
 
-function getRequestRoleCache(req?: ServerRequest): RequestRoleCache | null {
+export function getRequestRoleCache(req?: object): RequestRoleCache | null {
   if (!req) {
     return null;
   }
 
-  const reqWithCache = req as ServerRequest & {
+  const reqWithCache = req as {
     [requestRoleCacheKey]?: RequestRoleCache;
   };
 
@@ -66,16 +66,18 @@ function getRequestRoleCache(req?: ServerRequest): RequestRoleCache | null {
   return reqWithCache[requestRoleCacheKey] ?? null;
 }
 
-async function getRoleForAccess({
+export async function getRoleForAccess({
   req,
+  roleCache,
   roleName,
   getRoleByName,
 }: {
+  roleCache?: RequestRoleCache;
   req?: ServerRequest;
   roleName: string;
   getRoleByName: CheckAccessParams['getRoleByName'];
 }): Promise<IRole | null> {
-  const cache = getRequestRoleCache(req);
+  const cache = roleCache ?? getRequestRoleCache(req);
   if (!cache) {
     return await getRoleByName(roleName);
   }

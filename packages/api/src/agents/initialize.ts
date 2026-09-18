@@ -120,6 +120,7 @@ import { createRequestAgentExecutionContext } from './runtime';
 import { resolveAgentInstructionPrompt } from './instructions';
 import { resolveTurnDeliveryRouting } from './files/delivery';
 import { filterFilesByEndpointRuntimeConfig } from '~/files';
+import { getRequestRoleCache } from '../middleware/access';
 import { hasActiveFileFieldPolicy } from '~/protection';
 import { PARTIAL_RESOLVED_CONVERSATION } from './guard';
 import { applyBackgroundToolCalls } from './background';
@@ -1083,12 +1084,14 @@ export async function initializeAgent(
     throw new Error('initializeAgent requires db methods to be passed');
   }
 
+  const requestRoleCache = getRequestRoleCache(params.req) ?? undefined;
   await resolveAgentInstructionPrompt({
     agent,
     resolver: db.instructionPromptResolver,
     context: {
       userId: user?.id ?? '',
       role: user?.role,
+      ...(requestRoleCache ? { roleCache: requestRoleCache } : {}),
       appConfig,
       signal: params.signal,
     },

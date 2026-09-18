@@ -4,6 +4,7 @@ import type {
   ResolvedAgentInstructionPrompt,
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import type { RequestRoleCache } from '../../middleware/access';
 
 export type AgentInstructionPromptResult = ResolvedAgentInstructionPrompt & {
   prompt: string;
@@ -14,6 +15,7 @@ export type AgentInstructionPromptContext = {
   role?: string;
   appConfig?: AppConfig;
   signal?: AbortSignal;
+  roleCache?: RequestRoleCache;
 };
 
 export class AgentInstructionPromptError extends Error {
@@ -58,7 +60,11 @@ export interface AgentInstructionPromptResolverDeps {
     role?: string;
     promptId: string;
   }) => Promise<number>;
-  canUseLibreChatPrompts: (input: { userId: string; role?: string }) => Promise<boolean>;
+  canUseLibreChatPrompts: (input: {
+    userId: string;
+    role?: string;
+    roleCache?: RequestRoleCache;
+  }) => Promise<boolean>;
   getLibreChatPromptGroup: (promptId: string) => Promise<LibreChatPromptGroup | null>;
   getLibreChatPrompts: (promptId: string) => Promise<LibreChatPrompt[]>;
   langfuse: AgentInstructionPromptProvider;
@@ -95,6 +101,7 @@ export function createAgentInstructionPromptResolver(
         deps.canUseLibreChatPrompts({
           userId: context.userId,
           role: context.role,
+          roleCache: context.roleCache,
         }),
         deps.getLibreChatPromptPermissions({
           userId: context.userId,
