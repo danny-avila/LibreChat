@@ -367,10 +367,62 @@ function clientOptionsIdentity(value: unknown): unknown {
  * would let those flip without retiring the key.
  *
  * A runtime instance carries a Zod schema instead, which `canonicalize`
- * refuses to walk, so it is identified by name and description — a schema
- * change there ships with the code change that causes it and is covered by
- * {@link PROMPT_CACHE_KEY_VERSION}.
+ * refuses to walk — it is self-referential for an action built from an
+ * OpenAPI document. Name and description alone would not be an identity:
+ * a user-defined action's schema is editable at runtime, so its parameters
+ * can change under an unchanged name and the prefix would move beneath a
+ * key that stayed still. The shape is walked instead, guarded against the
+ * cycles that made the schema unserializable in the first place.
  */
+const RUNTIME_SHAPE_DEPTH = 8;
+
+/**
+ * The declared shape of a Zod schema: its type, its keys, and their types,
+ * which is what a schema edit changes. Reading `_def` is reading an internal,
+ * and that is the safe direction — a Zod release that renames it changes
+ * every digest at once, which retires keys rather than colliding them.
+ */
+function runtimeSchemaShape(value: unknown, seen: Set<object>, depth = 0): unknown {
+  if (value == null || typeof value !== 'object') {
+    return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+      ? value
+      : null;
+  }
+  if (seen.has(value) || depth >= RUNTIME_SHAPE_DEPTH) {
+    return '[cycle]';
+  }
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return value.map((entry) => runtimeSchemaShape(entry, seen, depth + 1));
+    }
+    const node = value as {
+      _def?: { typeName?: unknown; values?: unknown; innerType?: unknown; type?: unknown };
+      shape?: unknown;
+    };
+    const def = node._def;
+    const shape = typeof node.shape === 'function' ? undefined : node.shape;
+    const inner = def?.innerType ?? def?.type;
+    return {
+      type: typeof def?.typeName === 'string' ? def.typeName : null,
+      ...(def?.values != null ? { values: runtimeSchemaShape(def.values, seen, depth + 1) } : {}),
+      ...(inner != null ? { inner: runtimeSchemaShape(inner, seen, depth + 1) } : {}),
+      ...(shape != null && typeof shape === 'object'
+        ? {
+            keys: Object.keys(shape)
+              .sort()
+              .map((key) => [
+                key,
+                runtimeSchemaShape((shape as Record<string, unknown>)[key], seen, depth + 1),
+              ]),
+          }
+        : {}),
+    };
+  } finally {
+    seen.delete(value);
+  }
+}
+
 function safeIdentity(value: unknown): unknown {
   if (value == null || typeof value !== 'object') {
     return typeof value === 'function' ? null : value;
@@ -378,10 +430,13 @@ function safeIdentity(value: unknown): unknown {
   try {
     return canonicalize(value);
   } catch {
-    const candidate = value as { name?: unknown; description?: unknown };
+    const candidate = value as { name?: unknown; description?: unknown; schema?: unknown };
     return {
       name: typeof candidate.name === 'string' ? candidate.name : null,
       ...(typeof candidate.description === 'string' ? { description: candidate.description } : {}),
+      ...(candidate.schema != null
+        ? { schema: runtimeSchemaShape(candidate.schema, new Set()) }
+        : {}),
     };
   }
 }
