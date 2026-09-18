@@ -79,6 +79,12 @@ import {
   stripBackgroundFromToolDefinitions,
 } from '~/agents/background';
 import {
+  buildPromptCacheKey,
+  PROMPT_CACHE_MARKER_FIELDS,
+  PROMPT_CACHE_WIRE_FIELDS,
+  supportsExplicitPromptCache,
+} from '~/endpoints/openai/promptCache';
+import {
   createSubagentWakeupHandleHook,
   agentUsesSubagentCompletionWakeups,
   usesSubagentCompletionWakeups,
@@ -88,11 +94,6 @@ import {
   isSteerPreemptSupported,
   isSteerTerminalContinuationSupported,
 } from '~/agents/steering/runtime';
-import {
-  buildPromptCacheKey,
-  PROMPT_CACHE_MARKER_FIELDS,
-  supportsExplicitPromptCache,
-} from '~/endpoints/openai/promptCache';
 import {
   resolveToolApprovalPolicy,
   healToolApprovalPolicy,
@@ -1470,7 +1471,11 @@ function shapeSummarizationConfig(
    * above already establishes that explicit user parameters win.
    */
   const agentParameters = agent?.model_parameters as
-    | { promptCacheKeyEnabled?: boolean; promptCacheExplicit?: boolean }
+    | {
+        promptCacheKeyEnabled?: boolean;
+        promptCacheExplicit?: boolean;
+        modelKwargs?: Record<string, unknown>;
+      }
     | undefined;
   if (
     provider === fallbackProvider &&
@@ -1503,11 +1508,36 @@ function shapeSummarizationConfig(
       : supportsExplicitPromptCache(model);
   if (
     provider === fallbackProvider &&
-    agentParameters?.promptCacheExplicit === true &&
     userParameters?.promptCacheExplicit == null &&
     !summarySupportsExplicitCache
   ) {
-    parameters = { ...parameters, promptCacheExplicit: undefined };
+    if (agentParameters?.promptCacheExplicit === true) {
+      parameters = { ...parameters, promptCacheExplicit: undefined };
+    }
+    /**
+     * And in the wire spelling, which an administrator sets through
+     * `addParams`: the agent's request kwargs are inherited whole, so the
+     * controls reach a summary request that cannot accept them without ever
+     * passing through the field above. Anything the summarization config set
+     * for itself is left alone.
+     */
+    const inheritedKwargs = isPlainObject(agentParameters?.modelKwargs)
+      ? agentParameters.modelKwargs
+      : undefined;
+    const inheritedRawFields = PROMPT_CACHE_WIRE_FIELDS.filter(
+      (field) => field !== 'prompt_cache_key' && inheritedKwargs?.[field] != null,
+    );
+    if (inheritedRawFields.length > 0) {
+      const summaryKwargs = isPlainObject(parameters?.modelKwargs)
+        ? { ...parameters.modelKwargs }
+        : {};
+      for (const field of inheritedRawFields) {
+        if (summaryKwargs[field] == null) {
+          summaryKwargs[field] = undefined;
+        }
+      }
+      parameters = { ...parameters, modelKwargs: summaryKwargs };
+    }
   }
 
   return {

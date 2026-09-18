@@ -1071,7 +1071,17 @@ export function getOpenAILLMConfig({
       llmConfig.promptCacheScope = promptCacheScope;
     }
   }
-  if (firstPartyEndpoint && promptCacheRetention != null) {
+  /**
+   * The wire spelling drops it too. `dropParams: ['prompt_cache_retention']`
+   * is the spelling an operator reads in OpenAI's own documentation, and
+   * without this the constructor field is set anyway and LangChain serializes
+   * it straight back to the field they excluded — with billed retention
+   * attached, which is the version of this mistake that costs money.
+   */
+  const promptCacheRetentionDropped =
+    dropParams?.includes('promptCacheRetention') === true ||
+    dropParams?.includes('prompt_cache_retention') === true;
+  if (firstPartyEndpoint && promptCacheRetention != null && !promptCacheRetentionDropped) {
     llmConfig.promptCacheRetention = promptCacheRetention;
   }
   /**
