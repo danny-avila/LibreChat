@@ -21,8 +21,11 @@ import { repoRoot, run } from './lint.helpers';
  * primitives' class strings render as.
  */
 
+type ClientManifest = { exports: Record<string, string> };
+
 const PROBE_DIR = resolve(repoRoot, 'e2e/specs/.test-results/published-consumer');
 const DIST_STYLESHEET = resolve(repoRoot, 'packages/client/dist/style.css');
+const PACKAGE_ROOT = resolve(repoRoot, 'packages/client');
 
 /** The class strings below are the published primitives' own, copied from the
  *  components so the probe cannot drift away from what ships. */
@@ -38,11 +41,16 @@ test.describe('the published package appearance', () => {
     test.setTimeout(300_000);
     mkdirSync(PROBE_DIR, { recursive: true });
 
-    /** What the consumer imports as `@librechat/client/style.css`. The mock lane
-     *  and the verify runner both build the packages first; building here as
-     *  well keeps the scenario runnable on its own. */
-    if (!existsSync(DIST_STYLESHEET)) {
-      const built = run('npm', ['run', 'build', '--prefix', resolve(repoRoot, 'packages/client')]);
+    /** What the consumer imports as `@librechat/client/style.css` and
+     *  `@librechat/client/theme.css`. Both are build artifacts, so the mock lane
+     *  and the verify runner build the packages first; building here as well
+     *  keeps the scenario runnable on its own. */
+    const manifest = JSON.parse(
+      readFileSync(resolve(PACKAGE_ROOT, 'package.json'), 'utf8'),
+    ) as ClientManifest;
+    const tokenStylesheet = resolve(PACKAGE_ROOT, manifest.exports['./theme.css']);
+    if (!existsSync(DIST_STYLESHEET) || !existsSync(tokenStylesheet)) {
+      const built = run('npm', ['run', 'build', '--prefix', PACKAGE_ROOT]);
       expect(built.status, `the component library did not build:\n${built.output}`).toBe(0);
     }
     const packageStylesheet = readFileSync(DIST_STYLESHEET, 'utf8');
@@ -57,14 +65,18 @@ test.describe('the published package appearance', () => {
     const probeMarkup = join(PROBE_DIR, 'probe.html');
     writeFileSync(probeMarkup, markup);
 
-    /** A consumer's stylesheet: Tailwind, the package's config — which is the
-     *  published preset plus the semantic colors — and nothing of this app. */
+    /** A consumer's stylesheet, in the order the theme README documents:
+     *  Tailwind, the published token stylesheet — the colours are declared there
+     *  as `@theme inline`, not in the config, so a consumer that skips this
+     *  import gets no `border-border-light` to paint with — the package's config,
+     *  and nothing of this app. */
     const entry = join(PROBE_DIR, 'consumer.css');
     writeFileSync(
       entry,
       [
         "@import 'tailwindcss';",
-        `@config '${resolve(repoRoot, 'packages/client/tailwind.config.js')}';`,
+        `@import '${tokenStylesheet}';`,
+        `@config '${resolve(PACKAGE_ROOT, 'tailwind.config.js')}';`,
         `@source '${probeMarkup}';`,
         '',
       ].join('\n'),
