@@ -1362,6 +1362,34 @@ describe('ApprovalLifecycle via GenerationJobManager.approvals (in-memory)', () 
       expect(active.sort()).toEqual(['s-paused', 's-running']);
     });
 
+    test('getActiveJobsForUser returns only safe sidebar metadata', async () => {
+      await manager.createJob('s-metadata', 'user-metadata', 'convo-metadata', {
+        initialMetadata: {
+          endpoint: 'agents',
+          model: 'gpt-4.1-mini',
+          agent_id: 'agent-1',
+          userMessage: {
+            messageId: 'msg-1',
+            text: 'must not be returned',
+          },
+        },
+      });
+
+      const result = await manager.getActiveJobsForUser('user-metadata');
+
+      expect(result.activeJobIds).toEqual(['s-metadata']);
+      expect(result.activeJobs).toEqual([
+        expect.objectContaining({
+          jobId: 's-metadata',
+          conversationId: 'convo-metadata',
+          endpoint: 'agents',
+          model: 'gpt-4.1-mini',
+          agent_id: 'agent-1',
+        }),
+      ]);
+      expect(result.activeJobs[0]).not.toHaveProperty('userMessage');
+    });
+
     test('excludes a pending-approval job whose prompt has expired', async () => {
       const streamId = 'stream-expired-active';
       await manager.createJob(streamId, 'user-exp');

@@ -8,10 +8,12 @@ import {
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
 import type {
+  ActiveJob,
   Action,
   TPreset,
   ConversationListResponse,
   ConversationListParams,
+  TConversation,
   MessagesListParams,
   MessagesListResponse,
   Assistant,
@@ -32,6 +34,77 @@ import type {
 import type t from 'librechat-data-provider';
 import type { ConversationCursorData } from '~/utils/convos';
 import { findConversationInInfinite, isNotFoundError } from '~/utils';
+import { isTemporaryConversation } from '~/utils/conversation';
+
+function canPreserveActiveConversations(params: ConversationListParams, pageParam: unknown) {
+  return (
+    pageParam == null &&
+    params.isArchived !== true &&
+    !params.search?.trim() &&
+    (params.sortBy == null || params.sortBy === 'updatedAt') &&
+    (params.sortDirection == null || params.sortDirection === 'desc')
+  );
+}
+
+function matchesConversationScope(
+  conversation: TConversation,
+  params: ConversationListParams,
+): boolean {
+  if (isTemporaryConversation(conversation) || conversation.isArchived === true) {
+    return false;
+  }
+
+  if (params.projectId === 'unassigned' && conversation.chatProjectId) {
+    return false;
+  }
+  if (
+    params.projectId &&
+    params.projectId !== 'unassigned' &&
+    conversation.chatProjectId !== params.projectId
+  ) {
+    return false;
+  }
+
+  if (params.tags?.length) {
+    if (
+      !Array.isArray(conversation.tags) ||
+      !params.tags.some((tag) => conversation.tags?.includes(tag))
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function activeJobToConversation(job: ActiveJob): TConversation | null {
+  if (!job.conversationId || !Number.isFinite(job.createdAt)) {
+    return null;
+  }
+
+  const date = new Date(job.createdAt);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  const timestamp = date.toISOString();
+  const endpoint = Object.values(EModelEndpoint).includes(job.endpoint as EModelEndpoint)
+    ? (job.endpoint as EModelEndpoint)
+    : null;
+
+  return {
+    conversationId: job.conversationId,
+    title: '',
+    messages: [],
+    endpoint,
+    model: job.model ?? null,
+    agent_id: job.agent_id,
+    iconURL: job.iconURL ?? null,
+    isTemporary: job.isTemporary,
+    isArchived: false,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  } as TConversation;
+}
 
 export const useGetPresetsQuery = (
   config?: UseQueryOptions<TPreset[]>,
@@ -86,12 +159,28 @@ export const useConversationsInfiniteQuery = (
   params: ConversationListParams,
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
 ) => {
+  const queryClient = useQueryClient();
+  const { data: activeJobsData } = useQuery<ActiveJobsResponse>(
+    [QueryKeys.activeJobs],
+    () => dataService.getActiveJobs(),
+    { enabled: false },
+  );
   const { isArchived, sortBy, sortDirection, tags, search, projectId } = params;
+  const activeJobsVersion = canPreserveActiveConversations(params, null)
+    ? [
+        ...(activeJobsData?.activeJobIds ?? []),
+        ...(activeJobsData?.activeJobs ?? []).map(
+          (job) => `${job.jobId}:${job.conversationId ?? ''}:${job.createdAt}`,
+        ),
+      ]
+        .sort()
+        .join('|')
+    : '';
 
   return useInfiniteQuery<ConversationListResponse>({
     queryKey: [
       isArchived ? QueryKeys.archivedConversations : QueryKeys.allConversations,
-      { isArchived, sortBy, sortDirection, tags, search, projectId },
+      { isArchived, sortBy, sortDirection, tags, search, projectId, activeJobsVersion },
     ],
     queryFn: async ({ pageParam }) => {
       const page = await dataService.listConversations({
@@ -106,14 +195,46 @@ export const useConversationsInfiniteQuery = (
       /* A row's own `isArchived` decides what its menu offers, so a backend that predates
          that field in the list projection would make archived rows offer Archive and submit
          a no-op. What the variant asked for is the answer for any row that omits it. */
-      return {
-        ...page,
-        conversations: page.conversations.map((conversation) =>
-          conversation.isArchived == null
-            ? { ...conversation, isArchived: isArchived === true }
-            : conversation,
-        ),
-      };
+      const conversations = page.conversations.map((conversation) =>
+        conversation.isArchived == null
+          ? { ...conversation, isArchived: isArchived === true }
+          : conversation,
+      );
+
+      /** Agent runs with model-bound files defer the first message write until the model
+       * admits the exact payload. The optimistic conversation is still available locally,
+       * but a list refetch can briefly omit it while the run is active. Keep that row in
+       * the first active page until the server can return it, without persisting anything
+       * before the content-protection check. Filtered, archived and non-default sorted
+       * lists remain entirely server-authoritative. */
+      if (canPreserveActiveConversations(params, pageParam)) {
+        const existingIds = new Set(
+          conversations.map((conversation) => conversation.conversationId),
+        );
+        const activeJobsData = queryClient.getQueryData<ActiveJobsResponse>([QueryKeys.activeJobs]);
+        const activeConversations = (activeJobsData?.activeJobIds ?? [])
+          .map((jobId) => queryClient.getQueryData<TConversation>([QueryKeys.conversation, jobId]))
+          .concat((activeJobsData?.activeJobs ?? []).map(activeJobToConversation))
+          .filter(
+            (conversation): conversation is TConversation =>
+              conversation != null &&
+              conversation.conversationId != null &&
+              !existingIds.has(conversation.conversationId) &&
+              matchesConversationScope(conversation, params),
+          );
+
+        const uniqueActiveConversations = [
+          ...new Map(
+            activeConversations.map((conversation) => [conversation.conversationId, conversation]),
+          ).values(),
+        ];
+
+        if (uniqueActiveConversations.length > 0) {
+          conversations.unshift(...uniqueActiveConversations);
+        }
+      }
+
+      return { ...page, conversations };
     },
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
     keepPreviousData: true,

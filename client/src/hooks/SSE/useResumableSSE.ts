@@ -809,6 +809,7 @@ export default function useResumableSSE(
   const addActiveJob = useCallback(
     (jobId: string) => {
       queryClient.setQueryData<ActiveJobsResponse>([QueryKeys.activeJobs], (old) => ({
+        ...old,
         activeJobIds: [...new Set([...(old?.activeJobIds ?? []), jobId])],
       }));
     },
@@ -822,7 +823,9 @@ export default function useResumableSSE(
   const removeActiveJob = useCallback(
     (jobId: string) => {
       queryClient.setQueryData<ActiveJobsResponse>([QueryKeys.activeJobs], (old) => ({
+        ...old,
         activeJobIds: (old?.activeJobIds ?? []).filter((id) => id !== jobId),
+        activeJobs: old?.activeJobs?.filter((job) => job.jobId !== jobId),
       }));
     },
     [queryClient],

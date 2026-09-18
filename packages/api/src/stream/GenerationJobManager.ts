@@ -9311,6 +9311,41 @@ class GenerationJobManagerClass {
     return this.jobStore.getActiveJobIdsByUser(userId, tenantId);
   }
 
+  /**
+   * Return active job IDs together with the non-sensitive conversation metadata
+   * needed to restore a sidebar row after a page reload. Request content and
+   * uploaded files intentionally stay out of this response.
+   */
+  async getActiveJobsForUser(
+    userId: string,
+    tenantId?: string,
+  ): Promise<{ activeJobIds: string[]; activeJobs: t.ActiveGenerationJob[] }> {
+    const activeJobIds = await this.getActiveJobIdsForUser(userId, tenantId);
+    const jobs = await Promise.all(activeJobIds.map((jobId) => this.jobStore.getJob(jobId)));
+    const activeJobs = jobs.flatMap((job, index) => {
+      const belongsToTenant =
+        job?.tenantId == null || (tenantId != null && job.tenantId === tenantId);
+      if (!job || job.userId !== userId || !belongsToTenant) {
+        return [];
+      }
+
+      return [
+        {
+          jobId: activeJobIds[index],
+          conversationId: job.conversationId,
+          createdAt: job.createdAt,
+          endpoint: job.endpoint,
+          iconURL: job.iconURL,
+          model: job.model,
+          agent_id: job.agent_id,
+          isTemporary: job.isTemporary,
+        },
+      ];
+    });
+
+    return { activeJobIds, activeJobs };
+  }
+
   /** Returns every generation whose provider can still mutate user-owned data,
    * including a terminal generation whose controller is finishing trailing writes. */
   async getCleanupBlockingJobIdsForUser(userId: string, tenantId?: string): Promise<string[]> {
