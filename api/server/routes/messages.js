@@ -1,6 +1,11 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
-const { logger, CLIENT_MESSAGE_SELECT, MEILI_SEARCH_LIMIT } = require('@librechat/data-schemas');
+const {
+  logger,
+  CLIENT_MESSAGE_SELECT,
+  MEILI_SEARCH_LIMIT,
+  buildMeiliUserTenantFilter,
+} = require('@librechat/data-schemas');
 const {
   ContentTypes,
   feedbackSchema,
@@ -154,7 +159,7 @@ router.get('/', async (req, res) => {
       const searchResults = await db.searchMessages(
         search,
         {
-          filter: `user = "${user}"`,
+          filter: buildMeiliUserTenantFilter(user, 'message search'),
           limit: Math.min(pageSize, MEILI_SEARCH_LIMIT),
         },
         true,

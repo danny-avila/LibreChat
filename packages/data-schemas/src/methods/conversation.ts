@@ -46,7 +46,9 @@ import { createChatExpirationDate, createTempChatExpirationDate } from '~/utils/
 import { isAgentFadingTier, isAgentFadingTierEntries } from '~/utils/fading';
 import { isCompactionSemanticIndexProjection } from '~/types/compaction';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { buildMeiliUserTenantFilter } from '~/utils/search';
 import { isValidObjectIdString } from '~/utils/objectId';
+import { TenantIsolationError } from '~/tenant/policy';
 import { decrementTagCounts } from './conversationTag';
 import logger from '~/config/winston';
 
@@ -72,8 +74,6 @@ const MEILI_SEARCH_LIMIT = 1000;
 /** Ceiling for a single conversation page; the sidebar's largest request is 100. */
 const MAX_CONVO_PAGE_SIZE = 100;
 const DEFAULT_CONVO_PAGE_SIZE = 25;
-const escapeMeiliFilterValue = (value: string): string =>
-  value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
 function validateAgentEventActorSuspension(
   conversationId: string,
@@ -2814,7 +2814,7 @@ export function createConversationMethods(
     if (search) {
       try {
         const searchParams: SearchParams = {
-          filter: `user = "${escapeMeiliFilterValue(user)}"`,
+          filter: buildMeiliUserTenantFilter(user, 'conversation search'),
           limit: MEILI_SEARCH_LIMIT,
           attributesToRetrieve: ['conversationId', 'originalConversationId'],
         };
@@ -2851,6 +2851,9 @@ export function createConversationMethods(
           conversationId: { $in: [...matchingIds] },
         } as FilterQuery<IConversation>);
       } catch (error) {
+        if (error instanceof TenantIsolationError) {
+          throw error;
+        }
         logger.error('[getConvosByCursor] Error during meiliSearch', error);
         throw new Error('Error during meiliSearch');
       }
