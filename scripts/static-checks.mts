@@ -781,17 +781,26 @@ async function validatePackageJson(): Promise<CheckOutcome> {
  */
 async function validateSuppressions(context: CheckContext): Promise<CheckOutcome> {
   const named = context.files.filter((file) => file.endsWith(`/${SUPPRESSIONS_FILE}`));
-  // A diff that deletes the baseline still activates this group, and the
+  // A diff that deletes a baseline still activates this group, and the
   // changed-file lint would see no source file to report through: the deletion
-  // has to fail here rather than read as "nothing to validate".
-  if (!existsSync(resolve(ROOT, SUPPRESSIONS_FILE))) {
+  // has to fail here rather than read as "nothing to validate". That holds for
+  // a baseline under a lane's own directory as much as for the repository's:
+  // what either one silences goes back to being reported, or stops being
+  // reported, and no other step reads it.
+  const missing = [SUPPRESSIONS_FILE, ...named].filter((file) => !existsSync(resolve(ROOT, file)));
+  if (missing.length > 0) {
     return {
       ok: false,
-      output: `${SUPPRESSIONS_FILE} is missing: the design rules run at error against it, so removing it exposes the whole recorded backlog.`,
+      output: missing
+        .map(
+          (file) =>
+            `${file} is missing: the design rules run at error against it, so removing it changes what they report and nothing else reads it.`,
+        )
+        .join('\n'),
       hints: ['Restore it, or re-record it with: npm run lint:design:suppress'],
     };
   }
-  const targets = [SUPPRESSIONS_FILE, ...named].filter((file) => existsSync(resolve(ROOT, file)));
+  const targets = [SUPPRESSIONS_FILE, ...named];
 
   const problems: string[] = [];
   // Read the rule names from the plugin rather than listing them here, so a rule
