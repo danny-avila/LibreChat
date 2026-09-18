@@ -673,7 +673,7 @@ test.describe('the recorded design-rule backlog', () => {
         { cwd: root },
       );
       expect(recordedAtOnce.status, 'a new file arrived with its own allowance').not.toBe(0);
-      expect(recordedAtOnce.output).toContain('is new here');
+      expect(recordedAtOnce.output).toContain('is in a file this change adds');
 
       /** A move is not an addition: the violations came with the file, so the
        *  documented re-record of a moved path stays a green commit. */
