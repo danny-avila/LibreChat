@@ -2090,6 +2090,33 @@ describe('prompt caching', () => {
     expect(kwargs).not.toHaveProperty('prompt_cache_key');
   });
 
+  it('withholds raw explicit controls from a model that rejects them', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-4o' },
+      addParams: { prompt_cache_options: { mode: 'explicit' } },
+    });
+
+    const kwargs = (result.llmConfig.modelKwargs ?? {}) as Record<string, unknown>;
+    /** The kwargs are forwarded verbatim, and gpt-4o rejects unknown parameters. */
+    expect(kwargs).not.toHaveProperty('prompt_cache_options');
+  });
+
+  it('honors a wire-spelled explicit-cache drop', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6' },
+      promptCacheExplicit: true,
+      dropParams: ['prompt_cache_options'],
+    });
+
+    expect(result.llmConfig).not.toHaveProperty('promptCacheExplicit');
+  });
+
   it('honors a wire-spelled retention drop', () => {
     const result = getOpenAILLMConfig({
       apiKey: 'test-api-key',

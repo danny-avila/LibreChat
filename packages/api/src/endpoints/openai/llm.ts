@@ -1092,7 +1092,11 @@ export function getOpenAILLMConfig({
    * deployment that is depends on `AZURE_USE_MODEL_AS_DEPLOYMENT_NAME` and the
    * base URL, neither of which is resolved yet here.
    */
-  const promptCacheExplicitDropped = dropParams?.includes('promptCacheExplicit') === true;
+  /** Either spelling disables it: the raw names are what OpenAI's own docs use. */
+  const promptCacheExplicitDropped =
+    dropParams?.includes('promptCacheExplicit') === true ||
+    dropParams?.includes('prompt_cache_options') === true ||
+    dropParams?.includes('prompt_cache_breakpoint') === true;
   const applyExplicitPromptCache = (deploymentName?: string) => {
     /**
      * Every name the request can address. `modelKwargs.model` overrides the
@@ -1122,9 +1126,16 @@ export function getOpenAILLMConfig({
      * removed. Running after the drop cascade, this also has to re-honor an
      * explicit drop rather than reinstate what the cascade removed. A gateway
      * keeps whatever it is configured with.
+     *
+     * The wire spellings go with it: `addParams` can place
+     * `prompt_cache_options` or `prompt_cache_breakpoint` straight into the
+     * request kwargs, which are forwarded verbatim, so an unsupported model
+     * would be sent the parameters this gate exists to withhold.
      */
     if (firstPartyEndpoint && (!supported || promptCacheExplicitDropped)) {
       delete llmConfig.promptCacheExplicit;
+      delete modelKwargs.prompt_cache_options;
+      delete modelKwargs.prompt_cache_breakpoint;
     }
   };
 
