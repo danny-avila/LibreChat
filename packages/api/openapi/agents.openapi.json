@@ -2029,6 +2029,11 @@
                     "minLength": 1,
                     "maxLength": 255
                   },
+                  "destinationId": {
+                    "type": "string",
+                    "minLength": 64,
+                    "maxLength": 64
+                  },
                   "version": {
                     "type": "integer",
                     "exclusiveMinimum": 0
@@ -2539,6 +2544,11 @@
                     "minLength": 1,
                     "maxLength": 255
                   },
+                  "destinationId": {
+                    "type": "string",
+                    "minLength": 64,
+                    "maxLength": 64
+                  },
                   "version": {
                     "type": "integer",
                     "exclusiveMinimum": 0
@@ -3043,6 +3053,11 @@
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 255
+                  },
+                  "destinationId": {
+                    "type": "string",
+                    "minLength": 64,
+                    "maxLength": 64
                   },
                   "version": {
                     "type": "integer",

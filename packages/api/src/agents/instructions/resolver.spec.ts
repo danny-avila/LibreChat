@@ -232,6 +232,74 @@ describe('agent instruction prompt resolver', () => {
       },
     });
   });
+  it('re-resolves the compatibility snapshot for an instructions-only partial update', async () => {
+    const existingInstructionPrompt = {
+      source: 'librechat' as const,
+      promptId: 'group-1',
+      name: 'Support policy',
+    };
+    const agent: Parameters<typeof persistAgentInstructionPromptFallback>[0]['agent'] = {
+      instructions: 'unrelated inline value',
+    };
+
+    await persistAgentInstructionPromptFallback({
+      agent,
+      existingInstructionPrompt,
+      context: {
+        userId: 'user-1',
+        appConfig: {
+          endpoints: {
+            agents: { capabilities: [AgentCapabilities.instruction_prompts] },
+          },
+        } as unknown as AppConfig,
+      },
+      resolver: createResolver(),
+    });
+
+    expect(agent).toEqual({
+      instructions: 'version two',
+      instruction_prompt: existingInstructionPrompt,
+    });
+  });
+
+  it('persists the resolved Langfuse destination binding', async () => {
+    const agent: Parameters<typeof persistAgentInstructionPromptFallback>[0]['agent'] = {
+      instructions: '',
+      instruction_prompt: { source: 'langfuse', name: 'agent-policy' },
+    };
+    const destinationId = 'a'.repeat(64);
+    const resolver = {
+      resolve: jest.fn().mockResolvedValue({
+        prompt: 'bound policy',
+        source: 'langfuse',
+        name: 'agent-policy',
+        version: 1,
+        destinationId,
+      }),
+    };
+
+    await persistAgentInstructionPromptFallback({
+      agent,
+      context: {
+        userId: 'user-1',
+        appConfig: {
+          endpoints: {
+            agents: { capabilities: [AgentCapabilities.instruction_prompts] },
+          },
+        } as unknown as AppConfig,
+      },
+      resolver,
+    });
+
+    expect(agent).toEqual({
+      instructions: 'bound policy',
+      instruction_prompt: {
+        source: 'langfuse',
+        name: 'agent-policy',
+        destinationId,
+      },
+    });
+  });
 
   it('fails clearly when a referenced version was deleted', async () => {
     const resolver = createResolver();

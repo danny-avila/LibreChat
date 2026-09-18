@@ -1563,6 +1563,35 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       const agentInDb = await Agent.findOne({ id: existingAgentId });
       expect(agentInDb.name).toBe('Updated Agent');
     });
+    test('re-resolves prompt fallback for an instructions-only partial update', async () => {
+      const instructionPrompt = {
+        source: 'librechat',
+        promptId: new mongoose.Types.ObjectId().toString(),
+        name: 'Support policy',
+      };
+      await Agent.updateOne(
+        { id: existingAgentId },
+        { instructions: 'old snapshot', instruction_prompt: instructionPrompt },
+      );
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.config = {
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.instruction_prompts] },
+        },
+      };
+      mockReq.body = { instructions: 'unrelated inline value' };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockInstructionPromptResolve).toHaveBeenCalledWith(
+        instructionPrompt,
+        expect.objectContaining({ userId: mockReq.user.id }),
+      );
+      const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+      expect(agentInDb.instructions).toBe('resolved instructions');
+      expect(agentInDb.instruction_prompt).toMatchObject(instructionPrompt);
+    });
 
     test('removes newly added programmatic options when Code Interpreter capability is disabled', async () => {
       await Agent.updateOne(

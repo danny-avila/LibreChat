@@ -59,6 +59,66 @@ describe('Langfuse agent instruction prompts', () => {
       'https://langfuse.example.com/api/public/v2/prompts/agent-policy?version=7',
     );
   });
+  it('rejects a bound prompt when its saved destination is unavailable', async () => {
+    let destinations = [destination];
+    const fetch = jest.fn().mockResolvedValue(response(200, prompt));
+    const provider = createLangfusePromptProvider({
+      resolveDestinations: async () => destinations,
+      fetch,
+    });
+
+    const saved = await provider.resolve(
+      { source: 'langfuse', name: 'agent-policy' },
+      { userId: 'author' },
+    );
+    expect(saved.destinationId).toMatch(/^[a-f0-9]{64}$/);
+
+    destinations = [{ ...destination, authorization: 'Basic other-project' }];
+    await expect(
+      provider.resolve(
+        {
+          source: 'langfuse',
+          name: 'agent-policy',
+          destinationId: saved.destinationId,
+        },
+        { userId: 'reader' },
+      ),
+    ).rejects.toMatchObject({ code: 'not_configured', statusCode: 503 });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('keeps a project binding stable across credential rotation', async () => {
+    const projectId = 'b'.repeat(64);
+    let destinations = [{ ...destination, id: projectId }];
+    const fetch = jest.fn().mockResolvedValue(response(200, prompt));
+    const provider = createLangfusePromptProvider({
+      resolveDestinations: async () => destinations,
+      fetch,
+      cacheTtlMs: 0,
+    });
+
+    const saved = await provider.resolve(
+      { source: 'langfuse', name: 'agent-policy' },
+      { userId: 'author' },
+    );
+    expect(saved.destinationId).toBe(projectId);
+
+    destinations = [{ ...destination, id: projectId, authorization: 'Basic rotated-secret' }];
+    await provider.resolve(
+      {
+        source: 'langfuse',
+        name: 'agent-policy',
+        destinationId: projectId,
+      },
+      { userId: 'reader' },
+    );
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[1][1]).toEqual(
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Basic rotated-secret' }),
+      }),
+    );
+  });
 
   it('returns a fresh cached value without another request', async () => {
     const fetch = jest.fn().mockResolvedValue(response(200, prompt));

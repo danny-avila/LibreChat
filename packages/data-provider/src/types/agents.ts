@@ -973,6 +973,8 @@ export const agentInstructionPromptSchema = z
     z.object({
       source: z.literal('langfuse'),
       name: z.string().trim().min(1).max(255),
+      /** Opaque identity of the Langfuse destination selected when the reference was saved. */
+      destinationId: z.string().length(64).optional(),
       /** Missing resolves Langfuse's automatically maintained `latest` label. */
       version: z.number().int().positive().optional(),
     }),

@@ -49,14 +49,22 @@ function isLangfuseReference(
   return reference.source === 'langfuse';
 }
 
-function cacheKey(destination: LangfuseScoreDestination, name: string, version?: number): string {
+function cacheDestinationIdentity(destination: LangfuseScoreDestination): string {
   const headers = Object.entries(destination.headers ?? {})
     .map(([key, value]) => [key.toLowerCase(), value] as const)
     .sort(([left], [right]) => left.localeCompare(right));
   const identity = createHash('sha256')
     .update(`${destination.baseUrl}\n${destination.authorization}\n${JSON.stringify(headers)}`)
     .digest('hex');
-  return `${identity}:${name}:${version ?? 'latest'}`;
+  return identity;
+}
+
+function destinationId(destination: LangfuseScoreDestination): string {
+  return destination.id ?? cacheDestinationIdentity(destination);
+}
+
+function cacheKey(destination: LangfuseScoreDestination, name: string, version?: number): string {
+  return `${cacheDestinationIdentity(destination)}:${name}:${version ?? 'latest'}`;
 }
 
 function pruneExpiredEntries(
@@ -172,11 +180,16 @@ export function createLangfusePromptProvider({
       const destinations = (await resolveDestinations(context.appConfig)).sort(
         (left, right) => destinationPreference[left.name] - destinationPreference[right.name],
       );
-      const destination = destinations[0];
+      const destination =
+        reference.destinationId == null
+          ? destinations[0]
+          : destinations.find((candidate) => destinationId(candidate) === reference.destinationId);
       if (!destination) {
         throw new AgentInstructionPromptError(
           'not_configured',
-          'No Langfuse prompt connection is configured',
+          reference.destinationId == null
+            ? 'No Langfuse prompt connection is configured'
+            : 'The saved Langfuse prompt connection is not available',
           503,
         );
       }
@@ -207,7 +220,10 @@ export function createLangfusePromptProvider({
         if (!response.ok) {
           throw statusError(response.status);
         }
-        const result = parsePrompt(await response.json());
+        const result = {
+          ...parsePrompt(await response.json()),
+          destinationId: destinationId(destination),
+        };
         const fetchedAt = now();
         cache.set(key, {
           value: result,

@@ -8,6 +8,8 @@ import type { RequestRoleCache } from '../../middleware/access';
 
 export type AgentInstructionPromptResult = ResolvedAgentInstructionPrompt & {
   prompt: string;
+  /** Opaque routing identity returned by providers that support destination binding. */
+  destinationId?: string;
 };
 
 export type AgentInstructionPromptContext = {
@@ -219,16 +221,21 @@ export async function resolveAgentInstructionPrompt({
 export async function persistAgentInstructionPromptFallback({
   agent,
   context,
+  existingInstructionPrompt,
   resolver,
 }: {
   agent: {
     instructions?: string | null;
     instruction_prompt?: AgentInstructionPrompt | null;
   };
+  existingInstructionPrompt?: AgentInstructionPrompt | null;
   context: AgentInstructionPromptContext;
   resolver?: AgentInstructionPromptProvider;
 }): Promise<void> {
-  const reference = agent.instruction_prompt;
+  let reference = agent.instruction_prompt;
+  if (reference === undefined && agent.instructions !== undefined) {
+    reference = existingInstructionPrompt;
+  }
   if (!reference) {
     return;
   }
@@ -250,6 +257,13 @@ export async function persistAgentInstructionPromptFallback({
     );
   }
 
-  const { prompt } = await resolver.resolve(reference, context);
+  const { prompt, destinationId } = await resolver.resolve(reference, context);
   agent.instructions = prompt;
+  agent.instruction_prompt =
+    reference.source === 'langfuse' && destinationId != null
+      ? {
+          ...reference,
+          destinationId,
+        }
+      : reference;
 }

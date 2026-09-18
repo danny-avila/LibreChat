@@ -92,11 +92,12 @@ const instructionPromptResolver = require('~/server/services/Agents/instructionP
 const { getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
-const persistInstructionPromptSnapshot = async (req, agent) => {
+const persistInstructionPromptSnapshot = async (req, agent, existingAgent) => {
   const roleCache = getRequestRoleCache(req) ?? undefined;
   await persistAgentInstructionPromptFallback({
     agent,
     resolver: instructionPromptResolver,
+    existingInstructionPrompt: existingAgent?.instruction_prompt,
     context: {
       userId: req.user.id,
       role: req.user.role,
@@ -1262,7 +1263,7 @@ const updateAgentHandler = async (req, res) => {
       });
     }
 
-    await persistInstructionPromptSnapshot(req, updateData);
+    await persistInstructionPromptSnapshot(req, updateData, existingAgent);
     if (await blockFilteredAgentContent(req, res, updateData)) {
       return;
     }
