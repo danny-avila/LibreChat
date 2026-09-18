@@ -148,7 +148,11 @@ describe('skill creation cache updates', () => {
     queryClient.clear();
   });
 
-  it('invalidates skill lists when a failed rollback may leave the imported skill visible', async () => {
+  it.each([
+    'skill_import_incomplete',
+    'skill_import_rollback_failed',
+    'skill_import_cleanup_incomplete',
+  ])('invalidates skill lists after %s', async (errorCode) => {
     const queryClient = new QueryClient({
       defaultOptions: {
         queries: { retry: false },
@@ -159,7 +163,7 @@ describe('skill creation cache updates', () => {
     mockImportSkill.mockRejectedValue({
       response: {
         data: {
-          error: 'skill_import_rollback_failed',
+          error: errorCode,
           skillId: 'leftover-skill',
           failedFiles: [{ path: 'queries.sql', reason: 'persistence_failed' }],
         },

@@ -400,7 +400,7 @@ export type TDeleteSkillResponse = {
   id: string;
   deleted: true;
   /** False when the Skill row is gone but a dependent cleanup step needs repair. */
-  cleanupComplete: boolean;
+  cleanupComplete?: boolean;
 };
 
 /** Response from GET `/api/skills/:id/files`. */

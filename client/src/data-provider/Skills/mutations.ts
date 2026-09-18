@@ -164,7 +164,11 @@ export const useImportSkillMutation = (
     onError: (error, variables, context) => {
       const body = (error as { response?: { data?: Partial<TSkillImportFailedResponse> } })
         ?.response?.data;
-      if (body?.error === 'skill_import_rollback_failed') {
+      if (
+        body?.error === 'skill_import_incomplete' ||
+        body?.error === 'skill_import_rollback_failed' ||
+        body?.error === 'skill_import_cleanup_incomplete'
+      ) {
         void queryClient.invalidateQueries([QueryKeys.skills]);
       }
       if (onError) onError(error, variables, context);
