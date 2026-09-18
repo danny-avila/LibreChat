@@ -5,6 +5,7 @@ import { Button, useToastContext } from '@librechat/client';
 import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
+  AgentCapabilities,
   MemoryScope,
   SystemRoles,
   ResourceType,
@@ -74,6 +75,7 @@ export function composeAgentUpdatePayload(
   data: AgentForm,
   agent_id?: string | null,
   parameterConfig?: AgentParameterConfig,
+  instructionPromptsEnabled = true,
 ) {
   const {
     name,
@@ -152,8 +154,12 @@ export function composeAgentUpdatePayload(
       name,
       artifacts,
       description,
-      instructions: instruction_prompt ? '' : instructions,
-      instruction_prompt: instruction_prompt ?? null,
+      ...(agent_id && instruction_prompt && !instructionPromptsEnabled
+        ? {}
+        : {
+            instructions: instruction_prompt ? '' : instructions,
+            instruction_prompt: instruction_prompt ?? null,
+          }),
       model,
       provider,
       model_parameters,
@@ -615,10 +621,12 @@ export default function AgentPanel() {
         payload: basePayload,
         provider,
         model,
-      } = composeAgentUpdatePayload(data, agent_id, {
-        endpointsConfig,
-        startupConfig,
-      });
+      } = composeAgentUpdatePayload(
+        data,
+        agent_id,
+        { endpointsConfig, startupConfig },
+        agentsConfig?.capabilities?.includes(AgentCapabilities.instruction_prompts) ?? false,
+      );
 
       if (agent_id) {
         if (data.avatar_action === 'upload' && isAvatarUploadOnlyDirty(dirtyFields)) {
@@ -682,6 +690,7 @@ export default function AgentPanel() {
       create,
       dirtyFields,
       endpointsConfig,
+      agentsConfig?.capabilities,
       handleAvatarUpload,
       models,
       modelsError,

@@ -85,6 +85,21 @@ describe('composeAgentUpdatePayload', () => {
     expect(payload.instruction_prompt).toEqual(form.instruction_prompt);
   });
 
+  it('omits an existing prompt reference when the rollout capability is disabled', () => {
+    const form = createForm();
+    form.instructions = '';
+    form.instruction_prompt = {
+      source: 'langfuse',
+      name: 'support-policy',
+      version: 2,
+    };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123', undefined, false);
+
+    expect(payload.instructions).toBeUndefined();
+    expect(payload.instruction_prompt).toBeUndefined();
+  });
+
   it('includes avatar: null when resetting a persistent agent', () => {
     const form = createForm();
     form.avatar_action = 'reset';
