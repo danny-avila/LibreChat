@@ -9,6 +9,7 @@ import {
 } from 'librechat-data-provider';
 import type {
   ActiveJob,
+  ActiveJobsResponse,
   Action,
   TPreset,
   ConversationListResponse,
