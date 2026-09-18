@@ -56,6 +56,7 @@ const SCRIM_THEME = {
 type ThemeMode = 'light' | 'dark' | 'high-contrast-light' | 'high-contrast-dark';
 type Pixel = [number, number, number];
 type Point = { x: number; y: number };
+type ScrimReading = { color: string; dialog: Point; scrim: Point };
 
 test.use({ viewport: { width: 1280, height: 800 } });
 
@@ -117,35 +118,35 @@ async function openDeleteAccountDialog(page: Page) {
   });
 }
 
-async function scrimColor(page: Page): Promise<string> {
+/**
+ * The scrim of the frontmost open dialog, and the two points whose contrast
+ * decides whether that dialog reads as a separate surface: inside its own
+ * padding, and out on the scrim past the dialog's shadow, which would otherwise
+ * darken the sample and flatter the result.
+ *
+ * Frontmost, not first in the document: a dialog opened from inside another one
+ * mounts after it and sits at a higher z-index, and reading the outer dialog's
+ * scrim instead would measure the wrong layer without failing.
+ */
+async function readScrim(page: Page): Promise<ScrimReading> {
   return page.evaluate((selector) => {
-    const content = document.querySelector<HTMLElement>(selector);
-    if (!content) {
+    const opened = Array.from(document.querySelectorAll<HTMLElement>(selector));
+    if (opened.length === 0) {
       throw new Error('no dialog is open');
     }
+    /** `zIndex` is `auto` on an unpositioned node, which parses to NaN. */
+    const frontmost = opened
+      .map((node) => ({ node, z: Number.parseInt(getComputedStyle(node).zIndex, 10) || 0 }))
+      .reduce((front, candidate) => (candidate.z >= front.z ? candidate : front));
+    const content = frontmost.node;
     const scrim = content.previousElementSibling;
     if (!(scrim instanceof HTMLElement)) {
-      throw new Error('the open dialog is not preceded by a scrim');
-    }
-    return getComputedStyle(scrim).backgroundColor;
-  }, OPEN_DIALOG);
-}
-
-/**
- * Where to read the two colors whose contrast decides whether the dialog reads
- * as a separate surface: inside its own padding, and out on the scrim past the
- * dialog's shadow, which would otherwise darken the sample and flatter the
- * result.
- */
-async function samplePoints(page: Page): Promise<{ dialog: Point; scrim: Point }> {
-  return page.evaluate((selector) => {
-    const content = document.querySelector<HTMLElement>(selector);
-    if (!content) {
-      throw new Error('no dialog is open');
+      throw new Error('the frontmost open dialog is not preceded by a scrim');
     }
     const rect = content.getBoundingClientRect();
     const middle = rect.top + rect.height / 2;
     return {
+      color: getComputedStyle(scrim).backgroundColor,
       dialog: { x: rect.left + 6, y: middle },
       scrim: { x: Math.max(4, rect.left - 48), y: middle },
     };
@@ -188,6 +189,10 @@ async function pixelsAt(page: Page, points: Point[]): Promise<Pixel[]> {
   );
 }
 
+/**
+ * The relative luminance of one channel, per WCAG 2.x; `welcome-disclaimer`
+ * does the same arithmetic for text and its surround.
+ */
 const channel = (value: number): number => {
   const ratio = value / 255;
   return ratio <= 0.04045 ? ratio / 12.92 : ((ratio + 0.055) / 1.055) ** 2.4;
@@ -196,16 +201,11 @@ const channel = (value: number): number => {
 const luminance = ([r, g, b]: Pixel): number =>
   0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
 
-const contrastRatio = (a: Pixel, b: Pixel): number => {
-  const first = luminance(a);
-  const second = luminance(b);
-  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
-};
-
-async function boundaryContrast(page: Page): Promise<number> {
-  const points = await samplePoints(page);
-  const [dialog, scrim] = await pixelsAt(page, [points.dialog, points.scrim]);
-  return contrastRatio(dialog, scrim);
+async function boundaryContrast(page: Page, reading: ScrimReading): Promise<number> {
+  const [dialog, scrim] = await pixelsAt(page, [reading.dialog, reading.scrim]);
+  const surface = luminance(dialog);
+  const surround = luminance(scrim);
+  return (Math.max(surface, surround) + 0.05) / (Math.min(surface, surround) + 0.05);
 }
 
 test.describe('OGDialog scrim', () => {
@@ -221,7 +221,7 @@ test.describe('OGDialog scrim', () => {
       await expect(page.locator('html')).toHaveAttribute('data-theme', SCRIM_THEME.name);
 
       await openConversationDeleteDialog(page, CONVERSATION_TITLE);
-      expect(await scrimColor(page)).toBe(CUSTOM_SCRIM);
+      expect((await readScrim(page)).color).toBe(CUSTOM_SCRIM);
     } finally {
       await page.keyboard.press('Escape');
       await deleteMessagesByConversation([conversationId]);
@@ -242,7 +242,7 @@ test.describe('OGDialog scrim', () => {
         await expect(page.locator(applied)).toHaveCount(1, { timeout: 15000 });
 
         await openConversationDeleteDialog(page, CONVERSATION_TITLE);
-        expect(await scrimColor(page), `${mode} moved the scrim`).toBe(BLACK_SCRIM);
+        expect((await readScrim(page)).color, `${mode} moved the scrim`).toBe(BLACK_SCRIM);
         await page.keyboard.press('Escape');
         await expect(page.locator(OPEN_DIALOG)).toHaveCount(0, { timeout: 10000 });
       }
@@ -263,8 +263,9 @@ test.describe('OGDialog scrim', () => {
       await page.goto(chatIn('light'), { timeout: 10000 });
       await openConversationDeleteDialog(page, CONVERSATION_TITLE);
 
-      expect(await scrimColor(page)).toBe(LIGHT_SCRIM);
-      expect(await boundaryContrast(page)).toBeGreaterThanOrEqual(BOUNDARY_CONTRAST);
+      const reading = await readScrim(page);
+      expect(reading.color).toBe(LIGHT_SCRIM);
+      expect(await boundaryContrast(page, reading)).toBeGreaterThanOrEqual(BOUNDARY_CONTRAST);
     } finally {
       await page.keyboard.press('Escape');
       await deleteMessagesByConversation([conversationId]);
@@ -281,9 +282,10 @@ test.describe('OGDialog scrim', () => {
     await page.goto(chatIn('light'), { timeout: 10000 });
     await openDeleteAccountDialog(page);
 
-    /** The settings modal paints its own scrim; this one is still the role. */
-    expect(await scrimColor(page)).toBe(LIGHT_SCRIM);
-    expect(await boundaryContrast(page)).toBeGreaterThanOrEqual(BOUNDARY_CONTRAST);
+    /** The settings modal paints its own scrim; the frontmost is still the role. */
+    const reading = await readScrim(page);
+    expect(reading.color).toBe(LIGHT_SCRIM);
+    expect(await boundaryContrast(page, reading)).toBeGreaterThanOrEqual(BOUNDARY_CONTRAST);
 
     await page.keyboard.press('Escape');
   });
