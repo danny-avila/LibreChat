@@ -267,6 +267,23 @@ function getConfiguredScoreDestination(
 }
 
 /**
+ * Resolves credentials for prompt reads independently of trace export and
+ * sampling. Prompt retrieval is an agent runtime dependency, not telemetry.
+ */
+export async function resolveLangfusePromptDestinations(
+  appConfig?: AppConfig,
+): Promise<LangfuseScoreDestination[]> {
+  const headers = resolveLangfuseHeaders(appConfig?.langfuse?.headers);
+  const destinations = [
+    getConfiguredScoreDestination(appConfig, headers),
+    hasLangfuseEnvCredentials() ? await getCentralScoreDestination(false, headers) : undefined,
+  ];
+  return destinations.filter((destination): destination is LangfuseScoreDestination =>
+    Boolean(destination),
+  );
+}
+
+/**
  * Scores use Langfuse's direct REST API. Multi-tenant score fanout follows the
  * collector availability gate used by traces; single-tenant connections send
  * directly to their configured destination.

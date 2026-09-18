@@ -99,6 +99,7 @@ const {
 } = require('./backgroundCompletion');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
+const instructionPromptResolver = require('~/server/services/Agents/instructionPrompts');
 const { getAppConfig } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
@@ -750,6 +751,7 @@ const initializeClientWithProvider = async ({
       listSkillsByAccess: skillDbMethods.listSkillsByAccess,
       listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
       getSkillByName: skillDbMethods.getSkillByName,
+      instructionPromptResolver,
       provisionToCodeEnv,
       provisionToVectorDB,
       checkSessionsAlive,
@@ -842,6 +844,7 @@ const initializeClientWithProvider = async ({
         listSkillsByAccess: skillDbMethods.listSkillsByAccess,
         listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
         getSkillByName: skillDbMethods.getSkillByName,
+        instructionPromptResolver,
         provisionToCodeEnv,
         provisionToVectorDB,
         checkSessionsAlive,
@@ -1327,6 +1330,7 @@ const initializeClientWithProvider = async ({
           listSkillsByAccess: skillDbMethods.listSkillsByAccess,
           listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
           getSkillByName: skillDbMethods.getSkillByName,
+          instructionPromptResolver,
           provisionToCodeEnv,
           provisionToVectorDB,
           checkSessionsAlive,

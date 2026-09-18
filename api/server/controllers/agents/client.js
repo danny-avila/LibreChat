@@ -220,7 +220,6 @@ const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { getAccessibleMCPServers } = require('~/server/services/MCP');
-const instructionPromptResolver = require('~/server/services/Agents/instructionPrompts');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
@@ -230,7 +229,6 @@ const loadAgent = (params) =>
     getAgent: db.getAgent,
     getMCPServerTools,
     getAccessibleMCPServers,
-    instructionPromptResolver,
   });
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;

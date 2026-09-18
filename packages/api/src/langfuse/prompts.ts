@@ -1,5 +1,9 @@
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
+import {
+  LANGFUSE_PROMPT_CACHE_TTL_DEFAULT_MS,
+  LANGFUSE_PROMPT_REQUEST_TIMEOUT_DEFAULT_MS,
+} from 'librechat-data-provider';
 import type { AgentInstructionPrompt } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type {
@@ -12,8 +16,6 @@ import { AgentInstructionPromptError } from '~/agents/instructions';
 import { mergeHeaders } from '~/utils/headers';
 import { redirectPolicyFor } from './utils';
 
-const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
-const DEFAULT_TIMEOUT_MS = 10_000;
 const destinationPreference: Record<LangfuseScoreDestination['name'], number> = {
   connection: 0,
   tenant: 1,
@@ -47,10 +49,25 @@ function isLangfuseReference(
 }
 
 function cacheKey(destination: LangfuseScoreDestination, name: string, version?: number): string {
+  const headers = Object.entries(destination.headers ?? {})
+    .map(([key, value]) => [key.toLowerCase(), value] as const)
+    .sort(([left], [right]) => left.localeCompare(right));
   const identity = createHash('sha256')
-    .update(`${destination.baseUrl}\n${destination.authorization}`)
+    .update(`${destination.baseUrl}\n${destination.authorization}\n${JSON.stringify(headers)}`)
     .digest('hex');
   return `${identity}:${name}:${version ?? 'latest'}`;
+}
+
+function pruneExpiredEntries(
+  cache: Map<string, CacheEntry>,
+  currentKey: string,
+  currentTime: number,
+) {
+  for (const [key, entry] of cache) {
+    if (key !== currentKey && entry.expiresAt <= currentTime) {
+      cache.delete(key);
+    }
+  }
 }
 
 function promptUrl(destination: LangfuseScoreDestination, name: string, version?: number): string {
@@ -136,8 +153,8 @@ function parsePrompt(value: unknown): AgentInstructionPromptResult {
 export function createLangfusePromptProvider({
   resolveDestinations,
   fetch,
-  cacheTtlMs = DEFAULT_CACHE_TTL_MS,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
+  cacheTtlMs = LANGFUSE_PROMPT_CACHE_TTL_DEFAULT_MS,
+  timeoutMs = LANGFUSE_PROMPT_REQUEST_TIMEOUT_DEFAULT_MS,
   now = Date.now,
 }: LangfusePromptProviderDeps): AgentInstructionPromptProvider {
   const cache = new Map<string, CacheEntry>();
@@ -164,24 +181,29 @@ export function createLangfusePromptProvider({
       }
 
       const key = cacheKey(destination, reference.name, reference.version);
+      const currentTime = now();
+      pruneExpiredEntries(cache, key, currentTime);
       const cached = cache.get(key);
-      if (cached && cached.expiresAt > now()) {
+      if (cached && cached.expiresAt > currentTime) {
         return { ...cached.value, cached: true };
       }
+      const promptConfig = context.appConfig?.langfuse?.prompts;
+      const effectiveCacheTtlMs = promptConfig?.cacheTtlMs ?? cacheTtlMs;
+      const effectiveTimeoutMs = promptConfig?.requestTimeoutMs ?? timeoutMs;
 
       try {
         const response = await fetch(promptUrl(destination, reference.name, reference.version), {
           headers: mergeHeaders(destination.headers, {
             Authorization: destination.authorization,
           }),
-          signal: AbortSignal.timeout(timeoutMs),
+          signal: AbortSignal.timeout(effectiveTimeoutMs),
           ...redirectPolicyFor(destination.headers),
         });
         if (!response.ok) {
           throw statusError(response.status);
         }
         const result = parsePrompt(await response.json());
-        cache.set(key, { value: result, expiresAt: now() + cacheTtlMs });
+        cache.set(key, { value: result, expiresAt: now() + effectiveCacheTtlMs });
         return result;
       } catch (error) {
         const normalized =

@@ -3,7 +3,6 @@ const { loadAgent: loadAgentFn } = require('@librechat/api');
 const { isAgentsEndpoint, removeNullishValues, Constants } = require('librechat-data-provider');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { getAccessibleMCPServers } = require('~/server/services/MCP');
-const instructionPromptResolver = require('~/server/services/Agents/instructionPrompts');
 const db = require('~/models');
 
 const loadAgent = (params) =>
@@ -11,7 +10,6 @@ const loadAgent = (params) =>
     getAgent: db.getAgent,
     getMCPServerTools,
     getAccessibleMCPServers,
-    instructionPromptResolver,
   });
 
 const buildOptions = (req, endpoint, parsedBody, endpointType) => {

@@ -58,6 +58,7 @@ import type { LCAvailableTools, RequestScopedMCPConnectionStore } from '../mcp/t
 import type { ContentTraversalLimitError } from '../protection/adapters/nested';
 import type { SkillContentInput } from '../protection/adapters/submissions';
 import type { RepositoryInstructionSource } from '../code/instructions';
+import type { AgentInstructionPromptProvider } from './instructions';
 import type { TextContentFragment } from '../protection/types';
 import type { CheckAccessParams } from '../middleware/access';
 import type { MCPToolAlias } from '~/tools/classification';
@@ -116,6 +117,7 @@ import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { resolveToolRoleGrants } from '~/tools/rolePermissions';
 import { createRequestAgentExecutionContext } from './runtime';
+import { resolveAgentInstructionPrompt } from './instructions';
 import { resolveTurnDeliveryRouting } from './files/delivery';
 import { filterFilesByEndpointRuntimeConfig } from '~/files';
 import { hasActiveFileFieldPolicy } from '~/protection';
@@ -936,6 +938,8 @@ export interface InitializeAgentParams {
  * getConvoFiles not yet in data-schemas but included here for consistency
  */
 export interface InitializeAgentDbMethods extends EndpointDbMethods {
+  /** Resolve referenced instructions before any agent definition is inspected or initialized. */
+  instructionPromptResolver?: AgentInstructionPromptProvider;
   /**
    * Names of every MCP server the user can reach (operator config + user DB).
    * Consulted by the legacy-key heal ONLY when a configured name needs
@@ -1078,6 +1082,16 @@ export async function initializeAgent(
   if (!db) {
     throw new Error('initializeAgent requires db methods to be passed');
   }
+
+  await resolveAgentInstructionPrompt({
+    agent,
+    resolver: db.instructionPromptResolver,
+    context: {
+      userId: user?.id ?? '',
+      role: user?.role,
+      appConfig,
+    },
+  });
 
   /**
    * Reject the stored agent definition before initialization performs usage

@@ -25,6 +25,16 @@ only for a transient network, rate-limit, or server failure. Authentication fail
 deleted prompts never fall back to cached content. The builder's status and retry controls use the
 same resolver as an actual run.
 
+Operators can override the cache lifetime and per-request retrieval timeout:
+
+```yaml
+langfuse:
+  prompts:
+    cacheTtlMs: 300000
+    requestTimeoutMs: 10000
+```
+
+
 Langfuse credentials remain configured through **Settings > Langfuse** or the existing central
 environment variables. No additional credentials are stored on the agent.
 

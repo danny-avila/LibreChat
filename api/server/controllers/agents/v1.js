@@ -21,6 +21,7 @@ const {
   collectToolResourceFileIds,
   convertOcrToContextInPlace,
   normalizeToolResourceFiles,
+  normalizeAgentUpdateData,
   stripFileIdsFromToolResources,
   inspectContent,
   inspectContentWithTraversal,
@@ -1078,25 +1079,7 @@ const updateAgentHandler = async (req, res) => {
     /** See the create path: retain hydrated file IDs through validation. */
     normalizeToolResourceFiles(req.body?.tool_resources);
     const validatedData = agentUpdateSchema.parse(req.body);
-    // Preserve explicit null for avatar to allow resetting the avatar
-    const {
-      avatar: avatarField,
-      code_environment_id: codeEnvironmentIdField,
-      git_identity: gitIdentityField,
-      instruction_prompt: instructionPromptField,
-      _id,
-      ...rest
-    } = validatedData;
-    let updateData = removeNullishValues(rest);
-    if (codeEnvironmentIdField !== undefined) {
-      updateData.code_environment_id = codeEnvironmentIdField;
-    }
-    if (gitIdentityField !== undefined) {
-      updateData.git_identity = gitIdentityField;
-    }
-    if (instructionPromptField !== undefined) {
-      updateData.instruction_prompt = instructionPromptField;
-    }
+    let updateData = normalizeAgentUpdateData(validatedData);
     let existingAgent;
 
     const includesStatefulConfiguration =
@@ -1194,9 +1177,6 @@ const updateAgentHandler = async (req, res) => {
         sanitizeModelParameters(updateData.model_parameters),
         true,
       );
-    }
-    if (avatarField === null) {
-      updateData.avatar = avatarField;
     }
 
     if (updateData.edges !== undefined) {

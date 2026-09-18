@@ -1,4 +1,6 @@
+import type { AppConfig } from '@librechat/data-schemas';
 import type { LangfuseScoreDestination } from './destinations';
+import { resolveLangfusePromptDestinations } from './destinations';
 import { createLangfusePromptProvider } from './prompts';
 
 const destination: LangfuseScoreDestination = {
@@ -123,5 +125,108 @@ describe('Langfuse agent instruction prompts', () => {
     await expect(
       provider.resolve({ source: 'langfuse', name: 'agent-policy' }, { userId: 'user-1' }),
     ).rejects.toMatchObject({ code: 'unsupported_type', statusCode: 422 });
+  });
+  it('isolates cached prompts by gateway headers', async () => {
+    let headers = { 'x-tenant': 'tenant-a' };
+    const fetch = jest
+      .fn()
+      .mockResolvedValueOnce(response(200, { ...prompt, prompt: 'Tenant A' }))
+      .mockResolvedValueOnce(response(200, { ...prompt, prompt: 'Tenant B' }));
+    const provider = createLangfusePromptProvider({
+      resolveDestinations: async () => [{ ...destination, headers }],
+      fetch,
+    });
+
+    await expect(
+      provider.resolve({ source: 'langfuse', name: 'agent-policy' }, { userId: 'user-1' }),
+    ).resolves.toMatchObject({ prompt: 'Tenant A' });
+    headers = { 'x-tenant': 'tenant-b' };
+    await expect(
+      provider.resolve({ source: 'langfuse', name: 'agent-policy' }, { userId: 'user-1' }),
+    ).resolves.toMatchObject({ prompt: 'Tenant B' });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('evicts expired entries while retaining the current entry for transient fallback', async () => {
+    let now = 0;
+    const fetch = jest
+      .fn()
+      .mockResolvedValueOnce(response(200, prompt))
+      .mockResolvedValueOnce(response(200, { ...prompt, name: 'other-policy' }))
+      .mockRejectedValueOnce(new Error('network unavailable'));
+    const provider = createLangfusePromptProvider({
+      resolveDestinations: jest.fn().mockResolvedValue([destination]),
+      fetch,
+      cacheTtlMs: 10,
+      now: () => now,
+    });
+
+    await provider.resolve({ source: 'langfuse', name: 'agent-policy' }, { userId: 'user-1' });
+    now = 11;
+    await provider.resolve({ source: 'langfuse', name: 'other-policy' }, { userId: 'user-1' });
+
+    await expect(
+      provider.resolve({ source: 'langfuse', name: 'agent-policy' }, { userId: 'user-1' }),
+    ).rejects.toMatchObject({ code: 'retrieval_failed', retryable: true });
+  });
+
+  it('uses schema-backed cache and request limits from app config', async () => {
+    let now = 0;
+    const timeout = jest.spyOn(AbortSignal, 'timeout');
+    const fetch = jest.fn().mockResolvedValue(response(200, prompt));
+    const provider = createLangfusePromptProvider({
+      resolveDestinations: jest.fn().mockResolvedValue([destination]),
+      fetch,
+      cacheTtlMs: 100,
+      timeoutMs: 100,
+      now: () => now,
+    });
+    const context = {
+      userId: 'user-1',
+      appConfig: {
+        langfuse: { prompts: { cacheTtlMs: 5, requestTimeoutMs: 25 } },
+      } as AppConfig,
+    };
+
+    await provider.resolve({ source: 'langfuse', name: 'agent-policy' }, context);
+    now = 6;
+    await provider.resolve({ source: 'langfuse', name: 'agent-policy' }, context);
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(timeout).toHaveBeenCalledWith(25);
+  });
+  it('resolves prompt credentials while trace export is disabled', async () => {
+    const previous = {
+      tracing: process.env.LANGFUSE_TRACING_ENABLED,
+      publicKey: process.env.LANGFUSE_PUBLIC_KEY,
+      secretKey: process.env.LANGFUSE_SECRET_KEY,
+      projectId: process.env.LANGFUSE_PROJECT_ID,
+    };
+    Object.assign(process.env, {
+      LANGFUSE_TRACING_ENABLED: 'false',
+      LANGFUSE_PUBLIC_KEY: 'public-key',
+      LANGFUSE_SECRET_KEY: 'secret-key',
+      LANGFUSE_PROJECT_ID: 'project-id',
+    });
+    try {
+      await expect(resolveLangfusePromptDestinations()).resolves.toEqual([
+        expect.objectContaining({
+          name: 'central',
+          baseUrl: 'https://cloud.langfuse.com',
+        }),
+      ]);
+    } finally {
+      const restore = (key: string, value: string | undefined) => {
+        if (value == null) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      };
+      restore('LANGFUSE_TRACING_ENABLED', previous.tracing);
+      restore('LANGFUSE_PUBLIC_KEY', previous.publicKey);
+      restore('LANGFUSE_SECRET_KEY', previous.secretKey);
+      restore('LANGFUSE_PROJECT_ID', previous.projectId);
+    }
   });
 });

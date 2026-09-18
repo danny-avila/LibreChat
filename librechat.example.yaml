@@ -51,6 +51,10 @@ cache: true
 #     CF-Access-Client-Id: "${CF_ACCESS_CLIENT_ID}"
 #     CF-Access-Client-Secret: "${CF_ACCESS_CLIENT_SECRET}"
 #   trace:
+#   prompts:
+#     cacheTtlMs: 300000
+#     requestTimeoutMs: 10000
+#
 #     userIdField: email
 #     userMetadataFields: [email, username, role, provider]
 #     conversationMetadataFields: [conversationId, endpoint, model, modelLabel, spec]
