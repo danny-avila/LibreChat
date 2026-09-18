@@ -49,6 +49,15 @@ describe('resolveEndpointProviderId', () => {
     ).toBe(ProviderId.helicone);
   });
 
+  it('resolves the GitGot inference host', () => {
+    expect(
+      resolveEndpointProviderId({
+        name: 'My GitGot',
+        baseURL: 'https://inference.gitgot.ai/v1',
+      }),
+    ).toBe(ProviderId.gitgot);
+  });
+
   it('recognizes the supported Cohere API host', () => {
     expect(
       resolveEndpointProviderId({
