@@ -1553,6 +1553,34 @@ export class MCPConnectionFactory {
     return true;
   }
 
+  /**
+   * Whether the server rejected the tokens a silent refresh issued during this connection attempt,
+   * and they are still the stored credential. A provider can keep refreshing a grant its resource
+   * server no longer accepts, so refreshing again would repeat the rejection on every connect
+   * attempt and never ask the user to authorize. Tokens another request stored since then are not
+   * a rejected renewal; the refresh path adopts them.
+   */
+  private async isRejectedRenewal(
+    renewed: MCPOAuthTokens,
+    rejectedCredentialSetId: string | null,
+  ): Promise<boolean> {
+    if (!this.tokenMethods?.findToken) {
+      return false;
+    }
+    if ((renewed.credential_set_id ?? null) !== rejectedCredentialSetId) {
+      return false;
+    }
+    return this.runWithCapturedTenant(() =>
+      MCPTokenStorage.isCurrentAccessToken({
+        userId: this.userId!,
+        serverName: this.serverName,
+        accessToken: renewed.access_token,
+        credentialSetId: renewed.credential_set_id,
+        findToken: this.tokenMethods!.findToken!,
+      }),
+    );
+  }
+
   private getOAuthReplayExpiresAt(createdAt?: number): number | undefined {
     if (!createdAt) {
       return undefined;
@@ -1662,6 +1690,8 @@ export class MCPConnectionFactory {
     const isRequestRecovery = eventName === 'oauthReauthenticationRequired';
     let recoveryPhase: OAuthRecoveryPhase = 'silent-refresh';
     let eventHandling: Promise<void> | null = null;
+    /** Tokens a silent refresh issued while this connection was being established. */
+    let renewedTokens: MCPOAuthTokens | null = null;
 
     const handleOAuthEvent = async (data: OAuthRequiredEvent) => {
       logger.info(`${this.logPrefix} oauthRequired event received`);
@@ -1704,7 +1734,15 @@ export class MCPConnectionFactory {
 
       if (!isRequestRecovery || recoveryPhase === 'silent-refresh') {
         recoveryPhase = 'interactive';
-        if (!data.skipSilentRefresh && this.shouldAttemptSilentTokenRefresh(data)) {
+        if (
+          !isRequestRecovery &&
+          renewedTokens != null &&
+          (await this.isRejectedRenewal(renewedTokens, rejectedCredentialSetId))
+        ) {
+          logger.info(
+            `${this.logPrefix} Server rejected the tokens a silent refresh just issued; starting interactive OAuth`,
+          );
+        } else if (!data.skipSilentRefresh && this.shouldAttemptSilentTokenRefresh(data)) {
           let refreshedTokens: MCPOAuthTokens | null;
           try {
             refreshedTokens = await this.attemptSilentTokenRefresh(rejectedCredentialSetId);
@@ -1727,6 +1765,9 @@ export class MCPConnectionFactory {
             return;
           }
           if (refreshedTokens) {
+            if (!isRequestRecovery) {
+              renewedTokens = refreshedTokens;
+            }
             connection.setOAuthTokens(refreshedTokens);
             connection.emit('oauthHandled', 'silent-refresh' satisfies t.OAuthHandledSource);
             return;

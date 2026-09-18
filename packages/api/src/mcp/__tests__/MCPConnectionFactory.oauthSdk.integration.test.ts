@@ -495,6 +495,53 @@ describe('MCPConnectionFactory OAuth against real SDK Streamable HTTP server', (
     }
   });
 
+  it('starts OAuth once the resource rejects the tokens a refresh issued while connecting', async () => {
+    server = await createOAuthMCPServer({
+      issueRefreshTokens: true,
+      requireResourceParameter: true,
+      tokenScopes: ['read'],
+      scopesSupported: ['read'],
+      rejectRefreshTokens: 10,
+    });
+    const initialTokens = await issueTokens(server);
+    await storeTokens(tokenStore, server, initialTokens);
+    server.issuedTokens.delete(initialTokens.access_token);
+
+    const oauthStart = jest.fn(async (_authorizationUrl: string): Promise<void> => undefined);
+    await expect(
+      MCPConnectionFactory.create(
+        {
+          serverName: SERVER_NAME,
+          serverConfig: {
+            type: 'streamable-http',
+            url: server.url,
+            initTimeout: 15000,
+          },
+        },
+        {
+          useOAuth: true,
+          user: { id: USER_ID } as IUser,
+          flowManager: createFlowManager(),
+          tokenMethods: {
+            findToken: tokenStore.findToken,
+            createToken: tokenStore.createToken,
+            updateToken: tokenStore.updateToken,
+            deleteTokens: tokenStore.deleteTokens,
+          },
+          returnOnOAuth: true,
+          oauthStart,
+        },
+      ),
+    ).rejects.toThrow();
+
+    expect(
+      server.tokenRequests.filter((request) => request.grantType === 'refresh_token'),
+    ).toHaveLength(1);
+    expect(oauthStart).toHaveBeenCalledTimes(1);
+    const authorizationUrl = new URL(oauthStart.mock.calls[0][0]);
+    expect(authorizationUrl.searchParams.get('resource')).toBe(server.resourceUrl);
+  });
+
   it('does not silently refresh an SDK insufficient_scope challenge before starting OAuth', async () => {
     server = await createOAuthMCPServer({
       issueRefreshTokens: true,
