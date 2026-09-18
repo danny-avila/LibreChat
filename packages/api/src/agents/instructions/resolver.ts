@@ -13,6 +13,7 @@ export type AgentInstructionPromptContext = {
   userId: string;
   role?: string;
   appConfig?: AppConfig;
+  signal?: AbortSignal;
 };
 
 export class AgentInstructionPromptError extends Error {

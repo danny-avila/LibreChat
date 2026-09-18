@@ -51,16 +51,15 @@ cache: true
 #     CF-Access-Client-Id: "${CF_ACCESS_CLIENT_ID}"
 #     CF-Access-Client-Secret: "${CF_ACCESS_CLIENT_SECRET}"
 #   trace:
-#   prompts:
-#     cacheTtlMs: 300000
-#     requestTimeoutMs: 10000
-#
 #     userIdField: email
 #     userMetadataFields: [email, username, role, provider]
 #     conversationMetadataFields: [conversationId, endpoint, model, modelLabel, spec]
 #     # Export only the resolved prompt source, name, version, and cache status.
 #     # Prompt content is never included. Disabled by default because names may be sensitive.
 #     promptMetadata: false
+#   prompts:
+#     cacheTtlMs: 300000
+#     requestTimeoutMs: 10000
 
 # File storage configuration
 # Single strategy for all file types (legacy format, still supported)

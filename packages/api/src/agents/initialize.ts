@@ -1090,6 +1090,7 @@ export async function initializeAgent(
       userId: user?.id ?? '',
       role: user?.role,
       appConfig,
+      signal: params.signal,
     },
   });
 

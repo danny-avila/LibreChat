@@ -220,6 +220,7 @@ const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { getAccessibleMCPServers } = require('~/server/services/MCP');
+const instructionPromptResolver = require('~/server/services/Agents/instructionPrompts');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
@@ -3325,6 +3326,7 @@ class AgentClient extends BaseClient {
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
+        instructionPromptResolver,
         getRoleByName: db.getRoleByName,
       },
     );

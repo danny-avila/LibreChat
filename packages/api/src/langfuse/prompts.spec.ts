@@ -195,6 +195,40 @@ describe('Langfuse agent instruction prompts', () => {
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(timeout).toHaveBeenCalledWith(25);
   });
+
+  it('cancels prompt retrieval with the owning run and does not restore stale content', async () => {
+    let now = 0;
+    const controller = new AbortController();
+    const reason = new Error('run cancelled');
+    const fetch = jest
+      .fn()
+      .mockResolvedValueOnce(response(200, prompt))
+      .mockImplementationOnce((_url, init: RequestInit) => {
+        return new Promise<Response>((_resolve, reject) => {
+          if (init.signal?.aborted) {
+            reject(init.signal.reason);
+            return;
+          }
+          init.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+        });
+      });
+    const provider = createLangfusePromptProvider({
+      resolveDestinations: jest.fn().mockResolvedValue([destination]),
+      fetch,
+      cacheTtlMs: 10,
+      now: () => now,
+    });
+    const context = { userId: 'user-1', signal: controller.signal };
+
+    await provider.resolve({ source: 'langfuse', name: 'agent-policy' }, context);
+    now = 11;
+    const pending = provider.resolve({ source: 'langfuse', name: 'agent-policy' }, context);
+    controller.abort(reason);
+
+    await expect(pending).rejects.toBe(reason);
+    expect(fetch.mock.calls[1][1].signal).not.toBe(controller.signal);
+    expect(fetch.mock.calls[1][1].signal.aborted).toBe(true);
+  });
   it('resolves prompt credentials while trace export is disabled', async () => {
     const previous = {
       tracing: process.env.LANGFUSE_TRACING_ENABLED,

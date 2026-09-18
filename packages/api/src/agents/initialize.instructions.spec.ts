@@ -21,6 +21,7 @@ describe('initializeAgent instruction prompts', () => {
         version: 3,
       }),
     };
+    const signal = new AbortController().signal;
 
     await expect(
       initializeAgent(
@@ -30,6 +31,7 @@ describe('initializeAgent instruction prompts', () => {
             appConfig: {},
           },
           agent,
+          signal,
           allowedProviders: new Set(['allowed-provider']),
         } as unknown as InitializeAgentParams,
         { instructionPromptResolver: resolver } as unknown as InitializeAgentDbMethods,
@@ -40,6 +42,7 @@ describe('initializeAgent instruction prompts', () => {
       userId: 'user-1',
       role: 'USER',
       appConfig: {},
+      signal,
     });
     expect(agent.instructions).toBe('Resolved instructions');
     expect(agent.resolved_instruction_prompt).toEqual({

@@ -19,6 +19,9 @@ const mockFormatAgentMessages = jest.fn(() => ({
 const mockStripActivityLabelParts = jest.fn((payload) =>
   jest.requireActual('@librechat/api').stripActivityLabelParts(payload),
 );
+const mockInstructionPromptResolver = { resolve: jest.fn() };
+
+jest.mock('~/server/services/Agents/instructionPrompts', () => mockInstructionPromptResolver);
 
 const { Providers } = require('@librechat/agents');
 const { Constants, ContentTypes, EModelEndpoint, ErrorTypes } = require('librechat-data-provider');
@@ -8267,7 +8270,7 @@ describe('AgentClient - titleConvo', () => {
         expect.objectContaining({
           agent: mockAgent,
         }),
-        expect.any(Object),
+        expect.objectContaining({ instructionPromptResolver: mockInstructionPromptResolver }),
       );
     });
 

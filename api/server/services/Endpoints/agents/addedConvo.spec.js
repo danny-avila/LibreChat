@@ -10,6 +10,7 @@ const mockGetMCPServerTools = jest.fn();
 const mockRegistryGetSkillByName = jest.fn();
 const mockRegistryListSkillsByAccess = jest.fn();
 const mockRegistryListAlwaysApplySkills = jest.fn();
+const mockInstructionPromptResolver = { resolve: jest.fn() };
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -108,6 +109,7 @@ describe('processAddedConvo', () => {
     primaryAgentId: 'primary-id',
     primaryAgent: { id: 'primary-id' },
     userMCPAuthMap: undefined,
+    instructionPromptResolver: mockInstructionPromptResolver,
     ...overrides,
   });
 
@@ -117,6 +119,15 @@ describe('processAddedConvo', () => {
     expect(mockInitializeAgent).toHaveBeenCalledWith(
       expect.objectContaining({ codeEnvAvailable: true }),
       expect.anything(),
+    );
+  });
+
+  it('forwards the instruction prompt resolver to added-agent initialization', async () => {
+    await processAddedConvo(baseParams());
+
+    expect(mockInitializeAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ instructionPromptResolver: mockInstructionPromptResolver }),
     );
   });
 

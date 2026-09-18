@@ -909,6 +909,7 @@ const initializeClientWithProvider = async ({
     toolIntentsAvailable,
     statefulSessionsAvailable,
     memoryAvailable,
+    instructionPromptResolver,
     signal,
   });
 

@@ -190,13 +190,17 @@ export function createLangfusePromptProvider({
       const promptConfig = context.appConfig?.langfuse?.prompts;
       const effectiveCacheTtlMs = promptConfig?.cacheTtlMs ?? cacheTtlMs;
       const effectiveTimeoutMs = promptConfig?.requestTimeoutMs ?? timeoutMs;
+      const timeoutSignal = AbortSignal.timeout(effectiveTimeoutMs);
+      const signal = context.signal
+        ? AbortSignal.any([context.signal, timeoutSignal])
+        : timeoutSignal;
 
       try {
         const response = await fetch(promptUrl(destination, reference.name, reference.version), {
           headers: mergeHeaders(destination.headers, {
             Authorization: destination.authorization,
           }),
-          signal: AbortSignal.timeout(effectiveTimeoutMs),
+          signal,
           ...redirectPolicyFor(destination.headers),
         });
         if (!response.ok) {
@@ -206,6 +210,9 @@ export function createLangfusePromptProvider({
         cache.set(key, { value: result, expiresAt: now() + effectiveCacheTtlMs });
         return result;
       } catch (error) {
+        if (context.signal?.aborted) {
+          throw context.signal.reason ?? error;
+        }
         const normalized =
           error instanceof AgentInstructionPromptError
             ? error
