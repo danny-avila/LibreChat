@@ -1968,15 +1968,15 @@
   },
   "client/src/components/SidePanel/Agents/Tools/MarketplaceSidebar.tsx": {
     "shadcn/no-arbitrary-values": {
-      "count": 1
+      "count": 2
     },
     "shadcn/no-restyle": {
-      "count": 1
+      "count": 3
     }
   },
   "client/src/components/SidePanel/Agents/Tools/SkillsDialog.tsx": {
     "shadcn/no-restyle": {
-      "count": 12
+      "count": 11
     }
   },
   "client/src/components/SidePanel/Agents/Tools/SkillsSection.tsx": {
@@ -2005,7 +2005,7 @@
   },
   "client/src/components/SidePanel/Agents/Tools/ToolsMarketplaceDialog.tsx": {
     "shadcn/no-restyle": {
-      "count": 6
+      "count": 7
     }
   },
   "client/src/components/SidePanel/Agents/Tools/ToolsSection.tsx": {
