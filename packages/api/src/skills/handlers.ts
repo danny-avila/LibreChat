@@ -29,6 +29,7 @@ import type {
   ListSkillsByAccessParams,
   UpdateSkillResult,
   ValidationIssue,
+  DeleteSkillResult,
 } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { Types } from 'mongoose';
@@ -62,7 +63,7 @@ export interface SkillsHandlersDeps {
     expectedVersion: number;
     update: UpdateSkillInput;
   }) => Promise<UpdateSkillResult>;
-  deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
+  deleteSkill: (id: string) => Promise<DeleteSkillResult>;
   listSkillFiles: (
     skillId: string | Types.ObjectId,
   ) => Promise<Array<ISkillFile & { _id: Types.ObjectId }>>;
@@ -597,7 +598,10 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
       const files = await listSkillFiles(id);
 
       const result = await deleteSkill(id);
-      if (!result.deleted) {
+      if (!result.cleanupComplete) {
+        return res.status(500).json({ error: 'Skill deletion cleanup did not finish' });
+      }
+      if (!result.deleted && files.length === 0) {
         return res.status(404).json({ error: 'Skill not found' });
       }
 

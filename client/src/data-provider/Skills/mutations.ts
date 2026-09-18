@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type {
   TSkill,
   TSkillFile,
+  TSkillImportFailedResponse,
   TCreateSkill,
   TUpdateSkillVariables,
   TUpdateSkillResponse,
@@ -149,7 +150,7 @@ export const useImportSkillMutation = (
   options?: ImportSkillOptions,
 ): UseMutationResult<TSkill, unknown, FormData> => {
   const queryClient = useQueryClient();
-  const { onSuccess, ...rest } = options ?? {};
+  const { onError, onSuccess, ...rest } = options ?? {};
   return useMutation({
     mutationFn: (formData: FormData) => dataService.importSkill(formData),
     ...rest,
@@ -159,6 +160,14 @@ export const useImportSkillMutation = (
       addSkillToCachedLists(queryClient, skill);
       void queryClient.invalidateQueries([QueryKeys.skills]);
       if (onSuccess) onSuccess(skill, variables, context);
+    },
+    onError: (error, variables, context) => {
+      const body = (error as { response?: { data?: Partial<TSkillImportFailedResponse> } })
+        ?.response?.data;
+      if (body?.error === 'skill_import_rollback_failed') {
+        void queryClient.invalidateQueries([QueryKeys.skills]);
+      }
+      if (onError) onError(error, variables, context);
     },
   });
 };

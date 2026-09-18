@@ -84,6 +84,9 @@ jest.mock('~/hooks', () => ({
         com_ui_skill_created: 'Skill created',
         com_ui_create_skill_upload_error: 'Failed to read the uploaded file',
         com_ui_skill_upload_failed_files: 'These files could not be imported:',
+        com_ui_skill_upload_cleanup_incomplete: `Import failed for ${params?.[0]} file(s). The incomplete skill was removed, but automatic cleanup did not finish.`,
+        com_ui_skill_upload_cleanup_incomplete_files:
+          'Import failed for these files; automatic cleanup did not finish:',
         com_ui_skill_upload_incomplete: `Import canceled: ${params?.[0]} file(s) in the archive could not be imported. Fix the archive and upload it again.`,
         com_ui_skill_upload_reason_invalid_path: 'Unsupported file path',
         com_ui_skill_upload_reason_file_too_large: `Exceeds the ${params?.[0]} MB file size limit`,
@@ -288,6 +291,28 @@ describe('UploadSkillDialog', () => {
     );
   });
 
+  it('distinguishes incomplete cleanup from a skill that still needs deletion', () => {
+    render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
+
+    act(() => {
+      mockImportOptions?.onError?.(
+        incompleteImportError(
+          [{ path: 'queries.sql', reason: 'persistence_failed' }],
+          'skill_import_cleanup_incomplete',
+        ),
+      );
+    });
+
+    expect(mockShowToast).toHaveBeenCalledWith({
+      status: 'error',
+      message:
+        'Import failed for 1 file(s). The incomplete skill was removed, but automatic cleanup did not finish.',
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Import failed for these files; automatic cleanup did not finish:',
+    );
+  });
+
   it('clears a previous import failure when a new file is selected', () => {
     const { container } = render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
 
@@ -328,9 +353,7 @@ describe('UploadSkillDialog', () => {
   });
 
   it('ignores a success that resolves after the dialog was dismissed', () => {
-    const { container } = render(
-      <UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />,
-    );
+    const { container } = render(<UploadSkillDialog isOpen={true} setIsOpen={mockSetIsOpen} />);
     uploadArchive(container, 'abandoned.skill');
 
     act(() => {

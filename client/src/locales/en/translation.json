@@ -2344,6 +2344,8 @@
   "com_ui_skill_validation_error": "Check the skill fields and try again",
   "com_ui_skill_updated": "Skill saved",
   "com_ui_skill_upload": "Upload a skill",
+  "com_ui_skill_upload_cleanup_incomplete": "Import failed for {{0}} file(s). The incomplete skill was removed, but automatic cleanup did not finish.",
+  "com_ui_skill_upload_cleanup_incomplete_files": "Import failed for these files; automatic cleanup did not finish:",
   "com_ui_skill_upload_drag": "Drag and drop or click to upload",
   "com_ui_skill_upload_failed_files": "These files could not be imported:",
   "com_ui_skill_upload_file": "Upload File",

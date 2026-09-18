@@ -26,6 +26,7 @@ interface ImportFailure {
   error: string;
   message: string;
   failedFiles: Array<{ path: string; reason: string; limitMb?: number }>;
+  skillId?: string;
 }
 
 function mockAppConfig(filters: FiltersConfig): NonNullable<ImportRequest['config']> {
@@ -63,7 +64,12 @@ function mockImportDeps(limits?: ImportSkillDeps['limits']): ImportSkillDeps {
     limits,
     createSkill: jest.fn(async () => ({ skill }) as unknown as CreateSkillResult),
     getSkillById: jest.fn(async () => skill),
-    deleteSkill: jest.fn(async () => ({ deleted: true })),
+    deleteSkill: jest.fn(async () => ({
+      deleted: true,
+      skillAbsent: true,
+      cleanupComplete: true,
+      failedCleanupSteps: [],
+    })),
     upsertSkillFile: jest.fn(async () => skillFile),
     saveBuffer: jest.fn(async () => ({ filepath: '/tmp/imported-file', source: 'local' })),
     grantPermission: jest.fn(async () => undefined),
@@ -582,6 +588,7 @@ describe('createImportHandler', () => {
     expect(res.status).toHaveBeenCalledWith(500);
     const failure = importFailure(res.body);
     expect(failure.error).toBe('skill_import_rollback_failed');
+    expect(failure.skillId).toBeDefined();
     expect(failure.failedFiles).toEqual([{ path: 'files/1.txt', reason: 'persistence_failed' }]);
     /** Only the inline cleanup for the row that failed runs. The blob whose row
      *  survived stays, because SkillFile rows may still reference it and a
@@ -591,6 +598,61 @@ describe('createImportHandler', () => {
       expect.anything(),
       expect.objectContaining({ filepath: '/tmp/imported-0' }),
     );
+  });
+
+  it('retries idempotent database cleanup before deleting stored blobs', async () => {
+    const deps = mockImportDeps();
+    deps.deleteSkill = jest
+      .fn()
+      .mockResolvedValueOnce({
+        deleted: true,
+        skillAbsent: true,
+        cleanupComplete: false,
+        failedCleanupSteps: ['skill_files'],
+      })
+      .mockResolvedValueOnce({
+        deleted: false,
+        skillAbsent: true,
+        cleanupComplete: true,
+        failedCleanupSteps: [],
+      }) as ImportSkillDeps['deleteSkill'];
+    deps.deleteFile = jest.fn(async () => undefined);
+    deps.upsertSkillFile = jest
+      .fn()
+      .mockResolvedValueOnce({ _id: new Types.ObjectId() })
+      .mockRejectedValueOnce(
+        new Error('write conflict'),
+      ) as unknown as ImportSkillDeps['upsertSkillFile'];
+    const handler = createImportHandler(deps);
+    const res = mockResponse();
+
+    await handler(mockZipRequest(await zipWithAdditionalFiles(2, 64)), res);
+
+    expect(deps.deleteSkill).toHaveBeenCalledTimes(2);
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(importFailure(res.body).error).toBe('skill_import_incomplete');
+  });
+
+  it('reports incomplete cleanup when a persisted blob cannot be deleted', async () => {
+    const deps = mockImportDeps();
+    deps.deleteFile = jest.fn(async (_req, file) => {
+      if (file.filepath === '/tmp/imported-file') {
+        throw new Error('storage unavailable');
+      }
+    });
+    deps.upsertSkillFile = jest
+      .fn()
+      .mockResolvedValueOnce({ _id: new Types.ObjectId() })
+      .mockRejectedValueOnce(
+        new Error('write conflict'),
+      ) as unknown as ImportSkillDeps['upsertSkillFile'];
+    const handler = createImportHandler(deps);
+    const res = mockResponse();
+
+    await handler(mockZipRequest(await zipWithAdditionalFiles(2, 64)), res);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(importFailure(res.body).error).toBe('skill_import_cleanup_incomplete');
   });
 
   it('rolls back the skill and its stored blobs when one archive file fails', async () => {

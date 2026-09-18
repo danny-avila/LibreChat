@@ -381,11 +381,18 @@ export type TSkillImportFailedFile = {
  * everything the import created was rolled back. `skill_import_rollback_failed`
  * (500) means the same failure occurred but the partially created skill could
  * not be removed, so it may still be listed and needs deleting by hand.
+ * `skill_import_cleanup_incomplete` (500) means the Skill row was removed but
+ * dependent database or blob cleanup did not finish.
  */
 export type TSkillImportFailedResponse = {
-  error: 'skill_import_incomplete' | 'skill_import_rollback_failed';
+  error:
+    | 'skill_import_incomplete'
+    | 'skill_import_rollback_failed'
+    | 'skill_import_cleanup_incomplete';
   message: string;
   failedFiles: TSkillImportFailedFile[];
+  /** Present when the Skill row may remain and should be surfaced for deletion. */
+  skillId?: string;
 };
 
 /** Response from DELETE `/api/skills/:id`. */

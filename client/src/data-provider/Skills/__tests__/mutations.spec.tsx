@@ -4,10 +4,11 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TSkill, TSkillListResponse } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import { useCreateSkillMutation } from '../mutations';
+import { useCreateSkillMutation, useImportSkillMutation } from '../mutations';
 import { useSkillsInfiniteQuery } from '../queries';
 
 const mockCreateSkill = jest.fn();
+const mockImportSkill = jest.fn();
 const mockListSkills = jest.fn();
 
 jest.mock('librechat-data-provider', () => {
@@ -17,6 +18,7 @@ jest.mock('librechat-data-provider', () => {
     dataService: {
       ...actual.dataService,
       createSkill: (...args: unknown[]) => mockCreateSkill(...args),
+      importSkill: (...args: unknown[]) => mockImportSkill(...args),
       listSkills: (...args: unknown[]) => mockListSkills(...args),
     },
   };
@@ -137,6 +139,36 @@ describe('skill creation cache updates', () => {
         .map((skill) => skill._id),
     ).toContain(createdSkill._id);
 
+    queryClient.clear();
+  });
+
+  it('invalidates skill lists when a failed rollback may leave the imported skill visible', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    const invalidateQueries = jest.spyOn(queryClient, 'invalidateQueries');
+    mockImportSkill.mockRejectedValue({
+      response: {
+        data: {
+          error: 'skill_import_rollback_failed',
+          skillId: 'leftover-skill',
+          failedFiles: [{ path: 'queries.sql', reason: 'persistence_failed' }],
+        },
+      },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useImportSkillMutation(), { wrapper });
+
+    await act(async () => {
+      await expect(result.current.mutateAsync(new FormData())).rejects.toBeDefined();
+    });
+
+    expect(invalidateQueries).toHaveBeenCalledWith([QueryKeys.skills]);
     queryClient.clear();
   });
 });

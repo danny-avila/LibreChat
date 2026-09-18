@@ -55,12 +55,34 @@ function getImportFailure(error: unknown): ImportFailure | null {
   }
   const body = data as Partial<TSkillImportFailedResponse>;
   if (
-    (body.error !== 'skill_import_incomplete' && body.error !== 'skill_import_rollback_failed') ||
+    (body.error !== 'skill_import_incomplete' &&
+      body.error !== 'skill_import_rollback_failed' &&
+      body.error !== 'skill_import_cleanup_incomplete') ||
     !Array.isArray(body.failedFiles)
   ) {
     return null;
   }
   return { code: body.error, files: body.failedFiles };
+}
+
+function failureMessageKey(code: ImportFailure['code']): TranslationKeys {
+  if (code === 'skill_import_rollback_failed') {
+    return 'com_ui_skill_upload_rollback_failed';
+  }
+  if (code === 'skill_import_cleanup_incomplete') {
+    return 'com_ui_skill_upload_cleanup_incomplete';
+  }
+  return 'com_ui_skill_upload_incomplete';
+}
+
+function failureHeadingKey(code: ImportFailure['code']): TranslationKeys {
+  if (code === 'skill_import_rollback_failed') {
+    return 'com_ui_skill_upload_rollback_failed_files';
+  }
+  if (code === 'skill_import_cleanup_incomplete') {
+    return 'com_ui_skill_upload_cleanup_incomplete_files';
+  }
+  return 'com_ui_skill_upload_failed_files';
 }
 
 export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDialogProps) {
@@ -115,12 +137,9 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
         setFailure(importFailure);
         showToast({
           status: 'error',
-          message: localize(
-            importFailure.code === 'skill_import_rollback_failed'
-              ? 'com_ui_skill_upload_rollback_failed'
-              : 'com_ui_skill_upload_incomplete',
-            { 0: `${importFailure.files.length}` },
-          ),
+          message: localize(failureMessageKey(importFailure.code), {
+            0: `${importFailure.files.length}`,
+          }),
         });
         return;
       }
@@ -227,11 +246,7 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
                 className="flex flex-col gap-1 rounded-lg border border-border-medium bg-surface-secondary p-3 text-xs"
               >
                 <p className="font-medium text-text-destructive">
-                  {localize(
-                    failure.code === 'skill_import_rollback_failed'
-                      ? 'com_ui_skill_upload_rollback_failed_files'
-                      : 'com_ui_skill_upload_failed_files',
-                  )}
+                  {localize(failureHeadingKey(failure.code))}
                 </p>
                 {/* An archive may hold up to 500 entries, and the dialog's own
                     overflow-hidden would clip a long list past the viewport. */}

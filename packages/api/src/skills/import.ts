@@ -15,6 +15,7 @@ import type {
   ISkillFile,
   CreateSkillInput,
   CreateSkillResult,
+  DeleteSkillResult,
   UpsertSkillFileInput,
 } from '@librechat/data-schemas';
 import type { SkillImportFailureReason, TSkillImportFailedResponse } from 'librechat-data-provider';
@@ -131,7 +132,7 @@ export interface ImportSkillDeps {
   limits?: Partial<ImportLimits> | ((req: ServerRequest) => Partial<ImportLimits> | undefined);
   createSkill: (data: CreateSkillInput) => Promise<CreateSkillResult>;
   getSkillById: (id: string | Types.ObjectId) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
-  deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
+  deleteSkill: (id: string) => Promise<DeleteSkillResult>;
   upsertSkillFile: (row: UpsertSkillFileInput) => Promise<ISkillFile & { _id: Types.ObjectId }>;
   saveBuffer: (
     req: Request,
@@ -739,6 +740,13 @@ async function persistArchiveFile(
     isImage: file.mimeType.startsWith('image/'),
     tenantId: context.tenantId,
   });
+  const persistedBlob: PersistedArchiveBlob = {
+    relativePath: file.relativePath,
+    filepath,
+    source,
+    storageKey,
+    storageRegion,
+  };
 
   try {
     await deps.upsertSkillFile({
@@ -757,6 +765,7 @@ async function persistArchiveFile(
       tenantId: context.tenantId,
     });
   } catch (dbError) {
+    let blobRemoved = false;
     if (deps.deleteFile) {
       await deps
         .deleteFile(req, {
@@ -767,20 +776,20 @@ async function persistArchiveFile(
           user: context.authorId,
           tenantId: context.tenantId,
         })
+        .then(() => {
+          blobRemoved = true;
+        })
         .catch((error) =>
           logger.error(`[importSkill] Orphan cleanup failed for ${file.relativePath}:`, error),
         );
     }
+    if (!blobRemoved) {
+      context.persisted.push(persistedBlob);
+    }
     throw dbError;
   }
 
-  context.persisted.push({
-    relativePath: file.relativePath,
-    filepath,
-    source,
-    storageKey,
-    storageRegion,
-  });
+  context.persisted.push(persistedBlob);
 }
 
 /**
@@ -801,30 +810,44 @@ async function rollbackArchiveImport(
   req: ServerRequest,
   deps: ImportSkillDeps,
   context: ArchivePersistenceContext,
-): Promise<{ skillRemoved: boolean }> {
+): Promise<{ skillRemoved: boolean; cleanupComplete: boolean }> {
   const skillId = context.skillId.toString();
-  let skillRemoved = false;
+  let deletion: DeleteSkillResult;
   try {
-    const { deleted } = await deps.deleteSkill(skillId);
-    skillRemoved = deleted;
-    if (!deleted) {
-      logger.error(`[importSkill] Rollback could not find skill ${skillId} to delete`);
-    }
+    deletion = await deps.deleteSkill(skillId);
   } catch (error) {
     logger.error(`[importSkill] Rollback delete failed for skill ${skillId}:`, error);
-  }
-
-  if (!skillRemoved) {
     logger.error(
       `[importSkill] Rollback incomplete for skill ${skillId}: leaving ${context.persisted.length} stored file(s) in place because the skill row was not removed`,
     );
-    return { skillRemoved: false };
+    return { skillRemoved: false, cleanupComplete: false };
+  }
+
+  if (deletion.skillAbsent && !deletion.cleanupComplete) {
+    try {
+      deletion = await deps.deleteSkill(skillId);
+    } catch (error) {
+      logger.error(`[importSkill] Rollback cleanup retry failed for skill ${skillId}:`, error);
+      return { skillRemoved: true, cleanupComplete: false };
+    }
+  }
+
+  if (!deletion.skillAbsent) {
+    logger.error(`[importSkill] Rollback could not confirm removal of skill ${skillId}`);
+    return { skillRemoved: false, cleanupComplete: false };
+  }
+  if (!deletion.cleanupComplete) {
+    logger.error(
+      `[importSkill] Rollback database cleanup incomplete for skill ${skillId}: ${deletion.failedCleanupSteps.join(', ')}`,
+    );
+    return { skillRemoved: true, cleanupComplete: false };
   }
 
   const { deleteFile } = deps;
   if (deleteFile == null) {
-    return { skillRemoved: true };
+    return { skillRemoved: true, cleanupComplete: context.persisted.length === 0 };
   }
+  let cleanupComplete = true;
   for (const blob of context.persisted) {
     await deleteFile(req, {
       filepath: blob.filepath,
@@ -833,11 +856,12 @@ async function rollbackArchiveImport(
       source: blob.source,
       user: context.authorId,
       tenantId: context.tenantId,
-    }).catch((error) =>
-      logger.error(`[importSkill] Rollback blob cleanup failed for ${blob.relativePath}:`, error),
-    );
+    }).catch((error) => {
+      cleanupComplete = false;
+      logger.error(`[importSkill] Rollback blob cleanup failed for ${blob.relativePath}:`, error);
+    });
   }
-  return { skillRemoved: true };
+  return { skillRemoved: true, cleanupComplete };
 }
 
 async function persistPreflightedArchiveFiles(
@@ -1165,7 +1189,11 @@ async function handleZip(
     logger.warn(
       `[importSkill] Rolling back skill "${inferredName}" (${skill._id.toString()}): ${errors.length} of ${fileResults.length} files failed`,
     );
-    const { skillRemoved } = await rollbackArchiveImport(req, deps, persistenceContext);
+    const { skillRemoved, cleanupComplete } = await rollbackArchiveImport(
+      req,
+      deps,
+      persistenceContext,
+    );
     /** Reasons are codes, not prose: the client localizes them, and the
      *  underlying storage and database messages stay in the server log where
      *  they cannot leak infrastructure detail to the uploader. */
@@ -1179,8 +1207,17 @@ async function handleZip(
         error: 'skill_import_rollback_failed',
         message: `Import failed for ${errors.length} of ${fileResults.length} files and the partially created skill could not be removed automatically.`,
         failedFiles,
+        skillId: skill._id.toString(),
       };
       return res.status(500).json(rollbackFailure);
+    }
+    if (!cleanupComplete) {
+      const cleanupFailure: TSkillImportFailedResponse = {
+        error: 'skill_import_cleanup_incomplete',
+        message: `Import failed for ${errors.length} of ${fileResults.length} files. The skill was removed, but automatic cleanup did not finish.`,
+        failedFiles,
+      };
+      return res.status(500).json(cleanupFailure);
     }
     const failure: TSkillImportFailedResponse = {
       error: 'skill_import_incomplete',
