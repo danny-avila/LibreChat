@@ -204,8 +204,8 @@ function ToolCardImpl({
               }
               className={cn(
                 'flex size-7 items-center justify-center rounded-lg text-text-secondary',
-                'opacity-0 transition duration-150 hover:bg-surface-hover hover:text-text-primary',
-                'group-focus-within:opacity-100 group-hover:opacity-100',
+                'transition duration-150 hover:bg-surface-hover hover:text-text-primary',
+                'group-focus-within:opacity-100 group-hover:opacity-100 [@media(hover:hover)]:opacity-0',
                 'focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary',
               )}
             >
@@ -223,10 +223,11 @@ function ToolCardImpl({
               aria-label={localize(isFavorited ? 'com_ui_unfavorite' : 'com_ui_favorite')}
               className={cn(
                 'flex size-7 items-center justify-center rounded-lg text-text-secondary',
-                'opacity-0 transition duration-150 hover:bg-surface-hover hover:text-text-primary',
+                'transition duration-150 hover:bg-surface-hover hover:text-text-primary',
                 'group-focus-within:opacity-100 group-hover:opacity-100',
                 'focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary',
-                isFavorited && 'text-series-4 opacity-100 hover:text-series-4',
+                !isFavorited && '[@media(hover:hover)]:opacity-0',
+                isFavorited && 'text-series-4 hover:text-series-4',
               )}
             >
               <Star className={cn('size-4', isFavorited && 'fill-current')} aria-hidden="true" />

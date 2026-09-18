@@ -186,27 +186,45 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
         <OGDialogDescription className="sr-only">
           {localize('com_ui_skills_dialog_description')}
         </OGDialogDescription>
-        <div className="flex h-[80vh] max-h-[760px] flex-col">
-          <div className="flex flex-col gap-3 border-b border-border-light px-6 pb-4 pt-5">
-            <div className="flex items-center gap-2 pr-10">
-              <OGDialogTitle className="text-base font-semibold text-text-primary">
+        <div className="flex h-[80dvh] max-h-[760px] flex-col">
+          <div className="flex flex-col gap-3 border-b border-border-light px-4 pb-3 pt-4 md:px-6 md:pb-4 md:pt-5">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-3">
+              <OGDialogTitle className="pr-10 text-base font-semibold text-text-primary md:pr-0">
                 {localize('com_ui_skills')}
               </OGDialogTitle>
+              <Label id="skills-view-label" className="sr-only">
+                {localize('com_ui_skills_filter')}
+              </Label>
+              {/* basis-full below md: on the title's line these controls would sit under
+                  the dialog close button at the top right. From md they do share that
+                  line, and md:pr-10 keeps the clearance. */}
+              <div className="flex basis-full items-center gap-2 md:ml-auto md:basis-auto md:pr-10">
+                <Radio
+                  options={viewOptions}
+                  value={view}
+                  onChange={(value) => {
+                    setView(value as SkillView);
+                    setCategory('all');
+                  }}
+                  className="shrink-0 p-1"
+                  aria-labelledby="skills-view-label"
+                />
+                {hasCreateAccess && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCreateOpen(true)}
+                    aria-label={localize('com_ui_create_skill')}
+                    className="ml-auto h-[42px] w-[42px] shrink-0 p-0"
+                  >
+                    <Plus className="size-4" aria-hidden="true" />
+                  </Button>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center gap-2">
-              {hasCreateAccess && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCreateOpen(true)}
-                  aria-label={localize('com_ui_create_skill')}
-                  className="h-[42px] w-[42px] shrink-0 p-0"
-                >
-                  <Plus className="size-4" aria-hidden="true" />
-                </Button>
-              )}
               <div className="relative min-w-0 flex-1">
                 <Search
                   className="pointer-events-none absolute left-3 top-1/2 z-[1] size-4 -translate-y-1/2 text-text-tertiary"
@@ -222,23 +240,10 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
                 />
               </div>
               <CategoryFilter options={categoryOptions} value={category} onChange={setCategory} />
-              <Label id="skills-view-label" className="sr-only">
-                {localize('com_ui_skills_filter')}
-              </Label>
-              <Radio
-                options={viewOptions}
-                value={view}
-                onChange={(value) => {
-                  setView(value as SkillView);
-                  setCategory('all');
-                }}
-                className="flex-shrink-0 p-1"
-                aria-labelledby="skills-view-label"
-              />
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-6 py-4">
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3 md:px-6 md:py-4">
             {isSkillsError && (
               <div
                 role="alert"
