@@ -281,7 +281,7 @@ Multi-line imports count total character length across all lines. Consolidate va
   the theme in every case. Widen a contract when a whole category belongs to callers; do not widen
   one to clear a single call site.
 - **The existing backlog is recorded, not exempted.** `eslint-suppressions.json` holds the
-  violations the tree carried when the rules landed (3,150 today), as a per-file, per-rule count.
+  violations the tree carried when the rules landed (3,149 today), as a per-file, per-rule count.
   Adding a violation to a file reports every violation of that rule in it, so raising a file's
   count is a visible diff in that file — review it like any other change, and expect a raise to
   be justified by what the diff does. Strengthening a rule is the one case where counts rise in

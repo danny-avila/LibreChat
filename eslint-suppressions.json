@@ -149,7 +149,7 @@
   },
   "client/src/components/Chat/AddMultiConvo.tsx": {
     "shadcn/no-restyle": {
-      "count": 10
+      "count": 9
     }
   },
   "client/src/components/Chat/ChatView.tsx": {

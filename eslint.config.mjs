@@ -196,11 +196,6 @@ export default [
   // violations are recorded in eslint-suppressions.json, so these rules gate new and edited
   // code without a tree-wide migration; see CLAUDE.md, "Theming and styling".
   //
-  // `no-unknown-classes` is deliberately not enabled: it asks the installed Tailwind whether a
-  // class generates CSS and needs Tailwind v4, while this repo runs tailwindcss 3.4 with a JS
-  // preset. Its grammar fallback would report every preset utility (`duration-theme-fast`,
-  // `rounded-theme-control`, `icon-md`) as a typo.
-  //
   // The client's entry points and helpers are `.jsx`/`.js` — App.jsx among them — so the globs
   // name those extensions too: the rules have to see them.
   {
