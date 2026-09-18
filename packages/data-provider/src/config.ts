@@ -16,6 +16,7 @@ import {
   MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
   MAX_CHAT_PROJECT_INSTRUCTIONS_LENGTH,
   MAX_CHAT_PROJECT_FILES,
+  DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
 } from './limits';
 import {
   EModelEndpoint,
@@ -29,11 +30,6 @@ import {
   MIN_BALANCE_RESERVATION_TTL_MS,
   DEFAULT_BALANCE_RESERVATION_TTL_MS,
 } from './balance';
-import {
-  MAX_SUBAGENTS,
-  MAX_SUBAGENTS_CEILING,
-  DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
-} from './limits';
 import { CODE_ENVIRONMENT_DECISION_VERSION, CODE_ENVIRONMENT_MOVE_VERSION } from './code/workspace';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 
