@@ -2069,7 +2069,12 @@ describe('prompt caching', () => {
     });
 
     const kwargs = (result.llmConfig.modelKwargs ?? {}) as Record<string, unknown>;
-    expect(kwargs).toHaveProperty('prompt_cache_key', 'tenant-fixed-key');
+    /**
+     * Moved onto the constructor field: LangChain spreads the kwargs first and
+     * would overwrite a raw key with its own undefined, sending nothing.
+     */
+    expect(result.llmConfig.promptCacheKey).toBe('tenant-fixed-key');
+    expect(kwargs).not.toHaveProperty('prompt_cache_key');
     /** Withholding the marker is what stops createRun synthesizing over it. */
     expect(result.llmConfig).not.toHaveProperty('promptCacheKeyEnabled');
   });
@@ -2088,6 +2093,36 @@ describe('prompt caching', () => {
     expect(result.llmConfig).not.toHaveProperty('promptCacheKey');
     /** `addParams` routes the raw spelling into the kwargs the request forwards. */
     expect(kwargs).not.toHaveProperty('prompt_cache_key');
+  });
+
+  it('preserves a model group\u2019s explicit-cache opt-out', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6' },
+      promptCacheExplicit: true,
+      addParams: { promptCacheExplicit: false },
+    });
+
+    /** The endpoint value is a default; the group's own is the instruction. */
+    expect(result.llmConfig.promptCacheExplicit).toBe(false);
+  });
+
+  it('keeps a group-scoped cache scope off the request body', () => {
+    const result = getOpenAILLMConfig({
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.openAI,
+      modelOptions: { model: 'gpt-5.6' },
+      promptCacheScope: 'user',
+      addParams: { promptCacheScope: 'shared' },
+    });
+
+    const kwargs = (result.llmConfig.modelKwargs ?? {}) as Record<string, unknown>;
+    /** A host-only control no request body accepts, and the group's value wins. */
+    expect(kwargs).not.toHaveProperty('promptCacheScope');
+    expect(result.llmConfig.promptCacheScope).toBe('shared');
   });
 
   it('lets a model group override the endpoint retention', () => {
