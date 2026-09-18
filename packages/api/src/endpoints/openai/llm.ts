@@ -1042,11 +1042,11 @@ export function getOpenAILLMConfig({
      * And the wire spelling: `addParams` runs after the sanitizer above, so an
      * administrator's raw `prompt_cache_key` is sitting in the request kwargs
      * by now, and Responses forwards them verbatim. "Send no key at all" has
-     * to mean that in both alphabets.
+     * to mean that in both alphabets — and only that: retention and the
+     * explicit controls are separate levers with their own policy, so this
+     * switch leaves them to it.
      */
-    for (const field of PROMPT_CACHE_WIRE_FIELDS) {
-      delete modelKwargs[field];
-    }
+    delete modelKwargs.prompt_cache_key;
   }
   /**
    * Both spellings count as an administrator's decision. `addParams` routes the

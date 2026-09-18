@@ -1473,7 +1473,10 @@ describe('Azure deployment alias', () => {
       ],
       summarizationConfig: {
         model: 'gpt-5.6',
-        parameters: { streaming: false, modelKwargs: { model: 'gpt-4o' } },
+        parameters: { streaming: false, modelKwargs: { model: 'gpt-4o' } } as unknown as Record<
+          string,
+          string | number | boolean | null
+        >,
       },
     });
 
