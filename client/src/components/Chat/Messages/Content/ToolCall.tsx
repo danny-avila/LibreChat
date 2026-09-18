@@ -10,10 +10,10 @@ import {
 } from 'librechat-data-provider';
 import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
+import { cn, getToolDisplayLabel, logger, openInNewTab } from '~/utils';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { resolveToolCallPhase } from '~/utils/toolCallPhase';
-import { cn, getToolDisplayLabel, logger } from '~/utils';
 import { toolPanelSpacingClassName } from './disclosure';
 import { useToolCallIntent } from './Parts/intent';
 import { AttachmentGroup } from './Parts';
@@ -54,6 +54,7 @@ export default function ToolCall({
 }) {
   const localize = useLocalize();
   const [oauthError, setOAuthError] = useState<string | null>(null);
+  const [oauthBindFailed, setOAuthBindFailed] = useState(false);
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const hasOutput = (output?.length ?? 0) > 0;
   const [showInfo, setShowInfo] = useState(() => autoExpand && hasOutput);
@@ -139,24 +140,14 @@ export default function ToolCall({
     return match?.[1] || '';
   }, [parsedAuthUrl, isMCPToolCall]);
 
-  const handleOAuthClick = useCallback(async () => {
-    if (!auth) {
-      return;
+  /** Sets the CSRF cookie the OAuth callback checks when the provider redirects back. */
+  const bindOAuth = useCallback(async (): Promise<void> => {
+    if (isMCPToolCall && mcpServerName) {
+      await dataService.bindMCPOAuth(mcpServerName);
+    } else if (actionId) {
+      await dataService.bindActionOAuth(actionId);
     }
-    setOAuthError(null);
-    try {
-      if (isMCPToolCall && mcpServerName) {
-        await dataService.bindMCPOAuth(mcpServerName);
-      } else if (actionId) {
-        await dataService.bindActionOAuth(actionId);
-      }
-    } catch (e) {
-      logger.error('Failed to bind OAuth CSRF cookie', e);
-      setOAuthError(localize('com_ui_oauth_error_generic'));
-      return;
-    }
-    window.open(auth, '_blank', 'noopener,noreferrer');
-  }, [auth, isMCPToolCall, mcpServerName, actionId, localize]);
+  }, [isMCPToolCall, mcpServerName, actionId]);
 
   const hasError = (typeof output === 'string' && isError(output)) || runStepStatus === 'failed';
   /**
@@ -216,6 +207,48 @@ export default function ToolCall({
     isSubmitting,
     hasError,
   });
+  const showOAuth = Boolean(auth) && phase === 'running';
+
+  /**
+   * Binds when the sign-in prompt appears instead of on tap, so the tap opens the provider
+   * synchronously: an iOS home-screen app drops a tab opened after an awaited request.
+   */
+  useEffect(() => {
+    if (!showOAuth) {
+      return;
+    }
+    let active = true;
+    setOAuthBindFailed(false);
+    bindOAuth().catch((error: unknown) => {
+      logger.error('Failed to bind OAuth CSRF cookie', error);
+      if (active) {
+        setOAuthBindFailed(true);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [showOAuth, auth, bindOAuth]);
+
+  const handleOAuthClick = useCallback(() => {
+    if (!auth) {
+      return;
+    }
+    if (!oauthBindFailed) {
+      setOAuthError(null);
+      openInNewTab(auth);
+      return;
+    }
+    setOAuthError(localize('com_ui_oauth_error_generic'));
+    setOAuthBindFailed(false);
+    bindOAuth().then(
+      () => setOAuthError(null),
+      (error: unknown) => {
+        logger.error('Failed to bind OAuth CSRF cookie', error);
+        setOAuthBindFailed(true);
+      },
+    );
+  }, [auth, oauthBindFailed, bindOAuth, localize]);
 
   const handleToggleInfo = useCallback(() => {
     mountBody();
@@ -329,7 +362,7 @@ export default function ToolCall({
           )}
         </div>
       </div>
-      {auth != null && auth && phase === 'running' && (
+      {showOAuth && (
         <div className="flex w-full flex-col gap-2.5">
           <div className="mb-1 mt-2">
             <Button
