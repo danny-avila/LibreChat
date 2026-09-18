@@ -36,6 +36,7 @@ import type { Types } from 'mongoose';
 import type { ServerRequest, StrategyFunctions } from '~/types';
 import { extractSkillContent, inspectContentWithTraversal } from '~/protection';
 import { contentFilterBlockResponse } from '~/middleware/contentFilter';
+import { mergeDeleteSkillResults } from './deleteCleanup';
 import { getDeploymentSkillIds } from './deployment';
 import { resolveDownloadPath } from '~/storage/path';
 import { resolveSkillFilePathParam } from './path';
@@ -597,7 +598,14 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
       // Collect file records before deletion so we can clean up storage blobs
       const files = await listSkillFiles(id);
 
-      const result = await deleteSkill(id);
+      let result = await deleteSkill(id);
+      if (result.skillAbsent && !result.cleanupComplete) {
+        try {
+          result = mergeDeleteSkillResults(result, await deleteSkill(id));
+        } catch (error) {
+          logger.error(`[deleteSkill] Cleanup retry failed for ${id}:`, error);
+        }
+      }
       /** Once SkillFile cleanup succeeds, the records loaded above are the
        * only remaining references to their blobs. Use them even if an
        * independent allowlist or permission cleanup step needs a retry. */

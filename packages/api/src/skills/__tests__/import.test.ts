@@ -682,6 +682,39 @@ describe('createImportHandler', () => {
     expect(importFailure(res.body).error).toBe('skill_import_cleanup_incomplete');
   });
 
+  it('preserves successful cleanup steps across alternating rollback failures', async () => {
+    const deps = mockImportDeps();
+    deps.deleteSkill = jest
+      .fn()
+      .mockResolvedValueOnce({
+        deleted: true,
+        skillAbsent: true,
+        cleanupComplete: false,
+        failedCleanupSteps: ['permissions'],
+      })
+      .mockResolvedValueOnce({
+        deleted: false,
+        skillAbsent: true,
+        cleanupComplete: false,
+        failedCleanupSteps: ['skill_files'],
+      }) as ImportSkillDeps['deleteSkill'];
+    deps.deleteFile = jest.fn(async () => undefined);
+    deps.upsertSkillFile = jest
+      .fn()
+      .mockResolvedValueOnce({ _id: new Types.ObjectId() })
+      .mockRejectedValueOnce(
+        new Error('write conflict'),
+      ) as unknown as ImportSkillDeps['upsertSkillFile'];
+    const handler = createImportHandler(deps);
+    const res = mockResponse();
+
+    await handler(mockZipRequest(await zipWithAdditionalFiles(2, 64)), res);
+
+    expect(deps.deleteFile).toHaveBeenCalledTimes(2);
+    expect(res.status).toHaveBeenCalledWith(422);
+    expect(importFailure(res.body).error).toBe('skill_import_incomplete');
+  });
+
   it('rolls back the skill and its stored blobs when one archive file fails', async () => {
     const deps = mockImportDeps();
     let savedFiles = 0;

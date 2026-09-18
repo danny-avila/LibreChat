@@ -41,6 +41,7 @@ import {
 } from '~/protection';
 import { contentFilterBlockResponse } from '~/middleware/contentFilter';
 import { resolveRequestTenantId } from '~/middleware/tenant';
+import { mergeDeleteSkillResults } from './deleteCleanup';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from './limits';
 import { isSafeSkillFilePath } from './path';
 import { parseSkillMarkdown } from './parse';
@@ -825,10 +826,9 @@ async function rollbackArchiveImport(
 
   if (deletion.skillAbsent && !deletion.cleanupComplete) {
     try {
-      deletion = await deps.deleteSkill(skillId);
+      deletion = mergeDeleteSkillResults(deletion, await deps.deleteSkill(skillId));
     } catch (error) {
       logger.error(`[importSkill] Rollback cleanup retry failed for skill ${skillId}:`, error);
-      return { skillRemoved: true, cleanupComplete: false };
     }
   }
 
