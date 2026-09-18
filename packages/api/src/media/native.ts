@@ -1,10 +1,9 @@
 import { Readable } from 'node:stream';
-import { createHash } from 'node:crypto';
 import { EModelEndpoint } from 'librechat-data-provider';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { MediaNativeMethods, MediaStoredJob } from '@librechat/data-schemas';
 import type { MediaIntegration } from 'librechat-data-provider';
 import type { NativeMediaPort } from '@librechat/agents';
-import type { Request } from 'express';
 import type { MediaContext, MediaServiceDependencies } from './service';
 import { assertMediaAccess } from './service';
 import { MediaServiceError } from './errors';
@@ -25,6 +24,13 @@ export interface MediaChatSource {
   messageId: string;
   prompt: string;
   temporary: boolean;
+}
+
+function secretsMatch(candidate: string | undefined, expected: string | undefined): boolean {
+  if (candidate == null || expected == null) return false;
+  const left = Buffer.from(candidate);
+  const right = Buffer.from(expected);
+  return left.length === right.length && timingSafeEqual(left, right);
 }
 
 /** The SDK owns the model invocation and chat debit; this port records its ordered output. */
@@ -71,8 +77,7 @@ export function createNativeMediaFactory({
     });
     if (connection) {
       const base = (value: string) => value.replace(/\/$/, '').replace(/\/v1beta$/, '');
-      const keyMatches =
-        selection.apiKey != null && selection.apiKey === connection.headers['x-goog-api-key'];
+      const keyMatches = secretsMatch(selection.apiKey, connection.headers['x-goog-api-key']);
       const urlMatches =
         base(selection.baseURL ?? 'https://generativelanguage.googleapis.com') ===
         base(connection.baseURL);
@@ -320,34 +325,4 @@ export function createNativeMediaFactory({
       },
     };
   };
-}
-
-/** CJS host wiring supplies already-authenticated request and conversation identity. */
-export async function createMediaNativeFactory({
-  request,
-  conversationId,
-  messageId,
-}: {
-  request: Request;
-  conversationId: string;
-  messageId: string;
-}): Promise<NativeMediaFactory | undefined> {
-  const runtime = request.app?.locals?.mediaRuntime as
-    | {
-        nativeFactory?: (
-          request: Request,
-          source: MediaChatSource,
-        ) => Promise<NativeMediaFactory | undefined>;
-      }
-    | undefined;
-  if (!runtime?.nativeFactory) {
-    return undefined;
-  }
-  const body = request.body as { text?: string; isTemporary?: boolean } | undefined;
-  return runtime.nativeFactory(request, {
-    conversationId,
-    messageId,
-    prompt: typeof body?.text === 'string' ? body.text : '',
-    temporary: body?.isTemporary === true,
-  });
 }

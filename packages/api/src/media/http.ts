@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import path from 'node:path';
 import { Router } from 'express';
+import { unlink } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
-import { mkdir, unlink } from 'node:fs/promises';
 import { MediaPersistenceError } from '@librechat/data-schemas';
 import {
   mediaIdSchema,
@@ -19,45 +19,72 @@ import {
 import type { Request, Response, RequestHandler } from 'express';
 import type { MediaErrorCode } from 'librechat-data-provider';
 import type { MediaMethods } from '@librechat/data-schemas';
+import type { MediaStaging, MediaUploadStorage } from './staging';
 import type { MediaServices, MediaContext } from './service';
 import type { MediaStorage } from './storage';
-import { mediaContentByteLimit, mediaContentExtension, normalizeMediaContentType } from './content';
+import { mediaContentExtension, normalizeMediaContentType } from './content';
 import { assertUploadContentAllowed } from '../files/preflight';
 import { parseHostedMediaReference } from './hosted';
 import { assertMediaAccess } from './service';
 import { MediaServiceError } from './errors';
 
+type UploadFile = Express.Multer.File;
+
 export type MediaUploadFactory = (options: {
-  dest: string;
+  storage: MediaUploadStorage;
   limits: { fileSize: number; files: number; fields: number };
+  fileFilter(
+    req: Request,
+    file: UploadFile,
+    callback: (error: Error | null, accept?: boolean) => void,
+  ): void;
 }) => {
   single(field: string): RequestHandler;
 };
 
-export function sendMediaError(res: Response, error: Error): void {
-  let status = 500;
-  let code: MediaErrorCode = 'internal_error';
-  if (error instanceof MediaServiceError) {
-    status = error.status;
-    code = error.code;
-  } else if (error instanceof z.ZodError) {
-    status = 422;
-    code = 'invalid_request';
-  } else if (error instanceof MediaPersistenceError) {
-    const mapping = {
-      conflict: 'request_conflict',
-      capacity: 'quota_exceeded',
-      not_found: 'not_found',
-      retired: 'not_found',
-      invalid_input: 'invalid_request',
-      unsafe_retry: 'submission_uncertain',
-    } as const;
-    code = mapping[error.code];
-    status = 409;
-    if (error.code === 'capacity') status = 429;
-    else if (error.code === 'not_found' || error.code === 'retired') status = 404;
+const persistenceCodes = {
+  conflict: 'request_conflict',
+  capacity: 'quota_exceeded',
+  not_found: 'not_found',
+  retired: 'not_found',
+  invalid_input: 'invalid_request',
+  unsafe_retry: 'submission_uncertain',
+} as const;
+
+function persistenceStatus(code: MediaPersistenceError['code']): number {
+  if (code === 'capacity') return 429;
+  if (code === 'not_found' || code === 'retired') return 404;
+  return 409;
+}
+
+/** Errors the router knows how to answer; anything else is an operator-facing defect. */
+export function classifyMediaError(
+  error: Error,
+): { status: number; code: MediaErrorCode } | undefined {
+  if (error instanceof MediaServiceError) return { status: error.status, code: error.code };
+  if (error instanceof z.ZodError) return { status: 422, code: 'invalid_request' };
+  if (error instanceof MediaPersistenceError) {
+    return { status: persistenceStatus(error.code), code: persistenceCodes[error.code] };
   }
-  res.status(status).json({ error: { code } });
+  return undefined;
+}
+
+export function sendMediaError(res: Response, error: Error): void {
+  const mapped = classifyMediaError(error) ?? { status: 500, code: 'internal_error' as const };
+  res.status(mapped.status).json({ error: { code: mapped.code } });
+}
+
+function isMulterError(error: unknown): error is Error & { code: string } {
+  return error instanceof Error && error.name === 'MulterError' && 'code' in error;
+}
+
+function uploadError(error: unknown): Error {
+  if (isMulterError(error)) {
+    return error.code === 'LIMIT_FILE_SIZE'
+      ? new MediaServiceError('invalid_request', 413, 'Media exceeds the configured file limit.')
+      : new MediaServiceError('invalid_request', 422, 'Invalid media upload.');
+  }
+  return error instanceof Error ? error : new Error('Media upload failed.');
 }
 
 export function createMediaRouter({
@@ -66,16 +93,20 @@ export function createMediaRouter({
   storage,
   resolveContext,
   upload,
-  tempDirectory,
+  staging,
   id,
+  now,
+  log,
 }: {
   services: MediaServices;
   repository: MediaMethods;
   storage: MediaStorage;
   resolveContext(request: Request): Promise<MediaContext>;
   upload: MediaUploadFactory;
-  tempDirectory: string;
+  staging: MediaStaging;
   id: () => string;
+  now: () => number;
+  log(error: Error): void;
 }): Router {
   const router = Router();
   const handle =
@@ -88,8 +119,12 @@ export function createMediaRouter({
         const context = await resolveContext(req);
         assertMediaAccess(context);
         res.status(status).json(await action(req, context));
-      } catch (error) {
-        sendMediaError(res, error instanceof Error ? error : new Error('Media request failed'));
+      } catch (caught) {
+        const error = caught instanceof Error ? caught : new Error('Media request failed');
+        if (!classifyMediaError(error)) {
+          log(new Error(`Media request failed: ${req.method} ${req.path}`, { cause: caught }));
+        }
+        sendMediaError(res, error);
       }
     };
   const param = (req: Request, name: string) => mediaIdSchema.parse(req.params[name]);
@@ -265,7 +300,6 @@ export function createMediaRouter({
           'This media storage adapter is not available.',
         );
       }
-      await mkdir(tempDirectory, { recursive: true });
       const fileConfig = mergeFileConfig(context.appConfig.fileConfig);
       const maxFileBytes = Math.max(
         context.config.transfers.maxImageBytes,
@@ -273,15 +307,26 @@ export function createMediaRouter({
         context.config.transfers.maxAudioBytes,
       );
       const receive = upload({
-        dest: tempDirectory,
+        storage: staging.storage(context.config),
         limits: {
           fileSize: Math.min(maxFileBytes, fileConfig.serverFileSizeLimit ?? maxFileBytes),
           files: 1,
           fields: 1,
         },
+        fileFilter(_req, file, callback) {
+          if (!mediaContentExtension(normalizeMediaContentType(file.mimetype))) {
+            callback(
+              new MediaServiceError('unsupported', 422, 'Unsupported media reference type.'),
+            );
+            return;
+          }
+          callback(null, true);
+        },
       }).single('file');
       await new Promise<void>((resolve, reject) =>
-        receive(req, req.res!, (error?: Error | string) => (error ? reject(error) : resolve())),
+        receive(req, req.res!, (error?: unknown) =>
+          error ? reject(uploadError(error)) : resolve(),
+        ),
       );
       const file = req.file;
       if (!file) {
@@ -289,16 +334,6 @@ export function createMediaRouter({
       }
       try {
         const type = normalizeMediaContentType(file.mimetype);
-        if (!mediaContentExtension(type)) {
-          throw new MediaServiceError('unsupported', 422, 'Unsupported media reference type.');
-        }
-        if (file.size > mediaContentByteLimit(type, context.config)) {
-          throw new MediaServiceError(
-            'invalid_request',
-            413,
-            'Media exceeds the configured file limit.',
-          );
-        }
         await assertUploadContentAllowed({
           filters: context.appConfig.filters,
           file: { ...file, mimetype: type },
@@ -313,7 +348,7 @@ export function createMediaRouter({
           type,
           filename: path.basename(file.originalname),
           config: context.config,
-          expiredAt: new Date(Date.now() + context.config.assets.orphanRetentionMs).toISOString(),
+          expiredAt: new Date(now() + context.config.assets.orphanRetentionMs).toISOString(),
         });
         return { file: asset };
       } finally {

@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { apiBaseUrl } from 'librechat-data-provider';
 import {
   Download,
@@ -191,7 +192,7 @@ function Preview({
   );
 }
 
-function formatBytes(bytes: number) {
+function formatBytes(bytes: number, locale: string) {
   let unit = 'byte';
   let divisor = 1;
   if (bytes >= 1000000) {
@@ -201,7 +202,7 @@ function formatBytes(bytes: number) {
     unit = 'kilobyte';
     divisor = 1000;
   }
-  return new Intl.NumberFormat(undefined, {
+  return new Intl.NumberFormat(locale, {
     style: 'unit',
     unit,
     maximumFractionDigits: 1,
@@ -221,6 +222,7 @@ export function MediaAssetView({
 }) {
   const host = useMediaHost();
   const localize = useLocalize();
+  const { i18n } = useTranslation();
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState(false);
@@ -240,7 +242,7 @@ export function MediaAssetView({
   const details = [
     asset.type.split('/')[1]?.toUpperCase(),
     asset.width && asset.height ? `${asset.width} × ${asset.height}` : undefined,
-    formatBytes(asset.bytes),
+    formatBytes(asset.bytes, i18n.language),
   ].filter((value): value is string => !!value);
   return (
     <figure className="min-w-0 space-y-2">

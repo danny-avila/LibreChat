@@ -67,6 +67,9 @@ jest.mock('../Presentation', () => ({ children }: { children: React.ReactNode })
   <>{children}</>
 ));
 jest.mock('../Input/ChatForm', () => () => <div data-testid="chat-form" />);
+jest.mock('../Studio', () => ({
+  StudioProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
 jest.mock('../Landing', () => () => <div data-testid="landing" />);
 jest.mock('../Footer', () => ({
   __esModule: true,

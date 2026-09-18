@@ -270,6 +270,8 @@ export interface MediaMethods {
     clientRequestId: string;
     maxActiveJobs: number;
     maxPendingTotal: number;
+    /** Replaces the failed job's execution snapshot; the original is copied when omitted. */
+    execution?: MediaExecutionSnapshot;
   }): Promise<MediaSubmissionReceipt>;
   retireMediaThread(scope: MediaOwnerScope, threadId: string): Promise<boolean>;
   /** Retires temporary threads whose `expiresAt` has passed; returns how many were retired. */
@@ -363,6 +365,12 @@ export interface MediaMethods {
     kind: MediaPermit['kind'];
     capacity: number;
     key?: string;
+  }): Promise<boolean>;
+  /** Acquires every permit in order; on any failure the permits this call inserted are removed. */
+  acquireMediaPermits(input: {
+    scope: MediaOwnerScope;
+    jobId: string;
+    permits: Array<{ kind: MediaPermit['kind']; capacity: number; key?: string }>;
   }): Promise<boolean>;
   releaseMediaPermits(input: {
     scope: MediaOwnerScope;

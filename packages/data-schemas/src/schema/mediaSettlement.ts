@@ -49,7 +49,7 @@ const mediaSettlementSchema: Schema<MediaSettlementRecord> = new Schema(
     },
     balanceAcknowledged: { type: Boolean, default: false },
   },
-  { minimize: false, writeConcern: { w: 'majority', j: true } },
+  { versionKey: false, minimize: false },
 );
 mediaSettlementSchema.index({ tenantId: 1, ownerId: 1, jobId: 1 }, { unique: true });
 mediaSettlementSchema.index({ settlementId: 1 }, { unique: true });

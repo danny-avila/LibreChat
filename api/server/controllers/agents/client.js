@@ -3,7 +3,6 @@ const { logger, MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH } = require('@librechat/da
 const { getBufferString, HumanMessage } = require('@librechat/agents/langchain/messages');
 const {
   createRun,
-  createMediaNativeFactory,
   isEnabled,
   checkAccess,
   buildRunToolSet,
@@ -355,6 +354,20 @@ function getUserFacingRequestError(baseMessage, error, appConfig) {
     return baseMessage;
   }
   return `${baseMessage}: ${message}`;
+}
+
+/** Hands the request's mounted media runtime the identity a native image port records under. */
+function resolveNativeMediaFactory(req, conversationId, messageId) {
+  const runtime = req?.app?.locals?.mediaRuntime;
+  if (!runtime?.nativeFactory) {
+    return undefined;
+  }
+  return runtime.nativeFactory(req, {
+    conversationId,
+    messageId,
+    prompt: typeof req.body?.text === 'string' ? req.body.text : '',
+    temporary: req.body?.isTemporary === true,
+  });
 }
 
 class AgentClient extends BaseClient {
@@ -4896,11 +4909,11 @@ class AgentClient extends BaseClient {
           activityPhase?.handlers(offsetHandlers) ??
           (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers);
         const createRunPromise = createRun({
-          nativeMediaFactory: await createMediaNativeFactory({
-            request: this.options.req,
-            conversationId: this.conversationId,
-            messageId: this.responseMessageId,
-          }),
+          nativeMediaFactory: await resolveNativeMediaFactory(
+            this.options.req,
+            this.conversationId,
+            this.responseMessageId,
+          ),
           agents,
           // Conversation-stable identity for the e2e run hook; a resumed run
           // carries no messages, so history cannot identify the conversation.
@@ -5679,11 +5692,11 @@ class AgentClient extends BaseClient {
         activityPhase?.handlers(offsetHandlers) ??
         (activityLabel ? createAssistantPhaseStampingHandlers(offsetHandlers) : offsetHandlers);
       run = await createRun({
-        nativeMediaFactory: await createMediaNativeFactory({
-          request: this.options.req,
-          conversationId: this.conversationId,
-          messageId: this.responseMessageId,
-        }),
+        nativeMediaFactory: await resolveNativeMediaFactory(
+          this.options.req,
+          this.conversationId,
+          this.responseMessageId,
+        ),
         agents,
         conversationId: this.conversationId,
         modelCallbacks: [

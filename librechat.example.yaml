@@ -291,6 +291,13 @@ interface:
   #   share: true
   #   public: true # Allows users to toggle "share with everyone" for their links. Whether anonymous access is permitted is controlled by ALLOW_SHARED_LINKS_PUBLIC.
   #   snapshotFiles: true # Snapshot files referenced by a shared chat so viewers can preview/download them via the link. Enabled by default; the SHARED_LINKS_SNAPSHOT_FILES env var overrides this.
+  # Media Studio permissions (role defaults: USER use/create false, ADMIN use/create true).
+  # The `media:` section at the top level enables the feature and configures providers.
+  # - use: Allow users to open Media Studio and see media generated in chat
+  # - create: Allow users to submit new image and video generations
+  # media:
+  #   use: true
+  #   create: true
   # mcpServers:
   #   # Poll only while MCP controls are visible, in milliseconds (0 disables polling).
   #   toolsRefreshInterval: 300000
@@ -368,6 +375,73 @@ registration:
 #  enabled: false
 # Note: If balance.enabled is true, transactions will always be enabled
 # regardless of this setting to ensure balance tracking works correctly
+
+# Media Studio: image and video generation through configured provider integrations.
+# `media` is base-config-only; database overrides cannot change it per user, group, or role.
+# Values shown are the defaults. `enabled: true` requires at least one integration with
+# configured models, an allowlist, or explicit all-model discovery. Access is granted per role
+# through `interface.media` (see above), and saved originals use the local file strategy.
+# Further tuning groups keep their schema defaults when omitted: accounting, catalog, worker,
+# polling, timeouts, recovery, credentials, transfers.
+# media:
+#   enabled: false
+#   surfaces:
+#     studio: true   # The Media Studio surface
+#     chat: true     # Native image output from Google image models inside chat
+#   integrations:
+#     # Reuse the OpenAI chat endpoint's credentials for image generation and editing.
+#     - id: openai-images
+#       api: openai.images
+#       endpointRef: { kind: builtin, endpoint: openAI }
+#       catalog: { kind: configured, models: ['gpt-image-1'] }
+#       operations: ['image.generate', 'image.edit']
+#       # Optional when balance or transactions are enabled: charge generations in credits.
+#       # billing: { creditsPerUSD: 1000000, estimatedCostUSD: 0.04, maxCostUSD: 0.25 }
+#     # Vertex AI video with a service-account key file; Vertex requires explicit models.
+#     - id: vertex-video
+#       api: google.vertex.videos
+#       endpointRef: { kind: vertex, keyFile: '/run/secrets/vertex-media.json', location: us-central1 }
+#       catalog: { kind: configured, models: ['veo-3.1-fast-generate-001'] }
+#       operations: ['video.generate']
+#     # A direct provider key with discovered models narrowed to an allowlist. Use
+#     # `apiKey: user_provided` with `credentialName` to let each user save their own key.
+#     - id: openrouter-images
+#       api: openrouter.images
+#       endpointRef: { kind: direct, apiKey: '${OPENROUTER_KEY}' }
+#       catalog: { kind: discovered, allowModels: ['black-forest-labs/flux.2-pro'] }
+#       operations: ['image.generate', 'image.edit']
+#   limits:
+#     maxPromptChars: 32000
+#     maxTitleChars: 200
+#     maxInputs: 16
+#     maxOutputs: 8
+#     pageSize: 24
+#     maxPageSize: 100
+#     maxAssetRetainers: 128
+#     maxNativeParts: 1024
+#     maxNativePartBytes: 1048576
+#     maxNativeRecordingBytes: 4194304
+#     maxProviderOptionBytes: 32768
+#     maxProviderOptionDepth: 8
+#     maxPresets: 50
+#   queue:
+#     maxPendingPerUser: 20
+#     maxPendingTotal: 200
+#     maxQueueAgeMs: 3600000       # Queued work older than this fails with `queue_expired`
+#   execution:
+#     maxActivePerUser: 2
+#     maxActivePerIntegration: 4
+#     maxActiveTotal: 8
+#   titles:
+#     enabled: true                # Ask a text model for a short thread title after the receipt
+#     # endpoint: openAI           # Falls back to endpoints.all.titleEndpoint
+#     # model: gpt-4o-mini         # Falls back to endpoints.all.titleModel, then the endpoint's titleModel
+#     # prompt: 'Name this media request in five words or fewer.'
+#     timeoutMs: 45000
+#   assets:
+#     source: null                 # File strategy for originals; null inherits `fileStrategy` (local only)
+#     retention: inherit           # Originals follow the chat retention policy
+#     orphanRetentionMs: 86400000  # Unreferenced uploads and staging files are removed after this
 
 # Speech (STT/TTS) outbound requests to operator-provided target URLs are SSRF-guarded
 # at connect time: private, loopback, link-local, and cloud-metadata targets are blocked

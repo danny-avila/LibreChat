@@ -82,6 +82,7 @@ export const mediaErrorLabels = {
   version_conflict: 'com_media_error_version_conflict',
   request_conflict: 'com_media_error_request_conflict',
   quota_exceeded: 'com_media_error_quota_exceeded',
+  queue_expired: 'com_media_error_queue_expired',
   credentials_required: 'com_media_error_credentials_required',
   credentials_expired: 'com_media_error_credentials_expired',
   provider_rejected: 'com_media_error_provider_rejected',

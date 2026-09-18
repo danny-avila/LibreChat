@@ -112,7 +112,7 @@ export function createVertexMediaCredentialProvider({
       return { projectId: project, accessToken: token, revision };
     } catch (error) {
       if (error instanceof MediaServiceError) throw error;
-      // File and SDK errors can contain credential material; never surface their payloads.
+      /** File and SDK errors can contain credential material; never surface their payloads. */
       throw new MediaServiceError('credentials_required', 403, 'Vertex authentication failed.');
     }
   };

@@ -1,6 +1,22 @@
 import { resolveMediaConfig } from 'librechat-data-provider';
 import type { MediaConfig, MediaStartupConfig } from 'librechat-data-provider';
 
+export interface MediaRoleGrant {
+  permissions?: { MEDIA?: { USE?: boolean; CREATE?: boolean } };
+}
+export interface MediaPermissions {
+  canUse: boolean;
+  canCreate: boolean;
+}
+
+/** Absent roles and absent grants both deny; only an explicit `true` opens a surface. */
+export function resolveMediaPermissions(role: MediaRoleGrant | null | undefined): MediaPermissions {
+  return {
+    canUse: role?.permissions?.MEDIA?.USE === true,
+    canCreate: role?.permissions?.MEDIA?.CREATE === true,
+  };
+}
+
 /** Project capability hints from already-loaded policy; never resolve keys or discover models. */
 export function sanitizeMediaStartupConfig({
   config,

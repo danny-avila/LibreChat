@@ -18,7 +18,7 @@ export function nativeRequest(
     body.forEach((value) => {
       bodyBytes += typeof value === 'string' ? Buffer.byteLength(value) : value.size;
     });
-    // Allow multipart framing while accounting for every submitted reference file.
+    /** Allow multipart framing while accounting for every submitted reference file. */
     bodyBytes *= 2;
   }
   return {

@@ -130,6 +130,11 @@ export enum Panel {
   version = 'version',
 }
 
+/** The subset of a stored file a chat surface needs to hand it to Media Studio as a reference. */
+export type TMediaFileRef = Partial<
+  Pick<t.TFile, 'file_id' | 'filename' | 'filepath' | 'bytes' | 'type' | 'width' | 'height'>
+>;
+
 export type FileSetter =
   | SetterOrUpdater<Map<string, ExtendedFile>>
   | React.Dispatch<React.SetStateAction<Map<string, ExtendedFile>>>;

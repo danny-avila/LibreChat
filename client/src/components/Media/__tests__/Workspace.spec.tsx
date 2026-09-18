@@ -472,3 +472,38 @@ test('temporary creations are a header toggle for new work only and mark the dra
     header().queryByRole('button', { name: 'com_media_temporary_creation' }),
   ).not.toBeInTheDocument();
 });
+
+test('a pending request the server does not know can be recovered or dismissed', async () => {
+  sessionStorage.setItem(
+    'librechat:media:owner:pending',
+    JSON.stringify([
+      {
+        kind: 'submission',
+        draftKey: 'owner:new',
+        draftRevision: 1,
+        request: {
+          schemaVersion: 1,
+          clientRequestId: 'lost',
+          operation: 'image.generate',
+          prompt: 'A lost boat',
+          inputs: [],
+          parameters: { count: 1 },
+          selection,
+        },
+      },
+    ]),
+  );
+  jest
+    .spyOn(dataService, 'getMediaSubmission')
+    .mockRejectedValue({ response: { status: 404, data: { error: { code: 'not_found' } } } });
+  mount();
+  await screen.findByRole('textbox', { name: 'com_media_prompt' });
+  const recovery = () => within(screen.getByRole('region', { name: 'com_media_recovery' }));
+  expect(await screen.findByText('com_media_uncertain')).toBeInTheDocument();
+  expect(recovery().getByRole('button', { name: 'com_media_recover_request' })).toBeEnabled();
+  fireEvent.click(recovery().getByRole('button', { name: 'com_ui_dismiss' }));
+  await waitFor(() =>
+    expect(screen.queryByRole('region', { name: 'com_media_recovery' })).not.toBeInTheDocument(),
+  );
+  expect(sessionStorage.getItem('librechat:media:owner:pending')).toBe('[]');
+});

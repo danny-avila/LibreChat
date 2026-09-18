@@ -89,12 +89,17 @@ export interface MediaProviderAdapter {
   ): Promise<Readable>;
 }
 
+const absoluteReference = /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i;
+
 export function mediaAPIURL(connection: MediaConnection, path: string): string {
   const base = new URL(
     connection.baseURL.endsWith('/') ? connection.baseURL : `${connection.baseURL}/`,
   );
   if (base.username || base.password || base.search || base.hash) {
     throw new Error('Media API roots cannot contain credentials, query parameters or fragments.');
+  }
+  if (absoluteReference.test(path)) {
+    throw new Error('Media API paths must be relative to the connection root.');
   }
   return new URL(path.replace(/^\//, ''), base).href;
 }

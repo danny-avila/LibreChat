@@ -3,6 +3,7 @@ import type { MediaPresetMethods, MediaStoredPreset } from '~/types/mediaPreset'
 import type { MediaOwnerScope } from '~/types/media';
 import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { createMediaPresetModel } from '~/models/media';
+import { createIndexesWithRetry } from '~/utils/retry';
 import { MediaPersistenceError } from './media';
 
 const durable = { w: 'majority' as const, j: true };
@@ -45,7 +46,7 @@ export function createMediaPresetMethods(mongoose: typeof import('mongoose')): M
   let indexPromise: Promise<void> | undefined;
 
   async function ensureMediaPresetIndexes(): Promise<void> {
-    indexPromise ??= Preset.createIndexes()
+    indexPromise ??= createIndexesWithRetry(Preset)
       .then(() => undefined)
       .catch((error: unknown) => {
         indexPromise = undefined;

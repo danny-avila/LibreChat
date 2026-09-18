@@ -109,7 +109,11 @@ export default function MediaWorkspace({
   const studioTitle = localize('com_media_studio');
   const threadTitle = detail.data?.thread.title;
   useEffect(() => {
+    const previous = document.title;
     setDocumentTitle(threadTitle ? `${threadTitle} | ${studioTitle}` : studioTitle);
+    return () => {
+      document.title = previous;
+    };
   }, [threadTitle, studioTitle]);
   useEffect(() => {
     if (!focusRequested.current || gallery) return;
@@ -140,6 +144,7 @@ export default function MediaWorkspace({
     <section className="space-y-2" aria-label={localize('com_media_recovery')}>
       {commands.pending.map((command, index) => {
         const response = commands.receipts[index];
+        const unresolved = !response.data && !commands.sending.has(command.request.clientRequestId);
         return (
           <div
             key={command.request.clientRequestId}
@@ -163,7 +168,7 @@ export default function MediaWorkspace({
                 {localize('com_media_open_thread')}
               </Button>
             )}
-            {!response.data && !commands.sending.has(command.request.clientRequestId) && (
+            {unresolved && (
               <>
                 <p className="text-sm text-text-secondary">{localize('com_media_uncertain')}</p>
                 <Button
@@ -176,7 +181,7 @@ export default function MediaWorkspace({
                 </Button>
               </>
             )}
-            {response.data?.phase === 'rejected' && (
+            {(unresolved || response.data?.phase === 'rejected') && (
               <Button
                 variant="ghost"
                 size="sm"

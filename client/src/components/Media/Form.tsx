@@ -1,12 +1,7 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { v4 } from 'uuid';
 import { useAtom } from 'jotai';
 import { ChevronDown, Film, HatGlasses, ImagePlus, Pencil, Plus, X } from 'lucide-react';
-import {
-  mediaSubmissionRequestSchema,
-  mediaURLUploadRequestSchema,
-  mediaProviderOptionsSchema,
-} from 'librechat-data-provider';
 import {
   Button,
   Alert,
@@ -20,6 +15,12 @@ import {
   Textarea,
   TooltipAnchor,
 } from '@librechat/client';
+import {
+  mediaInputRoleSchema,
+  mediaSubmissionRequestSchema,
+  mediaURLUploadRequestSchema,
+  mediaProviderOptionsSchema,
+} from 'librechat-data-provider';
 import type {
   MediaCatalog,
   MediaEnumControl,
@@ -60,6 +61,7 @@ const numericKeys = [
   'creativity',
 ] as const;
 const enumKeys = ['size', 'aspectRatio', 'quality', 'format', 'background', 'resolution'] as const;
+const controlKeys = [...numericKeys, ...enumKeys] as const;
 type NumericKey = (typeof numericKeys)[number];
 type EnumKey = (typeof enumKeys)[number];
 type FormControls = Partial<Record<NumericKey, MediaNumberControl>> &
@@ -190,6 +192,7 @@ export function MediaForm({
       ? localize('com_media_provider_configuration_required')
       : localize(mediaErrorLabels[reason ?? 'unsupported']);
   const id = useId();
+  const connectionTrigger = useRef<HTMLButtonElement>(null);
   const credentials = useMediaCredentials(catalog, `${id}-connection`);
   const providerRequiresKey = (connectionId: string, reason: MediaOffering['unavailableReason']) =>
     (reason === 'credentials_required' || reason === 'credentials_expired') &&
@@ -324,12 +327,12 @@ export function MediaForm({
     return true;
   };
   const defaultPreset = presets.data?.find((preset) => preset.isDefault);
+  const untouched = !savedDraft.offering && !initialOffering;
+  const seedPreset = useRef(applyPreset);
+  seedPreset.current = applyPreset;
   useEffect(() => {
-    if (savedDraft.offering || initialOffering || !defaultPreset) return;
-    applyPreset(defaultPreset.settings);
-    // A default preset seeds only an untouched draft; the apply logic itself is not memoized.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [defaultPreset, savedDraft.offering, initialOffering]);
+    if (untouched && defaultPreset) seedPreset.current(defaultPreset.settings);
+  }, [defaultPreset, untouched]);
   const param = <K extends keyof MediaDraft['parameters']>(
     key: K,
     value: MediaDraft['parameters'][K],
@@ -351,11 +354,10 @@ export function MediaForm({
   const options = readProviderOptions(providerOptionsText, controls.providerOptions, catalog);
   if (options.value && Object.keys(options.value).length)
     parameters.providerOptions = options.value;
-  const invalidSettings = Object.entries(controls).flatMap(([key, control]) => {
-    if (!control || typeof control !== 'object' || Array.isArray(control)) return [];
-    const value =
-      draft.parameters[key as keyof MediaDraft['parameters']] ??
-      parameters[key as keyof MediaDraft['parameters']];
+  const invalidSettings: (keyof typeof mediaControlLabels)[] = controlKeys.flatMap((key) => {
+    const control = controls[key];
+    if (!control) return [];
+    const value = draft.parameters[key] ?? parameters[key];
     const missingRequired = 'required' in control && control.required && value == null;
     const invalidChoice =
       value != null &&
@@ -371,11 +373,9 @@ export function MediaForm({
         value > control.max);
     const invalidInteger =
       value != null &&
-      ['count', 'seed', 'outputCompression'].includes(key) &&
+      (key === 'count' || key === 'seed' || key === 'outputCompression') &&
       !Number.isInteger(value);
-    return missingRequired || invalidChoice || invalidNumber || invalidInteger
-      ? [key as keyof typeof mediaControlLabels]
-      : [];
+    return missingRequired || invalidChoice || invalidNumber || invalidInteger ? [key] : [];
   });
   if (draft.parameters.size && draft.parameters.resolution)
     invalidSettings.push('size', 'resolution');
@@ -406,6 +406,7 @@ export function MediaForm({
         {control.values ? (
           <ControlCombobox
             showCarat
+            selectId={`${id}-${key}`}
             ariaLabel={label}
             ariaInvalid={invalid}
             ariaDescribedBy={invalid ? `${id}-unsupported` : undefined}
@@ -447,11 +448,12 @@ export function MediaForm({
     const invalid = value ? !control.values.includes(value) : !!control.required;
     return (
       <div key={key} className="space-y-1">
-        <Label variant="section" id={`${id}-${key}-label`}>
+        <Label variant="section" htmlFor={`${id}-${key}`}>
           {label}
         </Label>
         <ControlCombobox
           showCarat
+          selectId={`${id}-${key}`}
           ariaLabel={label}
           ariaInvalid={invalid}
           ariaDescribedBy={invalid ? `${id}-unsupported` : undefined}
@@ -688,13 +690,15 @@ export function MediaForm({
                       value: role,
                       label: localize(mediaInputRoleLabels[role]),
                     }))}
-                  setValue={(value) =>
+                  setValue={(value) => {
+                    const role = mediaInputRoleSchema.safeParse(value);
+                    if (!role.success) return;
                     change({
                       inputs: draft.inputs.map((item, at) =>
-                        at === index ? { ...item, role: value as typeof input.role } : item,
+                        at === index ? { ...item, role: role.data } : item,
                       ),
-                    })
-                  }
+                    });
+                  }}
                 />
               )}
             </div>
@@ -757,8 +761,9 @@ export function MediaForm({
     const unavailable = (
       <div className="space-y-3">
         {!hasDraft && <p role="status">{message}</p>}
-        <Label>{localize('com_media_connection')}</Label>
+        <Label htmlFor={`${id}-connection`}>{localize('com_media_connection')}</Label>
         <ControlCombobox
+          ref={connectionTrigger}
           ariaLabel={localize('com_media_connection')}
           selectId={`${id}-connection`}
           optionAction={providerAction}
@@ -798,10 +803,7 @@ export function MediaForm({
           }}
         />
         {draft.offering && offerings.length > 0 && (
-          <Button
-            variant="outline"
-            onClick={() => document.getElementById(`${id}-connection`)?.click()}
-          >
+          <Button variant="outline" onClick={() => connectionTrigger.current?.click()}>
             {localize('com_media_choose_model')}
           </Button>
         )}

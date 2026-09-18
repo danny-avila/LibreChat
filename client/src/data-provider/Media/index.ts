@@ -1,4 +1,5 @@
 export * from './queries';
 export * from './reconcile';
+export * from './mutations';
 export * from './uploads';
 export * from './presets';

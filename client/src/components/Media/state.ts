@@ -13,6 +13,7 @@ import {
 } from 'librechat-data-provider';
 import type { MediaImportReceipt, MediaSubmissionReceipt } from 'librechat-data-provider';
 import type { SetStateAction } from 'react';
+import { registerSessionCleanup } from '~/store/session';
 
 const prefix = 'librechat:media:';
 const draftSchema = z.object({
@@ -134,3 +135,4 @@ export function clearMediaSessionStorage() {
   mediaPendingFamily.setShouldRemove(null);
   mediaLibraryFamily.setShouldRemove(null);
 }
+registerSessionCleanup(clearMediaSessionStorage);

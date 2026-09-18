@@ -49,6 +49,8 @@ function hasExplicitConfig(
       return interfaceConfig?.skills !== undefined;
     case PermissionTypes.SHARED_LINKS:
       return interfaceConfig?.sharedLinks !== undefined;
+    case PermissionTypes.MEDIA:
+      return interfaceConfig?.media !== undefined;
     case PermissionTypes.SCHEDULES: {
       // `schedules` is dual-purpose. The BOOLEAN form is the RUNTIME kill switch read
       // by getLimits, NOT a permission config: treating it as explicit would write
@@ -139,23 +141,6 @@ export async function updateInterfacePermissions({
     const permissionsToUpdate: Partial<
       Record<PermissionTypes, Record<string, boolean | undefined>>
     > = {};
-
-    const mediaConfig = interfaceConfig?.media;
-    const existingMedia = existingPermissions?.[PermissionTypes.MEDIA];
-    const mediaUpdate: Partial<Record<Permissions, boolean>> = {};
-    for (const [field, configured] of [
-      [Permissions.USE, mediaConfig?.use],
-      [Permissions.CREATE, mediaConfig?.create],
-    ] as const) {
-      if (configured !== undefined) {
-        mediaUpdate[field] = configured;
-      } else if (existingMedia?.[field] === undefined) {
-        mediaUpdate[field] = defaultPerms[PermissionTypes.MEDIA][field];
-      }
-    }
-    if (Object.keys(mediaUpdate).length > 0) {
-      permissionsToUpdate[PermissionTypes.MEDIA] = mediaUpdate;
-    }
 
     /**
      * Helper to add permission if it should be updated
@@ -583,6 +568,23 @@ export async function updateInterfacePermissions({
                 getConfigCreate(loadedInterface.schedules),
                 defaultPerms[PermissionTypes.SCHEDULES]?.[Permissions.CREATE],
                 schedulesDefaultCreate ?? true,
+              ),
+            }
+          : {}),
+      },
+      [PermissionTypes.MEDIA]: {
+        [Permissions.USE]: getPermissionValue(
+          loadedInterface.media?.use,
+          defaultPerms[PermissionTypes.MEDIA]?.[Permissions.USE],
+          undefined,
+        ),
+        ...((typeof interfaceConfig?.media === 'object' && 'create' in interfaceConfig.media) ||
+        !existingPermissions?.[PermissionTypes.MEDIA]
+          ? {
+              [Permissions.CREATE]: getPermissionValue(
+                loadedInterface.media?.create,
+                defaultPerms[PermissionTypes.MEDIA]?.[Permissions.CREATE],
+                undefined,
               ),
             }
           : {}),

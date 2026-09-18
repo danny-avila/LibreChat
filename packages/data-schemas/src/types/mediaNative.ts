@@ -17,6 +17,10 @@ export type MediaNativePartRecord = MediaOwnerScope & {
   createdAt: string;
   expiresAt?: string;
 };
+/** Stored shape: the expiry is a Date so the collection's TTL index can act on it. */
+export type MediaNativePartDocument = Omit<MediaNativePartRecord, 'expiresAt'> & {
+  expiresAt?: Date;
+};
 export type MediaNativePartReservation = NonNullable<MediaStoredJob['nativePartKeys']>[number];
 
 export interface MediaNativeMethods {

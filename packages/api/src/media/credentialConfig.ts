@@ -15,7 +15,7 @@ export interface MediaEnvironment {
   OPENAI_REVERSE_PROXY?: string;
   [name: string]: string | undefined;
 }
-// Match the admin secret envelope, while preserving literal provider keys beginning with v3:.
+/** Match the admin secret envelope, while preserving literal provider keys beginning with v3:. */
 const encryptedPayload = /^v3:[0-9a-f]{32}:[0-9a-f]+$/;
 
 interface MediaCredentialSettings {
@@ -153,7 +153,7 @@ export function createMediaCredentialConfiguration({
   function describe(input: SettingsInput): MediaUserKey | undefined {
     const userKey = read(input, false)?.userKey;
     if (!userKey) return undefined;
-    // Google chat owns this key's existing envelope even without a media builtin entry.
+    /** Google chat owns this key's existing envelope even without a media builtin entry. */
     if (userKey.keyName === 'google' && userKey.encoding !== 'google')
       throw new MediaServiceError(
         'not_ready',

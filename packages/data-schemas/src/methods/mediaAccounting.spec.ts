@@ -202,7 +202,7 @@ describe('media accounting on standalone MongoDB', () => {
     expect((await balance())?.mediaHolds).toHaveLength(1);
   });
 
-  it('records excess paid cost as debt and keeps refill/admission honest', async () => {
+  it('records excess paid cost as debt, keeps refill/admission honest, and never blocks deletion', async () => {
     const jobId = await job();
     await accounting.acquireMediaHold(hold(jobId));
     await accounting.settleMediaJob(settle(jobId, 1_050));
@@ -216,7 +216,8 @@ describe('media accounting on standalone MongoDB', () => {
         expiresAt: new Date(Date.now() + 60_000),
       }),
     ).toEqual({ reserved: false, balance: 10 });
-    expect((await ordinary.deleteBalances({ user: scope.ownerId })).deletedCount).toBe(0);
+    expect(await accounting.hasMediaAccountingObligations(scope)).toBe(false);
+    expect((await ordinary.deleteBalances({ user: scope.ownerId })).deletedCount).toBe(1);
   });
 
   it('releases only a certain no-charge result and never charges native chat again', async () => {
@@ -267,6 +268,9 @@ describe('media accounting on standalone MongoDB', () => {
     const jobId = await job();
     await accounting.acquireMediaHold(hold(jobId));
     expect((await ordinary.deleteBalances({ user: scope.ownerId })).deletedCount).toBe(0);
+    await expect(accounting.deleteMediaAccountingHistory(scope)).rejects.toMatchObject({
+      code: 'invariant',
+    });
     const pinned = await balance();
     await mongoose.models.Balance.create({
       _id: new mongoose.Types.ObjectId('000000000000000000000001'),
@@ -346,14 +350,12 @@ describe('media accounting on standalone MongoDB', () => {
     expect(await accounting.hasMediaAccountingObligations(scope)).toBe(false);
   });
 
-  it('collects debt from its pinned legacy balance and refuses premature accounting erasure', async () => {
+  it('collects debt from its pinned legacy balance without letting debt alone hold accounting hostage', async () => {
     const jobId = await job();
     const pinned = await balance();
     await accounting.acquireMediaHold(hold(jobId));
     await accounting.settleMediaJob(settle(jobId, 1_200));
-    await expect(accounting.deleteMediaAccountingHistory(scope)).rejects.toMatchObject({
-      code: 'invariant',
-    });
+    expect(await accounting.hasMediaAccountingObligations(scope)).toBe(false);
     await mongoose.models.Balance.create({
       _id: '000000000000000000000001',
       user: scope.ownerId,

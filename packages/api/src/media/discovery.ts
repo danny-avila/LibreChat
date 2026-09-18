@@ -119,7 +119,7 @@ function openRouterImageCapabilities(
   const format = enumeration(parameters.output_format);
   const resolution = enumeration(parameters.resolution);
   if (modelId === 'bytedance-seed/seedream-4.5' && resolution) {
-    // Seedream 4.5 rejects the 1K tier still advertised in the upstream catalog.
+    /** Seedream 4.5 rejects the 1K tier still advertised in the upstream catalog. */
     resolution.values = resolution.values.filter((value) => value !== '1K');
     if (!resolution.values.length) return [];
   }
@@ -358,7 +358,7 @@ export async function discoverOpenRouter(
               generalEndpoints,
               config,
             );
-            // Video routing isn't part of the documented API. These tags scope provider options only.
+            /** Video routing isn't part of the documented API. These tags scope provider options only. */
             const tags = [
               ...new Set(
                 endpoints.data.endpoints

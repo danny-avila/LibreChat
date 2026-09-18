@@ -78,7 +78,7 @@ export default function ProviderKeyRow({
           variant="outline"
           disabled={conflict || disabled || isLoading}
           onClick={() => (isError ? void refetch() : setDialogOpen(true))}
-          aria-label={`${buttonLabel} ${label}`}
+          aria-label={localize('com_ui_provider_key_action', { action: buttonLabel, name: label })}
         >
           {buttonLabel}
         </Button>

@@ -31,7 +31,7 @@ export function createDeferredNativeMediaPort(
       await (await resolve())?.complete(input);
     },
     async fail(input) {
-      // An admission failure has no provider-side work to reconcile.
+      /** An admission failure has no provider-side work to reconcile. */
       const port = await pending?.catch(() => undefined);
       await port?.fail(input);
     },

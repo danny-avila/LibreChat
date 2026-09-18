@@ -16,6 +16,7 @@ import type {
 import type { MediaOwnerScope, MediaStoredJob, MediaPage } from '~/types/media';
 import type { IBalance } from '~/types/balance';
 import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
+import { createIndexesWithRetry } from '~/utils/retry';
 
 export class MediaAccountingError extends Error {
   constructor(
@@ -50,6 +51,11 @@ export function createMediaAccountingMethods(
   const balances = (): Model<IBalance> => mongoose.models.Balance as Model<IBalance>;
   const writeBalance = (filter: FilterQuery<IBalance>, update: UpdateQuery<IBalance>) =>
     balances().updateOne(filter, update, { writeConcern: durable });
+  const writeSettlement = (
+    filter: FilterQuery<MediaSettlementRecord>,
+    update: UpdateQuery<MediaSettlementRecord>,
+    options: { upsert?: boolean } = {},
+  ) => settlements().updateOne(filter, update, { ...options, writeConcern: durable });
   const jobs = (): Model<MediaStoredJob> => mongoose.models.MediaJob as Model<MediaStoredJob>;
   const scopeFilter = (scope: MediaOwnerScope): MediaOwnerScope => {
     const context = tenantStorage.getStore()?.tenantId;
@@ -91,7 +97,7 @@ export function createMediaAccountingMethods(
   }
 
   async function ensureMediaAccountingIndexes(): Promise<void> {
-    await settlements().createIndexes();
+    await createIndexesWithRetry(settlements());
     const indexes = await settlements().listIndexes();
     for (const keys of [
       ['tenantId', 'ownerId', 'jobId'],
@@ -112,11 +118,7 @@ export function createMediaAccountingMethods(
     const [balance, unsettled] = await Promise.all([
       balances().exists({
         ...balanceFilter(scope),
-        $or: [
-          { 'mediaHolds.0': { $exists: true } },
-          { mediaDebtCredits: { $gt: 0 } },
-          { mediaPendingSettlement: { $ne: null } },
-        ],
+        $or: [{ 'mediaHolds.0': { $exists: true } }, { mediaPendingSettlement: { $ne: null } }],
       }),
       settlements().exists({ ...scopeFilter(scope), balanceAcknowledged: false }),
     ]);
@@ -276,7 +278,7 @@ export function createMediaAccountingMethods(
         .lean<IBalance>();
       if (!balance) return { status: 'unavailable', settlementId };
       try {
-        await settlements().updateOne(
+        await writeSettlement(
           { ...scopeFilter(scope), settlementId },
           {
             $setOnInsert: {
@@ -350,7 +352,7 @@ export function createMediaAccountingMethods(
       );
       if (result.modifiedCount !== 1) continue;
       await hooks.afterStep?.('held');
-      await settlements().updateOne(
+      await writeSettlement(
         { ...scopeFilter(scope), settlementId, state: 'holding' },
         { $set: { state: 'held' } },
       );
@@ -381,7 +383,7 @@ export function createMediaAccountingMethods(
       const pending = balance.mediaPendingSettlement;
       if (!pending) {
         if (requested.state === 'published') {
-          await settlements().updateOne(
+          await writeSettlement(
             { ...scopeFilter(scope), settlementId, state: 'published' },
             { $set: { balanceAcknowledged: true } },
           );
@@ -413,7 +415,7 @@ export function createMediaAccountingMethods(
         );
       }
       if (active.sequence === undefined) {
-        await settlements().updateOne(
+        await writeSettlement(
           {
             ...scopeFilter(scope),
             settlementId: active.settlementId,
@@ -499,7 +501,7 @@ export function createMediaAccountingMethods(
       }
       if (!pending.result)
         throw new MediaAccountingError('invariant', 'Applied settlement result is missing');
-      await settlements().updateOne(
+      await writeSettlement(
         { ...scopeFilter(scope), settlementId: active.settlementId, sequence: pending.sequence },
         {
           $set: { result: pending.result, state: 'applied' },
@@ -549,7 +551,7 @@ export function createMediaAccountingMethods(
         },
         { writeConcern: durable },
       );
-      await settlements().updateOne(
+      await writeSettlement(
         { ...scopeFilter(scope), settlementId: active.settlementId, sequence: pending.sequence },
         { $set: { state: 'published' } },
       );
@@ -565,7 +567,7 @@ export function createMediaAccountingMethods(
         { $unset: { mediaPendingSettlement: 1 } },
       );
       await hooks.afterStep?.('cleared');
-      await settlements().updateOne(
+      await writeSettlement(
         { ...scopeFilter(scope), settlementId: active.settlementId, state: 'published' },
         { $set: { balanceAcknowledged: true } },
       );
@@ -615,7 +617,7 @@ export function createMediaAccountingMethods(
       ...(effect.model !== undefined ? { model: effect.model } : {}),
     };
     const fingerprint = digest(JSON.stringify(normalized));
-    await settlements().updateOne(
+    await writeSettlement(
       { ...scopeFilter(scope), settlementId, effect: { $exists: false } },
       {
         $set: { effect: normalized, effectFingerprint: fingerprint, state: 'ready' },
@@ -789,7 +791,7 @@ export function createMediaAccountingMethods(
       const settlementId = identity(scope, jobId);
       const effect: MediaSettlementEffect = { kind: 'debt_collection', credits };
       const createdAt = new Date().toISOString();
-      await settlements().updateOne(
+      await writeSettlement(
         { ...scopeFilter(scope), settlementId },
         {
           $setOnInsert: {

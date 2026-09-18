@@ -3,7 +3,7 @@ import { v4 } from 'uuid';
 import * as Ariakit from '@ariakit/react';
 import { useTranslation } from 'react-i18next';
 import { useSetAtom, useAtomValue } from 'jotai';
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { Clock3, Ellipsis, HatGlasses, Images, Pen, Pencil, RotateCcw, Trash } from 'lucide-react';
 import {
   dataService,
@@ -37,8 +37,8 @@ import type {
 import type { MenuItemProps } from '~/common';
 import type { MediaSend } from './state';
 import { mediaErrorLabels, mediaJobPhaseLabels, mediaOutputStateLabels } from './labels';
+import { useMediaJobMutations, useMediaThreadMutations } from '~/data-provider/Media';
 import { mediaDraftFamily, mediaPendingFamily } from './state';
-import { invalidateMedia } from '~/data-provider/Media';
 import { MediaImagePending } from './ImagePending';
 import { getMessageTimestamp } from '~/utils';
 import { mediaErrorCode } from './commands';
@@ -122,7 +122,7 @@ function Job({
     (command) => command.kind === 'retry' && command.jobId === job.jobId,
   );
   const localize = useLocalize();
-  const client = useQueryClient();
+  const { cancel } = useMediaJobMutations(host);
   const retryUnavailableId = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -245,18 +245,14 @@ function Job({
           <Button
             variant="outline"
             size="sm"
-            disabled={busy}
+            disabled={busy || cancel.isLoading}
             onClick={async () => {
-              setBusy(true);
               setError(undefined);
               try {
-                await dataService.cancelMediaJob(job.jobId);
-                if (host.isCurrentSession()) await invalidateMedia(client, host.scope);
+                await cancel.mutateAsync(job.jobId);
               } catch (failure) {
                 if (host.isCurrentSession())
                   setError(localize(mediaErrorLabels[mediaErrorCode(failure)]));
-              } finally {
-                if (host.isCurrentSession()) setBusy(false);
               }
             }}
           >
@@ -267,7 +263,9 @@ function Job({
           <Button
             variant="outline"
             size="sm"
-            disabled={busy || retryPending || !host.canCreate || missingConnection}
+            disabled={
+              busy || cancel.isLoading || retryPending || !host.canCreate || missingConnection
+            }
             aria-describedby={missingConnection ? retryUnavailableId : undefined}
             onClick={async () => {
               setBusy(true);
@@ -301,6 +299,7 @@ function Job({
 }
 function TurnPrompt({ turn }: { turn: MediaTurn }) {
   const localize = useLocalize();
+  const { i18n } = useTranslation();
   return (
     <div className="flex justify-end" role="group" aria-label={localize('com_media_request')}>
       <div className="max-w-[90%] space-y-2 sm:max-w-[85%]">
@@ -312,7 +311,7 @@ function TurnPrompt({ turn }: { turn: MediaTurn }) {
           dateTime={turn.createdAt}
         >
           <Clock3 className="size-3.5" aria-hidden="true" />
-          {new Date(turn.createdAt).toLocaleString(undefined, {
+          {new Date(turn.createdAt).toLocaleString(i18n.language, {
             month: 'short',
             day: 'numeric',
             hour: 'numeric',
@@ -498,15 +497,16 @@ export function MediaThreadView({
   const host = useMediaHost();
   const localize = useLocalize();
   const { i18n } = useTranslation();
-  const client = useQueryClient();
+  const { update: updateThread, remove: removeThread } = useMediaThreadMutations(host);
   const [expanded, setExpanded] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuId = useId();
+  const titleId = useId();
   const menuTrigger = useRef<HTMLButtonElement>(null);
   const [error, setError] = useState<string>();
-  const [busy, setBusy] = useState(false);
+  const busy = updateThread.isLoading || removeThread.isLoading;
   const [title, setTitle] = useState(detail.thread.title);
   const threadId = detail.thread.threadId;
   const more = useInfiniteQuery(
@@ -537,20 +537,16 @@ export function MediaThreadView({
     }),
   );
   const update = async (change: { title?: string; coverFileId?: string }) => {
-    setBusy(true);
     setError(undefined);
     try {
-      await dataService.updateMediaThread(threadId, {
-        expectedVersion: detail.thread.version,
-        ...change,
+      await updateThread.mutateAsync({
+        threadId,
+        update: { expectedVersion: detail.thread.version, ...change },
       });
-      if (host.isCurrentSession()) await invalidateMedia(client, host.scope);
-      return true;
+      return host.isCurrentSession();
     } catch (failure) {
       if (host.isCurrentSession()) setError(localize(mediaErrorLabels[mediaErrorCode(failure)]));
       return false;
-    } finally {
-      if (host.isCurrentSession()) setBusy(false);
     }
   };
   const expires = getMessageTimestamp(detail.thread.expiresAt, i18n.language);
@@ -680,9 +676,9 @@ export function MediaThreadView({
         >
           <OGDialogTitle>{localize('com_media_rename')}</OGDialogTitle>
           <OGDialogDescription>{localize('com_media_rename_description')}</OGDialogDescription>
-          <Label htmlFor="media-thread-title">{localize('com_media_title')}</Label>
+          <Label htmlFor={titleId}>{localize('com_media_title')}</Label>
           <Input
-            id="media-thread-title"
+            id={titleId}
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             maxLength={catalog?.limits.maxTitleChars}
@@ -719,21 +715,14 @@ export function MediaThreadView({
             <Button
               disabled={busy}
               onClick={async () => {
-                setBusy(true);
                 try {
-                  await dataService.deleteMediaThread(threadId);
-                  if (host.isCurrentSession()) {
-                    await invalidateMedia(client, host.scope);
-                    onDeleted();
-                  }
+                  await removeThread.mutateAsync(threadId);
+                  if (host.isCurrentSession()) onDeleted();
                 } catch (failure) {
                   if (host.isCurrentSession())
                     setError(localize(mediaErrorLabels[mediaErrorCode(failure)]));
                 } finally {
-                  if (host.isCurrentSession()) {
-                    setBusy(false);
-                    setDeleteOpen(false);
-                  }
+                  if (host.isCurrentSession()) setDeleteOpen(false);
                 }
               }}
             >

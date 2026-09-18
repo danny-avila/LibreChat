@@ -248,6 +248,13 @@ file.index(
     partialFilterExpression: { mediaOutputKey: { $exists: true } },
   },
 );
+file.index(
+  { tenantId: 1, user: 1, mediaLifecycle: 1, file_id: 1 },
+  {
+    name: 'media_retirement_sweep',
+    partialFilterExpression: { mediaOutputKey: { $exists: true } },
+  },
+);
 file.index({ mediaLifecycle: 1, expiredAt: 1, deletionRetryAt: 1 });
 file.index({ createdAt: 1, updatedAt: 1 });
 file.index(
@@ -305,11 +312,7 @@ function guardMediaOriginal(this: Query<unknown, IMongoFile>): void {
           ['$set', '$addFields', '$unset'].includes(operator) &&
           fields &&
           typeof fields === 'object' &&
-          Object.entries(fields).every(
-            ([path, value]) =>
-              !mediaOriginalFields.has(path.split('.')[0]) ||
-              (path === 'expiresAt' && value === '$$REMOVE'),
-          ),
+          Object.keys(fields).every((path) => !mediaOriginalFields.has(path.split('.')[0])),
       ),
     );
     if (!safe) {
@@ -325,9 +328,13 @@ function guardMediaOriginal(this: Query<unknown, IMongoFile>): void {
   ) {
     throw new Error('Media file identities must be published through the immutable media protocol');
   }
+  /** Removing the upload TTL is a lifecycle write; only attaching one can harm an original. */
   const touched = Object.entries(update).flatMap(([key, value]) => {
     if (key === '$setOnInsert') {
       return [];
+    }
+    if (key === '$unset' && value && typeof value === 'object') {
+      return Object.keys(value).filter((path) => path !== 'expiresAt');
     }
     if (key.startsWith('$') && value && typeof value === 'object') {
       return Object.keys(value);

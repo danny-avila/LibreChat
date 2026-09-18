@@ -29,6 +29,7 @@ import type {
   MediaThreadUpdate,
   MediaURLUploadRequest,
   MediaURLUploadResponse,
+  MediaUserKey,
 } from 'librechat-data-provider';
 import type {
   AppConfig,
@@ -38,6 +39,8 @@ import type {
   MediaPresetMethods,
   MediaPublicationOptions,
   MediaStoredJob,
+  MediaAccountingMethods,
+  MediaExecutionSnapshot,
 } from '@librechat/data-schemas';
 import type {
   MediaConnection,
@@ -62,7 +65,7 @@ export type { MediaContext } from './context';
 
 export interface MediaAccounting {
   ensureReady?(): Promise<void>;
-  scopes?: import('@librechat/data-schemas').MediaAccountingMethods['listMediaAccountingScopes'];
+  scopes?: MediaAccountingMethods['listMediaAccountingScopes'];
   reconcile?(scope: MediaOwnerScope, config: MediaConfig): Promise<number>;
   reserve(job: MediaStoredJob, integration: MediaIntegration, context: MediaContext): Promise<void>;
   settle(
@@ -79,6 +82,8 @@ export interface MediaServiceDependencies extends MediaHostedDependencies {
   /** Retention window for temporary creations recovered outside a request; derived from the host config. */
   temporaryRetentionMs?: number;
   reconcileNative?(scope: MediaOwnerScope, config: MediaConfig): Promise<void>;
+  /** Removes abandoned upload staging files older than `staleBefore`. */
+  sweepStaging?(staleBefore: number): Promise<number>;
   adapters: readonly MediaProviderAdapter[];
   resolveConnection(input: {
     scope: MediaOwnerScope;
@@ -89,7 +94,7 @@ export interface MediaServiceDependencies extends MediaHostedDependencies {
   describeUserKey?(input: {
     integration: MediaIntegration;
     appConfig: AppConfig;
-  }): import('librechat-data-provider').MediaUserKey | undefined;
+  }): MediaUserKey | undefined;
   loadContext(scope: MediaOwnerScope): Promise<MediaContext>;
   withScope<T>(scope: MediaOwnerScope, operation: () => Promise<T>): Promise<T>;
   asSystem<T>(operation: () => Promise<T>): Promise<T>;
@@ -118,6 +123,26 @@ function publicationOptions(context: MediaContext): MediaPublicationOptions {
     maxRetainers: context.config.limits.maxAssetRetainers,
     maxTitleChars: context.config.limits.maxTitleChars,
     temporaryRetentionMs: mediaTemporaryRetentionMs(context.appConfig.interfaceConfig),
+  };
+}
+/** Freezes the resolved connection so dispatch can detect any change made after admission. */
+function preparedExecution(
+  selection: MediaSubmissionRequest['selection'],
+  ready: PreparedMedia,
+  appConfig: AppConfig,
+): MediaExecutionSnapshot {
+  return {
+    connectionId: selection.connectionId,
+    modelId: selection.modelId,
+    api: ready.connection.api,
+    catalogVersion: selection.catalogVersion,
+    bindingRevision: ready.connection.binding,
+    billing: ready.integration.billing,
+    providerTag: ready.providerTag,
+    ...(ready.integration.endpointRef.kind === 'direct'
+      ? {}
+      : { endpointRef: ready.integration.endpointRef }),
+    accountingMode: mediaAccountingMode(appConfig),
   };
 }
 function presetError(error: unknown): never {
@@ -244,7 +269,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
     const assets: MediaAsset[] = [];
     const inputs = await Promise.all(
       request.inputs.map(async (input) => {
-        const { asset, data } = await deps.storage.read(
+        const { asset, data, digest } = await deps.storage.read(
           context.scope,
           input.file_id,
           mediaInputByteLimit(input.role, context.config),
@@ -258,7 +283,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
         const sourceURL = input.sourceURL
           ? await verifyHostedMediaReference(
               { url: input.sourceURL, role: input.role === 'audio' ? 'audio' : 'video' },
-              data,
+              digest,
               context,
               deps.transport,
               signal,
@@ -418,21 +443,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
           : undefined;
         const execution =
           existing?.execution ??
-          (ready
-            ? {
-                connectionId: request.selection.connectionId,
-                modelId: request.selection.modelId,
-                api: ready.connection.api,
-                catalogVersion: request.selection.catalogVersion,
-                bindingRevision: ready.connection.binding,
-                billing: ready.integration.billing,
-                providerTag: ready.providerTag,
-                ...(ready.integration.endpointRef.kind === 'direct'
-                  ? {}
-                  : { endpointRef: ready.integration.endpointRef }),
-                accountingMode: mediaAccountingMode(context.appConfig),
-              }
-            : undefined);
+          (ready ? preparedExecution(request.selection, ready, context.appConfig) : undefined);
         if (!execution) {
           throw new MediaServiceError('not_found', 404, 'Submission is unavailable.');
         }
@@ -515,15 +526,16 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
           throw new MediaServiceError('not_found', 404, 'The job is unavailable.');
         }
         const replay = await deps.repository.getMediaSubmission(context.scope, clientRequestId);
-        if (!replay) {
-          await prepare(old.request, context, false);
-        }
+        const ready = replay ? undefined : await prepare(old.request, context, false);
         const receipt = await deps.repository.retryMediaJob({
           scope: context.scope,
           jobId,
           clientRequestId,
           maxActiveJobs: context.config.queue.maxPendingPerUser,
           maxPendingTotal: context.config.queue.maxPendingTotal,
+          ...(ready
+            ? { execution: preparedExecution(old.request.selection, ready, context.appConfig) }
+            : {}),
         });
         return (
           (await deps.repository.publishMediaSubmission(

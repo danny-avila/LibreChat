@@ -1,19 +1,20 @@
 import { createHash, randomUUID } from 'crypto';
 import type { MediaOutput } from 'librechat-data-provider';
 import type {
+  MediaNativeMethods,
+  MediaNativePart,
+  MediaNativePartDocument,
+} from '~/types/mediaNative';
+import type {
   MediaMethods,
   MediaOwnerScope,
   MediaStoredJob,
   MediaProviderState,
 } from '~/types/media';
-import type {
-  MediaNativeMethods,
-  MediaNativePart,
-  MediaNativePartRecord,
-} from '~/types/mediaNative';
 import { createMediaJobModel, createMediaThreadModel } from '~/models/media';
 import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { createMediaNativePartModel } from '~/models/mediaNativePart';
+import { createIndexesWithRetry } from '~/utils/retry';
 import { createFileModel } from '~/models/file';
 import { MediaPersistenceError } from './media';
 
@@ -63,7 +64,7 @@ export function createMediaNativeMethods(
   const File = createFileModel(mongoose);
 
   const ensureMediaNativeIndexes: MediaNativeMethods['ensureMediaNativeIndexes'] = async () => {
-    await Part.createIndexes();
+    await createIndexesWithRetry(Part);
   };
 
   const startMediaNativeRecording: MediaNativeMethods['startMediaNativeRecording'] = async (
@@ -228,14 +229,14 @@ export function createMediaNativeMethods(
         job = current;
       }
     }
-    const record: MediaNativePartRecord = {
+    const record: MediaNativePartDocument = {
       ...identity,
       continuationRef: randomUUID(),
       fingerprint,
       part,
       ...(part.kind === 'image' ? { fileId: part.fileId } : {}),
       createdAt: new Date().toISOString(),
-      ...(job?.nativeSource?.expiresAt ? { expiresAt: job.nativeSource.expiresAt } : {}),
+      ...(job?.nativeSource?.expiresAt ? { expiresAt: new Date(job.nativeSource.expiresAt) } : {}),
     };
     try {
       await new Part(record).save(durable);
@@ -533,7 +534,7 @@ export function createMediaNativeMethods(
       ...(input.continuationRef
         ? { continuationRef: input.continuationRef }
         : { fileId: input.fileId }),
-      $or: [{ expiresAt: { $exists: false } }, { expiresAt: { $gt: new Date().toISOString() } }],
+      $or: [{ expiresAt: { $exists: false } }, { expiresAt: { $gt: new Date() } }],
     }).lean();
     if (!part || (input.fileId && part.fileId !== input.fileId)) {
       return null;
@@ -552,7 +553,8 @@ export function createMediaNativeMethods(
     if (part.fileId && !(await media.getMediaAsset(scope, part.fileId))) {
       return null;
     }
-    return part;
+    const { expiresAt, ...stored } = part;
+    return { ...stored, ...(expiresAt ? { expiresAt: expiresAt.toISOString() } : {}) };
   };
 
   return {

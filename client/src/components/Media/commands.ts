@@ -9,9 +9,14 @@ import {
   mediaErrorSchema,
 } from 'librechat-data-provider';
 import type { MediaErrorCode } from 'librechat-data-provider';
+import type { UseQueryOptions } from '@tanstack/react-query';
 import type { MediaReceipt } from '~/data-provider/Media';
 import type { PendingMedia } from './state';
-import { invalidateMedia, mayClearMediaDraft } from '~/data-provider/Media';
+import {
+  invalidateMedia,
+  mayClearMediaDraft,
+  useMediaCommandMutations,
+} from '~/data-provider/Media';
 import { emptyDraft, mediaDraftFamily, mediaPendingFamily } from './state';
 import { useMediaHost } from './host';
 
@@ -39,18 +44,34 @@ const receiptKey = (scope: string, pending: PendingMedia) => [
   scope,
   pending.request.clientRequestId,
 ];
+/** A receipt polls quickly until it settles. A server that answers "no such request" is not
+ * going to change its mind, so the loop stops and leaves the entry to be recovered or dismissed;
+ * an outage backs off to the catch-up cadence instead of hammering at the poll rate. */
+export function receiptInterval(
+  data: MediaReceipt | undefined,
+  error: unknown,
+  intervals: { pollIntervalMs: number; catchUpIntervalMs: number },
+): number | false {
+  if (data) return data.phase === 'preparing' ? intervals.pollIntervalMs : false;
+  if (!error) return intervals.pollIntervalMs;
+  return definitiveRejection(error) ? false : intervals.catchUpIntervalMs;
+}
 export function useMediaCommands(visibleThreadIds: string[]) {
   const host = useMediaHost();
   const client = useQueryClient();
   const store = useStore();
+  const { submit, retry, importMedia } = useMediaCommandMutations(host);
+  const { mutateAsync: submitAsync } = submit;
+  const { mutateAsync: retryAsync } = retry;
+  const { mutateAsync: importAsync } = importMedia;
   const [pending, setPending] = useAtom(mediaPendingFamily(host.scope));
   const [sending, setSending] = useState<Set<string>>(new Set());
   const [error, setError] = useState<MediaErrorCode>();
   const observed = useRef(new Map<string, MediaReceipt['phase']>());
-  const receipts = useQueries({
-    queries: pending.map((command) => ({
+  const queries: UseQueryOptions<MediaReceipt, unknown, MediaReceipt, string[]>[] = pending.map(
+    (command) => ({
       queryKey: receiptKey(host.scope, command),
-      queryFn: async ({ signal }: { signal?: AbortSignal }): Promise<MediaReceipt> => {
+      queryFn: async ({ signal }): Promise<MediaReceipt> => {
         const receipt =
           command.kind === 'import'
             ? mediaImportReceiptSchema.parse(
@@ -63,11 +84,11 @@ export function useMediaCommands(visibleThreadIds: string[]) {
         return receipt;
       },
       retry: false,
-      refetchInterval: (data: MediaReceipt | undefined) =>
-        !data || data.phase === 'preparing' ? host.pollIntervalMs : (false as const),
+      refetchInterval: (data, query) => receiptInterval(data, query.state.error, host),
       refetchIntervalInBackground: false,
-    })),
-  });
+    }),
+  );
+  const receipts = useQueries({ queries });
   const send = useCallback(
     async (command: PendingMedia): Promise<MediaReceipt | undefined> => {
       if (!host.canCreate || !host.isCurrentSession()) return undefined;
@@ -79,16 +100,10 @@ export function useMediaCommands(visibleThreadIds: string[]) {
       setError(undefined);
       try {
         let receipt: MediaReceipt;
-        if (command.kind === 'submission')
-          receipt = mediaSubmissionReceiptSchema.parse(
-            await dataService.submitMedia(command.request),
-          );
+        if (command.kind === 'submission') receipt = await submitAsync(command.request);
         else if (command.kind === 'retry')
-          receipt = mediaSubmissionReceiptSchema.parse(
-            await dataService.retryMediaJob(command.jobId, command.request),
-          );
-        else
-          receipt = mediaImportReceiptSchema.parse(await dataService.importMedia(command.request));
+          receipt = await retryAsync({ jobId: command.jobId, request: command.request });
+        else receipt = await importAsync(command.request);
         if (!host.isCurrentSession()) return undefined;
         const carried =
           command.kind === 'submission' && !command.request.threadId && receipt.phase !== 'rejected'
@@ -103,7 +118,6 @@ export function useMediaCommands(visibleThreadIds: string[]) {
         if (receipt.phase === 'rejected') setError(receipt.error.code);
         else if (command.kind !== 'retry' && !command.request.threadId)
           host.openThread(receipt.threadId);
-        await invalidateMedia(client, host.scope);
         return receipt;
       } catch (failure) {
         if (host.isCurrentSession()) {
@@ -113,6 +127,7 @@ export function useMediaCommands(visibleThreadIds: string[]) {
             setPending((previous) =>
               previous.filter((item) => item.request.clientRequestId !== id),
             );
+          else void client.invalidateQueries(receiptKey(host.scope, command));
         }
         return undefined;
       } finally {
@@ -124,7 +139,7 @@ export function useMediaCommands(visibleThreadIds: string[]) {
           });
       }
     },
-    [host, client, setPending, store],
+    [host, client, setPending, store, submitAsync, retryAsync, importAsync],
   );
   useEffect(() => {
     if (!host.isCurrentSession()) return;

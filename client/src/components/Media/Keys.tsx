@@ -31,7 +31,10 @@ export function useMediaCredentials(catalog: MediaCatalog, selectId: string) {
     const key = integration?.userKey && keys.get(integration.userKey.keyName);
     if (!integration || !key) return undefined;
     return {
-      label: `${localize('com_endpoint_config_key')} ${integration.connectionName}`,
+      label: localize('com_ui_provider_key_action', {
+        action: localize('com_endpoint_config_key'),
+        name: integration.connectionName,
+      }),
       icon: <Settings className="size-4" aria-hidden="true" />,
       onClick: () => setActive({ ...key, label: integration.connectionName }),
     };

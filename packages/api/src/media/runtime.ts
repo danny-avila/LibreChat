@@ -25,6 +25,8 @@ import { createMediaCredentialResolver } from './credentials';
 import { createRESTMediaAdapters } from './adapters/rest';
 import { createLocalMediaStorage } from './storage';
 import { createNativeMediaFactory } from './native';
+import { resolveMediaPermissions } from './config';
+import { createMediaStaging } from './staging';
 import { createMediaWorker } from './worker';
 import { MediaServiceError } from './errors';
 import { createMediaRouter } from './http';
@@ -74,7 +76,16 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
   if (!imageDirectory || !uploadDirectory) {
     throw new Error('Media storage paths are unavailable.');
   }
-  const storage = createLocalMediaStorage({ repository, imageDirectory, uploadDirectory });
+  const storage = createLocalMediaStorage({
+    repository,
+    imageDirectory,
+    uploadDirectory,
+    now: Date.now,
+  });
+  const staging = createMediaStaging({
+    directory: `${uploadDirectory}/media-staging`,
+    id: randomUUID,
+  });
   const adapters = input.adapters ?? createRESTMediaAdapters();
   const resolveConnection = createMediaCredentialResolver({
     repository,
@@ -101,8 +112,7 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
       scope: { ownerId: actor.id, tenantId: actor.tenantId ?? null },
       appConfig,
       config,
-      canUse: role?.permissions?.MEDIA?.USE === true,
-      canCreate: role?.permissions?.MEDIA?.CREATE === true,
+      ...resolveMediaPermissions(role),
     };
   }
   const loadContext = async (scope: MediaOwnerScope) => {
@@ -138,6 +148,7 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
         repository.ensureMediaPresetIndexes(),
       ]);
     },
+    sweepStaging: staging.sweep,
     reconcileNative: async (scope: MediaOwnerScope, config: typeof baseConfig) => {
       await repository.reconcileMediaNativeRecordings({
         scope,
@@ -161,12 +172,14 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
     storage,
     repository,
     upload: input.upload,
-    tempDirectory: `${uploadDirectory}/media-staging`,
+    staging,
     id: randomUUID,
+    now: Date.now,
+    log: input.log,
     resolveContext: async (request: Request) => {
       const user = (request as Request & { user?: IUser }).user;
       if (!user?.id) {
-        throw new MediaServiceError('forbidden', 401, 'Authentication is required.');
+        throw new MediaServiceError('forbidden', 403, 'Authentication is required.');
       }
       return { ...(await actorContext(user)), user };
     },
@@ -184,7 +197,7 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
       }
       const user = (request as Request & { user?: MediaActor }).user;
       if (!user?.id) {
-        throw new MediaServiceError('forbidden', 401, 'Authentication is required.');
+        throw new MediaServiceError('forbidden', 403, 'Authentication is required.');
       }
       let currentContext: Promise<MediaContext> | undefined;
       return async (selection) => {

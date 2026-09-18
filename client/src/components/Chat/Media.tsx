@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState, lazy, Suspense } from 'react';
-import { useSetAtom } from 'jotai';
+import { useStore } from 'jotai';
 import { Images } from 'lucide-react';
 import { getEndpointFileConfig, isAgentsEndpoint, mergeFileConfig } from 'librechat-data-provider';
 import {
@@ -11,29 +11,34 @@ import {
 } from '@librechat/client';
 import type { MediaAsset, TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
+import { useGetFileConfig, useGetStartupConfig } from '~/data-provider';
 import useAgentUploadTarget from '~/hooks/Agents/useAgentUploadTarget';
 import { MediaHostProvider } from '~/components/Media/host';
 import { useMediaChatHandoff } from './useMediaChatHandoff';
+import { mediaDraftFamily } from '~/components/Media/state';
 import { getViableUploadOptions } from '~/utils/files';
 import { useMediaShellHost } from '~/routes/mediaHost';
-import { useGetFileConfig } from '~/data-provider';
 import { useLocalize } from '~/hooks';
-const MediaWorkspace = lazy(() => import('~/components/Media/Workspace'));
-import { mediaDraftFamily } from '~/components/Media/state';
 
-export default function ChatMedia({
-  conversation,
-  files,
-  setFiles,
-  disabled,
-  temporary,
-}: {
+const MediaWorkspace = lazy(() => import('~/components/Media/Workspace'));
+
+type ChatMediaProps = {
   conversation: TConversation | null;
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
   disabled: boolean;
   temporary: boolean;
-}) {
+};
+
+/** The host adapter binds permissions, composer shortcuts and identity; none of that is worth
+ * paying for on a deployment that has not turned Studio on in chat. */
+export default function ChatMedia(props: ChatMediaProps) {
+  const { data: startup } = useGetStartupConfig();
+  if (!startup?.media?.chat) return null;
+  return <ChatMediaEnabled {...props} />;
+}
+
+function ChatMediaEnabled({ conversation, files, setFiles, disabled, temporary }: ChatMediaProps) {
   const localize = useLocalize();
   const [open, setOpen] = useState(false);
   const [threadId, setThreadId] = useState<string>();
@@ -99,8 +104,8 @@ export default function ChatMedia({
     () => ({ openThread: (id: string) => setThreadId(id || undefined), useInChat: attach }),
     [attach],
   );
-  const { host, media } = useMediaShellHost(actions);
-  const setDraft = useSetAtom(mediaDraftFamily(`${host?.scope ?? ''}:new`));
+  const { host } = useMediaShellHost(actions);
+  const store = useStore();
   const destination = conversation?.conversationId ?? 'new';
   const { dismiss } = useMediaChatHandoff({
     scope: host?.scope,
@@ -114,7 +119,7 @@ export default function ChatMedia({
     (file) =>
       file.progress === 1 && file.type?.startsWith('image/') && file.filepath && file.filename,
   );
-  if (!host || !media?.chat) return null;
+  if (!host) return null;
   return (
     <>
       <Button
@@ -125,7 +130,7 @@ export default function ChatMedia({
         disabled={disabled}
         onClick={() => setOpen(true)}
       >
-        <Images className="size-5" />
+        <Images className="size-5" aria-hidden="true" />
       </Button>
       {error && (
         <div role="alert" className="text-sm">
@@ -162,7 +167,7 @@ export default function ChatMedia({
                       width: file.width,
                       height: file.height,
                     }));
-                    setDraft((previous) => ({
+                    store.set(mediaDraftFamily(`${host.scope}:new`), (previous) => ({
                       ...previous,
                       revision: previous.revision + 1,
                       operation: 'image.edit',

@@ -424,6 +424,22 @@ describe('media persistence on standalone MongoDB', () => {
     expect(await mongoose.models.MediaTurn.countDocuments()).toBe(1);
   });
 
+  it('retries under a fresh execution snapshot instead of copying the failed one', async () => {
+    const job = await accepted('retry-execution');
+    await methods.cancelMediaJob(scope, job.jobId);
+    const execution = { ...job.execution, connectionId: 'images-b', bindingRevision: 'v2' };
+    const receipt = await methods.retryMediaJob({
+      scope,
+      jobId: job.jobId,
+      clientRequestId: 'retry-fresh',
+      maxActiveJobs: 10,
+      maxPendingTotal: 100,
+      execution,
+    });
+    expect((await methods.getMediaJob(scope, receipt.jobId))?.execution).toEqual(execution);
+    expect((await methods.getMediaJob(scope, job.jobId))?.execution).toEqual(job.execution);
+  });
+
   it('prevents dispatch after thread retirement and never recreates the identity', async () => {
     const job = await accepted('retire');
     const now = new Date(Date.now() + 1000).toISOString();
@@ -851,6 +867,30 @@ describe('media persistence on standalone MongoDB', () => {
         capacity: 1,
       }),
     ).toBe(true);
+  });
+
+  it('rolls back every permit a failed multi-permit acquisition inserted', async () => {
+    const other = { ...scope, ownerId: new mongoose.Types.ObjectId().toString() };
+    const [firstA, secondA] = await Promise.all([accepted('owner-a-1'), accepted('owner-a-2')]);
+    const staged = await methods.stageMediaSubmission({ ...submission('owner-b'), scope: other });
+    await methods.publishMediaSubmission(other, staged.jobId, options);
+    const permits = [
+      { kind: 'deployment' as const, capacity: 2 },
+      { kind: 'owner' as const, capacity: 1 },
+    ];
+    const held = (jobId: string) =>
+      mongoose.models.MediaPermit.find({ jobId })
+        .distinct('kind')
+        .then((kinds) => kinds.sort());
+    expect(await methods.acquireMediaPermits({ scope, jobId: firstA.jobId, permits })).toBe(true);
+    expect(await held(firstA.jobId)).toEqual(['deployment', 'owner', 'queue']);
+    expect(await methods.acquireMediaPermits({ scope, jobId: secondA.jobId, permits })).toBe(false);
+    expect(await held(secondA.jobId)).toEqual(['queue']);
+    expect(await mongoose.models.MediaPermit.countDocuments({ kind: 'deployment' })).toBe(1);
+    expect(await methods.acquireMediaPermits({ scope: other, jobId: staged.jobId, permits })).toBe(
+      true,
+    );
+    expect(await held(staged.jobId)).toEqual(['deployment', 'owner', 'queue']);
   });
 
   it('repairs a lost asset receipt acknowledgement from the canonical immutable File', async () => {

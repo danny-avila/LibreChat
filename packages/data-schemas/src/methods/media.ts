@@ -3,6 +3,7 @@ import type {
   MediaAsset,
   MediaImportReceipt,
   MediaJob,
+  MediaOutput,
   MediaSubmissionReceipt,
   MediaThread,
   MediaTurn,
@@ -30,6 +31,7 @@ import {
 } from '~/models/media';
 import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { createMediaNativePartModel } from '~/models/mediaNativePart';
+import { createIndexesWithRetry } from '~/utils/retry';
 import { MEDIA_FILE_ID_PREFIX } from '~/types/media';
 import { createFileModel } from '~/models/file';
 
@@ -135,6 +137,24 @@ function assetView(content: MediaAsset): MediaAsset {
     ...(content.durationSeconds != null ? { durationSeconds: content.durationSeconds } : {}),
   };
 }
+const readyAssetOutput = {
+  kind: { $in: ['image', 'video'] },
+  state: 'ready',
+  'asset.file_id': { $exists: true },
+};
+/** The lowest-ordinal ready image or video output; the cover a thread shows before it is chosen. */
+function firstReadyAsset(outputs: MediaOutput[] = []): MediaAsset | undefined {
+  let cover: Extract<MediaOutput, { kind: 'image' | 'video' }> | undefined;
+  for (const output of outputs) {
+    if (output.kind === 'text' || output.state !== 'ready' || !output.asset?.file_id) {
+      continue;
+    }
+    if (!cover || output.ordinal < cover.ordinal) {
+      cover = output;
+    }
+  }
+  return cover?.asset;
+}
 function jobView(job: MediaStoredJob): MediaJob {
   const canRetry =
     job.receipt.phase === 'accepted' &&
@@ -216,7 +236,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
   async function ensureMediaIndexes(): Promise<void> {
     indexPromise ??= Promise.all(
       [Thread, Turn, Job, AssetWrite, File, Permit, Activation, Owner, Preset].map((model) =>
-        model.createIndexes(),
+        createIndexesWithRetry(model),
       ),
     )
       .then(() => undefined)
@@ -808,78 +828,21 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
 
   const getMediaThread: MediaMethods['getMediaThread'] = async (scope, threadId) => {
     const owner = scopeFilter(scope);
-    type ThreadProjection = MediaStoredThread & {
-      projectedJobs: Array<{
-        pending: Array<{ value: number }>;
-        covers: Array<{ asset: MediaAsset }>;
-      }>;
-      projectedTurns: Array<{ value: number }>;
-    };
-    const [thread] = await Thread.aggregate<ThreadProjection>([
-      { $match: { ...owner, threadId, status: 'active' } },
-      { $limit: 1 },
-      {
-        $lookup: {
-          // eslint-disable-next-line no-restricted-syntax -- Metadata only; the lookup explicitly filters owner, tenant and thread.
-          from: Job.collection.name,
-          pipeline: [
-            { $match: { ...owner, threadId, 'receipt.phase': 'accepted' } },
-            {
-              $facet: {
-                pending: [{ $match: { phase: { $nin: terminal } } }, { $count: 'value' }],
-                covers: [
-                  {
-                    $match: {
-                      outputs: {
-                        $elemMatch: {
-                          kind: { $in: ['image', 'video'] },
-                          state: 'ready',
-                          'asset.file_id': { $exists: true },
-                        },
-                      },
-                    },
-                  },
-                  { $sort: { createdAt: 1, jobId: 1 } },
-                  { $limit: 1 },
-                  { $unwind: '$outputs' },
-                  {
-                    $match: {
-                      'outputs.kind': { $in: ['image', 'video'] },
-                      'outputs.state': 'ready',
-                      'outputs.asset.file_id': { $exists: true },
-                    },
-                  },
-                  { $sort: { 'outputs.ordinal': 1 } },
-                  { $limit: 1 },
-                  { $project: { _id: 0, asset: '$outputs.asset' } },
-                ],
-              },
-            },
-          ],
-          as: 'projectedJobs',
-        },
-      },
-      {
-        $lookup: {
-          // eslint-disable-next-line no-restricted-syntax -- Metadata only; the lookup explicitly filters owner, tenant and thread.
-          from: Turn.collection.name,
-          pipeline: [
-            { $match: { ...owner, threadId, publicationPhase: 'accepted' } },
-            { $count: 'value' },
-          ],
-          as: 'projectedTurns',
-        },
-      },
+    const acceptedJobs = { ...owner, threadId, 'receipt.phase': 'accepted' };
+    const [thread, pendingJobCount, turnCount, coverJob] = await Promise.all([
+      Thread.findOne({ ...owner, threadId, status: 'active' }).lean(),
+      Job.countDocuments({ ...acceptedJobs, phase: { $nin: terminal } }),
+      Turn.countDocuments({ ...owner, threadId, publicationPhase: 'accepted' }),
+      Job.findOne({ ...acceptedJobs, outputs: { $elemMatch: readyAssetOutput } })
+        .sort({ createdAt: 1, jobId: 1 })
+        .select({ outputs: 1 })
+        .lean<Pick<MediaStoredJob, 'outputs'> | null>(),
     ]);
     if (!thread) {
       return null;
     }
-    const pendingJobCount = thread.projectedJobs[0]?.pending[0]?.value ?? 0;
-    const turnCount = thread.projectedTurns[0]?.value ?? 0;
     const cover =
-      !thread.cover && !thread.coverExplicit
-        ? thread.projectedJobs[0]?.covers[0]?.asset
-        : undefined;
+      !thread.cover && !thread.coverExplicit ? firstReadyAsset(coverJob?.outputs) : undefined;
     if (pendingJobCount === thread.pendingJobCount && turnCount === thread.turnCount && !cover) {
       return threadView(thread);
     }
@@ -921,13 +884,15 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     }
     if (include === 'activity') {
       type GalleryThread = MediaStoredThread & {
-        jobs: Array<{
-          pending: Array<{ value: number }>;
-          summary: Array<NonNullable<MediaThread['activity']>>;
-          covers: Array<{ asset: MediaAsset }>;
-        }>;
+        jobs: Array<{ pending: number } & NonNullable<MediaThread['activity']>>;
+        covers: Array<Pick<MediaStoredJob, 'outputs'>>;
       };
       const filtered = filter === 'pending' || filter === 'completed';
+      const correlated = {
+        ...scopeFilter(scope),
+        'receipt.phase': 'accepted',
+        $expr: { $eq: ['$threadId', '$$threadId'] },
+      };
       const rows = await Thread.aggregate<GalleryThread>([
         { $match: query },
         { $sort: { createdAt: -1, threadId: -1 } },
@@ -938,79 +903,55 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
             from: Job.collection.name,
             let: { threadId: '$threadId' },
             pipeline: [
+              { $match: correlated },
+              { $sort: { createdAt: -1, jobId: -1 } },
               {
-                $match: {
-                  ...scopeFilter(scope),
-                  'receipt.phase': 'accepted',
-                  $expr: { $eq: ['$threadId', '$$threadId'] },
+                $group: {
+                  _id: null,
+                  pending: { $sum: { $cond: [{ $in: ['$phase', terminal] }, 0, 1] } },
+                  latestJob: {
+                    $first: {
+                      phase: '$phase',
+                      operation: '$operation',
+                      selection: '$selection',
+                    },
+                  },
+                  readyOutputs: {
+                    $sum: {
+                      $size: {
+                        $filter: {
+                          input: '$outputs',
+                          as: 'output',
+                          cond: {
+                            $and: [
+                              { $in: ['$$output.kind', ['image', 'video']] },
+                              { $eq: ['$$output.state', 'ready'] },
+                              { $ne: [{ $ifNull: ['$$output.asset.file_id', null] }, null] },
+                            ],
+                          },
+                        },
+                      },
+                    },
+                  },
                 },
               },
-              {
-                $facet: {
-                  pending: [{ $match: { phase: { $nin: terminal } } }, { $count: 'value' }],
-                  summary: [
-                    { $sort: { createdAt: -1, jobId: -1 } },
-                    {
-                      $group: {
-                        _id: null,
-                        latestJob: {
-                          $first: {
-                            phase: '$phase',
-                            operation: '$operation',
-                            selection: '$selection',
-                          },
-                        },
-                        readyOutputs: {
-                          $sum: {
-                            $size: {
-                              $filter: {
-                                input: '$outputs',
-                                as: 'output',
-                                cond: {
-                                  $and: [
-                                    { $in: ['$$output.kind', ['image', 'video']] },
-                                    { $eq: ['$$output.state', 'ready'] },
-                                    { $ne: [{ $ifNull: ['$$output.asset.file_id', null] }, null] },
-                                  ],
-                                },
-                              },
-                            },
-                          },
-                        },
-                      },
-                    },
-                    { $project: { _id: 0, latestJob: 1, readyOutputs: 1 } },
-                  ],
-                  covers: [
-                    {
-                      $match: {
-                        outputs: {
-                          $elemMatch: {
-                            kind: { $in: ['image', 'video'] },
-                            state: 'ready',
-                            'asset.file_id': { $exists: true },
-                          },
-                        },
-                      },
-                    },
-                    { $sort: { createdAt: 1, jobId: 1 } },
-                    { $limit: 1 },
-                    { $unwind: '$outputs' },
-                    {
-                      $match: {
-                        'outputs.kind': { $in: ['image', 'video'] },
-                        'outputs.state': 'ready',
-                        'outputs.asset.file_id': { $exists: true },
-                      },
-                    },
-                    { $sort: { 'outputs.ordinal': 1 } },
-                    { $limit: 1 },
-                    { $project: { _id: 0, asset: '$outputs.asset' } },
-                  ],
-                },
-              },
+              { $project: { _id: 0, pending: 1, latestJob: 1, readyOutputs: 1 } },
             ],
             as: 'jobs',
+          },
+        },
+        {
+          $lookup: {
+            // eslint-disable-next-line no-restricted-syntax -- Owner and tenant are explicit in this correlated lookup.
+            from: Job.collection.name,
+            let: { threadId: '$threadId' },
+            pipeline: [
+              { $match: { ...correlated, outputs: { $elemMatch: readyAssetOutput } } },
+              { $sort: { createdAt: 1, jobId: 1 } },
+              { $limit: 1 },
+              { $project: { _id: 0, outputs: 1 } },
+            ],
+            as: 'covers',
           },
         },
         ...(filtered
@@ -1018,8 +959,8 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
               {
                 $match:
                   filter === 'pending'
-                    ? { 'jobs.pending.value': { $gt: 0 } }
-                    : { 'jobs.summary.readyOutputs': { $gt: 0 } },
+                    ? { 'jobs.pending': { $gt: 0 } }
+                    : { 'jobs.readyOutputs': { $gt: 0 } },
               },
               { $limit: limit + 1 },
             ]
@@ -1028,13 +969,16 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
       const last = rows[limit - 1];
       return {
         items: rows.slice(0, limit).map((thread) => {
-          const projected = thread.jobs[0];
+          const [projected] = thread.jobs;
           const cover =
-            thread.cover ?? (!thread.coverExplicit ? projected?.covers[0]?.asset : undefined);
+            thread.cover ??
+            (!thread.coverExplicit ? firstReadyAsset(thread.covers[0]?.outputs) : undefined);
           return {
             ...threadView({ ...thread, cover }),
-            pendingJobCount: projected?.pending[0]?.value ?? 0,
-            activity: projected?.summary[0] ?? { readyOutputs: 0 },
+            pendingJobCount: projected?.pending ?? 0,
+            activity: projected
+              ? { latestJob: projected.latestJob, readyOutputs: projected.readyOutputs }
+              : { readyOutputs: 0 },
           };
         }),
         ...(rows.length > limit && last
@@ -1153,10 +1097,6 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     if (!page.length) {
       return { items: [] };
     }
-    const facets: Record<string, PipelineStage.FacetPipelineStage[]> = {};
-    page.forEach((turn, index) => {
-      facets[`turn${index}`] = [{ $match: { turnId: turn.turnId } }, { $limit: jobsPerTurn + 1 }];
-    });
     const importIds = [
       ...new Set(
         page
@@ -1164,18 +1104,25 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
           .flatMap((turn) => turn.inputs.map((input) => input.file_id)),
       ),
     ];
-    const [jobGroups, importFiles] = await Promise.all([
-      Job.aggregate<Record<string, MediaStoredJob[]>>([
-        {
-          $match: {
-            ...scopeFilter(scope),
-            turnId: { $in: page.map((turn) => turn.turnId) },
-            'receipt.phase': 'accepted',
-          },
-        },
-        { $sort: { createdAt: 1, jobId: 1 } },
-        { $facet: facets },
-      ]),
+    const [jobRowsByTurn, importFiles] = await Promise.all([
+      Job.find({
+        ...scopeFilter(scope),
+        turnId: { $in: page.map((turn) => turn.turnId) },
+        'receipt.phase': 'accepted',
+      })
+        .sort({ createdAt: 1, jobId: 1 })
+        .lean<MediaStoredJob[]>()
+        .then((jobs) =>
+          jobs.reduce((groups, job) => {
+            const group = groups.get(job.turnId);
+            if (!group) {
+              groups.set(job.turnId, [job]);
+            } else if (group.length <= jobsPerTurn) {
+              group.push(job);
+            }
+            return groups;
+          }, new Map<string, MediaStoredJob[]>()),
+        ),
       importIds.length
         ? File.find({
             user: scope.ownerId,
@@ -1188,8 +1135,8 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     const assetsById = new Map(
       importFiles.map((file) => [file.file_id, assetView(file as unknown as MediaAssetContent)]),
     );
-    const items = page.map((turn, index): MediaTurn => {
-      const jobRows = jobGroups[0]?.[`turn${index}`] ?? [];
+    const items = page.map((turn): MediaTurn => {
+      const jobRows = jobRowsByTurn.get(turn.turnId) ?? [];
       const lastJob = jobRows[jobsPerTurn - 1];
       const jobs = {
         items: jobRows.slice(0, jobsPerTurn).map(jobView),
@@ -1489,6 +1436,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     clientRequestId,
     maxActiveJobs,
     maxPendingTotal,
+    execution,
   }) => {
     const job = await getJob(scope, jobId);
     if (!job) {
@@ -1505,7 +1453,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
       {
         scope,
         request: { ...job.request, clientRequestId },
-        execution: job.execution,
+        execution: execution ?? job.execution,
         maxActiveJobs,
         maxPendingTotal,
         executionOwner: 'media',
@@ -2045,31 +1993,33 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
   }) => {
     scopeFilter(scope);
     positive(maxRetainers);
-    const result = await File.updateOne(
-      {
-        user: scope.ownerId,
-        tenantId: scope.tenantId,
-        file_id: fileId,
-        mediaLifecycle: 'live',
-        $and: [
-          {
-            $or: [
-              { mediaRetainers: retainer },
-              { $expr: { $lt: [{ $size: { $ifNull: ['$mediaRetainers', []] } }, maxRetainers] } },
-            ],
-          },
-          { $or: [{ mediaHardExpiresAt: null }, { mediaHardExpiresAt: { $gt: new Date() } }] },
-        ],
-      },
-      [
+    const retainable = {
+      user: scope.ownerId,
+      tenantId: scope.tenantId,
+      file_id: fileId,
+      mediaLifecycle: 'live',
+      $and: [
         {
-          $set: {
-            mediaRetainers: { $setUnion: [{ $ifNull: ['$mediaRetainers', []] }, [retainer]] },
-            expiredAt: { $ifNull: ['$mediaHardExpiresAt', '$$REMOVE'] },
-            expiresAt: '$$REMOVE',
-          },
+          $or: [
+            { mediaRetainers: retainer },
+            { $expr: { $lt: [{ $size: { $ifNull: ['$mediaRetainers', []] } }, maxRetainers] } },
+          ],
         },
+        { $or: [{ mediaHardExpiresAt: null }, { mediaHardExpiresAt: { $gt: new Date() } }] },
       ],
+    };
+    // The hard deadline is immutable, so reading it ahead of the fenced write is safe.
+    const file = await File.findOne(retainable).select({ mediaHardExpiresAt: 1 }).lean();
+    if (!file) {
+      return false;
+    }
+    const result = await File.updateOne(
+      retainable,
+      {
+        $addToSet: { mediaRetainers: retainer },
+        ...(file.mediaHardExpiresAt ? { $set: { expiredAt: file.mediaHardExpiresAt } } : {}),
+        $unset: { expiresAt: 1, ...(file.mediaHardExpiresAt ? {} : { expiredAt: 1 }) },
+      },
       { writeConcern: durable },
     );
     return result.matchedCount > 0;
@@ -2186,15 +2136,19 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
   const hasMediaActivation: MediaMethods['hasMediaActivation'] = async () =>
     !!(await Activation.exists({ key: 'media-v1' }));
 
-  const acquireMediaPermit: MediaMethods['acquireMediaPermit'] = async (input) => {
+  type PermitRequest = Parameters<MediaMethods['acquireMediaPermit']>[0];
+  /** `permitId` is set only when this call inserted the permit, so a rollback never touches an earlier grant. */
+  async function acquirePermit(
+    input: PermitRequest,
+  ): Promise<{ acquired: boolean; permitId?: string }> {
     const scope = scopeFilter(input.scope);
     positive(input.capacity);
     const job = await getJob(scope, input.jobId);
     if (!job || terminal.includes(job.phase) || job.receipt.phase === 'rejected') {
-      return false;
+      return { acquired: false };
     }
     if (input.kind !== 'queue' && job.executionOwner !== 'media') {
-      return false;
+      return { acquired: false };
     }
     let capacityIdentity: MediaOwnerScope | string = 'deployment';
     if (input.kind === 'owner') {
@@ -2211,14 +2165,15 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     const capacityKey = digest([input.kind, capacityIdentity]);
     const jobIdentity = digest([scope, input.jobId]);
     if (await Permit.exists({ capacityKey, jobIdentity })) {
-      return true;
+      return { acquired: true };
     }
     const start = parseInt(jobIdentity.slice(0, 8), 16) % input.capacity;
     for (let offset = 0; offset < input.capacity; offset++) {
+      const permitId = randomUUID();
       try {
         await new Permit({
           ...scope,
-          permitId: randomUUID(),
+          permitId,
           capacityKey,
           kind: input.kind,
           slot: (start + offset) % input.capacity,
@@ -2228,20 +2183,57 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         }).save(durable);
         const current = await getJob(scope, input.jobId);
         if (current && !terminal.includes(current.phase)) {
-          return true;
+          return { acquired: true, permitId };
         }
         await releaseMediaPermits({ scope, jobId: input.jobId, kind: input.kind });
-        return false;
+        return { acquired: false };
       } catch (error) {
         if (!duplicate(error)) {
           throw error;
         }
         if (await Permit.exists({ capacityKey, jobIdentity })) {
-          return true;
+          return { acquired: true };
         }
       }
     }
-    return false;
+    return { acquired: false };
+  }
+  const acquireMediaPermit: MediaMethods['acquireMediaPermit'] = async (input) =>
+    (await acquirePermit(input)).acquired;
+
+  const acquireMediaPermits: MediaMethods['acquireMediaPermits'] = async ({
+    scope: inputScope,
+    jobId,
+    permits,
+  }) => {
+    const scope = scopeFilter(inputScope);
+    const inserted: string[] = [];
+    const rollback = async (): Promise<void> => {
+      if (!inserted.length) {
+        return;
+      }
+      await Permit.deleteMany(
+        { ...scope, jobId, permitId: { $in: inserted } },
+        { writeConcern: durable },
+      );
+    };
+    for (const permit of permits) {
+      let result: Awaited<ReturnType<typeof acquirePermit>>;
+      try {
+        result = await acquirePermit({ scope, jobId, ...permit });
+      } catch (error) {
+        await rollback();
+        throw error;
+      }
+      if (result.permitId) {
+        inserted.push(result.permitId);
+      }
+      if (!result.acquired) {
+        await rollback();
+        return false;
+      }
+    }
+    return true;
   };
 
   const releaseMediaPermits: MediaMethods['releaseMediaPermits'] = async ({
@@ -2923,6 +2915,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     claimMediaAssetDeletion,
     completeMediaAssetDeletion,
     acquireMediaPermit,
+    acquireMediaPermits,
     releaseMediaPermits,
     reconcileMediaPermits,
     listMediaCleanupScopes,

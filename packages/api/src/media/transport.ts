@@ -33,6 +33,26 @@ export function isMediaTransferLimitError(error: Error, maxBytes: number): boole
   );
 }
 
+/**
+ * Classify a transport failure for logs without copying any payload: status codes, axios error
+ * codes and error class names are safe; messages, bodies and headers are not.
+ */
+export function describeMediaTransportFailure(error: unknown): string {
+  if (error instanceof z.ZodError) return 'schema_mismatch';
+  if (error instanceof SyntaxError) return 'malformed_json';
+  if (isAxiosError(error)) {
+    return [
+      error.response?.status ? `http_${error.response.status}` : undefined,
+      error.code,
+      error.config?.signal?.aborted ? 'aborted' : undefined,
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
+  if (error instanceof Error) return error.name === 'AbortError' ? 'aborted' : error.name;
+  return 'unknown';
+}
+
 /** Axios merges instance defaults before transforms, so an empty request header map is insufficient. */
 function preparePublicRequest(
   this: AxiosRequestConfig,
@@ -64,7 +84,7 @@ export function createMediaTransport({
         target.hash ||
         isSSRFTarget(target.hostname)
       )
-        throw new MediaProviderError('rejected');
+        throw new MediaProviderError('rejected', undefined, 'unsafe_public_url');
     }
     return applySSRFSafeAgentIfDirect(
       {
@@ -98,7 +118,7 @@ export function createMediaTransport({
       return;
     }
     const rejected = status >= 400 && status < 500 && status !== 408;
-    throw new MediaProviderError(rejected ? 'rejected' : 'uncertain', status);
+    throw new MediaProviderError(rejected ? 'rejected' : 'uncertain', status, `http_${status}`);
   };
 
   return {
@@ -119,7 +139,7 @@ export function createMediaTransport({
         if (error instanceof MediaProviderError) {
           throw error;
         }
-        throw new MediaProviderError('uncertain');
+        throw new MediaProviderError('uncertain', undefined, describeMediaTransportFailure(error));
       }
     },
     async stream(request: MediaTransportRequest): Promise<Readable> {
@@ -135,12 +155,18 @@ export function createMediaTransport({
             redirects >= (request.maxRedirects ?? 0) ||
             typeof response.headers.location !== 'string'
           ) {
-            throw new MediaProviderError('uncertain');
+            throw new MediaProviderError(
+              'uncertain',
+              response.status,
+              redirects >= (request.maxRedirects ?? 0)
+                ? 'redirect_limit'
+                : 'redirect_without_target',
+            );
           }
           const target = new URL(response.headers.location, current.url);
           const previous = new URL(current.url);
           if (previous.protocol === 'https:' && target.protocol !== 'https:') {
-            throw new MediaProviderError('rejected');
+            throw new MediaProviderError('rejected', response.status, 'redirect_downgrade');
           }
           current = {
             ...current,
@@ -156,14 +182,14 @@ export function createMediaTransport({
         const size = Number(response.headers['content-length']);
         if (Number.isFinite(size) && size > request.maxBytes) {
           response.data.destroy();
-          throw new MediaProviderError('rejected', 413);
+          throw new MediaProviderError('rejected', 413, 'content_length_exceeded');
         }
         return response.data;
       } catch (error) {
         if (error instanceof MediaProviderError) {
           throw error;
         }
-        throw new MediaProviderError('uncertain');
+        throw new MediaProviderError('uncertain', undefined, describeMediaTransportFailure(error));
       }
     },
   };

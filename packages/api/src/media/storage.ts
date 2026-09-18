@@ -8,6 +8,7 @@ import { mkdir, open, stat, unlink, readFile } from 'node:fs/promises';
 import type { MediaAssetContent, MediaMethods, MediaOwnerScope } from '@librechat/data-schemas';
 import type { MediaAsset, MediaConfig } from 'librechat-data-provider';
 import type { Readable, TransformCallback } from 'node:stream';
+import type { Hash } from 'node:crypto';
 import {
   mediaContentByteLimit,
   mediaContentExtension,
@@ -32,15 +33,15 @@ export interface MediaStorage {
     scope: MediaOwnerScope,
     fileId: string,
     maxBytes: number,
-  ): Promise<{ asset: MediaAsset; data: Buffer }>;
+  ): Promise<{ asset: MediaAsset; data: Buffer; digest: string }>;
   remove(scope: MediaOwnerScope, fileId: string): Promise<boolean>;
   discardWrite(scope: MediaOwnerScope, writeId: string, staleBefore: string): Promise<boolean>;
   capture(scope: MediaOwnerScope, fileId: string, config: MediaConfig): Promise<MediaAsset>;
 }
 
-class MediaByteCounter extends Transform {
-  bytes = 0;
-  readonly hash = createHash('sha256');
+export class MediaByteCounter extends Transform {
+  bytes: number = 0;
+  readonly hash: Hash = createHash('sha256');
   constructor(private readonly maxBytes: number) {
     super();
   }
@@ -88,10 +89,12 @@ export function createLocalMediaStorage({
   repository,
   imageDirectory,
   uploadDirectory,
+  now,
 }: {
   repository: MediaMethods;
   imageDirectory: string;
   uploadDirectory: string;
+  now: () => number;
 }): MediaStorage {
   const root = path.resolve(imageDirectory);
   function originalPath(
@@ -224,7 +227,7 @@ export function createLocalMediaStorage({
           await unlink(location).catch(() => undefined);
         }
         await storage
-          .discardWrite(input.scope, receipt.writeId, new Date().toISOString())
+          .discardWrite(input.scope, receipt.writeId, new Date(now()).toISOString())
           .catch(() => undefined);
         throw error;
       }
@@ -250,7 +253,8 @@ export function createLocalMediaStorage({
         chunks.push(buffer);
       }
       const data = Buffer.concat(chunks);
-      if (hash.digest('hex') !== content.contentDigest) {
+      const digest = hash.digest('hex');
+      if (digest !== content.contentDigest) {
         throw new MediaServiceError('storage_failed', 409, 'The media original changed.');
       }
       const {
@@ -262,7 +266,7 @@ export function createLocalMediaStorage({
         hardExpiresAt: _hardExpiry,
         ...asset
       } = content;
-      return { asset, data };
+      return { asset, data, digest };
     },
     async discardWrite(scope, writeId, staleBefore) {
       const token = randomUUID();
@@ -320,7 +324,7 @@ export function createLocalMediaStorage({
         filename: source.filename,
         config,
         expiredAt:
-          source.expiredAt ?? new Date(Date.now() + config.assets.orphanRetentionMs).toISOString(),
+          source.expiredAt ?? new Date(now() + config.assets.orphanRetentionMs).toISOString(),
         hardExpiresAt: source.hardExpiresAt ?? source.expiredAt,
       });
       const [after, current] = await Promise.all([

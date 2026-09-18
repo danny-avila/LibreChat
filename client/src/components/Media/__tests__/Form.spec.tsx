@@ -15,7 +15,10 @@ import { MediaHostProvider } from '../host';
 import { MediaThreadView } from '../Thread';
 import { MediaForm } from '../Form';
 
-jest.mock('~/hooks', () => ({ useLocalize: () => (key: string) => key }));
+jest.mock('~/hooks', () => ({
+  useLocalize: () => (key: string, values?: Record<string, string | number>) =>
+    key === 'com_ui_provider_key_action' && values ? `${values.action} for ${values.name}` : key,
+}));
 jest.mock('~/components/Input/SetKeyDialog/SetKeyDialog', () => ({
   __esModule: true,
   default: ({
@@ -151,14 +154,14 @@ test.each(['row', 'gear'] as const)(
     const draft = env.store.get(mediaDraftFamily('owner:new'));
     fireEvent.click(screen.getByRole('combobox', { name: 'com_media_connection' }));
     expect(
-      screen.queryByRole('button', { name: 'com_endpoint_config_key Managed' }),
+      screen.queryByRole('button', { name: 'com_endpoint_config_key for Managed' }),
     ).not.toBeInTheDocument();
     const provider = await screen.findByRole('option', { name: 'Native Images' });
     expect(provider).not.toHaveAttribute('aria-disabled', 'true');
     fireEvent.click(
       target === 'row'
         ? provider
-        : await screen.findByRole('button', { name: 'com_endpoint_config_key Native Images' }),
+        : await screen.findByRole('button', { name: 'com_endpoint_config_key for Native Images' }),
     );
     expect(await screen.findByRole('dialog', { name: 'Native Images' })).toHaveTextContent(
       'SharedNative',
@@ -206,7 +209,7 @@ test('offers provider settings even when the catalog has no available models', a
   expect(screen.getAllByRole('combobox', { name: 'com_media_connection' })).toHaveLength(1);
   fireEvent.click(screen.getByRole('combobox', { name: 'com_media_connection' }));
   fireEvent.click(
-    await screen.findByRole('button', { name: 'com_endpoint_config_key Native Images' }),
+    await screen.findByRole('button', { name: 'com_endpoint_config_key for Native Images' }),
   );
   expect(await screen.findByRole('dialog', { name: 'Native Images' })).toBeInTheDocument();
 });
@@ -502,6 +505,7 @@ test('leaving an editor aborts its upload and cannot append the late file to its
   fireEvent.change(input, {
     target: { files: [new File(['image'], 'lake.png', { type: 'image/png' })] },
   });
+  await waitFor(() => expect(dataService.uploadMedia).toHaveBeenCalledTimes(1));
   const signal = jest.mocked(dataService.uploadMedia).mock.calls[0][1];
   view.unmount();
   expect(signal?.aborted).toBe(true);
@@ -1344,6 +1348,7 @@ test('switching editors closes and aborts a hosted import, preserves its draft, 
     target: { value: hostedReference.sourceURL },
   });
   fireEvent.click(screen.getByRole('button', { name: 'com_media_add_reference_url' }));
+  await waitFor(() => expect(dataService.uploadMediaURL).toHaveBeenCalledTimes(1));
   const signal = jest.mocked(dataService.uploadMediaURL).mock.calls[0][1];
   view.rerender(
     <MediaForm catalog={hostedCatalog} threadId="second" send={env.send} busy={false} />,
@@ -1460,6 +1465,7 @@ test('cancels a URL import without accepting a late result and retains the draft
   });
   fireEvent.click(screen.getByRole('button', { name: 'com_media_add_reference_url' }));
   expect(screen.getByText('com_media_reference_loading')).toBeInTheDocument();
+  await waitFor(() => expect(dataService.uploadMediaURL).toHaveBeenCalledTimes(1));
   const signal = jest.mocked(dataService.uploadMediaURL).mock.calls[0][1];
   fireEvent.click(screen.getByRole('button', { name: 'com_ui_cancel' }));
   expect(signal?.aborted).toBe(true);

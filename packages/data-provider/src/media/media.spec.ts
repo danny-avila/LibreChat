@@ -256,13 +256,15 @@ describe('media configuration compatibility', () => {
     expect(mediaConfigSchema.safeParse(config).success).toBe(false);
   });
 
-  it('defaults new permissions off for both roles and preserves explicit denial', () => {
-    for (const role of [SystemRoles.USER, SystemRoles.ADMIN]) {
-      expect(roleDefaults[role].permissions[PermissionTypes.MEDIA]).toEqual({
-        USE: false,
-        CREATE: false,
-      });
-    }
+  it('defaults new permissions off for users, on for admins, and preserves explicit denial', () => {
+    expect(roleDefaults[SystemRoles.USER].permissions[PermissionTypes.MEDIA]).toEqual({
+      USE: false,
+      CREATE: false,
+    });
+    expect(roleDefaults[SystemRoles.ADMIN].permissions[PermissionTypes.MEDIA]).toEqual({
+      USE: true,
+      CREATE: true,
+    });
     const parsed = permissionsSchema.parse({
       ...roleDefaults[SystemRoles.USER].permissions,
       [PermissionTypes.MEDIA]: { [Permissions.USE]: true, [Permissions.CREATE]: false },

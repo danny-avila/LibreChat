@@ -93,6 +93,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
   let runtime: ReturnType<typeof createMediaRuntime>;
   let app: express.Express;
   let userRole = 'USER';
+  let logged: Error[] = [];
 
   beforeAll(async () => {
     mongo = await MongoMemoryServer.create();
@@ -282,6 +283,14 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     await rm(directory, { recursive: true, force: true });
   });
 
+  afterEach(() => {
+    if (logged.length > 0) {
+      throw new Error(
+        `The media runtime logged unexpected errors: ${logged.map((error) => error.message).join('; ')}`,
+      );
+    }
+  });
+
   beforeEach(async () => {
     await Promise.all(
       Object.values(mongoose.models).map((model) => model.collection.deleteMany({})),
@@ -313,6 +322,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     vertexAuthorizations = [];
     behavior = 'image';
     userRole = 'USER';
+    logged = [];
     scope = { ownerId: new mongoose.Types.ObjectId().toString(), tenantId: null };
     config = {
       config: {},
@@ -408,7 +418,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
         },
       },
       log: (error) => {
-        throw error;
+        logged.push(error);
       },
     });
     app = express();
@@ -910,6 +920,9 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     const job = await run(response.body.jobId);
     expect(job?.phase).toBe('requires_attention');
     expect(posts).toBe(1);
+    expect(logged.splice(0).map((error) => error.message)).toEqual([
+      `Media job ${response.body.jobId} provider request uncertain (http_503).`,
+    ]);
     await request(app)
       .post(`/api/media/jobs/${response.body.jobId}/retry`)
       .send({ clientRequestId: 'unsafe-retry' })
@@ -921,6 +934,9 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     behavior = 'rejected';
     const response = await submit('rejected');
     expect((await run(response.body.jobId))?.phase).toBe('failed');
+    expect(logged.splice(0).map((error) => error.message)).toEqual([
+      `Media job ${response.body.jobId} provider request rejected (http_400).`,
+    ]);
     const retried = await request(app)
       .post(`/api/media/jobs/${response.body.jobId}/retry`)
       .send({ clientRequestId: 'safe-retry' })
@@ -1146,6 +1162,17 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
         error: { code: change === 'expiry' ? 'credentials_expired' : 'credentials_required' },
       });
       expect(posts).toBe(0);
+      if (change !== 'rotation') {
+        return;
+      }
+      const retried = await request(app)
+        .post(`/api/media/jobs/${response.body.jobId}/retry`)
+        .send({ clientRequestId: 'saved-key-rotation-retry' })
+        .expect(202);
+      expect(retried.body.jobId).not.toBe(response.body.jobId);
+      expect((await run(retried.body.jobId))?.phase).toBe('succeeded');
+      expect(posts).toBe(1);
+      expect(providerHeaders).toEqual([{ authorization: 'Bearer second-user-key' }]);
     },
   );
 
@@ -1273,6 +1300,9 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       throw new Error('Lost Vertex video storage acknowledgment');
     });
     expect((await run(response.body.jobId))?.phase).toBe('ingesting');
+    expect(logged.splice(0).map((error) => error.message)).toEqual([
+      `Media job ${response.body.jobId} failed unexpectedly.`,
+    ]);
     config.media = resolveMediaConfig();
     const completed = await run(response.body.jobId);
     expect(completed?.phase).toBe('succeeded');
@@ -1304,6 +1334,9 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     });
     const response = await submit('lost-storage-ack');
     expect((await run(response.body.jobId))?.phase).toBe('ingesting');
+    expect(logged.splice(0).map((error) => error.message)).toEqual([
+      `Media job ${response.body.jobId} failed unexpectedly.`,
+    ]);
     const recovered = await run(response.body.jobId);
     expect(recovered?.phase).toBe('succeeded');
     expect(recovered?.outputs[0]).toMatchObject({ kind: 'image', state: 'ready' });
@@ -1318,6 +1351,9 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     });
     const response = await submit('image-before-provider-exclusion');
     expect((await run(response.body.jobId))?.phase).toBe('ingesting');
+    expect(logged.splice(0).map((error) => error.message)).toEqual([
+      `Media job ${response.body.jobId} failed unexpectedly.`,
+    ]);
     config.media!.integrations.find((entry) => entry.id === 'images')!.enabled = false;
     const recovered = await run(response.body.jobId);
     expect(recovered?.phase).toBe('succeeded');
@@ -1372,6 +1408,9 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       .mockRejectedValueOnce(new Error('Storage temporarily unavailable'));
     const response = await submit('lost-inline-output');
     expect((await run(response.body.jobId))?.phase).toBe('ingesting');
+    expect(logged.splice(0).map((error) => error.message)).toEqual([
+      `Media job ${response.body.jobId} failed unexpectedly.`,
+    ]);
     expect(settle).not.toHaveBeenCalled();
     const failed = await run(response.body.jobId);
     expect(failed).toMatchObject({
@@ -1506,6 +1545,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       repository,
       imageDirectory: path.join(directory, 'images'),
       uploadDirectory: path.join(directory, 'uploads'),
+      now: Date.now,
     });
     const reserve = repository.reserveMediaAssetWrite.bind(repository);
     jest.spyOn(repository, 'reserveMediaAssetWrite').mockImplementationOnce(async (input) => {
@@ -1530,6 +1570,27 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       }),
     ).rejects.toThrow('Media asset write not found');
     expect(await readdir(path.join(directory, 'images', scope.ownerId))).toEqual([]);
+  });
+
+  it('rejects oversized and unsupported uploads before they reach staging or storage', async () => {
+    config.media!.transfers.maxImageBytes = 16;
+    const staging = path.join(directory, 'uploads', 'media-staging');
+    const reservation = jest.spyOn(repository, 'reserveMediaAssetWrite');
+    const oversized = await request(app)
+      .post('/api/media/uploads')
+      .attach('file', original, { filename: 'big.png', contentType: 'image/png' })
+      .expect(413);
+    expect(oversized.body).toEqual({ error: { code: 'invalid_request' } });
+    const unsupported = await request(app)
+      .post('/api/media/uploads')
+      .attach('file', Buffer.from('%PDF-1.4'), {
+        filename: 'notes.pdf',
+        contentType: 'application/pdf',
+      })
+      .expect(422);
+    expect(unsupported.body).toEqual({ error: { code: 'unsupported' } });
+    expect(await readdir(staging).catch(() => [])).toEqual([]);
+    expect(reservation).not.toHaveBeenCalled();
   });
 
   it('denies mutations for a read-only role and isolates another owner', async () => {

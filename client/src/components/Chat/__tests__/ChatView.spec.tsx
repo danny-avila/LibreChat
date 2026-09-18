@@ -42,6 +42,9 @@ jest.mock('../Presentation', () => ({
   default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 jest.mock('../Header', () => ({ __esModule: true, default: () => <div /> }));
+jest.mock('../Studio', () => ({
+  StudioProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
 jest.mock('../Footer', () => ({
   __esModule: true,
   default: () => <div />,

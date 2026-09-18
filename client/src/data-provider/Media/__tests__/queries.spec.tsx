@@ -3,7 +3,8 @@ import { AxiosError, AxiosHeaders } from 'axios';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { dataService, QueryKeys, mediaCatalogSchema } from 'librechat-data-provider';
-import { useMediaThreads, useMediaCatalog } from '../queries';
+import type { MediaThreadDetail } from 'librechat-data-provider';
+import { useMediaThreads, useMediaCatalog, useMediaThread } from '../queries';
 
 jest.mock('librechat-data-provider', () => {
   const actual =
@@ -112,5 +113,37 @@ test('preserves authorization failures instead of retrying a different gallery r
   await waitFor(() => expect(hook.result.current.isError).toBe(true));
   expect(list).toHaveBeenCalledTimes(1);
   hook.unmount();
+  env.client.clear();
+});
+
+test('keeps the newer thread snapshot when a refetch returns an older version', async () => {
+  const env = setup();
+  const createdAt = '2026-09-17T12:00:00.000Z';
+  const newer: MediaThreadDetail = {
+    thread: {
+      schemaVersion: 1,
+      threadId: 'thread',
+      title: 'Renamed',
+      version: 2,
+      createdAt,
+      updatedAt: createdAt,
+      pendingJobCount: 0,
+      turnCount: 0,
+    },
+    turns: { items: [] },
+  };
+  const older = { ...newer, thread: { ...newer.thread, title: 'Original', version: 1 } };
+  const load = jest
+    .spyOn(dataService, 'getMediaThread')
+    .mockResolvedValueOnce(newer)
+    .mockResolvedValueOnce(older);
+  const hook = renderHook(() => useMediaThread(env.host, 'thread'), { wrapper: env.wrapper });
+  await waitFor(() => expect(hook.result.current.data?.thread.version).toBe(2));
+  await act(async () => {
+    await hook.result.current.refetch();
+  });
+  expect(load).toHaveBeenCalledTimes(2);
+  expect(hook.result.current.data?.thread).toMatchObject({ version: 2, title: 'Renamed' });
+  load.mockRestore();
   env.client.clear();
 });

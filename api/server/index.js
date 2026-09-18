@@ -34,12 +34,7 @@ const {
   agentStartupIngressMiddleware,
   agentStartupTelemetryMiddleware,
   initializeFileStorage,
-  createMediaRuntime,
-  resolveConfigSecret,
-  createMediaTransport,
-  createMediaAccounting,
-  createVertexMediaCredentialProvider,
-  createGoogleMediaAuthClient,
+  createMediaRuntimeFromApp,
   initializeDeploymentSkills,
   initializeDeploymentPlugins,
   getDeploymentPluginSkills,
@@ -242,47 +237,18 @@ const startServer = async () => {
   configureAgentEventRuntime(appConfig?.endpoints?.agents?.eventDriven);
   warnOnUnreachableDeliveryPaths(appConfig);
   initializeFileStorage(appConfig);
-  const mediaRuntime = createMediaRuntime({
+  const mediaRuntime = createMediaRuntimeFromApp({
     appConfig,
-    repository: agentEventMethods,
-    getUserById: agentEventMethods.getUserById,
+    db: agentEventMethods,
     getRoleByName,
     getAppConfig,
     tenantContext: tenantStorage,
     asSystem: runAsSystem,
     environment: process.env,
-    vertexCredentials: createVertexMediaCredentialProvider({
-      readFile: fs.promises.readFile,
-      createAuth: createGoogleMediaAuthClient,
-      now: Date.now,
-      maxCacheEntries: appConfig.media?.catalog.maxCacheEntries,
-    }),
-    decrypt,
-    resolveConfigSecret,
-    transport: createMediaTransport({
-      http: axios,
-      allowedAddresses: appConfig.endpoints?.allowedAddresses,
-    }),
+    http: axios,
     upload: multer,
-    accounting: createMediaAccounting({ repository: agentEventMethods, now: Date.now }),
-    titles: {
-      db: {
-        getUserKey: agentEventMethods.getUserKey,
-        getUserKeyValues: agentEventMethods.getUserKeyValues,
-      },
-      usage: {
-        spendTokens: agentEventMethods.spendTokens,
-        spendStructuredTokens: agentEventMethods.spendStructuredTokens,
-        pricing: {
-          getMultiplier: agentEventMethods.getMultiplier,
-          getCacheMultiplier: agentEventMethods.getCacheMultiplier,
-        },
-        bulkWriteOps: {
-          insertMany: agentEventMethods.bulkInsertTransactions,
-          updateBalance: agentEventMethods.updateBalance,
-        },
-      },
-    },
+    readFile: fs.promises.readFile,
+    decrypt,
     log: logger.error.bind(logger),
   });
   app.locals.mediaRuntime = mediaRuntime;

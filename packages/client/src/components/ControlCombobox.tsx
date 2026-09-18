@@ -1,14 +1,19 @@
-import { useMemo, useState, useRef, memo, useEffect, MemoExoticComponent } from 'react';
+import { useMemo, useState, useRef, memo, useEffect, forwardRef, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { matchSorter } from 'match-sorter';
 import { Search, ChevronDown } from 'lucide-react';
 import { SelectRenderer } from '@ariakit/react-components/select/select-renderer';
+import type {
+  ForwardedRef,
+  ForwardRefExoticComponent,
+  MemoExoticComponent,
+  RefAttributes,
+} from 'react';
 import type { OptionWithIcon } from '~/common';
 import { usePopoverZIndex } from './OriginalDialog';
 import { fieldControl } from './Field';
 import { Button } from './Button';
 import './AnimatePopover.css';
-import { JSX } from 'react/jsx-runtime';
 import { cn } from '~/utils';
 
 interface ControlComboboxProps {
@@ -62,37 +67,52 @@ interface ControlComboboxProps {
 
 const ROW_HEIGHT = 36;
 
-function ControlCombobox({
-  selectedValue,
-  displayValue,
-  items,
-  setValue,
-  onBlur,
-  ariaLabel,
-  ariaInvalid,
-  ariaDescribedBy,
-  searchPlaceholder,
-  selectPlaceholder,
-  containerClassName,
-  isCollapsed,
-  SelectIcon,
-  showCarat,
-  className,
-  disabled,
-  iconClassName,
-  iconSide = 'left',
-  selectId,
-  placement,
-  popoverClassName,
-  matchTriggerWidth = true,
-  variant = 'default',
-  gutter = 4,
-  portal = true,
-  onOpenChange,
-  optionAction,
-}: ControlComboboxProps): JSX.Element {
+/** The ref reaches the trigger button, so a host can focus or open the control without
+ *  looking it up in the document. */
+const ControlCombobox: ForwardRefExoticComponent<
+  ControlComboboxProps & RefAttributes<HTMLButtonElement>
+> = forwardRef(function ControlCombobox(
+  {
+    selectedValue,
+    displayValue,
+    items,
+    setValue,
+    onBlur,
+    ariaLabel,
+    ariaInvalid,
+    ariaDescribedBy,
+    searchPlaceholder,
+    selectPlaceholder,
+    containerClassName,
+    isCollapsed,
+    SelectIcon,
+    showCarat,
+    className,
+    disabled,
+    iconClassName,
+    iconSide = 'left',
+    selectId,
+    placement,
+    popoverClassName,
+    matchTriggerWidth = true,
+    variant = 'default',
+    gutter = 4,
+    portal = true,
+    onOpenChange,
+    optionAction,
+  }: ControlComboboxProps,
+  ref: ForwardedRef<HTMLButtonElement>,
+) {
   const [searchValue, setSearchValue] = useState('');
-  const buttonRef = useRef<HTMLButtonElement>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const setButtonRef = useCallback(
+    (node: HTMLButtonElement | null) => {
+      buttonRef.current = node;
+      if (typeof ref === 'function') ref(node);
+      else if (ref) ref.current = node;
+    },
+    [ref],
+  );
   const openingAction = useRef(false);
   const [buttonWidth, setButtonWidth] = useState<number | null>(null);
   const popoverZIndex = usePopoverZIndex();
@@ -202,7 +222,7 @@ function ControlCombobox({
         {ariaLabel}
       </Ariakit.SelectLabel>
       <Ariakit.Select
-        ref={buttonRef}
+        ref={setButtonRef}
         store={select}
         id={selectId}
         disabled={disabled}
@@ -285,6 +305,7 @@ function ControlCombobox({
                   {...item}
                   disabled={itemDisabled}
                   title={description}
+                  aria-describedby={description ? `${item.id}-description` : undefined}
                   className={cn(
                     'flex w-full cursor-pointer items-center px-3 text-sm',
                     'text-text-primary hover:bg-surface-tertiary',
@@ -305,6 +326,18 @@ function ControlCombobox({
               )}
             </SelectRenderer>
           </Ariakit.ComboboxList>
+          {matches.some((item) => item.description) && (
+            <div className="sr-only">
+              {matches.map(
+                (item) =>
+                  item.description && (
+                    <span key={item.id} id={`${item.id}-description`}>
+                      {item.description}
+                    </span>
+                  ),
+              )}
+            </div>
+          )}
           {optionAction && (
             <div className="absolute right-1 top-0">
               {matches.map((item) => {
@@ -337,7 +370,7 @@ function ControlCombobox({
       </Ariakit.SelectPopover>
     </div>
   );
-}
+});
 
 const ControlComboboxMemo: MemoExoticComponent<typeof ControlCombobox> = memo(ControlCombobox);
 export default ControlComboboxMemo;

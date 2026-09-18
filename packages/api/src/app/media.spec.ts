@@ -24,16 +24,21 @@ describe('media permission migration', () => {
     media: resolveMediaConfig(),
   });
 
-  it('seeds missing media permissions off without enabling existing image tools', async () => {
+  it('seeds missing media permissions from role defaults without enabling existing image tools', async () => {
     await updateInterfacePermissions({
       appConfig: appConfig(),
       getRoleByName,
       updateAccessPermissions,
     });
     expect(updateAccessPermissions).toHaveBeenCalledTimes(2);
-    for (const call of updateAccessPermissions.mock.calls) {
-      expect(call[1][PermissionTypes.MEDIA]).toEqual({ USE: false, CREATE: false });
-    }
+    expect(
+      Object.fromEntries(
+        updateAccessPermissions.mock.calls.map((call) => [call[0], call[1][PermissionTypes.MEDIA]]),
+      ),
+    ).toEqual({
+      USER: { [Permissions.USE]: false, [Permissions.CREATE]: false },
+      ADMIN: { [Permissions.USE]: true, [Permissions.CREATE]: true },
+    });
   });
 
   it('preserves stored denials and grants through disabled runtime config', async () => {
@@ -51,7 +56,7 @@ describe('media permission migration', () => {
     }
   });
 
-  it('applies only explicitly configured bits and backfills missing bits', async () => {
+  it('applies only explicitly configured bits and leaves unmentioned bits untouched', async () => {
     getRoleByName.mockResolvedValue({
       name: 'USER',
       permissions: { MEDIA: { USE: false, CREATE: true } },
@@ -72,7 +77,7 @@ describe('media permission migration', () => {
       updateAccessPermissions,
     });
     for (const call of updateAccessPermissions.mock.calls) {
-      expect(call[1][PermissionTypes.MEDIA]).toEqual({ [Permissions.CREATE]: false });
+      expect(call[1][PermissionTypes.MEDIA]).toBeUndefined();
     }
   });
 });

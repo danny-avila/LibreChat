@@ -161,34 +161,30 @@ export function createMediaWorker(
           await observe({
             phase: 'failed',
             provider: { certainty: 'unsubmitted' },
-            error: { code: 'quota_exceeded' },
+            error: { code: 'queue_expired' },
           });
           return;
         }
-        const permits = [
-          { kind: 'deployment' as const, capacity: context.config.execution.maxActiveTotal },
-          {
-            kind: 'integration' as const,
-            capacity: context.config.execution.maxActivePerIntegration,
-            key: integration.id,
-          },
-          { kind: 'owner' as const, capacity: context.config.execution.maxActivePerUser },
-        ];
-        for (const permit of permits) {
-          if (
-            !(await deps.repository.acquireMediaPermit({
-              scope: context.scope,
-              jobId: job.jobId,
-              ...permit,
-            }))
-          ) {
-            await observe({
-              phase: 'queued',
-              dueAt: new Date(deps.now() + context.config.worker.tickMs).toISOString(),
-              releaseLease: true,
-            });
-            return;
-          }
+        const admitted = await deps.repository.acquireMediaPermits({
+          scope: context.scope,
+          jobId: job.jobId,
+          permits: [
+            { kind: 'deployment', capacity: context.config.execution.maxActiveTotal },
+            {
+              kind: 'integration',
+              capacity: context.config.execution.maxActivePerIntegration,
+              key: integration.id,
+            },
+            { kind: 'owner', capacity: context.config.execution.maxActivePerUser },
+          ],
+        });
+        if (!admitted) {
+          await observe({
+            phase: 'queued',
+            dueAt: new Date(deps.now() + context.config.worker.tickMs).toISOString(),
+            releaseLease: true,
+          });
+          return;
         }
         const prepared = await services.prepare(job.request, context, false, controller.signal);
         if (prepared.providerTag !== job.execution.providerTag) {
@@ -306,7 +302,7 @@ export function createMediaWorker(
         await observe({
           phase: result.status,
           provider: { ...job.provider, certainty: 'terminal' },
-          error: { code: 'provider_rejected' },
+          ...(result.status === 'failed' ? { error: { code: 'provider_rejected' } } : {}),
         });
         return;
       }
@@ -430,6 +426,16 @@ export function createMediaWorker(
       if (error instanceof MediaServiceError) code = error.code;
       else if (error instanceof MediaProviderError && error.certainty === 'rejected')
         code = 'provider_rejected';
+      if (error instanceof MediaProviderError) {
+        deps.log(
+          new Error(
+            `Media job ${job.jobId} provider request ${error.certainty} (${error.reason ?? 'unclassified'}).`,
+            { cause: error },
+          ),
+        );
+      } else if (!(error instanceof MediaServiceError)) {
+        deps.log(new Error(`Media job ${job.jobId} failed unexpectedly.`, { cause: error }));
+      }
       const safeRejection =
         job.provider.certainty === 'unsubmitted' ||
         (error instanceof MediaProviderError &&
@@ -485,8 +491,12 @@ export function createMediaWorker(
             dueAt: new Date(deps.now() + baseConfig.polling.providerIntervalMs).toISOString(),
           });
         }
-      } catch {
-        deps.log(new Error('Media reconciliation will resume after the job lease expires.'));
+      } catch (reconciliation) {
+        deps.log(
+          new Error('Media reconciliation will resume after the job lease expires.', {
+            cause: reconciliation,
+          }),
+        );
       }
     } finally {
       clearInterval(renewal);
@@ -575,6 +585,7 @@ export function createMediaWorker(
           }
         });
       }
+      await deps.sweepStaging?.(deps.now() - baseConfig.assets.orphanRetentionMs);
       for (const scope of scopes.items) {
         if (stopped || active.size >= baseConfig.execution.maxActiveTotal) {
           break;
@@ -598,13 +609,15 @@ export function createMediaWorker(
           }
           const work = deps
             .withScope(scope, () => execute(job))
-            .catch(() => deps.log(new Error('Media work needs reconciliation.')))
+            .catch((cause: unknown) =>
+              deps.log(new Error(`Media job ${job.jobId} needs reconciliation.`, { cause })),
+            )
             .finally(() => active.delete(job.jobId));
           active.set(job.jobId, work);
         });
       }
-    } catch {
-      deps.log(new Error('The media worker could not scan pending work.'));
+    } catch (cause) {
+      deps.log(new Error('The media worker could not scan pending work.', { cause }));
     } finally {
       scanning = false;
       if (!stopped) {

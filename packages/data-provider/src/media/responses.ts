@@ -23,6 +23,7 @@ export const mediaErrorCodeSchema = z.enum([
   'version_conflict',
   'request_conflict',
   'quota_exceeded',
+  'queue_expired',
   'credentials_required',
   'credentials_expired',
   'provider_rejected',

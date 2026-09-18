@@ -33,12 +33,13 @@ export function parseHostedMediaReference(input: MediaURLUploadRequest): MediaUR
 }
 
 /** Fetch only public HTTPS content, without user, provider, or application credentials. */
-export async function fetchHostedMediaReference(
+async function readHostedMediaReference(
   input: MediaURLUploadRequest,
   context: MediaContext,
   transport: MediaTransport,
-  signal?: AbortSignal,
-): Promise<{ sourceURL: string; data: Buffer; type: string }> {
+  signal: AbortSignal | undefined,
+  consume: (chunk: Buffer) => void,
+): Promise<{ sourceURL: string; bytes: number; role: MediaURLUploadRequest['role'] }> {
   const request = parseHostedMediaReference(input);
   const fileConfig = mergeFileConfig(context.appConfig.fileConfig);
   const maxBytes = Math.min(
@@ -46,7 +47,6 @@ export async function fetchHostedMediaReference(
     fileConfig.serverFileSizeLimit ?? Number.MAX_SAFE_INTEGER,
   );
   const sourceURL = new URL(request.url).href;
-  const chunks: Buffer[] = [];
   let bytes = 0;
   try {
     const stream = await transport.stream({
@@ -71,7 +71,7 @@ export async function fetchHostedMediaReference(
             'Media exceeds the configured file limit.',
           );
         }
-        chunks.push(chunk);
+        consume(chunk);
       }
     } finally {
       stream.destroy();
@@ -91,31 +91,49 @@ export async function fetchHostedMediaReference(
       'The media URL could not be downloaded safely.',
     );
   }
-  const data = Buffer.concat(chunks, bytes);
-  return { sourceURL, data, type: detectMediaReferenceType(data, request.role) };
+  return { sourceURL, bytes, role: request.role };
 }
 
+export async function fetchHostedMediaReference(
+  input: MediaURLUploadRequest,
+  context: MediaContext,
+  transport: MediaTransport,
+  signal?: AbortSignal,
+): Promise<{ sourceURL: string; data: Buffer; type: string }> {
+  const chunks: Buffer[] = [];
+  const { sourceURL, bytes, role } = await readHostedMediaReference(
+    input,
+    context,
+    transport,
+    signal,
+    (chunk) => chunks.push(chunk),
+  );
+  const data = Buffer.concat(chunks, bytes);
+  return { sourceURL, data, type: detectMediaReferenceType(data, role) };
+}
+
+/** Re-reads the public URL through a digest only; neither copy is held in memory. */
 export async function verifyHostedMediaReference(
   input: MediaURLUploadRequest,
-  archived: Buffer,
+  archivedDigest: string,
   context: MediaContext,
   transport: MediaTransport,
   signal?: AbortSignal,
 ): Promise<string> {
-  const remote = await fetchHostedMediaReference(input, context, transport, signal);
-  if (
-    !timingSafeEqual(
-      createHash('sha256').update(remote.data).digest(),
-      createHash('sha256').update(archived).digest(),
-    )
-  ) {
+  const hash = createHash('sha256');
+  const { sourceURL } = await readHostedMediaReference(input, context, transport, signal, (chunk) =>
+    hash.update(chunk),
+  );
+  const expected = Buffer.from(archivedDigest, 'hex');
+  const actual = hash.digest();
+  if (expected.length !== actual.length || !timingSafeEqual(actual, expected)) {
     throw new MediaServiceError(
       'reference_changed',
       422,
       'The media URL no longer matches the archived reference.',
     );
   }
-  return remote.sourceURL;
+  return sourceURL;
 }
 
 export async function importHostedMediaReference(

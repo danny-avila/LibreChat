@@ -39,10 +39,20 @@ describe('native chat media persistence', () => {
     scope = { ownerId: new mongoose.Types.ObjectId().toString(), tenantId: null };
   });
 
-  async function start(modelRunId = 'run-one', configuredLimits = limits, maxTitleChars = 20) {
+  async function start(
+    modelRunId = 'run-one',
+    configuredLimits = limits,
+    maxTitleChars = 20,
+    expiresAt?: string,
+  ) {
     return native.startMediaNativeRecording({
       scope,
-      source: { conversationId: 'conversation', messageId: 'assistant-message', modelRunId },
+      source: {
+        conversationId: 'conversation',
+        messageId: 'assistant-message',
+        modelRunId,
+        ...(expiresAt ? { expiresAt } : {}),
+      },
       request: mediaSubmissionRequestSchema.parse({
         clientRequestId: 'ignored-client-key',
         prompt: 'Create an image',
@@ -257,6 +267,34 @@ describe('native chat media persistence', () => {
     expect(await native.getMediaNativeContinuation({ ...base, fileId: 'another-file' })).toBeNull();
     await media.retireMediaThread(scope, job.threadId);
     expect(await native.getMediaNativeContinuation(base)).toBeNull();
+  });
+
+  it('stores part expiry as a TTL-backed date and hides an expired continuation', async () => {
+    const expiresAt = new Date(Date.now() + 60_000).toISOString();
+    const job = await start('expiring-run', limits, 20, expiresAt);
+    const receipt = await native.recordMediaNativePart({
+      scope,
+      jobId: job.jobId,
+      chunkIndex: 0,
+      partIndex: 0,
+      part: { kind: 'text', text: 'Soon gone' },
+      maxRetainers: 4,
+    });
+    const input = { scope, execution, continuationRef: receipt.continuationRef };
+    expect(await native.getMediaNativeContinuation(input)).toMatchObject({ expiresAt });
+    const stored = await mongoose.models.MediaNativePart.findOne({
+      continuationRef: receipt.continuationRef,
+    }).lean<{ expiresAt?: Date }>();
+    expect(stored?.expiresAt).toBeInstanceOf(Date);
+    const indexes = await mongoose.models.MediaNativePart.listIndexes();
+    expect(indexes).toContainEqual(
+      expect.objectContaining({ key: { expiresAt: 1 }, expireAfterSeconds: 0 }),
+    );
+    await mongoose.models.MediaNativePart.updateOne(
+      { continuationRef: receipt.continuationRef },
+      { $set: { expiresAt: new Date(0) } },
+    );
+    expect(await native.getMediaNativeContinuation(input)).toBeNull();
   });
 
   it('records native failure without enabling automatic or manual paid retry', async () => {

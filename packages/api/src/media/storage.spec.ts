@@ -320,6 +320,7 @@ describe('Media original storage', () => {
       repository,
       imageDirectory: path.join(directory, 'images'),
       uploadDirectory: path.join(directory, 'uploads'),
+      now: Date.now,
     });
   }, 60000);
 

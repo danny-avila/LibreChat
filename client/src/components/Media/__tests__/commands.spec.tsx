@@ -11,7 +11,7 @@ import {
   mediaDraftFamily,
   mediaPendingFamily,
 } from '../state';
-import { useMediaCommands } from '../commands';
+import { receiptInterval, useMediaCommands } from '../commands';
 import { MediaHostProvider } from '../host';
 
 jest.mock('librechat-data-provider', () => {
@@ -46,7 +46,7 @@ const preparing: MediaSubmissionReceipt = {
   phase: 'preparing',
 };
 
-function setup() {
+function setup(intervals = { pollIntervalMs: 60000, catchUpIntervalMs: 60000 }) {
   const store = createStore();
   const openThread = jest.fn();
   const client = new QueryClient({
@@ -61,8 +61,7 @@ function setup() {
           value={{
             scope: 'owner',
             canCreate: true,
-            pollIntervalMs: 60000,
-            catchUpIntervalMs: 60000,
+            ...intervals,
             enterToSend: false,
             isCurrentSession: () => active,
             openThread,
@@ -161,6 +160,7 @@ test('an account change discards a late receipt and leaves the next session cach
   act(() => {
     sending = hook.result.current.send(command);
   });
+  await waitFor(() => expect(dataService.submitMedia).toHaveBeenCalledTimes(1));
   env.endSession();
   await act(async () => {
     finish({ ...preparing, phase: 'accepted' });
@@ -190,5 +190,43 @@ test('a definite validation rejection preserves the draft without an unrecoverab
   expect(env.store.get(mediaDraftFamily(command.draftKey)).prompt).toBe('A lake');
   expect(hook.result.current.error).toBe('invalid_request');
   expect(env.openThread).not.toHaveBeenCalled();
+  env.client.clear();
+});
+
+const unknownReceipt = { response: { status: 404, data: { error: { code: 'not_found' } } } };
+const intervals = { pollIntervalMs: 10, catchUpIntervalMs: 20 };
+
+test.each([
+  ['no receipt and no error', undefined, null, 10],
+  ['a preparing receipt', preparing, null, 10],
+  ['a settled receipt', { ...preparing, phase: 'accepted' as const }, null, false],
+  ['a request the server does not know', undefined, unknownReceipt, false],
+  ['an outage', undefined, new Error('offline'), 20],
+])('receiptInterval with %s', (_label, data, error, expected) => {
+  expect(receiptInterval(data, error, intervals)).toBe(expected);
+});
+
+test('a pending request the server does not know stops polling and can be dismissed', async () => {
+  const load = jest.mocked(dataService.getMediaSubmission).mockRejectedValue(unknownReceipt);
+  const env = setup(intervals);
+  env.store.set(mediaPendingFamily('owner'), [command]);
+  const hook = renderHook(() => useMediaCommands([]), { wrapper: env.wrapper });
+  await waitFor(() => expect(hook.result.current.receipts[0]?.isError).toBe(true));
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  expect(load).toHaveBeenCalledTimes(1);
+  expect(hook.result.current.pending).toHaveLength(1);
+  act(() => hook.result.current.dismiss('request'));
+  expect(hook.result.current.pending).toEqual([]);
+  expect(sessionStorage.getItem('librechat:media:owner:pending')).toBe('[]');
+  env.client.clear();
+});
+
+test('an outage keeps a pending receipt polling at the catch-up cadence', async () => {
+  const load = jest.mocked(dataService.getMediaSubmission).mockRejectedValue(new Error('offline'));
+  const env = setup(intervals);
+  env.store.set(mediaPendingFamily('owner'), [command]);
+  const hook = renderHook(() => useMediaCommands([]), { wrapper: env.wrapper });
+  await waitFor(() => expect(load.mock.calls.length).toBeGreaterThanOrEqual(3), { timeout: 2000 });
+  expect(hook.result.current.pending).toHaveLength(1);
   env.client.clear();
 });

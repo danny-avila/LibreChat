@@ -419,3 +419,21 @@ test('a temporary creation announces its expiry next to the title', () => {
   expect(status).toHaveTextContent('com_media_temporary_expires');
   expect(status).toHaveAttribute('title');
 });
+
+test('cancelling a job surfaces a failure inline and clears it once the cancellation is accepted', async () => {
+  const running = withJob({ phase: 'running', allowedActions: { cancel: true, retry: false } });
+  const cancel = jest
+    .spyOn(dataService, 'cancelMediaJob')
+    .mockRejectedValueOnce(new Error('connection lost'))
+    .mockResolvedValueOnce({ ...running.turns.items[0].jobs[0], phase: 'cancelled' });
+  setup(undefined, running);
+  const button = () => screen.getByRole('button', { name: 'com_media_cancel_job' });
+  fireEvent.click(button());
+  expect(await screen.findByRole('alert')).toHaveTextContent('com_media_error_internal_error');
+  expect(cancel).toHaveBeenCalledWith('job');
+  fireEvent.click(button());
+  await waitFor(() => expect(cancel).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  expect(button()).toBeEnabled();
+  cancel.mockRestore();
+});

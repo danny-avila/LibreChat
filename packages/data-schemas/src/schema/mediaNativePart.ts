@@ -1,7 +1,7 @@
 import { Schema } from 'mongoose';
-import type { MediaNativePartRecord } from '~/types/mediaNative';
+import type { MediaNativePartDocument } from '~/types/mediaNative';
 
-const mediaNativePartSchema: Schema<MediaNativePartRecord> = new Schema(
+const mediaNativePartSchema: Schema<MediaNativePartDocument> = new Schema(
   {
     tenantId: { type: String, default: null },
     ownerId: { type: String, required: true },
@@ -13,7 +13,7 @@ const mediaNativePartSchema: Schema<MediaNativePartRecord> = new Schema(
     part: { type: Schema.Types.Mixed, required: true },
     fileId: String,
     createdAt: { type: String, required: true },
-    expiresAt: String,
+    expiresAt: Date,
   },
   { versionKey: false, minimize: false },
 );
@@ -23,5 +23,5 @@ mediaNativePartSchema.index(
 );
 mediaNativePartSchema.index({ tenantId: 1, ownerId: 1, continuationRef: 1 }, { unique: true });
 mediaNativePartSchema.index({ tenantId: 1, ownerId: 1, fileId: 1 });
-mediaNativePartSchema.index({ expiresAt: 1 });
+mediaNativePartSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 export default mediaNativePartSchema;

@@ -736,14 +736,7 @@ export function createTransactionMethods(
   ): Promise<import('mongodb').DeleteResult> {
     const Balance = mongoose.models.Balance as Model<IBalance>;
     return Balance.deleteMany({
-      $and: [
-        filter,
-        {
-          'mediaHolds.0': { $exists: false },
-          mediaPendingSettlement: null,
-          $or: [{ mediaDebtCredits: { $lte: 0 } }, { mediaDebtCredits: { $exists: false } }],
-        },
-      ],
+      $and: [filter, { 'mediaHolds.0': { $exists: false }, mediaPendingSettlement: null }],
     });
   }
 

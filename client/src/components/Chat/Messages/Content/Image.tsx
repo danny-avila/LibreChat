@@ -1,9 +1,11 @@
 import React, { useState, useRef, useMemo, useEffect, lazy, Suspense } from 'react';
 import { Skeleton } from '@librechat/client';
 import { apiBaseUrl } from 'librechat-data-provider';
-import type { TFile } from 'librechat-data-provider';
+import type { TMediaFileRef } from '~/common';
+import { useStudioAvailable } from '~/components/Chat/Studio/context';
 import { cn, toAbsoluteFilePath } from '~/utils';
 import DialogImage from './DialogImage';
+
 const OpenInStudio = lazy(() => import('~/components/Chat/OpenInStudio'));
 
 /** Max display height for chat images (Tailwind JIT class) */
@@ -36,9 +38,7 @@ const Image = ({
   height,
 }: {
   imagePath: string;
-  file?: Partial<
-    Pick<TFile, 'file_id' | 'filename' | 'filepath' | 'bytes' | 'type' | 'width' | 'height'>
-  >;
+  file?: TMediaFileRef;
   altText: string;
   className?: string;
   args?: {
@@ -53,6 +53,7 @@ const Image = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const studio = useStudioAvailable();
 
   /** Root-relative server paths (`/images/...` static, `/api/...` downloads and
    *  share routes) are resolved against the API base so they load under a
@@ -127,7 +128,7 @@ const Image = ({
           )}
         />
       </button>
-      {file?.file_id && (
+      {studio && file?.file_id && (
         <Suspense fallback={null}>
           <OpenInStudio file={file} />
         </Suspense>

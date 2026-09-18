@@ -178,7 +178,7 @@ export function createVertexVideoAdapter(): MediaProviderAdapter {
       if (operationModel(response.name, context) !== model) {
         throw new MediaProviderError('uncertain');
       }
-      // Persist the operation before fetching bytes, even if generation already finished.
+      /** Persist the operation before fetching bytes, even if generation already finished. */
       return { status: 'running', operationId: response.name };
     },
     async poll(operationId, context): Promise<MediaProviderResult> {

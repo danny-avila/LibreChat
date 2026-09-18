@@ -1,6 +1,7 @@
-import axios from 'axios';
+import { z } from 'zod';
 import dns from 'node:dns';
 import { Readable } from 'node:stream';
+import axios, { AxiosError } from 'axios';
 import type { CreateAxiosDefaults, InternalAxiosRequestConfig } from 'axios';
 import { createMediaTransport } from './transport';
 
@@ -135,6 +136,47 @@ describe('public media downloads', () => {
       expect(responses[0].destroyed).toBe(true);
     },
   );
+
+  it('records a redacted failure reason without copying response headers or bodies', async () => {
+    const leaked = ['session=fixture-only-cookie', 'req-fixture-only', 'body-with-fixture-only'];
+    const http = axios.create({
+      adapter: async (config) => ({
+        config,
+        data: leaked[2],
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: { 'set-cookie': [leaked[0]], 'x-request-id': leaked[1] },
+      }),
+    });
+    const transport = createMediaTransport({ http, allowedAddresses: ['127.0.0.1:443'] });
+    const error: unknown = await transport
+      .json({ ...request, publicOnly: false }, z.object({}))
+      .catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ certainty: 'uncertain', status: 503, reason: 'http_503' });
+    const reason = (error as { reason: string }).reason;
+    for (const value of leaked) {
+      expect(reason).not.toContain(value);
+    }
+  });
+
+  it('names the transport error class when no response arrived', async () => {
+    const http = axios.create({
+      adapter: async (config) => {
+        throw new AxiosError('timeout of 1000ms exceeded', AxiosError.ECONNABORTED, config);
+      },
+    });
+    const transport = createMediaTransport({ http, allowedAddresses: ['127.0.0.1:443'] });
+    await expect(
+      transport.json({ ...request, publicOnly: false }, z.object({})),
+    ).rejects.toMatchObject({ certainty: 'uncertain', reason: 'ECONNABORTED' });
+    const { transport: redirecting, redirectTo } = fixture();
+    redirectTo('https://cdn.example/video.mp4');
+    await expect(redirecting.stream({ ...request, maxRedirects: 0 })).rejects.toMatchObject({
+      certainty: 'uncertain',
+      status: 302,
+      reason: 'redirect_limit',
+    });
+  });
 
   it('preserves configured provider authentication outside public downloads', async () => {
     const { transport, requests } = fixture({
