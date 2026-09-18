@@ -1,4 +1,7 @@
-import { MAX_CHAT_PROJECT_INSTRUCTIONS_LENGTH } from 'librechat-data-provider';
+import {
+  MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
+  MAX_CHAT_PROJECT_INSTRUCTIONS_LENGTH,
+} from 'librechat-data-provider';
 import {
   DEFAULT_AVAILABLE_PROJECT_FILES_LIMIT,
   InvalidAvailableProjectFilesCursorError,
@@ -103,6 +106,7 @@ const instructionValidationError = (
 const createProjectInput = (
   req: ProjectRequest,
   maxInstructionsLength?: number,
+  maxDescriptionLength: number = MAX_CHAT_PROJECT_DESCRIPTION_LENGTH,
 ): { input: CreateChatProjectInput; error?: never } | { input?: never; error: string } => {
   const name = normalizeString(req.body?.name);
   if (!name) {
@@ -114,11 +118,17 @@ const createProjectInput = (
       return { error };
     }
   }
+  const description = typeof req.body?.description === 'string' ? req.body.description : '';
+  /* Refuse an over-long description rather than storing a silently shortened one, the way
+   * instructions already answer. */
+  if (description.trim().length > maxDescriptionLength) {
+    return { error: `description must be at most ${maxDescriptionLength} characters` };
+  }
 
   return {
     input: {
       name,
-      description: typeof req.body?.description === 'string' ? req.body.description : '',
+      description,
       ...(req.body?.instructions !== undefined && { instructions: req.body.instructions }),
     },
   };
@@ -153,7 +163,11 @@ export function createProjectHandlers(deps: ProjectHandlerDependencies): {
   }
 
   async function createProject(req: ProjectRequest, res: Response): Promise<Response> {
-    const parsed = createProjectInput(req, req.config?.projects?.maxInstructionsLength);
+    const parsed = createProjectInput(
+      req,
+      req.config?.projects?.maxInstructionsLength,
+      req.config?.projects?.maxDescriptionLength,
+    );
     if ('error' in parsed) {
       return res.status(400).json({ error: parsed.error });
     }
@@ -234,7 +248,15 @@ export function createProjectHandlers(deps: ProjectHandlerDependencies): {
       input.name = name;
     }
     if (req.body?.description !== undefined) {
-      input.description = typeof req.body.description === 'string' ? req.body.description : '';
+      const description = typeof req.body.description === 'string' ? req.body.description : '';
+      const maxDescriptionLength =
+        req.config?.projects?.maxDescriptionLength ?? MAX_CHAT_PROJECT_DESCRIPTION_LENGTH;
+      if (description.trim().length > maxDescriptionLength) {
+        return res
+          .status(400)
+          .json({ error: `description must be at most ${maxDescriptionLength} characters` });
+      }
+      input.description = description;
     }
     if (req.body?.instructions !== undefined) {
       const error = instructionValidationError(

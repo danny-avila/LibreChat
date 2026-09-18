@@ -69,6 +69,29 @@ describe('ChatProject handlers', () => {
     expect(deps.updateChatProject).not.toHaveBeenCalled();
   });
 
+  it('refuses an over-long description instead of storing a shortened one', async () => {
+    const { handlers, deps } = setup();
+    const description = 'd'.repeat(41);
+    const config = { config: { projects: { maxDescriptionLength: 40 } } };
+
+    const created = response();
+    await handlers.createProject(
+      request({ body: { name: 'Project', description }, ...config }),
+      created.res,
+    );
+    expect(created.result.statusCode).toBe(400);
+    expect(created.result.body).toEqual({ error: 'description must be at most 40 characters' });
+    expect(deps.createChatProject).not.toHaveBeenCalled();
+
+    const updated = response();
+    await handlers.updateProject(
+      request({ params: { projectId }, body: { description }, ...config }),
+      updated.res,
+    );
+    expect(updated.result.statusCode).toBe(400);
+    expect(deps.updateChatProject).not.toHaveBeenCalled();
+  });
+
   it('surfaces atomic resource errors without pretending the attach succeeded', async () => {
     const { handlers } = setup({
       addChatProjectFile: jest.fn().mockRejectedValue(new Error('Project file limit reached')),
