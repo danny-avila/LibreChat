@@ -2088,6 +2088,63 @@ describe('stable/dynamic system instructions', () => {
     expect(agents[0].instructions).toBe('Static tool instructions\nBase instructions');
     expect(agents[0].additional_instructions).toBe('Conversation Date & Time: anchor\nMemory tail');
   });
+
+  it('folds an Anthropic subagent dynamic tail so the SDK can mark the tool loop', async () => {
+    const child = makeAgent({
+      id: 'agent_child',
+      provider: 'anthropic',
+      endpoint: 'anthropic',
+      instructions: 'You are a researcher.',
+      additional_instructions: 'Conversation Date & Time: 2026-09-17',
+      model_parameters: { model: 'claude-sonnet-4', promptCache: true },
+    });
+    const [root] = await callAndCapture({
+      agents: [
+        makeAgent({
+          provider: 'anthropic',
+          endpoint: 'anthropic',
+          instructions: 'You are a supervisor.',
+          additional_instructions: 'Conversation Date & Time: 2026-09-17',
+          model_parameters: { model: 'claude-sonnet-4', promptCache: true },
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+    const [childConfig] = root.subagentConfigs as Array<Record<string, unknown>>;
+    const childInputs = childConfig.agentInputs as Record<string, unknown>;
+
+    expect(root.additional_instructions).toBe('Conversation Date & Time: 2026-09-17');
+    expect(root.instructions).toBe('You are a supervisor.');
+    expect(childInputs.additional_instructions).toBeUndefined();
+    expect(childInputs.instructions).toBe(
+      'You are a researcher.\nConversation Date & Time: 2026-09-17',
+    );
+  });
+
+  it('keeps a subagent dynamic tail when promptCache is off', async () => {
+    const child = makeAgent({
+      id: 'agent_child',
+      provider: 'anthropic',
+      endpoint: 'anthropic',
+      instructions: 'You are a researcher.',
+      additional_instructions: 'Conversation Date & Time: 2026-09-17',
+      model_parameters: { model: 'claude-sonnet-4', promptCache: false },
+    });
+    const [root] = await callAndCapture({
+      agents: [
+        makeAgent({
+          subagents: { enabled: true, allowSelf: false, agent_ids: ['agent_child'] },
+          subagentAgentConfigs: [child],
+        }),
+      ],
+    });
+    const [childConfig] = root.subagentConfigs as Array<Record<string, unknown>>;
+    const childInputs = childConfig.agentInputs as Record<string, unknown>;
+
+    expect(childInputs.instructions).toBe('You are a researcher.');
+    expect(childInputs.additional_instructions).toBe('Conversation Date & Time: 2026-09-17');
+  });
 });
 
 // ---------------------------------------------------------------------------
