@@ -204,14 +204,21 @@ export default function SkillsDialog({ open, onOpenChange, agentId }: SkillsDial
               <Label id="skills-view-label" className="sr-only">
                 {localize('com_ui_skills_filter')}
               </Label>
+              {/* `wrap`, and no `shrink-0`: every segment carries whitespace-nowrap
+                  and px-4, so the group has a hard 261px minimum in English and more
+                  in longer locales. On a 360px phone that plus the create button
+                  exceeds the dialog, which is overflow-hidden, and the trailing
+                  option becomes unreachable. Shrinking lets the segments flow onto a
+                  second row instead; at 390px they still occupy one. */}
               <Radio
+                wrap
                 options={viewOptions}
                 value={view}
                 onChange={(value) => {
                   setView(value as SkillView);
                   setCategory('all');
                 }}
-                className="order-1 shrink-0 p-1 md:order-3"
+                className="order-1 p-1 md:order-3"
                 aria-labelledby="skills-view-label"
               />
               {hasCreateAccess && (
