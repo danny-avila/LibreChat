@@ -1,5 +1,13 @@
 import { expect, test } from '@playwright/test';
-import { designMessages, inOneProject, lintFile, lintStdin, messagesFor } from './lint.helpers';
+import {
+  designMessages,
+  designRuleSeverities,
+  inOneProject,
+  lintFile,
+  lintStdin,
+  messagesFor,
+  sourceDirectories,
+} from './lint.helpers';
 
 /**
  * `CLAUDE.md` asks callers to compose the library's primitives and keep colour on
@@ -98,5 +106,59 @@ test.describe('design-system rules', () => {
     /** The one real violation the widened glob exposed, now fixed at the source
      *  rather than recorded in the backlog. */
     expect(designMessages(lintFile('client/src/App.jsx'))).toEqual([]);
+  });
+
+  test('every client source directory is policed by the design rules @scenario:every-client-source-directory-is-policed-by-the-design-rules', () => {
+    inOneProject();
+    test.setTimeout(120_000);
+
+    /**
+     * A report says what the rules found; it cannot say where they were asked.
+     * A config that narrowed the design block over a subtree with nothing to
+     * report — `client/src/routes/**` today — would produce no new diagnostic
+     * for any gate to notice, and the styling written there next would never be
+     * read. So the question is put to the resolved configuration itself, for
+     * one representative path in every directory under the roots.
+     *
+     * The library is a different profile on purpose: `packages/client/src` owns
+     * the primitives, so the rules about overriding one are off there while the
+     * rules about colour and inline geometry still hold.
+     */
+    const caller: Record<string, number> = {
+      'shadcn/no-restyle': 2,
+      'shadcn/no-raw-colors': 2,
+      'shadcn/no-arbitrary-values': 2,
+      'shadcn/no-inline-styles': 2,
+      'shadcn/require-static-classes': 2,
+    };
+    const library: Record<string, number> = {
+      ...caller,
+      'shadcn/no-restyle': 0,
+      'shadcn/no-arbitrary-values': 0,
+      'shadcn/require-static-classes': 0,
+    };
+
+    const server = 'api/server/index.js';
+    const probes: Record<string, Record<string, number>> = {};
+    for (const [root, expected] of [
+      ['client/src', caller],
+      ['packages/client/src', library],
+    ] as const) {
+      for (const directory of sourceDirectories(root)) {
+        for (const extension of ['ts', 'tsx', 'js', 'jsx']) {
+          probes[`${directory}/__coverage_probe__.${extension}`] = expected;
+        }
+      }
+    }
+    /** And the profile is a choice, not the default everywhere: server code is
+     *  not a caller of the design system and is not policed by these rules. */
+    probes[server] = {};
+    expect(Object.keys(probes).length, 'the roots hold no source directories').toBeGreaterThan(50);
+
+    const resolved = designRuleSeverities(Object.keys(probes));
+    const outside = Object.entries(probes)
+      .filter(([path, expected]) => JSON.stringify(resolved[path]) !== JSON.stringify(expected))
+      .map(([path]) => `${path}: ${JSON.stringify(resolved[path])}`);
+    expect(outside, 'a path the design rules no longer police as expected').toEqual([]);
   });
 });
