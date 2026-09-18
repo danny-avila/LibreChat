@@ -139,6 +139,9 @@ const nonPrefixClientOptionKeys: ReadonlySet<string> = new Set([
   'seed',
   'stop',
   'stopSequences',
+  /** Scheduling and cost, not prefix: `default`, `flex` and `priority` read one prompt. */
+  'service_tier',
+  'serviceTier',
   'maxTokens',
   'maxCompletionTokens',
   'max_tokens',
@@ -335,7 +338,10 @@ function toolDefinitionsIdentity(value: unknown, context: PromptCacheProjectionC
   const identities: unknown[] = [];
   for (const tool of value) {
     const name = (tool as { name?: unknown } | null)?.name;
-    const configured = typeof name === 'string' ? state[name] : undefined;
+    const configured =
+      typeof name === 'string' && Object.prototype.hasOwnProperty.call(state, name)
+        ? state[name]
+        : undefined;
     if (configured == null) {
       identities.push(safeIdentity(tool));
       continue;
