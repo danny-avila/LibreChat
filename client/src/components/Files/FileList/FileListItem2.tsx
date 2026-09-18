@@ -24,7 +24,7 @@ export default function FileListItem2({
       onClick={() => {
         navigate('file_id_abcdef');
       }}
-      className="w-100 mt-2 flex h-fit cursor-pointer flex-row rounded-md border border-0 bg-white p-4 transition duration-300 ease-in-out hover:bg-slate-200"
+      className="mt-2 flex h-fit cursor-pointer flex-row rounded-md border border-0 bg-white p-4 transition duration-300 ease-in-out hover:bg-slate-200"
     >
       <div className="flex w-10/12 flex-col justify-around md:flex-row">
         <div className="flex w-2/5 flex-row">
@@ -39,7 +39,7 @@ export default function FileListItem2({
               return (
                 <span
                   key={index}
-                  className="ml-2 mt-1 flex flex-row items-center rounded-full bg-[#f5f5f5] px-2 text-xs"
+                  className="mt-1 ml-2 flex flex-row items-center rounded-full bg-[#f5f5f5] px-2 text-xs"
                 >
                   <PlusIcon className="h-3 w-3" />
                   &nbsp;
@@ -53,7 +53,7 @@ export default function FileListItem2({
             return (
               <span
                 key={index}
-                className="ml-2 mt-1 content-center rounded-full bg-[#f2f8ec] px-2 text-xs text-[#91c561]"
+                className="mt-1 ml-2 content-center rounded-full bg-[#f2f8ec] px-2 text-xs text-[#91c561]"
               >
                 {vectorStore.name}
               </span>

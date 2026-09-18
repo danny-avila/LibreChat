@@ -742,21 +742,29 @@ html.high-contrast.dark .btn-neutral:hover {
   src: url('$fonts/roboto-mono-latin-400-italic.woff2') format('woff2');
 }
 
-select {
-  --tw-shadow: 0 0 transparent;
-  -webkit-appearance: none;
-  appearance: none;
-  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%238e8ea0' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
-  background-position: right 0.5rem center;
-  background-repeat: no-repeat;
-  background-size: 1.5em 1.5em;
-  padding-right: 2.5rem;
-  background-color: #fff;
-  border-color: #8e8ea0;
-  border-radius: 0;
-  border-width: 1px;
-  font-size: 1rem;
-  line-height: 1.5rem;
+/* v4 puts every utility in `@layer utilities`, and an unlayered declaration outranks a
+ * layered one whatever its specificity. The rules below are element and bare-pseudo
+ * resets that utilities beat under v3 by being classes; each is layered so it keeps
+ * losing to a utility. A rule that is meant to beat utilities stays unlayered
+ * (`.dark :focus-visible`, the `code, pre` font reset, the `.hidden`/`.overflow-*`
+ * class overrides). */
+@layer base {
+  select {
+    --tw-shadow: 0 0 transparent;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%238e8ea0' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+    background-position: right 0.5rem center;
+    background-repeat: no-repeat;
+    background-size: 1.5em 1.5em;
+    padding-right: 2.5rem;
+    background-color: #fff;
+    border-color: #8e8ea0;
+    border-radius: 0;
+    border-width: 1px;
+    font-size: 1rem;
+    line-height: 1.5rem;
+  }
 }
 
 .overflow-y-auto {
@@ -810,21 +818,23 @@ p > small {
   }
 }
 
-blockquote,
-dd,
-dl,
-fieldset,
-figure,
-h1,
-h2,
-h3,
-h4,
-h5,
-h6,
-hr,
-p,
-pre {
-  margin: 0;
+@layer base {
+  blockquote,
+  dd,
+  dl,
+  fieldset,
+  figure,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  hr,
+  p,
+  pre {
+    margin: 0;
+  }
 }
 
 /* Show the message time when the row is hovered. Tailwind group-hover
@@ -2409,8 +2419,10 @@ html {
   box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.35);
 }
 
-:focus {
-  outline: none;
+@layer base {
+  :focus {
+    outline: none;
+  }
 }
 
 html[data-input-modality='pointer']
@@ -2459,9 +2471,11 @@ html[data-input-modality='keyboard']
   outline-offset: 2px !important;
 }
 
-:focus-visible {
-  outline: 2px solid #000;
-  outline-offset: 2px;
+@layer base {
+  :focus-visible {
+    outline: 2px solid #000;
+    outline-offset: 2px;
+  }
 }
 
 .dark :focus-visible {

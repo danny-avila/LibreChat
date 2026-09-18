@@ -405,7 +405,6 @@ describe('AgentDetail', () => {
         );
       });
     });
-
   });
 
   describe('Edge Cases', () => {
