@@ -324,6 +324,27 @@ describe('run-level prompt cache identity', () => {
     expect(cacheKey(implicit)).toBe(cacheKey(explicit));
   });
 
+  it('treats a handoff prompt callback as the no-prompt tool the model receives', async () => {
+    const base = { from: 'supervisor', to: 'writer', edgeType: 'handoff' as const };
+    const [plain] = await captureRun({
+      agent: makeAgent({ id: 'supervisor', edges: [base] }),
+      user: 'user-a',
+    });
+    const [callback] = await captureRun({
+      agent: makeAgent({
+        id: 'supervisor',
+        edges: [{ ...base, prompt: () => 'resolved per turn', promptKey: 'brief' }],
+      }),
+      user: 'user-a',
+    });
+
+    /**
+     * The SDK builds the handoff input only from a string prompt, so a
+     * callback reaches the model in no form and must not partition the cache.
+     */
+    expect(cacheKey(callback)).toBe(cacheKey(plain));
+  });
+
   it('reads a spelled-out default handoff parameter name as the default', async () => {
     const edge = (promptKey?: string) => ({
       from: 'supervisor',

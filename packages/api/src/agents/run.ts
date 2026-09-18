@@ -1909,34 +1909,31 @@ function finalizePromptCacheKey(input: AgentInputs, handoffEdges?: readonly unkn
  * graph and never reaches the model.
  */
 function handoffEdgeIdentity(edge: GraphEdge): unknown {
+  /**
+   * The generated transfer tool takes its input parameter only from a string
+   * prompt (`MultiAgentGraph` builds the schema when `typeof edge.prompt ===
+   * 'string'`), so a callback prompt reaches the model in no form at all: no
+   * parameter, no description, nothing to name. It hashes like an edge with no
+   * prompt, and the parameter name comes along only when the parameter exists.
+   */
+  const prompt = typeof edge.prompt === 'string' ? edge.prompt : undefined;
   return {
+    /**
+     * The tool the model sees is `lc_transfer_to_<to>`, and its description
+     * falls back to a template over the same value, so the target id is the
+     * whole of the destination's contribution — renaming the destination agent
+     * changes nothing in this tool.
+     */
     to: edge.to,
     ...(typeof edge.description === 'string' ? { description: edge.description } : {}),
     /** Absent means `handoff`, so both spellings must hash alike. */
     edgeType: edge.edgeType ?? 'handoff',
-    /**
-     * Only when the edge has a prompt, because that is what creates the
-     * handoff input parameter this names; an inert `promptKey` reaches no
-     * tool. Resolved rather than passed through: the SDK falls back to
-     * `instructions` (`MultiAgentGraph`), so an edge that spells the default
-     * out and one that leaves it unset advertise the same parameter and must
-     * not land in different cache partitions.
-     */
-    ...(edge.prompt != null
-      ? { promptKey: typeof edge.promptKey === 'string' ? edge.promptKey : 'instructions' }
+    ...(prompt != null
+      ? {
+          prompt,
+          promptKey: typeof edge.promptKey === 'string' ? edge.promptKey : 'instructions',
+        }
       : {}),
-    /**
-     * A string prompt becomes the handoff parameter's description and is
-     * hashed verbatim; a function one is resolved per turn, so only its
-     * presence — which is what decides whether the parameter exists — counts.
-     * An agent whose callback returns different text per turn therefore has no
-     * stable prefix to name: its requests share one identity across those
-     * texts, which mixes their accounting and gains no reuse. Resolving the
-     * callback here is not possible — it needs the turn's messages — and
-     * hashing its output would partition the cache per turn, so the cost is
-     * carried rather than traded for a key that changes every request.
-     */
-    prompt: typeof edge.prompt === 'string' ? edge.prompt : edge.prompt != null,
   };
 }
 
