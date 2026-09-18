@@ -112,7 +112,23 @@ const excluded = (because: string): PromptCacheDisposition => ({ role: 'excluded
  * token placeholders into `configuration.defaultHeaders`, so hashing the
  * transport would partition the cache per conversation and per turn.
  */
-const nonPrefixClientOptionKeys: ReadonlySet<string> = new Set([
+/**
+ * One field, two spellings. LangChain takes `topP` where the provider
+ * documents `top_p`, and `addParams` lets an administrator write either — the
+ * unknown one lands in `modelKwargs` and the known one on the options object,
+ * but both mean the same request. Exclusions are matched on a normalized form
+ * so a set has to name a field once rather than in every alphabet it arrives
+ * in, which is where this kept going wrong.
+ */
+function normalizeOptionKey(key: string): string {
+  return key.replace(/_/g, '').toLowerCase();
+}
+
+function normalizedKeySet(keys: readonly string[]): ReadonlySet<string> {
+  return new Set(keys.map(normalizeOptionKey));
+}
+
+const nonPrefixClientOptionNames: readonly string[] = [
   /** Credentials and transport. */
   'apiKey',
   'organization',
@@ -181,7 +197,14 @@ const nonPrefixClientOptionKeys: ReadonlySet<string> = new Set([
   'useLegacyContent',
   'provider',
   'fallbacks',
-]);
+  /** Streaming delivery, in both spellings. */
+  'stream',
+  'streamOptions',
+  /** The Responses output cap, which a stored agent can set at the top level. */
+  'maxOutputTokens',
+];
+
+const nonPrefixClientOptionKeys = normalizedKeySet(nonPrefixClientOptionNames);
 
 /**
  * Reasoning and verbosity controls the SDK routes through `modelKwargs`. A
@@ -190,7 +213,7 @@ const nonPrefixClientOptionKeys: ReadonlySet<string> = new Set([
  * rest of `modelKwargs` is admin-configured (`addParams`) or wire identity
  * (`model` carries the Azure Astra deployment), so it is hashed.
  */
-const nonPrefixModelKwargsKeys: ReadonlySet<string> = new Set([
+const nonPrefixModelKwargsKeys = normalizedKeySet([
   'verbosity',
   'reasoning',
   'reasoning_effort',
@@ -200,7 +223,19 @@ const nonPrefixModelKwargsKeys: ReadonlySet<string> = new Set([
   'max_tokens',
   'max_completion_tokens',
   'max_output_tokens',
-  'maxOutputTokens',
+  /**
+   * Sampling in its provider spelling: `knownOpenAIParams` carries only the
+   * camelCase names, so these arrive here instead of on the options object.
+   */
+  'top_p',
+  'frequency_penalty',
+  'presence_penalty',
+  'logit_bias',
+  'top_logprobs',
+  'stream_options',
+  /** And the cache levers themselves, which route the key without shaping it. */
+  ...PROMPT_CACHE_WIRE_FIELDS,
+  ...PROMPT_CACHE_ADMIN_FIELDS,
 ]);
 
 /**
@@ -250,7 +285,7 @@ function modelKwargsIdentity(value: unknown): unknown {
   const kwargs = value as Record<string, unknown>;
   const projected: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   for (const key of Object.keys(kwargs)) {
-    if (nonPrefixModelKwargsKeys.has(key)) {
+    if (nonPrefixModelKwargsKeys.has(normalizeOptionKey(key))) {
       continue;
     }
     const value = key === 'text' ? responsesTextIdentity(kwargs[key]) : safeIdentity(kwargs[key]);
@@ -293,7 +328,7 @@ function clientOptionsIdentity(value: unknown): unknown {
   };
   const projected: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
   for (const key of Object.keys(options)) {
-    if (nonPrefixClientOptionKeys.has(key)) {
+    if (nonPrefixClientOptionKeys.has(normalizeOptionKey(key))) {
       continue;
     }
     const projectedValue =

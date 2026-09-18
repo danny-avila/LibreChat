@@ -356,6 +356,30 @@ describe('buildPromptCacheKey', () => {
         'the Responses output budget',
         { clientOptions: { modelKwargs: { max_output_tokens: 4096 } } },
       ],
+      ['the Responses output cap at the top level', { clientOptions: { max_output_tokens: 2048 } }],
+      [
+        'streaming delivery in its provider spelling',
+        { clientOptions: { stream: false, stream_options: { include_usage: true } } },
+      ],
+      [
+        'sampling in its provider spelling',
+        {
+          clientOptions: {
+            modelKwargs: { top_p: 0.4, frequency_penalty: 0.2, logit_bias: { '1': 1 } },
+          },
+        },
+      ],
+      [
+        'the cache levers in their provider spelling',
+        {
+          clientOptions: {
+            modelKwargs: {
+              prompt_cache_retention: '24h',
+              prompt_cache_options: { mode: 'explicit' },
+            },
+          },
+        },
+      ],
     ])('ignores %s', (_label, change) => {
       expect(key(change)).toBe(key());
     });
