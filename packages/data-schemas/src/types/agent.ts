@@ -1,5 +1,6 @@
 import { Document, Types } from 'mongoose';
 import type {
+  AgentInstructionPrompt,
   GraphEdge,
   MemoryScope,
   SkillsScope,
@@ -19,6 +20,7 @@ export interface IAgent extends Omit<Document, 'model'> {
   name?: string;
   description?: string;
   instructions?: string;
+  instruction_prompt?: AgentInstructionPrompt;
   avatar?: {
     filepath: string;
     source: string;

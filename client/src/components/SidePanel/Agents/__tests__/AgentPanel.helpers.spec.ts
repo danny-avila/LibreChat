@@ -59,6 +59,32 @@ const createForm = (): AgentForm => ({
 });
 
 describe('composeAgentUpdatePayload', () => {
+  it('clears a stored reference when inline instructions are selected', () => {
+    const form = createForm();
+    form.instructions = 'Inline instructions';
+    form.instruction_prompt = undefined;
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.instructions).toBe('Inline instructions');
+    expect(payload.instruction_prompt).toBeNull();
+  });
+
+  it('clears stale inline text when a prompt reference is selected', () => {
+    const form = createForm();
+    form.instructions = 'Old inline instructions';
+    form.instruction_prompt = {
+      source: 'langfuse',
+      name: 'support-policy',
+      version: 2,
+    };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.instructions).toBe('');
+    expect(payload.instruction_prompt).toEqual(form.instruction_prompt);
+  });
+
   it('includes avatar: null when resetting a persistent agent', () => {
     const form = createForm();
     form.avatar_action = 'reset';

@@ -142,6 +142,28 @@ export const useGetExpandedAgentByIdQuery = (
   );
 };
 
+export const useAgentInstructionPromptPreview = (
+  name: string,
+  version?: number,
+  config?: UseQueryOptions<t.ResolvedAgentInstructionPrompt>,
+): QueryObserverResult<t.ResolvedAgentInstructionPrompt> => {
+  const normalizedName = name.trim();
+  return useQuery<t.ResolvedAgentInstructionPrompt>(
+    [QueryKeys.agentInstructionPrompt, normalizedName, version ?? 'latest'],
+    () => dataService.previewAgentInstructionPrompt(normalizedName, version),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      retry: false,
+      ...config,
+      enabled:
+        normalizedName.length > 0 &&
+        (version == null || (Number.isInteger(version) && version > 0)) &&
+        (config?.enabled ?? true),
+    },
+  );
+};
+
 /**
  * Hook for lazily retrieving an agent's version history (EDIT permission).
  * Only fetched when the user opens version history, so editors with large

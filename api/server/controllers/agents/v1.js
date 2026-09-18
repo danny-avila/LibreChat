@@ -1083,6 +1083,7 @@ const updateAgentHandler = async (req, res) => {
       avatar: avatarField,
       code_environment_id: codeEnvironmentIdField,
       git_identity: gitIdentityField,
+      instruction_prompt: instructionPromptField,
       _id,
       ...rest
     } = validatedData;
@@ -1092,6 +1093,9 @@ const updateAgentHandler = async (req, res) => {
     }
     if (gitIdentityField !== undefined) {
       updateData.git_identity = gitIdentityField;
+    }
+    if (instructionPromptField !== undefined) {
+      updateData.instruction_prompt = instructionPromptField;
     }
     let existingAgent;
 

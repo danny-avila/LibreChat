@@ -112,6 +112,11 @@ function AgentSelect({
           return;
         }
 
+        if (name === 'instruction_prompt' && typeof value === 'object') {
+          formValues[name] = value;
+          return;
+        }
+
         if (capabilities[name] !== undefined) {
           formValues[name] = value;
           return;

@@ -1,11 +1,15 @@
 const express = require('express');
-const { generateCheckAccess } = require('@librechat/api');
+const {
+  generateCheckAccess,
+  createAgentInstructionPromptPreviewHandler,
+} = require('@librechat/api');
 const { PermissionTypes, Permissions, PermissionBits } = require('librechat-data-provider');
 const { configMiddleware, canAccessAgentResource } = require('~/server/middleware');
 const v1 = require('~/server/controllers/agents/v1');
 const { getRoleByName } = require('~/models');
 const actions = require('./actions');
 const tools = require('./tools');
+const instructionPromptResolver = require('~/server/services/Agents/instructionPrompts');
 
 const router = express.Router();
 const avatar = express.Router();
@@ -32,6 +36,13 @@ router.use('/actions', configMiddleware, actions);
  * @route GET /agents/tools
  */
 router.use('/tools', configMiddleware, tools);
+
+router.get(
+  '/instruction-prompts/langfuse',
+  checkAgentCreate,
+  configMiddleware,
+  createAgentInstructionPromptPreviewHandler({ resolver: instructionPromptResolver }),
+);
 
 /**
  * Get all agent categories with counts

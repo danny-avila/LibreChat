@@ -3,6 +3,7 @@ import {
   CODE_WORKSPACE_ID_PATTERN,
   MemoryScope,
   SkillsScope,
+  agentInstructionPromptSchema,
   getMaxSubagents,
   agentGitIdentitySchema,
   resolveModelCatalogKey,
@@ -423,6 +424,7 @@ export const agentBaseSchema: z.ZodObject<
     name: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     description: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     instructions: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    instruction_prompt: z.ZodOptional<z.ZodNullable<typeof agentInstructionPromptSchema>>;
     avatar: z.ZodOptional<
       z.ZodNullable<
         z.ZodObject<
@@ -569,6 +571,7 @@ export const agentBaseSchema: z.ZodObject<
   name: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
   instructions: z.string().nullable().optional(),
+  instruction_prompt: agentInstructionPromptSchema.nullable().optional(),
   avatar: agentAvatarSchema.nullable().optional(),
   model_parameters: z.record(z.unknown()).optional(),
   tools: z.array(z.string()).optional(),
@@ -604,6 +607,7 @@ export const agentCreateSchema: z.ZodObject<
     name: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     description: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     instructions: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    instruction_prompt: z.ZodOptional<z.ZodNullable<typeof agentInstructionPromptSchema>>;
     avatar: z.ZodOptional<
       z.ZodNullable<
         z.ZodObject<
@@ -760,6 +764,7 @@ export const agentUpdateSchema: z.ZodObject<
     name: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     description: z.ZodOptional<z.ZodNullable<z.ZodString>>;
     instructions: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    instruction_prompt: z.ZodOptional<z.ZodNullable<typeof agentInstructionPromptSchema>>;
     model_parameters: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
     tools: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;

@@ -15,6 +15,7 @@ import type {
   Agent,
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import type { AgentInstructionPromptProvider } from '~/agents/instructions';
 import type { ParsedServerConfig } from '~/mcp/types';
 import {
   requiresEphemeralUserConnection,
@@ -23,6 +24,7 @@ import {
 } from '~/mcp/utils';
 import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
 import { synthesizeBackgroundToolOptions } from '~/agents/background';
+import { resolveAgentInstructionPrompt } from '~/agents/instructions';
 import { mergeSynthesizedToolOptions } from '~/agents/selection';
 import { synthesizeIntentToolOptions } from '~/agents/intent';
 import { getCustomEndpointConfig } from '~/app/config';
@@ -44,6 +46,7 @@ export interface LoadAgentDeps {
     userId: string,
     role?: string,
   ) => Promise<Record<string, ParsedServerConfig>>;
+  instructionPromptResolver?: AgentInstructionPromptProvider;
 }
 
 export interface LoadAgentParams {
@@ -241,6 +244,16 @@ export async function loadAgent(
   if (!agent) {
     return null;
   }
+
+  await resolveAgentInstructionPrompt({
+    agent,
+    resolver: deps.instructionPromptResolver,
+    context: {
+      userId: req.user?.id ?? '',
+      role: req.user?.role,
+      appConfig: req.config,
+    },
+  });
 
   // Set version count from versions array length
   const agentWithVersion = agent as Agent & { versions?: unknown[]; version?: number };

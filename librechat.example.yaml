@@ -54,6 +54,9 @@ cache: true
 #     userIdField: email
 #     userMetadataFields: [email, username, role, provider]
 #     conversationMetadataFields: [conversationId, endpoint, model, modelLabel, spec]
+#     # Export only the resolved prompt source, name, version, and cache status.
+#     # Prompt content is never included. Disabled by default because names may be sensitive.
+#     promptMetadata: false
 
 # File storage configuration
 # Single strategy for all file types (legacy format, still supported)
