@@ -686,15 +686,27 @@ class UsageEmittingFakeChatModel extends FakeChatModel {
 
     if (toolCalls?.length) {
       await new Promise((resolve) => setTimeout(resolve, this.streamSleep));
-      const toolCallChunks = toolCalls.map((toolCall, index) => ({
-        name: toolCall.name,
-        args: JSON.stringify(toolCall.args),
-        id: toolCall.id,
-        index,
-        type: 'tool_call_chunk',
-      }));
-      yield this._createResponseChunk('', toolCallChunks);
-      void runManager?.handleLLMNewToken('');
+      for (const [index, toolCall] of toolCalls.entries()) {
+        const serializedArgs = JSON.stringify(toolCall.args);
+        const chunks = toolCall.streamArgs
+          ? (serializedArgs.match(/.{1,64}/gs) ?? [''])
+          : [serializedArgs];
+        for (const [chunkIndex, args] of chunks.entries()) {
+          const toolCallChunk = {
+            name: chunkIndex === 0 ? toolCall.name : undefined,
+            args,
+            id: chunkIndex === 0 ? toolCall.id : undefined,
+            index,
+            type: 'tool_call_chunk',
+          };
+          yield this._createResponseChunk('', [toolCallChunk]);
+          void runManager?.handleLLMNewToken('');
+          if (chunkIndex < chunks.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, this.streamSleep));
+          }
+        }
+      }
+      return;
     }
   }
 
@@ -2686,10 +2698,9 @@ function provisioningToolResponses({ text, toolNames }) {
         responses: [`E2E highlight code unavailable: ${JSON.stringify([...toolNames])}`],
       };
     }
-    const command = Array.from(
-      { length: 120 },
-      (_, index) => `printf 'line-${index}-☃\\n'`,
-    ).join('\n');
+    const command = Array.from({ length: 120 }, (_, index) => `printf 'line-${index}-☃\\n'`).join(
+      '\n',
+    );
     const args =
       codeTool.name === 'bash_tool'
         ? { command }
@@ -2704,6 +2715,7 @@ function provisioningToolResponses({ text, toolNames }) {
           id: EXECUTE_CODE_TOOL_CALL_ID,
           name: codeTool.name,
           args,
+          streamArgs: true,
           type: 'tool_call',
         },
       ],
