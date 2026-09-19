@@ -524,6 +524,15 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toBe(false);
   });
 
+  it('does not make legacy string-owned conversation cleanup depend on an ObjectId cast', async () => {
+    await expect(
+      methods.prepareAgentTriggerConversationResultErasure('legacy-user', ['conversation']),
+    ).resolves.toBeUndefined();
+    await expect(
+      methods.eraseAgentTriggerDeliveryConversationResults('legacy-user', ['conversation']),
+    ).resolves.toBeUndefined();
+  });
+
   it('recovers receipt erasure after a descendant row was already deleted', async () => {
     const user = new mongoose.Types.ObjectId();
     const source = { id: 'background-tool-completion', type: 'internal' };

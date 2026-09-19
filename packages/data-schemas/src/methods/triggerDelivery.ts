@@ -3934,7 +3934,7 @@ export function createAgentTriggerDeliveryMethods(
     user: string | Types.ObjectId,
     conversationIds: string[],
   ): Promise<void> {
-    if (conversationIds.length === 0) {
+    if (conversationIds.length === 0 || !mongoose.isObjectIdOrHexString(user)) {
       return;
     }
     const erasedAt = new Date();
@@ -3955,7 +3955,7 @@ export function createAgentTriggerDeliveryMethods(
     user: string | Types.ObjectId,
     conversationIds: string[],
   ): Promise<void> {
-    if (conversationIds.length === 0) return;
+    if (conversationIds.length === 0 || !mongoose.isObjectIdOrHexString(user)) return;
     await Delivery().updateMany(
       {
         user,
