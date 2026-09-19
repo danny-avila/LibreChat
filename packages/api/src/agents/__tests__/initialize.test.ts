@@ -1363,6 +1363,158 @@ describe('initializeAgent — stable and dynamic instruction fields', () => {
     );
   });
 
+  it('keeps the agent prompt ahead of the repository block and the existing tail when it is relocated', async () => {
+    /**
+     * The relocation exists to keep today's date out of the cached prefix, and
+     * the tail is sent after the instructions field. Relocating the agent's own
+     * prompt while the repository block stayed behind sent that block first and
+     * reversed the precedence a saved agent was written with, so both blocks
+     * move together and keep their order.
+     */
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.instructions = 'Agent conventions. Today is {{current_date}}.';
+    agent.additional_instructions = 'Existing dynamic';
+    agent.repositoryInstructions = 'prefer';
+    req.turnStartedAt = new Date('2026-08-31T06:20:00.000Z').getTime();
+    req.body = { timezone: 'UTC' };
+    const content = 'Repository conventions';
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          protocolVersion: 1,
+          operation: 'read_file',
+          workspaceId: 'primary',
+          path: 'AGENTS.md',
+          content,
+          startLine: 1,
+          endLine: 1,
+          truncated: false,
+        }),
+      ),
+    );
+    loadTools.mockResolvedValue({
+      toolDefinitions: [],
+      repositoryInstructionSource: {
+        load: createRepositoryInstructionLoader(),
+        enabled: true,
+        principalId: 'test-order',
+        context: {
+          environmentType: 'attached',
+          baseUrl: 'https://code.example/v1',
+          codeWorkspace: {
+            workspaceId: 'primary',
+            operations: ['read_file'],
+            instructions: [
+              {
+                path: 'AGENTS.md',
+                bytes: Buffer.byteLength(content),
+                sha256: createHash('sha256').update(content).digest('hex'),
+                truncated: false,
+              },
+            ],
+          },
+        },
+        authHeaders: jest.fn(async () => ({})),
+      },
+    });
+
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+    fetchSpy.mockRestore();
+
+    expect(result.instructions).toBeUndefined();
+    const tail = result.additional_instructions ?? '';
+    expect(tail).toMatch(/^Agent conventions\. Today is 2026-08-31 \(Monday\)\./);
+    expect(tail.indexOf('Repository conventions')).toBeGreaterThan(
+      tail.indexOf('Agent conventions'),
+    );
+    expect(tail.indexOf('Existing dynamic')).toBeGreaterThan(
+      tail.indexOf('Repository conventions'),
+    );
+  });
+
+  it('records the unresolved template and the relocated repository block as the configured surface', async () => {
+    /**
+     * Both blocks left the prefix, so both have to stay in the identity:
+     * editing the instructions or the repository file retires the key, while
+     * the clock moving does not.
+     */
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.instructions = 'Agent conventions. Today is {{current_date}}.';
+    agent.repositoryInstructions = 'prefer';
+    req.turnStartedAt = new Date('2026-08-31T06:20:00.000Z').getTime();
+    req.body = { timezone: 'UTC' };
+    const content = 'Repository conventions';
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          protocolVersion: 1,
+          operation: 'read_file',
+          workspaceId: 'primary',
+          path: 'AGENTS.md',
+          content,
+          startLine: 1,
+          endLine: 1,
+          truncated: false,
+        }),
+      ),
+    );
+    loadTools.mockResolvedValue({
+      toolDefinitions: [],
+      repositoryInstructionSource: {
+        load: createRepositoryInstructionLoader(),
+        enabled: true,
+        principalId: 'test-identity',
+        context: {
+          environmentType: 'attached',
+          baseUrl: 'https://code.example/v1',
+          codeWorkspace: {
+            workspaceId: 'primary',
+            operations: ['read_file'],
+            instructions: [
+              {
+                path: 'AGENTS.md',
+                bytes: Buffer.byteLength(content),
+                sha256: createHash('sha256').update(content).digest('hex'),
+                truncated: false,
+              },
+            ],
+          },
+        },
+        authHeaders: jest.fn(async () => ({})),
+      },
+    });
+
+    const result = (await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    )) as Agent & { configuredAdditionalInstructions?: string };
+    fetchSpy.mockRestore();
+
+    const configured = result.configuredAdditionalInstructions ?? '';
+    expect(configured).toContain('Agent conventions. Today is 1970-01-01 (Thursday).');
+    expect(configured).toContain('Repository conventions');
+    expect(configured).not.toContain('2026-08-31');
+  });
+
   it('resolves temporal special vars in the request timezone', async () => {
     const { agent, req, res, loadTools, db } = createMocks();
     agent.instructions = 'It is currently {{current_datetime}}.';

@@ -181,6 +181,34 @@ export function recordStableInstructionText(
     .join('\n\n');
 }
 
+/**
+ * Prepends to an agent's dynamic instruction tail, ahead of everything already
+ * there, without recording the text as part of the identity.
+ *
+ * The direction is the point. The tail is sent after the instructions field,
+ * so a block moved out of that field and appended lands behind the repository
+ * instructions, the memory guard and the author's own tail, reversing an order
+ * the agent was saved with. One caller: instructions carrying temporal
+ * variables, whose resolved text leaves the cached prefix but must keep its
+ * place in what the model reads. The configured form is recorded separately,
+ * because the resolved text moves with the clock.
+ */
+export function prependAgentInstructionTail(
+  agent: {
+    additional_instructions?: string | null;
+    configuredAdditionalInstructions?: string;
+  },
+  text?: string | null,
+): void {
+  if (text == null || text === '') {
+    return;
+  }
+  captureConfiguredAdditionalInstructions(agent);
+  agent.additional_instructions = [text, agent.additional_instructions ?? '']
+    .filter(Boolean)
+    .join('\n\n');
+}
+
 export function appendAgentInstructionTail(
   agent: {
     additional_instructions?: string | null;
