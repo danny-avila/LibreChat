@@ -1,0 +1,84 @@
+import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { NEW_CHAT_PATH } from '../helpers';
+const modelTrigger = (page: Page) => page.getByRole('button', { name: 'Select a model' }).first();
+
+async function openModelSearch(page: Page, query: string) {
+  await modelTrigger(page).click();
+  const search = page.locator('#model-search');
+  await expect(search).toBeVisible();
+  await search.fill(query);
+  await expect(page.getByRole('option').first()).toBeVisible();
+  return search;
+}
+
+test.describe('model selector search', () => {
+  test('keyboard navigation reaches every rendered search result @scenario:model-selector-search-keyboard-navigation-reaches-every-rendered-result', async ({
+    page,
+  }) => {
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    const search = await openModelSearch(page, 'mock-model-a');
+
+    await search.press('ArrowDown');
+    await expect(page.locator('[data-active-item="true"]')).toBeVisible();
+    await search.press('ArrowDown');
+    await expect(page.locator('[data-active-item="true"]')).toBeVisible();
+  });
+
+  test('pinning a search result is keyboard reachable @scenario:model-selector-search-result-pin-is-keyboard-reachable', async ({
+    page,
+  }) => {
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    const search = await openModelSearch(page, 'mock-model-a');
+    const row = page.getByRole('option', { name: /mock-model-a/i }).first();
+    const pin = row.getByRole('button', { name: /pin/i }).first();
+
+    await search.press('ArrowDown');
+    await pin.focus();
+    await expect(pin).toBeFocused();
+    await pin.press('Enter');
+    await expect(row.getByRole('button', { name: /unpin/i })).toBeVisible();
+  });
+
+  test('search options expose one global position sequence @scenario:model-selector-search-options-report-global-positions', async ({
+    page,
+  }) => {
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await openModelSearch(page, 'mock');
+
+    const options = page.locator('[role="option"][aria-posinset]');
+    await expect(options.first()).toBeVisible();
+    const metadata = await options.evaluateAll((nodes) =>
+      nodes.map((node) => ({
+        position: Number(node.getAttribute('aria-posinset')),
+        setSize: Number(node.getAttribute('aria-setsize')),
+      })),
+    );
+    expect(metadata.length).toBeGreaterThan(0);
+    expect(new Set(metadata.map((entry) => entry.setSize)).size).toBe(1);
+    expect(metadata.map((entry) => entry.position)).toEqual(
+      Array.from({ length: metadata.length }, (_, index) => index + 1),
+    );
+  });
+
+  test('mobile search rows keep their controls inside the popover @scenario:model-selector-search-row-fits-mobile-popover', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await openModelSearch(page, 'mock-model-a');
+
+    const row = page.getByRole('option', { name: /mock-model-a/i }).first();
+    const pin = row.getByRole('button', { name: /pin/i }).first();
+    const menu = page.locator('[role="listbox"]').first();
+    const rowBox = await row.boundingBox();
+    const pinBox = await pin.boundingBox();
+    const menuBox = await menu.boundingBox();
+    expect(rowBox).not.toBeNull();
+    expect(pinBox).not.toBeNull();
+    expect(menuBox).not.toBeNull();
+    expect(rowBox!.x).toBeGreaterThanOrEqual(menuBox!.x);
+    expect(pinBox!.x + pinBox!.width).toBeLessThanOrEqual(menuBox!.x + menuBox!.width + 1);
+    expect(pinBox!.x + pinBox!.width).toBeLessThanOrEqual(390);
+  });
+});

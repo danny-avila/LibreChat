@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { List } from 'react-virtualized';
 import * as Ariakit from '@ariakit/react';
+import { AutoSizer, List } from 'react-virtualized';
 import type { ListRowProps } from 'react-virtualized';
 import type { Endpoint } from '~/common';
 import { EndpointModelItem } from './EndpointModelItem';
@@ -17,9 +17,10 @@ interface VirtualizedModelListProps {
   isFavorite: (modelId: string) => boolean;
   onToggleFavorite: (modelId: string) => void;
   endpointIndex?: number;
-  /** Count of options rendered ahead of this list in the same listbox (marketplace entry,
-   *  model specs), so `aria-posinset` is relative to the whole listbox and not just this list. */
+  /** Count of options rendered ahead of this list in the same listbox. */
   precedingOptionCount: number;
+  /** Total selectable options in the surrounding listbox, when known. */
+  listboxSetSize?: number;
 }
 
 /**
@@ -44,6 +45,7 @@ export default function VirtualizedModelList({
   onToggleFavorite,
   endpointIndex,
   precedingOptionCount,
+  listboxSetSize,
 }: VirtualizedModelListProps) {
   const listRef = useRef<List>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -118,7 +120,7 @@ export default function VirtualizedModelList({
             isFavorite={isFavorite(modelId)}
             onToggleFavorite={onToggleFavorite}
             posInSet={precedingOptionCount + index + 1}
-            setSize={precedingOptionCount + rowCount}
+            setSize={listboxSetSize ?? precedingOptionCount + rowCount}
           />
         </div>
       );
@@ -127,6 +129,7 @@ export default function VirtualizedModelList({
       endpoint,
       globalByName,
       isFavorite,
+      listboxSetSize,
       modelIds,
       onToggleFavorite,
       precedingOptionCount,
@@ -135,29 +138,37 @@ export default function VirtualizedModelList({
   );
 
   return (
-    <div ref={containerRef} data-endpoint-models={`${endpoint.value}${indexSuffix}`}>
-      <List
-        ref={listRef}
-        width={360}
-        height={height}
-        rowCount={rowCount}
-        rowHeight={ROW_HEIGHT}
-        overscanRowCount={OVERSCAN}
-        rowRenderer={rowRenderer}
-        className="outline-none!"
-        style={{ width: '100%' }}
-        /**
-         * `List` spreads its props onto the underlying `Grid`, whose defaults are
-         * `role="grid"`, `containerRole="row"` and `tabIndex={0}`. Left alone, that puts a
-         * focusable grid between Ariakit's listbox and its options: tabbing out of the
-         * search field lands on the wrapper instead of a row, where the combobox no longer
-         * owns the keystroke, and the grid/row semantics fight the surrounding listbox.
-         * Neutralise both so focus and ARIA stay with the combobox items.
-         */
-        role="presentation"
-        containerRole="presentation"
-        tabIndex={-1}
-      />
+    <div
+      ref={containerRef}
+      data-endpoint-models={`${endpoint.value}${indexSuffix}`}
+      className="w-full"
+    >
+      <AutoSizer disableHeight>
+        {({ width }) => (
+          <List
+            ref={listRef}
+            width={width}
+            height={height}
+            rowCount={rowCount}
+            rowHeight={ROW_HEIGHT}
+            overscanRowCount={OVERSCAN}
+            rowRenderer={rowRenderer}
+            className="outline-none!"
+            style={{ width: '100%' }}
+            /**
+             * `List` spreads its props onto the underlying `Grid`, whose defaults are
+             * `role="grid"`, `containerRole="row"` and `tabIndex={0}`. Left alone, that puts a
+             * focusable grid between Ariakit's listbox and its options: tabbing out of the
+             * search field lands on the wrapper instead of a row, where the combobox no longer
+             * owns the keystroke, and the grid/row semantics fight the surrounding listbox.
+             * Neutralise both so focus and ARIA stay with the combobox items.
+             */
+            role="presentation"
+            containerRole="presentation"
+            tabIndex={-1}
+          />
+        )}
+      </AutoSizer>
     </div>
   );
 }

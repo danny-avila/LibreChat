@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import type { TModelSpec } from 'librechat-data-provider';
 import type { Endpoint, SelectedValues } from '~/common';
 import { SearchResults } from '../SearchResults';
 
@@ -62,6 +63,8 @@ jest.mock('../VirtualizedModelList', () => {
       globalByName: Map<string, boolean>;
       isFavorite: (modelId: string) => boolean;
       onToggleFavorite: (modelId: string) => void;
+      precedingOptionCount: number;
+      listboxSetSize?: number;
     }) => {
       mockVirtualizedModelList(props);
       const { EndpointModelItem } = jest.requireActual('../EndpointModelItem');
@@ -75,6 +78,8 @@ jest.mock('../VirtualizedModelList', () => {
           isGlobal: props.globalByName.get(modelId) ?? false,
           isFavorite: props.isFavorite(modelId),
           onToggleFavorite: props.onToggleFavorite,
+          posInSet: props.precedingOptionCount + 1,
+          setSize: props.listboxSetSize,
         }),
       );
     },
@@ -219,6 +224,45 @@ describe('SearchResults', () => {
     fireEvent.click(item);
     expect(mockNavigate).toHaveBeenCalledWith('/agents');
     expect(mockHandleSelectModel).not.toHaveBeenCalled();
+  });
+
+  it('assigns search option positions across specs, marketplace, and endpoint rows', () => {
+    mockSelectedValues = { endpoint: '', model: '', modelSpec: '' };
+    const spec = { name: 'preset', label: 'Preset' } as TModelSpec;
+    const models = Array.from({ length: 101 }, (_, index) => ({
+      name: `agent-${index}`,
+    }));
+    const secondEndpoint: Endpoint = {
+      value: 'other',
+      label: 'Other',
+      hasModels: true,
+      models: [{ name: 'agent-other-1' }, { name: 'agent-other-2' }],
+      icon: null,
+    };
+
+    render(
+      <SearchResults
+        results={[spec, { ...agentsMarketplaceEndpoint, models }, secondEndpoint]}
+        localize={localize}
+        searchValue="agent"
+      />,
+    );
+
+    const firstVirtualRow = within(screen.getByTestId('virtualized-list')).getByRole('menuitem');
+    expect(firstVirtualRow).toHaveAttribute('aria-posinset', '3');
+    expect(firstVirtualRow).toHaveAttribute('aria-setsize', '105');
+    expect(screen.getByTestId('model-selector-marketplace-item')).toHaveAttribute(
+      'aria-posinset',
+      '2',
+    );
+    expect(screen.getByTestId('model-selector-marketplace-item')).toHaveAttribute(
+      'aria-setsize',
+      '105',
+    );
+    expect(screen.getByRole('menuitem', { name: 'agent-other-1' })).toHaveAttribute(
+      'aria-posinset',
+      '104',
+    );
   });
 
   it('renders every matching row directly at or below the virtualization threshold', () => {
