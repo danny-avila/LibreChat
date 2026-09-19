@@ -361,11 +361,13 @@ describe('background tool completion wakeups', () => {
       .fn()
       .mockResolvedValueOnce('started' as const)
       .mockResolvedValueOnce('fenced' as const);
+    const releaseReceiptClaims = jest.fn(async () => true);
     const recover = createBackgroundToolDeadClaimRecovery(
       retire,
       release,
       getGenerationJob,
       fenceGenerationClaim,
+      releaseReceiptClaims,
     );
     const input = {
       userId: 'user-1',
@@ -381,6 +383,9 @@ describe('background tool completion wakeups', () => {
     await expect(recover(input)).resolves.toBe(true);
     expect(retire).toHaveBeenCalledTimes(2);
     expect(release).toHaveBeenCalledTimes(1);
+    expect(releaseReceiptClaims).toHaveBeenCalledWith(
+      expect.objectContaining({ claimId: 'batch-root-delivery' }),
+    );
   });
 
   it('retries claim release through an idempotently retired recovery receipt', async () => {

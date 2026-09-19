@@ -2475,6 +2475,7 @@ export function createAgentTriggerDeliveryMethods(
     const limit = Math.max(1, Math.min(MAX_BACKGROUND_TOOL_RESULT_BATCH, input.limit ?? 8));
     const ownedCount = await Delivery().countDocuments({
       ...scope,
+      'backgroundToolResult.settledAt': { $exists: true },
       'backgroundToolResult.resultClaim.claimId': input.claimId,
     });
     const availableSiblingSlots = Math.max(0, limit - ownedCount);
@@ -2483,7 +2484,7 @@ export function createAgentTriggerDeliveryMethods(
         .find({
           ...scope,
           deliveryKey: { $ne: input.deliveryKey },
-          backgroundToolResult: { $exists: true },
+          'backgroundToolResult.settledAt': { $exists: true },
           'backgroundToolResult.resultClaim': { $exists: false },
         })
         .select({ deliveryKey: 1 })
@@ -2496,7 +2497,7 @@ export function createAgentTriggerDeliveryMethods(
             {
               ...scope,
               deliveryKey: sibling.deliveryKey,
-              backgroundToolResult: { $exists: true },
+              'backgroundToolResult.settledAt': { $exists: true },
               'backgroundToolResult.resultClaim': { $exists: false },
             },
             {
@@ -2513,12 +2514,21 @@ export function createAgentTriggerDeliveryMethods(
         ),
       );
     }
-    const owned = await Delivery()
-      .find({ ...scope, 'backgroundToolResult.resultClaim.claimId': input.claimId })
+    const ownedQuery = Delivery()
+      .find({
+        ...scope,
+        'backgroundToolResult.settledAt': { $exists: true },
+        'backgroundToolResult.resultClaim.claimId': input.claimId,
+      })
       .select(projection)
-      .sort({ 'backgroundToolResult.settledAt': 1, _id: 1 })
-      .limit(limit)
-      .lean<Array<Pick<IAgentTriggerDelivery, 'envelope' | 'backgroundToolResult'>>>();
+      .sort({ 'backgroundToolResult.settledAt': 1, _id: 1 });
+    if (!isReplay) {
+      ownedQuery.limit(limit);
+    }
+    const owned =
+      await ownedQuery.lean<
+        Array<Pick<IAgentTriggerDelivery, 'envelope' | 'backgroundToolResult'>>
+      >();
     return {
       status: 'acquired',
       results: owned.map(projectBackgroundResult).filter((result) => result != null),

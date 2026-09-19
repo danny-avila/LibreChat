@@ -41,8 +41,11 @@ describe('agent trigger service composition', () => {
     jest.resetModules();
     jest.clearAllMocks();
     mockGenerationJobManager.supportsDetachedAgentEventActions = true;
+    let completionResultBatchSize = 8;
     mockCreateAgentTriggerService.mockReturnValue({
-      initialize: jest.fn(),
+      initialize: jest.fn(async (options) => {
+        completionResultBatchSize = options.completionResultBatchSize ?? 8;
+      }),
       stop: jest.fn(),
       dispatch: jest.fn(),
       enqueue: jest.fn(),
@@ -54,6 +57,7 @@ describe('agent trigger service composition', () => {
       prepareUserPurge: jest.fn(),
       cancelUserPurge: jest.fn(),
       purgeUser: jest.fn(),
+      getBackgroundCompletionResultBatchSize: () => completionResultBatchSize,
     });
   });
 
@@ -84,6 +88,7 @@ describe('agent trigger service composition', () => {
     expect(resolverDeps.getResultBatchSize()).toBe(12);
     expect(mockCreateAgentTriggerService.mock.results[0].value.initialize).toHaveBeenCalledWith({
       address: 'local',
+      completionResultBatchSize: 12,
     });
   });
 });

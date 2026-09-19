@@ -517,7 +517,7 @@ describe('agent background completion batch config', () => {
     });
     expect(defaults.endpoints?.agents?.backgroundTasks?.completionResultBatchSize).toBe(8);
 
-    for (const completionResultBatchSize of [0, 33, 1.5]) {
+    for (const completionResultBatchSize of [0, 17, 1.5]) {
       expect(
         configSchema.safeParse({
           version: '1.0',

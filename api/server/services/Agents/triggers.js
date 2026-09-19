@@ -13,8 +13,6 @@ const {
 } = require('@librechat/api');
 const methods = require('~/models');
 
-let backgroundCompletionResultBatchSize = 8;
-
 const getGenerationAdmissionEvidence = (userId, clientRequestId, streamId, conversationId) =>
   GenerationJobManager.getGenerationAdmissionEvidence(
     userId,
@@ -30,7 +28,7 @@ const subagentCompletionAdapter = createSubagentCompletionWakeupResolver({
 const backgroundToolCompletionAdapter = createBackgroundToolCompletionWakeupResolver({
   methods,
   getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),
-  getResultBatchSize: () => backgroundCompletionResultBatchSize,
+  getResultBatchSize: () => service.getBackgroundCompletionResultBatchSize(),
 });
 const eventActorAdapter = createAgentEventContinueResolver({
   methods,
@@ -64,8 +62,7 @@ service = createAgentTriggerService({
   }),
 });
 
-const initializeAgentTriggerService = async ({ completionResultBatchSize, ...options }) => {
-  backgroundCompletionResultBatchSize = completionResultBatchSize ?? 8;
+const initializeAgentTriggerService = async (options) => {
   await service.initialize(options);
   await queuedTurnLifecycle.initialize();
 };
