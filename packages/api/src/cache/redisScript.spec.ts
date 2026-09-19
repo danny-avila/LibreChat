@@ -16,17 +16,14 @@ describe('evalScript', () => {
     expect(evalCommand).toHaveBeenCalledTimes(1);
     expect(evalCommand).toHaveBeenCalledWith('return ARGV[1]', 0, 'first');
   });
-  test('falls back when EVALSHA is unavailable but EVAL is permitted', async () => {
-    const evalsha = jest
-      .fn()
-      .mockRejectedValue(
-        new Error("NOPERM this user has no permissions to run the 'EVALSHA' command"),
-      );
-    const evalCommand = jest.fn().mockResolvedValue(1);
+  test('propagates EVALSHA ACL denials without falling back', async () => {
+    const failure = new Error("NOPERM this user has no permissions to run the 'EVALSHA' command");
+    const evalsha = jest.fn().mockRejectedValue(failure);
+    const evalCommand = jest.fn();
     const client = { evalsha, eval: evalCommand } as unknown as RedisScriptClient;
 
-    await expect(evalScript(client, 'return 1', 0)).resolves.toBe(1);
-    expect(evalCommand).toHaveBeenCalledWith('return 1', 0);
+    await expect(evalScript(client, 'return 1', 0)).rejects.toBe(failure);
+    expect(evalCommand).not.toHaveBeenCalled();
   });
 
   test('propagates non-NOSCRIPT EVALSHA failures without falling back', async () => {

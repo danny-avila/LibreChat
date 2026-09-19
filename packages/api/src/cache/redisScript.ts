@@ -29,7 +29,6 @@ export function isEvalshaFallbackError(error: unknown): boolean {
   const message = error.message.toUpperCase();
   return (
     message.includes('NOSCRIPT') ||
-    (message.includes('NOPERM') && message.includes('EVALSHA')) ||
     (message.includes('UNKNOWN COMMAND') && message.includes('EVALSHA'))
   );
 }
