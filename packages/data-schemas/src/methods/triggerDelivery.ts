@@ -18,6 +18,7 @@ import type {
   IAgentTriggerUserPurgeDocument,
 } from '~/types/triggerDelivery';
 import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
   AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
@@ -373,6 +374,10 @@ export interface AgentTriggerDeliveryMethods {
   ) => Promise<boolean>;
   recoverAgentTriggerUserPurges: (limit?: number) => Promise<number>;
   deleteAgentTriggerDeliveriesByUser: (user: string | Types.ObjectId) => Promise<void>;
+  eraseAgentTriggerDeliveryConversationResults: (
+    user: string | Types.ObjectId,
+    conversationIds: string[],
+  ) => Promise<void>;
 }
 
 function normalizeFailure(error: AgentTriggerDeliveryFailure): AgentTriggerDeliveryFailure {
@@ -975,6 +980,8 @@ export function createAgentTriggerDeliveryMethods(
     if (
       input.requiredWorkerCapability != null &&
       input.requiredWorkerCapability !== AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 &&
+      input.requiredWorkerCapability !==
+        AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2 &&
       input.requiredWorkerCapability !== AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1 &&
       input.requiredWorkerCapability !== AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1
     ) {
@@ -2137,7 +2144,12 @@ export function createAgentTriggerDeliveryMethods(
     const renewed = await Delivery().updateOne(
       {
         deliveryKey: input.deliveryKey,
-        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+        requiredWorkerCapability: {
+          $in: [
+            AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+            AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+          ],
+        },
         'envelope.event.source.type': 'internal',
         'envelope.event.source.id': input.sourceId,
         status: {
@@ -2176,7 +2188,12 @@ export function createAgentTriggerDeliveryMethods(
     const delivery = await Delivery()
       .findOne({
         deliveryKey: input.deliveryKey,
-        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+        requiredWorkerCapability: {
+          $in: [
+            AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+            AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+          ],
+        },
         'envelope.event.source.type': 'internal',
         'envelope.event.source.id': input.sourceId,
       })
@@ -2211,7 +2228,7 @@ export function createAgentTriggerDeliveryMethods(
     }
     const identity = {
       deliveryKey: input.deliveryKey,
-      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
       'envelope.event.source.type': 'internal',
       'envelope.event.source.id': input.sourceId,
     };
@@ -2249,7 +2266,7 @@ export function createAgentTriggerDeliveryMethods(
     const delivery = await Delivery()
       .findOne({
         deliveryKey: input.deliveryKey,
-        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
         'envelope.event.source.type': 'internal',
         'envelope.event.source.id': input.sourceId,
       })
@@ -3648,6 +3665,24 @@ export function createAgentTriggerDeliveryMethods(
     await UserPurge().deleteOne({ _id: user });
   }
 
+  async function eraseAgentTriggerDeliveryConversationResults(
+    user: string | Types.ObjectId,
+    conversationIds: string[],
+  ): Promise<void> {
+    if (conversationIds.length === 0) {
+      return;
+    }
+    await Delivery().updateMany(
+      {
+        user,
+        'envelope.target.conversationId': { $in: conversationIds },
+        backgroundToolResult: { $exists: true },
+      },
+      { $unset: { backgroundToolResult: 1 } },
+      { timestamps: false },
+    );
+  }
+
   return {
     ensureAgentTriggerDeliveryIndexes,
     enqueueAgentTriggerDelivery,
@@ -3691,5 +3726,6 @@ export function createAgentTriggerDeliveryMethods(
     cancelAgentTriggerUserPurge,
     recoverAgentTriggerUserPurges,
     deleteAgentTriggerDeliveriesByUser,
+    eraseAgentTriggerDeliveryConversationResults,
   };
 }

@@ -1,4 +1,4 @@
-import { AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1 } from '@librechat/data-schemas';
+import { AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2 } from '@librechat/data-schemas';
 import type { AgentTriggerProducerLeaseStatus } from '@librechat/data-schemas';
 import type { EnqueueBackgroundToolCompletion } from './backgroundCompletionWakeup';
 import {
@@ -141,7 +141,7 @@ describe('background tool completion wakeups', () => {
     expect(options).toEqual({
       orderingKey: 'background-tool-completion:conversation-1:task-1',
       availableAt: new Date(NOW + 250),
-      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
       producerLeaseUntil: new Date(NOW + 30_000),
     });
     if (admission !== false) {
@@ -451,6 +451,7 @@ describe('background tool completion wakeups', () => {
 
   it('continues from the independent delivery receipt before the parent projection lands', async () => {
     const { methods } = resolverMethods();
+    methods.claimBackgroundToolResults.mockResolvedValueOnce({ status: 'not_ready' });
     methods.getAgentBackgroundToolResult.mockResolvedValueOnce({
       status: 'completed',
       output: 'independently durable',
@@ -469,7 +470,28 @@ describe('background tool completion wakeups', () => {
       deliveryKey: 'delivery-1',
       sourceId: 'background-tool-completion',
     });
-    expect(methods.claimBackgroundToolResults).not.toHaveBeenCalled();
+    expect(methods.claimBackgroundToolResults).toHaveBeenCalledWith(
+      expect.objectContaining({ taskId: 'task-1', kind: 'wakeup', claimId: 'delivery-1' }),
+    );
+  });
+
+  it('honors a manual message claim before an independent receipt', async () => {
+    const { methods } = resolverMethods();
+    methods.claimBackgroundToolResults.mockResolvedValueOnce({ status: 'claimed' });
+    methods.getAgentBackgroundToolResult.mockResolvedValueOnce({
+      status: 'completed',
+      output: 'must not be delivered twice',
+      settledAt: new Date(NOW),
+    } as never);
+    const resolve = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    await expect(resolve(await envelope(), { idempotencyKey: 'delivery-1' })).resolves.toEqual({
+      status: 'settled',
+    });
+    expect(methods.getAgentBackgroundToolResult).not.toHaveBeenCalled();
   });
 
   it('shares one bounded input budget across a full sibling batch', async () => {

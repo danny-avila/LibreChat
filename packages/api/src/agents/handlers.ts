@@ -5795,11 +5795,17 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   );
                   const backgroundTask = resolveBackgroundTask();
                   let durableReceiptReady = false;
-                  if (completionAdmission?.persistResult != null) {
+                  const persistDurableReceipt = async (receipt: {
+                    status: 'completed' | 'error' | 'cancelled';
+                    output?: string;
+                  }): Promise<boolean> => {
+                    if (completionAdmission?.persistResult == null) {
+                      return false;
+                    }
                     try {
-                      durableReceiptReady = await completionAdmission.persistResult({
-                        status: params.status,
-                        output: truncateMiddle(params.output ?? localTask?.result ?? '', 24 * 1024),
+                      return await completionAdmission.persistResult({
+                        status: receipt.status,
+                        output: truncateMiddle(receipt.output ?? '', 24 * 1024),
                         settledAt: backgroundTask.settledAt,
                       });
                     } catch (receiptError) {
@@ -5807,8 +5813,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         `[background] Failed to persist independent result receipt for task ${task.id}:`,
                         receiptError,
                       );
+                      return false;
                     }
-                  }
+                  };
                   const retireFailedPersistence = async (
                     reason: string,
                     certainty: 'definite' | 'ambiguous',
@@ -5867,6 +5874,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     }
                   };
                   if (!harvestEnabled || !persistBackgroundCodeResult) {
+                    durableReceiptReady = await persistDurableReceipt({
+                      status: params.status,
+                      output: params.output ?? localTask?.result,
+                    });
                     if (
                       backgroundToolCompletion == null ||
                       detachedReservation?.status === 'reserved'
@@ -5947,6 +5958,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       }
                       return;
                     }
+                    durableReceiptReady = await persistDurableReceipt({
+                      status: params.status,
+                      output: params.output ?? localTask?.result,
+                    });
                     if (persisted.deliveryReady === false && !durableReceiptReady) {
                       await retireFailedPersistence(
                         'background code result was not persisted',
@@ -5960,25 +5975,37 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       persisted.attachments,
                     );
                   } catch (persistError) {
-                    if (completionPreregistered && !durableReceiptReady) {
-                      await retireFailedPersistence(
-                        'background code result persistence failed',
-                        isContentFilterError(persistError) ? 'definite' : 'ambiguous',
-                      );
-                    }
                     if (isContentFilterError(persistError)) {
+                      const blockedMessage =
+                        persistError instanceof ContentFilterError
+                          ? modelBoundContentFilterErrorMessage(persistError.body)
+                          : persistError.body.message;
                       backgroundTaskRegistry.blockArtifact(
                         backgroundUserId,
                         backgroundConversationId,
                         task.id,
-                        persistError instanceof ContentFilterError
-                          ? modelBoundContentFilterErrorMessage(persistError.body)
-                          : persistError.body.message,
+                        blockedMessage,
                       );
+                      durableReceiptReady = await persistDurableReceipt({
+                        status: 'error',
+                        output: blockedMessage,
+                      });
+                      if (completionPreregistered && !durableReceiptReady) {
+                        await retireFailedPersistence(
+                          'background code result was blocked by content policy',
+                          'definite',
+                        );
+                      }
                       logger.warn(
                         `[background] Generated code output for task ${task.id} was blocked by content policy.`,
                       );
                       return;
+                    }
+                    if (completionPreregistered && !durableReceiptReady) {
+                      await retireFailedPersistence(
+                        'background code result persistence failed',
+                        'ambiguous',
+                      );
                     }
                     logger.warn(
                       `[background] Failed to persist code result for task ${task.id}:`,

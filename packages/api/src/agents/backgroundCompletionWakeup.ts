@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isEphemeralAgentId } from 'librechat-data-provider';
-import { AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1 } from '@librechat/data-schemas';
+import { AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2 } from '@librechat/data-schemas';
 import type {
   AgentTriggerProducerLeaseStatus,
   BackgroundToolResultClaim,
@@ -333,23 +333,6 @@ export function createBackgroundToolCompletionWakeupResolver({
         status: 404,
       });
     }
-    const receipt = await methods.getAgentBackgroundToolResult?.({
-      deliveryKey: context.idempotencyKey,
-      sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
-    });
-    if (receipt != null) {
-      return {
-        status: 'ready',
-        parentMessageId,
-        input: buildWakeupInput([
-          {
-            ...registration,
-            status: receipt.status,
-            output: receipt.output,
-          },
-        ]),
-      };
-    }
     const claim = await methods.claimBackgroundToolResults({
       userId,
       conversationId: envelope.target.conversationId,
@@ -368,56 +351,73 @@ export function createBackgroundToolCompletionWakeupResolver({
         retryable: false,
       });
     }
-    if (claim.status !== 'acquired') {
-      let producerLease: AgentTriggerProducerLeaseStatus;
-      try {
-        producerLease = await methods.getAgentTriggerDeliveryProducerLease({
-          deliveryKey: context.idempotencyKey,
-          sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
-          now: new Date(),
-        });
-      } catch (error) {
-        throw executionError(
-          `Background tool producer liveness is temporarily unavailable: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-          { code: 'BACKGROUND_TOOL_PRODUCER_STATE_UNAVAILABLE', retryable: true },
-        );
-      }
-      if (producerLease.status === 'expired') {
-        throw executionError('The process-local background tool executor was lost.', {
-          code: 'BACKGROUND_TOOL_PRODUCER_LOST',
-          retryable: false,
-        });
-      }
-      /** A live lease proves the invocation or its durable persistence retry
-       * still has an owner. Missing remains defer-only for compatibility with
-       * completion rows admitted before producer leases existed. */
-      throw executionError('The background tool result is not durable yet.', {
-        code: 'BACKGROUND_TOOL_RESULT_NOT_READY',
-        retryable: true,
-        status: 409,
-        retryAfter: '1',
-        deferWithoutAttempt: true,
+    if (claim.status === 'acquired') {
+      const taskIds = claim.results.map((result) => result.taskId);
+      const input = buildWakeupInput(claim.results);
+      return {
+        status: 'ready',
+        parentMessageId,
+        input,
+        releaseOnDefiniteFailure: async () => {
+          await methods.releaseBackgroundToolResultClaims({
+            userId,
+            conversationId: envelope.target.conversationId,
+            messageId: envelope.target.parentMessageId,
+            taskIds,
+            kind: 'wakeup',
+            claimId: context.idempotencyKey,
+          });
+        },
+      };
+    }
+    const receipt = await methods.getAgentBackgroundToolResult?.({
+      deliveryKey: context.idempotencyKey,
+      sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+    });
+    if (receipt != null) {
+      return {
+        status: 'ready',
+        parentMessageId,
+        input: buildWakeupInput([
+          {
+            ...registration,
+            status: receipt.status,
+            output: receipt.output,
+          },
+        ]),
+      };
+    }
+    let producerLease: AgentTriggerProducerLeaseStatus;
+    try {
+      producerLease = await methods.getAgentTriggerDeliveryProducerLease({
+        deliveryKey: context.idempotencyKey,
+        sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+        now: new Date(),
+      });
+    } catch (error) {
+      throw executionError(
+        `Background tool producer liveness is temporarily unavailable: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        { code: 'BACKGROUND_TOOL_PRODUCER_STATE_UNAVAILABLE', retryable: true },
+      );
+    }
+    if (producerLease.status === 'expired') {
+      throw executionError('The process-local background tool executor was lost.', {
+        code: 'BACKGROUND_TOOL_PRODUCER_LOST',
+        retryable: false,
       });
     }
-    const taskIds = claim.results.map((result) => result.taskId);
-    const input = buildWakeupInput(claim.results);
-    return {
-      status: 'ready',
-      parentMessageId,
-      input,
-      releaseOnDefiniteFailure: async () => {
-        await methods.releaseBackgroundToolResultClaims({
-          userId,
-          conversationId: envelope.target.conversationId,
-          messageId: envelope.target.parentMessageId,
-          taskIds,
-          kind: 'wakeup',
-          claimId: context.idempotencyKey,
-        });
-      },
-    };
+    /** A live lease proves the invocation or its durable persistence retry
+     * still has an owner. Missing remains defer-only for compatibility with
+     * completion rows admitted before producer leases existed. */
+    throw executionError('The background tool result is not durable yet.', {
+      code: 'BACKGROUND_TOOL_RESULT_NOT_READY',
+      retryable: true,
+      status: 409,
+      retryAfter: '1',
+      deferWithoutAttempt: true,
+    });
   };
 }
 
@@ -470,7 +470,7 @@ export function createBackgroundToolCompletionWakeupHandler(
       availableAt: new Date(
         Math.max(Date.now(), registration.createdAt) + WAKEUP_ADMISSION_DELAY_MS,
       ),
-      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
       producerLeaseUntil: new Date(Date.now() + BACKGROUND_TOOL_PRODUCER_LEASE_MS),
     });
     return {

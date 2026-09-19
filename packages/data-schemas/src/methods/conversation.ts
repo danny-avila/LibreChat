@@ -512,6 +512,10 @@ export interface ConversationMethodDeps
     user: string,
     conversations: Array<{ conversationId: string; tenantId?: string; allTenants?: true }>,
   ) => Promise<void>;
+  eraseAgentTriggerDeliveryConversationResults?: (
+    user: string,
+    conversationIds: string[],
+  ) => Promise<void>;
 }
 
 export function createConversationMethods(
@@ -3234,6 +3238,7 @@ export function createConversationMethods(
             ...(conversation.tenantId != null && { tenantId: conversation.tenantId }),
           })),
         );
+        await deps?.eraseAgentTriggerDeliveryConversationResults?.(user, waveIds);
         await options?.beforeDelete?.(waveIds);
         const result = await Conversation.deleteMany({ user, conversationId: { $in: waveIds } });
         acknowledged &&= result.acknowledged;

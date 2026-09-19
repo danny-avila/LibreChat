@@ -18,6 +18,7 @@ import {
   type AgentTriggerDeliveryMethods,
 } from './triggerDelivery';
 import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
   AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
 } from '~/types/triggerDelivery';
@@ -384,7 +385,7 @@ describe('agent trigger delivery methods', () => {
   it('shields background completion work from workers that cannot resolve it', async () => {
     const queued = await methods.enqueueAgentTriggerDelivery(
       enqueueInput({
-        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
       }),
     );
     const claimInput = {
@@ -400,7 +401,7 @@ describe('agent trigger delivery methods', () => {
         ...claimInput,
         workerId: 'background-capable-worker',
         claimToken: 'background-capable-claim',
-        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1],
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2],
       }),
     ).resolves.toMatchObject({ id: queued.delivery.id });
   });
@@ -412,7 +413,7 @@ describe('agent trigger delivery methods', () => {
       enqueueInput({
         deliveryKey: 'background-completion-producer-lease',
         envelope: { event: { source } },
-        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
         producerLeaseUntil: initialLease,
       }),
     );
@@ -455,7 +456,7 @@ describe('agent trigger delivery methods', () => {
       enqueueInput({
         deliveryKey: 'background-completion-result-receipt',
         envelope: { event: { source } },
-        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
       }),
     );
     const input = {
@@ -480,6 +481,37 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toBe(false);
     const ordinaryRead = await Delivery.findById(queued.delivery.id).lean();
     expect(ordinaryRead).not.toHaveProperty('backgroundToolResult');
+  });
+
+  it('erases private result receipts when their conversation is deleted', async () => {
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const user = new mongoose.Types.ObjectId();
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-result-to-erase',
+        user,
+        envelope: {
+          event: { source },
+          target: { conversationId: 'conversation-to-delete' },
+        },
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+      }),
+    );
+    await methods.persistAgentBackgroundToolResult({
+      deliveryKey: queued.delivery.deliveryKey,
+      sourceId: source.id,
+      result: { status: 'completed', output: 'private output', settledAt: START },
+    });
+
+    await methods.eraseAgentTriggerDeliveryConversationResults(user, ['conversation-to-delete']);
+
+    await expect(
+      methods.getAgentBackgroundToolResult({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+      }),
+    ).resolves.toBeNull();
+    await expect(Delivery.exists({ _id: queued.delivery.id })).resolves.not.toBeNull();
   });
 
   it('keeps capability-fenced work limited to capable workers through lease recovery', async () => {

@@ -2646,12 +2646,17 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     });
     const toolEndCallback = jest.fn();
     const retire = jest.fn(async () => true);
+    const persistResult = jest.fn(async () => true);
     const handler = createToolExecuteHandler({
       loadTools: async () => ({ loadedTools: [codeTool] }),
       toolEndCallback,
       persistBackgroundCodeResult,
       backgroundToolCompletion: {
-        preregister: jest.fn(async () => ({ renew: jest.fn(async () => true), retire })),
+        preregister: jest.fn(async () => ({
+          renew: jest.fn(async () => true),
+          retire,
+          persistResult,
+        })),
         persist: jest.fn(async () => true),
         claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
       },
@@ -2671,7 +2676,10 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     const taskId = JSON.parse(dispatch[0].content).background_task_id;
     await flushMicrotasks();
     await flushMicrotasks();
-    expect(retire).toHaveBeenCalledWith('background code result persistence failed', undefined);
+    expect(persistResult).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'error', output: MODEL_BOUND_FILE_CONTENT_BLOCK }),
+    );
+    expect(retire).not.toHaveBeenCalled();
     await flushMicrotasks();
 
     for (const pollId of ['call_policy_poll_1', 'call_policy_poll_2']) {
