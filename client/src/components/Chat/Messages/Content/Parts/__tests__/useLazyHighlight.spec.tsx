@@ -108,7 +108,6 @@ describe('useLazyHighlight', () => {
     expect(result.current).toEqual(['ab']);
   });
 
-
   it('clears immediately when code becomes empty', async () => {
     const { result, rerender } = renderHook(
       ({ code }: { code: string | undefined }) => useLazyHighlight(code, 'js'),
