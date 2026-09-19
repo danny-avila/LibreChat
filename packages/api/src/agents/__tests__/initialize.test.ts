@@ -2614,7 +2614,7 @@ describe('initializeAgent — execute_code capability expansion', () => {
        but never appears in the tool definitions the LLM sees. */
     expect(names).not.toContain('execute_code');
     const readFile = result.toolDefinitions?.find((d) => d.name === 'read_file');
-    expect(readFile?.description).toContain('code-execution sandbox');
+    expect(readFile?.description).toContain('code-sandbox');
     expect(readFile?.description).not.toContain('{skillName}');
     expect(readFile?.description).not.toContain('SKILL.md');
     const createFile = result.toolDefinitions?.find((d) => d.name === 'create_file');
