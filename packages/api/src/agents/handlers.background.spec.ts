@@ -2620,6 +2620,79 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     expect(poll[0].artifact).toEqual(CODE_ARTIFACT);
   });
 
+  it('does not publish an output-only receipt when generated files miss their message anchor', async () => {
+    const state: CodeToolState = { calls: 0 };
+    const retire = jest.fn(async () => true);
+    const persistResult = jest.fn(async () => true);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
+      persistBackgroundCodeResult: async () => ({
+        deliveryReady: false,
+        attachments: [{ filename: 'plot.png' }],
+      }),
+      backgroundToolCompletion: {
+        preregister: jest.fn(async () => ({
+          renew: jest.fn(async () => true),
+          persistResult,
+          retire,
+        })),
+        persist: jest.fn(async () => true),
+        claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
+      },
+    });
+
+    await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_missing_anchor' })],
+      agentId: 'a',
+      configurable: buildConfig(['execute_code']),
+      metadata: { thread_id: 'exec_convo_code_missing_anchor', run_id: 'msg-missing-anchor' },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(persistResult).not.toHaveBeenCalled();
+    expect(retire).toHaveBeenCalledWith('background code result was not persisted', undefined);
+  });
+
+  it('uses the configured durable completion result size', async () => {
+    const persistResult = jest.fn(async () => true);
+    const tool = {
+      name: 'execute_code',
+      description: 'run code',
+      schema: z.object({ lang: z.string(), code: z.string() }),
+      invoke: jest.fn(async () => ({ content: '0123456789'.repeat(10), artifact: CODE_ARTIFACT })),
+    } as unknown as StructuredToolInterface;
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundCompletionResultMaxChars: 32,
+      persistBackgroundCodeResult: async () => ({ deliveryReady: true, attachments: [] }),
+      backgroundToolCompletion: {
+        preregister: jest.fn(async () => ({
+          renew: jest.fn(async () => true),
+          persistResult,
+          retire: jest.fn(async () => true),
+        })),
+        persist: jest.fn(async () => true),
+        claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
+      },
+    });
+
+    await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call-sized-receipt' })],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-sized-receipt' },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(persistResult).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'completed', output: expect.any(String) }),
+    );
+    expect(persistResult.mock.calls[0][0].output).toHaveLength(32);
+  });
+
   it('makes a completion-time generated-file policy rejection terminal across polls', async () => {
     const protectedValue = 'PROTECTED-GENERATED-FILE-BYTES';
     const blockedArtifact = {

@@ -512,6 +512,68 @@ describe('agent trigger delivery methods', () => {
       }),
     ).resolves.toBeNull();
     await expect(Delivery.exists({ _id: queued.delivery.id })).resolves.not.toBeNull();
+    await expect(
+      methods.persistAgentBackgroundToolResult({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        result: { status: 'completed', output: 'late private output', settledAt: START },
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it('claims an independent result receipt before returning its output', async () => {
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const user = new mongoose.Types.ObjectId();
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-result-to-claim',
+        user,
+        envelope: {
+          event: {
+            source,
+            payload: { taskId: 'task-1', toolCallId: 'call-1', toolName: 'slow_tool' },
+          },
+          target: {
+            agentId: 'agent-1',
+            conversationId: 'conversation-1',
+            parentMessageId: 'response-1',
+          },
+        },
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+      }),
+    );
+    await methods.persistAgentBackgroundToolResult({
+      deliveryKey: queued.delivery.deliveryKey,
+      sourceId: source.id,
+      result: { status: 'completed', output: 'private output', settledAt: START },
+    });
+    const claim = {
+      deliveryKey: queued.delivery.deliveryKey,
+      sourceId: source.id,
+      userId: user.toString(),
+      conversationId: 'conversation-1',
+      parentMessageId: 'response-1',
+      agentId: 'agent-1',
+      claimId: 'delivery-claim-1',
+      limit: 1,
+    };
+
+    await expect(methods.claimAgentBackgroundToolResults(claim)).resolves.toMatchObject({
+      status: 'acquired',
+      results: [{ taskId: 'task-1', output: 'private output' }],
+    });
+    await expect(
+      methods.claimAgentBackgroundToolResults({ ...claim, claimId: 'delivery-claim-2' }),
+    ).resolves.toEqual({ status: 'claimed', claimId: 'delivery-claim-1' });
+    await expect(
+      methods.releaseAgentBackgroundToolResultClaims({
+        sourceId: source.id,
+        userId: user.toString(),
+        conversationId: 'conversation-1',
+        parentMessageId: 'response-1',
+        claimId: 'delivery-claim-1',
+      }),
+    ).resolves.toBe(true);
   });
 
   it('keeps capability-fenced work limited to capable workers through lease recovery', async () => {

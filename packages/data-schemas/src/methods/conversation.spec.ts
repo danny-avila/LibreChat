@@ -2479,13 +2479,22 @@ describe('Conversation Operations', () => {
     });
 
     it('allows a single-conversation cleanup retry after topology and messages are gone', async () => {
-      const result = await deleteConvos(
+      const eraseAgentTriggerDeliveryConversationResults = jest.fn(async () => undefined);
+      const scopedMethods = createConversationMethods(mongoose, {
+        getMessages,
+        deleteMessages,
+        eraseAgentTriggerDeliveryConversationResults,
+      });
+      const result = await scopedMethods.deleteConvos(
         'user123',
         { conversationId: 'already-absent' },
         { allowEmpty: true },
       );
       expect(result.deletedCount).toBe(0);
       expect(result.conversationIds).toEqual(['already-absent']);
+      expect(eraseAgentTriggerDeliveryConversationResults).toHaveBeenCalledWith('user123', [
+        'already-absent',
+      ]);
     });
 
     it('supports an idempotent empty recovery sweep without hiding storage failures', async () => {

@@ -3271,6 +3271,7 @@ export function createConversationMethods(
             allTenants: true,
           })),
         );
+        await deps?.eraseAgentTriggerDeliveryConversationResults?.(user, recoveryConversationIds);
       }
 
       const deleteConvoResult: DeleteResult = { acknowledged, deletedCount };

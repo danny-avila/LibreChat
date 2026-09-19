@@ -1,5 +1,6 @@
 import { Schema } from 'mongoose';
 import type { IAgentTriggerDeliveryDocument } from '~/types/triggerDelivery';
+import { AGENT_BACKGROUND_TOOL_RESULT_STORAGE_MAX_CHARS } from '~/types/triggerDelivery';
 
 const failureSchema = new Schema(
   {
@@ -155,13 +156,29 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
             enum: ['completed', 'error', 'cancelled'],
             required: true,
           },
-          output: { type: String, required: true, maxlength: 24 * 1024 },
+          output: {
+            type: String,
+            required: true,
+            maxlength: AGENT_BACKGROUND_TOOL_RESULT_STORAGE_MAX_CHARS,
+          },
           settledAt: { type: Date, required: true },
+          resultClaim: {
+            type: new Schema(
+              {
+                kind: { type: String, enum: ['wakeup'], required: true },
+                claimId: { type: String, required: true, maxlength: 128 },
+                claimedAt: { type: Date, required: true },
+              },
+              { _id: false },
+            ),
+            required: false,
+          },
         },
         { _id: false },
       ),
       select: false,
     },
+    backgroundToolResultErasedAt: { type: Date, select: false },
     attempts: { type: Number, required: true, default: 0, min: 0 },
     availableAt: { type: Date, required: true },
     envelopeBytes: { type: Number, min: 0 },

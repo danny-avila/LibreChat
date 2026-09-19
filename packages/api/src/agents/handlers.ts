@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import { GraphEvents, Constants, ToolEndHandler } from '@librechat/agents';
 import { logger, normalizeSkillFrontmatterKeys } from '@librechat/data-schemas';
 import {
+  AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_DEFAULT,
   hasActivePiiFields,
   hasActivePiiPatterns,
   hasToolCallErrorPrefix,
@@ -271,6 +272,8 @@ export interface ToolExecuteOptions {
   runFiles?: Pick<RunFileSession, 'isActive' | 'prepareTools' | 'withCodeExecution'>;
   /** Trusted deployment gate for cooperative ordinary-tool cancellation. */
   ordinaryToolCancellation?: boolean;
+  /** Deployment-configured cap for terminal output copied into durable receipts. */
+  backgroundCompletionResultMaxChars?: number;
   /** Callback to process tool artifacts (code output files, file citations, etc.) */
   toolEndCallback?: ToolEndCallback;
   /** Durable internal-completion adapter, present only for an Event Actor invocation. */
@@ -5317,6 +5320,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
     subagentTasks,
     runFiles,
     ordinaryToolCancellation = false,
+    backgroundCompletionResultMaxChars = AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_DEFAULT,
     provisionFiles,
   } = options;
 
@@ -5805,7 +5809,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     try {
                       return await completionAdmission.persistResult({
                         status: receipt.status,
-                        output: truncateMiddle(receipt.output ?? '', 24 * 1024),
+                        output: truncateMiddle(
+                          receipt.output ?? '',
+                          backgroundCompletionResultMaxChars,
+                        ),
                         settledAt: backgroundTask.settledAt,
                       });
                     } catch (receiptError) {
@@ -5958,11 +5965,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       }
                       return;
                     }
-                    durableReceiptReady = await persistDurableReceipt({
-                      status: params.status,
-                      output: params.output ?? localTask?.result,
-                    });
-                    if (persisted.deliveryReady === false && !durableReceiptReady) {
+                    if (persisted.deliveryReady !== false) {
+                      durableReceiptReady = await persistDurableReceipt({
+                        status: params.status,
+                        output: params.output ?? localTask?.result,
+                      });
+                    }
+                    if (persisted.deliveryReady === false) {
                       await retireFailedPersistence(
                         'background code result was not persisted',
                         'definite',

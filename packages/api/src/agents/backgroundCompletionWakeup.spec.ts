@@ -92,6 +92,8 @@ function resolverMethods() {
         }),
       ),
       getAgentBackgroundToolResult: jest.fn(async () => null),
+      claimAgentBackgroundToolResults: jest.fn(async () => ({ status: 'not_ready' as const })),
+      releaseAgentBackgroundToolResultClaims: jest.fn(async () => true),
     },
   };
 }
@@ -452,10 +454,17 @@ describe('background tool completion wakeups', () => {
   it('continues from the independent delivery receipt before the parent projection lands', async () => {
     const { methods } = resolverMethods();
     methods.claimBackgroundToolResults.mockResolvedValueOnce({ status: 'not_ready' });
-    methods.getAgentBackgroundToolResult.mockResolvedValueOnce({
-      status: 'completed',
-      output: 'independently durable',
-      settledAt: new Date(NOW),
+    methods.claimAgentBackgroundToolResults.mockResolvedValueOnce({
+      status: 'acquired',
+      results: [
+        {
+          taskId: 'task-1',
+          toolCallId: 'call-1',
+          toolName: 'slow_tool',
+          status: 'completed',
+          output: 'independently durable',
+        },
+      ],
     } as never);
     const resolve = createBackgroundToolCompletionWakeupResolver({
       methods: methods as never,
@@ -466,9 +475,15 @@ describe('background tool completion wakeups', () => {
 
     expect(prepared).toMatchObject({ status: 'ready', parentMessageId: 'response-2' });
     expect(prepared?.status === 'ready' && prepared.input).toContain('independently durable');
-    expect(methods.getAgentBackgroundToolResult).toHaveBeenCalledWith({
+    expect(methods.claimAgentBackgroundToolResults).toHaveBeenCalledWith({
       deliveryKey: 'delivery-1',
       sourceId: 'background-tool-completion',
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+      parentMessageId: 'response-1',
+      agentId: 'agent_parent_1',
+      claimId: 'delivery-1',
+      limit: 1,
     });
     expect(methods.claimBackgroundToolResults).toHaveBeenCalledWith(
       expect.objectContaining({ taskId: 'task-1', kind: 'wakeup', claimId: 'delivery-1' }),
@@ -478,11 +493,6 @@ describe('background tool completion wakeups', () => {
   it('honors a manual message claim before an independent receipt', async () => {
     const { methods } = resolverMethods();
     methods.claimBackgroundToolResults.mockResolvedValueOnce({ status: 'claimed' });
-    methods.getAgentBackgroundToolResult.mockResolvedValueOnce({
-      status: 'completed',
-      output: 'must not be delivered twice',
-      settledAt: new Date(NOW),
-    } as never);
     const resolve = createBackgroundToolCompletionWakeupResolver({
       methods: methods as never,
       getGenerationJob: async () => null,
@@ -491,6 +501,7 @@ describe('background tool completion wakeups', () => {
     await expect(resolve(await envelope(), { idempotencyKey: 'delivery-1' })).resolves.toEqual({
       status: 'settled',
     });
+    expect(methods.claimAgentBackgroundToolResults).not.toHaveBeenCalled();
     expect(methods.getAgentBackgroundToolResult).not.toHaveBeenCalled();
   });
 

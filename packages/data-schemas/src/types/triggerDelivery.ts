@@ -18,6 +18,7 @@ export const AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1 =
 export const AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2 =
   'background_tool_completion_receipt_v2';
 export const AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1 = 'agent_queued_turn_v1';
+export const AGENT_BACKGROUND_TOOL_RESULT_STORAGE_MAX_CHARS: number = 64 * 1024;
 export type AgentTriggerDeliveryOutcome = 'succeeded' | 'retry' | 'dead';
 
 export interface AgentTriggerHandlingState {
@@ -86,6 +87,11 @@ export interface AgentBackgroundToolResultReceipt {
   status: 'completed' | 'error' | 'cancelled';
   output: string;
   settledAt: Date;
+  resultClaim?: {
+    kind: 'wakeup';
+    claimId: string;
+    claimedAt: Date;
+  };
 }
 
 export interface AgentTriggerDeliveryHistoryEntry {
@@ -121,6 +127,8 @@ export interface IAgentTriggerDelivery {
   producerLeaseUntil?: Date;
   /** Durable source of truth for a background completion. */
   backgroundToolResult?: AgentBackgroundToolResultReceipt;
+  /** Conversation-deletion fence preventing a late producer from restoring private output. */
+  backgroundToolResultErasedAt?: Date;
   attempts: number;
   availableAt: Date;
   envelopeBytes?: number;

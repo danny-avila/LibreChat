@@ -215,6 +215,8 @@ const initializeClientWithProvider = async ({
   const ordinaryToolCancellationEnabled =
     appConfig?.endpoints?.[EModelEndpoint.agents]?.backgroundTasks?.ordinaryToolCancellation ===
     true;
+  const backgroundCompletionResultMaxChars =
+    appConfig?.endpoints?.[EModelEndpoint.agents]?.backgroundTasks?.completionResultMaxChars;
   /** The normal controller resolves this once for timestamp anchoring. Reuse
    * that trusted document for child-thread execution policy; resume and direct
    * callers fall back to the same owner-scoped lookup. */
@@ -440,6 +442,7 @@ const initializeClientWithProvider = async ({
     runSignal: signal,
     foregroundRunId,
     ordinaryToolCancellation: ordinaryToolCancellationEnabled,
+    backgroundCompletionResultMaxChars,
     loadTools: async (
       toolNames,
       agentId,

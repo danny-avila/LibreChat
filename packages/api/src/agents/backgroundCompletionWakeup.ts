@@ -370,20 +370,48 @@ export function createBackgroundToolCompletionWakeupResolver({
         },
       };
     }
-    const receipt = await methods.getAgentBackgroundToolResult?.({
+    const receiptClaim = await methods.claimAgentBackgroundToolResults?.({
       deliveryKey: context.idempotencyKey,
       sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+      userId,
+      conversationId: envelope.target.conversationId,
+      parentMessageId: envelope.target.parentMessageId,
+      agentId: envelope.target.agentId,
+      claimId: context.idempotencyKey,
+      limit: 1,
     });
+    if (receiptClaim?.status === 'claimed') {
+      return { status: 'settled' };
+    }
+    if (receiptClaim?.status === 'acquired') {
+      return {
+        status: 'ready',
+        parentMessageId,
+        input: buildWakeupInput(receiptClaim.results),
+        releaseOnDefiniteFailure: async () => {
+          await methods.releaseAgentBackgroundToolResultClaims?.({
+            sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+            userId,
+            conversationId: envelope.target.conversationId,
+            parentMessageId: envelope.target.parentMessageId,
+            claimId: context.idempotencyKey,
+          });
+        },
+      };
+    }
+    const receipt =
+      methods.claimAgentBackgroundToolResults == null
+        ? await methods.getAgentBackgroundToolResult?.({
+            deliveryKey: context.idempotencyKey,
+            sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+          })
+        : null;
     if (receipt != null) {
       return {
         status: 'ready',
         parentMessageId,
         input: buildWakeupInput([
-          {
-            ...registration,
-            status: receipt.status,
-            output: receipt.output,
-          },
+          { ...registration, status: receipt.status, output: receipt.output },
         ]),
       };
     }
