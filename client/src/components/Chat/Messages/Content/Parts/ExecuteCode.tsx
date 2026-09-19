@@ -187,7 +187,9 @@ export default function ExecuteCode({
                 onScroll={onCodePaneScroll}
                 className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt"
               >
-                <code className={`hljs language-${lang} !whitespace-pre`}>{highlighted}</code>
+                <code className={`hljs language-${lang} !whitespace-pre`}>
+                  {highlighted ?? code}
+                </code>
               </pre>
             )}
             <PtcToolTrace
