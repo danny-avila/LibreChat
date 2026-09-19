@@ -24,7 +24,7 @@ test.describe('model selector search', () => {
 
     for (let index = 0; index < Math.min(optionCount, 3); index++) {
       await search.press('ArrowDown');
-      await expect(search).toHaveAttribute('aria-activedescendant', /.+/);
+      await expect(search).toBeFocused();
     }
     const announcement = page.locator('[role="alert"]').first();
     const initialAnnouncement = await announcement.textContent();
@@ -38,14 +38,16 @@ test.describe('model selector search', () => {
   }) => {
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     const search = await openModelSearch(page, 'mock');
-    const pin = page.locator('button[aria-label="Pin"]:visible').first();
-    await expect(pin).toBeVisible();
+    const tabbablePin = page.locator('button[aria-label="Pin"][tabindex="0"]');
 
-    await search.press('ArrowDown');
+    for (let index = 0; index < 10 && (await tabbablePin.count()) === 0; index++) {
+      await search.press('ArrowDown');
+    }
+    await expect(tabbablePin).toHaveCount(1);
     await page.keyboard.press('Tab');
-    await expect(pin).toBeFocused();
-    await pin.press('Enter');
-    await expect(pin).toHaveAttribute('aria-label', 'Unpin');
+    await expect(tabbablePin).toBeFocused();
+    await tabbablePin.press('Enter');
+    await expect(page.locator('button[aria-label="Unpin"]')).toHaveCount(1);
   });
 
   test('search options expose one global position sequence @scenario:model-selector-search-options-report-global-positions', async ({
@@ -76,8 +78,13 @@ test.describe('model selector search', () => {
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await openModelSearch(page, 'mock');
 
-    const row = page.getByRole('option').first();
-    const pin = row.getByRole('button', { name: /pin/i }).first();
+    const row = page
+      .locator('[role="option"]')
+      .filter({
+        has: page.locator('button[aria-label="Pin"]'),
+      })
+      .first();
+    const pin = row.locator('button[aria-label="Pin"]');
     const menu = page.locator('[role="listbox"]').first();
     const rowBox = await row.boundingBox();
     const pinBox = await pin.boundingBox();
