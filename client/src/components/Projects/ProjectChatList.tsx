@@ -10,7 +10,8 @@ import {
   type ReactNode,
 } from 'react';
 import throttle from 'lodash/throttle';
-import { Spinner } from '@librechat/client';
+import { MessagesSquare } from 'lucide-react';
+import { EmptyState, Spinner } from '@librechat/client';
 import { AutoSizer, CellMeasurer, CellMeasurerCache, List } from 'react-virtualized';
 import type { TConversation } from 'librechat-data-provider';
 import type { MeasuredCellParent } from '~/components/Conversations/Conversations';
@@ -27,8 +28,7 @@ type ChatSortField = 'updatedAt' | 'createdAt';
 type FlattenedItem =
   | { type: 'date'; groupName: string }
   | { type: 'convo'; convo: TConversation }
-  | { type: 'loading' }
-  | { type: 'empty' };
+  | { type: 'loading' };
 
 interface ProjectChatListProps {
   conversations: TConversation[];
@@ -53,8 +53,8 @@ const MeasuredRow: FC<MeasuredRowProps> = memo(
   ({ cache, rowKey, parent, index, style, children }) => (
     <CellMeasurer cache={cache} columnIndex={0} key={rowKey} parent={parent} rowIndex={index}>
       {({ registerChild }) => (
-        <div ref={registerChild as React.LegacyRef<HTMLDivElement>} style={style}>
-          {children}
+        <div ref={registerChild as React.LegacyRef<HTMLDivElement>} style={style} role="row">
+          <div role="gridcell">{children}</div>
         </div>
       )}
     </CellMeasurer>
@@ -145,6 +145,7 @@ const ProjectChatList = ({
   emptyLabel,
   loadMore,
 }: ProjectChatListProps) => {
+  const localize = useLocalize();
   const { data: activeJobsData } = useActiveJobs();
   const activeJobIds = useMemo(
     () => new Set(activeJobsData?.activeJobIds ?? []),
@@ -153,9 +154,6 @@ const ProjectChatList = ({
   const flattenedItems = useMemo(() => {
     if (isLoading) {
       return [{ type: 'loading' as const }];
-    }
-    if (!conversations.length) {
-      return [{ type: 'empty' as const }];
     }
 
     const items: FlattenedItem[] = [];
@@ -219,14 +217,6 @@ const ProjectChatList = ({
         );
       }
 
-      if (item.type === 'empty') {
-        return (
-          <MeasuredRow key={key} {...rowProps}>
-            <div className="px-3 py-14 text-center text-sm text-text-secondary">{emptyLabel}</div>
-          </MeasuredRow>
-        );
-      }
-
       if (item.type === 'date') {
         return (
           <MeasuredRow key={key} {...rowProps}>
@@ -246,7 +236,7 @@ const ProjectChatList = ({
         </MeasuredRow>
       );
     },
-    [activeJobIds, cache, emptyLabel, flattenedItems],
+    [activeJobIds, cache, flattenedItems],
   );
 
   const getRowHeight = useCallback(
@@ -263,11 +253,27 @@ const ProjectChatList = ({
     [flattenedItems.length, hasNextPage, throttledLoadMore],
   );
 
+  /** Outside the virtualized list: as a measured row the message sits at the top of a
+   *  full-height viewport, and the panel is the thing that should center it. */
+  if (!isLoading && !conversations.length) {
+    return (
+      <div className="min-h-[280px] flex-1">
+        <EmptyState
+          icon={MessagesSquare}
+          description={emptyLabel}
+          className="h-full border-0 p-3"
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-[280px] flex-1 overflow-hidden">
       <AutoSizer>
         {({ width, height }) => (
           <List
+            aria-label={localize('com_ui_chats')}
+            containerRole="rowgroup"
             ref={listRef}
             width={width}
             height={height}
