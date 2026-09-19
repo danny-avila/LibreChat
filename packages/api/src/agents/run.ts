@@ -111,6 +111,7 @@ import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/a
 import { resolveConfigHeaders, resolveModelHeaders, mergeHeaders } from '~/utils/headers';
 import { extractDefaultParams, resolveReasoningParams } from '~/endpoints/openai/llm';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
+import { foldSubagentDynamicInstructionsForPromptCache } from '~/agents/cache';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { buildAgentInitialToolSessions } from '~/agents/codeFilesSession';
 import { getAzureCredentials, constructAzureURL } from '~/utils/azure';
@@ -1845,7 +1846,7 @@ function buildIsolatedAgentInputs(
       child.intentToolNames,
     );
   }
-  return childInputs;
+  return foldSubagentDynamicInstructionsForPromptCache(childInputs);
 }
 
 function buildSubagentConfigs(
