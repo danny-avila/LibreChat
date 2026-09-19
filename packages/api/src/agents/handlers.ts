@@ -5778,6 +5778,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       ...(params.status === 'cancelled' ? { cancelled: true } : {}),
                       settledAt: new Date(current?.updatedAt ?? Date.now()),
                       ...(completionPreregistered ? { completionWakeup: true } : {}),
+                      ...(completionAdmission?.persistResult != null
+                        ? { completionReceipt: true }
+                        : {}),
                       ...(current?.resultClaim != null
                         ? {
                             resultClaim: {

@@ -726,6 +726,7 @@ export interface MessageMethods {
       cancelled?: true;
       settledAt: Date;
       completionWakeup?: true;
+      completionReceipt?: true;
       resultClaim?: {
         kind: 'manual' | 'wakeup';
         claimId: string;
@@ -1274,6 +1275,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         partPatch['content.$[part].tool_call.backgroundTask.cancelled'] =
           backgroundTask.cancelled === true;
         partPatch['content.$[part].tool_call.backgroundTask.settledAt'] = backgroundTask.settledAt;
+        if (backgroundTask.completionReceipt === true) {
+          partPatch['content.$[part].tool_call.backgroundTask.completionReceipt'] = true;
+        }
         if (backgroundTask.completionWakeup === true) {
           partPatch['content.$[part].tool_call.backgroundTask.completionWakeup'] = true;
         } else {
