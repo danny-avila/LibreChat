@@ -58,7 +58,7 @@ export interface LoadAddedAgentDeps {
   /** Resolves the agent without its `versions` history; `version` carries the count. */
   getAgent: (searchParameter: {
     id: string;
-  }) => Promise<(Agent & { versions?: { length: number } }) | null>;
+  }) => Promise<(Agent & { version?: number; versions?: { length: number } }) | null>;
   getMCPServerTools: (
     userId: string,
     serverName: string,
@@ -102,7 +102,7 @@ export async function loadAddedAgent(
       return null;
     }
 
-    const agentRecord = agent as Agent & { versions?: { length: number } };
+    const agentRecord = agent as Agent & { version?: number; versions?: { length: number } };
     agentRecord.version ??= agentRecord.versions?.length ?? 0;
     agent.id = appendAgentIdSuffix(agent.id, 1);
     return agent;
