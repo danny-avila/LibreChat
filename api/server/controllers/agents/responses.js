@@ -76,6 +76,7 @@ const {
   sendResponsesErrorResponse,
   createResponsesEventHandlers,
   createAggregatorEventHandlers,
+  createClientToolHandoff,
   getLangfuseTraceMessageFields,
   stripActivityLabelParts,
   stripUnusableSummaryParts,
@@ -893,6 +894,17 @@ const executeResponse = async (envelope, { req, res }) => {
         dbMethods,
       );
 
+      /** The caller's function tools: declared to the model with no server-side
+       *  executor, handed back when the model calls one, and reported on the
+       *  response as the subset that was actually applied. */
+      const clientTools = createClientToolHandoff({
+        tools: request.tools,
+        agentDefinitions: primaryConfig.toolDefinitions,
+        responseId,
+      });
+      primaryConfig.toolDefinitions = clientTools.toolDefinitions;
+      context.tools = clientTools.appliedTools;
+
       /**
        * Per-agent tool-execution context map, keyed by agentId. Ensures the
        * ON_TOOL_EXECUTE callback routes each sub-agent's tool calls to the
@@ -1167,6 +1179,9 @@ const executeResponse = async (envelope, { req, res }) => {
           res,
           context,
           tracker,
+          /* The run terminates a caller-executed call's item itself: the server
+             never executes one, so `on_tool_end` cannot. */
+          clientToolNames: clientTools.clientToolNames,
         };
 
         // Emit response.created then response.in_progress per Open Responses spec
@@ -1242,7 +1257,7 @@ const executeResponse = async (envelope, { req, res }) => {
         const handlers = {
           on_message_delta: responsesHandlers.on_message_delta,
           on_reasoning_delta: responsesHandlers.on_reasoning_delta,
-          on_run_step: responsesHandlers.on_run_step,
+          on_run_step: clientTools.wrapRunStep(responsesHandlers.on_run_step),
           on_run_step_delta: responsesHandlers.on_run_step_delta,
           on_chat_model_end: {
             handle: (event, data, metadata, graph) => {
@@ -1261,7 +1276,9 @@ const executeResponse = async (envelope, { req, res }) => {
           on_chain_end: { handle: () => {} },
           on_agent_update: { handle: () => {} },
           on_custom_event: { handle: () => {} },
-          on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
+          on_tool_execute: clientTools.wrapToolExecute(
+            createToolExecuteHandler(toolExecuteOptions),
+          ),
           on_agent_log: agentLogHandlerObj,
           ...(summarizationConfig?.enabled !== false
             ? buildSummarizationHandlers({ isStreaming: actuallyStreaming, res })
@@ -1471,7 +1488,7 @@ const executeResponse = async (envelope, { req, res }) => {
         const handlers = {
           on_message_delta: aggregatorHandlers.on_message_delta,
           on_reasoning_delta: aggregatorHandlers.on_reasoning_delta,
-          on_run_step: aggregatorHandlers.on_run_step,
+          on_run_step: clientTools.wrapRunStep(aggregatorHandlers.on_run_step),
           on_run_step_delta: aggregatorHandlers.on_run_step_delta,
           on_chat_model_end: {
             handle: (event, data, metadata, graph) => {
@@ -1490,7 +1507,9 @@ const executeResponse = async (envelope, { req, res }) => {
           on_chain_end: { handle: () => {} },
           on_agent_update: { handle: () => {} },
           on_custom_event: { handle: () => {} },
-          on_tool_execute: createToolExecuteHandler(toolExecuteOptions),
+          on_tool_execute: clientTools.wrapToolExecute(
+            createToolExecuteHandler(toolExecuteOptions),
+          ),
           on_agent_log: agentLogHandlerObj,
           ...(summarizationConfig?.enabled !== false
             ? buildSummarizationHandlers({ isStreaming: false, res })
