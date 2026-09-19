@@ -32,6 +32,7 @@ type RunStepData = {
 
 type RunStepCompletedData = {
   result?: {
+    id?: string;
     type?: string;
     tool_call?: {
       id?: string;
@@ -57,6 +58,9 @@ type TextPart = { type: ContentTypes.TEXT; text: string };
 type ThinkPart = { type: ContentTypes.THINK; think: string };
 type ToolCallPart = {
   type: ContentTypes.TOOL_CALL;
+  /** Run-step id that owns the call — scopes live progress for parallel agents
+   *  that reuse the same tool-call id inside the subagent's run. */
+  stepId?: string;
   tool_call: {
     id: string;
     name: string;
@@ -189,6 +193,7 @@ export function foldSubagentEvent(
       toolCallIndexById[tc.id] = next.length;
       next.push({
         type: ContentTypes.TOOL_CALL,
+        stepId: data.id,
         tool_call: {
           id: tc.id,
           name: tc.name ?? '',
@@ -216,6 +221,7 @@ export function foldSubagentEvent(
       const existing = parts[existingIdx] as ToolCallPart;
       const merged: ToolCallPart = {
         type: ContentTypes.TOOL_CALL,
+        stepId: existing.stepId,
         tool_call: {
           ...existing.tool_call,
           ...(tc.name ? { name: tc.name } : {}),
@@ -234,6 +240,7 @@ export function foldSubagentEvent(
     const newIdx = next.length;
     next.push({
       type: ContentTypes.TOOL_CALL,
+      stepId: data?.result?.id,
       tool_call: {
         id: tc.id,
         name: tc.name ?? '',

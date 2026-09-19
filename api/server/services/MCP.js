@@ -830,6 +830,9 @@ function createToolInstance({
         onToolProgress = createToolProgressEmitter({
           toolCallId: toolCall.id,
           runId: config.metadata?.run_id,
+          /** Scopes the event to the owning run step so parallel agents that
+           *  reuse the same tool-call id don't scramble each other's card. */
+          stepId,
           /** Transient emit: progress must never land in the Redis chunk log
            *  or resume reconstruction — live subscribers only. */
           emit: (eventData) =>

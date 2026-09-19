@@ -64,8 +64,26 @@ jest.mock('../Reasoning', () => ({
 
 jest.mock('~/components/Chat/Messages/Content/ToolCall', () => ({
   __esModule: true,
-  default: ({ name, output }: { name: string; output: string }) => (
-    <div data-testid="tool-call-part" data-name={name}>
+  default: ({
+    name,
+    output,
+    toolCallId,
+    stepId,
+    messageId,
+  }: {
+    name: string;
+    output: string;
+    toolCallId?: string;
+    stepId?: string;
+    messageId?: string;
+  }) => (
+    <div
+      data-testid="tool-call-part"
+      data-name={name}
+      data-tool-call-id={toolCallId}
+      data-step-id={stepId}
+      data-message-id={messageId}
+    >
       {output}
     </div>
   ),
@@ -603,6 +621,55 @@ describe('SubagentCall — dialog content', () => {
     expect(screen.getByTestId('tool-call-part')).toHaveAttribute('data-name', 'calculator');
     expect(screen.getByTestId('tool-call-part')).toHaveTextContent('4');
     expect(screen.getByTestId('text-part')).toHaveTextContent('The answer is 4.');
+  });
+
+  it('scopes the dialog ToolCall by the child run id so MCP progress resolves', () => {
+    /**
+     * `ON_TOOL_PROGRESS` events inside a subagent carry the child graph's
+     * run id (`metadata.run_id`), so the dialog's `<ToolCall>` must look up
+     * progress under `toolProgressKey(subagentRunId, tc.id)` — not the
+     * parent message's id or the synthetic `subagent-${toolCallId}` scope.
+     * Previous P2 finding: the dialog ToolCall got neither `toolCallId` nor
+     * `messageId`, so live MCP progress never surfaced for subagent tools.
+     */
+    renderWithState({
+      toolCallId: 'call_dialog_tool',
+      initialProgress: 0.4,
+      isSubmitting: true,
+      progress: progressFromEvents({
+        subagentRunId: 'run_c1',
+        subagentType: 'self',
+        status: 'run_step',
+        events: [
+          {
+            runId: 'p',
+            subagentRunId: 'run_c1',
+            subagentType: 'self',
+            subagentAgentId: 'child',
+            phase: 'run_step',
+            data: {
+              id: 'step_child_1',
+              stepDetails: {
+                type: 'tool_calls',
+                tool_calls: [{ id: 'c1', name: 'calculator', args: '{}' }],
+              },
+            },
+            timestamp: '',
+          },
+        ],
+      }),
+    });
+
+    openSubagentDialog('Running agent');
+    const toolPart = screen.getByTestId('tool-call-part');
+    expect(toolPart).toHaveAttribute('data-tool-call-id', 'c1');
+    expect(toolPart).toHaveAttribute('data-message-id', 'run_c1');
+    /** The child's step id must reach the dialog ToolCall so the progress
+     *  key matches the event written under the same step. */
+    expect(toolPart).toHaveAttribute('data-step-id', 'step_child_1');
+    /** Never the synthetic dialog scope — that key can't match the
+     *  child run id the progress events actually carry. */
+    expect(toolPart.getAttribute('data-message-id')).not.toContain('subagent-');
   });
 
   it('falls back to the raw tool output when no content parts were recorded', () => {

@@ -111,7 +111,10 @@ describe('ToolCall', () => {
         <RecoilRoot
           initializeState={({ set }) => {
             if (liveState) {
-              set(toolProgressByToolCallId(toolProgressKey('msg_live', 'call_live')), liveState);
+              set(
+                toolProgressByToolCallId(toolProgressKey('msg_live', undefined, 'call_live')),
+                liveState,
+              );
             }
           }}
         >
@@ -137,14 +140,83 @@ describe('ToolCall', () => {
       expect(screen.getByTestId('in-progress-text')).toHaveTextContent('3 of 10');
     });
 
-    it('renders a percentage for fraction-only progress (no total, no message)', () => {
+    it('does not infer a percentage from progress without a total', () => {
       renderRunningToolCall({ progress: 0.4 });
-      expect(screen.getByTestId('in-progress-text')).toHaveTextContent('40%');
+      expect(screen.getByTestId('in-progress-text')).toHaveTextContent('Running search');
+      expect(screen.getByTestId('in-progress-text')).not.toHaveTextContent('40%');
     });
 
     it('falls back to the running label without live progress', () => {
       renderRunningToolCall(null);
       expect(screen.getByTestId('in-progress-text')).toHaveTextContent('Running search');
+    });
+
+    it('scopes progress lookups by the messageId prop instead of the context when provided', () => {
+      const liveState = { progress: 3, total: 10, message: 'child run crunching' };
+      render(
+        <RecoilRoot
+          initializeState={({ set }) => {
+            set(
+              toolProgressByToolCallId(toolProgressKey('run_child', undefined, 'call_child')),
+              liveState,
+            );
+            /** Decoy under the context scope — must NOT win over the
+             *  explicit prop (this mirrors the subagent dialog, where the
+             *  context id is a synthetic `subagent-*` scope). */
+            set(toolProgressByToolCallId(toolProgressKey('msg_live', undefined, 'call_child')), {
+              progress: 1,
+              total: 1,
+            });
+          }}
+        >
+          <MessageContext.Provider value={{ messageId: 'msg_live' } as never}>
+            <ToolCall
+              name={`search${Constants.mcp_delimiter}docs`}
+              args=""
+              initialProgress={0.1}
+              isSubmitting={true}
+              toolCallId="call_child"
+              messageId="run_child"
+            />
+          </MessageContext.Provider>
+        </RecoilRoot>,
+      );
+      expect(screen.getByTestId('in-progress-text')).toHaveTextContent('child run crunching');
+      expect(screen.getByTestId('in-progress-text')).not.toHaveTextContent('1 of 1');
+    });
+
+    it('scopes parallel agents that reuse a tool-call id by their step id', () => {
+      render(
+        <RecoilRoot
+          initializeState={({ set }) => {
+            /** Two parallel agents in ONE run both emit `call_0`; their steps
+             *  must not overwrite each other's card. */
+            set(toolProgressByToolCallId(toolProgressKey('msg_live', 'step_a', 'call_0')), {
+              progress: 2,
+              total: 4,
+              message: 'agent a crunching',
+            });
+            set(toolProgressByToolCallId(toolProgressKey('msg_live', 'step_b', 'call_0')), {
+              progress: 3,
+              total: 4,
+              message: 'agent b crunching',
+            });
+          }}
+        >
+          <MessageContext.Provider value={{ messageId: 'msg_live' } as never}>
+            <ToolCall
+              name={`search${Constants.mcp_delimiter}docs`}
+              args=""
+              initialProgress={0.1}
+              isSubmitting={true}
+              toolCallId="call_0"
+              stepId="step_b"
+            />
+          </MessageContext.Provider>
+        </RecoilRoot>,
+      );
+      expect(screen.getByTestId('in-progress-text')).toHaveTextContent('agent b crunching');
+      expect(screen.getByTestId('in-progress-text')).not.toHaveTextContent('agent a crunching');
     });
   });
 

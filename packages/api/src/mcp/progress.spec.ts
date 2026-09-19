@@ -20,6 +20,18 @@ describe('buildToolProgressEvent', () => {
     });
   });
 
+  it('includes the owning step id so parallel agents keep separate progress', () => {
+    expect(buildToolProgressEvent('call_0', { progress: 2 }, 'msg_run', 'step_a')).toEqual({
+      event: StepEvents.ON_TOOL_PROGRESS,
+      data: { toolCallId: 'call_0', runId: 'msg_run', stepId: 'step_a', progress: 2 },
+    });
+    // An absent/empty step id is omitted rather than serialized as an empty key.
+    expect(buildToolProgressEvent('call_0', { progress: 2 }, 'msg_run', '')).toEqual({
+      event: StepEvents.ON_TOOL_PROGRESS,
+      data: { toolCallId: 'call_0', runId: 'msg_run', progress: 2 },
+    });
+  });
+
   it('caps oversized messages', () => {
     const event = buildToolProgressEvent('call_1', { progress: 1, message: 'x'.repeat(2_000) });
     expect((event.data as { message: string }).message).toHaveLength(500);
@@ -64,6 +76,27 @@ describe('createToolProgressEmitter', () => {
     jest.setSystemTime(600);
     emit({ progress: 10, total: 10 });
     expect(emitted).toHaveLength(4);
+  });
+
+  it('forwards the configured run and step ids on every event', () => {
+    const emitted: StreamEvent[] = [];
+    const emit = createToolProgressEmitter({
+      toolCallId: 'call_0',
+      runId: 'msg_run',
+      stepId: 'step_a',
+      emit: (event) => {
+        emitted.push(event);
+      },
+      minIntervalMs: 0,
+    });
+    emit({ progress: 1, total: 4 });
+    expect(emitted[0].data).toEqual({
+      toolCallId: 'call_0',
+      runId: 'msg_run',
+      stepId: 'step_a',
+      progress: 1,
+      total: 4,
+    });
   });
 
   it('drops non-finite wire values instead of forwarding them', () => {

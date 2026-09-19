@@ -16,10 +16,12 @@ export function buildToolProgressEvent(
   toolCallId: string,
   update: ToolProgressUpdate,
   runId?: string,
+  stepId?: string,
 ): StreamEvent {
   const data: ToolProgressEvent = {
     toolCallId,
     ...(runId != null && runId !== '' ? { runId } : {}),
+    ...(stepId != null && stepId !== '' ? { stepId } : {}),
     progress: update.progress,
     ...(Number.isFinite(update.total) ? { total: update.total } : {}),
     ...(typeof update.message === 'string' && update.message !== ''
@@ -40,6 +42,9 @@ export function buildToolProgressEvent(
 export function createToolProgressEmitter(params: {
   toolCallId: string;
   runId?: string;
+  /** Run-step id owning the call; scopes progress away from parallel agents
+   *  that reuse the same tool-call id within a run. */
+  stepId?: string;
   emit: (event: StreamEvent) => void | Promise<void>;
   minIntervalMs?: number;
 }): (update: ToolProgressUpdate) => void {
@@ -66,7 +71,7 @@ export function createToolProgressEmitter(params: {
     lastEmitAt = now;
     try {
       void Promise.resolve(
-        params.emit(buildToolProgressEvent(params.toolCallId, update, params.runId)),
+        params.emit(buildToolProgressEvent(params.toolCallId, update, params.runId, params.stepId)),
       ).catch(() => undefined);
     } catch {
       /* progress is best-effort */

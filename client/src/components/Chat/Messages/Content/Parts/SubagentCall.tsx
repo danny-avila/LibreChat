@@ -170,6 +170,12 @@ export default function SubagentCall({
   const [promptExpanded, setPromptExpanded] = useState(false);
 
   const subagentType = progress?.subagentType ?? extractSubagentType(args);
+  /** The child graph's run id, from `metadata.run_id` on the MCP progress
+   *  notifications a subagent run emits. `ON_TOOL_PROGRESS` events carry
+   *  their own `runId`; scoping the dialog's tool-call progress lookups by
+   *  this id (instead of the parent message's run id) is what makes live
+   *  progress render for tools executed inside the subagent. */
+  const subagentRunId = progress?.subagentRunId;
   const isSelfSpawn = subagentType === 'self';
   /** Avatar lookup for the header icon. We use the child's agent id when
    *  present (explicit subagents); self-spawn falls back to the agents
@@ -273,13 +279,13 @@ export default function SubagentCall({
    */
   const dialogMessageContext = useMemo(
     () => ({
-      messageId: `subagent-${toolCallId}`,
+      messageId: subagentRunId ?? `subagent-${toolCallId}`,
       isExpanded: true,
       isSubmitting: running,
       isLatestMessage: running,
       conversationId: null,
     }),
-    [toolCallId, running],
+    [toolCallId, subagentRunId, running],
   );
 
   const lastPartIndex = contentParts.length - 1;
@@ -302,6 +308,7 @@ export default function SubagentCall({
         <SubagentDialogPart
           key={`${toolCallId}-part-${idx}`}
           part={part}
+          messageId={subagentRunId}
           isSubmitting={running}
           showCursor={running && isLastPart}
           isLast={isLastPart}
@@ -309,7 +316,7 @@ export default function SubagentCall({
         />
       );
     },
-    [toolCallId, running],
+    [toolCallId, subagentRunId, running],
   );
 
   /**
@@ -813,12 +820,14 @@ function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Element {
  */
 function SubagentDialogPart({
   part,
+  messageId,
   isSubmitting,
   showCursor,
   isLast,
   onToolExpand,
 }: {
   part: TMessageContentParts;
+  messageId?: string;
   isSubmitting: boolean;
   showCursor: boolean;
   isLast: boolean;
@@ -850,6 +859,7 @@ function SubagentDialogPart({
       }
     )[ContentTypes.TOOL_CALL];
     if (!tc) return null;
+    const stepId = (part as { stepId?: string }).stepId;
     const toolCall = (
       <ToolCall
         args={tc.args ?? ''}
@@ -858,6 +868,9 @@ function SubagentDialogPart({
         isSubmitting={isSubmitting}
         isLast={isLast}
         name={tc.name ?? ''}
+        toolCallId={tc.id ?? ''}
+        stepId={stepId}
+        messageId={messageId}
         onExpand={onToolExpand}
       />
     );

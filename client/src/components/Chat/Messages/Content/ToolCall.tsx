@@ -29,6 +29,8 @@ export default function ToolCall({
   attachments,
   auth,
   toolCallId,
+  stepId,
+  messageId: messageIdProp,
   hideAttachments = false,
   onExpand,
 }: {
@@ -41,6 +43,9 @@ export default function ToolCall({
   attachments?: TAttachment[];
   auth?: string;
   toolCallId?: string;
+  /** Owning run-step id — disambiguates parallel agents that reuse a tool-call id. */
+  stepId?: string;
+  messageId?: string;
   hideAttachments?: boolean;
   onExpand?: () => void;
 }) {
@@ -169,10 +174,14 @@ export default function ToolCall({
   const showCancelled = cancelled || (errorState && !output);
 
   /** Live MCP progress (`notifications/progress`) for this call, when streamed;
-   *  scoped by the message id since providers reuse tool-call ids across agents. */
-  const { messageId } = useMessageContext();
+   *  scoped by the message id AND the owning step id since providers reuse
+   *  tool-call ids (e.g. `call_0`) across parallel agents. */
+  const { messageId: contextMessageId } = useMessageContext();
+  const progressKeyScope = messageIdProp ?? contextMessageId;
   const liveProgress = useRecoilValue(
-    toolProgressByToolCallId(toolCallId ? toolProgressKey(messageId, toolCallId) : ''),
+    toolProgressByToolCallId(
+      toolCallId ? toolProgressKey(progressKeyScope, stepId, toolCallId) : '',
+    ),
   );
   const inProgressText = useMemo(() => {
     if (liveProgress?.message) {
@@ -189,9 +198,6 @@ export default function ToolCall({
         0: asLabel(liveProgress.progress),
         1: asLabel(liveProgress.total),
       });
-    }
-    if (liveProgress != null && liveProgress.progress >= 0 && liveProgress.progress <= 1) {
-      return `${Math.round(liveProgress.progress * 100)}%`;
     }
     return function_name
       ? localize('com_assistants_running_var', { 0: function_name })
