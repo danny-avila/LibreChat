@@ -113,6 +113,29 @@ export function resolveAgentInstructionPromptError(error: unknown): string | und
   return JSON.stringify({ type: ErrorTypes.AGENT_INSTRUCTION_PROMPT, reason: error.code });
 }
 
+export function getInstructionPromptErrorResponse(error: unknown):
+  | {
+      error: {
+        type: ErrorTypes.AGENT_INSTRUCTION_PROMPT;
+        code: AgentInstructionPromptError['code'];
+        message: string;
+        retryable: boolean;
+      };
+    }
+  | undefined {
+  if (!(error instanceof AgentInstructionPromptError)) {
+    return undefined;
+  }
+  return {
+    error: {
+      type: ErrorTypes.AGENT_INSTRUCTION_PROMPT,
+      code: error.code,
+      message: error.message,
+      retryable: error.retryable,
+    },
+  };
+}
+
 /**
  * Provider failure text for OpenAI-compatible responses, which carry raw strings rather than the
  * typed payloads the LibreChat client localizes.

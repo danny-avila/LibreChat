@@ -48,6 +48,18 @@ export interface AgentInstructionPromptProvider {
   ): Promise<AgentInstructionPromptResult>;
 }
 
+export function assertAgentInstructionPromptsEnabled(appConfig?: AppConfig): void {
+  const capabilities = appConfig?.endpoints?.agents?.capabilities;
+  if (!capabilities?.includes(AgentCapabilities.instruction_prompts)) {
+    throw new AgentInstructionPromptError(
+      'not_configured',
+      'Agent instruction prompt references are not enabled for this deployment',
+      409,
+      true,
+    );
+  }
+}
+
 type LibreChatPromptGroup = {
   name?: string | null;
 };
@@ -245,15 +257,7 @@ export async function persistAgentInstructionPromptFallback({
   if (!reference) {
     return;
   }
-  const capabilities = context.appConfig?.endpoints?.agents?.capabilities;
-  if (!capabilities?.includes(AgentCapabilities.instruction_prompts)) {
-    throw new AgentInstructionPromptError(
-      'not_configured',
-      'Agent instruction prompt references are not enabled for this deployment',
-      409,
-      true,
-    );
-  }
+  assertAgentInstructionPromptsEnabled(context.appConfig);
   if (!resolver) {
     throw new AgentInstructionPromptError(
       'not_configured',

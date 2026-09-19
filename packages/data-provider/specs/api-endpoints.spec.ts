@@ -3,6 +3,7 @@
  */
 import {
   agentQueuedTurn,
+  previewAgentInstructionPrompt,
   buildLoginRedirectUrl,
   getSharedLinks,
   agentQueuedTurnsByConversation,
@@ -115,5 +116,22 @@ describe('agent queued turns', () => {
 
   it('encodes queued-turn identity as one path segment', () => {
     expect(agentQueuedTurn('turn/a b')).toBe('/api/agents/chat/queued-turns/turn%2Fa%20b');
+  });
+});
+
+describe('instruction prompt preview URL', () => {
+  it('preserves destination binding and encodes prompt names', () => {
+    const url = new URL(
+      previewAgentInstructionPrompt('policy/a & b', 3, 'b'.repeat(64)),
+      'https://example.com',
+    );
+    expect(url.searchParams.get('name')).toBe('policy/a & b');
+    expect(url.searchParams.get('version')).toBe('3');
+    expect(url.searchParams.get('destinationId')).toBe('b'.repeat(64));
+  });
+  it('omits an absent binding for new references', () => {
+    const url = new URL(previewAgentInstructionPrompt('policy'), 'https://example.com');
+    expect(url.searchParams.has('destinationId')).toBe(false);
+    expect(url.searchParams.has('version')).toBe(false);
   });
 });

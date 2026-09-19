@@ -6,6 +6,7 @@ import {
   getProviderErrorMessage,
   resolveLangChainError,
   resolveAgentInstructionPromptError,
+  getInstructionPromptErrorResponse,
   getUserFacingProviderError,
   isFatalAgentInitializationError,
   AGENT_ATTACHMENT_LIMIT_EXCEEDED,
@@ -271,4 +272,27 @@ describe('isStepLimitError', () => {
   ])('leaves case %# on the ordinary error path', (error) => {
     expect(isStepLimitError(error)).toBe(false);
   });
+});
+
+describe('instruction prompt management error responses', () => {
+  it('preserves the typed prompt failure envelope', () => {
+    expect(
+      getInstructionPromptErrorResponse(
+        new AgentInstructionPromptError('retrieval_failed', 'Prompt unavailable', 502, true),
+      ),
+    ).toEqual({
+      error: {
+        type: ErrorTypes.AGENT_INSTRUCTION_PROMPT,
+        code: 'retrieval_failed',
+        message: 'Prompt unavailable',
+        retryable: true,
+      },
+    });
+  });
+  it.each([undefined, null, new Error('Other failure')])(
+    'leaves unrelated failures to the caller',
+    (error) => {
+      expect(getInstructionPromptErrorResponse(error)).toBeUndefined();
+    },
+  );
 });

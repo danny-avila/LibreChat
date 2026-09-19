@@ -41,12 +41,14 @@ export default function Instructions() {
     setSource(getValues('instruction_prompt')?.source ?? 'inline');
   }, [agentId, getValues]);
 
-  const groupsQuery = useGetAllPromptGroups(undefined, { enabled: source === 'librechat' });
+  const groupsQuery = useGetAllPromptGroups(undefined, {
+    enabled: promptReferencesEnabled && source === 'librechat',
+  });
   const groups = groupsQuery.data ?? [];
   const groupId = reference?.source === 'librechat' ? reference.promptId : '';
   const promptsQuery = useGetPrompts(
     { groupId },
-    { enabled: source === 'librechat' && groupId.length > 0 },
+    { enabled: promptReferencesEnabled && source === 'librechat' && groupId.length > 0 },
   );
   const prompts = useMemo(
     () =>
@@ -63,9 +65,17 @@ export default function Instructions() {
   const langfuseName = reference?.source === 'langfuse' ? reference.name : '';
   const debouncedLangfuseName = useDebounce(langfuseName, 300);
   const langfuseVersion = reference?.source === 'langfuse' ? reference.version : undefined;
-  const langfuseQuery = useAgentInstructionPromptPreview(debouncedLangfuseName, langfuseVersion, {
-    enabled: source === 'langfuse' && debouncedLangfuseName.trim().length > 0,
-  });
+  const langfuseDestinationId =
+    reference?.source === 'langfuse' ? reference.destinationId : undefined;
+  const langfuseQuery = useAgentInstructionPromptPreview(
+    debouncedLangfuseName,
+    langfuseVersion,
+    {
+      enabled:
+        promptReferencesEnabled && source === 'langfuse' && debouncedLangfuseName.trim().length > 0,
+    },
+    langfuseDestinationId,
+  );
 
   const updateReference = (next: AgentInstructionPrompt | undefined) =>
     setValue('instruction_prompt', next, { shouldDirty: true, shouldValidate: true });
@@ -105,12 +115,18 @@ export default function Instructions() {
     });
   };
 
-  const updateLangfuse = (name: string, version = langfuseVersion) => {
-    updateReference(name.trim().length > 0 ? { source: 'langfuse', name, version } : undefined);
+  const updateLangfuse = (name: string, version?: number) => {
+    updateReference(
+      name.trim().length > 0
+        ? { source: 'langfuse', name, version, destinationId: langfuseDestinationId }
+        : undefined,
+    );
   };
 
   let status: ReactNode = null;
-  if (source === 'librechat') {
+  if (!promptReferencesEnabled && source !== 'inline') {
+    status = <span role="status">{localize('com_ui_disabled')}</span>;
+  } else if (source === 'librechat') {
     if (groupsQuery.isLoading || promptsQuery.isLoading) {
       status = <span role="status">{localize('com_ui_loading')}</span>;
     } else if (groupsQuery.isError || promptsQuery.isError) {
@@ -175,7 +191,7 @@ export default function Instructions() {
       control={control}
       rules={{
         validate: () => {
-          if (source === 'inline') {
+          if (source === 'inline' || (!promptReferencesEnabled && agentId && reference)) {
             return true;
           }
           if (reference?.source !== source) {
@@ -212,15 +228,15 @@ export default function Instructions() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="inline">{localize('com_agents_prompt_source_inline')}</SelectItem>
-              {promptReferencesEnabled && (
-                <>
-                  <SelectItem value="librechat">
-                    {localize('com_agents_prompt_source_librechat')}
-                  </SelectItem>
-                  <SelectItem value="langfuse">
-                    {localize('com_agents_prompt_source_langfuse')}
-                  </SelectItem>
-                </>
+              {(promptReferencesEnabled || source === 'librechat') && (
+                <SelectItem value="librechat" disabled={!promptReferencesEnabled}>
+                  {localize('com_agents_prompt_source_librechat')}
+                </SelectItem>
+              )}
+              {(promptReferencesEnabled || source === 'langfuse') && (
+                <SelectItem value="langfuse" disabled={!promptReferencesEnabled}>
+                  {localize('com_agents_prompt_source_langfuse')}
+                </SelectItem>
               )}
             </SelectContent>
           </Select>
@@ -242,7 +258,11 @@ export default function Instructions() {
           )}
           {source === 'librechat' && (
             <div className="grid gap-2 sm:grid-cols-2">
-              <Select value={groupId} onValueChange={selectGroup}>
+              <Select
+                value={groupId}
+                onValueChange={selectGroup}
+                disabled={!promptReferencesEnabled}
+              >
                 <SelectTrigger aria-label={localize('com_agents_prompt_select')}>
                   <SelectValue placeholder={localize('com_agents_prompt_select')} />
                 </SelectTrigger>
@@ -257,7 +277,7 @@ export default function Instructions() {
                 </SelectContent>
               </Select>
               <Select
-                disabled={!groupId || prompts.length === 0}
+                disabled={!promptReferencesEnabled || !groupId || prompts.length === 0}
                 value={
                   reference?.source === 'librechat' ? (reference.versionId ?? 'latest') : 'latest'
                 }
@@ -293,11 +313,13 @@ export default function Instructions() {
               <Input
                 aria-label={localize('com_agents_prompt_name')}
                 value={langfuseName}
+                disabled={!promptReferencesEnabled}
                 placeholder={localize('com_agents_prompt_name')}
-                onChange={(event) => updateLangfuse(event.target.value)}
+                onChange={(event) => updateLangfuse(event.target.value, langfuseVersion)}
               />
               <div className="flex gap-2">
                 <Select
+                  disabled={!promptReferencesEnabled}
                   value={langfuseVersion == null ? 'latest' : 'pinned'}
                   onValueChange={(value) =>
                     updateLangfuse(langfuseName, value === 'latest' ? undefined : 1)
@@ -317,6 +339,7 @@ export default function Instructions() {
                     type="number"
                     min={1}
                     value={langfuseVersion}
+                    disabled={!promptReferencesEnabled}
                     onChange={(event) => updateLangfuse(langfuseName, Number(event.target.value))}
                   />
                 )}

@@ -24,7 +24,7 @@ const {
   normalizeAgentUpdateData,
   getRequestRoleCache,
   persistAgentInstructionPromptFallback,
-  AgentInstructionPromptError,
+  getInstructionPromptErrorResponse,
   prepareAgentInstructionPromptRestore,
   redactAgentInstructionPromptFallback,
   redactAgentInstructionPromptFallbacks,
@@ -58,7 +58,6 @@ const {
   CacheKeys,
   Constants,
   FileSources,
-  ErrorTypes,
   ResourceType,
   AccessRoleIds,
   PrincipalType,
@@ -123,20 +122,6 @@ const prepareInstructionPromptRestore = (req, version) => {
       ...(roleCache ? { roleCache } : {}),
     },
   });
-};
-
-const getInstructionPromptErrorResponse = (error) => {
-  if (!(error instanceof AgentInstructionPromptError)) {
-    return;
-  }
-  return {
-    error: {
-      type: ErrorTypes.AGENT_INSTRUCTION_PROMPT,
-      code: error.code,
-      message: error.message,
-      retryable: error.retryable,
-    },
-  };
 };
 
 const systemTools = {

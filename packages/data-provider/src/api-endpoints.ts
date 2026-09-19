@@ -532,10 +532,17 @@ export const updatePromptPermissions = (roleName: string) => `${getRole(roleName
 export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName)}/memories`;
 export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)}/agents`;
 
-export const previewAgentInstructionPrompt = (name: string, version?: number) => {
+export const previewAgentInstructionPrompt = (
+  name: string,
+  version?: number,
+  destinationId?: string,
+) => {
   const params = new URLSearchParams({ name });
   if (version != null) {
     params.set('version', String(version));
+  }
+  if (destinationId != null) {
+    params.set('destinationId', destinationId);
   }
   return `${agents({ path: 'instruction-prompts/langfuse' })}?${params.toString()}`;
 };

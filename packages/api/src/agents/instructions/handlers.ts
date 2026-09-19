@@ -2,11 +2,12 @@ import { z } from 'zod';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { AgentInstructionPromptProvider } from './resolver';
-import { AgentInstructionPromptError } from './resolver';
+import { AgentInstructionPromptError, assertAgentInstructionPromptsEnabled } from './resolver';
 
 const querySchema = z.object({
   name: z.string().trim().min(1).max(255),
   version: z.coerce.number().int().positive().optional(),
+  destinationId: z.string().length(64).optional(),
 });
 
 type PromptPreviewRequest = Request & {
@@ -52,8 +53,9 @@ export function createAgentInstructionPromptPreviewHandler({
 
     const requestSignal = requestAbortSignal(req, res);
     try {
+      assertAgentInstructionPromptsEnabled(req.config);
       const { prompt: _prompt, ...result } = await resolver.resolve(
-        { source: 'langfuse', name: query.data.name, version: query.data.version },
+        { source: 'langfuse', ...query.data },
         {
           userId: req.user?.id ?? '',
           role: req.user?.role,

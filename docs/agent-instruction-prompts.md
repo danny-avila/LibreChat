@@ -4,6 +4,11 @@ Agent Builder can use inline instructions, a prompt from LibreChat's prompt libr
 prompt from Langfuse. Existing agents continue to use their inline `instructions` unless an
 `instruction_prompt` reference is saved.
 
+Prompt selection and Langfuse preview requests require the opt-in
+`endpoints.agents.capabilities: [instruction_prompts]` capability. Enable it after all execution
+nodes support prompt references. Disabling it later preserves existing references and permits
+unrelated edits; the builder disables prompt controls until it is enabled again.
+
 ## LibreChat prompts
 
 Choose **LibreChat prompt**, then select a prompt you can view. **Latest** resolves the newest
@@ -18,7 +23,9 @@ than silently using stale inline text.
 Choose **Langfuse prompt**, enter its exact name, and select **Latest** or a positive version.
 Latest requests Langfuse's `latest` label, not its default `production` label. LibreChat uses the
 first available read destination in connection, tenant, then central order and accepts text prompts
-only.
+only. Saving binds the reference to that destination's opaque identity. Previewing or changing
+its version preserves this binding; a missing saved destination produces an error instead of
+selecting a same-named prompt from another project.
 
 Successful Langfuse reads are cached for five minutes. A cached value may be reused after expiry
 only for a transient network, rate-limit, or server failure. Authentication failures and missing or
@@ -33,7 +40,6 @@ langfuse:
     cacheTtlMs: 300000
     requestTimeoutMs: 10000
 ```
-
 
 Langfuse credentials remain configured through **Settings > Langfuse** or the existing central
 environment variables. No additional credentials are stored on the agent.

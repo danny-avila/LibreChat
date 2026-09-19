@@ -146,11 +146,13 @@ export const useAgentInstructionPromptPreview = (
   name: string,
   version?: number,
   config?: UseQueryOptions<t.ResolvedAgentInstructionPrompt>,
+  destinationId?: string,
 ): QueryObserverResult<t.ResolvedAgentInstructionPrompt> => {
   const normalizedName = name.trim();
   return useQuery<t.ResolvedAgentInstructionPrompt>(
-    [QueryKeys.agentInstructionPrompt, normalizedName, version ?? 'latest'],
-    ({ signal }) => dataService.previewAgentInstructionPrompt(normalizedName, version, signal),
+    [QueryKeys.agentInstructionPrompt, normalizedName, version ?? 'latest', destinationId],
+    ({ signal }) =>
+      dataService.previewAgentInstructionPrompt(normalizedName, version, signal, destinationId),
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
