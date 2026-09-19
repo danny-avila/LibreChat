@@ -5,7 +5,9 @@ import type { Redis, Cluster } from 'ioredis';
 
 export type RedisScriptArg = string | number | Buffer;
 export type RedisScriptResult = string | number | boolean | null | undefined | RedisScriptResult[];
-export type RedisScriptClient = Pick<Redis | Cluster, 'eval' | 'evalsha'>;
+export type RedisScriptClient = Pick<Redis | Cluster, 'eval' | 'evalsha'> & {
+  options?: { keyPrefix?: string };
+};
 
 const scriptShas = new Map<string, string>();
 const unsupportedEvalshaClients = new WeakSet<object>();
@@ -47,6 +49,15 @@ function scriptOrderingKey(args: RedisScriptArg[]): string {
   const open = value.indexOf('{');
   const close = value.indexOf('}', open + 1);
   return open >= 0 && close > open ? value.slice(open, close + 1) : value;
+}
+
+function scriptRoutingKey(client: RedisScriptClient, args: RedisScriptArg[]): string | Buffer {
+  const key = firstScriptKey(args);
+  const prefix = client.options?.keyPrefix;
+  if (!prefix) {
+    return key;
+  }
+  return Buffer.isBuffer(key) ? Buffer.concat([Buffer.from(prefix), key]) : `${prefix}${key}`;
 }
 
 const evalshaFallbackContext = new AsyncLocalStorage<boolean>();
@@ -121,12 +132,12 @@ export async function evalScript(
   const sha = scriptSha(script);
   const orderingKey = scriptOrderingKey(args);
   const confirmationKey = (client as RedisScriptClient & { isCluster?: boolean }).isCluster
-    ? String(calculateSlot(firstScriptKey(args)))
+    ? String(calculateSlot(scriptRoutingKey(client, args)))
     : '';
   const confirmed = confirmedShasFor(client, confirmationKey);
   const loads = loadsFor(client);
-  const evalshaCall = () =>
-    evalshaFallbackContext.run(true, () => client.evalsha(sha, numberOfKeys, ...args));
+  const evalshaCall = (fallbackExpected: boolean) =>
+    evalshaFallbackContext.run(fallbackExpected, () => client.evalsha(sha, numberOfKeys, ...args));
 
   const inFlight = loads.get(orderingKey);
   if (inFlight) {
@@ -140,7 +151,7 @@ export async function evalScript(
 
   if (confirmed.has(sha)) {
     try {
-      return (await evalshaCall()) as RedisScriptResult;
+      return (await evalshaCall(false)) as RedisScriptResult;
     } catch (error) {
       if (!isNoScriptError(error)) {
         throw error;
@@ -155,7 +166,7 @@ export async function evalScript(
   // direct append could otherwise overtake a batch call that has not yet returned NOSCRIPT.
   const load = (async () => {
     try {
-      const result = await evalshaCall();
+      const result = await evalshaCall(true);
       confirmed.add(sha);
       return result as RedisScriptResult;
     } catch (error) {

@@ -153,6 +153,34 @@ describe('redisTelemetry', () => {
     );
   });
 
+  it('counts a confirmed EVALSHA permission failure as a Redis error', async () => {
+    const span = createSpan();
+    const telemetry = createRedisRequestTelemetry(span as unknown as Span);
+    const permissionError = new Error(
+      'NOPERM this user has no permissions to run the EVALSHA command',
+    );
+    const evalsha = jest.fn().mockResolvedValueOnce(1).mockRejectedValueOnce(permissionError);
+    const redis = instrumentIORedisClient(
+      { evalsha, eval: jest.fn() },
+      RedisUseCases.GENERATION_STREAM,
+    );
+
+    await runWithRedisRequestTelemetry(telemetry, async () => {
+      await expect(evalScript(redis, 'return 1', 0)).resolves.toBe(1);
+      await expect(evalScript(redis, 'return 1', 0)).rejects.toBe(permissionError);
+    });
+    finishRedisRequestTelemetry(telemetry);
+
+    expect(telemetry.errors).toBe(1);
+    expect(mockRecordRedisOperation).toHaveBeenLastCalledWith(
+      'ioredis',
+      RedisUseCases.GENERATION_STREAM,
+      'evalsha',
+      'error',
+      expect.any(Number),
+    );
+  });
+
   it('counts a direct EVALSHA miss as a Redis error', async () => {
     const span = createSpan();
     const telemetry = createRedisRequestTelemetry(span as unknown as Span);
