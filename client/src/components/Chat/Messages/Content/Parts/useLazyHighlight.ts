@@ -135,12 +135,13 @@ export default function useLazyHighlight(
         });
     };
 
-    const elapsed =
-      lastRunAt.current === null
-        ? throttleMs
-        : typeof performance === 'undefined'
+    let elapsed = throttleMs;
+    if (lastRunAt.current !== null) {
+      elapsed =
+        typeof performance === 'undefined'
           ? Date.now() - lastRunAt.current
           : performance.now() - lastRunAt.current;
+    }
     const wait = throttleMs - elapsed;
     if (wait <= 0) {
       run();
