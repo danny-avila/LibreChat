@@ -252,33 +252,106 @@ test.describe('the recorded design-rule backlog', () => {
     });
     expect(unselected, 'the runner does not select what the lane selects').toEqual([]);
 
-    /** And the lane cannot select what the workflow never starts for. The
-     *  trigger is a separate path list, so a baseline the `suppressions` filter
+    /** And the lane cannot select what the workflow never starts for: the
+     *  trigger is a second path list, so a baseline the `suppressions` filter
      *  names — a nested one outside the source trees the trigger enumerates —
-     *  can sit in a diff that runs no workflow at all, which is the validator
-     *  advertising coverage CI never reaches. */
-    const trigger = (workflow.split(/^ {4}paths:$/m)[1] ?? '')
-      .split(/^ {2}\S/m)[0]
-      .split('\n')
-      .map((line) => /^ {6}- '([^']+)'$/.exec(line)?.[1])
-      .filter((pattern): pattern is string => Boolean(pattern) && !pattern.startsWith('!'));
-    expect(trigger.length, 'the workflow declares no path trigger').toBeGreaterThan(5);
+     *  can sit in a diff that runs no workflow at all, which is this gate
+     *  advertising coverage CI never reaches. The runner owns that claim,
+     *  because the file that breaks it is the workflow and this group is what a
+     *  change to it runs; the mock lane's own trigger excludes
+     *  `.github/workflows` apart from its own file, so an assertion living here
+     *  would be absent from exactly the diff it guards.
+     *
+     *  Asked of the runner both ways, over a copy of the real workflow: as it
+     *  stands, and with the nested-baseline pattern taken out of the trigger. */
+    const parityRoot = syntheticRoot();
+    const parityWorkflow = join(parityRoot, '.github/workflows/static-checks.yml');
+    const parity = () =>
+      run(
+        process.execPath,
+        [
+          join(parityRoot, 'scripts/static-checks.mts'),
+          'eslint.config.mjs',
+          '--only',
+          'suppressions',
+        ],
+        { cwd: parityRoot },
+      ).output;
+    const complaint = 'starts the workflow for';
+    try {
+      expect(
+        parity(),
+        'the committed workflow already disagrees with its own filter',
+      ).not.toContain(complaint);
 
-    /** GitHub's path-filter syntax, in the three shapes both lists use: an
-     *  exact path, a subtree ending in a double star, and a basename at any
-     *  depth beginning with one. */
-    const starts = (path: string, pattern: string): boolean => {
-      if (pattern.endsWith('/**')) return path.startsWith(`${pattern.slice(0, -3)}/`);
-      if (pattern.startsWith('**/')) {
-        const name = pattern.slice(3);
-        return path === name || path.endsWith(`/${name}`);
+      /** A filter block ends at its first sibling. A neighbouring lane may
+       *  name paths this workflow deliberately never starts for, and reading
+       *  past the block's end would charge them to `suppressions` and fail a
+       *  workflow that is correct. */
+      const committed = readFileSync(parityWorkflow, 'utf8');
+      const marker = /^ {12}suppressions:$/m.exec(committed);
+      const after = committed.slice((marker?.index ?? 0) + (marker?.[0].length ?? 0));
+      const sibling = /^ {12}\S/m.exec(after);
+      expect(marker && sibling, 'the suppressions filter has no sibling to read past').toBeTruthy();
+      const end = (marker?.index ?? 0) + (marker?.[0].length ?? 0) + (sibling?.index ?? 0);
+      writeFileSync(
+        parityWorkflow,
+        `${committed.slice(0, end)}            neighbour:\n              - 'e2e/**'\n${committed.slice(end)}`,
+      );
+      expect(parity(), "a neighbouring lane's paths were charged to this one").not.toContain(
+        complaint,
+      );
+      copyFileSync(resolve(repoRoot, '.github/workflows/static-checks.yml'), parityWorkflow);
+      writeFileSync(
+        parityWorkflow,
+        readFileSync(parityWorkflow, 'utf8').replace(
+          /^ {6}- '\*\*\/eslint-suppressions\.json'\n/m,
+          '',
+        ),
+      );
+      const drifted = parity();
+      expect(drifted, 'a lane path the trigger never starts went unreported').toContain(complaint);
+      expect(drifted).toContain('eslint-suppressions.json');
+    } finally {
+      rmSync(parityRoot, { force: true, recursive: true });
+    }
+
+    /** A rename is two paths, and selection is about both. Git's rename
+     *  detection reports `git mv eslint-suppressions.json backlog.json` as the
+     *  destination alone — a name no filter matches — so the group that owns
+     *  the source never activates and the baseline's disappearance is reported
+     *  by nothing until CI. Asked of the staged diff, which is the path the
+     *  pre-commit hook takes. */
+    const renameRoot = syntheticRoot();
+    try {
+      for (const args of [
+        ['init', '-q'],
+        ['add', '-A'],
+        [
+          '-c',
+          'user.email=scenario@librechat',
+          '-c',
+          'user.name=scenario',
+          'commit',
+          '-qm',
+          'base',
+        ],
+        ['mv', SUPPRESSIONS_FILE, 'backlog.json'],
+      ]) {
+        const step = run('git', args, { cwd: renameRoot });
+        expect(step.status, `git ${args[0]}: ${step.output}`).toBe(0);
       }
-      return path === pattern;
-    };
-    const unstarted = lane
-      .map((pattern) => pattern.replace('**/', 'e2e/fixtures/').replace('/**', '/Probe.tsx'))
-      .filter((path) => !trigger.some((pattern) => starts(path, pattern)));
-    expect(unstarted, 'the lane selects paths the workflow never starts for').toEqual([]);
+      const renamed = run(
+        process.execPath,
+        [join(renameRoot, 'scripts/static-checks.mts'), '--staged', '--only', 'suppressions'],
+        { cwd: renameRoot },
+      );
+      expect(renamed.status, 'a renamed-away baseline was selected by nothing').not.toBe(0);
+      expect(renamed.output).toContain(SUPPRESSIONS_FILE);
+      expect(renamed.output).toContain('is missing');
+    } finally {
+      rmSync(renameRoot, { force: true, recursive: true });
+    }
 
     /** And it is a selection, not a default: a path outside both roots is not. */
     const outside = staticChecks([
@@ -418,6 +491,25 @@ test.describe('the recorded design-rule backlog', () => {
       [
         'a quoted rule configuration',
         '/* eslint "shadcn/no-raw-colors": off */',
+        'shadcn/no-raw-colors',
+      ],
+      /** A quoted key is a JSON string, so its escapes belong to the encoding
+       *  and not to the rule name. ESLint decodes both of these to the same
+       *  rule it disables for the file; a gate that compares the spelling sees
+       *  neither. */
+      [
+        'an escaped rule configuration',
+        '/* eslint "shadcn\\/no-raw-colors": off */',
+        'shadcn/no-raw-colors',
+      ],
+      [
+        'a unicode-escaped rule configuration',
+        '/* eslint "shadcn\\u002fno-raw-colors": off */',
+        'shadcn/no-raw-colors',
+      ],
+      [
+        'a single-quoted rule configuration',
+        "/* eslint 'shadcn/no-raw-colors': off */",
         'shadcn/no-raw-colors',
       ],
     ];
@@ -876,13 +968,36 @@ fs.utimesSync('packages/client/dist', when, when);
       expect(existsSync(marker), 'a spec edit rebuilt the primitives').toBe(false);
       expect(afterSpec.status, afterSpec.output).not.toBe(0);
 
+      /** Freshness is a property of every declared output, not of the newest
+       *  file in the directory. A resolver loads one entry: a build that
+       *  rewrote the ESM bundle and left the CJS one or the type declarations
+       *  behind still satisfies a `max` comparison while `@shadcn/lint` reads
+       *  the stale one. Only asserted when the manifest promises more than one
+       *  output, which is what makes the distinction observable. */
+      if (entries.length > 1) {
+        for (const entry of entries) at(join('packages/client', entry), 600);
+        at('packages/client/dist', 600);
+        rmSync(marker, { force: true });
+        /** Newer than one declared output and older than the rest, so the
+         *  newest-file comparison reads the bundle as current and the
+         *  per-output one does not. */
+        at('packages/client/tsconfig.json', 520);
+        at(join('packages/client', entries[0]), 300);
+        const partialRefresh = checks(['eslint.config.mjs']);
+        expect(existsSync(marker), 'one stale declared output read as a current build').toBe(true);
+        expect(partialRefresh.status, partialRefresh.output).not.toBe(0);
+      }
+
       /** And a build that reports success without producing one is not a
        *  build. Its exit code says the metadata is current; `dist` says it is
        *  not, and the lint that would follow classifies against a bundle that
        *  describes something else — reporting fewer violations than CI, which
        *  is the failure the rebuild exists to prevent. */
       setBuild('node -e "process.exit(0)"');
-      at('packages/client/tsdown.config.mjs', 540);
+      for (const entry of entries) at(join('packages/client', entry), 700);
+      at('packages/client/dist', 700);
+      rmSync(marker, { force: true });
+      at('packages/client/tsdown.config.mjs', 760);
       const lying = checks(['packages/client/tsdown.config.mjs']);
       expect(lying.status, 'a build that produced nothing was trusted').not.toBe(0);
       expect(lying.output).toContain('reported success');
@@ -926,6 +1041,9 @@ function syntheticRoot(): string {
     'packages/client/package.json',
     'packages/client/tsdown.config.mjs',
     'packages/client/tsconfig.json',
+    /** The lane this runner mirrors: the filter-parity check reads it, and the
+     *  copy is what a scenario can break without touching the checkout. */
+    '.github/workflows/static-checks.yml',
   ]) {
     copy(file);
   }
