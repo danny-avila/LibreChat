@@ -196,9 +196,23 @@ export async function initializeOpenAI(
     user: user?.id,
   };
 
+  /**
+   * Prompt-cache levers. `endpoints.all` is the deployment-wide default and the
+   * endpoint's own block overrides it, which is what the example config
+   * documents ("as a global default, under `endpoints.all`") and what an
+   * operator who wrote a value on the endpoint they are configuring expects.
+   * The `streamRate` block below reads the other way round for historical
+   * reasons; these four do not inherit that.
+   */
+  const cacheConfig = (isAzureOpenAI ? azureConfig || undefined : openAIConfig) ?? {};
+
   const finalClientOptions: OpenAIConfigOptions = {
     ...clientOptions,
     modelOptions,
+    promptCacheKeyEnabled: cacheConfig.promptCacheKey ?? allConfig?.promptCacheKey,
+    promptCacheScope: cacheConfig.promptCacheScope ?? allConfig?.promptCacheScope,
+    promptCacheRetention: cacheConfig.promptCacheRetention ?? allConfig?.promptCacheRetention,
+    promptCacheExplicit: cacheConfig.promptCacheExplicit ?? allConfig?.promptCacheExplicit,
   };
 
   const options: InitializeResultBase = getOpenAIConfig(apiKey, finalClientOptions, endpoint);
