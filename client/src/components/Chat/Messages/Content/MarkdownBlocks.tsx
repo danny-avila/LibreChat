@@ -2,9 +2,9 @@ import React, { memo, useMemo, useState, useLayoutEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { PluggableList } from 'unified';
 import type { ElementType } from 'react';
+import type { MarkdownSplitter } from './splitMarkdown';
 import { ArtifactProvider, CodeBlockProvider } from '~/Providers';
 import { createMarkdownSplitter } from './splitMarkdown';
-import type { MarkdownSplitter } from './splitMarkdown';
 import { createFadePlugin } from './animate';
 
 type SharedProps = {
@@ -174,12 +174,11 @@ const MarkdownBlocks = memo(function MarkdownBlocks({
   if (changing && !hasChanged) {
     setHasChanged(true);
   }
+  const perBlock = hasChanged || changing;
   const blocks = useMemo(
     () =>
-      perBlock
-        ? toBlockEntries(content, splitMarkdown)
-        : toWholeMessage(content),
-    [content, perBlock, splitMarkdown],
+      perBlock ? toBlockEntries(content, splitMarkdown) : toWholeMessage(content),
+    [content, hasChanged, changing, splitMarkdown],
   );
 
   return (
