@@ -8,16 +8,7 @@ export type RedisScriptClient = Pick<Redis | Cluster, 'eval' | 'evalsha'>;
 
 const scriptShas = new Map<string, string>();
 const unsupportedEvalshaClients = new WeakSet<object>();
-const inFlightScriptLoads = new WeakMap<object, Map<string, Promise<RedisScriptResult>>>();
-
-function scriptLoadsFor(client: RedisScriptClient): Map<string, Promise<RedisScriptResult>> {
-  let loads = inFlightScriptLoads.get(client);
-  if (loads == null) {
-    loads = new Map<string, Promise<RedisScriptResult>>();
-    inFlightScriptLoads.set(client, loads);
-  }
-  return loads;
-}
+const inFlightClientLoads = new WeakMap<object, Promise<RedisScriptResult>>();
 
 const evalshaFallbackContext = new AsyncLocalStorage<boolean>();
 
@@ -87,7 +78,7 @@ export async function evalScript(
   const sha = scriptSha(script);
   const evalshaCall = () =>
     evalshaFallbackContext.run(true, () => client.evalsha(sha, numberOfKeys, ...args));
-  const inFlight = inFlightScriptLoads.get(client)?.get(sha);
+  const inFlight = inFlightClientLoads.get(client);
   if (inFlight) {
     try {
       await inFlight;
@@ -104,8 +95,7 @@ export async function evalScript(
       throw error;
     }
 
-    const loads = scriptLoadsFor(client);
-    const existingLoad = loads.get(sha);
+    const existingLoad = inFlightClientLoads.get(client);
     if (existingLoad) {
       try {
         await existingLoad;
@@ -122,11 +112,11 @@ export async function evalScript(
       client.eval(script, numberOfKeys, ...args),
     ) as Promise<RedisScriptResult>;
     const trackedLoad = load.finally(() => {
-      if (loads.get(sha) === trackedLoad) {
-        loads.delete(sha);
+      if (inFlightClientLoads.get(client) === trackedLoad) {
+        inFlightClientLoads.delete(client);
       }
     });
-    loads.set(sha, trackedLoad);
+    inFlightClientLoads.set(client, trackedLoad);
     return await trackedLoad;
   }
 }
