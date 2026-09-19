@@ -196,10 +196,11 @@ export default function Viewer({
       return presentation;
     };
   }, [localize, activity, previewOf, mcpServerNames, agentOf]);
-  const toolTitleFor = useCallback(
-    (name: string) => presentTool(name, { localize, mcpServerNames }).title,
+  const toolFor = useCallback(
+    (name: string) => presentTool(name, { localize, mcpServerNames }),
     [localize, mcpServerNames],
   );
+  const toolTitleFor = useCallback((name: string) => toolFor(name).title, [toolFor]);
   /** The user message each response answered: what tells one response from another in the ledger. */
   const askedByResponse = useMemo(() => {
     const textById = new Map<string, string>();
@@ -576,6 +577,7 @@ export default function Viewer({
               node={selectedNode}
               presentation={presentFor(selectedNode)}
               mcpIconMap={mcpIconMap}
+              toolFor={toolFor}
               turnStart={selectedTurnStart}
               sourceId={recordSources.get(selectedNode.record.id)}
               conversationId={conversationId}
