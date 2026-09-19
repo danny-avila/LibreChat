@@ -63,10 +63,22 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
         cachedResponse?.parentMessageId ||
         existingMessage?.parentMessageId ||
         initialResponseMessage.parentMessageId;
+      let fallbackUserMessage: TMessage | undefined;
+      if (parentMessageId == null && thread_id == null && responseThreadId != null) {
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const message = messages[i];
+          if (message.thread_id === responseThreadId && message.isCreatedByUser) {
+            fallbackUserMessage = message;
+            break;
+          }
+        }
+      }
       const userMessage =
         (parentMessageId
           ? messages.find((message) => message.messageId === parentMessageId)
-          : undefined) ?? (messages[messages.length - 1] as TMessage | undefined);
+          : undefined) ??
+        fallbackUserMessage ??
+        (messages[messages.length - 1] as TMessage | undefined);
       const resolvedParentMessageId = parentMessageId || userMessage?.messageId;
 
       let response = cachedResponse;
