@@ -2079,6 +2079,80 @@ describe('prompt caching', () => {
     expect(result.llmConfig).not.toHaveProperty('promptCacheKeyEnabled');
   });
 
+  it.each([['prompt_cache_key'], ['promptCacheKey']])(
+    'drops a raw pinned key that promotion moved, under dropParams %s',
+    (dropped) => {
+      /**
+       * The promotion above moves the raw key onto the constructor field so the
+       * serializer cannot overwrite it, and the generic drop cascade then looks
+       * for a name that is no longer there. Either spelling has to remove both.
+       */
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: { model: 'gpt-5.6' },
+        addParams: { prompt_cache_key: 'tenant-fixed-key' },
+        dropParams: [dropped],
+      });
+
+      const kwargs = (result.llmConfig.modelKwargs ?? {}) as Record<string, unknown>;
+      expect(result.llmConfig).not.toHaveProperty('promptCacheKey');
+      expect(kwargs).not.toHaveProperty('prompt_cache_key');
+      expect(result.llmConfig).not.toHaveProperty('promptCacheKeyEnabled');
+    },
+  );
+
+  it.each([['prompt_cache_retention'], ['promptCacheRetention']])(
+    'drops raw pinned retention that promotion moved, under dropParams %s',
+    (dropped) => {
+      const result = getOpenAILLMConfig({
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.openAI,
+        modelOptions: { model: 'gpt-5.6' },
+        promptCacheRetention: '24h',
+        addParams: { prompt_cache_retention: '24h' },
+        dropParams: [dropped],
+      });
+
+      const kwargs = (result.llmConfig.modelKwargs ?? {}) as Record<string, unknown>;
+      expect(result.llmConfig).not.toHaveProperty('promptCacheRetention');
+      expect(kwargs).not.toHaveProperty('prompt_cache_retention');
+    },
+  );
+
+  it.each([['prompt_cache_key'], ['promptCacheKey']])(
+    'drops a raw pinned key on first-party Azure too, under dropParams %s',
+    (dropped) => {
+      /**
+       * The Azure branch reaches the same enforcement through its own call
+       * site, after the deployment name is resolved: `firstPartyEndpoint` is
+       * `firstPartyOpenAI || firstPartyAzure`, so a canonical Azure resource
+       * is on this policy path exactly as OpenAI is.
+       */
+      const result = getOpenAILLMConfig({
+        azure: {
+          azureOpenAIApiInstanceName: 'test-instance',
+          azureOpenAIApiDeploymentName: 'production-deployment',
+          azureOpenAIApiVersion: '2025-04-01-preview',
+          azureOpenAIApiKey: 'test-api-key',
+        },
+        apiKey: 'test-api-key',
+        streaming: true,
+        endpoint: EModelEndpoint.azureOpenAI,
+        modelOptions: { model: 'gpt-5.6' },
+        addParams: { prompt_cache_key: 'tenant-fixed-key' },
+        dropParams: [dropped],
+      });
+
+      const kwargs = (result.llmConfig.modelKwargs ?? {}) as Record<string, unknown>;
+      expect(result.llmConfig).not.toHaveProperty('promptCacheKey');
+      expect(kwargs).not.toHaveProperty('prompt_cache_key');
+      expect(result.llmConfig).not.toHaveProperty('promptCacheKeyEnabled');
+    },
+  );
+
   it('sends no key at all when an endpoint opts out over a raw pinned one', () => {
     const result = getOpenAILLMConfig({
       apiKey: 'test-api-key',
