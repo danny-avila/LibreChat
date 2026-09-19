@@ -274,7 +274,7 @@ Multi-line imports count total character length across all lines. Consolidate va
   `Skeleton` takes the silhouette and footprint of the content it stands in for. Color stays with
   the theme in every case. Widen a contract when a whole category belongs to callers; do not widen
   one to clear a single call site.
-- **The existing backlog is recorded, not exempted.** `eslint-suppressions.json` holds the 3,230
+- **The existing backlog is recorded, not exempted.** `eslint-suppressions.json` holds the
   violations the tree carried when the rules landed, as a per-file, per-rule count. Adding a
   violation to a file reports every violation of that rule in it, so raising a file's count is a
   visible diff in that file — review it like any other change. `npm run lint:design:prune` drops
