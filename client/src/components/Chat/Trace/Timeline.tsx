@@ -13,8 +13,8 @@ import {
   minimumSpan,
   sequenceLane,
 } from './model';
-import { KIND_APPEARANCE } from './kinds';
 import { useTraceFormat } from './format';
+import { appearanceOf } from './kinds';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -200,7 +200,7 @@ function Timeline({
             const lane = lanes?.get(record.id) ?? sequenceLane(record);
             const y = TOP_PADDING + lane * (LANE_HEIGHT + LANE_GAP);
             const fill =
-              record.status === 'error' ? 'fill-status-error' : KIND_APPEARANCE[record.kind].fill;
+              record.status === 'error' ? 'fill-status-error' : appearanceOf(record).fill;
             if (scale === 'time' && node.end == null) {
               return (
                 <rect

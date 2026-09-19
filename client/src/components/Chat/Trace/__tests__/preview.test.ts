@@ -66,9 +66,17 @@ describe('buildStepPreviews', () => {
       {
         text: 'Let me check the weather for you.',
         toolCalls: [
-          { name: 'web_search', args: 'query: weather in Paris, limit: 3' },
-          { name: 'web_search', args: 'query: weather in Lyon' },
-          { name: 'read_file', args: 'path: notes.md' },
+          {
+            name: 'web_search',
+            args: 'query: weather in Paris, limit: 3',
+            input: '{"query":"weather in Paris","limit":3}',
+          },
+          {
+            name: 'web_search',
+            args: 'query: weather in Lyon',
+            input: '{"query":"weather in Lyon"}',
+          },
+          { name: 'read_file', args: 'path: notes.md', input: '{"path":"notes.md"}' },
         ],
       },
       { text: 'Paris is sunny, Lyon is not.', toolCalls: [] },
@@ -95,11 +103,11 @@ describe('buildStepPreviews', () => {
       {
         text: '',
         toolCalls: [
-          { name: 'ls', args: '' },
-          { name: 'cat', args: 'path: a' },
+          { name: 'ls', args: '', input: '{}' },
+          { name: 'cat', args: 'path: a', input: '{"path":"a"}' },
         ],
       },
-      { text: '', toolCalls: [{ name: 'cat', args: 'path: b' }] },
+      { text: '', toolCalls: [{ name: 'cat', args: 'path: b', input: '{"path":"b"}' }] },
       { text: 'Both read.', toolCalls: [] },
     ]);
   });
@@ -114,8 +122,8 @@ describe('buildStepPreviews', () => {
     } as Partial<TMessage>);
 
     expect(buildStepPreviews(rounds)).toEqual([
-      { text: '', toolCalls: [{ name: 'ls', args: '' }] },
-      { text: '', toolCalls: [{ name: 'cat', args: 'path: a' }] },
+      { text: '', toolCalls: [{ name: 'ls', args: '', input: '{}' }] },
+      { text: '', toolCalls: [{ name: 'cat', args: 'path: a', input: '{"path":"a"}' }] },
     ]);
   });
 
@@ -132,7 +140,7 @@ describe('buildStepPreviews', () => {
     expect(buildStepPreviews(compacted)).toEqual([
       { text: 'Before.', toolCalls: [] },
       { text: '', toolCalls: [] },
-      { text: '', toolCalls: [{ name: 'ls', args: '' }] },
+      { text: '', toolCalls: [{ name: 'ls', args: '', input: '{}' }] },
       { text: 'After.', toolCalls: [] },
     ]);
   });
@@ -376,7 +384,7 @@ describe('buildPreviewIndex', () => {
     );
 
     expect(handoff).toEqual([
-      { text: 'Agent A.', toolCalls: [{ name: 'ls', args: '' }] },
+      { text: 'Agent A.', toolCalls: [{ name: 'ls', args: '', input: '{}' }] },
       { text: 'Agent B.', toolCalls: [] },
     ]);
   });
