@@ -34,6 +34,17 @@ export function createRedisTestClient(keyPrefix: string): RedisTestClient {
   return new IoRedis(primary.href, { ...redisOptions, lazyConnect: true });
 }
 
+/**
+ * Empties every node's Lua script cache so the next run of each script misses EVALSHA and
+ * falls back to EVAL — the only path where a test spying on `eval` can observe the script body.
+ */
+export async function flushScriptCache(redis: RedisTestClient): Promise<void> {
+  const nodes = (redis as Cluster).isCluster
+    ? (redis as Cluster).nodes('master')
+    : [redis as Redis];
+  await Promise.all(nodes.map((node) => node.script('FLUSH')));
+}
+
 /** Delete only this suite's keys, including keys spread across cluster masters. */
 export async function clearRedisTestPrefix(
   redis: RedisTestClient,
