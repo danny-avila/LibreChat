@@ -25,14 +25,14 @@ import { BACKGROUND_TOOL_INVOCATION_CONFIG_KEY } from '~/agents/invocation';
 
 const DEFAULT_OUTPUT_BYTES = 256 * 1024;
 
-export const ATTACHED_WORKSPACE_BASH_DESCRIPTION = `Runs bash commands inside the selected attached environment and returns stdout/stderr. The workspace may be an existing project, a Git repository, or an empty directory; Git is not required.
+export const ATTACHED_WORKSPACE_BASH_DESCRIPTION = `Runs bash commands inside the selected attached environment and returns stdout/stderr. Its workspace may be an existing project, Git repository, or empty directory.
 
 Session behavior:
-- This tool starts a new command. It does not inspect an existing background task. Use check_background_task with background_task_id when that tool is available to inspect an existing task; do not send a task ID to bash_tool.
-- Files in the registered workspace persist between calls.
-- Each call runs in a fresh sandboxed process; shell variables, the working directory, temporary files, and background processes do not survive the call.
-- Network access follows the sandbox policy configured on the worker and may be unavailable.
-- Commands and file access remain confined by the worker's runtime policy.
+- This starts a new command, not an existing background task. Inspect a background_task_id with check_background_task when available; never send it to bash_tool.
+- Only registered-workspace files persist between calls. Install project dependencies there.
+- Every call is a fresh process. Shell and exported variables, cwd, /tmp, $TMPDIR, and background processes do not survive.
+- $HOME, global/system packages, and machine services are operator-managed. Do not change or rely on them as session storage.
+- Network access follows the sandbox policy configured on the worker and may be unavailable. File access follows the same worker policy.
 - Input code is already displayed to the user; do not repeat it unless asked.
 - Explicitly print every result the user should see.
 - Never use this tool to execute malicious commands.`;
@@ -44,7 +44,7 @@ const attachedCommandSchema: NonNullable<LCTool['parameters']> = {
   ...bashSchema.properties?.command,
   type: 'string',
   description:
-    'The bash command or script to execute from the attached workspace root. Files written in the workspace persist between calls, but each call starts a fresh process.',
+    'The bash command or script to execute from the attached workspace root. Only files written inside the workspace persist between calls. Each call starts a fresh process; $HOME, temporary files, shell state, global installs, and background processes are not durable.',
 };
 
 /** `maxLength` is valid JSON Schema, but the SDK's schema type omits it. */
