@@ -77,7 +77,7 @@ jest.mock('../splitMarkdown', () => {
   return {
     ...actual,
     splitMarkdownIntoBlocks: splitSpy,
-    createMarkdownSplitter: jest.fn(() => splitSpy),
+    createMarkdownSplitter: jest.fn(() => jest.fn((content: string) => splitSpy(content))),
   };
 });
 
