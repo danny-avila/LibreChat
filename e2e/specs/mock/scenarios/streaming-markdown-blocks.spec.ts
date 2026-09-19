@@ -26,13 +26,51 @@ test.describe('streaming markdown blocks', () => {
       assistantMessage.getByRole('heading', { name: 'E2E streaming markdown heading' }),
     ).toBeVisible({ timeout: 30_000 });
 
-    await expect(
-      assistantMessage.getByText('E2E streaming markdown final paragraph.'),
-    ).toBeVisible({ timeout: 60_000 });
+    await expect(assistantMessage.getByText('E2E streaming markdown final paragraph.')).toBeVisible(
+      { timeout: 60_000 },
+    );
     await expect(
       assistantMessage.locator('code').filter({ hasText: 'e2eIncrementalMarkdown' }),
     ).toBeVisible();
     await expect(assistantMessage.getByRole('table')).toBeVisible();
     await expect(assistantMessage).toContainText('日本語');
+  });
+
+  test('isolates markdown blocks across concurrent conversations @scenario:concurrent-streams-keep-message-blocks-isolated', async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(120_000);
+    const secondPage = await context.newPage();
+    try {
+      await Promise.all([
+        page.goto(NEW_CHAT_PATH, { timeout: 10_000 }),
+        secondPage.goto(NEW_CHAT_PATH, { timeout: 10_000 }),
+      ]);
+      await Promise.all([
+        selectMockEndpoint(page, MOCK_ENDPOINTS[0]),
+        selectMockEndpoint(secondPage, MOCK_ENDPOINTS[0]),
+      ]);
+
+      await Promise.all([
+        sendMessage(page, 'E2E_STREAMING_MARKDOWN_REPLY'),
+        sendMessage(secondPage, 'E2E_STREAMING_MARKDOWN_REPLY'),
+      ]);
+
+      const firstAssistantMessage = messagesView(page).locator('.message-render').last();
+      const secondAssistantMessage = messagesView(secondPage).locator('.message-render').last();
+      await Promise.all([
+        expect(
+          firstAssistantMessage.getByText('E2E streaming markdown final paragraph.'),
+        ).toBeVisible({ timeout: 90_000 }),
+        expect(
+          secondAssistantMessage.getByText('E2E streaming markdown final paragraph.'),
+        ).toBeVisible({ timeout: 90_000 }),
+      ]);
+      await expect(firstAssistantMessage).toContainText('日本語');
+      await expect(secondAssistantMessage).toContainText('日本語');
+    } finally {
+      await secondPage.close();
+    }
   });
 });
