@@ -88,6 +88,7 @@ describe('agent instruction prompt validation', () => {
     { source: 'langfuse', name: '' },
     { source: 'langfuse', name: 'Policy', version: 0 },
     { source: 'librechat', promptId: 'group-1', name: 'Policy', version: 1 },
+    { source: 'librechat', promptId: 'group-1', name: 'Policy', versionId: 'prompt-1' },
     { source: 'unknown', name: 'Policy' },
   ])('rejects an invalid reference: %j', (instruction_prompt) => {
     expect(agentCreateSchema.safeParse({ ...base, instruction_prompt }).success).toBe(false);

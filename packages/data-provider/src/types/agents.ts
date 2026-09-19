@@ -959,39 +959,60 @@ export type AgentGitIdentity = {
   email: string;
 };
 
-export const agentInstructionPromptSchema = z
-  .discriminatedUnion('source', [
-    z.object({
-      source: z.literal('librechat'),
-      promptId: z.string().min(1),
-      name: z.string().trim().min(1).max(255),
-      /** Missing selects the newest prompt in the group. */
-      version: z.number().int().positive().optional(),
-      /** Stable record identity for a pinned version, so deletion cannot retarget it. */
-      versionId: z.string().min(1).optional(),
-    }),
-    z.object({
-      source: z.literal('langfuse'),
-      name: z.string().trim().min(1).max(255),
-      /** Opaque identity of the Langfuse destination selected when the reference was saved. */
-      destinationId: z.string().length(64).optional(),
-      /** Missing resolves Langfuse's automatically maintained `latest` label. */
-      version: z.number().int().positive().optional(),
-    }),
-  ])
-  .superRefine((reference, context) => {
-    if (
-      reference.source === 'librechat' &&
-      (reference.version == null) !== (reference.versionId == null)
-    ) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Pinned LibreChat prompts require both version and versionId',
-      });
+type LibreChatInstructionPrompt =
+  | {
+      source: 'librechat';
+      promptId: string;
+      name: string;
+      version?: never;
+      versionId?: never;
     }
-  });
+  | {
+      source: 'librechat';
+      promptId: string;
+      name: string;
+      version: number;
+      versionId: string;
+    };
 
-export type AgentInstructionPrompt = z.infer<typeof agentInstructionPromptSchema>;
+type LangfuseInstructionPrompt = {
+  source: 'langfuse';
+  name: string;
+  destinationId?: string;
+  version?: number;
+};
+
+export type AgentInstructionPrompt = LibreChatInstructionPrompt | LangfuseInstructionPrompt;
+
+const libreChatInstructionPromptBase = {
+  source: z.literal('librechat'),
+  promptId: z.string().min(1),
+  name: z.string().trim().min(1).max(255),
+};
+
+export const agentInstructionPromptSchema: z.ZodType<AgentInstructionPrompt> = z.union([
+  z
+    .object({
+      ...libreChatInstructionPromptBase,
+    })
+    .strict(),
+  z
+    .object({
+      ...libreChatInstructionPromptBase,
+      version: z.number().int().positive(),
+      /** Stable record identity for a pinned version, so deletion cannot retarget it. */
+      versionId: z.string().min(1),
+    })
+    .strict(),
+  z.object({
+    source: z.literal('langfuse'),
+    name: z.string().trim().min(1).max(255),
+    /** Opaque identity of the Langfuse destination selected when the reference was saved. */
+    destinationId: z.string().length(64).optional(),
+    /** Missing resolves Langfuse's automatically maintained `latest` label. */
+    version: z.number().int().positive().optional(),
+  }),
+]);
 
 export type ResolvedAgentInstructionPrompt = {
   source: AgentInstructionPrompt['source'];

@@ -1985,7 +1985,31 @@
             ]
           },
           "instruction_prompt": {
-            "oneOf": [
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "const": "librechat"
+                  },
+                  "promptId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "source",
+                  "promptId",
+                  "name"
+                ],
+                "additionalProperties": false
+              },
               {
                 "type": "object",
                 "properties": {
@@ -2014,8 +2038,11 @@
                 "required": [
                   "source",
                   "promptId",
-                  "name"
-                ]
+                  "name",
+                  "version",
+                  "versionId"
+                ],
+                "additionalProperties": false
               },
               {
                 "type": "object",
@@ -2500,7 +2527,31 @@
             "type": "string"
           },
           "instruction_prompt": {
-            "oneOf": [
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "const": "librechat"
+                  },
+                  "promptId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "source",
+                  "promptId",
+                  "name"
+                ],
+                "additionalProperties": false
+              },
               {
                 "type": "object",
                 "properties": {
@@ -2529,8 +2580,11 @@
                 "required": [
                   "source",
                   "promptId",
-                  "name"
-                ]
+                  "name",
+                  "version",
+                  "versionId"
+                ],
+                "additionalProperties": false
               },
               {
                 "type": "object",
@@ -3010,7 +3064,31 @@
             ]
           },
           "instruction_prompt": {
-            "oneOf": [
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "const": "librechat"
+                  },
+                  "promptId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "source",
+                  "promptId",
+                  "name"
+                ],
+                "additionalProperties": false
+              },
               {
                 "type": "object",
                 "properties": {
@@ -3039,8 +3117,11 @@
                 "required": [
                   "source",
                   "promptId",
-                  "name"
-                ]
+                  "name",
+                  "version",
+                  "versionId"
+                ],
+                "additionalProperties": false
               },
               {
                 "type": "object",
