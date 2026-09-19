@@ -252,6 +252,34 @@ test.describe('the recorded design-rule backlog', () => {
     });
     expect(unselected, 'the runner does not select what the lane selects').toEqual([]);
 
+    /** And the lane cannot select what the workflow never starts for. The
+     *  trigger is a separate path list, so a baseline the `suppressions` filter
+     *  names — a nested one outside the source trees the trigger enumerates —
+     *  can sit in a diff that runs no workflow at all, which is the validator
+     *  advertising coverage CI never reaches. */
+    const trigger = (workflow.split(/^ {4}paths:$/m)[1] ?? '')
+      .split(/^ {2}\S/m)[0]
+      .split('\n')
+      .map((line) => /^ {6}- '([^']+)'$/.exec(line)?.[1])
+      .filter((pattern): pattern is string => Boolean(pattern) && !pattern.startsWith('!'));
+    expect(trigger.length, 'the workflow declares no path trigger').toBeGreaterThan(5);
+
+    /** GitHub's path-filter syntax, in the three shapes both lists use: an
+     *  exact path, a subtree ending in a double star, and a basename at any
+     *  depth beginning with one. */
+    const starts = (path: string, pattern: string): boolean => {
+      if (pattern.endsWith('/**')) return path.startsWith(`${pattern.slice(0, -3)}/`);
+      if (pattern.startsWith('**/')) {
+        const name = pattern.slice(3);
+        return path === name || path.endsWith(`/${name}`);
+      }
+      return path === pattern;
+    };
+    const unstarted = lane
+      .map((pattern) => pattern.replace('**/', 'e2e/fixtures/').replace('/**', '/Probe.tsx'))
+      .filter((path) => !trigger.some((pattern) => starts(path, pattern)));
+    expect(unstarted, 'the lane selects paths the workflow never starts for').toEqual([]);
+
     /** And it is a selection, not a default: a path outside both roots is not. */
     const outside = staticChecks([
       'api/server/index.js',
@@ -736,17 +764,38 @@ test.describe('the recorded design-rule backlog', () => {
      *  stays older than the last build. CI always builds, so a local run that
      *  trusted the old output would be the only one disagreeing.
      *
-     *  The build is made observable rather than real: the miniature repository's
-     *  `build:client-package` writes a marker, so the assertion is whether the
-     *  runner asked for a build at all. */
+     *  The build is made observable rather than real: the miniature
+     *  repository's `build:client-package` writes a marker and refreshes the
+     *  bundle the manifest promises, dated ahead of every source so the result
+     *  is what a finished build looks like. The assertion is whether the runner
+     *  asked for a build at all — and, in the last case, what it does when the
+     *  build reports success without producing one. */
     const root = syntheticRoot();
     const marker = join(root, 'built.marker');
     const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>;
     };
-    manifest.scripts['build:client-package'] =
-      `node -e "require('fs').writeFileSync('built.marker','1')"`;
-    writeFileSync(join(root, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    const buildScript = 'scripts/fake-build.cjs';
+    writeFileSync(
+      join(root, buildScript),
+      `const fs = require('fs');
+const path = require('path');
+fs.writeFileSync('built.marker', '1');
+const when = new Date(Date.now() + 86400000);
+for (const entry of ${JSON.stringify(bundleEntries())}) {
+  const file = path.join('packages/client', entry);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, 'export {};\\n');
+  fs.utimesSync(file, when, when);
+}
+fs.utimesSync('packages/client/dist', when, when);
+`,
+    );
+    const setBuild = (command: string): void => {
+      manifest.scripts['build:client-package'] = command;
+      writeFileSync(join(root, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    };
+    setBuild(`node ${buildScript}`);
     const checks = (files: string[]) =>
       run(
         process.execPath,
@@ -826,6 +875,18 @@ test.describe('the recorded design-rule backlog', () => {
       const afterSpec = checks(['eslint.config.mjs']);
       expect(existsSync(marker), 'a spec edit rebuilt the primitives').toBe(false);
       expect(afterSpec.status, afterSpec.output).not.toBe(0);
+
+      /** And a build that reports success without producing one is not a
+       *  build. Its exit code says the metadata is current; `dist` says it is
+       *  not, and the lint that would follow classifies against a bundle that
+       *  describes something else — reporting fewer violations than CI, which
+       *  is the failure the rebuild exists to prevent. */
+      setBuild('node -e "process.exit(0)"');
+      at('packages/client/tsdown.config.mjs', 540);
+      const lying = checks(['packages/client/tsdown.config.mjs']);
+      expect(lying.status, 'a build that produced nothing was trusted').not.toBe(0);
+      expect(lying.output).toContain('reported success');
+      expect(lying.output).toContain('packages/client/dist');
     } finally {
       rmSync(root, { force: true, recursive: true });
     }
