@@ -226,7 +226,10 @@ export async function observeRedisOperation<T>(
     }
     return result;
   } catch (error) {
-    status = 'error';
+    status =
+      redisOperation === 'evalsha' && error instanceof Error && error.message.includes('NOSCRIPT')
+        ? 'success'
+        : 'error';
     throw error;
   } finally {
     const durationSeconds = Number(process.hrtime.bigint() - startedAt) / 1_000_000_000;

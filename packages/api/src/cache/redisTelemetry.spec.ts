@@ -10,6 +10,7 @@ import {
   RedisUseCases,
   runWithRedisRequestTelemetry,
 } from './redisTelemetry';
+import { evalScript } from './redisScript';
 import { isMetricsConfigured, recordRedisOperation } from '~/app/metrics';
 
 jest.mock('~/app/metrics', () => ({
@@ -120,6 +121,38 @@ describe('redisTelemetry', () => {
     expect(mockRecordRedisOperation).toHaveBeenCalledTimes(1);
   });
 
+  it('does not count an expected EVALSHA NOSCRIPT miss as a Redis error', async () => {
+    const span = createSpan();
+    const telemetry = createRedisRequestTelemetry(span as unknown as Span);
+    const evalsha = jest.fn().mockRejectedValue(new Error('NOSCRIPT No matching script'));
+    const evalCommand = jest.fn().mockResolvedValue(1);
+    const redis = instrumentIORedisClient(
+      { evalsha, eval: evalCommand },
+      RedisUseCases.GENERATION_STREAM,
+    );
+
+    await runWithRedisRequestTelemetry(telemetry, async () => {
+      await expect(evalScript(redis, 'return 1', 0)).resolves.toBe(1);
+    });
+    finishRedisRequestTelemetry(telemetry);
+
+    expect(telemetry.errors).toBe(0);
+    expect(mockRecordRedisOperation).toHaveBeenCalledWith(
+      'ioredis',
+      RedisUseCases.GENERATION_STREAM,
+      'evalsha',
+      'success',
+      expect.any(Number),
+    );
+    expect(mockRecordRedisOperation).toHaveBeenCalledWith(
+      'ioredis',
+      RedisUseCases.GENERATION_STREAM,
+      'eval',
+      'success',
+      expect.any(Number),
+    );
+  });
+
   it('records resolved ioredis pipeline command errors', async () => {
     const span = createSpan();
     const telemetry = createRedisRequestTelemetry(span as unknown as Span);
@@ -147,7 +180,6 @@ describe('redisTelemetry', () => {
       expect.any(Number),
     );
   });
-
   it('preserves the ioredis client constructor', () => {
     class FakeRedisClient {}
 
