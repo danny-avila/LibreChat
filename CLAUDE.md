@@ -305,7 +305,11 @@ Multi-line imports count total character length across all lines. Consolidate va
   violation that merely moved does not, adding one with the count raised to cover it is the
   documented `npm run lint:design:suppress` path and stays green — the raised count is the line a
   reviewer reads — and a file the change adds brings no allowance with it, while a renamed one
-  keeps what its violations came with. `npm run static-checks` and the Static Checks lane also
+  keeps what its violations came with. Two kinds of swap still pass: one whose diagnostic message
+  is the same as the message it replaced, because some rules name the property and not the value
+  (`Inline style sets display.` is one message for `none` and for `flex`), and one caused by the
+  diff's own change to a primitive or to the config, because both versions are linted under the
+  head's design inputs. `npm run static-checks` and the Static Checks lane also
   validate the baseline itself (shape, positive counts, rules the plugin defines, paths that still
   exist, paths a design-rule lint actually reports on, and counts that match the file's violations).
 - **The design rules read JSX, not CSS.** They are AST rules over `className`, `cva` and
