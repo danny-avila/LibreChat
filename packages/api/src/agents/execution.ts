@@ -41,6 +41,8 @@ export interface CodeExecutionContext {
   /** Live, server-validated directory selection. Never derive session reuse from this field. */
   codeWorkspace?: CodeWorkspaceSelection & {
     operations: CodeWorkspaceOperation[];
+    /** Live Code API execution ceiling. Omitted by older deployments. */
+    maxCommandTimeoutMs?: number;
     instructions?: CodeWorkspaceDescriptor['instructions'];
     environment?: CodeWorkspaceDescriptor['environment'];
   };

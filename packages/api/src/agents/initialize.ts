@@ -1993,6 +1993,7 @@ export async function initializeAgent(
     trustedCodeExecutionContext.environmentType === 'attached'
       ? resolveAttachedWorkspaceCommandTimeoutMax(
           trustedCodeExecutionContext.codeEnvironmentConfigSchema,
+          trustedCodeExecutionContext.codeWorkspace?.maxCommandTimeoutMs,
         )
       : undefined;
   if (

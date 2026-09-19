@@ -84,6 +84,7 @@ describe('getCodeBridgeWorkerStatus', () => {
           online: true,
           ready: true,
           leaseExpiresInMs: 45_000,
+          maxCommandTimeoutMs: 120_000,
           capabilities: {
             statefulWorkspace: true,
             sandboxProfile: 'native-srt',
@@ -114,6 +115,7 @@ describe('getCodeBridgeWorkerStatus', () => {
       status: 'ready',
       statefulWorkspace: true,
       leaseExpiresInMs: 45_000,
+      maxCommandTimeoutMs: 120_000,
       sandboxProfile: 'native-srt',
       runtimes: ['bash'],
       operations: ['read_file', 'execute_command'],
@@ -172,6 +174,8 @@ describe('getCodeBridgeWorkerStatus', () => {
     { online: true, ready: false },
     { online: false, ready: false, leaseExpiresInMs: 5_000 },
     { online: true, ready: true, leaseExpiresInMs: 60_001 },
+    { online: true, ready: true, maxCommandTimeoutMs: 0 },
+    { online: true, ready: true, maxCommandTimeoutMs: 300_001 },
     {
       online: true,
       ready: true,

@@ -121,6 +121,7 @@ import {
 import { buildSkillPrimeMessage, isSkillFilePath, SKILL_FILE_PREFIX } from './skills';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
 import { resolveAttachedWorkspaceQueueWaitMs } from '~/code/command';
+import { BACKGROUND_TOOL_INVOCATION_CONFIG_KEY } from './invocation';
 import { mergeCodeFilesIntoContext } from './codeFilesSession';
 import { toolValidationFeedback } from './validationFeedback';
 import { createSkillContentDigest } from './compatibility';
@@ -6010,6 +6011,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       signal: backgroundAbortController.signal,
                       configurable: {
                         ...mergedConfigurable,
+                        [BACKGROUND_TOOL_INVOCATION_CONFIG_KEY]: true,
                         ...(detachedReservation?.status === 'reserved'
                           ? {
                               eventActorDetachedAction: {
