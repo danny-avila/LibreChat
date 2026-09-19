@@ -90,10 +90,7 @@ export async function evalScript(
   const inFlight = inFlightScriptLoads.get(client)?.get(sha);
   if (inFlight) {
     await inFlight;
-    if (scriptUsesEvalOnly(client)) {
-      return (await client.eval(script, numberOfKeys, ...args)) as RedisScriptResult;
-    }
-    return (await evalshaCall()) as RedisScriptResult;
+    return evalScript(client, script, numberOfKeys, ...args);
   }
 
   try {
@@ -107,23 +104,19 @@ export async function evalScript(
     const existingLoad = loads.get(sha);
     if (existingLoad) {
       await existingLoad;
-      if (scriptUsesEvalOnly(client)) {
-        return (await client.eval(script, numberOfKeys, ...args)) as RedisScriptResult;
-      }
-      return (await evalshaCall()) as RedisScriptResult;
+      return evalScript(client, script, numberOfKeys, ...args);
     }
 
     if (isEvalshaPermissionError(error)) {
       markClientEvalOnly(client);
     }
     const load = client.eval(script, numberOfKeys, ...args) as Promise<RedisScriptResult>;
-    loads.set(sha, load);
-    try {
-      return await load;
-    } finally {
-      if (loads.get(sha) === load) {
+    const trackedLoad = load.finally(() => {
+      if (loads.get(sha) === trackedLoad) {
         loads.delete(sha);
       }
-    }
+    });
+    loads.set(sha, trackedLoad);
+    return await trackedLoad;
   }
 }
