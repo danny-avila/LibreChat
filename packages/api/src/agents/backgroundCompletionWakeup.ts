@@ -3,6 +3,7 @@ import { isEphemeralAgentId } from 'librechat-data-provider';
 import { AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2 } from '@librechat/data-schemas';
 import type {
   AgentTriggerProducerLeaseStatus,
+  AgentTriggerDeliveryMethods,
   BackgroundToolResultClaim,
   ConversationMethods,
   IMessage,
@@ -91,6 +92,8 @@ type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &
       output: string;
       settledAt: Date;
     } | null>;
+    claimAgentBackgroundToolResults?: AgentTriggerDeliveryMethods['claimAgentBackgroundToolResults'];
+    releaseAgentBackgroundToolResultClaims?: AgentTriggerDeliveryMethods['releaseAgentBackgroundToolResultClaims'];
   };
 
 interface GenerationState {
@@ -384,6 +387,28 @@ export function createBackgroundToolCompletionWakeupResolver({
       return { status: 'settled' };
     }
     if (receiptClaim?.status === 'acquired') {
+      /** Reconcile with a parent projection that may have appeared while the
+       * receipt CAS was in flight. A manual poll that already owns the message
+       * wins; otherwise stamp this same automatic owner before dispatch. */
+      const projectedClaim = await methods.claimBackgroundToolResults({
+        userId,
+        conversationId: envelope.target.conversationId,
+        messageId: envelope.target.parentMessageId,
+        taskId: registration.taskId,
+        agentId: envelope.target.agentId,
+        kind: 'wakeup',
+        claimId: context.idempotencyKey,
+      });
+      if (projectedClaim.status === 'claimed') {
+        await methods.releaseAgentBackgroundToolResultClaims?.({
+          sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+          userId,
+          conversationId: envelope.target.conversationId,
+          parentMessageId: envelope.target.parentMessageId,
+          claimId: context.idempotencyKey,
+        });
+        return { status: 'settled' };
+      }
       return {
         status: 'ready',
         parentMessageId,

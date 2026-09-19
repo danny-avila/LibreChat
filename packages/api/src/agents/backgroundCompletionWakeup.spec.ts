@@ -505,6 +505,39 @@ describe('background tool completion wakeups', () => {
     expect(methods.getAgentBackgroundToolResult).not.toHaveBeenCalled();
   });
 
+  it('yields a receipt claim when a manual message claim lands during receipt arbitration', async () => {
+    const { methods } = resolverMethods();
+    methods.claimBackgroundToolResults
+      .mockResolvedValueOnce({ status: 'not_ready' } as never)
+      .mockResolvedValueOnce({
+        status: 'claimed',
+        claim: { kind: 'manual', claimId: 'poll-1' },
+      } as never);
+    methods.claimAgentBackgroundToolResults.mockResolvedValueOnce({
+      status: 'acquired',
+      results: [
+        {
+          taskId: 'task-1',
+          toolCallId: 'call-1',
+          toolName: 'slow_tool',
+          status: 'completed',
+          output: 'durable',
+        },
+      ],
+    } as never);
+    const resolve = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    await expect(resolve(await envelope(), { idempotencyKey: 'delivery-1' })).resolves.toEqual({
+      status: 'settled',
+    });
+    expect(methods.releaseAgentBackgroundToolResultClaims).toHaveBeenCalledWith(
+      expect.objectContaining({ claimId: 'delivery-1', parentMessageId: 'response-1' }),
+    );
+  });
+
   it('shares one bounded input budget across a full sibling batch', async () => {
     const { methods } = resolverMethods();
     const results = Array.from({ length: 8 }, (_, index) => ({

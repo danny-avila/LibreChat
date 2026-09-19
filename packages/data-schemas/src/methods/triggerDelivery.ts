@@ -307,6 +307,13 @@ export interface AgentTriggerDeliveryMethods {
     deliveryKey: string;
     sourceId: string;
   }) => Promise<AgentBackgroundToolResultReceipt | null>;
+  getAgentBackgroundToolResultClaim: (input: {
+    sourceId: string;
+    userId: string;
+    conversationId: string;
+    parentMessageId: string;
+    taskId: string;
+  }) => Promise<AgentBackgroundToolResultReceipt['resultClaim'] | null>;
   claimAgentBackgroundToolResults: (input: {
     deliveryKey: string;
     sourceId: string;
@@ -2307,6 +2314,24 @@ export function createAgentTriggerDeliveryMethods(
     return delivery?.backgroundToolResult ?? null;
   }
 
+  async function getAgentBackgroundToolResultClaim(input: {
+    sourceId: string;
+    userId: string;
+    conversationId: string;
+    parentMessageId: string;
+    taskId: string;
+  }): Promise<AgentBackgroundToolResultReceipt['resultClaim'] | null> {
+    const delivery = await Delivery()
+      .findOne({
+        ...backgroundResultIdentity(input),
+        'envelope.event.payload.taskId': input.taskId,
+        'backgroundToolResult.resultClaim': { $exists: true },
+      })
+      .select('+backgroundToolResult')
+      .lean<Pick<IAgentTriggerDelivery, 'backgroundToolResult'>>();
+    return delivery?.backgroundToolResult?.resultClaim ?? null;
+  }
+
   function backgroundResultIdentity(input: {
     sourceId: string;
     userId: string;
@@ -3897,6 +3922,7 @@ export function createAgentTriggerDeliveryMethods(
     getAgentTriggerDeliveryProducerLease,
     persistAgentBackgroundToolResult,
     getAgentBackgroundToolResult,
+    getAgentBackgroundToolResultClaim,
     claimAgentBackgroundToolResults,
     releaseAgentBackgroundToolResultClaims,
     settleAgentTriggerHandlingOutcome,

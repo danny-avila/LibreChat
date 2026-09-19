@@ -566,6 +566,15 @@ describe('agent trigger delivery methods', () => {
       methods.claimAgentBackgroundToolResults({ ...claim, claimId: 'delivery-claim-2' }),
     ).resolves.toEqual({ status: 'claimed', claimId: 'delivery-claim-1' });
     await expect(
+      methods.getAgentBackgroundToolResultClaim({
+        sourceId: source.id,
+        userId: user.toString(),
+        conversationId: 'conversation-1',
+        parentMessageId: 'response-1',
+        taskId: 'task-1',
+      }),
+    ).resolves.toMatchObject({ kind: 'wakeup', claimId: 'delivery-claim-1' });
+    await expect(
       methods.releaseAgentBackgroundToolResultClaims({
         sourceId: source.id,
         userId: user.toString(),

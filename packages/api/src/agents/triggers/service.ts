@@ -114,6 +114,7 @@ export interface AgentTriggerDeliveryPersistence {
   retireAgentTriggerDelivery: AgentTriggerDeliveryMethods['retireAgentTriggerDelivery'];
   renewAgentTriggerDeliveryProducerLease: AgentTriggerDeliveryMethods['renewAgentTriggerDeliveryProducerLease'];
   persistAgentBackgroundToolResult?: AgentTriggerDeliveryMethods['persistAgentBackgroundToolResult'];
+  getAgentBackgroundToolResultClaim?: AgentTriggerDeliveryMethods['getAgentBackgroundToolResultClaim'];
   retryAgentTriggerDelivery: AgentTriggerDeliveryStore['retry'];
   deadLetterAgentTriggerDelivery: AgentTriggerDeliveryStore['dead'];
   getAgentTriggerDelivery: (deliveryKey: string) => Promise<AgentTriggerStoredRecord | null>;
@@ -179,6 +180,9 @@ export interface AgentTriggerService {
       settledAt: Date;
     };
   }) => Promise<boolean>;
+  getBackgroundToolResultClaim: (
+    input: Parameters<AgentTriggerDeliveryMethods['getAgentBackgroundToolResultClaim']>[0],
+  ) => ReturnType<AgentTriggerDeliveryMethods['getAgentBackgroundToolResultClaim']>;
   drainUser: (userId: string) => Promise<void>;
   prepareUserPurge: (userId: string, fenceStartedAt: Date, tenantId?: string) => Promise<void>;
   cancelUserPurge: (userId: string, fenceStartedAt: Date) => Promise<boolean>;
@@ -616,6 +620,11 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
       runAsSystem(async () => {
         const persist = requireMethods().persistAgentBackgroundToolResult;
         return persist == null ? false : persist(input);
+      }),
+    getBackgroundToolResultClaim: (input) =>
+      runAsSystem(async () => {
+        const getClaim = requireMethods().getAgentBackgroundToolResultClaim;
+        return getClaim == null ? null : getClaim(input);
       }),
     drainUser,
     prepareUserPurge: (userId, fenceStartedAt, tenantId) =>

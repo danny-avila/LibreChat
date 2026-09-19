@@ -3238,9 +3238,14 @@ export function createConversationMethods(
             ...(conversation.tenantId != null && { tenantId: conversation.tenantId }),
           })),
         );
-        await deps?.eraseAgentTriggerDeliveryConversationResults?.(user, waveIds);
         await options?.beforeDelete?.(waveIds);
         const result = await Conversation.deleteMany({ user, conversationId: { $in: waveIds } });
+        if (result.deletedCount > 0) {
+          /** Result erasure is irreversible. Keep receipts intact when a
+           * pre-delete hook or the conversation delete itself fails, so a
+           * retained conversation cannot lose a receipt-only completion. */
+          await deps?.eraseAgentTriggerDeliveryConversationResults?.(user, waveIds);
+        }
         acknowledged &&= result.acknowledged;
         deletedCount += result.deletedCount;
         await reconcileDeletedWave(wave, result.deletedCount);
