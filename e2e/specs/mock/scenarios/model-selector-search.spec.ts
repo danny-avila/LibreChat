@@ -44,7 +44,9 @@ test.describe('model selector search', () => {
       await search.press('ArrowDown');
     }
     await expect(tabbablePin).toHaveCount(1);
-    const row = tabbablePin.locator('xpath=ancestor::*[@role="option"][1]');
+    const rowId = await tabbablePin.locator('xpath=ancestor::*[@role="option"][1]').getAttribute('id');
+    expect(rowId).toBeTruthy();
+    const row = page.locator(`xpath=//*[@id="${rowId}"]`);
     await page.keyboard.press('Tab');
     await expect(tabbablePin).toBeFocused();
     await tabbablePin.press('Enter');
