@@ -27,6 +27,11 @@ only. Saving binds the reference to that destination's opaque identity. Previewi
 its version preserves this binding; a missing saved destination produces an error instead of
 selecting a same-named prompt from another project.
 
+Central prompt reads wait for project discovery before returning a persistable reference. If
+discovery is unavailable, retry after it recovers or set `LANGFUSE_PROJECT_ID` explicitly.
+This project identity remains stable when central credentials rotate; no credential-derived
+central identity is saved.
+
 Successful Langfuse reads are cached for five minutes. A cached value may be reused after expiry
 only for a transient network, rate-limit, or server failure. Authentication failures and missing or
 deleted prompts never fall back to cached content. The builder's status and retry controls use the

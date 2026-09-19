@@ -276,7 +276,7 @@ export async function resolveLangfusePromptDestinations(
   const headers = resolveLangfuseHeaders(appConfig?.langfuse?.headers);
   const destinations = [
     getConfiguredScoreDestination(appConfig, headers),
-    hasLangfuseEnvCredentials() ? await getCentralScoreDestination(false, headers) : undefined,
+    hasLangfuseEnvCredentials() ? await getCentralScoreDestination(true, headers) : undefined,
   ];
   return destinations.filter((destination): destination is LangfuseScoreDestination =>
     Boolean(destination),

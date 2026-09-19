@@ -1,6 +1,6 @@
 import type { AppConfig } from '@librechat/data-schemas';
 import type { LangfuseScoreDestination } from './destinations';
-import { resolveLangfusePromptDestinations } from './destinations';
+import { getLangfuseDestinationId, resolveLangfusePromptDestinations } from './destinations';
 import { createLangfusePromptProvider } from './prompts';
 
 const destination: LangfuseScoreDestination = {
@@ -25,6 +25,65 @@ const prompt = {
 };
 
 describe('Langfuse agent instruction prompts', () => {
+  it('does not bind central prompts until identity discovery succeeds, then survives rotation', async () => {
+    const stableId = 'd'.repeat(64);
+    let destinations: LangfuseScoreDestination[] = [{ ...destination, name: 'central' }];
+    const fetch = jest.fn().mockResolvedValue(response(200, prompt));
+    const provider = createLangfusePromptProvider({
+      resolveDestinations: async () => destinations,
+      fetch,
+    });
+    const reference = { source: 'langfuse' as const, name: 'agent-policy' };
+    await expect(provider.resolve(reference, { userId: 'author' })).rejects.toMatchObject({
+      code: 'not_configured',
+      statusCode: 503,
+    });
+    expect(fetch).not.toHaveBeenCalled();
+    destinations = [{ ...destination, name: 'central', id: stableId }];
+    const saved = await provider.resolve(reference, { userId: 'author' });
+    expect(saved.destinationId).toBe(stableId);
+    destinations = [{ ...destinations[0], authorization: 'Basic rotated-secret' }];
+    await expect(
+      provider.resolve({ ...reference, destinationId: saved.destinationId }, { userId: 'reader' }),
+    ).resolves.toMatchObject({ destinationId: stableId });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('waits for central project discovery before returning prompt destinations', async () => {
+    const keys = [
+      'LANGFUSE_PUBLIC_KEY',
+      'LANGFUSE_SECRET_KEY',
+      'LANGFUSE_PROJECT_ID',
+      'LANGFUSE_BASE_URL',
+    ] as const;
+    const previous = keys.map((key) => process.env[key]);
+    process.env.LANGFUSE_PUBLIC_KEY = 'discovery-public';
+    process.env.LANGFUSE_SECRET_KEY = 'discovery-secret';
+    process.env.LANGFUSE_BASE_URL = 'https://discovery.example.com';
+    delete process.env.LANGFUSE_PROJECT_ID;
+    const fetch = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(response(200, { data: [{ id: 'discovered-project' }] }));
+    try {
+      await expect(resolveLangfusePromptDestinations()).resolves.toEqual([
+        expect.objectContaining({
+          name: 'central',
+          id: getLangfuseDestinationId('https://discovery.example.com', 'discovered-project'),
+        }),
+      ]);
+      expect(fetch).toHaveBeenCalledTimes(1);
+    } finally {
+      fetch.mockRestore();
+      keys.forEach((key, index) => {
+        if (previous[index] == null) {
+          delete process.env[key];
+        } else {
+          process.env[key] = previous[index];
+        }
+      });
+    }
+  });
+
   it.each([false, true])(
     'uses a concurrent successful refresh after failure (prior cache: %s)',
     async (hasPriorCache) => {

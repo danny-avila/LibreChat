@@ -202,6 +202,14 @@ export function createLangfusePromptProvider({
         );
       }
 
+      if (destination.name === 'central' && !destination.id) {
+        throw new AgentInstructionPromptError(
+          'not_configured',
+          'Langfuse project identity is unavailable; retry discovery or configure LANGFUSE_PROJECT_ID',
+          503,
+        );
+      }
+
       const key = cacheKey(destination, reference.name, reference.version);
       const currentTime = now();
       const promptConfig = context.appConfig?.langfuse?.prompts;
