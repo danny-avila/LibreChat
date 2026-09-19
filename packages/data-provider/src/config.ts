@@ -2180,6 +2180,7 @@ export const interfaceSchema = z
   })
   .default({
     modelSelect: true,
+    codeHighlightThrottleMs: 300,
     parameters: true,
     presets: true,
     multiConvo: true,
