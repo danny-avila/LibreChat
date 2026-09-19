@@ -327,6 +327,21 @@ test.describe('the recorded design-rule backlog', () => {
       expect(ordinary.output, 'an ordinary source change swept the roots').not.toContain(
         'client/src/Caller.tsx',
       );
+
+      /** And a spec under either metadata root is not metadata, however much it
+       *  looks like a component source: the flat config turns every design rule
+       *  off inside it and the library's tsconfig keeps it out of the bundle the
+       *  caller rules resolve primitives through, so it carries no `cva` variant
+       *  and can move no caller's diagnostic. Sweeping both roots for one is
+       *  minutes spent on a question with no answer in it. */
+      for (const spec of [
+        'packages/client/src/Primitive.spec.tsx',
+        'client/src/components/ui/Thing.spec.tsx',
+      ]) {
+        const report = checks([spec]);
+        expect(report.status, `${spec}: ${report.output}`).toBe(0);
+        expect(report.output, `${spec} swept the roots`).not.toContain('client/src/Caller.tsx');
+      }
     } finally {
       rmSync(root, { force: true, recursive: true });
     }
@@ -800,6 +815,17 @@ test.describe('the recorded design-rule backlog', () => {
       const afterToolchain = checks(['package-lock.json']);
       expect(existsSync(marker), 'a toolchain change kept the old metadata').toBe(true);
       expect(afterToolchain.status, afterToolchain.output).not.toBe(0);
+
+      /** A spec under the library's sources is not one of the things the bundle
+       *  is built from — `packages/client/tsconfig.json` excludes it — so a
+       *  build older than it is not stale, and editing one buys no rebuild. */
+      for (const entry of entries) at(join('packages/client', entry), 420);
+      at('packages/client/dist', 420);
+      rmSync(marker, { force: true });
+      at('packages/client/src/Primitive.spec.tsx', 480);
+      const afterSpec = checks(['eslint.config.mjs']);
+      expect(existsSync(marker), 'a spec edit rebuilt the primitives').toBe(false);
+      expect(afterSpec.status, afterSpec.output).not.toBe(0);
     } finally {
       rmSync(root, { force: true, recursive: true });
     }
@@ -852,6 +878,13 @@ function syntheticRoot(): string {
   write('client/src/Other.tsx', 'export default () => <div className="bg-surface-primary" />;\n');
   write('client/src/components/ui/Thing.tsx', 'export const Thing = () => null;\n');
   write('packages/client/src/Primitive.tsx', 'export const Primitive = () => null;\n');
+  /** A spec beside each of them, under both metadata roots. The real roots are
+   *  full of these — every primitive in `packages/client/src/components` has
+   *  one — and the flat config turns every design rule off inside them, so what
+   *  the gate does when one changes is a question the checkout asks constantly.
+   *  Written before the bundle, so the miniature build still reads as current. */
+  write('packages/client/src/Primitive.spec.tsx', 'export const fixture = null;\n');
+  write('client/src/components/ui/Thing.spec.tsx', 'export const fixture = null;\n');
   for (const entry of bundleEntries()) write(join('packages/client', entry), 'export {};\n');
   write(
     SUPPRESSIONS_FILE,
