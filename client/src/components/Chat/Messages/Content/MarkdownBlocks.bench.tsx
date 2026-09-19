@@ -147,7 +147,7 @@ describe('splitMarkdownIntoBlocks streaming benchmark (full re-parse vs incremen
     const prefixes = makePrefixes(content, steps);
     const iterations = 3;
 
-    const time = (split: (content: string) => unknown): number => {
+    const time = (split: (content: string) => void): number => {
       split('warm up and reset the cache');
       const start = performance.now();
       for (const prefix of prefixes) {

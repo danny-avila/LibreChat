@@ -53,6 +53,7 @@ const ASK_USER_QUESTION_MARKER = 'E2E_ASK_USER_QUESTION:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
+const STREAMING_MARKDOWN_REPLY_MARKER = 'E2E_STREAMING_MARKDOWN_REPLY';
 const STATEFUL_CODE_MARKER = 'E2E_STATEFUL_CODE:';
 /** Two prose paragraphs, so a spec can select the message's *closing* block. */
 const PARAGRAPHS_REPLY_MARKER = 'E2E_PARAGRAPHS_REPLY';
@@ -512,6 +513,28 @@ function replyResponses(text) {
           '```',
         ].join('\n'),
       ],
+    };
+  }
+  if (text.includes(STREAMING_MARKDOWN_REPLY_MARKER)) {
+    return {
+      responses: [
+        [
+          '## E2E streaming markdown heading',
+          '',
+          'E2E streaming opening paragraph with 日本語 content.',
+          '',
+          '```javascript',
+          'const e2eIncrementalMarkdown = "complete";',
+          '```',
+          '',
+          '| E2E column | E2E value |',
+          '| --- | --- |',
+          '| completed block | visible |',
+          '',
+          'E2E streaming markdown final paragraph.',
+        ].join('\n'),
+      ],
+      sleep: SLOW_CHUNK_DELAY_MS,
     };
   }
 
