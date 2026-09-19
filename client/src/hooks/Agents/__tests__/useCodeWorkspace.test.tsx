@@ -669,8 +669,8 @@ describe('useCodeWorkspace', () => {
     /* Switching an existing chat to a coding agent used to leave the composer with a sealed
      * decision its owner never made: nothing to select, and Send disabled. */
     it.each([
+      { support: { codeEnvironmentDecisionVersion: 1 } },
       { support: { codeEnvironmentDecisionVersion: 1, codeEnvironmentMoveVersion: 1 } },
-      { support: {} },
     ])('lets a saved chat with several workspaces choose one', ({ support }) => {
       mockStartupConfig.mockReturnValue(support);
       mockStatus()[0].data.workspaces.push({ id: 'project-b', name: 'Project B' });
@@ -689,6 +689,25 @@ describe('useCodeWorkspace', () => {
         codeEnvironmentMode: 'attached',
         codeWorkspaces: [chosen],
       });
+    });
+
+    /* A replica that predates the protocol reads a field-less row as sealed `without_attached`, so
+     * attaching an agent default here would submit a choice it rejects as `locked`. The rollout
+     * window keeps the legacy lock, which is what an unadvertised protocol means. */
+    it('keeps the legacy lock until the deployment advertises the protocol', () => {
+      mockStartupConfig.mockReturnValue({});
+      mockStatus()[0].data.workspaces.push({ id: 'project-b', name: 'Project B' });
+      mockAgentPermissions().agent.code_workspace_id = 'project-b';
+
+      const { result } = renderHook(() =>
+        useCodeWorkspace({ ...conversation(), conversationId: 'existing' } as TConversation),
+      );
+
+      expect(result.current.locked).toBe(true);
+      expect(result.current.mode).toBeUndefined();
+      expect(result.current.selections).toBeUndefined();
+      expect(result.current.canSubmit).toBe(false);
+      expect(result.current.resolveSubmission()).toBeUndefined();
     });
 
     it('keeps auto-selecting for an API that does not seal decisions', () => {
