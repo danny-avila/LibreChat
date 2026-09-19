@@ -1225,6 +1225,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       cancelled?: true;
       settledAt: Date;
       completionWakeup?: true;
+      completionReceipt?: true;
       resultClaim?: {
         kind: 'manual' | 'wakeup';
         claimId: string;
