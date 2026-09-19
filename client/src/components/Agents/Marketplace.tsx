@@ -125,7 +125,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   }
 
   return (
-    <div className={`relative flex w-full grow overflow-hidden bg-presentation ${className}`}>
+    <div className={`bg-presentation relative flex w-full grow overflow-hidden ${className}`}>
       <SidePanelGroup>
         <main
           className="flex h-full min-w-0 flex-col overflow-hidden"
@@ -137,7 +137,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
           <h1 id="marketplace-heading" className="sr-only">
             {localize('com_agents_marketplace')}
           </h1>
-          <div className="shrink-0 border-b border-border-light">
+          <div className="border-border-light shrink-0 border-b">
             <div className="flex items-center gap-2 p-3">
               {isSmallScreen && <OpenSidebar className="size-9 shrink-0 rounded-lg" />}
               <SearchBar value={searchQuery} onSearch={handleSearch} className="min-w-0 flex-1" />
@@ -160,7 +160,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
           </div>
           <div
             ref={scrollContainerRef}
-            className="scrollbar-gutter-stable min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3"
+            className="min-h-0 flex-1 scrollbar-gutter-stable overflow-x-hidden overflow-y-auto p-3"
           >
             {/* Deliberately unkeyed: the grid's own `scopeKey` already carries the category,
                 so it replaces the results itself and hands focus back when the scope

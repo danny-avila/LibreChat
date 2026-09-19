@@ -369,7 +369,7 @@ function LivePhaseHeader({
         /** A span that is only reasoning so far has no tool to show; it takes
          *  the glyph the reasoning row itself uses. */
         <span
-          className={cn(ROW_GLYPH_SLOT, 'animate-pulse text-text-primary')}
+          className={cn(ROW_GLYPH_SLOT, 'text-text-primary animate-pulse')}
           aria-hidden="true"
           data-testid="live-phase-thinking"
         >
@@ -399,7 +399,7 @@ function LivePhaseHeader({
       {detail && (
         <span
           id={detailId}
-          className="shrink-0 text-xs font-normal text-text-warning"
+          className="text-text-warning shrink-0 text-xs font-normal"
           data-testid="live-phase-outcome"
         >
           · {detail}
@@ -597,7 +597,7 @@ export default function ActivityPhaseGroup({
   const group = !hasContent ? (
     <div
       className={cn(
-        'mb-2 mt-1 flex min-h-7 w-full items-center gap-2 py-1 text-text-secondary',
+        'text-text-secondary mt-1 mb-2 flex min-h-7 w-full items-center gap-2 py-1',
         shouldAnimateEntrance && `animate-in fade-in-0 motion-reduce:animate-none ${FOLD_EASING}`,
       )}
       data-testid="activity-phase-card"
@@ -619,7 +619,7 @@ export default function ActivityPhaseGroup({
      *  groups it stands for, so it carries the same geometry: 16px glyph, 8px
      *  gap, no inset. Boxing it was what put its text on a third left edge and
      *  forced every folded row 13px sideways as the box materialized. */
-    <div className="mb-2 mt-1 w-full" ref={rootRef} data-testid="activity-phase-card">
+    <div className="mt-1 mb-2 w-full" ref={rootRef} data-testid="activity-phase-card">
       <span className="sr-only" role="status" data-testid="activity-phase-announcer">
         {announcement}
       </span>
@@ -634,7 +634,7 @@ export default function ActivityPhaseGroup({
              *  keyboard users with no focus indicator. The ghost variant
              *  supplies it today; stating it here keeps the requirement with
              *  the element that depends on it. */
-            className="flex h-auto min-h-7 w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-left font-medium text-text-secondary hover:bg-transparent hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-heavy focus-visible:ring-offset-0"
+            className="text-text-secondary hover:text-text-primary focus-visible:ring-border-heavy flex h-auto min-h-7 w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-left font-medium hover:bg-transparent focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:outline-hidden focus-visible:ring-inset"
             onClick={handleToggle}
             aria-expanded={isExpanded}
             aria-controls={panelId}

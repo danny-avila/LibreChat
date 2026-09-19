@@ -23,11 +23,11 @@ const card = (
       <Skeleton className="h-6 w-16 rounded-full motion-reduce:animate-none" />
     </div>
     <Skeleton className="mt-4 h-6 w-3/4 motion-reduce:animate-none" />
-    <div className="mb-5 mt-3 space-y-2">
+    <div className="mt-3 mb-5 space-y-2">
       <Skeleton className="h-4 w-full motion-reduce:animate-none" />
       <Skeleton className="h-4 w-5/6 motion-reduce:animate-none" />
     </div>
-    <div className="mt-auto flex justify-between gap-3 border-t border-border-light pt-4">
+    <div className="border-border-light mt-auto flex justify-between gap-3 border-t pt-4">
       <Skeleton className="h-4 w-24 motion-reduce:animate-none" />
       <Skeleton className="h-4 w-20 motion-reduce:animate-none" />
     </div>
@@ -92,7 +92,7 @@ export default function GridSkeleton({ scrollElementRef, label }: GridSkeletonPr
         {Array.from({ length: count }, (_, index) => (
           <div
             key={index}
-            className="flex min-h-[17.5rem] min-w-0 flex-col rounded-theme-surface border border-border-light bg-surface-secondary p-5"
+            className="rounded-theme-surface border-border-light bg-surface-secondary flex min-h-[17.5rem] min-w-0 flex-col border p-5"
           >
             {card}
           </div>

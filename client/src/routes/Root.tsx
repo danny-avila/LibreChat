@@ -173,7 +173,7 @@ export default function Root() {
                       /** Focus target of last resort when the drawer closes on a
                        *  route that renders no opener. Not in the tab order. */
                       tabIndex={-1}
-                      className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden focus:outline-none"
+                      className="relative flex h-full max-w-full flex-1 flex-col overflow-hidden focus:outline-hidden"
                       style={{
                         /** A percentage of the pane's own width, so it tracks the
                          *  drawer without a literal and survives rotation. */

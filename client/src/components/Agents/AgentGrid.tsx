@@ -361,7 +361,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
             and reading order reach it immediately; without rows it is the whole of the
             page. */}
         <div ref={recoveryCardRef} className="pointer-events-auto w-full max-w-xl pb-5">
-          <div className="rounded-theme-surface border border-border-light bg-surface-secondary shadow-lg high-contrast:border-border-medium high-contrast:shadow-none">
+          <div className="rounded-theme-surface border-border-light bg-surface-secondary high-contrast:border-border-medium high-contrast:shadow-none border shadow-lg">
             {errorCard}
           </div>
         </div>
@@ -376,7 +376,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
   } else if (!hasData) {
     listPlaceholder = (
       <div
-        className="py-12 text-center text-text-secondary"
+        className="text-text-secondary py-12 text-center"
         role="status"
         aria-live="polite"
         aria-label={localize(emptyState.key, emptyState.values)}
@@ -390,7 +390,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
   const mainContent = (
     <div
       ref={panelRef}
-      className="min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
+      className="focus-visible:ring-text-primary min-w-0 focus-visible:ring-2 focus-visible:outline-hidden focus-visible:ring-inset"
       role="tabpanel"
       id={`category-panel-${category}`}
       aria-labelledby={`category-tab-${category}`}
@@ -431,14 +431,14 @@ const AgentGrid: React.FC<AgentGridProps> = ({
           aria-live="polite"
           aria-label={localize('com_agents_loading')}
         >
-          <Spinner className="h-6 w-6 text-text-primary" />
+          <Spinner className="text-text-primary h-6 w-6" />
           <span className="sr-only">{localize('com_agents_loading')}</span>
         </div>
       )}
 
       {!failure && hasData && !hasNextPage && (
         <div className="mt-6 text-center">
-          <p className="text-sm text-text-secondary">{localize('com_agents_no_more_results')}</p>
+          <p className="text-text-secondary text-sm">{localize('com_agents_no_more_results')}</p>
         </div>
       )}
     </div>
