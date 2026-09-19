@@ -4875,7 +4875,7 @@ export class RedisJobStore implements IJobStoreV2 {
      * control events, steer receipts) is a barrier: pending coalesced deltas
      * must be issued first. Same connection, so issue order is land order. */
     if (this.pendingAppends.has(streamId)) {
-      void this.flushCoalescedAppends(streamId);
+      await this.flushCoalescedAppends(streamId);
     }
     const key = KEYS.chunks(streamId);
     const jobKey = KEYS.job(streamId);
