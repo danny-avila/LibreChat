@@ -43,6 +43,9 @@ export async function flushScriptCache(redis: RedisTestClient): Promise<void> {
     ? (redis as Cluster).nodes('master')
     : [redis as Redis];
   await Promise.all(nodes.map((node) => node.script('FLUSH')));
+  // Resolve after jest.resetModules so the helper resets the same loader instance as the SUT.
+  const { resetRedisScriptState } = await import('~/cache/redisScript');
+  resetRedisScriptState(redis);
 }
 
 /** Delete only this suite's keys, including keys spread across cluster masters. */

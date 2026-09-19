@@ -1,4 +1,4 @@
-import { evalScript, type RedisScriptClient } from './redisScript';
+import { evalScript, type RedisScriptArg, type RedisScriptClient } from './redisScript';
 
 describe('evalScript', () => {
   test('falls back once on NOSCRIPT, then uses the cached EVALSHA result', async () => {
@@ -115,6 +115,39 @@ describe('evalScript', () => {
     await expect(batch).resolves.toBe('batch-result');
     await expect(direct).resolves.toBe('direct-result');
     expect(commandOrder).toEqual(['batch-evalsha', 'eval:batch-script', 'direct-evalsha']);
+  });
+  test('gates same-key direct calls before a cold EVALSHA miss returns', async () => {
+    let releaseFirst!: () => void;
+    const firstFinished = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let signalFirstStarted!: () => void;
+    const firstStarted = new Promise<void>((resolve) => {
+      signalFirstStarted = resolve;
+    });
+    const commandOrder: string[] = [];
+    const evalsha = jest.fn((sha: string, _numberOfKeys: number, ...args: RedisScriptArg[]) => {
+      commandOrder.push(`${sha}:${args.at(-1)}`);
+      if (evalsha.mock.calls.length === 1) {
+        signalFirstStarted();
+        return firstFinished.then(() => 'batch-result');
+      }
+      return Promise.resolve('direct-result');
+    });
+    const evalCommand = jest.fn();
+    const client = { evalsha, eval: evalCommand } as unknown as RedisScriptClient;
+
+    const batch = evalScript(client, 'batch-script-before-miss', 1, '{stream-a}chunks', 'batch');
+    await firstStarted;
+    const direct = evalScript(client, 'direct-script-before-miss', 1, '{stream-a}chunks', 'direct');
+    await Promise.resolve();
+
+    expect(evalsha).toHaveBeenCalledTimes(1);
+    releaseFirst();
+    await expect(batch).resolves.toBe('batch-result');
+    await expect(direct).resolves.toBe('direct-result');
+    expect(evalCommand).not.toHaveBeenCalled();
+    expect(commandOrder).toHaveLength(2);
   });
   test('does not serialize cold loads for unrelated hash tags', async () => {
     let releaseFirstLoad!: () => void;

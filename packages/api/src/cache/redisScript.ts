@@ -8,7 +8,18 @@ export type RedisScriptClient = Pick<Redis | Cluster, 'eval' | 'evalsha'>;
 
 const scriptShas = new Map<string, string>();
 const unsupportedEvalshaClients = new WeakSet<object>();
+const confirmedShasByClient = new WeakMap<object, Set<string>>();
+
 const inFlightLoadsByKey = new WeakMap<object, Map<string, Promise<RedisScriptResult>>>();
+
+function confirmedShasFor(client: RedisScriptClient): Set<string> {
+  let confirmed = confirmedShasByClient.get(client);
+  if (confirmed == null) {
+    confirmed = new Set<string>();
+    confirmedShasByClient.set(client, confirmed);
+  }
+  return confirmed;
+}
 
 function loadsFor(client: RedisScriptClient): Map<string, Promise<RedisScriptResult>> {
   let loads = inFlightLoadsByKey.get(client);
@@ -42,6 +53,11 @@ function markClientEvalOnly(client: RedisScriptClient): void {
   unsupportedEvalshaClients.add(client);
 }
 
+export function resetRedisScriptState(client: RedisScriptClient): void {
+  unsupportedEvalshaClients.delete(client);
+  confirmedShasByClient.delete(client);
+  inFlightLoadsByKey.delete(client);
+}
 function scriptSha(script: string): string {
   let sha = scriptShas.get(script);
   if (sha == null) {
@@ -99,9 +115,12 @@ export async function evalScript(
 
   const sha = scriptSha(script);
   const orderingKey = scriptOrderingKey(args);
+  const confirmed = confirmedShasFor(client);
+  const loads = loadsFor(client);
   const evalshaCall = () =>
     evalshaFallbackContext.run(true, () => client.evalsha(sha, numberOfKeys, ...args));
-  const inFlight = inFlightLoadsByKey.get(client)?.get(orderingKey);
+
+  const inFlight = loads.get(orderingKey);
   if (inFlight) {
     try {
       await inFlight;
@@ -111,36 +130,37 @@ export async function evalScript(
     return evalScript(client, script, numberOfKeys, ...args);
   }
 
-  try {
+  if (confirmed.has(sha)) {
     return (await evalshaCall()) as RedisScriptResult;
-  } catch (error) {
-    if (!isEvalshaFallbackError(error)) {
-      throw error;
-    }
-
-    const existingLoad = inFlightLoadsByKey.get(client)?.get(orderingKey);
-    if (existingLoad) {
-      try {
-        await existingLoad;
-      } catch {
-        // Retry with this call's own Redis keys after another caller's load failed.
-      }
-      return evalScript(client, script, numberOfKeys, ...args);
-    }
-
-    if (isEvalshaPermissionError(error)) {
-      markClientEvalOnly(client);
-    }
-    const load = Promise.resolve(
-      client.eval(script, numberOfKeys, ...args),
-    ) as Promise<RedisScriptResult>;
-    const loads = loadsFor(client);
-    const trackedLoad = load.finally(() => {
-      if (loads.get(orderingKey) === trackedLoad) {
-        loads.delete(orderingKey);
-      }
-    });
-    loads.set(orderingKey, trackedLoad);
-    return await trackedLoad;
   }
+
+  // Register the gate before issuing EVALSHA. This closes the cold window where a
+  // direct append could otherwise overtake a batch call that has not yet returned NOSCRIPT.
+  const load = (async () => {
+    try {
+      const result = await evalshaCall();
+      confirmed.add(sha);
+      return result as RedisScriptResult;
+    } catch (error) {
+      if (!isEvalshaFallbackError(error)) {
+        throw error;
+      }
+
+      if (isEvalshaPermissionError(error)) {
+        markClientEvalOnly(client);
+      }
+      const result = await client.eval(script, numberOfKeys, ...args);
+      if (!isEvalshaPermissionError(error)) {
+        confirmed.add(sha);
+      }
+      return result as RedisScriptResult;
+    }
+  })();
+  const trackedLoad = load.finally(() => {
+    if (loads.get(orderingKey) === trackedLoad) {
+      loads.delete(orderingKey);
+    }
+  });
+  loads.set(orderingKey, trackedLoad);
+  return await trackedLoad;
 }
