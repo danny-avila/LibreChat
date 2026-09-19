@@ -105,7 +105,7 @@ describe('useContentHandler message reconciliation', () => {
     const existingResponse = {
       messageId: 'response-1',
       conversationId: 'conversation-1',
-      parentMessageId: 'missing-parent',
+      parentMessageId: '',
       isCreatedByUser: false,
       sender: 'Assistant',
       text: '',
@@ -132,7 +132,6 @@ describe('useContentHandler message reconciliation', () => {
       initialResponse: {
         messageId: 'response-1',
         conversationId: 'conversation-1',
-        parentMessageId: 'missing-parent',
         thread_id: 'thread-1',
         content: [],
       },
@@ -162,7 +161,7 @@ describe('useContentHandler message reconciliation', () => {
     expect(output[2]).toBe(untaggedMessage);
     expect(output[3]).toMatchObject({
       messageId: 'response-1',
-      parentMessageId: 'missing-parent',
+      parentMessageId: 'user-1',
       thread_id: 'thread-1',
       content: [{ type: 'text', text: { value: 'streamed without thread metadata' } }],
     });
