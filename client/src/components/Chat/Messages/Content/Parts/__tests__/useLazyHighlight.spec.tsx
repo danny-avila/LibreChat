@@ -172,6 +172,15 @@ describe('useLazyHighlight', () => {
     expect(mockHighlight).toHaveBeenCalledTimes(1);
   });
 
+  it('shows current raw code while a replacement highlight is pending', async () => {
+    const { result, rerender } = renderHook(({ code }) => useLazyHighlight(code, 'js'), {
+      initialProps: { code: 'echo a' },
+    });
+    await flush();
+    rerender({ code: 'echo ab' });
+    expect(result.current).toEqual(['echo ab']);
+  });
+
   it('clears immediately when code becomes empty', async () => {
     const { result, rerender } = renderHook(
       ({ code }: { code: string | undefined }) => useLazyHighlight(code, 'js'),

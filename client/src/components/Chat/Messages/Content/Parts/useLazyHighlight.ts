@@ -73,18 +73,24 @@ function highlightCode(mod: LowlightModule, code: string, lang: string): React.R
   }
 }
 
+type HighlightedValue = {
+  key: string;
+  nodes: React.ReactNode[];
+};
+
 export default function useLazyHighlight(
   code: string | undefined,
   lang: string,
 ): React.ReactNode[] | null {
   const throttleMs = React.useContext(CodeHighlightThrottleContext);
-  const initialKey = code && lowlightModule ? `${lang}\0${code}` : '';
+  const currentKey = `${lang}\0${code ?? ''}`;
+  const initialKey = code && lowlightModule ? currentKey : '';
   const hasInitialHighlight = Boolean(code && lowlightModule);
-  const [highlighted, setHighlighted] = useState<React.ReactNode[] | null>(() => {
+  const [highlighted, setHighlighted] = useState<HighlightedValue | null>(() => {
     if (!hasInitialHighlight) {
       return null;
     }
-    return highlightCode(lowlightModule!, code!, lang);
+    return { key: initialKey, nodes: highlightCode(lowlightModule!, code!, lang) };
   });
   const prevKey = useRef(initialKey);
   const prevThrottleMs = useRef<number | null>(hasInitialHighlight ? throttleMs : null);
@@ -118,7 +124,7 @@ export default function useLazyHighlight(
     }
 
     if (lang === 'plaintext') {
-      setHighlighted([code]);
+      setHighlighted({ key, nodes: [code] });
       return;
     }
 
@@ -128,19 +134,19 @@ export default function useLazyHighlight(
       const gen = ++generation.current;
 
       if (lowlightModule) {
-        setHighlighted(highlightCode(lowlightModule, code, lang));
+        setHighlighted({ key, nodes: highlightCode(lowlightModule, code, lang) });
         return;
       }
 
       loadLowlight()
         .then((mod) => {
           if (gen === generation.current) {
-            setHighlighted(highlightCode(mod, code, lang));
+            setHighlighted({ key, nodes: highlightCode(mod, code, lang) });
           }
         })
         .catch(() => {
           if (gen === generation.current) {
-            setHighlighted([code]);
+            setHighlighted({ key, nodes: [code] });
           }
         });
     };
@@ -171,5 +177,8 @@ export default function useLazyHighlight(
     },
     [],
   );
-  return highlighted ?? (code ? [code] : null);
+  if (highlighted?.key === currentKey) {
+    return highlighted.nodes;
+  }
+  return code ? [code] : null;
 }
