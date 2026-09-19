@@ -10,8 +10,8 @@ import {
   RedisUseCases,
   runWithRedisRequestTelemetry,
 } from './redisTelemetry';
-import { evalScript } from './redisScript';
 import { isMetricsConfigured, recordRedisOperation } from '~/app/metrics';
+import { evalScript } from './redisScript';
 
 jest.mock('~/app/metrics', () => ({
   isMetricsConfigured: jest.fn(() => false),
