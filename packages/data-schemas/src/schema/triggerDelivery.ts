@@ -258,19 +258,6 @@ triggerDeliverySchema.index({ user: 1, actorActionAdmittedAt: 1 }, { sparse: tru
 triggerDeliverySchema.index({ stagingRecoveryAt: 1 }, { sparse: true });
 triggerDeliverySchema.index({ laneCleanupPendingAt: 1 }, { sparse: true });
 triggerDeliverySchema.index({ backgroundToolResultDeletionPendingAt: 1 }, { sparse: true });
-triggerDeliverySchema.index(
-  {
-    user: 1,
-    requiredWorkerCapability: 1,
-    'envelope.target.conversationId': 1,
-    'envelope.target.parentMessageId': 1,
-    'envelope.target.agentId': 1,
-    'backgroundToolResult.settledAt': 1,
-  },
-  {
-    partialFilterExpression: { 'backgroundToolResult.settledAt': { $exists: true } },
-  },
-);
 // Only successful rows receive expiresAt. Dead letters remain available until
 // an operator explicitly requeues or removes them.
 triggerDeliverySchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });

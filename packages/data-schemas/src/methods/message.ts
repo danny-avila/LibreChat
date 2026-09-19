@@ -1,4 +1,8 @@
-import { HITL_MESSAGE_FILTER_FIELDS, RetentionMode } from 'librechat-data-provider';
+import {
+  backgroundResultMetadata,
+  HITL_MESSAGE_FILTER_FIELDS,
+  RetentionMode,
+} from 'librechat-data-provider';
 import type { DeleteResult, FilterQuery, Model, Types, UpdateQuery } from 'mongoose';
 import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { SearchParams } from 'meilisearch';
@@ -1423,7 +1427,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     }
   }
 
-  const MAX_BACKGROUND_TOOL_RESULT_BATCH = 8;
+  const MAX_BACKGROUND_TOOL_RESULT_BATCH = 16;
   /** Bounds the attachments-merge fence retries. Each lost round means a
    * concurrent writer changed the array, so re-reading converges. */
   const ATTACHMENT_MERGE_CAS_ATTEMPTS = 8;
@@ -1579,7 +1583,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     claimId,
     generationId,
     allowUnfinished = false,
-    limit = kind === 'wakeup' ? MAX_BACKGROUND_TOOL_RESULT_BATCH : 1,
+    limit = kind === 'wakeup' ? 8 : 1,
+    maxMetadataChars,
   }: {
     userId: string;
     conversationId: string;
@@ -1591,6 +1596,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     generationId?: string;
     allowUnfinished?: boolean;
     limit?: number;
+    /** Includes JSON escaping, delimiters, and empty result fields. */
+    maxMetadataChars?: number;
   }): Promise<BackgroundToolResultClaim> {
     const requestedMessageId = messageId?.trim();
     const requestedGenerationId = generationId?.trim();
@@ -1605,7 +1612,11 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         (requestedGenerationId.length === 0 || requestedGenerationId.length > 256)) ||
       (requestedGenerationId != null && kind !== 'manual') ||
       (allowUnfinished && kind !== 'manual') ||
-      (kind !== 'manual' && kind !== 'wakeup')
+      (kind !== 'manual' && kind !== 'wakeup') ||
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      (maxMetadataChars != null &&
+        (!Number.isSafeInteger(maxMetadataChars) || maxMetadataChars < 1))
     ) {
       throw new TypeError('Invalid background tool result claim');
     }
@@ -1665,6 +1676,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     const requestedClaim = readBackgroundToolResultClaim(row, taskId);
     const replaying = requestedClaim?.kind === kind && requestedClaim.claimId === claimId;
     const candidates: string[] = [];
+    const costs = new Map<string, number>();
+    let receiptBacked = false;
     let requestedState: 'ready' | 'claimed' | 'missing' = 'missing';
     for (const part of row.content ?? []) {
       if (part == null || typeof part !== 'object' || Array.isArray(part)) {
@@ -1692,6 +1705,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       const claimable =
         terminal && wakeupEligible && sameAgent && (replaying ? replay : resultClaim == null);
       if (candidateId === taskId) {
+        receiptBacked = task?.completionReceipt === true;
         if (claimable) {
           requestedState = 'ready';
         } else if (resultClaim != null) {
@@ -1700,10 +1714,28 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       }
       if (
         claimable &&
+        (candidateId === taskId || task?.completionReceipt !== true) &&
         (candidateId === taskId || kind === 'wakeup') &&
         candidates.length < boundedLimit
       ) {
         candidates.push(candidateId);
+      }
+      if (claimable && (candidateId === taskId || candidates.includes(candidateId))) {
+        const call = (part as { tool_call?: { id?: string } }).tool_call;
+        if (typeof call?.id === 'string' && typeof task?.toolName === 'string') {
+          const terminalStatus = task.status === 'error' ? 'error' : 'completed';
+          costs.set(
+            candidateId,
+            JSON.stringify(
+              backgroundResultMetadata({
+                taskId: candidateId,
+                toolCallId: call.id,
+                toolName: task.toolName,
+                status: task.cancelled === true ? 'cancelled' : terminalStatus,
+              }),
+            ).length + 1,
+          );
+        }
       }
     }
     if (requestedState === 'missing') {
@@ -1719,6 +1751,24 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     if (!candidates.includes(taskId)) {
       candidates.unshift(taskId);
       candidates.splice(boundedLimit);
+    }
+    if (!replaying) {
+      /** A receipt lives on another document, so it cannot join this atomic
+       * message-row batch. Keep its delivery task-local in both directions. */
+      if (receiptBacked) candidates.splice(0, candidates.length, taskId);
+      if (maxMetadataChars != null) {
+        let remaining = maxMetadataChars - 1 - (costs.get(taskId) ?? maxMetadataChars);
+        if (remaining < 0)
+          throw new TypeError('Background result metadata exceeds its input budget');
+        const admitted = candidates.filter((id) => {
+          if (id === taskId) return true;
+          const cost = costs.get(id) ?? maxMetadataChars;
+          if (cost > remaining) return false;
+          remaining -= cost;
+          return true;
+        });
+        candidates.splice(0, candidates.length, ...admitted);
+      }
     }
     const claimedAt = new Date();
     const claimStamp = {

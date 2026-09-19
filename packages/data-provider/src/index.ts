@@ -75,6 +75,7 @@ export { default as createPayload } from './createPayload';
 export * from './feedback';
 export * from './parameterSettings';
 export * from './agentToolOptions';
+export * from './backgroundResults';
 /* code-execution sandbox */
 export * from './codeEnvRef';
 export * from './code/worker';
