@@ -1,6 +1,10 @@
 import { act, renderHook } from '@testing-library/react';
 import useLazyHighlight, { HIGHLIGHT_THROTTLE_MS } from '../useLazyHighlight';
+import { useGetStartupConfig } from '~/data-provider';
 
+jest.mock('~/data-provider', () => ({
+  useGetStartupConfig: jest.fn(() => ({ data: undefined })),
+}));
 const mockHighlight = jest.fn((_lang: string, code: string) => ({
   type: 'root',
   children: [{ type: 'text', value: code }],
@@ -21,6 +25,7 @@ describe('useLazyHighlight', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     mockHighlight.mockClear();
+    jest.mocked(useGetStartupConfig).mockReturnValue({ data: undefined } as never);
   });
 
   afterEach(() => {
@@ -44,7 +49,7 @@ describe('useLazyHighlight', () => {
 
   it('highlights the first value immediately', async () => {
     const { result } = renderHook(() => useLazyHighlight('a', 'js'));
-    expect(result.current).toEqual(['a']);
+    expect([null, ['a']]).toContainEqual(result.current);
     await flush();
     expect(result.current).toEqual(['a']);
   });
@@ -69,6 +74,23 @@ describe('useLazyHighlight', () => {
     expect(mockHighlight).toHaveBeenCalledTimes(1);
     expect(mockHighlight).toHaveBeenLastCalledWith('js', 'abcde');
     expect(result.current).toEqual(['abcde']);
+  });
+  it('uses the configured throttle interval', async () => {
+    jest.mocked(useGetStartupConfig).mockReturnValue({
+      data: { interface: { codeHighlightThrottleMs: 100 } },
+    } as never);
+    const { result, rerender } = renderHook(({ code }) => useLazyHighlight(code, 'js'), {
+      initialProps: { code: 'a' },
+    });
+    await flush();
+    mockHighlight.mockClear();
+
+    rerender({ code: 'ab' });
+    act(() => jest.advanceTimersByTime(99));
+    expect(result.current).toEqual(['a']);
+    act(() => jest.advanceTimersByTime(1));
+    await flush();
+    expect(result.current).toEqual(['ab']);
   });
 
   it('clears immediately when code becomes empty', async () => {

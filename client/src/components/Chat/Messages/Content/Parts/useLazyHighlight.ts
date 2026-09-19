@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 
+import { useGetStartupConfig } from '~/data-provider';
+
 /** Minimum gap between highlights while the input keeps changing (streaming). */
 export const HIGHLIGHT_THROTTLE_MS = 300;
 
@@ -74,6 +76,8 @@ export default function useLazyHighlight(
   code: string | undefined,
   lang: string,
 ): React.ReactNode[] | null {
+  const { data: startupConfig } = useGetStartupConfig();
+  const throttleMs = startupConfig?.interface?.codeHighlightThrottleMs ?? HIGHLIGHT_THROTTLE_MS;
   const [highlighted, setHighlighted] = useState<React.ReactNode[] | null>(() => {
     if (!code || !lowlightModule) {
       return null;
@@ -105,7 +109,7 @@ export default function useLazyHighlight(
 
     const run = () => {
       timer.current = null;
-      lastRunAt.current = Date.now();
+      lastRunAt.current = typeof performance === 'undefined' ? Date.now() : performance.now();
       const gen = ++generation.current;
 
       if (lowlightModule) {
@@ -126,13 +130,17 @@ export default function useLazyHighlight(
         });
     };
 
-    const wait = HIGHLIGHT_THROTTLE_MS - (Date.now() - lastRunAt.current);
+    const elapsed =
+      typeof performance === 'undefined'
+        ? Date.now() - lastRunAt.current
+        : performance.now() - lastRunAt.current;
+    const wait = throttleMs - elapsed;
     if (wait <= 0) {
       run();
     } else {
       timer.current = setTimeout(run, wait);
     }
-  }, [code, lang]);
+  }, [code, lang, throttleMs]);
 
   useEffect(
     () => () => {

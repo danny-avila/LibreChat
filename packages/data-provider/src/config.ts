@@ -2057,6 +2057,8 @@ export const interfaceSchema = z
     customWelcome: z.string().optional(),
     mcpServers: mcpServersSchema.optional(),
     modelSelect: z.boolean().optional(),
+    /** Milliseconds between syntax highlights while a code block streams. */
+    codeHighlightThrottleMs: z.number().int().min(0).max(60_000).default(300),
     parameters: z.boolean().optional(),
     multiConvo: z.boolean().optional(),
     bookmarks: z.boolean().optional(),
