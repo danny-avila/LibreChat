@@ -429,14 +429,24 @@ function clientOptionsIdentity(value: unknown): unknown {
  * the `seen` set; what remains to bound is total work, and counting nodes
  * bounds it without erasing structure at a fixed depth.
  *
- * The budget is a horizon, not a proof: two schemas identical for this many
- * nodes and differing only past it still share `[truncated]` and so share an
- * identity. That is the same class the depth cutoff made reachable at twelve
- * levels, moved to a size no Zod schema written by hand reaches, and removing
- * it for good means declining to key a request whose schema could not be
- * represented. Tracked at berry-13/LibreChat#63.
+ * Both bounds are horizons, not proofs: two schemas identical up to whichever
+ * one they reach and differing past it still share `[truncated]` and so share
+ * an identity. That is the same class the old cutoff made reachable at twelve
+ * levels, moved out to sizes no Zod schema written by hand reaches, and
+ * removing it for good means declining to key a request whose schema could
+ * not be represented. Tracked at berry-13/LibreChat#63.
  */
 const RUNTIME_SHAPE_NODE_BUDGET = 5000;
+
+/**
+ * A recursion bound, kept separate from the work budget because it guards a
+ * different failure: the walk is recursive, so depth alone can exhaust the
+ * call stack and throw `RangeError` while a key is being built, failing the
+ * request outright. Twelve was low enough that ordinary schemas collided
+ * under it; this is past anything a schema reaches and far short of the
+ * stack.
+ */
+const RUNTIME_SHAPE_MAX_DEPTH = 64;
 
 /**
  * The whole declared definition of a Zod schema, not a list of the fields
@@ -456,6 +466,7 @@ function runtimeSchemaShape(
   value: unknown,
   seen: Set<object>,
   budget: { left: number } = { left: RUNTIME_SHAPE_NODE_BUDGET },
+  depth = 0,
 ): unknown {
   if (typeof value === 'function') {
     return '[fn]';
@@ -478,17 +489,17 @@ function runtimeSchemaShape(
   if (seen.has(value)) {
     return '[cycle]';
   }
-  if (budget.left <= 0) {
+  if (budget.left <= 0 || depth >= RUNTIME_SHAPE_MAX_DEPTH) {
     return '[truncated]';
   }
   budget.left -= 1;
   seen.add(value);
   try {
     if (Array.isArray(value)) {
-      return value.map((entry) => runtimeSchemaShape(entry, seen, budget));
+      return value.map((entry) => runtimeSchemaShape(entry, seen, budget, depth + 1));
     }
     const node = value as { _def?: unknown; shape?: unknown };
-    const walk = (entry: unknown): unknown => runtimeSchemaShape(entry, seen, budget);
+    const walk = (entry: unknown): unknown => runtimeSchemaShape(entry, seen, budget, depth + 1);
     const entries = (source: unknown): unknown =>
       source != null && typeof source === 'object' && !Array.isArray(source)
         ? Object.keys(source as Record<string, unknown>)

@@ -159,6 +159,20 @@ describe('buildPromptCacheKey', () => {
       );
     });
 
+    it('builds a key for a schema deeper than the recursion bound instead of throwing', () => {
+      /**
+       * The walk is recursive, so a schema deep enough to exhaust the call
+       * stack would throw `RangeError` while the key is being built and fail
+       * the request — worse than any cache miss. Depth is bounded separately
+       * from total work for that reason.
+       */
+      let schema: z.ZodTypeAny = z.object({ leaf: z.string() });
+      for (let i = 0; i < 400; i++) {
+        schema = z.object({ next: schema });
+      }
+      expect(() => key({ tools: [action(schema)] })).not.toThrow();
+    });
+
     it('keeps one key for an unchanged schema', () => {
       const unchanged = () =>
         z.object({
