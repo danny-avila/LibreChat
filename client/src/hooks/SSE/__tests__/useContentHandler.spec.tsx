@@ -118,7 +118,13 @@ describe('useContentHandler message reconciliation', () => {
       isCreatedByUser: true,
       content: [],
     } as unknown as TMessage;
-    let messages = [userMessage, existingResponse, laterMessageFromAnotherThread];
+    const untaggedMessage = {
+      messageId: 'legacy-1',
+      conversationId: 'conversation-1',
+      isCreatedByUser: true,
+      content: [],
+    } as unknown as TMessage;
+    let messages = [userMessage, existingResponse, laterMessageFromAnotherThread, untaggedMessage];
     const setMessages = jest.fn((nextMessages: TMessage[]) => {
       messages = nextMessages;
     });
@@ -149,12 +155,14 @@ describe('useContentHandler message reconciliation', () => {
     });
 
     const output = setMessages.mock.calls[0][0];
-    expect(output).toHaveLength(2);
+    expect(output).toHaveLength(3);
     expect(output[0]).toBe(userMessage);
-    expect(output[0]).toMatchObject({ thread_id: 'thread-1' });
-    expect(output[1]).toMatchObject({
+    expect(output[1]).toBe(untaggedMessage);
+    expect(output[1]).not.toBe(laterMessageFromAnotherThread);
+    expect(output[1]).toMatchObject({ messageId: 'legacy-1' });
+    expect(output[2]).toMatchObject({
       messageId: 'response-1',
-      parentMessageId: 'user-1',
+      parentMessageId: 'legacy-1',
       thread_id: 'thread-1',
       content: [{ type: 'text', text: { value: 'streamed without thread metadata' } }],
     });

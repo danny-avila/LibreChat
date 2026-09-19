@@ -57,7 +57,7 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
       }
       if (thread_id == null && responseThreadId != null) {
         for (let i = messages.length - 1; i >= 0; i--) {
-          if (messages[i].thread_id !== responseThreadId) {
+          if (messages[i].thread_id != null && messages[i].thread_id !== responseThreadId) {
             messages.splice(i, 1);
           }
         }
