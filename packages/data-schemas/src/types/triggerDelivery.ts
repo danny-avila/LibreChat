@@ -84,6 +84,11 @@ export interface AgentBackgroundToolResultReceipt {
   status: 'completed' | 'error' | 'cancelled';
   output: string;
   settledAt: Date;
+  resultClaim?: {
+    kind: 'wakeup';
+    claimId: string;
+    claimedAt: Date;
+  };
 }
 
 export interface AgentTriggerDeliveryHistoryEntry {

@@ -91,6 +91,36 @@ type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &
       output: string;
       settledAt: Date;
     } | null>;
+    claimAgentBackgroundToolResults?(params: {
+      deliveryKey: string;
+      sourceId: string;
+      userId: string;
+      conversationId: string;
+      parentMessageId: string;
+      agentId?: string;
+      claimId: string;
+      limit?: number;
+    }): Promise<
+      | { status: 'not_ready' }
+      | { status: 'claimed'; claimId: string }
+      | {
+          status: 'acquired';
+          results: Array<{
+            taskId: string;
+            toolCallId: string;
+            toolName: string;
+            status: 'completed' | 'error' | 'cancelled';
+            output: string;
+          }>;
+        }
+    >;
+    releaseAgentBackgroundToolResultClaims?(params: {
+      sourceId: string;
+      userId: string;
+      conversationId: string;
+      parentMessageId: string;
+      claimId: string;
+    }): Promise<boolean>;
   };
 
 interface GenerationState {
@@ -333,20 +363,48 @@ export function createBackgroundToolCompletionWakeupResolver({
         status: 404,
       });
     }
-    const receipt = await methods.getAgentBackgroundToolResult?.({
+    const receiptClaim = await methods.claimAgentBackgroundToolResults?.({
       deliveryKey: context.idempotencyKey,
       sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+      userId,
+      conversationId: envelope.target.conversationId,
+      parentMessageId: envelope.target.parentMessageId,
+      agentId: envelope.target.agentId,
+      claimId: context.idempotencyKey,
     });
+    if (receiptClaim?.status === 'claimed') {
+      return { status: 'settled' };
+    }
+    if (receiptClaim?.status === 'acquired') {
+      const input = buildWakeupInput(receiptClaim.results);
+      return {
+        status: 'ready',
+        parentMessageId,
+        input,
+        releaseOnDefiniteFailure: async () => {
+          await methods.releaseAgentBackgroundToolResultClaims?.({
+            sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+            userId,
+            conversationId: envelope.target.conversationId,
+            parentMessageId: envelope.target.parentMessageId,
+            claimId: context.idempotencyKey,
+          });
+        },
+      };
+    }
+    const receipt =
+      methods.claimAgentBackgroundToolResults == null
+        ? await methods.getAgentBackgroundToolResult?.({
+            deliveryKey: context.idempotencyKey,
+            sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+          })
+        : null;
     if (receipt != null) {
       return {
         status: 'ready',
         parentMessageId,
         input: buildWakeupInput([
-          {
-            ...registration,
-            status: receipt.status,
-            output: receipt.output,
-          },
+          { ...registration, status: receipt.status, output: receipt.output },
         ]),
       };
     }
