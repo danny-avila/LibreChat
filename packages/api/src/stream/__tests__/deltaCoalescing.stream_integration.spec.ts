@@ -102,7 +102,7 @@ describe.each([undefined, '25'])('Delta coalescing integration (window %s)', (wi
   }
 
   testRedis(
-    'publishes a window in one EVAL as legacy chunks readable without batch support',
+    'publishes a window in one EVALSHA as legacy chunks readable without batch support',
     async () => {
       const { RedisEventTransport, emitChunkWithReceipt } = await importFreshTransportModules();
       const subscriber = (ioredisClient as Redis).duplicate();
@@ -128,7 +128,7 @@ describe.each([undefined, '25'])('Delta coalescing integration (window %s)', (wi
       });
       await subscription.ready;
 
-      const evalSpy = jest.spyOn(ioredisClient!, 'eval');
+      const evalshaSpy = jest.spyOn(ioredisClient!, 'evalsha');
       const receipts = await Promise.all(
         Array.from({ length: 5 }, (_, i) =>
           emitChunkWithReceipt(
@@ -142,8 +142,8 @@ describe.each([undefined, '25'])('Delta coalescing integration (window %s)', (wi
       );
 
       await waitFor(() => received.length === 5 && rawFrames.length === 5);
-      expect(evalSpy).toHaveBeenCalledTimes(1);
-      evalSpy.mockRestore();
+      expect(evalshaSpy).toHaveBeenCalledTimes(1);
+      evalshaSpy.mockRestore();
       expect(legacyReceived).toEqual([0, 1, 2, 3, 4]);
       expect(received.map((event) => (event as { data: { i: number } }).data.i)).toEqual([
         0, 1, 2, 3, 4,
@@ -203,7 +203,7 @@ describe.each([undefined, '25'])('Delta coalescing integration (window %s)', (wi
         targetSize,
       );
       const immediate = targetSize >= MAX_COALESCED_BYTES || count >= MAX_COALESCED_EVENTS;
-      const evalSpy = jest.spyOn(ioredisClient!, 'eval');
+      const evalshaSpy = jest.spyOn(ioredisClient!, 'evalsha');
       const appends: Array<Promise<boolean>> = [];
       const publications: Array<ReturnType<typeof emitChunkWithReceipt>> = [];
 
@@ -231,7 +231,7 @@ describe.each([undefined, '25'])('Delta coalescing integration (window %s)', (wi
         }
         /** Append script has eight keys; publication has three. Both must issue on
          * the same boundary, with durable append first, or neither may issue yet. */
-        expect(evalSpy.mock.calls.map((call) => call[1])).toEqual(immediate ? [8, 3] : []);
+        expect(evalshaSpy.mock.calls.map((call) => call[1])).toEqual(immediate ? [8, 3] : []);
         if (!immediate) {
           expect(await reader.xlen(`stream:{${streamId}}:chunks`)).toBe(0);
           expect(await reader.get(`stream:{${streamId}}:seq`)).toBeNull();
@@ -239,7 +239,7 @@ describe.each([undefined, '25'])('Delta coalescing integration (window %s)', (wi
         }
         expect(await Promise.all(appends)).toEqual(Array(count).fill(true));
         expect(await Promise.all(publications)).toEqual(Array.from({ length: count }, (_, i) => i));
-        expect(evalSpy.mock.calls.map((call) => call[1])).toEqual([8, 3]);
+        expect(evalshaSpy.mock.calls.map((call) => call[1])).toEqual([8, 3]);
 
         /** A different connection reads only durable Redis state, never the owner's
          * local pending buffer. Its log and publication frontier must agree. */
@@ -249,9 +249,9 @@ describe.each([undefined, '25'])('Delta coalescing integration (window %s)', (wi
         ).toEqual(events);
         expect(await reader.get(`stream:{${streamId}}:seq`)).toBe(String(count));
         await jest.advanceTimersByTimeAsync(25);
-        expect(evalSpy).toHaveBeenCalledTimes(2);
+        expect(evalshaSpy).toHaveBeenCalledTimes(2);
       } finally {
-        evalSpy.mockRestore();
+        evalshaSpy.mockRestore();
         transport.destroy();
         await store.destroy();
         reader.disconnect();

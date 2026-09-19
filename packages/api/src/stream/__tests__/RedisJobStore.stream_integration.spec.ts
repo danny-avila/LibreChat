@@ -507,7 +507,8 @@ describe('RedisJobStore Integration Tests', () => {
         releaseTransition = resolve;
       });
       let restoreEval: (() => void) | undefined;
-
+      let replacementRedis: Redis | Cluster | undefined;
+      let replacementStore: InstanceType<typeof RedisJobStore> | undefined;
       try {
         const originalJob = await store.createJob(streamId, userId, streamId);
         await store.appendChunk(streamId, {
@@ -548,14 +549,18 @@ describe('RedisJobStore Integration Tests', () => {
           patch: { error: 'old generation stopped', completedAt: Date.now() },
         });
         await casApplied;
+        replacementRedis = ioredisClient.duplicate();
+        await replacementRedis.ping();
+        replacementStore = new RedisJobStore(replacementRedis);
+        await replacementStore.initialize();
 
         now.mockReturnValue(2000);
-        const replacement = await store.createJob(streamId, userId, streamId);
-        await store.appendChunk(streamId, {
+        const replacement = await replacementStore!.createJob(streamId, userId, streamId);
+        await replacementStore!.appendChunk(streamId, {
           event: 'on_message_delta',
           data: { text: 'replacement generation' },
         });
-        await store.enqueueSteer(streamId, {
+        await replacementStore!.enqueueSteer(streamId, {
           steerId: 'replacement-steer',
           text: 'keep replacement state',
           userId,
@@ -584,6 +589,8 @@ describe('RedisJobStore Integration Tests', () => {
         releaseTransition?.();
         restoreEval?.();
         now.mockRestore();
+        await replacementStore?.destroy();
+        replacementRedis?.disconnect();
         await store.destroy();
       }
     });
@@ -4100,6 +4107,8 @@ describe('RedisJobStore Integration Tests', () => {
         releaseCleanup = resolve;
       });
       let restoreEval: (() => void) | undefined;
+      let replacementRedis: Redis | Cluster | undefined;
+      let replacementStore: InstanceType<typeof RedisJobStore> | undefined;
 
       try {
         let gated = false;
@@ -4119,17 +4128,20 @@ describe('RedisJobStore Integration Tests', () => {
             ...(args as Array<string | number | Buffer>),
           );
         }) as typeof ioredisClient.eval);
-        restoreEval = () => evalSpy.mockRestore();
-
         const cleaning = store.cleanup();
         await cleanupReady;
+        replacementRedis = ioredisClient.duplicate();
+        await replacementRedis.ping();
+        replacementStore = new RedisJobStore(replacementRedis, { runningTtl: 1 });
+        await replacementStore.initialize();
 
-        const replacement = await store.createJob(streamId, userId, streamId);
-        await store.appendChunk(streamId, {
+        const replacement = await replacementStore!.createJob(streamId, userId, streamId);
+
+        await replacementStore!.appendChunk(streamId, {
           event: 'on_message_delta',
           data: { text: 'replacement generation' },
         });
-        await store.enqueueSteer(
+        await replacementStore!.enqueueSteer(
           streamId,
           buildSteer('replacement-steer', 'keep replacement state'),
         );
@@ -4155,6 +4167,8 @@ describe('RedisJobStore Integration Tests', () => {
       } finally {
         releaseCleanup?.();
         restoreEval?.();
+        await replacementStore?.destroy();
+        replacementRedis?.disconnect();
         await store.destroy();
       }
     });

@@ -127,7 +127,7 @@ describe('evalScript', () => {
     });
     const commandOrder: string[] = [];
     const evalsha = jest.fn((sha: string, _numberOfKeys: number, ...args: RedisScriptArg[]) => {
-      commandOrder.push(`${sha}:${args.at(-1)}`);
+      commandOrder.push(`${sha}:${args[args.length - 1]}`);
       if (evalsha.mock.calls.length === 1) {
         signalFirstStarted();
         return firstFinished.then(() => 'batch-result');

@@ -7,9 +7,11 @@ jest.mock('~/cache/redisTelemetry', () => ({
   instrumentIORedisClient: (client: unknown) => client,
 }));
 
-/** Cold script cache: every EVALSHA reports NOSCRIPT so the store falls back to EVAL. */
+/** Test double for a client where EVALSHA is unavailable and EVAL is the supported path. */
 function evalshaNoScript(): jest.Mock {
-  return jest.fn().mockRejectedValue(new Error('NOSCRIPT No matching script. Please use EVAL.'));
+  return jest
+    .fn()
+    .mockRejectedValue(new Error("NOPERM this user has no permissions to run the 'EVALSHA' command"));
 }
 
 type Deferred<T> = {

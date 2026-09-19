@@ -53,7 +53,7 @@ function markClientEvalOnly(client: RedisScriptClient): void {
   unsupportedEvalshaClients.add(client);
 }
 
-export function resetRedisScriptState(client: RedisScriptClient): void {
+export function resetScriptStateForTests(client: RedisScriptClient): void {
   unsupportedEvalshaClients.delete(client);
   confirmedShasByClient.delete(client);
   inFlightLoadsByKey.delete(client);
@@ -131,7 +131,16 @@ export async function evalScript(
   }
 
   if (confirmed.has(sha)) {
-    return (await evalshaCall()) as RedisScriptResult;
+    try {
+      return (await evalshaCall()) as RedisScriptResult;
+    } catch (error) {
+      if (!isEvalshaFallbackError(error)) {
+        throw error;
+      }
+      // SCRIPT FLUSH or a node restart can invalidate a previously confirmed SHA.
+      confirmed.delete(sha);
+      return evalScript(client, script, numberOfKeys, ...args);
+    }
   }
 
   // Register the gate before issuing EVALSHA. This closes the cold window where a
