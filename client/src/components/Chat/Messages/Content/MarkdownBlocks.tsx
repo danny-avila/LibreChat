@@ -174,10 +174,9 @@ const MarkdownBlocks = memo(function MarkdownBlocks({
   if (changing && !hasChanged) {
     setHasChanged(true);
   }
-  const perBlock = hasChanged || changing;
   const blocks = useMemo(
     () =>
-      perBlock ? toBlockEntries(content, splitMarkdown) : toWholeMessage(content),
+      hasChanged || changing ? toBlockEntries(content, splitMarkdown) : toWholeMessage(content),
     [content, hasChanged, changing, splitMarkdown],
   );
 
