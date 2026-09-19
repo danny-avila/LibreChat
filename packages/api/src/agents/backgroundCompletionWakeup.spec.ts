@@ -203,6 +203,7 @@ describe('background tool completion wakeups', () => {
   it('retires the batch-root delivery before releasing all of its sibling claims', async () => {
     const retire = jest.fn(async () => true);
     const release = jest.fn(async () => true);
+    const releaseReceipts = jest.fn(async () => true);
     const getGenerationJob = jest.fn(async () => ({ status: 'complete' }));
     const fenceGenerationClaim = jest.fn(async () => 'fenced' as const);
     const recover = createBackgroundToolDeadClaimRecovery(
@@ -210,6 +211,7 @@ describe('background tool completion wakeups', () => {
       release,
       getGenerationJob,
       fenceGenerationClaim,
+      releaseReceipts,
     );
 
     await expect(
@@ -239,6 +241,13 @@ describe('background tool completion wakeups', () => {
       conversationId: 'conversation-1',
       messageId: 'response-1',
       kind: 'wakeup',
+      claimId: 'batch-root-delivery',
+    });
+    expect(releaseReceipts).toHaveBeenCalledWith({
+      sourceId: 'background-tool-completion',
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+      parentMessageId: 'response-1',
       claimId: 'batch-root-delivery',
     });
   });
@@ -505,7 +514,7 @@ describe('background tool completion wakeups', () => {
     expect(methods.getAgentBackgroundToolResult).not.toHaveBeenCalled();
   });
 
-  it('yields a receipt claim when a manual message claim lands during receipt arbitration', async () => {
+  it('retries after yielding to a racing manual claim so mutual yielding cannot lose output', async () => {
     const { methods } = resolverMethods();
     methods.claimBackgroundToolResults
       .mockResolvedValueOnce({ status: 'not_ready' } as never)
@@ -530,9 +539,12 @@ describe('background tool completion wakeups', () => {
       getGenerationJob: async () => null,
     });
 
-    await expect(resolve(await envelope(), { idempotencyKey: 'delivery-1' })).resolves.toEqual({
-      status: 'settled',
-    });
+    await expect(resolve(await envelope(), { idempotencyKey: 'delivery-1' })).rejects.toMatchObject(
+      {
+        code: 'BACKGROUND_TOOL_CLAIM_RECONCILING',
+        deferWithoutAttempt: true,
+      },
+    );
     expect(methods.releaseAgentBackgroundToolResultClaims).toHaveBeenCalledWith(
       expect.objectContaining({ claimId: 'delivery-1', parentMessageId: 'response-1' }),
     );
@@ -578,7 +590,10 @@ describe('background tool completion wakeups', () => {
       await prepared.releaseOnDefiniteFailure?.();
     }
     expect(releaseBackgroundToolResultClaims).toHaveBeenCalledWith(
-      expect.objectContaining({ taskIds: ['task-1', 'task-2'], claimId: 'delivery-1' }),
+      expect.objectContaining({ claimId: 'delivery-1', kind: 'wakeup' }),
+    );
+    expect(releaseBackgroundToolResultClaims).toHaveBeenCalledWith(
+      expect.not.objectContaining({ taskIds: expect.anything() }),
     );
   });
 

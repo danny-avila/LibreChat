@@ -516,6 +516,10 @@ export interface ConversationMethodDeps
     user: string,
     conversationIds: string[],
   ) => Promise<void>;
+  prepareAgentTriggerConversationResultErasure?: (
+    user: string,
+    conversationIds: string[],
+  ) => Promise<void>;
 }
 
 export function createConversationMethods(
@@ -3239,6 +3243,7 @@ export function createConversationMethods(
           })),
         );
         await options?.beforeDelete?.(waveIds);
+        await deps?.prepareAgentTriggerConversationResultErasure?.(user, waveIds);
         const result = await Conversation.deleteMany({ user, conversationId: { $in: waveIds } });
         if (result.deletedCount > 0) {
           /** Result erasure is irreversible. Keep receipts intact when a

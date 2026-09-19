@@ -179,6 +179,7 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
       select: false,
     },
     backgroundToolResultErasedAt: { type: Date, select: false },
+    backgroundToolResultDeletionPendingAt: { type: Date, select: false },
     attempts: { type: Number, required: true, default: 0, min: 0 },
     availableAt: { type: Date, required: true },
     envelopeBytes: { type: Number, min: 0 },
@@ -256,6 +257,7 @@ triggerDeliverySchema.index({ 'actorReceipt.resolution': 1 }, { sparse: true });
 triggerDeliverySchema.index({ user: 1, actorActionAdmittedAt: 1 }, { sparse: true });
 triggerDeliverySchema.index({ stagingRecoveryAt: 1 }, { sparse: true });
 triggerDeliverySchema.index({ laneCleanupPendingAt: 1 }, { sparse: true });
+triggerDeliverySchema.index({ backgroundToolResultDeletionPendingAt: 1 }, { sparse: true });
 // Only successful rows receive expiresAt. Dead letters remain available until
 // an operator explicitly requeues or removes them.
 triggerDeliverySchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });

@@ -129,6 +129,7 @@ export interface IAgentTriggerDelivery {
   backgroundToolResult?: AgentBackgroundToolResultReceipt;
   /** Conversation-deletion fence preventing a late producer from restoring private output. */
   backgroundToolResultErasedAt?: Date;
+  backgroundToolResultDeletionPendingAt?: Date;
   attempts: number;
   availableAt: Date;
   envelopeBytes?: number;

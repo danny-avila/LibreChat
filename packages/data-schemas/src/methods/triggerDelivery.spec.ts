@@ -25,6 +25,7 @@ import {
 import { createAgentTriggerLaneSequenceModel } from '../models/triggerLaneSequence';
 import { createAgentTriggerUserPurgeModel } from '../models/triggerUserPurge';
 import { createAgentTriggerDeliveryModel } from '../models/triggerDelivery';
+import { createConversationModel } from '../models/convo';
 import { createUserModel } from '../models/user';
 
 jest.mock('~/config/winston', () => ({
@@ -33,6 +34,7 @@ jest.mock('~/config/winston', () => ({
   info: jest.fn(),
   debug: jest.fn(),
 }));
+jest.mock('~/models/plugins/mongoMeili', () => jest.fn());
 
 const DB_SETUP_TIMEOUT_MS = 60_000;
 const START = new Date('2026-08-17T12:00:00.000Z');
@@ -51,6 +53,7 @@ beforeAll(async () => {
   LaneSequence = createAgentTriggerLaneSequenceModel(mongoose);
   UserPurge = createAgentTriggerUserPurgeModel(mongoose);
   User = createUserModel(mongoose);
+  createConversationModel(mongoose);
   await Promise.all([Delivery.init(), LaneSequence.init(), UserPurge.init(), User.init()]);
   methods = createAgentTriggerDeliveryMethods(mongoose);
 }, DB_SETUP_TIMEOUT_MS);
@@ -520,6 +523,84 @@ describe('agent trigger delivery methods', () => {
       }),
     ).resolves.toBe(false);
   });
+
+  it('recovers receipt erasure after a descendant row was already deleted', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        user,
+        envelope: { event: { source }, target: { conversationId: 'deleted-child' } },
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+      }),
+    );
+    const lookup = { deliveryKey: queued.delivery.deliveryKey, sourceId: source.id };
+    await methods.persistAgentBackgroundToolResult({
+      ...lookup,
+      result: { status: 'completed', output: 'private child output', settledAt: START },
+    });
+    await methods.prepareAgentTriggerConversationResultErasure(user, ['deleted-child']);
+    await mongoose.models.Conversation.collection.insertOne({
+      user: user.toString(),
+      conversationId: 'deleted-child',
+    });
+    await methods.recoverAgentTriggerUserPurges();
+    await expect(methods.getAgentBackgroundToolResult(lookup)).resolves.not.toBeNull();
+    await mongoose.models.Conversation.deleteOne({ user, conversationId: 'deleted-child' });
+    /** The conversation deletion committed, but the follow-up receipt erasure did not. */
+    await methods.recoverAgentTriggerUserPurges();
+    await expect(methods.getAgentBackgroundToolResult(lookup)).resolves.toBeNull();
+    await expect(
+      Delivery.exists({
+        _id: queued.delivery.id,
+        backgroundToolResultDeletionPendingAt: { $exists: true },
+      }),
+    ).resolves.toBeNull();
+    await expect(
+      methods.persistAgentBackgroundToolResult({
+        ...lookup,
+        result: { status: 'completed', output: 'late write', settledAt: START },
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it.each(['receipt', 'death'])(
+    'atomically fences producer loss when %s wins first',
+    async (winner) => {
+      const source = { id: 'background-tool-completion', type: 'internal' };
+      const queued = await methods.enqueueAgentTriggerDelivery(
+        enqueueInput({
+          envelope: { event: { source } },
+          requiredWorkerCapability:
+            AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+        }),
+      );
+      const owner = { workerId: 'worker', claimToken: 'claim', now: START };
+      const claimed = await methods.claimNextAgentTriggerDelivery({
+        ...owner,
+        leaseUntil: new Date(START.getTime() + 60_000),
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2],
+      });
+      expect(claimed).not.toBeNull();
+      const attempt = await methods.beginAgentTriggerDeliveryAttempt({ ...owner, id: claimed!.id });
+      const write = () =>
+        methods.persistAgentBackgroundToolResult({
+          deliveryKey: queued.delivery.deliveryKey,
+          sourceId: source.id,
+          result: { status: 'completed', output: 'late output', settledAt: START },
+        });
+      const dead = () =>
+        methods.deadLetterAgentTriggerDelivery({
+          ...owner,
+          id: claimed!.id,
+          attempt: attempt!,
+          settledAt: START,
+          error: transientFailure({ code: 'BACKGROUND_TOOL_PRODUCER_LOST', retryable: false }),
+        });
+      await expect(winner === 'receipt' ? write() : dead()).resolves.toBe(true);
+      await expect(winner === 'receipt' ? dead() : write()).resolves.toBe(false);
+    },
+  );
 
   it('claims an independent result receipt before returning its output', async () => {
     const source = { id: 'background-tool-completion', type: 'internal' };

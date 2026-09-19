@@ -416,6 +416,10 @@ export interface AgentTriggerDeliveryMethods {
     user: string | Types.ObjectId,
     conversationIds: string[],
   ) => Promise<void>;
+  prepareAgentTriggerConversationResultErasure: (
+    user: string | Types.ObjectId,
+    conversationIds: string[],
+  ) => Promise<void>;
 }
 
 function normalizeFailure(error: AgentTriggerDeliveryFailure): AgentTriggerDeliveryFailure {
@@ -2272,7 +2276,12 @@ export function createAgentTriggerDeliveryMethods(
       backgroundToolResultErasedAt: { $exists: false },
     };
     const updated = await Delivery().updateOne(
-      { ...identity, backgroundToolResult: { $exists: false } },
+      {
+        ...identity,
+        backgroundToolResult: { $exists: false },
+        status: { $nin: ['dead', 'capability_dead', 'succeeded'] },
+        capabilityStatus: { $ne: 'dead' },
+      },
       { $set: { backgroundToolResult: result } },
       { timestamps: false },
     );
@@ -3476,6 +3485,12 @@ export function createAgentTriggerDeliveryMethods(
     },
   ): Promise<boolean> {
     const error = normalizeFailure(input.error);
+    /** Receipt publication and producer-loss settlement must contend on the
+     * same row. A late liveness observation cannot retire committed output. */
+    const receiptFence =
+      error.code === 'BACKGROUND_TOOL_PRODUCER_LOST'
+        ? { backgroundToolResult: { $exists: false } }
+        : {};
     const deadUpdate = (status: 'dead' | 'capability_dead') => ({
       $set: { status, settledAt: input.settledAt, lastError: error },
       $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1, expiresAt: 1 },
@@ -3495,7 +3510,7 @@ export function createAgentTriggerDeliveryMethods(
       },
     });
     const shieldDead = await Delivery().updateOne(
-      { _id: input.id, ...shieldCapabilityFence(input) },
+      { _id: input.id, ...shieldCapabilityFence(input), ...receiptFence },
       {
         $set: {
           // The pre-capability runtime already treats `capability_dead` as a
@@ -3522,16 +3537,20 @@ export function createAgentTriggerDeliveryMethods(
       return true;
     }
     const capabilityDead = await Delivery().updateOne(
-      { _id: input.id, ...legacyCapabilityFence(input) },
+      { _id: input.id, ...legacyCapabilityFence(input), ...receiptFence },
       deadUpdate('capability_dead'),
     );
     if (capabilityDead.modifiedCount === 1) {
       return true;
     }
     const dead = await Delivery()
-      .findOneAndUpdate({ _id: input.id, ...ordinaryFence(input) }, deadUpdate('dead'), {
-        new: true,
-      })
+      .findOneAndUpdate(
+        { _id: input.id, ...ordinaryFence(input), ...receiptFence },
+        deadUpdate('dead'),
+        {
+          new: true,
+        },
+      )
       .select('_id orderingKey batchMemberIds batchMembersSettledAt requeueCount')
       .lean<
         Pick<
@@ -3833,6 +3852,31 @@ export function createAgentTriggerDeliveryMethods(
     if (!Number.isSafeInteger(limit) || limit <= 0) {
       throw new TypeError('Agent trigger purge recovery limit must be a positive integer');
     }
+    const pending = await Delivery()
+      .find({
+        backgroundToolResultDeletionPendingAt: { $exists: true },
+      })
+      .select('user envelope')
+      .sort({ backgroundToolResultDeletionPendingAt: 1, _id: 1 })
+      .limit(Math.min(limit, MAX_PURGE_RECOVERY_LIMIT))
+      .lean<IAgentTriggerDelivery[]>();
+    for (const row of pending) {
+      const conversationId = (row.envelope as { target?: { conversationId?: string } }).target
+        ?.conversationId;
+      if (conversationId == null) {
+        continue;
+      }
+      const exists = await mongoose.models.Conversation.exists({ user: row.user, conversationId });
+      if (exists == null) {
+        await eraseAgentTriggerDeliveryConversationResults(row.user, [conversationId]);
+      } else {
+        await Delivery().updateOne(
+          { _id: row._id, backgroundToolResultDeletionPendingAt: { $exists: true } },
+          { $currentDate: { backgroundToolResultDeletionPendingAt: true } },
+          { timestamps: false },
+        );
+      }
+    }
     const markers = await UserPurge()
       .find({})
       .sort({ updatedAt: 1, _id: 1 })
@@ -3901,8 +3945,25 @@ export function createAgentTriggerDeliveryMethods(
       },
       {
         $set: { backgroundToolResultErasedAt: erasedAt },
-        $unset: { backgroundToolResult: 1 },
+        $unset: { backgroundToolResult: 1, backgroundToolResultDeletionPendingAt: 1 },
       },
+      { timestamps: false },
+    );
+  }
+
+  async function prepareAgentTriggerConversationResultErasure(
+    user: string | Types.ObjectId,
+    conversationIds: string[],
+  ): Promise<void> {
+    if (conversationIds.length === 0) return;
+    await Delivery().updateMany(
+      {
+        user,
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+        'envelope.target.conversationId': { $in: conversationIds },
+        backgroundToolResultErasedAt: { $exists: false },
+      },
+      { $set: { backgroundToolResultDeletionPendingAt: new Date() } },
       { timestamps: false },
     );
   }
@@ -3954,5 +4015,6 @@ export function createAgentTriggerDeliveryMethods(
     recoverAgentTriggerUserPurges,
     deleteAgentTriggerDeliveriesByUser,
     eraseAgentTriggerDeliveryConversationResults,
+    prepareAgentTriggerConversationResultErasure,
   };
 }

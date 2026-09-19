@@ -93,6 +93,7 @@ type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &
       settledAt: Date;
     } | null>;
     claimAgentBackgroundToolResults?: AgentTriggerDeliveryMethods['claimAgentBackgroundToolResults'];
+    getAgentBackgroundToolResultClaim?: AgentTriggerDeliveryMethods['getAgentBackgroundToolResultClaim'];
     releaseAgentBackgroundToolResultClaims?: AgentTriggerDeliveryMethods['releaseAgentBackgroundToolResultClaims'];
   };
 
@@ -344,6 +345,7 @@ export function createBackgroundToolCompletionWakeupResolver({
       agentId: envelope.target.agentId,
       kind: 'wakeup',
       claimId: context.idempotencyKey,
+      limit: 1,
     });
     if (claim.status === 'claimed') {
       return { status: 'settled' };
@@ -356,20 +358,48 @@ export function createBackgroundToolCompletionWakeupResolver({
     }
     if (claim.status === 'acquired') {
       const taskIds = claim.results.map((result) => result.taskId);
+      const receiptOwner = await methods.getAgentBackgroundToolResultClaim?.({
+        sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+        userId,
+        conversationId: envelope.target.conversationId,
+        parentMessageId: envelope.target.parentMessageId,
+        taskId: registration.taskId,
+      });
+      if (receiptOwner != null && receiptOwner.claimId !== context.idempotencyKey) {
+        const released = await methods.releaseBackgroundToolResultClaims({
+          userId,
+          conversationId: envelope.target.conversationId,
+          messageId: envelope.target.parentMessageId,
+          taskIds,
+          kind: 'wakeup',
+          claimId: context.idempotencyKey,
+        });
+        if (!released) throw new Error('Background projection claim release was not confirmed');
+        return { status: 'settled' };
+      }
       const input = buildWakeupInput(claim.results);
       return {
         status: 'ready',
         parentMessageId,
         input,
         releaseOnDefiniteFailure: async () => {
-          await methods.releaseBackgroundToolResultClaims({
+          const released = await methods.releaseBackgroundToolResultClaims({
             userId,
             conversationId: envelope.target.conversationId,
             messageId: envelope.target.parentMessageId,
-            taskIds,
             kind: 'wakeup',
             claimId: context.idempotencyKey,
           });
+          if (!released) throw new Error('Background projection claim release was not confirmed');
+          const receiptReleased = await methods.releaseAgentBackgroundToolResultClaims?.({
+            sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+            userId,
+            conversationId: envelope.target.conversationId,
+            parentMessageId: envelope.target.parentMessageId,
+            claimId: context.idempotencyKey,
+          });
+          if (receiptReleased === false)
+            throw new Error('Background receipt claim release was not confirmed');
         },
       };
     }
@@ -398,29 +428,49 @@ export function createBackgroundToolCompletionWakeupResolver({
         agentId: envelope.target.agentId,
         kind: 'wakeup',
         claimId: context.idempotencyKey,
+        limit: 1,
       });
       if (projectedClaim.status === 'claimed') {
-        await methods.releaseAgentBackgroundToolResultClaims?.({
+        const released = await methods.releaseAgentBackgroundToolResultClaims?.({
           sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
           userId,
           conversationId: envelope.target.conversationId,
           parentMessageId: envelope.target.parentMessageId,
           claimId: context.idempotencyKey,
         });
-        return { status: 'settled' };
+        if (released === false)
+          throw new Error('Background receipt claim release was not confirmed');
+        throw executionError('Background result ownership is being reconciled.', {
+          code: 'BACKGROUND_TOOL_CLAIM_RECONCILING',
+          retryable: true,
+          deferWithoutAttempt: true,
+          retryAfter: '1',
+        });
       }
       return {
         status: 'ready',
         parentMessageId,
         input: buildWakeupInput(receiptClaim.results),
         releaseOnDefiniteFailure: async () => {
-          await methods.releaseAgentBackgroundToolResultClaims?.({
+          const projectionReleased = await methods.releaseBackgroundToolResultClaims({
+            userId,
+            conversationId: envelope.target.conversationId,
+            messageId: envelope.target.parentMessageId,
+            kind: 'wakeup',
+            claimId: context.idempotencyKey,
+          });
+          if (projectedClaim.status === 'acquired' && !projectionReleased) {
+            throw new Error('Background projection claim release was not confirmed');
+          }
+          const receiptReleased = await methods.releaseAgentBackgroundToolResultClaims?.({
             sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
             userId,
             conversationId: envelope.target.conversationId,
             parentMessageId: envelope.target.parentMessageId,
             claimId: context.idempotencyKey,
           });
+          if (receiptReleased === false)
+            throw new Error('Background receipt claim release was not confirmed');
         },
       };
     }
@@ -561,6 +611,7 @@ export function createBackgroundToolDeadClaimRecovery(
     conversationId: string;
     claimId: string;
   }) => Promise<'fenced' | 'started' | 'unavailable'>,
+  releaseReceiptClaims?: AgentTriggerDeliveryMethods['releaseAgentBackgroundToolResultClaims'],
 ): BackgroundToolDeadClaimRecovery {
   return async ({ userId, conversationId, messageId, claimId, kind, generationId }) => {
     if (kind === 'manual') {
@@ -610,12 +661,24 @@ export function createBackgroundToolDeadClaimRecovery(
     if (await claimGenerationIsActive()) {
       return false;
     }
-    return releaseClaims({
+    const released = await releaseClaims({
       userId,
       conversationId,
       messageId,
       kind: 'wakeup',
       claimId,
     });
+    if (!released) {
+      return false;
+    }
+    return (
+      (await releaseReceiptClaims?.({
+        sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+        userId,
+        conversationId,
+        parentMessageId: messageId,
+        claimId,
+      })) ?? true
+    );
   };
 }

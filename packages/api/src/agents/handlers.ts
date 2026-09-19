@@ -5799,6 +5799,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   );
                   const backgroundTask = resolveBackgroundTask();
                   let durableReceiptReady = false;
+                  let durableReceiptAmbiguous = false;
                   const persistDurableReceipt = async (receipt: {
                     status: 'completed' | 'error' | 'cancelled';
                     output?: string;
@@ -5816,6 +5817,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         settledAt: backgroundTask.settledAt,
                       });
                     } catch (receiptError) {
+                      durableReceiptAmbiguous = true;
                       logger.warn(
                         `[background] Failed to persist independent result receipt for task ${task.id}:`,
                         receiptError,
@@ -5827,6 +5829,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     reason: string,
                     certainty: 'definite' | 'ambiguous',
                   ): Promise<void> => {
+                    if (durableReceiptAmbiguous) {
+                      return;
+                    }
                     if (completionAdmission == null) {
                       backgroundTaskRegistry.markCompletionPersistenceFailed(
                         backgroundUserId,

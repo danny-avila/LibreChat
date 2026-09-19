@@ -88,6 +88,7 @@ module.exports = {
   renewAgentTriggerProducerLease: service.renewProducerLease,
   persistAgentBackgroundToolResult: service.persistBackgroundToolResult,
   getAgentBackgroundToolResultClaim: service.getBackgroundToolResultClaim,
+  releaseAgentBackgroundToolResultClaims: service.releaseBackgroundToolResultClaims,
   drainAgentTriggerDeliveriesForUser: service.drainUser,
   prepareAgentTriggerUserPurge: service.prepareUserPurge,
   cancelAgentTriggerUserPurge: service.cancelUserPurge,

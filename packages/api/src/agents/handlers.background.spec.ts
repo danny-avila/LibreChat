@@ -3,8 +3,8 @@ import { logger } from '@librechat/data-schemas';
 import { tool as structuredTool } from '@librechat/agents/langchain/tools';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { FiltersConfig } from 'librechat-data-provider';
-import type { ToolExecuteOptions } from './handlers';
 import type { BackgroundToolWakeupAdmission } from './backgroundCompletion';
+import type { ToolExecuteOptions } from './handlers';
 import {
   BACKGROUND_TASK_ABORT_GRACE_MS,
   BACKGROUND_TASK_TIMEOUT_MS,
@@ -272,48 +272,54 @@ describe('createToolExecuteHandler — background tool calls', () => {
     );
   });
 
-  it('keeps automatic delivery live when only the independent receipt persists', async () => {
-    const retire = jest.fn(async () => true);
-    const persistResult = jest.fn(async () => true);
-    const tool = {
-      name: 'search_mcp_docs',
-      description: 'search docs',
-      schema: z.object({ q: z.string() }),
-      invoke: jest.fn(async () => ({ content: 'available before parent row' })),
-    } as unknown as StructuredToolInterface;
-    const handler = createToolExecuteHandler({
-      loadTools: async () => ({ loadedTools: [tool] }),
-      backgroundToolCompletion: {
-        preregister: jest.fn(async () => ({
-          renew: jest.fn(async () => true),
-          persistResult,
-          retire,
-        })),
-        persist: jest.fn(async () => false),
-        claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
-      },
-    });
-
-    await runBatch(handler, {
-      toolCalls: [
-        {
-          id: 'call-independent-receipt',
-          name: tool.name,
-          args: { q: 'receipt', run_in_background: true },
-          stepId: 'step-independent-receipt',
+  it.each(['acknowledged', 'ambiguous'])(
+    'keeps delivery live for an %s receipt without a projection',
+    async (ack) => {
+      const retire = jest.fn(async () => true);
+      const persistResult = jest.fn(async () => {
+        if (ack === 'ambiguous') throw new Error('receipt committed but acknowledgement lost');
+        return true;
+      });
+      const tool = {
+        name: 'search_mcp_docs',
+        description: 'search docs',
+        schema: z.object({ q: z.string() }),
+        invoke: jest.fn(async () => ({ content: 'available before parent row' })),
+      } as unknown as StructuredToolInterface;
+      const handler = createToolExecuteHandler({
+        loadTools: async () => ({ loadedTools: [tool] }),
+        backgroundToolCompletion: {
+          preregister: jest.fn(async () => ({
+            renew: jest.fn(async () => true),
+            persistResult,
+            retire,
+          })),
+          persist: jest.fn(async () => false),
+          claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
         },
-      ],
-      agentId: 'agent_parent_1',
-      configurable: buildConfig([tool.name]),
-      metadata: { thread_id: 'exec_convo', run_id: 'response-independent-receipt' },
-    });
-    await flushMicrotasks();
+      });
 
-    expect(persistResult).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'completed', output: 'available before parent row' }),
-    );
-    expect(retire).not.toHaveBeenCalled();
-  });
+      await runBatch(handler, {
+        toolCalls: [
+          {
+            id: `call-independent-receipt-${ack}`,
+            name: tool.name,
+            args: { q: 'receipt', run_in_background: true },
+            stepId: 'step-independent-receipt',
+          },
+        ],
+        agentId: 'agent_parent_1',
+        configurable: buildConfig([tool.name]),
+        metadata: { thread_id: 'exec_convo', run_id: `response-independent-receipt-${ack}` },
+      });
+      await flushMicrotasks();
+
+      expect(persistResult).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'completed', output: 'available before parent row' }),
+      );
+      expect(retire).not.toHaveBeenCalled();
+    },
+  );
 
   it('keeps polling guidance when the completion adapter skips registration', async () => {
     const tool = makeSearchTool({ calls: 0 });
