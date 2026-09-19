@@ -52,6 +52,7 @@ const {
   TavilySearchResults,
   createGeminiImageTool,
   createOpenAIImageTools,
+  AzureSora,
 } = require('../');
 const {
   createMCPTool,
@@ -277,6 +278,7 @@ const loadTools = async ({
   if (functions === true) {
     toolConstructors.dalle = DALLE3;
   }
+  toolConstructors.video_gen_sora_azure = AzureSora;
 
   /** @type {ImageGenOptions} */
   const imageGenOptions = {
@@ -293,6 +295,7 @@ const loadTools = async ({
     dalle: imageGenOptions,
     'stable-diffusion': imageGenOptions,
     gemini_image_gen: imageGenOptions,
+    video_gen_sora_azure: imageGenOptions,
   };
 
   /** @type {Record<string, string>} */
