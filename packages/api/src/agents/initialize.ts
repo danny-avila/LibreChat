@@ -72,6 +72,12 @@ import {
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
 import {
+  appendAgentInstructionTail,
+  prependAgentInstructionTail,
+  captureConfiguredAdditionalInstructions,
+  recordStableInstructionText,
+} from './context';
+import {
   normalizeStatefulCodeEnvironment,
   resolveCodeExecutionContext,
   type CodeEnvironmentConfig,
@@ -95,11 +101,6 @@ import {
   registerFileAuthoringTools,
   isFileAuthoringToolDefinition,
 } from './tools';
-import {
-  appendAgentInstructionTail,
-  captureConfiguredAdditionalInstructions,
-  recordStableInstructionText,
-} from './context';
 import {
   normalizeServerName,
   requiresEphemeralUserConnection,
@@ -2265,6 +2266,16 @@ export async function initializeAgent(
     (agent.model_parameters as Record<string, unknown>).configuration = options.configOptions;
   }
 
+  /**
+   * Resolved here, relocated once the repository block has been joined. Moving
+   * the resolved text into the dynamic tail is what keeps today's date out of
+   * the cached prefix, but the tail is sent after everything the instructions
+   * field carries: relocating the agent's own prompt while a repository block
+   * stayed behind would send that block first and reverse the precedence the
+   * agent was saved with. They travel together instead, ahead of the tail.
+   */
+  let temporalInstructions: string | undefined;
+  let instructionTemplate: string | undefined;
   if (agent.instructions && agent.instructions !== '') {
     const resolvedInstructions = replaceSpecialVars({
       text: agent.instructions,
@@ -2274,13 +2285,10 @@ export async function initializeAgent(
     });
     if (hasTemporalSpecialVars(agent.instructions)) {
       /**
-       * The template, before resolution. Moving the resolved text into the
-       * dynamic tail is what keeps today's date out of the cached prefix, but
-       * the instructions themselves are still configuration: recording the
-       * unresolved form means editing them retires the identity while the
-       * clock does not move it.
-       */
-      /**
+       * The template, before resolution. The instructions are still
+       * configuration: recording the unresolved form means editing them
+       * retires the identity while the clock does not move it.
+       *
        * Resolved against a fixed instant in a fixed zone, so the temporal
        * placeholders collapse to one constant while every other substitution
        * — the user's name, for one — resolves as the model will see it.
@@ -2289,18 +2297,14 @@ export async function initializeAgent(
        * request's timezone would make the identity follow a per-request
        * setting whose effect is excluded from the cached prefix anyway.
        */
-      const instructionTemplate = replaceSpecialVars({
+      instructionTemplate = replaceSpecialVars({
         text: agent.instructions,
         user: user ? (user as unknown as TUser) : null,
         now: new Date(0),
         timezone: 'UTC',
       });
+      temporalInstructions = resolvedInstructions;
       agent.instructions = undefined;
-      appendAdditionalInstructions(agent, resolvedInstructions, { stable: false });
-      recordStableInstructionText(
-        agent as Agent & { configuredAdditionalInstructions?: string },
-        instructionTemplate,
-      );
     } else {
       agent.instructions = resolvedInstructions;
     }
@@ -2323,6 +2327,25 @@ export async function initializeAgent(
     agent.instructions = [agent.instructions, repositoryInstructionBlock]
       .filter(Boolean)
       .join('\n\n');
+  }
+
+  if (temporalInstructions != null) {
+    /**
+     * The stable blocks leave the prefix together and in their own order, at
+     * the front of the tail, so what the model reads is what it read before
+     * the prefix was made cacheable. Recorded in their place is the configured
+     * form: the unresolved template, joined to the repository block that
+     * traveled with it, because the identity still has to follow both.
+     */
+    prependAgentInstructionTail(
+      agent,
+      [temporalInstructions, agent.instructions].filter(Boolean).join('\n\n'),
+    );
+    agent.instructions = undefined;
+    recordStableInstructionText(
+      agent as Agent & { configuredAdditionalInstructions?: string },
+      [instructionTemplate, repositoryInstructionBlock].filter(Boolean).join('\n\n'),
+    );
   }
 
   if (typeof agent.artifacts === 'string' && agent.artifacts !== '') {
