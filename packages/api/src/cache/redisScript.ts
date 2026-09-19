@@ -89,7 +89,11 @@ export async function evalScript(
     evalshaFallbackContext.run(true, () => client.evalsha(sha, numberOfKeys, ...args));
   const inFlight = inFlightScriptLoads.get(client)?.get(sha);
   if (inFlight) {
-    await inFlight;
+    try {
+      await inFlight;
+    } catch {
+      // A failed load belongs to the caller that issued it; retry independently.
+    }
     return evalScript(client, script, numberOfKeys, ...args);
   }
 
@@ -103,14 +107,20 @@ export async function evalScript(
     const loads = scriptLoadsFor(client);
     const existingLoad = loads.get(sha);
     if (existingLoad) {
-      await existingLoad;
+      try {
+        await existingLoad;
+      } catch {
+        // Retry with this call's own Redis keys after another caller's load failed.
+      }
       return evalScript(client, script, numberOfKeys, ...args);
     }
 
     if (isEvalshaPermissionError(error)) {
       markClientEvalOnly(client);
     }
-    const load = client.eval(script, numberOfKeys, ...args) as Promise<RedisScriptResult>;
+    const load = Promise.resolve(
+      client.eval(script, numberOfKeys, ...args),
+    ) as Promise<RedisScriptResult>;
     const trackedLoad = load.finally(() => {
       if (loads.get(sha) === trackedLoad) {
         loads.delete(sha);

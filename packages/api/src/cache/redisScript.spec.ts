@@ -78,6 +78,36 @@ describe('evalScript', () => {
     expect(evalsha).toHaveBeenCalledTimes(2);
     expect(evalCommand).toHaveBeenCalledTimes(2);
   });
+  test('does not share a failed cold load with a waiting caller', async () => {
+    let releaseFirstLoad!: () => void;
+    const firstLoadFinished = new Promise<void>((resolve) => {
+      releaseFirstLoad = resolve;
+    });
+    let signalFirstLoadStarted!: () => void;
+    const firstLoadStarted = new Promise<void>((resolve) => {
+      signalFirstLoadStarted = resolve;
+    });
+    const evalsha = jest.fn().mockRejectedValue(new Error('NOSCRIPT No matching script'));
+    const evalCommand = jest
+      .fn()
+      .mockImplementationOnce(async () => {
+        signalFirstLoadStarted();
+        await firstLoadFinished;
+        throw new Error('EVAL load failed');
+      })
+      .mockResolvedValueOnce('waiter-result');
+    const client = { evalsha, eval: evalCommand } as unknown as RedisScriptClient;
+
+    const first = evalScript(client, 'return ARGV[1]', 1, '{stream-a}chunks', 'first');
+    await firstLoadStarted;
+    const second = evalScript(client, 'return ARGV[1]', 1, '{stream-b}chunks', 'second');
+    releaseFirstLoad();
+
+    await expect(first).rejects.toThrow('EVAL load failed');
+    await expect(second).resolves.toBe('waiter-result');
+    expect(evalsha).toHaveBeenCalledTimes(2);
+    expect(evalCommand).toHaveBeenCalledTimes(2);
+  });
   test('falls back and memoizes when EVALSHA is denied but EVAL is permitted', async () => {
     const evalsha = jest
       .fn()
