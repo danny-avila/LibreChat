@@ -6083,6 +6083,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           .renew()
                           .then((renewed) => {
                             if (!renewed) {
+                              producerHeartbeatStopped = true;
+                              if (producerHeartbeat != null) {
+                                clearInterval(producerHeartbeat);
+                              }
                               logger.warn(
                                 `[background] Completion producer lease was not renewed for task ${task.id}.`,
                               );

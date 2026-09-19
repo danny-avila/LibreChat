@@ -2310,7 +2310,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
   });
 
-  it('lets a later poll collect a receipt without inheriting an abandoned local claim', async () => {
+  it('lets a later-generation poll collect a receipt without inheriting an abandoned local claim', async () => {
     const created = backgroundTaskRegistry.create({
       userId: 'claim_user',
       conversationId: 'claim_convo',
@@ -2341,7 +2341,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
       args: { background_task_id: created.task.id },
       agentId: 'agent_parent_1',
       runId: 'poll-run',
-      generationId: 'response-claim',
+      generationId: 'response-later-poll',
       claimBackgroundToolResult,
     };
 
@@ -2359,7 +2359,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(laterPoll).toMatchObject({ status: 'completed', result: 'CLAIMED RESULT' });
     expect(
       backgroundTaskRegistry.get('claim_user', 'claim_convo', created.task.id)?.resultClaim,
-    ).toMatchObject({ kind: 'manual', generationId: 'response-claim' });
+    ).toMatchObject({ kind: 'manual', generationId: 'response-later-poll' });
     expect(retire).toHaveBeenCalledTimes(1);
     expect(retire).toHaveBeenCalledWith('completion claimed by same-generation manual poll', {
       onlyIfUnclaimed: true,
@@ -2369,10 +2369,61 @@ describe('runCheckBackgroundTask (singleton)', () => {
         messageId: 'response-claim',
         taskId: created.task.id,
         kind: 'manual',
-        generationId: 'response-claim',
+        generationId: 'response-later-poll',
         allowUnfinished: true,
       }),
     );
+  });
+
+  it('delivers a completed result inside its originating generation before the response row finalizes', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'originating_user',
+      conversationId: 'originating_convo',
+      toolCallId: 'call_originating',
+      toolName: 'search_mcp_docs',
+      messageId: 'response-originating',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('originating_user', 'originating_convo', created.task.id, {
+      content: 'ORIGINATING RESULT',
+    });
+    const retire = jest.fn(async () => true);
+    backgroundTaskRegistry.markCompletionWakeup(
+      'originating_user',
+      'originating_convo',
+      created.task.id,
+      { renew: jest.fn(async () => true), retire },
+    );
+    const claimBackgroundToolResult = jest.fn(async () => ({ status: 'not_ready' as const }));
+    const request = {
+      userId: 'originating_user',
+      conversationId: 'originating_convo',
+      args: { background_task_id: created.task.id },
+      toolCallId: 'poll-originating',
+      runId: 'originating-run',
+      generationId: 'response-originating',
+      claimBackgroundToolResult,
+    };
+
+    const result = JSON.parse(await runCheckBackgroundTask(request));
+    const replay = JSON.parse(await runCheckBackgroundTask(request));
+
+    expect(result).toMatchObject({ status: 'completed', result: 'ORIGINATING RESULT' });
+    expect(replay).toMatchObject({ status: 'completed', result: 'ORIGINATING RESULT' });
+    expect(retire).toHaveBeenCalledTimes(1);
+    expect(retire).toHaveBeenCalledWith('completion claimed by same-generation manual poll', {
+      onlyIfUnclaimed: true,
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(2);
+    expect(
+      backgroundTaskRegistry.get('originating_user', 'originating_convo', created.task.id)
+        ?.resultClaim,
+    ).toMatchObject({
+      kind: 'manual',
+      generationId: 'response-originating',
+    });
   });
 
   it('reclaims a dead manual delivery after its owning generation is gone', async () => {
