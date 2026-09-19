@@ -116,6 +116,7 @@ import {
 } from './intent';
 import { buildSkillPrimeMessage, isSkillFilePath, SKILL_FILE_PREFIX } from './skills';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
+import { resolveAttachedWorkspaceQueueWaitMs } from '~/code/command';
 import { mergeCodeFilesIntoContext } from './codeFilesSession';
 import { toolValidationFeedback } from './validationFeedback';
 import { createSkillContentDigest } from './compatibility';
@@ -540,6 +541,7 @@ export interface ToolExecuteOptions {
     bridgeWorkerId?: string;
     req?: ServerRequest;
     signal?: AbortSignal;
+    maxQueueWaitMs?: number;
   }) => Promise<WorkspaceReadResult>;
   /** Searches literal text within an attached worker's logical workspace. */
   searchWorkspace?: (params: {
@@ -552,6 +554,7 @@ export interface ToolExecuteOptions {
     bridgeWorkerId?: string;
     req?: ServerRequest;
     signal?: AbortSignal;
+    maxQueueWaitMs?: number;
   }) => Promise<WorkspaceSearchResult>;
   /** Lists relative file paths within an attached worker's logical workspace. */
   listWorkspaceFiles?: (params: {
@@ -564,6 +567,7 @@ export interface ToolExecuteOptions {
     bridgeWorkerId?: string;
     req?: ServerRequest;
     signal?: AbortSignal;
+    maxQueueWaitMs?: number;
   }) => Promise<WorkspaceListResult>;
   /** Writes a UTF-8 file within an attached worker's logical workspace. */
   writeWorkspaceFile?: (params: {
@@ -576,6 +580,7 @@ export interface ToolExecuteOptions {
     bridgeWorkerId?: string;
     req?: ServerRequest;
     signal?: AbortSignal;
+    maxQueueWaitMs?: number;
   }) => Promise<WorkspaceWriteResult>;
   /** Previews exact replacements without mutating an attached worker workspace. */
   previewWorkspaceEdit?: (params: {
@@ -587,6 +592,7 @@ export interface ToolExecuteOptions {
     bridgeWorkerId?: string;
     req?: ServerRequest;
     signal?: AbortSignal;
+    maxQueueWaitMs?: number;
   }) => Promise<WorkspacePreviewEditResult>;
   /** Applies exact replacements atomically within an attached worker workspace. */
   editWorkspaceFile?: (params: {
@@ -599,6 +605,7 @@ export interface ToolExecuteOptions {
     bridgeWorkerId?: string;
     req?: ServerRequest;
     signal?: AbortSignal;
+    maxQueueWaitMs?: number;
   }) => Promise<WorkspaceEditResult>;
   /**
    * Reads a code-execution sandbox file by shelling `cat` through the
@@ -2421,6 +2428,9 @@ async function handleWorkspaceFileRead(
       start_line: startLine,
       max_lines: maxLines,
       codeApiBaseUrl: codeExecutionContext.baseUrl,
+      maxQueueWaitMs: resolveAttachedWorkspaceQueueWaitMs(
+        codeExecutionContext.codeEnvironmentConfigSchema,
+      ),
       executionProfile: codeExecutionContext.executionProfile,
       ...(codeExecutionContext.bridgeWorkerId
         ? { bridgeWorkerId: codeExecutionContext.bridgeWorkerId }
@@ -2523,6 +2533,9 @@ async function handleWorkspaceSearchCall(
       ...(typeof args.path === 'string' && args.path.length > 0 ? { path: args.path } : {}),
       max_results: Number(maxResults),
       codeApiBaseUrl: codeExecutionContext.baseUrl,
+      maxQueueWaitMs: resolveAttachedWorkspaceQueueWaitMs(
+        codeExecutionContext.codeEnvironmentConfigSchema,
+      ),
       executionProfile: codeExecutionContext.executionProfile,
       ...(codeExecutionContext.bridgeWorkerId
         ? { bridgeWorkerId: codeExecutionContext.bridgeWorkerId }
@@ -2610,6 +2623,9 @@ async function handleWorkspaceListCall(
         : {}),
       max_results: Number(maxResults),
       codeApiBaseUrl: codeExecutionContext.baseUrl,
+      maxQueueWaitMs: resolveAttachedWorkspaceQueueWaitMs(
+        codeExecutionContext.codeEnvironmentConfigSchema,
+      ),
       executionProfile: codeExecutionContext.executionProfile,
       ...(codeExecutionContext.bridgeWorkerId
         ? { bridgeWorkerId: codeExecutionContext.bridgeWorkerId }
@@ -3764,10 +3780,14 @@ function attachedWorkspaceMutationParams(
   bridgeWorkerId?: string;
   req?: ServerRequest;
   signal?: AbortSignal;
+  maxQueueWaitMs: number;
 } {
   return {
     workspace_id: workspaceId,
     codeApiBaseUrl: codeExecutionContext.baseUrl,
+    maxQueueWaitMs: resolveAttachedWorkspaceQueueWaitMs(
+      codeExecutionContext.codeEnvironmentConfigSchema,
+    ),
     executionProfile: codeExecutionContext.executionProfile,
     ...(codeExecutionContext.bridgeWorkerId
       ? { bridgeWorkerId: codeExecutionContext.bridgeWorkerId }
@@ -3884,6 +3904,13 @@ async function handleAttachedWorkspaceEditFileCall({
       oldText: edit.old_text,
       newText: edit.new_text,
     }));
+    const workspaceParams = attachedWorkspaceMutationParams(
+      codeExecutionContext,
+      workspaceId,
+      req,
+      signal,
+    );
+    const queueDeadlineAt = Date.now() + workspaceParams.maxQueueWaitMs;
     let expectedBaseSha256: string | undefined;
     if (hasActiveFileFieldPolicy(req?.config?.filters, ['content', 'extracted_text'])) {
       if (!options.previewWorkspaceEdit) {
@@ -3900,7 +3927,7 @@ async function handleAttachedWorkspaceEditFileCall({
         preview = await options.previewWorkspaceEdit({
           file_path: path.filePath,
           edits: workspaceEdits,
-          ...attachedWorkspaceMutationParams(codeExecutionContext, workspaceId, req, signal),
+          ...workspaceParams,
         });
       } catch (error) {
         if (signal?.aborted === true && isAbortError(error)) throw error;
@@ -3913,12 +3940,24 @@ async function handleAttachedWorkspaceEditFileCall({
       const filteredContent = filteredFileResult(tc, req, path.filePath, preview.content);
       if (filteredContent != null) return filteredContent;
       expectedBaseSha256 = preview.baseSha256;
+      /** Zero disables retries, not the two operations required for a protected
+       * edit. Positive horizons must not restart after a successful preview. */
+      if (workspaceParams.maxQueueWaitMs > 0) {
+        const remainingMs = queueDeadlineAt - Date.now();
+        if (remainingMs <= 0) {
+          return errorResult(
+            tc,
+            'The workspace retry budget expired after preview. The file was not modified.',
+          );
+        }
+        workspaceParams.maxQueueWaitMs = remainingMs;
+      }
     }
     const result = await options.editWorkspaceFile({
       file_path: path.filePath,
       edits: workspaceEdits,
       ...(expectedBaseSha256 ? { expected_base_sha256: expectedBaseSha256 } : {}),
-      ...attachedWorkspaceMutationParams(codeExecutionContext, workspaceId, req, signal),
+      ...workspaceParams,
     });
     return successResult(
       tc,
