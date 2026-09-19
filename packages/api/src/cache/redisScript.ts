@@ -8,15 +8,23 @@ export type RedisScriptClient = Pick<Redis | Cluster, 'eval' | 'evalsha'>;
 
 const scriptShas = new Map<string, string>();
 const unsupportedEvalshaClients = new WeakSet<object>();
-const confirmedShasByClient = new WeakMap<object, Set<string>>();
+const confirmedShasByClient = new WeakMap<object, Map<string, Set<string>>>();
 
 const inFlightLoadsByKey = new WeakMap<object, Map<string, Promise<RedisScriptResult>>>();
 
-function confirmedShasFor(client: RedisScriptClient): Set<string> {
-  let confirmed = confirmedShasByClient.get(client);
+function confirmedShasFor(client: RedisScriptClient, orderingKey: string): Set<string> {
+  let confirmedByKey = confirmedShasByClient.get(client);
+  if (confirmedByKey == null) {
+    confirmedByKey = new Map<string, Set<string>>();
+    confirmedShasByClient.set(client, confirmedByKey);
+  }
+  const confirmationKey = (client as RedisScriptClient & { isCluster?: boolean }).isCluster
+    ? orderingKey
+    : '';
+  let confirmed = confirmedByKey.get(confirmationKey);
   if (confirmed == null) {
     confirmed = new Set<string>();
-    confirmedShasByClient.set(client, confirmed);
+    confirmedByKey.set(confirmationKey, confirmed);
   }
   return confirmed;
 }
@@ -112,10 +120,9 @@ export async function evalScript(
   if (scriptUsesEvalOnly(client)) {
     return (await client.eval(script, numberOfKeys, ...args)) as RedisScriptResult;
   }
-
   const sha = scriptSha(script);
   const orderingKey = scriptOrderingKey(args);
-  const confirmed = confirmedShasFor(client);
+  const confirmed = confirmedShasFor(client, orderingKey);
   const loads = loadsFor(client);
   const evalshaCall = () =>
     evalshaFallbackContext.run(true, () => client.evalsha(sha, numberOfKeys, ...args));
@@ -134,7 +141,7 @@ export async function evalScript(
     try {
       return (await evalshaCall()) as RedisScriptResult;
     } catch (error) {
-      if (!isEvalshaFallbackError(error)) {
+      if (!isNoScriptError(error)) {
         throw error;
       }
       // SCRIPT FLUSH or a node restart can invalidate a previously confirmed SHA.

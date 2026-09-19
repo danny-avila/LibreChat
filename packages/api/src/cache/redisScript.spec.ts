@@ -245,6 +245,84 @@ describe('evalScript', () => {
     expect(evalCommand).not.toHaveBeenCalled();
   });
 
+  test('does not reload a confirmed SHA after a permission error', async () => {
+    const failure = new Error(
+      "NOPERM this user has no permissions to run the 'EVALSHA' command",
+    );
+    const evalsha = jest.fn().mockResolvedValueOnce('warm').mockRejectedValueOnce(failure);
+    const evalCommand = jest.fn();
+    const client = { evalsha, eval: evalCommand } as unknown as RedisScriptClient;
+
+    await expect(evalScript(client, 'return 1', 0)).resolves.toBe('warm');
+    await expect(evalScript(client, 'return 1', 0)).rejects.toBe(failure);
+    expect(evalCommand).not.toHaveBeenCalled();
+  });
+
+  test('confirms cluster script SHAs per hash tag before allowing a warm script', async () => {
+    let releaseFallback!: () => void;
+    const fallbackFinished = new Promise<void>((resolve) => {
+      releaseFallback = resolve;
+    });
+    let signalFallbackStarted!: () => void;
+    const fallbackStarted = new Promise<void>((resolve) => {
+      signalFallbackStarted = resolve;
+    });
+    const order: string[] = [];
+    const evalsha = jest
+      .fn()
+      .mockImplementationOnce(async () => {
+        order.push('first@slot-a');
+        return 'first-a';
+      })
+      .mockImplementationOnce(async () => {
+        order.push('second@slot-b');
+        return 'second-b';
+      })
+      .mockImplementationOnce(async () => {
+        order.push('first@slot-b');
+        throw new Error('NOSCRIPT No matching script');
+      })
+      .mockImplementationOnce(async () => {
+        order.push('second@slot-b-warm');
+        return 'second-b-warm';
+      });
+    const evalCommand = jest.fn(async () => {
+      order.push('eval:first@slot-b');
+      signalFallbackStarted();
+      await fallbackFinished;
+      return 'first-b';
+    });
+    const clusterClient = {
+      isCluster: true,
+      evalsha,
+      eval: evalCommand,
+    } as unknown as RedisScriptClient;
+
+    await expect(
+      evalScript(clusterClient, 'first-script', 1, '{slot-a}key', 'first'),
+    ).resolves.toBe('first-a');
+    await expect(
+      evalScript(clusterClient, 'second-script', 1, '{slot-b}key', 'second'),
+    ).resolves.toBe('second-b');
+
+    const crossMaster = evalScript(clusterClient, 'first-script', 1, '{slot-b}key', 'first');
+    await fallbackStarted;
+    const warmTarget = evalScript(clusterClient, 'second-script', 1, '{slot-b}key', 'second');
+    await Promise.resolve();
+    expect(evalsha).toHaveBeenCalledTimes(3);
+
+    releaseFallback();
+    await expect(crossMaster).resolves.toBe('first-b');
+    await expect(warmTarget).resolves.toBe('second-b-warm');
+    expect(order).toEqual([
+      'first@slot-a',
+      'second@slot-b',
+      'first@slot-b',
+      'eval:first@slot-b',
+      'second@slot-b-warm',
+    ]);
+  });
+
   test('uses a successful EVALSHA result with a cluster-compatible client', async () => {
     const evalsha = jest.fn().mockResolvedValue(7);
     const evalCommand = jest.fn();
