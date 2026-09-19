@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Redis, Cluster } from 'ioredis';
 
 export type RedisScriptArg = string | number | Buffer;
+export type RedisScriptResult = string | number | null | RedisScriptResult[];
 export type RedisScriptClient = Pick<Redis | Cluster, 'eval' | 'evalsha'>;
 
 const scriptShas = new Map<string, string>();
@@ -18,6 +19,14 @@ function scriptSha(script: string): string {
 export function isNoScriptError(error: unknown): boolean {
   return error instanceof Error && error.message.includes('NOSCRIPT');
 }
+function isRedisScriptResult(value: unknown): value is RedisScriptResult {
+  return (
+    value == null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    (Array.isArray(value) && value.every(isRedisScriptResult))
+  );
+}
 
 /**
  * Runs a Lua script by its SHA1 (EVALSHA) so only the 40-byte digest crosses the wire on
@@ -25,18 +34,26 @@ export function isNoScriptError(error: unknown): boolean {
  * when the server reports NOSCRIPT (first use, restart, SCRIPT FLUSH). Same semantics,
  * atomicity, key slotting and return value as `client.eval(script, ...)`.
  */
-export async function evalScript<T = unknown>(
+export async function evalScript(
   client: RedisScriptClient,
   script: string,
   numberOfKeys: number,
   ...args: RedisScriptArg[]
-): Promise<T> {
+): Promise<RedisScriptResult> {
   try {
-    return (await client.evalsha(scriptSha(script), numberOfKeys, ...args)) as T;
+    const result = await client.evalsha(scriptSha(script), numberOfKeys, ...args);
+    if (!isRedisScriptResult(result)) {
+      throw new TypeError('Redis script returned an unsupported result');
+    }
+    return result;
   } catch (error) {
     if (!isNoScriptError(error)) {
       throw error;
     }
-    return (await client.eval(script, numberOfKeys, ...args)) as T;
+    const result = await client.eval(script, numberOfKeys, ...args);
+    if (!isRedisScriptResult(result)) {
+      throw new TypeError('Redis script returned an unsupported result');
+    }
+    return result;
   }
 }
