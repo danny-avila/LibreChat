@@ -839,6 +839,124 @@ describe('BaseClient', () => {
       );
     });
 
+    describe('seeding the conversation for a deferred user message', () => {
+      const seedContext = 'api/app/clients/BaseClient.js - sendMessage #seedConversation';
+      const flush = () => new Promise((resolve) => setImmediate(resolve));
+      const savedUserMessage = () =>
+        saveMessage.mock.calls.some(([, message]) => message.isCreatedByUser === true);
+
+      beforeEach(() => {
+        saveMessage.mockReset();
+        saveConvo.mockReset().mockImplementation(async (_ctx, fields) => ({ ...fields }));
+        getConvo.mockReset().mockResolvedValue(null);
+        /** A fresh options object: the suite-level one is shared by reference across clients. */
+        TestClient.options = {
+          ...TestClient.options,
+          req: { user: { id: 'seed-user' }, body: {} },
+        };
+        TestClient.shouldDeferUserMessagePersistence = jest.fn(() => true);
+        TestClient.shouldSeedDeferredConversation = jest.fn(() => true);
+      });
+
+      afterEach(() => {
+        saveMessage.mockReset();
+        saveConvo.mockReset();
+        getConvo.mockReset();
+      });
+
+      test('creates a new conversation row while the message itself waits for admission', async () => {
+        TestClient.sendCompletion.mockImplementation(async () => {
+          await flush();
+          expect(savedUserMessage()).toBe(false);
+          expect(saveConvo).toHaveBeenCalledTimes(1);
+          const [, fields, seedOptions] = saveConvo.mock.calls[0];
+          expect(fields).toEqual(expect.objectContaining({ conversationId: expect.any(String) }));
+          expect(seedOptions).toEqual(expect.objectContaining({ context: seedContext }));
+          /** An empty append set spares `saveConvo` the read of a message list the seed lacks. */
+          expect(seedOptions).toEqual(expect.objectContaining({ appendMessageIds: [] }));
+          return { completion: 'Safe response', metadata: undefined };
+        });
+
+        await TestClient.sendMessage('Message with an attachment');
+
+        expect(savedUserMessage()).toBe(true);
+        /** The message save reuses the seeded row instead of looking the conversation up again. */
+        expect(getConvo).toHaveBeenCalledTimes(1);
+      });
+
+      test('leaves an existing conversation to the deferred message write', async () => {
+        getConvo.mockResolvedValue({ conversationId: 'existing-convo', endpoint: 'openAI' });
+        TestClient.sendCompletion.mockImplementation(async () => {
+          await flush();
+          expect(saveConvo).not.toHaveBeenCalled();
+          return { completion: 'Safe response', metadata: undefined };
+        });
+
+        await TestClient.sendMessage('Message with an attachment');
+
+        expect(savedUserMessage()).toBe(true);
+        expect(saveConvo.mock.calls.every(([, , opts]) => opts.context !== seedContext)).toBe(true);
+      });
+
+      test('holds the deferred message write until an in-flight seed lands', async () => {
+        const seedWrite = deferred();
+        saveConvo.mockImplementationOnce(() => seedWrite.promise);
+        const completionStarted = deferred();
+        const completionResult = deferred();
+        const abortController = new AbortController();
+        TestClient.sendCompletion.mockImplementation(() => {
+          completionStarted.resolve();
+          return completionResult.promise;
+        });
+
+        const sendPromise = TestClient.sendMessage('Message with an attachment', {
+          abortController,
+        });
+        await completionStarted.promise;
+        await flush();
+        expect(saveConvo).toHaveBeenCalledTimes(1);
+
+        abortController.abort();
+        await flush();
+        expect(savedUserMessage()).toBe(false);
+
+        seedWrite.resolve({ conversationId: 'seeded-convo' });
+        await flush();
+        expect(savedUserMessage()).toBe(true);
+
+        completionResult.resolve({ completion: 'Partial response', metadata: undefined });
+        await sendPromise;
+      });
+
+      test('keeps the deferral cancellable after seeding when the model boundary rejects content', async () => {
+        const policyError = new ContentFilterError({ source: 'message', field: 'text' });
+        TestClient.sendCompletion.mockImplementation(async () => {
+          await flush();
+          throw policyError;
+        });
+
+        await expect(TestClient.sendMessage('Message with an attachment')).rejects.toBe(
+          policyError,
+        );
+
+        expect(savedUserMessage()).toBe(false);
+        expect(saveConvo).toHaveBeenCalledTimes(1);
+      });
+
+      test('does not seed when the client holds back every write', async () => {
+        TestClient.shouldSeedDeferredConversation = jest.fn(() => false);
+        TestClient.sendCompletion.mockImplementation(async () => {
+          await flush();
+          expect(saveConvo).not.toHaveBeenCalled();
+          return { completion: 'Safe response', metadata: undefined };
+        });
+
+        await TestClient.sendMessage('Message with an attachment');
+
+        expect(savedUserMessage()).toBe(true);
+      });
+    });
+
     test('preserves eager user-message persistence for non-policy provider failures', async () => {
       saveMessage.mockClear();
       saveConvo.mockClear();
