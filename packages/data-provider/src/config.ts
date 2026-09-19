@@ -1161,9 +1161,9 @@ export const CODE_ENVIRONMENT_COMMAND_TIMEOUT_DEFAULT_MS = 30_000;
 /** Protocol-level ceiling; deployments may only lower this value. */
 export const CODE_ENVIRONMENT_COMMAND_TIMEOUT_HARD_MAX_MS = 5 * 60_000;
 /**
- * How long a capacity-blocked attached tool call stays queued across Code API
- * admission windows. Also the protocol-level ceiling: deployments may only
- * lower it, and `0` disables queueing entirely.
+ * Client retry horizon across Code API admission windows. Also the hard cap:
+ * deployments may only lower it. `0` disables client retries, not the server's
+ * initial admission wait or an already-admitted operation's execution budget.
  */
 export const CODE_ENVIRONMENT_QUEUE_WAIT_DEFAULT_MS = 5 * 60_000;
 
@@ -1191,9 +1191,10 @@ export const codeEnvironmentUserConfigSchema = z
           .min(1)
           .max(CODE_ENVIRONMENT_COMMAND_TIMEOUT_HARD_MAX_MS)
           .optional(),
-        /** How long a tool call whose workspace is busy waits for admission
-         * before the model is told the operation never started. `0` fails on
-         * the first capacity expiry. Omission keeps the five-minute budget. */
+        /** Client retry horizon for capacity expirations, shared by preview/edit.
+         * Omission keeps five minutes; `0` makes each required operation try once.
+         * An in-flight request retains Code API's admission/execution budgets and
+         * can finish after this horizon. This is not a server admission timeout. */
         maxQueueWaitMs: z
           .number()
           .int()

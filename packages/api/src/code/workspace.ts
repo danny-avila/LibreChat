@@ -1,3 +1,4 @@
+import { CODE_ENVIRONMENT_QUEUE_WAIT_DEFAULT_MS } from 'librechat-data-provider';
 import type { CodeBridgeFetch } from './bridge';
 
 const WORKSPACE_TOOL_TIMEOUT_MS = 30_000;
@@ -20,12 +21,8 @@ const MAX_COMMAND_SIGNAL_LENGTH = 32;
 const WORKSPACE_COMMAND_TRANSPORT_GRACE_MS = 5_000;
 /** Matches Code API's bounded admission wait and command settlement allowance. */
 const WORKSPACE_QUEUE_TIMEOUT_MS = 30_000;
-/**
- * Keep a single model tool call queued across bounded Code API admission
- * windows. Keep aligned with data-provider's deployment schema default and
- * hard cap (`limits.maxQueueWaitMs`).
- */
-export const WORKSPACE_QUEUE_MAX_WAIT_MS: number = 5 * 60_000;
+/** Compatibility export; the deployment schema owns the default and hard cap. */
+export const WORKSPACE_QUEUE_MAX_WAIT_MS: number = CODE_ENVIRONMENT_QUEUE_WAIT_DEFAULT_MS;
 const WORKSPACE_QUEUE_RETRY_DELAY_MS = 1_000;
 const WORKSPACE_COMMAND_SETTLEMENT_GRACE_MS = 5_000;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
@@ -772,6 +769,9 @@ export async function executeWorkspaceTool({
   while (true) {
     try {
       signal?.throwIfAborted();
+      /** The endpoint replies only after execution settles. Capping this by the
+       * retry horizon would also abort already-admitted commands, with an unknown
+       * mutation outcome. Server admission and execution retain separate budgets. */
       const timeoutSignal = AbortSignal.timeout(getWorkspaceToolTimeoutMs(request));
       const requestSignal =
         signal != null && typeof AbortSignal.any === 'function'

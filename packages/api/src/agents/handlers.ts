@@ -3904,6 +3904,13 @@ async function handleAttachedWorkspaceEditFileCall({
       oldText: edit.old_text,
       newText: edit.new_text,
     }));
+    const workspaceParams = attachedWorkspaceMutationParams(
+      codeExecutionContext,
+      workspaceId,
+      req,
+      signal,
+    );
+    const queueDeadlineAt = Date.now() + workspaceParams.maxQueueWaitMs;
     let expectedBaseSha256: string | undefined;
     if (hasActiveFileFieldPolicy(req?.config?.filters, ['content', 'extracted_text'])) {
       if (!options.previewWorkspaceEdit) {
@@ -3920,7 +3927,7 @@ async function handleAttachedWorkspaceEditFileCall({
         preview = await options.previewWorkspaceEdit({
           file_path: path.filePath,
           edits: workspaceEdits,
-          ...attachedWorkspaceMutationParams(codeExecutionContext, workspaceId, req, signal),
+          ...workspaceParams,
         });
       } catch (error) {
         if (signal?.aborted === true && isAbortError(error)) throw error;
@@ -3933,12 +3940,24 @@ async function handleAttachedWorkspaceEditFileCall({
       const filteredContent = filteredFileResult(tc, req, path.filePath, preview.content);
       if (filteredContent != null) return filteredContent;
       expectedBaseSha256 = preview.baseSha256;
+      /** Zero disables retries, not the two operations required for a protected
+       * edit. Positive horizons must not restart after a successful preview. */
+      if (workspaceParams.maxQueueWaitMs > 0) {
+        const remainingMs = queueDeadlineAt - Date.now();
+        if (remainingMs <= 0) {
+          return errorResult(
+            tc,
+            'The workspace retry budget expired after preview. The file was not modified.',
+          );
+        }
+        workspaceParams.maxQueueWaitMs = remainingMs;
+      }
     }
     const result = await options.editWorkspaceFile({
       file_path: path.filePath,
       edits: workspaceEdits,
       ...(expectedBaseSha256 ? { expected_base_sha256: expectedBaseSha256 } : {}),
-      ...attachedWorkspaceMutationParams(codeExecutionContext, workspaceId, req, signal),
+      ...workspaceParams,
     });
     return successResult(
       tc,

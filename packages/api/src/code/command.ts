@@ -95,9 +95,9 @@ export function resolveAttachedWorkspaceCommandTimeoutMax(
 }
 
 /**
- * How long one capacity-blocked invocation stays queued. Omitting the field
- * keeps the built-in admission budget; `0` surfaces the first capacity expiry
- * to the model instead of waiting.
+ * Client retry horizon for one capacity-blocked invocation. `0` surfaces the
+ * first capacity expiry without retrying; an in-flight server admission window
+ * and execution retain their own budgets.
  */
 export function resolveAttachedWorkspaceQueueWaitMs(
   configSchema?: CodeEnvironmentUserConfigSchema,

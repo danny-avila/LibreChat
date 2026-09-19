@@ -125,15 +125,16 @@ describe('workspace admission feedback', () => {
   });
 
   test('never opens another admission window once the queue budget is spent', async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(
-      new Response(JSON.stringify({ code: 'WORKSPACE_QUEUE_TIMEOUT' }), {
-        status: 503,
-        headers: { 'Retry-After': '1' },
-      }),
-    );
+    jest.useFakeTimers();
+    try {
+      const fetchImpl = jest.fn().mockResolvedValue(
+        new Response(JSON.stringify({ code: 'WORKSPACE_QUEUE_TIMEOUT' }), {
+          status: 503,
+          headers: { 'Retry-After': '1' },
+        }),
+      );
 
-    await expect(
-      executeWorkspaceTool({
+      const result = executeWorkspaceTool({
         baseURL: 'https://code.example/v1',
         authHeaders: {},
         fetchImpl,
@@ -145,12 +146,19 @@ describe('workspace admission feedback', () => {
           path: 'src/app.ts',
           edits: [{ oldText: 'const old = true;', newText: 'const ready = true;' }],
         },
-      }),
-    ).rejects.toThrow('The operation was not started');
+      }).catch((error: Error) => error);
 
-    // The clamped wait lands on the deadline: a further dispatch could still be
-    // admitted and run a long command after the budget expired.
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(150);
+      expect(await result).toMatchObject({
+        message: expect.stringContaining('The operation was not started'),
+      });
+
+      // The clamped wait lands on the deadline: a further dispatch could still be
+      // admitted and run a long command after the budget expired.
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test.each([true, false])(
@@ -290,6 +298,51 @@ describe('workspace admission feedback', () => {
 });
 
 describe('executeWorkspaceTool', () => {
+  test.each([0, 100])(
+    'preserves admitted command execution beyond a %i ms retry horizon',
+    async (maxQueueWaitMs) => {
+      const now = jest.spyOn(Date, 'now').mockReturnValue(1000);
+      const timeout = jest.spyOn(AbortSignal, 'timeout');
+      const fetchImpl = jest.fn(async (...[_url, init]: Parameters<CodeBridgeFetch>) => {
+        // The endpoint does not report admission separately. A successful command
+        // may finish after the client retry horizon without being cancelled.
+        now.mockReturnValue(2000);
+        expect(init?.signal?.aborted).toBe(false);
+        return new Response(
+          JSON.stringify({
+            protocolVersion: 1,
+            operation: 'execute_command',
+            workspaceId: 'primary',
+            stdout: 'ready',
+            stderr: '',
+            exitCode: 0,
+            timedOut: false,
+            truncated: false,
+          }),
+          { status: 200 },
+        );
+      });
+      await expect(
+        executeWorkspaceTool({
+          baseURL: 'https://code.example/v1',
+          authHeaders: {},
+          maxQueueWaitMs,
+          fetchImpl,
+          request: {
+            protocolVersion: 1,
+            operation: 'execute_command',
+            workspaceId: 'primary',
+            command: 'echo ready',
+            timeoutMs: 300000,
+          },
+        }),
+      ).resolves.toMatchObject({ stdout: 'ready', exitCode: 0 });
+      expect(timeout).toHaveBeenCalledTimes(1);
+      expect(timeout).toHaveBeenCalledWith(340000);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    },
+  );
+
   test.each<[WorkspaceToolRequest, number]>([
     [
       { protocolVersion: 1, operation: 'read_file', workspaceId: 'primary', path: 'README.md' },

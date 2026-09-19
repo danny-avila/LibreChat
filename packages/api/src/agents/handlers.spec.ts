@@ -4764,82 +4764,105 @@ describe('createToolExecuteHandler', () => {
       expect(editWorkspaceFile).not.toHaveBeenCalled();
     });
 
-    it('commits inspected attached edits with the preview revision fence', async () => {
-      const previewWorkspaceEdit = jest.fn(async () => ({
-        protocolVersion: 1 as const,
-        operation: 'preview_edit' as const,
-        workspaceId: 'primary',
-        path: 'src/app.ts',
-        content: 'const state = "ready";',
-        hasUtf8Bom: false,
-        baseSha256: 'b'.repeat(64),
-        replacements: 1,
-        bytesWritten: 22,
-      }));
-      const editWorkspaceFile = jest.fn(async () => ({
-        protocolVersion: 1 as const,
-        operation: 'edit_file' as const,
-        workspaceId: 'primary',
-        path: 'src/app.ts',
-        replacements: 1,
-        bytesWritten: 22,
-      }));
-      const protectedReq = {
-        user: { id: 'user-1' },
-        config: {
-          filters: {
-            files: {
-              pii: {
-                fields: ['content'],
-                starterPatterns: [],
-                customPatterns: [
-                  {
-                    id: 'blocked-placeholder',
-                    label: 'blocked placeholder',
-                    regex: 'NEVER-MATCH-THIS',
-                  },
-                ],
+    it.each([
+      { budget: 1200, elapsed: 0, remaining: 1200 },
+      { budget: 1200, elapsed: 400, remaining: 800 },
+      { budget: 1200, elapsed: 1200, remaining: null },
+      { budget: 1200, elapsed: 1500, remaining: null },
+      { budget: 0, elapsed: 400, remaining: 0 },
+    ])(
+      'shares a protected edit retry horizon ($budget ms, preview $elapsed ms)',
+      async ({ budget, elapsed, remaining }) => {
+        let nowMs = Date.now();
+        jest.spyOn(Date, 'now').mockImplementation(() => nowMs);
+        const previewWorkspaceEdit = jest.fn(async () => {
+          nowMs += elapsed;
+          return {
+            protocolVersion: 1 as const,
+            operation: 'preview_edit' as const,
+            workspaceId: 'primary',
+            path: 'src/app.ts',
+            content: 'const state = "ready";',
+            hasUtf8Bom: false,
+            baseSha256: 'b'.repeat(64),
+            replacements: 1,
+            bytesWritten: 22,
+          };
+        });
+        const editWorkspaceFile = jest.fn(async () => ({
+          protocolVersion: 1 as const,
+          operation: 'edit_file' as const,
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          replacements: 1,
+          bytesWritten: 22,
+        }));
+        const protectedReq = {
+          user: { id: 'user-1' },
+          config: {
+            filters: {
+              files: {
+                pii: {
+                  fields: ['content'],
+                  starterPatterns: [],
+                  customPatterns: [
+                    {
+                      id: 'blocked-placeholder',
+                      label: 'blocked placeholder',
+                      regex: 'NEVER-MATCH-THIS',
+                    },
+                  ],
+                },
               },
             },
           },
-        },
-      } as never;
-      const handler = makeSandboxAuthoringHandler(
-        { previewWorkspaceEdit, editWorkspaceFile },
-        {
-          req: protectedReq,
-          codeExecutionContext: {
-            baseUrl: 'https://code.example.com',
-            codeSessionKey: 'attached-session',
-            executionProfile: 'stateful',
-            statefulSessions: true,
-            environmentType: 'attached',
-            codeEnvironmentConfigSchema: { limits: { maxQueueWaitMs: 1200 } },
-            bridgeWorkerId: 'user-worker',
+        } as never;
+        const handler = makeSandboxAuthoringHandler(
+          { previewWorkspaceEdit, editWorkspaceFile },
+          {
+            req: protectedReq,
+            codeExecutionContext: {
+              baseUrl: 'https://code.example.com',
+              codeSessionKey: 'attached-session',
+              executionProfile: 'stateful',
+              statefulSessions: true,
+              environmentType: 'attached',
+              codeEnvironmentConfigSchema: { limits: { maxQueueWaitMs: budget } },
+              bridgeWorkerId: 'user-worker',
+            },
           },
-        },
-      );
+        );
 
-      const [result] = await invokeHandler(handler, [
-        {
-          id: 'call_edit_workspace_inspected',
-          name: 'edit_file',
-          args: {
-            path: 'workspace/src/app.ts',
-            old_text: 'draft',
-            new_text: 'ready',
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_edit_workspace_inspected',
+            name: 'edit_file',
+            args: {
+              path: 'workspace/src/app.ts',
+              old_text: 'draft',
+              new_text: 'ready',
+            },
           },
-        },
-      ]);
+        ]);
 
-      expect(result.status).toBe('success');
-      expect(previewWorkspaceEdit).toHaveBeenCalledWith(
-        expect.objectContaining({ maxQueueWaitMs: 1200 }),
-      );
-      expect(editWorkspaceFile).toHaveBeenCalledWith(
-        expect.objectContaining({ expected_base_sha256: 'b'.repeat(64), maxQueueWaitMs: 1200 }),
-      );
-    });
+        expect(previewWorkspaceEdit).toHaveBeenCalledWith(
+          expect.objectContaining({ maxQueueWaitMs: budget }),
+        );
+        if (remaining == null) {
+          expect(result.status).toBe('error');
+          expect(result.errorMessage).toContain('The file was not modified');
+          expect(editWorkspaceFile).not.toHaveBeenCalled();
+          return;
+        }
+        expect(result.status).toBe('success');
+        expect(editWorkspaceFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            expected_base_sha256: 'b'.repeat(64),
+            maxQueueWaitMs: remaining,
+          }),
+        );
+      },
+    );
 
     it('contains a file-artifact policy rejection to its call without rejecting the batch', async () => {
       const detectorLabel = 'generated-file bearer token';
