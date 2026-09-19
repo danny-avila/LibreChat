@@ -2471,7 +2471,12 @@ export function createAgentTriggerDeliveryMethods(
       }
     }
     const limit = Math.max(1, Math.min(MAX_BACKGROUND_TOOL_RESULT_BATCH, input.limit ?? 8));
-    if (limit > 1) {
+    const ownedCount = await Delivery().countDocuments({
+      ...scope,
+      'backgroundToolResult.resultClaim.claimId': input.claimId,
+    });
+    const availableSiblingSlots = Math.max(0, limit - ownedCount);
+    if (availableSiblingSlots > 0) {
       const siblings = await Delivery()
         .find({
           ...scope,
@@ -2481,7 +2486,7 @@ export function createAgentTriggerDeliveryMethods(
         })
         .select({ deliveryKey: 1 })
         .sort({ 'backgroundToolResult.settledAt': 1, _id: 1 })
-        .limit(limit - 1)
+        .limit(availableSiblingSlots)
         .lean<Array<Pick<IAgentTriggerDelivery, 'deliveryKey'>>>();
       await Promise.all(
         siblings.map((sibling) =>

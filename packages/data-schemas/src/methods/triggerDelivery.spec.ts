@@ -800,9 +800,18 @@ describe('agent trigger delivery methods', () => {
         requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
       }),
     );
+    const third = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-result-third',
+        user,
+        envelope: makeEnvelope('task-third'),
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+      }),
+    );
     for (const [delivery, output] of [
       [first, 'first output'],
       [second, 'second output'],
+      [third, 'third output'],
     ] as const) {
       await methods.persistAgentBackgroundToolResult({
         deliveryKey: delivery.delivery.deliveryKey,
@@ -823,6 +832,7 @@ describe('agent trigger delivery methods', () => {
         ...scope,
         deliveryKey: first.delivery.deliveryKey,
         claimId: 'first-claim',
+        limit: 2,
       }),
     ).resolves.toMatchObject({
       status: 'acquired',
@@ -830,6 +840,31 @@ describe('agent trigger delivery methods', () => {
         { taskId: 'task-first', output: 'first output' },
         { taskId: 'task-second', output: 'second output' },
       ],
+    });
+    await expect(
+      methods.claimAgentBackgroundToolResults({
+        ...scope,
+        deliveryKey: first.delivery.deliveryKey,
+        claimId: 'first-claim',
+        limit: 2,
+      }),
+    ).resolves.toMatchObject({
+      status: 'acquired',
+      results: [
+        { taskId: 'task-first', output: 'first output' },
+        { taskId: 'task-second', output: 'second output' },
+      ],
+    });
+    await expect(
+      methods.claimAgentBackgroundToolResults({
+        ...scope,
+        deliveryKey: third.delivery.deliveryKey,
+        claimId: 'third-claim',
+        limit: 1,
+      }),
+    ).resolves.toMatchObject({
+      status: 'acquired',
+      results: [{ taskId: 'task-third', output: 'third output' }],
     });
     await expect(
       methods.claimAgentBackgroundToolResults({
@@ -870,6 +905,7 @@ describe('agent trigger delivery methods', () => {
       claim.status === 'acquired' ? claim.results.map((result) => result.taskId) : [],
     );
     expect(deliveredTaskIds.sort()).toEqual(['task-first', 'task-second']);
+    await methods.releaseAgentBackgroundToolResultClaims({ ...scope, claimId: 'third-claim' });
   });
 
   it('keeps capability-fenced work limited to capable workers through lease recovery', async () => {
