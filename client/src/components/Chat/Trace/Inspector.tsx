@@ -1,17 +1,21 @@
-import { memo, useId } from 'react';
-import { X } from 'lucide-react';
-import { Button, Spinner } from '@librechat/client';
+import { memo, useId, useState } from 'react';
+import copy from 'copy-to-clipboard';
+import { Link } from 'react-router-dom';
+import { X, Copy, Check, MessageSquare } from 'lucide-react';
+import { Button, Spinner, buttonVariants } from '@librechat/client';
 import type { TTraceContent } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
+import type { RecordPresentation, ToolCallView } from './present';
 import type { TranslationKeys } from '~/hooks';
 import type { TraceNode } from './model';
+import StackedToolIcons from '~/components/Chat/Messages/Content/ToolOutput/StackedToolIcons';
 import { useConversationTraceRecordQuery } from '~/data-provider';
 import { useTraceFormat, recordDurationText } from './format';
 import { formatCost, formatTokens } from '~/utils/tokens';
-import { KIND_APPEARANCE, STATUS_LABEL } from './kinds';
+import { appearanceOf, STATUS_LABEL } from './kinds';
+import { cn, renderAgentAvatar } from '~/utils';
 import { formatJSON } from '~/utils/json';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 
 type Field = { label: TranslationKeys; value: ReactNode };
 
@@ -110,9 +114,100 @@ function RecordContent({
   );
 }
 
+const COPIED_MS = 2000;
+const CALL_CONTENT_LENGTH = 4000;
+
+function toContent(value?: string): TTraceContent | undefined {
+  if (value == null) {
+    return undefined;
+  }
+  const truncated = value.length > CALL_CONTENT_LENGTH;
+  return { value: truncated ? value.slice(0, CALL_CONTENT_LENGTH) : value, truncated };
+}
+
+/** The saved agent a record ran: who it is, its id to copy, and a chat with it one click away. */
+function AgentCard({ agent, agentId }: { agent: RecordPresentation['agent']; agentId: string }) {
+  const localize = useLocalize();
+  const [copied, setCopied] = useState(false);
+  const copyId = () => {
+    copy(agentId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), COPIED_MS);
+  };
+  return (
+    <section className="flex flex-col gap-3">
+      {agent?.description != null && agent.description !== '' && (
+        <p className="text-sm text-text-secondary">{agent.description}</p>
+      )}
+      {agent == null && (
+        <p className="text-sm text-text-secondary">{localize('com_ui_trace_agent_unavailable')}</p>
+      )}
+      <div className="flex items-center gap-1 rounded-lg border border-border-light bg-surface-primary-alt py-0.5 pl-2.5 pr-0.5">
+        <span className="min-w-0 flex-1 select-all truncate font-mono text-xs text-text-secondary">
+          {agentId}
+        </span>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          onClick={copyId}
+          aria-label={localize(copied ? 'com_ui_copied' : 'com_ui_trace_copy_agent_id')}
+        >
+          {copied ? (
+            <Check className="size-4" aria-hidden="true" />
+          ) : (
+            <Copy className="size-4" aria-hidden="true" />
+          )}
+        </Button>
+      </div>
+      {agent != null && (
+        <Link
+          to={`/c/new?agent_id=${encodeURIComponent(agentId)}`}
+          className={cn(buttonVariants({ variant: 'default', size: 'sm' }), 'self-start')}
+        >
+          <MessageSquare className="size-4" aria-hidden="true" />
+          {localize('com_ui_trace_chat_with_agent')}
+        </Link>
+      )}
+    </section>
+  );
+}
+
+/** A tool round's calls as the chat's own tool cards hold them: no trace read, no content gate. */
+function ToolCalls({
+  calls,
+  mcpIconMap,
+}: {
+  calls: ToolCallView[];
+  mcpIconMap: Map<string, string>;
+}) {
+  const localize = useLocalize();
+  return (
+    <section className="flex flex-col gap-3">
+      {calls.map((call, index) => (
+        <div key={`${call.name}-${index}`} className="flex flex-col gap-1.5">
+          <h4 className="flex items-center gap-1.5 text-sm font-medium">
+            <StackedToolIcons toolNames={[call.name]} mcpIconMap={mcpIconMap} />
+            <span className="min-w-0 truncate">{call.title}</span>
+            {call.caption != null && (
+              <span className="truncate text-xs font-normal text-text-secondary">
+                {call.caption}
+              </span>
+            )}
+          </h4>
+          <ContentBlock label="com_ui_trace_tool_sent" content={toContent(call.input)} />
+          <ContentBlock label="com_ui_trace_tool_returned" content={toContent(call.output)} />
+        </div>
+      ))}
+      <p className="text-xs text-text-secondary">{localize('com_ui_trace_from_conversation')}</p>
+    </section>
+  );
+}
+
 /** Details for the selected record; input and output load only when the deployment allows them. */
 function Inspector({
   node,
+  presentation,
+  mcpIconMap,
   turnStart,
   sourceId,
   conversationId,
@@ -122,6 +217,8 @@ function Inspector({
   onClose,
 }: {
   node: TraceNode;
+  presentation: RecordPresentation;
+  mcpIconMap: Map<string, string>;
   turnStart: number;
   /** The page source that listed this record. */
   sourceId?: string;
@@ -135,7 +232,7 @@ function Inspector({
   const format = useTraceFormat();
   const headingId = useId();
   const { record } = node;
-  const appearance = KIND_APPEARANCE[record.kind];
+  const appearance = appearanceOf(record);
   const Icon = appearance.icon;
   const { usage } = record;
 
@@ -186,9 +283,21 @@ function Inspector({
       className="flex min-h-0 flex-col border-border-light bg-presentation max-md:absolute max-md:inset-x-0 max-md:bottom-0 max-md:z-20 max-md:max-h-[65%] max-md:rounded-t-2xl max-md:border-t max-md:shadow-lg md:w-[22rem] md:shrink-0 md:border-l"
     >
       <div className="flex items-center gap-2 border-b border-border-light px-3 py-2">
-        <Icon aria-hidden="true" className="size-4 shrink-0 text-text-secondary" />
+        {presentation.agent !== undefined &&
+          renderAgentAvatar(presentation.agent, { size: 'icon', showBorder: false })}
+        {presentation.agent === undefined && presentation.toolNames != null && (
+          <StackedToolIcons toolNames={presentation.toolNames} mcpIconMap={mcpIconMap} />
+        )}
+        {presentation.agent === undefined && presentation.toolNames == null && (
+          <Icon aria-hidden="true" className="size-4 shrink-0 text-text-secondary" />
+        )}
         <h3 id={headingId} className="min-w-0 flex-1 truncate text-sm font-semibold">
-          {record.name}
+          {presentation.title}
+          {presentation.caption != null && (
+            <span className="ml-1.5 text-xs font-normal text-text-secondary">
+              {presentation.caption}
+            </span>
+          )}
         </h3>
         <Button
           size="icon-sm"
@@ -230,6 +339,17 @@ function Inspector({
             {record.statusMessage}
           </p>
         )}
+        {record.agentId != null && presentation.agent !== undefined && (
+          <AgentCard agent={presentation.agent} agentId={record.agentId} />
+        )}
+        {presentation.calls == null && presentation.preview != null && (
+          <p className="whitespace-pre-wrap break-words rounded-lg border border-border-light bg-surface-primary-alt p-2 text-sm">
+            {presentation.preview}
+          </p>
+        )}
+        {presentation.calls != null && (
+          <ToolCalls calls={presentation.calls} mcpIconMap={mcpIconMap} />
+        )}
         <Section title="com_ui_trace_timing" fields={timing} />
         <Section
           title="com_ui_trace_model"
@@ -241,6 +361,14 @@ function Inspector({
         <Section
           title="com_ui_trace_identifiers"
           fields={[
+            ...(presentation.technicalName != null
+              ? [
+                  {
+                    label: 'com_ui_trace_recorded_as' as const,
+                    value: <span className="font-mono text-xs">{presentation.technicalName}</span>,
+                  },
+                ]
+              : []),
             {
               label: 'com_ui_trace_record_id',
               value: <span className="select-all font-mono text-xs">{record.id}</span>,
