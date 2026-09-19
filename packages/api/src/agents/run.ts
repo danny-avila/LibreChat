@@ -1477,10 +1477,25 @@ function shapeSummarizationConfig(
         modelKwargs?: Record<string, unknown>;
       }
     | undefined;
-  /** Already resolved above, and only when the summarizer shares the provider. */
-  const ownKwargs = isPlainObject(userParameters?.modelKwargs)
-    ? userParameters.modelKwargs
+  /**
+   * The target's own request kwargs, from both layers that can carry one.
+   *
+   * `summarization.parameters` is the operator's explicit layer, and
+   * `clientOverrides` is the endpoint configuration resolved for the target,
+   * whose `addParams` are merged into `parameters` above. A custom endpoint
+   * keeps a raw key there rather than on the constructor field, because the
+   * promotion that moves it is first-party only — so reading the yaml layer
+   * alone mistook the target's own key for the agent's inherited one and
+   * cleared it, on a surface whose contract is to keep what it is configured
+   * with.
+   */
+  const targetKwargs = isPlainObject(clientOverrides?.modelKwargs)
+    ? clientOverrides.modelKwargs
     : undefined;
+  const ownKwargs =
+    targetKwargs != null || isPlainObject(userParameters?.modelKwargs)
+      ? { ...targetKwargs, ...(userParameters?.modelKwargs as Record<string, unknown> | undefined) }
+      : undefined;
   if (provider === fallbackProvider && parameters?.promptCacheKey == null) {
     /**
      * Whether `createRun` is going to synthesize one or an administrator
