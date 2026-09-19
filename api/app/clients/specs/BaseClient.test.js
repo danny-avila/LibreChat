@@ -840,7 +840,7 @@ describe('BaseClient', () => {
     });
 
     describe('seeding the conversation for a deferred user message', () => {
-      const seedContext = 'api/app/clients/BaseClient.js - seedConversation #saveConvo';
+      const seedContext = 'api/app/clients/BaseClient.js - sendMessage #seedConversation';
       const flush = () => new Promise((resolve) => setImmediate(resolve));
       const savedUserMessage = () =>
         saveMessage.mock.calls.some(([, message]) => message.isCreatedByUser === true);
@@ -872,7 +872,8 @@ describe('BaseClient', () => {
           const [, fields, seedOptions] = saveConvo.mock.calls[0];
           expect(fields).toEqual(expect.objectContaining({ conversationId: expect.any(String) }));
           expect(seedOptions).toEqual(expect.objectContaining({ context: seedContext }));
-          expect(seedOptions).not.toHaveProperty('appendMessageIds');
+          /** An empty append set spares `saveConvo` the read of a message list the seed lacks. */
+          expect(seedOptions).toEqual(expect.objectContaining({ appendMessageIds: [] }));
           return { completion: 'Safe response', metadata: undefined };
         });
 
