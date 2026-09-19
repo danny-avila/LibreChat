@@ -352,12 +352,13 @@ describe('Media original storage', () => {
       };
       const asset = await storage.publish({ ...input, stream: Readable.from(data) });
       expect(asset).toMatchObject({ type: normalizeMediaContentType(type), bytes: data.length });
-      expect(asset.filepath.endsWith(`.${extension}`)).toBe(true);
+      expect(asset.filepath).toBe(`/api/media/assets/${asset.file_id}/content`);
       if (type === 'image/svg+xml') expect(asset).toMatchObject({ width: 32, height: 24 });
       const original = await repository.getMediaAssetContent(scope, asset.file_id);
+      expect(original?.filepath.endsWith(`.${extension}`)).toBe(true);
       expect(original?.contentDigest).toBe(createHash('sha256').update(data).digest('hex'));
       expect((await storage.read(scope, asset.file_id, data.length)).data).toEqual(data);
-      const location = path.join(directory, asset.filepath.slice(1));
+      const location = path.join(directory, original!.filepath.slice(1));
       expect(await readFile(location)).toEqual(data);
       const repeated = await storage.publish({ ...input, stream: Readable.from(data) });
       expect(repeated.file_id).toBe(asset.file_id);

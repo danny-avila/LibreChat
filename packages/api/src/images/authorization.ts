@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-import jwt, { type JwtPayload } from 'jsonwebtoken';
 import { PermissionBits, PrincipalType, ResourceType } from 'librechat-data-provider';
 import {
   ResourceCapabilityMap,
@@ -12,8 +10,10 @@ import type { IAgent, IAssistant, AssistantQuery, SystemCapability } from '@libr
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import type { FilterQuery, ProjectionType, Types } from 'mongoose';
 
+import type { CookieAuthResult } from './cookies';
+import { authenticateCookieRequest } from './cookies';
+
 const MAX_URL_LENGTH = 2048;
-const OBJECT_ID_PATTERN = /^[0-9a-f]{24}$/i;
 const AGENT_AVATAR_PATTERN = /^agent-(.+)-avatar-\d+\.[^/]+$/;
 
 type Principal = {
@@ -50,16 +50,6 @@ type ResolvedImageConfig = {
   secureImageLinks: boolean;
   assistantEndpoints: AssistantConfig[];
 };
-
-type CookieAuthResult =
-  | { status: 'missing' }
-  | { status: 'invalid' }
-  | { status: 'authenticated'; userId: string };
-
-type OpenIdCookieAuthResult =
-  | { status: 'invalid' }
-  | { status: 'legacy'; userId: string }
-  | { status: 'authenticated'; userId: string };
 
 export interface ImageAuthorizationDeps {
   parseCookies: (cookieHeader: string) => Record<string, string | undefined>;
@@ -159,93 +149,21 @@ function parseImagePath(originalUrl: string, basePath: string): ImagePath | null
   };
 }
 
-function getSignedUserId(token: string | undefined): string | null {
-  const secret = process.env.JWT_REFRESH_SECRET;
-  if (!token || !secret) {
-    return null;
-  }
-  try {
-    const payload = jwt.verify(token, secret) as JwtPayload;
-    return typeof payload.id === 'string' && OBJECT_ID_PATTERN.test(payload.id) ? payload.id : null;
-  } catch (error) {
-    logger.warn('[imageAuthorization] Invalid signed user token', error);
-    return null;
-  }
-}
-
-function getSignedOpenIdUserId(
-  token: string | undefined,
-  refreshToken: string,
-): OpenIdCookieAuthResult {
-  const secret = process.env.JWT_REFRESH_SECRET;
-  if (!token || !secret) {
-    return { status: 'invalid' };
-  }
-  try {
-    const payload = jwt.verify(token, secret) as JwtPayload;
-    if (typeof payload.id !== 'string' || !OBJECT_ID_PATTERN.test(payload.id)) {
-      return { status: 'invalid' };
-    }
-    if (typeof payload.refreshTokenHash !== 'string') {
-      return { status: 'legacy', userId: payload.id };
-    }
-    const refreshTokenHash = createHash('sha256').update(refreshToken).digest('base64url');
-    return payload.refreshTokenHash === refreshTokenHash
-      ? { status: 'authenticated', userId: payload.id }
-      : { status: 'invalid' };
-  } catch (error) {
-    logger.warn('[imageAuthorization] Invalid signed OpenID user token', error);
-    return { status: 'invalid' };
-  }
-}
-
 function getStoredPathCandidates(canonicalPath: string): string[] {
   return [canonicalPath, `${canonicalPath}?manual=false`, `${canonicalPath}?manual=true`];
 }
 
-async function authenticateRequest(
+function authenticateRequest(
   req: ImageRequest,
   deps: ImageAuthorizationDeps,
 ): Promise<CookieAuthResult> {
-  const cookieHeader = req.headers.cookie;
-  if (!cookieHeader) {
-    return { status: 'missing' };
-  }
-
-  let parsed: Record<string, string | undefined>;
-  try {
-    parsed = deps.parseCookies(cookieHeader);
-  } catch {
-    return { status: 'invalid' };
-  }
-
-  const refreshToken = parsed.refreshToken;
-  if (!refreshToken) {
-    return { status: 'missing' };
-  }
-
-  if (parsed.token_provider === 'openid' && deps.isOpenIdReuseEnabled()) {
-    const openIdAuth = getSignedOpenIdUserId(parsed.openid_user_id, refreshToken);
-    if (openIdAuth.status === 'invalid') {
-      return { status: 'invalid' };
-    }
-    if (openIdAuth.status === 'legacy') {
-      return refreshToken === req.session?.openidTokens?.refreshToken
-        ? { status: 'authenticated', userId: openIdAuth.userId }
-        : { status: 'invalid' };
-    }
-    const session = await runAsSystem(() =>
-      deps.findSession({ userId: openIdAuth.userId, refreshToken }),
-    );
-    return session ? openIdAuth : { status: 'invalid' };
-  }
-
-  const userId = getSignedUserId(refreshToken);
-  if (!userId) {
-    return { status: 'invalid' };
-  }
-  const session = await runAsSystem(() => deps.findSession({ userId, refreshToken }));
-  return session ? { status: 'authenticated', userId } : { status: 'invalid' };
+  return authenticateCookieRequest(req, {
+    parseCookies: deps.parseCookies,
+    isOpenIdReuseEnabled: deps.isOpenIdReuseEnabled,
+    getSecret: () => process.env.JWT_REFRESH_SECRET,
+    findSession: deps.findSession,
+    asSystem: runAsSystem,
+  });
 }
 
 function isSharedAssistant(assistant: AssistantImageRecord, configs: AssistantConfig[]): boolean {

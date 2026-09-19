@@ -6,6 +6,8 @@ export * from './credentials';
 export * from './vertexAuth';
 export * from './catalog';
 export * from './storage';
+export * from './objects';
+export * from './derivatives';
 export * from './service';
 export * from './title';
 export * from './worker';

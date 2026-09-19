@@ -5,6 +5,7 @@ import {
 } from '@librechat/data-schemas';
 import {
   messageFilterPiiSchema,
+  TOKEN_CREDITS_PER_USD,
   createMediaSubmissionSchema,
   createMediaImportSchema,
   createMediaPresetSchema,
@@ -59,6 +60,7 @@ import { mediaInputByteLimit, prepareMediaInputContent } from './content';
 import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { isContentFilterError } from '../middleware/contentFilter';
 import { UninspectableFileError } from '../protection/files';
+import { assertMediaStorage } from './storage';
 import { MediaServiceError } from './errors';
 
 export type { MediaContext } from './context';
@@ -131,18 +133,22 @@ function preparedExecution(
   ready: PreparedMedia,
   appConfig: AppConfig,
 ): MediaExecutionSnapshot {
+  const accountingMode = mediaAccountingMode(appConfig);
   return {
     connectionId: selection.connectionId,
     modelId: selection.modelId,
     api: ready.connection.api,
     catalogVersion: selection.catalogVersion,
     bindingRevision: ready.connection.binding,
-    billing: ready.integration.billing,
+    billing:
+      ready.integration.billing ??
+      (accountingMode === 'transactions' ? { creditsPerUSD: TOKEN_CREDITS_PER_USD } : undefined),
     providerTag: ready.providerTag,
     ...(ready.integration.endpointRef.kind === 'direct'
       ? {}
       : { endpointRef: ready.integration.endpointRef }),
-    accountingMode: mediaAccountingMode(appConfig),
+    accountingMode,
+    cancellation: ready.cancellation,
   };
 }
 function presetError(error: unknown): never {
@@ -157,6 +163,7 @@ export interface PreparedMedia {
   connection: MediaConnection;
   inputs: MediaProviderInput[];
   providerTag?: string;
+  cancellation?: MediaExecutionSnapshot['cancellation'];
   continuation?: MediaProviderContext['continuation'];
 }
 export interface MediaServices {
@@ -228,7 +235,17 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
   const snapshot = (context: MediaContext) =>
     catalog.read(
       context.config,
-      (integration) => resolve(context, integration),
+      (integration) => {
+        assertMediaStorage(context);
+        if (context.appConfig.balance?.enabled && !integration.billing?.maxCostUSD) {
+          throw new MediaServiceError(
+            'not_ready',
+            422,
+            'A media cost reservation must be configured before generation.',
+          );
+        }
+        return resolve(context, integration);
+      },
       `${context.scope.tenantId ?? ''}:${context.scope.ownerId}`,
       (integration) => deps.describeUserKey?.({ integration, appConfig: context.appConfig }),
     );
@@ -246,13 +263,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
     if (integration?.enabled === false) {
       throw new MediaServiceError('forbidden', 403, 'This media provider is disabled.');
     }
-    if ((context.config.assets.source ?? context.appConfig.fileStrategy) !== 'local') {
-      throw new MediaServiceError(
-        'unsupported',
-        422,
-        'This media storage adapter is not available.',
-      );
-    }
+    assertMediaStorage(context);
     const current = await snapshot(context);
     if (requireCatalogVersion && current.catalog.version !== request.selection.catalogVersion) {
       throw new MediaServiceError('stale_catalog', 409, 'The media model catalog changed.');
@@ -414,7 +425,19 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
       }
       throw error;
     }
-    return { integration, connection, inputs, providerTag: selected.providerTag, continuation };
+    const execution = selected.offering.capabilities.find(
+      (capability) => capability.operation === request.operation,
+    )?.execution;
+    return {
+      integration,
+      connection,
+      inputs,
+      providerTag: selected.providerTag,
+      continuation,
+      ...(execution?.kind === 'remote-job' && execution.cancellation !== 'unsupported'
+        ? { cancellation: execution.cancellation }
+        : {}),
+    };
   }
 
   const pageLimit = (context: MediaContext, requested?: number) =>
@@ -547,18 +570,22 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
       },
       async cancel(jobId: string, context: MediaContext) {
         assertMediaAccess(context);
-        const job = await deps.repository.getMediaJob(context.scope, jobId);
+        const job = await deps.repository.cancelMediaJob(
+          context.scope,
+          jobId,
+          deps.adapters.filter((adapter) => adapter.cancel).map((adapter) => adapter.api),
+        );
         if (!job) {
           throw new MediaServiceError('not_found', 404, 'The job is unavailable.');
         }
-        if (job.phase !== 'queued' && job.phase !== 'cancelled') {
+        if (job.executionOwner !== 'media' || (job.phase !== 'cancelled' && !job.cancellation)) {
           throw new MediaServiceError(
             'cancel_unsupported',
             409,
-            'This provider does not support cancelling accepted work.',
+            'This media job does not support cancellation.',
           );
         }
-        return deps.repository.cancelMediaJob(context.scope, jobId);
+        return job;
       },
       async updateThread(threadId: string, update: MediaThreadUpdate, context: MediaContext) {
         assertMediaAccess(context);

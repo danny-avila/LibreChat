@@ -182,7 +182,10 @@ function getReservationTtlMs(config?: BalanceConfig): number {
   return effective;
 }
 
-function buildInitialBalance(user: string, config?: BalanceConfig): IBalanceUpdate | undefined {
+export function buildInitialBalance(
+  user: string,
+  config?: BalanceConfig,
+): IBalanceUpdate | undefined {
   if (config?.startBalance == null) {
     return undefined;
   }

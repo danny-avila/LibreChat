@@ -1,6 +1,6 @@
 import type { RefillIntervalUnit } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
-import type { MediaHold, MediaPendingSettlement } from './mediaAccounting';
+import type { MediaHold, MediaPendingSettlement } from './mediaBalance';
 
 /** Whole credits held against a balance while the request that reserved them is in flight */
 export interface IBalanceReservation {
@@ -59,6 +59,17 @@ export interface BalanceReservationRequest {
   /** Creates the balance record with these fields when the user has none */
   initialBalance?: IBalanceUpdate;
 }
+
+/** Maintains the shared balance before another durable admission mechanism holds credits. */
+export type BalancePreparationRequest = Pick<
+  BalanceReservationRequest,
+  'user' | 'amount' | 'initialBalance'
+> & {
+  /** Explicit tenant scope for background work, including the legacy null tenant. */
+  tenantId?: string | null;
+  /** Keeps recovery tied to the balance originally selected for the request. */
+  balanceId?: string;
+};
 
 export interface BalanceReservationRenewal {
   user: string;

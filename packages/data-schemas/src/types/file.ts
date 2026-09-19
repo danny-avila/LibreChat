@@ -6,6 +6,7 @@ import type {
   RunFileProvenance,
   TFile,
 } from 'librechat-data-provider';
+import type { MediaAssetContent } from './media';
 
 export type RunArtifactRunScope = {
   userId: string;
@@ -137,6 +138,8 @@ export interface IMongoFile extends Omit<Document, 'model'> {
   mediaOutputKey?: string;
   mediaRendition?: string;
   mediaContentDigest?: string;
+  mediaRenditions?: MediaAssetContent['mediaRenditions'];
+  mediaRenditionLocations?: MediaAssetContent['mediaRenditionLocations'];
   mediaLifecycle?: 'live' | 'retiring' | 'retired';
   mediaEpoch?: number;
   mediaRetainers?: string[];

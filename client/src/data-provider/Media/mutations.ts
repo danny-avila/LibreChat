@@ -49,7 +49,7 @@ export function useMediaJobMutations(host: MutationScope) {
   const cancel = useMutation(
     [MutationKeys.cancelMediaJob],
     (jobId: string) => dataService.cancelMediaJob(jobId),
-    { onSuccess: settle },
+    { onSettled: settle },
   );
   return { cancel };
 }

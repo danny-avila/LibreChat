@@ -219,7 +219,50 @@ export function createMediaWorker(
           usage: job.provider.recovery.usage,
         };
       } else if (job.provider.operationId && adapter.poll) {
-        result = await adapter.poll(job.provider.operationId, providerContext);
+        const cancellation = adapter.cancel;
+        if (
+          job.cancelRequestedAt &&
+          job.provider.certainty === 'submitted' &&
+          job.execution.cancellation &&
+          cancellation &&
+          !job.provider.cancellationAcknowledged &&
+          (!job.provider.cancellationAttemptedAt || cancellation.retry === 'idempotent')
+        ) {
+          const cancelled = await cancellation.request(
+            job.provider.operationId!,
+            providerContext,
+            () =>
+              observe({
+                phase: 'running',
+                provider: {
+                  ...job.provider,
+                  cancellationAttemptedAt: new Date(deps.now()).toISOString(),
+                },
+              }),
+          );
+          if (
+            cancelled.status === 'cancellation_requested' ||
+            cancelled.status === 'cancellation_deferred'
+          ) {
+            const { cancellationAttemptedAt, ...provider } = job.provider;
+            await observe({
+              phase: 'running',
+              provider: {
+                ...provider,
+                ...(cancelled.status === 'cancellation_requested'
+                  ? { cancellationAttemptedAt }
+                  : {}),
+                cancellationAcknowledged: cancelled.status === 'cancellation_requested',
+              },
+              dueAt: new Date(deps.now() + context.config.polling.providerIntervalMs).toISOString(),
+              releaseLease: true,
+            });
+            return;
+          }
+          result = cancelled;
+        } else {
+          result = await adapter.poll(job.provider.operationId, providerContext);
+        }
       } else if (job.provider.certainty === 'terminal' && job.provider.recovery?.parts) {
         const parts: MediaProviderPart[] = [];
         for (const part of job.provider.recovery.parts) {
@@ -283,7 +326,7 @@ export function createMediaWorker(
       if (result.status === 'running') {
         await observe({
           phase: 'running',
-          provider: { certainty: 'submitted', operationId: result.operationId },
+          provider: { ...job.provider, certainty: 'submitted', operationId: result.operationId },
           dueAt: new Date(deps.now() + context.config.polling.providerIntervalMs).toISOString(),
           releaseLease: true,
         });

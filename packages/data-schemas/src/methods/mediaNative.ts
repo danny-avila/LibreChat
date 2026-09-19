@@ -17,6 +17,7 @@ import { createMediaNativePartModel } from '~/models/mediaNativePart';
 import { createIndexesWithRetry } from '~/utils/retry';
 import { createFileModel } from '~/models/file';
 import { MediaPersistenceError } from './media';
+import { toMediaAsset } from '~/utils/media';
 
 const durable = { w: 'majority' as const, j: true };
 function scopeFilter(scope: MediaOwnerScope): MediaOwnerScope {
@@ -276,22 +277,13 @@ export function createMediaNativeMethods(
           file_id: { $in: fileIds },
           mediaLifecycle: 'live',
           $or: [{ mediaHardExpiresAt: null }, { mediaHardExpiresAt: { $gt: new Date() } }],
-        }).lean()
+        })
+          .select(
+            'file_id filename type bytes filepath width height durationSeconds source mediaRenditions',
+          )
+          .lean()
       : [];
-    const assets = new Map(
-      files.map((file) => [
-        file.file_id,
-        {
-          file_id: file.file_id,
-          filename: file.filename,
-          type: file.type,
-          bytes: file.bytes,
-          filepath: file.filepath,
-          ...(file.width !== undefined ? { width: file.width } : {}),
-          ...(file.height !== undefined ? { height: file.height } : {}),
-        },
-      ]),
-    );
+    const assets = new Map(files.map((file) => [file.file_id, toMediaAsset(file)]));
     parts.forEach((entry, ordinal) => {
       const part = entry.part;
       if (part.kind === 'text') {

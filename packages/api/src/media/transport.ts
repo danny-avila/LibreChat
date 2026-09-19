@@ -8,7 +8,7 @@ import { isSSRFTarget } from '../auth/domain';
 
 export interface MediaTransportRequest {
   url: string;
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'DELETE';
   headers?: Record<string, string>;
   body?: string | FormData;
   signal?: AbortSignal;
@@ -16,6 +16,7 @@ export interface MediaTransportRequest {
   maxBytes: number;
   maxRedirects?: number;
   emptyResponse?: { status: number; body: string };
+  successStatus?: number;
   publicOnly?: boolean;
 }
 
@@ -130,6 +131,9 @@ export function createMediaTransport({
           transformResponse: [(text: string) => text],
         });
         assertStatus(response.status);
+        if (request.successStatus !== undefined && response.status !== request.successStatus) {
+          throw new MediaProviderError('uncertain', response.status, 'unexpected_success_status');
+        }
         const body =
           response.status === request.emptyResponse?.status && !response.data.trim()
             ? request.emptyResponse.body

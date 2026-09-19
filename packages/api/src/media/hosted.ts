@@ -10,6 +10,7 @@ import { isContentFilterError } from '../middleware/contentFilter';
 import { assertUploadContentAllowed } from '../files/preflight';
 import { UninspectableFileError } from '../protection/files';
 import { isMediaTransferLimitError } from './transport';
+import { assertMediaStorage } from './storage';
 import { MediaServiceError } from './errors';
 
 export interface MediaHostedDependencies {
@@ -141,9 +142,7 @@ export async function importHostedMediaReference(
   context: MediaContext,
   deps: MediaHostedDependencies,
 ): Promise<MediaURLUploadResponse> {
-  if ((context.config.assets.source ?? context.appConfig.fileStrategy) !== 'local') {
-    throw new MediaServiceError('unsupported', 422, 'This media storage adapter is not available.');
-  }
+  assertMediaStorage(context);
   const { sourceURL, data, type } = await fetchHostedMediaReference(input, context, deps.transport);
   const filename = `${input.role}-reference.${mediaContentExtension(type)}`;
   try {

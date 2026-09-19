@@ -51,7 +51,7 @@ export default function MediaWorkspace({
   const galleryScroll = useRef<HTMLDivElement>(null);
   const galleryPosition = useRef(0);
   const followLatest = useRef(true);
-  const focusRequested = useRef(false);
+  const focusRequested = useRef<{ threadId: string | undefined }>();
   const settingsTrigger = useRef<HTMLButtonElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [library, setLibrary] = useAtom(mediaLibraryFamily(host.scope));
@@ -84,21 +84,22 @@ export default function MediaWorkspace({
   const pendingTitle = (receipt?: MediaReceipt) =>
     localize(receipt?.phase === 'preparing' ? 'com_media_preparing' : 'com_media_restoring');
   const focusPrompt = useCallback(() => {
+    if (!focusRequested.current || focusRequested.current.threadId !== threadId) return;
     const prompt = workspace.current?.querySelector<HTMLTextAreaElement>(
       '[data-media-composer] textarea',
     );
     if (!prompt || prompt.closest('[hidden]')) return;
     prompt.focus();
-    focusRequested.current = false;
-  }, []);
-  const focusComposer = () => {
+    if (document.activeElement === prompt) focusRequested.current = undefined;
+  }, [threadId]);
+  const focusComposer = (destination = { threadId }) => {
     setView('thread');
-    focusRequested.current = true;
+    focusRequested.current = destination;
     requestAnimationFrame(focusPrompt);
   };
   const create = () => {
     host.openThread('');
-    focusComposer();
+    focusComposer({ threadId: undefined });
   };
   const { latestTurn, image: imageContext } = useMemo(
     () => mediaThreadContext(detail.data?.turns.items ?? []),
@@ -447,7 +448,7 @@ export default function MediaWorkspace({
               onColumns={(columns) => setLibrary((previous) => ({ ...previous, columns }))}
               onOpen={(id) => {
                 host.openThread(id);
-                focusComposer();
+                focusComposer({ threadId: id });
               }}
               onCreate={create}
             />

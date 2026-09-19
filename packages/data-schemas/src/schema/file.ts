@@ -67,6 +67,8 @@ const file: Schema<IMongoFile> = new Schema(
     mediaOutputKey: { type: String, immutable: true },
     mediaRendition: { type: String, immutable: true },
     mediaContentDigest: { type: String, immutable: true },
+    mediaRenditions: { type: Schema.Types.Mixed, immutable: true },
+    mediaRenditionLocations: { type: [Schema.Types.Mixed], immutable: true, default: undefined },
     mediaLifecycle: { type: String, enum: ['live', 'retiring', 'retired'] },
     mediaEpoch: Number,
     mediaRetainers: { type: [String], default: undefined },

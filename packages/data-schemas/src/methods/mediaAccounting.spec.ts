@@ -29,13 +29,15 @@ describe('media accounting on standalone MongoDB', () => {
     createBalanceModel(mongoose);
     createTransactionModel(mongoose);
     createMediaSettlementModel(mongoose);
-    accounting = createMediaAccountingMethods(mongoose);
-    await media.ensureMediaIndexes();
-    await accounting.ensureMediaAccountingIndexes();
     ordinary = createTransactionMethods(mongoose, {
       getMultiplier: () => 1,
       getCacheMultiplier: () => 1,
     });
+    accounting = createMediaAccountingMethods(mongoose, {
+      prepareBalance: ordinary.prepareBalance,
+    });
+    await media.ensureMediaIndexes();
+    await accounting.ensureMediaAccountingIndexes();
   }, 60_000);
   afterAll(async () => {
     await mongoose.disconnect();
@@ -46,7 +48,9 @@ describe('media accounting on standalone MongoDB', () => {
       Object.values(mongoose.models).map((model) => model.collection.deleteMany({})),
     );
     scope = { ownerId: new mongoose.Types.ObjectId().toString(), tenantId: null };
-    accounting = createMediaAccountingMethods(mongoose);
+    accounting = createMediaAccountingMethods(mongoose, {
+      prepareBalance: ordinary.prepareBalance,
+    });
     await mongoose.models.Balance.create({ user: scope.ownerId, tokenCredits: 1_000 });
   });
 
@@ -95,6 +99,144 @@ describe('media accounting on standalone MongoDB', () => {
         '+reservedCredits +mediaHolds +mediaDebtCredits +mediaPendingSettlement +mediaSettlementSequence',
       )
       .lean<IBalance>();
+
+  it('initializes the shared balance without creating a second reservation', async () => {
+    const jobId = await job();
+    await ordinary.deleteBalances({ user: scope.ownerId });
+    expect(
+      await accounting.acquireMediaHold({
+        ...hold(jobId),
+        initialBalance: { tokenCredits: 800, autoRefillEnabled: false },
+      }),
+    ).toMatchObject({ status: 'held', availableCredits: 400 });
+    expect(await balance()).toMatchObject({ tokenCredits: 800, reservedCredits: 400 });
+    const stored = await mongoose.models.Balance.findOne({ user: scope.ownerId })
+      .select('+reservations')
+      .lean<IBalance>();
+    expect(stored?.reservations).toBeUndefined();
+    expect(await mongoose.models.Balance.countDocuments()).toBe(1);
+  });
+
+  it('uses the existing auto-refill ledger and skips maintenance for an already-held job', async () => {
+    const jobId = await job();
+    await mongoose.models.Balance.updateOne(
+      { user: scope.ownerId },
+      {
+        $set: {
+          tokenCredits: 100,
+          autoRefillEnabled: true,
+          refillAmount: 500,
+          refillIntervalValue: 1,
+          refillIntervalUnit: 'days',
+          lastRefill: new Date(0),
+        },
+      },
+    );
+    expect((await accounting.acquireMediaHold(hold(jobId))).status).toBe('held');
+    expect(await balance()).toMatchObject({ tokenCredits: 600, reservedCredits: 400 });
+    expect(await mongoose.models.Transaction.countDocuments({ context: 'autoRefill' })).toBe(1);
+    await mongoose.models.Balance.updateOne(
+      { user: scope.ownerId },
+      { $set: { lastRefill: new Date(0) } },
+    );
+    expect((await accounting.acquireMediaHold(hold(jobId))).status).toBe('held');
+    expect(await balance()).toMatchObject({ tokenCredits: 600, reservedCredits: 400 });
+    expect(await mongoose.models.Transaction.countDocuments({ context: 'autoRefill' })).toBe(1);
+  });
+
+  it('prunes expired chat reservations while preserving other durable media holds', async () => {
+    const first = await job('first');
+    const second = await job('second');
+    await accounting.acquireMediaHold(hold(first));
+    await mongoose.models.Balance.updateOne(
+      { user: scope.ownerId },
+      {
+        $push: { reservations: { id: 'expired', amount: 500, expiresAt: new Date(0) } },
+        $inc: { reservedCredits: 500 },
+      },
+    );
+    expect((await accounting.acquireMediaHold(hold(second))).status).toBe('held');
+    expect(await balance()).toMatchObject({ tokenCredits: 1_000, reservedCredits: 800 });
+    expect((await balance())?.mediaHolds).toHaveLength(2);
+  });
+
+  it('keeps shared balance maintenance inside the explicit media tenant scope', async () => {
+    const unscopedBalance = await balance();
+    scope = { ...scope, tenantId: 'tenant-a' };
+    await tenantStorage.run({ tenantId: scope.tenantId ?? undefined }, async () => {
+      await mongoose.models.Balance.create({
+        user: scope.ownerId,
+        tokenCredits: 100,
+        autoRefillEnabled: true,
+        refillAmount: 500,
+        refillIntervalValue: 1,
+        refillIntervalUnit: 'days',
+        lastRefill: new Date(0),
+      });
+    });
+    const jobId = await job();
+    expect((await accounting.acquireMediaHold(hold(jobId))).status).toBe('held');
+    const tenantBalance = await tenantStorage.run(
+      { tenantId: scope.tenantId ?? undefined },
+      async () => balance(),
+    );
+    expect(tenantBalance).toMatchObject({ tokenCredits: 600, reservedCredits: 400 });
+    expect(await mongoose.models.Balance.findById(unscopedBalance?._id).lean()).toMatchObject({
+      tokenCredits: 1_000,
+    });
+  });
+
+  it('preserves provider token usage in the existing transaction ledger', async () => {
+    const jobId = await job();
+    await accounting.acquireMediaHold(hold(jobId));
+    const charge = settle(jobId);
+    await accounting.settleMediaJob({
+      ...charge,
+      effect: { ...charge.effect, inputTokens: 20, outputTokens: 30, model: 'model-a' },
+    });
+    expect(await mongoose.models.Transaction.findOne({ mediaJobId: jobId }).lean()).toMatchObject({
+      tokenType: 'credits',
+      model: 'model-a',
+      rawAmount: -250,
+      tokenValue: -250,
+      inputTokens: 20,
+      mediaOutputTokens: 30,
+      mediaCostUSD: 0.25,
+      mediaAccountingMode: 'balance',
+    });
+  });
+
+  it('keeps legacy null-tenant maintenance from selecting an older tenant balance', async () => {
+    await mongoose.models.Balance.updateOne(
+      { user: scope.ownerId, tenantId: null },
+      {
+        $set: {
+          tokenCredits: 100,
+          autoRefillEnabled: true,
+          refillAmount: 500,
+          refillIntervalValue: 1,
+          refillIntervalUnit: 'days',
+          lastRefill: new Date(0),
+        },
+      },
+    );
+    const other = await mongoose.models.Balance.create({
+      _id: '000000000000000000000001',
+      user: scope.ownerId,
+      tenantId: 'tenant-a',
+      tokenCredits: 5_000,
+    });
+    const jobId = await job();
+    expect((await accounting.acquireMediaHold(hold(jobId))).status).toBe('held');
+    expect(
+      await mongoose.models.Balance.findOne({ user: scope.ownerId, tenantId: null })
+        .select('+reservedCredits')
+        .lean(),
+    ).toMatchObject({ tokenCredits: 600, reservedCredits: 400 });
+    expect(await mongoose.models.Balance.findById(other._id).lean()).toMatchObject({
+      tokenCredits: 5_000,
+    });
+  });
 
   it.each<MediaAccountingStep>(['pinned', 'held'])(
     'recovers an unacknowledged hold after %s',

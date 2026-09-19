@@ -217,6 +217,15 @@ function Job({
       {job.phase === 'cancelled' && outputs.size === 0 && (
         <p className="text-sm text-text-secondary">{localize('com_media_cancelled_hint')}</p>
       )}
+      {job.cancellation && job.phase !== 'cancelled' && (
+        <p role="status" className="text-sm text-text-secondary">
+          {localize(
+            job.cancellation === 'confirmed'
+              ? 'com_media_cancellation_confirmed'
+              : 'com_media_cancellation_requested',
+          )}
+        </p>
+      )}
       <Outputs
         outputs={[...outputs.values()]}
         refine={refine}
@@ -256,7 +265,9 @@ function Job({
               }
             }}
           >
-            {localize('com_media_cancel_job')}
+            {localize(
+              job.phase === 'queued' ? 'com_media_cancel_job' : 'com_media_request_cancellation',
+            )}
           </Button>
         )}
         {job.allowedActions.retry && (

@@ -1,6 +1,9 @@
 import type {
   MediaApi,
   MediaAsset,
+  MediaRendition,
+  MediaRenditionKind,
+  FileStorage,
   MediaImportReceipt,
   MediaImportRequest,
   MediaIntegration,
@@ -49,6 +52,7 @@ export type MediaExecutionSnapshot = {
   billing?: MediaIntegration['billing'];
   providerTag?: string;
   accountingMode?: 'balance' | 'transactions' | 'none';
+  cancellation?: 'best-effort' | 'confirmed';
 };
 export type MediaJobFence = {
   scope: MediaOwnerScope;
@@ -60,6 +64,8 @@ export type MediaProviderState = {
   certainty: 'unsubmitted' | 'unknown' | 'submitted' | 'terminal';
   operationId?: string;
   requestId?: string;
+  cancellationAttemptedAt?: string;
+  cancellationAcknowledged?: boolean;
   /** Private bounded recovery descriptor. Never included in the public view. */
   recovery?: {
     parts?: Array<
@@ -153,6 +159,19 @@ export type MediaJobObservation = {
   /** Keep the lease while writing a provider response, or release it for polling. */
   releaseLease?: boolean;
 };
+export type MediaRenditionContent = MediaRendition & {
+  source: FileStorage;
+  storageKey: string;
+  storageRegion?: string;
+  contentDigest: string;
+};
+export type MediaRenditionLocation = {
+  kind: MediaRenditionKind;
+  source: FileStorage;
+  storageKey: string;
+  storageRegion?: string;
+  filepath?: string;
+};
 export type MediaAssetContent = MediaAsset & {
   source: string;
   storageKey?: string;
@@ -160,6 +179,8 @@ export type MediaAssetContent = MediaAsset & {
   contentDigest: string;
   expiredAt?: string | null;
   hardExpiresAt?: string | null;
+  mediaRenditions?: Partial<Record<MediaRenditionKind, MediaRenditionContent>>;
+  mediaRenditionLocations?: MediaRenditionLocation[];
 };
 export type MediaAssetWrite = MediaOwnerScope & {
   writeId: string;
@@ -168,6 +189,10 @@ export type MediaAssetWrite = MediaOwnerScope & {
   ingestToken: string;
   fileId: string;
   storageKey: string;
+  source?: FileStorage;
+  storageRegion?: string;
+  filepath?: string;
+  renditionLocations?: MediaRenditionLocation[];
   fingerprint: string;
   state: 'reserved' | 'committing' | 'published' | 'abandoned' | 'deleted';
   createdAt: string;
@@ -263,7 +288,11 @@ export interface MediaMethods {
   recordMediaJobObservation(
     input: MediaJobFence & { observation: MediaJobObservation; now: string },
   ): Promise<MediaStoredJob | null>;
-  cancelMediaJob(scope: MediaOwnerScope, jobId: string): Promise<MediaJob | null>;
+  cancelMediaJob(
+    scope: MediaOwnerScope,
+    jobId: string,
+    providerApis?: MediaApi[],
+  ): Promise<MediaJob | null>;
   retryMediaJob(input: {
     scope: MediaOwnerScope;
     jobId: string;
@@ -300,6 +329,10 @@ export interface MediaMethods {
     ingestToken: string;
     fingerprint: string;
     storageKey: string;
+    source?: FileStorage;
+    storageRegion?: string;
+    filepath?: string;
+    renditionLocations?: MediaRenditionLocation[];
   }): Promise<MediaAssetWrite>;
   commitMediaAssetWrite(input: {
     scope: MediaOwnerScope;
@@ -317,7 +350,19 @@ export interface MediaMethods {
     writeId: string;
     token: string;
     staleBefore: string;
-  }): Promise<{ writeId: string; fileId: string; storageKey: string; token: string } | null>;
+  }): Promise<
+    | (Pick<
+        MediaAssetWrite,
+        | 'writeId'
+        | 'fileId'
+        | 'storageKey'
+        | 'source'
+        | 'storageRegion'
+        | 'filepath'
+        | 'renditionLocations'
+      > & { token: string })
+    | null
+  >;
   completeMediaAssetWriteDeletion(input: {
     scope: MediaOwnerScope;
     writeId: string;

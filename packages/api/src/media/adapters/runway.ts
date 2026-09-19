@@ -6,6 +6,7 @@ import type {
   MediaProviderAdapter,
   MediaProviderContext,
   MediaProviderInput,
+  MediaProviderResult,
 } from '../provider';
 import {
   dataURI,
@@ -44,7 +45,10 @@ function catalog(config: MediaConfig): MediaModelProfile[] {
           min: model === 'aleph2' ? 1 : 0,
           max: Math.min(model === 'aleph2' ? 6 : 1, config.limits.maxInputs),
         },
-        execution: { kind: 'remote-job', cancellation: 'unsupported' },
+        execution: {
+          kind: 'remote-job',
+          cancellation: config.cancellation.enabled ? 'best-effort' : 'unsupported',
+        },
         controls: {
           count: { min: 1, max: 1 },
           seed: { min: 0, max: 4_294_967_295 },
@@ -98,6 +102,43 @@ async function upload(input: MediaProviderInput, context: MediaProviderContext):
   return receipt.runwayUri;
 }
 
+async function poll(
+  operationId: string,
+  context: MediaProviderContext,
+): Promise<MediaProviderResult> {
+  const operation = decodeOperation(operationId, context);
+  if (!models.has(operation.modelId)) throw new MediaProviderError('uncertain');
+  const response = await context.transport.json(
+    nativeRequest(context, `tasks/${encodeURIComponent(operation.id)}`, undefined, true),
+    z.object({
+      id: z.string(),
+      status: z.string(),
+      progress: z.number().optional(),
+      output: z.array(z.string().url()).max(context.config.limits.maxOutputs).optional(),
+      cost: z.object({ credits: z.number().finite().nonnegative() }).optional(),
+    }),
+  );
+  if (response.id !== operation.id) throw new MediaProviderError('uncertain');
+  if (['PENDING', 'THROTTLED', 'RUNNING'].includes(response.status))
+    return { status: 'running', operationId, progress: response.progress };
+  /** Runway's published currency is $0.01 per credit: https://docs.dev.runwayml.com/guides/pricing */
+  const usage = response.cost ? { costUSD: response.cost.credits / 100 } : undefined;
+  if (response.status === 'FAILED') return { status: 'failed', usage };
+  if (response.status === 'CANCELLED') return { status: 'cancelled', usage };
+  if (response.status !== 'SUCCEEDED' || !response.output?.length)
+    throw new MediaProviderError('uncertain');
+  return {
+    status: 'completed',
+    usage,
+    parts: response.output.map((url, ordinal) => ({
+      kind: 'video',
+      ordinal,
+      type: 'video/mp4',
+      url,
+    })),
+  };
+}
+
 export function createRunwayMediaAdapters(): MediaProviderAdapter[] {
   return [
     {
@@ -109,6 +150,41 @@ export function createRunwayMediaAdapters(): MediaProviderAdapter[] {
       operations: ['video.generate'],
       catalog,
       download: nativeDownload,
+      poll,
+      cancel: {
+        retry: 'idempotent',
+        async request(operationId, context, beforeRequest) {
+          const operation = decodeOperation(operationId, context);
+          try {
+            const current = await poll(operationId, context);
+            if (current.status !== 'running') return current;
+          } catch (error) {
+            if (!(error instanceof MediaProviderError && error.status === 404)) throw error;
+          }
+          /** DELETE cancels active tasks, deletes terminal tasks, and documents repeat 404 as idempotent.
+           * https://docs.dev.runwayml.com/openapi.json — DELETE /v1/tasks/{id}. No refund is implied. */
+          await beforeRequest();
+          try {
+            await context.transport.json(
+              {
+                ...nativeRequest(
+                  context,
+                  `tasks/${encodeURIComponent(operation.id)}`,
+                  undefined,
+                  true,
+                ),
+                method: 'DELETE',
+                successStatus: 204,
+                emptyResponse: { status: 204, body: '{}' },
+              },
+              z.object({}),
+            );
+          } catch (error) {
+            if (!(error instanceof MediaProviderError && error.status === 404)) throw error;
+          }
+          return { status: 'cancelled' };
+        },
+      },
       async submit(request, inputs, context) {
         const model = models.get(request.selection.modelId);
         if (
@@ -184,35 +260,6 @@ export function createRunwayMediaAdapters(): MediaProviderAdapter[] {
             { id: response.id, modelId: request.selection.modelId },
             context,
           ),
-        };
-      },
-      async poll(operationId, context) {
-        const operation = decodeOperation(operationId, context);
-        if (!models.has(operation.modelId)) throw new MediaProviderError('uncertain');
-        const response = await context.transport.json(
-          nativeRequest(context, `tasks/${encodeURIComponent(operation.id)}`, undefined, true),
-          z.object({
-            id: z.string(),
-            status: z.string(),
-            progress: z.number().optional(),
-            output: z.array(z.string().url()).max(context.config.limits.maxOutputs).optional(),
-          }),
-        );
-        if (response.id !== operation.id) throw new MediaProviderError('uncertain');
-        if (['PENDING', 'THROTTLED', 'RUNNING'].includes(response.status))
-          return { status: 'running', operationId, progress: response.progress };
-        if (response.status === 'FAILED') return { status: 'failed' };
-        if (response.status === 'CANCELLED') return { status: 'cancelled' };
-        if (response.status !== 'SUCCEEDED' || !response.output?.length)
-          throw new MediaProviderError('uncertain');
-        return {
-          status: 'completed',
-          parts: response.output.map((url, ordinal) => ({
-            kind: 'video',
-            ordinal,
-            type: 'video/mp4',
-            url,
-          })),
         };
       },
     },

@@ -91,6 +91,7 @@ RUN npm run build
 
 # API setup (including client dist)
 FROM base-min AS api-build
+RUN apk add --no-cache ffmpeg
 ARG NPM_CI_TIMEOUT_SECONDS=1500
 ARG NPM_CI_ATTEMPTS=2
 RUN mkdir -p /app/data && chmod 1777 /app/data

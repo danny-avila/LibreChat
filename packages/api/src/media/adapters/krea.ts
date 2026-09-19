@@ -1,6 +1,11 @@
 import { z } from 'zod';
 import type { MediaConfig } from 'librechat-data-provider';
-import type { MediaModelProfile, MediaProviderAdapter } from '../provider';
+import type {
+  MediaModelProfile,
+  MediaProviderAdapter,
+  MediaProviderContext,
+  MediaProviderResult,
+} from '../provider';
 import {
   decodeOperation,
   encodeOperation,
@@ -37,7 +42,10 @@ function catalog(config: MediaConfig): MediaModelProfile[] {
         min: operation === 'image.edit' ? 1 : 0,
         max: Math.min(1, config.limits.maxInputs),
       },
-      execution: { kind: 'remote-job', cancellation: 'unsupported' },
+      execution: {
+        kind: 'remote-job',
+        cancellation: config.cancellation.enabled ? 'best-effort' : 'unsupported',
+      },
       controls: {
         count: { min: 1, max: 1 },
         aspectRatio: {
@@ -53,6 +61,58 @@ function catalog(config: MediaConfig): MediaModelProfile[] {
   }));
 }
 
+async function readJob(operationId: string, context: MediaProviderContext) {
+  const operation = decodeOperation(operationId, context);
+  if (!models.has(operation.modelId)) throw new MediaProviderError('uncertain');
+  const response = await context.transport.json(
+    nativeRequest(context, `jobs/${encodeURIComponent(operation.id)}`, undefined, true),
+    z.object({
+      job_id: z.string(),
+      status: z.string(),
+      result: z
+        .object({
+          urls: z.array(z.string().url()).max(context.config.limits.maxOutputs).optional(),
+        })
+        .optional()
+        .nullable(),
+    }),
+  );
+  if (response.job_id !== operation.id) throw new MediaProviderError('uncertain');
+  return { operation, response };
+}
+
+function result(
+  response: Awaited<ReturnType<typeof readJob>>['response'],
+  operationId: string,
+): MediaProviderResult {
+  if (
+    [
+      'backlogged',
+      'queued',
+      'scheduled',
+      'processing',
+      'sampling',
+      'intermediate-complete',
+    ].includes(response.status)
+  )
+    return { status: 'running', operationId };
+  /** Only explicit terminal states establish Krea's published no-charge guarantee.
+   * https://www.krea.ai/docs/developers/job-lifecycle */
+  if (response.status === 'failed') return { status: 'failed', usage: { costUSD: 0 } };
+  if (response.status === 'cancelled') return { status: 'cancelled', usage: { costUSD: 0 } };
+  if (response.status !== 'completed' || !response.result?.urls?.length)
+    throw new MediaProviderError('uncertain');
+  return {
+    status: 'completed',
+    parts: response.result.urls.map((url, ordinal) => ({
+      kind: 'image',
+      ordinal,
+      type: nativeImageType(url),
+      url,
+    })),
+  };
+}
+
 export function createKreaMediaAdapters(): MediaProviderAdapter[] {
   return [
     {
@@ -61,6 +121,35 @@ export function createKreaMediaAdapters(): MediaProviderAdapter[] {
       operations: ['image.generate', 'image.edit'],
       catalog,
       download: nativeDownload,
+      cancel: {
+        retry: 'never',
+        async request(operationId, context, beforeRequest) {
+          const { operation, response } = await readJob(operationId, context);
+          const current = result(response, operationId);
+          if (current.status !== 'running') return current;
+          if (!['queued', 'processing'].includes(response.status))
+            return { status: 'cancellation_deferred' };
+          /** Krea documents cancellation only in queued/processing. After an uncertain DELETE,
+           * resume polling; its 404 also means unauthorized and cannot confirm a refund.
+           * https://www.krea.ai/docs/api-reference/general/delete-a-job-by-id */
+          await beforeRequest();
+          await context.transport.json(
+            {
+              ...nativeRequest(
+                context,
+                `jobs/${encodeURIComponent(operation.id)}`,
+                undefined,
+                true,
+              ),
+              method: 'DELETE',
+              successStatus: 200,
+              emptyResponse: { status: 200, body: '{}' },
+            },
+            z.object({}),
+          );
+          return { status: 'cancellation_requested' };
+        },
+      },
       async submit(request, inputs, context) {
         const model = models.get(request.selection.modelId);
         if (
@@ -115,44 +204,7 @@ export function createKreaMediaAdapters(): MediaProviderAdapter[] {
         };
       },
       async poll(operationId, context) {
-        const operation = decodeOperation(operationId, context);
-        if (!models.has(operation.modelId)) throw new MediaProviderError('uncertain');
-        const response = await context.transport.json(
-          nativeRequest(context, `jobs/${encodeURIComponent(operation.id)}`, undefined, true),
-          z.object({
-            job_id: z.string(),
-            status: z.string(),
-            result: z
-              .object({ urls: z.array(z.string().url()).max(context.config.limits.maxOutputs) })
-              .optional()
-              .nullable(),
-          }),
-        );
-        if (response.job_id !== operation.id) throw new MediaProviderError('uncertain');
-        if (
-          [
-            'backlogged',
-            'queued',
-            'scheduled',
-            'processing',
-            'sampling',
-            'intermediate-complete',
-          ].includes(response.status)
-        )
-          return { status: 'running', operationId };
-        if (response.status === 'failed') return { status: 'failed' };
-        if (response.status === 'cancelled') return { status: 'cancelled' };
-        if (response.status !== 'completed' || !response.result?.urls.length)
-          throw new MediaProviderError('uncertain');
-        return {
-          status: 'completed',
-          parts: response.result.urls.map((url, ordinal) => ({
-            kind: 'image',
-            ordinal,
-            type: nativeImageType(url),
-            url,
-          })),
-        };
+        return result((await readJob(operationId, context)).response, operationId);
       },
     },
   ];

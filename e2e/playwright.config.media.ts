@@ -25,6 +25,9 @@ export default defineConfig({
         CONFIG_PATH: path.resolve(__dirname, 'media/librechat.yaml'),
         E2E_USE_MEMORY_MONGO: 'true',
         ENDPOINTS: 'openAI,custom',
+        // The original-to-chat handoff needs an enabled destination; all requests stay local.
+        OPENAI_API_KEY: 'local-fixture-key',
+        OPENAI_REVERSE_PROXY: 'http://127.0.0.1:8768/v1',
         OPENAI_MODELS: 'gpt-4o-mini',
         ASSISTANTS_API_KEY: '',
       },

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { apiBaseUrl } from 'librechat-data-provider';
 import {
@@ -20,7 +20,7 @@ import {
   OGDialogDescription,
   TooltipAnchor,
 } from '@librechat/client';
-import type { MediaAsset } from 'librechat-data-provider';
+import type { MediaAsset, MediaRenditionKind } from 'librechat-data-provider';
 import type { CSSProperties, ReactNode } from 'react';
 import { MediaImagePixels, mediaImageFrame } from './ImagePending';
 import { toAbsoluteFilePath } from '~/utils/media';
@@ -37,7 +37,15 @@ type PreviewProps = {
 };
 
 export function MediaPreview(props: PreviewProps) {
-  return <Preview key={`${props.asset.file_id}:${props.asset.filepath}`} {...props} />;
+  const { asset } = props;
+  const key = [
+    asset.file_id,
+    asset.filepath,
+    asset.renditions?.thumbnail?.filepath,
+    asset.renditions?.poster?.filepath,
+    asset.renditions?.playback?.filepath,
+  ].join(':');
+  return <Preview key={key} {...props} />;
 }
 
 function Preview({
@@ -51,9 +59,56 @@ function Preview({
   const localize = useLocalize();
   const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
   const [attempt, setAttempt] = useState(0);
+  const [failedRenditions, setFailedRenditions] = useState<
+    Partial<Record<MediaRenditionKind, true>>
+  >({});
   const source = toAbsoluteFilePath(asset.filepath, apiBaseUrl());
   const video = asset.type.startsWith('video/');
   const audio = asset.type.startsWith('audio/');
+  const thumbnail =
+    compact &&
+    !expanded &&
+    !failedRenditions.thumbnail &&
+    asset.renditions?.thumbnail?.type.startsWith('image/')
+      ? asset.renditions.thumbnail
+      : undefined;
+  const poster =
+    !failedRenditions.poster && asset.renditions?.poster?.type.startsWith('image/')
+      ? asset.renditions.poster
+      : undefined;
+  const playback =
+    !failedRenditions.playback && asset.renditions?.playback?.type.startsWith('video/')
+      ? asset.renditions.playback
+      : undefined;
+  const posterOnly = video && compact && !interactive && poster;
+  const imageRendition = posterOnly ? poster : thumbnail;
+  const imageRenditionKind = posterOnly ? 'poster' : 'thumbnail';
+  const imageSource = imageRendition
+    ? toAbsoluteFilePath(imageRendition.filepath, apiBaseUrl())
+    : source;
+  const videoSource = playback ? toAbsoluteFilePath(playback.filepath, apiBaseUrl()) : source;
+  const failPreview = (kind?: MediaRenditionKind) => {
+    if (kind) {
+      setFailedRenditions((failed) => ({ ...failed, [kind]: true }));
+      setStatus('loading');
+      return;
+    }
+    setStatus('failed');
+  };
+  const frameRef = useRef<HTMLSpanElement>(null);
+  const deferVideo = video && compact && !interactive;
+  const [visible, setVisible] = useState(false);
+  const loadVideo = !deferVideo || visible || typeof IntersectionObserver === 'undefined';
+  useEffect(() => {
+    if (posterOnly || loadVideo || !frameRef.current) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return;
+      setVisible(true);
+      observer.disconnect();
+    });
+    observer.observe(frameRef.current);
+    return () => observer.disconnect();
+  }, [loadVideo, posterOnly]);
   const fit = compact ? 'object-cover' : 'object-contain';
   const dimensions = expanded ? 'max-h-[75vh] w-auto max-w-full' : 'absolute inset-0 h-full w-full';
   const generatedImage = !!imagePendingSince && !video && !audio && !compact && !expanded;
@@ -95,15 +150,16 @@ function Preview({
         aria-label={localize('com_media_audio_preview')}
       />
     );
-  } else if (video) {
+  } else if (video && !posterOnly) {
     media = (
       // Generated originals have no caption track; never fabricate captions for provider output.
       // eslint-disable-next-line jsx-a11y/media-has-caption
       <video
         key={attempt}
-        src={source}
+        src={loadVideo ? videoSource : undefined}
+        poster={poster ? toAbsoluteFilePath(poster.filepath, apiBaseUrl()) : undefined}
         controls={interactive}
-        preload="metadata"
+        preload={loadVideo ? 'metadata' : 'none'}
         playsInline
         muted={!interactive}
         aria-label={localize('com_media_video_preview')}
@@ -114,7 +170,7 @@ function Preview({
             event.currentTarget.currentTime = Math.min(0.1, event.currentTarget.duration / 2);
           }
         }}
-        onError={() => setStatus('failed')}
+        onError={() => failPreview(playback ? 'playback' : undefined)}
         className={`${dimensions} ${fit}`}
       />
     );
@@ -122,20 +178,21 @@ function Preview({
     media = (
       <img
         key={attempt}
-        src={source}
-        alt={localize('com_media_image_preview')}
-        loading="eager"
+        src={imageSource}
+        alt={localize(posterOnly ? 'com_media_video_preview' : 'com_media_image_preview')}
+        loading={compact && !interactive ? 'lazy' : 'eager'}
         decoding="async"
-        width={asset.width}
-        height={asset.height}
+        width={imageRendition?.width ?? asset.width}
+        height={imageRendition?.height ?? asset.height}
         onLoad={() => setStatus('ready')}
-        onError={() => setStatus('failed')}
+        onError={() => failPreview(imageRendition ? imageRenditionKind : undefined)}
         className={`${dimensions} ${fit} ${generatedImage ? `transition-opacity duration-300 motion-reduce:transition-none ${status === 'ready' ? 'opacity-100' : 'opacity-0'}` : ''}`}
       />
     );
   }
   return (
     <span
+      ref={frameRef}
       className={`relative grid w-full place-items-center overflow-hidden bg-surface-secondary ${frame}`}
       style={style}
     >
@@ -179,6 +236,7 @@ function Preview({
               size="sm"
               onClick={() => {
                 setStatus('loading');
+                setFailedRenditions({});
                 setAttempt((value) => value + 1);
               }}
             >

@@ -460,7 +460,9 @@ export function createMethods(
   return {
     ...mediaMethods,
     ...createMediaNativeMethods(mongoose, mediaMethods),
-    ...createMediaAccountingMethods(mongoose),
+    ...createMediaAccountingMethods(mongoose, {
+      prepareBalance: transactionMethods.prepareBalance,
+    }),
     ...createMediaPresetMethods(mongoose),
     ...createUserMethods(mongoose, { getCache: deps.getCache }),
     ...createSessionMethods(mongoose),

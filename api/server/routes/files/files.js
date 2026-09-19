@@ -21,6 +21,7 @@ const {
   checkToolResourceUploadPermission,
   resolveAssistantToolPermissions,
   resolveDownloadPath,
+  toPublicFiles,
 } = require('@librechat/api');
 const {
   Time,
@@ -86,7 +87,7 @@ router.get('/', async (req, res) => {
         logger.warn('[/files] Error refreshing S3 file URLs:', error);
       }
     }
-    res.status(200).send(files);
+    res.status(200).send(toPublicFiles(files));
   } catch (error) {
     logger.error('[/files] Error getting files:', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
@@ -144,7 +145,7 @@ router.get('/agent/:agent_id', async (req, res) => {
       text: 0,
     });
 
-    res.status(200).json(files);
+    res.status(200).json(toPublicFiles(files));
   } catch (error) {
     logger.error('[/files/agent/:agent_id] Error fetching agent files:', error);
     res.status(500).json({ error: 'Failed to fetch agent files' });

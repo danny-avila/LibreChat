@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { createWriteStream } from 'node:fs';
-import { mkdir, readdir, stat, unlink } from 'node:fs/promises';
+import { mkdir, readdir, lstat, rm, unlink } from 'node:fs/promises';
 import type { MediaConfig } from 'librechat-data-provider';
 import type { Request } from 'express';
 import { mediaContentByteLimit, normalizeMediaContentType } from './content';
@@ -108,11 +108,15 @@ export function createMediaStaging({
       }
       const removed = await Promise.all(
         entries.map(async (entry) => {
-          const location = path.join(root, entry);
+          const location = path.resolve(root, entry);
+          const relative = path.relative(root, location);
+          if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return false;
           try {
-            const info = await stat(location);
-            if (!info.isFile() || info.mtimeMs >= staleBefore) return false;
-            await remove(location);
+            const info = await lstat(location);
+            if (info.isSymbolicLink() || info.mtimeMs >= staleBefore) return false;
+            if (info.isDirectory()) await rm(location, { recursive: true, force: true });
+            else if (info.isFile()) await remove(location);
+            else return false;
             return true;
           } catch (error) {
             if (isMissing(error)) return false;

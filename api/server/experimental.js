@@ -42,6 +42,7 @@ const {
   injectConfiguredFooterBootstrap,
   preAuthTenantMiddleware,
   requestContextMiddleware,
+  tenantContextMiddleware,
   configureServerTimeouts,
   setupGracefulShutdown,
   registerShutdownTask,
@@ -86,6 +87,7 @@ const createSpaFallback = require('./utils/fallback');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
+const optionalShareFileAuth = require('./middleware/optionalShareFileAuth');
 const requireJwtAuth = require('./middleware/requireJwtAuth');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
@@ -514,6 +516,7 @@ if (cluster.isMaster) {
       environment: process.env,
       http: axios,
       upload: multer,
+      getStorageStrategy: require('~/server/services/Files/strategies').getStrategyFunctions,
       readFile: fs.promises.readFile,
       decrypt,
       log: logger.error.bind(logger),
@@ -672,6 +675,13 @@ if (cluster.isMaster) {
     app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
     app.use('/api/assistants', routes.assistants);
     app.use('/api/files', await routes.files.initialize());
+    app.use(
+      '/api/media/assets',
+      optionalJwtAuth,
+      optionalShareFileAuth,
+      tenantContextMiddleware,
+      mediaRuntime.contentRouter,
+    );
     app.use('/api/media', requireJwtAuth, mediaRuntime.router);
     app.use(
       '/images/',

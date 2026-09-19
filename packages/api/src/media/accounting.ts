@@ -6,17 +6,14 @@ import type {
 import type { MediaConfig, MediaIntegration } from 'librechat-data-provider';
 import type { MediaAccounting, MediaContext } from './service';
 import type { MediaProviderUsage } from './provider';
+import { buildInitialBalance } from '~/middleware/checkBalance';
+import { mediaAccountingMode } from './service';
 import { MediaServiceError } from './errors';
 
 export interface MediaAccountingService extends MediaAccounting {
   ensureReady(): Promise<void>;
   scopes: MediaAccountingMethods['listMediaAccountingScopes'];
   reconcile(scope: MediaOwnerScope, config: MediaConfig): Promise<number>;
-}
-
-function currentMode(context: MediaContext): 'balance' | 'transactions' | 'none' {
-  if (context.appConfig.balance?.enabled) return 'balance';
-  return context.appConfig.transactions?.enabled === false ? 'none' : 'transactions';
 }
 
 function frozenMode(job: MediaStoredJob): 'balance' | 'transactions' | 'none' {
@@ -31,7 +28,11 @@ function frozenMode(job: MediaStoredJob): 'balance' | 'transactions' | 'none' {
 }
 
 function cost(job: MediaStoredJob, usage?: MediaProviderUsage): number | undefined {
-  const value = usage?.costUSD ?? job.execution.billing?.estimatedCostUSD;
+  const value =
+    usage?.costUSD ??
+    (job.provider.recovery?.terminalStatus === 'cancelled'
+      ? undefined
+      : job.execution.billing?.estimatedCostUSD);
   if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
     throw new MediaServiceError('not_ready', 409, 'The provider cost needs reconciliation.');
   }
@@ -52,7 +53,7 @@ export function createMediaAccounting({
   ): Promise<void> {
     if (job.executionOwner === 'chat') return;
     const mode = frozenMode(job);
-    if (mode !== currentMode(context)) {
+    if (mode !== mediaAccountingMode(context.appConfig)) {
       throw new MediaServiceError(
         'not_ready',
         409,
@@ -78,6 +79,7 @@ export function createMediaAccounting({
       now: new Date(now()).toISOString(),
       reviewAt: new Date(now() + context.config.recovery.attentionAfterMs).toISOString(),
       policy: context.config.accounting,
+      initialBalance: buildInitialBalance(context.scope.ownerId, context.appConfig.balance),
     });
     if (result.status === 'held') return;
     if (result.status === 'insufficient') {

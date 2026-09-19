@@ -110,6 +110,36 @@ describe('media accounting provider bridge', () => {
     );
   });
 
+  it('uses the existing starting balance and refill configuration for media admission', async () => {
+    await bridge().reserve(job, config.integrations[0], {
+      ...context,
+      appConfig: {
+        ...context.appConfig,
+        balance: {
+          enabled: true,
+          startBalance: 800,
+          autoRefillEnabled: true,
+          refillAmount: 400,
+          refillIntervalValue: 1,
+          refillIntervalUnit: 'days',
+        },
+      },
+    });
+    expect(repository.acquireMediaHold).toHaveBeenCalledWith(
+      expect.objectContaining({
+        initialBalance: {
+          user: scope.ownerId,
+          tokenCredits: 800,
+          autoRefillEnabled: true,
+          refillAmount: 400,
+          refillIntervalValue: 1,
+          refillIntervalUnit: 'days',
+          lastRefill: expect.any(Date),
+        },
+      }),
+    );
+  });
+
   it('uses an explicit estimate only when the provider does not report cost', async () => {
     await bridge().settle(job, undefined, context);
     expect(repository.settleMediaJob).toHaveBeenCalledWith(
@@ -131,6 +161,22 @@ describe('media accounting provider bridge', () => {
 
   it('accepts an explicit zero provider cost', async () => {
     await bridge().settle(job, { costUSD: 0 }, context);
+    expect(repository.settleMediaJob).toHaveBeenCalledWith(
+      expect.objectContaining({ effect: expect.objectContaining({ credits: 0, costUSD: 0 }) }),
+    );
+  });
+
+  it('does not price an accepted cancellation using the completed-request estimate', async () => {
+    const cancelled: MediaStoredJob = {
+      ...job,
+      provider: { certainty: 'terminal', recovery: { terminalStatus: 'cancelled' } },
+    };
+    await expect(bridge().settle(cancelled, undefined, context)).rejects.toMatchObject({
+      code: 'not_ready',
+    });
+    expect(repository.settleMediaJob).not.toHaveBeenCalled();
+    expect(repository.releaseMediaHold).not.toHaveBeenCalled();
+    await bridge().settle(cancelled, { costUSD: 0 }, context);
     expect(repository.settleMediaJob).toHaveBeenCalledWith(
       expect.objectContaining({ effect: expect.objectContaining({ credits: 0, costUSD: 0 }) }),
     );
@@ -172,6 +218,56 @@ describe('media accounting provider bridge', () => {
     await bridge().release(chatJob, context);
     expect(repository.acquireMediaHold).not.toHaveBeenCalled();
     expect(repository.settleMediaJob).not.toHaveBeenCalled();
+    expect(repository.releaseMediaHold).not.toHaveBeenCalled();
+  });
+
+  it('uses the frozen default credit currency for new transaction-only jobs', async () => {
+    const transactionJob: MediaStoredJob = {
+      ...job,
+      execution: {
+        ...job.execution,
+        accountingMode: 'transactions',
+        billing: { creditsPerUSD: 1_000_000 },
+      },
+    };
+    await bridge().settle(transactionJob, { costUSD: 0.125, outputTokens: 30 }, context);
+    expect(repository.recordMediaUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ credits: 125_000, costUSD: 0.125, outputTokens: 30 }),
+    );
+    expect(repository.settleMediaJob).not.toHaveBeenCalled();
+  });
+
+  it('preserves legacy transaction-only effects when the snapshot has no frozen rate', async () => {
+    const transactionJob: MediaStoredJob = {
+      ...job,
+      execution: { ...job.execution, accountingMode: 'transactions', billing: undefined },
+    };
+    await bridge().settle(transactionJob, { costUSD: 0.125, outputTokens: 30 }, context);
+    expect(repository.recordMediaUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ credits: undefined, costUSD: 0.125, outputTokens: 30 }),
+    );
+    expect(repository.settleMediaJob).not.toHaveBeenCalled();
+  });
+
+  it('does not create accounting effects when balances and transactions are disabled', async () => {
+    const disabledJob: MediaStoredJob = {
+      ...job,
+      execution: { ...job.execution, accountingMode: 'none', billing: undefined },
+    };
+    const disabledContext: MediaContext = {
+      ...context,
+      appConfig: {
+        ...context.appConfig,
+        balance: { enabled: false },
+        transactions: { enabled: false },
+      },
+    };
+    await bridge().reserve(disabledJob, config.integrations[0], disabledContext);
+    await bridge().settle(disabledJob, { costUSD: 0.2 }, disabledContext);
+    await bridge().release(disabledJob, disabledContext);
+    expect(repository.acquireMediaHold).not.toHaveBeenCalled();
+    expect(repository.settleMediaJob).not.toHaveBeenCalled();
+    expect(repository.recordMediaUsage).not.toHaveBeenCalled();
     expect(repository.releaseMediaHold).not.toHaveBeenCalled();
   });
 });

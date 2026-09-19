@@ -5,6 +5,7 @@ import type { MediaNativeMethods, MediaStoredJob } from '@librechat/data-schemas
 import type { MediaIntegration } from 'librechat-data-provider';
 import type { NativeMediaPort } from '@librechat/agents';
 import type { MediaContext, MediaServiceDependencies } from './service';
+import { assertMediaStorage } from './storage';
 import { assertMediaAccess } from './service';
 import { MediaServiceError } from './errors';
 
@@ -132,13 +133,7 @@ export function createNativeMediaFactory({
           'Native media generation requires a saved conversation.',
         );
       }
-      if ((context.config.assets.source ?? context.appConfig.fileStrategy) !== 'local') {
-        throw new MediaServiceError(
-          'unsupported',
-          422,
-          'Native media requires an available storage adapter.',
-        );
-      }
+      assertMediaStorage(context);
     };
     return {
       async start({ modelRunId, model, signal }) {

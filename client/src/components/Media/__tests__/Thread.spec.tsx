@@ -1,8 +1,8 @@
 import { Provider, createStore } from 'jotai';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { dataService, mediaCatalogSchema } from 'librechat-data-provider';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { dataService, QueryKeys, mediaCatalogSchema } from 'librechat-data-provider';
 import type { MediaCatalog, MediaThreadDetail, MediaJob } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import { clearMediaSessionStorage, mediaDraftFamily } from '../state';
@@ -134,6 +134,7 @@ function setup(initialCatalog?: MediaCatalog, initialDetail = detail) {
   const view = render(tree(initialCatalog), { wrapper: Wrapper });
   return {
     store,
+    client,
     send,
     compose,
     rerender: (value?: MediaCatalog) => view.rerender(tree(value)),
@@ -421,12 +422,12 @@ test('a temporary creation announces its expiry next to the title', () => {
 });
 
 test('cancelling a job surfaces a failure inline and clears it once the cancellation is accepted', async () => {
-  const running = withJob({ phase: 'running', allowedActions: { cancel: true, retry: false } });
+  const queued = withJob({ phase: 'queued', allowedActions: { cancel: true, retry: false } });
   const cancel = jest
     .spyOn(dataService, 'cancelMediaJob')
     .mockRejectedValueOnce(new Error('connection lost'))
-    .mockResolvedValueOnce({ ...running.turns.items[0].jobs[0], phase: 'cancelled' });
-  setup(undefined, running);
+    .mockResolvedValueOnce({ ...queued.turns.items[0].jobs[0], phase: 'cancelled' });
+  setup(undefined, queued);
   const button = () => screen.getByRole('button', { name: 'com_media_cancel_job' });
   fireEvent.click(button());
   expect(await screen.findByRole('alert')).toHaveTextContent('com_media_error_internal_error');
@@ -436,4 +437,62 @@ test('cancelling a job surfaces a failure inline and clears it once the cancella
   await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
   expect(button()).toBeEnabled();
   cancel.mockRestore();
+});
+
+test('refreshes restored job status when cancellation loses the race with dispatch', async () => {
+  const queued = withJob({ phase: 'queued', allowedActions: { cancel: true, retry: false } });
+  const cancel = jest.spyOn(dataService, 'cancelMediaJob').mockRejectedValueOnce({
+    response: { data: { error: { code: 'cancel_unsupported' } } },
+  });
+  const env = setup(undefined, queued);
+  const key = [QueryKeys.mediaThread, 'owner', 'thread'];
+  env.client.setQueryData(key, queued);
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_cancel_job' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('com_media_error_cancel_unsupported');
+  expect(env.client.getQueryState(key)?.isInvalidated).toBe(true);
+  env.rerenderDetail(
+    withJob({ phase: 'submitting', allowedActions: { cancel: false, retry: false } }),
+  );
+  expect(screen.queryByRole('button', { name: 'com_media_cancel_job' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'com_media_edit_request' })).toBeEnabled();
+  cancel.mockRestore();
+});
+
+test('requests provider cancellation and restores its pending status without an unsafe retry', async () => {
+  const running = withJob({ phase: 'running', allowedActions: { cancel: true, retry: false } });
+  const requested = withJob({
+    phase: 'running',
+    cancellation: 'requested',
+    allowedActions: { cancel: false, retry: false },
+  });
+  const cancel = jest
+    .spyOn(dataService, 'cancelMediaJob')
+    .mockResolvedValueOnce(requested.turns.items[0].jobs[0]);
+  const env = setup(undefined, running);
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_request_cancellation' }));
+  await waitFor(() => expect(cancel).toHaveBeenCalledWith('job'));
+  env.rerenderDetail(requested);
+  expect(screen.getByText('com_media_cancellation_requested')).toHaveAttribute('role', 'status');
+  expect(
+    screen.queryByRole('button', { name: 'com_media_request_cancellation' }),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'com_media_retry_job' })).not.toBeInTheDocument();
+  cancel.mockRestore();
+});
+
+test('distinguishes confirmed provider cancellation from unresolved billing', () => {
+  setup(
+    undefined,
+    withJob({
+      phase: 'requires_attention',
+      cancellation: 'confirmed',
+      error: { code: 'not_ready' },
+      allowedActions: { cancel: false, retry: false },
+    }),
+  );
+  expect(screen.getByText('com_media_cancellation_confirmed')).toHaveAttribute('role', 'status');
+  expect(screen.getByText('com_media_error_not_ready')).toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: 'com_media_request_cancellation' }),
+  ).not.toBeInTheDocument();
 });

@@ -6,6 +6,7 @@ import {
   mediaOperationSchema,
 } from './requests';
 import { mediaLimitsSchema } from './capabilities';
+import { TOKEN_CREDITS_PER_USD } from '../balance';
 import { fileStorageSchema } from '../storage';
 import { EModelEndpoint } from '../schemas';
 
@@ -59,22 +60,55 @@ export const mediaIntegrationSchema = z
     operations: z.array(mediaOperationSchema).min(1),
     billing: z
       .object({
-        creditsPerUSD: z.number().finite().positive(),
+        /** Defaults to the existing balance currency; explicit legacy rates remain supported. */
+        creditsPerUSD: z.number().finite().positive().default(TOKEN_CREDITS_PER_USD),
         estimatedCostUSD: z.number().finite().nonnegative().optional(),
         maxCostUSD: z.number().finite().positive().optional(),
       })
       .strict()
-      .refine(
-        (billing) =>
-          billing.estimatedCostUSD === undefined ||
-          billing.maxCostUSD === undefined ||
-          billing.estimatedCostUSD <= billing.maxCostUSD,
-        'Estimated cost cannot exceed the maximum',
-      )
+      .superRefine((billing, ctx) => {
+        if (
+          billing.estimatedCostUSD !== undefined &&
+          billing.maxCostUSD !== undefined &&
+          billing.estimatedCostUSD > billing.maxCostUSD
+        ) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['estimatedCostUSD'],
+            message: 'Estimated cost cannot exceed the maximum',
+          });
+        }
+        for (const field of ['estimatedCostUSD', 'maxCostUSD'] as const) {
+          const cost = billing[field];
+          if (cost === undefined) continue;
+          const credits = cost * billing.creditsPerUSD;
+          if (
+            !Number.isFinite(credits) ||
+            credits > Number.MAX_SAFE_INTEGER ||
+            (cost > 0 && credits === 0)
+          ) {
+            ctx.addIssue({
+              code: 'custom',
+              path: [field],
+              message: 'Converted cost must fit within the supported token-credit range',
+            });
+          }
+        }
+      })
       .optional(),
   })
   .strict()
   .superRefine((integration, ctx) => {
+    if (integration.endpointRef.kind === 'builtin') {
+      const endpoint = integration.endpointRef.endpoint;
+      if (endpoint !== EModelEndpoint.openAI && endpoint !== EModelEndpoint.google) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['endpointRef'],
+          message: 'Built-in media credentials support only the OpenAI and Google endpoints',
+        });
+      }
+    }
     if (
       (integration.api === 'google.vertex.videos' && integration.endpointRef.kind !== 'vertex') ||
       (integration.endpointRef.kind === 'vertex' &&
@@ -121,6 +155,10 @@ export const mediaConfigSchema = z
       .strict()
       .default({}),
     integrations: z.array(mediaIntegrationSchema).default([]),
+    cancellation: z
+      .object({ enabled: z.boolean().default(true) })
+      .strict()
+      .default({}),
     limits: mediaLimitsSchema.default({}),
     accounting: z
       .object({
@@ -203,6 +241,17 @@ export const mediaConfigSchema = z
         source: fileStorageSchema.nullable().default(null),
         retention: z.literal('inherit').default('inherit'),
         orphanRetentionMs: milliseconds.default(86_400_000),
+        derivatives: z
+          .object({
+            enabled: z.boolean().default(true),
+            maxWidth: z.number().int().min(2).max(4_096).default(640),
+            maxHeight: z.number().int().min(2).max(4_096).default(640),
+            timeoutMs: milliseconds.max(3_600_000).default(120_000),
+            ffmpegPath: z.string().trim().min(1).default('ffmpeg'),
+            transcodeVideo: z.boolean().default(false),
+          })
+          .strict()
+          .default({}),
       })
       .strict()
       .default({}),

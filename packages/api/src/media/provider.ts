@@ -50,6 +50,11 @@ export type MediaProviderResult =
   | { status: 'failed'; usage?: MediaProviderUsage }
   | { status: 'cancelled'; usage?: MediaProviderUsage };
 
+export type MediaProviderCancellationResult =
+  | MediaProviderResult
+  | { status: 'cancellation_requested' }
+  | { status: 'cancellation_deferred' };
+
 export interface MediaProviderContext {
   transport: MediaTransport;
   connection: MediaConnection;
@@ -83,6 +88,15 @@ export interface MediaProviderAdapter {
     context: MediaProviderContext,
   ): Promise<MediaProviderResult>;
   poll?(operationId: string, context: MediaProviderContext): Promise<MediaProviderResult>;
+  cancel?: {
+    retry: 'idempotent' | 'never';
+    request(
+      operationId: string,
+      context: MediaProviderContext,
+      /** Fence and persist immediately before the first provider mutation. */
+      beforeRequest: () => Promise<void>,
+    ): Promise<MediaProviderCancellationResult>;
+  };
   download(
     part: Extract<MediaProviderPart, { kind: 'image' | 'video' }>,
     context: MediaProviderContext,

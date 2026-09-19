@@ -3,12 +3,22 @@ import path from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createHash, randomUUID } from 'node:crypto';
+import { toMediaAsset } from '@librechat/data-schemas';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, open, stat, unlink, readFile } from 'node:fs/promises';
-import type { MediaAssetContent, MediaMethods, MediaOwnerScope } from '@librechat/data-schemas';
-import type { MediaAsset, MediaConfig } from 'librechat-data-provider';
+import { mkdir, open, rm, rename, readFile } from 'node:fs/promises';
+import type {
+  MediaAssetContent,
+  MediaMethods,
+  MediaOwnerScope,
+  MediaRenditionContent,
+  MediaRenditionLocation,
+} from '@librechat/data-schemas';
+import type { MediaAsset, MediaConfig, MediaRenditionKind } from 'librechat-data-provider';
 import type { Readable, TransformCallback } from 'node:stream';
 import type { Hash } from 'node:crypto';
+import type { MediaObjectLocation, MediaObjectReadOptions, MediaObjectStore } from './objects';
+import type { MediaDerivativeProcessor } from './derivatives';
+import type { MediaContext } from './context';
 import {
   mediaContentByteLimit,
   mediaContentExtension,
@@ -16,8 +26,30 @@ import {
   validateMediaAudio,
   validateMediaSvg,
 } from './content';
+import { createLocalMediaObjectStore } from './objects';
 import { MediaServiceError } from './errors';
 
+export function resolveMediaStorageSource({
+  config,
+  appConfig,
+}: Pick<MediaContext, 'config' | 'appConfig'>): string {
+  return (
+    config.assets.source ??
+    appConfig.fileStrategies?.image ??
+    appConfig.fileStrategies?.default ??
+    appConfig.fileStrategy
+  );
+}
+export function assertMediaStorage(context: MediaContext): void {
+  const source = resolveMediaStorageSource(context);
+  if (
+    !['local', 's3', 'cloudfront', 'azure_blob', 'firebase'].includes(source) ||
+    (context.storageSources && !context.storageSources.some((available) => available === source))
+  )
+    throw new MediaServiceError('unsupported', 422, 'This media storage adapter is not available.');
+  if (context.storageReady === false)
+    throw new MediaServiceError('not_ready', 503, 'Media storage is not configured.');
+}
 export interface MediaStorage {
   publish(input: {
     scope: MediaOwnerScope;
@@ -34,13 +66,18 @@ export interface MediaStorage {
     fileId: string,
     maxBytes: number,
   ): Promise<{ asset: MediaAsset; data: Buffer; digest: string }>;
+  /** Content must have been loaded through the repository under this scope. */
+  open(
+    scope: MediaOwnerScope,
+    content: MediaAssetContent,
+    options?: MediaObjectReadOptions & { rendition?: MediaRenditionKind },
+  ): Promise<Readable>;
   remove(scope: MediaOwnerScope, fileId: string): Promise<boolean>;
   discardWrite(scope: MediaOwnerScope, writeId: string, staleBefore: string): Promise<boolean>;
   capture(scope: MediaOwnerScope, fileId: string, config: MediaConfig): Promise<MediaAsset>;
 }
-
 export class MediaByteCounter extends Transform {
-  bytes: number = 0;
+  bytes = 0;
   readonly hash: Hash = createHash('sha256');
   constructor(private readonly maxBytes: number) {
     super();
@@ -58,11 +95,6 @@ export class MediaByteCounter extends Transform {
     callback(null, chunk);
   }
 }
-
-function isMissingFile(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
-}
-
 async function readHeader(location: string): Promise<Buffer> {
   const file = await open(location, 'r');
   const header = Buffer.alloc(12);
@@ -73,7 +105,6 @@ async function readHeader(location: string): Promise<Buffer> {
     await file.close();
   }
 }
-
 function matchesRasterHeader(header: Buffer, type: string): boolean {
   if (type === 'image/png')
     return header.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'));
@@ -84,119 +115,220 @@ function matchesRasterHeader(header: Buffer, type: string): boolean {
     header.toString('ascii', 8, 12) === 'WEBP'
   );
 }
-
-export function createLocalMediaStorage({
+async function inspect(
+  location: string,
+  type: string,
+): Promise<{ width?: number; height?: number }> {
+  if (type.startsWith('audio/')) {
+    validateMediaAudio(await readFile(location), type);
+    return {};
+  }
+  if (type.startsWith('video/')) {
+    const header = await readHeader(location);
+    const valid =
+      header.length >= 12 &&
+      (type === 'video/mp4'
+        ? header.toString('ascii', 4, 8) === 'ftyp'
+        : type === 'video/webm' && header.readUInt32BE(0) === 0x1a45dfa3);
+    if (!valid) throw new MediaServiceError('unsupported', 422, 'Unsupported video content.');
+    return {};
+  }
+  if (type === 'image/svg+xml') validateMediaSvg(await readFile(location));
+  else if (!matchesRasterHeader(await readHeader(location), type))
+    throw new MediaServiceError(
+      'invalid_request',
+      422,
+      'Image content does not match its media type.',
+    );
+  const metadata = await sharp(await readFile(location)).metadata();
+  const mime = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp', svg: 'image/svg+xml' };
+  if (!metadata.format || !(metadata.format in mime))
+    throw new MediaServiceError('unsupported', 422, 'Unsupported image content.');
+  if (mime[metadata.format as keyof typeof mime] !== type)
+    throw new MediaServiceError(
+      'invalid_request',
+      422,
+      'Image content does not match its media type.',
+    );
+  return { width: metadata.width, height: metadata.height };
+}
+async function digestStream(stream: Readable, maxBytes: number): Promise<string> {
+  const hash = createHash('sha256');
+  let bytes = 0;
+  for await (const chunk of stream) {
+    const buffer = Buffer.from(chunk);
+    bytes += buffer.length;
+    if (bytes > maxBytes)
+      throw new MediaServiceError('invalid_request', 413, 'Media input is too large.');
+    hash.update(buffer);
+  }
+  return hash.digest('hex');
+}
+export function createMediaStorage({
   repository,
   imageDirectory,
   uploadDirectory,
   now,
+  stores = [],
+  derivatives,
+  imageOutputType = 'png',
+  log,
 }: {
   repository: MediaMethods;
   imageDirectory: string;
   uploadDirectory: string;
   now: () => number;
+  stores?: readonly MediaObjectStore[];
+  derivatives?: MediaDerivativeProcessor;
+  imageOutputType?: string;
+  log?(error: Error): void;
 }): MediaStorage {
-  const root = path.resolve(imageDirectory);
-  function originalPath(
-    content: Pick<MediaAssetContent, 'storageKey' | 'filepath' | 'source'>,
-  ): string {
-    if (content.source !== 'local') {
+  const objects = new Map<string, MediaObjectStore>(
+    [createLocalMediaObjectStore({ imageDirectory, uploadDirectory }), ...stores].map((store) => [
+      store.source,
+      store,
+    ]),
+  );
+  const objectStore = (source: string): MediaObjectStore => {
+    const store = objects.get(source);
+    if (!store)
       throw new MediaServiceError(
         'unsupported',
         422,
-        'This storage source requires a media storage adapter.',
+        'This media storage adapter is not available.',
       );
-    }
-    const key = content.storageKey ?? content.filepath.replace(/^\//, '');
-    const prefix = ['images/', 'uploads/'].find((candidate) => key.startsWith(candidate));
-    if (!prefix) {
-      throw new MediaServiceError('not_found', 404, 'Media content is unavailable.');
-    }
-    const directory = prefix === 'images/' ? root : path.resolve(uploadDirectory);
-    const resolved = path.resolve(directory, key.slice(prefix.length));
-    const relative = path.relative(directory, resolved);
-    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
-      throw new MediaServiceError('not_found', 404, 'Media content is unavailable.');
-    }
-    return resolved;
-  }
-
+    return store;
+  };
+  const imageExtension = ['png', 'jpeg', 'webp'].includes(imageOutputType)
+    ? imageOutputType
+    : 'png';
+  const stagingRoot = path.resolve(uploadDirectory, 'media-staging');
+  const cleanupLocations = async (scope: MediaOwnerScope, locations: MediaObjectLocation[]) => {
+    const unique = new Map(
+      locations.map((location) => [
+        `${location.source}:${location.storageRegion ?? ''}:${location.storageKey ?? location.filepath}`,
+        location,
+      ]),
+    );
+    for (const location of unique.values())
+      await objectStore(location.source).remove(scope, location);
+  };
   const storage: MediaStorage = {
     async publish(input) {
-      if (!/^[A-Za-z0-9_-]+$/.test(input.scope.ownerId)) {
-        throw new MediaServiceError('invalid_request', 400, 'Invalid media owner.');
-      }
-      const contentType = normalizeMediaContentType(input.type);
-      const video = contentType.startsWith('video/');
-      const audio = contentType.startsWith('audio/');
-      const extension = mediaContentExtension(contentType);
-      if (!extension) {
+      const type = normalizeMediaContentType(input.type);
+      const extension = mediaContentExtension(type);
+      if (!extension)
         throw new MediaServiceError('unsupported', 422, 'Unsupported media content type.');
-      }
+      const store = objectStore(input.config.assets.source ?? 'local');
       const ingestToken = randomUUID();
-      const key = `images/${input.scope.ownerId}/${ingestToken}.${extension}`;
+      const originalName = `${ingestToken}.${extension}`;
+      const location = await store.plan(input.scope, originalName, type);
+      const derivativePlans = derivatives
+        ? await Promise.all(
+            (
+              [
+                ['thumbnail', imageExtension, `image/${imageExtension}`],
+                ['poster', imageExtension, `image/${imageExtension}`],
+                ['playback', 'mp4', 'video/mp4'],
+              ] as const
+            ).map(
+              async ([kind, ext, contentType]): Promise<MediaRenditionLocation> => ({
+                ...(await store.plan(input.scope, `${ingestToken}.${kind}.${ext}`, contentType)),
+                kind,
+                source: store.source,
+              }),
+            ),
+          )
+        : [];
       const receipt = await repository.reserveMediaAssetWrite({
         scope: input.scope,
         outputKey: input.outputKey,
         rendition: 'original',
         ingestToken,
         fingerprint: createHash('sha256').update(input.outputKey).digest('hex'),
-        storageKey: key,
+        ...location,
+        source: store.source,
+        renditionLocations: derivativePlans,
       });
-      const location = originalPath({ source: 'local', storageKey: key, filepath: `/${key}` });
-      await mkdir(path.dirname(location), { recursive: true });
-      const counter = new MediaByteCounter(mediaContentByteLimit(input.type, input.config));
+      const directory = path.join(stagingRoot, ingestToken);
+      const stagedPath = path.join(directory, originalName);
+      const counter = new MediaByteCounter(mediaContentByteLimit(type, input.config));
       let publicationAttempted = false;
       try {
+        await mkdir(directory, { recursive: true });
         await pipeline(
           input.stream,
           counter,
-          createWriteStream(location, { flags: 'wx', mode: 0o600 }),
+          createWriteStream(stagedPath, { flags: 'wx', mode: 0o600 }),
         );
-        let width: number | undefined;
-        let height: number | undefined;
-        let type = contentType;
-        if (audio) {
-          validateMediaAudio(await readFile(location), type);
-        } else if (!video) {
-          if (type === 'image/svg+xml') {
-            validateMediaSvg(await readFile(location));
-          } else if (!matchesRasterHeader(await readHeader(location), type)) {
-            throw new MediaServiceError(
-              'invalid_request',
-              422,
-              'Image content does not match its media type.',
+        const dimensions = await inspect(stagedPath, type);
+        const generated =
+          (await derivatives
+            ?.generate({
+              path: stagedPath,
+              type,
+              config: input.config,
+              outputDirectory: directory,
+            })
+            .catch((error: unknown) => {
+              log?.(
+                error instanceof Error ? error : new Error('Media derivative generation failed.'),
+              );
+              return [];
+            })) ?? [];
+        const original = await store.put(input.scope, location, stagedPath, type);
+        const mediaRenditions: Partial<Record<MediaRenditionKind, MediaRenditionContent>> = {};
+        for (const derivative of generated) {
+          const plan = derivativePlans.find((item) => item.kind === derivative.kind);
+          try {
+            const generatedPath = path.resolve(derivative.path);
+            const relative = path.relative(directory, generatedPath);
+            if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+              throw new MediaServiceError(
+                'storage_failed',
+                409,
+                'Media rendition escaped its staging directory.',
+              );
+            }
+            if (!plan)
+              throw new MediaServiceError(
+                'storage_failed',
+                409,
+                'An unplanned media rendition cannot be published.',
+              );
+            const renditionPath = path.join(
+              directory,
+              `${ingestToken}.${derivative.kind}.${derivative.kind === 'playback' ? 'mp4' : imageExtension}`,
             );
-          }
-          const metadata = await sharp(location).metadata();
-          const mime = {
-            png: 'image/png',
-            jpeg: 'image/jpeg',
-            webp: 'image/webp',
-            svg: 'image/svg+xml',
-          };
-          if (!metadata.format || !(metadata.format in mime)) {
-            throw new MediaServiceError('unsupported', 422, 'Unsupported image content.');
-          }
-          type = mime[metadata.format as keyof typeof mime];
-          width = metadata.width;
-          height = metadata.height;
-          if (type !== contentType) {
-            throw new MediaServiceError(
-              'invalid_request',
-              422,
-              'Image content does not match its media type.',
+            await rename(generatedPath, renditionPath);
+            const uploaded = await store.put(
+              input.scope,
+              { ...plan, filepath: plan.filepath ?? plan.storageKey },
+              renditionPath,
+              derivative.type,
             );
-          }
-        } else {
-          const header = await readHeader(location);
-          const valid =
-            header.length >= 12 &&
-            (type === 'video/mp4'
-              ? header.toString('ascii', 4, 8) === 'ftyp'
-              : type === 'video/webm' && header.readUInt32BE(0) === 0x1a45dfa3);
-          if (!valid) {
-            throw new MediaServiceError('unsupported', 422, 'Unsupported video content.');
+            mediaRenditions[derivative.kind] = {
+              ...uploaded,
+              source: store.source,
+              storageKey: plan.storageKey,
+              type: derivative.type,
+              bytes: derivative.bytes,
+              width: derivative.width,
+              height: derivative.height,
+              durationSeconds: derivative.durationSeconds,
+              contentDigest: await digestStream(
+                createReadStream(renditionPath),
+                mediaContentByteLimit(derivative.type, input.config),
+              ),
+            };
+          } catch (error) {
+            if (plan)
+              await store
+                .remove(input.scope, { ...plan, filepath: plan.filepath ?? plan.storageKey })
+                .catch(() => undefined);
+            log?.(
+              error instanceof Error ? error : new Error('Media rendition publication failed.'),
+            );
           }
         }
         publicationAttempted = true;
@@ -204,69 +336,67 @@ export function createLocalMediaStorage({
           scope: input.scope,
           writeId: receipt.writeId,
           content: {
+            ...original,
             file_id: receipt.fileId,
             filename: path.basename(input.filename),
             type,
             bytes: counter.bytes,
-            filepath: `/${key}`,
-            source: 'local',
-            storageKey: key,
             contentDigest: counter.hash.digest('hex'),
-            width,
-            height,
+            ...dimensions,
             expiredAt: input.expiredAt,
             hardExpiresAt: input.hardExpiresAt,
+            ...(Object.keys(mediaRenditions).length ? { mediaRenditions } : {}),
           },
         });
-        if (asset.filepath !== `/${key}`) {
-          await unlink(location).catch(() => undefined);
-        }
+        if (asset.file_id !== receipt.fileId)
+          await storage.discardWrite(input.scope, receipt.writeId, new Date(now()).toISOString());
         return asset;
       } catch (error) {
-        if (!publicationAttempted) {
-          await unlink(location).catch(() => undefined);
-        }
+        if (!publicationAttempted)
+          await cleanupLocations(input.scope, [
+            location,
+            ...derivativePlans.map((plan) => ({
+              ...plan,
+              filepath: plan.filepath ?? plan.storageKey,
+            })),
+          ]).catch(() => undefined);
         await storage
           .discardWrite(input.scope, receipt.writeId, new Date(now()).toISOString())
           .catch(() => undefined);
         throw error;
+      } finally {
+        await rm(directory, { recursive: true, force: true });
       }
+    },
+    async open(scope, content, options) {
+      const rendition = options?.rendition
+        ? content.mediaRenditions?.[options.rendition]
+        : undefined;
+      if (options?.rendition && !rendition)
+        throw new MediaServiceError('not_found', 404, 'Media rendition is unavailable.');
+      const location = rendition ?? content;
+      return objectStore(location.source).open(scope, location, options);
     },
     async read(scope, fileId, maxBytes) {
       const content = await repository.getMediaAssetContent(scope, fileId);
-      if (!content) {
-        throw new MediaServiceError('not_found', 404, 'Media input is unavailable.');
-      }
-      if (content.bytes > maxBytes) {
+      if (!content) throw new MediaServiceError('not_found', 404, 'Media input is unavailable.');
+      if (content.bytes > maxBytes)
         throw new MediaServiceError('invalid_request', 413, 'Media input is too large.');
-      }
       const chunks: Buffer[] = [];
       const hash = createHash('sha256');
       let bytes = 0;
-      for await (const chunk of createReadStream(originalPath(content))) {
+      for await (const chunk of await storage.open(scope, content)) {
         const buffer = Buffer.from(chunk);
         bytes += buffer.length;
-        if (bytes > maxBytes) {
+        if (bytes > maxBytes)
           throw new MediaServiceError('invalid_request', 413, 'Media input is too large.');
-        }
         hash.update(buffer);
         chunks.push(buffer);
       }
-      const data = Buffer.concat(chunks);
       const digest = hash.digest('hex');
-      if (digest !== content.contentDigest) {
+      if (digest !== content.contentDigest)
         throw new MediaServiceError('storage_failed', 409, 'The media original changed.');
-      }
-      const {
-        source: _source,
-        storageKey: _key,
-        storageRegion: _region,
-        contentDigest: _digest,
-        expiredAt: _expiry,
-        hardExpiresAt: _hardExpiry,
-        ...asset
-      } = content;
-      return { asset, data, digest };
+      return { asset: toMediaAsset(content), data: Buffer.concat(chunks), digest };
     },
     async discardWrite(scope, writeId, staleBefore) {
       const token = randomUUID();
@@ -277,75 +407,88 @@ export function createLocalMediaStorage({
         staleBefore,
       });
       if (!write) return false;
-      try {
-        await unlink(
-          originalPath({
-            source: 'local',
-            storageKey: write.storageKey,
-            filepath: `/${write.storageKey}`,
-          }),
-        );
-      } catch (error) {
-        if (!isMissingFile(error)) throw error;
-      }
+      await cleanupLocations(scope, [
+        ...(write.renditionLocations ?? []).map((location) => ({
+          ...location,
+          filepath: location.filepath ?? location.storageKey,
+        })),
+        {
+          source: write.source ?? 'local',
+          storageKey: write.storageKey,
+          storageRegion: write.storageRegion,
+          filepath: write.filepath ?? `/${write.storageKey}`,
+        },
+      ]);
       return repository.completeMediaAssetWriteDeletion({ scope, writeId, token });
     },
     async remove(scope, fileId) {
       const token = randomUUID();
       const content = await repository.claimMediaAssetDeletion({ scope, fileId, token });
-      if (!content) {
-        return false;
-      }
-      try {
-        await unlink(originalPath(content));
-      } catch (error) {
-        if (!isMissingFile(error)) {
-          throw error;
-        }
-      }
+      if (!content) return false;
+      await cleanupLocations(scope, [
+        ...(content.mediaRenditionLocations ?? []).map((location) => ({
+          ...location,
+          filepath: location.filepath ?? location.storageKey,
+        })),
+        ...Object.values(content.mediaRenditions ?? {}),
+        content,
+      ]);
       return repository.completeMediaAssetDeletion({ scope, fileId, token });
     },
     async capture(scope, fileId, config) {
       const existing = await repository.getMediaAsset(scope, fileId);
-      if (existing) {
-        return existing;
-      }
+      if (existing) return existing;
       const source = await repository.getMediaSourceFile(scope, fileId);
-      if (!source) {
-        throw new MediaServiceError('not_found', 404, 'The source file is unavailable.');
+      if (!source) throw new MediaServiceError('not_found', 404, 'The source file is unavailable.');
+      const store = objectStore(source.source);
+      const before = await store.revision?.(scope, source);
+      const counter = new MediaByteCounter(mediaContentByteLimit(source.type, config));
+      const sourceStream = await store.open(scope, source);
+      const sourcePipeline = pipeline(sourceStream, counter);
+      sourcePipeline.catch(() => undefined);
+      let captured: MediaAsset;
+      try {
+        captured = await storage.publish({
+          scope,
+          outputKey: `capture:${fileId}:${source.sourceRevision}`,
+          stream: counter,
+          type: source.type,
+          filename: source.filename,
+          config,
+          expiredAt:
+            source.expiredAt ?? new Date(now() + config.assets.orphanRetentionMs).toISOString(),
+          hardExpiresAt: source.hardExpiresAt ?? source.expiredAt,
+        });
+      } catch (error) {
+        sourceStream.destroy();
+        counter.destroy();
+        await sourcePipeline.catch(() => undefined);
+        throw error;
       }
-      const location = originalPath(source);
-      const before = await stat(location);
-      const captured = await storage.publish({
-        scope,
-        outputKey: `capture:${fileId}:${source.sourceRevision}`,
-        stream: createReadStream(location),
-        type: source.type,
-        filename: source.filename,
-        config,
-        expiredAt:
-          source.expiredAt ?? new Date(now() + config.assets.orphanRetentionMs).toISOString(),
-        hardExpiresAt: source.hardExpiresAt ?? source.expiredAt,
-      });
+      await sourcePipeline;
+      const digest = counter.hash.digest('hex');
       const [after, current] = await Promise.all([
-        stat(location),
+        store.revision
+          ? store.revision(scope, source)
+          : digestStream(
+              await store.open(scope, source),
+              mediaContentByteLimit(source.type, config),
+            ),
         repository.getMediaSourceFile(scope, fileId),
       ]);
       if (
         !current ||
         current.sourceRevision !== source.sourceRevision ||
-        before.ino !== after.ino ||
-        before.size !== after.size ||
-        before.mtimeMs !== after.mtimeMs
-      ) {
+        (before !== undefined ? before !== after : digest !== after)
+      )
         throw new MediaServiceError(
           'version_conflict',
           409,
           'The source changed while it was imported.',
         );
-      }
       return captured;
     },
   };
   return storage;
 }
+export const createLocalMediaStorage: typeof createMediaStorage = createMediaStorage;

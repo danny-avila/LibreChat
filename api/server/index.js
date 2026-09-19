@@ -48,6 +48,7 @@ const {
   injectConfiguredFooterBootstrap,
   preAuthTenantMiddleware,
   requestContextMiddleware,
+  tenantContextMiddleware,
   registerShutdownTask,
   getRemainingShutdownMs,
   configureServerTimeouts,
@@ -81,6 +82,7 @@ const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { checkMigrations } = require('./services/start/migration');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
+const optionalShareFileAuth = require('./middleware/optionalShareFileAuth');
 const requireJwtAuth = require('./middleware/requireJwtAuth');
 const initializeMCPs = require('./services/initializeMCPs');
 const { configureSubagentTaskRouting } = require('./services/Endpoints/agents/subagentThreadStore');
@@ -247,6 +249,7 @@ const startServer = async () => {
     environment: process.env,
     http: axios,
     upload: multer,
+    getStorageStrategy: require('~/server/services/Files/strategies').getStrategyFunctions,
     readFile: fs.promises.readFile,
     decrypt,
     log: logger.error.bind(logger),
@@ -446,6 +449,13 @@ const startServer = async () => {
   app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', await routes.files.initialize());
+  app.use(
+    '/api/media/assets',
+    optionalJwtAuth,
+    optionalShareFileAuth,
+    tenantContextMiddleware,
+    mediaRuntime.contentRouter,
+  );
   app.use('/api/media', requireJwtAuth, mediaRuntime.router);
   app.use(
     '/images/',

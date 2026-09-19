@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { mediaSubmissionRequestSchema } from 'librechat-data-provider';
+import { FileSources, mediaSubmissionRequestSchema } from 'librechat-data-provider';
+import type { FileStorage } from 'librechat-data-provider';
 import type { MediaNativeMethods, MediaNativeLimits } from '~/types/mediaNative';
 import type { MediaMethods, MediaOwnerScope } from '~/types/media';
 import { createMediaNativeMethods } from './mediaNative';
@@ -76,14 +77,29 @@ describe('native chat media persistence', () => {
     expect(job.request.prompt).toBe('Create an image');
     expect((await start('bounded-title', limits, 5)).jobId).toBe(job.jobId);
   });
-  async function original() {
+  async function original(source: FileStorage = FileSources.local, thumbnail = false) {
+    const storageKey = `images/t/${scope.tenantId ?? 'default'}/${scope.ownerId}/immutable.png`;
+    const filepath =
+      source === FileSources.local ? `/${storageKey}` : `https://private.example/${storageKey}`;
+    const rendition = {
+      source,
+      storageKey: `${storageKey}.thumbnail.png`,
+      filepath: `${filepath}.thumbnail.png`,
+      type: 'image/png',
+      bytes: 8,
+      width: 16,
+      height: 16,
+      contentDigest: 'thumbnail-digest',
+    };
     const write = await media.reserveMediaAssetWrite({
       scope,
       outputKey: 'native-image',
       rendition: 'original',
       ingestToken: 'one',
       fingerprint: 'digest',
-      storageKey: 'images/immutable.png',
+      storageKey,
+      source,
+      ...(thumbnail ? { renditionLocations: [{ ...rendition, kind: 'thumbnail' as const }] } : {}),
     });
     return media.commitMediaAssetWrite({
       scope,
@@ -91,12 +107,13 @@ describe('native chat media persistence', () => {
       content: {
         file_id: write.fileId,
         storageKey: write.storageKey,
-        source: 'local',
+        source,
         filename: 'immutable.png',
         type: 'image/png',
-        filepath: '/images/immutable.png',
+        filepath,
         bytes: 16,
         contentDigest: 'digest',
+        ...(thumbnail ? { mediaRenditions: { thumbnail: rendition } } : {}),
       },
     });
   }
@@ -174,6 +191,42 @@ describe('native chat media persistence', () => {
     });
     expect((await media.getMediaThread(scope, job.threadId))?.pendingJobCount).toBe(0);
   });
+
+  it.each([FileSources.local, FileSources.s3] as const)(
+    'restores private %s native outputs and thumbnails through the canonical public projection',
+    async (source) => {
+      scope.tenantId = 'tenant-one';
+      const job = await start();
+      const image = await original(source, true);
+      await native.recordMediaNativePart({
+        scope,
+        jobId: job.jobId,
+        chunkIndex: 0,
+        partIndex: 0,
+        part: { kind: 'image', mimeType: 'image/png', fileId: image.file_id },
+        maxRetainers: 4,
+      });
+      native = createMediaNativeMethods(mongoose, createMediaMethods(mongoose));
+      const completed = await native.completeMediaNativeRecording({ scope, jobId: job.jobId });
+      expect(completed?.outputs).toEqual([
+        expect.objectContaining({ kind: 'image', state: 'ready', asset: image }),
+      ]);
+      const publicPath = `/api/media/assets/${image.file_id}/content`;
+      expect(image).toMatchObject({
+        filepath: publicPath,
+        renditions: { thumbnail: { filepath: `${publicPath}?rendition=thumbnail`, bytes: 8 } },
+      });
+      const restored = await media.getMediaJobView(scope, job.jobId);
+      expect(JSON.stringify(restored)).not.toContain('private.example');
+      expect(JSON.stringify(restored)).not.toContain('images/t/');
+      expect(JSON.stringify(restored)).not.toContain('storageKey');
+      expect((await media.getMediaThread(scope, job.threadId))?.cover).toEqual(image);
+      const content = await media.getMediaAssetContent(scope, image.file_id);
+      expect(content?.filepath).toContain('images/t/tenant-one/');
+      expect(content?.mediaRenditions?.thumbnail?.storageKey).toContain('thumbnail.png');
+      expect(content?.source).toBe(source);
+    },
+  );
 
   it('deduplicates part replay and rejects a changed body at the same position', async () => {
     const job = await start();

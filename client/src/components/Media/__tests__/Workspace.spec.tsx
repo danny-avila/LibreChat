@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { Provider, createStore, useAtomValue } from 'jotai';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { dataService, mediaSubmissionRequestSchema } from 'librechat-data-provider';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type {
   MediaAsset,
   MediaCatalog,
@@ -168,10 +168,12 @@ function Harness({
   initialThread,
   embedded = false,
   features,
+  navigate,
 }: {
   initialThread?: string;
   embedded?: boolean;
   features?: MediaHost['features'];
+  navigate?: (id: string, commit: () => void) => void;
 }) {
   const [threadId, setThreadId] = useState(initialThread);
   const target = useAtomValue(sidebarPortalTarget);
@@ -184,7 +186,11 @@ function Harness({
         catchUpIntervalMs: 60000,
         enterToSend: false,
         isCurrentSession: () => true,
-        openThread: (id) => setThreadId(id || undefined),
+        openThread: (id) => {
+          const commit = () => setThreadId(id || undefined);
+          if (navigate) navigate(id, commit);
+          else commit();
+        },
         features,
       }}
     >
@@ -209,7 +215,12 @@ function Harness({
 }
 const clients: QueryClient[] = [];
 function mount(
-  props: { initialThread?: string; embedded?: boolean; features?: MediaHost['features'] } = {},
+  props: {
+    initialThread?: string;
+    embedded?: boolean;
+    features?: MediaHost['features'];
+    navigate?: (id: string, commit: () => void) => void;
+  } = {},
 ) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, cacheTime: 0 } },
@@ -276,6 +287,34 @@ test('keeps parameters in the sidebar and restores the prompt and gallery densit
   expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue(
     'A paper boat on a lake',
   );
+});
+
+test('focuses the destination composer after deferred navigation replaces the old thread', async () => {
+  let commitNavigation: (() => void) | undefined;
+  const frames: FrameRequestCallback[] = [];
+  jest.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+    frames.push(callback);
+    return frames.length;
+  });
+  mount({
+    initialThread: 'thread',
+    navigate: (_id, commit) => {
+      commitNavigation = commit;
+    },
+  });
+  await screen.findByText('Result 2');
+  const originalPrompt = screen.getByRole('textbox', { name: 'com_media_prompt' });
+  fireEvent.click(header().getByRole('button', { name: 'com_media_open_gallery' }));
+  const create = header().getByRole('button', { name: 'com_media_new_thread' });
+  create.focus();
+  fireEvent.click(create);
+  act(() => frames.splice(0).forEach((callback) => callback(0)));
+  expect(originalPrompt).not.toHaveFocus();
+  act(() => commitNavigation?.());
+  act(() => frames.splice(0).forEach((callback) => callback(0)));
+  const nextPrompt = screen.getByRole('textbox', { name: 'com_media_prompt' });
+  expect(nextPrompt).not.toBe(originalPrompt);
+  expect(nextPrompt).toHaveFocus();
 });
 
 test('preserves older saved filters while applying the new gallery defaults', async () => {

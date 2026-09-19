@@ -18,6 +18,10 @@ const {
   getCloudFrontFileStream,
   getCloudFrontDownloadURL,
   deleteFileFromCloudFront,
+  initializeS3,
+  getFirebaseStorage,
+  getAzureContainerClient,
+  getCloudFrontConfig,
   uploadGoogleVertexMistralOCR,
 } = require('@librechat/api');
 const {
@@ -25,6 +29,7 @@ const {
   prepareImageURL,
   saveURLToFirebase,
   deleteFirebaseFile,
+  deleteFile: deleteStoredFirebaseFile,
   saveBufferToFirebase,
   uploadFileToFirebase,
   uploadImageToFirebase,
@@ -80,10 +85,12 @@ const { uploadVectors, deleteVectors } = require('./VectorDB');
  *
  * */
 const firebaseStrategy = () => ({
+  getStorageState: getFirebaseStorage,
   handleFileUpload: uploadFileToFirebase,
   saveURL: saveURLToFirebase,
   getFileURL: getFirebaseURL,
   deleteFile: deleteFirebaseFile,
+  deleteStoredFile: deleteStoredFirebaseFile,
   saveBuffer: saveBufferToFirebase,
   prepareImagePayload: prepareImageURL,
   processAvatar: processFirebaseAvatar,
@@ -112,6 +119,7 @@ const localStrategy = () => ({
  *
  * */
 const s3Strategy = () => ({
+  getStorageState: initializeS3,
   handleFileUpload: uploadFileToS3,
   saveURL: saveURLToS3WithMetadata,
   getFileURL: getS3URL,
@@ -129,6 +137,7 @@ const s3Strategy = () => ({
  * Uses S3 for storage, CloudFront for URL delivery
  */
 const cloudfrontStrategy = () => ({
+  getStorageState: getCloudFrontConfig,
   handleFileUpload: uploadFileToCloudFront,
   saveURL: saveURLToCloudFrontWithMetadata,
   getFileURL: getCloudFrontURL,
@@ -146,6 +155,7 @@ const cloudfrontStrategy = () => ({
  *
  * */
 const azureStrategy = () => ({
+  getStorageState: getAzureContainerClient,
   handleFileUpload: uploadFileToAzure,
   saveURL: saveURLToAzure,
   getFileURL: getAzureURL,

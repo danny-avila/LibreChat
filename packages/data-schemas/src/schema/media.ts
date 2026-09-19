@@ -176,6 +176,10 @@ export const mediaAssetWriteSchema: Schema<MediaAssetWrite> = new Schema(
     ingestToken: { type: String, required: true },
     fileId: { type: String, required: true },
     storageKey: { type: String, required: true },
+    source: String,
+    storageRegion: String,
+    filepath: String,
+    renditionLocations: { type: [Schema.Types.Mixed], default: undefined },
     fingerprint: { type: String, required: true },
     state: {
       type: String,

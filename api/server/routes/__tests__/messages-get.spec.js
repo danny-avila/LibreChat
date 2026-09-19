@@ -51,6 +51,7 @@ jest.mock('@librechat/api', () => {
   };
 
   return {
+    ...jest.requireActual('../../../../packages/api/src/files/public.ts'),
     /** The real helper, without loading the rest of the package this suite mocks around. */
     withoutTraceRefs: jest.requireActual('../../../../packages/api/src/langfuse/trace.ts')
       .withoutTraceRefs,
@@ -279,6 +280,37 @@ describe('message route conversation ownership filters', () => {
     expect(storedMessageFilterOptions.getMessageRoles({ body: { role: 'system' } })).toEqual([
       'system',
     ]);
+  });
+
+  it('projects saved media originals in file and image snapshots without reading Files again', async () => {
+    const file = {
+      file_id: 'f17ecafe-1234-4123-8123-123456789012',
+      filename: 'original.png',
+      type: 'image/png',
+      bytes: 4096,
+      filepath: 'https://private.example/original.png?signature=private-secret',
+      storageKey: 'private-key',
+      mediaRenditions: { thumbnail: { filepath: 'private-thumbnail', bytes: 32 } },
+    };
+    const stored = {
+      messageId: 'saved-media',
+      files: [file],
+      content: [{ type: 'image_file', image_file: file }],
+    };
+    getConvoOwnership.mockResolvedValue({ conversationId: 'convo-media' });
+    getMessagesByCursor.mockResolvedValue({ messages: [stored], nextCursor: 'next' });
+    const response = await request(app).get('/api/messages?conversationId=convo-media').expect(200);
+    const publicPath = `/api/media/assets/${file.file_id}/content`;
+    expect(response.body).toMatchObject({
+      nextCursor: 'next',
+      messages: [
+        { files: [{ filepath: publicPath }], content: [{ image_file: { filepath: publicPath } }] },
+      ],
+    });
+    expect(JSON.stringify(response.body)).not.toContain('private-');
+    expect(getMessagesByCursor).toHaveBeenCalledTimes(1);
+    expect(require('~/models').getFiles).not.toHaveBeenCalled();
+    expect(stored.files[0].filepath).toBe(file.filepath);
   });
 
   it.each([

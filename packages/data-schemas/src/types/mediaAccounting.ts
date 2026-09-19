@@ -1,4 +1,12 @@
+import type {
+  BalancePreparationRequest,
+  BalanceReservationResult,
+  IBalanceUpdate,
+} from './balance';
+import type { MediaAppliedSettlement } from './mediaBalance';
 import type { MediaOwnerScope, MediaPage } from './media';
+
+export type { MediaHold, MediaAppliedSettlement, MediaPendingSettlement } from './mediaBalance';
 
 export type MediaAccountingPolicy = { maxHoldsPerUser: number; maxAttempts: number };
 export type MediaAccountingStep =
@@ -13,7 +21,9 @@ export type MediaAccountingStep =
   | 'published'
   | 'cleared';
 export type MediaAccountingHooks = { afterStep?: (step: MediaAccountingStep) => Promise<void> };
-export type MediaHold = { settlementId: string; jobId: string; amount: number; reviewAt: string };
+export type MediaAccountingDependencies = MediaAccountingHooks & {
+  prepareBalance?: (request: BalancePreparationRequest) => Promise<BalanceReservationResult | null>;
+};
 export type MediaSettlementEffect = {
   kind: 'charge' | 'release' | 'debt_collection';
   credits: number;
@@ -22,18 +32,6 @@ export type MediaSettlementEffect = {
   inputTokens?: number;
   outputTokens?: number;
   model?: string;
-};
-export type MediaAppliedSettlement = {
-  debitedCredits: number;
-  debtCredits: number;
-  releasedCredits: number;
-  remainingCredits: number;
-};
-export type MediaPendingSettlement = {
-  settlementId: string;
-  sequence: number;
-  phase: 'allocated' | 'applied';
-  result?: MediaAppliedSettlement;
 };
 export type MediaSettlementRecord = MediaOwnerScope & {
   settlementId: string;
@@ -69,6 +67,7 @@ export type AcquireMediaHoldInput = {
   reviewAt: string;
   now: string;
   policy: MediaAccountingPolicy;
+  initialBalance?: IBalanceUpdate;
 };
 export type SettleMediaJobInput = {
   scope: MediaOwnerScope;

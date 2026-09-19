@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import {
+  FileSources,
   mediaAssetSchema,
   mediaImportReceiptSchema,
   mediaSubmissionReceiptSchema,
@@ -14,6 +15,7 @@ import type {
   MediaOwnerScope,
   MediaStoredJob,
   StageMediaSubmissionInput,
+  MediaAssetContent,
 } from '~/types/media';
 import { createMediaMethods, deriveMediaThreadTitle } from './media';
 import { runAsSystem, tenantStorage } from '~/config/tenantContext';
@@ -395,15 +397,120 @@ describe('media persistence on standalone MongoDB', () => {
     ).rejects.toMatchObject({ code: 'unsafe_retry' });
   });
 
-  it('records cancellation intent for an unknown remote outcome', async () => {
+  it('keeps dispatched work unchanged when cancellation loses admission', async () => {
     await accepted('cancel-submitted');
     const now = new Date(Date.now() + 1000).toISOString();
     const claim = (await methods.claimMediaJob({ scope, workerId: 'one', now, leaseMs: 10000 }))!;
     const begun = (await methods.beginMediaSubmission(fence(claim, now)))!;
     const result = await methods.cancelMediaJob(scope, begun.jobId);
-    expect(result?.phase).toBe('submitting');
-    expect((await methods.getMediaJob(scope, begun.jobId))?.cancelRequestedAt).toBeDefined();
-    expect(result?.allowedActions.retry).toBe(false);
+    expect(result).toMatchObject({
+      phase: 'submitting',
+      version: begun.version,
+      allowedActions: { cancel: false, retry: false },
+    });
+    expect(await methods.getMediaJob(scope, begun.jobId)).toEqual(begun);
+  });
+
+  it('cancels claimed queued work once and fences off later dispatch', async () => {
+    await accepted('cancel-claimed');
+    const now = new Date(Date.now() + 1000).toISOString();
+    const claim = (await methods.claimMediaJob({ scope, workerId: 'one', now, leaseMs: 10000 }))!;
+    const cancelled = await methods.cancelMediaJob(scope, claim.jobId);
+    expect(cancelled).toMatchObject({
+      phase: 'cancelled',
+      allowedActions: { cancel: false, retry: true },
+    });
+    expect(await methods.beginMediaSubmission(fence(claim, now))).toBeNull();
+    expect(await methods.cancelMediaJob(scope, claim.jobId)).toEqual(cancelled);
+    expect((await methods.getMediaThread(scope, claim.threadId))?.pendingJobCount).toBe(0);
+  });
+
+  it('records accepted-provider intent once without releasing its lease, capacity, or owner fence', async () => {
+    const input = submission('cancel-remote');
+    input.execution = { ...input.execution, api: 'krea.images', cancellation: 'best-effort' };
+    const receipt = await methods.stageMediaSubmission(input);
+    await methods.publishMediaSubmission(scope, receipt.jobId, options);
+    const now = new Date(Date.now() + 1000).toISOString();
+    const claim = (await methods.claimMediaJob({ scope, workerId: 'one', now, leaseMs: 10000 }))!;
+    const begun = (await methods.beginMediaSubmission(fence(claim, now)))!;
+    const running = (await methods.recordMediaJobObservation({
+      ...fence(begun, now),
+      observation: { phase: 'running', provider: { certainty: 'submitted', operationId: 'owned' } },
+    }))!;
+    expect((await methods.getMediaJobView(scope, running.jobId))?.allowedActions.cancel).toBe(true);
+    expect(
+      (await methods.cancelMediaJob(scope, running.jobId, ['runway.videos']))?.cancellation,
+    ).toBeUndefined();
+    expect(
+      await methods.cancelMediaJob(
+        { ...scope, ownerId: new mongoose.Types.ObjectId().toString() },
+        running.jobId,
+        ['krea.images'],
+      ),
+    ).toBeNull();
+    const beforePermits = await mongoose.models.MediaPermit.countDocuments({
+      jobId: running.jobId,
+    });
+    const beforeOwner = await mongoose.models.MediaOwner.findOne(scope).lean();
+    const requested = await methods.cancelMediaJob(scope, running.jobId, ['krea.images']);
+    expect(requested).toMatchObject({
+      phase: 'running',
+      version: running.version + 1,
+      cancellation: 'requested',
+      allowedActions: { cancel: false, retry: false },
+    });
+    expect(await methods.cancelMediaJob(scope, running.jobId, ['krea.images'])).toEqual(requested);
+    expect(await methods.getMediaJob(scope, running.jobId)).toMatchObject({
+      leaseToken: running.leaseToken,
+      leaseUntil: running.leaseUntil,
+      provider: running.provider,
+    });
+    expect(await mongoose.models.MediaPermit.countDocuments({ jobId: running.jobId })).toBe(
+      beforePermits,
+    );
+    expect(await mongoose.models.MediaOwner.findOne(scope).lean()).toEqual(beforeOwner);
+    expect((await methods.getMediaThread(scope, running.threadId))?.pendingJobCount).toBe(1);
+    expect(
+      await methods.recordMediaJobObservation({
+        ...fence(running, now),
+        observation: { phase: 'running' },
+      }),
+    ).toBeNull();
+  });
+
+  it('keeps legacy accepted snapshots without verified cancellation queued-only', async () => {
+    const input = submission('cancel-legacy');
+    input.execution.api = 'krea.images';
+    const receipt = await methods.stageMediaSubmission(input);
+    await methods.publishMediaSubmission(scope, receipt.jobId, options);
+    const now = new Date(Date.now() + 1000).toISOString();
+    const claim = (await methods.claimMediaJob({ scope, workerId: 'one', now, leaseMs: 10000 }))!;
+    const begun = (await methods.beginMediaSubmission(fence(claim, now)))!;
+    const running = (await methods.recordMediaJobObservation({
+      ...fence(begun, now),
+      observation: { phase: 'running', provider: { certainty: 'submitted', operationId: 'owned' } },
+    }))!;
+    expect(await methods.cancelMediaJob(scope, running.jobId, ['krea.images'])).toMatchObject({
+      phase: 'running',
+      version: running.version,
+      allowedActions: { cancel: false, retry: false },
+    });
+    expect(await methods.getMediaJob(scope, running.jobId)).toEqual(running);
+  });
+
+  it('leaves chat-owned work to its own cancellation protocol', async () => {
+    const receipt = await methods.stageMediaSubmission({
+      ...submission('cancel-native'),
+      executionOwner: 'chat',
+    });
+    await methods.publishMediaSubmission(scope, receipt.jobId, options);
+    const before = await methods.getMediaJob(scope, receipt.jobId);
+    expect(await methods.cancelMediaJob(scope, receipt.jobId)).toMatchObject({
+      phase: 'queued',
+      executionOwner: 'chat',
+      allowedActions: { cancel: false, retry: false },
+    });
+    expect(await methods.getMediaJob(scope, receipt.jobId)).toEqual(before);
   });
 
   it('explicit safe retry creates a new job under the immutable turn', async () => {
@@ -584,6 +691,169 @@ describe('media persistence on standalone MongoDB', () => {
     expect(mediaAssetSchema.parse(await methods.getMediaAsset(scope, asset.file_id))).toEqual(
       asset,
     );
+  });
+
+  it('freezes cloud locations while allowing refreshed URLs and publishes sidecars without leaking storage metadata', async () => {
+    const planned = {
+      scope,
+      outputKey: 'cloud-image',
+      rendition: 'original',
+      ingestToken: 'cloud-ingest',
+      fingerprint: 'cloud-digest',
+      source: FileSources.s3 as const,
+      storageKey: `images/${scope.ownerId}/cloud.png`,
+      storageRegion: 'us-east-1',
+      filepath: 'https://storage.test/original?signature=before',
+      renditionLocations: [
+        {
+          kind: 'thumbnail' as const,
+          source: FileSources.s3 as const,
+          storageKey: `images/${scope.ownerId}/thumbnail.png`,
+          storageRegion: 'us-east-1',
+          filepath: 'https://storage.test/thumbnail?signature=before',
+        },
+      ],
+    };
+    const write = await methods.reserveMediaAssetWrite(planned);
+    expect(
+      (
+        await methods.reserveMediaAssetWrite({
+          ...planned,
+          filepath: 'https://storage.test/original?signature=after',
+        })
+      ).writeId,
+    ).toBe(write.writeId);
+    for (const changed of [
+      { source: FileSources.firebase as const },
+      { storageRegion: 'us-west-2' },
+      { storageKey: 'different-key' },
+    ]) {
+      await expect(
+        methods.reserveMediaAssetWrite({ ...planned, ...changed }),
+      ).rejects.toMatchObject({ code: 'conflict' });
+    }
+    const content: MediaAssetContent = {
+      file_id: write.fileId,
+      filename: 'original.png',
+      type: 'image/png',
+      bytes: 32,
+      source: FileSources.s3,
+      storageKey: planned.storageKey,
+      storageRegion: planned.storageRegion,
+      filepath: 'https://storage.test/original?signature=after',
+      contentDigest: 'original-digest',
+      mediaRenditions: {
+        thumbnail: {
+          source: FileSources.s3,
+          storageKey: planned.renditionLocations[0].storageKey,
+          storageRegion: 'us-east-1',
+          filepath: 'https://storage.test/thumbnail?signature=after',
+          type: 'image/png',
+          bytes: 12,
+          width: 16,
+          height: 8,
+          contentDigest: 'thumbnail-digest',
+        },
+      },
+    };
+    await expect(
+      methods.commitMediaAssetWrite({
+        scope,
+        writeId: write.writeId,
+        content: {
+          ...content,
+          mediaRenditions: {
+            thumbnail: { ...content.mediaRenditions!.thumbnail!, storageKey: 'unplanned-key' },
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'conflict' });
+    const asset = await methods.commitMediaAssetWrite({ scope, writeId: write.writeId, content });
+    expect(asset.filepath).toBe(`/api/media/assets/${asset.file_id}/content`);
+    expect(asset.renditions?.thumbnail).toEqual({
+      filepath: `/api/media/assets/${asset.file_id}/content?rendition=thumbnail`,
+      type: 'image/png',
+      bytes: 12,
+      width: 16,
+      height: 8,
+    });
+    expect(asset).not.toHaveProperty('storageKey');
+    expect(asset).not.toHaveProperty('mediaRenditions');
+    expect(await methods.getMediaAssetContent(scope, asset.file_id)).toMatchObject(content);
+    expect(
+      await methods.claimMediaAssetWriteDeletion({
+        scope,
+        writeId: write.writeId,
+        token: 'cleanup',
+        staleBefore: new Date().toISOString(),
+      }),
+    ).toBeNull();
+    expect(
+      await methods.claimMediaAssetDeletion({ scope, fileId: asset.file_id, token: 'cleanup' }),
+    ).toMatchObject(content);
+  });
+
+  it('returns the original and planned sidecar cloud locations when an upload is abandoned', async () => {
+    const write = await methods.reserveMediaAssetWrite({
+      scope,
+      outputKey: 'abandoned-cloud',
+      rendition: 'original',
+      ingestToken: 'abandoned-ingest',
+      fingerprint: 'abandoned-digest',
+      source: FileSources.azure_blob,
+      storageKey: `images/${scope.ownerId}/original.mp4`,
+      filepath: 'https://storage.test/files/original.mp4',
+      renditionLocations: [
+        {
+          kind: 'poster',
+          source: FileSources.azure_blob,
+          storageKey: `images/${scope.ownerId}/poster.png`,
+          filepath: 'https://storage.test/files/poster.png',
+        },
+      ],
+    });
+    const claimed = await methods.claimMediaAssetWriteDeletion({
+      scope,
+      writeId: write.writeId,
+      token: 'cleanup',
+      staleBefore: new Date(Date.now() + 1000).toISOString(),
+    });
+    expect(claimed).toMatchObject({
+      source: FileSources.azure_blob,
+      storageKey: write.storageKey,
+      filepath: write.filepath,
+      renditionLocations: write.renditionLocations,
+    });
+    expect(
+      await methods.completeMediaAssetWriteDeletion({
+        scope,
+        writeId: write.writeId,
+        token: 'cleanup',
+      }),
+    ).toBe(true);
+  });
+
+  it('does not let a canonical local object prevent cleaning the same key on a different backend', async () => {
+    const { write: local } = await original('same-path');
+    await mongoose.models.MediaAssetWrite.deleteOne({ writeId: local.writeId });
+    const cloud = await methods.reserveMediaAssetWrite({
+      scope,
+      outputKey: 'different-backend',
+      rendition: 'original',
+      ingestToken: 'different-ingest',
+      fingerprint: 'different-digest',
+      source: FileSources.s3,
+      storageKey: local.storageKey,
+    });
+    expect(
+      await methods.claimMediaAssetWriteDeletion({
+        scope,
+        writeId: cloud.writeId,
+        token: 'cleanup',
+        staleBefore: new Date(Date.now() + 1000).toISOString(),
+      }),
+    ).toMatchObject({ source: FileSources.s3, storageKey: local.storageKey });
+    expect(await methods.getMediaAssetContent(scope, local.fileId)).not.toBeNull();
   });
 
   it('normalizes unset dimensions in previously stored output and cover snapshots', async () => {

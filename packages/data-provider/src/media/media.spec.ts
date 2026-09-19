@@ -24,7 +24,9 @@ import {
 import { PermissionTypes, Permissions, permissionsSchema } from '../permissions';
 import { configSchema, BASE_ONLY_CONFIG_SECTIONS } from '../config';
 import { roleDefaults, SystemRoles } from '../roles';
+import { TOKEN_CREDITS_PER_USD } from '../balance';
 import * as endpoints from '../api-endpoints';
+import { EModelEndpoint } from '../schemas';
 
 const integration = {
   id: 'router',
@@ -218,8 +220,109 @@ describe('media configuration compatibility', () => {
       source: null,
       retention: 'inherit',
       orphanRetentionMs: 86_400_000,
+      derivatives: {
+        enabled: true,
+        maxWidth: 640,
+        maxHeight: 640,
+        timeoutMs: 120_000,
+        ffmpegPath: 'ffmpeg',
+        transcodeVideo: false,
+      },
     });
     expect(config.integrations[0].billing).toBeUndefined();
+  });
+
+  it('uses the existing token-credit currency without changing explicit billing rates', () => {
+    const config = configSchema.parse({
+      version: '1.3.1',
+      media: {
+        integrations: [
+          { ...integration, billing: { estimatedCostUSD: 0.04, maxCostUSD: 0.25 } },
+          { ...integration, id: 'legacy', billing: { creditsPerUSD: 1_000, maxCostUSD: 0.5 } },
+          { ...integration, id: 'unconfigured' },
+        ],
+      },
+    });
+    expect(config.media?.integrations[0].billing).toEqual({
+      creditsPerUSD: TOKEN_CREDITS_PER_USD,
+      estimatedCostUSD: 0.04,
+      maxCostUSD: 0.25,
+    });
+    expect(config.media?.integrations[0].billing?.creditsPerUSD).toBe(1_000_000);
+    expect(config.media?.integrations[1].billing).toEqual({
+      creditsPerUSD: 1_000,
+      maxCostUSD: 0.5,
+    });
+    expect(config.media?.integrations[2].billing).toBeUndefined();
+  });
+
+  it('configures derived previews without changing original storage or image format settings', () => {
+    const config = configSchema.parse({
+      version: '1.3.1',
+      imageOutputType: 'webp',
+      media: { assets: { derivatives: { maxWidth: 320, transcodeVideo: true } } },
+    });
+    expect(config.imageOutputType).toBe('webp');
+    expect(config.media?.assets.source).toBeNull();
+    expect(config.media?.assets.derivatives).toEqual({
+      enabled: true,
+      maxWidth: 320,
+      maxHeight: 640,
+      timeoutMs: 120_000,
+      ffmpegPath: 'ffmpeg',
+      transcodeVideo: true,
+    });
+    expect(
+      resolveMediaConfig({ assets: { derivatives: { enabled: false } } }).assets.derivatives
+        .enabled,
+    ).toBe(false);
+  });
+
+  it.each([
+    { estimatedCostUSD: 0.5, maxCostUSD: 0.25 },
+    { creditsPerUSD: Number.MAX_VALUE, maxCostUSD: 2 },
+    { maxCostUSD: Number.MAX_SAFE_INTEGER },
+    { creditsPerUSD: Number.MIN_VALUE, estimatedCostUSD: Number.MIN_VALUE },
+  ])('rejects billing amounts that cannot be safely reserved: %j', (billing) => {
+    expect(
+      mediaConfigSchema.safeParse({ integrations: [{ ...integration, billing }] }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    { api: 'openai.images', endpoint: EModelEndpoint.openAI, operations: ['image.generate'] },
+    { api: 'openai.videos', endpoint: EModelEndpoint.openAI, operations: ['video.generate'] },
+    { api: 'google.generateContent', endpoint: EModelEndpoint.google, operations: ['image.edit'] },
+  ])('reuses compatible built-in endpoint credentials: %j', ({ api, endpoint, operations }) => {
+    expect(
+      mediaConfigSchema.safeParse({
+        integrations: [
+          { ...integration, api, operations, endpointRef: { kind: 'builtin', endpoint } },
+        ],
+      }).success,
+    ).toBe(true);
+  });
+
+  it.each([
+    { api: 'openai.images', endpoint: EModelEndpoint.azureOpenAI },
+    { api: 'openai.images', endpoint: EModelEndpoint.assistants },
+    { api: 'openrouter.images', endpoint: EModelEndpoint.custom },
+  ])('rejects unsupported built-in endpoint credentials: %j', ({ api, endpoint }) => {
+    expect(
+      mediaConfigSchema.safeParse({
+        integrations: [{ ...integration, api, endpointRef: { kind: 'builtin', endpoint } }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it('preserves the separation between API protocol and reverse-proxied credential endpoints', () => {
+    expect(
+      mediaConfigSchema.safeParse({
+        integrations: [
+          { ...integration, endpointRef: { kind: 'builtin', endpoint: EModelEndpoint.openAI } },
+        ],
+      }).success,
+    ).toBe(true);
   });
 
   it('keeps generated titles on by default while deferring the model choice to configuration', () => {
@@ -250,8 +353,13 @@ describe('media configuration compatibility', () => {
     { limits: { maxNativeParts: 4_097 } },
     { limits: { maxNativeRecordingBytes: 4_194_305 } },
     { transfers: { arbitrary: 'ignored' } },
+    { assets: { derivatives: { maxWidth: 0 } } },
+    { assets: { derivatives: { maxHeight: 4_097 } } },
+    { assets: { derivatives: { timeoutMs: 3_600_001 } } },
+    { assets: { derivatives: { ffmpegPath: '' } } },
+    { assets: { derivatives: { format: 'webp' } } },
     { integrations: [{ ...integration, api: 'openrouter.videos' }] },
-    { integrations: [{ ...integration, billing: { estimatedCostUSD: 1 } }] },
+    { integrations: [{ ...integration, billing: { creditsPerUSD: 0, estimatedCostUSD: 1 } }] },
   ])('fails closed for invalid config %j', (config) => {
     expect(mediaConfigSchema.safeParse(config).success).toBe(false);
   });

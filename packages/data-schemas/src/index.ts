@@ -80,6 +80,7 @@ export {
   AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
 } from './types/triggerDelivery';
 export type * from './types';
+export { toMediaAsset } from './utils/media';
 export type * from './methods';
 export {
   AUDIT_ACTIONS,

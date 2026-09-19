@@ -5,6 +5,7 @@ import type {
   BalanceReservationRenewal,
   BalanceReservationRelease,
   BalanceReservationResult,
+  BalancePreparationRequest,
   IBalancePendingRefill,
   IBalanceReservation,
   IBalanceUpdate,
@@ -113,6 +114,7 @@ export function createTransactionMethods(
   deleteBalances: (filter: FilterQuery<IBalance>) => Promise<import('mongodb').DeleteResult>;
   createTransaction: (_txData: TxData) => Promise<TransactionResult | undefined>;
   reserveBalance: (request: BalanceReservationRequest) => Promise<BalanceReservationResult | null>;
+  prepareBalance: (request: BalancePreparationRequest) => Promise<BalanceReservationResult | null>;
   renewBalanceReservation: (params: BalanceReservationRenewal) => Promise<void>;
   releaseBalanceReservation: (params: BalanceReservationRelease) => Promise<void>;
   createStructuredTransaction: (_txData: TxData) => Promise<TransactionResult | undefined>;
@@ -428,6 +430,7 @@ export function createTransactionMethods(
     user: string,
     fields: IBalanceUpdate,
     insertOnly: IBalanceUpdate = {},
+    scope?: { tenantId: string | null },
   ): Promise<IBalance | null> {
     const Balance = mongoose.models.Balance as Model<IBalance>;
     const { user: _fieldsUser, ...set } = fields;
@@ -438,19 +441,24 @@ export function createTransactionMethods(
 
     const existing = updatesExisting
       ? await Balance.findOneAndUpdate(
-          { user },
+          { user, ...scope },
           { $set: set },
           { new: true, sort: oldestFirst },
         ).lean<IBalance>()
-      : await Balance.findOne({ user }).sort(oldestFirst).lean<IBalance>();
+      : await Balance.findOne({ user, ...scope })
+          .sort(oldestFirst)
+          .lean<IBalance>();
     if (existing) {
       return existing;
     }
 
     const create = () =>
       Balance.findOneAndUpdate(
-        { _id: user },
-        { ...(updatesExisting ? { $set: set } : {}), $setOnInsert: { ...setOnInsert, user } },
+        { _id: user, ...scope },
+        {
+          ...(updatesExisting ? { $set: set } : {}),
+          $setOnInsert: { ...setOnInsert, user, ...scope },
+        },
         { upsert: true, new: true },
       ).lean<IBalance>();
     try {
@@ -474,27 +482,30 @@ export function createTransactionMethods(
    * refill interval that is due again the instant it is applied still refills once. Returns null
    * when the user has no balance record and no `initialBalance` was given.
    */
-  async function reserveBalance({
-    user,
-    reservationId,
-    amount,
-    expiresAt,
-    initialBalance,
-  }: BalanceReservationRequest): Promise<BalanceReservationResult | null> {
+  async function admitBalance(
+    request: BalanceReservationRequest | BalancePreparationRequest,
+  ): Promise<BalanceReservationResult | null> {
+    const { user, amount, initialBalance } = request;
+    const balanceId = 'balanceId' in request ? request.balanceId : undefined;
+    const scope = 'tenantId' in request ? { tenantId: request.tenantId ?? null } : undefined;
     const Balance = mongoose.models.Balance as Model<IBalance>;
     let delay = 10;
     let refilled = false;
 
     for (let attempt = 1; attempt <= maxReservationAttempts; attempt++) {
-      const record = await Balance.findOne({ user })
+      const record = await Balance.findOne({
+        user,
+        ...scope,
+        ...(balanceId ? { _id: balanceId } : {}),
+      })
         .sort(oldestFirst)
         .select('+reservations +reservedCredits +pendingRefill +mediaDebtCredits')
         .lean<IBalance>();
       if (!record) {
-        if (!initialBalance) {
+        if (!initialBalance || balanceId) {
           return null;
         }
-        await upsertBalanceRecord(user, {}, initialBalance);
+        await upsertBalanceRecord(user, {}, initialBalance, scope);
         continue;
       }
 
@@ -520,10 +531,11 @@ export function createTransactionMethods(
       }
 
       const reserved = balance >= amount;
-      if (!reserved || !(amount > 0)) {
+      if (!reserved || !(amount > 0) || !('reservationId' in request)) {
         return { reserved, balance };
       }
 
+      const { reservationId, expiresAt } = request;
       const held = Math.ceil(amount);
       let result: Awaited<ReturnType<typeof Balance.updateOne>>;
       try {
@@ -567,6 +579,9 @@ export function createTransactionMethods(
 
     throw new Error(`Balance reservation for user ${user} exceeded its retry bound.`);
   }
+
+  const reserveBalance = (request: BalanceReservationRequest) => admitBalance(request);
+  const prepareBalance = (request: BalancePreparationRequest) => admitBalance(request);
 
   /** Extends an in-flight reservation's expiry; a reservation already released or pruned stays gone. */
   async function renewBalanceReservation({
@@ -763,6 +778,7 @@ export function createTransactionMethods(
     deleteBalances,
     createTransaction,
     reserveBalance,
+    prepareBalance,
     renewBalanceReservation,
     releaseBalanceReservation,
     createStructuredTransaction,

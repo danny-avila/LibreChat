@@ -40,6 +40,24 @@ export const mediaErrorSchema = z
     field: z.string().optional(),
   })
   .strict();
+export const mediaRenditionKindSchema = z.enum(['thumbnail', 'poster', 'playback']);
+export const mediaRenditionSchema = z
+  .object({
+    filepath: z.string().min(1),
+    type: z.string().min(1),
+    bytes: z.number().int().nonnegative().safe(),
+    width: z.number().int().positive().optional(),
+    height: z.number().int().positive().optional(),
+    durationSeconds: z.number().finite().nonnegative().optional(),
+  })
+  .strict();
+export const mediaRenditionsSchema = z
+  .object({
+    thumbnail: mediaRenditionSchema.optional(),
+    poster: mediaRenditionSchema.optional(),
+    playback: mediaRenditionSchema.optional(),
+  })
+  .strict();
 export const mediaAssetSchema = z
   .object({
     file_id: mediaIdSchema,
@@ -50,6 +68,7 @@ export const mediaAssetSchema = z
     width: z.number().int().positive().optional(),
     height: z.number().int().positive().optional(),
     durationSeconds: z.number().finite().nonnegative().optional(),
+    renditions: mediaRenditionsSchema.optional(),
   })
   .strict();
 const assetOutputFields = {
@@ -110,6 +129,7 @@ export const mediaJobSchema = z
     error: mediaErrorSchema.optional(),
     allowedActions: z.object({ cancel: z.boolean(), retry: z.boolean() }).strict(),
     retryOfJobId: mediaIdSchema.optional(),
+    cancellation: z.enum(['requested', 'confirmed']).optional(),
   })
   .strict();
 export const mediaThreadSchema = z
@@ -240,6 +260,9 @@ export const mediaStartupConfigSchema = z
 export type MediaErrorCode = z.infer<typeof mediaErrorCodeSchema>;
 export type MediaError = z.infer<typeof mediaErrorSchema>;
 export type MediaAsset = z.infer<typeof mediaAssetSchema>;
+export type MediaRenditionKind = z.infer<typeof mediaRenditionKindSchema>;
+export type MediaRendition = z.infer<typeof mediaRenditionSchema>;
+export type MediaRenditions = z.infer<typeof mediaRenditionsSchema>;
 export type MediaOutput = z.infer<typeof mediaOutputSchema>;
 export type MediaJobPhase = z.infer<typeof mediaJobPhaseSchema>;
 export type MediaJob = z.infer<typeof mediaJobSchema>;

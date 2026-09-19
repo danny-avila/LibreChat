@@ -34,6 +34,7 @@ import { createMediaNativePartModel } from '~/models/mediaNativePart';
 import { createIndexesWithRetry } from '~/utils/retry';
 import { MEDIA_FILE_ID_PREFIX } from '~/types/media';
 import { createFileModel } from '~/models/file';
+import { toMediaAsset } from '~/utils/media';
 
 export class MediaPersistenceError extends Error {
   readonly code:
@@ -125,18 +126,6 @@ function cursorParts(cursor?: string): [string, string] | undefined {
   }
   throw new MediaPersistenceError('invalid_input', 'Invalid media cursor');
 }
-function assetView(content: MediaAsset): MediaAsset {
-  return {
-    file_id: content.file_id,
-    filename: content.filename,
-    type: content.type,
-    bytes: content.bytes,
-    filepath: content.filepath,
-    ...(content.width != null ? { width: content.width } : {}),
-    ...(content.height != null ? { height: content.height } : {}),
-    ...(content.durationSeconds != null ? { durationSeconds: content.durationSeconds } : {}),
-  };
-}
 const readyAssetOutput = {
   kind: { $in: ['image', 'video'] },
   state: 'ready',
@@ -156,11 +145,21 @@ function firstReadyAsset(outputs: MediaOutput[] = []): MediaAsset | undefined {
   return cover?.asset;
 }
 function jobView(job: MediaStoredJob): MediaJob {
+  const remoteCancellation =
+    !!job.execution.cancellation &&
+    !!job.provider.operationId &&
+    ['running', 'reconciling'].includes(job.phase) &&
+    job.provider.certainty === 'submitted';
   const canRetry =
     job.receipt.phase === 'accepted' &&
     job.executionOwner === 'media' &&
     ((job.phase === 'failed' && ['unsubmitted', 'terminal'].includes(job.provider.certainty)) ||
       (job.phase === 'cancelled' && job.provider.certainty === 'unsubmitted'));
+  let cancellation: MediaJob['cancellation'];
+  if (job.cancelRequestedAt && job.execution.cancellation) {
+    if (job.provider.recovery?.terminalStatus === 'cancelled') cancellation = 'confirmed';
+    else if (!terminal.includes(job.phase)) cancellation = 'requested';
+  }
   return {
     schemaVersion: 1,
     jobId: job.jobId,
@@ -175,16 +174,17 @@ function jobView(job: MediaStoredJob): MediaJob {
     updatedAt: job.updatedAt,
     outputs: job.outputs.map((output) =>
       output.kind !== 'text' && output.asset
-        ? { ...output, asset: assetView(output.asset) }
+        ? { ...output, asset: toMediaAsset(output.asset) }
         : output,
     ),
     ...(job.error ? { error: job.error } : {}),
     ...(job.retryOfJobId ? { retryOfJobId: job.retryOfJobId } : {}),
+    ...(cancellation ? { cancellation } : {}),
     allowedActions: {
       cancel:
         job.executionOwner === 'media' &&
-        job.phase === 'queued' &&
-        job.provider.certainty === 'unsubmitted' &&
+        ((job.phase === 'queued' && job.provider.certainty === 'unsubmitted') ||
+          remoteCancellation) &&
         !job.cancelRequestedAt,
       retry: canRetry,
     },
@@ -200,7 +200,7 @@ function threadView(thread: MediaStoredThread): MediaThread {
     updatedAt: thread.updatedAt,
     pendingJobCount: thread.pendingJobCount,
     turnCount: thread.turnCount,
-    ...(thread.cover ? { cover: assetView(thread.cover) } : {}),
+    ...(thread.cover ? { cover: toMediaAsset(thread.cover) } : {}),
     ...(thread.retiredAt ? { retiredAt: thread.retiredAt } : {}),
     ...(thread.expiresAt ? { expiresAt: thread.expiresAt } : {}),
   };
@@ -1065,7 +1065,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
       mediaLifecycle: 'live',
       $or: [{ mediaHardExpiresAt: null }, { mediaHardExpiresAt: { $gt: new Date() } }],
     }).lean();
-    return file ? assetView(file as unknown as MediaAssetContent) : null;
+    return file ? toMediaAsset(file as unknown as MediaAssetContent) : null;
   };
 
   const listMediaTurns: MediaMethods['listMediaTurns'] = async ({
@@ -1133,7 +1133,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         : Promise.resolve([]),
     ]);
     const assetsById = new Map(
-      importFiles.map((file) => [file.file_id, assetView(file as unknown as MediaAssetContent)]),
+      importFiles.map((file) => [file.file_id, toMediaAsset(file as unknown as MediaAssetContent)]),
     );
     const items = page.map((turn): MediaTurn => {
       const jobRows = jobRowsByTurn.get(turn.turnId) ?? [];
@@ -1389,11 +1389,21 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     return job;
   };
 
-  const cancelMediaJob: MediaMethods['cancelMediaJob'] = async (scope, jobId) => {
+  const cancelMediaJob: MediaMethods['cancelMediaJob'] = async (
+    scope,
+    jobId,
+    providerApis = [],
+  ) => {
     scopeFilter(scope);
     const now = new Date().toISOString();
     const cancelled = await Job.findOneAndUpdate(
-      { ...scope, jobId, phase: 'queued', 'provider.certainty': 'unsubmitted' },
+      {
+        ...scope,
+        jobId,
+        executionOwner: 'media',
+        phase: 'queued',
+        'provider.certainty': 'unsubmitted',
+      },
       {
         $set: { phase: 'cancelled', cancelRequestedAt: now, updatedAt: now },
         $unset: { activeSlot: 1, leaseToken: 1, leaseOwner: 1, leaseUntil: 1 },
@@ -1421,11 +1431,26 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
       await refreshThread(scope, cancelled.threadId);
       return jobView(cancelled);
     }
-    await Job.updateOne(
-      { ...scope, jobId, phase: { $nin: terminal }, cancelRequestedAt: { $exists: false } },
-      { $set: { cancelRequestedAt: now, updatedAt: now }, $inc: { version: 1 } },
-      { writeConcern: durable },
-    );
+    if (providerApis.length) {
+      await Job.updateOne(
+        {
+          ...scope,
+          jobId,
+          executionOwner: 'media',
+          phase: { $in: ['running', 'reconciling'] },
+          'provider.certainty': 'submitted',
+          'provider.operationId': { $exists: true },
+          'execution.api': { $in: providerApis },
+          'execution.cancellation': { $in: ['best-effort', 'confirmed'] },
+          cancelRequestedAt: { $exists: false },
+        },
+        {
+          $set: { cancelRequestedAt: now, dueAt: now, updatedAt: now },
+          $inc: { version: 1 },
+        },
+        { writeConcern: durable },
+      );
+    }
     const job = await getJob(scope, jobId);
     return job ? jobView(job) : null;
   };
@@ -1696,7 +1721,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
           'A cover must be retained by this media thread',
         );
       }
-      set.cover = assetView(cover as unknown as MediaAssetContent);
+      set.cover = toMediaAsset(cover as unknown as MediaAssetContent);
     }
     if (input.coverFileId !== undefined) {
       set.coverExplicit = true;
@@ -1739,6 +1764,10 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
             writeId: randomUUID(),
             fileId: `${MEDIA_FILE_ID_PREFIX}${randomUUID().slice(9)}`,
             storageKey: input.storageKey,
+            source: input.source,
+            storageRegion: input.storageRegion,
+            filepath: input.filepath,
+            renditionLocations: input.renditionLocations,
             fingerprint: input.fingerprint,
             state: 'reserved',
             createdAt: now,
@@ -1752,7 +1781,19 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         row = await AssetWrite.findOne(key).lean();
       }
     }
-    if (!row || row.fingerprint !== input.fingerprint || row.storageKey !== input.storageKey) {
+    if (
+      !row ||
+      row.fingerprint !== input.fingerprint ||
+      row.storageKey !== input.storageKey ||
+      (row.source ?? 'local') !== (input.source ?? 'local') ||
+      row.storageRegion !== input.storageRegion ||
+      canonical(
+        (row.renditionLocations ?? []).map(({ filepath: _path, ...location }) => location),
+      ) !==
+        canonical(
+          (input.renditionLocations ?? []).map(({ filepath: _path, ...location }) => location),
+        )
+    ) {
       throw new MediaPersistenceError('conflict', 'Media asset write identity changed');
     }
     return row;
@@ -1768,8 +1809,24 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     if (!write || write.state === 'deleted' || (write.state === 'abandoned' && !write.asset)) {
       throw new MediaPersistenceError('not_found', 'Media asset write not found');
     }
-    if (inputContent.file_id !== write.fileId || inputContent.storageKey !== write.storageKey) {
+    if (
+      inputContent.file_id !== write.fileId ||
+      inputContent.storageKey !== write.storageKey ||
+      inputContent.source !== (write.source ?? 'local') ||
+      inputContent.storageRegion !== write.storageRegion
+    ) {
       throw new MediaPersistenceError('conflict', 'Media asset staging identity changed');
+    }
+    for (const [kind, rendition] of Object.entries(inputContent.mediaRenditions ?? {})) {
+      const location = write.renditionLocations?.find((item) => item.kind === kind);
+      if (
+        !location ||
+        location.source !== rendition.source ||
+        location.storageKey !== rendition.storageKey ||
+        location.storageRegion !== rendition.storageRegion
+      ) {
+        throw new MediaPersistenceError('conflict', 'Media rendition staging identity changed');
+      }
     }
     if (write.state === 'published' || write.state === 'abandoned') {
       const asset = write.asset && (await getMediaAssetContent(scope, write.asset.file_id));
@@ -1783,7 +1840,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         );
       }
       await releaseOwnerWork(scope, `write:${writeId}`);
-      return assetView(asset);
+      return toMediaAsset(asset);
     }
     if (write.state === 'reserved') {
       if (!(await admitOwnerWork(scope, `write:${writeId}`))) {
@@ -1829,6 +1886,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
             $setOnInsert: {
               ...identity,
               ...content,
+              mediaRenditionLocations: write.renditionLocations,
               file_id: write.fileId,
               mediaLifecycle: 'live',
               mediaEpoch: 1,
@@ -1860,7 +1918,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
           'Media output bytes changed for a stable identity',
         );
       }
-      const asset = assetView(file as unknown as MediaAssetContent);
+      const asset = toMediaAsset(file as unknown as MediaAssetContent);
       await AssetWrite.updateOne(
         { ...scope, writeId, state: 'committing' },
         {
@@ -1964,12 +2022,22 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         user: scope.ownerId,
         tenantId: scope.tenantId,
         storageKey: write.storageKey,
+        source: write.source ?? 'local',
         mediaOutputKey: { $exists: true },
       })
     ) {
       return null;
     }
-    return { writeId, fileId: write.fileId, storageKey: write.storageKey, token };
+    return {
+      writeId,
+      fileId: write.fileId,
+      storageKey: write.storageKey,
+      token,
+      source: write.source,
+      storageRegion: write.storageRegion,
+      filepath: write.filepath,
+      renditionLocations: write.renditionLocations,
+    };
   };
 
   const completeMediaAssetWriteDeletion: MediaMethods['completeMediaAssetWriteDeletion'] = async ({
@@ -2035,7 +2103,10 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     }).lean();
     return file
       ? {
-          ...assetView(file as unknown as MediaAssetContent),
+          ...toMediaAsset(file as unknown as MediaAssetContent),
+          filepath: file.filepath,
+          mediaRenditions: file.mediaRenditions,
+          mediaRenditionLocations: file.mediaRenditionLocations,
           source: file.source,
           storageKey: file.storageKey,
           storageRegion: file.storageRegion,
@@ -2091,7 +2162,10 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     ).lean();
     return file
       ? {
-          ...assetView(file as unknown as MediaAssetContent),
+          ...toMediaAsset(file as unknown as MediaAssetContent),
+          filepath: file.filepath,
+          mediaRenditions: file.mediaRenditions,
+          mediaRenditionLocations: file.mediaRenditionLocations,
           source: file.source,
           storageKey: file.storageKey,
           storageRegion: file.storageRegion,
@@ -2301,7 +2375,10 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
       return null;
     }
     return {
-      ...assetView(file as unknown as MediaAssetContent),
+      ...toMediaAsset(file as unknown as MediaAssetContent),
+      filepath: file.filepath,
+      mediaRenditions: file.mediaRenditions,
+      mediaRenditionLocations: file.mediaRenditionLocations,
       source: file.source,
       storageKey: file.storageKey,
       storageRegion: file.storageRegion,
@@ -2344,7 +2421,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     if (!file) {
       return null;
     }
-    const asset = assetView(file as unknown as MediaAssetContent);
+    const asset = toMediaAsset(file as unknown as MediaAssetContent);
     // The canonical File is the publication fact when acknowledgement of the write receipt was lost.
     const write = await AssetWrite.findOneAndUpdate(
       {
@@ -2739,7 +2816,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
       .limit(positive(limit))
       .lean();
     return files.map((file) => ({
-      ...assetView(file as unknown as MediaAssetContent),
+      ...toMediaAsset(file as unknown as MediaAssetContent),
       source: file.source,
       storageKey: file.storageKey,
       storageRegion: file.storageRegion,

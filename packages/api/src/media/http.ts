@@ -25,6 +25,7 @@ import type { MediaStorage } from './storage';
 import { mediaContentExtension, normalizeMediaContentType } from './content';
 import { assertUploadContentAllowed } from '../files/preflight';
 import { parseHostedMediaReference } from './hosted';
+import { assertMediaStorage } from './storage';
 import { assertMediaAccess } from './service';
 import { MediaServiceError } from './errors';
 
@@ -293,13 +294,7 @@ export function createMediaRouter({
     '/uploads',
     handle(async (req, context) => {
       assertMediaAccess(context, true);
-      if ((context.config.assets.source ?? context.appConfig.fileStrategy) !== 'local') {
-        throw new MediaServiceError(
-          'unsupported',
-          422,
-          'This media storage adapter is not available.',
-        );
-      }
+      assertMediaStorage(context);
       const fileConfig = mergeFileConfig(context.appConfig.fileConfig);
       const maxFileBytes = Math.max(
         context.config.transfers.maxImageBytes,

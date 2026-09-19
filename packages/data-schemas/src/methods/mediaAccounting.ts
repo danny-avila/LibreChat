@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Model, FilterQuery, UpdateQuery } from 'mongoose';
 import type {
   AcquireMediaHoldInput,
-  MediaAccountingHooks,
+  MediaAccountingDependencies,
   MediaAccountingMethods,
   MediaAccountingPolicy,
   MediaAppliedSettlement,
@@ -14,7 +14,7 @@ import type {
   RecordMediaUsageInput,
 } from '~/types/mediaAccounting';
 import type { MediaOwnerScope, MediaStoredJob, MediaPage } from '~/types/media';
-import type { IBalance } from '~/types/balance';
+import type { IBalance, BalancePreparationRequest } from '~/types/balance';
 import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { createIndexesWithRetry } from '~/utils/retry';
 
@@ -44,7 +44,7 @@ const finiteCredits = (value: number): boolean =>
 
 export function createMediaAccountingMethods(
   mongoose: typeof import('mongoose'),
-  hooks: MediaAccountingHooks = {},
+  hooks: MediaAccountingDependencies = {},
 ): MediaAccountingMethods {
   const settlements = (): Model<MediaSettlementRecord> =>
     mongoose.models.MediaSettlement as Model<MediaSettlementRecord>;
@@ -84,6 +84,11 @@ export function createMediaAccountingMethods(
       .findOne({ ...balanceFilter(scope), _id: balanceId })
       .select(balanceSelection)
       .lean<IBalance>();
+  const prepareBalance = (scope: MediaOwnerScope, input: BalancePreparationRequest) =>
+    tenantStorage.run(
+      { ...tenantStorage.getStore(), tenantId: scope.tenantId ?? undefined },
+      async () => hooks.prepareBalance?.(input),
+    );
 
   function validatePolicy(policy: MediaAccountingPolicy): void {
     if (
@@ -265,6 +270,7 @@ export function createMediaAccountingMethods(
     const maxCredits = Math.ceil(input.maxCredits);
     const fingerprint = digest(JSON.stringify([estimatedCredits, maxCredits]));
     let record = await getRecord(scope, settlementId);
+    let balancePrepared = false;
     if (!record) {
       if (job.provider.certainty !== 'unsubmitted') {
         throw new MediaAccountingError(
@@ -272,6 +278,13 @@ export function createMediaAccountingMethods(
           'A credit hold must precede provider submission',
         );
       }
+      await prepareBalance(scope, {
+        user: scope.ownerId,
+        tenantId: scope.tenantId,
+        amount: maxCredits,
+        initialBalance: input.initialBalance,
+      });
+      balancePrepared = true;
       const balance = await balances()
         .findOne(balanceFilter(scope))
         .sort({ _id: 1 })
@@ -321,6 +334,16 @@ export function createMediaAccountingMethods(
       }
       if (balance.mediaPendingSettlement) {
         await reconcileSettlement(scope, balance.mediaPendingSettlement.settlementId, policy);
+        continue;
+      }
+      if (!balancePrepared && hooks.prepareBalance) {
+        await prepareBalance(scope, {
+          user: scope.ownerId,
+          tenantId: scope.tenantId,
+          balanceId: record.balanceId,
+          amount: maxCredits,
+        });
+        balancePrepared = true;
         continue;
       }
       const availableCredits =
@@ -532,6 +555,8 @@ export function createMediaAccountingMethods(
             mediaCostUSD: active.effect.costUSD,
             mediaFingerprint: active.effectFingerprint,
             mediaAccountingMode: 'balance',
+            inputTokens: active.effect.inputTokens,
+            mediaOutputTokens: active.effect.outputTokens,
           },
         },
         { upsert: true, writeConcern: durable },

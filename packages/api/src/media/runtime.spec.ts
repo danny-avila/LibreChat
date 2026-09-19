@@ -11,6 +11,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import {
+  createModels,
   createMediaMethods,
   createMediaNativeMethods,
   createMediaPresetMethods,
@@ -18,7 +19,6 @@ import {
   getTempChatRetentionHours,
   runAsSystem,
   tenantStorage,
-  keySchema,
 } from '@librechat/data-schemas';
 import {
   EModelEndpoint,
@@ -40,7 +40,9 @@ import type {
   MediaOwnerScope,
 } from '@librechat/data-schemas';
 import type { Server } from 'node:http';
+import type { MediaFileStrategy } from './objects';
 import { mp4ReferenceFixture } from './__fixtures__/reference-content';
+import { createMediaStrategyObjectStores } from './objects';
 import { createMediaAccounting } from './accounting';
 import { createLocalMediaStorage } from './storage';
 import { createMediaTransport } from './transport';
@@ -94,11 +96,13 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
   let app: express.Express;
   let userRole = 'USER';
   let logged: Error[] = [];
+  let storageState: object | null = null;
+  let cloudStrategy: MediaFileStrategy;
 
   beforeAll(async () => {
     mongo = await MongoMemoryServer.create();
     await mongoose.connect(mongo.getUri());
-    mongoose.model('Key', keySchema);
+    createModels(mongoose);
     const mediaMethods = createMediaMethods(mongoose);
     repository = {
       ...mediaMethods,
@@ -323,6 +327,15 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     behavior = 'image';
     userRole = 'USER';
     logged = [];
+    storageState = null;
+    cloudStrategy = {
+      getStorageState: async () => storageState,
+      getFileURL: jest.fn(),
+      saveBuffer: jest.fn(),
+      handleFileUpload: jest.fn(),
+      getDownloadStream: jest.fn(),
+      deleteFile: jest.fn(),
+    };
     scope = { ownerId: new mongoose.Types.ObjectId().toString(), tenantId: null };
     config = {
       config: {},
@@ -407,6 +420,9 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       },
       upload: multer,
       accounting,
+      objectStores: createMediaStrategyObjectStores(() => cloudStrategy).filter(
+        (store) => store.source === FileSources.firebase,
+      ),
       titles: {
         db: {
           getUserKey: async () => {
@@ -448,6 +464,99 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
         ...extra,
       });
   }
+  test('honors existing image storage policy before catalog availability, uploads or submission', async () => {
+    config.fileStrategies = { image: FileSources.s3 };
+    const unavailable = mediaCatalogSchema.parse(
+      (await request(app).get('/api/media/catalog').expect(200)).body,
+    );
+    expect(unavailable.offerings.length).toBeGreaterThan(0);
+    expect(unavailable.offerings.every((offering) => !offering.available)).toBe(true);
+    expect(unavailable.integrations?.every((integration) => !integration.available)).toBe(true);
+    expect((await submit('cloud-storage')).status).toBe(422);
+    await request(app)
+      .post('/api/media/uploads')
+      .attach('file', original, { filename: 'reference.png', contentType: 'image/png' })
+      .expect(422);
+    await request(app)
+      .post('/api/media/uploads/url')
+      .send({ role: 'audio', url: referenceURL })
+      .expect(422);
+    expect(referenceReads).toBe(0);
+    expect(posts).toBe(0);
+
+    config.media!.assets.source = FileSources.local;
+    const available = mediaCatalogSchema.parse(
+      (await request(app).get('/api/media/catalog').expect(200)).body,
+    );
+    expect(available.version).not.toBe(unavailable.version);
+    expect(available.offerings.some((offering) => offering.available)).toBe(true);
+    await request(app)
+      .post('/api/media/uploads')
+      .attach('file', original, { filename: 'reference.png', contentType: 'image/png' })
+      .expect(201);
+    expect((await submit('explicit-local-storage')).status).toBe(202);
+  });
+
+  test('inherits fileStrategies.default and permits an existing local image override', async () => {
+    config.fileStrategy = FileSources.local;
+    config.fileStrategies = { default: FileSources.azure_blob };
+    expect((await submit('default-cloud-storage')).status).toBe(422);
+    config.fileStrategies.image = FileSources.local;
+    expect((await submit('existing-local-image-storage')).status).toBe(202);
+  });
+
+  test('blocks unconfigured cloud storage before catalog, paid admission, upload or queued dispatch', async () => {
+    config.media!.assets.source = FileSources.firebase;
+    config.balance = { enabled: true, startBalance: 1_000_000 };
+    config.media!.integrations[0].billing = { maxCostUSD: 0.1, creditsPerUSD: 1_000_000 };
+    const unavailable = mediaCatalogSchema.parse(
+      (await request(app).get('/api/media/catalog').expect(200)).body,
+    );
+    expect(unavailable.offerings.every((offering) => !offering.available)).toBe(true);
+    expect(unavailable.integrations?.every((integration) => !integration.available)).toBe(true);
+    expect((await submit('unconfigured-cloud')).status).toBe(503);
+    await request(app)
+      .post('/api/media/uploads')
+      .attach('file', original, { filename: 'reference.png', contentType: 'image/png' })
+      .expect(503);
+    expect(await mongoose.models.MediaJob.countDocuments()).toBe(0);
+    expect(posts).toBe(0);
+    expect(cloudStrategy.getFileURL).not.toHaveBeenCalled();
+    expect(cloudStrategy.saveBuffer).not.toHaveBeenCalled();
+
+    storageState = {};
+    const accepted = await submit('configured-cloud');
+    expect(accepted.status).toBe(202);
+    storageState = null;
+    const reserve = jest.spyOn(accounting, 'reserve');
+    const completed = await run(mediaSubmissionReceiptSchema.parse(accepted.body).jobId);
+    expect(completed).toMatchObject({ phase: 'failed', error: { code: 'not_ready' } });
+    expect(reserve).not.toHaveBeenCalled();
+    reserve.mockRestore();
+    expect(posts).toBe(0);
+  });
+
+  test('keeps billed connections unavailable until a cost reservation is configured', async () => {
+    config.balance = { enabled: true, startBalance: 1_000_000 };
+    const unavailable = mediaCatalogSchema.parse(
+      (await request(app).get('/api/media/catalog').expect(200)).body,
+    );
+    expect(unavailable.integrations?.every((integration) => !integration.available)).toBe(true);
+    expect((await submit('missing-cost-policy')).status).toBe(422);
+    expect(posts).toBe(0);
+    expect(await mongoose.models.MediaJob.countDocuments()).toBe(0);
+
+    config.media!.integrations[0].billing = { creditsPerUSD: 1_000_000, maxCostUSD: 0.25 };
+    const available = mediaCatalogSchema.parse(
+      (await request(app).get('/api/media/catalog').expect(200)).body,
+    );
+    expect(available.version).not.toBe(unavailable.version);
+    expect(
+      available.integrations?.find((integration) => integration.connectionId === 'images'),
+    ).toMatchObject({ available: true });
+    expect((await submit('configured-cost-policy')).status).toBe(202);
+  });
+
   async function run(jobId: string) {
     const job = await repository.claimMediaJob({
       scope,
@@ -509,7 +618,14 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     if (!output || output.kind === 'text' || !output.asset) {
       throw new Error('Expected image');
     }
-    expect(await readFile(path.join(directory, output.asset.filepath))).toEqual(original);
+    expect(
+      await readFile(
+        path.join(
+          directory,
+          (await repository.getMediaAssetContent(scope, output.asset.file_id))!.filepath,
+        ),
+      ),
+    ).toEqual(original);
     expect(output.asset).toMatchObject({ width: 24, height: 16, bytes: original.length });
     const next = await submit('iteration', {
       threadId: receipt.threadId,
@@ -528,6 +644,51 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
         token: 'delete',
       }),
     ).toBeNull();
+  });
+
+  it.each([undefined, 1000])(
+    'freezes the transaction conversion rate %s before provider dispatch',
+    async (creditsPerUSD) => {
+      config.transactions = { enabled: true };
+      if (creditsPerUSD !== undefined) {
+        config.media!.integrations.find((entry) => entry.id === 'images')!.billing = {
+          creditsPerUSD,
+        };
+      }
+      const response = await submit('transaction-rate');
+      expect(response.status).toBe(202);
+      expect((await repository.getMediaJob(scope, response.body.jobId))?.execution).toMatchObject({
+        accountingMode: 'transactions',
+        billing: { creditsPerUSD: creditsPerUSD ?? 1_000_000 },
+      });
+      expect(posts).toBe(0);
+    },
+  );
+
+  it('preserves legacy transaction snapshots on replay and freezes the current rate for an explicit retry', async () => {
+    config.transactions = { enabled: true };
+    const original = await submit('legacy-transaction-rate');
+    expect(original.status).toBe(202);
+    await mongoose.models.MediaJob.updateOne(
+      { ...scope, jobId: original.body.jobId },
+      { $unset: { 'execution.billing': 1 } },
+    );
+    const replay = await submit('legacy-transaction-rate');
+    expect(replay.status).toBe(202);
+    expect(replay.body.jobId).toBe(original.body.jobId);
+    expect(
+      (await repository.getMediaJob(scope, replay.body.jobId))?.execution.billing,
+    ).toBeUndefined();
+    await request(app).post(`/api/media/jobs/${original.body.jobId}/cancel`).expect(200);
+    const retried = await request(app)
+      .post(`/api/media/jobs/${original.body.jobId}/retry`)
+      .send({ clientRequestId: 'new-transaction-rate' })
+      .expect(202);
+    expect((await repository.getMediaJob(scope, retried.body.jobId))?.execution).toMatchObject({
+      accountingMode: 'transactions',
+      billing: { creditsPerUSD: 1_000_000 },
+    });
+    expect(posts).toBe(0);
   });
 
   it('names a new thread with the configured title model after the receipt, never on replay or follow-up', async () => {
@@ -591,7 +752,14 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       width: 24,
       height: 16,
     });
-    expect(await readFile(path.join(directory, asset.filepath))).toEqual(source);
+    expect(
+      await readFile(
+        path.join(
+          directory,
+          (await repository.getMediaAssetContent(scope, asset.file_id))!.filepath,
+        ),
+      ),
+    ).toEqual(source);
     expect(await readdir(path.join(directory, 'uploads', 'media-staging'))).toEqual([]);
     expect(posts).toBe(0);
   });
@@ -656,7 +824,14 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       const imported = mediaURLUploadResponseSchema.parse(response.body);
       expect(imported.file.type).toBe(role === 'video' ? 'video/mp4' : 'audio/wav');
       expect(imported.sourceURL).toBe(referenceURL);
-      expect(await readFile(path.join(directory, imported.file.filepath))).toEqual(archived);
+      expect(
+        await readFile(
+          path.join(
+            directory,
+            (await repository.getMediaAssetContent(scope, imported.file.file_id))!.filepath,
+          ),
+        ),
+      ).toEqual(archived);
       const submission = await hostedSubmission(`hosted-${role}`, [
         {
           role,
@@ -709,7 +884,14 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       provider: { certainty: 'unsubmitted' },
     });
     expect(posts).toBe(0);
-    expect(await readFile(path.join(directory, imported.file.filepath))).toEqual(archived);
+    expect(
+      await readFile(
+        path.join(
+          directory,
+          (await repository.getMediaAssetContent(scope, imported.file.file_id))!.filepath,
+        ),
+      ),
+    ).toEqual(archived);
   });
 
   it.each([401, 403, 404, 410])(

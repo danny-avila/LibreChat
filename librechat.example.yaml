@@ -380,11 +380,20 @@ registration:
 # `media` is base-config-only; database overrides cannot change it per user, group, or role.
 # Values shown are the defaults. `enabled: true` requires at least one integration with
 # configured models, an allowlist, or explicit all-model discovery. Access is granted per role
-# through `interface.media` (see above), and saved originals use the local file strategy.
+# through `interface.media` (see above). Originals reuse the deployment's existing file strategies.
+# Media uses the existing balance and transactions settings. With balance enabled, each
+# integration requires billing.maxCostUSD before it can dispatch work; credits are reserved
+# from the same token-credit balance as chat. With balance disabled, transactions default on
+# and record reported provider usage without debiting a balance. Native chat output keeps
+# the chat invocation's existing accounting and is not charged again by Media Studio.
 # Further tuning groups keep their schema defaults when omitted: accounting, catalog, worker,
 # polling, timeouts, recovery, credentials, transfers.
 # media:
 #   enabled: false
+#   cancellation:
+#     # New Runway/Krea jobs may request provider cancellation; existing jobs keep their saved policy.
+#     # A cancellation request never releases reserved credits without a confirmed billing outcome.
+#     enabled: true
 #   surfaces:
 #     studio: true   # The Media Studio surface
 #     chat: true     # Native image output from Google image models inside chat
@@ -395,21 +404,28 @@ registration:
 #       endpointRef: { kind: builtin, endpoint: openAI }
 #       catalog: { kind: configured, models: ['gpt-image-1'] }
 #       operations: ['image.generate', 'image.edit']
-#       # Optional when balance or transactions are enabled: charge generations in credits.
-#       # billing: { creditsPerUSD: 1000000, estimatedCostUSD: 0.04, maxCostUSD: 0.25 }
+#       # Required for balance enforcement. Amounts cover the entire provider request.
+#       # maxCostUSD reserves credits; it is not a provider-side spending cap.
+#       # estimatedCostUSD is the fallback charge when the provider omits a USD cost.
+#       # Omit creditsPerUSD to use the existing 1,000,000 token credits per USD.
+#       # billing: { estimatedCostUSD: 0.04, maxCostUSD: 0.25 }
 #     # Vertex AI video with a service-account key file; Vertex requires explicit models.
 #     - id: vertex-video
 #       api: google.vertex.videos
 #       endpointRef: { kind: vertex, keyFile: '/run/secrets/vertex-media.json', location: us-central1 }
 #       catalog: { kind: configured, models: ['veo-3.1-fast-generate-001'] }
 #       operations: ['video.generate']
-#     # A direct provider key with discovered models narrowed to an allowlist. Use
-#     # `apiKey: user_provided` with `credentialName` to let each user save their own key.
+#     # Reuse the custom OpenRouter endpoint below, including its saved personal-key slot,
+#     # headers and provider routing policy. No separate media credential is needed.
 #     - id: openrouter-images
 #       api: openrouter.images
-#       endpointRef: { kind: direct, apiKey: '${OPENROUTER_KEY}' }
+#       endpointRef: { kind: custom, name: OpenRouter }
 #       catalog: { kind: discovered, allowModels: ['black-forest-labs/flux.2-pro'] }
 #       operations: ['image.generate', 'image.edit']
+#     # For providers without a chat endpoint, use a direct connection instead:
+#     # endpointRef: { kind: direct, apiKey: '${OPENROUTER_KEY}' }
+#     # Use apiKey: user_provided and credentialName to share one saved key across
+#     # that provider's image/video integrations; this still follows balance policy.
 #   limits:
 #     maxPromptChars: 32000
 #     maxTitleChars: 200
@@ -439,9 +455,19 @@ registration:
 #     # prompt: 'Name this media request in five words or fewer.'
 #     timeoutMs: 45000
 #   assets:
-#     source: null                 # File strategy for originals; null inherits `fileStrategy` (local only)
+#     source: null                 # Inherits fileStrategies.image, then .default, then fileStrategy
+#                                  # local, s3, cloudfront, azure_blob and firebase use existing credentials
 #     retention: inherit           # Originals follow the chat retention policy
 #     orphanRetentionMs: 86400000  # Unreferenced uploads and staging files are removed after this
+#     derivatives:
+#       enabled: true             # Best-effort thumbnails and video posters; originals stay unchanged
+#       maxWidth: 640             # Preview/playback bounds; aspect ratio is preserved
+#       maxHeight: 640
+#       timeoutMs: 120000
+#       ffmpegPath: ffmpeg        # Included in the container; install FFmpeg for a local deployment
+#       transcodeVideo: false     # Also generate H.264/AAC MP4 playback within the same bounds
+#     # Image previews use imageOutputType; byte caps use media.transfers. Derivative failure
+#     # falls back to the original, and deleting an original removes its sidecars together.
 
 # Speech (STT/TTS) outbound requests to operator-provided target URLs are SSRF-guarded
 # at connect time: private, loopback, link-local, and cloud-metadata targets are blocked

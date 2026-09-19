@@ -7,15 +7,31 @@ import type {
 } from '@librechat/data-schemas';
 import type { AxiosInstance } from 'axios';
 import type { MediaRuntime, MediaRuntimeDependencies } from './runtime';
+import type { MediaStrategyResolver } from './objects';
 import type { RecordUsageDeps } from '~/agents/usage';
 import type { MediaEnvironment } from './credentials';
 import type { EndpointDbMethods } from '~/types';
 import type { MediaUploadFactory } from './http';
 import { createGoogleMediaAuthClient, createVertexMediaCredentialProvider } from './vertexAuth';
+import { createFFmpegMediaProcessor, createMediaDerivativeProcessor } from './derivatives';
+import { getBalanceConfig, getTransactionsConfig } from '~/app/config';
+import { createMediaStrategyObjectStores } from './objects';
 import { resolveConfigSecret } from '~/admin/secrets';
 import { createMediaAccounting } from './accounting';
 import { createMediaTransport } from './transport';
 import { createMediaRuntime } from './runtime';
+
+/** Resolve the host's legacy/YAML policy before jobs freeze their accounting mode. */
+export function resolveMediaHostConfig(
+  appConfig: AppConfig,
+  environment: MediaEnvironment,
+): AppConfig {
+  return {
+    ...appConfig,
+    balance: getBalanceConfig(appConfig, environment) ?? undefined,
+    transactions: getTransactionsConfig(appConfig, environment),
+  };
+}
 
 /** The slice of the host's model layer that Media Studio reads and writes. */
 export interface MediaHostDatabase
@@ -43,6 +59,7 @@ export interface MediaHostDependencies {
   environment: MediaEnvironment;
   http: AxiosInstance;
   upload: MediaUploadFactory;
+  getStorageStrategy?: MediaStrategyResolver;
   readFile(path: string, encoding: 'utf8'): Promise<string>;
   decrypt(value: string): Promise<string>;
   log(error: Error): void;
@@ -59,16 +76,18 @@ export function createMediaRuntimeFromApp({
   environment,
   http,
   upload,
+  getStorageStrategy,
   readFile,
   decrypt,
   log,
 }: MediaHostDependencies): MediaRuntime {
   return createMediaRuntime({
-    appConfig,
+    appConfig: resolveMediaHostConfig(appConfig, environment),
     repository: db,
     getUserById: db.getUserById,
     getRoleByName,
-    getAppConfig,
+    getAppConfig: async (options) =>
+      resolveMediaHostConfig(await getAppConfig(options), environment),
     tenantContext,
     asSystem,
     environment,
@@ -85,6 +104,14 @@ export function createMediaRuntimeFromApp({
       allowedAddresses: appConfig.endpoints?.allowedAddresses,
     }),
     upload,
+    objectStores: getStorageStrategy
+      ? createMediaStrategyObjectStores(getStorageStrategy)
+      : undefined,
+    derivatives: createMediaDerivativeProcessor({
+      imageOutputType: appConfig.imageOutputType,
+      video: createFFmpegMediaProcessor(),
+      log,
+    }),
     accounting: createMediaAccounting({ repository: db, now: Date.now }),
     titles: {
       db: { getUserKey: db.getUserKey, getUserKeyValues: db.getUserKeyValues },

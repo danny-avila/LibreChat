@@ -65,6 +65,23 @@ describe('encodeAndFormatImages', () => {
     expect(getDownloadStream).toHaveBeenCalledWith(expect.anything(), file.filepath);
   });
 
+  it('reads a media original for the provider and saves its authenticated original URL for chat', async () => {
+    const media = { ...file, file_id: 'f17ecafe-1234-4123-8123-123456789012' };
+    const result = await encodeAndFormatImages(makeReq(), [media], {}, deps);
+    expect(getDownloadStream).toHaveBeenCalledWith(expect.anything(), media.storageKey);
+    expect(result.image_urls).toEqual([
+      { type: 'image_url', image_url: { url: dataUrl, detail: 'auto' } },
+    ]);
+    expect(result.files[0]).toMatchObject({
+      file_id: media.file_id,
+      filepath: `/api/media/assets/${media.file_id}/content`,
+      width: media.width,
+      height: media.height,
+    });
+    expect(JSON.stringify(result.files[0])).not.toContain('signature=secret');
+    expect(media.filepath).toBe(file.filepath);
+  });
+
   it('returns an empty result without acquiring a strategy for absent files', async () => {
     await expect(encodeAndFormatImages(makeReq(), undefined, {}, deps)).resolves.toEqual({
       files: [],
