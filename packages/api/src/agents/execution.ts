@@ -44,6 +44,8 @@ export interface CodeExecutionContext {
   codeWorkspace?: CodeWorkspaceSelection & {
     operations: CodeWorkspaceOperation[];
     workspaceInstanceId?: string;
+    /** Live Code API execution ceiling. Omitted by older deployments. */
+    maxCommandTimeoutMs?: number;
     instructions?: CodeWorkspaceDescriptor['instructions'];
     environment?: CodeWorkspaceDescriptor['environment'];
   };

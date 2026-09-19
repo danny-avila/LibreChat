@@ -182,6 +182,9 @@ export async function resolveCodeExecutionWorkspaceContext({
       workspace.workspaceInstances?.includes('git_worktree')
         ? { workspaceInstanceId: context.conversationWorkspaceInstanceId }
         : {}),
+      ...(status.maxCommandTimeoutMs == null
+        ? {}
+        : { maxCommandTimeoutMs: status.maxCommandTimeoutMs }),
       ...(workspace.instructions ? { instructions: workspace.instructions } : {}),
       ...(workspace.environment ? { environment: workspace.environment } : {}),
     },

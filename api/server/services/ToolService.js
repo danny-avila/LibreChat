@@ -2301,6 +2301,7 @@ async function loadToolsForExecution({
               gitIdentity: agent?.git_identity,
               maxTimeoutMs: resolveAttachedWorkspaceCommandTimeoutMax(
                 codeExecutionContext.codeEnvironmentConfigSchema,
+                codeExecutionContext.codeWorkspace?.maxCommandTimeoutMs,
               ),
               maxQueueWaitMs: resolveAttachedWorkspaceQueueWaitMs(
                 codeExecutionContext.codeEnvironmentConfigSchema,
