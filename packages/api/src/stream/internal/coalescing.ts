@@ -14,10 +14,10 @@ export const MAX_COALESCED_BYTES = 128 * 1024;
  * resume frontier assumes an event is never visible in the durable chunk log
  * meaningfully earlier than its sequence lands on the shared counter, so
  * batching one side without the other reopens that race for the full window
- * instead of a same-tick skew. 0 (the default) disables coalescing.
+ * instead of a same-tick skew. Unset uses 25ms; explicit 0 disables coalescing.
  */
 export function resolveCoalesceWindowMs(): number {
-  const raw = Number(process.env.STREAM_DELTA_COALESCE_MS ?? 0);
+  const raw = Number(process.env.STREAM_DELTA_COALESCE_MS ?? 25);
   if (!Number.isFinite(raw) || raw <= 0) {
     return 0;
   }

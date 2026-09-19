@@ -16,7 +16,7 @@ jest.spyOn(console, 'log').mockImplementation();
  *
  * Run with: USE_REDIS=true npx jest deltaCoalescing.stream_integration
  */
-describe('Delta coalescing integration', () => {
+describe.each([undefined, '25'])('Delta coalescing integration (window %s)', (windowMs) => {
   let originalEnv: NodeJS.ProcessEnv;
   let ioredisClient: Redis | Cluster | null = null;
   const testPrefix = 'DeltaCoalescing-Integration-Test';
@@ -28,7 +28,11 @@ describe('Delta coalescing integration', () => {
     process.env.USE_REDIS = process.env.USE_REDIS ?? 'true';
     process.env.REDIS_URI = process.env.REDIS_URI ?? 'redis://127.0.0.1:6379';
     process.env.REDIS_KEY_PREFIX = testPrefix;
-    process.env.STREAM_DELTA_COALESCE_MS = '25';
+    if (windowMs === undefined) {
+      delete process.env.STREAM_DELTA_COALESCE_MS;
+    } else {
+      process.env.STREAM_DELTA_COALESCE_MS = windowMs;
+    }
 
     jest.resetModules();
     const redisModule = await import('~/cache/redisClients');

@@ -1,5 +1,29 @@
 # Upgrading LibreChat
 
+## Redis streaming now coalesces deltas by default
+
+Redis-backed streams now batch model and tool-argument deltas in a **25 ms**
+window when `STREAM_DELTA_COALESCE_MS` is unset. Explicit `0` keeps per-delta
+publication; existing explicit values retain their behavior. In-memory streams
+are unchanged, including deployments using `USE_REDIS_STREAMS=false`.
+
+The same window batches durable appends and publications. It reduces Redis
+operations at the cost of up to one window of buffering latency and possible loss
+of unflushed deltas on process crash. Terminal and non-coalescable barriers still
+flush pending batches before proceeding.
+
+**Rolling upgrades from builds without batch-frame support:** older subscribers
+silently drop `chunk_batch` frames. Before introducing this default, configure
+`STREAM_DELTA_COALESCE_MS=0` on every API replica and restart them with that setting.
+Keep it set throughout the upgrade. Once every replica supports batch frames
+(introduced in #14614), remove the override and restart to use the 25 ms default.
+A mixed deployment of batch-capable builds can receive batches even if some
+replicas still publish per delta.
+
+**Rollback to a build without batch-frame support:** first set
+`STREAM_DELTA_COALESCE_MS=0` on every replica and restart all publishers with it;
+only then introduce the older build. Keep `0` set throughout the rollback.
+
 ## Tenant index migration (v0.8.7 and earlier databases)
 
 Upgrading an existing database can log `Index build failed` for User, Role,
