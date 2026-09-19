@@ -989,6 +989,17 @@ endpoints:
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
 
+    # GitGot
+    - name: 'GitGot'
+      apiKey: '${GITGOT_API_KEY}'
+      baseURL: 'https://inference.gitgot.ai/v1'
+      models:
+        default: ['openai/gpt-oss-120b']
+        fetch: true
+      titleConvo: true
+      titleModel: 'openai/gpt-oss-120b'
+      modelDisplayLabel: 'GitGot'
+
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables
   # bedrock:

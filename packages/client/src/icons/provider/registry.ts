@@ -99,6 +99,7 @@ export const providerIcons: Record<ProviderId, ProviderIconDef> = {
   },
   [ProviderId.deepseek]: { art: asset('assets/deepseek.svg'), label: 'DeepSeek' },
   [ProviderId.fireworks]: { art: asset('assets/fireworks.png'), label: 'Fireworks' },
+  [ProviderId.gitgot]: { art: asset('assets/gitgot.svg'), label: 'GitGot' },
   [ProviderId.groq]: { art: asset('assets/groq.png'), label: 'Groq' },
   [ProviderId.helicone]: { art: asset('assets/helicone.svg'), label: 'Helicone' },
   [ProviderId.huggingface]: { art: asset('assets/huggingface.svg'), label: 'Hugging Face' },

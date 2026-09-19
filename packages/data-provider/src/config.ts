@@ -3054,6 +3054,7 @@ export enum KnownEndpoints {
   cohere = 'cohere',
   fireworks = 'fireworks',
   deepseek = 'deepseek',
+  gitgot = 'gitgot',
   moonshot = 'moonshot',
   groq = 'groq',
   helicone = 'helicone',
@@ -3105,6 +3106,7 @@ export const alternateName = {
   [KnownEndpoints.xai]: 'xAI',
   [KnownEndpoints.vercel]: 'Vercel',
   [KnownEndpoints.helicone]: 'Helicone',
+  [KnownEndpoints.gitgot]: 'GitGot',
 };
 
 /**

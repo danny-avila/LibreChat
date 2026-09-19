@@ -15,6 +15,7 @@ export const providerHosts: ReadonlyArray<readonly [string, ProviderId]> = [
   ['api.cohere.com', ProviderId.cohere],
   ['api.cohere.ai', ProviderId.cohere],
   ['api.fireworks.ai', ProviderId.fireworks],
+  ['inference.gitgot.ai', ProviderId.gitgot],
   ['api-inference.huggingface.co', ProviderId.huggingface],
   ['api.endpoints.anyscale.com', ProviderId.anyscale],
   ['apipie.ai', ProviderId.apipie],
