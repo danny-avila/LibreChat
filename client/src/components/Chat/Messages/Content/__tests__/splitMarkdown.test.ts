@@ -1,4 +1,8 @@
-import { splitMarkdownIntoBlocks, splitMarkdownIntoBlocksUncached } from '../splitMarkdown';
+import {
+  createMarkdownSplitter,
+  splitMarkdownIntoBlocks,
+  splitMarkdownIntoBlocksUncached,
+} from '../splitMarkdown';
 
 const raws = (content: string) => splitMarkdownIntoBlocks(content).map((block) => block.raw);
 
@@ -89,6 +93,23 @@ describe('splitMarkdownIntoBlocks', () => {
       expect(splitMarkdownIntoBlocks(edited)).toEqual(splitMarkdownIntoBlocksUncached(edited));
       const shorter = 'First.';
       expect(splitMarkdownIntoBlocks(shorter)).toEqual(splitMarkdownIntoBlocksUncached(shorter));
+    });
+
+    it('keeps independent stream caches isolated', () => {
+      const first = createMarkdownSplitter();
+      const second = createMarkdownSplitter();
+      const firstPrefix = 'First stream.\n\nActive block';
+      const secondPrefix = 'Second stream.\n\nActive block';
+
+      first(firstPrefix);
+      second(secondPrefix);
+
+      expect(first(`${firstPrefix} continued.`)).toEqual(
+        splitMarkdownIntoBlocksUncached(`${firstPrefix} continued.`),
+      );
+      expect(second(`${secondPrefix} continued.`)).toEqual(
+        splitMarkdownIntoBlocksUncached(`${secondPrefix} continued.`),
+      );
     });
   });
 
