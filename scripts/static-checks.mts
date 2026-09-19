@@ -546,12 +546,21 @@ interface Target {
  * so they never hand a deleted path to a tool. Activating gates off the
  * narrowed list would let a delete-only commit — the last reference to a
  * translation key, say — slip past the i18n and depcheck gates.
+ *
+ * `--no-renames` is what makes a rename two paths. Git's rename detection
+ * reports `git mv eslint-suppressions.json backlog.json` as the destination
+ * alone, so the group that owns the source — the baseline that just
+ * disappeared, the recorded design source that just left its root — is never
+ * activated and nothing notices the departure. Selection is about which paths a
+ * diff touches, and a rename touches both; the one place that wants the pairing
+ * asks for it separately, with `--name-status -M`.
  */
 function diffPaths(args: string[]): { files: string[]; existing: string[] } {
   const split = (output: string): string[] => output.split('\0').filter(Boolean);
+  const named = [...args, '--no-renames'];
   return {
-    files: split(captureStdout(GIT, args)),
-    existing: split(captureStdout(GIT, [...args, '--diff-filter=ACMRTUXB'])),
+    files: split(captureStdout(GIT, named)),
+    existing: split(captureStdout(GIT, [...named, '--diff-filter=ACMRTUXB'])),
   };
 }
 
@@ -829,6 +838,7 @@ async function validateSuppressions(context: CheckContext): Promise<CheckOutcome
   const built = buildClientPackage();
   if (built) return built;
 
+  problems.push(...workflowSelectsWhatItFilters());
   problems.push(...(await inlineDirectives(context)));
   for (const target of targets) {
     problems.push(...(await suppressionProblems(target, known)));
@@ -843,6 +853,62 @@ async function validateSuppressions(context: CheckContext): Promise<CheckOutcome
       'Re-record a moved file with: npm run lint:design:suppress',
     ],
   };
+}
+
+/**
+ * The Static Checks lane names its files twice: once in `on.pull_request.paths`,
+ * which decides whether the workflow runs at all, and once in the job's own
+ * `suppressions` filter, which decides whether this check runs inside it. A
+ * pattern in the second that no pattern in the first matches is a file this
+ * gate claims to cover and CI never sees — a nested baseline outside the source
+ * trees the trigger enumerates was exactly that.
+ *
+ * Asked here rather than in a spec because the file that breaks it is
+ * `.github/workflows/static-checks.yml`, and this group is what a change to it
+ * runs. A test in the mock Playwright lane cannot make that claim: that lane's
+ * own trigger excludes `.github/workflows/**` apart from its own file, so a
+ * workflow-only diff would never execute the assertion guarding it.
+ */
+function workflowSelectsWhatItFilters(): string[] {
+  const path = '.github/workflows/static-checks.yml';
+  let workflow: string;
+  try {
+    workflow = readFileSync(resolve(ROOT, path), 'utf8');
+  } catch {
+    return [`${path} could not be read; the lane it defines is what this check runs in`];
+  }
+  /** A block ends at its first sibling, which sits at the same indent: a
+   *  terminator that only fires on shallower lines runs on through the next
+   *  filter and reads its patterns as this one's. */
+  const list = (section: RegExp, indent: number): string[] =>
+    (workflow.split(section)[1] ?? '')
+      .split(new RegExp(`^ {0,${indent}}\\S`, 'm'))[0]
+      .split('\n')
+      .map((line) => new RegExp(`^ {${indent + 2}}- '([^']+)'$`).exec(line)?.[1])
+      .filter((pattern): pattern is string => Boolean(pattern) && !pattern.startsWith('!'));
+
+  const trigger = list(/^ {4}paths:$/m, 4);
+  const lane = list(/^ {12}suppressions:$/m, 12);
+  if (trigger.length === 0 || lane.length === 0) {
+    return [`${path}: the trigger or the suppressions filter could not be read`];
+  }
+  /** GitHub's filter syntax, in the shapes both lists use: an exact path, a
+   *  subtree, and a basename at any depth. */
+  const starts = (file: string, pattern: string): boolean => {
+    if (pattern.endsWith('/**')) return file.startsWith(`${pattern.slice(0, -3)}/`);
+    if (pattern.startsWith('**/')) {
+      const name = pattern.slice(3);
+      return file === name || file.endsWith(`/${name}`);
+    }
+    return file === pattern;
+  };
+  return lane
+    .map((pattern) => pattern.replace('**/', 'e2e/fixtures/').replace('/**', '/Probe.tsx'))
+    .filter((file) => !trigger.some((pattern) => starts(file, pattern)))
+    .map(
+      (file) =>
+        `${path}: the suppressions filter selects ${file}, which no \`on.pull_request.paths\` pattern starts the workflow for`,
+    );
 }
 
 /**
@@ -1003,12 +1069,21 @@ async function directiveComments(files: string[]): Promise<string[]> {
         continue;
       }
       /** `/* eslint rule: severity *\/` does not suppress a violation, it turns
-       *  the rule off for the file — dormant or not, that is the same hole. */
+       *  the rule off for the file — dormant or not, that is the same hole.
+       *
+       *  ESLint reads what follows as an object literal, so a rule key is
+       *  whatever the token decodes to, not how it is written:
+       *  `shadcn/no-raw-colors`, `"shadcn/no-raw-colors"`,
+       *  `"shadcn\/no-raw-colors"` and `"shadcn\u002fno-raw-colors"` are one
+       *  key spelled four ways, and ESLint disables the rule for all four.
+       *  Matching the spelling is what kept losing to the next one; decoding
+       *  the token is what stops the question being about spelling at all. */
       if (!/^eslint\s/.test(body)) continue;
-      /** `/* eslint "shadcn/no-raw-colors": off *\/` is the same directive as
-       *  the unquoted one — ESLint reads the key either way — so the quotes
-       *  cannot be what decides whether the gate sees it. */
-      for (const [, rule] of body.matchAll(/["']?(shadcn\/[\w-]+)["']?\s*:/g)) {
+      for (const [, doubled, singled, bare] of body.matchAll(
+        /(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([A-Za-z@][\w@\-./]*))\s*:/g,
+      )) {
+        const rule = decodeRuleKey(doubled ?? singled ?? bare ?? '');
+        if (!rule.startsWith('shadcn/')) continue;
         problems.push(
           `${file}: ${rule} is configured by an inline comment; the record is where a design rule is answered, not the file that owes it`,
         );
@@ -1016,6 +1091,22 @@ async function directiveComments(files: string[]): Promise<string[]> {
     }
   }
   return problems;
+}
+
+/**
+ * One rule key from an inline `eslint` configuration comment, as ESLint reads
+ * it rather than as it was typed. A quoted key is a JSON string, so its escapes
+ * are part of the encoding and not of the name: `\/` and `\u002f` are both `/`.
+ * An undecodable token is returned unchanged — ESLint would not honour it
+ * either, and inventing a name here would invent a violation.
+ */
+function decodeRuleKey(token: string): string {
+  if (!token.includes('\\')) return token;
+  try {
+    return JSON.parse(`"${token.replace(/\\'/g, "'").replace(/"/g, '\\"')}"`) as string;
+  } catch {
+    return token;
+  }
 }
 
 /** Everything wrong with one recorded baseline, named by its own path. */
@@ -1466,6 +1557,14 @@ function editedEntries(target: string, context: CheckContext): string[] {
  * tsconfig actually emits stays older than the last build. CI always builds, so
  * either divergence would only appear locally.
  *
+ * Freshness is asked of every declared output, not of the newest file anywhere
+ * under `dist`. A resolver loads one entry, not the directory: a build that
+ * rewrote the ESM bundle and left the CJS one or the type declarations behind
+ * would pass a `max` comparison while `@shadcn/lint` reads the stale one and
+ * classifies callers against variants that no longer exist. The weakest output
+ * is the one that decides, which is the same reason their existence is checked
+ * one by one rather than by the directory's mtime.
+ *
  * Specs are not among those sources: `packages/client/tsconfig.json` excludes
  * them, so no edit to one can make the bundle describe something else. Adding or
  * deleting a spec still moves its directory's own mtime, which is read because a
@@ -1475,10 +1574,8 @@ function editedEntries(target: string, context: CheckContext): string[] {
 function designMetadataIsFresh(): boolean {
   const dist = resolve(ROOT, 'packages/client/dist');
   if (!existsSync(dist)) return false;
-  if (declaredBundleFiles().some((file) => !existsSync(resolve(ROOT, 'packages/client', file)))) {
-    return false;
-  }
-  const builtAt = newestModification(dist);
+  const declared = declaredBundleFiles().map((file) => resolve(ROOT, 'packages/client', file));
+  if (declared.length === 0 || declared.some((file) => !existsSync(file))) return false;
   let sourcedAt = newestModification(resolve(ROOT, 'packages/client/src'), (path) =>
     DESIGN_TEST_SOURCE.test(path),
   );
@@ -1486,7 +1583,7 @@ function designMetadataIsFresh(): boolean {
     const path = resolve(ROOT, file);
     if (existsSync(path)) sourcedAt = Math.max(sourcedAt, statSync(path).mtimeMs);
   }
-  return builtAt >= sourcedAt;
+  return declared.every((file) => statSync(file).mtimeMs >= sourcedAt);
 }
 
 /**
