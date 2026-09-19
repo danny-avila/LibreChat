@@ -78,6 +78,43 @@ describe('evalScript', () => {
     expect(evalsha).toHaveBeenCalledTimes(2);
     expect(evalCommand).toHaveBeenCalledTimes(2);
   });
+  test('serializes different scripts during a cold load', async () => {
+    let releaseBatchLoad!: () => void;
+    const batchLoadFinished = new Promise<void>((resolve) => {
+      releaseBatchLoad = resolve;
+    });
+    let signalBatchLoadStarted!: () => void;
+    const batchLoadStarted = new Promise<void>((resolve) => {
+      signalBatchLoadStarted = resolve;
+    });
+    const commandOrder: string[] = [];
+    const evalsha = jest.fn(() => {
+      if (evalsha.mock.calls.length === 1) {
+        commandOrder.push('batch-evalsha');
+        return Promise.reject(new Error('NOSCRIPT No matching script'));
+      }
+      commandOrder.push('direct-evalsha');
+      return Promise.resolve('direct-result');
+    });
+    const evalCommand = jest.fn(async (script: string) => {
+      commandOrder.push(`eval:${script}`);
+      signalBatchLoadStarted();
+      await batchLoadFinished;
+      return 'batch-result';
+    });
+    const client = { evalsha, eval: evalCommand } as unknown as RedisScriptClient;
+
+    const batch = evalScript(client, 'batch-script', 1, '{stream-a}chunks', 'batch');
+    await batchLoadStarted;
+    const direct = evalScript(client, 'direct-script', 1, '{stream-a}chunks', 'direct');
+    await Promise.resolve();
+
+    expect(evalsha).toHaveBeenCalledTimes(1);
+    releaseBatchLoad();
+    await expect(batch).resolves.toBe('batch-result');
+    await expect(direct).resolves.toBe('direct-result');
+    expect(commandOrder).toEqual(['batch-evalsha', 'eval:batch-script', 'direct-evalsha']);
+  });
   test('does not share a failed cold load with a waiting caller', async () => {
     let releaseFirstLoad!: () => void;
     const firstLoadFinished = new Promise<void>((resolve) => {
