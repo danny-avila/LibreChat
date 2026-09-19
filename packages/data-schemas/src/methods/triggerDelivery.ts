@@ -38,6 +38,7 @@ const MAX_PURGE_RECOVERY_LIMIT = 200;
 const HISTORY_LIMIT = 64;
 const MAX_BATCH_SIZE = 8;
 const MAX_BATCH_BYTES = 512 * 1024;
+const MAX_BACKGROUND_TOOL_RESULT_BATCH = 8;
 /** Bounds the claim's compare-and-swap retries. Each lost round means another
  * worker claimed the row this one read, so the queue is making progress. */
 export const CLAIM_CAS_MAX_ATTEMPTS = 16;
@@ -2395,9 +2396,9 @@ export function createAgentTriggerDeliveryMethods(
     };
   }
 
-  /** Elects exactly one automatic continuation for an independently persisted
-   * result. A later stack layer may coalesce siblings after this ownership
-   * boundary, but the durable receipt itself is never dispatched unclaimed. */
+  /** Elects one automatic continuation and coalesces already-settled sibling
+   * receipts from the same originating response. Every row is CAS-claimed, so
+   * concurrent delivery workers may split a batch but can never duplicate it. */
   async function claimAgentBackgroundToolResults(input: {
     deliveryKey: string;
     sourceId: string;
@@ -2436,6 +2437,7 @@ export function createAgentTriggerDeliveryMethods(
     if (existingClaim != null && existingClaim.claimId !== input.claimId) {
       return { status: 'claimed', claimId: existingClaim.claimId };
     }
+    const claimedAt = new Date();
     if (existingClaim == null) {
       const claimed = await Delivery().updateOne(
         {
@@ -2449,7 +2451,7 @@ export function createAgentTriggerDeliveryMethods(
             'backgroundToolResult.resultClaim': {
               kind: 'wakeup',
               claimId: input.claimId,
-              claimedAt: new Date(),
+              claimedAt,
             },
           },
         },
@@ -2468,8 +2470,52 @@ export function createAgentTriggerDeliveryMethods(
         }
       }
     }
-    const result = requested == null ? null : projectBackgroundResult(requested);
-    return result == null ? { status: 'not_ready' } : { status: 'acquired', results: [result] };
+    const limit = Math.max(1, Math.min(MAX_BACKGROUND_TOOL_RESULT_BATCH, input.limit ?? 8));
+    if (limit > 1) {
+      const siblings = await Delivery()
+        .find({
+          ...scope,
+          deliveryKey: { $ne: input.deliveryKey },
+          backgroundToolResult: { $exists: true },
+          'backgroundToolResult.resultClaim': { $exists: false },
+        })
+        .select({ deliveryKey: 1 })
+        .sort({ 'backgroundToolResult.settledAt': 1, _id: 1 })
+        .limit(limit - 1)
+        .lean<Array<Pick<IAgentTriggerDelivery, 'deliveryKey'>>>();
+      await Promise.all(
+        siblings.map((sibling) =>
+          Delivery().updateOne(
+            {
+              ...scope,
+              deliveryKey: sibling.deliveryKey,
+              backgroundToolResult: { $exists: true },
+              'backgroundToolResult.resultClaim': { $exists: false },
+            },
+            {
+              $set: {
+                'backgroundToolResult.resultClaim': {
+                  kind: 'wakeup',
+                  claimId: input.claimId,
+                  claimedAt,
+                },
+              },
+            },
+            { timestamps: false },
+          ),
+        ),
+      );
+    }
+    const owned = await Delivery()
+      .find({ ...scope, 'backgroundToolResult.resultClaim.claimId': input.claimId })
+      .select(projection)
+      .sort({ 'backgroundToolResult.settledAt': 1, _id: 1 })
+      .limit(limit)
+      .lean<Array<Pick<IAgentTriggerDelivery, 'envelope' | 'backgroundToolResult'>>>();
+    return {
+      status: 'acquired',
+      results: owned.map(projectBackgroundResult).filter((result) => result != null),
+    };
   }
 
   async function releaseAgentBackgroundToolResultClaims(input: {

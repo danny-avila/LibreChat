@@ -435,7 +435,6 @@ export function createBackgroundToolCompletionWakeupResolver({
       parentMessageId: envelope.target.parentMessageId,
       agentId: envelope.target.agentId,
       claimId: context.idempotencyKey,
-      limit: 1,
     });
     if (receiptClaim?.status === 'claimed') {
       return { status: 'settled' };
@@ -471,10 +470,11 @@ export function createBackgroundToolCompletionWakeupResolver({
           retryAfter: '1',
         });
       }
+      const input = buildWakeupInput(receiptClaim.results);
       return {
         status: 'ready',
         parentMessageId,
-        input: buildWakeupInput(receiptClaim.results),
+        input,
         releaseOnDefiniteFailure: async () => {
           const projectionReleased = await methods.releaseBackgroundToolResultClaims({
             userId,
@@ -510,7 +510,11 @@ export function createBackgroundToolCompletionWakeupResolver({
         status: 'ready',
         parentMessageId,
         input: buildWakeupInput([
-          { ...registration, status: receipt.status, output: receipt.output },
+          {
+            ...registration,
+            status: receipt.status,
+            output: receipt.output,
+          },
         ]),
       };
     }

@@ -474,6 +474,13 @@ describe('background tool completion wakeups', () => {
           status: 'completed',
           output: 'independently durable',
         },
+        {
+          taskId: 'task-2',
+          toolCallId: 'call-2',
+          toolName: 'other_tool',
+          status: 'completed',
+          output: 'coalesced sibling',
+        },
       ],
     } as never);
     const resolve = createBackgroundToolCompletionWakeupResolver({
@@ -485,6 +492,7 @@ describe('background tool completion wakeups', () => {
 
     expect(prepared).toMatchObject({ status: 'ready', parentMessageId: 'response-2' });
     expect(prepared?.status === 'ready' && prepared.input).toContain('independently durable');
+    expect(prepared?.status === 'ready' && prepared.input).toContain('coalesced sibling');
     expect(methods.claimAgentBackgroundToolResults).toHaveBeenCalledWith({
       deliveryKey: 'delivery-1',
       sourceId: 'background-tool-completion',
@@ -493,10 +501,15 @@ describe('background tool completion wakeups', () => {
       parentMessageId: 'response-1',
       agentId: 'agent_parent_1',
       claimId: 'delivery-1',
-      limit: 1,
     });
     expect(methods.claimBackgroundToolResults).toHaveBeenCalledWith(
       expect.objectContaining({ taskId: 'task-1', kind: 'wakeup', claimId: 'delivery-1' }),
+    );
+    if (prepared?.status === 'ready') {
+      await prepared.releaseOnDefiniteFailure?.();
+    }
+    expect(methods.releaseAgentBackgroundToolResultClaims).toHaveBeenCalledWith(
+      expect.objectContaining({ claimId: 'delivery-1' }),
     );
   });
 
@@ -635,6 +648,7 @@ describe('background tool completion wakeups', () => {
         deferWithoutAttempt: true,
       },
     );
+    expect(methods.claimAgentBackgroundToolResults).not.toHaveBeenCalled();
     expect(methods.claimBackgroundToolResults).not.toHaveBeenCalled();
   });
 
