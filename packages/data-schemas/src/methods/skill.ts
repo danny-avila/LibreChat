@@ -44,6 +44,18 @@ export type ValidationIssue = {
   severity?: 'error' | 'warning';
 };
 
+export type DeleteSkillCleanupStep = 'agent_allowlists' | 'skill_files' | 'permissions';
+
+export type DeleteSkillResult = {
+  /** Whether this call removed the Skill row. */
+  deleted: boolean;
+  /** Whether the Skill row is absent after this call, including an idempotent retry. */
+  skillAbsent: boolean;
+  /** Whether every dependent database cleanup step completed. */
+  cleanupComplete: boolean;
+  failedCleanupSteps: DeleteSkillCleanupStep[];
+};
+
 type SkillFileUpsertResult = {
   value: (ISkillFile & { _id: Types.ObjectId }) | null;
   lastErrorObject?: {
@@ -1056,7 +1068,7 @@ export function createSkillMethods(
     expectedVersion: number;
     update: UpdateSkillInput;
   }) => Promise<UpdateSkillResult>;
-  deleteSkill: (id: string) => Promise<{ deleted: boolean }>;
+  deleteSkill: (id: string) => Promise<DeleteSkillResult>;
   deleteUserSkills: (userId: Types.ObjectId | string) => Promise<number>;
   findSkillBySourceIdentity: (params: {
     source: 'github' | 'notion';
@@ -1669,9 +1681,9 @@ export function createSkillMethods(
    * full catalog on purpose -- so disabling them would turn skills off behind
    * the author's back.
    */
-  async function removeSkillsFromAgentAllowlists(skillIds: string[]): Promise<void> {
+  async function removeSkillsFromAgentAllowlists(skillIds: string[]): Promise<boolean> {
     if (skillIds.length === 0) {
-      return;
+      return true;
     }
     const ids = skillIds.map((id) => id.toLowerCase());
     const Agent = mongoose.models.Agent as Model<IAgent>;
@@ -1695,36 +1707,54 @@ export function createSkillMethods(
         { $pull: { skills: { $in: ids } } },
         { timestamps: false },
       );
+      return true;
     } catch (error) {
       logger.error(
         '[removeSkillsFromAgentAllowlists] Error pruning agent skill allowlists:',
         error,
       );
+      return false;
     }
   }
 
-  async function deleteSkill(id: string): Promise<{ deleted: boolean }> {
+  async function deleteSkill(id: string): Promise<DeleteSkillResult> {
     if (!isValidObjectIdString(id)) {
-      return { deleted: false };
+      return {
+        deleted: false,
+        skillAbsent: false,
+        cleanupComplete: false,
+        failedCleanupSteps: [],
+      };
     }
     const Skill = mongoose.models.Skill as Model<ISkillDocument>;
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
     const objectId = new ObjectId(id);
     const res = await Skill.deleteOne({ _id: objectId });
-    if (!res.deletedCount) {
-      return { deleted: false };
+    const failedCleanupSteps: DeleteSkillCleanupStep[] = [];
+    const allowlistsRemoved = await removeSkillsFromAgentAllowlists([id]);
+    if (!allowlistsRemoved) {
+      failedCleanupSteps.push('agent_allowlists');
     }
-    /** Prune allowlists immediately after the Skill row is gone: if the
-     *  SkillFile cleanup below throws, a retry exits early on
-     *  `deletedCount === 0` and would never reach a later prune. */
-    await removeSkillsFromAgentAllowlists([id]);
-    await SkillFile.deleteMany({ skillId: objectId });
-    try {
-      await deps.removeAllPermissions({ resourceType: ResourceType.SKILL, resourceId: id });
-    } catch (error) {
-      logger.error(`[deleteSkill] Error removing permissions for ${id}:`, error);
+
+    const [filesResult, permissionsResult] = await Promise.allSettled([
+      SkillFile.deleteMany({ skillId: objectId }),
+      deps.removeAllPermissions({ resourceType: ResourceType.SKILL, resourceId: id }),
+    ]);
+    if (filesResult.status === 'rejected') {
+      failedCleanupSteps.push('skill_files');
+      logger.error(`[deleteSkill] Error removing files for ${id}:`, filesResult.reason);
     }
-    return { deleted: true };
+    if (permissionsResult.status === 'rejected') {
+      failedCleanupSteps.push('permissions');
+      logger.error(`[deleteSkill] Error removing permissions for ${id}:`, permissionsResult.reason);
+    }
+
+    return {
+      deleted: Boolean(res.deletedCount),
+      skillAbsent: true,
+      cleanupComplete: failedCleanupSteps.length === 0,
+      failedCleanupSteps,
+    };
   }
 
   async function deleteUserSkills(userId: Types.ObjectId | string): Promise<number> {
