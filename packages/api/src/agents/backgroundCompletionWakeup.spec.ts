@@ -92,6 +92,7 @@ function resolverMethods() {
         }),
       ),
       getAgentBackgroundToolResult: jest.fn(async () => null),
+      getAgentBackgroundToolResultClaim: jest.fn(async () => null),
       claimAgentBackgroundToolResults: jest.fn(async () => ({ status: 'not_ready' as const })),
       releaseAgentBackgroundToolResultClaims: jest.fn(async () => true),
     },
@@ -512,6 +513,30 @@ describe('background tool completion wakeups', () => {
     });
     expect(methods.claimAgentBackgroundToolResults).not.toHaveBeenCalled();
     expect(methods.getAgentBackgroundToolResult).not.toHaveBeenCalled();
+  });
+
+  it('does not settle a resumed receipt owner while a speculative manual message claim yields', async () => {
+    const { methods } = resolverMethods();
+    methods.claimBackgroundToolResults.mockResolvedValueOnce({ status: 'claimed', results: [] });
+    methods.getAgentBackgroundToolResultClaim.mockResolvedValueOnce({
+      kind: 'wakeup',
+      claimId: 'delivery-1',
+      claimedAt: new Date(NOW),
+    } as never);
+    const resolve = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+    await expect(resolve(await envelope(), { idempotencyKey: 'delivery-1' })).rejects.toMatchObject(
+      {
+        code: 'BACKGROUND_TOOL_CLAIM_RECONCILING',
+        deferWithoutAttempt: true,
+      },
+    );
+    expect(methods.releaseAgentBackgroundToolResultClaims).toHaveBeenCalledWith(
+      expect.objectContaining({ claimId: 'delivery-1' }),
+    );
+    expect(methods.releaseBackgroundToolResultClaims).not.toHaveBeenCalled();
   });
 
   it('retries after yielding to a racing manual claim so mutual yielding cannot lose output', async () => {

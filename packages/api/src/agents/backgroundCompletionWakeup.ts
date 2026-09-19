@@ -348,6 +348,30 @@ export function createBackgroundToolCompletionWakeupResolver({
       limit: 1,
     });
     if (claim.status === 'claimed') {
+      const receiptOwner = await methods.getAgentBackgroundToolResultClaim?.({
+        sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+        userId,
+        conversationId: envelope.target.conversationId,
+        parentMessageId: envelope.target.parentMessageId,
+        taskId: registration.taskId,
+      });
+      if (receiptOwner?.claimId === context.idempotencyKey) {
+        const released = await methods.releaseAgentBackgroundToolResultClaims?.({
+          sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+          userId,
+          conversationId: envelope.target.conversationId,
+          parentMessageId: envelope.target.parentMessageId,
+          claimId: context.idempotencyKey,
+        });
+        if (released === false)
+          throw new Error('Background receipt claim release was not confirmed');
+        throw executionError('Background result ownership is being reconciled.', {
+          code: 'BACKGROUND_TOOL_CLAIM_RECONCILING',
+          retryable: true,
+          deferWithoutAttempt: true,
+          retryAfter: '1',
+        });
+      }
       return { status: 'settled' };
     }
     if (claim.status === 'outcome_unknown') {
