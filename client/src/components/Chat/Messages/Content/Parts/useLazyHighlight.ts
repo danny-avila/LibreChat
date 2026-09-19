@@ -1,9 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-import { useGetStartupConfig } from '~/data-provider';
-
 /** Minimum gap between highlights while the input keeps changing (streaming). */
 export const HIGHLIGHT_THROTTLE_MS = 300;
+export const CodeHighlightThrottleContext = React.createContext(HIGHLIGHT_THROTTLE_MS);
+
+export function normalizeCodeHighlightThrottleMs(value: unknown): number {
+  return typeof value === 'number' &&
+    Number.isFinite(value) &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= 60000
+    ? value
+    : HIGHLIGHT_THROTTLE_MS;
+}
 
 interface HastText {
   type: 'text';
@@ -64,20 +73,11 @@ function highlightCode(mod: LowlightModule, code: string, lang: string): React.R
   }
 }
 
-/**
- * Highlights `code` with lowlight, loading the grammar module lazily.
- *
- * The first value highlights immediately; while the value keeps changing
- * (e.g. a streamed tool call) re-highlights are throttled to one per
- * `HIGHLIGHT_THROTTLE_MS`, with a trailing run so the settled value is
- * always highlighted. Returns `null` until the first highlight completes.
- */
 export default function useLazyHighlight(
   code: string | undefined,
   lang: string,
 ): React.ReactNode[] | null {
-  const { data: startupConfig } = useGetStartupConfig();
-  const throttleMs = startupConfig?.interface?.codeHighlightThrottleMs ?? HIGHLIGHT_THROTTLE_MS;
+  const throttleMs = React.useContext(CodeHighlightThrottleContext);
   const [highlighted, setHighlighted] = useState<React.ReactNode[] | null>(() => {
     if (!code || !lowlightModule) {
       return null;
@@ -100,6 +100,7 @@ export default function useLazyHighlight(
     prevKey.current = key;
     prevThrottleMs.current = throttleMs;
     generation.current += 1;
+    setHighlighted(null);
 
     if (timer.current) {
       clearTimeout(timer.current);
@@ -108,7 +109,11 @@ export default function useLazyHighlight(
 
     if (!code) {
       lastRunAt.current = null;
-      setHighlighted(null);
+      return;
+    }
+
+    if (lang === 'plaintext') {
+      setHighlighted([code]);
       return;
     }
 

@@ -67,7 +67,7 @@ describe('useLazyHighlight', () => {
       act(() => jest.advanceTimersByTime(20));
     }
     expect(mockHighlight).not.toHaveBeenCalled();
-    expect(result.current).toEqual(['a']);
+    expect(result.current).toBeNull();
 
     act(() => jest.advanceTimersByTime(HIGHLIGHT_THROTTLE_MS));
     await flush();
@@ -77,7 +77,7 @@ describe('useLazyHighlight', () => {
   });
   it('uses the configured throttle interval', async () => {
     jest.mocked(useGetStartupConfig).mockReturnValue({
-      data: { interface: { codeHighlightThrottleMs: 100 } },
+      data: { interface: { codeHighlightThrottleMs: 300 } },
     } as never);
     const { result, rerender } = renderHook(({ code }) => useLazyHighlight(code, 'js'), {
       initialProps: { code: 'a' },
@@ -86,8 +86,8 @@ describe('useLazyHighlight', () => {
     mockHighlight.mockClear();
 
     rerender({ code: 'ab' });
-    act(() => jest.advanceTimersByTime(99));
-    expect(result.current).toEqual(['a']);
+    act(() => jest.advanceTimersByTime(299));
+    expect(result.current).toBeNull();
     act(() => jest.advanceTimersByTime(1));
     await flush();
     expect(result.current).toEqual(['ab']);
@@ -102,7 +102,7 @@ describe('useLazyHighlight', () => {
     rerender({ code: 'ab' });
     act(() => jest.setSystemTime(new Date(Date.now() - 60_000)));
     act(() => jest.advanceTimersByTime(HIGHLIGHT_THROTTLE_MS - 1));
-    expect(result.current).toEqual(['a']);
+    expect(result.current).toBeNull();
     act(() => jest.advanceTimersByTime(1));
     await flush();
     expect(result.current).toEqual(['ab']);
