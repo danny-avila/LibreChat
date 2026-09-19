@@ -126,6 +126,7 @@ const {
   prependFileContext,
   prependQuotes,
   applyAttachmentOnlyText,
+  appendUploadedImageInventory,
   hydrateMissingIndexTokenCounts,
   injectSkillPrimes,
   buildAgentEventActorSkillMessages,
@@ -2604,6 +2605,13 @@ class AgentClient extends BaseClient {
        */
       const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
       applyAttachmentOnlyText(formattedMessage, turnFiles);
+      if (i === orderedMessages.length - 1) {
+        appendUploadedImageInventory({
+          formattedMessage,
+          request: this.options.req,
+          files: turnFiles,
+        });
+      }
 
       /**
        * A summarize round that errored or was cut off never reaches the model:

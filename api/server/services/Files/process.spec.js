@@ -373,6 +373,45 @@ const setupStoredFileUpload = (result = {}) => {
   return handleFileUpload;
 };
 
+describe('processImageFile - converted upload metadata', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRes.status.mockReturnThis();
+    mockRes.json.mockReturnValue({});
+    mergeFileConfig.mockReturnValue(makeFileConfig());
+  });
+
+  it('persists a converted PNG MIME type while preserving the original JPEG filename', async () => {
+    const req = makeReq({ mimetype: 'image/jpeg' });
+    req.file.originalname = 'holiday.jpeg';
+    req.config.imageOutputType = 'png';
+    const handleImageUpload = jest.fn().mockResolvedValue({
+      bytes: 42,
+      filepath: '/images/user-123/converted-image__holiday.png',
+      width: 1,
+      height: 1,
+    });
+    getStrategyFunctions.mockReturnValue({ handleImageUpload });
+
+    await processImageFile({
+      req,
+      res: mockRes,
+      metadata: { file_id: 'converted-image' },
+    });
+
+    expect(handleImageUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ file_id: 'converted-image' }),
+    );
+    expect(db.createFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filename: 'holiday.jpeg',
+        type: 'image/png',
+      }),
+      true,
+    );
+  });
+});
+
 describe('upload retention scheduling', () => {
   beforeEach(() => {
     jest.clearAllMocks();

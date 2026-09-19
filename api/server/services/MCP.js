@@ -77,6 +77,7 @@ const {
   invalidateCachedTools,
 } = require('./Config');
 const { getLogStores } = require('~/cache');
+const { resolveUploadedImageArguments } = require('./MCP/images');
 const {
   clearMCPAuthorizationFenceRetry,
   persistMCPAuthorizationFenceRetry,
@@ -856,6 +857,7 @@ async function reconnectServer({
  *
  * @param {Object} params
  * @param {ServerResponse} params.res - The Express response object for sending events.
+ * @param {ServerRequest} [params.request] - The originating request, including resolved upload context.
  * @param {{ canUseServers: (user?: IUser) => Promise<boolean> }} [params.mcpPermissionContext] - Request-scoped MCP permission context.
  * @param {IUser} params.user - The user from the request object.
  * @param {string} params.serverName
@@ -876,6 +878,7 @@ async function reconnectServer({
  */
 async function createMCPTools({
   res,
+  request,
   mcpPermissionContext,
   user,
   index,
@@ -957,6 +960,7 @@ async function createMCPTools({
   for (const tool of result.tools) {
     const toolInstance = await createMCPTool({
       res,
+      request,
       mcpPermissionContext,
       user,
       provider,
@@ -989,6 +993,7 @@ async function createMCPTools({
  * Creates a single tool from the specified MCP Server via `toolKey`.
  * @param {Object} params
  * @param {ServerResponse} params.res - The Express response object for sending events.
+ * @param {ServerRequest} [params.request] - The originating request, including resolved upload context.
  * @param {{ canUseServers: (user?: IUser) => Promise<boolean> }} [params.mcpPermissionContext] - Request-scoped MCP permission context.
  * @param {IUser} params.user - The user from the request object.
  * @param {string} params.toolKey - The toolKey for the tool.
@@ -1012,6 +1017,7 @@ async function createMCPTools({
  */
 async function createMCPTool({
   res,
+  request,
   mcpPermissionContext,
   user,
   index,
@@ -1184,6 +1190,7 @@ async function createMCPTool({
 
   return createToolInstance({
     res,
+    request,
     mcpPermissionContext,
     user,
     requestBody,
@@ -1214,6 +1221,7 @@ async function createMCPTool({
 
 function createToolInstance({
   res,
+  request: capturedRequest,
   mcpPermissionContext,
   user: capturedUser = null,
   requestBody: capturedRequestBody,
@@ -1307,6 +1315,16 @@ function createToolInstance({
       const customUserVars =
         config?.configurable?.userMCPAuthMap?.[`${Constants.mcp_prefix}${serverName}`];
 
+      const resolvedToolArguments =
+        capturedServerConfig?.forwardUploadedImages === true
+          ? await resolveUploadedImageArguments({
+              forwardUploadedImages: true,
+              toolArguments,
+              request: capturedRequest,
+              user: effectiveUser,
+            })
+          : toolArguments;
+
       /**
        * The upstream-token closure is built at the request boundary (where
        * `req`/`res` are in scope) and captured here, so this layer never holds
@@ -1325,7 +1343,7 @@ function createToolInstance({
          *  a redundant server-name prefix calls the ORIGINAL tool. */
         toolName: serverToolName,
         provider,
-        toolArguments,
+        toolArguments: resolvedToolArguments,
         options: {
           signal: derivedSignal,
         },

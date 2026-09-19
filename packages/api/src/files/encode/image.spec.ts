@@ -243,4 +243,113 @@ describe('encodeAndFormatImages', () => {
       'Image validation failed for image.png: Image file size',
     );
   });
+
+  describe('MCP uploaded images', () => {
+    const mcpImageSizeLimit = 1024 * 1024;
+
+    function createLocalImage(bytes: number, metadataBytes: number | undefined) {
+      const image = { ...file, source: FileSources.local, bytes: metadataBytes };
+      const imageContent = Buffer.alloc(bytes, 65).toString('base64');
+      prepareImagePayload.mockResolvedValue([image, imageContent]);
+      return { image, imageContent };
+    }
+
+    it.each([FileSources.local, FileSources.s3])(
+      'preserves persisted file identity and generic image format for %s',
+      async (source) => {
+        const result = await encodeAndFormatImages(
+          makeReq(),
+          [{ ...file, source }],
+          { provider: 'anthropic', mcpImageSizeLimit },
+          deps,
+          VisionModes.mcp,
+        );
+
+        expect(result.image_urls).toEqual([
+          {
+            type: 'image_url',
+            file_id: file.file_id,
+            image_url: { url: dataUrl, detail: 'auto' },
+          },
+        ]);
+      },
+    );
+
+    it.each([
+      ['zero metadata', 0],
+      ['stale-low metadata', 1],
+      ['missing metadata', undefined],
+    ] as const)(
+      'rejects an actual over-limit local image with %s',
+      async (_name, metadataBytes) => {
+        const { image, imageContent } = createLocalImage(mcpImageSizeLimit + 1, metadataBytes);
+        const result = encodeAndFormatImages(
+          makeReq(),
+          [image],
+          { mcpImageSizeLimit },
+          deps,
+          VisionModes.mcp,
+        );
+
+        await expect(result).rejects.toThrow('Image validation failed for image.png');
+        await result.catch((error: Error) => expect(error.message).not.toContain(imageContent));
+      },
+    );
+
+    it.each([mcpImageSizeLimit, 20])(
+      'forwards a local image of %i permitted bytes',
+      async (bytes) => {
+        const { image, imageContent } = createLocalImage(bytes, 0);
+        const result = await encodeAndFormatImages(
+          makeReq(),
+          [image],
+          { mcpImageSizeLimit },
+          deps,
+          VisionModes.mcp,
+        );
+
+        expect(result.image_urls).toEqual([
+          {
+            type: 'image_url',
+            file_id: file.file_id,
+            image_url: { url: `data:image/png;base64,${imageContent}`, detail: 'auto' },
+          },
+        ]);
+      },
+    );
+
+    it('rejects oversized stored bytes even when persisted metadata is zero', async () => {
+      getDownloadStream.mockImplementation(async () =>
+        Readable.from(Buffer.alloc(mcpImageSizeLimit + 1, 65)),
+      );
+
+      await expect(
+        encodeAndFormatImages(
+          makeReq(),
+          [{ ...file, bytes: 0 }],
+          { mcpImageSizeLimit },
+          deps,
+          VisionModes.mcp,
+        ),
+      ).rejects.toThrow('Image validation failed for image.png');
+    });
+
+    it('does not apply MCP limits or expose file identity to ordinary agent images', async () => {
+      const { image, imageContent } = createLocalImage(mcpImageSizeLimit + 1, 1);
+      const result = await encodeAndFormatImages(
+        makeReq(),
+        [image],
+        { mcpImageSizeLimit },
+        deps,
+        VisionModes.agents,
+      );
+
+      expect(result.image_urls).toEqual([
+        {
+          type: 'image_url',
+          image_url: { url: `data:image/png;base64,${imageContent}`, detail: 'auto' },
+        },
+      ]);
+    });
+  });
 });

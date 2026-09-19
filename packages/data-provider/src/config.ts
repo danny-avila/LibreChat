@@ -3347,6 +3347,7 @@ export const visionModels = [
 export enum VisionModes {
   generative = 'generative',
   agents = 'agents',
+  mcp = 'mcp',
 }
 
 export function validateVisionModel({
