@@ -9,7 +9,9 @@ jest.mock('../Parts', () => ({
   ExecuteCode: () => <div data-testid="execute-code" />,
   AgentUpdate: () => <div data-testid="agent-update" />,
   EmptyText: () => <div data-testid="empty-text" />,
-  Reasoning: () => <div data-testid="reasoning" />,
+  Reasoning: ({ reasoning }: { reasoning?: string }) => (
+    <div data-testid="reasoning">{reasoning}</div>
+  ),
   ReasoningMarker: ({ label }: { label?: string }) => (
     <div data-testid="reasoning-marker">{label}</div>
   ),
@@ -173,5 +175,16 @@ describe('Part tool renderer selection', () => {
 
     expect(screen.getByTestId('reasoning')).toBeInTheDocument();
     expect(screen.queryByTestId('reasoning-marker')).not.toBeInTheDocument();
+  });
+
+  it('renders trailing text after </think> as the response, not Thoughts', () => {
+    renderPart({
+      type: ContentTypes.THINK,
+      think: '<think>hidden plan</think>\n\nVisible answer',
+    } as TMessageContentParts);
+
+    expect(screen.getByTestId('reasoning')).toHaveTextContent('hidden plan');
+    expect(screen.getByTestId('text')).toHaveTextContent('Visible answer');
+    expect(screen.getByTestId('reasoning')).not.toHaveTextContent('Visible answer');
   });
 });

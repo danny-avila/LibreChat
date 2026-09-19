@@ -26,6 +26,7 @@ import {
   SteerPart,
 } from './Parts';
 import { getCachedPreview, getActivityLabelPart, getActivityLabelText } from '~/utils';
+import { splitThinkPartContent } from '~/utils/splitThinkTaggedContent';
 import { getAskUserQuestionPart } from '~/utils/approval';
 import AskUserQuestionCall from './AskUserQuestionCall';
 import { isBashProgrammaticToolCall } from './routing';
@@ -151,12 +152,21 @@ const Part = memo(function Part({
     if (reasoning.trim() === '' && part.reasoning_unavailable === true) {
       return <ReasoningMarker label={part.reasoning_label} />;
     }
+    const { thinking, text } = splitThinkPartContent(reasoning);
+    const hasTrailingText = text.length > 0;
     return (
-      <Reasoning
-        reasoning={reasoning}
-        isLast={isLast ?? false}
-        reasoningLabel={part.reasoning_label}
-      />
+      <>
+        <Reasoning
+          reasoning={thinking}
+          isLast={(isLast ?? false) && !hasTrailingText}
+          reasoningLabel={part.reasoning_label}
+        />
+        {hasTrailingText && (
+          <Container>
+            <Text text={text} isCreatedByUser={isCreatedByUser} showCursor={showCursor} />
+          </Container>
+        )}
+      </>
     );
   } else if (part.type === ContentTypes.SUMMARY) {
     return (

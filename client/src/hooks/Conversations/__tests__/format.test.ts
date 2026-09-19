@@ -180,6 +180,23 @@ describe('formatMessageContent', () => {
     ]);
   });
 
+  it('exports trailing response after </think> as the body, not Thoughts', () => {
+    expect(
+      formatMessageContent({
+        sender: 'Assistant',
+        content: {
+          type: ContentTypes.THINK,
+          think: '<think>hidden plan</think>\n\nVisible answer',
+        },
+        format: 'md',
+        localize,
+      }),
+    ).toEqual([
+      'Assistant',
+      '<details>\n<summary>Thinking</summary>\n\nhidden plan\n</details>\n\nVisible answer',
+    ]);
+  });
+
   it('concatenates summary chunks without inserted paragraphs', () => {
     expect(
       formatMessageContent({
@@ -249,6 +266,19 @@ describe('formatMessageText', () => {
 
     expect(formatMessageText({ message, format: 'md', localize })).toBe(
       '**DeepInfra**\n<details>\n<summary>Thinking</summary>\n\nHidden chain\n</details>\n\n\n**DeepInfra**\nFinal answer',
+    );
+  });
+
+  it('exports a glued <think> part as thoughts plus the trailing response', () => {
+    const message = {
+      sender: 'MiniMax',
+      content: [
+        { type: ContentTypes.THINK, think: '<think>hidden plan</think>\n\nVisible answer' },
+      ],
+    } as Partial<TMessage>;
+
+    expect(formatMessageText({ message, format: 'md', localize })).toBe(
+      '**MiniMax**\n<details>\n<summary>Thinking</summary>\n\nhidden plan\n</details>\n\nVisible answer',
     );
   });
 });
