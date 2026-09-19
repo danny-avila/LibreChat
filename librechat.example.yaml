@@ -1127,6 +1127,10 @@ endpoints:
 #     tokens: 2000 # Also preserve up to this many recent tokens
 
 # fileConfig:
+#   skills:
+#     # Bound parallel storage deletes after a failed archive import (default: 8).
+#     # Set to 1 for serial cleanup on storage backends that require it.
+#     importCleanupConcurrency: 8
 #   # Store best-effort text for inferred tool-routed message attachments. On each turn,
 #   # deliver it only if no available tool can read the type. Off by default; also configurable
 #   # under endpoints.default or a provider/custom endpoint name. Explicit destinations stand.

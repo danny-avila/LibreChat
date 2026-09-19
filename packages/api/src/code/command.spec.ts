@@ -8,6 +8,7 @@ import {
   createAttachedWorkspaceBashTool,
   createGitIdentityProgrammaticBashTool,
   resolveAttachedWorkspaceCommandTimeoutMax,
+  resolveAttachedWorkspaceQueueWaitMs,
 } from './command';
 
 describe('programmatic Bash Git identity', () => {
@@ -263,6 +264,17 @@ describe('createAttachedWorkspaceBashTool', () => {
       properties: { timeoutMs: { type: 'integer', minimum: 1, maximum: 120_000 } },
     });
     expect(resolveAttachedWorkspaceCommandTimeoutMax()).toBe(30_000);
+  });
+
+  test('resolves the administrator-configured admission budget', () => {
+    expect(resolveAttachedWorkspaceQueueWaitMs()).toBe(5 * 60_000);
+    expect(resolveAttachedWorkspaceQueueWaitMs({ limits: { maxQueueWaitMs: 30_000 } })).toBe(
+      30_000,
+    );
+    expect(resolveAttachedWorkspaceQueueWaitMs({ limits: { maxQueueWaitMs: 0 } })).toBe(0);
+    expect(resolveAttachedWorkspaceQueueWaitMs({ limits: { maxQueueWaitMs: 10 * 60_000 } })).toBe(
+      5 * 60_000,
+    );
   });
 
   test('lowers the omitted timeout when the deployment ceiling is below 30 seconds', async () => {

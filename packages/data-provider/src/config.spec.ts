@@ -6,6 +6,7 @@ import {
   DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
   bedrockModels,
   configSchema,
+  codeEnvironmentUserConfigSchema,
   excludedKeys,
   resolveEndpointType,
   webSearchSchema,
@@ -398,6 +399,28 @@ describe('Agent Management authentication config', () => {
 });
 
 describe('attached code environment user config schema', () => {
+  it.each([0, 1200, 300000])(
+    'preserves an admission budget of %i milliseconds',
+    (maxQueueWaitMs) => {
+      expect(codeEnvironmentUserConfigSchema.parse({ limits: { maxQueueWaitMs } })).toEqual({
+        limits: { maxQueueWaitMs },
+      });
+    },
+  );
+
+  it.each([-1, 0.5, 300001, NaN, Infinity])(
+    'rejects an invalid admission budget of %s',
+    (maxQueueWaitMs) => {
+      expect(
+        codeEnvironmentUserConfigSchema.safeParse({ limits: { maxQueueWaitMs } }).success,
+      ).toBe(false);
+    },
+  );
+
+  it('keeps an omitted admission budget backward compatible', () => {
+    expect(codeEnvironmentUserConfigSchema.parse({ limits: {} })).toEqual({ limits: {} });
+  });
+
   it('accepts typed permission controls exposed by the administrator', () => {
     const result = configSchema.safeParse({
       version: '1.0',

@@ -2435,6 +2435,31 @@ export function createConversationMethods(
         return null;
       }
 
+      /** `$setOnInsert` only reaches a chat this save creates, yet a chat whose earlier turns never
+       * involved a code-capable agent holds no decision either: without this fill its first
+       * workspace choice is dropped and the next turn starts undecided again. The filter repeats
+       * that absence, so a concurrent writer that decided first keeps its decision and a chat that
+       * already holds one is never touched. Only a whole decision seeds a row, never bare
+       * selections. */
+      if (
+        decisionOnInsert.codeEnvironmentMode != null &&
+        conversation.codeEnvironmentMode == null &&
+        (conversation.codeWorkspaces?.length ?? 0) === 0
+      ) {
+        const seeded = await Conversation.updateOne(
+          {
+            _id: conversation._id,
+            codeEnvironmentMode: { $in: [null] },
+            $or: [{ codeWorkspaces: { $in: [null] } }, { codeWorkspaces: { $size: 0 } }],
+          },
+          { $set: decisionOnInsert },
+          { timestamps: false },
+        );
+        if (seeded.modifiedCount > 0) {
+          Object.assign(conversation, decisionOnInsert);
+        }
+      }
+
       /** Reuse the saved row's chat type when callers omit it, preserving existing deadlines. */
       if (
         interfaceConfig?.retentionMode === RetentionMode.ALL &&
