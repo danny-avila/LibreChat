@@ -744,6 +744,13 @@ export function createAgentMethods(
    * Without an explicit projection, the unbounded `versions` history is excluded;
    * pass `{}` (or a projection including `versions`) to read the full history.
    */
+  function getAgent(
+    searchParameter: FilterQuery<IAgent>,
+  ): Promise<Omit<IAgent, 'versions'> | null>;
+  function getAgent(
+    searchParameter: FilterQuery<IAgent>,
+    projection: ProjectionType<IAgent>,
+  ): Promise<IAgent | null>;
   async function getAgent(
     searchParameter: FilterQuery<IAgent>,
     projection: ProjectionType<IAgent> = { versions: 0 },
