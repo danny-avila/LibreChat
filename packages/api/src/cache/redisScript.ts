@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Redis, Cluster } from 'ioredis';
 
 export type RedisScriptArg = string | number | Buffer;
-export type RedisScriptResult = string | number | null | RedisScriptResult[];
+export type RedisScriptResult = string | number | boolean | null | undefined | RedisScriptResult[];
 export type RedisScriptClient = Pick<Redis | Cluster, 'eval' | 'evalsha'>;
 
 const scriptShas = new Map<string, string>();
@@ -23,6 +23,7 @@ function isRedisScriptResult(value: unknown): value is RedisScriptResult {
   return (
     value == null ||
     typeof value === 'string' ||
+    typeof value === 'boolean' ||
     typeof value === 'number' ||
     (Array.isArray(value) && value.every(isRedisScriptResult))
   );
