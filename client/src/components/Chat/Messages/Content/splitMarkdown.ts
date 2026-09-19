@@ -203,7 +203,6 @@ export function createMarkdownSplitter(): MarkdownSplitter {
       return [];
     }
 
-
     const prev = lastSplit;
     if (prev != null && content.length > prev.content.length && content.startsWith(prev.content)) {
       const tail = splitBlocks(content.slice(prev.lastBlockStart));
