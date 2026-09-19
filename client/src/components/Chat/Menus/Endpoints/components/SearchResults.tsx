@@ -338,7 +338,7 @@ export function renderSearchResults(
 ) {
   return (
     <SearchResults
-      key="search-results"
+      key={`search-results-${searchValue}`}
       results={results}
       localize={localize}
       searchValue={searchValue}
