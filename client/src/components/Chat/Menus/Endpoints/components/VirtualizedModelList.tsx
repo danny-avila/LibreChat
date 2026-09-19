@@ -96,15 +96,17 @@ export default function VirtualizedModelList({
           : [];
         const before = options.filter(
           (option) =>
+            !containerRef.current!.contains(option) &&
             (containerRef.current!.compareDocumentPosition(option) &
               Node.DOCUMENT_POSITION_PRECEDING) !==
-            0,
+              0,
         );
         const after = options.filter(
           (option) =>
+            !containerRef.current!.contains(option) &&
             (containerRef.current!.compareDocumentPosition(option) &
               Node.DOCUMENT_POSITION_FOLLOWING) !==
-            0,
+              0,
         );
         const entersFromBefore = delta === 1 && before.at(-1) === activeRow;
         const entersFromAfter = delta === -1 && after[0] === activeRow;
@@ -119,7 +121,7 @@ export default function VirtualizedModelList({
 
       event.preventDefault();
       event.stopPropagation();
-      listRef.current?.scrollToRow(next);
+      listRef.current?.scrollToRow(next!);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           const id = rowAt(next!)?.id;

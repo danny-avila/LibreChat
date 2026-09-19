@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ListRowProps } from 'react-virtualized';
 import type { ForwardedRef, ReactNode } from 'react';
 import type { Endpoint } from '~/common';
@@ -10,6 +10,9 @@ type MockListProps = {
   rowRenderer: (props: ListRowProps) => ReactNode;
 };
 
+let mockActiveIdForTest: string | null = null;
+const mockMoveForTest = jest.fn();
+const mockScrollToRowForTest = jest.fn();
 jest.mock('react-virtualized', () => {
   const React = jest.requireActual<typeof import('react')>('react');
   return {
@@ -17,8 +20,9 @@ jest.mock('react-virtualized', () => {
       children({ width: 280 }),
     List: React.forwardRef(function MockList(
       { width, rowCount, rowRenderer }: MockListProps,
-      _ref: ForwardedRef<unknown>,
+      ref: ForwardedRef<unknown>,
     ) {
+      React.useImperativeHandle(ref, () => ({ scrollToRow: mockScrollToRowForTest }));
       return React.createElement(
         'div',
         { 'data-testid': 'virtual-list', 'data-width': width, 'data-row-count': rowCount },
@@ -37,9 +41,11 @@ jest.mock('react-virtualized', () => {
     }),
   };
 });
-
 jest.mock('@ariakit/react', () => ({
-  useComboboxContext: () => null,
+  useComboboxContext: () => ({
+    getState: () => ({ activeId: mockActiveIdForTest }),
+    move: mockMoveForTest,
+  }),
 }));
 
 jest.mock('../EndpointModelItem', () => ({
@@ -59,6 +65,11 @@ const endpoint: Endpoint = {
 };
 
 describe('VirtualizedModelList', () => {
+  beforeEach(() => {
+    mockActiveIdForTest = null;
+    mockMoveForTest.mockClear();
+    mockScrollToRowForTest.mockClear();
+  });
   it('uses measured container width and mounts only the rendered window', () => {
     const modelIds = Array.from({ length: 101 }, (_, index) => `agent-${index}`);
     render(
@@ -79,5 +90,34 @@ describe('VirtualizedModelList', () => {
     expect(screen.getByTestId('model-agent-0')).toBeInTheDocument();
     expect(screen.getByTestId('model-agent-1')).toBeInTheDocument();
     expect(screen.queryByTestId('model-agent-100')).not.toBeInTheDocument();
+  });
+  it('enters from adjacent options at the logical virtualized boundaries', async () => {
+    const modelIds = Array.from({ length: 101 }, (_, index) => `agent-${index}`);
+    render(
+      <div role="listbox">
+        <div id="before" role="option">
+          before
+        </div>
+        <VirtualizedModelList
+          endpoint={endpoint}
+          modelIds={modelIds}
+          globalByName={new Map()}
+          isFavorite={() => false}
+          onToggleFavorite={() => undefined}
+          precedingOptionCount={1}
+        />
+        <div id="after" role="option">
+          after
+        </div>
+      </div>,
+    );
+
+    mockActiveIdForTest = 'before';
+    fireEvent.keyDown(document, { key: 'ArrowDown' });
+    await waitFor(() => expect(mockScrollToRowForTest).toHaveBeenCalledWith(0));
+
+    mockActiveIdForTest = 'after';
+    fireEvent.keyDown(document, { key: 'ArrowUp' });
+    await waitFor(() => expect(mockScrollToRowForTest).toHaveBeenLastCalledWith(100));
   });
 });
