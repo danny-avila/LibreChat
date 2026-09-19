@@ -133,6 +133,10 @@ describe('redisTelemetry', () => {
 
     await runWithRedisRequestTelemetry(telemetry, async () => {
       await expect(evalScript(redis, 'return 1', 0)).resolves.toBe(1);
+      evalsha.mockRejectedValueOnce(
+        new Error("NOPERM this user has no permissions to run the 'EVALSHA' command"),
+      );
+      await expect(evalScript(redis, 'return 1', 0)).resolves.toBe(1);
     });
     finishRedisRequestTelemetry(telemetry);
 
