@@ -95,4 +95,60 @@ describe('useContentHandler message reconciliation', () => {
       content: [{ type: 'text', text: { value: 'streamed' } }],
     });
   });
+  it('preserves thread IDs when a content event omits thread_id', () => {
+    const userMessage = {
+      messageId: 'user-1',
+      thread_id: 'thread-1',
+      conversationId: 'conversation-1',
+      isCreatedByUser: true,
+    } as TMessage;
+    const existingResponse = {
+      messageId: 'response-1',
+      thread_id: 'thread-1',
+      conversationId: 'conversation-1',
+      parentMessageId: 'user-1',
+      isCreatedByUser: false,
+      sender: 'Assistant',
+      text: '',
+      content: [],
+    } as TMessage;
+    let messages = [userMessage, existingResponse];
+    const setMessages = jest.fn((nextMessages: TMessage[]) => {
+      messages = nextMessages;
+    });
+    const submission = {
+      initialResponse: {
+        messageId: 'response-1',
+        conversationId: 'conversation-1',
+        thread_id: 'thread-1',
+        content: [],
+      },
+    } as unknown as EventSubmission;
+    const { result } = renderHook(
+      () => useContentHandler({ setMessages, getMessages: () => messages }),
+      { wrapper },
+    );
+
+    act(() => {
+      result.current.contentHandler({
+        data: {
+          type: 'text',
+          text: 'streamed without thread metadata',
+          messageId: 'response-1',
+          conversationId: 'conversation-1',
+          index: 0,
+        } as never,
+        submission,
+      });
+    });
+
+    const output = setMessages.mock.calls[0][0];
+    expect(output[0]).toBe(userMessage);
+    expect(output[0]).toMatchObject({ thread_id: 'thread-1' });
+    expect(output[1]).toMatchObject({
+      messageId: 'response-1',
+      thread_id: 'thread-1',
+      content: [{ type: 'text', text: { value: 'streamed without thread metadata' } }],
+    });
+  });
 });

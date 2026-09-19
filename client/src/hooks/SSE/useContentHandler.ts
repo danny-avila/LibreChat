@@ -45,7 +45,9 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
           existingMessage ??= msg;
           continue;
         }
-        messages.push(msg.thread_id === thread_id ? msg : { ...msg, thread_id });
+        messages.push(
+          thread_id == null || msg.thread_id === thread_id ? msg : { ...msg, thread_id },
+        );
       }
       const userMessage = messages[messages.length - 1] as TMessage | undefined;
 
@@ -53,12 +55,13 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
 
       let response = messageMap.get(messageId);
       if (!response) {
+        const responseBase = existingMessage ?? (initialResponse as TMessage);
         response = {
-          ...(existingMessage ?? (initialResponse as TMessage)),
+          ...responseBase,
           parentMessageId: userMessage?.messageId ?? '',
           conversationId,
           messageId,
-          thread_id,
+          ...(thread_id != null ? { thread_id } : {}),
         };
         messageMap.set(messageId, response);
       }
