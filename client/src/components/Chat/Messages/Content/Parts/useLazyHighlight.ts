@@ -85,16 +85,20 @@ export default function useLazyHighlight(
     return highlightCode(lowlightModule, code, lang);
   });
   const prevKey = useRef('');
-  const lastRunAt = useRef(0);
+  const prevThrottleMs = useRef<number | null>(null);
+  const lastRunAt = useRef<number | null>(null);
   const generation = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     const key = `${lang}\0${code ?? ''}`;
-    if (key === prevKey.current) {
+    const keyChanged = key !== prevKey.current;
+    const throttleChanged = throttleMs !== prevThrottleMs.current;
+    if (!keyChanged && !throttleChanged) {
       return;
     }
     prevKey.current = key;
+    prevThrottleMs.current = throttleMs;
     generation.current += 1;
 
     if (timer.current) {
@@ -103,6 +107,7 @@ export default function useLazyHighlight(
     }
 
     if (!code) {
+      lastRunAt.current = null;
       setHighlighted(null);
       return;
     }
@@ -131,9 +136,11 @@ export default function useLazyHighlight(
     };
 
     const elapsed =
-      typeof performance === 'undefined'
-        ? Date.now() - lastRunAt.current
-        : performance.now() - lastRunAt.current;
+      lastRunAt.current === null
+        ? throttleMs
+        : typeof performance === 'undefined'
+          ? Date.now() - lastRunAt.current
+          : performance.now() - lastRunAt.current;
     const wait = throttleMs - elapsed;
     if (wait <= 0) {
       run();
@@ -147,6 +154,8 @@ export default function useLazyHighlight(
       if (timer.current) {
         clearTimeout(timer.current);
       }
+      prevKey.current = '';
+      prevThrottleMs.current = null;
       generation.current += 1;
     },
     [],
