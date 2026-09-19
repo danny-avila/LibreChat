@@ -2181,6 +2181,42 @@ describe('custom-endpoint provider resolution', () => {
     });
   });
 
+  it("keeps a custom summary endpoint's own raw cache key while clearing the inherited one", async () => {
+    /**
+     * Both endpoints normalize to `openAI`, so the inherited-key guard runs.
+     * The target's own `addParams.prompt_cache_key` reaches `parameters`
+     * through `clientOverrides`, and a custom endpoint keeps it there rather
+     * than on the constructor field, because the promotion that moves it is
+     * first-party only. Reading the yaml layer alone mistook it for the
+     * agent's inherited key and cleared it.
+     */
+    const appConfig = makeAppConfig([
+      {
+        name: 'Together',
+        baseURL: 'https://api.together.ai/v1',
+        apiKey: 'together-key',
+        addParams: { prompt_cache_key: 'target-owned-key' },
+      } as TestCustomEndpoint,
+    ]);
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          model_parameters: {
+            model: 'gpt-4o',
+            modelKwargs: { prompt_cache_key: 'agent-inherited-key' },
+          },
+        }),
+      ],
+      summarizationConfig: { provider: 'Together', model: 'mixtral' },
+      appConfig,
+    });
+
+    const config = agents[0].summarizationConfig as Record<string, unknown>;
+    const parameters = config.parameters as Record<string, unknown>;
+    const kwargs = (parameters.modelKwargs ?? {}) as Record<string, unknown>;
+    expect(kwargs.prompt_cache_key).toBe('target-owned-key');
+  });
+
   it('matches Ollama case-insensitively (via normalizeEndpointName)', async () => {
     const appConfig = makeAppConfig([
       { name: 'Ollama', baseURL: 'http://localhost:11434/v1', apiKey: 'ollama-key' },
