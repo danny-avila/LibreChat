@@ -157,6 +157,32 @@ describe('redisTelemetry', () => {
     );
   });
 
+  it('counts a direct EVALSHA miss as a Redis error', async () => {
+    const span = createSpan();
+    const telemetry = createRedisRequestTelemetry(span as unknown as Span);
+    const redis = instrumentIORedisClient(
+      {
+        evalsha: jest.fn().mockRejectedValue(new Error('NOSCRIPT No matching script')),
+        eval: jest.fn(),
+      },
+      RedisUseCases.GENERATION_STREAM,
+    );
+
+    await runWithRedisRequestTelemetry(telemetry, async () => {
+      await expect(redis.evalsha('sha', 0)).rejects.toThrow('NOSCRIPT');
+    });
+    finishRedisRequestTelemetry(telemetry);
+
+    expect(telemetry.errors).toBe(1);
+    expect(mockRecordRedisOperation).toHaveBeenCalledWith(
+      'ioredis',
+      RedisUseCases.GENERATION_STREAM,
+      'evalsha',
+      'error',
+      expect.any(Number),
+    );
+  });
+
   it('records resolved ioredis pipeline command errors', async () => {
     const span = createSpan();
     const telemetry = createRedisRequestTelemetry(span as unknown as Span);
