@@ -1,7 +1,10 @@
 import React, { useMemo, useState, useEffect, useRef, useCallback, useContext } from 'react';
 import debounce from 'lodash/debounce';
 import MonacoEditor from '@monaco-editor/react';
+import { useQueryClient } from '@tanstack/react-query';
+import { MutationKeys } from 'librechat-data-provider';
 import { ThemeContext, highContrastDarkTheme, highContrastLightTheme } from '@librechat/client';
+import type { QueryClient } from '@tanstack/react-query';
 import type { Monaco } from '@monaco-editor/react';
 import type { IThemeRGB } from '@librechat/client';
 import type { editor } from 'monaco-editor';
@@ -220,6 +223,35 @@ function isSameMutationTarget(target: ArtifactEditTarget, vars: ArtifactMutation
   return target.messageId === vars.messageId && target.index === vars.index;
 }
 
+/**
+ * The text the most recent successful save wrote for this artifact, which is
+ * what the server now holds. The registry catches up only when the edited
+ * message propagates, so an edit sent between those two moments has to be
+ * rebased on the request's own record rather than on `artifact.content`.
+ */
+function getSavedContent(queryClient: QueryClient, target: ArtifactEditTarget): string | undefined {
+  /** Mutation ids increase, so the highest one is the most recent save. */
+  let latestId = -1;
+  let latest: string | undefined;
+  for (const mutation of queryClient
+    .getMutationCache()
+    .findAll({ mutationKey: [MutationKeys.editArtifact] })) {
+    const vars = mutation.state.variables as ArtifactMutationVars | undefined;
+    if (
+      mutation.state.status !== 'success' ||
+      vars == null ||
+      !isSameMutationTarget(target, vars)
+    ) {
+      continue;
+    }
+    if (mutation.mutationId > latestId) {
+      latestId = mutation.mutationId;
+      latest = vars.updated;
+    }
+  }
+  return latest;
+}
+
 export const ArtifactCodeEditor = function ArtifactCodeEditor({
   artifact,
   monacoRef,
@@ -230,36 +262,74 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
   readOnly?: boolean;
 }) {
   const { resolvedMode, highContrast } = useContext(ThemeContext);
+  const queryClient = useQueryClient();
   const { isSubmitting } = useArtifactsContext();
   const readOnly = (externalReadOnly ?? false) || isSubmitting;
-  const { setCurrentCode } = useCodeState();
+  const {
+    currentCode,
+    codeArtifactId,
+    setCurrentCode,
+    rejectedCode,
+    rejectedCodeArtifactId,
+    setRejectedCode,
+    codeSession,
+  } = useCodeState();
+  /* The pane is remounted when it changes hosts (side panel, mobile sheet,
+   * undocked window). The buffer outlives that remount, so unsaved text is
+   * restored here instead of falling back to the persisted content. */
+  const restoredCode = codeArtifactId === artifact.id ? currentCode : undefined;
   const [currentUpdate, setCurrentUpdate] = useState<string | null>(null);
-  const { isMutating, setIsMutating } = useMutationState();
-  const [failedContent, setFailedContent] = useState<string | null>(null);
+  const { isMutating } = useMutationState();
   const artifactRef = useRef(artifact);
   const isMutatingRef = useRef(isMutating);
   const currentUpdateRef = useRef(currentUpdate);
   const setCurrentCodeRef = useRef(setCurrentCode);
-  const failedContentRef = useRef(failedContent);
+  const rejectedCodeRef = useRef(rejectedCode);
+  const rejectedCodeArtifactIdRef = useRef(rejectedCodeArtifactId);
   const pendingUpdateRef = useRef<PendingUpdate | null>(null);
   const runMutationRef = useRef<(code: string, original?: string) => void>(() => {});
+  /** Read by the mount effect below, which must not re-run as the user types. */
+  const restoredCodeRef = useRef(restoredCode);
+  /* The session a save was started in. Its callbacks outlive the editor, so
+   * they compare this against the live session before touching the buffer or
+   * submitting a queued edit: both belong to whoever is editing now, and a
+   * pane the user closed is not it. The save itself is left alone — it is the
+   * request's to finish, and `isMutating` reports it until it does. */
+  const mutationSessionRef = useRef(codeSession.current);
+  /* The artifact a save was started for. Its callbacks answer later, by which
+   * time the user may have selected another artifact, and a rejection belongs
+   * to the text that was refused rather than to whatever is on screen when
+   * the refusal lands. */
+  const mutationArtifactIdRef = useRef<string | null>(null);
+  /* The buffer this instance inherited at mount, and whether it has been
+   * dealt with. It is the oldest text in play: anything the user types here
+   * supersedes it, so both the drain and the queue consult these. */
+  const inheritedBufferRef = useRef<string | null>(restoredCode ?? null);
+  const drainedBufferRef = useRef<string | null>(null);
+  const isStaleSession = () => codeSession.current !== mutationSessionRef.current;
 
   const editArtifact = useEditArtifact({
     onMutate: (vars) => {
       isMutatingRef.current = true;
       currentUpdateRef.current = vars.updated;
-      setIsMutating(true);
       setCurrentUpdate(vars.updated);
     },
     onSuccess: (_data, vars) => {
-      isMutatingRef.current = false;
       currentUpdateRef.current = null;
-      setIsMutating(false);
-      setCurrentUpdate(null);
-      setFailedContent(null);
-
+      /* A save that outlived its session reports to nobody: the buffer and any
+       * queued edit belong to whoever is editing now. */
+      if (isStaleSession()) {
+        return;
+      }
       const pending = pendingUpdateRef.current;
       pendingUpdateRef.current = null;
+      setCurrentUpdate(null);
+      /* Only this save's own artifact is cleared: another artifact's refusal
+       * is still a refusal. */
+      const savedArtifactId = mutationArtifactIdRef.current ?? artifactRef.current.id;
+      if (rejectedCodeArtifactIdRef.current === savedArtifactId) {
+        setRejectedCode(undefined);
+      }
       const currentTarget = getArtifactEditTarget(artifactRef.current);
       if (
         pending == null ||
@@ -271,21 +341,23 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
 
       const original = isSameMutationTarget(pending, vars) ? vars.updated : pending.original;
       if (pending.code.trim() !== original.trim()) {
-        setCurrentCodeRef.current(pending.code);
+        setCurrentCodeRef.current(pending.code, artifactRef.current.id);
         runMutationRef.current(pending.code, original);
       }
     },
     onError: (error) => {
-      const status = getResponseStatus(error);
-      if (status === 400 && currentUpdateRef.current != null) {
-        setFailedContent(currentUpdateRef.current);
-        failedContentRef.current = currentUpdateRef.current;
+      const attempted = currentUpdateRef.current;
+      currentUpdateRef.current = null;
+      if (isStaleSession()) {
+        return;
       }
       const pending = pendingUpdateRef.current;
       pendingUpdateRef.current = null;
-      isMutatingRef.current = false;
-      currentUpdateRef.current = null;
-      setIsMutating(false);
+
+      const status = getResponseStatus(error);
+      if (status === 400 && attempted != null) {
+        setRejectedCode(attempted, mutationArtifactIdRef.current ?? artifactRef.current.id);
+      }
       setCurrentUpdate(null);
 
       const currentTarget = getArtifactEditTarget(artifactRef.current);
@@ -298,7 +370,7 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
       }
 
       if (pending.code.trim() !== pending.original.trim()) {
-        setCurrentCodeRef.current(pending.code);
+        setCurrentCodeRef.current(pending.code, artifactRef.current.id);
         runMutationRef.current(pending.code, pending.original);
       }
     },
@@ -314,7 +386,9 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
   currentUpdateRef.current = currentUpdate;
   editArtifactRef.current = editArtifact;
   setCurrentCodeRef.current = setCurrentCode;
-  failedContentRef.current = failedContent;
+  rejectedCodeRef.current = rejectedCode;
+  rejectedCodeArtifactIdRef.current = rejectedCodeArtifactId;
+  restoredCodeRef.current = restoredCode;
 
   const runMutation = useCallback(
     (code: string, originalOverride?: string) => {
@@ -324,7 +398,34 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
         return;
       }
 
-      const original = originalOverride ?? art.content ?? '';
+      /* An empty editor is not an instruction to delete the artifact. Typing
+       * never saves it — a user who selects all and deletes is mid-edit — and
+       * the paths that resubmit retained text must not turn that into a
+       * deletion just because the pane changed hosts or the user came back to
+       * the artifact. The rule belongs here, with the rest of what decides
+       * whether a request goes out. */
+      if (code.length === 0) {
+        return;
+      }
+
+      /* What an edit replaces is whatever the last save wrote, and the
+       * registry catches up only when the edited message propagates — so
+       * every path that sends text (a keystroke's debounce, a queued edit, a
+       * buffer inherited at mount, one restored on the way back to an
+       * artifact) rebases here rather than each remembering to. Sending a
+       * registry that has not caught up has the endpoint refuse the newest
+       * text, and three of those paths have had to learn that separately. */
+      const original =
+        originalOverride ?? getSavedContent(queryClient, target) ?? art.content ?? '';
+      /* Anything this instance sends is newer than the buffer it inherited at
+       * mount, so that older text stops being a candidate for the drain —
+       * whether this goes out now or waits behind a running save. Left in
+       * play, it would be sent once this one lands and would quietly put the
+       * user's edit back the way it was. The drain itself passes the
+       * inherited text, which is how it stays exempt. */
+      if (inheritedBufferRef.current !== code) {
+        drainedBufferRef.current = inheritedBufferRef.current;
+      }
       if (isMutatingRef.current) {
         pendingUpdateRef.current = {
           ...target,
@@ -342,11 +443,17 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
         return;
       }
 
-      if (failedContentRef.current != null && code.trim() === failedContentRef.current.trim()) {
+      if (
+        rejectedCodeArtifactIdRef.current === art.id &&
+        rejectedCodeRef.current != null &&
+        code.trim() === rejectedCodeRef.current.trim()
+      ) {
         return;
       }
 
-      setCurrentCodeRef.current(code);
+      mutationSessionRef.current = codeSession.current;
+      mutationArtifactIdRef.current = target.artifactId;
+      setCurrentCodeRef.current(code, art.id);
       editArtifactRef.current.mutate({
         index: target.index,
         messageId: target.messageId,
@@ -354,10 +461,22 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
         updated: code,
       });
     },
-    [readOnly],
+    [codeSession, queryClient, readOnly],
   );
 
   runMutationRef.current = runMutation;
+
+  /** The value this component last wrote into the model, held until the change
+   *  event it produces arrives. */
+  const programmaticValueRef = useRef<string | null>(null);
+  const writeModelValue = useCallback((ed: editor.IStandaloneCodeEditor, value: string) => {
+    const model = ed.getModel();
+    if (!model || model.getValue() === value) {
+      return;
+    }
+    programmaticValueRef.current = value;
+    model.setValue(value);
+  }, []);
 
   const debouncedMutation = useMemo(
     () =>
@@ -370,6 +489,76 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
   useEffect(() => {
     return () => debouncedMutation.cancel();
   }, [artifact.id, debouncedMutation]);
+
+  /* A remount cancels the debounce mid-flight, so text the user typed just
+   * before the pane changed hosts lives in the buffer and has never been sent.
+   * The request its previous instance started keeps its own callbacks — React
+   * Query holds them on the mutation, not on the observer — so this instance
+   * must not guess at that request's state or resubmit against an `original`
+   * it may already have replaced. It waits for the shared flag to go idle and
+   * submits then, once.
+   *
+   * Only the buffer this instance inherited at mount is drained. A buffer
+   * picked up by navigating back to an artifact belongs to an editor that is
+   * still alive and will send it itself; submitting it here would race that
+   * editor's own `setValue`. */
+  useEffect(() => {
+    if (isMutating) {
+      return;
+    }
+
+    /* An edit typed while a save was in flight is queued here, and normally
+     * the callbacks of that save send it. Those callbacks belong to whichever
+     * editor started it, so when the save was started by a previous session
+     * nobody else will: this editor sends its own queued edit as soon as the
+     * pipeline is idle.
+     *
+     * What that edit replaces is whatever the last save wrote, which is not
+     * necessarily `artifact.content` yet — the registry catches up when the
+     * edited message propagates. Sending either the content captured when the
+     * edit was queued or a registry that has not caught up has the endpoint
+     * reject the newest text, so the request's own record decides. */
+    const queued = pendingUpdateRef.current;
+    if (queued != null) {
+      pendingUpdateRef.current = null;
+      const currentTarget = getArtifactEditTarget(artifactRef.current);
+      if (currentTarget != null && isSameArtifactTarget(queued, currentTarget)) {
+        const original =
+          getSavedContent(queryClient, currentTarget) ??
+          artifactRef.current.content ??
+          queued.original;
+        if (queued.code.trim() !== original.trim()) {
+          setCurrentCodeRef.current(queued.code, artifactRef.current.id);
+          runMutationRef.current(queued.code, original);
+          return;
+        }
+      }
+    }
+
+    const inherited = inheritedBufferRef.current;
+    if (inherited == null || drainedBufferRef.current === inherited) {
+      return;
+    }
+    const inheritedTarget = getArtifactEditTarget(artifactRef.current);
+    const inheritedOriginal =
+      (inheritedTarget != null ? getSavedContent(queryClient, inheritedTarget) : undefined) ??
+      artifactRef.current.content ??
+      '';
+    if (inherited === inheritedOriginal) {
+      return;
+    }
+    drainedBufferRef.current = inherited;
+    prevContentRef.current = inherited;
+    if (
+      inheritedTarget != null &&
+      rejectedCodeArtifactIdRef.current === artifactRef.current.id &&
+      rejectedCodeRef.current != null &&
+      inherited.trim() === rejectedCodeRef.current.trim()
+    ) {
+      return;
+    }
+    runMutationRef.current(inherited, inheritedOriginal);
+  }, [isMutating, queryClient]);
 
   /**
    * Streaming: use model.applyEdits() to append new content.
@@ -415,38 +604,68 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
     ed.revealLine(model.getLineCount());
   }, [artifact.content, readOnly, monacoRef]);
 
+  /* Selecting another artifact and coming back has to land on this artifact's
+   * own text: its unsaved buffer when it has one, the persisted content
+   * otherwise. Writing the persisted content over a retained edit would queue
+   * that content behind the edit and quietly undo it.
+   *
+   * A retained buffer is also sent here. Its own debounce was cancelled when
+   * the selection moved away, so this is where that edit finally becomes a
+   * save — and it is sent for the artifact it belongs to, which is the one on
+   * screen again. The rejection marker is deliberately left alone: it names
+   * the artifact it was recorded for, so it cannot suppress this artifact's
+   * save, and dropping it here would let this resend put the one text the
+   * endpoint already refused back on the wire. */
   useEffect(() => {
     if (artifact.id === prevArtifactId.current) {
       return;
     }
     prevArtifactId.current = artifact.id;
     pendingUpdateRef.current = null;
-    setFailedContent(null);
-    prevContentRef.current = artifact.content ?? '';
+    const restored = restoredCodeRef.current;
+    const nextValue = restored ?? artifact.content;
+    prevContentRef.current = nextValue ?? '';
     const ed = monacoRef.current;
-    if (ed && artifact.content != null) {
-      ed.getModel()?.setValue(artifact.content);
+    if (ed && nextValue != null) {
+      writeModelValue(ed, nextValue);
     }
-  }, [artifact.id, artifact.content, monacoRef]);
+    /* `runMutation` decides what this replaces, and refuses text that would
+     * change nothing or that the endpoint already rejected. */
+    if (restored != null) {
+      runMutationRef.current(restored);
+    }
+  }, [artifact.id, artifact.content, monacoRef, writeModelValue]);
 
   useEffect(() => {
     if (prevReadOnly.current && !readOnly && artifact.content != null) {
       const ed = monacoRef.current;
       if (ed) {
-        ed.getModel()?.setValue(artifact.content);
+        writeModelValue(ed, artifact.content);
         prevContentRef.current = artifact.content;
       }
     }
     prevReadOnly.current = readOnly;
-  }, [readOnly, artifact.content, monacoRef]);
+  }, [readOnly, artifact.content, monacoRef, writeModelValue]);
 
+  /* Monaco reports a write this component made through `onChange` like any
+   * other edit. Treating it as typing would key the shared buffer to the
+   * artifact now on screen and drop the unsaved text another artifact is
+   * holding, so the value written here is recognised and consumed. */
   const handleChange = useCallback(
     (value: string | undefined) => {
-      if (value === undefined || readOnly) {
+      if (value === undefined) {
+        return;
+      }
+      const programmatic = programmaticValueRef.current;
+      programmaticValueRef.current = null;
+      if (readOnly) {
         return;
       }
       prevContentRef.current = value;
-      setCurrentCode(value);
+      if (programmatic != null && value === programmatic) {
+        return;
+      }
+      setCurrentCode(value, artifactRef.current.id);
       if (value.length > 0) {
         debouncedMutation(value);
       }
@@ -571,7 +790,7 @@ export const ArtifactCodeEditor = function ArtifactCodeEditor({
         height="100%"
         language={readOnly ? 'plaintext' : language}
         theme={editorAppearance.theme}
-        defaultValue={artifact.content}
+        defaultValue={restoredCode ?? artifact.content}
         onChange={handleChange}
         beforeMount={handleBeforeMount}
         onMount={handleMount}
