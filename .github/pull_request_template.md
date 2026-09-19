@@ -9,6 +9,7 @@
 <!--
 Briefly explain:
 - What problem or limitation exists today?
+- What triggers it (input, state, or configuration)?
 - What does this PR change?
 - What is the resulting behavior?
 
