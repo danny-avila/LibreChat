@@ -29,6 +29,8 @@ export type TraceNode = {
   stepKey: string | null;
   /** Order among shown records: the record's position on the sequence scale. */
   sequence: number;
+  /** The saved agent the record ran under: its nearest `agent` ancestor's. */
+  agentId?: string;
 };
 
 export type TraceStep = {
@@ -38,6 +40,7 @@ export type TraceStep = {
   index: number;
   origin: 'run' | 'title';
   generationId: string | null;
+  agentId?: string;
   rootIds: string[];
   start: number;
   end: number;
@@ -61,7 +64,11 @@ export type TraceTurn = {
   recordCount: number;
   errorCount: number;
   generations: number;
+  /** Model calls that wrote an activity label; they are spend, not work of the response. */
+  labels: number;
   toolCalls: number;
+  /** Saved agents that ran in the response, each with the record that stands for it. */
+  agents: Array<{ agentId: string; recordId: string }>;
   sequence: TraceSpan;
 };
 
@@ -69,6 +76,7 @@ export type TraceSummary = {
   duration: number;
   turns: number;
   generations: number;
+  labels: number;
   toolCalls: number;
   errors: number;
   running: number;
@@ -117,6 +125,7 @@ const EMPTY_SUMMARY: TraceSummary = {
   duration: 0,
   turns: 0,
   generations: 0,
+  labels: 0,
   toolCalls: 0,
   errors: 0,
   running: 0,
@@ -151,11 +160,32 @@ const byStart = (nodes: Map<string, TraceNode>) => (a: string, b: string) => {
   );
 };
 
+const LABEL_ROLES: ReadonlySet<TTraceRecord['role']> = new Set([
+  'stepLabel',
+  'reasoningLabel',
+  'phaseLabel',
+]);
+
+/** A model call that wrote one of the activity labels the chat shows while a response runs. */
+export function isLabelRecord(record: TTraceRecord): boolean {
+  return LABEL_ROLES.has(record.role);
+}
+
+/** A model call of the response itself: it starts a step, and the chat's message describes it. */
+export function isModelCall(record: TTraceRecord): boolean {
+  return record.kind === 'generation' && !isLabelRecord(record);
+}
+
+/** A tool, or the round of tool calls a host ran without recording each one. */
+export function isToolWork(record: TTraceRecord): boolean {
+  return record.kind === 'tool' || record.role === 'tools';
+}
+
 /** The records the simple mode lists: what the model did, anything that failed, and the title run. */
 function isSimpleRecord(record: TTraceRecord): boolean {
   return (
     record.kind === 'generation' ||
-    record.kind === 'tool' ||
+    isToolWork(record) ||
     record.status === 'error' ||
     record.origin === 'title'
   );
@@ -163,7 +193,7 @@ function isSimpleRecord(record: TTraceRecord): boolean {
 
 /** The records others hang from: what the model called. A failed wrapper stays visible but holds nothing. */
 function isStepAnchor(record: TTraceRecord): boolean {
-  return record.kind === 'generation' || record.kind === 'tool';
+  return record.kind === 'generation' || isToolWork(record);
 }
 
 function toNode(record: TTraceRecord): TraceNode | null {
@@ -395,11 +425,15 @@ function groupSteps(
     const latestByLane = new Map<string, { rootIds: string[]; lane: string }>();
     let leading: string[] = [];
     for (const id of roots) {
-      const kind = nodes.get(id)?.record.kind;
+      const record = nodes.get(id)?.record;
       const lane = laneOf(id);
       const current = groups[groups.length - 1];
-      /** A tool whose lane has no model call loaded yet (an older page holds it) leads its own step. */
-      if (kind === 'generation' || (kind === 'tool' && !latestByLane.has(lane))) {
+      /** A tool whose lane has no model call loaded yet (an older page holds it) leads its own step.
+       *  A label's model call describes a step; it never starts one. */
+      if (
+        record != null &&
+        (isModelCall(record) || (isToolWork(record) && !latestByLane.has(lane)))
+      ) {
         const group = { rootIds: [...leading, id], lane };
         groups.push(group);
         latestByLane.set(lane, group);
@@ -422,6 +456,7 @@ function groupSteps(
         index: index + 1,
         origin,
         generationId,
+        agentId: nodes.get(generationId ?? rootIds[0])?.agentId,
         rootIds,
         start: Number.POSITIVE_INFINITY,
         end: Number.NEGATIVE_INFINITY,
@@ -470,8 +505,36 @@ function groupSteps(
   });
 }
 
-const isGenerationId = (nodes: Map<string, TraceNode>) => (id: string) =>
-  nodes.get(id)?.record.kind === 'generation';
+const isGenerationId = (nodes: Map<string, TraceNode>) => (id: string) => {
+  const record = nodes.get(id)?.record;
+  return record != null && isModelCall(record);
+};
+
+/** Stamps each record with its nearest `agent` ancestor's saved agent, caching every path walked. */
+function resolveAgents(nodes: Map<string, TraceNode>): void {
+  const resolved = new Map<string, string | undefined>();
+  for (const node of nodes.values()) {
+    const path: TraceNode[] = [];
+    let current: TraceNode | undefined = node;
+    let agentId: string | undefined;
+    while (current != null) {
+      if (resolved.has(current.record.id)) {
+        agentId = resolved.get(current.record.id);
+        break;
+      }
+      path.push(current);
+      if (current.record.agentId != null) {
+        agentId = current.record.agentId;
+        break;
+      }
+      current = current.parentId != null ? nodes.get(current.parentId) : undefined;
+    }
+    for (const visited of path) {
+      resolved.set(visited.record.id, agentId);
+      visited.agentId = agentId;
+    }
+  }
+}
 
 /** Walks a shown subtree in ledger order, setting depth and the sequence position. */
 function numberSubtree(nodes: Map<string, TraceNode>, rootIds: string[], next: number): number {
@@ -512,6 +575,7 @@ export function buildTraceModel(
   }
 
   resolveParents(nodes);
+  resolveAgents(nodes);
   const turnsWithWork = turnsWithSimpleRecords(nodes);
   const ancestors = new Map<string, string | null>();
   resolveViewTree(nodes, mode, turnsWithWork, ancestors);
@@ -548,7 +612,9 @@ export function buildTraceModel(
         recordCount: 0,
         errorCount: 0,
         generations: 0,
+        labels: 0,
         toolCalls: 0,
+        agents: [],
         sequence: EMPTY_SPAN,
       };
       turnsByMessage.set(record.messageId, turn);
@@ -570,9 +636,17 @@ export function buildTraceModel(
       turn.toolCalls++;
       summary.toolCalls++;
     }
+    if (record.agentId != null && !turn.agents.some((agent) => agent.agentId === record.agentId)) {
+      turn.agents.push({ agentId: record.agentId, recordId: id });
+    }
     if (record.kind === 'generation') {
-      turn.generations++;
-      summary.generations++;
+      if (isLabelRecord(record)) {
+        turn.labels++;
+        summary.labels++;
+      } else {
+        turn.generations++;
+        summary.generations++;
+      }
       const input = record.usage?.input ?? 0;
       const output = record.usage?.output ?? 0;
       const total = record.usage?.total ?? input + output;
@@ -850,10 +924,10 @@ export function assignLanes(model: TraceModel, laneCount: number): Map<string, n
 
 /** On the sequence scale nothing overlaps, so lanes separate kinds: model calls, tools, the rest. */
 export function sequenceLane(record: TTraceRecord): number {
-  if (record.kind === 'generation') {
+  if (isModelCall(record)) {
     return 0;
   }
-  return record.kind === 'tool' ? 1 : 2;
+  return isToolWork(record) ? 1 : 2;
 }
 
 /** Clamps a zoom window inside the trace and keeps it at least `minSpan` wide. */

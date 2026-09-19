@@ -6,6 +6,24 @@
 
 export type TTraceRecordKind = 'agent' | 'generation' | 'tool' | 'span' | 'event';
 
+/**
+ * What a record did in the run, in the application's own terms, so a client never reads a tracing
+ * backend's span names. Absent on a record the backend did not describe: it is listed by `kind`.
+ * `run` is a whole agent run, `agent` the named agent inside it, `plumbing` a wrapper that only
+ * frames a model call, `model` a model call of the response, `tools` one round of tool calls, and
+ * the label roles are the model calls that wrote the activity labels the chat shows while a
+ * response runs.
+ */
+export type TTraceRecordRole =
+  | 'run'
+  | 'agent'
+  | 'plumbing'
+  | 'model'
+  | 'tools'
+  | 'stepLabel'
+  | 'reasoningLabel'
+  | 'phaseLabel';
+
 /** `running` marks a record with no end time yet; it has a start but no duration. */
 export type TTraceStatus = 'ok' | 'warning' | 'error' | 'running';
 
@@ -26,6 +44,9 @@ export type TTraceRecord = {
   /** `null` for a root; may name a record that is not loaded (or does not exist). */
   parentId: string | null;
   kind: TTraceRecordKind;
+  role?: TTraceRecordRole;
+  /** The saved agent a `role: 'agent'` record ran; absent for an agent that was never saved. */
+  agentId?: string;
   name: string;
   model?: string;
   /** ISO-8601 timestamps. */

@@ -1,6 +1,7 @@
 import { memo, useId, useMemo, useState } from 'react';
 import { ChevronRight, CircleAlert, CircleDashed } from 'lucide-react';
 import type { RefObject, CSSProperties, KeyboardEvent } from 'react';
+import type { Agent } from 'librechat-data-provider';
 import type {
   TraceRow,
   TraceNode,
@@ -11,13 +12,15 @@ import type {
   TraceScale,
   TraceWindow,
 } from './model';
-import { spanOf, stepSpan, turnSpan, turnKey, boundsOf } from './model';
+import type { RecordPresentation } from './present';
+import StackedToolIcons from '~/components/Chat/Messages/Content/ToolOutput/StackedToolIcons';
+import { spanOf, stepSpan, turnSpan, turnKey, boundsOf, isLabelRecord } from './model';
 import { useTraceFormat, recordDurationText } from './format';
-import { KIND_APPEARANCE, STATUS_LABEL } from './kinds';
+import { appearanceOf, STATUS_LABEL } from './kinds';
+import { cn, renderAgentAvatar } from '~/utils';
 import { formatTokens } from '~/utils/tokens';
 import { useRowWindow } from './virtual';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 
 const ROW_HEIGHT = 32;
 const HEADER_HEIGHT = 28;
@@ -47,7 +50,7 @@ function RecordBar({
   domain: Domain;
 }) {
   const { record } = node;
-  const appearance = KIND_APPEARANCE[record.kind];
+  const appearance = appearanceOf(record);
   const solid = record.status === 'error' ? 'bg-status-error' : appearance.bar;
 
   if (scale === 'time' && node.end == null) {
@@ -122,7 +125,12 @@ function Ledger({
   view,
   selectedId,
   treeRef,
-  previewFor,
+  presentFor,
+  askedFor,
+  toolTitleFor,
+  agentOf,
+  unrecordedCalls,
+  mcpIconMap,
   onSelect,
   onToggle,
 }: {
@@ -132,7 +140,15 @@ function Ledger({
   view: TraceWindow | null;
   selectedId: string | null;
   treeRef: RefObject<HTMLDivElement>;
-  previewFor: (node: TraceNode) => string | undefined;
+  presentFor: (node: TraceNode) => RecordPresentation;
+  /** The user message a response answered, which tells one response from another. */
+  askedFor: (messageId: string) => string | undefined;
+  /** A tool's name as the chat's tool cards give it. */
+  toolTitleFor: (name: string) => string;
+  agentOf: (agentId: string) => Agent | undefined;
+  /** Tool calls the trace names no record for, by response, as the chat's messages count them. */
+  unrecordedCalls: ReadonlyMap<string, number>;
+  mcpIconMap: Map<string, string>;
   onSelect: (id: string) => void;
   onToggle: (key: string) => void;
 }) {
@@ -255,25 +271,33 @@ function Ledger({
     />
   );
 
-  const turnSummary = (turn: TraceTurn) =>
-    [
-      localize(turn.steps === 1 ? 'com_ui_trace_steps_count_one' : 'com_ui_trace_steps_count', {
-        count: turn.steps,
-      }),
+  const turnSummary = (turn: TraceTurn) => {
+    const toolCalls = turn.toolCalls + (unrecordedCalls.get(turn.messageId) ?? 0);
+    const asked = askedFor(turn.messageId);
+    /** The counts come first: the question is the part a narrow row can afford to truncate. */
+    return [
       localize(
-        turn.toolCalls === 1
-          ? 'com_ui_trace_tool_calls_count_one'
-          : 'com_ui_trace_tool_calls_count',
-        { count: turn.toolCalls },
+        turn.generations === 1
+          ? 'com_ui_trace_model_calls_count_one'
+          : 'com_ui_trace_model_calls_count',
+        { count: turn.generations },
       ),
+      localize(
+        toolCalls === 1 ? 'com_ui_trace_tool_calls_count_one' : 'com_ui_trace_tool_calls_count',
+        { count: toolCalls },
+      ),
+      ...(asked ? [localize('com_ui_trace_asked', { 0: asked })] : []),
     ].join(' · ');
+  };
 
   const stepDescription = (step: TraceStep) => {
     const names = [...step.toolNames];
     const tools = names
       .slice(0, STEP_TOOL_NAMES)
       .map(([name, count]) =>
-        count > 1 ? localize('com_ui_trace_tool_times', { 0: name, 1: String(count) }) : name,
+        count > 1
+          ? localize('com_ui_trace_tool_times', { 0: toolTitleFor(name), 1: String(count) })
+          : toolTitleFor(name),
       );
     if (names.length > STEP_TOOL_NAMES) {
       tools.push(
@@ -294,6 +318,7 @@ function Ledger({
       span,
       messageId,
       indent,
+      agents = [],
     }: {
       label: string;
       description: string;
@@ -302,6 +327,7 @@ function Ledger({
       span: TraceSpan;
       messageId: string;
       indent: number;
+      agents?: TraceTurn['agents'];
     },
   ) => {
     const active = activeRow?.key === row.key;
@@ -330,7 +356,32 @@ function Ledger({
         <span className="flex min-w-0 items-center gap-1.5" style={{ paddingLeft: indent }}>
           {chevron(row.expanded)}
           <span className="shrink-0 truncate">{label}</span>
-          <span className="min-w-0 truncate font-normal text-text-secondary">{description}</span>
+          {agents.map(({ agentId, recordId }) => {
+            const agent = agentOf(agentId);
+            const name = agent?.name || localize('com_ui_agent');
+            return (
+              <button
+                key={agentId}
+                type="button"
+                aria-label={localize('com_ui_trace_agent_details', { 0: name })}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelect(recordId);
+                }}
+                onKeyDown={(event) => event.stopPropagation()}
+                className={cn(
+                  'flex max-w-[45%] shrink-0 items-center gap-1 rounded-full border border-border-light py-0.5 pl-0.5 pr-2 font-medium hover:bg-surface-hover',
+                  selectedId === recordId && 'bg-surface-active-alt',
+                )}
+              >
+                {renderAgentAvatar(agent ?? null, { size: 'icon', showBorder: false })}
+                <span className="truncate">{name}</span>
+              </button>
+            );
+          })}
+          <span className="min-w-0 shrink-[3] truncate font-normal text-text-secondary">
+            {description}
+          </span>
           {errorCount > 0 && (
             <CircleAlert aria-hidden="true" className="size-3.5 shrink-0 text-status-error" />
           )}
@@ -359,6 +410,7 @@ function Ledger({
         span: turnSpan(turn, scale),
         messageId: turn.messageId,
         indent: 0,
+        agents: turn.agents,
       });
     }
     if (row.type === 'step') {
@@ -381,7 +433,7 @@ function Ledger({
     const { record } = node;
     const active = activeRow?.key === row.key;
     const turnStart = model.turns.find((turn) => turn.messageId === record.messageId)?.start;
-    const appearance = KIND_APPEARANCE[record.kind];
+    const appearance = appearanceOf(record);
     const Icon = appearance.icon;
     const running = record.status === 'running';
     const duration = recordDurationText(node, format, localize(STATUS_LABEL.running));
@@ -389,8 +441,12 @@ function Ledger({
       record.status === 'error' || record.status === 'warning'
         ? `${duration}, ${localize(STATUS_LABEL[record.status])}`
         : duration;
-    const preview = previewFor(node);
-    const name = preview != null ? `${record.name}: ${preview}` : record.name;
+    const presentation = presentFor(node);
+    const { title, caption, preview, technicalName, toolNames } = presentation;
+    const name = [caption != null ? `${title} (${caption})` : title, preview]
+      .filter((part) => part != null)
+      .join(': ');
+    const isLabel = isLabelRecord(record);
 
     return (
       <div
@@ -433,14 +489,45 @@ function Ledger({
           >
             {row.hasChildren && chevron(row.expanded)}
           </span>
-          <Icon aria-hidden="true" className="size-3.5 shrink-0 text-text-secondary" />
-          <span className="min-w-[3ch] max-w-[60%] truncate">{record.name}</span>
+          {presentation.agent !== undefined &&
+            renderAgentAvatar(presentation.agent, { size: 'icon', showBorder: false })}
+          {presentation.agent === undefined && toolNames != null && (
+            <span className="flex shrink-0 items-center">
+              <StackedToolIcons toolNames={toolNames} mcpIconMap={mcpIconMap} />
+            </span>
+          )}
+          {presentation.agent === undefined && toolNames == null && (
+            <Icon aria-hidden="true" className="size-3.5 shrink-0 text-text-secondary" />
+          )}
+          <span
+            className={cn(
+              'max-w-[60%] truncate',
+              isLabel ? 'shrink-0 text-text-secondary' : 'min-w-[3ch] shrink-[0.25]',
+            )}
+          >
+            {title}
+          </span>
+          {caption != null && (
+            <span className="hidden shrink-[2] truncate text-xs text-text-secondary sm:inline">
+              {caption}
+            </span>
+          )}
           {preview != null && (
             <span
-              className="min-w-[4ch] flex-1 truncate text-xs text-text-secondary"
+              className={cn(
+                'min-w-[4ch] shrink-[3] truncate text-xs',
+                isLabel
+                  ? 'rounded-full bg-surface-tertiary px-2 py-0.5 font-medium text-text-primary'
+                  : 'flex-1 text-text-secondary',
+              )}
               title={preview}
             >
               {preview}
+            </span>
+          )}
+          {model.mode === 'full' && technicalName != null && (
+            <span className="hidden min-w-0 shrink-[6] truncate font-mono text-[11px] text-text-tertiary lg:inline">
+              {technicalName}
             </span>
           )}
           {record.model != null && (
