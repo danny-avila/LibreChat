@@ -109,6 +109,7 @@ interface GenerationState {
 export interface BackgroundToolCompletionWakeupResolverDeps {
   methods: WakeupMethods;
   getGenerationJob: (conversationId: string) => Promise<GenerationState | null>;
+  getResultBatchSize?: () => number | undefined;
 }
 
 function executionError(
@@ -272,6 +273,7 @@ function buildWakeupInput(
 export function createBackgroundToolCompletionWakeupResolver({
   methods,
   getGenerationJob,
+  getResultBatchSize,
 }: BackgroundToolCompletionWakeupResolverDeps): NonNullable<
   AgentTriggerExecutionHostDeps['prepareContinue']
 > {
@@ -435,6 +437,7 @@ export function createBackgroundToolCompletionWakeupResolver({
       parentMessageId: envelope.target.parentMessageId,
       agentId: envelope.target.agentId,
       claimId: context.idempotencyKey,
+      limit: getResultBatchSize?.() ?? 8,
     });
     if (receiptClaim?.status === 'claimed') {
       return { status: 'settled' };

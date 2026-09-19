@@ -509,6 +509,25 @@ describe('attached code environment user config schema', () => {
   });
 });
 
+describe('agent background completion batch config', () => {
+  it('defaults and bounds automatic completion coalescing', () => {
+    const defaults = configSchema.parse({
+      version: '1.0',
+      endpoints: { agents: { backgroundTasks: {} } },
+    });
+    expect(defaults.endpoints?.agents?.backgroundTasks?.completionResultBatchSize).toBe(8);
+
+    for (const completionResultBatchSize of [0, 33, 1.5]) {
+      expect(
+        configSchema.safeParse({
+          version: '1.0',
+          endpoints: { agents: { backgroundTasks: { completionResultBatchSize } } },
+        }).success,
+      ).toBe(false);
+    }
+  });
+});
+
 describe('agent event runtime config', () => {
   it('accepts the routing choice and ignores removed rollout fields', () => {
     const result = configSchema.safeParse({
@@ -576,6 +595,7 @@ describe('agent background task config', () => {
       return;
     }
     expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({
+      completionResultBatchSize: 8,
       completionWakeups: true,
       completionResultMaxChars: 24 * 1024,
       ordinaryToolCancellation: false,
@@ -593,6 +613,7 @@ describe('agent background task config', () => {
       return;
     }
     expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({
+      completionResultBatchSize: 8,
       completionWakeups: false,
       completionResultMaxChars: 24 * 1024,
       ordinaryToolCancellation: false,
@@ -610,6 +631,7 @@ describe('agent background task config', () => {
       return;
     }
     expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({
+      completionResultBatchSize: 8,
       completionWakeups: true,
       completionResultMaxChars: 24 * 1024,
       ordinaryToolCancellation: true,

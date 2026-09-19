@@ -38,7 +38,7 @@ const MAX_PURGE_RECOVERY_LIMIT = 200;
 const HISTORY_LIMIT = 64;
 const MAX_BATCH_SIZE = 8;
 const MAX_BATCH_BYTES = 512 * 1024;
-const MAX_BACKGROUND_TOOL_RESULT_BATCH = 8;
+const MAX_BACKGROUND_TOOL_RESULT_BATCH = 32;
 /** Bounds the claim's compare-and-swap retries. Each lost round means another
  * worker claimed the row this one read, so the queue is making progress. */
 export const CLAIM_CAS_MAX_ATTEMPTS = 16;

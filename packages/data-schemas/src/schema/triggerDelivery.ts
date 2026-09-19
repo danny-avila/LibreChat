@@ -267,7 +267,9 @@ triggerDeliverySchema.index(
     'envelope.target.agentId': 1,
     'backgroundToolResult.settledAt': 1,
   },
-  { sparse: true },
+  {
+    partialFilterExpression: { 'backgroundToolResult.settledAt': { $exists: true } },
+  },
 );
 // Only successful rows receive expiresAt. Dead letters remain available until
 // an operator explicitly requeues or removes them.

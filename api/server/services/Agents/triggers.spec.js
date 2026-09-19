@@ -1,4 +1,5 @@
 const mockCreateAgentTriggerService = jest.fn();
+const mockCreateBackgroundToolCompletionWakeupResolver = jest.fn(() => jest.fn());
 const mockGenerationJobManager = {
   supportsDetachedAgentEventActions: true,
   getJob: jest.fn(),
@@ -21,7 +22,8 @@ jest.mock('@librechat/api', () => ({
   createAgentTriggerService: (...args) => mockCreateAgentTriggerService(...args),
   createAgentContinuationResolver: jest.fn(() => jest.fn()),
   createAgentEventContinueResolver: jest.fn(() => jest.fn()),
-  createBackgroundToolCompletionWakeupResolver: jest.fn(() => jest.fn()),
+  createBackgroundToolCompletionWakeupResolver: (...args) =>
+    mockCreateBackgroundToolCompletionWakeupResolver(...args),
   createSubagentCompletionWakeupResolver: jest.fn(() => jest.fn()),
   createAgentQueuedTurnLifecycle: jest.fn(() => mockQueuedTurnLifecycle),
   BACKGROUND_TOOL_COMPLETION_SOURCE: 'background-tool-completion',
@@ -72,5 +74,16 @@ describe('agent trigger service composition', () => {
     expect(supportsDetachedActionCompletion()).toBe(true);
     mockGenerationJobManager.supportsDetachedAgentEventActions = false;
     expect(supportsDetachedActionCompletion()).toBe(false);
+  });
+
+  it('injects the configured background completion batch size', async () => {
+    const { initializeAgentTriggerService } = require('./triggers');
+    await initializeAgentTriggerService({ address: 'local', completionResultBatchSize: 12 });
+
+    const resolverDeps = mockCreateBackgroundToolCompletionWakeupResolver.mock.calls[0][0];
+    expect(resolverDeps.getResultBatchSize()).toBe(12);
+    expect(mockCreateAgentTriggerService.mock.results[0].value.initialize).toHaveBeenCalledWith({
+      address: 'local',
+    });
   });
 });

@@ -484,6 +484,13 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toBe(false);
     const ordinaryRead = await Delivery.findById(queued.delivery.id).lean();
     expect(ordinaryRead).not.toHaveProperty('backgroundToolResult');
+    const receiptIndex = Delivery.schema
+      .indexes()
+      .find(([keys]) => keys['backgroundToolResult.settledAt'] === 1);
+    expect(receiptIndex?.[1]).toMatchObject({
+      partialFilterExpression: { 'backgroundToolResult.settledAt': { $exists: true } },
+    });
+    expect(receiptIndex?.[1]).not.toHaveProperty('sparse');
   });
 
   it('erases private result receipts when their conversation is deleted', async () => {

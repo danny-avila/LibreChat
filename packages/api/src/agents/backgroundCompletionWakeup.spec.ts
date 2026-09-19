@@ -486,6 +486,7 @@ describe('background tool completion wakeups', () => {
     const resolve = createBackgroundToolCompletionWakeupResolver({
       methods: methods as never,
       getGenerationJob: async () => null,
+      getResultBatchSize: () => 2,
     });
 
     const prepared = await resolve(await envelope(), { idempotencyKey: 'delivery-1' });
@@ -501,6 +502,7 @@ describe('background tool completion wakeups', () => {
       parentMessageId: 'response-1',
       agentId: 'agent_parent_1',
       claimId: 'delivery-1',
+      limit: 2,
     });
     expect(methods.claimBackgroundToolResults).toHaveBeenCalledWith(
       expect.objectContaining({ taskId: 'task-1', kind: 'wakeup', claimId: 'delivery-1' }),
