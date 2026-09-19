@@ -1130,9 +1130,11 @@ async function readWorkspaceFile({
   bridgeWorkerId,
   req,
   signal,
+  maxQueueWaitMs,
 }) {
   return executeWorkspaceTool({
     baseURL: codeApiBaseUrl,
+    maxQueueWaitMs,
     /** Minted per admission attempt: a queued call outlives one token TTL. */
     authHeaders: async () => ({
       ...(await getCodeApiAuthHeaders(req, bridgeWorkerId)),
@@ -1174,9 +1176,11 @@ async function searchWorkspace({
   bridgeWorkerId,
   req,
   signal,
+  maxQueueWaitMs,
 }) {
   return executeWorkspaceTool({
     baseURL: codeApiBaseUrl,
+    maxQueueWaitMs,
     /** Minted per admission attempt: a queued call outlives one token TTL. */
     authHeaders: async () => ({
       ...(await getCodeApiAuthHeaders(req, bridgeWorkerId)),
@@ -1218,9 +1222,11 @@ async function listWorkspaceFiles({
   bridgeWorkerId,
   req,
   signal,
+  maxQueueWaitMs,
 }) {
   return executeWorkspaceTool({
     baseURL: codeApiBaseUrl,
+    maxQueueWaitMs,
     /** Minted per admission attempt: a queued call outlives one token TTL. */
     authHeaders: async () => ({
       ...(await getCodeApiAuthHeaders(req, bridgeWorkerId)),
@@ -1249,9 +1255,11 @@ async function writeWorkspaceFile({
   bridgeWorkerId,
   req,
   signal,
+  maxQueueWaitMs,
 }) {
   return executeWorkspaceTool({
     baseURL: codeApiBaseUrl,
+    maxQueueWaitMs,
     /** Minted per admission attempt: a queued call outlives one token TTL. */
     authHeaders: async () => ({
       ...(await getCodeApiAuthHeaders(req, bridgeWorkerId)),
@@ -1280,9 +1288,11 @@ async function editWorkspaceFile({
   bridgeWorkerId,
   req,
   signal,
+  maxQueueWaitMs,
 }) {
   return executeWorkspaceTool({
     baseURL: codeApiBaseUrl,
+    maxQueueWaitMs,
     /** Minted per admission attempt: a queued call outlives one token TTL. */
     authHeaders: async () => ({
       ...(await getCodeApiAuthHeaders(req, bridgeWorkerId)),
@@ -1310,9 +1320,11 @@ async function previewWorkspaceEdit({
   bridgeWorkerId,
   req,
   signal,
+  maxQueueWaitMs,
 }) {
   return executeWorkspaceTool({
     baseURL: codeApiBaseUrl,
+    maxQueueWaitMs,
     /** Minted per admission attempt: a queued call outlives one token TTL. */
     authHeaders: async () => ({
       ...(await getCodeApiAuthHeaders(req, bridgeWorkerId)),

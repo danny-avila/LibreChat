@@ -767,14 +767,21 @@ export async function executeWorkspaceTool({
     throw new WorkspaceToolHttpError('invalid');
   }
   const queueDeadlineAt = Date.now() + maxQueueWaitMs;
+  const body = JSON.stringify(request);
+  let lastAdmissionRejection: WorkspaceToolHttpError | undefined;
   while (true) {
     try {
+      signal?.throwIfAborted();
       const timeoutSignal = AbortSignal.timeout(getWorkspaceToolTimeoutMs(request));
       const requestSignal =
         signal != null && typeof AbortSignal.any === 'function'
           ? AbortSignal.any([signal, timeoutSignal])
           : timeoutSignal;
       const attemptHeaders = typeof authHeaders === 'function' ? await authHeaders() : authHeaders;
+      requestSignal.throwIfAborted();
+      if (lastAdmissionRejection && Date.now() >= queueDeadlineAt) {
+        throw lastAdmissionRejection;
+      }
       const response = await fetchImpl(
         `${baseURL.trim().replace(/\/+$/, '')}/workspace-tools/execute`,
         {
@@ -783,7 +790,7 @@ export async function executeWorkspaceTool({
             ...attemptHeaders,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(request),
+          body,
           redirect: 'error',
           signal: requestSignal,
         },
@@ -802,6 +809,7 @@ export async function executeWorkspaceTool({
           workspaceAdmissionRetryDelay(response.headers.get('Retry-After')),
           queueDeadlineAt - Date.now(),
         );
+        lastAdmissionRejection = rejection;
         await waitForWorkspaceAdmission(delayMs, signal);
         /** A clamped delay can land exactly on the deadline: the budget is spent,
          * so never open another admission window that could still be admitted. */

@@ -4539,6 +4539,7 @@ describe('createToolExecuteHandler', () => {
             executionProfile: 'stateful',
             statefulSessions: true,
             environmentType: 'attached',
+            codeEnvironmentConfigSchema: { limits: { maxQueueWaitMs: 0 } },
             bridgeWorkerId: 'user-worker',
           },
         },
@@ -4568,6 +4569,7 @@ describe('createToolExecuteHandler', () => {
         content: 'export const ok = 1;',
         overwrite: false,
         workspace_id: 'project-a',
+        maxQueueWaitMs: 0,
         codeApiBaseUrl: 'https://code.example.com',
         executionProfile: 'stateful',
         bridgeWorkerId: 'user-worker',
@@ -4654,6 +4656,7 @@ describe('createToolExecuteHandler', () => {
             executionProfile: 'stateful',
             statefulSessions: true,
             environmentType: 'attached',
+            codeEnvironmentConfigSchema: { limits: { maxQueueWaitMs: 0 } },
             bridgeWorkerId: 'user-worker',
           },
         },
@@ -4688,6 +4691,7 @@ describe('createToolExecuteHandler', () => {
           { oldText: 'false', newText: 'true' },
         ],
         workspace_id: 'project-a',
+        maxQueueWaitMs: 0,
         codeApiBaseUrl: 'https://code.example.com',
         executionProfile: 'stateful',
         bridgeWorkerId: 'user-worker',
@@ -4810,6 +4814,7 @@ describe('createToolExecuteHandler', () => {
             executionProfile: 'stateful',
             statefulSessions: true,
             environmentType: 'attached',
+            codeEnvironmentConfigSchema: { limits: { maxQueueWaitMs: 1200 } },
             bridgeWorkerId: 'user-worker',
           },
         },
@@ -4828,8 +4833,11 @@ describe('createToolExecuteHandler', () => {
       ]);
 
       expect(result.status).toBe('success');
+      expect(previewWorkspaceEdit).toHaveBeenCalledWith(
+        expect.objectContaining({ maxQueueWaitMs: 1200 }),
+      );
       expect(editWorkspaceFile).toHaveBeenCalledWith(
-        expect.objectContaining({ expected_base_sha256: 'b'.repeat(64) }),
+        expect.objectContaining({ expected_base_sha256: 'b'.repeat(64), maxQueueWaitMs: 1200 }),
       );
     });
 
@@ -5516,6 +5524,7 @@ describe('createToolExecuteHandler', () => {
           codeSessionKey: 'execute_code:stateful:attached',
           executionProfile: 'stateful',
           environmentType: 'attached',
+          codeEnvironmentConfigSchema: { limits: { maxQueueWaitMs: 0 } },
           bridgeWorkerId: 'personal-worker-1',
           statefulSessions: true,
         },
@@ -5534,6 +5543,7 @@ describe('createToolExecuteHandler', () => {
       expect(readWorkspaceFile).toHaveBeenCalledWith({
         file_path: 'src/app.ts',
         workspace_id: 'project-a',
+        maxQueueWaitMs: 0,
         start_line: 1,
         max_lines: 200,
         codeApiBaseUrl: 'https://code.example.com/v1',
@@ -5840,6 +5850,7 @@ describe('createToolExecuteHandler', () => {
       expect(searchWorkspace).toHaveBeenCalledWith({
         query: 'needle',
         workspace_id: 'project-a',
+        maxQueueWaitMs: 300000,
         path: 'src',
         max_results: 20,
         codeApiBaseUrl: 'https://code.example.com/v1',
@@ -5992,6 +6003,7 @@ describe('createToolExecuteHandler', () => {
 
       expect(listWorkspaceFiles).toHaveBeenCalledWith({
         workspace_id: 'project-a',
+        maxQueueWaitMs: 300000,
         path: 'src',
         after_path: 'src/app.ts',
         max_results: 20,

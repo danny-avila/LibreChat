@@ -153,6 +153,73 @@ describe('workspace admission feedback', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  test.each([true, false])(
+    'does not dispatch when cancelled before or during credential refresh (%s)',
+    async (beforeRefresh) => {
+      const controller = new AbortController();
+      const reason = new DOMException('Stopped', 'AbortError');
+      const authHeaders = jest.fn(async () => {
+        controller.abort(reason);
+        return {};
+      });
+      const fetchImpl = jest.fn();
+      if (beforeRefresh) controller.abort(reason);
+      await expect(
+        executeWorkspaceTool({
+          baseURL: 'https://code.example/v1',
+          authHeaders,
+          fetchImpl,
+          signal: controller.signal,
+          request: {
+            protocolVersion: 1,
+            operation: 'read_file',
+            workspaceId: 'primary',
+            path: 'src/app.ts',
+          },
+        }),
+      ).rejects.toBe(reason);
+      expect(fetchImpl).not.toHaveBeenCalled();
+      expect(authHeaders).toHaveBeenCalledTimes(beforeRefresh ? 0 : 1);
+    },
+  );
+
+  test('does not dispatch a retry if credential refresh spends the remaining queue budget', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1000);
+    const authHeaders = jest
+      .fn()
+      .mockResolvedValueOnce({})
+      .mockImplementationOnce(async () => {
+        now.mockReturnValue(2000);
+        return {};
+      });
+    const fetchImpl = jest.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: 'WORKSPACE_QUEUE_TIMEOUT' }), {
+        status: 503,
+        headers: { 'Retry-After': '0' },
+      }),
+    );
+    try {
+      await expect(
+        executeWorkspaceTool({
+          baseURL: 'https://code.example/v1',
+          authHeaders,
+          fetchImpl,
+          maxQueueWaitMs: 1000,
+          request: {
+            protocolVersion: 1,
+            operation: 'read_file',
+            workspaceId: 'primary',
+            path: 'src/app.ts',
+          },
+        }),
+      ).rejects.toThrow('The operation was not started');
+      expect(authHeaders).toHaveBeenCalledTimes(2);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    } finally {
+      now.mockRestore();
+    }
+  });
+
   test('stops waiting for capacity when the chat is cancelled', async () => {
     const controller = new AbortController();
     const reason = new DOMException('Stopped', 'AbortError');
