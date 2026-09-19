@@ -14,11 +14,13 @@ Briefly explain:
 - What is the resulting behavior?
 
 Keep this focused on the final state of the code rather than the history of the
-branch or previous review iterations.
+branch or previous review iterations. Naming the merged pull request that
+introduced a regression is the exception: that is history the reader needs.
 
-Link related issues where applicable:
+Link related issues, and name any dependency this change needs:
 Fixes #123
 Related to #123
+Depends on danny-avila/agents#123
 -->
 
 ## How it works
@@ -27,8 +29,10 @@ Related to #123
 Optional. Remove this section if the implementation is already obvious from the
 summary and diff.
 
-Explain the mechanism reviewers need to understand. Prefer the smallest useful
-representation rather than describing every changed file.
+Explain the mechanism reviewers need to understand. Pick one or two of the views
+below, whichever make the change reviewable, and put a sentence beside each rather
+than describing every changed file. Show a whole block instead of a diff when most
+of it is new, or when the omitted context would hide execution order or ownership.
 
 Focused diff:
 
@@ -68,6 +72,11 @@ sequenceDiagram
     Provider->>API: content parts
     API->>Client: SSE events
 ```
+
+Keep the arrows in this example solid (`->>`). A dashed Mermaid arrow spells the
+HTML comment terminator, so it would close this block early and spill the rest of
+the guidance into every description. Diagrams you write outside this comment can
+use dashed arrows freely.
 -->
 
 ## Type of change
