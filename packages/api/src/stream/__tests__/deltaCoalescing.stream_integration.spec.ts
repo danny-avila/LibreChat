@@ -232,8 +232,9 @@ describe.each([undefined, '25'])('Delta coalescing integration (window %s)', (wi
          * EVALSHA spy observes their durable-before-publication order. Cluster
          * publication uses its routed connection; the durable log and sequence
          * assertions below prove its effect while this spy sees only the append. */
+        const expectedImmediateCalls = clusterMode ? [8] : [8, 3];
         expect(evalshaSpy.mock.calls.map((call) => call[1])).toEqual(
-          immediate ? (clusterMode ? [8] : [8, 3]) : [],
+          immediate ? expectedImmediateCalls : [],
         );
         if (!immediate) {
           expect(await reader.xlen(`stream:{${streamId}}:chunks`)).toBe(0);
