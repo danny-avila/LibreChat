@@ -111,6 +111,33 @@ describe('buildPromptCacheKey', () => {
       expect(key({ tools: [action(edited)] })).not.toBe(key({ tools: [action(base)] }));
     });
 
+    it('retires the key for a changed regex pattern', () => {
+      /**
+       * A regular expression keeps its meaning on non-enumerable properties,
+       * so a generic own-key walk reads nothing from it and files every
+       * pattern under one identity while the model is shown each one.
+       */
+      const withPattern = (pattern: RegExp) =>
+        z.object({
+          orderId: z.string().regex(pattern),
+          mode: z.literal('full'),
+          filter: z.union([z.string(), z.number()]),
+        });
+      expect(key({ tools: [action(withPattern(/^A-\d+$/))] })).not.toBe(
+        key({ tools: [action(withPattern(/^B-\d+$/))] }),
+      );
+    });
+
+    it('keeps one key for the same regex pattern', () => {
+      const withPattern = () =>
+        z.object({
+          orderId: z.string().regex(/^A-\d+$/),
+          mode: z.literal('full'),
+          filter: z.union([z.string(), z.number()]),
+        });
+      expect(key({ tools: [action(withPattern())] })).toBe(key({ tools: [action(withPattern())] }));
+    });
+
     it('keeps one key for an unchanged schema', () => {
       const unchanged = () =>
         z.object({
