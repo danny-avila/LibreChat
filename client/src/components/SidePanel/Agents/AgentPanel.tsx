@@ -6,6 +6,7 @@ import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   AgentCapabilities,
+  ErrorTypes,
   MemoryScope,
   SystemRoles,
   ResourceType,
@@ -62,6 +63,13 @@ function getUpdateToastMessage(
     return localize('com_ui_no_changes');
   }
   return localize('com_assistants_update_success_name', { name: name ?? localize('com_ui_agent') });
+}
+
+export function isAgentInstructionPromptMutationError(error: unknown): boolean {
+  const payload = (
+    error as { response?: { data?: { error?: { type?: unknown } } } } | null | undefined
+  )?.response?.data?.error;
+  return payload != null && payload.type === ErrorTypes.AGENT_INSTRUCTION_PROMPT;
 }
 
 /**
@@ -574,12 +582,12 @@ export default function AgentPanel() {
     },
     onError: (err) => {
       const error = err as Error;
-      showToast({
-        message: `${localize('com_agents_update_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
-        status: 'error',
-      });
+      const message = isAgentInstructionPromptMutationError(err)
+        ? localize('com_agents_prompt_load_error')
+        : `${localize('com_agents_update_error')}${
+            error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
+          }`;
+      showToast({ message, status: 'error' });
     },
   });
 
@@ -604,12 +612,12 @@ export default function AgentPanel() {
     },
     onError: (err) => {
       const error = err as Error;
-      showToast({
-        message: `${localize('com_agents_create_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
-        status: 'error',
-      });
+      const message = isAgentInstructionPromptMutationError(err)
+        ? localize('com_agents_prompt_load_error')
+        : `${localize('com_agents_create_error')}${
+            error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
+          }`;
+      showToast({ message, status: 'error' });
     },
   });
 

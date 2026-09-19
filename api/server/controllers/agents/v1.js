@@ -24,6 +24,7 @@ const {
   normalizeAgentUpdateData,
   getRequestRoleCache,
   persistAgentInstructionPromptFallback,
+  AgentInstructionPromptError,
   prepareAgentInstructionPromptRestore,
   redactAgentInstructionPromptFallback,
   redactAgentInstructionPromptFallbacks,
@@ -57,6 +58,7 @@ const {
   CacheKeys,
   Constants,
   FileSources,
+  ErrorTypes,
   ResourceType,
   AccessRoleIds,
   PrincipalType,
@@ -121,6 +123,20 @@ const prepareInstructionPromptRestore = (req, version) => {
       ...(roleCache ? { roleCache } : {}),
     },
   });
+};
+
+const getInstructionPromptErrorResponse = (error) => {
+  if (!(error instanceof AgentInstructionPromptError)) {
+    return;
+  }
+  return {
+    error: {
+      type: ErrorTypes.AGENT_INSTRUCTION_PROMPT,
+      code: error.code,
+      message: error.message,
+      retryable: error.retryable,
+    },
+  };
 };
 
 const systemTools = {
@@ -975,6 +991,10 @@ const createAgentHandler = async (req, res) => {
       return res.status(400).json({ error: 'Invalid request data', details: error.errors });
     }
     logger.error('[/Agents] Error creating agent', error);
+    const promptError = getInstructionPromptErrorResponse(error);
+    if (promptError) {
+      return res.status(error.statusCode).json(promptError);
+    }
     if (Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 600) {
       return res.status(error.statusCode).json({ error: error.message });
     }
@@ -1412,6 +1432,10 @@ const updateAgentHandler = async (req, res) => {
 
     logger.error('[/Agents/:id] Error updating Agent', error);
 
+    const promptError = getInstructionPromptErrorResponse(error);
+    if (promptError) {
+      return res.status(error.statusCode).json(promptError);
+    }
     if (Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 600) {
       return res.status(error.statusCode).json({
         error: error.message,

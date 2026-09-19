@@ -7,6 +7,7 @@ const { createModels, tenantStorage } = require('@librechat/data-schemas');
 const {
   Tools,
   AgentCapabilities,
+  ErrorTypes,
   SkillsScope,
   FileSources,
   Permissions,
@@ -445,6 +446,13 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       await createAgentHandler(mockReq, mockRes);
 
       expect(mockRes.status).toHaveBeenCalledWith(409);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: expect.objectContaining({
+          type: ErrorTypes.AGENT_INSTRUCTION_PROMPT,
+          code: 'not_configured',
+          retryable: true,
+        }),
+      });
       await expect(Agent.countDocuments()).resolves.toBe(0);
       expect(mockInstructionPromptResolve).not.toHaveBeenCalled();
     });
@@ -1634,6 +1642,30 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
       expect(agentInDb.instructions).toBe('resolved instructions');
       expect(agentInDb.instruction_prompt).toMatchObject(instructionPrompt);
+    });
+
+    test('returns a typed prompt error when an update cannot resolve its reference', async () => {
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.config = { endpoints: { agents: { capabilities: [] } } };
+      mockReq.body = {
+        instruction_prompt: {
+          source: 'librechat',
+          promptId: new mongoose.Types.ObjectId().toString(),
+          name: 'Unavailable policy',
+        },
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(409);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: expect.objectContaining({
+          type: ErrorTypes.AGENT_INSTRUCTION_PROMPT,
+          code: 'not_configured',
+          retryable: true,
+        }),
+      });
     });
 
     test('clears a protected fallback when detaching without inline instructions', async () => {
