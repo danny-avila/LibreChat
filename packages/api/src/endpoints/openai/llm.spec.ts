@@ -2366,6 +2366,48 @@ describe('prompt caching', () => {
     expect(result.llmConfig).not.toHaveProperty('promptCacheExplicit');
   });
 
+  it('lets an unsupported Azure deployment veto a supported visible alias', () => {
+    /**
+     * The deployment is what the URL addresses; the visible model is a label
+     * over it. Asking whether either looks supported would send body
+     * parameters `gpt-4o-prod` rejects outright, and a rejected request is
+     * worse than the caching an opaque deployment name costs.
+     */
+    const result = getOpenAILLMConfig({
+      azure: {
+        azureOpenAIApiInstanceName: 'test-instance',
+        azureOpenAIApiDeploymentName: 'gpt-4o-prod',
+        azureOpenAIApiVersion: '2025-04-01-preview',
+        azureOpenAIApiKey: 'test-api-key',
+      },
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.azureOpenAI,
+      modelOptions: { model: 'gpt-5.6' },
+      promptCacheExplicit: true,
+    });
+
+    expect(result.llmConfig).not.toHaveProperty('promptCacheExplicit');
+  });
+
+  it('lets a supported Azure deployment enable them behind an unsupported alias', () => {
+    const result = getOpenAILLMConfig({
+      azure: {
+        azureOpenAIApiInstanceName: 'test-instance',
+        azureOpenAIApiDeploymentName: 'gpt-5-6-prod',
+        azureOpenAIApiVersion: '2025-04-01-preview',
+        azureOpenAIApiKey: 'test-api-key',
+      },
+      apiKey: 'test-api-key',
+      streaming: true,
+      endpoint: EModelEndpoint.azureOpenAI,
+      modelOptions: { model: 'gpt-4o' },
+      promptCacheExplicit: true,
+    });
+
+    expect(result.llmConfig.promptCacheExplicit).toBe(true);
+  });
+
   it('sends no key at all when an endpoint opts out over a pinned one', () => {
     const result = getOpenAILLMConfig({
       apiKey: 'test-api-key',

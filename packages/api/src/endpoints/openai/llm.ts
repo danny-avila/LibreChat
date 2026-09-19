@@ -1160,17 +1160,29 @@ export function getOpenAILLMConfig({
      */
     const wireModel = (llmConfig.modelKwargs as { model?: unknown } | undefined)?.model;
     /**
-     * By precedence, not by agreement: the `modelKwargs` override is the model
-     * the request addresses, so it decides alone when present — permitting a
-     * supported deployment behind an unsupported visible name, and vetoing the
-     * reverse. Without one, an Azure deployment name is the next most specific
-     * name, and the visible model is the fallback.
+     * By precedence, not by agreement: each name decides alone when it is
+     * present, and only then does the next one get a say. The `modelKwargs`
+     * override is the model the request addresses, so it comes first —
+     * permitting a supported deployment behind an unsupported visible name,
+     * and vetoing the reverse. An Azure deployment name is next, because it is
+     * what the URL addresses while the visible model is a label over it, and
+     * the visible model is the fallback when there is no deployment.
+     *
+     * Asking whether *any* of them looks supported is what this must not do:
+     * a supported-looking alias over a `gpt-4o` deployment would send body
+     * parameters that deployment rejects outright, and a rejected request is
+     * worse than the caching an opaque deployment name costs.
      */
-    const supported =
-      typeof wireModel === 'string'
-        ? supportsExplicitPromptCache(wireModel)
-        : supportsExplicitPromptCache(llmConfig.model) ||
-          supportsExplicitPromptCache(deploymentName);
+    const resolveExplicitSupport = (): boolean => {
+      if (typeof wireModel === 'string') {
+        return supportsExplicitPromptCache(wireModel);
+      }
+      if (typeof deploymentName === 'string' && deploymentName !== '') {
+        return supportsExplicitPromptCache(deploymentName);
+      }
+      return supportsExplicitPromptCache(llmConfig.model);
+    };
+    const supported = resolveExplicitSupport();
     /**
      * A default, like retention: `addParams` is the most specific layer, so a
      * model group that opted out of explicit breakpoints keeps its own value
