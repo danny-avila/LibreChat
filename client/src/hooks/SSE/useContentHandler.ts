@@ -78,7 +78,9 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
           ? messages.find((message) => message.messageId === parentMessageId)
           : undefined) ??
         fallbackUserMessage ??
-        (messages[messages.length - 1] as TMessage | undefined);
+        (thread_id != null || responseThreadId == null
+          ? (messages[messages.length - 1] as TMessage | undefined)
+          : undefined);
       const resolvedParentMessageId = parentMessageId || userMessage?.messageId;
 
       let response = cachedResponse;
