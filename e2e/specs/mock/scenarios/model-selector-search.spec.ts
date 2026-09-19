@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { NEW_CHAT_PATH } from '../helpers';
+import { resetPinnedState } from './pinned.helpers';
 const modelTrigger = (page: Page) => page.getByRole('button', { name: 'Select a model' }).first();
 
 async function openModelSearch(page: Page, query: string) {
@@ -37,16 +38,23 @@ test.describe('model selector search', () => {
     page,
   }) => {
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await resetPinnedState(page);
     const search = await openModelSearch(page, 'mock');
-    const tabbablePin = page.locator('button[aria-label="Pin"][tabindex="0"]');
+    const modelRows = page.getByRole('option').filter({ hasText: /mock-model-[a-z]/i });
+    const tabbablePin = modelRows.locator('button[aria-label="Pin"][tabindex="0"]');
 
-    for (let index = 0; index < 10 && (await tabbablePin.count()) === 0; index++) {
+    for (
+      let index = 0, optionCount = await page.getByRole('option').count();
+      index <= optionCount && (await tabbablePin.count()) === 0;
+      index++
+    ) {
       await search.press('ArrowDown');
     }
     await expect(tabbablePin).toHaveCount(1);
-    const rowId = await tabbablePin.locator('xpath=ancestor::*[@role="option"][1]').getAttribute('id');
-    expect(rowId).toBeTruthy();
-    const row = page.locator(`xpath=//*[@id="${rowId}"]`);
+    const activeRow = tabbablePin.locator('xpath=ancestor::*[@role="option"][1]');
+    const modelName = (await activeRow.innerText()).match(/mock-model-[a-z]/i)?.[0];
+    expect(modelName).toBeTruthy();
+    const row = page.getByRole('option').filter({ hasText: modelName! }).first();
     await page.keyboard.press('Tab');
     await expect(tabbablePin).toBeFocused();
     await tabbablePin.press('Enter');
