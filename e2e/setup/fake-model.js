@@ -53,6 +53,7 @@ const ASK_USER_QUESTION_MARKER = 'E2E_ASK_USER_QUESTION:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
+const HIGHLIGHT_CODE_MARKER = 'E2E_HIGHLIGHT_CODE:';
 const STATEFUL_CODE_MARKER = 'E2E_STATEFUL_CODE:';
 /** Two prose paragraphs, so a spec can select the message's *closing* block. */
 const PARAGRAPHS_REPLY_MARKER = 'E2E_PARAGRAPHS_REPLY';
@@ -2677,6 +2678,37 @@ function provisioningToolResponses({ text, toolNames }) {
       toolNames,
     );
   }
+  const highlightLabel = getMarkerValue(text, HIGHLIGHT_CODE_MARKER);
+  if (highlightLabel) {
+    const codeTool = CODE_EXEC_TOOLS.find((tool) => toolNames.has(tool.name));
+    if (!codeTool) {
+      return {
+        responses: [`E2E highlight code unavailable: ${JSON.stringify([...toolNames])}`],
+      };
+    }
+    const command = Array.from(
+      { length: 120 },
+      (_, index) => `printf 'line-${index}-☃\\n'`,
+    ).join('\n');
+    const args =
+      codeTool.name === 'bash_tool'
+        ? { command }
+        : codeTool.name === 'execute_code'
+          ? { lang: 'bash', code: command }
+          : codeTool.args;
+    return {
+      responses: ['', `E2E highlighted code complete: ${highlightLabel}`],
+      sleep: SLOW_CHUNK_DELAY_MS,
+      toolCalls: [
+        {
+          id: EXECUTE_CODE_TOOL_CALL_ID,
+          name: codeTool.name,
+          args,
+          type: 'tool_call',
+        },
+      ],
+    };
+  }
 
   const codeLabel = getMarkerValue(text, EXECUTE_CODE_MARKER);
   if (codeLabel) {
@@ -2702,7 +2734,6 @@ function provisioningToolResponses({ text, toolNames }) {
       ],
     };
   }
-
   const searchLabel = getMarkerValue(text, FILE_SEARCH_MARKER);
   if (searchLabel) {
     if (!toolNames.has(FILE_SEARCH_TOOL_NAME)) {
