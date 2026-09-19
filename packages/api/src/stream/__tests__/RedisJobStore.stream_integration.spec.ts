@@ -4128,6 +4128,7 @@ describe('RedisJobStore Integration Tests', () => {
             ...(args as Array<string | number | Buffer>),
           );
         }) as typeof ioredisClient.eval);
+        restoreEval = () => evalSpy.mockRestore();
         const cleaning = store.cleanup();
         await cleanupReady;
         replacementRedis = ioredisClient.duplicate();

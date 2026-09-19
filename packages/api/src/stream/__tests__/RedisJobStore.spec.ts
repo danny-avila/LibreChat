@@ -11,7 +11,9 @@ jest.mock('~/cache/redisTelemetry', () => ({
 function evalshaNoScript(): jest.Mock {
   return jest
     .fn()
-    .mockRejectedValue(new Error("NOPERM this user has no permissions to run the 'EVALSHA' command"));
+    .mockRejectedValue(
+      new Error("NOPERM this user has no permissions to run the 'EVALSHA' command"),
+    );
 }
 
 type Deferred<T> = {
