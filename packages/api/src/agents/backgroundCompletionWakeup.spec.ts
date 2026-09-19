@@ -590,6 +590,61 @@ describe('background tool completion wakeups', () => {
     );
   });
 
+  it('releases a message projection claimed after its receipt was already delivered', async () => {
+    const { methods, releaseBackgroundToolResultClaims } = resolverMethods();
+    methods.claimBackgroundToolResults.mockResolvedValueOnce({
+      status: 'acquired',
+      results: [
+        {
+          taskId: 'task-1',
+          toolCallId: 'call-1',
+          toolName: 'slow_tool',
+          status: 'completed',
+          output: 'duplicate projection',
+        },
+      ],
+    });
+    methods.claimAgentBackgroundToolResults.mockResolvedValueOnce({
+      status: 'claimed',
+      claimId: 'delivery-a',
+    });
+    const resolve = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    await expect(resolve(await envelope(), { idempotencyKey: 'delivery-b' })).resolves.toEqual({
+      status: 'settled',
+    });
+    expect(releaseBackgroundToolResultClaims).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskIds: ['task-1'],
+        kind: 'wakeup',
+        claimId: 'delivery-b',
+      }),
+    );
+  });
+
+  it('releases a message projection when receipt reconciliation fails', async () => {
+    const { methods, releaseBackgroundToolResultClaims } = resolverMethods();
+    methods.claimAgentBackgroundToolResults.mockRejectedValueOnce(new Error('receipt unavailable'));
+    const resolve = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    await expect(resolve(await envelope(), { idempotencyKey: 'delivery-1' })).rejects.toThrow(
+      'receipt unavailable',
+    );
+    expect(releaseBackgroundToolResultClaims).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskIds: ['task-1', 'task-2'],
+        kind: 'wakeup',
+        claimId: 'delivery-1',
+      }),
+    );
+  });
+
   it('shares one bounded input budget across a full sibling batch', async () => {
     const { methods } = resolverMethods();
     const results = Array.from({ length: 8 }, (_, index) => ({

@@ -2437,6 +2437,7 @@ export function createAgentTriggerDeliveryMethods(
     if (existingClaim != null && existingClaim.claimId !== input.claimId) {
       return { status: 'claimed', claimId: existingClaim.claimId };
     }
+    let isReplay = existingClaim != null;
     const claimedAt = new Date();
     if (existingClaim == null) {
       const claimed = await Delivery().updateOne(
@@ -2468,6 +2469,7 @@ export function createAgentTriggerDeliveryMethods(
             ? { status: 'not_ready' }
             : { status: 'claimed', claimId: winner.claimId };
         }
+        isReplay = true;
       }
     }
     const limit = Math.max(1, Math.min(MAX_BACKGROUND_TOOL_RESULT_BATCH, input.limit ?? 8));
@@ -2476,7 +2478,7 @@ export function createAgentTriggerDeliveryMethods(
       'backgroundToolResult.resultClaim.claimId': input.claimId,
     });
     const availableSiblingSlots = Math.max(0, limit - ownedCount);
-    if (availableSiblingSlots > 0) {
+    if (!isReplay && availableSiblingSlots > 0) {
       const siblings = await Delivery()
         .find({
           ...scope,

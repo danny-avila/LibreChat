@@ -109,7 +109,6 @@ interface GenerationState {
 export interface BackgroundToolCompletionWakeupResolverDeps {
   methods: WakeupMethods;
   getGenerationJob: (conversationId: string) => Promise<GenerationState | null>;
-  getResultBatchSize?: () => number | undefined;
 }
 
 function executionError(
@@ -273,7 +272,6 @@ function buildWakeupInput(
 export function createBackgroundToolCompletionWakeupResolver({
   methods,
   getGenerationJob,
-  getResultBatchSize,
 }: BackgroundToolCompletionWakeupResolverDeps): NonNullable<
   AgentTriggerExecutionHostDeps['prepareContinue']
 > {
@@ -437,7 +435,7 @@ export function createBackgroundToolCompletionWakeupResolver({
       parentMessageId: envelope.target.parentMessageId,
       agentId: envelope.target.agentId,
       claimId: context.idempotencyKey,
-      limit: getResultBatchSize?.() ?? 8,
+      limit: 1,
     });
     if (receiptClaim?.status === 'claimed') {
       return { status: 'settled' };
@@ -473,11 +471,10 @@ export function createBackgroundToolCompletionWakeupResolver({
           retryAfter: '1',
         });
       }
-      const input = buildWakeupInput(receiptClaim.results);
       return {
         status: 'ready',
         parentMessageId,
-        input,
+        input: buildWakeupInput(receiptClaim.results),
         releaseOnDefiniteFailure: async () => {
           const projectionReleased = await methods.releaseBackgroundToolResultClaims({
             userId,
@@ -513,11 +510,7 @@ export function createBackgroundToolCompletionWakeupResolver({
         status: 'ready',
         parentMessageId,
         input: buildWakeupInput([
-          {
-            ...registration,
-            status: receipt.status,
-            output: receipt.output,
-          },
+          { ...registration, status: receipt.status, output: receipt.output },
         ]),
       };
     }

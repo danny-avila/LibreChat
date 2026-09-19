@@ -818,7 +818,6 @@ describe('agent trigger delivery methods', () => {
     for (const [delivery, output] of [
       [first, 'first output'],
       [second, 'second output'],
-      [third, 'third output'],
     ] as const) {
       await methods.persistAgentBackgroundToolResult({
         deliveryKey: delivery.delivery.deliveryKey,
@@ -839,7 +838,7 @@ describe('agent trigger delivery methods', () => {
         ...scope,
         deliveryKey: first.delivery.deliveryKey,
         claimId: 'first-claim',
-        limit: 2,
+        limit: 3,
       }),
     ).resolves.toMatchObject({
       status: 'acquired',
@@ -848,12 +847,17 @@ describe('agent trigger delivery methods', () => {
         { taskId: 'task-second', output: 'second output' },
       ],
     });
+    await methods.persistAgentBackgroundToolResult({
+      deliveryKey: third.delivery.deliveryKey,
+      sourceId: source.id,
+      result: { status: 'completed', output: 'third output', settledAt: START },
+    });
     await expect(
       methods.claimAgentBackgroundToolResults({
         ...scope,
         deliveryKey: first.delivery.deliveryKey,
         claimId: 'first-claim',
-        limit: 2,
+        limit: 3,
       }),
     ).resolves.toMatchObject({
       status: 'acquired',
