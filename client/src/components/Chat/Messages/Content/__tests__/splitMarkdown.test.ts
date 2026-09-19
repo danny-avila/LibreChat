@@ -39,6 +39,12 @@ describe('splitMarkdownIntoBlocks', () => {
     expect(raws(content)).toEqual(['Lead.', artifact, 'Tail.']);
   });
 
+  it("keeps a top-level block's indentation, which decides how it parses", () => {
+    const fence = ['   ```python', '   def test():', '       assert True', '   ```'].join('\n');
+    const content = ['9. Build:', '', '   make', '', '10. Run the tests:', '', fence].join('\n');
+    expect(raws(content)).toEqual([content.slice(0, content.indexOf('\n\n   ```')), fence]);
+  });
+
   it('keeps a list as one block (does not split items)', () => {
     const list = '- one\n- two\n- three';
     expect(raws(list)).toEqual([list]);
