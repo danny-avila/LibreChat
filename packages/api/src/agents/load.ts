@@ -34,7 +34,7 @@ export interface LoadAgentDeps {
   /** Resolves the agent without its `versions` history; `version` carries the count. */
   getAgent: (searchParameter: {
     id: string;
-  }) => Promise<(Agent & { versions?: { length: number } }) | null>;
+  }) => Promise<(Agent & { version?: number; versions?: { length: number } }) | null>;
   getMCPServerTools: (
     userId: string,
     serverName: string,
