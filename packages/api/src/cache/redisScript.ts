@@ -7,8 +7,19 @@ export type RedisScriptResult = string | number | boolean | null | undefined | R
 export type RedisScriptClient = Pick<Redis | Cluster, 'eval' | 'evalsha'>;
 
 const scriptShas = new Map<string, string>();
+const unsupportedEvalshaScripts = new WeakMap<object, Set<string>>();
 
 const evalshaFallbackContext = new AsyncLocalStorage<boolean>();
+
+function scriptUsesEvalOnly(client: RedisScriptClient, script: string): boolean {
+  return unsupportedEvalshaScripts.get(client)?.has(script) === true;
+}
+
+function markScriptEvalOnly(client: RedisScriptClient, script: string): void {
+  const scripts = unsupportedEvalshaScripts.get(client) ?? new Set<string>();
+  scripts.add(script);
+  unsupportedEvalshaScripts.set(client, scripts);
+}
 
 function scriptSha(script: string): string {
   let sha = scriptShas.get(script);
@@ -29,7 +40,16 @@ export function isEvalshaFallbackError(error: unknown): boolean {
   const message = error.message.toUpperCase();
   return (
     message.includes('NOSCRIPT') ||
+    (message.includes('NOPERM') && message.includes('EVALSHA')) ||
     (message.includes('UNKNOWN COMMAND') && message.includes('EVALSHA'))
+  );
+}
+
+function isEvalshaPermissionError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message.toUpperCase().includes('NOPERM') &&
+    error.message.toUpperCase().includes('EVALSHA')
   );
 }
 
@@ -49,6 +69,9 @@ export async function evalScript(
   numberOfKeys: number,
   ...args: RedisScriptArg[]
 ): Promise<RedisScriptResult> {
+  if (scriptUsesEvalOnly(client, script)) {
+    return (await client.eval(script, numberOfKeys, ...args)) as RedisScriptResult;
+  }
   try {
     return (await evalshaFallbackContext.run(true, () =>
       client.evalsha(scriptSha(script), numberOfKeys, ...args),
@@ -56,6 +79,9 @@ export async function evalScript(
   } catch (error) {
     if (!isEvalshaFallbackError(error)) {
       throw error;
+    }
+    if (isEvalshaPermissionError(error)) {
+      markScriptEvalOnly(client, script);
     }
     return (await client.eval(script, numberOfKeys, ...args)) as RedisScriptResult;
   }
