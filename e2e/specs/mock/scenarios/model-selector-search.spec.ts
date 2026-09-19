@@ -33,14 +33,14 @@ test.describe('model selector search', () => {
   }) => {
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     const search = await openModelSearch(page, 'mock');
-    const pin = page.getByRole('button', { name: /pin/i }).first();
+    const pin = page.locator('button[aria-label="Pin"]:visible').first();
     await expect(pin).toBeVisible();
 
     await search.press('ArrowDown');
-    await pin.focus();
+    await page.keyboard.press('Tab');
     await expect(pin).toBeFocused();
     await pin.press('Enter');
-    await expect(pin).toHaveAttribute('aria-label', /unpin/i);
+    await expect(pin).toHaveAttribute('aria-label', 'Unpin');
   });
 
   test('search options expose one global position sequence @scenario:model-selector-search-options-report-global-positions', async ({
