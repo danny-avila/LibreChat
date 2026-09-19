@@ -19,7 +19,9 @@ describe('evalScript', () => {
   test('falls back when EVALSHA is unavailable but EVAL is permitted', async () => {
     const evalsha = jest
       .fn()
-      .mockRejectedValue(new Error("NOPERM this user has no permissions to run the 'EVALSHA' command"));
+      .mockRejectedValue(
+        new Error("NOPERM this user has no permissions to run the 'EVALSHA' command"),
+      );
     const evalCommand = jest.fn().mockResolvedValue(1);
     const client = { evalsha, eval: evalCommand } as unknown as RedisScriptClient;
 
