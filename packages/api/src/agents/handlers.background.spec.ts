@@ -4,6 +4,7 @@ import { tool as structuredTool } from '@librechat/agents/langchain/tools';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { FiltersConfig } from 'librechat-data-provider';
 import type { ToolExecuteOptions } from './handlers';
+import type { BackgroundToolWakeupAdmission } from './backgroundCompletion';
 import {
   BACKGROUND_TASK_ABORT_GRACE_MS,
   BACKGROUND_TASK_TIMEOUT_MS,
@@ -2655,7 +2656,12 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
   });
 
   it('uses the configured durable completion result size', async () => {
-    const persistResult = jest.fn(async () => true);
+    const persistResult: jest.MockedFunction<
+      NonNullable<BackgroundToolWakeupAdmission['persistResult']>
+    > = jest.fn(
+      async (_result: Parameters<NonNullable<BackgroundToolWakeupAdmission['persistResult']>>[0]) =>
+        true,
+    );
     const tool = {
       name: 'execute_code',
       description: 'run code',

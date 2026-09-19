@@ -453,7 +453,7 @@ describe('background tool completion wakeups', () => {
 
   it('continues from the independent delivery receipt before the parent projection lands', async () => {
     const { methods } = resolverMethods();
-    methods.claimBackgroundToolResults.mockResolvedValueOnce({ status: 'not_ready' });
+    methods.claimBackgroundToolResults.mockResolvedValueOnce({ status: 'not_ready', results: [] });
     methods.claimAgentBackgroundToolResults.mockResolvedValueOnce({
       status: 'acquired',
       results: [
@@ -492,7 +492,7 @@ describe('background tool completion wakeups', () => {
 
   it('honors a manual message claim before an independent receipt', async () => {
     const { methods } = resolverMethods();
-    methods.claimBackgroundToolResults.mockResolvedValueOnce({ status: 'claimed' });
+    methods.claimBackgroundToolResults.mockResolvedValueOnce({ status: 'claimed', results: [] });
     const resolve = createBackgroundToolCompletionWakeupResolver({
       methods: methods as never,
       getGenerationJob: async () => null,
