@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import calculateSlot from 'cluster-key-slot';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Redis, Cluster } from 'ioredis';
 
@@ -12,15 +13,12 @@ const confirmedShasByClient = new WeakMap<object, Map<string, Set<string>>>();
 
 const inFlightLoadsByKey = new WeakMap<object, Map<string, Promise<RedisScriptResult>>>();
 
-function confirmedShasFor(client: RedisScriptClient, orderingKey: string): Set<string> {
+function confirmedShasFor(client: RedisScriptClient, confirmationKey: string): Set<string> {
   let confirmedByKey = confirmedShasByClient.get(client);
   if (confirmedByKey == null) {
     confirmedByKey = new Map<string, Set<string>>();
     confirmedShasByClient.set(client, confirmedByKey);
   }
-  const confirmationKey = (client as RedisScriptClient & { isCluster?: boolean }).isCluster
-    ? orderingKey
-    : '';
   let confirmed = confirmedByKey.get(confirmationKey);
   if (confirmed == null) {
     confirmed = new Set<string>();
@@ -38,14 +36,14 @@ function loadsFor(client: RedisScriptClient): Map<string, Promise<RedisScriptRes
   return loads;
 }
 
-function scriptOrderingKey(args: RedisScriptArg[]): string {
+function firstScriptKey(args: RedisScriptArg[]): string | Buffer {
   const firstKey = args[0];
-  let value = '';
-  if (typeof firstKey === 'string') {
-    value = firstKey;
-  } else if (Buffer.isBuffer(firstKey)) {
-    value = firstKey.toString();
-  }
+  return typeof firstKey === 'string' || Buffer.isBuffer(firstKey) ? firstKey : '';
+}
+
+function scriptOrderingKey(args: RedisScriptArg[]): string {
+  const firstKey = firstScriptKey(args);
+  const value = Buffer.isBuffer(firstKey) ? firstKey.toString() : firstKey;
   const open = value.indexOf('{');
   const close = value.indexOf('}', open + 1);
   return open >= 0 && close > open ? value.slice(open, close + 1) : value;
@@ -122,7 +120,10 @@ export async function evalScript(
   }
   const sha = scriptSha(script);
   const orderingKey = scriptOrderingKey(args);
-  const confirmed = confirmedShasFor(client, orderingKey);
+  const confirmationKey = (client as RedisScriptClient & { isCluster?: boolean }).isCluster
+    ? String(calculateSlot(firstScriptKey(args)))
+    : '';
+  const confirmed = confirmedShasFor(client, confirmationKey);
   const loads = loadsFor(client);
   const evalshaCall = () =>
     evalshaFallbackContext.run(true, () => client.evalsha(sha, numberOfKeys, ...args));

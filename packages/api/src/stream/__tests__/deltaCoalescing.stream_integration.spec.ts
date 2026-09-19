@@ -179,10 +179,8 @@ describe.each([undefined, '25'])('Delta coalescing integration (window %s)', (wi
       const { RedisJobStore } = await import('../implementations/RedisJobStore');
       const { MAX_COALESCED_BYTES, MAX_COALESCED_EVENTS } = await import('../internal/coalescing');
       const store = new RedisJobStore(ioredisClient!);
-      const transport = new RedisEventTransport(
-        ioredisClient!,
-        (ioredisClient as Redis).duplicate(),
-      );
+      const subscriber = (ioredisClient as Redis).duplicate();
+      const transport = new RedisEventTransport(ioredisClient!, subscriber);
       const reader = (ioredisClient as Redis).duplicate();
       const streamId = `coalesce-boundary-${Date.now()}`;
       const job = await store.createJob(streamId, 'user-1', streamId);
@@ -237,6 +235,7 @@ describe.each([undefined, '25'])('Delta coalescing integration (window %s)', (wi
           expect(await reader.get(`stream:{${streamId}}:seq`)).toBeNull();
           await jest.advanceTimersByTimeAsync(25);
         }
+        await Promise.all([...appends, ...publications]);
         const evalshaKeyCounts = evalshaSpy.mock.calls.map((call) => call[1]);
         expect(evalshaKeyCounts.every((keyCount) => keyCount === 8 || keyCount === 3)).toBe(true);
 
@@ -252,6 +251,8 @@ describe.each([undefined, '25'])('Delta coalescing integration (window %s)', (wi
       } finally {
         evalshaSpy.mockRestore();
         await store.destroy();
+        transport.destroy();
+        subscriber.disconnect();
         reader.disconnect();
         jest.useRealTimers();
       }
