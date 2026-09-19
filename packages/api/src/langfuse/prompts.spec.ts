@@ -25,6 +25,89 @@ const prompt = {
 };
 
 describe('Langfuse agent instruction prompts', () => {
+  it.each([false, true])(
+    'uses a concurrent successful refresh after failure (prior cache: %s)',
+    async (hasPriorCache) => {
+      let clock = 0;
+      let finishOlder!: (value: Response) => void;
+      let finishNewer!: (value: Response) => void;
+      const fetch = jest.fn();
+      const provider = createLangfusePromptProvider({
+        resolveDestinations: async () => [destination],
+        fetch,
+        cacheTtlMs: 100,
+        now: () => clock,
+      });
+      const reference = { source: 'langfuse' as const, name: 'agent-policy' };
+      const context = { userId: 'user-1' };
+      if (hasPriorCache) {
+        fetch.mockResolvedValueOnce(response(200, { ...prompt, version: 7 }));
+        await provider.resolve(reference, context);
+        clock = 101;
+      }
+      fetch
+        .mockImplementationOnce(
+          () =>
+            new Promise<Response>((resolve) => {
+              finishOlder = resolve;
+            }),
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise<Response>((resolve) => {
+              finishNewer = resolve;
+            }),
+        );
+      const older = provider.resolve(reference, context);
+      const newer = provider.resolve(reference, context);
+      await Promise.resolve();
+      finishNewer(response(200, { ...prompt, version: 8 }));
+      await newer;
+      finishOlder(response(503, {}));
+      await expect(older).resolves.toMatchObject({ version: 8, cached: true });
+    },
+  );
+
+  it('preserves request ordering when another prompt triggers expiry eviction', async () => {
+    let clock = 0;
+    let finishOlder!: (value: Response) => void;
+    let finishNewer!: (value: Response) => void;
+    const fetch = jest
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            finishOlder = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            finishNewer = resolve;
+          }),
+      )
+      .mockResolvedValue(response(200, { ...prompt, version: 8 }));
+    const provider = createLangfusePromptProvider({
+      resolveDestinations: async () => [destination],
+      fetch,
+      cacheTtlMs: 100,
+      now: () => clock,
+    });
+    const reference = { source: 'langfuse' as const, name: 'agent-policy' };
+    const context = { userId: 'user-1' };
+    const older = provider.resolve(reference, context);
+    const newer = provider.resolve(reference, context);
+    await Promise.resolve();
+    finishNewer(response(200, { ...prompt, version: 8 }));
+    await newer;
+    clock = 101;
+    await provider.resolve({ ...reference, name: 'another-policy' }, context);
+    finishOlder(response(200, { ...prompt, version: 7 }));
+    await older;
+    await expect(provider.resolve(reference, context)).resolves.toMatchObject({ version: 8 });
+    expect(fetch).toHaveBeenCalledTimes(4);
+  });
+
   it('does not let an older overlapping fetch replace a newer cached result', async () => {
     let finishFirst!: (value: Response) => void;
     let finishSecond!: (value: Response) => void;

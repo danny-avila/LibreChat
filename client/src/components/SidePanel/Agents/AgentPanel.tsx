@@ -84,6 +84,7 @@ export function composeAgentUpdatePayload(
   agent_id?: string | null,
   parameterConfig?: AgentParameterConfig,
   instructionPromptsEnabled = true,
+  instructionPromptChanged = true,
 ) {
   const {
     name,
@@ -162,7 +163,9 @@ export function composeAgentUpdatePayload(
       name,
       artifacts,
       description,
-      ...(agent_id && instruction_prompt && !instructionPromptsEnabled
+      ...(agent_id &&
+      instruction_prompt &&
+      (!instructionPromptsEnabled || !instructionPromptChanged)
         ? {}
         : {
             instructions: instruction_prompt ? '' : instructions,
@@ -634,6 +637,7 @@ export default function AgentPanel() {
         agent_id,
         { endpointsConfig, startupConfig },
         agentsConfig?.capabilities?.includes(AgentCapabilities.instruction_prompts) ?? false,
+        Boolean(dirtyFields.instruction_prompt),
       );
 
       if (agent_id) {

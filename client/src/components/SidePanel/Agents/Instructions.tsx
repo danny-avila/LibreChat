@@ -32,7 +32,7 @@ export default function Instructions() {
   const { agentsConfig } = useGetAgentsConfig();
   const promptReferencesEnabled =
     agentsConfig?.capabilities?.includes(AgentCapabilities.instruction_prompts) ?? false;
-  const { control, getValues, setValue } = useFormContext<AgentForm>();
+  const { control, getValues, getFieldState, setValue } = useFormContext<AgentForm>();
   const agentId = useWatch({ control, name: 'id' });
   const reference = useWatch({ control, name: 'instruction_prompt' });
   const [source, setSource] = useState<InstructionSource>(reference?.source ?? 'inline');
@@ -191,7 +191,12 @@ export default function Instructions() {
       control={control}
       rules={{
         validate: () => {
-          if (source === 'inline' || (!promptReferencesEnabled && agentId && reference)) {
+          if (
+            source === 'inline' ||
+            (agentId &&
+              reference &&
+              (!promptReferencesEnabled || !getFieldState('instruction_prompt').isDirty))
+          ) {
             return true;
           }
           if (reference?.source !== source) {

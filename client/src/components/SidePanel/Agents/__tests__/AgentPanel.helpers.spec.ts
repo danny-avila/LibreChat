@@ -59,6 +59,32 @@ const createForm = (): AgentForm => ({
 });
 
 describe('composeAgentUpdatePayload', () => {
+  it('omits unchanged referenced instructions when saving unrelated edits', () => {
+    const form = createForm();
+    form.name = 'Renamed agent';
+    form.instruction_prompt = {
+      source: 'librechat',
+      promptId: 'group-1',
+      name: 'Protected prompt',
+    };
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123', undefined, true, false);
+    expect(payload.name).toBe('Renamed agent');
+    expect(payload).not.toHaveProperty('instructions');
+    expect(payload).not.toHaveProperty('instruction_prompt');
+  });
+  it('still validates an explicitly changed reference by sending it to the server', () => {
+    const form = createForm();
+    form.instruction_prompt = { source: 'librechat', promptId: 'group-2', name: 'New prompt' };
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123', undefined, true, true);
+    expect(payload.instruction_prompt).toEqual(form.instruction_prompt);
+  });
+  it('includes a reference when creating an agent even if the form was prefilled', () => {
+    const form = createForm();
+    form.instruction_prompt = { source: 'langfuse', name: 'New prompt' };
+    const { payload } = composeAgentUpdatePayload(form, undefined, undefined, true, false);
+    expect(payload.instruction_prompt).toEqual(form.instruction_prompt);
+  });
+
   it('clears a stored reference when inline instructions are selected', () => {
     const form = createForm();
     form.instructions = 'Inline instructions';

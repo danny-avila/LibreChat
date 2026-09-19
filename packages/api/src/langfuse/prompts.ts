@@ -72,9 +72,10 @@ function pruneExpiredEntries(
   cache: Map<string, CacheEntry>,
   currentKey: string,
   currentTime: number,
+  activeRequests: Map<string, { count: number }>,
 ) {
   for (const [key, entry] of cache) {
-    if (key !== currentKey && entry.expiresAt <= currentTime) {
+    if (key !== currentKey && entry.expiresAt <= currentTime && !activeRequests.has(key)) {
       cache.delete(key);
     }
   }
@@ -169,6 +170,7 @@ export function createLangfusePromptProvider({
 }: LangfusePromptProviderDeps): AgentInstructionPromptProvider {
   const cache = new Map<string, CacheEntry>();
   let nextRequestId = 0;
+  const activeRequests = new Map<string, { count: number }>();
 
   return {
     async resolve(reference, context: AgentInstructionPromptContext) {
@@ -204,7 +206,7 @@ export function createLangfusePromptProvider({
       const currentTime = now();
       const promptConfig = context.appConfig?.langfuse?.prompts;
       const effectiveCacheTtlMs = promptConfig?.cacheTtlMs ?? cacheTtlMs;
-      pruneExpiredEntries(cache, key, currentTime);
+      pruneExpiredEntries(cache, key, currentTime, activeRequests);
       const cached = cache.get(key);
       if (cached && currentTime - cached.fetchedAt < effectiveCacheTtlMs) {
         return { ...cached.value, cached: true };
@@ -216,6 +218,9 @@ export function createLangfusePromptProvider({
         ? AbortSignal.any([context.signal, timeoutSignal])
         : timeoutSignal;
 
+      const activity = activeRequests.get(key) ?? { count: 0 };
+      activity.count++;
+      activeRequests.set(key, activity);
       try {
         const response = await fetch(promptUrl(destination, reference.name, reference.version), {
           headers: mergeHeaders(destination.headers, {
@@ -254,10 +259,15 @@ export function createLangfusePromptProvider({
                 502,
                 true,
               );
-        if (normalized.retryable && cached) {
-          return { ...cached.value, cached: true };
+        const fallback = cache.get(key) ?? cached;
+        if (normalized.retryable && fallback) {
+          return { ...fallback.value, cached: true };
         }
         throw normalized;
+      } finally {
+        if (--activity.count === 0) {
+          activeRequests.delete(key);
+        }
       }
     },
   };

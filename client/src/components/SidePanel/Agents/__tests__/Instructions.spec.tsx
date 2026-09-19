@@ -63,6 +63,50 @@ function InstructionsHarness({
 }
 
 describe('Agent Instructions', () => {
+  it('allows unrelated edits when the unchanged saved prompt is inaccessible', async () => {
+    const onSubmit = jest.fn();
+    render(
+      <InstructionsHarness
+        defaultValues={{
+          id: 'agent-1',
+          instruction_prompt: {
+            source: 'librechat',
+            promptId: 'inaccessible',
+            name: 'Protected',
+          },
+        }}
+        onSubmit={onSubmit}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_save' }));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0].instruction_prompt.promptId).toBe('inaccessible');
+  });
+
+  it('validates a changed prompt on an existing agent', async () => {
+    HTMLElement.prototype.scrollIntoView = jest.fn();
+    const onSubmit = jest.fn();
+    mockPromptGroups.push({ _id: 'other', name: 'Other prompt' });
+    render(
+      <InstructionsHarness
+        defaultValues={{
+          id: 'agent-1',
+          instruction_prompt: {
+            source: 'librechat',
+            promptId: 'inaccessible',
+            name: 'Protected',
+          },
+        }}
+        onSubmit={onSubmit}
+      />,
+    );
+    fireEvent.click(screen.getByRole('combobox', { name: 'com_agents_prompt_select' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Other prompt' }));
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_save' }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText('com_agents_prompt_missing')).toBeVisible();
+  });
+
   beforeEach(() => {
     mockPreview.mockClear();
     mockPromptGroups.length = 0;
