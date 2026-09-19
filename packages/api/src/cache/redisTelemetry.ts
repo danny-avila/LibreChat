@@ -8,6 +8,7 @@ import {
   type RedisOperationStatus,
 } from '~/app/metrics';
 
+import { isEvalshaFallbackError } from './redisScript';
 const REDIS_CACHE_METHODS = [
   'clear',
   'delete',
@@ -227,9 +228,7 @@ export async function observeRedisOperation<T>(
     return result;
   } catch (error) {
     status =
-      redisOperation === 'evalsha' && error instanceof Error && error.message.includes('NOSCRIPT')
-        ? 'success'
-        : 'error';
+      redisOperation === 'evalsha' && isEvalshaFallbackError(error) ? 'success' : 'error';
     throw error;
   } finally {
     const durationSeconds = Number(process.hrtime.bigint() - startedAt) / 1_000_000_000;

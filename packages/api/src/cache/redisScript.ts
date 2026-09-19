@@ -15,17 +15,19 @@ function scriptSha(script: string): string {
   }
   return sha;
 }
-
 export function isNoScriptError(error: unknown): boolean {
   return error instanceof Error && error.message.includes('NOSCRIPT');
 }
-function isRedisScriptResult(value: unknown): value is RedisScriptResult {
+
+export function isEvalshaFallbackError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const message = error.message.toUpperCase();
   return (
-    value == null ||
-    typeof value === 'string' ||
-    typeof value === 'boolean' ||
-    typeof value === 'number' ||
-    (Array.isArray(value) && value.every(isRedisScriptResult))
+    message.includes('NOSCRIPT') ||
+    (message.includes('NOPERM') && message.includes('EVALSHA')) ||
+    (message.includes('UNKNOWN COMMAND') && message.includes('EVALSHA'))
   );
 }
 
@@ -42,19 +44,11 @@ export async function evalScript(
   ...args: RedisScriptArg[]
 ): Promise<RedisScriptResult> {
   try {
-    const result = await client.evalsha(scriptSha(script), numberOfKeys, ...args);
-    if (!isRedisScriptResult(result)) {
-      throw new TypeError('Redis script returned an unsupported result');
-    }
-    return result;
+    return (await client.evalsha(scriptSha(script), numberOfKeys, ...args)) as RedisScriptResult;
   } catch (error) {
-    if (!isNoScriptError(error)) {
+    if (!isEvalshaFallbackError(error)) {
       throw error;
     }
-    const result = await client.eval(script, numberOfKeys, ...args);
-    if (!isRedisScriptResult(result)) {
-      throw new TypeError('Redis script returned an unsupported result');
-    }
-    return result;
+    return (await client.eval(script, numberOfKeys, ...args)) as RedisScriptResult;
   }
 }
