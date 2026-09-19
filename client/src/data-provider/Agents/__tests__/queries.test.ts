@@ -4,7 +4,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { dataService, QueryKeys, EModelEndpoint, PermissionBits } from 'librechat-data-provider';
 import type { AgentListResponse } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import { defaultAgentParams, useListAgentsQuery } from '../queries';
+import {
+  defaultAgentParams,
+  useListAgentsQuery,
+  useAgentInstructionPromptPreview,
+} from '../queries';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -13,6 +17,7 @@ jest.mock('librechat-data-provider', () => {
     dataService: {
       ...actual.dataService,
       listAgents: jest.fn(),
+      previewAgentInstructionPrompt: jest.fn(),
     },
   };
 });
@@ -87,5 +92,39 @@ describe('useListAgentsQuery', () => {
     expect(listAgents).toHaveBeenLastCalledWith(expect.objectContaining({ cursor: 'cursor-1' }));
     expect(result.current.data?.data.map((agent) => agent.id)).toEqual(['a', 'b', 'c']);
     expect(result.current.data?.has_more).toBe(false);
+  });
+});
+
+describe('instruction prompt preview cache', () => {
+  it('keeps the same prompt in different destinations in separate cache entries', async () => {
+    const preview = jest.mocked(dataService.previewAgentInstructionPrompt);
+    preview
+      .mockResolvedValueOnce({ source: 'langfuse', name: 'policy', version: 3 })
+      .mockResolvedValueOnce({ source: 'langfuse', name: 'policy', version: 7 });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result, rerender } = renderHook(
+      ({ destinationId }) =>
+        useAgentInstructionPromptPreview(
+          'policy',
+          undefined,
+          { staleTime: Infinity },
+          destinationId,
+        ),
+      { wrapper: createWrapper(queryClient), initialProps: { destinationId: 'a'.repeat(64) } },
+    );
+    await waitFor(() => expect(result.current.data?.version).toBe(3));
+    rerender({ destinationId: 'b'.repeat(64) });
+    await waitFor(() => expect(result.current.data?.version).toBe(7));
+    expect(preview).toHaveBeenLastCalledWith(
+      'policy',
+      undefined,
+      expect.any(AbortSignal),
+      'b'.repeat(64),
+    );
+    expect(preview).toHaveBeenCalledTimes(2);
+    rerender({ destinationId: 'a'.repeat(64) });
+    await waitFor(() => expect(result.current.data?.version).toBe(3));
+    expect(preview).toHaveBeenCalledTimes(2);
+    queryClient.clear();
   });
 });

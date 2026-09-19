@@ -4,6 +4,7 @@ import {
   Permissions,
   PermissionTypes,
   ResourceType,
+  removeNullishValues,
 } from 'librechat-data-provider';
 import type { IRole, IUser, SystemCapability } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
@@ -22,6 +23,38 @@ type AgentUpdateHandler = (
 ) => Promise<Response | void> | Response | void;
 
 type AgentManagementRecord = AgentManagementProjectionSource & { _id: Types.ObjectId };
+
+/**
+ * Removes omitted update fields while preserving the explicit null values that
+ * clear nullable agent settings. Persistence semantics belong in TypeScript,
+ * leaving the legacy controller responsible only for request wiring.
+ */
+export function normalizeAgentUpdateData(
+  validatedData: Record<string, unknown>,
+): Record<string, unknown> {
+  const {
+    avatar,
+    code_environment_id: codeEnvironmentId,
+    git_identity: gitIdentity,
+    instruction_prompt: instructionPrompt,
+    _id: _ignoredId,
+    ...rest
+  } = validatedData;
+  const updateData = removeNullishValues(rest) as Record<string, unknown>;
+  if (codeEnvironmentId !== undefined) {
+    updateData.code_environment_id = codeEnvironmentId;
+  }
+  if (gitIdentity !== undefined) {
+    updateData.git_identity = gitIdentity;
+  }
+  if (instructionPrompt !== undefined) {
+    updateData.instruction_prompt = instructionPrompt;
+  }
+  if (avatar === null) {
+    updateData.avatar = null;
+  }
+  return updateData;
+}
 
 export interface AgentManagementUpdateDeps {
   getRoleByName: (roleName: string, fieldsToSelect?: string | string[]) => Promise<IRole | null>;
@@ -50,7 +83,7 @@ function sendError(
 }
 
 function mapUpdateStatus(status: number): Parameters<typeof mapAgentManagementError>[0] {
-  if (status === 400 || status === 409) {
+  if (status === 400 || status === 409 || status === 422) {
     return 'invalid_request';
   }
   if (status === 401 || status === 403) {

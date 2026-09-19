@@ -19,6 +19,9 @@ const mockFormatAgentMessages = jest.fn(() => ({
 const mockStripActivityLabelParts = jest.fn((payload) =>
   jest.requireActual('@librechat/api').stripActivityLabelParts(payload),
 );
+const mockInstructionPromptResolver = { resolve: jest.fn() };
+
+jest.mock('~/server/services/Agents/instructionPrompts', () => mockInstructionPromptResolver);
 
 const { Providers } = require('@librechat/agents');
 const { Constants, ContentTypes, EModelEndpoint, ErrorTypes } = require('librechat-data-provider');
@@ -219,6 +222,7 @@ jest.mock('@librechat/api', () => ({
   recordCollectedUsage: (...args) => mockRecordCollectedUsage(...args),
   getAgentCheckpointer: mockGetAgentCheckpointer,
   hasDurableAgentInterruptCheckpoint: (...args) => mockHasDurableAgentInterruptCheckpoint(...args),
+  resolveAgentInstructionPromptError: jest.fn(),
   stripActivityLabelParts: (...args) => mockStripActivityLabelParts(...args),
 }));
 
@@ -8257,6 +8261,8 @@ describe('AgentClient - titleConvo', () => {
       mockCreateMemoryProcessor.mockResolvedValue([undefined, jest.fn()]);
 
       client = new AgentClient(mockOptions);
+      const abortController = new AbortController();
+      client.abortController = abortController;
       client.conversationId = 'convo-123';
       client.responseMessageId = 'response-123';
 
@@ -8266,8 +8272,9 @@ describe('AgentClient - titleConvo', () => {
       expect(mockInitializeAgent).toHaveBeenCalledWith(
         expect.objectContaining({
           agent: mockAgent,
+          signal: abortController.signal,
         }),
-        expect.any(Object),
+        expect.objectContaining({ instructionPromptResolver: mockInstructionPromptResolver }),
       );
     });
 

@@ -219,6 +219,21 @@ describe('Agent Management contract', () => {
       expect(response).not.toHaveProperty('mcpServerNames');
       expect(response).not.toHaveProperty('is_promoted');
     });
+    it('redacts compatibility snapshots from prompt-backed responses', () => {
+      const instructionPrompt = {
+        source: 'langfuse' as const,
+        name: 'protected-policy',
+        destinationId: 'a'.repeat(64),
+      };
+      const response = projectAgentManagementResponse({
+        ...persistedAgent,
+        instructions: 'protected snapshot',
+        instruction_prompt: instructionPrompt,
+      });
+
+      expect(response.instructions).toBeUndefined();
+      expect(response.instruction_prompt).toEqual(instructionPrompt);
+    });
 
     it('omits legacy string avatars that are not part of the management contract', () => {
       const response = projectAgentManagementResponse({

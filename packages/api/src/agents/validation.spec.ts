@@ -41,6 +41,60 @@ describe('agent Git identity validation', () => {
   });
 });
 
+describe('agent instruction prompt validation', () => {
+  const base = { provider: 'openAI', model: 'gpt-4o-mini', tools: [] };
+
+  it('accepts latest and pinned LibreChat prompt references', () => {
+    expect(
+      agentCreateSchema.parse({
+        ...base,
+        instruction_prompt: {
+          source: 'librechat',
+          promptId: 'group-1',
+          name: 'Support policy',
+        },
+      }).instruction_prompt,
+    ).toEqual({
+      source: 'librechat',
+      promptId: 'group-1',
+      name: 'Support policy',
+    });
+    expect(
+      agentUpdateSchema.safeParse({
+        instruction_prompt: {
+          source: 'librechat',
+          promptId: 'group-1',
+          name: 'Support policy',
+          version: 2,
+          versionId: 'prompt-2',
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  it('accepts a Langfuse reference and an explicit clear', () => {
+    expect(
+      agentUpdateSchema.parse({
+        instruction_prompt: { source: 'langfuse', name: 'support-policy', version: 3 },
+      }).instruction_prompt,
+    ).toEqual({ source: 'langfuse', name: 'support-policy', version: 3 });
+    expect(agentUpdateSchema.parse({ instruction_prompt: null })).toEqual({
+      instruction_prompt: null,
+    });
+  });
+
+  it.each([
+    { source: 'librechat', promptId: '', name: 'Policy' },
+    { source: 'langfuse', name: '' },
+    { source: 'langfuse', name: 'Policy', version: 0 },
+    { source: 'librechat', promptId: 'group-1', name: 'Policy', version: 1 },
+    { source: 'librechat', promptId: 'group-1', name: 'Policy', versionId: 'prompt-1' },
+    { source: 'unknown', name: 'Policy' },
+  ])('rejects an invalid reference: %j', (instruction_prompt) => {
+    expect(agentCreateSchema.safeParse({ ...base, instruction_prompt }).success).toBe(false);
+  });
+});
+
 describe('agentSubagentsSchema', () => {
   const graph = {
     type: 'research_team',

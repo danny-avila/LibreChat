@@ -8,7 +8,7 @@ import {
 import type { IRole, IUser } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { AgentManagementUpdateDeps } from './updates';
-import { createAgentManagementUpdateHandler } from './updates';
+import { createAgentManagementUpdateHandler, normalizeAgentUpdateData } from './updates';
 
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
@@ -227,6 +227,27 @@ describe('Agent Management update handler', () => {
     expect(response.status).toHaveBeenCalledWith(500);
     expect(response.json).toHaveBeenCalledWith({
       error: { code: 'internal_error', message: 'Internal server error' },
+    });
+  });
+});
+describe('normalizeAgentUpdateData', () => {
+  it('preserves explicit clears for nullable agent settings', () => {
+    expect(
+      normalizeAgentUpdateData({
+        _id: 'ignored',
+        name: 'Updated agent',
+        description: null,
+        avatar: null,
+        code_environment_id: null,
+        git_identity: null,
+        instruction_prompt: null,
+      }),
+    ).toEqual({
+      name: 'Updated agent',
+      avatar: null,
+      code_environment_id: null,
+      git_identity: null,
+      instruction_prompt: null,
     });
   });
 });

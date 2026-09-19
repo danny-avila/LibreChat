@@ -59,6 +59,73 @@ const createForm = (): AgentForm => ({
 });
 
 describe('composeAgentUpdatePayload', () => {
+  it('omits unchanged referenced instructions when saving unrelated edits', () => {
+    const form = createForm();
+    form.name = 'Renamed agent';
+    form.instruction_prompt = {
+      source: 'librechat',
+      promptId: 'group-1',
+      name: 'Protected prompt',
+    };
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123', undefined, true, false);
+    expect(payload.name).toBe('Renamed agent');
+    expect(payload).not.toHaveProperty('instructions');
+    expect(payload).not.toHaveProperty('instruction_prompt');
+  });
+  it('still validates an explicitly changed reference by sending it to the server', () => {
+    const form = createForm();
+    form.instruction_prompt = { source: 'librechat', promptId: 'group-2', name: 'New prompt' };
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123', undefined, true, true);
+    expect(payload.instruction_prompt).toEqual(form.instruction_prompt);
+  });
+  it('includes a reference when creating an agent even if the form was prefilled', () => {
+    const form = createForm();
+    form.instruction_prompt = { source: 'langfuse', name: 'New prompt' };
+    const { payload } = composeAgentUpdatePayload(form, undefined, undefined, true, false);
+    expect(payload.instruction_prompt).toEqual(form.instruction_prompt);
+  });
+
+  it('clears a stored reference when inline instructions are selected', () => {
+    const form = createForm();
+    form.instructions = 'Inline instructions';
+    form.instruction_prompt = undefined;
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.instructions).toBe('Inline instructions');
+    expect(payload.instruction_prompt).toBeNull();
+  });
+
+  it('clears stale inline text when a prompt reference is selected', () => {
+    const form = createForm();
+    form.instructions = 'Old inline instructions';
+    form.instruction_prompt = {
+      source: 'langfuse',
+      name: 'support-policy',
+      version: 2,
+    };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123');
+
+    expect(payload.instructions).toBe('');
+    expect(payload.instruction_prompt).toEqual(form.instruction_prompt);
+  });
+
+  it('omits an existing prompt reference when the rollout capability is disabled', () => {
+    const form = createForm();
+    form.instructions = '';
+    form.instruction_prompt = {
+      source: 'langfuse',
+      name: 'support-policy',
+      version: 2,
+    };
+
+    const { payload } = composeAgentUpdatePayload(form, 'agent_123', undefined, false);
+
+    expect(payload.instructions).toBeUndefined();
+    expect(payload.instruction_prompt).toBeUndefined();
+  });
+
   it('includes avatar: null when resetting a persistent agent', () => {
     const form = createForm();
     form.avatar_action = 'reset';

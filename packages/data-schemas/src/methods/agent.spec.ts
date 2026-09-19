@@ -4569,10 +4569,19 @@ describe('Agent Methods', () => {
         { name: 'Updated Name', description: 'Updated description' },
       );
 
-      const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
+      const instructionPrompt = {
+        source: 'langfuse' as const,
+        name: 'restored-policy',
+      };
+      const revertedAgent = await revertAgentVersion({ id: agentId }, 0, {
+        instructions: 'refreshed snapshot',
+        instruction_prompt: instructionPrompt,
+      });
 
       expect(revertedAgent.name).toBe('Original Name');
       expect(revertedAgent.description).toBe('Original description');
+      expect(revertedAgent.instructions).toBe('refreshed snapshot');
+      expect(revertedAgent.instruction_prompt).toEqual(instructionPrompt);
       expect(revertedAgent.author.toString()).toBe(authorId.toString());
     });
 

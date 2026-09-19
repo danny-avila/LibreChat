@@ -151,6 +151,7 @@ const {
   appendYouTubeVideoParts,
   resolveGoogleVideoError,
   resolveLangChainError,
+  resolveAgentInstructionPromptError,
   resolveYouTubeInjectionConfig,
   decrementPendingRequest,
   maybePrewarmCodeSandbox,
@@ -220,6 +221,7 @@ const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
 const { getMCPServerTools } = require('~/server/services/Config');
 const { getAccessibleMCPServers } = require('~/server/services/MCP');
+const instructionPromptResolver = require('~/server/services/Agents/instructionPrompts');
 const BaseClient = require('~/app/clients/BaseClient');
 const { getMCPManager } = require('~/config');
 const db = require('~/models');
@@ -337,6 +339,10 @@ function getUserFacingRequestError(baseMessage, error, appConfig) {
   /** Carries no model or user content, so it is safe under every filter. */
   if (error?.name === 'ManualSummarizationSkippedError') {
     return JSON.stringify({ type: ErrorTypes.COMPACTION_SKIPPED, reason: error.reason });
+  }
+  const instructionPromptError = resolveAgentInstructionPromptError(error);
+  if (instructionPromptError != null) {
+    return instructionPromptError;
   }
   const protectionEnabled = hasModelBoundContentProtection(
     appConfig?.filters,
@@ -3305,6 +3311,7 @@ class AgentClient extends BaseClient {
       {
         req: this.options.req,
         res: this.options.res,
+        signal: this.abortController?.signal,
         agent: prelimAgent,
         allowedProviders,
         endpointOption: {
@@ -3325,6 +3332,7 @@ class AgentClient extends BaseClient {
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
+        instructionPromptResolver,
         getRoleByName: db.getRoleByName,
       },
     );
