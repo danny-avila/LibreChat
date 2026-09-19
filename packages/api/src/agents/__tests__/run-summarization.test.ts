@@ -1486,6 +1486,35 @@ describe('Azure deployment alias', () => {
     expect(parameters).toHaveProperty('promptCacheExplicit', undefined);
   });
 
+  it('withholds explicit cache controls a cross-provider summarizer asked for itself', async () => {
+    /**
+     * An Anthropic agent selecting a built-in OpenAI summarizer does not share
+     * the agent's provider, so the inherited half of this cleanup is empty —
+     * but the model gate is about what `gpt-4o` accepts, not about who the
+     * agent is. Leaving the configuration's own flag on sends body parameters
+     * OpenAI rejects outright, failing the compaction.
+     */
+    const agents = await callAndCapture({
+      agents: [
+        makeAgent({
+          provider: EModelEndpoint.anthropic,
+          endpoint: EModelEndpoint.anthropic,
+          model: 'claude-sonnet-4-5',
+          model_parameters: { model: 'claude-sonnet-4-5' },
+        }),
+      ],
+      summarizationConfig: {
+        provider: EModelEndpoint.openAI,
+        model: 'gpt-4o',
+        parameters: { streaming: false, promptCacheExplicit: true },
+      },
+    });
+
+    const summaryConfig = agents[0].summarizationConfig as Record<string, unknown>;
+    const parameters = summaryConfig.parameters as Record<string, unknown>;
+    expect(parameters).toHaveProperty('promptCacheExplicit', undefined);
+  });
+
   it('withholds inherited explicit cache controls from an unsupported summary model', async () => {
     const { llmConfig, configOptions } = getOpenAIConfig(
       'test-openai-key',

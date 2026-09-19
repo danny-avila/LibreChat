@@ -1547,7 +1547,17 @@ function shapeSummarizationConfig(
     typeof summaryWireModel === 'string'
       ? supportsExplicitPromptCache(summaryWireModel)
       : supportsExplicitPromptCache(model);
-  if (provider === fallbackProvider && !summarySupportsExplicitCache) {
+  /**
+   * Model capability, not inheritance. The block below clears an inherited
+   * value and one the summarization config set for itself, and only the
+   * inherited half depends on the summarizer sharing the agent's provider —
+   * `inheritedKwargs` is already undefined otherwise. Gating the whole check
+   * on a provider match let an Anthropic or Google agent select a built-in
+   * OpenAI summarizer, set `promptCacheExplicit` in its own parameters, and
+   * send the explicit controls to a model that rejects unknown body fields
+   * outright, failing the compaction this gate exists to protect.
+   */
+  if (!summarySupportsExplicitCache) {
     /**
      * Regardless of who asked for it. This is not a preference the
      * summarization configuration can outvote: a model that does not accept
