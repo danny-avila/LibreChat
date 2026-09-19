@@ -557,13 +557,19 @@ export class RedisEventTransport implements IEventTransport {
     }
 
     const batch = pending;
-    const [, encoded] = RedisEventTransport.buildPayloadParts({
+    const payload = JSON.stringify(event);
+    const [, envelopeSuffix] = RedisEventTransport.buildPayloadParts({
       type: EventTypes.CHUNK,
-      data: event,
       ...(generationId != null && { generationId }),
     });
-    batch.events.push(encoded);
-    batch.bytes += encoded.length;
+    batch.events.push(
+      payload === undefined ? envelopeSuffix : `,"data":${payload}${envelopeSuffix}`,
+    );
+    /** Match RedisJobStore's raw JSON length, excluding the publication envelope.
+     * Counting its wrapper would flush publications before their durable appends
+     * near the byte cap, letting a remote resume skip not-yet-durable events.
+     * Reuse the serialized payload so size accounting adds no second traversal. */
+    batch.bytes += payload?.length ?? 0;
     const receipt = new Promise<number | false | undefined>((resolve) => {
       batch.resolvers.push(resolve);
     });

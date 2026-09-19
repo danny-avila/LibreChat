@@ -1,4 +1,4 @@
-/* eslint jest/no-standalone-expect: ["error", { "additionalTestBlockFunctions": ["testRedis"] }] */
+/* eslint jest/no-standalone-expect: ["error", { "additionalTestBlockFunctions": ["testRedis", "testRedis.each"] }] */
 import type { Redis, Cluster } from 'ioredis';
 import type { emitChunkWithReceipt as EmitChunkWithReceipt } from '~/stream/internal/chunkPublication';
 import type { ServerSentEvent } from '~/types';
@@ -161,6 +161,103 @@ describe.each([undefined, '25'])('Delta coalescing integration (window %s)', (wi
       rawSubscriber.disconnect();
     },
     15000,
+  );
+
+  testRedis.each([
+    { name: 'below byte cap, untagged', offset: -1, tagged: false, count: 2, character: 'x' },
+    { name: 'at byte cap, untagged', offset: 0, tagged: false, count: 2, character: 'x' },
+    { name: 'above byte cap, untagged', offset: 1, tagged: false, count: 2, character: 'x' },
+    { name: 'below byte cap, tagged', offset: -1, tagged: true, count: 2, character: 'x' },
+    { name: 'at byte cap, tagged', offset: 0, tagged: true, count: 2, character: 'x' },
+    { name: 'above byte cap, tagged', offset: 1, tagged: true, count: 2, character: 'x' },
+    { name: 'below byte cap, non-ASCII', offset: -1, tagged: true, count: 2, character: '雪' },
+    { name: 'at event cap', offset: -1000, tagged: true, count: 64, character: 'x' },
+  ])(
+    'aligns append and publication flushes $name',
+    async ({ offset, tagged, count, character }) => {
+      const { RedisEventTransport, emitChunkWithReceipt } = await importFreshTransportModules();
+      const { RedisJobStore } = await import('../implementations/RedisJobStore');
+      const { MAX_COALESCED_BYTES, MAX_COALESCED_EVENTS } = await import('../internal/coalescing');
+      const store = new RedisJobStore(ioredisClient!);
+      const transport = new RedisEventTransport(
+        ioredisClient!,
+        (ioredisClient as Redis).duplicate(),
+      );
+      const reader = (ioredisClient as Redis).duplicate();
+      const streamId = `coalesce-boundary-${Date.now()}`;
+      const job = await store.createJob(streamId, 'user-1', streamId);
+      await reader.ping();
+      const generationId = tagged ? job.createdAt : undefined;
+      const eventWithText = (text: string) => ({ event: 'on_message_delta', data: { text } });
+      const targetSize = MAX_COALESCED_BYTES + offset;
+      const emptySize = JSON.stringify(eventWithText('')).length;
+      const baseSize = Math.floor(targetSize / count);
+      const events = Array.from({ length: count }, (_, index) =>
+        eventWithText(
+          character.repeat(
+            (index === count - 1 ? targetSize - baseSize * (count - 1) : baseSize) - emptySize,
+          ),
+        ),
+      );
+      expect(events.reduce((size, event) => size + JSON.stringify(event).length, 0)).toBe(
+        targetSize,
+      );
+      const immediate = targetSize >= MAX_COALESCED_BYTES || count >= MAX_COALESCED_EVENTS;
+      const evalSpy = jest.spyOn(ioredisClient!, 'eval');
+      const appends: Array<Promise<boolean>> = [];
+      const publications: Array<ReturnType<typeof emitChunkWithReceipt>> = [];
+
+      /** Freeze only timers: real Redis I/O continues, while scheduler speed cannot
+       * conceal one coalescer flushing before the other's window expires. */
+      jest.useFakeTimers({
+        doNotFake: [
+          'Date',
+          'hrtime',
+          'nextTick',
+          'performance',
+          'queueMicrotask',
+          'setImmediate',
+          'clearImmediate',
+        ],
+      });
+      try {
+        for (const event of events) {
+          appends.push(
+            store.appendChunk(streamId, event, generationId, undefined, { coalesce: true }),
+          );
+          publications.push(
+            emitChunkWithReceipt(transport, streamId, event, generationId, { coalesce: true }),
+          );
+        }
+        /** Append script has eight keys; publication has three. Both must issue on
+         * the same boundary, with durable append first, or neither may issue yet. */
+        expect(evalSpy.mock.calls.map((call) => call[1])).toEqual(immediate ? [8, 3] : []);
+        if (!immediate) {
+          expect(await reader.xlen(`stream:{${streamId}}:chunks`)).toBe(0);
+          expect(await reader.get(`stream:{${streamId}}:seq`)).toBeNull();
+          await jest.advanceTimersByTimeAsync(25);
+        }
+        expect(await Promise.all(appends)).toEqual(Array(count).fill(true));
+        expect(await Promise.all(publications)).toEqual(Array.from({ length: count }, (_, i) => i));
+        expect(evalSpy.mock.calls.map((call) => call[1])).toEqual([8, 3]);
+
+        /** A different connection reads only durable Redis state, never the owner's
+         * local pending buffer. Its log and publication frontier must agree. */
+        const entries = await reader.xrange(`stream:{${streamId}}:chunks`, '-', '+');
+        expect(
+          entries.map(([, fields]) => JSON.parse(fields[fields.indexOf('event') + 1])),
+        ).toEqual(events);
+        expect(await reader.get(`stream:{${streamId}}:seq`)).toBe(String(count));
+        await jest.advanceTimersByTimeAsync(25);
+        expect(evalSpy).toHaveBeenCalledTimes(2);
+      } finally {
+        evalSpy.mockRestore();
+        transport.destroy();
+        await store.destroy();
+        reader.disconnect();
+        jest.useRealTimers();
+      }
+    },
   );
 
   testRedis('preserves JSON payloads and generation tags in coalesced legacy frames', async () => {

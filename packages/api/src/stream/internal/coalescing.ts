@@ -2,6 +2,8 @@
 const MAX_COALESCE_WINDOW_MS = 1000;
 /** Coalesced-batch safety caps: a full buffer flushes immediately, ahead of the window. */
 export const MAX_COALESCED_EVENTS = 64;
+/** Shared raw-event JSON string-length budget, excluding transport envelopes.
+ * Keep both coalescers on the same accounting basis, including for non-ASCII JSON. */
 export const MAX_COALESCED_BYTES = 128 * 1024;
 
 /**
