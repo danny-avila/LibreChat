@@ -5,11 +5,15 @@ import type { StructuredToolInterface } from '@librechat/agents/langchain/tools'
 import type { FiltersConfig } from 'librechat-data-provider';
 import type { ToolExecuteOptions } from './handlers';
 import {
+  BACKGROUND_TASK_ABORT_GRACE_MS,
+  BACKGROUND_TASK_TIMEOUT_MS,
+  BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS,
+} from './backgroundCompletion';
+import {
   backgroundTaskRegistry,
   runCheckBackgroundTask,
   CHECK_BACKGROUND_TASK_NAME,
 } from './background';
-import { BACKGROUND_TASK_ABORT_GRACE_MS, BACKGROUND_TASK_TIMEOUT_MS } from './backgroundCompletion';
 import { BACKGROUND_TOOL_INVOCATION_CONFIG_KEY } from './invocation';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { createToolExecuteHandler } from './handlers';
@@ -821,6 +825,64 @@ describe('createToolExecuteHandler — background tool calls', () => {
       jest.advanceTimersByTime(3 * 60 * 1000);
       await flushMicrotasks();
       expect(renew).toHaveBeenCalledTimes(renewalsBefore);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('stops producer heartbeats after the completion lease is lost', async () => {
+    jest.useFakeTimers({ doNotFake: ['setImmediate'] });
+    try {
+      let finishTool: ((value: { content: string }) => void) | undefined;
+      const tool = {
+        name: 'search_mcp_docs',
+        description: 'search docs',
+        schema: z.object({ q: z.string() }),
+        invoke: jest.fn(
+          () =>
+            new Promise<{ content: string }>((resolve) => {
+              finishTool = resolve;
+            }),
+        ),
+      } as unknown as StructuredToolInterface;
+      const renew = jest.fn(async () => false);
+      const handler = createToolExecuteHandler({
+        loadTools: async () => ({ loadedTools: [tool] }),
+        backgroundToolCompletion: {
+          preregister: jest.fn(async () => ({
+            renew,
+            retire: jest.fn(async () => true),
+          })),
+          persist: jest.fn(async () => true),
+          claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
+        },
+      });
+
+      await runBatch(handler, {
+        toolCalls: [
+          {
+            id: 'call-lost-producer-lease',
+            name: tool.name,
+            args: { q: 'lease', run_in_background: true },
+            stepId: 'step-lost-producer-lease',
+          },
+        ],
+        agentId: 'agent_parent_1',
+        configurable: buildConfig([tool.name]),
+        metadata: { thread_id: 'exec_convo', run_id: 'response-lost-producer-lease' },
+      });
+
+      jest.advanceTimersByTime(BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS);
+      await flushMicrotasks();
+      expect(renew).toHaveBeenCalledTimes(1);
+
+      jest.advanceTimersByTime(BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS * 6);
+      await flushMicrotasks();
+      expect(renew).toHaveBeenCalledTimes(1);
+
+      finishTool?.({ content: 'settled after lease loss' });
+      await flushMicrotasks();
+      await flushMicrotasks();
     } finally {
       jest.useRealTimers();
     }
