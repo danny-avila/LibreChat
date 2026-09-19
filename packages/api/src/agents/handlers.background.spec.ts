@@ -147,9 +147,13 @@ describe('createToolExecuteHandler — background tool calls', () => {
   it('pre-registers an ordinary completion before invoke and persists its terminal receipt', async () => {
     const events: string[] = [];
     const retire = jest.fn(async () => true);
+    const persistResult = jest.fn(async () => {
+      events.push('receipt');
+      return true;
+    });
     const preregister = jest.fn(async () => {
       events.push('preregister');
-      return { renew: jest.fn(async () => true), retire };
+      return { renew: jest.fn(async () => true), persistResult, retire };
     });
     const persist = jest.fn(async () => {
       events.push('persist');
@@ -198,7 +202,7 @@ describe('createToolExecuteHandler — background tool calls', () => {
     );
     expect(JSON.parse(dispatch.content).message).toContain('host will resume you');
     await flushMicrotasks();
-    expect(events).toEqual(['preregister', 'invoke', 'persist']);
+    expect(events).toEqual(['preregister', 'invoke', 'receipt', 'persist']);
     expect(preregister).toHaveBeenCalledWith(
       expect.objectContaining({
         toolCallId: 'call-wakeup',
@@ -216,6 +220,9 @@ describe('createToolExecuteHandler — background tool calls', () => {
           status: 'completed',
         }),
       }),
+    );
+    expect(persistResult).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'completed', output: 'durable result' }),
     );
     expect(retire).not.toHaveBeenCalled();
   });
@@ -262,6 +269,49 @@ describe('createToolExecuteHandler — background tool calls', () => {
     expect(persist).toHaveBeenCalledWith(
       expect.objectContaining({ output: JSON.stringify(structuredContent) }),
     );
+  });
+
+  it('keeps automatic delivery live when only the independent receipt persists', async () => {
+    const retire = jest.fn(async () => true);
+    const persistResult = jest.fn(async () => true);
+    const tool = {
+      name: 'search_mcp_docs',
+      description: 'search docs',
+      schema: z.object({ q: z.string() }),
+      invoke: jest.fn(async () => ({ content: 'available before parent row' })),
+    } as unknown as StructuredToolInterface;
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister: jest.fn(async () => ({
+          renew: jest.fn(async () => true),
+          persistResult,
+          retire,
+        })),
+        persist: jest.fn(async () => false),
+        claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
+      },
+    });
+
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-independent-receipt',
+          name: tool.name,
+          args: { q: 'receipt', run_in_background: true },
+          stepId: 'step-independent-receipt',
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-independent-receipt' },
+    });
+    await flushMicrotasks();
+
+    expect(persistResult).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'completed', output: 'available before parent row' }),
+    );
+    expect(retire).not.toHaveBeenCalled();
   });
 
   it('keeps polling guidance when the completion adapter skips registration', async () => {

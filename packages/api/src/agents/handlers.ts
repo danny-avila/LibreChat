@@ -5794,6 +5794,21 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     task.id,
                   );
                   const backgroundTask = resolveBackgroundTask();
+                  let durableReceiptReady = false;
+                  if (completionAdmission?.persistResult != null) {
+                    try {
+                      durableReceiptReady = await completionAdmission.persistResult({
+                        status: params.status,
+                        output: truncateMiddle(params.output ?? localTask?.result ?? '', 24 * 1024),
+                        settledAt: backgroundTask.settledAt,
+                      });
+                    } catch (receiptError) {
+                      logger.warn(
+                        `[background] Failed to persist independent result receipt for task ${task.id}:`,
+                        receiptError,
+                      );
+                    }
+                  }
                   const retireFailedPersistence = async (
                     reason: string,
                     certainty: 'definite' | 'ambiguous',
@@ -5870,17 +5885,19 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         backgroundTask,
                         resolveBackgroundTask,
                       });
-                      if (!deliveryReady) {
+                      if (!deliveryReady && !durableReceiptReady) {
                         await retireFailedPersistence(
                           'background tool result was not persisted',
                           'definite',
                         );
                       }
                     } catch (persistError) {
-                      await retireFailedPersistence(
-                        'background tool result persistence failed',
-                        isContentFilterError(persistError) ? 'definite' : 'ambiguous',
-                      );
+                      if (!durableReceiptReady) {
+                        await retireFailedPersistence(
+                          'background tool result persistence failed',
+                          isContentFilterError(persistError) ? 'definite' : 'ambiguous',
+                        );
+                      }
                       logger.warn(
                         `[background] Failed to persist result for task ${task.id}:`,
                         persistError,
@@ -5922,7 +5939,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         task.id,
                         params.artifact,
                       );
-                      if (completionPreregistered) {
+                      if (completionPreregistered && !durableReceiptReady) {
                         await retireFailedPersistence(
                           'background code result had no durable message anchor',
                           'definite',
@@ -5930,7 +5947,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       }
                       return;
                     }
-                    if (persisted.deliveryReady === false) {
+                    if (persisted.deliveryReady === false && !durableReceiptReady) {
                       await retireFailedPersistence(
                         'background code result was not persisted',
                         'definite',
@@ -5943,7 +5960,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       persisted.attachments,
                     );
                   } catch (persistError) {
-                    if (completionPreregistered) {
+                    if (completionPreregistered && !durableReceiptReady) {
                       await retireFailedPersistence(
                         'background code result persistence failed',
                         isContentFilterError(persistError) ? 'definite' : 'ambiguous',

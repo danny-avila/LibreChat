@@ -77,6 +77,15 @@ export interface AgentTriggerDeliveryFailure {
   status?: number;
 }
 
+/** Private terminal result produced before a background-completion delivery is
+ * resolved. It is independent of the parent message projection because a fast
+ * task can settle before that response row exists. */
+export interface AgentBackgroundToolResultReceipt {
+  status: 'completed' | 'error' | 'cancelled';
+  output: string;
+  settledAt: Date;
+}
+
 export interface AgentTriggerDeliveryHistoryEntry {
   attempt: number;
   outcome: AgentTriggerDeliveryOutcome;
@@ -108,6 +117,8 @@ export interface IAgentTriggerDelivery {
   capabilityClaimToken?: string;
   /** Durable liveness evidence for process-owned capability work. */
   producerLeaseUntil?: Date;
+  /** Durable source of truth for a background completion. */
+  backgroundToolResult?: AgentBackgroundToolResultReceipt;
   attempts: number;
   availableAt: Date;
   envelopeBytes?: number;

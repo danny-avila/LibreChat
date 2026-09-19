@@ -112,6 +112,7 @@ export interface AgentTriggerDeliveryPersistence {
   completeAgentTriggerDelivery: AgentTriggerDeliveryStore['complete'];
   retireAgentTriggerDelivery: AgentTriggerDeliveryMethods['retireAgentTriggerDelivery'];
   renewAgentTriggerDeliveryProducerLease: AgentTriggerDeliveryMethods['renewAgentTriggerDeliveryProducerLease'];
+  persistAgentBackgroundToolResult?: AgentTriggerDeliveryMethods['persistAgentBackgroundToolResult'];
   retryAgentTriggerDelivery: AgentTriggerDeliveryStore['retry'];
   deadLetterAgentTriggerDelivery: AgentTriggerDeliveryStore['dead'];
   getAgentTriggerDelivery: (deliveryKey: string) => Promise<AgentTriggerStoredRecord | null>;
@@ -168,6 +169,15 @@ export interface AgentTriggerService {
     options?: { onlyIfUnclaimed?: boolean; onlyIfDead?: boolean },
   ) => Promise<boolean>;
   renewProducerLease: (deliveryKey: string, sourceId: string, leaseUntil: Date) => Promise<boolean>;
+  persistBackgroundToolResult: (input: {
+    deliveryKey: string;
+    sourceId: string;
+    result: {
+      status: 'completed' | 'error' | 'cancelled';
+      output: string;
+      settledAt: Date;
+    };
+  }) => Promise<boolean>;
   drainUser: (userId: string) => Promise<void>;
   prepareUserPurge: (userId: string, fenceStartedAt: Date, tenantId?: string) => Promise<void>;
   cancelUserPurge: (userId: string, fenceStartedAt: Date) => Promise<boolean>;
@@ -600,6 +610,11 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
           leaseUntil,
         }),
       ),
+    persistBackgroundToolResult: (input) =>
+      runAsSystem(async () => {
+        const persist = requireMethods().persistAgentBackgroundToolResult;
+        return persist == null ? false : persist(input);
+      }),
     drainUser,
     prepareUserPurge: (userId, fenceStartedAt, tenantId) =>
       runAsSystem(async () =>
