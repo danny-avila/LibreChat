@@ -115,6 +115,8 @@ export const MEILI_INDEX_SCHEMA_VERSION = 1;
 const explicitTemporaryFlagKey = 'meiliExplicitTemporaryFlag';
 const previouslyIndexedFlagKey = 'meiliPreviouslyIndexed';
 const meiliCleanupVersion = 1;
+/** Partial indexes reject `$exists: false` (`$not`); `$eq: null` matches missing or null. */
+const missingMeiliCleanupVersion = { $eq: null } as const;
 const meiliRequestTimeoutMs = 10_000;
 const meiliWriteMaxAttempts = 3;
 const meiliRetryBaseDelayMs = 250;
@@ -196,7 +198,7 @@ const buildExcludedIndexedQuery = (excludeFromIndexPath?: string): FilterQuery<u
     $or: [
       { _meiliIndex: true },
       { _meiliIndexAttempted: true },
-      { _meiliIndex: false, _meiliCleanupVersion: { $exists: false } },
+      { _meiliIndex: false, _meiliCleanupVersion: missingMeiliCleanupVersion },
     ],
   };
 };
@@ -995,7 +997,7 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
         partialFilterExpression: {
           [options.excludeFromIndexPath]: { $exists: true },
           _meiliIndex: { $eq: false },
-          _meiliCleanupVersion: { $exists: false },
+          _meiliCleanupVersion: missingMeiliCleanupVersion,
         },
       },
     );

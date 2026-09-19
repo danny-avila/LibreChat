@@ -863,6 +863,39 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(storedDoc?._meiliCleanupVersion).toBe(1);
   });
 
+  test('reconciles an excluded false marker with a null cleanup version', async () => {
+    const messageModel = createMessageModel(mongoose) as unknown as SchemaWithMeiliMethods;
+    await messageModel.deleteMany({});
+    const messageId = new mongoose.Types.ObjectId().toString();
+
+    await messageModel.collection.insertOne({
+      messageId,
+      conversationId: new mongoose.Types.ObjectId().toString(),
+      user: new mongoose.Types.ObjectId().toString(),
+      isCreatedByUser: true,
+      text: 'Excluded child with a null cleanup version',
+      subagentTask: {
+        attemptKey: 'null-cleanup-key',
+        status: 'completed',
+      },
+      _meiliIndex: false,
+      _meiliCleanupVersion: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+
+    const progressBefore = await messageModel.getSyncProgress();
+    await messageModel.cleanupExcludedMeiliIndex();
+    const progressAfter = await messageModel.getSyncProgress();
+    const storedDoc = await messageModel.collection.findOne({ messageId });
+
+    expect(progressBefore).toMatchObject({ pendingCleanup: 1, isComplete: false });
+    expect(progressAfter).toMatchObject({ pendingCleanup: 0, isComplete: true });
+    expect(mockDeleteDocuments).toHaveBeenCalledWith([messageId]);
+    expect(storedDoc?._meiliIndex).toBeUndefined();
+    expect(storedDoc?._meiliCleanupVersion).toBe(1);
+  });
+
   test('cleans an excluded child when an earlier Meili add was attempted but not acknowledged', async () => {
     const messageModel = createMessageModel(mongoose) as unknown as SchemaWithMeiliMethods;
     await messageModel.deleteMany({});
@@ -925,7 +958,7 @@ describe('Meilisearch Mongoose plugin', () => {
         partialFilterExpression: {
           subagentThread: { $exists: true },
           _meiliIndex: { $eq: false },
-          _meiliCleanupVersion: { $exists: false },
+          _meiliCleanupVersion: { $eq: null },
         },
       }),
     ]);
@@ -956,10 +989,50 @@ describe('Meilisearch Mongoose plugin', () => {
         partialFilterExpression: {
           subagentTask: { $exists: true },
           _meiliIndex: { $eq: false },
-          _meiliCleanupVersion: { $exists: false },
+          _meiliCleanupVersion: { $eq: null },
         },
       }),
     ]);
+  });
+
+  test('builds the excluded-document cleanup indexes', async () => {
+    const messageModel = createMessageModel(mongoose) as unknown as SchemaWithMeiliMethods;
+    const conversationModel = createConversationModel(
+      mongoose,
+    ) as unknown as SchemaWithMeiliMethods;
+
+    await messageModel.createIndexes();
+    await conversationModel.createIndexes();
+
+    const [messageIndexes, conversationIndexes] = await Promise.all([
+      messageModel.collection.indexes(),
+      conversationModel.collection.indexes(),
+    ]);
+
+    expect(messageIndexes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'meili_excluded_legacy_cleanup_v3',
+          partialFilterExpression: {
+            subagentTask: { $exists: true },
+            _meiliIndex: { $eq: false },
+            _meiliCleanupVersion: { $eq: null },
+          },
+        }),
+      ]),
+    );
+    expect(conversationIndexes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'meili_excluded_legacy_cleanup_v3',
+          partialFilterExpression: {
+            subagentThread: { $exists: true },
+            _meiliIndex: { $eq: false },
+            _meiliCleanupVersion: { $eq: null },
+          },
+        }),
+      ]),
+    );
   });
 
   test('sync w/ meili treats null isTemporary with no expiration like missing legacy fields', async () => {
