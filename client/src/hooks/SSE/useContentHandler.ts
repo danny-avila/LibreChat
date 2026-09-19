@@ -55,14 +55,14 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
           thread_id == null || msg.thread_id === thread_id ? msg : { ...msg, thread_id },
         );
       }
-      if (thread_id == null && responseThreadId != null) {
-        for (let i = messages.length - 1; i >= 0; i--) {
-          if (messages[i].thread_id != null && messages[i].thread_id !== responseThreadId) {
-            messages.splice(i, 1);
-          }
-        }
-      }
-      const userMessage = messages[messages.length - 1] as TMessage | undefined;
+      const parentMessageId =
+        cachedResponse?.parentMessageId ??
+        existingMessage?.parentMessageId ??
+        initialResponseMessage.parentMessageId;
+      const userMessage =
+        (parentMessageId != null
+          ? messages.find((message) => message.messageId === parentMessageId)
+          : undefined) ?? (messages[messages.length - 1] as TMessage | undefined);
 
       let response = cachedResponse;
       if (!response) {
