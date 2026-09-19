@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { CodeBridgeFetch } from './bridge';
 import {
+  ATTACHED_WORKSPACE_BASH_DESCRIPTION,
   ATTACHED_WORKSPACE_BASH_SCHEMA,
   buildAttachedWorkspaceBashSchema,
   createAttachedWorkspaceBashTool,
@@ -10,6 +11,31 @@ import {
   resolveAttachedWorkspaceCommandTimeoutMax,
   resolveAttachedWorkspaceQueueWaitMs,
 } from './command';
+
+describe('attached workspace Bash contract', () => {
+  test('distinguishes durable workspace files from per-call and operator-managed state', () => {
+    expect(ATTACHED_WORKSPACE_BASH_DESCRIPTION).toContain(
+      'Only registered-workspace files persist',
+    );
+    expect(ATTACHED_WORKSPACE_BASH_DESCRIPTION).toContain('Install project dependencies there');
+    expect(ATTACHED_WORKSPACE_BASH_DESCRIPTION).toContain('$HOME');
+    expect(ATTACHED_WORKSPACE_BASH_DESCRIPTION).toContain('/tmp, $TMPDIR');
+    expect(ATTACHED_WORKSPACE_BASH_DESCRIPTION).toContain('global/system packages');
+    expect(ATTACHED_WORKSPACE_BASH_DESCRIPTION).toContain('background processes do not survive');
+  });
+
+  test('keeps the command parameter persistence warning next to generated commands', () => {
+    expect(ATTACHED_WORKSPACE_BASH_SCHEMA).toMatchObject({
+      properties: {
+        command: {
+          description: expect.stringContaining(
+            'Only files written inside the workspace persist between calls',
+          ),
+        },
+      },
+    });
+  });
+});
 
 describe('programmatic Bash Git identity', () => {
   test('applies authorship before the SDK sends a programmatic script', async () => {
