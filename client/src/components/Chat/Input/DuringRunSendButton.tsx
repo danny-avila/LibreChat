@@ -28,11 +28,11 @@ type DuringRunSendButtonProps = {
 /**
  * The send button while a run is generating: it takes over the send/stop slot
  * (and `submitButtonRef`, so Enter's synthetic click routes here) whenever the
- * composer holds text — submitting steers or queues per the effective action.
+ * composer holds text: submitting steers or queues per the effective action.
  * Hovering it reveals the full action list with its shortcuts: steer, queue
  * (⌘/Ctrl+Enter routes to the non-default action), interrupt & steer
- * (⌘/Ctrl+Shift+Enter — stops writing now but keeps what is written), and
- * interrupt & send (⌥/Alt+Enter — discards the answer and starts over).
+ * (⌘/Ctrl+Shift+Enter: stops writing now but keeps what is written), and
+ * interrupt & send (⌥/Alt+Enter: discards the answer and starts over).
  * Clearing the composer restores the Stop button.
  */
 const DuringRunSendButton = React.memo(
@@ -125,9 +125,8 @@ const DuringRunSendButton = React.memo(
       label: localize('com_ui_steer'),
       kbd: steerKbd,
       icon: <Zap className="h-4 w-4 text-status-warning" aria-hidden="true" />,
-      // Gate on availability, not the default action — the row exists to
-      // override a queue-preferring default with an explicit steer.
-      disabled: !steering.canSteer,
+      // A staged reasoning choice is a queued full turn, not a live steer.
+      disabled: !steering.canSteer || steering.pendingReasoningOverride != null,
       onClick: () => runAction((text) => steering.steerFromComposer(text)),
     };
     const queueRow: ActionRow = {
@@ -143,11 +142,10 @@ const DuringRunSendButton = React.memo(
       label: localize('com_ui_interrupt_steer'),
       kbd: interruptSteerKbd,
       icon: <ZapOff className="h-4 w-4 text-status-warning" aria-hidden="true" />,
-      // Matches the standalone button's gate, and deliberately NOT
-      // `!canSteer` like the steer row above: `canSteer` is also false before
-      // a conversation exists, where `interruptSteer` falls back to interrupt
-      // & send and this row must stay live for the whole first turn.
-      disabled: steering.pausedOnApproval || !steering.canControlGeneration,
+      disabled:
+        steering.pausedOnApproval ||
+        !steering.canControlGeneration ||
+        steering.pendingReasoningOverride != null,
       onClick: () => runAction((text) => steering.interruptSteer(text)),
     };
     const interruptRow: ActionRow = {
@@ -172,7 +170,6 @@ const DuringRunSendButton = React.memo(
           <button
             ref={ref}
             aria-label={label}
-            id="during-run-send-button"
             disabled={!content || props.disabled === true}
             className={composerSubmitClasses()}
             data-testid="during-run-send-button"

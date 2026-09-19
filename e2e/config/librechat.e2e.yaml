@@ -8,6 +8,10 @@ interface:
   # Exercises the cost row in the context usage gauge (off by default).
   # Mock models price at the default rate, so synthetic usage yields a value.
   contextCost: true
+  # Enables the model-parameter surface, including the per-turn reasoning
+  # control in the composer. Mock Provider A resolves Anthropic's adaptive
+  # `effort` setting through its custom endpoint configuration below.
+  parameters: true
   # Grants MULTI_CONVO.USE so the composer's `+` command opens the added-model
   # popover. agent-skills-added.spec.ts drives that flow; without an explicit
   # value the permission falls through to the seeded role default and
@@ -159,7 +163,10 @@ endpoints:
       modelDisplayLabel: 'Mock Provider A'
       customParams:
         defaultParamsEndpoint: anthropic
-
+        # Explicitly advertise the effort control for the mock custom endpoint.
+        # Generic fallback inference is intentionally disabled for custom targets.
+        paramDefinitions:
+          - key: effort
     - name: 'Mock Provider B'
       apiKey: 'e2e-mock-key-b'
       baseURL: 'http://127.0.0.1:8889/v1'

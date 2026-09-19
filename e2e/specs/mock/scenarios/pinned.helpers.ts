@@ -191,6 +191,24 @@ const sidebarPlacement = async (page: Page): Promise<SidebarPlacement> => {
  * than answered with a click that would never resolve.
  */
 export async function ensureSidebarOnScreen(page: Page): Promise<void> {
+  const drawer = page.locator('#mobile-drawer');
+  if ((await pinnedSection(page).count()) === 0) {
+    /* Empty sidebars have no Pinned region to measure, but the mobile drawer
+       is still mounted while its transform keeps it outside the viewport. */
+    const drawerBox = await drawer.boundingBox();
+    if (drawerBox != null && drawerBox.x < 0) {
+      const opener = page.getByRole('button', { name: 'Open sidebar' });
+      if ((await opener.count()) > 0) {
+        await opener.first().click();
+        await expect
+          .poll(async () => (await drawer.boundingBox())?.x ?? Number.NEGATIVE_INFINITY, {
+            timeout: 15_000,
+          })
+          .toBeGreaterThanOrEqual(0);
+      }
+    }
+    return;
+  }
   await expect.poll(() => sidebarPlacement(page), { timeout: 15_000 }).not.toBe('unlaid');
   if ((await sidebarPlacement(page)) === 'on-screen') {
     return;

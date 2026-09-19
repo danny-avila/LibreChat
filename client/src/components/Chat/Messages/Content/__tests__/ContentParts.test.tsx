@@ -187,7 +187,7 @@ beforeEach(() => {
     .mockImplementation((parts) => parts.map((part) => ({ type: 'single', part })));
 });
 
-describe('ContentParts — interim skill cards', () => {
+describe('ContentParts: interim skill cards', () => {
   it('renders stateful workspace changes once at message level', () => {
     const content: TMessageContentParts[] = [
       { type: ContentTypes.TEXT, text: 'done' } as TMessageContentParts,
@@ -307,7 +307,7 @@ describe('ContentParts — interim skill cards', () => {
   });
 });
 
-describe('ContentParts — thinking-dot header alignment', () => {
+describe('ContentParts: thinking-dot header alignment', () => {
   const submittingProps = { ...baseProps, isSubmitting: true, isLatestMessage: true };
   const memoryAttachment = {
     type: Tools.memory,
@@ -362,7 +362,7 @@ describe('ContentParts — thinking-dot header alignment', () => {
   });
 });
 
-describe('ContentParts — post-steer author re-attribution', () => {
+describe('ContentParts: post-steer author re-attribution', () => {
   const steerPart = {
     type: ContentTypes.STEER,
     steer: 'go left',
@@ -727,7 +727,7 @@ describe('ContentParts — activity phase state', () => {
   });
 });
 
-describe('ContentParts — settled content identity across compaction', () => {
+describe('ContentParts: settled content identity across compaction', () => {
   /** Mirrors a captured run: the aggregator leaves holes at the source indexes
    *  of steps that produced nothing, and `finalHandler` swaps in the server's
    *  compacted array. Without the streamed-index stamp every index-derived key

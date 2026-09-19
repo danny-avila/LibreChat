@@ -1,36 +1,25 @@
 import { useCallback } from 'react';
+import { useSetAtom } from 'jotai';
 import { useRecoilCallback, useRecoilValue } from 'recoil';
 import type { PendingSteer } from '~/store/families';
+import { pendingSteerCancelClientIdsFamily } from '~/store/steer';
+import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useCancelSteerMutation } from '~/data-provider';
 import { appendAppliedSteerIds } from '~/utils';
 import store from '~/store';
 
-/**
- * `reclaimed` — the cancel beat the boundary; the words never entered the run.
- * `applied` — the steer already injected (or the run ended): the events own it.
- * `failed` — the POST failed, so the entry is restored and the server may still
- * inject it.
- */
 export type SteerCancelOutcome = 'reclaimed' | 'applied' | 'failed';
 
 /**
- * Asks the server to drop a steer before its injection boundary, touching no
- * chip state — the caller owns what happens to the words.
- *
- * A steer leaves the server queue only by injecting, so only `reclaimed` proves
- * the words never entered the run and are still the client's to re-home. Giving
- * an `applied` steer a second life (queueing it, editing it back into the
- * composer) would say the same thing twice; on `failed` the server may still
- * inject it, so its fate is unknown and it must be left alone.
+ * Asks the server to drop a steer before its injection boundary. Only a
+ * confirmed reclaim proves the words remain safe to move elsewhere.
  */
 export function useSteerReclaim(conversationId: string) {
   const cancelMutation = useCancelSteerMutation();
   const activeGenerationCreatedAt = useRecoilValue(
     store.activeGenerationCreatedAtByConvoId(conversationId),
   );
-  /** A confirmed reclaim is a terminal settlement too. Tombstone both ids so
-   * a final payload captured before the server discard cannot requeue it, and
-   * remove a recovered queue copy if the opposite ordering already occurred. */
+  const setPendingCancelIds = useSetAtom(pendingSteerCancelClientIdsFamily(conversationId));
   const settleReclaimed = useRecoilCallback(
     ({ set }) =>
       (steer: PendingSteer) => {
@@ -46,6 +35,7 @@ export function useSteerReclaim(conversationId: string) {
               (item.clientSteerId == null || !settled.has(item.clientSteerId)),
           ),
         );
+        setPendingCancelIds((prev) => prev.filter((id) => !ids.includes(id)));
         set(store.queuedMessagesByConvoId(conversationId), (prev) =>
           prev.filter(
             (item) =>
@@ -55,7 +45,7 @@ export function useSteerReclaim(conversationId: string) {
           ),
         );
       },
-    [conversationId],
+    [conversationId, setPendingCancelIds],
   );
 
   return useCallback(
@@ -85,35 +75,60 @@ export function useSteerReclaim(conversationId: string) {
   );
 }
 
-/**
- * Cancels a steer still waiting on its injection boundary. The chip stays
- * visible until the request settles so capability/update events can still
- * patch its current server revision while cancel is in flight. Only a
- * confirmed reclaim removes it here. `removed:false` is ambiguous in the v1
- * protocol (already injected OR terminal conversion won), so the event path
- * must decide whether to remove or recover that entry without discarding its
- * client-only files/quotes/skills first.
- */
-export default function useSteerCancel(conversationId: string) {
+export function useSteerMoveToQueue(conversationId: string) {
   const reclaim = useSteerReclaim(conversationId);
+  const convertSteersToQueued = useSteerConvert();
 
-  const removeEntry = useRecoilCallback(
-    ({ set }) =>
-      (steerId: string) => {
-        set(store.pendingSteersByConvoId(conversationId), (prev) =>
-          prev.filter((item) => item.steerId !== steerId),
-        );
-      },
-    [conversationId],
-  );
   return useCallback(
     async (steer: PendingSteer): Promise<SteerCancelOutcome> => {
       const outcome = await reclaim(steer);
       if (outcome === 'reclaimed') {
-        removeEntry(steer.steerId);
+        convertSteersToQueued(conversationId, [steer], {
+          generationProtocolVersion: steer.generationProtocolVersion,
+          allowPreviouslyConvertedIds: [steer.steerId],
+          bindRecoverySource: false,
+        });
       }
       return outcome;
     },
-    [reclaim, removeEntry],
+    [conversationId, convertSteersToQueued, reclaim],
+  );
+}
+
+export default function useSteerCancel(conversationId: string) {
+  const reclaim = useSteerReclaim(conversationId);
+  const setPendingCancelIds = useSetAtom(pendingSteerCancelClientIdsFamily(conversationId));
+  const markOptimisticCancel = useRecoilCallback(
+    ({ set }) =>
+      (steer: PendingSteer) => {
+        const clientId = steer.clientSteerId ?? steer.steerId;
+        setPendingCancelIds((prev) => (prev.includes(clientId) ? prev : [...prev, clientId]));
+        if (steer.status === 'sending') {
+          set(store.pendingSteersByConvoId(conversationId), (prev) =>
+            prev.filter((item) => item.steerId !== steer.steerId),
+          );
+        }
+      },
+    [conversationId, setPendingCancelIds],
+  );
+  const clearOptimisticCancel = useCallback(
+    (steer: PendingSteer) => {
+      const clientId = steer.clientSteerId ?? steer.steerId;
+      setPendingCancelIds((prev) => prev.filter((id) => id !== clientId));
+    },
+    [setPendingCancelIds],
+  );
+  return useCallback(
+    async (steer: PendingSteer): Promise<SteerCancelOutcome> => {
+      if (steer.status === 'sending') {
+        markOptimisticCancel(steer);
+      }
+      const outcome = await reclaim(steer);
+      if (outcome === 'reclaimed') {
+        clearOptimisticCancel(steer);
+      }
+      return outcome;
+    },
+    [clearOptimisticCancel, markOptimisticCancel, reclaim],
   );
 }
