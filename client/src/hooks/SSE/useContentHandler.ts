@@ -55,13 +55,16 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
 
       let response = messageMap.get(messageId);
       if (!response) {
-        const responseBase = existingMessage ?? (initialResponse as TMessage);
+        const initialResponseMessage = initialResponse as TMessage;
+        const responseBase = existingMessage ?? initialResponseMessage;
+        const responseThreadId =
+          thread_id ?? responseBase.thread_id ?? initialResponseMessage.thread_id;
         response = {
           ...responseBase,
           parentMessageId: userMessage?.messageId ?? '',
           conversationId,
           messageId,
-          ...(thread_id != null ? { thread_id } : {}),
+          ...(responseThreadId != null ? { thread_id: responseThreadId } : {}),
         };
         messageMap.set(messageId, response);
       }

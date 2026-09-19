@@ -104,7 +104,6 @@ describe('useContentHandler message reconciliation', () => {
     } as TMessage;
     const existingResponse = {
       messageId: 'response-1',
-      thread_id: 'thread-1',
       conversationId: 'conversation-1',
       parentMessageId: 'user-1',
       isCreatedByUser: false,
