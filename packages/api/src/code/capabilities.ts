@@ -178,6 +178,9 @@ export async function resolveCodeExecutionWorkspaceContext({
     codeWorkspace: {
       ...selection,
       operations: [...(workspace.operations ?? status.operations)],
+      ...(status.maxCommandTimeoutMs == null
+        ? {}
+        : { maxCommandTimeoutMs: status.maxCommandTimeoutMs }),
       ...(workspace.instructions ? { instructions: workspace.instructions } : {}),
       ...(workspace.environment ? { environment: workspace.environment } : {}),
     },

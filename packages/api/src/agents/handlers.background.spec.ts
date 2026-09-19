@@ -10,6 +10,7 @@ import {
   CHECK_BACKGROUND_TASK_NAME,
 } from './background';
 import { BACKGROUND_TASK_ABORT_GRACE_MS, BACKGROUND_TASK_TIMEOUT_MS } from './backgroundCompletion';
+import { BACKGROUND_TOOL_INVOCATION_CONFIG_KEY } from './invocation';
 import { ContentFilterError } from '../middleware/contentFilter';
 import { createToolExecuteHandler } from './handlers';
 
@@ -183,6 +184,14 @@ describe('createToolExecuteHandler — background tool calls', () => {
     });
 
     expect(events.slice(0, 2)).toEqual(['preregister', 'invoke']);
+    expect(tool.invoke).toHaveBeenCalledWith(
+      { q: 'continuations' },
+      expect.objectContaining({
+        configurable: expect.objectContaining({
+          [BACKGROUND_TOOL_INVOCATION_CONFIG_KEY]: true,
+        }),
+      }),
+    );
     expect(JSON.parse(dispatch.content).message).toContain('host will resume you');
     await flushMicrotasks();
     expect(events).toEqual(['preregister', 'invoke', 'persist']);
