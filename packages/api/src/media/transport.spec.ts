@@ -1,9 +1,84 @@
 import { z } from 'zod';
 import dns from 'node:dns';
 import { Readable } from 'node:stream';
+import { createServer } from 'node:http';
 import axios, { AxiosError } from 'axios';
 import type { CreateAxiosDefaults, InternalAxiosRequestConfig } from 'axios';
-import { createMediaTransport } from './transport';
+import { createMediaTransport, scopeMediaTransport } from './transport';
+
+describe('effective media network policy', () => {
+  it('enforces each principal exemption list at the actual HTTP boundary', async () => {
+    let hits = 0;
+    const server = createServer((_request, response) => {
+      hits++;
+      response.end('{"ok":true}');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing fixture address');
+    const host = `127.0.0.1:${address.port}`;
+    const request = { url: `http://${host}/provider`, timeoutMs: 1000, maxBytes: 1024 };
+    try {
+      const inherited = createMediaTransport({
+        http: axios.create({ proxy: false }),
+        allowedAddresses: [host],
+      });
+      await expect(
+        scopeMediaTransport(inherited, []).json(request, z.object({ ok: z.boolean() })),
+      ).rejects.toThrow();
+      expect(hits).toBe(0);
+      const restricted = createMediaTransport({
+        http: axios.create({ proxy: false }),
+        allowedAddresses: [],
+      });
+      expect(
+        await scopeMediaTransport(restricted, [host]).json(request, z.object({ ok: z.boolean() })),
+      ).toEqual({ ok: true });
+      await expect(
+        scopeMediaTransport(restricted, ['127.0.0.1:1']).json(request, z.object({})),
+      ).rejects.toThrow();
+      expect(hits).toBe(1);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it('uses the shared PROXY configuration for provider requests while public references stay direct', async () => {
+    const original = process.env.PROXY;
+    process.env.PROXY = 'http://proxy.example:8080';
+    const requests: InternalAxiosRequestConfig[] = [];
+    const http = axios.create({
+      adapter: async (config) => {
+        requests.push(config);
+        return { config, data: '{}', status: 200, statusText: 'OK', headers: {} };
+      },
+    });
+    try {
+      const transport = createMediaTransport({ http });
+      await transport.json(
+        { url: 'https://provider.example/v1', timeoutMs: 1000, maxBytes: 1024 },
+        z.object({}),
+      );
+      expect(requests[0].httpsAgent.constructor.name).toBe('HttpsProxyAgent');
+      await transport.json(
+        {
+          url: 'https://reference.example/file',
+          timeoutMs: 1000,
+          maxBytes: 1024,
+          publicOnly: true,
+        },
+        z.object({}),
+      );
+      expect(requests[1].httpsAgent.constructor.name).not.toBe('HttpsProxyAgent');
+      expect(requests[1].proxy).toBe(false);
+    } finally {
+      if (original === undefined) delete process.env.PROXY;
+      else process.env.PROXY = original;
+    }
+  });
+});
 
 describe('public media downloads', () => {
   function fixture(defaults: CreateAxiosDefaults = {}) {

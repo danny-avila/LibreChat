@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   dataService,
   MutationKeys,
@@ -8,11 +8,16 @@ import {
 } from 'librechat-data-provider';
 import type { MediaURLUploadRequest } from 'librechat-data-provider';
 import type { MediaQueryScope } from './queries';
+import { cacheMediaAssets } from './files';
 
 type Upload<TBody> = { body: TBody; signal: AbortSignal };
 
 /** File and URL uploads belong to the current editor and cannot outlive it. */
-export function useMediaUpload(host: Pick<MediaQueryScope, 'isCurrentSession'>, ownerKey: string) {
+export function useMediaUpload(
+  host: Pick<MediaQueryScope, 'isCurrentSession' | 'userId'>,
+  ownerKey: string,
+) {
+  const client = useQueryClient();
   const [uploading, setUploading] = useState(false);
   const controller = useRef<AbortController>();
   const currentKey = useRef(ownerKey);
@@ -55,7 +60,15 @@ export function useMediaUpload(host: Pick<MediaQueryScope, 'isCurrentSession'>, 
   return {
     uploading,
     cancel,
-    uploadFile: (body: FormData) => run((signal) => file.mutateAsync({ body, signal })),
-    uploadURL: (body: MediaURLUploadRequest) => run((signal) => url.mutateAsync({ body, signal })),
+    uploadFile: async (body: FormData) => {
+      const result = await run((signal) => file.mutateAsync({ body, signal }));
+      if (result) cacheMediaAssets(client, host.userId, [result.file]);
+      return result;
+    },
+    uploadURL: async (body: MediaURLUploadRequest) => {
+      const result = await run((signal) => url.mutateAsync({ body, signal }));
+      if (result) cacheMediaAssets(client, host.userId, [result.file]);
+      return result;
+    },
   };
 }

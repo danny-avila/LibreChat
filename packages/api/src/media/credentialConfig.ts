@@ -4,10 +4,14 @@ import type { AppConfig } from '@librechat/data-schemas';
 import type { MediaProviderAdapter } from './provider';
 import type { MediaRoutingPolicy } from './routing';
 import { mediaRoutingPolicySchema } from './routing';
+import { mergeHeaders } from '../utils/headers';
 import { MediaServiceError } from './errors';
 
 type SettingsInput = { integration: MediaIntegration; appConfig: AppConfig };
 export interface MediaEnvironment {
+  OPENAI_MODERATION?: string;
+  OPENAI_MODERATION_REVERSE_PROXY?: string;
+  OPENAI_MODERATION_API_KEY?: string;
   GOOGLE_KEY?: string;
   GEMINI_API_KEY?: string;
   GOOGLE_REVERSE_PROXY?: string;
@@ -26,6 +30,7 @@ interface MediaCredentialSettings {
   keyHeader: string;
   keyPrefix: string;
   headers?: Record<string, string>;
+  legacyHeaders?: Record<string, string>;
   options?: Record<string, string>;
   routing?: MediaRoutingPolicy;
   configuration?: MediaProviderAdapter['configuration'];
@@ -121,9 +126,11 @@ export function createMediaCredentialConfiguration({
         apiKey = environment.GOOGLE_KEY || environment.GEMINI_API_KEY;
         baseURL =
           environment.GOOGLE_REVERSE_PROXY || 'https://generativelanguage.googleapis.com/v1beta';
+        headers = expanded(appConfig.endpoints?.google?.headers);
       } else if (keyName === 'openAI') {
         apiKey = environment.OPENAI_API_KEY;
         baseURL = environment.OPENAI_REVERSE_PROXY || 'https://api.openai.com/v1';
+        headers = expanded(appConfig.endpoints?.openAI?.headers);
       } else
         throw new MediaServiceError('unsupported', 422, 'This native connection is not supported.');
     }
@@ -143,7 +150,8 @@ export function createMediaCredentialConfiguration({
       userKey,
       keyHeader,
       keyPrefix,
-      headers,
+      headers: mergeHeaders(expanded(appConfig.endpoints?.all?.headers), headers),
+      legacyHeaders: integration.endpointRef.kind === 'builtin' ? undefined : headers,
       options,
       routing,
       configuration,

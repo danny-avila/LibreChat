@@ -1016,6 +1016,14 @@ test('requires an avatar recording or an explicit voice before enabling generati
           {
             operation: 'video.generate',
             workflow: 'avatar',
+            constraints: [
+              {
+                anyOf: [
+                  { kind: 'input', role: 'audio', present: true },
+                  { kind: 'parameter', name: 'providerOptions', option: 'voice_id', present: true },
+                ],
+              },
+            ],
             inputs: { min: 1, max: 2, roles: ['reference', 'audio'], requiredRoles: ['reference'] },
             execution: { kind: 'remote-job', cancellation: 'unsupported' },
             controls: { count: { min: 1, max: 1, default: 1 }, providerOptions: ['voice_id'] },
@@ -1034,7 +1042,7 @@ test('requires an avatar recording or an explicit voice before enabling generati
   });
   render(<MediaForm catalog={choices} send={env.send} busy={false} />, { wrapper: env.wrapper });
   expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
-  expect(screen.getByText('com_media_avatar_voice_required')).toBeVisible();
+  expect(screen.getByText('com_media_unsupported_settings')).toBeVisible();
   fireEvent.click(screen.getByText('com_media_advanced'));
   fireEvent.change(screen.getByRole('textbox', { name: 'com_media_provider_options' }), {
     target: { value: '{"voice_id":"selected-voice"}' },
@@ -1704,7 +1712,7 @@ test('a default preset seeds an untouched draft', async () => {
   );
 });
 
-test('comparing sends the same prompt to a second model in the created thread', async () => {
+test('comparing hands both validated model requests to the command owner before dispatch', async () => {
   const env = setup(true, { compare: true });
   const comparable: MediaCatalog = {
     ...catalog,
@@ -1743,12 +1751,11 @@ test('comparing sends the same prompt to a second model in the created thread', 
     target: { value: 'A lighthouse at dusk' },
   });
   fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
-  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(2));
-  const [first, second] = env.send.mock.calls.map(([command]) => command.request);
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
+  const { request: first, following: second } = env.send.mock.calls[0][0];
   expect(first.threadId).toBeUndefined();
   expect(first.comparisonId).toEqual(expect.any(String));
   expect(second).toMatchObject({
-    threadId: 'thread-9',
     comparisonId: first.comparisonId,
     prompt: 'A lighthouse at dusk',
     selection: expect.objectContaining({ modelId: 'other-model' }),
@@ -1772,4 +1779,91 @@ test('a temporary draft flags only the submission that creates the thread', asyn
   await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
   expect(env.send.mock.calls[0][0].request).toMatchObject({ temporary: true });
   expect(env.send.mock.calls[0][0].request.comparisonId).toBeUndefined();
+});
+
+test('importing references from a temporary draft preserves its retention choice', async () => {
+  const env = setup();
+  env.store.set(mediaDraftFamily('owner:new'), {
+    ...emptyDraft(),
+    temporary: true,
+    inputs: [{ role: 'reference', file_id: 'image' }],
+    revision: 2,
+  });
+  render(<MediaForm catalog={catalog} send={env.send} busy={false} />, { wrapper: env.wrapper });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_import' }));
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
+  expect(env.send.mock.calls[0][0]).toMatchObject({ kind: 'import', request: { temporary: true } });
+});
+
+test('conditional defaults adapt to references without overwriting an explicit invalid choice', async () => {
+  const env = setup();
+  const choices: MediaCatalog = {
+    ...catalog,
+    offerings: [
+      {
+        ...catalog.offerings[0],
+        capabilities: [
+          {
+            operation: 'video.generate',
+            inputs: { min: 0, max: 1, roles: ['reference'] },
+            execution: { kind: 'remote-job', cancellation: 'unsupported' },
+            controls: {
+              count: { min: 1, max: 1, default: 1 },
+              durationSeconds: { min: 4, max: 8, default: 4, values: [4, 6, 8] },
+            },
+            constraints: [
+              {
+                when: [{ kind: 'input', role: 'reference', present: true }],
+                anyOf: [{ kind: 'parameter', name: 'durationSeconds', values: [8] }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  env.store.set(mediaDraftFamily('owner:new'), {
+    ...emptyDraft(),
+    offering: '["connection","image-model"]',
+    operation: 'video.generate',
+    prompt: 'A lake',
+    inputs: [{ role: 'reference', file_id: 'image' }],
+    revision: 2,
+  });
+  render(<MediaForm catalog={choices} send={env.send} busy={false} />, { wrapper: env.wrapper });
+  expect(screen.getByRole('combobox', { name: 'com_media_durationSeconds' })).toHaveTextContent(
+    '8',
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
+  expect(env.send.mock.calls[0][0].request.parameters.durationSeconds).toBe(8);
+  fireEvent.click(screen.getByRole('combobox', { name: 'com_media_durationSeconds' }));
+  fireEvent.click(await screen.findByRole('option', { name: '4' }));
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
+  expect(screen.getByText('com_media_unsupported_settings')).toBeVisible();
+});
+
+test('failed preset mutations retain the preset and show a localized retryable error', async () => {
+  const env = setup(true, { presets: true });
+  jest.spyOn(dataService, 'listMediaPresets').mockResolvedValue({ items: [preset] });
+  const update = jest
+    .spyOn(dataService, 'updateMediaPreset')
+    .mockRejectedValue(new Error('Disconnected'));
+  const remove = jest
+    .spyOn(dataService, 'deleteMediaPreset')
+    .mockRejectedValue(new Error('Disconnected'));
+  render(<MediaForm catalog={catalog} send={env.send} busy={false} />, { wrapper: env.wrapper });
+  fireEvent.click(screen.getByRole('button', { name: 'com_ui_manage' }));
+  const dialog = await screen.findByRole('dialog', { name: 'com_media_presets' });
+  fireEvent.click(
+    await within(dialog).findByRole('button', { name: 'com_media_preset_set_default' }),
+  );
+  expect(await within(dialog).findByText('com_media_preset_error')).toBeVisible();
+  expect(update).toHaveBeenCalledTimes(1);
+  fireEvent.click(within(dialog).getByRole('button', { name: 'com_media_preset_delete' }));
+  fireEvent.click(within(dialog).getByRole('button', { name: 'com_ui_delete' }));
+  await waitFor(() => expect(remove).toHaveBeenCalledTimes(1));
+  expect(await within(dialog).findByText('com_media_preset_error')).toBeVisible();
+  expect(within(dialog).getByText('Quick draft')).toBeVisible();
+  expect(within(dialog).getByRole('button', { name: 'com_ui_delete' })).toBeEnabled();
 });

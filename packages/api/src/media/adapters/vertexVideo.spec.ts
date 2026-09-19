@@ -36,6 +36,7 @@ function fixture(responses: unknown[] = []) {
     },
   };
   const context: MediaProviderContext = {
+    jobId: 'server-job',
     transport,
     connection: {
       id: 'vertex',
@@ -52,6 +53,16 @@ function fixture(responses: unknown[] = []) {
 
 describe('Vertex Veo adapter', () => {
   const adapter = createVertexVideoAdapter();
+
+  it('uses the advertised conditional default of eight seconds for reference images', async () => {
+    const { context, calls } = fixture([{ name: operation }]);
+    await adapter.submit(
+      { ...request, parameters: { count: 1 } },
+      [{ role: 'reference', file_id: 'reference', type: 'image/png', data: Buffer.from('image') }],
+      context,
+    );
+    expect(JSON.parse(calls[0].body as string).parameters.durationSeconds).toBe(8);
+  });
 
   it('submits once to Vertex and retains the complete operation resource for recovery', async () => {
     const { context, calls } = fixture([{ name: operation }]);

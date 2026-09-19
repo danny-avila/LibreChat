@@ -5,6 +5,7 @@ export interface IKey extends Document {
   name: string;
   value: string;
   expiresAt?: Date;
+  mediaBindingRevision?: string;
   tenantId?: string;
 }
 
@@ -25,6 +26,7 @@ const keySchema: Schema<IKey> = new Schema({
   expiresAt: {
     type: Date,
   },
+  mediaBindingRevision: { type: String },
   tenantId: {
     type: String,
     index: true,

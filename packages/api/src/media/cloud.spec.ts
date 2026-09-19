@@ -13,6 +13,7 @@ import type { MediaFileStrategy, MediaStorageSource } from './objects';
 import type { GetURLParams } from '~/storage/types';
 import { createMediaDerivativeProcessor } from './derivatives';
 import { createMediaStrategyObjectStores } from './objects';
+import { deleteMediaAwareFile } from './deletion';
 import { createMediaStorage } from './storage';
 import { getS3Key } from '~/storage/s3/crud';
 
@@ -74,10 +75,13 @@ function objectService(source: MediaStorageSource) {
           : {}),
       };
     },
-    async getDownloadStream(_req, filename) {
+    async getDownloadStream(_req, filename, options) {
       const data = objects.get(storedKey(filename));
       if (!data) throw Object.assign(new Error('Object missing'), { code: 'NoSuchKey' });
-      return Readable.from([data.subarray(0, 13), data.subarray(13)]);
+      const selected = options?.range
+        ? data.subarray(options.range.start, options.range.end + 1)
+        : data;
+      return Readable.from([selected.subarray(0, 13), selected.subarray(13)]);
     },
     async deleteFile(_req, file) {
       if (failDeletion) throw new Error('Deletion unavailable');
@@ -162,6 +166,39 @@ describe('media storage through existing cloud strategies', () => {
     };
     return { remote, storage, input };
   };
+
+  it.each([
+    FileSources.s3,
+    FileSources.cloudfront,
+    FileSources.azure_blob,
+    FileSources.firebase,
+  ] as const)(
+    'legacy Files deletion removes the %s original and every derivative before retirement',
+    async (source) => {
+      const { remote, storage, input } = setup(source);
+      const asset = await storage.publish({ ...input, stream: Readable.from(png) });
+      expect(remote.objects.size).toBe(2);
+      const legacyDelete = jest.fn();
+      await deleteMediaAwareFile({
+        request: {
+          user: { id: scope.ownerId, tenantId: scope.tenantId ?? undefined },
+          config: {
+            paths: {
+              imageOutput: path.join(directory, 'images'),
+              uploads: path.join(directory, 'uploads'),
+            },
+          },
+        },
+        file: asset,
+        repository,
+        deleteFile: legacyDelete,
+        resolveStrategy: () => remote.strategy,
+      });
+      expect(remote.objects.size).toBe(0);
+      expect(legacyDelete).not.toHaveBeenCalled();
+      expect(await repository.getMediaAssetContent(scope, asset.file_id)).toBeNull();
+    },
+  );
 
   it.each([
     FileSources.s3,

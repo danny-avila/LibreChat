@@ -3,6 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { createPortal } from 'react-dom';
 import { useSetAtom, useAtomValue } from 'jotai';
 import { SlidersHorizontal } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Button,
@@ -16,6 +17,7 @@ import {
 } from '@librechat/client';
 import type { MediaAsset } from 'librechat-data-provider';
 import { sidebarPortalTarget } from '~/components/UnifiedSidebar/portal';
+import { cacheMediaAssets } from '~/data-provider/Media/files';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { MediaHostProvider } from '~/components/Media/host';
@@ -29,6 +31,7 @@ import store from '~/store';
 export default function Studio() {
   const { threadId } = useParams();
   const navigate = useNavigate();
+  const client = useQueryClient();
   const localize = useLocalize();
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const [asset, setAsset] = useState<MediaAsset>();
@@ -47,6 +50,7 @@ export default function Studio() {
   const { host, media, userId, loading, failed, reload } = useMediaShellHost(actions);
   const handoff = (conversationId: string) => {
     if (!asset || !userId || !host?.isCurrentSession()) return;
+    cacheMediaAssets(client, userId, [asset]);
     setHandoff({ scope: host.scope, conversationId, asset });
     setAsset(undefined);
     navigate(`/c/${encodeURIComponent(conversationId)}`);

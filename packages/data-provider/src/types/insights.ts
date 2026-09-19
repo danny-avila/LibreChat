@@ -13,6 +13,7 @@ export type TInsightsParams = {
   agentIds?: string[];
   page?: number;
   pageSize?: number;
+  mediaPage?: number;
 };
 
 export type TInsightsAgent = {
@@ -62,6 +63,8 @@ export type TInsightsSummary = {
 };
 
 export type TInsightsResponse = {
+  /** Studio jobs only; omitted without tenant-wide Insights access. */
+  media?: TMediaInsights;
   agents: TInsightsAgent[];
   summary: TInsightsSummary;
   daily: TInsightsDailyPoint[];
@@ -77,4 +80,26 @@ export type TInsightsResponse = {
 
 export type TInsightsAccessResponse = {
   access: boolean;
+};
+
+export type TMediaInsightsTotals = {
+  submitted: number;
+  completed: number;
+  failed: number;
+  cancelled: number;
+  uncertain: number;
+  active: number;
+  providerCostUSD: number;
+  operatorCostUSD: number;
+  estimatedCostUSD: number;
+  unclassifiedCostUSD: number;
+  unknownCostJobs: number;
+};
+
+export type TMediaInsights = {
+  summary: TMediaInsightsTotals;
+  offerings: Array<TMediaInsightsTotals & { provider: string; model: string; operation: string }>;
+  page: number;
+  pageSize: number;
+  pages: number;
 };

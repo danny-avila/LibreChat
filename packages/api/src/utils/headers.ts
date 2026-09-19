@@ -1,6 +1,6 @@
 import type { AnthropicClientOptions } from '@librechat/agents';
-import type { IUser } from '@librechat/data-schemas';
 import type { RequestBody, RunLLMConfig } from '~/types';
+import type { SafeUserInput } from './env';
 import { resolveHeaders } from './env';
 
 const TENANT_ID_HEADER_PLACEHOLDERS = [
@@ -114,7 +114,7 @@ export function resolveModelHeaders({
   customUserVars,
 }: {
   headers: Record<string, string> | undefined;
-  user?: Partial<IUser> | { id: string };
+  user?: SafeUserInput;
   tenantId?: string;
   body?: RequestBody;
   customUserVars?: Record<string, string>;
@@ -172,7 +172,7 @@ export function resolveConfigHeaders({
    *  titles/activity labels) can resolve headers without assembling a
    *  full run config. */
   llmConfig?: Partial<RunLLMConfig> | null;
-  user?: Partial<IUser> | { id: string };
+  user?: SafeUserInput;
   /** Authoritative request tenant used only for model-header templates. */
   tenantId?: string;
   body?: RequestBody;

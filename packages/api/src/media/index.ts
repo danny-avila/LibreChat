@@ -21,3 +21,7 @@ export * from './accounting';
 export * from './account';
 export * from './native';
 export * from './replay';
+export * from './recovery';
+export * from './request';
+export * from './admission';
+export * from './telemetry';

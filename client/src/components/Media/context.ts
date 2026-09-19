@@ -1,7 +1,12 @@
-import type { MediaAsset, MediaOperation, MediaTurn } from 'librechat-data-provider';
+import type {
+  MediaAsset,
+  MediaImageContext,
+  MediaOperation,
+  MediaTurn,
+} from 'librechat-data-provider';
 import type { MediaDraft } from './state';
 
-export type MediaEditTarget = { turnId: string; asset: MediaAsset };
+export type MediaEditTarget = MediaImageContext;
 
 export const compareTurns = (left: MediaTurn, right: MediaTurn) =>
   (left.sequence ?? 0) - (right.sequence ?? 0) || left.createdAt.localeCompare(right.createdAt);

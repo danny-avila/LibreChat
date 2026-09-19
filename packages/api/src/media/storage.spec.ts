@@ -20,7 +20,9 @@ import {
   validateMediaSvg,
 } from './content';
 import { mp4ReferenceFixture, webmReferenceFixture } from './__fixtures__/reference-content';
+import { createMediaDerivativeProcessor, createFFmpegMediaProcessor } from './derivatives';
 import { createLocalMediaStorage } from './storage';
+import { deleteMediaAwareFile } from './deletion';
 
 const svg = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="24" viewBox="0 0 32 24">
@@ -326,6 +328,56 @@ describe('Media original storage', () => {
 
   beforeEach(() => {
     scope = { ownerId: new mongoose.Types.ObjectId().toString(), tenantId: null };
+  });
+
+  it('deletes physical originals and thumbnails through the shared Files entry point', async () => {
+    const original = await sharp({
+      create: { width: 24, height: 16, channels: 4, background: '#cde' },
+    })
+      .png()
+      .toBuffer();
+    const paths = {
+      imageOutput: path.join(directory, 'images'),
+      uploads: path.join(directory, 'uploads'),
+    };
+    const withDerivatives = createLocalMediaStorage({
+      repository,
+      imageDirectory: paths.imageOutput,
+      uploadDirectory: paths.uploads,
+      now: Date.now,
+      derivatives: createMediaDerivativeProcessor({
+        imageOutputType: 'png',
+        video: createFFmpegMediaProcessor(),
+        log: () => undefined,
+      }),
+    });
+    const asset = await withDerivatives.publish({
+      scope,
+      outputKey: 'legacy-delete',
+      config,
+      stream: Readable.from(original),
+      filename: 'original.png',
+      type: 'image/png',
+    });
+    const content = await repository.getMediaAssetContent(scope, asset.file_id);
+    const locations = [content!.filepath, content!.mediaRenditions!.thumbnail!.filepath].map(
+      (filepath) => path.join(directory, filepath.slice(1)),
+    );
+    for (const location of locations) expect((await readFile(location)).length).toBeGreaterThan(0);
+    const legacyDelete = jest.fn();
+    await deleteMediaAwareFile({
+      request: { user: { id: scope.ownerId }, config: { paths } },
+      file: asset,
+      repository,
+      deleteFile: legacyDelete,
+      resolveStrategy: () => {
+        throw new Error('Local deletion must not require cloud configuration');
+      },
+    });
+    expect(legacyDelete).not.toHaveBeenCalled();
+    for (const location of locations)
+      await expect(readFile(location)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await repository.getMediaAssetContent(scope, asset.file_id)).toBeNull();
   });
 
   afterAll(async () => {

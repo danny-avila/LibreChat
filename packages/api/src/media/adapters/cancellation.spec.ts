@@ -13,6 +13,7 @@ function fixture(
 ) {
   const calls: InternalAxiosRequestConfig[] = [];
   const context: MediaProviderContext = {
+    jobId: 'server-job',
     connection: {
       id: 'provider',
       api: adapter.api,

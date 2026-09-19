@@ -4,6 +4,7 @@ import type { MediaIntegration } from 'librechat-data-provider';
 import type { MediaEnvironment } from './credentials';
 import { createMediaCredentialResolver } from './credentials';
 import { createRESTMediaAdapters } from './adapters/rest';
+import { isMediaConnectionBinding } from './provider';
 
 describe('Direct provider credentials', () => {
   const environment: MediaEnvironment = { BFL_KEY: 'test-secret', BRAND: 'brand-test' };
@@ -204,6 +205,82 @@ describe('Google media credentials', () => {
 
   it('requires a key when neither environment variable is configured', async () => {
     await expect(resolver({})(request)).rejects.toMatchObject({ code: 'credentials_required' });
+  });
+
+  it('reuses global and endpoint headers with current identity and provider-managed authorization', async () => {
+    const connection = await resolver({
+      GOOGLE_KEY: '${LITERAL_API_SECRET}',
+      GOOGLE_AUTH_HEADER: 'true',
+    })({
+      ...request,
+      user: { name: 'Media user' },
+      appConfig: {
+        ...request.appConfig,
+        endpoints: {
+          all: {
+            headers: {
+              'X-Global': 'global',
+              'X-User': '{{LIBRECHAT_USER_ID}}',
+              'X-Tenant': '{{LIBRECHAT_USER_TENANT_ID}}',
+              authorization: 'untrusted',
+            },
+          },
+          google: { headers: { 'x-global': 'google', 'X-Name': '{{LIBRECHAT_USER_NAME}}' } },
+        },
+      },
+    });
+    expect(connection.headers).toEqual({
+      'x-global': 'google',
+      'X-User': 'owner',
+      'X-Tenant': 'tenant',
+      'X-Name': 'Media user',
+      'x-goog-api-key': '${LITERAL_API_SECRET}',
+      Authorization: 'Bearer ${LITERAL_API_SECRET}',
+    });
+  });
+
+  it('preserves current and legacy bindings through metadata refresh while fencing real credential changes', async () => {
+    const initial = {
+      value: 'user-google-key',
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      bindingRevision: 'legacy-initial',
+    };
+    const lookup = jest.spyOn(repository, 'getStoredMediaCredential').mockResolvedValue(initial);
+    const resolve = resolver({ GOOGLE_KEY: 'user_provided' });
+    const legacy = await resolve(request);
+    lookup.mockResolvedValue({ ...initial, id: 'saved-key-row' });
+    const stable = await resolve(request);
+    lookup.mockResolvedValue({
+      id: 'saved-key-row',
+      value: JSON.stringify({
+        GOOGLE_API_KEY: 'user-google-key',
+        GOOGLE_SERVICE_KEY: { project_id: 'unrelated' },
+      }),
+      expiresAt: null,
+      bindingRevision: 'metadata-updated',
+      legacyBindingRevision: 'legacy-initial',
+    });
+    const refreshed = await resolve(request);
+    expect(refreshed.binding).toBe(stable.binding);
+    expect(isMediaConnectionBinding(refreshed, legacy.binding)).toBe(true);
+    expect(refreshed.headers).toEqual(stable.headers);
+    lookup.mockResolvedValue({
+      ...initial,
+      id: 'saved-key-row',
+      value: 'rotated-key',
+      legacyBindingRevision: 'legacy-initial',
+    });
+    const rotated = await resolve(request);
+    expect(isMediaConnectionBinding(rotated, legacy.binding)).toBe(false);
+    expect(isMediaConnectionBinding(rotated, stable.binding)).toBe(false);
+    lookup.mockResolvedValue({
+      ...initial,
+      id: 'new-row-after-revocation',
+      bindingRevision: 'new-row',
+    });
+    expect(isMediaConnectionBinding(await resolve(request), stable.binding)).toBe(false);
+    lookup.mockResolvedValue(null);
+    await expect(resolve(request)).rejects.toMatchObject({ code: 'credentials_required' });
   });
 });
 

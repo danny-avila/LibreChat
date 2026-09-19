@@ -27,6 +27,8 @@ import {
   validateMediaSvg,
 } from './content';
 import { createLocalMediaObjectStore } from './objects';
+import { removeMediaObjectLocations } from './objects';
+import { removeMediaAsset } from './deletion';
 import { MediaServiceError } from './errors';
 
 export function resolveMediaStorageSource({
@@ -203,16 +205,8 @@ export function createMediaStorage({
     ? imageOutputType
     : 'png';
   const stagingRoot = path.resolve(uploadDirectory, 'media-staging');
-  const cleanupLocations = async (scope: MediaOwnerScope, locations: MediaObjectLocation[]) => {
-    const unique = new Map(
-      locations.map((location) => [
-        `${location.source}:${location.storageRegion ?? ''}:${location.storageKey ?? location.filepath}`,
-        location,
-      ]),
-    );
-    for (const location of unique.values())
-      await objectStore(location.source).remove(scope, location);
-  };
+  const cleanupLocations = (scope: MediaOwnerScope, locations: MediaObjectLocation[]) =>
+    removeMediaObjectLocations(scope, locations, objectStore);
   const storage: MediaStorage = {
     async publish(input) {
       const type = normalizeMediaContentType(input.type);
@@ -422,18 +416,7 @@ export function createMediaStorage({
       return repository.completeMediaAssetWriteDeletion({ scope, writeId, token });
     },
     async remove(scope, fileId) {
-      const token = randomUUID();
-      const content = await repository.claimMediaAssetDeletion({ scope, fileId, token });
-      if (!content) return false;
-      await cleanupLocations(scope, [
-        ...(content.mediaRenditionLocations ?? []).map((location) => ({
-          ...location,
-          filepath: location.filepath ?? location.storageKey,
-        })),
-        ...Object.values(content.mediaRenditions ?? {}),
-        content,
-      ]);
-      return repository.completeMediaAssetDeletion({ scope, fileId, token });
+      return removeMediaAsset({ repository, scope, fileId, removeLocations: cleanupLocations });
     },
     async capture(scope, fileId, config) {
       const existing = await repository.getMediaAsset(scope, fileId);

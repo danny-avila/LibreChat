@@ -22,6 +22,7 @@ export interface ITransaction extends Document {
   mediaJobId?: string;
   mediaDebtCredits?: number;
   mediaCostUSD?: number;
+  mediaCostSource?: 'provider' | 'estimate';
   mediaFingerprint?: string;
   mediaAccountingMode?: 'balance' | 'transactions';
   mediaOutputTokens?: number;
@@ -66,6 +67,7 @@ const transactionSchema: Schema<ITransaction> = new Schema(
     mediaJobId: String,
     mediaDebtCredits: Number,
     mediaCostUSD: Number,
+    mediaCostSource: { type: String, enum: ['provider', 'estimate'] },
     mediaFingerprint: String,
     mediaAccountingMode: { type: String, enum: ['balance', 'transactions'] },
     mediaOutputTokens: Number,
@@ -77,6 +79,11 @@ const transactionSchema: Schema<ITransaction> = new Schema(
   {
     timestamps: true,
   },
+);
+
+transactionSchema.index(
+  { tenantId: 1, mediaJobId: 1, user: 1 },
+  { partialFilterExpression: { mediaJobId: { $exists: true } } },
 );
 
 export default transactionSchema;

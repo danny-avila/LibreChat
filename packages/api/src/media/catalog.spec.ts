@@ -176,6 +176,31 @@ describe('media catalog provider conformance', () => {
       selection: { connectionId: 'images', modelId: 'google/image', catalogVersion: 'v1' },
     });
 
+  it('isolates catalog discovery and cached results by effective address policy', async () => {
+    const fixture = imageTransport(() => JSON.stringify(imageEndpoints));
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    const allowed = async (integration: MediaIntegration) => ({
+      ...connection(integration),
+      allowedAddresses: ['provider.example:443'],
+    });
+    await catalog.read(config, allowed, 'owner-one');
+    const first = fixture.calls.length;
+    expect(
+      fixture.calls.every((call) => call.allowedAddresses?.includes('provider.example:443')),
+    ).toBe(true);
+    await catalog.read(
+      config,
+      async (integration) => ({ ...connection(integration), allowedAddresses: [] }),
+      'owner-two',
+    );
+    expect(fixture.calls.length).toBe(first * 2);
+    expect(fixture.calls.slice(first).every((call) => call.allowedAddresses?.length === 0)).toBe(
+      true,
+    );
+    await catalog.read(config, allowed, 'owner-one');
+    expect(fixture.calls).toHaveLength(first * 2);
+  });
+
   it('uses the official endpoint envelope and one policy-compatible parameter intersection', async () => {
     const fixture = imageTransport(() => JSON.stringify(imageEndpoints));
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
@@ -694,6 +719,7 @@ describe('OpenRouter complete public media catalog', () => {
     await adapter.submit(submission, [], {
       transport: fixture.transport,
       config: limited,
+      jobId: 'server-job',
       signal: new AbortController().signal,
       connection: { ...connection(imageIntegration), routing },
       providerTag: selected.providerTag,
@@ -799,6 +825,7 @@ describe('OpenRouter complete public media catalog', () => {
     await adapter.submit(submission, [], {
       transport: fixture.transport,
       config: limited,
+      jobId: 'server-job',
       signal: new AbortController().signal,
       connection: connection(videoIntegration),
       providerTag: selected.providerTag,
@@ -1101,6 +1128,7 @@ describe('media provider routing and continuation', () => {
         {
           ...fixture,
           config: resolveMediaConfig({ ...config, limits: { ...config.limits, ...limits } }),
+          jobId: 'server-job',
           signal: new AbortController().signal,
           connection: { ...connection(imageIntegration), api: 'google.generateContent' },
         },
@@ -1150,6 +1178,7 @@ describe('media provider routing and continuation', () => {
     const context: MediaProviderContext = {
       ...fixture,
       config,
+      jobId: 'server-job',
       signal: new AbortController().signal,
       connection: {
         ...connection(imageIntegration),
@@ -1209,6 +1238,7 @@ describe('media provider routing and continuation', () => {
         {
           ...fixture,
           config,
+          jobId: 'server-job',
           signal: new AbortController().signal,
           connection: { ...connection(videoIntegration), routing: { zdr: true } },
         },
@@ -1250,6 +1280,7 @@ describe('media provider routing and continuation', () => {
       {
         ...fixture,
         config,
+        jobId: 'server-job',
         signal: new AbortController().signal,
         connection: { ...connection(imageIntegration), api: 'google.generateContent' },
         continuation: {

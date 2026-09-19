@@ -3,3 +3,5 @@ export * from './requests';
 export * from './responses';
 export * from './capabilities';
 export * from './presets';
+export * from './validation';
+export * from './recovery';

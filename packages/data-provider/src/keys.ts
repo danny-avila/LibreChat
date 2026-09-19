@@ -1,5 +1,6 @@
 export enum QueryKeys {
   mediaCatalog = 'mediaCatalog',
+  mediaRecovery = 'mediaRecovery',
   mediaThreads = 'mediaThreads',
   mediaThread = 'mediaThread',
   mediaTurns = 'mediaTurns',
@@ -122,6 +123,7 @@ export const DynamicQueryKeys = {
 
 export enum MutationKeys {
   submitMedia = 'submitMedia',
+  recoverMediaJob = 'recoverMediaJob',
   importMedia = 'importMedia',
   uploadMedia = 'uploadMedia',
   cancelMediaJob = 'cancelMediaJob',

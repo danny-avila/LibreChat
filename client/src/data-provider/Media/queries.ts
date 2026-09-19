@@ -7,17 +7,24 @@ import {
   mediaCatalogSchema,
   mediaThreadDetailSchema,
   mediaThreadPageSchema,
+  mediaTurnPageSchema,
+  mediaJobPageSchema,
+  mediaOutputPageSchema,
 } from 'librechat-data-provider';
 import type {
   MediaThreadDetail,
   MediaThreadPage,
   MediaThreadListRequest,
   TCheckUserKeyResponse,
+  MediaTurn,
+  MediaJob,
 } from 'librechat-data-provider';
+import { cacheMediaAssets, cacheMediaTurns } from './files';
 import { newerMediaSnapshot } from './reconcile';
 
 export type MediaQueryScope = {
   scope: string;
+  userId?: string;
   pollIntervalMs: number;
   catchUpIntervalMs: number;
   isCurrentSession: () => boolean;
@@ -104,6 +111,11 @@ export function useMediaThreads(host: MediaQueryScope, filter: MediaThreadListRe
         }
       };
       const next = current(host, mediaThreadPageSchema.parse(await load()));
+      cacheMediaAssets(
+        client,
+        host.userId,
+        next.items.flatMap((thread) => (thread.cover ? [thread.cover] : [])),
+      );
       const previous = client.getQueryData<{ pages: MediaThreadPage[] }>(key);
       const old = new Map(
         previous?.pages.flatMap((page) => page.items).map((thread) => [thread.threadId, thread]),
@@ -124,7 +136,7 @@ export function useMediaThreads(host: MediaQueryScope, filter: MediaThreadListRe
     },
   );
 }
-export function useMediaThread(host: MediaQueryScope, threadId?: string, preparing = false) {
+export function useMediaThread(host: MediaQueryScope, threadId?: string) {
   const client = useQueryClient();
   const key = [QueryKeys.mediaThread, host.scope, threadId];
   return useQuery(
@@ -136,6 +148,9 @@ export function useMediaThread(host: MediaQueryScope, threadId?: string, prepari
       );
       const previous = client.getQueryData<MediaThreadDetail>(key);
       if (previous && previous.thread.version > next.thread.version) return previous;
+      cacheMediaTurns(client, host.userId, next.turns.items);
+      if (next.latestImageContext)
+        cacheMediaAssets(client, host.userId, [next.latestImageContext.asset]);
       const turns = new Map(previous?.turns.items.map((turn) => [turn.turnId, turn]));
       return {
         ...next,
@@ -148,14 +163,109 @@ export function useMediaThread(host: MediaQueryScope, threadId?: string, prepari
     {
       enabled: !!threadId,
       refetchInterval: (data) =>
-        preparing || (data?.thread.pendingJobCount ?? 0) > 0
-          ? host.pollIntervalMs
-          : host.catchUpIntervalMs,
+        (data?.thread.pendingJobCount ?? 0) > 0 ? host.pollIntervalMs : host.catchUpIntervalMs,
       refetchIntervalInBackground: false,
       retry: false,
     },
   );
 }
+export function useMediaTurns(host: MediaQueryScope, detail: MediaThreadDetail, expanded: boolean) {
+  const client = useQueryClient();
+  return useInfiniteQuery(
+    [QueryKeys.mediaTurns, host.scope, detail.thread.threadId, detail.turns.nextCursor],
+    async ({ pageParam, signal }) => {
+      const page = current(
+        host,
+        mediaTurnPageSchema.parse(
+          await dataService.listMediaTurns(
+            detail.thread.threadId,
+            { cursor: pageParam ?? detail.turns.nextCursor },
+            signal,
+          ),
+        ),
+      );
+      cacheMediaTurns(client, host.userId, page.items);
+      return page;
+    },
+    {
+      enabled: expanded && !!detail.turns.nextCursor,
+      getNextPageParam: (page) => page.nextCursor,
+      retry: false,
+      refetchInterval: detail.thread.pendingJobCount ? host.pollIntervalMs : host.catchUpIntervalMs,
+      refetchIntervalInBackground: false,
+    },
+  );
+}
+
+const activeJob = (job: MediaJob) =>
+  !['succeeded', 'failed', 'cancelled', 'requires_attention'].includes(job.phase);
+
+export function useMediaTurnJobs(host: MediaQueryScope, turn: MediaTurn, expanded: boolean) {
+  const client = useQueryClient();
+  return useInfiniteQuery(
+    [QueryKeys.mediaTurnJobs, host.scope, turn.threadId, turn.turnId, turn.jobsNextCursor],
+    async ({ pageParam, signal }) => {
+      const page = current(
+        host,
+        mediaJobPageSchema.parse(
+          await dataService.listMediaTurnJobs(
+            turn.threadId,
+            turn.turnId,
+            { cursor: pageParam ?? turn.jobsNextCursor },
+            signal,
+          ),
+        ),
+      );
+      cacheMediaTurns(client, host.userId, [{ ...turn, jobs: page.items }]);
+      return page;
+    },
+    {
+      enabled: expanded && !!turn.jobsNextCursor,
+      getNextPageParam: (page) => page.nextCursor,
+      retry: false,
+      refetchInterval: (data) =>
+        turn.jobs.some(activeJob) || data?.pages.some((page) => page.items.some(activeJob))
+          ? host.pollIntervalMs
+          : host.catchUpIntervalMs,
+      refetchIntervalInBackground: false,
+    },
+  );
+}
+
+export function useMediaJobOutputs(host: MediaQueryScope, job: MediaJob, expanded: boolean) {
+  const client = useQueryClient();
+  return useInfiniteQuery(
+    [QueryKeys.mediaJobOutputs, host.scope, job.jobId, job.outputsNextCursor],
+    async ({ pageParam, signal }) => {
+      const page = current(
+        host,
+        mediaOutputPageSchema.parse(
+          await dataService.listMediaJobOutputs(
+            job.jobId,
+            { cursor: pageParam ?? job.outputsNextCursor },
+            signal,
+          ),
+        ),
+      );
+      cacheMediaAssets(
+        client,
+        host.userId,
+        page.items.flatMap((output) =>
+          output.kind !== 'text' && output.state === 'ready' && output.asset ? [output.asset] : [],
+        ),
+      );
+      return page;
+    },
+    {
+      enabled: expanded && !!job.outputsNextCursor,
+      getNextPageParam: (page) => page.nextCursor,
+      retry: false,
+      refetchInterval: activeJob(job) ? host.pollIntervalMs : host.catchUpIntervalMs,
+      refetchIntervalInBackground: false,
+    },
+  );
+}
+
 export function invalidateMedia(client: ReturnType<typeof useQueryClient>, scope: string) {
   return Promise.all([
     client.invalidateQueries([QueryKeys.mediaThreads, scope]),

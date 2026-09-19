@@ -52,6 +52,7 @@ import type { CallbackHandlerMethods } from '@langchain/core/callbacks/base';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { Callbacks } from '@langchain/core/callbacks/manager';
 import type { ModelBoundChatModelCallback } from '~/middleware/modelBoundContent';
+import type { NativeMediaFactory, NativeMediaSelection } from '~/media/native';
 import type { ModelErrorTrackerCallback } from '~/agents/failures/tracker';
 import type { ToolInputValidationError } from '~/agents/toolValidation';
 import type { ResolvedToolApprovalHook } from '~/agents/hitl/hooks';
@@ -60,7 +61,6 @@ import type { LangfuseTraceContext } from '~/langfuse/identity';
 import type { ResolvedAlwaysApplySkill } from '~/agents/skills';
 import type { CodeExecutionContext } from '~/agents/execution';
 import type { MCPToolAlias } from '~/tools/classification';
-import type { NativeMediaFactory } from '~/media/native';
 import type { SubagentUsageEvent } from '~/agents/usage';
 import type { RunFileSession } from './files/session';
 import type { RunFadingTiers } from './fading';
@@ -2388,6 +2388,14 @@ export async function createRun({
     );
 
     if (nativeMediaFactory && String(provider).toLowerCase() === 'google') {
+      let usageType: NativeMediaSelection['usageType'];
+      if (isSubagent) usageType = 'subagent';
+      else if (
+        agents[0]?.hide_sequential_outputs === true &&
+        agent.id !== agents[agents.length - 1]?.id
+      ) {
+        usageType = 'sequential';
+      }
       const modalities =
         'responseModalities' in llmConfig && Array.isArray(llmConfig.responseModalities)
           ? llmConfig.responseModalities.filter(
@@ -2399,6 +2407,7 @@ export async function createRun({
           provider: String(provider),
           model: selfModel ?? '',
           agentId: agent.id,
+          usageType,
           responseModalities: modalities,
           apiKey:
             'apiKey' in llmConfig && typeof llmConfig.apiKey === 'string'

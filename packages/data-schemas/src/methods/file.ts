@@ -41,7 +41,7 @@ function withOwnerScope<T extends FilterQuery<IMongoFile>>(
     ...filter,
     user: ownerScope.userId,
   };
-  if (ownerScope.tenantId) {
+  if (ownerScope.tenantId !== undefined) {
     scopedFilter.tenantId = ownerScope.tenantId;
   }
   return scopedFilter;
@@ -136,8 +136,12 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     selectFields?: Record<string, 0 | 1> | string | null,
   ) => Promise<IMongoFile[] | null>;
   getExpiredFiles: (limit?: number, options?: ExpiredFileQueryOptions) => Promise<IMongoFile[]>;
-  incrementFileDeletionAttempts: (file_id: string) => Promise<number>;
-  deferExpiredFile: (file_id: string, deletionRetryAt: Date) => Promise<void>;
+  incrementFileDeletionAttempts: (file_id: string, ownerScope?: FileOwnerScope) => Promise<number>;
+  deferExpiredFile: (
+    file_id: string,
+    deletionRetryAt: Date,
+    ownerScope?: FileOwnerScope,
+  ) => Promise<void>;
   getToolFilesByIds: (
     fileIds: string[],
     toolResourceSet?: Set<EToolResources>,
@@ -373,7 +377,20 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   ): Promise<IMongoFile[] | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
     const sortOptions = { updatedAt: -1 as SortOrder, ..._sortOptions };
-    const query = File.find(filter);
+    const query = File.find({
+      $and: [
+        filter,
+        {
+          $or: [
+            { mediaOutputKey: { $exists: false } },
+            {
+              mediaLifecycle: 'live',
+              $or: [{ mediaHardExpiresAt: null }, { mediaHardExpiresAt: { $gt: new Date() } }],
+            },
+          ],
+        },
+      ],
+    });
     if (selectFields != null) {
       query.select(selectFields);
     } else {
@@ -429,10 +446,13 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    * both still think it is below — so the give-up would never be reported.
    * Returning it here gives every caller a distinct attempt number.
    */
-  async function incrementFileDeletionAttempts(file_id: string): Promise<number> {
+  async function incrementFileDeletionAttempts(
+    file_id: string,
+    ownerScope?: FileOwnerScope,
+  ): Promise<number> {
     const File = mongoose.models.File as Model<IMongoFile>;
     const file = await File.findOneAndUpdate(
-      { file_id },
+      withOwnerScope({ file_id }, ownerScope),
       { $inc: { deletionAttempts: 1 } },
       /** `timestamps: false`: sweep bookkeeping is not a content write.
        *  `processCodeOutput` falls back to `updatedAt` as the writer-order
@@ -453,9 +473,17 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    * computed a shorter backoff from a lower attempt count cannot pull the
    * file forward past a longer one another node already committed.
    */
-  async function deferExpiredFile(file_id: string, deletionRetryAt: Date): Promise<void> {
+  async function deferExpiredFile(
+    file_id: string,
+    deletionRetryAt: Date,
+    ownerScope?: FileOwnerScope,
+  ): Promise<void> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    await File.updateOne({ file_id }, { $max: { deletionRetryAt } }, { timestamps: false }).exec();
+    await File.updateOne(
+      withOwnerScope({ file_id }, ownerScope),
+      { $max: { deletionRetryAt } },
+      { timestamps: false },
+    ).exec();
   }
 
   /**

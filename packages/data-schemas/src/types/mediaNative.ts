@@ -22,6 +22,11 @@ export type MediaNativePartDocument = Omit<MediaNativePartRecord, 'expiresAt'> &
   expiresAt?: Date;
 };
 export type MediaNativePartReservation = NonNullable<MediaStoredJob['nativePartKeys']>[number];
+export type MediaNativeReference = { continuationRef?: string; fileId?: string };
+export type MediaNativeExecution = Pick<
+  MediaExecutionSnapshot,
+  'api' | 'modelId' | 'bindingRevision'
+>;
 
 export interface MediaNativeMethods {
   ensureMediaNativeIndexes(): Promise<void>;
@@ -50,6 +55,7 @@ export interface MediaNativeMethods {
     scope: MediaOwnerScope;
     jobId: string;
     reason: 'aborted' | 'provider' | 'storage';
+    resolutionId?: string;
   }): Promise<MediaStoredJob | null>;
   reconcileMediaNativeRecordings(input: {
     scope: MediaOwnerScope;
@@ -61,6 +67,48 @@ export interface MediaNativeMethods {
     scope: MediaOwnerScope;
     continuationRef?: string;
     fileId?: string;
-    execution: Pick<MediaExecutionSnapshot, 'api' | 'modelId' | 'bindingRevision'>;
+    execution: MediaNativeExecution;
+    conversationId?: string;
+    bindingAliases?: readonly string[];
   }): Promise<MediaNativePartRecord | null>;
+  getMediaNativeContinuations(input: {
+    scope: MediaOwnerScope;
+    references: readonly MediaNativeReference[];
+    execution: MediaNativeExecution;
+    conversationId?: string;
+    bindingAliases?: readonly string[];
+    limit: number;
+  }): Promise<Array<MediaNativePartRecord | null>>;
+  retainMediaNativeConversation(input: {
+    scope: MediaOwnerScope;
+    conversationId: string;
+    continuationRefs: readonly string[];
+    maxRetainers: number;
+    limit: number;
+    pendingUntil?: string;
+  }): Promise<boolean>;
+  confirmMediaNativeConversation(input: {
+    scope: MediaOwnerScope;
+    conversationId: string;
+  }): Promise<void>;
+  prepareMediaNativeMessageDeletion(input: {
+    scope: MediaOwnerScope;
+    conversationId: string;
+    continuationRefs: readonly string[];
+  }): Promise<void>;
+  reconcileMediaNativeMessageDeletion(input: {
+    scope: MediaOwnerScope;
+    conversationId: string;
+  }): Promise<void>;
+  releaseMediaNativeConversation(input: {
+    scope: MediaOwnerScope;
+    conversationId: string;
+    maxRetainers: number;
+  }): Promise<void>;
+  migrateMediaNativeConsumers(input: {
+    scope: MediaOwnerScope;
+    threadId?: string;
+    maxRetainers: number;
+    limit: number;
+  }): Promise<number>;
 }

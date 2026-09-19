@@ -30,6 +30,7 @@ import type {
   UploadResult,
   UrlBuilder,
   S3FileRef,
+  StorageReadOptions,
 } from '~/storage/types';
 import type { StoredFileRef } from '~/storage/path';
 import type { ServerRequest } from '~/types';
@@ -51,6 +52,7 @@ import {
   assertPathSegment,
   sanitizeContentDispositionFilename,
 } from '~/storage/validation';
+import { storageRangeHeader, assertStorageRange } from '../read';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { initializeS3 } from '~/cdn/s3';
 import { deleteRagFile } from '~/files';
@@ -852,11 +854,11 @@ export async function uploadFileToS3({
 export async function getS3FileStream(
   _req: ServerRequest,
   filePath: string,
-  { signal }: { signal?: AbortSignal } = {},
+  { signal, range }: StorageReadOptions = {},
 ): Promise<Readable> {
   try {
     const Key = extractKeyFromS3Url(filePath);
-    const params = { Bucket: bucketName, Key };
+    const params = { Bucket: bucketName, Key, Range: storageRangeHeader(range) };
 
     const s3 = initializeS3();
     if (!s3) {
@@ -867,7 +869,9 @@ export async function getS3FileStream(
     if (!data.Body) {
       throw new Error('[getS3FileStream] S3 response body is empty');
     }
-    return data.Body as Readable;
+    const stream = data.Body as Readable;
+    assertStorageRange(stream, range, data.ContentRange);
+    return stream;
   } catch (error) {
     logger.error('[getS3FileStream] Error retrieving S3 file stream', getSafeErrorMetadata(error));
     throw error;

@@ -4,6 +4,12 @@
 
 The patch includes published source, CommonJS, ESM, and TypeScript declarations because this repository consumes the published package. `api/package.json` pins the exact version; root `postinstall` applies the patch with failure treated as an installation error. `patch-package` is a production dependency so container installs with `--omit=dev` apply the same code, and both Dockerfiles copy this directory before installation.
 
+The corresponding SDK source is [`usnavy13/agents` commit `c9190b7f`](https://github.com/usnavy13/agents/commit/c9190b7f9ab3c17de44d7b926f62d51d9182267c) on `feat/native-media-port`.
+
+The SDK ships its standalone `config/native-media-contract.test.mjs` with the bridge. `npm run test:agents-contract` runs that same fixture against the installed CommonJS and ESM artifacts, covering invocation, both event APIs, streaming, admission, signed replay, blocked responses, and usage retained after storage failure. The Media CI lane runs this contract before the real Studio browser journey. Dependency/build cache keys and Turbo inputs include the patch; patched dependencies force complete test selection.
+
 The host adapter is in `packages/api/src/media/sdk.ts`; request and model selection are wired in `packages/api/src/agents/run.ts`. The port implementation in `packages/api/src/media/native.ts` owns authorization, immutable storage, journal completion, and continuation identity checks. `packages/api/src/media/nativeSdk.spec.ts` exercises the actual SDK graph and Google adapter with a controlled provider boundary: ordered mixed output, serialization without inline bytes, signed replay, cancellation, admission, missing storage, and host replay preservation. No paid calls are made.
 
 To update the SDK, port these changes against the new version, rerun the SDK tests and workspace typechecks, then regenerate the exact version patch with `npx patch-package @librechat/agents`. Verify the patch against an unpacked pristine package before committing. Remove the patch and pin when an upstream release supplies the port and ordered native-content protocol with equivalent persistence-before-emission and replay behavior. No upstream issue or pull request has been created by this local change.
+
+Regeneration must copy the built `dist`, changed production `src`, and the SDK contract fixture from the reviewed SDK checkout into the installed package before generating the patch. Run the installed contract again after applying the patch to a pristine package. This prevents reviewing one SDK implementation while shipping another.

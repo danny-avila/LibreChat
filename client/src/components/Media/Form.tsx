@@ -20,6 +20,8 @@ import {
   mediaSubmissionRequestSchema,
   mediaURLUploadRequestSchema,
   mediaProviderOptionsSchema,
+  validateMediaCapability,
+  resolveMediaParameters,
 } from 'librechat-data-provider';
 import type {
   MediaCatalog,
@@ -36,12 +38,12 @@ import type { MediaEditTarget } from './context';
 import { mediaControlLabels, mediaErrorLabels, mediaInputRoleLabels } from './labels';
 import { useMediaUpload } from '~/data-provider/Media/uploads';
 import { useMediaPresets } from '~/data-provider/Media';
-import { emptyDraft, mediaDraftFamily } from './state';
 import { mediaFeatures, useMediaHost } from './host';
 import { MediaReferenceUpload } from './Reference';
 import { withImageContext } from './context';
 import { useMediaCredentials } from './Keys';
 import { mediaErrorCode } from './commands';
+import { mediaDraftFamily } from './state';
 import { MediaPresets } from './Presets';
 import { MediaPreview } from './Asset';
 import { useLocalize } from '~/hooks';
@@ -50,20 +52,16 @@ const offeringId = (
   offering: Pick<MediaCatalog['offerings'][number], 'connectionId' | 'modelId'>,
 ) => JSON.stringify([offering.connectionId, offering.modelId]);
 
-const numericKeys = [
-  'count',
-  'durationSeconds',
-  'seed',
-  'outputCompression',
-  'strength',
-  'guidance',
-  'upscaleFactor',
-  'creativity',
-] as const;
-const enumKeys = ['size', 'aspectRatio', 'quality', 'format', 'background', 'resolution'] as const;
-const controlKeys = [...numericKeys, ...enumKeys] as const;
-type NumericKey = (typeof numericKeys)[number];
-type EnumKey = (typeof enumKeys)[number];
+type NumericKey =
+  | 'count'
+  | 'durationSeconds'
+  | 'seed'
+  | 'outputCompression'
+  | 'strength'
+  | 'guidance'
+  | 'upscaleFactor'
+  | 'creativity';
+type EnumKey = 'size' | 'aspectRatio' | 'quality' | 'format' | 'background' | 'resolution';
 type FormControls = Partial<Record<NumericKey, MediaNumberControl>> &
   Partial<Record<EnumKey, MediaEnumControl>> & {
     audio?: boolean;
@@ -71,55 +69,13 @@ type FormControls = Partial<Record<NumericKey, MediaNumberControl>> &
     providerOptions?: string[];
   };
 
-function defaultParameters(draft: MediaDraft, controls: FormControls): MediaDraft['parameters'] {
-  const values: MediaDraft['parameters'] = {
-    count: draft.parameters.count ?? controls.count?.default ?? 1,
-  };
-  for (const key of numericKeys) {
-    const control = controls[key];
-    const value = draft.parameters[key] ?? control?.default;
-    if (control && value !== undefined) values[key] = value;
-  }
-  // Exact pixels and resolution tiers are alternative sizing methods.
-  const exactSize = !!draft.parameters.size || (!controls.resolution && !!controls.size);
-  for (const key of enumKeys) {
-    const control = controls[key];
-    if (
-      !control ||
-      (key === 'size' && !exactSize) ||
-      (key === 'resolution' && exactSize) ||
-      (key === 'aspectRatio' && exactSize)
-    )
-      continue;
-    const value =
-      draft.parameters[key] ??
-      control.default ??
-      (control.required ? undefined : control.values[0]);
-    if (value !== undefined) Object.assign(values, { [key]: value });
-  }
-  if (controls.audio) values.audio = draft.parameters.audio ?? false;
-  if (controls.negativePrompt && draft.parameters.negativePrompt)
-    values.negativePrompt = draft.parameters.negativePrompt;
-  return values;
-}
-
-function readProviderOptions(text: string, allowed: string[] | undefined, catalog: MediaCatalog) {
+function readProviderOptions(text: string, catalog: MediaCatalog) {
   if (!text.trim()) return {};
   try {
     if (new TextEncoder().encode(text).length > catalog.limits.maxProviderOptionBytes)
       return { invalid: true };
     const value: unknown = JSON.parse(text);
     if (!value || typeof value !== 'object' || Array.isArray(value)) return { invalid: true };
-    const pending: Array<{ value: unknown; depth: number }> = [{ value, depth: 0 }];
-    while (pending.length) {
-      const item = pending.pop()!;
-      if (item.depth > catalog.limits.maxProviderOptionDepth) return { invalid: true };
-      if (item.value && typeof item.value === 'object')
-        Object.values(item.value).forEach((child) =>
-          pending.push({ value: child, depth: item.depth + 1 }),
-        );
-    }
-    if (Object.keys(value).some((key) => !allowed?.includes(key))) return { invalid: true };
     const parsed = mediaProviderOptionsSchema.safeParse(value);
     return parsed.success ? { value: parsed.data } : { invalid: true };
   } catch {
@@ -143,12 +99,21 @@ const sameParameters = (left: MediaDraft['parameters'], right: MediaDraft['param
   canonical(left) === canonical(right);
 
 /** A comparison run keeps the batch size and otherwise takes the other model's own defaults. */
-function comparisonParameters(capability: MediaCapability, count: number) {
+function comparisonParameters(
+  capability: MediaCapability,
+  count: number,
+  inputs: MediaDraft['inputs'],
+) {
   const min = capability.controls.count?.min ?? 1;
   const max = capability.controls.count?.max ?? count;
-  return defaultParameters(
-    { ...emptyDraft(), parameters: { count: Math.min(Math.max(count, min), max) } },
-    capability.controls,
+  return resolveMediaParameters(
+    {
+      operation: capability.operation,
+      inputs,
+      parameters: { count: Math.min(Math.max(count, min), max) },
+    },
+    capability,
+    { optionalChoices: true },
   );
 }
 
@@ -304,6 +269,13 @@ export function MediaForm({
       (item) => item.operation === settings.operation,
     );
     if (!next || !cap) return false;
+    if (settings.providerTag && !route) return false;
+    if (
+      validateMediaCapability({ ...settings, inputs: [] }, cap, catalog.limits, {
+        checkInputs: false,
+      }).length
+    )
+      return false;
     const update: Partial<MediaDraft> = {
       offering: offeringId(next),
       providerTag: route?.providerTag ?? next.defaultProviderTag,
@@ -345,48 +317,37 @@ export function MediaForm({
     change({ parameters });
   };
   const controls: FormControls = capability?.controls ?? {};
-  const parameters = defaultParameters(draft, controls);
+  const parameters = capability
+    ? resolveMediaParameters(draft, capability, { optionalChoices: true })
+    : { ...draft.parameters };
   const providerOptionsText =
     draft.providerOptionsText ??
     (draft.parameters.providerOptions
       ? JSON.stringify(draft.parameters.providerOptions, null, 2)
       : '');
-  const options = readProviderOptions(providerOptionsText, controls.providerOptions, catalog);
+  const options = readProviderOptions(providerOptionsText, catalog);
+  delete parameters.providerOptions;
   if (options.value && Object.keys(options.value).length)
     parameters.providerOptions = options.value;
-  const invalidSettings: (keyof typeof mediaControlLabels)[] = controlKeys.flatMap((key) => {
-    const control = controls[key];
-    if (!control) return [];
-    const value = draft.parameters[key] ?? parameters[key];
-    const missingRequired = 'required' in control && control.required && value == null;
-    const invalidChoice =
-      value != null &&
-      'values' in control &&
-      control.values &&
-      !control.values.some((choice) => choice === value);
-    const invalidNumber =
-      value != null &&
-      'min' in control &&
-      (typeof value !== 'number' ||
-        !Number.isFinite(value) ||
-        value < control.min ||
-        value > control.max);
-    const invalidInteger =
-      value != null &&
-      (key === 'count' || key === 'seed' || key === 'outputCompression') &&
-      !Number.isInteger(value);
-    return missingRequired || invalidChoice || invalidNumber || invalidInteger ? [key] : [];
-  });
-  if (draft.parameters.size && draft.parameters.resolution)
-    invalidSettings.push('size', 'resolution');
-  if (parameters.background === 'transparent' && parameters.format === 'jpeg')
-    invalidSettings.push('background', 'format');
-  if (
-    draft.parameters.negativePrompt &&
-    (!controls.negativePrompt ||
-      draft.parameters.negativePrompt.length > catalog.limits.maxPromptChars)
-  )
-    invalidSettings.push('negativePrompt');
+  const validation = capability
+    ? validateMediaCapability(
+        {
+          operation: capability.operation,
+          inputs: draft.inputs,
+          parameters,
+        },
+        capability,
+        catalog.limits,
+      )
+    : [];
+  const invalidSettings = [
+    ...new Set(
+      validation.flatMap((issue) =>
+        issue.field === 'inputs' || issue.field === 'prompt' ? [] : [issue.field],
+      ),
+    ),
+  ];
+  const optionsInvalid = options.invalid || invalidSettings.includes('providerOptions');
   const numeric = (key: NumericKey, control?: MediaNumberControl) => {
     if (!control) return null;
     const label = localize(mediaControlLabels[key]);
@@ -484,10 +445,9 @@ export function MediaForm({
       busy ||
       uploading ||
       invalidSettings.length ||
-      options.invalid ||
+      optionsInvalid ||
       staleRoute ||
       !inputsValid ||
-      avatarVoiceMissing ||
       unsupportedContext ||
       compareInvalid
     )
@@ -514,50 +474,45 @@ export function MediaForm({
     });
     if (
       !parsed.success ||
-      draft.inputs.length < capability.inputs.min ||
-      draft.inputs.length > capability.inputs.max ||
-      draft.inputs.some((input) => !capability.inputs.roles.includes(input.role)) ||
-      capability.inputs.requiredRoles?.some(
-        (role) => !draft.inputs.some((input) => input.role === role),
-      ) ||
-      (capability.workflow === 'avatar' &&
-        !draft.inputs.some((input) => input.role === 'audio') &&
-        !parameters.providerOptions?.voice_id)
+      validateMediaCapability(parsed.data, capability, catalog.limits).length
     ) {
       setError(localize('com_media_error_invalid_request'));
       return;
     }
-    const receipt = await send({
+    const comparison = comparing
+      ? mediaSubmissionRequestSchema.safeParse({
+          schemaVersion: 1,
+          clientRequestId: v4(),
+          threadId,
+          parentTurnId: threadId ? draft.parentTurnId : undefined,
+          selection: {
+            connectionId: compareOffering.connectionId,
+            modelId: compareOffering.modelId,
+            catalogVersion: catalog.version,
+            providerTag: compareRoute?.providerTag ?? compareOffering.defaultProviderTag,
+          },
+          operation: compareCapability.operation,
+          prompt: draft.prompt,
+          inputs: draft.inputs,
+          parameters: comparisonParameters(compareCapability, parameters.count, draft.inputs),
+          comparisonId: parsed.data.comparisonId,
+        })
+      : undefined;
+    if (
+      comparison &&
+      (!comparison.success ||
+        validateMediaCapability(comparison.data, compareCapability!, catalog.limits).length)
+    ) {
+      setError(localize('com_media_compare_unsupported'));
+      return;
+    }
+    await send({
       kind: 'submission',
       request: parsed.data,
+      ...(comparison?.success ? { following: comparison.data } : {}),
       draftKey,
       draftRevision: draft.revision,
     });
-    if (!comparing || !receipt || receipt.phase === 'rejected') return;
-    const comparison = mediaSubmissionRequestSchema.safeParse({
-      schemaVersion: 1,
-      clientRequestId: v4(),
-      threadId: receipt.threadId,
-      parentTurnId: threadId ? draft.parentTurnId : undefined,
-      selection: {
-        connectionId: compareOffering.connectionId,
-        modelId: compareOffering.modelId,
-        catalogVersion: catalog.version,
-        providerTag: compareRoute?.providerTag ?? compareOffering.defaultProviderTag,
-      },
-      operation: compareCapability.operation,
-      prompt: draft.prompt,
-      inputs: draft.inputs,
-      parameters: comparisonParameters(compareCapability, parameters.count),
-      comparisonId: parsed.data.comparisonId,
-    });
-    if (comparison.success)
-      await send({
-        kind: 'submission',
-        request: comparison.data,
-        draftKey,
-        draftRevision: draft.revision,
-      });
   }
   async function uploadFile(file?: File): Promise<boolean> {
     if (!file || !host.canCreate || !capability || uploading) return false;
@@ -888,21 +843,7 @@ export function MediaForm({
     }
     change(update);
   };
-  const inputsValid =
-    draft.inputs.length >= capability.inputs.min &&
-    draft.inputs.length <= capability.inputs.max &&
-    draft.inputs.every((input) => capability.inputs.roles.includes(input.role)) &&
-    draft.inputs.every(
-      (input) => !hostedRoles.some((role) => role === input.role) || !!input.sourceURL,
-    ) &&
-    (capability.inputs.requiredRoles ?? []).every((role) =>
-      draft.inputs.some((input) => input.role === role),
-    );
-  const avatarVoiceMissing =
-    capability.workflow === 'avatar' &&
-    !draft.inputs.some((input) => input.role === 'audio') &&
-    (typeof parameters.providerOptions?.voice_id !== 'string' ||
-      !parameters.providerOptions.voice_id.trim());
+  const inputsValid = !validation.some((issue) => issue.field === 'inputs');
   const compareCandidates = features.compare
     ? modeOfferings.filter(
         (item) => availableForMode(item) && offeringId(item) !== offeringId(offering),
@@ -920,9 +861,16 @@ export function MediaForm({
   );
   const compareInputsValid =
     !!compareCapability &&
-    draft.inputs.length >= compareCapability.inputs.min &&
-    draft.inputs.length <= compareCapability.inputs.max &&
-    draft.inputs.every((input) => compareCapability.inputs.roles.includes(input.role));
+    (!(draft.compare?.providerTag ?? compareOffering?.defaultProviderTag) || !!compareRoute) &&
+    validateMediaCapability(
+      {
+        operation: compareCapability.operation,
+        inputs: draft.inputs,
+        parameters: comparisonParameters(compareCapability, parameters.count, draft.inputs),
+      },
+      compareCapability,
+      catalog.limits,
+    ).length === 0;
   const compareInvalid = features.compare && !!draft.compare && !compareInputsValid;
   const currentSettings: MediaPresetSettings = {
     operation: activeOperation,
@@ -938,7 +886,9 @@ export function MediaForm({
       preset.settings.modelId === offering.modelId &&
       (preset.settings.providerTag ?? undefined) === (providerTag ?? undefined) &&
       sameParameters(
-        defaultParameters({ ...emptyDraft(), parameters: preset.settings.parameters }, controls),
+        resolveMediaParameters({ ...preset.settings, inputs: [] }, capability, {
+          optionalChoices: true,
+        }),
         parameters,
       ),
   )?.presetId;
@@ -1005,6 +955,7 @@ export function MediaForm({
                 clientRequestId: v4(),
                 threadId,
                 inputs: draft.inputs,
+                temporary: !threadId && draft.temporary ? true : undefined,
                 title: draft.prompt.slice(0, catalog.limits.maxTitleChars) || undefined,
               },
               draftKey,
@@ -1318,8 +1269,8 @@ export function MediaForm({
                 onChange={(event) => change({ providerOptionsText: event.target.value })}
                 rows={4}
                 spellCheck={false}
-                aria-invalid={options.invalid || undefined}
-                aria-describedby={`${id}-provider-options-hint${options.invalid ? ` ${id}-provider-options-error` : ''}`}
+                aria-invalid={optionsInvalid || undefined}
+                aria-describedby={`${id}-provider-options-hint${optionsInvalid ? ` ${id}-provider-options-error` : ''}`}
               />
             </div>
           )}
@@ -1377,17 +1328,12 @@ export function MediaForm({
           })}
         </p>
       )}
-      {avatarVoiceMissing && (
-        <p role="status" className="text-xs text-text-secondary">
-          {localize('com_media_avatar_voice_required')}
-        </p>
-      )}
       {staleRoute && (
         <Alert variant="warning" id={`${id}-stale-route`}>
           {localize('com_media_stale_provider_route')}
         </Alert>
       )}
-      {options.invalid && (
+      {optionsInvalid && (
         <Alert variant="warning" id={`${id}-provider-options-error`}>
           {localize('com_media_provider_options_invalid')}
         </Alert>
@@ -1421,8 +1367,7 @@ export function MediaForm({
             !uploading &&
             !unsupportedContext &&
             !staleRoute &&
-            !options.invalid &&
-            !avatarVoiceMissing &&
+            !optionsInvalid &&
             !compareInvalid &&
             inputsValid &&
             invalidSettings.length === 0 &&

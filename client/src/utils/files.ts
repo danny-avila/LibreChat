@@ -246,29 +246,16 @@ export function formatDate(dateString: string, isSmallScreen = false) {
  * Adds a file to the query cache
  */
 export function addFileToCache(queryClient: QueryClient, newfile: TFile) {
-  const currentFiles = queryClient.getQueryData<TFile[]>([QueryKeys.files]);
+  addFilesToCache(queryClient, [newfile]);
+}
 
-  if (!currentFiles) {
-    console.warn('No current files found in cache, skipped updating file query cache');
-    return;
-  }
-
-  const fileIndex = currentFiles.findIndex((file) => file.file_id === newfile.file_id);
-
-  if (fileIndex > -1) {
-    console.warn('File already exists in cache, skipped updating file query cache');
-    return;
-  }
-
-  queryClient.setQueryData<TFile[]>(
-    [QueryKeys.files],
-    [
-      {
-        ...newfile,
-      },
-      ...currentFiles,
-    ],
-  );
+export function addFilesToCache(queryClient: QueryClient, files: TFile[]) {
+  if (!files.length) return;
+  queryClient.setQueryData<TFile[]>([QueryKeys.files], (previous = []) => {
+    const merged = new Map(previous.map((file) => [file.file_id, file]));
+    for (const file of files) merged.set(file.file_id, { ...merged.get(file.file_id), ...file });
+    return [...merged.values()];
+  });
 }
 
 export function formatBytes(bytes: number, decimals = 2) {
@@ -284,7 +271,7 @@ export function formatBytes(bytes: number, decimals = 2) {
 const { checkType } = defaultFileConfig;
 
 type FileSizeValidationParams = {
-  fileList: File[];
+  fileList: Pick<File, 'size'>[];
   files: Map<string, ExtendedFile>;
   setError: (error: string) => void;
   endpointFileConfig: EndpointFileConfig;

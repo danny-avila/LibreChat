@@ -41,5 +41,17 @@ export function createDeferredNativeMediaPort(
         throw new MediaServiceError('not_found', 404, 'Native continuation is unavailable.');
       return port.restore(input);
     },
+    async restoreBatch(input) {
+      const port = await resolve();
+      if (!port)
+        throw new MediaServiceError('not_found', 404, 'Native continuation is unavailable.');
+      if (port.restoreBatch) return port.restoreBatch(input);
+      const result = [];
+      for (const part of input.parts) {
+        input.signal?.throwIfAborted();
+        result.push(await port.restore(part));
+      }
+      return result;
+    },
   };
 }

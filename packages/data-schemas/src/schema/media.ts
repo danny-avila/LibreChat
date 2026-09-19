@@ -50,6 +50,11 @@ export const mediaThreadSchema: Schema<MediaStoredThread> = new Schema(
     turnCount: { type: Number, default: 0 },
     retiredAt: String,
     expiresAt: String,
+    payloadPurgedAt: String,
+    titleClaim: {
+      type: new Schema({ jobId: String, claimedAt: String }, { _id: false }),
+      default: undefined,
+    },
   },
   options,
 );
@@ -82,6 +87,7 @@ export const mediaTurnSchema: Schema<MediaStoredTurn> = new Schema(
     clientRequestId: String,
     fingerprint: String,
     publicationPhase: { type: String, enum: ['preparing', 'accepted', 'rejected'], required: true },
+    publicationExpiresAt: String,
   },
   options,
 );
@@ -131,6 +137,18 @@ export const mediaJobSchema: Schema<MediaStoredJob> = new Schema(
     nativeLimits: Schema.Types.Mixed,
     nativePartKeys: { type: Schema.Types.Mixed, default: undefined },
     nativePartBytes: Number,
+    nativeConsumers: { type: [String], default: undefined },
+    nativeRetentionState: { type: String, enum: ['live', 'purging', 'purged'] },
+    nativeCleanupPending: Boolean,
+    nativeConsumerClaims: {
+      type: [{ _id: false, conversationId: String, expiresAt: String }],
+      default: undefined,
+    },
+    nativeConsumersCheckedAt: String,
+    nativeConsumersTracked: Boolean,
+    recoveryDecisions: { type: [Schema.Types.Mixed], default: undefined },
+    publicationExpiresAt: String,
+    payloadPurgedAt: String,
     dueAt: { type: String, required: true },
     leaseToken: String,
     leaseOwner: String,
@@ -153,6 +171,12 @@ mediaJobSchema.index({ tenantId: 1, ownerId: 1, turnId: 1, createdAt: 1, jobId: 
 mediaJobSchema.index({ tenantId: 1, ownerId: 1, threadId: 1, 'receipt.phase': 1, phase: 1 });
 mediaJobSchema.index({ executionOwner: 1, 'receipt.phase': 1, phase: 1, dueAt: 1, leaseUntil: 1 });
 mediaJobSchema.index({ 'receipt.phase': 1, updatedAt: 1, jobId: 1 });
+mediaJobSchema.index({ tenantId: 1, ownerId: 1, nativeConsumers: 1 });
+mediaJobSchema.index({ tenantId: 1, phase: 1, jobId: 1, ownerId: 1 });
+mediaJobSchema.index({ tenantId: 1, executionOwner: 1, 'receipt.phase': 1, createdAt: 1 });
+mediaJobSchema.index({ executionOwner: 1, nativeCleanupPending: 1, ownerId: 1, tenantId: 1 });
+mediaJobSchema.index({ executionOwner: 1, nativeConsumersTracked: 1, nativeConsumersCheckedAt: 1 });
+mediaJobSchema.index({ executionOwner: 1, 'nativeSource.expiresAt': 1, nativeRetentionState: 1 });
 mediaJobSchema.index(
   {
     tenantId: 1,
@@ -189,6 +213,8 @@ export const mediaAssetWriteSchema: Schema<MediaAssetWrite> = new Schema(
     asset: Schema.Types.Mixed,
     publicationContent: Schema.Types.Mixed,
     deletionToken: String,
+    deletionRetryAt: String,
+    deletionAttempts: Number,
   },
   options,
 );

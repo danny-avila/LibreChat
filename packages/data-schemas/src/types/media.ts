@@ -3,10 +3,12 @@ import type {
   MediaAsset,
   MediaRendition,
   MediaRenditionKind,
+  MediaRecoveryRequest,
   FileStorage,
   MediaImportReceipt,
   MediaImportRequest,
   MediaIntegration,
+  MediaImageContext,
   MediaJob,
   MediaOutput,
   MediaSubmissionReceipt,
@@ -15,6 +17,13 @@ import type {
   MediaThreadListRequest,
   MediaTurn,
 } from 'librechat-data-provider';
+
+export type MediaRecoveryDecision = {
+  actorId: string;
+  createdAt: string;
+  fingerprint: string;
+  request: MediaRecoveryRequest;
+};
 
 /** A reserved UUID-compatible namespace keeps ordinary chat attachment validators working. */
 export const MEDIA_FILE_ID_PREFIX: string = 'f17ecafe-';
@@ -101,6 +110,16 @@ export type MediaStoredJob = MediaJob &
     nativeLimits?: { maxParts: number; maxPartBytes: number; maxRecordingBytes: number };
     nativePartKeys?: Array<{ key: string; fingerprint: string; bytes: number }>;
     nativePartBytes?: number;
+    /** Conversation consumers own native continuation independently of the Studio presentation. */
+    nativeConsumers?: string[];
+    nativeRetentionState?: 'live' | 'purging' | 'purged';
+    nativeCleanupPending?: boolean;
+    nativeConsumerClaims?: Array<{ conversationId: string; expiresAt: string }>;
+    nativeConsumersCheckedAt?: string;
+    nativeConsumersTracked?: boolean;
+    publicationExpiresAt?: string | null;
+    payloadPurgedAt?: string;
+    recoveryDecisions?: MediaRecoveryDecision[];
     clientRequestId: string;
     fingerprint: string;
     request: MediaSubmissionRequest;
@@ -127,6 +146,9 @@ export type MediaStoredThread = MediaThread &
     /** Admission intents are bounded by the active-job capacity. */
     dispatchJobIds: string[];
     coverExplicit?: boolean;
+    payloadPurgedAt?: string;
+    /** Paid title dispatch is one-shot: an ambiguous invocation is never retried automatically. */
+    titleClaim?: { jobId: string; claimedAt: string };
   };
 export type MediaStoredTurn = Omit<MediaTurn, 'jobs' | 'assets'> &
   MediaOwnerScope & {
@@ -141,6 +163,7 @@ export type MediaStoredTurn = Omit<MediaTurn, 'jobs' | 'assets'> &
     clientRequestId?: string;
     fingerprint?: string;
     publicationPhase: 'preparing' | 'accepted' | 'rejected';
+    publicationExpiresAt?: string | null;
   };
 export type StageMediaSubmissionInput = {
   scope: MediaOwnerScope;
@@ -149,6 +172,8 @@ export type StageMediaSubmissionInput = {
   maxActiveJobs: number;
   maxPendingTotal: number;
   executionOwner?: 'media' | 'chat';
+  /** Resolved at admission; null explicitly preserves a permanent presentation across recovery. */
+  publicationExpiresAt?: string | null;
 };
 export type MediaJobObservation = {
   phase: MediaJob['phase'];
@@ -200,6 +225,8 @@ export type MediaAssetWrite = MediaOwnerScope & {
   asset?: MediaAsset;
   publicationContent?: MediaAssetContent;
   deletionToken?: string;
+  deletionRetryAt?: string;
+  deletionAttempts?: number;
 };
 export type MediaSourceFile = Omit<MediaAssetContent, 'contentDigest'> & { sourceRevision: string };
 export type MediaPermit = MediaOwnerScope & {
@@ -234,6 +261,7 @@ export interface MediaMethods {
     scope: MediaOwnerScope;
     request: MediaImportRequest;
     identityRequest?: MediaImportRequest;
+    publicationExpiresAt?: string | null;
   }): Promise<MediaImportReceipt>;
   publishMediaImport(
     scope: MediaOwnerScope,
@@ -251,6 +279,10 @@ export interface MediaMethods {
   listMediaTurns(
     input: MediaPageInput & { threadId: string; jobsPerTurn: number },
   ): Promise<MediaPage<MediaTurn>>;
+  getMediaLatestImageContext(input: {
+    scope: MediaOwnerScope;
+    threadId: string;
+  }): Promise<MediaImageContext | null>;
   listMediaTurnJobs(
     input: MediaPageInput & { turnId: string; threadId?: string },
   ): Promise<MediaPage<MediaJob>>;
@@ -318,10 +350,13 @@ export interface MediaMethods {
   recoverMediaPublications(
     input: { scope: MediaOwnerScope; limit: number } & MediaPublicationOptions,
   ): Promise<number>;
-  getStoredMediaCredential(input: {
-    scope: MediaOwnerScope;
-    name: string;
-  }): Promise<{ value: string; expiresAt: string | null; bindingRevision: string } | null>;
+  getStoredMediaCredential(input: { scope: MediaOwnerScope; name: string }): Promise<{
+    value: string;
+    expiresAt: string | null;
+    bindingRevision: string;
+    id?: string;
+    legacyBindingRevision?: string;
+  } | null>;
   reserveMediaAssetWrite(input: {
     scope: MediaOwnerScope;
     outputKey: string;
@@ -344,7 +379,17 @@ export interface MediaMethods {
     scope: MediaOwnerScope;
     limit: number;
     staleBefore: string;
+    now?: string;
   }): Promise<MediaAssetWrite[]>;
+  incrementMediaAssetWriteDeletionAttempts(input: {
+    scope: MediaOwnerScope;
+    writeId: string;
+  }): Promise<number>;
+  deferMediaAssetWriteCleanup(input: {
+    scope: MediaOwnerScope;
+    writeId: string;
+    retryAt: string;
+  }): Promise<void>;
   claimMediaAssetWriteDeletion(input: {
     scope: MediaOwnerScope;
     writeId: string;
@@ -432,6 +477,8 @@ export interface MediaMethods {
     now: string;
   }): Promise<MediaPage<MediaOwnerScope>>;
   reconcileMediaRetirements(input: { scope: MediaOwnerScope; limit: number }): Promise<number>;
+  /** Erases retired presentation payloads after provider/accounting and surviving consumers settle. */
+  purgeMediaThreadPayloads(input: { scope: MediaOwnerScope; threadId: string }): Promise<boolean>;
   listMediaExpiredAssets(input: {
     scope: MediaOwnerScope;
     limit: number;

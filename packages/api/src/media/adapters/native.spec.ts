@@ -68,6 +68,7 @@ function fixture(api: MediaProviderAdapter['api'], responses: object[] = []) {
   };
   const configuration = adapter.configuration;
   const context: MediaProviderContext = {
+    jobId: 'server-job',
     transport,
     config: resolveMediaConfig(),
     signal: new AbortController().signal,
@@ -576,6 +577,29 @@ describe('Runway and Krea native jobs', () => {
 });
 
 describe('Sourceful native brand-scoped image API', () => {
+  it('namespaces upstream idempotency by the durable job while retaining same-job replay', async () => {
+    const response = {
+      data: {
+        freestyle_image: {
+          freestyle_image_id: jobId,
+          brand_id: brandId,
+          status: 'queued',
+          image_url: null,
+        },
+      },
+      error: null,
+    };
+    const { adapter, context, calls } = fixture('sourceful.images', [response, response, response]);
+    const submission = request('sourceful/riverflow-v2-pro');
+    await adapter.submit(submission, [], context);
+    await adapter.submit(submission, [], context);
+    await adapter.submit({ ...submission, prompt: 'Another owner or retry' }, [], {
+      ...context,
+      jobId: 'another-server-job',
+    });
+    expect(calls[0].headers?.['Idempotency-Key']).toBe(calls[1].headers?.['Idempotency-Key']);
+    expect(calls[0].headers?.['Idempotency-Key']).not.toBe(calls[2].headers?.['Idempotency-Key']);
+  });
   it.each([
     ['sourceful/riverflow-v2.5-pro', undefined, brandId],
     ['sourceful/riverflow-v2.5-fast', 'high', brandId],

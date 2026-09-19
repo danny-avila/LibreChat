@@ -449,11 +449,12 @@ registration:
 #     maxActivePerIntegration: 4
 #     maxActiveTotal: 8
 #   titles:
-#     enabled: true                # Ask a text model for a short thread title after the receipt
+#     enabled: true                # Ask once for a short title after funded worker admission
 #     # endpoint: openAI           # Falls back to endpoints.all.titleEndpoint
 #     # model: gpt-4o-mini         # Falls back to endpoints.all.titleModel, then the endpoint's titleModel
 #     # prompt: 'Name this media request in five words or fewer.'
 #     timeoutMs: 45000
+#     maxOutputTokens: 128         # Limits title output and its separate balance reservation
 #   assets:
 #     source: null                 # Inherits fileStrategies.image, then .default, then fileStrategy
 #                                  # local, s3, cloudfront, azure_blob and firebase use existing credentials

@@ -19,10 +19,13 @@ import {
 import type { Request, Response, RequestHandler } from 'express';
 import type { MediaErrorCode } from 'librechat-data-provider';
 import type { MediaMethods } from '@librechat/data-schemas';
+import type { RateLimitResponseLocals } from '../middleware/limiters';
 import type { MediaStaging, MediaUploadStorage } from './staging';
 import type { MediaServices, MediaContext } from './service';
+import type { MediaAdmissionPolicy } from './admission';
 import type { MediaStorage } from './storage';
 import { mediaContentExtension, normalizeMediaContentType } from './content';
+import { admitRequestMiddleware } from '../middleware/admission';
 import { assertUploadContentAllowed } from '../files/preflight';
 import { parseHostedMediaReference } from './hosted';
 import { assertMediaStorage } from './storage';
@@ -45,6 +48,7 @@ export type MediaUploadFactory = (options: {
 
 const persistenceCodes = {
   conflict: 'request_conflict',
+  version_conflict: 'version_conflict',
   capacity: 'quota_exceeded',
   not_found: 'not_found',
   retired: 'not_found',
@@ -98,6 +102,7 @@ export function createMediaRouter({
   id,
   now,
   log,
+  admission,
 }: {
   services: MediaServices;
   repository: MediaMethods;
@@ -108,8 +113,10 @@ export function createMediaRouter({
   id: () => string;
   now: () => number;
   log(error: Error): void;
+  admission?: MediaAdmissionPolicy;
 }): Router {
   const router = Router();
+  if (admission) router.use(admission.checkBan);
   const handle =
     <T>(
       action: (req: Request, context: MediaContext) => Promise<T>,
@@ -118,9 +125,26 @@ export function createMediaRouter({
     async (req, res) => {
       try {
         const context = await resolveContext(req);
+        const admit = async (middleware: readonly RequestHandler[]) => {
+          const response = res as Response<unknown, RateLimitResponseLocals>;
+          response.locals.rateLimitError = (error) => {
+            response
+              .set('Retry-After', String(error.retryAfterSeconds))
+              .status(429)
+              .json({ error: { code: 'quota_exceeded' } });
+          };
+          if (!(await admitRequestMiddleware(req, res, middleware))) {
+            throw new MediaServiceError('quota_exceeded', 429, 'Request admission was denied.');
+          }
+        };
+        if (admission) {
+          context.admitGeneration = () => admit(admission.generationLimiters);
+          context.admitImport = () => admit(admission.uploadLimiters);
+        }
         assertMediaAccess(context);
         res.status(status).json(await action(req, context));
       } catch (caught) {
+        if (res.headersSent || res.destroyed) return;
         const error = caught instanceof Error ? caught : new Error('Media request failed');
         if (!classifyMediaError(error)) {
           log(new Error(`Media request failed: ${req.method} ${req.path}`, { cause: caught }));
@@ -285,6 +309,7 @@ export function createMediaRouter({
   );
   router.post(
     '/uploads/url',
+    ...(admission?.uploadLimiters ?? []),
     handle(
       (req, context) => services.commands.uploadURL(parseHostedMediaReference(req.body), context),
       201,
@@ -292,6 +317,7 @@ export function createMediaRouter({
   );
   router.post(
     '/uploads',
+    ...(admission?.uploadLimiters ?? []),
     handle(async (req, context) => {
       assertMediaAccess(context, true);
       assertMediaStorage(context);

@@ -1170,6 +1170,78 @@ describe('Share Methods', () => {
       expect(share?.fileSnapshots?.[0].llmDeliveryPath).toBe('text');
     });
 
+    test.each([true, false])(
+      'projects native image files through the share inclusion policy (%s)',
+      async (includeFiles) => {
+        const userId = new mongoose.Types.ObjectId().toString();
+        const conversationId = `conv_${nanoid()}`;
+        const shareId = `share_${nanoid()}`;
+        await File.create({
+          user: userId,
+          file_id: 'native-image',
+          filename: 'native.png',
+          filepath: '/private/native.png',
+          storageKey: 'private/native.png',
+          source: 'local',
+          type: 'image/png',
+          bytes: 512,
+        });
+        const message = await Message.create({
+          user: userId,
+          conversationId,
+          messageId: `msg_${nanoid()}`,
+          isCreatedByUser: false,
+          content: [
+            { type: 'text', text: 'caption', native_media: { continuationRef: 'private-caption' } },
+            {
+              type: 'image_file',
+              native_media: { continuationRef: 'private-image' },
+              image_file: {
+                file_id: 'native-image',
+                filename: 'native.png',
+                filepath: '/api/media/native-image',
+                conversationId,
+                user: userId,
+                storageKey: 'private/native.png',
+              },
+            },
+          ],
+        });
+        await SharedLink.create({
+          user: userId,
+          conversationId,
+          shareId,
+          messages: [message._id],
+          snapshotFiles: includeFiles,
+        });
+        const shared = await shareMethods.getSharedMessages(shareId);
+        const content = shared?.messages[0]?.content;
+        expect(content?.[0]).toEqual({ type: 'text', text: 'caption' });
+        expect(JSON.stringify(content)).not.toMatch(
+          /native_media|private-caption|private-image|storageKey/,
+        );
+        if (includeFiles) {
+          expect(content?.[1]).toEqual({
+            type: 'image_file',
+            image_file: {
+              file_id: 'native-image',
+              filename: 'native.png',
+              filepath: `/api/share/${shareId}/files/native-image`,
+              conversationId: shared?.conversationId,
+              llmDeliveryPath: 'provider',
+            },
+          });
+          expect(
+            (await SharedLink.findOne({ shareId }).lean())?.fileSnapshots?.map(
+              (file) => file.file_id,
+            ),
+          ).toContain('native-image');
+        } else {
+          expect(content).toHaveLength(1);
+        }
+      },
+    );
+
     test('leaves safe non-steer content untouched (same array reference)', () => {
       const plainContent = [
         { type: 'text', text: 'no steers here' },

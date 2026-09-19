@@ -87,6 +87,29 @@ const toolCallPart = (name: string, args = '{"code":"echo hi"}'): TMessageConten
   }) as unknown as TMessageContentParts;
 
 describe('Part tool renderer selection', () => {
+  it('explains unavailable imported images without fetching or offering the original file', () => {
+    renderPart({
+      type: ContentTypes.IMAGE_FILE,
+      image_file: {
+        file_id: '',
+        filepath: '',
+        filename: 'image.png',
+        width: 10,
+        height: 20,
+        bytes: 0,
+        user: '',
+        embedded: false,
+        object: 'file',
+        usage: 0,
+        type: 'image/png',
+        unavailable: 'not_transferred',
+      },
+    });
+    expect(screen.getByRole('note')).toHaveTextContent(
+      'This image was not transferred with the conversation. Upload it to use it in a new message.',
+    );
+    expect(screen.queryByTestId('image')).not.toBeInTheDocument();
+  });
   it('routes bash PTC tool calls through the BashCall renderer', () => {
     renderPart(toolCallPart(Constants.BASH_PROGRAMMATIC_TOOL_CALLING));
 

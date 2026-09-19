@@ -141,10 +141,63 @@ describe('media accounting provider bridge', () => {
   });
 
   it('uses an explicit estimate only when the provider does not report cost', async () => {
-    await bridge().settle(job, undefined, context);
-    expect(repository.settleMediaJob).toHaveBeenCalledWith(
-      expect.objectContaining({ effect: expect.objectContaining({ credits: 200, costUSD: 0.2 }) }),
+    await bridge().settle(
+      { ...job, provider: { certainty: 'terminal', recovery: { terminalStatus: 'completed' } } },
+      undefined,
+      context,
     );
+    expect(repository.settleMediaJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        effect: expect.objectContaining({ credits: 200, costUSD: 0.2, costSource: 'estimate' }),
+      }),
+    );
+  });
+
+  it.each(['failed', 'cancelled'] as const)(
+    'keeps an unknown %s cost unresolved even with a successful-request estimate',
+    async (terminalStatus) => {
+      const terminal: MediaStoredJob = {
+        ...job,
+        provider: { certainty: 'terminal', recovery: { terminalStatus } },
+      };
+      await expect(bridge().settle(terminal, { inputTokens: 20 }, context)).rejects.toMatchObject({
+        code: 'not_ready',
+      });
+      expect(repository.settleMediaJob).not.toHaveBeenCalled();
+      expect(repository.releaseMediaHold).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ['failed', 0],
+    ['failed', 0.1],
+    ['cancelled', 0],
+    ['cancelled', 0.1],
+    ['completed', 0],
+    ['completed', 0.1],
+  ] as const)('settles authoritative %s usage of %s dollars', async (terminalStatus, costUSD) => {
+    const terminal: MediaStoredJob = {
+      ...job,
+      provider: { certainty: 'terminal', recovery: { terminalStatus } },
+    };
+    await bridge().settle(terminal, { costUSD }, context);
+    expect(repository.settleMediaJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        effect: expect.objectContaining({
+          costUSD,
+          credits: costUSD * 1_000,
+          costSource: 'provider',
+        }),
+      }),
+    );
+    expect(repository.releaseMediaHold).not.toHaveBeenCalled();
+  });
+
+  it('does not use a completion estimate before there is a durable completed outcome', async () => {
+    await expect(bridge().settle(job, undefined, context)).rejects.toMatchObject({
+      code: 'not_ready',
+    });
+    expect(repository.settleMediaJob).not.toHaveBeenCalled();
   });
 
   it('keeps unknown paid cost in reconciliation rather than settling for zero', async () => {

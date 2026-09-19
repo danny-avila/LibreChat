@@ -10,6 +10,7 @@ import { createMediaAccountingMethods } from './mediaAccounting';
 import { createTransactionModel } from '~/models/transaction';
 import { createTransactionMethods } from './transaction';
 import { createBalanceModel } from '~/models/balance';
+import { createUserModel } from '~/models/user';
 import { createMediaMethods } from './media';
 
 describe('media accounting on standalone MongoDB', () => {
@@ -99,6 +100,247 @@ describe('media accounting on standalone MongoDB', () => {
         '+reservedCredits +mediaHolds +mediaDebtCredits +mediaPendingSettlement +mediaSettlementSequence',
       )
       .lean<IBalance>();
+
+  function pause() {
+    let arrive: () => void = () => undefined;
+    let resume: () => void = () => undefined;
+    const entered = new Promise<void>((resolve) => {
+      arrive = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    return {
+      entered,
+      resume,
+      wait: async () => {
+        arrive();
+        await released;
+      },
+    };
+  }
+
+  async function deleteCancelledOwner(jobId: string) {
+    await media.cancelMediaJob(scope, jobId);
+    await accounting.reconcileMediaAccounting({ scope, limit: 10, policy });
+    expect(
+      await media.prepareMediaAccountDeletion({ scope, token: 'delete-paused-admission' }),
+    ).toBe(true);
+    expect(await accounting.hasMediaAccountingObligations(scope)).toBe(false);
+    await media.completeMediaAccountDeletion({ scope, token: 'delete-paused-admission' });
+    await media.reconcileMediaAccountDeletion({ scope, limit: 10 });
+  }
+
+  it.each<MediaAccountingStep>([
+    'registering',
+    'registered',
+    'admitted',
+    'pinned',
+    'checked',
+    'held',
+  ])(
+    'cannot restore a hold after cancellation and deletion while admission is paused at %s',
+    async (step) => {
+      const jobId = await job();
+      const stopped = pause();
+      const delayed = createMediaAccountingMethods(mongoose, {
+        prepareBalance: ordinary.prepareBalance,
+        afterStep: async (current) => {
+          if (current === step) await stopped.wait();
+        },
+      });
+      const work = delayed.acquireMediaHold(hold(jobId)).catch((error: Error) => error);
+      await stopped.entered;
+      try {
+        await deleteCancelledOwner(jobId);
+      } finally {
+        stopped.resume();
+      }
+      await work;
+      await media.reconcileMediaAccountDeletion({ scope, limit: 10 });
+      expect(await balance()).toBeNull();
+      expect(await mongoose.models.MediaSettlement.countDocuments(scope)).toBe(0);
+      expect(await media.getMediaJob(scope, jobId)).toBeNull();
+    },
+  );
+
+  it('fences a delayed hold CAS against a recreated balance, including a legacy balance generation', async () => {
+    await ordinary.deleteBalances({ user: scope.ownerId });
+    await mongoose.models.Balance.create({
+      _id: scope.ownerId,
+      user: scope.ownerId,
+      tokenCredits: 1000,
+    });
+    await mongoose.models.Balance.updateOne(
+      { _id: scope.ownerId },
+      { $unset: { mediaGeneration: 1 } },
+    );
+    const jobId = await job();
+    const stopped = pause();
+    const delayed = createMediaAccountingMethods(mongoose, {
+      prepareBalance: ordinary.prepareBalance,
+      afterStep: async (step) => {
+        if (step === 'checked') await stopped.wait();
+      },
+    });
+    const work = delayed.acquireMediaHold(hold(jobId)).catch((error: Error) => error);
+    await stopped.entered;
+    const previous = await mongoose.models.Balance.findById(scope.ownerId)
+      .select('+mediaGeneration')
+      .lean<IBalance>();
+    expect(previous?.mediaGeneration).toEqual(expect.any(String));
+    try {
+      await deleteCancelledOwner(jobId);
+      await ordinary.prepareBalance({
+        user: scope.ownerId,
+        amount: 0,
+        initialBalance: { tokenCredits: 1000 },
+      });
+      const recreated = await mongoose.models.Balance.findById(scope.ownerId)
+        .select('+mediaGeneration')
+        .lean<IBalance>();
+      expect(recreated?.mediaGeneration).not.toBe(previous?.mediaGeneration);
+    } finally {
+      stopped.resume();
+    }
+    await work;
+    expect((await balance())?.mediaHolds).toBeUndefined();
+    expect((await balance())?.reservedCredits ?? 0).toBe(0);
+    await media.reconcileMediaAccountDeletion({ scope, limit: 10 });
+    expect(await balance()).toBeNull();
+  });
+
+  it('fences a paused initializer against a recreated receipt and reclaims its late default balance', async () => {
+    const jobId = await job();
+    const registering = pause();
+    const registered = pause();
+    const preparing = pause();
+    const late = createMediaAccountingMethods(mongoose, {
+      prepareBalance: ordinary.prepareBalance,
+      afterStep: async (step) => {
+        if (step === 'registering') await registering.wait();
+        if (step === 'registered') await registered.wait();
+      },
+    });
+    const stale = createMediaAccountingMethods(mongoose, {
+      prepareBalance: async (input) => {
+        await preparing.wait();
+        return ordinary.prepareBalance(input);
+      },
+    });
+    const lateWork = late.acquireMediaHold(hold(jobId)).catch((error: Error) => error);
+    await registering.entered;
+    const staleWork = stale
+      .acquireMediaHold({ ...hold(jobId), initialBalance: { tokenCredits: 1000 } })
+      .catch((error: Error) => error);
+    await preparing.entered;
+    try {
+      await deleteCancelledOwner(jobId);
+      registering.resume();
+      await registered.entered;
+      preparing.resume();
+      await staleWork;
+      expect((await balance())?.mediaHolds).toBeUndefined();
+      expect((await balance())?.reservedCredits ?? 0).toBe(0);
+      await media.reconcileMediaAccountDeletion({ scope, limit: 10 });
+      expect(await balance()).toBeNull();
+      expect(await mongoose.models.MediaSettlement.countDocuments(scope)).toBe(0);
+    } finally {
+      registering.resume();
+      registered.resume();
+      preparing.resume();
+      await Promise.all([lateWork, staleWork]);
+    }
+  });
+
+  it('does not restore a held job marker after cancellation settled the paused allocation', async () => {
+    const jobId = await job();
+    const stopped = pause();
+    const delayed = createMediaAccountingMethods(mongoose, {
+      afterStep: async (step) => {
+        if (step === 'held') await stopped.wait();
+      },
+    });
+    const work = delayed.acquireMediaHold(hold(jobId));
+    await stopped.entered;
+    try {
+      await media.cancelMediaJob(scope, jobId);
+      await accounting.reconcileMediaAccounting({ scope, limit: 10, policy });
+    } finally {
+      stopped.resume();
+    }
+    await work;
+    const current = await media.getMediaJob(scope, jobId);
+    expect(current).toMatchObject({ phase: 'cancelled', accounting: { phase: 'settled' } });
+    expect(await balance()).toMatchObject({
+      tokenCredits: 1000,
+      reservedCredits: 0,
+      mediaHolds: [],
+    });
+    expect(await media.prepareMediaAccountDeletion({ scope, token: 'after-held' })).toBe(true);
+  });
+
+  it('reclaims an unstarted debt receipt registered after its owner and balance were deleted', async () => {
+    const jobId = await job();
+    await accounting.acquireMediaHold(hold(jobId));
+    await accounting.settleMediaJob(settle(jobId, 1500));
+    await ordinary.updateBalance({ user: scope.ownerId, incrementValue: 100 });
+    await media.cancelMediaJob(scope, jobId);
+    const stopped = pause();
+    const delayed = createMediaAccountingMethods(mongoose, {
+      afterStep: async (step) => {
+        if (step === 'registering') await stopped.wait();
+      },
+    });
+    const work = delayed.reconcileMediaAccounting({ scope, limit: 10, policy });
+    await stopped.entered;
+    try {
+      expect(await media.prepareMediaAccountDeletion({ scope, token: 'delete-before-debt' })).toBe(
+        true,
+      );
+      expect(await accounting.hasMediaAccountingObligations(scope)).toBe(false);
+      await media.completeMediaAccountDeletion({ scope, token: 'delete-before-debt' });
+      await media.reconcileMediaAccountDeletion({ scope, limit: 10 });
+    } finally {
+      stopped.resume();
+    }
+    await work;
+    await media.reconcileMediaAccountDeletion({ scope, limit: 10 });
+    expect(await balance()).toBeNull();
+    expect(await mongoose.models.MediaSettlement.countDocuments(scope)).toBe(0);
+    expect(await mongoose.models.Transaction.countDocuments({ context: 'media_debt' })).toBe(0);
+  });
+
+  it('reclaims a delayed ledger upsert after another reconciler completed account deletion', async () => {
+    const jobId = await job();
+    await accounting.acquireMediaHold(hold(jobId));
+    const stopped = pause();
+    const delayed = createMediaAccountingMethods(mongoose, {
+      afterStep: async (step) => {
+        if (step === 'projected') await stopped.wait();
+      },
+    });
+    const work = delayed.settleMediaJob(settle(jobId));
+    await stopped.entered;
+    try {
+      await accounting.settleMediaJob(settle(jobId));
+      await media.cancelMediaJob(scope, jobId);
+      expect(
+        await media.prepareMediaAccountDeletion({ scope, token: 'delete-before-ledger-replay' }),
+      ).toBe(true);
+      await media.completeMediaAccountDeletion({ scope, token: 'delete-before-ledger-replay' });
+      await media.reconcileMediaAccountDeletion({ scope, limit: 10 });
+      expect(await mongoose.models.Transaction.countDocuments({ mediaJobId: jobId })).toBe(0);
+    } finally {
+      stopped.resume();
+    }
+    await work;
+    expect(await mongoose.models.Transaction.countDocuments({ mediaJobId: jobId })).toBe(1);
+    await media.reconcileMediaAccountDeletion({ scope, limit: 10 });
+    expect(await mongoose.models.Transaction.countDocuments({ mediaJobId: jobId })).toBe(0);
+    expect(await mongoose.models.MediaSettlement.countDocuments(scope)).toBe(0);
+    expect(await balance()).toBeNull();
+  });
 
   it('initializes the shared balance without creating a second reservation', async () => {
     const jobId = await job();
@@ -344,6 +586,119 @@ describe('media accounting on standalone MongoDB', () => {
     expect((await balance())?.mediaHolds).toHaveLength(1);
   });
 
+  it.each(['media-first', 'chat-first'])(
+    'preserves chat liability and collects the same overage after a refill (%s)',
+    async (order) => {
+      const jobId = await job();
+      const chat = { user: scope.ownerId, reservationId: 'chat', amount: 600 };
+      expect(
+        await ordinary.reserveBalance({ ...chat, expiresAt: new Date(Date.now() + 60_000) }),
+      ).toMatchObject({ reserved: true });
+      expect(await accounting.acquireMediaHold(hold(jobId))).toMatchObject({ status: 'held' });
+      const settleChat = async () => {
+        await ordinary.updateBalance({ user: scope.ownerId, incrementValue: -chat.amount });
+        await ordinary.releaseBalanceReservation(chat);
+      };
+      if (order === 'chat-first') await settleChat();
+      await accounting.settleMediaJob(settle(jobId, 800));
+      if (order === 'media-first') {
+        expect(await balance()).toMatchObject({
+          tokenCredits: 600,
+          reservedCredits: 600,
+          mediaDebtCredits: 400,
+        });
+        await settleChat();
+      }
+      await accounting.settleMediaJob(settle(jobId, 800));
+      expect(await balance()).toMatchObject({
+        tokenCredits: 0,
+        reservedCredits: 0,
+        mediaDebtCredits: 400,
+      });
+      await ordinary.updateBalance({ user: scope.ownerId, incrementValue: 400 });
+      await accounting.reconcileMediaAccounting({ scope, limit: 10, policy });
+      await accounting.reconcileMediaAccounting({ scope, limit: 10, policy });
+      expect(await balance()).toMatchObject({ tokenCredits: 0, mediaDebtCredits: 0 });
+      expect(await mongoose.models.Transaction.countDocuments({ context: 'media' })).toBe(1);
+      expect(await mongoose.models.Transaction.countDocuments({ context: 'media_debt' })).toBe(1);
+    },
+  );
+
+  it('preserves every other hold through concurrent media settlements and an ordinary debit', async () => {
+    const first = await job('first');
+    const second = await job('second');
+    const chat = { user: scope.ownerId, reservationId: 'chat', amount: 400 };
+    await ordinary.reserveBalance({ ...chat, expiresAt: new Date(Date.now() + 60_000) });
+    await accounting.acquireMediaHold(hold(first, 300));
+    await accounting.acquireMediaHold(hold(second, 300));
+    const effects = [settle(first, 650), settle(second, 650)];
+    await Promise.all([
+      ...effects.flatMap((effect) => [
+        accounting.settleMediaJob(effect),
+        accounting.settleMediaJob(effect),
+      ]),
+      ordinary.updateBalance({ user: scope.ownerId, incrementValue: -chat.amount }),
+    ]);
+    await ordinary.releaseBalanceReservation(chat);
+    await accounting.reconcileMediaAccounting({ scope, limit: 10, policy });
+    expect(await balance()).toMatchObject({
+      tokenCredits: 0,
+      reservedCredits: 0,
+      mediaDebtCredits: 700,
+      mediaHolds: [],
+    });
+    expect(await mongoose.models.Transaction.countDocuments({ context: 'media' })).toBe(2);
+    await ordinary.updateBalance({ user: scope.ownerId, incrementValue: 710 });
+    await accounting.reconcileMediaAccounting({ scope, limit: 10, policy });
+    expect(await balance()).toMatchObject({ tokenCredits: 10, mediaDebtCredits: 0 });
+  });
+
+  it.each<MediaAccountingStep>(['allocated', 'applied', 'ledger', 'cleared'])(
+    'preserves concurrent chat funds and debt when media recovery resumes after %s',
+    async (step) => {
+      const jobId = await job();
+      const chat = { user: scope.ownerId, reservationId: 'chat', amount: 600 };
+      await ordinary.reserveBalance({ ...chat, expiresAt: new Date(Date.now() + 60_000) });
+      await accounting.acquireMediaHold(hold(jobId));
+      let crashed = false;
+      const crashing = createMediaAccountingMethods(mongoose, {
+        afterStep: async (current) => {
+          if (current === step && !crashed) {
+            crashed = true;
+            throw new Error('crash');
+          }
+        },
+      });
+      await expect(crashing.settleMediaJob(settle(jobId, 800))).rejects.toThrow('crash');
+      await ordinary.updateBalance({ user: scope.ownerId, incrementValue: -600 });
+      await ordinary.releaseBalanceReservation(chat);
+      await accounting.reconcileMediaAccounting({ scope, limit: 10, policy });
+      await accounting.settleMediaJob(settle(jobId, 800));
+      expect(await balance()).toMatchObject({
+        tokenCredits: 0,
+        reservedCredits: 0,
+        mediaDebtCredits: 400,
+      });
+      expect(await mongoose.models.Transaction.countDocuments({ context: 'media' })).toBe(1);
+    },
+  );
+
+  it('records cost provenance without invalidating existing settlement identities', async () => {
+    const jobId = await job();
+    await accounting.acquireMediaHold(hold(jobId));
+    const input = settle(jobId);
+    await accounting.settleMediaJob({
+      ...input,
+      effect: { ...input.effect, costSource: 'provider' },
+    });
+    expect(await accounting.settleMediaJob(input)).toMatchObject({ status: 'settled' });
+    expect(await mongoose.models.Transaction.findOne({ mediaJobId: jobId }).lean()).toMatchObject({
+      mediaCostSource: 'provider',
+      mediaCostUSD: 0.25,
+    });
+    expect(await mongoose.models.Transaction.countDocuments({ context: 'media' })).toBe(1);
+  });
+
   it('records excess paid cost as debt, keeps refill/admission honest, and never blocks deletion', async () => {
     const jobId = await job();
     await accounting.acquireMediaHold(hold(jobId));
@@ -360,6 +715,83 @@ describe('media accounting on standalone MongoDB', () => {
     ).toEqual({ reserved: false, balance: 10 });
     expect(await accounting.hasMediaAccountingObligations(scope)).toBe(false);
     expect((await ordinary.deleteBalances({ user: scope.ownerId })).deletedCount).toBe(1);
+  });
+
+  it.each(['before completion', 'before history deletion', 'after history deletion'] as const)(
+    'recovers account accounting cleanup after User deletion and a crash %s',
+    async (crash) => {
+      const User = createUserModel(mongoose);
+      await User.create({ _id: scope.ownerId, email: 'deleted-media-owner@example.test' });
+      const jobId = await job();
+      await accounting.acquireMediaHold(hold(jobId));
+      await accounting.settleMediaJob(settle(jobId));
+      await mongoose.models.MediaJob.updateOne(
+        { ...scope, jobId },
+        {
+          $set: { phase: 'failed', 'provider.certainty': 'terminal' },
+        },
+      );
+      expect(await media.prepareMediaAccountDeletion({ scope, token: 'delete-settled' })).toBe(
+        true,
+      );
+      await User.deleteOne({ _id: scope.ownerId });
+      if (crash !== 'before completion') {
+        const Settlement = mongoose.models.MediaSettlement;
+        const remove = Settlement.deleteMany.bind(Settlement);
+        const interrupted = jest
+          .spyOn(Settlement, 'deleteMany')
+          .mockImplementationOnce((...args) => {
+            const query = remove(...args);
+            const execute = query.exec.bind(query);
+            jest.spyOn(query, 'exec').mockImplementationOnce(async () => {
+              if (crash === 'after history deletion') await execute();
+              throw new Error('Interrupted account settlement cleanup');
+            });
+            return query;
+          });
+        try {
+          await expect(
+            media.completeMediaAccountDeletion({ scope, token: 'delete-settled' }),
+          ).rejects.toThrow('Interrupted account settlement cleanup');
+        } finally {
+          interrupted.mockRestore();
+        }
+      }
+      expect(await mongoose.models.MediaOwner.findOne(scope).lean()).toMatchObject({
+        status: crash === 'before completion' ? 'deleting' : 'deleted',
+        deletionPrepared: true,
+      });
+      expect(await media.getMediaJob(scope, jobId)).not.toBeNull();
+      await media.reconcileMediaAccountDeletion({ scope, limit: 10 });
+      await media.reconcileMediaAccountDeletion({ scope, limit: 10 });
+      expect(await mongoose.models.MediaSettlement.countDocuments(scope)).toBe(0);
+      expect(await media.getMediaJob(scope, jobId)).toBeNull();
+      expect(await mongoose.models.MediaOwner.findOne(scope).lean()).toMatchObject({
+        status: 'deleted',
+      });
+    },
+  );
+
+  it('retains unsettled accounting and job evidence until deletion recovery can safely purge them', async () => {
+    const jobId = await job();
+    await accounting.acquireMediaHold(hold(jobId));
+    await media.cancelMediaJob(scope, jobId);
+    expect(await media.prepareMediaAccountDeletion({ scope, token: 'delete-held' })).toBe(true);
+    await expect(
+      media.completeMediaAccountDeletion({ scope, token: 'delete-held' }),
+    ).rejects.toThrow('Outstanding media accounting prevents history deletion');
+    await expect(media.reconcileMediaAccountDeletion({ scope, limit: 10 })).rejects.toThrow(
+      'Outstanding media accounting prevents history deletion',
+    );
+    expect(await mongoose.models.MediaSettlement.countDocuments(scope)).toBe(1);
+    expect(await media.getMediaJob(scope, jobId)).not.toBeNull();
+    expect(await balance()).toMatchObject({ reservedCredits: 400, tokenCredits: 1000 });
+
+    await accounting.reconcileMediaAccounting({ scope, limit: 10, policy });
+    await media.reconcileMediaAccountDeletion({ scope, limit: 10 });
+    expect(await mongoose.models.MediaSettlement.countDocuments(scope)).toBe(0);
+    expect(await media.getMediaJob(scope, jobId)).toBeNull();
+    expect(await balance()).toBeNull();
   });
 
   it('releases only a certain no-charge result and never charges native chat again', async () => {

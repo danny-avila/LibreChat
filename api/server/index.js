@@ -35,6 +35,7 @@ const {
   agentStartupTelemetryMiddleware,
   initializeFileStorage,
   createMediaRuntimeFromApp,
+  createAdminMediaRouter,
   initializeDeploymentSkills,
   initializeDeploymentPlugins,
   getDeploymentPluginSkills,
@@ -72,7 +73,7 @@ const {
   seedDatabase,
 } = require('~/models');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
-const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
+const { capabilityContextMiddleware, hasCapability } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { initializeAgentTriggerService } = require('./services/Agents/triggers');
@@ -84,6 +85,9 @@ const { checkMigrations } = require('./services/start/migration');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const optionalShareFileAuth = require('./middleware/optionalShareFileAuth');
 const requireJwtAuth = require('./middleware/requireJwtAuth');
+const checkBan = require('./middleware/checkBan');
+const { messageIpLimiter, messageUserLimiter } = require('./middleware/limiters/messageLimiters');
+const { createFileLimiters } = require('./middleware/limiters/uploadLimiters');
 const initializeMCPs = require('./services/initializeMCPs');
 const { configureSubagentTaskRouting } = require('./services/Endpoints/agents/subagentThreadStore');
 const configureSocialLogins = require('./socialLogins');
@@ -176,7 +180,7 @@ const SHUTDOWN_TEARDOWN_RESERVE_MS = 10_000;
 const startServer = async () => {
   await waitForKeyvRedisClient();
   await configureSubagentTaskRouting();
-  const { metricsMiddleware, metricsRouter } = createMetrics({
+  const { metricsMiddleware, metricsRouter, recordMediaEvent } = createMetrics({
     collectAgentEventActorStorageMetrics: () =>
       runAsSystem(async () => {
         const now = new Date();
@@ -240,6 +244,7 @@ const startServer = async () => {
   warnOnUnreachableDeliveryPaths(appConfig);
   initializeFileStorage(appConfig);
   const mediaRuntime = createMediaRuntimeFromApp({
+    mediaMetrics: recordMediaEvent,
     appConfig,
     db: agentEventMethods,
     getRoleByName,
@@ -249,6 +254,7 @@ const startServer = async () => {
     environment: process.env,
     http: axios,
     upload: multer,
+    admission: { checkBan, messageIpLimiter, messageUserLimiter, createFileLimiters },
     getStorageStrategy: require('~/server/services/Files/strategies').getStrategyFunctions,
     readFile: fs.promises.readFile,
     decrypt,
@@ -429,6 +435,16 @@ const startServer = async () => {
   app.use('/api/admin/roles', routes.adminRoles);
   app.use('/api/admin/skills', routes.adminSkills);
   app.use('/api/admin/users', routes.adminUsers);
+  app.use(
+    '/api/admin/media',
+    createAdminMediaRouter({
+      services: mediaRuntime.recovery,
+      hasCapability,
+      recordAuditEntry: agentEventMethods.recordAuditEntry,
+      requireJwtAuth,
+      log: logger.error.bind(logger),
+    }),
+  );
   app.use('/api/admin/audit-log', routes.adminAuditLog);
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);

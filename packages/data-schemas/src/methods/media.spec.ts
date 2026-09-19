@@ -265,7 +265,7 @@ describe('media persistence on standalone MongoDB', () => {
       limit: 10,
       jobsPerTurn: 10,
     });
-    expect(turns.items.map((turn) => turn.sequence)).toEqual([1, 2, 3]);
+    expect(turns.items.map((turn) => turn.sequence)).toEqual([3, 2, 1]);
   });
 
   it('enforces queue capacity with an index across independent repositories', async () => {
@@ -605,7 +605,7 @@ describe('media persistence on standalone MongoDB', () => {
       jobsPerTurn: 2,
       cursor: one.nextCursor,
     });
-    expect([...one.items, ...two.items].map((turn) => turn.sequence)).toEqual([1, 2, 3, 4]);
+    expect([...one.items, ...two.items].map((turn) => turn.sequence)).toEqual([4, 3, 2, 1]);
     expect(two.nextCursor).toBeUndefined();
   });
 
@@ -1718,6 +1718,237 @@ describe('media persistence on standalone MongoDB', () => {
     const thread = await methods.getMediaThread(scope, receipt.threadId);
     expect(thread).not.toHaveProperty('expiresAt');
     expect((await methods.listMediaThreads({ scope, limit: 10 })).items).toHaveLength(1);
+  });
+
+  it('recovers a staged deadline without adopting a later retention policy', async () => {
+    const deadline = new Date(Date.now() + 60_000).toISOString();
+    const bounded = await methods.stageMediaSubmission({
+      ...submission('staged-deadline', { temporary: true }),
+      publicationExpiresAt: deadline,
+    });
+    const permanent = await methods.stageMediaSubmission({
+      ...submission('staged-permanent', { temporary: true }),
+      publicationExpiresAt: null,
+    });
+    const legacy = await methods.stageMediaSubmission(
+      submission('legacy-temporary', { temporary: true }),
+    );
+    await createMediaMethods(mongoose).recoverMediaPublications({
+      scope,
+      limit: 10,
+      ...options,
+      temporaryRetentionMs: 120_000,
+    });
+    expect((await methods.getMediaThread(scope, bounded.threadId))?.expiresAt).toBe(deadline);
+    expect((await methods.getMediaThread(scope, permanent.threadId))?.expiresAt).toBeUndefined();
+    const legacyThread = (await methods.getMediaThread(scope, legacy.threadId))!;
+    expect(legacyThread.expiresAt).toBe(
+      new Date(Date.parse(legacyThread.createdAt) + 120_000).toISOString(),
+    );
+    await methods.recoverMediaPublications({
+      scope,
+      limit: 10,
+      ...options,
+      temporaryRetentionMs: 1,
+    });
+    expect((await methods.getMediaThread(scope, bounded.threadId))?.expiresAt).toBe(deadline);
+  });
+
+  it('purges retired payloads only after financial obligations settle and preserves replay receipts', async () => {
+    const input = submission('purge-after-settlement');
+    const job = await accepted('purge-after-settlement');
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: job.jobId },
+      {
+        $set: {
+          phase: 'succeeded',
+          provider: {
+            certainty: 'terminal',
+            recovery: {
+              parts: [
+                {
+                  kind: 'text',
+                  text: 'private output',
+                  thoughtSignature: 'private signature',
+                  ordinal: 0,
+                },
+              ],
+            },
+          },
+          outputs: [{ kind: 'text', outputId: 'text', ordinal: 0, text: 'private output' }],
+          accounting: { phase: 'held', settlementId: 'receipt' },
+        },
+      },
+    );
+    await methods.retireMediaThread(scope, job.threadId);
+    await methods.reconcileMediaRetirements({ scope, limit: 10 });
+    expect((await methods.getMediaJob(scope, job.jobId))?.request.prompt).toBe(
+      input.request.prompt,
+    );
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: job.jobId },
+      { $set: { 'accounting.phase': 'settled' } },
+    );
+    await methods.reconcileMediaRetirements({ scope, limit: 10 });
+    await methods.reconcileMediaRetirements({ scope, limit: 10 });
+    const purged = (await methods.getMediaJob(scope, job.jobId))!;
+    expect(purged.request.prompt).toBe('');
+    expect(purged.outputs).toEqual([]);
+    expect(purged.provider.recovery).toBeUndefined();
+    expect(purged.accounting).toEqual({ phase: 'settled', settlementId: 'receipt' });
+    expect(await methods.stageMediaSubmission(input)).toEqual(job.receipt);
+    expect(
+      await mongoose.models.MediaThread.findOne({ threadId: job.threadId }).lean(),
+    ).toMatchObject({ status: 'retired', title: '' });
+    expect(await mongoose.models.MediaTurn.findOne({ turnId: job.turnId }).lean()).toMatchObject({
+      prompt: '',
+      inputs: [],
+    });
+  });
+
+  it('keeps internal media tombstones out of the public Files query', async () => {
+    const { asset } = await original('public-tombstone');
+    const files = createFileMethods(mongoose);
+    expect(await files.getFiles({ user: scope.ownerId })).toHaveLength(1);
+    expect(
+      await methods.claimMediaAssetDeletion({ scope, fileId: asset.file_id, token: 'deletion' }),
+    ).not.toBeNull();
+    expect(await files.getFiles({ user: scope.ownerId })).toEqual([]);
+    await methods.completeMediaAssetDeletion({ scope, fileId: asset.file_id, token: 'deletion' });
+    expect(await files.getFiles({ user: scope.ownerId })).toEqual([]);
+    expect(await mongoose.models.File.exists({ file_id: asset.file_id })).not.toBeNull();
+  });
+
+  it('finds the latest live image beyond a page of failed turns and includes imported originals', async () => {
+    const job = await accepted('image-context', { parameters: { count: 2 } });
+    const { asset } = await original('context-image');
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: job.jobId },
+      {
+        $set: {
+          phase: 'succeeded',
+          provider: { certainty: 'terminal' },
+          outputs: [{ kind: 'image', ordinal: 0, outputId: 'image', state: 'ready', asset }],
+        },
+        $unset: { activeSlot: 1 },
+      },
+    );
+    for (let index = 0; index < 25; index++) {
+      const failed = await accepted(`failed-image-${index}`, { threadId: job.threadId });
+      await mongoose.models.MediaJob.updateOne(
+        { jobId: failed.jobId },
+        {
+          $set: { phase: 'failed', provider: { certainty: 'terminal' } },
+          $unset: { activeSlot: 1 },
+        },
+      );
+    }
+    const firstPage = await methods.listMediaTurns({
+      scope,
+      threadId: job.threadId,
+      limit: 24,
+      jobsPerTurn: 4,
+    });
+    expect(firstPage.items.map((turn) => turn.sequence)).toEqual(
+      Array.from({ length: 24 }, (_, index) => 26 - index),
+    );
+    expect(firstPage.items.some((turn) => turn.turnId === job.turnId)).toBe(false);
+    expect(await methods.getMediaLatestImageContext({ scope, threadId: job.threadId })).toEqual({
+      turnId: job.turnId,
+      asset,
+    });
+    const appended = await accepted('appended-during-pagination', { threadId: job.threadId });
+    const secondPage = await methods.listMediaTurns({
+      scope,
+      threadId: job.threadId,
+      limit: 24,
+      jobsPerTurn: 4,
+      cursor: firstPage.nextCursor,
+    });
+    expect(secondPage.items.map((turn) => turn.sequence)).toEqual([2, 1]);
+    expect(secondPage.items[1]).toMatchObject({ parameters: { count: 2 } });
+    expect(secondPage.items.some((turn) => turn.turnId === appended.turnId)).toBe(false);
+    const imported = await original('context-import');
+    const receipt = await methods.stageMediaImport({
+      scope,
+      request: {
+        clientRequestId: 'context-import',
+        schemaVersion: 1,
+        threadId: job.threadId,
+        inputs: [{ role: 'reference', file_id: imported.asset.file_id }],
+      },
+    });
+    await methods.publishMediaImport(scope, receipt.turnId, options);
+    expect(await methods.getMediaLatestImageContext({ scope, threadId: job.threadId })).toEqual({
+      turnId: receipt.turnId,
+      asset: imported.asset,
+    });
+    await mongoose.models.File.collection.updateOne(
+      { file_id: imported.asset.file_id },
+      { $set: { mediaHardExpiresAt: new Date(0) } },
+    );
+    expect(await methods.getMediaLatestImageContext({ scope, threadId: job.threadId })).toEqual({
+      turnId: job.turnId,
+      asset,
+    });
+    expect(
+      await methods.getMediaLatestImageContext({
+        scope: { ...scope, ownerId: new mongoose.Types.ObjectId().toString() },
+        threadId: job.threadId,
+      }),
+    ).toBeNull();
+    await methods.retireMediaThread(scope, job.threadId);
+    expect(await methods.getMediaLatestImageContext({ scope, threadId: job.threadId })).toBeNull();
+  });
+
+  it('defers poisoned media originals and write cleanup using durable retry deadlines', async () => {
+    const { asset } = await original('poisoned-original');
+    await methods.releaseMediaAsset({ scope, fileId: asset.file_id, retainer: 'unused' });
+    const now = new Date(Date.now() + 1_000).toISOString();
+    const retryAt = new Date(Date.parse(now) + 60_000);
+    const files = createFileMethods(mongoose);
+    const ownerScope = { userId: scope.ownerId, tenantId: scope.tenantId };
+    expect(
+      await files.incrementFileDeletionAttempts(asset.file_id, {
+        ...ownerScope,
+        tenantId: 'foreign',
+      }),
+    ).toBe(0);
+    expect(await files.incrementFileDeletionAttempts(asset.file_id, ownerScope)).toBe(1);
+    await files.deferExpiredFile(asset.file_id, retryAt, ownerScope);
+    await files.deferExpiredFile(asset.file_id, new Date(now), ownerScope);
+    expect(await methods.listMediaExpiredAssets({ scope, now, limit: 10 })).toEqual([]);
+    expect(
+      await methods.listMediaExpiredAssets({ scope, now: retryAt.toISOString(), limit: 10 }),
+    ).toHaveLength(1);
+    const write = await methods.reserveMediaAssetWrite({
+      scope,
+      outputKey: 'poisoned-write',
+      rendition: 'original',
+      ingestToken: 'attempt',
+      fingerprint: 'digest',
+      storageKey: 'poisoned-write.png',
+    });
+    expect(
+      await methods.incrementMediaAssetWriteDeletionAttempts({ scope, writeId: write.writeId }),
+    ).toBe(1);
+    await methods.deferMediaAssetWriteCleanup({
+      scope,
+      writeId: write.writeId,
+      retryAt: retryAt.toISOString(),
+    });
+    await methods.deferMediaAssetWriteCleanup({ scope, writeId: write.writeId, retryAt: now });
+    expect(
+      await methods.listMediaAssetWritesForCleanup({ scope, staleBefore: now, now, limit: 10 }),
+    ).toEqual([]);
+    expect(
+      await methods.listMediaAssetWritesForCleanup({
+        scope,
+        staleBefore: now,
+        now: retryAt.toISOString(),
+        limit: 10,
+      }),
+    ).toHaveLength(1);
   });
 
   it('carries a comparison marker onto the published turn view', async () => {

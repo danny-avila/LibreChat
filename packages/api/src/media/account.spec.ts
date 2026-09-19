@@ -35,7 +35,7 @@ describe('media account deletion preflight', () => {
       MediaMethods,
       'prepareMediaAccountDeletion' | 'cancelMediaAccountDeletion' | 'completeMediaAccountDeletion'
     > &
-      Pick<MediaAccountingMethods, 'hasMediaAccountingObligations' | 'deleteMediaAccountingHistory'>
+      Pick<MediaAccountingMethods, 'hasMediaAccountingObligations'>
   >;
   beforeEach(() => {
     repository = {
@@ -43,7 +43,6 @@ describe('media account deletion preflight', () => {
       cancelMediaAccountDeletion: jest.fn().mockResolvedValue(undefined),
       completeMediaAccountDeletion: jest.fn().mockResolvedValue(undefined),
       hasMediaAccountingObligations: jest.fn().mockResolvedValue(false),
-      deleteMediaAccountingHistory: jest.fn().mockResolvedValue(undefined),
     };
   });
   it('holds an admission fence before validating financial obligations', async () => {
@@ -70,14 +69,11 @@ describe('media account deletion preflight', () => {
       await expect(prepareMediaAccountDeletion({ repository, ...session })).rejects.toThrow();
       expect(repository.cancelMediaAccountDeletion).toHaveBeenCalledWith(session);
       expect(repository.completeMediaAccountDeletion).not.toHaveBeenCalled();
-      expect(repository.deleteMediaAccountingHistory).not.toHaveBeenCalled();
     },
   );
-  it('retains deletion identity until User deletion and only then clears acknowledged accounting', async () => {
+  it('delegates completion to the durable protocol and preserves the fence after User deletion', async () => {
     await completeMediaAccountDeletion({ repository, session });
-    expect(repository.completeMediaAccountDeletion.mock.invocationCallOrder[0]).toBeLessThan(
-      repository.deleteMediaAccountingHistory.mock.invocationCallOrder[0],
-    );
+    expect(repository.completeMediaAccountDeletion).toHaveBeenCalledWith(session);
     const log = jest.fn();
     await cancelMediaAccountDeletion({ repository, session, userDeleted: true, log });
     expect(repository.cancelMediaAccountDeletion).not.toHaveBeenCalled();

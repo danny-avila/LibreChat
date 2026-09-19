@@ -19,6 +19,7 @@ const {
 const {
   sendEvent,
   computeUsageCostUSD,
+  collectModelUsage,
   GenerationJobManager,
   writeAttachmentEvent,
   createToolExecuteHandler,
@@ -172,7 +173,11 @@ class ModelEndHandler {
         taggedUsage = { ...taggedUsage, usage_type: 'sequential' };
       }
 
-      this.collectedUsage.push(taggedUsage);
+      collectModelUsage(
+        this.collectedUsage,
+        taggedUsage,
+        data.output.additional_kwargs?.native_media_model_run_id,
+      );
 
       if (this.emitUsage) {
         /** Normalize Anthropic/Bedrock top-level and OpenAI GPT-5.6

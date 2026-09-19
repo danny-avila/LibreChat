@@ -15,6 +15,8 @@ export interface MediaConnection {
   baseURL: string;
   headers: Record<string, string>;
   binding: string;
+  bindingAliases?: string[];
+  allowedAddresses?: string[];
   routing?: MediaRoutingPolicy;
   options?: Record<string, string>;
 }
@@ -56,12 +58,18 @@ export type MediaProviderCancellationResult =
   | { status: 'cancellation_deferred' };
 
 export interface MediaProviderContext {
+  /** Durable server identity, shared by submission and recovery of the same job. */
+  jobId: string;
   transport: MediaTransport;
   connection: MediaConnection;
   config: MediaConfig;
   signal: AbortSignal;
   providerTag?: string;
   continuation?: { prompt: string; inputs: MediaProviderInput[]; parts: MediaProviderPart[] };
+}
+
+export function isMediaConnectionBinding(connection: MediaConnection, binding: string): boolean {
+  return connection.binding === binding || connection.bindingAliases?.includes(binding) === true;
 }
 
 export interface MediaModelProfile {

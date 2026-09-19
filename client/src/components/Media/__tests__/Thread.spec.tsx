@@ -55,6 +55,13 @@ const detail: MediaThreadDetail = {
         prompt: 'Keep the original reference',
         selection,
         operation: 'image.edit',
+        parameters: {
+          count: 2,
+          quality: 'high',
+          resolution: '2K',
+          seed: 42,
+          providerOptions: { style: 'saved' },
+        },
         inputs: [{ file_id: asset.file_id, role: 'reference' }],
         assets: [asset],
         jobs: [
@@ -160,6 +167,7 @@ test('explains why an excluded provider cannot retry while preserving Edit reque
     prompt: detail.turns.items[0].prompt,
     offering: JSON.stringify([selection.connectionId, selection.modelId]),
     inputs: detail.turns.items[0].inputs,
+    parameters: detail.turns.items[0].parameters,
     assets: [asset],
   });
   expect(env.compose).toHaveBeenCalledTimes(1);

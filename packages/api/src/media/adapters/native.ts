@@ -1,10 +1,34 @@
 import { z } from 'zod';
 import { Readable } from 'node:stream';
-import type { MediaSubmissionRequest } from 'librechat-data-provider';
+import { validateMediaCapability, resolveMediaParameters } from 'librechat-data-provider';
+import type {
+  MediaSubmissionRequest,
+  MediaCapability,
+  MediaImageParameters,
+  MediaVideoParameters,
+} from 'librechat-data-provider';
 import type { MediaProviderContext, MediaProviderInput, MediaProviderPart } from '../provider';
 import type { MediaTransportRequest } from '../transport';
+import { mediaAPIURL, isMediaConnectionBinding } from '../provider';
 import { MediaProviderError } from '../errors';
-import { mediaAPIURL } from '../provider';
+
+/** Admission and serialization share the advertised constraints and conditional defaults. */
+export function nativeParameters(
+  request: MediaSubmissionRequest,
+  inputs: MediaProviderInput[],
+  context: MediaProviderContext,
+  capability?: MediaCapability,
+): MediaImageParameters & MediaVideoParameters {
+  if (!capability) throw new MediaProviderError('rejected');
+  const candidate = {
+    ...request,
+    inputs: inputs.map(({ role, file_id, sourceURL }) => ({ role, file_id, sourceURL })),
+  };
+  if (validateMediaCapability(candidate, capability, context.config.limits).length) {
+    throw new MediaProviderError('rejected');
+  }
+  return resolveMediaParameters(candidate, capability);
+}
 
 export function nativeRequest(
   context: MediaProviderContext,
@@ -129,7 +153,7 @@ export function decodeOperation(token: string, context: MediaProviderContext): N
     const operation = operationSchema.parse(JSON.parse(Buffer.from(token, 'base64url').toString()));
     if (
       operation.api !== context.connection.api ||
-      operation.binding !== context.connection.binding
+      !isMediaConnectionBinding(context.connection, operation.binding)
     ) {
       throw new MediaProviderError('uncertain');
     }

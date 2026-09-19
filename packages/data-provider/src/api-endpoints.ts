@@ -33,6 +33,10 @@ const mediaQuery = (params: MediaThreadListRequest = {}): string => {
   return suffix ? `?${suffix}` : '';
 };
 export const mediaCatalog = () => `${mediaRoot()}/catalog`;
+export const mediaRecoveryJobs = (params: MediaPageRequest = {}) =>
+  `${BASE_URL}/api/admin/media/jobs${mediaQuery(params)}`;
+export const mediaRecoveryJob = (ownerId: string, jobId: string) =>
+  `${mediaRecoveryJobs()}/${encodeURIComponent(ownerId)}/${encodeURIComponent(jobId)}/recovery`;
 export const mediaThreads = (params: MediaThreadListRequest = {}) =>
   `${mediaRoot()}/threads${mediaQuery(params)}`;
 export const mediaThread = (threadId: string) =>

@@ -1,4 +1,9 @@
-import { HITL_MESSAGE_FILTER_FIELDS, RetentionMode } from 'librechat-data-provider';
+import {
+  HITL_MESSAGE_FILTER_FIELDS,
+  RetentionMode,
+  detachEditedNativeContent,
+  getNativeContinuationRefs,
+} from 'librechat-data-provider';
 import type { DeleteResult, FilterQuery, Model, Types, UpdateQuery } from 'mongoose';
 import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { SearchParams } from 'meilisearch';
@@ -7,6 +12,9 @@ import type { AppConfig, IConversation, IMessage } from '~/types';
 import { createChatExpirationDate, createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { activeExpirationFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { createMediaNativeMethods } from './mediaNative';
+import { tenantStorage } from '~/config/tenantContext';
+import { createMediaMethods } from './media';
 import logger from '~/config/winston';
 
 /** Simple UUID v4 regex to replace zod validation */
@@ -780,7 +788,7 @@ export interface MessageMethods {
   deleteMessagesSince(
     userId: string,
     params: { messageId: string; conversationId: string },
-  ): Promise<DeleteResult>;
+  ): Promise<DeleteResult | undefined>;
   getMessages(
     filter: FilterQuery<IMessage>,
     select?: string,
@@ -835,6 +843,27 @@ function agentOwnershipFilter(prefix: string, agentId: string): Record<string, u
 }
 
 export function createMessageMethods(mongoose: typeof import('mongoose')): MessageMethods {
+  async function reconcileEditedNativeParts(
+    identity: Pick<IMessage, 'user' | 'conversationId' | 'tenantId'>,
+    content: unknown,
+    paths: readonly string[],
+  ): Promise<void> {
+    if (!Array.isArray(content) || !paths.length) return;
+    const edited = detachEditedNativeContent(content, paths);
+    const changed = content.filter((part, index) => part !== edited[index]);
+    const continuationRefs = getNativeContinuationRefs(changed);
+    if (!continuationRefs.length) return;
+    const native = createMediaNativeMethods(mongoose, createMediaMethods(mongoose));
+    const consumer = {
+      scope: {
+        ownerId: identity.user,
+        tenantId: identity.tenantId ?? tenantStorage.getStore()?.tenantId ?? null,
+      },
+      conversationId: identity.conversationId,
+    };
+    await native.prepareMediaNativeMessageDeletion({ ...consumer, continuationRefs });
+    await native.reconcileMediaNativeMessageDeletion(consumer);
+  }
   /**
    * Saves a message in the database.
    */
@@ -951,6 +980,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       const userSubmittedMessageFieldPaths = normalizeUserSubmittedMessageFieldPaths(
         params.userSubmittedMessageFieldPaths,
       );
+      if (update.content != null) {
+        update.content = detachEditedNativeContent(update.content, userSubmittedPaths);
+      }
       delete update.userSubmittedPaths;
       delete update.userSubmittedMessageFieldPaths;
       const stampModelOutputOnInsert =
@@ -979,6 +1011,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       if (message == null) {
         return message;
       }
+      await reconcileEditedNativeParts(message, params.content, userSubmittedPaths);
 
       /** Reuse the saved row's chat type when callers omit it, preserving existing deadlines. */
       if (
@@ -1063,6 +1096,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           normalizeUserSubmittedPaths(message.userSubmittedPaths),
           normalizeUserSubmittedMessageFieldPaths(message.userSubmittedMessageFieldPaths),
         );
+        if (normalizedMessage.content != null) {
+          normalizedMessage.content = detachEditedNativeContent(
+            normalizedMessage.content,
+            provenance.userSubmittedPaths,
+          );
+        }
         if (provenance.userSubmittedPaths.length > 0) {
           normalizedMessage.userSubmittedPaths = provenance.userSubmittedPaths;
         } else {
@@ -1087,6 +1126,19 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         };
       });
       const result = await tenantSafeBulkWrite(Message, bulkOps);
+      for (const message of messages) {
+        if (typeof message.user === 'string' && typeof message.conversationId === 'string') {
+          await reconcileEditedNativeParts(
+            {
+              user: message.user,
+              conversationId: message.conversationId,
+              tenantId: typeof message.tenantId === 'string' ? message.tenantId : undefined,
+            },
+            message.content,
+            normalizeUserSubmittedPaths(message.userSubmittedPaths),
+          );
+        }
+      }
       return result;
     } catch (err) {
       logger.error('Error saving messages in bulk:', err);
@@ -1123,7 +1175,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         userSubmittedMessageFieldPaths: _userSubmittedMessageFieldPaths,
         ...safeRest
       } = rest;
-      const message = {
+      const message: Record<string, unknown> = {
         user,
         endpoint,
         messageId,
@@ -1138,6 +1190,12 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         }),
         ...(provenance.promoteWholeMessage && { isUserSubmitted: true }),
       };
+      if (safeRest.content != null) {
+        message.content = detachEditedNativeContent(
+          safeRest.content,
+          provenance.userSubmittedPaths,
+        );
+      }
       const update =
         rest.isCreatedByUser === false &&
         rest.isUserSubmitted === undefined &&
@@ -1145,10 +1203,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           ? { $set: message, $setOnInsert: { isUserSubmitted: false } }
           : message;
 
-      return await Message.findOneAndUpdate({ user, messageId }, update, {
+      const recorded = await Message.findOneAndUpdate({ user, messageId }, update, {
         upsert: true,
         new: true,
       });
+      if (recorded)
+        await reconcileEditedNativeParts(recorded, rest.content, provenance.userSubmittedPaths);
+      return recorded;
     } catch (err) {
       logger.error('Error recording message:', err);
       throw err;
@@ -1902,6 +1963,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       const submittedMessageFields = normalizeUserSubmittedMessageFieldPaths(
         update.userSubmittedMessageFieldPaths,
       );
+      if (update.content != null) {
+        update.content = detachEditedNativeContent(update.content, submittedPaths);
+      }
       delete update.userSubmittedPaths;
       delete update.userSubmittedMessageFieldPaths;
       const updatedMessage =
@@ -1919,6 +1983,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       if (!updatedMessage) {
         throw new Error('Message not found or user not authorized.');
       }
+
+      await reconcileEditedNativeParts(updatedMessage, message.content, submittedPaths);
 
       return {
         messageId: updatedMessage.messageId,
@@ -2333,8 +2399,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       const message = await Message.findOne({ messageId, user: userId }).lean<IMessage>();
 
       if (message) {
-        const query = Message.find({ conversationId, user: userId });
-        return await query.deleteMany({
+        return await deleteMessages({
+          conversationId,
+          user: userId,
           createdAt: { $gt: message.createdAt },
         });
       }
@@ -3524,7 +3591,30 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   async function deleteMessages(filter: FilterQuery<IMessage>) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      return await Message.deleteMany(filter);
+      let nativeDeleted = 0;
+      const nativeMessages = Message.find({
+        $and: [filter, { 'content.native_media.continuationRef': { $exists: true } }],
+      })
+        .select({ _id: 1, user: 1, tenantId: 1, conversationId: 1, content: 1 })
+        .lean<IMessage>()
+        .cursor();
+      let native: ReturnType<typeof createMediaNativeMethods> | undefined;
+      for await (const message of nativeMessages) {
+        native ??= createMediaNativeMethods(mongoose, createMediaMethods(mongoose));
+        const identity = {
+          scope: { ownerId: message.user, tenantId: message.tenantId ?? null },
+          conversationId: message.conversationId,
+        };
+        await native.prepareMediaNativeMessageDeletion({
+          ...identity,
+          continuationRefs: getNativeContinuationRefs(message.content),
+        });
+        const removed = await Message.deleteOne({ $and: [filter, { _id: message._id }] });
+        nativeDeleted += removed.deletedCount;
+        await native.reconcileMediaNativeMessageDeletion(identity);
+      }
+      const result = await Message.deleteMany(filter);
+      return { ...result, deletedCount: result.deletedCount + nativeDeleted };
     } catch (err) {
       logger.error('Error deleting messages:', err);
       throw err;

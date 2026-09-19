@@ -2,9 +2,11 @@ import { Readable } from 'node:stream';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { MediaNativeMethods, MediaStoredJob } from '@librechat/data-schemas';
+import type { NativeMediaPart, NativeMediaPort } from '@librechat/agents';
 import type { MediaIntegration } from 'librechat-data-provider';
-import type { NativeMediaPort } from '@librechat/agents';
 import type { MediaContext, MediaServiceDependencies } from './service';
+import type { MediaConnection } from './provider';
+import { observeMedia, mediaJobEvent } from './telemetry';
 import { assertMediaStorage } from './storage';
 import { assertMediaAccess } from './service';
 import { MediaServiceError } from './errors';
@@ -13,6 +15,7 @@ export interface NativeMediaSelection {
   provider: string;
   model: string;
   agentId?: string;
+  usageType?: 'subagent' | 'sequential';
   responseModalities?: string[];
   apiKey?: string;
   baseURL?: string;
@@ -25,7 +28,17 @@ export interface MediaChatSource {
   messageId: string;
   prompt: string;
   temporary: boolean;
+  expiresAt?: string;
 }
+
+export type NativeMediaUsageSink = (input: {
+  modelRunId: string;
+  model: string;
+  provider: string;
+  agentId?: string;
+  usageType?: NativeMediaSelection['usageType'];
+  usage: NonNullable<Parameters<NativeMediaPort['fail']>[0]['usage']>;
+}) => void | Promise<void>;
 
 function secretsMatch(candidate: string | undefined, expected: string | undefined): boolean {
   if (candidate == null || expected == null) return false;
@@ -40,11 +53,13 @@ export function createNativeMediaFactory({
   repository,
   context,
   source,
+  onUsage,
 }: {
   deps: MediaServiceDependencies;
   repository: MediaNativeMethods;
   context: MediaContext;
   source: MediaChatSource;
+  onUsage?: NativeMediaUsageSink;
 }): NativeMediaFactory {
   return async (selection) => {
     if (selection.provider.toLowerCase() !== 'google') {
@@ -70,37 +85,42 @@ export function createNativeMediaFactory({
       catalog: { kind: 'configured', models: [selection.model] },
       operations: ['image.generate'],
     };
-    const connection = await deps.resolveConnection({
-      scope: context.scope,
-      integration: historyIntegration,
-      appConfig: context.appConfig,
-      minValidityMs: context.config.credentials.minValidityAtDispatchMs,
-    });
-    if (connection) {
-      const base = (value: string) => value.replace(/\/$/, '').replace(/\/v1beta$/, '');
-      const keyMatches = secretsMatch(selection.apiKey, connection.headers['x-goog-api-key']);
-      const urlMatches =
-        base(selection.baseURL ?? 'https://generativelanguage.googleapis.com') ===
-        base(connection.baseURL);
-      if (!keyMatches || !urlMatches) {
-        throw new MediaServiceError(
-          'credentials_required',
-          403,
-          'Native media must use the configured Google connection.',
-        );
-      }
-    }
-    const execution = connection
-      ? {
-          connectionId: historyIntegration.id,
-          endpointRef: historyIntegration.endpointRef,
-          modelId: selection.model,
-          api: connection.api,
-          catalogVersion: 'native-chat',
-          bindingRevision: connection.binding,
-          accountingMode: 'none' as const,
+    let connectionPromise: Promise<MediaConnection> | undefined;
+    const getConnection = () =>
+      (connectionPromise ??= (async () => {
+        const connection = await deps.resolveConnection({
+          scope: context.scope,
+          integration: historyIntegration,
+          appConfig: context.appConfig,
+          minValidityMs: wantsImages ? context.config.credentials.minValidityAtDispatchMs : 0,
+          user: context.user,
+        });
+        const base = (value: string) => value.replace(/\/$/, '').replace(/\/v1beta$/, '');
+        const keyMatches = secretsMatch(selection.apiKey, connection.headers['x-goog-api-key']);
+        const urlMatches =
+          base(selection.baseURL ?? 'https://generativelanguage.googleapis.com') ===
+          base(connection.baseURL);
+        if (!keyMatches || !urlMatches) {
+          throw new MediaServiceError(
+            'credentials_required',
+            403,
+            'Native media must use the configured Google connection.',
+          );
         }
-      : undefined;
+        return connection;
+      })());
+    const getExecution = async () => {
+      const connection = await getConnection();
+      return {
+        connectionId: historyIntegration.id,
+        endpointRef: historyIntegration.endpointRef,
+        modelId: selection.model,
+        api: connection.api,
+        catalogVersion: 'native-chat',
+        bindingRevision: connection.binding,
+        accountingMode: 'none' as const,
+      };
+    };
     const runs = new Map<string, MediaStoredJob>();
     const imageKeys = new Map<string, Set<string>>();
     const getRun = (modelRunId: string) => {
@@ -119,7 +139,7 @@ export function createNativeMediaFactory({
           'Native media prompt exceeds the configured limit.',
         );
       }
-      if (!integration || !execution || !context.config.surfaces.chat) {
+      if (!integration || !context.config.surfaces.chat) {
         throw new MediaServiceError(
           'unsupported',
           422,
@@ -141,7 +161,8 @@ export function createNativeMediaFactory({
           return { responseModalities: modalities };
         }
         assertOutput();
-        if (signal?.aborted || model !== selection.model || !execution) {
+        const execution = await getExecution();
+        if (signal?.aborted || model !== selection.model) {
           throw new MediaServiceError(
             'invalid_request',
             400,
@@ -164,6 +185,7 @@ export function createNativeMediaFactory({
             conversationId: source.conversationId,
             messageId: source.messageId,
             modelRunId,
+            ...(source.expiresAt ? { expiresAt: source.expiresAt } : {}),
           },
           execution,
           request: {
@@ -188,6 +210,7 @@ export function createNativeMediaFactory({
           },
         });
         runs.set(modelRunId, job);
+        observeMedia(deps.observer, { ...mediaJobEvent(job), kind: 'attempt', result: 'started' });
         imageKeys.set(modelRunId, new Set());
         return { responseModalities: modalities };
       },
@@ -264,60 +287,114 @@ export function createNativeMediaFactory({
         if (!job) {
           return;
         }
-        await repository.completeMediaNativeRecording({ scope: context.scope, jobId: job.jobId });
-        runs.delete(modelRunId);
-        imageKeys.delete(modelRunId);
-      },
-      async fail({ modelRunId, reason }) {
-        const job = runs.get(modelRunId);
-        if (!job) {
-          return;
-        }
-        await repository.failMediaNativeRecording({
+        const completed = await repository.completeMediaNativeRecording({
           scope: context.scope,
           jobId: job.jobId,
-          reason,
         });
+        if (completed)
+          observeMedia(deps.observer, {
+            ...mediaJobEvent(completed),
+            kind: 'transition',
+            result: 'completed',
+            previousPhase: job.phase,
+            durationMs: Math.max(0, deps.now() - Date.parse(job.createdAt)),
+          });
         runs.delete(modelRunId);
         imageKeys.delete(modelRunId);
       },
-      async restore({ file_id, continuationRef }) {
-        assertMediaAccess(context);
-        if (!execution) {
-          throw new MediaServiceError(
-            'credentials_required',
-            403,
-            'The original Google connection is unavailable.',
-          );
+      async fail({ modelRunId, reason, usage }) {
+        const results = await Promise.allSettled([
+          Promise.resolve().then(() =>
+            usage
+              ? onUsage?.({
+                  modelRunId,
+                  usage,
+                  model: selection.model,
+                  provider: selection.provider,
+                  agentId: selection.agentId,
+                  usageType: selection.usageType,
+                })
+              : undefined,
+          ),
+          (async () => {
+            const job = runs.get(modelRunId);
+            if (!job) return;
+            const failed = await repository.failMediaNativeRecording({
+              scope: context.scope,
+              jobId: job.jobId,
+              reason,
+            });
+            if (failed)
+              observeMedia(deps.observer, {
+                ...mediaJobEvent(failed),
+                kind: 'transition',
+                result: 'completed',
+                previousPhase: job.phase,
+                durationMs: Math.max(0, deps.now() - Date.parse(job.createdAt)),
+              });
+            runs.delete(modelRunId);
+            imageKeys.delete(modelRunId);
+          })(),
+        ]);
+        for (const result of results) {
+          if (result.status === 'rejected') throw result.reason;
         }
-        const stored = await repository.getMediaNativeContinuation({
+      },
+      async restore(input) {
+        return (await restoreBatch({ parts: [input] }))[0];
+      },
+      restoreBatch,
+    };
+
+    async function restoreBatch({
+      parts,
+      signal,
+    }: Parameters<NonNullable<NativeMediaPort['restoreBatch']>>[0]): Promise<NativeMediaPart[]> {
+      assertMediaAccess(context);
+      signal?.throwIfAborted();
+      const execution = await getExecution();
+      const connection = await getConnection();
+      const result: NativeMediaPart[] = [];
+      const limit = context.config.limits.maxNativeParts;
+      for (let offset = 0; offset < parts.length; offset += limit) {
+        signal?.throwIfAborted();
+        const storedParts = await repository.getMediaNativeContinuations({
           scope: context.scope,
           execution,
-          fileId: file_id,
-          continuationRef,
+          bindingAliases: connection.bindingAliases,
+          conversationId: source.conversationId,
+          references: parts
+            .slice(offset, offset + limit)
+            .map(({ file_id, continuationRef }) => ({ fileId: file_id, continuationRef })),
+          limit,
         });
-        if (!stored) {
-          throw new MediaServiceError(
-            'not_found',
-            404,
-            'Native continuation is unavailable for this connection.',
+        for (const stored of storedParts) {
+          signal?.throwIfAborted();
+          if (!stored) {
+            throw new MediaServiceError(
+              'not_found',
+              404,
+              'Native continuation is unavailable for this connection.',
+            );
+          }
+          if (stored.part.kind === 'text') {
+            result.push(stored.part);
+            continue;
+          }
+          const { asset, data } = await deps.storage.read(
+            context.scope,
+            stored.part.fileId,
+            context.config.transfers.maxImageBytes,
           );
+          result.push({
+            kind: 'image',
+            mimeType: asset.type,
+            data: data.toString('base64'),
+            thoughtSignature: stored.part.thoughtSignature,
+          });
         }
-        if (stored.part.kind === 'text') {
-          return stored.part;
-        }
-        const { asset, data } = await deps.storage.read(
-          context.scope,
-          stored.part.fileId,
-          context.config.transfers.maxImageBytes,
-        );
-        return {
-          kind: 'image',
-          mimeType: asset.type,
-          data: data.toString('base64'),
-          thoughtSignature: stored.part.thoughtSignature,
-        };
-      },
-    };
+      }
+      return result;
+    }
   };
 }

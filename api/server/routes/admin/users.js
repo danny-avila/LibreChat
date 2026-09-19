@@ -20,6 +20,7 @@ const requireReadUsers = requireCapability(SystemCapabilities.READ_USERS);
 // const requireManageUsers = requireCapability(SystemCapabilities.MANAGE_USERS);
 
 const handlers = createAdminUsersHandlers({
+  media: db,
   findUsers: db.findUsers,
   countUsers: db.countUsers,
   beginAgentTriggerUserDeletion: db.beginAgentTriggerUserDeletion,

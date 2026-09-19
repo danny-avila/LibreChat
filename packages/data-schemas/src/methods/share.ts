@@ -6,6 +6,7 @@ import {
   ContentTypes,
   FileSources,
   isConfiguredSender,
+  detachNativeIdentity,
 } from 'librechat-data-provider';
 import type { FilterQuery, Model } from 'mongoose';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
@@ -208,14 +209,26 @@ function isSteerPartWithFiles(part: unknown): part is SteerLikePart {
   );
 }
 
-/** Collect `file_id`s carried by steer parts inside a message's content array. */
-function collectSteerFileIds(content: unknown, target: Set<string>): void {
+type ImageFilePart = { type: ContentTypes.IMAGE_FILE; image_file?: t.SharedFile };
+
+function isImageFilePart(part: unknown): part is ImageFilePart {
+  return (
+    part != null &&
+    typeof part === 'object' &&
+    (part as ImageFilePart).type === ContentTypes.IMAGE_FILE
+  );
+}
+
+/** All inline file parts follow the same discovery and inclusion policy. */
+function collectContentFileIds(content: unknown, target: Set<string>): void {
   if (!Array.isArray(content)) {
     return;
   }
   for (const part of content) {
     if (isSteerPartWithFiles(part)) {
       collectFileIds(part.files, target);
+    } else if (isImageFilePart(part)) {
+      collectFileIds([part.image_file], target);
     }
   }
 }
@@ -241,7 +254,7 @@ async function buildFileSnapshots(
   for (const message of messages) {
     collectFileIds(message.files, fileIds);
     collectFileIds(message.attachments, fileIds);
-    collectSteerFileIds(message.content, fileIds);
+    collectContentFileIds(message.content, fileIds);
   }
 
   return readFileSnapshots(mongoose, fileIds, ownerId);
@@ -518,11 +531,8 @@ function applyShareFileRoute(
 }
 
 /**
- * Steer parts persisted inline in `message.content` carry the same user file
- * refs as a message's top-level `files`, so they follow the identical share
- * policy: dropped entirely when files are excluded from the link, sanitized and
- * rewritten to the share-scoped route (with anonymized ids) when included.
- * Returns the original array untouched when no steer part carries files.
+ * Inline files follow the same inclusion, sanitization and share-scoped routing
+ * policy as top-level attachments. Native continuation identity stays private.
  */
 export function anonymizeSharedContent(
   content: unknown[] | undefined,
@@ -548,7 +558,36 @@ export function anonymizeSharedContent(
   }
 
   for (let i = 0; i < content.length; i++) {
-    const part = result?.[i] ?? content[i];
+    const originalPart = result?.[i] ?? content[i];
+    const part =
+      originalPart != null && typeof originalPart === 'object'
+        ? detachNativeIdentity(originalPart)
+        : originalPart;
+    if (part !== originalPart) {
+      result ??= [...content];
+      result[i] = part;
+    }
+    if (isImageFilePart(part)) {
+      result ??= [...content];
+      const file = params.includeFiles ? sanitizeSharedFile(part.image_file) : null;
+      result[i] = file
+        ? {
+            ...part,
+            image_file: applyShareFileRoute(
+              {
+                ...file,
+                ...(file.conversationId !== undefined && { conversationId: params.newConvoId }),
+                ...(file.messageId !== undefined && { messageId: params.newMessageId }),
+              },
+              params.shareId,
+              params.snapshotIds,
+              params.textSourceIds,
+              params.deliveryPathById,
+            ),
+          }
+        : null;
+      continue;
+    }
     if (!isSteerPartWithFiles(part)) {
       continue;
     }
@@ -571,7 +610,7 @@ export function anonymizeSharedContent(
     result ??= [...content];
     result[i] = files ? { ...rest, files } : rest;
   }
-  return result ?? content;
+  return result?.filter((part) => part != null) ?? content;
 }
 
 /**

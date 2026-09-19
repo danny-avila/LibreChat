@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { PermissionBits, PrincipalType, ResourceType, SystemRoles } from 'librechat-data-provider';
-import { createInsightsAgentAccessResolver, type InsightsAgentAccessDeps } from './access';
+import type { InsightsAgentAccessDeps } from './access';
+import { createInsightsAgentAccessResolver, createInsightsAccessResolver } from './access';
 
 const agentA = { _id: new Types.ObjectId(), id: 'agent-a', name: 'Zulu', tenantId: 'tenant-a' };
 const agentB = { _id: new Types.ObjectId(), id: 'agent-b', name: 'Alpha', tenantId: 'tenant-a' };
@@ -19,6 +20,25 @@ const createDeps = (): jest.Mocked<InsightsAgentAccessDeps> =>
   }) as jest.Mocked<InsightsAgentAccessDeps>;
 
 describe('createInsightsAgentAccessResolver', () => {
+  it('does not promote an agent-specific grant into tenant-wide Studio access', async () => {
+    const deps = createDeps();
+    deps.findAccessibleResources.mockResolvedValue([agentA._id]);
+    expect(
+      await createInsightsAccessResolver(deps)({ id: 'user-id', tenantId: 'tenant-a' }),
+    ).toEqual({
+      agents: [{ id: 'agent-a', name: 'Zulu' }],
+      media: false,
+    });
+  });
+
+  it('allows a global Insights reader into Studio even when no agents exist', async () => {
+    const deps = createDeps();
+    deps.getAgents.mockResolvedValue([]);
+    deps.hasCapabilityForPrincipals.mockResolvedValue(true);
+    expect(
+      await createInsightsAccessResolver(deps)({ id: 'user-id', tenantId: 'tenant-a' }),
+    ).toEqual({ agents: [], media: true });
+  });
   it('returns every tenant agent for a literal admin', async () => {
     const deps = createDeps();
     const resolve = createInsightsAgentAccessResolver(deps);

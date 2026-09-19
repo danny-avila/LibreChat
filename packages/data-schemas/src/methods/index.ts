@@ -1,6 +1,8 @@
 import type { MediaAccountingMethods } from '~/types/mediaAccounting';
+import type { MediaRecoveryMethods } from '~/types/mediaRecovery';
 import type { MediaPresetMethods } from '~/types/mediaPreset';
 import type { MediaNativeMethods } from '~/types/mediaNative';
+import type { MediaTitleMethods } from '~/types/mediaTitle';
 import type { RoleMethods, RoleDeps } from './role';
 import type { MediaMethods } from '~/types/media';
 import {
@@ -9,8 +11,10 @@ import {
 } from './openidRefreshFlight';
 import { createMediaMethods, deriveMediaThreadTitle, MediaPersistenceError } from './media';
 import { createMediaAccountingMethods, MediaAccountingError } from './mediaAccounting';
+import { createMediaRecoveryMethods } from './mediaRecovery';
 import { createMediaPresetMethods } from './mediaPreset';
 import { createMediaNativeMethods } from './mediaNative';
+import { createMediaTitleMethods } from './mediaTitle';
 export {
   createMCPAuthorizationFenceRetryStorage,
   type MCPAuthorizationFenceRetryStorage,
@@ -206,7 +210,9 @@ export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate, createT
 export { createMediaMethods, deriveMediaThreadTitle, MediaPersistenceError };
 export { createMediaAccountingMethods, MediaAccountingError };
 export { createMediaPresetMethods };
+export { createMediaTitleMethods };
 export { createMediaNativeMethods };
+export { createMediaRecoveryMethods };
 export { permissionBitSupersets };
 export { CLIENT_MESSAGE_SELECT, SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT };
 export {
@@ -231,6 +237,8 @@ export {
 };
 
 export type AllMethods = MediaNativeMethods &
+  MediaRecoveryMethods &
+  MediaTitleMethods &
   MediaAccountingMethods &
   MediaPresetMethods &
   MediaMethods &
@@ -459,7 +467,9 @@ export function createMethods(
   const mediaMethods = createMediaMethods(mongoose);
   return {
     ...mediaMethods,
+    ...createMediaTitleMethods(mongoose),
     ...createMediaNativeMethods(mongoose, mediaMethods),
+    ...createMediaRecoveryMethods(mongoose),
     ...createMediaAccountingMethods(mongoose, {
       prepareBalance: transactionMethods.prepareBalance,
     }),

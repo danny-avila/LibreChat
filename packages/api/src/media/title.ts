@@ -1,19 +1,31 @@
-import { initializeModel, Providers } from '@librechat/agents';
+import { HumanMessage } from '@langchain/core/messages';
 import { deriveMediaThreadTitle } from '@librechat/data-schemas';
-import { Constants, EModelEndpoint } from 'librechat-data-provider';
-import type { AppConfig, MediaMethods, MediaOwnerScope } from '@librechat/data-schemas';
+import { Constants, TOKEN_CREDITS_PER_USD } from 'librechat-data-provider';
+import { initializeModel, Providers, getMaxOutputTokensKey } from '@librechat/agents';
+import type {
+  AppConfig,
+  MediaMethods,
+  MediaOwnerScope,
+  MediaTitleMethods,
+} from '@librechat/data-schemas';
 import type { MediaOperation, TEndpoint } from 'librechat-data-provider';
 import type { ClientOptions } from '@librechat/agents';
-import type { EndpointDbMethods, InitializeResultBase, OpenAIConfiguration } from '~/types';
+import type { BalanceCreditReservationDeps, BalanceReservation } from '~/middleware/checkBalance';
+import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
+import type { EndpointTokenConfig } from '~/types/tokens';
 import type { RecordUsageDeps } from '~/agents/usage';
+import type { MediaModelTracer } from './tracing';
+import type { EndpointDbMethods } from '~/types';
 import type { MediaContext } from './context';
 import { getBalanceConfig, getCustomEndpointConfig, getTransactionsConfig } from '~/app/config';
 import { DEFAULT_TITLE_FALLBACK, sanitizeTitle } from '~/utils/sanitizeTitle';
+import { recordCollectedUsage, computeUsageCostUSD } from '~/agents/usage';
+import { reserveBalanceCredits } from '~/middleware/checkBalance';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { resolveConversationTitle } from '~/protection/title';
+import { createCachedTokenCounter } from '~/agents/client';
+import { resolveTitleModelConfig } from '~/agents/title';
 import { resolveConfigHeaders } from '~/utils/headers';
-import { recordCollectedUsage } from '~/agents/usage';
-import { omitTitleOptions } from '~/agents/client';
 import { createSafeUser } from '~/utils/env';
 
 export interface MediaTitleTarget {
@@ -97,61 +109,13 @@ export function buildMediaTitlePrompt(input: {
 export interface MediaTitleModel {
   provider: string;
   clientOptions: ClientOptions;
+  endpointTokenConfig?: EndpointTokenConfig;
 }
 
 export type MediaTitleModelResolver = (input: {
   context: MediaContext;
   target: MediaTitleTarget;
 }) => Promise<MediaTitleModel | undefined>;
-
-/** Azure exposes an instance name only when the resolved config really targets Azure. */
-type TitleClientOptions = ClientOptions & {
-  azureOpenAIApiInstanceName?: string;
-  configuration?: OpenAIConfiguration;
-  maxTokens?: number;
-  modelKwargs?: Record<string, unknown>;
-  clientOptions?: { defaultHeaders?: unknown };
-};
-
-function resolveTitleProvider(
-  endpoint: string,
-  options: InitializeResultBase,
-  overrideProvider: string,
-): string {
-  const provider = options.provider ?? overrideProvider;
-  if (endpoint !== EModelEndpoint.azureOpenAI) {
-    return provider;
-  }
-  const llmConfig = options.llmConfig as TitleClientOptions | undefined;
-  return llmConfig?.azureOpenAIApiInstanceName == null ? Providers.OPENAI : Providers.AZURE;
-}
-
-/**
- * Mirrors the chat title path: primary-generation caps and thinking/streaming carriers are
- * dropped, while the Anthropic `clientOptions` carrier is restored by reference so proxy headers
- * and SSRF-guarded fetch options still reach the request.
- */
-function sanitizeTitleClientOptions(options: InitializeResultBase): TitleClientOptions {
-  const raw = { ...(options.llmConfig ?? {}) } as TitleClientOptions;
-  delete raw.maxTokens;
-  if (raw.modelKwargs != null) {
-    const modelKwargs = { ...raw.modelKwargs };
-    delete modelKwargs.max_completion_tokens;
-    delete modelKwargs.max_output_tokens;
-    raw.modelKwargs = modelKwargs;
-  }
-  const carrier = raw.clientOptions;
-  const clientOptions = Object.fromEntries(
-    Object.entries(raw).filter(([key]) => !omitTitleOptions.has(key)),
-  ) as TitleClientOptions;
-  if (carrier != null && clientOptions.clientOptions == null) {
-    clientOptions.clientOptions = carrier;
-  }
-  if (options.configOptions) {
-    clientOptions.configuration = options.configOptions;
-  }
-  return clientOptions;
-}
 
 export function createMediaTitleModelResolver({
   db,
@@ -170,7 +134,11 @@ export function createMediaTitleModelResolver({
       model_parameters: { model: target.model },
       db,
     });
-    const clientOptions = sanitizeTitleClientOptions(options);
+    const { provider, clientOptions } = resolveTitleModelConfig({
+      endpoint: target.endpoint,
+      options,
+      fallbackProvider: providerConfig.overrideProvider,
+    });
     resolveConfigHeaders({
       llmConfig: clientOptions,
       user: createSafeUser(user),
@@ -178,16 +146,14 @@ export function createMediaTitleModelResolver({
       body: {},
     });
     return {
-      provider: resolveTitleProvider(target.endpoint, options, providerConfig.overrideProvider),
+      provider,
       clientOptions,
+      endpointTokenConfig: options.endpointTokenConfig,
     };
   };
 }
 
-export interface MediaTitleUsage {
-  input_tokens?: number;
-  output_tokens?: number;
-}
+export type MediaTitleUsage = UsageMetadata;
 
 export interface MediaTitleInvocation {
   text: string;
@@ -265,18 +231,22 @@ function cleanMediaTitle(
 
 export interface MediaTitleRequest {
   context: MediaContext;
+  jobId: string;
   threadId: string;
   prompt: string;
   operation: MediaOperation;
   currentTitle: string;
+  signal: AbortSignal;
 }
 
 export type MediaTitleGenerator = (input: MediaTitleRequest) => Promise<string | undefined>;
 
 export interface MediaTitleGeneratorDependencies {
-  repository: Pick<MediaMethods, 'replaceMediaThreadTitle'>;
+  modelTracer?: MediaModelTracer;
+  repository: Pick<MediaMethods, 'replaceMediaThreadTitle'> & MediaTitleMethods;
   resolveModel: MediaTitleModelResolver;
   usage?: RecordUsageDeps;
+  admission?: Omit<BalanceCreditReservationDeps, 'balanceConfig'>;
   /** Defaults to a real model call; tests substitute a fake to exercise the surrounding logic. */
   invoke?: MediaTitleInvoker;
   withScope<T>(scope: MediaOwnerScope, operation: () => Promise<T>): Promise<T>;
@@ -299,53 +269,128 @@ export function createMediaTitleGenerator(
   async function recordUsage(
     input: MediaTitleRequest,
     target: MediaTitleTarget,
+    model: MediaTitleModel,
     usage: MediaTitleUsage | undefined,
   ): Promise<void> {
-    if (!deps.usage || !usage) {
+    const source = deps.usage;
+    if (!source || !usage) {
       return;
     }
     const { appConfig, scope } = input.context;
+    const pending: Promise<unknown>[] = [];
+    const usageDeps: RecordUsageDeps = {
+      ...source,
+      spendTokens: (...args) => {
+        const write = source.spendTokens(...args);
+        pending.push(write);
+        return write;
+      },
+      spendStructuredTokens: (...args) => {
+        const write = source.spendStructuredTokens(...args);
+        pending.push(write);
+        return write;
+      },
+    };
     try {
-      await recordCollectedUsage(deps.usage, {
+      await recordCollectedUsage(usageDeps, {
         user: scope.ownerId,
         conversationId: input.threadId,
         context: 'title',
         model: target.model,
+        endpointTokenConfig: model.endpointTokenConfig,
         collectedUsage: [
           {
-            input_tokens: usage.input_tokens,
-            output_tokens: usage.output_tokens,
-            model: target.model,
+            ...usage,
+            provider: usage.provider ?? model.provider,
+            model: usage.model ?? target.model,
           },
         ],
         balance: getBalanceConfig(appConfig),
         transactions: getTransactionsConfig(appConfig),
       });
+      await Promise.all(pending);
     } catch (error) {
       deps.log(toError(error));
     }
   }
 
   return async (input) => {
+    let reservation: BalanceReservation | undefined;
     try {
+      input.signal.throwIfAborted();
       const target = resolveMediaTitleTarget(input.context);
       if (!target) {
         return undefined;
       }
-      const model = await deps.resolveModel({ context: input.context, target });
-      if (!model) {
+      const resolved = await deps.resolveModel({ context: input.context, target });
+      if (!resolved) {
         return undefined;
       }
-      const result = await invoke(
-        model,
-        buildMediaTitlePrompt({
-          prompt: input.prompt,
-          operation: input.operation,
-          template: target.prompt,
-        }),
-        AbortSignal.timeout(target.timeoutMs),
-      );
       const { scope, appConfig, config } = input.context;
+      const prompt = buildMediaTitlePrompt({
+        prompt: input.prompt,
+        operation: input.operation,
+        template: target.prompt,
+      });
+      const model: MediaTitleModel = {
+        ...resolved,
+        clientOptions: {
+          ...resolved.clientOptions,
+          [getMaxOutputTokensKey(resolved.provider as Providers)]: config.titles.maxOutputTokens,
+        },
+      };
+      const balanceConfig = getBalanceConfig(appConfig);
+      if (balanceConfig?.enabled) {
+        const admission = deps.admission;
+        if (!admission || !deps.usage?.pricing) return undefined;
+        const countTokens = await createCachedTokenCounter(
+          model.provider === Providers.ANTHROPIC ? 'claude' : 'o200k_base',
+        );
+        const amount =
+          computeUsageCostUSD(
+            {
+              model: target.model,
+              provider: model.provider,
+              input_tokens: countTokens(new HumanMessage(prompt)),
+              output_tokens: config.titles.maxOutputTokens,
+            },
+            deps.usage.pricing,
+            model.endpointTokenConfig,
+          ) * TOKEN_CREDITS_PER_USD;
+        const admitted = await deps.withScope(scope, () =>
+          reserveBalanceCredits({ user: scope.ownerId, amount }, { ...admission, balanceConfig }),
+        );
+        reservation = admitted.reservation;
+        if (!reservation) return undefined;
+      }
+      input.signal.throwIfAborted();
+      const claimed = await deps.withScope(scope, () =>
+        deps.repository.claimMediaThreadTitle({
+          scope,
+          jobId: input.jobId,
+          threadId: input.threadId,
+          expectedTitle: input.currentTitle,
+        }),
+      );
+      if (!claimed) return undefined;
+      const signal = AbortSignal.any([input.signal, AbortSignal.timeout(target.timeoutMs)]);
+      signal.throwIfAborted();
+      const invokeModel = () => invoke(model, prompt, signal);
+      const result = deps.modelTracer
+        ? await deps.modelTracer.run(
+            {
+              context: input.context,
+              jobId: input.jobId,
+              threadId: input.threadId,
+              kind: 'title',
+              model: target.model,
+              provider: model.provider,
+            },
+            invokeModel,
+            (result) => result.usage,
+          )
+        : await invokeModel();
+      await recordUsage(input, target, model, result.usage);
       const title = cleanMediaTitle(result.text, appConfig, config.limits.maxTitleChars);
       const applied =
         title !== undefined && title !== input.currentTitle
@@ -358,11 +403,15 @@ export function createMediaTitleGenerator(
               }),
             )
           : false;
-      await recordUsage(input, target, result.usage);
       return applied ? title : undefined;
     } catch (error) {
       deps.log(toError(error));
       return undefined;
+    } finally {
+      if (reservation) {
+        const held = reservation;
+        await deps.withScope(input.context.scope, () => held.release());
+      }
     }
   };
 }

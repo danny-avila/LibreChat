@@ -12,6 +12,8 @@ export {
   createMediaAccountingMethods,
   createMediaNativeMethods,
   createMediaPresetMethods,
+  createMediaRecoveryMethods,
+  createMediaTitleMethods,
   MediaAccountingError,
   MediaPersistenceError,
   deriveMediaThreadTitle,

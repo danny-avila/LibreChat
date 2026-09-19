@@ -14,6 +14,7 @@ import {
   encodeOperation,
   nativeDownload,
   nativeRequest,
+  nativeParameters,
   providerOptions,
 } from './native';
 import { MediaProviderError } from '../errors';
@@ -39,6 +40,15 @@ function catalog(config: MediaConfig): MediaModelProfile[] {
       {
         operation: 'video.generate',
         workflow: model === 'aleph2' ? 'edit' : 'generate',
+        constraints:
+          model === 'aleph2'
+            ? []
+            : [
+                {
+                  when: [{ kind: 'input', role: 'start_frame', present: false }],
+                  anyOf: [{ kind: 'parameter', name: 'aspectRatio', values: ['16:9', '9:16'] }],
+                },
+              ],
         inputs: {
           roles: model === 'aleph2' ? ['video', 'reference'] : ['start_frame'],
           requiredRoles: model === 'aleph2' ? ['video'] : [],
@@ -186,11 +196,19 @@ export function createRunwayMediaAdapters(): MediaProviderAdapter[] {
         },
       },
       async submit(request, inputs, context) {
+        const parameters = nativeParameters(
+          request,
+          inputs,
+          context,
+          catalog(context.config)
+            .find((profile) => profile.modelId === request.selection.modelId)
+            ?.capabilities.find((capability) => capability.operation === request.operation),
+        );
         const model = models.get(request.selection.modelId);
         if (
           request.operation !== 'video.generate' ||
           !model ||
-          request.parameters.count !== 1 ||
+          parameters.count !== 1 ||
           request.prompt.length > 1000
         )
           throw new MediaProviderError('rejected');
@@ -211,11 +229,10 @@ export function createRunwayMediaAdapters(): MediaProviderAdapter[] {
           inputs.some(
             (input) => input.role !== 'start_frame' || !/^image\/(png|jpeg|webp)$/.test(input.type),
           ) ||
-          (request.parameters.durationSeconds !== undefined &&
-            (!Number.isInteger(request.parameters.durationSeconds) ||
-              request.parameters.durationSeconds < 2 ||
-              request.parameters.durationSeconds > 10)) ||
-          (!inputs.length && !['16:9', '9:16'].includes(request.parameters.aspectRatio ?? '16:9'))
+          (parameters.durationSeconds !== undefined &&
+            (!Number.isInteger(parameters.durationSeconds) ||
+              parameters.durationSeconds < 2 ||
+              parameters.durationSeconds > 10))
         )
           throw new MediaProviderError('rejected');
         const prepared = await Promise.all(
@@ -236,17 +253,17 @@ export function createRunwayMediaAdapters(): MediaProviderAdapter[] {
                         at: references.length === 1 ? 0 : index / (references.length - 1),
                       }))
                   : undefined,
-                targetAspectRatio: request.parameters.aspectRatio,
-                seed: request.parameters.seed,
+                targetAspectRatio: parameters.aspectRatio,
+                seed: parameters.seed,
               }
             : {
                 ...options,
                 model,
                 promptText: request.prompt,
                 promptImage: prepared[0]?.uri,
-                ratio: ratios[request.parameters.aspectRatio ?? '16:9'],
-                duration: request.parameters.durationSeconds ?? 5,
-                seed: request.parameters.seed,
+                ratio: ratios[parameters.aspectRatio ?? '16:9'],
+                duration: parameters.durationSeconds ?? 5,
+                seed: parameters.seed,
               };
         const generatePath = inputs.length ? 'image_to_video' : 'text_to_video';
         const path = model === 'aleph2' ? 'video_to_video' : generatePath;

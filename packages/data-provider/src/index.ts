@@ -64,6 +64,7 @@ export { dataService };
 import * as dataService from './data-service';
 /* provider identity */
 export * from './providers';
+export * from './native';
 /* icon sanitization policy */
 export * from './svg';
 /* general helpers */

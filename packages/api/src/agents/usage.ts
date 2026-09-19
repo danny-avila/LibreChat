@@ -27,8 +27,12 @@ import { collectDetachedSubagentUsage } from './subagentTaskContext';
 import Tokenizer, { type EncodingName } from '~/utils/tokenizer';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { countRetainedToolTokens } from './client';
+import { collectModelUsage } from './collection';
+
+export { collectModelUsage } from './collection';
 
 type SpendTokensFn = (txData: TxMetadata, tokenUsage: TokenUsage) => Promise<unknown>;
+
 type SpendStructuredTokensFn = (
   txData: TxMetadata,
   tokenUsage: StructuredTokenUsage,
@@ -1042,6 +1046,7 @@ export function createSubagentUsageSink(
   onUsage?: (usage: UsageMetadata) => void | Promise<void>,
   recordDetachedUsage?: (usage: UsageMetadata) => void | Promise<void>,
 ): (event: SubagentUsageEvent) => void | Promise<void> {
+  const collect = createModelUsageSink(collectedUsage, { onUsage, recordDetachedUsage });
   return (event) => {
     if (event?.usage == null) {
       return;
@@ -1063,38 +1068,42 @@ export function createSubagentUsageSink(
     if (billingAgentId != null && billingAgentId !== '') {
       usage.agentId = billingAgentId;
     }
-    /** Usage emission is observability/UI plumbing. It must never prevent the
-     * authoritative billing path from running when a detached child outlives
-     * its parent transport. The host emitter normally contains its own error
-     * handling; this boundary also protects custom hosts and synchronous
-     * lifecycle failures. */
+    if (event.modelRunId) usage.modelRunId = event.modelRunId;
+    return collect(usage);
+  };
+}
+
+export interface ModelUsageSinkOptions {
+  onUsage?: (usage: UsageMetadata) => void | Promise<void>;
+  recordDetachedUsage?: (usage: UsageMetadata) => void | Promise<void>;
+}
+
+/** Share billing ownership across successful child calls and native failure recovery. */
+export function createModelUsageSink(
+  collectedUsage: UsageMetadata[],
+  { onUsage, recordDetachedUsage }: ModelUsageSinkOptions = {},
+): (usage: UsageMetadata) => void | Promise<void> {
+  return (usage) => {
     const emitUsage = () => {
       try {
         const emitted = onUsage?.(usage);
         if (emitted != null) {
           void Promise.resolve(emitted).catch((err) => {
-            logger.warn('[createSubagentUsageSink] Failed to emit subagent usage', err);
+            logger.warn('[createModelUsageSink] Failed to emit usage', err);
           });
         }
       } catch (err) {
-        logger.warn('[createSubagentUsageSink] Failed to emit subagent usage', err);
+        logger.warn('[createModelUsageSink] Failed to emit usage', err);
       }
     };
-    /** A detached task can finish after its parent turn's one-time billing
-     * flush. Its AsyncLocalStorage context therefore owns the usage: persist
-     * it with the child transcript and bill it immediately. Foreground child
-     * calls retain the existing parent-turn batch path. */
-    if (recordDetachedUsage != null && collectDetachedSubagentUsage(usage)) {
-      /** Emission is already retained/flushed by the host and must not add
-       * transport latency to the child model loop. Billing is the durable
-       * side effect the SDK needs to await. */
-      emitUsage();
-      return Promise.resolve(recordDetachedUsage(usage)).then(() => undefined);
-    }
-    collectedUsage.push(usage);
-    /** Lets the host stream the billed child usage to the client (tagged
-     *  `subagent`, so it folds into session cost/totals but not the live
-     *  gauge) — child runs never reach ModelEndHandler's emit path. */
-    emitUsage();
+    const detached =
+      recordDetachedUsage == null
+        ? undefined
+        : collectDetachedSubagentUsage(usage, async (ownedUsage) => {
+            emitUsage();
+            await recordDetachedUsage(ownedUsage);
+          });
+    if (detached != null) return detached;
+    if (collectModelUsage(collectedUsage, usage)) emitUsage();
   };
 }

@@ -1,20 +1,20 @@
 import { Readable } from 'node:stream';
-import type {
-  MediaConfig,
-  MediaIntegration,
-  MediaErrorCode,
-  MediaOutput,
-} from 'librechat-data-provider';
+import { deriveMediaThreadTitle } from '@librechat/data-schemas';
 import type {
   MediaJobObservation,
   MediaStoredJob,
   MediaProviderState,
 } from '@librechat/data-schemas';
+import type { MediaConfig, MediaErrorCode, MediaOutput } from 'librechat-data-provider';
 import type { MediaProviderContext, MediaProviderPart, MediaProviderResult } from './provider';
 import type { MediaServices, MediaServiceDependencies, MediaContext } from './service';
+import { getMediaTerminalRecovery, resolveMediaJobIntegration } from './recovery';
 import { assertMediaAccess, mediaAccountingMode } from './service';
 import { MediaServiceError, MediaProviderError } from './errors';
+import { observeMedia, mediaJobEvent } from './telemetry';
+import { isMediaConnectionBinding } from './provider';
 import { mediaContentExtension } from './content';
+import { scopeMediaTransport } from './transport';
 
 export interface MediaWorker {
   start(): Promise<void>;
@@ -30,7 +30,10 @@ export function createMediaWorker(
 ): MediaWorker {
   let stopped = true;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  let scanning = false;
+  let scanning: Promise<void> | undefined;
+  let maintaining: Promise<void> | undefined;
+  let starting: Promise<void> | undefined;
+  let lifecycle = 0;
   let dueCursor: string | undefined;
   let cleanupCursor: string | undefined;
   let accountingCursor: string | undefined;
@@ -42,9 +45,44 @@ export function createMediaWorker(
 
   async function execute(initial: MediaStoredJob): Promise<void> {
     let job = initial;
+    const startedAt = deps.now();
+    let phaseStartedAt = startedAt;
+    let attemptFailed = false;
+    observeMedia(deps.observer, {
+      ...mediaJobEvent(job),
+      kind: 'attempt',
+      result: 'started',
+      ...(job.phase === 'queued'
+        ? { queueWaitMs: Math.max(0, startedAt - Date.parse(job.createdAt)) }
+        : {}),
+    });
     const controller = new AbortController();
     controllers.add(controller);
     let context: MediaContext | undefined;
+    const recordSettlement = async (work: () => Promise<void>) => {
+      const start = deps.now();
+      try {
+        await work();
+        observeMedia(deps.observer, {
+          ...mediaJobEvent(job),
+          kind: 'settlement',
+          result: 'completed',
+          durationMs: deps.now() - start,
+        });
+      } catch (error) {
+        observeMedia(deps.observer, {
+          ...mediaJobEvent(job),
+          kind: 'settlement',
+          result: 'failed',
+          durationMs: deps.now() - start,
+        });
+        throw error;
+      }
+    };
+    const settle = (
+      usage: Parameters<MediaServiceDependencies['accounting']['settle']>[1],
+      currentContext: MediaContext,
+    ) => recordSettlement(() => deps.accounting.settle(job, usage, currentContext));
     let serial = Promise.resolve();
     const leased = (operation: () => Promise<void>) => {
       const work = serial.then(operation);
@@ -81,7 +119,18 @@ export function createMediaWorker(
           await refresh();
           throw new MediaServiceError('version_conflict', 409, 'The job changed.');
         }
+        const previousPhase = job.phase;
         job = changed;
+        if (job.phase !== previousPhase) {
+          observeMedia(deps.observer, {
+            ...mediaJobEvent(job),
+            kind: 'transition',
+            result: 'completed',
+            previousPhase,
+            durationMs: deps.now() - phaseStartedAt,
+          });
+          phaseStartedAt = deps.now();
+        }
       });
     const renewal = setInterval(() => {
       void leased(async () => {
@@ -102,53 +151,77 @@ export function createMediaWorker(
 
     try {
       context = await deps.loadContext(fence().scope);
-      const configuredIntegration = context.config.integrations.find(
-        (entry) => entry.id === job.execution.connectionId,
-      );
-      if (job.phase === 'queued' && configuredIntegration?.enabled === false) {
-        throw new MediaServiceError('forbidden', 403, 'This media provider is disabled.');
+      controller.signal.throwIfAborted();
+      const terminalRecovery = getMediaTerminalRecovery(job);
+      if (terminalRecovery) {
+        await observe({
+          phase: 'reconciling',
+          provider: {
+            ...job.provider,
+            certainty: 'terminal',
+            recovery: {
+              ...job.provider.recovery,
+              terminalStatus: terminalRecovery.status,
+              usage: terminalRecovery.usage,
+            },
+          },
+        });
+        await settle(terminalRecovery.usage, context);
+        await observe({
+          phase: terminalRecovery.status,
+          provider: { ...job.provider, certainty: 'terminal' },
+        });
+        return;
       }
-      const integration: MediaIntegration | undefined =
-        configuredIntegration ??
-        (job.phase !== 'queued' && job.execution.endpointRef
-          ? {
-              id: job.execution.connectionId,
-              api: job.execution.api,
-              endpointRef: job.execution.endpointRef,
-              catalog: { kind: 'configured', models: [job.execution.modelId] },
-              operations: [job.operation],
-              billing: job.execution.billing,
-            }
-          : undefined);
-      const adapter = adapters.get(job.execution.api);
-      if (!integration || !adapter) {
-        throw new MediaServiceError(
-          'not_ready',
-          409,
-          'The original media connection is unavailable.',
+      const currentContext = context;
+      const loadProvider = async () => {
+        const configuredIntegration = currentContext.config.integrations.find(
+          (entry) => entry.id === job.execution.connectionId,
         );
-      }
-      const connection = await deps.resolveConnection({
-        scope: context.scope,
-        integration,
-        appConfig: context.appConfig,
-        minValidityMs: context.config.credentials.minValidityAtDispatchMs,
-      });
-      if (connection.binding !== job.execution.bindingRevision) {
-        throw new MediaServiceError(
-          'credentials_required',
-          409,
-          'The original provider credential binding changed.',
-        );
-      }
-      const providerContext: MediaProviderContext = {
-        connection,
-        config: context.config,
-        transport: deps.transport,
-        signal: controller.signal,
+        if (job.phase === 'queued' && configuredIntegration?.enabled === false) {
+          throw new MediaServiceError('forbidden', 403, 'This media provider is disabled.');
+        }
+        const integration = resolveMediaJobIntegration(job, currentContext.config);
+        const adapter = adapters.get(job.execution.api);
+        if (!integration || !adapter) {
+          throw new MediaServiceError(
+            'not_ready',
+            409,
+            'The original media connection is unavailable.',
+          );
+        }
+        const connection = await deps.resolveConnection({
+          scope: currentContext.scope,
+          integration,
+          appConfig: currentContext.appConfig,
+          minValidityMs: currentContext.config.credentials.minValidityAtDispatchMs,
+          user: currentContext.user,
+        });
+        if (!isMediaConnectionBinding(connection, job.execution.bindingRevision)) {
+          throw new MediaServiceError(
+            'credentials_required',
+            409,
+            'The original provider credential binding changed.',
+          );
+        }
+        const providerContext: MediaProviderContext = {
+          jobId: job.jobId,
+          connection,
+          config: currentContext.config,
+          transport: scopeMediaTransport(deps.transport, connection.allowedAddresses),
+          signal: controller.signal,
+        };
+        return { integration, adapter, providerContext };
+      };
+      let loadedProvider: ReturnType<typeof loadProvider> | undefined;
+      const getProvider = () => (loadedProvider ??= loadProvider());
+      const download = async (part: Extract<MediaProviderPart, { kind: 'image' | 'video' }>) => {
+        const { adapter, providerContext } = await getProvider();
+        return adapter.download(part, providerContext);
       };
       let result: MediaProviderResult;
       if (job.phase === 'queued') {
+        const { integration, adapter, providerContext } = await getProvider();
         assertMediaAccess(context, true);
         if (job.execution.accountingMode !== mediaAccountingMode(context.appConfig)) {
           throw new MediaServiceError(
@@ -187,6 +260,7 @@ export function createMediaWorker(
           return;
         }
         const prepared = await services.prepare(job.request, context, false, controller.signal);
+        controller.signal.throwIfAborted();
         if (prepared.providerTag !== job.execution.providerTag) {
           throw new MediaServiceError(
             'stale_catalog',
@@ -197,6 +271,22 @@ export function createMediaWorker(
         providerContext.providerTag = job.execution.providerTag;
         providerContext.continuation = prepared.continuation;
         await deps.accounting.reserve(job, integration, context);
+        controller.signal.throwIfAborted();
+        if (deps.titles && !job.request.threadId && !job.request.temporary) {
+          await deps.titles({
+            context,
+            jobId: job.jobId,
+            threadId: job.threadId,
+            prompt: job.request.prompt,
+            operation: job.operation,
+            currentTitle: deriveMediaThreadTitle(
+              job.request.prompt,
+              context.config.limits.maxTitleChars,
+            ),
+            signal: controller.signal,
+          });
+          controller.signal.throwIfAborted();
+        }
         await leased(async () => {
           await refresh();
           const submitting = await deps.repository.beginMediaSubmission({
@@ -207,8 +297,40 @@ export function createMediaWorker(
             throw new MediaServiceError('version_conflict', 409, 'Submission admission changed.');
           }
           job = submitting;
+          observeMedia(deps.observer, {
+            ...mediaJobEvent(job),
+            kind: 'transition',
+            result: 'completed',
+            previousPhase: 'queued',
+            durationMs: deps.now() - phaseStartedAt,
+          });
+          phaseStartedAt = deps.now();
         });
-        result = await adapter.submit(job.request, prepared.inputs, providerContext);
+        controller.signal.throwIfAborted();
+        const submit = () => adapter.submit(job.request, prepared.inputs, providerContext);
+        result = deps.modelTracer
+          ? await deps.modelTracer.run(
+              {
+                context,
+                jobId: job.jobId,
+                threadId: job.threadId,
+                kind: 'submission',
+                provider: job.execution.api,
+                model: job.execution.modelId,
+              },
+              submit,
+              (result) => {
+                const usage = result.status === 'running' ? undefined : result.usage;
+                return usage
+                  ? {
+                      input_tokens: usage.inputTokens ?? 0,
+                      output_tokens: usage.outputTokens ?? 0,
+                      total_tokens: (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0),
+                    }
+                  : undefined;
+              },
+            )
+          : await submit();
       } else if (
         job.provider.certainty === 'terminal' &&
         job.provider.recovery?.terminalStatus &&
@@ -218,51 +340,6 @@ export function createMediaWorker(
           status: job.provider.recovery.terminalStatus,
           usage: job.provider.recovery.usage,
         };
-      } else if (job.provider.operationId && adapter.poll) {
-        const cancellation = adapter.cancel;
-        if (
-          job.cancelRequestedAt &&
-          job.provider.certainty === 'submitted' &&
-          job.execution.cancellation &&
-          cancellation &&
-          !job.provider.cancellationAcknowledged &&
-          (!job.provider.cancellationAttemptedAt || cancellation.retry === 'idempotent')
-        ) {
-          const cancelled = await cancellation.request(
-            job.provider.operationId!,
-            providerContext,
-            () =>
-              observe({
-                phase: 'running',
-                provider: {
-                  ...job.provider,
-                  cancellationAttemptedAt: new Date(deps.now()).toISOString(),
-                },
-              }),
-          );
-          if (
-            cancelled.status === 'cancellation_requested' ||
-            cancelled.status === 'cancellation_deferred'
-          ) {
-            const { cancellationAttemptedAt, ...provider } = job.provider;
-            await observe({
-              phase: 'running',
-              provider: {
-                ...provider,
-                ...(cancelled.status === 'cancellation_requested'
-                  ? { cancellationAttemptedAt }
-                  : {}),
-                cancellationAcknowledged: cancelled.status === 'cancellation_requested',
-              },
-              dueAt: new Date(deps.now() + context.config.polling.providerIntervalMs).toISOString(),
-              releaseLease: true,
-            });
-            return;
-          }
-          result = cancelled;
-        } else {
-          result = await adapter.poll(job.provider.operationId, providerContext);
-        }
       } else if (job.provider.certainty === 'terminal' && job.provider.recovery?.parts) {
         const parts: MediaProviderPart[] = [];
         for (const part of job.provider.recovery.parts) {
@@ -315,6 +392,55 @@ export function createMediaWorker(
           parts.push(part);
         }
         result = { status: 'completed', parts, usage: job.provider.recovery.usage };
+      } else if (job.provider.operationId && adapters.get(job.execution.api)?.poll) {
+        const { adapter, providerContext } = await getProvider();
+        const poll = adapter.poll;
+        if (!poll)
+          throw new MediaServiceError('not_ready', 409, 'Provider polling is unavailable.');
+        const cancellation = adapter.cancel;
+        if (
+          job.cancelRequestedAt &&
+          job.provider.certainty === 'submitted' &&
+          job.execution.cancellation &&
+          cancellation &&
+          !job.provider.cancellationAcknowledged &&
+          (!job.provider.cancellationAttemptedAt || cancellation.retry === 'idempotent')
+        ) {
+          const cancelled = await cancellation.request(
+            job.provider.operationId!,
+            providerContext,
+            () =>
+              observe({
+                phase: 'running',
+                provider: {
+                  ...job.provider,
+                  cancellationAttemptedAt: new Date(deps.now()).toISOString(),
+                },
+              }),
+          );
+          if (
+            cancelled.status === 'cancellation_requested' ||
+            cancelled.status === 'cancellation_deferred'
+          ) {
+            const { cancellationAttemptedAt, ...provider } = job.provider;
+            await observe({
+              phase: 'running',
+              provider: {
+                ...provider,
+                ...(cancelled.status === 'cancellation_requested'
+                  ? { cancellationAttemptedAt }
+                  : {}),
+                cancellationAcknowledged: cancelled.status === 'cancellation_requested',
+              },
+              dueAt: new Date(deps.now() + context.config.polling.providerIntervalMs).toISOString(),
+              releaseLease: true,
+            });
+            return;
+          }
+          result = cancelled;
+        } else {
+          result = await poll(job.provider.operationId, providerContext);
+        }
       } else {
         await observe({
           phase: 'requires_attention',
@@ -341,7 +467,7 @@ export function createMediaWorker(
             recovery: { usage: result.usage, terminalStatus: result.status },
           },
         });
-        await deps.accounting.settle(job, result.usage, context);
+        await settle(result.usage, context);
         await observe({
           phase: result.status,
           provider: { ...job.provider, certainty: 'terminal' },
@@ -389,9 +515,7 @@ export function createMediaWorker(
           const original = await deps.storage.publish({
             scope: context.scope,
             outputKey: outputId,
-            stream: part.data
-              ? Readable.from([part.data])
-              : await adapter.download(part, providerContext),
+            stream: part.data ? Readable.from([part.data]) : await download(part),
             type: part.type,
             filename: `${job.jobId}-${part.ordinal}.${mediaContentExtension(part.type)}`,
             config: context.config,
@@ -455,7 +579,7 @@ export function createMediaWorker(
       if (result.parts.length === 0 && recovered?.parts && outputs.length === 0) {
         throw new MediaServiceError('storage_failed', 409, 'Output recovery is incomplete.');
       }
-      await deps.accounting.settle(job, result.usage, context);
+      await settle(result.usage, context);
       await observe({
         phase: 'succeeded',
         outputs,
@@ -465,6 +589,7 @@ export function createMediaWorker(
       if (controller.signal.aborted) {
         return;
       }
+      attemptFailed = true;
       let code: MediaErrorCode = 'submission_uncertain';
       if (error instanceof MediaServiceError) code = error.code;
       else if (error instanceof MediaProviderError && error.certainty === 'rejected')
@@ -492,7 +617,7 @@ export function createMediaWorker(
           error instanceof MediaServiceError &&
           ['unsupported', 'invalid_request', 'output_expired'].includes(error.code)
         ) {
-          await deps.accounting.settle(job, job.provider.recovery?.usage, context);
+          await settle(job.provider.recovery?.usage, context);
           await observe({
             phase: 'failed',
             error: { code },
@@ -502,7 +627,8 @@ export function createMediaWorker(
         }
         if (safeRejection) {
           if (context) {
-            await deps.accounting.release(job, context);
+            const currentContext = context;
+            await recordSettlement(() => deps.accounting.release(job, currentContext));
           }
           await observe({
             phase: 'failed',
@@ -542,6 +668,13 @@ export function createMediaWorker(
         );
       }
     } finally {
+      const attemptResult = attemptFailed ? 'failed' : 'completed';
+      observeMedia(deps.observer, {
+        ...mediaJobEvent(job),
+        kind: 'attempt',
+        result: controller.signal.aborted ? 'interrupted' : attemptResult,
+        durationMs: deps.now() - startedAt,
+      });
       clearInterval(renewal);
       controllers.delete(controller);
       await serial;
@@ -549,46 +682,67 @@ export function createMediaWorker(
     }
   }
 
-  async function tick() {
-    if (stopped || scanning) {
-      return;
-    }
-    scanning = true;
+  async function attempt<T>(
+    message: string,
+    operation: () => Promise<T>,
+    kind?: 'cleanup' | 'settlement',
+  ): Promise<T | undefined> {
+    const start = deps.now();
     try {
-      const now = new Date(deps.now()).toISOString();
-      const [scopes, cleanup, permits, accounting] = await deps.asSystem(() =>
-        Promise.all([
-          deps.repository.listDueMediaScopes({
-            now,
-            limit: baseConfig.limits.maxPageSize,
-            cursor: dueCursor,
-          }),
+      const result = await operation();
+      if (kind)
+        observeMedia(deps.observer, { kind, result: 'completed', durationMs: deps.now() - start });
+      return result;
+    } catch (cause) {
+      if (kind)
+        observeMedia(deps.observer, { kind, result: 'failed', durationMs: deps.now() - start });
+      deps.log(new Error(message, { cause }));
+      return undefined;
+    }
+  }
+
+  async function maintain() {
+    const now = new Date(deps.now()).toISOString();
+    const [cleanup, permits, accounting] = await deps.asSystem(() =>
+      Promise.all([
+        attempt('The media worker could not discover cleanup work.', () =>
           deps.repository.listMediaCleanupScopes({
             now,
             limit: baseConfig.limits.pageSize,
             cursor: cleanupCursor,
           }),
+        ),
+        attempt('The media worker could not reconcile permits.', () =>
           deps.repository.reconcileMediaPermits({
             limit: baseConfig.limits.pageSize,
             cursor: permitCursor,
           }),
-          deps.accounting.scopes?.({
-            limit: baseConfig.limits.pageSize,
-            cursor: accountingCursor,
-          }) ?? Promise.resolve({ items: [], nextCursor: undefined }),
-        ]),
-      );
-      dueCursor = scopes.nextCursor;
-      cleanupCursor = cleanup.nextCursor;
-      permitCursor = permits.nextCursor;
-      accountingCursor = accounting.nextCursor;
-      for (const scope of accounting.items) {
-        await deps.withScope(scope, async () => {
+        ),
+        attempt(
+          'The media worker could not discover accounting work.',
+          () =>
+            deps.accounting.scopes?.({
+              limit: baseConfig.limits.pageSize,
+              cursor: accountingCursor,
+            }) ?? Promise.resolve({ items: [], nextCursor: undefined }),
+        ),
+      ]),
+    );
+    if (cleanup) cleanupCursor = cleanup.nextCursor;
+    if (permits) permitCursor = permits.nextCursor;
+    if (accounting) accountingCursor = accounting.nextCursor;
+    for (const scope of accounting?.items ?? []) {
+      if (stopped) return;
+      await attempt('Media accounting reconciliation needs another attempt.', () =>
+        deps.withScope(scope, async () => {
           await deps.accounting.reconcile?.(scope, baseConfig);
-        });
-      }
-      for (const scope of cleanup.items) {
-        await deps.withScope(scope, async () => {
+        }),
+      );
+    }
+    for (const scope of cleanup?.items ?? []) {
+      if (stopped) return;
+      await attempt('Media cleanup needs another attempt.', () =>
+        deps.withScope(scope, async () => {
           await deps.repository.recoverMediaAssetWrites({
             scope,
             limit: baseConfig.limits.pageSize,
@@ -602,13 +756,26 @@ export function createMediaWorker(
             limit: baseConfig.limits.pageSize,
           });
           for (const write of writes) {
-            await deps.storage.discardWrite(scope, write.writeId, staleBefore);
+            if (stopped) return;
+            await attempt(
+              'An abandoned media write could not be removed.',
+              async () => {
+                try {
+                  await deps.storage.discardWrite(scope, write.writeId, staleBefore);
+                } catch (error) {
+                  await deps.deferAssetWriteDeletion?.(scope, write.writeId);
+                  throw error;
+                }
+              },
+              'cleanup',
+            );
           }
           await deps.repository.reconcileMediaAccountDeletion({
             scope,
             limit: baseConfig.limits.pageSize,
           });
           await deps.reconcileNative?.(scope, baseConfig);
+          await deps.migrateNativeConsumers?.(scope, baseConfig);
           await deps.repository.retireExpiredMediaThreads({
             scope,
             now,
@@ -624,16 +791,39 @@ export function createMediaWorker(
             now,
           });
           for (const asset of expired) {
-            await deps.storage.remove(scope, asset.file_id);
+            if (stopped) return;
+            await attempt(
+              'An expired media original could not be removed.',
+              async () => {
+                try {
+                  await deps.storage.remove(scope, asset.file_id);
+                } catch (error) {
+                  await deps.deferAssetDeletion?.(scope, asset.file_id);
+                  throw error;
+                }
+              },
+              'cleanup',
+            );
           }
-        });
-      }
-      await deps.sweepStaging?.(deps.now() - baseConfig.assets.orphanRetentionMs);
-      for (const scope of scopes.items) {
-        if (stopped || active.size >= baseConfig.execution.maxActiveTotal) {
-          break;
-        }
-        await deps.withScope(scope, async () => {
+        }),
+      );
+    }
+    if (!stopped) await deps.sweepStaging?.(deps.now() - baseConfig.assets.orphanRetentionMs);
+  }
+
+  async function scan() {
+    const scopes = await deps.asSystem(() =>
+      deps.repository.listDueMediaScopes({
+        now: new Date(deps.now()).toISOString(),
+        limit: baseConfig.limits.maxPageSize,
+        cursor: dueCursor,
+      }),
+    );
+    dueCursor = scopes.nextCursor;
+    for (const scope of scopes.items) {
+      if (stopped || active.size >= baseConfig.execution.maxActiveTotal) break;
+      await attempt('A media queue could not be scanned.', () =>
+        deps.withScope(scope, async () => {
           await deps.repository.recoverMediaPublications({
             scope,
             limit: baseConfig.limits.pageSize,
@@ -641,15 +831,14 @@ export function createMediaWorker(
             maxTitleChars: baseConfig.limits.maxTitleChars,
             temporaryRetentionMs: deps.temporaryRetentionMs,
           });
+          if (stopped) return;
           const job = await deps.repository.claimMediaJob({
             scope,
             workerId,
             now: new Date(deps.now()).toISOString(),
             leaseMs: baseConfig.worker.leaseMs,
           });
-          if (!job) {
-            return;
-          }
+          if (!job || stopped) return;
           const work = deps
             .withScope(scope, () => execute(job))
             .catch((cause: unknown) =>
@@ -657,43 +846,63 @@ export function createMediaWorker(
             )
             .finally(() => active.delete(job.jobId));
           active.set(job.jobId, work);
-        });
-      }
-    } catch (cause) {
-      deps.log(new Error('The media worker could not scan pending work.', { cause }));
-    } finally {
-      scanning = false;
-      if (!stopped) {
-        timer = setTimeout(() => void tick(), baseConfig.worker.tickMs);
-        timer.unref();
-      }
+        }),
+      );
     }
+  }
+
+  function tick() {
+    if (stopped || scanning) return;
+    if (!maintaining) {
+      maintaining = attempt('Media maintenance needs another attempt.', maintain)
+        .then(() => undefined)
+        .finally(() => {
+          maintaining = undefined;
+        });
+    }
+    scanning = attempt('The media worker could not scan pending work.', scan)
+      .then(() => undefined)
+      .finally(() => {
+        scanning = undefined;
+        if (!stopped) {
+          timer = setTimeout(tick, baseConfig.worker.tickMs);
+          timer.unref();
+        }
+      });
   }
 
   return {
     async start() {
-      if (!stopped) {
-        return;
-      }
-      const activated =
-        baseConfig.enabled || (await deps.asSystem(() => deps.repository.hasMediaActivation()));
-      if (!activated) {
-        return;
-      }
-      await Promise.all([
-        deps.repository.ensureMediaIndexes(),
-        deps.accounting.ensureReady?.(),
-        deps.ensureReady?.(),
-      ]);
-      stopped = false;
-      void tick();
+      if (!stopped || starting) return starting;
+      const generation = ++lifecycle;
+      starting = (async () => {
+        const activated =
+          baseConfig.enabled || (await deps.asSystem(() => deps.repository.hasMediaActivation()));
+        if (!activated || generation !== lifecycle) return;
+        await Promise.all([
+          deps.repository.ensureMediaIndexes(),
+          deps.accounting.ensureReady?.(),
+          deps.ensureReady?.(),
+        ]);
+        if (generation !== lifecycle) return;
+        stopped = false;
+        tick();
+      })().finally(() => {
+        starting = undefined;
+      });
+      return starting;
     },
     async stop() {
       stopped = true;
+      lifecycle++;
       clearTimeout(timer);
       let deadline: ReturnType<typeof setTimeout> | undefined;
+      const drain = async () => {
+        await Promise.allSettled([starting, scanning, maintaining]);
+        await Promise.allSettled(active.values());
+      };
       await Promise.race([
-        Promise.allSettled(active.values()),
+        drain(),
         new Promise<void>((resolve) => {
           deadline = setTimeout(resolve, baseConfig.worker.shutdownTimeoutMs);
         }),

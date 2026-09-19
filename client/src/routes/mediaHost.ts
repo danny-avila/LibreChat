@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { getConfigDefaults, Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { ComposerProps } from '@librechat/client';
 import type { MediaHost } from '~/components/Media/host';
 import useComposerBindings from '~/hooks/Input/useComposerBindings';
+import { useMediaSessionGuard } from '~/components/Media/session';
 import { resolveComposerKeyDown } from '~/utils/shortcuts';
 import { useAuthContext, useHasAccess } from '~/hooks';
 import { useGetStartupConfig } from '~/data-provider';
@@ -37,22 +38,8 @@ export function useMediaShellHost(actions: Pick<MediaHost, 'openThread' | 'useIn
   const enterToSend = useRecoilValue(store.enterToSend);
   const { shortcutsEnabled, submitOverride, yieldedChords } = useComposerBindings();
   const scope = user ? mediaSessionScope(user) : undefined;
-  const session = useRef({ active: true, scope, isAuthenticated });
-  session.current.scope = scope;
-  session.current.isAuthenticated = isAuthenticated;
-  useEffect(() => {
-    const current = session.current;
-    current.active = true;
-    return () => {
-      current.active = false;
-    };
-  }, []);
   const userId = user?.id;
-  const isCurrentSession = useCallback(
-    () =>
-      session.current.active && session.current.isAuthenticated && session.current.scope === scope,
-    [scope],
-  );
+  const isCurrentSession = useMediaSessionGuard(scope, isAuthenticated);
   const resolveKeyVerdict = useCallback<NonNullable<ComposerProps['resolveKeyVerdict']>>(
     (event, isComposing) => {
       const action = resolveComposerKeyDown(event, {
@@ -75,6 +62,7 @@ export function useMediaShellHost(actions: Pick<MediaHost, 'openThread' | 'useIn
       media && scope && isAuthenticated && canUse
         ? {
             scope,
+            userId,
             canCreate: canCreate && media.canCreate,
             pollIntervalMs: media.clientPollIntervalMs,
             catchUpIntervalMs: media.clientCatchUpIntervalMs,
@@ -88,6 +76,7 @@ export function useMediaShellHost(actions: Pick<MediaHost, 'openThread' | 'useIn
     [
       media,
       scope,
+      userId,
       isAuthenticated,
       canUse,
       canCreate,

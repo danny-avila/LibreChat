@@ -14,10 +14,13 @@ import type {
 } from 'librechat-data-provider';
 import type { Model, PipelineStage } from 'mongoose';
 import type { IConversation, IMessage, IUser } from '~/types';
+import { getMediaInsights } from './mediaInsights';
 
 export type InsightsOptions = TInsightsParams & {
   tenantId?: string;
   agents?: TInsightsAgent[];
+  /** Set only after tenant-wide READ_INSIGHTS authorization. Agent ACLs do not imply this. */
+  includeMedia?: boolean;
 };
 
 export type InsightsResult = TInsightsResponse;
@@ -358,6 +361,7 @@ export function createInsightsMethods(mongoose: typeof import('mongoose')): Insi
       : conversationPipeline;
 
     const [
+      media,
       conversationDays,
       latestRows,
       searchedConversationCount,
@@ -367,6 +371,15 @@ export function createInsightsMethods(mongoose: typeof import('mongoose')): Insi
       topMessageUsers,
       churnedUserRows,
     ] = await Promise.all([
+      options.includeMedia
+        ? getMediaInsights(mongoose, {
+            tenantId: options.tenantId,
+            from,
+            to,
+            page: options.mediaPage ?? 1,
+            pageSize,
+          })
+        : Promise.resolve(undefined),
       Conversation.aggregate<ConversationDay>([
         ...conversationPipeline,
         {
@@ -609,6 +622,7 @@ export function createInsightsMethods(mongoose: typeof import('mongoose')): Insi
     );
 
     return {
+      ...(media ? { media } : {}),
       agents: options.agents ?? [],
       summary: {
         totalUsers: userCount[0]?.total ?? 0,

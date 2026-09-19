@@ -209,6 +209,7 @@ const createDeleteFileWithSecondaryStorage = ({ source, deleteFile, deletionMeth
         client: openai,
         deleteFile,
         repository: db,
+        resolveStrategy: getStrategyFunctions,
       });
     } catch (err) {
       if (!isMissingStorageError(err)) {

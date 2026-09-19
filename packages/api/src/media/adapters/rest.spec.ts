@@ -20,6 +20,7 @@ function fixture(api: 'openrouter.videos' | 'openai.videos', response: object) {
   const adapter = createRESTMediaAdapters().find((entry) => entry.api === api);
   if (!adapter?.poll) throw new Error('Missing video adapter');
   const context: MediaProviderContext = {
+    jobId: 'server-job',
     transport,
     config: resolveMediaConfig(),
     signal: new AbortController().signal,

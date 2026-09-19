@@ -2,6 +2,7 @@ import { FileSources, resolveMediaConfig } from 'librechat-data-provider';
 import type { AppConfig, IUser, MediaOwnerScope } from '@librechat/data-schemas';
 import type { MediaConfigInput } from 'librechat-data-provider';
 import type { MediaTitleGeneratorDependencies, MediaTitleInvoker, MediaTitleModel } from './title';
+import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { RecordUsageDeps } from '~/agents/usage';
 import type { MediaContext } from './context';
 import {
@@ -166,7 +167,14 @@ describe('createMediaTitleModelResolver', () => {
     const resolved = await resolve({
       context: context({ titles: { endpoint: 'Fixture', model: 'fixture-mini' } }, {
         endpoints: {
-          custom: [{ name: 'Fixture', apiKey: 'secret', baseURL: 'http://127.0.0.1:9/v1' }],
+          custom: [
+            {
+              name: 'Fixture',
+              apiKey: 'secret',
+              baseURL: 'http://127.0.0.1:9/v1',
+              tokenConfig: { 'fixture-mini': { prompt: 2, completion: 4, context: 1000 } },
+            },
+          ],
         },
       } as Partial<AppConfig>),
       target: { endpoint: 'Fixture', model: 'fixture-mini', timeoutMs: 1_000 },
@@ -175,6 +183,9 @@ describe('createMediaTitleModelResolver', () => {
     expect(resolved?.clientOptions).toMatchObject({ model: 'fixture-mini' });
     expect(resolved?.clientOptions).not.toHaveProperty('streaming');
     expect(resolved?.clientOptions).not.toHaveProperty('maxTokens');
+    expect(resolved?.endpointTokenConfig).toMatchObject({
+      'fixture-mini': { prompt: 2, completion: 4, context: 1000 },
+    });
   });
 });
 
@@ -185,10 +196,16 @@ describe('createMediaTitleGenerator', () => {
 
   function repository(title = currentTitle) {
     const thread = { title, version: 1 };
+    let claimed = false;
     const calls: Array<{ expectedTitle: string; title: string }> = [];
     return {
       thread,
       calls,
+      claimMediaThreadTitle: async () => {
+        if (claimed) return false;
+        claimed = true;
+        return true;
+      },
       replaceMediaThreadTitle: async (input: {
         scope: MediaOwnerScope;
         threadId: string;
@@ -207,7 +224,7 @@ describe('createMediaTitleGenerator', () => {
   }
 
   const reply =
-    (text: string, usage?: { input_tokens?: number; output_tokens?: number }): MediaTitleInvoker =>
+    (text: string, usage?: UsageMetadata): MediaTitleInvoker =>
     async () => ({ text, usage });
 
   function generator(
@@ -239,10 +256,12 @@ describe('createMediaTitleGenerator', () => {
 
   const request = (media: MediaConfigInput = configured(), appConfig?: Partial<AppConfig>) => ({
     context: context(media, appConfig),
+    jobId: 'job-1',
     threadId,
     prompt,
     operation: 'image.generate' as const,
     currentTitle,
+    signal: new AbortController().signal,
   });
 
   it('applies a cleaned title inside the owner scope', async () => {
@@ -254,7 +273,7 @@ describe('createMediaTitleGenerator', () => {
     expect(repo.calls).toEqual([
       { expectedTitle: currentTitle, title: 'Quiet Observatory Sketch' },
     ]);
-    expect(scopes).toEqual([scope]);
+    expect(scopes).toEqual([scope, scope]);
     expect(errors).toEqual([]);
   });
 
@@ -357,4 +376,188 @@ describe('createMediaTitleGenerator', () => {
     await expect(unmetered.generate(request())).resolves.toBe('Quiet Observatory');
     expect(spendTokens).toHaveBeenCalledTimes(2);
   });
+
+  it('records paid usage even when title publication throws', async () => {
+    const spendTokens = jest.fn().mockResolvedValue(undefined);
+    const publicationError = new Error('title write unavailable');
+    const repo = {
+      ...repository(),
+      replaceMediaThreadTitle: jest.fn().mockRejectedValue(publicationError),
+    };
+    const { generate, errors } = generator(
+      reply('Quiet Observatory', { input_tokens: 10, output_tokens: 2 }),
+      {
+        repository: repo,
+        usage: { spendTokens, spendStructuredTokens: jest.fn() },
+      },
+    );
+    await expect(generate(request())).resolves.toBeUndefined();
+    expect(spendTokens).toHaveBeenCalledTimes(1);
+    expect(errors).toEqual([publicationError]);
+    await generate(request());
+    expect(spendTokens).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    {
+      provider: 'openAI',
+      input_tokens: 100,
+      output_tokens: 5,
+      total_tokens: 125,
+      input_token_details: { cache_read: 60, cache_creation: 20 },
+      expected: { promptTokens: { input: 20, read: 60, write: 20 }, completionTokens: 25 },
+    },
+    {
+      provider: 'bedrock',
+      input_tokens: 20,
+      output_tokens: 5,
+      total_tokens: 105,
+      input_token_details: { cache_read: 60, cache_creation: 20 },
+      expected: { promptTokens: { input: 20, read: 60, write: 20 }, completionTokens: 5 },
+    },
+  ])(
+    'retains provider-aware cache and total metadata for $provider',
+    async ({ expected, ...usage }) => {
+      const spendStructuredTokens = jest.fn().mockResolvedValue(undefined);
+      const endpointTokenConfig = { 'gpt-4o-mini': { prompt: 2, completion: 3, context: 1000 } };
+      const { generate } = generator(reply('Quiet Observatory', usage), {
+        resolveModel: async () => ({ ...model, endpointTokenConfig }),
+        usage: { spendTokens: jest.fn(), spendStructuredTokens },
+      });
+      await generate(request());
+      expect(spendStructuredTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ endpointTokenConfig }),
+        expected,
+      );
+    },
+  );
+
+  const admission = () => ({
+    reserveBalance: jest.fn().mockResolvedValue({ reserved: true, balance: 10_000 }),
+    renewBalanceReservation: jest.fn().mockResolvedValue(undefined),
+    releaseBalanceReservation: jest.fn().mockResolvedValue(undefined),
+  });
+  const paidUsage = (): RecordUsageDeps => ({
+    spendTokens: jest.fn().mockResolvedValue(undefined),
+    spendStructuredTokens: jest.fn().mockResolvedValue(undefined),
+    pricing: { getMultiplier: () => 1, getCacheMultiplier: () => 1 },
+  });
+  const paidRequest = () => request(configured(), { balance: { enabled: true } });
+
+  it('skips an unfunded title without claiming or invoking it', async () => {
+    const ledger = admission();
+    ledger.reserveBalance.mockResolvedValue({ reserved: false, balance: 0 });
+    const invoke = jest.fn().mockResolvedValue({ text: 'Quiet Observatory' });
+    const claim = jest.fn().mockResolvedValue(true);
+    const { generate } = generator(invoke, {
+      admission: ledger,
+      usage: paidUsage(),
+      repository: { ...repository(), claimMediaThreadTitle: claim },
+    });
+    await generate(paidRequest());
+    expect(ledger.reserveBalance).toHaveBeenCalledTimes(1);
+    expect(claim).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+    expect(ledger.releaseBalanceReservation).not.toHaveBeenCalled();
+  });
+
+  it('admits title input and capped output using the shared endpoint pricing', async () => {
+    const ledger = admission();
+    const usage = paidUsage();
+    const getMultiplier = jest.fn().mockReturnValue(2);
+    usage.pricing!.getMultiplier = getMultiplier;
+    const endpointTokenConfig = { 'gpt-4o-mini': { prompt: 2, completion: 2, context: 1000 } };
+    const invoke = jest.fn().mockResolvedValue({
+      text: 'Quiet Observatory',
+      usage: { input_tokens: 10, output_tokens: 2 },
+    });
+    const { generate } = generator(invoke, {
+      admission: ledger,
+      usage,
+      resolveModel: async () => ({ ...model, endpointTokenConfig }),
+    });
+    await generate(paidRequest());
+    const held = ledger.reserveBalance.mock.calls[0][0];
+    expect(held.amount).toBeGreaterThan(128 * 2);
+    expect(getMultiplier).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tokenType: 'completion',
+        endpointTokenConfig,
+      }),
+    );
+    expect(invoke.mock.calls[0][0].clientOptions.maxTokens).toBe(128);
+    expect(ledger.releaseBalanceReservation).toHaveBeenCalledWith({
+      user: scope.ownerId,
+      reservationId: held.reservationId,
+      amount: held.amount,
+    });
+  });
+
+  it('permits one invocation for concurrent claims and releases every admitted reservation', async () => {
+    const ledger = admission();
+    const invoke = jest.fn().mockResolvedValue({ text: 'Quiet Observatory' });
+    const { generate } = generator(invoke, { admission: ledger, usage: paidUsage() });
+    await Promise.all([generate(paidRequest()), generate(paidRequest()), generate(paidRequest())]);
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(ledger.releaseBalanceReservation).toHaveBeenCalledTimes(3);
+  });
+
+  it('holds the title reservation until a non-bulk usage write settles', async () => {
+    const ledger = admission();
+    let complete!: () => void;
+    let started!: () => void;
+    const writing = new Promise<void>((resolve) => {
+      complete = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const usage = {
+      ...paidUsage(),
+      spendTokens: jest.fn(() => {
+        started();
+        return writing;
+      }),
+    };
+    const { generate } = generator(
+      reply('Quiet Observatory', { input_tokens: 10, output_tokens: 2 }),
+      {
+        admission: ledger,
+        usage,
+      },
+    );
+    const work = generate(paidRequest());
+    await entered;
+    expect(ledger.releaseBalanceReservation).not.toHaveBeenCalled();
+    complete();
+    await work;
+    expect(ledger.releaseBalanceReservation).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['claim', 'invoke', 'publication', 'abort'] as const)(
+    'releases the title reservation after %s failure',
+    async (step) => {
+      const ledger = admission();
+      const controller = new AbortController();
+      const fail = async () => {
+        throw new Error('failure');
+      };
+      const repo = repository();
+      const invoke: MediaTitleInvoker = step === 'invoke' ? fail : reply('Quiet Observatory');
+      if (step === 'claim') repo.claimMediaThreadTitle = fail;
+      if (step === 'publication') repo.replaceMediaThreadTitle = fail;
+      if (step === 'abort')
+        repo.claimMediaThreadTitle = async () => {
+          controller.abort();
+          return true;
+        };
+      const { generate } = generator(invoke, {
+        admission: ledger,
+        usage: paidUsage(),
+        repository: repo,
+      });
+      await generate({ ...paidRequest(), signal: controller.signal });
+      expect(ledger.releaseBalanceReservation).toHaveBeenCalledTimes(1);
+    },
+  );
 });

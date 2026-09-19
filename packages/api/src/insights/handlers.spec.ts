@@ -56,6 +56,26 @@ const createDashboardHandler = (getInsights = jest.fn().mockResolvedValue(emptyI
 });
 
 describe('Insights handlers', () => {
+  it('accepts tenant Insights readers without agents and scopes media to the authenticated tenant', async () => {
+    const getInsights = jest.fn().mockResolvedValue(emptyInsights);
+    const handler = createInsightsHandler({
+      isInsightsEnabled: insightsEnabled,
+      getAccess: async () => ({ agents: [], media: true }),
+      getInsights,
+    });
+    const { response, json } = createResponse();
+    await handler(createRequest({ tenantId: 'tenant-b', includeMedia: 'false' }), response);
+    expect(getInsights).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-a', agentIds: [], includeMedia: true }),
+    );
+    expect(json).toHaveBeenCalledWith(emptyInsights);
+  });
+
+  it('does not accept client-authored media access for an agent-specific reader', async () => {
+    const { handler, getInsights } = createDashboardHandler();
+    await handler(createRequest({ includeMedia: 'true' }), createResponse().response);
+    expect(getInsights.mock.calls[0][0]).not.toHaveProperty('includeMedia');
+  });
   beforeEach(() => {
     jest.clearAllMocks();
     getAccessibleAgents.mockResolvedValue(agents);

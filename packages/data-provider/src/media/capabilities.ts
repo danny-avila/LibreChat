@@ -80,7 +80,49 @@ export const mediaExecutionSchema = z.discriminatedUnion('kind', [
     .object({ kind: z.literal('conversation'), continuation: z.enum(['replay', 'remote-id']) })
     .strict(),
 ]);
+export const mediaParameterNameSchema = z.enum([
+  'count',
+  'size',
+  'resolution',
+  'aspectRatio',
+  'quality',
+  'format',
+  'background',
+  'seed',
+  'outputCompression',
+  'strength',
+  'guidance',
+  'negativePrompt',
+  'providerOptions',
+  'durationSeconds',
+  'audio',
+  'upscaleFactor',
+  'creativity',
+]);
+export const mediaConditionSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('input'), role: mediaInputRoleSchema, present: z.boolean() }).strict(),
+  z
+    .object({
+      kind: z.literal('parameter'),
+      name: mediaParameterNameSchema,
+      option: z.string().min(1).optional(),
+      present: z.boolean().optional(),
+      values: z
+        .array(z.union([z.string(), z.number().finite(), z.boolean()]))
+        .min(1)
+        .optional(),
+    })
+    .strict(),
+]);
+/** All conditions in `when` imply at least one condition in `anyOf`. */
+export const mediaConstraintSchema = z
+  .object({
+    when: z.array(mediaConditionSchema).optional(),
+    anyOf: z.array(mediaConditionSchema).min(1),
+  })
+  .strict();
 const capabilityFields = {
+  constraints: z.array(mediaConstraintSchema).optional(),
   inputs: z
     .object({
       roles: z.array(mediaInputRoleSchema),
@@ -201,3 +243,5 @@ export type MediaOffering = z.infer<typeof mediaOfferingSchema>;
 export type MediaCatalog = z.infer<typeof mediaCatalogSchema>;
 export type MediaLimits = z.infer<typeof mediaLimitsSchema>;
 export type MediaUserKey = z.infer<typeof mediaUserKeySchema>;
+export type MediaCondition = z.infer<typeof mediaConditionSchema>;
+export type MediaParameterName = z.infer<typeof mediaParameterNameSchema>;

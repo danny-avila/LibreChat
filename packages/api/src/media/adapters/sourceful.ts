@@ -210,7 +210,7 @@ export function createSourcefulMediaAdapters(): MediaProviderAdapter[] {
         );
         transportRequest.headers = {
           ...transportRequest.headers,
-          'Idempotency-Key': createHash('sha256').update(request.clientRequestId).digest('hex'),
+          'Idempotency-Key': createHash('sha256').update(context.jobId).digest('hex'),
         };
         if (edit) {
           const response = await context.transport.json(

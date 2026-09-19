@@ -11,12 +11,12 @@ import {
 } from '@librechat/client';
 import type { MediaAsset, TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
+import { getViableUploadOptions, validateFileLimit, validateFileSizes } from '~/utils/files';
 import { useGetFileConfig, useGetStartupConfig } from '~/data-provider';
 import useAgentUploadTarget from '~/hooks/Agents/useAgentUploadTarget';
 import { MediaHostProvider } from '~/components/Media/host';
 import { useMediaChatHandoff } from './useMediaChatHandoff';
 import { mediaDraftFamily } from '~/components/Media/state';
-import { getViableUploadOptions } from '~/utils/files';
 import { useMediaShellHost } from '~/routes/mediaHost';
 import { useLocalize } from '~/hooks';
 
@@ -34,11 +34,18 @@ type ChatMediaProps = {
  * paying for on a deployment that has not turned Studio on in chat. */
 export default function ChatMedia(props: ChatMediaProps) {
   const { data: startup } = useGetStartupConfig();
-  if (!startup?.media?.chat) return null;
-  return <ChatMediaEnabled {...props} />;
+  if (!startup?.media || (!startup.media.chat && !startup.media.studio)) return null;
+  return <ChatMediaEnabled {...props} showCreation={startup.media.chat} />;
 }
 
-function ChatMediaEnabled({ conversation, files, setFiles, disabled, temporary }: ChatMediaProps) {
+function ChatMediaEnabled({
+  conversation,
+  files,
+  setFiles,
+  disabled,
+  temporary,
+  showCreation,
+}: ChatMediaProps & { showCreation: boolean }) {
   const localize = useLocalize();
   const [open, setOpen] = useState(false);
   const [threadId, setThreadId] = useState<string>();
@@ -65,15 +72,20 @@ function ChatMediaEnabled({ conversation, files, setFiles, disabled, temporary }
         fileConfig: config.data,
         endpointSupportedMimeTypes: policy.supportedMimeTypes,
       });
-      const otherFiles = [...files.values()].filter((file) => file.file_id !== asset.file_id);
+      const otherFiles = new Map(files);
+      otherFiles.delete(asset.file_id);
+      const validation = {
+        files: otherFiles,
+        fileList: [{ size: asset.bytes }],
+        endpointFileConfig: policy,
+        setError: () => {},
+      };
       if (
         disabled ||
         policy.disabled ||
         !viable.includes(undefined) ||
-        (policy.fileLimit && otherFiles.length + 1 > policy.fileLimit) ||
-        (policy.fileSizeLimit && asset.bytes >= policy.fileSizeLimit) ||
-        (policy.totalSizeLimit &&
-          otherFiles.reduce((sum, file) => sum + file.size, asset.bytes) > policy.totalSizeLimit)
+        !validateFileLimit(validation) ||
+        !validateFileSizes(validation)
       ) {
         throw new Error('Destination cannot accept this file');
       }
@@ -122,16 +134,18 @@ function ChatMediaEnabled({ conversation, files, setFiles, disabled, temporary }
   if (!host) return null;
   return (
     <>
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label={localize('com_media_create')}
-        title={localize('com_media_create')}
-        disabled={disabled}
-        onClick={() => setOpen(true)}
-      >
-        <Images className="size-5" aria-hidden="true" />
-      </Button>
+      {showCreation && (
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={localize('com_media_create')}
+          title={localize('com_media_create')}
+          disabled={disabled}
+          onClick={() => setOpen(true)}
+        >
+          <Images className="size-5" aria-hidden="true" />
+        </Button>
+      )}
       {error && (
         <div role="alert" className="text-sm">
           <p>{localize('com_media_chat_unsupported')}</p>

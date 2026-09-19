@@ -1,7 +1,7 @@
 import {
-  deriveMediaThreadTitle,
   getTempChatRetentionHours,
   MediaPersistenceError,
+  createChatExpirationDate,
 } from '@librechat/data-schemas';
 import {
   messageFilterPiiSchema,
@@ -10,6 +10,7 @@ import {
   createMediaImportSchema,
   createMediaPresetSchema,
   createMediaPresetUpdateSchema,
+  RetentionMode,
 } from 'librechat-data-provider';
 import type {
   MediaAsset,
@@ -31,6 +32,7 @@ import type {
   MediaURLUploadRequest,
   MediaURLUploadResponse,
   MediaUserKey,
+  MediaImageContext,
 } from 'librechat-data-provider';
 import type {
   AppConfig,
@@ -51,17 +53,24 @@ import type {
   MediaProviderPart,
   MediaProviderInput,
 } from './provider';
+import type { ModerationCheck } from '../middleware/moderation';
+import type { MediaLifecycleObserver } from './telemetry';
 import type { MediaHostedDependencies } from './hosted';
 import type { MediaTitleGenerator } from './title';
+import type { MediaModelTracer } from './tracing';
+import type { SafeUserInput } from '../utils/env';
 import type { MediaContext } from './context';
 import { createMediaCatalog, selectMediaRoute, validateMediaOffering } from './catalog';
 import { importHostedMediaReference, verifyHostedMediaReference } from './hosted';
+import { extractModelParameterContent } from '../protection/adapters/submissions';
 import { mediaInputByteLimit, prepareMediaInputContent } from './content';
 import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { isContentFilterError } from '../middleware/contentFilter';
 import { UninspectableFileError } from '../protection/files';
+import { isMediaConnectionBinding } from './provider';
 import { assertMediaStorage } from './storage';
 import { MediaServiceError } from './errors';
+import { observeMedia } from './telemetry';
 
 export type { MediaContext } from './context';
 
@@ -79,6 +88,8 @@ export interface MediaAccounting {
 }
 
 export interface MediaServiceDependencies extends MediaHostedDependencies {
+  observer?: MediaLifecycleObserver;
+  modelTracer?: MediaModelTracer;
   repository: MediaMethods & MediaPresetMethods;
   ensureReady?(): Promise<void>;
   /** Retention window for temporary creations recovered outside a request; derived from the host config. */
@@ -86,12 +97,22 @@ export interface MediaServiceDependencies extends MediaHostedDependencies {
   reconcileNative?(scope: MediaOwnerScope, config: MediaConfig): Promise<void>;
   /** Removes abandoned upload staging files older than `staleBefore`. */
   sweepStaging?(staleBefore: number): Promise<number>;
+  /** Applies the host's existing file deletion retry policy to a failed media original. */
+  deferAssetDeletion?(scope: MediaOwnerScope, fileId: string): Promise<void>;
+  deferAssetWriteDeletion?(scope: MediaOwnerScope, writeId: string): Promise<void>;
+  migrateNativeConsumers?(
+    scope: MediaOwnerScope,
+    config: MediaConfig,
+    threadId?: string,
+  ): Promise<void>;
   adapters: readonly MediaProviderAdapter[];
+  moderate?: ModerationCheck;
   resolveConnection(input: {
     scope: MediaOwnerScope;
     integration: MediaIntegration;
     appConfig: AppConfig;
     minValidityMs: number;
+    user?: SafeUserInput;
   }): Promise<MediaConnection>;
   describeUserKey?(input: {
     integration: MediaIntegration;
@@ -119,6 +140,13 @@ const HOUR_MS = 3_600_000;
 /** Temporary creations share the chat retention policy so one setting governs both surfaces. */
 export function mediaTemporaryRetentionMs(interfaceConfig: AppConfig['interfaceConfig']): number {
   return getTempChatRetentionHours(interfaceConfig) * HOUR_MS;
+}
+/** Freeze the same saved/temporary retention deadline as chat before publication can be interrupted. */
+export function mediaPublicationExpiresAt(context: MediaContext, temporary = false): string | null {
+  const policy = context.appConfig.interfaceConfig;
+  return temporary || policy?.retentionMode === RetentionMode.ALL
+    ? createChatExpirationDate(policy, temporary).toISOString()
+    : null;
 }
 function publicationOptions(context: MediaContext): MediaPublicationOptions {
   return {
@@ -199,7 +227,11 @@ export interface MediaServices {
     thread(
       threadId: string,
       context: MediaContext,
-    ): Promise<{ thread: MediaThread; turns: MediaPage<MediaTurn> }>;
+    ): Promise<{
+      thread: MediaThread;
+      turns: MediaPage<MediaTurn>;
+      latestImageContext: MediaImageContext | null;
+    }>;
     turns(
       threadId: string,
       cursor: string | undefined,
@@ -231,6 +263,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
       integration,
       appConfig: context.appConfig,
       minValidityMs: context.config.credentials.minValidityAtDispatchMs,
+      user: context.user,
     });
   const snapshot = (context: MediaContext) =>
     catalog.read(
@@ -314,7 +347,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
       if (
         parent &&
         parent.execution.modelId === request.selection.modelId &&
-        parent.execution.bindingRevision === connection.binding &&
+        isMediaConnectionBinding(connection, parent.execution.bindingRevision) &&
         parent.provider.recovery?.parts
       ) {
         const parts: MediaProviderPart[] = [];
@@ -418,7 +451,17 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
           ...(continuation ? [{ role: 'user', content: continuation.prompt }] : []),
         ],
         files: assets,
+        modelParameters: { options: request.parameters },
       });
+      if (
+        await deps.moderate?.([
+          request.prompt,
+          ...(continuation ? [continuation.prompt] : []),
+          ...extractModelParameterContent({ options: request.parameters }).map((part) => part.text),
+        ])
+      ) {
+        throw new MediaServiceError('forbidden', 403, 'Media input was blocked by content policy.');
+      }
     } catch (error) {
       if (isContentFilterError(error) || error instanceof UninspectableFileError) {
         throw new MediaServiceError('forbidden', 403, 'Media input was blocked by content policy.');
@@ -460,6 +503,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
           context.scope,
           request.clientRequestId,
         );
+        if (!replay) await context.admitGeneration?.();
         const ready = replay ? undefined : await prepare(request, context, true);
         const existing = replay
           ? await deps.repository.getMediaJob(context.scope, replay.jobId)
@@ -476,6 +520,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
           execution,
           maxActiveJobs: context.config.queue.maxPendingPerUser,
           maxPendingTotal: context.config.queue.maxPendingTotal,
+          publicationExpiresAt: mediaPublicationExpiresAt(context, request.temporary),
         });
         const receipt =
           (await deps.repository.publishMediaSubmission(
@@ -483,28 +528,6 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
             staged.jobId,
             publicationOptions(context),
           )) ?? staged;
-        if (
-          !replay &&
-          !request.threadId &&
-          !request.temporary &&
-          receipt.phase === 'accepted' &&
-          deps.titles
-        ) {
-          void deps
-            .titles({
-              context,
-              threadId: receipt.threadId,
-              prompt: request.prompt,
-              operation: request.operation,
-              currentTitle: deriveMediaThreadTitle(
-                request.prompt,
-                context.config.limits.maxTitleChars,
-              ),
-            })
-            .catch((error: unknown) =>
-              deps.log(error instanceof Error ? error : new Error(String(error))),
-            );
-        }
         return receipt;
       },
       async import(input: MediaImportRequest, context: MediaContext): Promise<MediaImportReceipt> {
@@ -518,6 +541,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
             identityRequest: parsed,
           });
         }
+        await context.admitImport?.();
         const request = {
           ...parsed,
           inputs: await Promise.all(
@@ -533,6 +557,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
           scope: context.scope,
           request,
           identityRequest: parsed,
+          publicationExpiresAt: mediaPublicationExpiresAt(context, parsed.temporary),
         });
         return (
           (await deps.repository.publishMediaImport(
@@ -549,6 +574,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
           throw new MediaServiceError('not_found', 404, 'The job is unavailable.');
         }
         const replay = await deps.repository.getMediaSubmission(context.scope, clientRequestId);
+        if (!replay) await context.admitGeneration?.();
         const ready = replay ? undefined : await prepare(old.request, context, false);
         const receipt = await deps.repository.retryMediaJob({
           scope: context.scope,
@@ -585,6 +611,15 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
             'This media job does not support cancellation.',
           );
         }
+        observeMedia(deps.observer, {
+          kind: 'cancellation',
+          result: 'completed',
+          jobId,
+          tenantId: context.scope.tenantId,
+          phase: job.phase,
+          executionOwner: job.executionOwner,
+          operation: job.operation,
+        });
         return job;
       },
       async updateThread(threadId: string, update: MediaThreadUpdate, context: MediaContext) {
@@ -608,6 +643,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
       },
       async retire(threadId: string, context: MediaContext) {
         assertMediaAccess(context);
+        await deps.migrateNativeConsumers?.(context.scope, context.config, threadId);
         if (!(await deps.repository.retireMediaThread(context.scope, threadId))) {
           throw new MediaServiceError('not_found', 404, 'The thread is unavailable.');
         }
@@ -641,7 +677,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
       },
       async thread(threadId: string, context: MediaContext) {
         assertMediaAccess(context);
-        const [thread, turns] = await Promise.all([
+        const [thread, turns, latestImageContext] = await Promise.all([
           deps.repository.getMediaThread(context.scope, threadId),
           deps.repository.listMediaTurns({
             scope: context.scope,
@@ -649,11 +685,12 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
             limit: pageLimit(context),
             jobsPerTurn: pageLimit(context),
           }),
+          deps.repository.getMediaLatestImageContext({ scope: context.scope, threadId }),
         ]);
         if (!thread) {
           throw new MediaServiceError('not_found', 404, 'The thread is unavailable.');
         }
-        return { thread, turns };
+        return { thread, turns, latestImageContext };
       },
       async turns(
         threadId: string,

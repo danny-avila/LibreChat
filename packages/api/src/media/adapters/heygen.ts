@@ -3,6 +3,7 @@ import type { MediaConfig } from 'librechat-data-provider';
 import type { MediaModelProfile, MediaProviderAdapter, MediaProviderResult } from '../provider';
 import {
   nativeRequest,
+  nativeParameters,
   nativeDownload,
   providerOptions,
   encodeOperation,
@@ -64,6 +65,31 @@ function profiles(config: MediaConfig): MediaModelProfile[] {
         {
           operation: 'video.generate',
           workflow: 'avatar',
+          constraints: [
+            {
+              anyOf: [
+                { kind: 'input', role: 'audio', present: true },
+                { kind: 'parameter', name: 'providerOptions', option: 'voice_id', present: true },
+              ],
+            },
+            {
+              when: [{ kind: 'input', role: 'audio', present: true }],
+              anyOf: [
+                { kind: 'parameter', name: 'providerOptions', option: 'voice_id', present: false },
+              ],
+            },
+            {
+              when: [{ kind: 'input', role: 'audio', present: true }],
+              anyOf: [
+                {
+                  kind: 'parameter',
+                  name: 'providerOptions',
+                  option: 'voice_settings',
+                  present: false,
+                },
+              ],
+            },
+          ],
           inputs: {
             roles: ['reference', 'audio'],
             min: 1,
@@ -92,6 +118,14 @@ export function createHeygenMediaAdapters(): MediaProviderAdapter[] {
       operations: ['video.generate'],
       download: nativeDownload,
       async submit(request, inputs, context): Promise<MediaProviderResult> {
+        const parameters = nativeParameters(
+          request,
+          inputs,
+          context,
+          profiles(context.config)
+            .find((profile) => profile.modelId === request.selection.modelId)
+            ?.capabilities.find((capability) => capability.operation === request.operation),
+        );
         const image = inputs.find((input) => input.role === 'reference');
         const audio = inputs.find((input) => input.role === 'audio');
         const options = optionSchema.safeParse(providerOptions(request, optionNames));
@@ -102,9 +136,7 @@ export function createHeygenMediaAdapters(): MediaProviderAdapter[] {
           inputs.filter((input) => input.role === 'reference').length !== 1 ||
           inputs.filter((input) => input.role === 'audio').length > 1 ||
           inputs.some((input) => input.role !== 'reference' && input.role !== 'audio') ||
-          !options.success ||
-          (!audio && !options.data.voice_id) ||
-          (audio && (options.data.voice_id || options.data.voice_settings))
+          !options.success
         ) {
           throw new MediaProviderError('rejected');
         }
@@ -145,8 +177,8 @@ export function createHeygenMediaAdapters(): MediaProviderAdapter[] {
                     motion_prompt: options.data.motion_prompt ?? request.prompt,
                   }
                 : { script: request.prompt }),
-              resolution: request.parameters.resolution,
-              aspect_ratio: request.parameters.aspectRatio,
+              resolution: parameters.resolution,
+              aspect_ratio: parameters.aspectRatio,
             }),
           ),
           z.object({

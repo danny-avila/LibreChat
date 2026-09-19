@@ -2,9 +2,10 @@ import { z } from 'zod';
 import { isAxiosError } from 'axios';
 import type { AxiosInstance, AxiosRequestConfig, AxiosRequestHeaders } from 'axios';
 import type { Readable } from 'node:stream';
+import { isSSRFTarget, validateEndpointURL } from '../auth/domain';
 import { applySSRFSafeAgentIfDirect } from '../auth/agent';
+import { applyAxiosProxyConfig } from '../utils/proxy';
 import { MediaProviderError } from './errors';
-import { isSSRFTarget } from '../auth/domain';
 
 export interface MediaTransportRequest {
   url: string;
@@ -18,11 +19,23 @@ export interface MediaTransportRequest {
   emptyResponse?: { status: number; body: string };
   successStatus?: number;
   publicOnly?: boolean;
+  allowedAddresses?: string[];
 }
 
 export interface MediaTransport {
   json<T>(request: MediaTransportRequest, schema: z.ZodType<T>): Promise<T>;
   stream(request: MediaTransportRequest): Promise<Readable>;
+}
+
+/** Bind effective principal policy once for every provider operation, including downloads. */
+export function scopeMediaTransport(
+  transport: MediaTransport,
+  allowedAddresses: string[] = [],
+): MediaTransport {
+  return {
+    json: (request, schema) => transport.json({ ...request, allowedAddresses }, schema),
+    stream: (request) => transport.stream({ ...request, allowedAddresses }),
+  };
 }
 
 export function isMediaTransferLimitError(error: Error, maxBytes: number): boolean {
@@ -75,7 +88,7 @@ export function createMediaTransport({
   http: AxiosInstance;
   allowedAddresses?: string[];
 }): MediaTransport {
-  const options = (request: MediaTransportRequest): AxiosRequestConfig => {
+  const options = async (request: MediaTransportRequest): Promise<AxiosRequestConfig> => {
     if (request.publicOnly) {
       const target = new URL(request.url);
       if (
@@ -87,31 +100,35 @@ export function createMediaTransport({
       )
         throw new MediaProviderError('rejected', undefined, 'unsafe_public_url');
     }
-    return applySSRFSafeAgentIfDirect(
-      {
-        url: request.url,
-        method: request.method ?? 'GET',
-        headers: request.publicOnly ? {} : request.headers,
-        data: request.body,
-        signal: request.signal,
-        timeout: request.timeoutMs,
-        maxContentLength: request.maxBytes,
-        maxBodyLength: request.maxBytes,
-        validateStatus: () => true,
-        ...(request.publicOnly
-          ? {
-              proxy: false,
-              allowAbsoluteUrls: true,
-              httpVersion: 1,
-              withCredentials: false,
-              withXSRFToken: false,
-              transformRequest: [preparePublicRequest],
-            }
-          : {}),
-      },
-      request.url,
-      request.publicOnly ? undefined : allowedAddresses,
-    );
+    const policy = request.publicOnly ? undefined : (request.allowedAddresses ?? allowedAddresses);
+    const config: AxiosRequestConfig = {
+      url: request.url,
+      method: request.method ?? 'GET',
+      headers: request.publicOnly ? {} : request.headers,
+      data: request.body,
+      signal: request.signal,
+      timeout: request.timeoutMs,
+      maxContentLength: request.maxBytes,
+      maxBodyLength: request.maxBytes,
+      validateStatus: () => true,
+      ...(request.publicOnly
+        ? {
+            proxy: false,
+            allowAbsoluteUrls: true,
+            httpVersion: 1,
+            withCredentials: false,
+            withXSRFToken: false,
+            transformRequest: [preparePublicRequest],
+          }
+        : {}),
+    };
+    if (!request.publicOnly) {
+      applyAxiosProxyConfig(config, request.url);
+      if (config.httpsAgent || config.httpAgent || config.proxy) {
+        await validateEndpointURL(request.url, 'media', policy);
+      }
+    }
+    return applySSRFSafeAgentIfDirect(config, request.url, policy);
   };
 
   const assertStatus = (status: number) => {
@@ -126,7 +143,7 @@ export function createMediaTransport({
     async json<T>(request: MediaTransportRequest, schema: z.ZodType<T>): Promise<T> {
       try {
         const response = await http.request<string>({
-          ...options(request),
+          ...(await options(request)),
           responseType: 'text',
           transformResponse: [(text: string) => text],
         });
@@ -150,7 +167,7 @@ export function createMediaTransport({
       try {
         let current = request;
         let response = await http.request<Readable>({
-          ...options(current),
+          ...(await options(current)),
           responseType: 'stream',
         });
         for (let redirects = 0; [301, 302, 303, 307, 308].includes(response.status); redirects++) {
@@ -177,7 +194,10 @@ export function createMediaTransport({
             url: target.href,
             headers: target.origin === previous.origin ? current.headers : {},
           };
-          response = await http.request<Readable>({ ...options(current), responseType: 'stream' });
+          response = await http.request<Readable>({
+            ...(await options(current)),
+            responseType: 'stream',
+          });
         }
         if (response.status < 200 || response.status >= 300) {
           response.data.destroy();

@@ -5,6 +5,7 @@ import type { FileStorage } from 'librechat-data-provider';
 import type { MediaNativeMethods, MediaNativeLimits } from '~/types/mediaNative';
 import type { MediaMethods, MediaOwnerScope } from '~/types/media';
 import { createMediaNativeMethods } from './mediaNative';
+import { createMessageMethods } from './message';
 import { createMediaMethods } from './media';
 
 describe('native chat media persistence', () => {
@@ -38,6 +39,7 @@ describe('native chat media persistence', () => {
       Object.values(mongoose.models).map((model) => model.collection.deleteMany({})),
     );
     scope = { ownerId: new mongoose.Types.ObjectId().toString(), tenantId: null };
+    native = createMediaNativeMethods(mongoose, media);
   });
 
   async function start(
@@ -319,7 +321,163 @@ describe('native chat media persistence', () => {
     ).toBeNull();
     expect(await native.getMediaNativeContinuation({ ...base, fileId: 'another-file' })).toBeNull();
     await media.retireMediaThread(scope, job.threadId);
+    expect(await native.getMediaNativeContinuation(base)).not.toBeNull();
+    await native.releaseMediaNativeConversation({
+      scope,
+      maxRetainers: 4,
+      conversationId: 'conversation',
+    });
     expect(await native.getMediaNativeContinuation(base)).toBeNull();
+  });
+
+  it('retains source and fork continuations independently of the Studio projection until the final consumer leaves', async () => {
+    const job = await start();
+    const asset = await original();
+    const reference = await native.recordMediaNativePart({
+      scope,
+      jobId: job.jobId,
+      chunkIndex: 0,
+      partIndex: 0,
+      part: {
+        kind: 'image',
+        fileId: asset.file_id,
+        mimeType: 'image/png',
+        thoughtSignature: 'private signature',
+      },
+      maxRetainers: 4,
+    });
+    await native.completeMediaNativeRecording({ scope, jobId: job.jobId });
+    expect(
+      await native.retainMediaNativeConversation({
+        scope,
+        conversationId: 'fork',
+        continuationRefs: [reference.continuationRef],
+        limit: 20,
+        maxRetainers: 4,
+      }),
+    ).toBe(true);
+    await media.retireMediaThread(scope, job.threadId);
+    await media.reconcileMediaRetirements({ scope, limit: 10 });
+    const replay = (conversationId: string) =>
+      native.getMediaNativeContinuation({ scope, ...reference, execution, conversationId });
+    expect(await replay('conversation')).not.toBeNull();
+    expect(await replay('fork')).not.toBeNull();
+    expect(await replay('unregistered')).toBeNull();
+    expect((await media.getMediaJob(scope, job.jobId))?.outputs).toHaveLength(1);
+    await native.releaseMediaNativeConversation({
+      scope,
+      maxRetainers: 4,
+      conversationId: 'conversation',
+    });
+    expect(await replay('conversation')).toBeNull();
+    expect(await replay('fork')).not.toBeNull();
+    expect(await media.getMediaAsset(scope, asset.file_id)).not.toBeNull();
+    await native.releaseMediaNativeConversation({ scope, maxRetainers: 4, conversationId: 'fork' });
+    expect(await replay('fork')).toBeNull();
+    expect(await mongoose.models.MediaNativePart.countDocuments({ jobId: job.jobId })).toBe(0);
+    expect(await media.getMediaJob(scope, job.jobId)).toMatchObject({
+      nativeRetentionState: 'purged',
+      outputs: [],
+      request: { prompt: '' },
+    });
+    expect(await mongoose.models.File.findOne({ file_id: asset.file_id }).lean()).toMatchObject({
+      mediaRetainers: [],
+    });
+    expect(
+      await media.claimMediaAssetDeletion({
+        scope,
+        fileId: asset.file_id,
+        token: 'final-consumer',
+      }),
+    ).not.toBeNull();
+    expect(
+      await native.retainMediaNativeConversation({
+        scope,
+        conversationId: 'late',
+        continuationRefs: [reference.continuationRef],
+        limit: 20,
+        maxRetainers: 4,
+      }),
+    ).toBe(false);
+  });
+
+  it('recovers a crash after source-consumer release before presentation cleanup', async () => {
+    const job = await start();
+    const reference = await native.recordMediaNativePart({
+      scope,
+      jobId: job.jobId,
+      chunkIndex: 0,
+      partIndex: 0,
+      part: { kind: 'text', text: 'sensitive' },
+      maxRetainers: 4,
+    });
+    await native.completeMediaNativeRecording({ scope, jobId: job.jobId });
+    const failure = jest
+      .spyOn(media, 'retireMediaThread')
+      .mockRejectedValueOnce(new Error('interrupted database connection'));
+    await expect(
+      native.releaseMediaNativeConversation({
+        scope,
+        maxRetainers: 4,
+        conversationId: 'conversation',
+      }),
+    ).rejects.toThrow('interrupted');
+    failure.mockRestore();
+    const now = new Date().toISOString();
+    native = createMediaNativeMethods(mongoose, media);
+    await native.reconcileMediaNativeRecordings({ scope, now, staleBefore: now, limit: 10 });
+    await media.reconcileMediaRetirements({ scope, limit: 10 });
+    await native.reconcileMediaNativeRecordings({ scope, now, staleBefore: now, limit: 10 });
+    expect(await native.getMediaNativeContinuation({ scope, execution, ...reference })).toBeNull();
+    expect(await mongoose.models.MediaNativePart.countDocuments({ jobId: job.jobId })).toBe(0);
+    expect((await media.getMediaJob(scope, job.jobId))?.nativeCleanupPending).toBeUndefined();
+  });
+
+  it('restores a transcript in two bounded reads and preserves request order and authorization', async () => {
+    const job = await start('batch', { ...limits, maxParts: 30 });
+    const references = [];
+    for (let index = 0; index < 24; index++) {
+      references.push(
+        await native.recordMediaNativePart({
+          scope,
+          jobId: job.jobId,
+          chunkIndex: index,
+          partIndex: 0,
+          part: { kind: 'text', text: `chunk ${index}` },
+          maxRetainers: 4,
+        }),
+      );
+    }
+    const parts = jest.spyOn(mongoose.models.MediaNativePart, 'find');
+    const jobs = jest.spyOn(mongoose.models.MediaJob, 'find');
+    const threads = jest.spyOn(mongoose.models.MediaThread, 'find');
+    const restored = await native.getMediaNativeContinuations({
+      scope,
+      references: [...references].reverse(),
+      execution,
+      conversationId: 'conversation',
+      limit: 30,
+    });
+    expect(restored.map((part) => part?.part)).toEqual(
+      Array.from({ length: 24 }, (_, index) => ({ kind: 'text', text: `chunk ${23 - index}` })),
+    );
+    expect(parts).toHaveBeenCalledTimes(1);
+    expect(jobs).toHaveBeenCalledTimes(1);
+    expect(threads).not.toHaveBeenCalled();
+    parts.mockRestore();
+    jobs.mockRestore();
+    threads.mockRestore();
+    expect(
+      await native.getMediaNativeContinuations({
+        scope,
+        references,
+        execution: { ...execution, bindingRevision: 'different-account' },
+        limit: 30,
+      }),
+    ).toEqual(Array(24).fill(null));
+    await expect(
+      native.getMediaNativeContinuations({ scope, references, execution, limit: 10 }),
+    ).rejects.toMatchObject({ code: 'invalid_input' });
   });
 
   it('stores part expiry as a TTL-backed date and hides an expired continuation', async () => {
@@ -348,6 +506,275 @@ describe('native chat media persistence', () => {
       { $set: { expiresAt: new Date(0) } },
     );
     expect(await native.getMediaNativeContinuation(input)).toBeNull();
+  });
+
+  it('central message deletion releases only absent consumers, preserving a saved fork and other messages', async () => {
+    const job = await start();
+    const reference = await native.recordMediaNativePart({
+      scope,
+      jobId: job.jobId,
+      chunkIndex: 0,
+      partIndex: 0,
+      part: { kind: 'text', text: 'caption' },
+      maxRetainers: 4,
+    });
+    await native.completeMediaNativeRecording({ scope, jobId: job.jobId });
+    const content = [{ type: 'text', text: 'caption', native_media: reference }];
+    await mongoose.models.Message.create([
+      { user: scope.ownerId, conversationId: 'conversation', messageId: 'source', content },
+      { user: scope.ownerId, conversationId: 'fork', messageId: 'fork-one', content },
+      { user: scope.ownerId, conversationId: 'fork', messageId: 'fork-two', content },
+    ]);
+    await native.retainMediaNativeConversation({
+      scope,
+      conversationId: 'fork',
+      continuationRefs: [reference.continuationRef],
+      maxRetainers: 4,
+      limit: 4,
+    });
+    const messages = createMessageMethods(mongoose);
+    expect(
+      (await messages.deleteMessages({ user: scope.ownerId, messageId: 'source' })).deletedCount,
+    ).toBe(1);
+    expect(
+      await native.getMediaNativeContinuation({
+        scope,
+        execution,
+        ...reference,
+        conversationId: 'conversation',
+      }),
+    ).toBeNull();
+    expect(
+      await native.getMediaNativeContinuation({
+        scope,
+        execution,
+        ...reference,
+        conversationId: 'fork',
+      }),
+    ).not.toBeNull();
+    await media.reconcileMediaRetirements({ scope, limit: 10 });
+    expect(
+      await mongoose.models.MediaThread.findOne({ threadId: job.threadId }).lean(),
+    ).toMatchObject({ status: 'retired' });
+    await messages.deleteMessages({ user: scope.ownerId, messageId: 'fork-one' });
+    expect(
+      await native.getMediaNativeContinuation({
+        scope,
+        execution,
+        ...reference,
+        conversationId: 'fork',
+      }),
+    ).not.toBeNull();
+    await messages.deleteMessages({ user: scope.ownerId, messageId: 'fork-two' });
+    expect(
+      await native.getMediaNativeContinuation({
+        scope,
+        execution,
+        ...reference,
+        conversationId: 'fork',
+      }),
+    ).toBeNull();
+  });
+
+  it('protects unpublished clone claims and reclaims an abandoned clone after the claim expires', async () => {
+    const job = await start();
+    const reference = await native.recordMediaNativePart({
+      scope,
+      jobId: job.jobId,
+      chunkIndex: 0,
+      partIndex: 0,
+      part: { kind: 'text', text: 'caption' },
+      maxRetainers: 4,
+    });
+    await native.completeMediaNativeRecording({ scope, jobId: job.jobId });
+    await mongoose.models.Message.create({
+      user: scope.ownerId,
+      conversationId: 'conversation',
+      messageId: 'source',
+      content: [{ type: 'text', text: 'caption', native_media: reference }],
+    });
+    await native.retainMediaNativeConversation({
+      scope,
+      conversationId: 'unpublished',
+      continuationRefs: [reference.continuationRef],
+      maxRetainers: 4,
+      limit: 4,
+      pendingUntil: new Date(Date.now() + 60_000).toISOString(),
+    });
+    await native.migrateMediaNativeConsumers({ scope, limit: 10, maxRetainers: 1 });
+    expect(
+      await native.getMediaNativeContinuation({
+        scope,
+        execution,
+        ...reference,
+        conversationId: 'unpublished',
+      }),
+    ).not.toBeNull();
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: job.jobId },
+      { $set: { 'nativeConsumerClaims.0.expiresAt': new Date(0).toISOString() } },
+    );
+    await native.migrateMediaNativeConsumers({ scope, limit: 10, maxRetainers: 1 });
+    expect(
+      await native.getMediaNativeContinuation({
+        scope,
+        execution,
+        ...reference,
+        conversationId: 'unpublished',
+      }),
+    ).toBeNull();
+    expect(
+      await native.getMediaNativeContinuation({
+        scope,
+        execution,
+        ...reference,
+        conversationId: 'conversation',
+      }),
+    ).not.toBeNull();
+  });
+
+  it('releases an edited text-only native consumer without retaining private original text forever', async () => {
+    const job = await start();
+    const reference = await native.recordMediaNativePart({
+      scope,
+      jobId: job.jobId,
+      chunkIndex: 0,
+      partIndex: 0,
+      part: { kind: 'text', text: 'old caption' },
+      maxRetainers: 4,
+    });
+    await native.completeMediaNativeRecording({ scope, jobId: job.jobId });
+    const content = [{ type: 'text', text: 'corrected caption', native_media: reference }];
+    await mongoose.models.Message.create({
+      user: scope.ownerId,
+      conversationId: 'conversation',
+      messageId: 'source',
+      content,
+    });
+    await createMessageMethods(mongoose).updateMessage(scope.ownerId, {
+      messageId: 'source',
+      content,
+      userSubmittedPaths: ['/content/0/text'],
+    });
+    const stored = await mongoose.models.Message.findOne({ messageId: 'source' }).lean<{
+      content: typeof content;
+    }>();
+    expect(stored?.content).toEqual([{ type: 'text', text: 'corrected caption' }]);
+    expect((await media.getMediaJob(scope, job.jobId))?.nativeConsumers).toEqual([]);
+    await media.reconcileMediaRetirements({ scope, limit: 10 });
+    expect(await mongoose.models.MediaNativePart.countDocuments({ jobId: job.jobId })).toBe(0);
+  });
+
+  it('backfills old forks from owned saved content without resurrecting an absent source', async () => {
+    const job = await start();
+    const reference = await native.recordMediaNativePart({
+      scope,
+      jobId: job.jobId,
+      chunkIndex: 0,
+      partIndex: 0,
+      part: { kind: 'text', text: 'legacy caption' },
+      maxRetainers: 4,
+    });
+    await native.completeMediaNativeRecording({ scope, jobId: job.jobId });
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: job.jobId },
+      { $unset: { nativeConsumers: 1, nativeRetentionState: 1 } },
+    );
+    await mongoose.models.Message.create({
+      messageId: 'fork-message',
+      conversationId: 'old-fork',
+      user: scope.ownerId,
+      tenantId: scope.tenantId,
+      content: [{ type: 'text', text: 'legacy caption', native_media: { ...reference } }],
+    });
+    await mongoose.models.Message.create({
+      messageId: 'foreign-message',
+      conversationId: 'foreign-fork',
+      user: new mongoose.Types.ObjectId().toString(),
+      tenantId: scope.tenantId,
+      content: [{ type: 'text', text: 'legacy caption', native_media: { ...reference } }],
+    });
+    expect(
+      await native.getMediaNativeContinuation({
+        scope,
+        execution,
+        ...reference,
+        conversationId: 'old-fork',
+      }),
+    ).not.toBeNull();
+    expect(
+      await native.getMediaNativeContinuation({
+        scope,
+        execution,
+        ...reference,
+        conversationId: 'conversation',
+      }),
+    ).toBeNull();
+    await media.retireMediaThread(scope, job.threadId);
+    await media.reconcileMediaRetirements({ scope, limit: 10 });
+    expect(
+      await mongoose.models.MediaThread.findOne({ threadId: job.threadId }).lean(),
+    ).toMatchObject({ status: 'retiring' });
+    expect(
+      await native.migrateMediaNativeConsumers({
+        scope,
+        threadId: job.threadId,
+        maxRetainers: 1,
+        limit: 10,
+      }),
+    ).toBe(1);
+    await media.reconcileMediaRetirements({ scope, limit: 10 });
+    expect((await media.getMediaJob(scope, job.jobId))?.nativeConsumers).toEqual(['old-fork']);
+    expect(
+      await native.getMediaNativeContinuation({
+        scope,
+        execution,
+        ...reference,
+        conversationId: 'old-fork',
+      }),
+    ).not.toBeNull();
+    await native.releaseMediaNativeConversation({
+      scope,
+      conversationId: 'old-fork',
+      maxRetainers: 1,
+    });
+    expect(await mongoose.models.MediaNativePart.countDocuments({ jobId: job.jobId })).toBe(0);
+  });
+
+  it('defers destructive legacy retirement when existing consumer count exceeds the configured bound', async () => {
+    const job = await start();
+    const reference = await native.recordMediaNativePart({
+      scope,
+      jobId: job.jobId,
+      chunkIndex: 0,
+      partIndex: 0,
+      part: { kind: 'text', text: 'retained caption' },
+      maxRetainers: 4,
+    });
+    await native.completeMediaNativeRecording({ scope, jobId: job.jobId });
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: job.jobId },
+      { $unset: { nativeConsumers: 1, nativeRetentionState: 1 } },
+    );
+    await mongoose.models.Message.insertMany(
+      ['first', 'second'].map((conversationId) => ({
+        messageId: `${conversationId}-message`,
+        conversationId,
+        user: scope.ownerId,
+        tenantId: scope.tenantId,
+        content: [{ type: 'text', text: 'retained caption', native_media: { ...reference } }],
+      })),
+    );
+    await expect(
+      native.migrateMediaNativeConsumers({ scope, maxRetainers: 1, limit: 10 }),
+    ).rejects.toMatchObject({ code: 'capacity' });
+    expect((await media.getMediaJob(scope, job.jobId))?.nativeConsumers).toBeUndefined();
+    expect(await mongoose.models.MediaNativePart.countDocuments({ jobId: job.jobId })).toBe(1);
+    expect(await native.migrateMediaNativeConsumers({ scope, maxRetainers: 2, limit: 10 })).toBe(1);
+    expect((await media.getMediaJob(scope, job.jobId))?.nativeConsumers?.sort()).toEqual([
+      'first',
+      'second',
+    ]);
   });
 
   it('records native failure without enabling automatic or manual paid retry', async () => {

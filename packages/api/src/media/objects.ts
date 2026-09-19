@@ -7,6 +7,7 @@ import { mkdir, readFile, stat, unlink } from 'node:fs/promises';
 import type { MediaOwnerScope } from '@librechat/data-schemas';
 import type { FileStorage } from 'librechat-data-provider';
 import type { GetURLParams, SaveBufferParams, UploadResult } from '~/storage/types';
+import type { StorageByteRange, StorageReadOptions } from '~/storage/types';
 import { extractKeyFromS3Url, getStorageMetadataForKey, parseS3Key } from '~/storage/s3/crud';
 import { MediaServiceError } from './errors';
 
@@ -17,8 +18,8 @@ export type MediaObjectLocation = {
   storageRegion?: string;
   filepath: string;
 };
-export type MediaObjectRange = { start: number; end: number };
-export type MediaObjectReadOptions = { range?: MediaObjectRange; signal?: AbortSignal };
+export type MediaObjectRange = StorageByteRange;
+export type MediaObjectReadOptions = StorageReadOptions;
 
 export interface MediaObjectStore {
   readonly source: MediaStorageSource;
@@ -44,6 +45,24 @@ export interface MediaObjectStore {
   revision?(scope: MediaOwnerScope, location: MediaObjectLocation): Promise<string>;
 }
 
+export async function removeMediaObjectLocations(
+  scope: MediaOwnerScope,
+  locations: MediaObjectLocation[],
+  resolveStore: (source: string) => MediaObjectStore | undefined,
+): Promise<void> {
+  const unique = new Map(
+    locations.map((location) => [
+      `${location.source}:${location.storageRegion ?? ''}:${location.storageKey ?? location.filepath}`,
+      location,
+    ]),
+  );
+  for (const location of unique.values()) {
+    const store = resolveStore(location.source);
+    if (!store) throw new MediaServiceError('unsupported', 422, 'Media storage is unavailable.');
+    await store.remove(scope, location);
+  }
+}
+
 type StorageRequest = { user: { id: string; tenantId?: string } };
 
 /** The existing host strategy contract, narrowed to byte storage without HTTP or database dependencies. */
@@ -65,7 +84,7 @@ export interface MediaFileStrategy {
   getDownloadStream(
     req: StorageRequest,
     filepath: string,
-    options?: { signal?: AbortSignal },
+    options?: StorageReadOptions,
   ): Promise<Readable>;
   deleteFile(
     req: StorageRequest,
@@ -95,32 +114,6 @@ function missing(error: unknown): boolean {
       )) ||
     ('statusCode' in error && error.statusCode === 404) ||
     ('name' in error && ['NotFound', 'NoSuchKey'].includes(String(error.name)))
-  );
-}
-
-/** Stops the underlying cloud read as soon as an inclusive requested range has been consumed. */
-function sliceStream(stream: Readable, range?: MediaObjectRange): Readable {
-  if (!range) return stream;
-  return Readable.from(
-    (async function* () {
-      let offset = 0;
-      try {
-        for await (const chunk of stream) {
-          const buffer = Buffer.from(chunk);
-          const next = offset + buffer.length;
-          if (next > range.start && offset <= range.end) {
-            yield buffer.subarray(
-              Math.max(0, range.start - offset),
-              Math.min(buffer.length, range.end - offset + 1),
-            );
-          }
-          offset = next;
-          if (offset > range.end) return;
-        }
-      } finally {
-        stream.destroy();
-      }
-    })(),
   );
 }
 
@@ -288,9 +281,9 @@ export function createMediaStrategyObjectStores(
           source === 's3' || source === 'cloudfront'
             ? (location.storageKey ?? location.filepath)
             : location.filepath,
-          { signal: options?.signal },
+          options,
         );
-        return sliceStream(stream, options?.range);
+        return stream;
       },
       async remove(scope, location) {
         try {

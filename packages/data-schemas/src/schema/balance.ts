@@ -1,4 +1,5 @@
 import { Schema } from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import { REFILL_INTERVAL_UNITS } from 'librechat-data-provider';
 import type * as t from '~/types';
 
@@ -73,6 +74,8 @@ const balanceSchema: Schema<t.IBalance> = new Schema<t.IBalance>({
     default: undefined,
     select: false,
   },
+  /** Fences a delayed media CAS when the same balance id is deleted and recreated. */
+  mediaGeneration: { type: String, default: () => randomUUID(), select: false },
   mediaDebtCredits: { type: Number, select: false },
   mediaSettlementSequence: { type: Number, select: false },
   mediaPendingSettlement: {

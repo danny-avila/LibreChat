@@ -31,6 +31,19 @@ import * as r from './roles';
 export function getMediaCatalog(signal?: AbortSignal): Promise<media.MediaCatalog> {
   return request.get(endpoints.mediaCatalog(), signal ? { signal } : undefined);
 }
+export function listMediaRecoveryJobs(
+  params: media.MediaPageRequest = {},
+  signal?: AbortSignal,
+): Promise<media.MediaRecoveryPage> {
+  return request.get(endpoints.mediaRecoveryJobs(params), signal ? { signal } : undefined);
+}
+export function recoverMediaJob(
+  ownerId: string,
+  jobId: string,
+  payload: media.MediaRecoveryRequest,
+): Promise<media.MediaRecoveryJob> {
+  return request.post(endpoints.mediaRecoveryJob(ownerId, jobId), payload);
+}
 export function listMediaThreads(
   params: media.MediaThreadListRequest = {},
   signal?: AbortSignal,

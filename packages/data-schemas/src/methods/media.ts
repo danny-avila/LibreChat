@@ -31,7 +31,11 @@ import {
 } from '~/models/media';
 import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { createMediaNativePartModel } from '~/models/mediaNativePart';
+import { createMediaSettlementModel } from '~/models/mediaSettlement';
+import { createMediaAccountingMethods } from './mediaAccounting';
+import { createTransactionModel } from '~/models/transaction';
 import { createIndexesWithRetry } from '~/utils/retry';
+import { createBalanceModel } from '~/models/balance';
 import { MEDIA_FILE_ID_PREFIX } from '~/types/media';
 import { createFileModel } from '~/models/file';
 import { toMediaAsset } from '~/utils/media';
@@ -39,6 +43,7 @@ import { toMediaAsset } from '~/utils/media';
 export class MediaPersistenceError extends Error {
   readonly code:
     | 'conflict'
+    | 'version_conflict'
     | 'capacity'
     | 'not_found'
     | 'retired'
@@ -228,6 +233,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
   const Activation = createMediaActivationModel(mongoose);
   const Owner = createMediaOwnerModel(mongoose);
   const Preset = createMediaPresetModel(mongoose);
+  const accounting = createMediaAccountingMethods(mongoose);
   let indexPromise: Promise<void> | undefined;
 
   const getJob: MediaMethods['getMediaJob'] = async (scope, jobId) =>
@@ -374,6 +380,12 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
       createdAt: now,
       updatedAt: now,
       dueAt: now,
+      ...(input.publicationExpiresAt !== undefined
+        ? {
+            publicationExpiresAt:
+              input.publicationExpiresAt === null ? null : iso(input.publicationExpiresAt),
+          }
+        : {}),
       ...(retry ? { retryOfJobId: retry.jobId } : {}),
     };
     const capacity = positive(input.maxActiveJobs);
@@ -658,7 +670,9 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         turn,
         options.maxRetainers,
         options.maxTitleChars,
-        temporaryExpiry(turn, job.request.temporary, options.temporaryRetentionMs),
+        job.publicationExpiresAt === undefined
+          ? temporaryExpiry(turn, job.request.temporary, options.temporaryRetentionMs)
+          : (job.publicationExpiresAt ?? undefined),
       );
       await Turn.updateOne(
         { ...scope, turnId: job.turnId },
@@ -713,6 +727,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     scope: inputScope,
     request,
     identityRequest,
+    publicationExpiresAt,
   }) => {
     await ensureMediaIndexes();
     await activateMedia();
@@ -759,6 +774,12 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         prompt: '',
         inputs: request.inputs,
         publicationPhase: 'preparing',
+        ...(publicationExpiresAt !== undefined
+          ? {
+              publicationExpiresAt:
+                publicationExpiresAt === null ? null : iso(publicationExpiresAt),
+            }
+          : {}),
       }).save(durable);
       return receipt;
     } catch (error) {
@@ -777,7 +798,11 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
   };
 
   const publishMediaImport: MediaMethods['publishMediaImport'] = async (scope, turnId, options) => {
-    const turn = await Turn.findOne({ ...scopeFilter(scope), turnId, kind: 'import' }).lean();
+    const turn = await Turn.findOne({
+      ...scopeFilter(scope),
+      turnId,
+      kind: 'import',
+    }).lean<MediaStoredTurn | null>();
     if (!turn?.importReceipt || turn.importReceipt.phase !== 'preparing') {
       return turn?.importReceipt ?? null;
     }
@@ -785,7 +810,14 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
       if (!(await admitOwnerWork(scope, `import:${turnId}`))) {
         throw new MediaPersistenceError('retired', 'Media account is being deleted');
       }
-      await publishTurn(turn, options.maxRetainers, options.maxTitleChars);
+      await publishTurn(
+        turn,
+        options.maxRetainers,
+        options.maxTitleChars,
+        turn.publicationExpiresAt === undefined
+          ? temporaryExpiry(turn, turn.importRequest?.temporary, options.temporaryRetentionMs)
+          : (turn.publicationExpiresAt ?? undefined),
+      );
       await Turn.updateOne(
         { ...scope, turnId, 'importReceipt.phase': 'preparing' },
         {
@@ -1087,12 +1119,16 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
       publicationPhase: 'accepted',
     };
     if (after) {
-      query.sequence = { $gt: Number(after[0]) };
+      const sequence = Number(after[0]);
+      if (!Number.isSafeInteger(sequence) || sequence <= 0) {
+        throw new MediaPersistenceError('invalid_input', 'Invalid media turn cursor');
+      }
+      query.sequence = { $lt: sequence };
     }
     const rows = await Turn.find(query)
-      .sort({ sequence: 1 })
+      .sort({ sequence: -1 })
       .limit(limit + 1)
-      .lean();
+      .lean<MediaStoredTurn[]>();
     const page = rows.slice(0, limit);
     if (!page.length) {
       return { items: [] };
@@ -1165,6 +1201,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         inputs: turn.inputs,
         selection: turn.selection,
         operation: turn.operation,
+        ...(jobRows[0] ? { parameters: jobRows[0].request.parameters } : {}),
         jobs: jobs.items,
         jobsNextCursor: jobs.nextCursor,
         assets,
@@ -1189,6 +1226,120 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
       'receipt.phase': 'accepted',
     };
   }
+
+  const getMediaLatestImageContext: MediaMethods['getMediaLatestImageContext'] = async ({
+    scope: inputScope,
+    threadId,
+  }) => {
+    const scope = scopeFilter(inputScope);
+    const liveFile = {
+      user: new mongoose.Types.ObjectId(scope.ownerId),
+      tenantId: scope.tenantId,
+      mediaLifecycle: 'live',
+      type: /^image\//,
+      $or: [{ mediaHardExpiresAt: null }, { mediaHardExpiresAt: { $gt: new Date() } }],
+    };
+    const [context] = await Thread.aggregate<{ turnId: string; file: MediaAssetContent }>([
+      { $match: { ...scope, threadId, status: 'active' } },
+      {
+        $lookup: {
+          // eslint-disable-next-line no-restricted-syntax -- Collection metadata only; the lookup explicitly scopes owner and tenant.
+          from: Turn.collection.name,
+          let: { threadId: '$threadId' },
+          pipeline: [
+            {
+              $match: {
+                ...scope,
+                publicationPhase: 'accepted',
+                $expr: { $eq: ['$threadId', '$$threadId'] },
+              },
+            },
+            { $sort: { sequence: -1 } },
+            {
+              $lookup: {
+                // eslint-disable-next-line no-restricted-syntax -- Collection metadata only; the lookup explicitly scopes owner and tenant.
+                from: Job.collection.name,
+                let: { turnId: '$turnId' },
+                pipeline: [
+                  {
+                    $match: {
+                      ...scope,
+                      phase: 'succeeded',
+                      'receipt.phase': 'accepted',
+                      $expr: { $eq: ['$turnId', '$$turnId'] },
+                    },
+                  },
+                  { $unwind: '$outputs' },
+                  {
+                    $match: {
+                      'outputs.kind': 'image',
+                      'outputs.state': 'ready',
+                      'outputs.asset.file_id': { $exists: true },
+                    },
+                  },
+                  { $sort: { createdAt: -1, jobId: -1, 'outputs.ordinal': 1 } },
+                  {
+                    $lookup: {
+                      // eslint-disable-next-line no-restricted-syntax -- Collection metadata only; the lookup explicitly scopes owner and tenant.
+                      from: File.collection.name,
+                      let: { fileId: '$outputs.asset.file_id' },
+                      pipeline: [
+                        { $match: { ...liveFile, $expr: { $eq: ['$file_id', '$$fileId'] } } },
+                        { $limit: 1 },
+                      ],
+                      as: 'file',
+                    },
+                  },
+                  { $unwind: '$file' },
+                  { $limit: 1 },
+                  { $project: { _id: 0, file: 1 } },
+                ],
+                as: 'images',
+              },
+            },
+            {
+              $lookup: {
+                // eslint-disable-next-line no-restricted-syntax -- Collection metadata only; the lookup explicitly scopes owner and tenant.
+                from: File.collection.name,
+                let: { fileIds: '$inputs.file_id', kind: '$kind' },
+                pipeline: [
+                  {
+                    $match: {
+                      ...liveFile,
+                      $expr: {
+                        $and: [{ $eq: ['$$kind', 'import'] }, { $in: ['$file_id', '$$fileIds'] }],
+                      },
+                    },
+                  },
+                  { $addFields: { inputOrder: { $indexOfArray: ['$$fileIds', '$file_id'] } } },
+                  { $sort: { inputOrder: 1 } },
+                  { $limit: 1 },
+                ],
+                as: 'imports',
+              },
+            },
+            {
+              $set: {
+                file: {
+                  $ifNull: [
+                    { $arrayElemAt: ['$images.file', 0] },
+                    { $arrayElemAt: ['$imports', 0] },
+                  ],
+                },
+              },
+            },
+            { $match: { file: { $ne: null } } },
+            { $limit: 1 },
+            { $project: { _id: 0, turnId: 1, file: 1 } },
+          ],
+          as: 'context',
+        },
+      },
+      { $unwind: '$context' },
+      { $replaceRoot: { newRoot: '$context' } },
+    ]);
+    return context ? { turnId: context.turnId, asset: toMediaAsset(context.file) } : null;
+  };
 
   const claimMediaJob: MediaMethods['claimMediaJob'] = async ({
     scope,
@@ -1628,6 +1779,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     limit,
     maxRetainers,
     maxTitleChars,
+    temporaryRetentionMs,
   }) => {
     positive(limit);
     const [jobs, imports] = await Promise.all([
@@ -1641,11 +1793,21 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         .lean(),
     ]);
     await Promise.all(
-      jobs.map((job) => publishMediaSubmission(scope, job.jobId, { maxRetainers, maxTitleChars })),
+      jobs.map((job) =>
+        publishMediaSubmission(scope, job.jobId, {
+          maxRetainers,
+          maxTitleChars,
+          temporaryRetentionMs,
+        }),
+      ),
     );
     await Promise.all(
       imports.map((turn) =>
-        publishMediaImport(scope, turn.turnId, { maxRetainers, maxTitleChars }),
+        publishMediaImport(scope, turn.turnId, {
+          maxRetainers,
+          maxTitleChars,
+          temporaryRetentionMs,
+        }),
       ),
     );
     return jobs.length + imports.length;
@@ -1661,12 +1823,19 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
       tenantId: scope.tenantId,
       name,
     })
-      .select({ value: 1, expiresAt: 1 })
-      .lean()) as { value: string; expiresAt?: Date; _id: unknown } | null;
+      .select({ value: 1, expiresAt: 1, mediaBindingRevision: 1 })
+      .lean()) as {
+      value: string;
+      expiresAt?: Date;
+      mediaBindingRevision?: string;
+      _id: unknown;
+    } | null;
     return key
       ? {
           value: key.value,
           expiresAt: key.expiresAt?.toISOString() ?? null,
+          id: String(key._id),
+          legacyBindingRevision: key.mediaBindingRevision,
           bindingRevision: digest({
             id: String(key._id),
             value: key.value,
@@ -1981,14 +2150,39 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     scope,
     limit,
     staleBefore,
+    now = new Date().toISOString(),
   }) =>
     AssetWrite.find({
       ...scopeFilter(scope),
+      $and: [{ $or: [{ deletionRetryAt: null }, { deletionRetryAt: { $lte: iso(now) } }] }],
       $or: [{ state: 'abandoned' }, { state: 'reserved', updatedAt: { $lte: iso(staleBefore) } }],
     })
       .sort({ updatedAt: 1, writeId: 1 })
       .limit(positive(limit))
       .lean();
+
+  const incrementMediaAssetWriteDeletionAttempts: MediaMethods['incrementMediaAssetWriteDeletionAttempts'] =
+    async ({ scope, writeId }) => {
+      const write = await AssetWrite.findOneAndUpdate(
+        { ...scopeFilter(scope), writeId, state: { $in: ['reserved', 'abandoned'] } },
+        { $inc: { deletionAttempts: 1 } },
+        { new: true, writeConcern: durable },
+      )
+        .select({ deletionAttempts: 1 })
+        .lean();
+      return write?.deletionAttempts ?? 0;
+    };
+  const deferMediaAssetWriteCleanup: MediaMethods['deferMediaAssetWriteCleanup'] = async ({
+    scope,
+    writeId,
+    retryAt,
+  }) => {
+    await AssetWrite.updateOne(
+      { ...scopeFilter(scope), writeId, state: { $in: ['reserved', 'abandoned'] } },
+      { $max: { deletionRetryAt: iso(retryAt) } },
+      { writeConcern: durable },
+    );
+  };
 
   const claimMediaAssetWriteDeletion: MediaMethods['claimMediaAssetWriteDeletion'] = async ({
     scope,
@@ -2501,7 +2695,28 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         },
         { writeConcern: durable },
       );
-      if (await Job.exists({ ...scope, threadId: thread.threadId, phase: { $nin: terminal } })) {
+      if (
+        await Job.exists({
+          ...scope,
+          threadId: thread.threadId,
+          $or: [
+            { phase: { $nin: terminal } },
+            { 'accounting.phase': 'held' },
+            { 'provider.certainty': { $nin: ['unsubmitted', 'terminal'] } },
+          ],
+        })
+      ) {
+        continue;
+      }
+      if (
+        await Job.exists({
+          ...scope,
+          threadId: thread.threadId,
+          executionOwner: 'chat',
+          nativeSource: { $exists: true },
+          nativeConsumers: { $exists: false },
+        })
+      ) {
         continue;
       }
       const unlinkStamp = `thread:${thread.threadId}:${thread.epoch - 1}`;
@@ -2534,8 +2749,124 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         { $set: { status: 'retired' }, $inc: { version: 1 } },
         { writeConcern: durable },
       );
+      await purgeMediaThreadPayloads({ scope, threadId: thread.threadId });
+    }
+    const unfinished = await Thread.find({
+      ...scope,
+      status: 'retired',
+      payloadPurgedAt: { $exists: false },
+    })
+      .select({ threadId: 1 })
+      .sort({ threadId: 1 })
+      .limit(positive(limit))
+      .lean();
+    for (const thread of unfinished) {
+      await purgeMediaThreadPayloads({ scope, threadId: thread.threadId });
     }
     return threads.length;
+  };
+
+  const purgeMediaThreadPayloads: MediaMethods['purgeMediaThreadPayloads'] = async ({
+    scope: inputScope,
+    threadId,
+  }) => {
+    const scope = scopeFilter(inputScope);
+    if (!(await Thread.exists({ ...scope, threadId, status: 'retired' }))) {
+      return false;
+    }
+    if (
+      await Job.exists({
+        ...scope,
+        threadId,
+        $or: [
+          { phase: { $nin: terminal } },
+          { 'accounting.phase': 'held' },
+          { 'provider.certainty': { $nin: ['unsubmitted', 'terminal'] } },
+        ],
+      })
+    ) {
+      return false;
+    }
+    const now = new Date().toISOString();
+    await Job.updateMany(
+      {
+        ...scope,
+        threadId,
+        executionOwner: 'chat',
+        nativeRetentionState: { $ne: 'purged' },
+        $or: [{ nativeConsumers: { $size: 0 } }, { 'nativeSource.expiresAt': { $lte: now } }],
+      },
+      { $set: { nativeRetentionState: 'purging' } },
+      { writeConcern: durable },
+    );
+    const nativeJobs = await Job.find({
+      ...scope,
+      threadId,
+      executionOwner: 'chat',
+      nativeRetentionState: 'purging',
+    })
+      .select({ jobId: 1 })
+      .lean();
+    for (const job of nativeJobs) {
+      await createMediaNativePartModel(mongoose).deleteMany(
+        { ...scope, jobId: job.jobId },
+        { writeConcern: durable },
+      );
+      const retainer = `native:${job.jobId}`;
+      const files = await File.find({
+        user: scope.ownerId,
+        tenantId: scope.tenantId,
+        mediaLifecycle: 'live',
+        mediaRetainers: retainer,
+      })
+        .select({ file_id: 1 })
+        .lean();
+      for (const file of files) {
+        await releaseMediaAsset({ scope, fileId: file.file_id, retainer });
+      }
+      await Job.updateOne(
+        { ...scope, jobId: job.jobId, nativeRetentionState: 'purging' },
+        { $set: { nativeRetentionState: 'purged', nativeConsumers: [] } },
+        { writeConcern: durable },
+      );
+    }
+    await Job.updateMany(
+      {
+        ...scope,
+        threadId,
+        payloadPurgedAt: { $exists: false },
+        $or: [{ executionOwner: 'media' }, { nativeRetentionState: 'purged' }],
+      },
+      [
+        {
+          $set: {
+            request: {
+              clientRequestId: '$clientRequestId',
+              operation: '$operation',
+              selection: '$selection',
+              prompt: '',
+              inputs: [],
+              parameters: { count: 1 },
+            },
+            outputs: [],
+            payloadPurgedAt: now,
+          },
+        },
+        { $unset: ['provider.recovery', 'nativePartKeys', 'nativePartBytes'] },
+      ],
+      { writeConcern: durable },
+    );
+    await Turn.updateMany(
+      { ...scope, threadId },
+      { $set: { prompt: '', inputs: [] }, $unset: { importRequest: 1, importIdentityRequest: 1 } },
+      { writeConcern: durable },
+    );
+    await Thread.updateOne(
+      { ...scope, threadId, status: 'retired' },
+      { $set: { title: '', payloadPurgedAt: now }, $unset: { cover: 1 } },
+      { writeConcern: durable },
+    );
+    return true;
   };
 
   const prepareMediaAccountDeletion: MediaMethods['prepareMediaAccountDeletion'] = async ({
@@ -2568,7 +2899,10 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
       { $set: { state: 'abandoned', updatedAt: new Date().toISOString() } },
       { writeConcern: durable },
     );
-    const [settledJobs, publishedImports, terminalWrites] = await Promise.all([
+    const admissionIds = owner.workIds
+      .filter((id) => id.startsWith('accounting:'))
+      .map((id) => id.slice(11));
+    const [settledJobs, publishedImports, terminalWrites, closedAdmissions] = await Promise.all([
       Job.find({
         ...scope,
         jobId: { $in: jobIds },
@@ -2591,11 +2925,16 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
       })
         .select({ writeId: 1 })
         .lean(),
+      createMediaSettlementModel(mongoose)
+        .find({ ...scope, settlementId: { $in: admissionIds }, balanceAcknowledged: true })
+        .select({ settlementId: 1 })
+        .lean(),
     ]);
     const completed = [
       ...settledJobs.map((job) => `job:${job.jobId}`),
       ...publishedImports.map((turn) => `import:${turn.turnId}`),
       ...terminalWrites.map((write) => `write:${write.writeId}`),
+      ...closedAdmissions.map((record) => `accounting:${record.settlementId}`),
     ];
     if (completed.length) {
       await Owner.updateOne(
@@ -2639,11 +2978,34 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     );
   };
 
+  const purgeDeletedAccountAccounting = async (scope: MediaOwnerScope) => {
+    await accounting.deleteMediaAccountingHistory(scope);
+    await Promise.all([
+      createBalanceModel(mongoose).deleteMany(
+        {
+          user: scope.ownerId,
+          tenantId: scope.tenantId,
+          'mediaHolds.0': { $exists: false },
+          mediaPendingSettlement: null,
+        },
+        { writeConcern: durable },
+      ),
+      createTransactionModel(mongoose).deleteMany(
+        {
+          user: scope.ownerId,
+          tenantId: scope.tenantId,
+          context: { $in: ['media', 'media_debt'] },
+        },
+        { writeConcern: durable },
+      ),
+    ]);
+  };
+
   const completeMediaAccountDeletion: MediaMethods['completeMediaAccountDeletion'] = async ({
     scope,
     token,
   }) => {
-    const completed = await Owner.updateOne(
+    const completed = await Owner.findOneAndUpdate(
       {
         ...scopeFilter(scope),
         deletionToken: token,
@@ -2652,11 +3014,12 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         workIds: { $size: 0 },
       },
       { $set: { status: 'deleted', updatedAt: new Date().toISOString() } },
-      { writeConcern: durable },
-    );
-    if (!completed.matchedCount) {
+      { new: true, writeConcern: durable },
+    ).lean();
+    if (!completed) {
       throw new MediaPersistenceError('conflict', 'Media account deletion fence changed');
     }
+    await purgeDeletedAccountAccounting(scope);
     // No User lookup: this durable cleanup identity remains valid after the User is removed.
     await Thread.updateMany(
       { ...scopeFilter(scope), status: 'active' },
@@ -2693,6 +3056,8 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         return 0;
       }
       await completeMediaAccountDeletion({ scope, token: owner.deletionToken });
+    } else {
+      await purgeDeletedAccountAccounting(scope);
     }
     const now = new Date().toISOString();
     // Repeated sweeps also catch pre-fence request handlers whose staged write acknowledged late.
@@ -2802,6 +3167,9 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     const files = await File.find({
       user: scope.ownerId,
       tenantId: scope.tenantId,
+      $and: [
+        { $or: [{ deletionRetryAt: null }, { deletionRetryAt: { $lte: new Date(iso(now)) } }] },
+      ],
       $or: [
         {
           mediaLifecycle: 'live',
@@ -2850,7 +3218,21 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         }
       : {};
     const [threads, expiring, files, nativeJobs, deletedOwners, assetWrites] = await Promise.all([
-      globalScopes('thread', { status: 'retiring', ...threadAfter }, limit),
+      globalScopes(
+        'thread',
+        {
+          $and: [
+            threadAfter,
+            {
+              $or: [
+                { status: 'retiring' },
+                { status: 'retired', payloadPurgedAt: { $exists: false } },
+              ],
+            },
+          ],
+        },
+        limit,
+      ),
       globalScopes(
         'thread',
         { status: 'active', expiresAt: { $lte: iso(now) }, ...threadAfter },
@@ -2861,6 +3243,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
         {
           $and: [
             fileAfter,
+            { $or: [{ deletionRetryAt: null }, { deletionRetryAt: { $lte: new Date(iso(now)) } }] },
             {
               $or: [
                 {
@@ -2881,13 +3264,38 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
       ),
       globalScopes(
         'job',
-        { executionOwner: 'chat', phase: { $in: ['queued', 'running'] }, ...threadAfter },
+        {
+          executionOwner: 'chat',
+          $and: [
+            threadAfter,
+            {
+              $or: [
+                { phase: { $in: ['queued', 'running'] } },
+                { nativeRetentionState: 'purging' },
+                { nativeCleanupPending: true },
+                { nativeConsumersTracked: true, nativeRetentionState: { $ne: 'purged' } },
+                { phase: 'reconciling', 'recoveryDecisions.request.action': 'acknowledge' },
+                { nativeSource: { $exists: true }, nativeConsumers: { $exists: false } },
+                {
+                  'nativeSource.expiresAt': { $lte: iso(now) },
+                  nativeRetentionState: { $ne: 'purged' },
+                },
+              ],
+            },
+          ],
+        },
         limit,
       ),
       globalScopes('owner', { status: { $in: ['deleting', 'deleted'] }, ...threadAfter }, limit),
       globalScopes(
         'write',
-        { state: { $in: ['reserved', 'committing', 'abandoned'] }, ...threadAfter },
+        {
+          state: { $in: ['reserved', 'committing', 'abandoned'] },
+          $and: [
+            threadAfter,
+            { $or: [{ deletionRetryAt: null }, { deletionRetryAt: { $lte: iso(now) } }] },
+          ],
+        },
         limit,
       ),
     ]);
@@ -2940,6 +3348,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     getMediaThread,
     listMediaThreads,
     listMediaTurns,
+    getMediaLatestImageContext,
     listMediaTurnJobs,
     getMediaJob: getJob,
     getMediaParentContext: async (scope, threadId, parentTurnId) => {
@@ -2979,6 +3388,8 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     commitMediaAssetWrite,
     recoverMediaAssetWrites,
     listMediaAssetWritesForCleanup,
+    incrementMediaAssetWriteDeletionAttempts,
+    deferMediaAssetWriteCleanup,
     claimMediaAssetWriteDeletion,
     completeMediaAssetWriteDeletion,
     getMediaAsset,
@@ -2997,6 +3408,7 @@ export function createMediaMethods(mongoose: typeof import('mongoose')): MediaMe
     reconcileMediaPermits,
     listMediaCleanupScopes,
     reconcileMediaRetirements,
+    purgeMediaThreadPayloads,
     retireExpiredMediaThreads,
     listMediaExpiredAssets,
   };

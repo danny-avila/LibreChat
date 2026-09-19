@@ -1,6 +1,9 @@
 import type { TFile } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types/http';
 
+export type StorageByteRange = { start: number; end: number };
+export type StorageReadOptions = { range?: StorageByteRange; signal?: AbortSignal };
+
 export interface SaveBufferParams {
   userId: string;
   buffer: Buffer;

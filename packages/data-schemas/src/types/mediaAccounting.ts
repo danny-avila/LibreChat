@@ -10,6 +10,10 @@ export type { MediaHold, MediaAppliedSettlement, MediaPendingSettlement } from '
 
 export type MediaAccountingPolicy = { maxHoldsPerUser: number; maxAttempts: number };
 export type MediaAccountingStep =
+  | 'registering'
+  | 'checked'
+  | 'registered'
+  | 'admitted'
   | 'pinned'
   | 'held'
   | 'effect'
@@ -28,6 +32,7 @@ export type MediaSettlementEffect = {
   kind: 'charge' | 'release' | 'debt_collection';
   credits: number;
   costUSD?: number;
+  costSource?: 'provider' | 'estimate';
   creditsPerUSD?: number;
   inputTokens?: number;
   outputTokens?: number;
@@ -36,13 +41,13 @@ export type MediaSettlementEffect = {
 export type MediaSettlementRecord = MediaOwnerScope & {
   settlementId: string;
   jobId: string;
-  balanceId: string;
+  balanceId?: string;
   estimatedCredits: number;
   maxCredits: number;
   holdFingerprint: string;
   createdAt: string;
   reviewAt: string;
-  state: 'holding' | 'held' | 'ready' | 'applied' | 'published';
+  state: 'initializing' | 'holding' | 'held' | 'ready' | 'applied' | 'published';
   effect?: MediaSettlementEffect;
   effectFingerprint?: string;
   sequence?: number;
@@ -80,6 +85,7 @@ export type RecordMediaUsageInput = {
   jobId: string;
   credits?: number;
   costUSD?: number;
+  costSource?: MediaSettlementEffect['costSource'];
   inputTokens?: number;
   outputTokens?: number;
   model?: string;

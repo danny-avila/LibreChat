@@ -20,11 +20,11 @@ export interface MediaAccountDeletion {
   scope: MediaOwnerScope;
   token: string;
 }
-type Repository = Pick<
+export type MediaAccountDeletionRepository = Pick<
   MediaMethods,
   'prepareMediaAccountDeletion' | 'cancelMediaAccountDeletion' | 'completeMediaAccountDeletion'
 > &
-  Pick<MediaAccountingMethods, 'hasMediaAccountingObligations' | 'deleteMediaAccountingHistory'>;
+  Pick<MediaAccountingMethods, 'hasMediaAccountingObligations'>;
 
 /** Called under the existing account deletion fence, before deleting any account data. */
 export async function prepareMediaAccountDeletion({
@@ -32,7 +32,7 @@ export async function prepareMediaAccountDeletion({
   scope,
   token,
 }: {
-  repository: Repository;
+  repository: MediaAccountDeletionRepository;
   scope: MediaOwnerScope;
   token: string;
 }): Promise<MediaAccountDeletion> {
@@ -59,11 +59,10 @@ export async function completeMediaAccountDeletion({
   repository,
   session,
 }: {
-  repository: Repository;
+  repository: MediaAccountDeletionRepository;
   session: MediaAccountDeletion;
 }): Promise<void> {
   await repository.completeMediaAccountDeletion(session);
-  await repository.deleteMediaAccountingHistory(session.scope);
 }
 
 export async function cancelMediaAccountDeletion({
@@ -72,7 +71,7 @@ export async function cancelMediaAccountDeletion({
   userDeleted,
   log,
 }: {
-  repository: Repository;
+  repository: MediaAccountDeletionRepository;
   session?: MediaAccountDeletion;
   userDeleted: boolean;
   log(error: Error): void;

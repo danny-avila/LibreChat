@@ -3,6 +3,7 @@ import type { MediaConfig } from 'librechat-data-provider';
 import type { MediaModelProfile, MediaProviderAdapter, MediaProviderResult } from '../provider';
 import {
   nativeRequest,
+  nativeParameters,
   nativeDownload,
   dataURI,
   providerOptions,
@@ -44,6 +45,14 @@ function profiles(config: MediaConfig): MediaModelProfile[] {
       capabilities: [
         {
           operation: 'video.generate',
+          constraints: legacy
+            ? [
+                {
+                  when: [{ kind: 'parameter', name: 'resolution', values: ['1080P'] }],
+                  anyOf: [{ kind: 'parameter', name: 'durationSeconds', values: [6] }],
+                },
+              ]
+            : [],
           inputs: {
             roles: legacy
               ? ['start_frame']
@@ -94,11 +103,19 @@ export function createMinimaxMediaAdapters(): MediaProviderAdapter[] {
       operations: ['video.generate'],
       download: nativeDownload,
       async submit(request, inputs, context): Promise<MediaProviderResult> {
+        const parameters = nativeParameters(
+          request,
+          inputs,
+          context,
+          profiles(context.config)
+            .find((profile) => profile.modelId === request.selection.modelId)
+            ?.capabilities.find((capability) => capability.operation === request.operation),
+        );
         const model = models.get(request.selection.modelId);
         if (!model || request.operation !== 'video.generate')
           throw new MediaProviderError('rejected');
         const legacy = request.selection.modelId.endsWith('2.3');
-        const duration = request.parameters.durationSeconds ?? (legacy ? 6 : 5);
+        const duration = parameters.durationSeconds ?? (legacy ? 6 : 5);
         if (
           !Number.isInteger(duration) ||
           (legacy
@@ -113,9 +130,7 @@ export function createMinimaxMediaAdapters(): MediaProviderAdapter[] {
           if (
             !options.success ||
             inputs.length > 1 ||
-            inputs.some((input) => input.role !== 'start_frame') ||
-            (request.parameters.resolution === '1080P' &&
-              (request.parameters.durationSeconds ?? 6) !== 6)
+            inputs.some((input) => input.role !== 'start_frame')
           )
             throw new MediaProviderError('rejected');
           const result = await context.transport.json(
@@ -127,8 +142,8 @@ export function createMinimaxMediaAdapters(): MediaProviderAdapter[] {
                 model,
                 prompt: request.prompt,
                 first_frame_image: inputs[0] ? dataURI(inputs[0]) : undefined,
-                duration: request.parameters.durationSeconds ?? 6,
-                resolution: request.parameters.resolution ?? '768P',
+                duration: parameters.durationSeconds ?? 6,
+                resolution: parameters.resolution ?? '768P',
               }),
             ),
             z.object({
@@ -165,7 +180,7 @@ export function createMinimaxMediaAdapters(): MediaProviderAdapter[] {
           inputs.some(
             (input) => input.role === 'audio' && !['audio/mpeg', 'audio/wav'].includes(input.type),
           ) ||
-          (!inputs.length && request.parameters.aspectRatio === 'adaptive')
+          (!inputs.length && parameters.aspectRatio === 'adaptive')
         )
           throw new MediaProviderError('rejected');
         const roles = {
@@ -188,9 +203,9 @@ export function createMinimaxMediaAdapters(): MediaProviderAdapter[] {
               return { type, [type]: { url: dataURI(input) }, role: roles[input.role] };
             }),
           ],
-          resolution: request.parameters.resolution ?? '768P',
-          duration: request.parameters.durationSeconds ?? 5,
-          ratio: frames.length ? 'adaptive' : (request.parameters.aspectRatio ?? '16:9'),
+          resolution: parameters.resolution ?? '768P',
+          duration: parameters.durationSeconds ?? 5,
+          ratio: frames.length ? 'adaptive' : (parameters.aspectRatio ?? '16:9'),
         });
         if (Buffer.byteLength(body) > 64 * 1024 * 1024) throw new MediaProviderError('rejected');
         const result = await context.transport.json(

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useAtom, useAtomValue } from 'jotai';
+import { useAtom } from 'jotai';
 import { ArrowLeft, HatGlasses, History, Images, Plus, SlidersHorizontal } from 'lucide-react';
 import {
   Button,
@@ -22,7 +22,7 @@ import {
   useMediaThread,
   useMediaThreads,
 } from '~/data-provider/Media';
-import { mediaDraftFamily, mediaLibraryFamily, mediaPendingFamily } from './state';
+import { mediaDraftFamily, mediaLibraryFamily } from './state';
 import { mediaFeatures, useMediaHost } from './host';
 import { mediaThreadContext } from './context';
 import { cn, setDocumentTitle } from '~/utils';
@@ -61,8 +61,7 @@ export default function MediaWorkspace({
     setLibrary((previous) => ({ ...previous, view, threadId }));
   const catalog = useMediaCatalog(host);
   const threads = useMediaThreads(host, library.filter);
-  const pendingCommands = useAtomValue(mediaPendingFamily(host.scope));
-  const detail = useMediaThread(host, threadId, pendingCommands.length > 0);
+  const detail = useMediaThread(host, threadId);
   const visible = threads.data?.pages.flatMap((page) => page.items) ?? [];
   const commands = useMediaCommands([
     ...visible.map((thread) => thread.threadId),
@@ -101,10 +100,11 @@ export default function MediaWorkspace({
     host.openThread('');
     focusComposer({ threadId: undefined });
   };
-  const { latestTurn, image: imageContext } = useMemo(
+  const { latestTurn, image } = useMemo(
     () => mediaThreadContext(detail.data?.turns.items ?? []),
     [detail.data?.turns.items],
   );
+  const imageContext = detail.data?.latestImageContext ?? image;
   const hasDetail = !!detail.data;
   const hasCatalog = !!catalog.data;
   const studioTitle = localize('com_media_studio');
@@ -145,7 +145,18 @@ export default function MediaWorkspace({
     <section className="space-y-2" aria-label={localize('com_media_recovery')}>
       {commands.pending.map((command, index) => {
         const response = commands.receipts[index];
-        const unresolved = !response.data && !commands.sending.has(command.request.clientRequestId);
+        const predecessor =
+          command.kind === 'submission' && command.after
+            ? commands.pending.findIndex((item) => item.request.clientRequestId === command.after)
+            : -1;
+        const waiting =
+          predecessor >= 0 && commands.receipts[predecessor]?.data?.phase !== 'accepted';
+        const unresolved =
+          !waiting && !response.data && !commands.sending.has(command.request.clientRequestId);
+        let status = pendingTitle(response.data);
+        if (waiting) status = localize('com_media_comparison_waiting');
+        else if (response.data?.phase === 'rejected')
+          status = localize(mediaErrorLabels[response.data.error.code]);
         return (
           <div
             key={command.request.clientRequestId}
@@ -153,9 +164,7 @@ export default function MediaWorkspace({
           >
             {response.data?.phase !== 'rejected' && <Spinner className="size-4" />}
             <p role="status" className="text-sm">
-              {response.data?.phase === 'rejected'
-                ? localize(mediaErrorLabels[response.data.error.code])
-                : pendingTitle(response.data)}
+              {status}
             </p>
             {response.data && response.data.phase !== 'rejected' && (
               <Button

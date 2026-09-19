@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
+import { validateMediaCapability } from 'librechat-data-provider';
 import type {
   MediaCatalog,
   MediaCapability,
@@ -7,12 +8,7 @@ import type {
   MediaIntegration,
   MediaOffering,
   MediaSubmissionRequest,
-  MediaImageParameters,
-  MediaVideoParameters,
-  MediaNumberControl,
-  MediaEnumControl,
   MediaLimits,
-  MediaOptionValue,
   MediaUserKey,
   MediaErrorCode,
 } from 'librechat-data-provider';
@@ -107,7 +103,13 @@ export function createMediaCatalog({
     config: MediaConfig,
   ): Promise<ResolvedOffering[]> {
     if (integration.api.startsWith('openrouter.')) {
-      return discoverOpenRouter(integration, connection, config, discover);
+      return discoverOpenRouter(integration, connection, config, (request, schema, config) =>
+        discover(
+          { ...request, allowedAddresses: connection.allowedAddresses ?? [] },
+          schema,
+          config,
+        ),
+      );
     }
     const profiles = new Map(
       adapters
@@ -182,6 +184,8 @@ export function createMediaCatalog({
                   integration,
                   binding: connection.binding,
                   routing: connection.routing,
+                  allowedAddresses: connection.allowedAddresses ?? [],
+                  cancellation: config.cancellation,
                   limits: config.limits,
                   catalog: config.catalog,
                 }),
@@ -303,143 +307,7 @@ export function validateMediaOffering(
   if (!offering.available || !capability) {
     throw new MediaServiceError('unsupported', 422, 'This operation is not available.');
   }
-  if (
-    request.inputs.length < capability.inputs.min ||
-    request.inputs.length > capability.inputs.max ||
-    request.inputs.some((input) => !capability.inputs.roles.includes(input.role)) ||
-    capability.inputs.requiredRoles?.some(
-      (role) => !request.inputs.some((input) => input.role === role),
-    )
-  ) {
-    throw new MediaServiceError('unsupported', 422, 'These inputs are not supported.');
-  }
-  if (
-    request.inputs.some(
-      (input) =>
-        capability.inputs.hostedRoles?.some((role) => role === input.role) && !input.sourceURL,
-    )
-  ) {
-    throw new MediaServiceError(
-      'invalid_request',
-      422,
-      'This input requires a hosted HTTPS media source.',
-    );
-  }
-  type Parameters = MediaImageParameters & MediaVideoParameters;
-  const controls: Partial<
-    Record<keyof Parameters, MediaNumberControl | MediaEnumControl | boolean | string[]>
-  > = capability.controls;
-  for (const [name, control] of Object.entries(controls)) {
-    if (
-      control &&
-      typeof control === 'object' &&
-      !Array.isArray(control) &&
-      'required' in control &&
-      control.required &&
-      !Object.entries(request.parameters).some(
-        ([key, value]) => key === name && value !== undefined,
-      )
-    ) {
-      throw new MediaServiceError('invalid_request', 422, `Choose a value for ${name}.`);
-    }
-  }
-  for (const [name, value] of Object.entries(request.parameters)) {
-    if (value === undefined) {
-      continue;
-    }
-    const control = controls[name as keyof Parameters];
-    if (control == null) {
-      throw new MediaServiceError('unsupported', 422, `Unsupported parameter: ${name}`);
-    }
-    if (name === 'providerOptions') {
-      if (!Array.isArray(control) || !limits || !request.parameters.providerOptions) {
-        throw new MediaServiceError('unsupported', 422, 'Provider options are unavailable.');
-      }
-      const options = request.parameters.providerOptions;
-      if (Object.keys(options).some((key) => !control.includes(key))) {
-        throw new MediaServiceError('unsupported', 422, 'Unsupported provider options.');
-      }
-      const pending: Array<{ value: MediaOptionValue; depth: number }> = [
-        { value: options, depth: 0 },
-      ];
-      while (pending.length) {
-        const item = pending.pop()!;
-        if (item.depth > limits.maxProviderOptionDepth)
-          throw new MediaServiceError(
-            'unsupported',
-            422,
-            'Provider options are too deeply nested.',
-          );
-        if (item.value && typeof item.value === 'object') {
-          for (const child of Object.values(item.value))
-            pending.push({ value: child, depth: item.depth + 1 });
-        }
-      }
-      if (Buffer.byteLength(JSON.stringify(options)) > limits.maxProviderOptionBytes) {
-        throw new MediaServiceError(
-          'unsupported',
-          422,
-          'Provider options exceed the configured byte limit.',
-        );
-      }
-      continue;
-    }
-    if (Array.isArray(control))
-      throw new MediaServiceError('unsupported', 422, 'Unsupported parameter control.');
-    if (name === 'negativePrompt') {
-      if (
-        control !== true ||
-        typeof value !== 'string' ||
-        (limits && value.length > limits.maxPromptChars)
-      )
-        throw new MediaServiceError('unsupported', 422, 'Unsupported negative prompt.');
-      continue;
-    }
-    if (typeof control === 'boolean') {
-      if (!control || typeof value !== 'boolean') {
-        throw new MediaServiceError('unsupported', 422, 'Unsupported boolean parameter.');
-      }
-    } else if ('min' in control) {
-      if (
-        typeof value !== 'number' ||
-        value < control.min ||
-        value > control.max ||
-        (control.values && !control.values.includes(value))
-      ) {
-        throw new MediaServiceError(
-          'unsupported',
-          422,
-          'Parameter is outside the supported range.',
-        );
-      }
-    } else if (!control.values.includes(String(value))) {
-      throw new MediaServiceError('unsupported', 422, 'Unsupported parameter value.');
-    }
-  }
-  if (
-    request.operation !== 'video.generate' &&
-    request.parameters.background === 'transparent' &&
-    request.parameters.format === 'jpeg'
-  ) {
-    throw new MediaServiceError('unsupported', 422, 'JPEG cannot contain transparency.');
-  }
-  if (
-    request.operation !== 'video.generate' &&
-    request.parameters.size &&
-    request.parameters.resolution
-  ) {
-    throw new MediaServiceError('unsupported', 422, 'Choose either size or resolution.');
-  }
-  if (
-    request.operation === 'video.generate' &&
-    request.parameters.size &&
-    (request.parameters.resolution || request.parameters.aspectRatio)
-  ) {
-    throw new MediaServiceError(
-      'unsupported',
-      422,
-      'Choose exact dimensions or a resolution and aspect ratio.',
-    );
-  }
+  const [issue] = validateMediaCapability(request, capability, limits);
+  if (issue) throw new MediaServiceError(issue.code, 422, issue.message);
   return capability;
 }

@@ -234,8 +234,13 @@ export const mediaImportRequestSchema = z
     threadId: mediaIdSchema.optional(),
     title: z.string().trim().min(1).optional(),
     inputs: z.array(mediaInputSchema).min(1),
+    temporary: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .refine((request) => !request.temporary || !request.threadId, {
+    path: ['temporary'],
+    message: 'Only a new thread can be temporary',
+  });
 export const mediaRetryRequestSchema = z.object({ clientRequestId: mediaIdSchema }).strict();
 export const mediaThreadUpdateSchema = z
   .object({

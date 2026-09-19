@@ -4,6 +4,7 @@ import { Readable } from 'node:stream';
 import type { MediaCapability, MediaConfig } from 'librechat-data-provider';
 import type { MediaProviderAdapter, MediaProviderContext, MediaProviderResult } from '../provider';
 import { MediaProviderError } from '../errors';
+import { nativeParameters } from './native';
 import { mediaAPIURL } from '../provider';
 
 /** Protocol limits for the documented GA Veo 3.1 text-to-video models. */
@@ -32,6 +33,28 @@ export function vertexVideoCapabilities(modelId: string, config: MediaConfig): M
   return [
     {
       operation: 'video.generate',
+      constraints: [
+        {
+          when: [{ kind: 'input', role: 'reference', present: true }],
+          anyOf: [{ kind: 'parameter', name: 'durationSeconds', values: [8] }],
+        },
+        {
+          when: [{ kind: 'parameter', name: 'resolution', values: ['4k'] }],
+          anyOf: [{ kind: 'parameter', name: 'durationSeconds', values: [8] }],
+        },
+        {
+          when: [{ kind: 'input', role: 'end_frame', present: true }],
+          anyOf: [{ kind: 'input', role: 'start_frame', present: true }],
+        },
+        {
+          when: [{ kind: 'input', role: 'reference', present: true }],
+          anyOf: [{ kind: 'input', role: 'start_frame', present: false }],
+        },
+        {
+          when: [{ kind: 'input', role: 'reference', present: true }],
+          anyOf: [{ kind: 'input', role: 'end_frame', present: false }],
+        },
+      ],
       inputs: {
         roles: nativeModel(modelId).includes('lite')
           ? ['start_frame', 'end_frame']
@@ -105,7 +128,12 @@ export function createVertexVideoAdapter(): MediaProviderAdapter {
       const references = inputs.filter((input) => input.role === 'reference');
       const first = inputs.filter((input) => input.role === 'start_frame');
       const last = inputs.filter((input) => input.role === 'end_frame');
-      const parameters = request.parameters;
+      const parameters = nativeParameters(
+        request,
+        inputs,
+        context,
+        vertexVideoCapabilities(request.selection.modelId, context.config)[0],
+      );
       const duration = parameters.durationSeconds ?? 4;
       const resolution = parameters.resolution ?? '720p';
       if (
@@ -118,14 +146,11 @@ export function createVertexVideoAdapter(): MediaProviderAdapter {
         ) ||
         first.length > 1 ||
         last.length > 1 ||
-        (last.length && !first.length) ||
-        (references.length &&
-          (first.length || last.length || model.includes('lite') || duration !== 8)) ||
+        (references.length && model.includes('lite')) ||
         ![4, 6, 8].includes(duration) ||
         !['720p', '1080p', ...(model === 'veo-3.1-generate-001' ? ['4k'] : [])].includes(
           resolution,
         ) ||
-        (resolution === '4k' && duration !== 8) ||
         Object.keys(parameters.providerOptions ?? {}).length
       )
         throw new MediaProviderError('rejected');

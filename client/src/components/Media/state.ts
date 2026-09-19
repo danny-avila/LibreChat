@@ -10,6 +10,8 @@ import {
   mediaVideoParametersSchema,
   mediaSubmissionRequestSchema,
   mediaRetryRequestSchema,
+  mediaRecoveryJobSchema,
+  mediaRecoveryRequestSchema,
 } from 'librechat-data-provider';
 import type { MediaImportReceipt, MediaSubmissionReceipt } from 'librechat-data-provider';
 import type { SetStateAction } from 'react';
@@ -55,6 +57,8 @@ const pendingSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('submission'),
     request: mediaSubmissionRequestSchema,
+    following: mediaSubmissionRequestSchema.optional(),
+    after: z.string().optional(),
     draftKey: z.string(),
     draftRevision: z.number(),
   }),
@@ -103,6 +107,14 @@ export const mediaDraftFamily = atomFamily((key: string) =>
 export const mediaPendingFamily = atomFamily((scope: string) =>
   storedAtom<PendingMedia[]>(`${scope}:pending`, [], z.array(pendingSchema)),
 );
+const recoverySchema = z.object({
+  job: mediaRecoveryJobSchema,
+  request: mediaRecoveryRequestSchema,
+});
+export type PendingMediaRecovery = z.infer<typeof recoverySchema>;
+export const mediaRecoveryFamily = atomFamily((scope: string) =>
+  storedAtom<PendingMediaRecovery[]>(`${scope}:recovery`, [], z.array(recoverySchema)),
+);
 const librarySchema = z.object({
   filter: z.enum(['all', 'pending', 'completed']),
   search: z.string(),
@@ -131,8 +143,10 @@ export function clearMediaSessionStorage() {
   mediaDraftFamily.setShouldRemove(() => true);
   mediaPendingFamily.setShouldRemove(() => true);
   mediaLibraryFamily.setShouldRemove(() => true);
+  mediaRecoveryFamily.setShouldRemove(() => true);
   mediaDraftFamily.setShouldRemove(null);
   mediaPendingFamily.setShouldRemove(null);
   mediaLibraryFamily.setShouldRemove(null);
+  mediaRecoveryFamily.setShouldRemove(null);
 }
 registerSessionCleanup(clearMediaSessionStorage);

@@ -6,8 +6,11 @@ import type { MediaIntegration, MediaUserKey } from 'librechat-data-provider';
 import type { MediaConnection, MediaProviderAdapter } from './provider';
 import type { MediaVertexCredentialProvider } from './vertexAuth';
 import type { MediaEnvironment } from './credentialConfig';
+import type { SafeUserInput } from '../utils/env';
 import { createMediaCredentialConfiguration } from './credentialConfig';
+import { mergeHeaders, resolveModelHeaders } from '../utils/headers';
 import { MediaServiceError } from './errors';
+import { isEnabled } from '../utils/common';
 
 export type { MediaEnvironment } from './credentialConfig';
 
@@ -16,6 +19,7 @@ export interface MediaCredentialInput {
   integration: MediaIntegration;
   appConfig: AppConfig;
   minValidityMs: number;
+  user?: SafeUserInput;
 }
 
 export interface MediaCredentialResolver {
@@ -54,6 +58,7 @@ export function createMediaCredentialResolver({
     integration,
     appConfig,
     minValidityMs,
+    user,
   }: MediaCredentialInput): Promise<MediaConnection> {
     if (integration.endpointRef.kind === 'vertex') {
       if (!vertexCredentials) {
@@ -76,6 +81,7 @@ export function createMediaCredentialResolver({
         api: integration.api,
         baseURL,
         headers: { Authorization: `Bearer ${credential.accessToken}` },
+        allowedAddresses: appConfig.endpoints?.allowedAddresses ?? [],
         binding: createHash('sha256')
           .update(
             JSON.stringify({
@@ -100,9 +106,16 @@ export function createMediaCredentialResolver({
       options,
       configuration,
     } = configured;
-    const headers = userKey?.userProvideURL
+    const legacyHeaders = userKey?.userProvideURL
       ? { ...configuration?.headers }
-      : { ...configuration?.headers, ...configured.headers };
+      : { ...configuration?.headers, ...configured.legacyHeaders };
+    const headers = resolveModelHeaders({
+      headers: userKey?.userProvideURL
+        ? configuration?.headers
+        : mergeHeaders(configuration?.headers, configured.headers),
+      user: { ...user, id: scope.ownerId },
+      tenantId: scope.tenantId ?? undefined,
+    });
     if (userKey?.userProvideURL && options && Object.keys(options).length)
       throw new MediaServiceError(
         'not_ready',
@@ -119,6 +132,7 @@ export function createMediaCredentialResolver({
         'The direct provider requires additional configuration.',
       );
     let binding = `deployment:${credentialName}`;
+    let legacyBindings: string[] = [];
     if (userKey) {
       const record = await repository.getStoredMediaCredential({ scope, name: credentialName });
       if (!record) {
@@ -163,7 +177,11 @@ export function createMediaCredentialResolver({
           'Save a valid provider credential before queueing media.',
         );
       }
-      binding = `user:${scope.ownerId}:${credentialName}:${record.bindingRevision}`;
+      const prefix = `user:${scope.ownerId}:${credentialName}:`;
+      binding = `${prefix}${record.id ?? record.bindingRevision}`;
+      legacyBindings = [...new Set([record.bindingRevision, record.legacyBindingRevision])]
+        .filter((revision): revision is string => !!revision)
+        .map((revision) => `${prefix}${revision}`);
     }
     if (!apiKey || !baseURL) {
       throw new MediaServiceError(
@@ -198,26 +216,38 @@ export function createMediaCredentialResolver({
     ) {
       throw new MediaServiceError('not_ready', 422, 'Configure the provider API root for media.');
     }
+    const digest = (identity: string, configuredHeaders: Record<string, string>) =>
+      createHash('sha256')
+        .update(
+          JSON.stringify({
+            binding: identity,
+            root: root.href,
+            api: integration.api,
+            routing,
+            ...(Object.keys(configuredHeaders).length ? { headers: configuredHeaders } : {}),
+            ...(options ? { options } : {}),
+            keyRevision: createHash('sha256').update(apiKey).digest('hex'),
+          }),
+        )
+        .digest('hex');
+    const authentication = {
+      [keyHeader]: `${keyPrefix}${apiKey}`,
+      ...(integration.endpointRef.kind === 'builtin' &&
+      integration.endpointRef.endpoint === 'google' &&
+      isEnabled(environment.GOOGLE_AUTH_HEADER)
+        ? { Authorization: `Bearer ${apiKey}` }
+        : {}),
+    };
     return {
       id: integration.id,
       api: integration.api,
       baseURL: root.href,
       routing,
       options,
-      binding: createHash('sha256')
-        .update(
-          JSON.stringify({
-            binding,
-            root: root.href,
-            api: integration.api,
-            routing,
-            ...(headers && Object.keys(headers).length ? { headers } : {}),
-            ...(options ? { options } : {}),
-            keyRevision: createHash('sha256').update(apiKey).digest('hex'),
-          }),
-        )
-        .digest('hex'),
-      headers: { ...headers, [keyHeader]: `${keyPrefix}${apiKey}` },
+      binding: digest(binding, headers),
+      bindingAliases: legacyBindings.map((legacy) => digest(legacy, legacyHeaders)),
+      allowedAddresses: appConfig.endpoints?.allowedAddresses ?? [],
+      headers: mergeHeaders(headers, authentication)!,
     };
   }
   return Object.assign(resolve, { describe: settings.describe });

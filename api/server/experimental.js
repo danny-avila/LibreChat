@@ -37,6 +37,7 @@ const {
   handleJsonParseError,
   initializeFileStorage,
   createMediaRuntimeFromApp,
+  createAdminMediaRouter,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   injectConfiguredFooterBootstrap,
@@ -61,7 +62,7 @@ const {
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
-const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
+const { capabilityContextMiddleware, hasCapability } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
@@ -89,6 +90,9 @@ const staticCache = require('./utils/staticCache');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const optionalShareFileAuth = require('./middleware/optionalShareFileAuth');
 const requireJwtAuth = require('./middleware/requireJwtAuth');
+const checkBan = require('./middleware/checkBan');
+const { messageIpLimiter, messageUserLimiter } = require('./middleware/limiters/messageLimiters');
+const { createFileLimiters } = require('./middleware/limiters/uploadLimiters');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 const agentEventMethods = require('~/models');
@@ -516,6 +520,7 @@ if (cluster.isMaster) {
       environment: process.env,
       http: axios,
       upload: multer,
+      admission: { checkBan, messageIpLimiter, messageUserLimiter, createFileLimiters },
       getStorageStrategy: require('~/server/services/Files/strategies').getStrategyFunctions,
       readFile: fs.promises.readFile,
       decrypt,
@@ -656,6 +661,16 @@ if (cluster.isMaster) {
     app.use('/api/admin', routes.adminAuth);
     app.use('/api/admin/skills', routes.adminSkills);
     app.use('/api/admin/code-environments', routes.adminCodeEnvironments);
+    app.use(
+      '/api/admin/media',
+      createAdminMediaRouter({
+        services: mediaRuntime.recovery,
+        hasCapability,
+        recordAuditEntry: agentEventMethods.recordAuditEntry,
+        requireJwtAuth,
+        log: logger.error.bind(logger),
+      }),
+    );
     app.use('/api/code-environments', routes.codeEnvironments);
     app.use('/api/actions', routes.actions);
     app.use('/api/keys', routes.keys);

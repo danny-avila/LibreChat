@@ -3,10 +3,46 @@ import { CustomChatGoogleGenerativeAI } from '@librechat/agents/llm/google';
 import { Run, StandardGraph, Providers, createHandlers } from '@librechat/agents';
 import type { NativeMediaPart, NativeMediaPort, NativeMediaContent } from '@librechat/agents';
 import type { GenerateContentRequest, Part } from '@google/generative-ai';
+import type { ClientOptions } from '@librechat/agents';
+import type { NativeMediaSelection } from './native';
+import { createRun as createHostRun } from '~/agents/run';
 import { collapseAssistantReplayContent } from './replay';
 import { createDeferredNativeMediaPort } from './sdk';
 
 const imageData = 'aW1tdXRhYmxlLWltYWdlLWJ5dGVz';
+
+type RunAgent = Parameters<typeof createHostRun>[0]['agents'][number];
+function nativeAgent(id: string, extra: Partial<RunAgent> = {}): RunAgent {
+  return {
+    id,
+    name: id,
+    description: null,
+    avatar: null,
+    created_at: 0,
+    provider: 'google',
+    endpoint: 'google',
+    model: 'gemini-image',
+    tools: [],
+    model_parameters: {
+      model: 'gemini-image',
+      temperature: null,
+      maxContextTokens: null,
+      max_context_tokens: null,
+      max_output_tokens: null,
+      top_p: null,
+      frequency_penalty: null,
+      presence_penalty: null,
+    },
+    ...extra,
+  };
+}
+
+async function admitNativeOptions(options?: ClientOptions): Promise<void> {
+  if (!options || !('nativeMedia' in options) || !options.nativeMedia) {
+    throw new Error('Expected native model admission');
+  }
+  await options.nativeMedia.start({ modelRunId: 'ownership-probe', model: 'gemini-image' });
+}
 const imagePart = {
   inlineData: { mimeType: 'image/png', data: imageData },
   thoughtSignature: 'private-signature',
@@ -109,6 +145,41 @@ async function graphRun(model: CustomChatGoogleGenerativeAI) {
 }
 
 describe('tracked native Google SDK protocol', () => {
+  it.each([false, true])(
+    'carries top-level visibility and child ownership into native admission: hidden=%s',
+    async (hidden) => {
+      const selections: NativeMediaSelection[] = [];
+      const run = await createHostRun({
+        agents: [
+          nativeAgent('first', {
+            hide_sequential_outputs: hidden,
+            subagents: { enabled: true, allowSelf: false, agent_ids: ['child'] },
+            subagentAgentConfigs: [nativeAgent('child')],
+          }),
+          nativeAgent('last'),
+        ],
+        signal: new AbortController().signal,
+        centralTraceExportEnabled: false,
+        nativeMediaFactory: async (selection) => {
+          selections.push(selection);
+          return undefined;
+        },
+      });
+      if (!(run.Graph instanceof StandardGraph)) throw new Error('Expected standard graph');
+      const first = run.Graph.agentContexts.get('first');
+      const last = run.Graph.agentContexts.get('last');
+      await admitNativeOptions(first?.clientOptions);
+      await admitNativeOptions(last?.clientOptions);
+      const child = first?.subagentConfigs?.[0];
+      if (!child || !('agentInputs' in child)) throw new Error('Expected eager child');
+      await admitNativeOptions(child.agentInputs?.clientOptions);
+      expect(selections.map(({ agentId, usageType }) => ({ agentId, usageType }))).toEqual([
+        { agentId: 'first', usageType: hidden ? 'sequential' : undefined },
+        { agentId: 'last', usageType: undefined },
+        { agentId: 'child', usageType: 'subagent' },
+      ]);
+    },
+  );
   it('keeps unconfigured plain text behavior without exposing private text signatures', async () => {
     const { model } = fixtureModel(undefined, [
       [{ text: 'Hello', thoughtSignature: 'private-text-signature' }],
@@ -160,7 +231,11 @@ describe('tracked native Google SDK protocol', () => {
     );
     expect(port.complete).toHaveBeenCalledTimes(1);
     expect(port.fail).not.toHaveBeenCalled();
-    expect(client.generationConfig.responseModalities).toEqual(['TEXT', 'IMAGE']);
+    expect(client.generateContentStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        generationConfig: expect.objectContaining({ responseModalities: ['TEXT', 'IMAGE'] }),
+      }),
+    );
     expect(JSON.stringify({ content, messages })).not.toContain(imageData);
     expect(JSON.stringify({ content, messages })).not.toContain('private-signature');
     expect(JSON.stringify(messages?.map((message) => message.toJSON()))).not.toContain(imageData);

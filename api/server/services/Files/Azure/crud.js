@@ -6,8 +6,8 @@ const { logger } = require('@librechat/data-schemas');
 const {
   deleteRagFile,
   assertRemoteFileURL,
-  getSafeErrorMetadata,
   getAzureContainerClient,
+  createAzureFileStream,
   getRemoteFileFetchMaxBytes,
   getRemoteFileFetchTimeoutMs,
   assertRemoteFileContentLength,
@@ -243,55 +243,7 @@ async function uploadFileToAzure({
   }
 }
 
-/**
- * Retrieves a readable stream for a blob from Azure Blob Storage.
- *
- * @param {object} _req - The Express request object.
- * @param {string} fileURL - The URL of the blob.
- * @returns {Promise<ReadableStream>} A readable stream of the blob.
- */
-async function getAzureFileStream(_req, fileURL, { signal } = {}) {
-  try {
-    const url = new URL(fileURL);
-    const configuredClient = await getAzureContainerClient();
-    const configuredURL = configuredClient.url ? new URL(configuredClient.url) : undefined;
-    const configuredPrefix = configuredURL?.pathname.replace(/\/$/, '');
-    let containerClient = configuredClient;
-    let blobPath;
-
-    if (
-      configuredURL &&
-      configuredPrefix &&
-      url.origin === configuredURL.origin &&
-      url.pathname.startsWith(`${configuredPrefix}/`)
-    ) {
-      /* Azurite puts the account name before the container in the path. The configured
-       * container URL already includes both, so resolve the blob relative to it. */
-      blobPath = url.pathname.slice(configuredPrefix.length + 1);
-    } else {
-      const pathSegments = url.pathname.split('/').filter(Boolean);
-      const containerName = pathSegments.shift();
-      blobPath = pathSegments.join('/');
-      if (containerName) {
-        containerClient = await getAzureContainerClient(decodeURIComponent(containerName));
-      }
-    }
-    blobPath = blobPath?.split('/').map(decodeURIComponent).join('/');
-    if (!blobPath) {
-      throw new Error('Invalid Azure Blob URL');
-    }
-    const response = await containerClient.getBlockBlobClient(blobPath).download(0, undefined, {
-      abortSignal: signal,
-    });
-    if (!response.readableStreamBody) {
-      throw new Error('Azure Blob download returned no readable stream');
-    }
-    return response.readableStreamBody;
-  } catch (error) {
-    logger.error('[getAzureFileStream] Error getting blob stream:', getSafeErrorMetadata(error));
-    throw error;
-  }
-}
+const getAzureFileStream = createAzureFileStream({ getContainerClient: getAzureContainerClient });
 
 module.exports = {
   saveBufferToAzure,

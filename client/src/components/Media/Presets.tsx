@@ -89,6 +89,16 @@ export function MediaPresets({
     }
     setNotice(localize('com_media_preset_unavailable'));
   };
+  const mutate = async (action: () => Promise<unknown>) => {
+    setNotice(undefined);
+    try {
+      await action();
+      return host.isCurrentSession();
+    } catch {
+      if (host.isCurrentSession()) setNotice(localize('com_media_preset_error'));
+      return false;
+    }
+  };
   let displayValue: string | undefined;
   if (active) displayValue = active.title;
   else if (items.length > 0) displayValue = localize('com_ui_custom');
@@ -235,8 +245,8 @@ export function MediaPresets({
                         size="sm"
                         disabled={busy}
                         onClick={async () => {
-                          await remove.mutateAsync(preset.presetId).catch(() => undefined);
-                          if (host.isCurrentSession()) setConfirming(undefined);
+                          if (await mutate(() => remove.mutateAsync(preset.presetId)))
+                            setConfirming(undefined);
                         }}
                       >
                         {localize('com_ui_delete')}
@@ -275,12 +285,12 @@ export function MediaPresets({
                                     : 'com_media_preset_set_default',
                                 )}
                                 onClick={() =>
-                                  void update
-                                    .mutateAsync({
+                                  void mutate(() =>
+                                    update.mutateAsync({
                                       presetId: preset.presetId,
                                       update: { isDefault: !preset.isDefault },
-                                    })
-                                    .catch(() => undefined)
+                                    }),
+                                  )
                                 }
                               >
                                 {preset.isDefault ? (

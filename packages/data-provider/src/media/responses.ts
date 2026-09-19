@@ -6,6 +6,8 @@ import {
   mediaOperationSchema,
   mediaSelectionSchema,
   mediaSourceURLSchema,
+  mediaImageParametersSchema,
+  mediaVideoParametersSchema,
 } from './requests';
 
 const version = z.number().int().positive().safe();
@@ -176,6 +178,7 @@ export const mediaTurnSchema = z
     inputs: z.array(mediaInputSchema),
     selection: mediaSelectionSchema.optional(),
     operation: mediaOperationSchema.optional(),
+    parameters: mediaImageParametersSchema.merge(mediaVideoParametersSchema).optional(),
     jobs: z.array(mediaJobSchema),
     jobsNextCursor: mediaIdSchema.optional(),
     assets: z.array(mediaAssetSchema),
@@ -230,10 +233,15 @@ export const mediaOutputPageSchema = z
     nextCursor: mediaIdSchema.optional(),
   })
   .strict();
+export const mediaImageContextSchema = z
+  .object({ turnId: mediaIdSchema, asset: mediaAssetSchema })
+  .strict();
+export type MediaImageContext = z.infer<typeof mediaImageContextSchema>;
 export const mediaThreadDetailSchema = z
   .object({
     thread: mediaThreadSchema,
     turns: mediaTurnPageSchema,
+    latestImageContext: mediaImageContextSchema.optional(),
   })
   .strict();
 export const mediaDeletionReceiptSchema = z

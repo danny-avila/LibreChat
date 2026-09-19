@@ -30,9 +30,9 @@ function frozenMode(job: MediaStoredJob): 'balance' | 'transactions' | 'none' {
 function cost(job: MediaStoredJob, usage?: MediaProviderUsage): number | undefined {
   const value =
     usage?.costUSD ??
-    (job.provider.recovery?.terminalStatus === 'cancelled'
-      ? undefined
-      : job.execution.billing?.estimatedCostUSD);
+    (job.provider.recovery?.terminalStatus === 'completed'
+      ? job.execution.billing?.estimatedCostUSD
+      : undefined);
   if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
     throw new MediaServiceError('not_ready', 409, 'The provider cost needs reconciliation.');
   }
@@ -105,6 +105,10 @@ export function createMediaAccounting({
     const mode = frozenMode(job);
     if (mode === 'none') return;
     const costUSD = cost(job, usage);
+    let costSource: 'provider' | 'estimate' | undefined;
+    if (costUSD !== undefined) {
+      costSource = usage?.costUSD !== undefined ? 'provider' : 'estimate';
+    }
     const creditsPerUSD = job.execution.billing?.creditsPerUSD;
     const credits =
       costUSD !== undefined && creditsPerUSD !== undefined ? costUSD * creditsPerUSD : undefined;
@@ -114,6 +118,7 @@ export function createMediaAccounting({
         jobId: job.jobId,
         credits,
         costUSD,
+        costSource,
         inputTokens: usage?.inputTokens,
         outputTokens: usage?.outputTokens,
         model: job.execution.modelId,
@@ -130,6 +135,7 @@ export function createMediaAccounting({
         kind: 'charge',
         credits,
         costUSD,
+        costSource,
         creditsPerUSD,
         inputTokens: usage?.inputTokens,
         outputTokens: usage?.outputTokens,

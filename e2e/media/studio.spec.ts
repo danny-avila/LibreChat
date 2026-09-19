@@ -1,5 +1,48 @@
 import { expect, test } from '@playwright/test';
 
+test('Generate recovers accepted work after a lost response without another provider request', async ({
+  page,
+}) => {
+  await page.goto('/studio');
+  const prompt = page.getByRole('textbox', { name: 'Describe what you want to create or change' });
+  await prompt.fill('Recover an accepted observatory');
+  const requests: Array<{ clientRequestId: string }> = [];
+  const before = await (await page.request.get('http://127.0.0.1:8768/counts')).json();
+  // Keep receipt discovery unavailable until the user retries: a successful discovery
+  // legitimately clears the accepted draft even when the original POST response was lost.
+  await page.route('**/api/media/submissions/*', async (route) => {
+    if (requests.length < 2) await route.abort('connectionreset');
+    else await route.continue();
+  });
+  await page.route('**/api/media/submissions', async (route) => {
+    requests.push(route.request().postDataJSON());
+    if (requests.length === 1) {
+      const accepted = await route.fetch();
+      expect(accepted.status()).toBe(202);
+      await route.abort('connectionreset');
+      return;
+    }
+    await route.continue();
+  });
+  await page.getByRole('button', { name: 'Generate', exact: true }).click();
+  await expect(
+    page.getByRole('button', { name: 'Recover same request', exact: true }),
+  ).toBeVisible();
+  await expect(prompt).toHaveValue('Recover an accepted observatory');
+  await page.getByRole('button', { name: 'Generate', exact: true }).click();
+  await expect(page).toHaveURL(/\/studio\/threads\//);
+  await expect(page.getByRole('link', { name: 'Download original' })).toBeVisible({
+    timeout: 20_000,
+  });
+  expect(requests).toHaveLength(2);
+  expect(requests[1].clientRequestId).toBe(requests[0].clientRequestId);
+  expect((await (await page.request.get('http://127.0.0.1:8768/counts')).json()).submissions).toBe(
+    before.submissions + 1,
+  );
+  await page.reload();
+  await expect(page.getByRole('link', { name: 'Download original' })).toHaveCount(1);
+});
+
 test('sidebar studio queues, restores, refines and hands an original to chat', async ({ page }) => {
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));

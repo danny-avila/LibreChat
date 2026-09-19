@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useStore } from 'jotai';
+import { portableNativeContent } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 
@@ -60,11 +61,15 @@ export default function useBuildMessageTree() {
     }
 
     if (recursive && message) {
-      return { ...(message as TMessage), children: children as TMessage[] };
+      return {
+        ...(message as TMessage),
+        content: portableNativeContent(message.content),
+        children: children as TMessage[],
+      };
     } else {
       let ret: TMessage[] = [];
       if (message) {
-        const _message = { ...message };
+        const _message = { ...message, content: portableNativeContent(message.content) };
         delete _message.children;
         ret = [_message as TMessage];
       }

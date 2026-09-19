@@ -48,6 +48,7 @@ function fixture(api: MediaProviderAdapter['api'], responses: string[] = []) {
   const calls: MediaTransportRequest[] = [];
   const downloads: MediaTransportRequest[] = [];
   const context: MediaProviderContext = {
+    jobId: 'server-job',
     connection: {
       id: 'native',
       api,

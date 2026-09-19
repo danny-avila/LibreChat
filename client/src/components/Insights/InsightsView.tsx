@@ -29,6 +29,8 @@ import { useAuthContext, useDocumentTitle, useLocalize } from '~/hooks';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import { LocalizedDateRangePicker } from '~/components/ui';
 import { getRollingDateRange } from './dateRange';
+import { Panel, EmptyState } from './Panel';
+import MediaInsights from './Media';
 import { cn } from '~/utils';
 
 type ShortcutRange = Exclude<InsightsRange, 'custom'>;
@@ -107,31 +109,6 @@ function responseStatus(error: unknown) {
 function getShortcutDateRange(range: ShortcutRange) {
   const days = ranges.find((item) => item.value === range)?.days ?? 7;
   return getRollingDateRange(new Date(), days);
-}
-
-function Panel({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <section
-      className={cn(
-        'min-w-0 rounded-lg border border-border-light bg-surface-primary p-5',
-        /** Dark mode only: Click UI gives dashboard widgets their own surface and
-         *  stroke, a step lighter than the page behind them. Light mode keeps the
-         *  shared surface/border tokens. */
-        'dark:border-chart-widget-stroke dark:bg-chart-widget-surface',
-        className,
-      )}
-    >
-      {children}
-    </section>
-  );
-}
-
-function EmptyState({ message }: { message: string }) {
-  return (
-    <div className="flex min-h-40 items-center justify-center text-sm text-text-secondary">
-      {message}
-    </div>
-  );
 }
 
 function LoadingState({ message }: { message: string }) {
@@ -565,6 +542,7 @@ export default function InsightsView() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [mediaPage, setMediaPage] = useState(1);
   const [pendingAgentIds, setPendingAgentIds] = useState<string[] | null>(null);
   const dateRangeSelectionTimeout = useRef<number>();
   const isSmallScreen = useMediaQuery('(max-width: 768px)');
@@ -576,6 +554,7 @@ export default function InsightsView() {
   const insightsParams = useMemo<TInsightsParams>(() => {
     const params: TInsightsParams = {
       page,
+      mediaPage,
       pageSize: 10,
       search,
       timeZone,
@@ -590,7 +569,8 @@ export default function InsightsView() {
       };
     }
     return { ...params, range };
-  }, [customDateRange, page, range, search, selectedAgentIds, timeZone]);
+  }, [customDateRange, page, mediaPage, range, search, selectedAgentIds, timeZone]);
+  useEffect(() => setMediaPage(1), [customDateRange, range]);
   const displayDateRange = useMemo(
     () => customDateRange ?? getShortcutDateRange(range),
     [customDateRange, range],
@@ -886,6 +866,13 @@ export default function InsightsView() {
           )}
           {data && (
             <>
+              {data.media && (
+                <MediaInsights
+                  data={data.media}
+                  isFetching={insights.isFetching}
+                  onPage={setMediaPage}
+                />
+              )}
               {/** Use explicit responsive counts: one column on narrow screens,
                *  two through mid-range, and four at xl. This avoids auto-fit's
                *  three-plus-one orphan without making mobile cards too narrow. */}

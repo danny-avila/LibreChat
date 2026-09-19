@@ -2,13 +2,23 @@ import { Router } from 'express';
 import { timingSafeEqual } from 'crypto';
 import { Registry, collectDefaultMetrics, Counter, Gauge, Histogram } from 'prom-client';
 import { logger, setAgentEventActorReceiptMetricObserver } from '@librechat/data-schemas';
+import { mediaApiSchema, mediaOperationSchema, mediaJobPhaseSchema } from 'librechat-data-provider';
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import type { Mongoose } from 'mongoose';
 import type { AgentStartupMilestone, AgentStartupResult } from '~/agents/phases';
 import type { LocatorTraversalFailure } from '../protection/diagnostics';
+import type { MediaMetricEvent } from '../media/telemetry';
 import { agentStartupMilestones, agentStartupResults } from '~/agents/phases';
 
 const PATH_NORMALIZATIONS: [RegExp, string][] = [
+  [/^\/api\/media\/threads\/[^/]+\/turns\/[^/]+\/jobs$/, '/api/media/threads/#id/turns/#id/jobs'],
+  [/^\/api\/media\/threads\/[^/]+\/turns$/, '/api/media/threads/#id/turns'],
+  [/^\/api\/media\/jobs\/[^/]+\/(outputs|cancel|retry)$/, '/api/media/jobs/#id/$1'],
+  [
+    /^\/api\/media\/assets\/[^/]+\/(content|thumbnail|poster|playback)$/,
+    '/api/media/assets/#id/$1',
+  ],
+  [/^\/api\/media\/(threads|jobs|submissions|imports|presets)\/[^/]+$/, '/api/media/$1/#id'],
   [/^\/api\/agents\/chat\/stream\/[^/]+(?=\/|$)/, '/api/agents/chat/stream/#id'],
   [/^\/api\/agents\/chat\/status\/[^/]+(?=\/|$)/, '/api/agents/chat/status/#id'],
   [/^\/api\/files\/code\/download\/[^/]+\/[^/]+(?=\/|$)/, '/api/files/code/download/#id/#id'],
@@ -34,6 +44,13 @@ const PATH_NORMALIZATIONS: [RegExp, string][] = [
 ];
 
 const STATIC_PATHS = new Set([
+  '/api/media/catalog',
+  '/api/media/threads',
+  '/api/media/submissions',
+  '/api/media/imports',
+  '/api/media/presets',
+  '/api/media/uploads',
+  '/api/media/uploads/url',
   '/',
   '/health',
   '/metrics',
@@ -51,6 +68,8 @@ const STATIC_PATHS = new Set([
 ]);
 
 const UPLOAD_PATHS = new Set([
+  '/api/media/uploads',
+  '/api/media/uploads/url',
   '/api/files',
   '/api/files/images',
   '/api/files/images/avatar',
@@ -61,6 +80,10 @@ const UPLOAD_PATHS = new Set([
 const UPLOAD_METHODS = new Set(['POST', 'PUT', 'PATCH']);
 
 const LOW_CARDINALITY_PATHS: RegExp[] = [
+  /^\/api\/media\/(threads|jobs|submissions|imports|presets)\/#id$/,
+  /^\/api\/media\/threads\/#id\/turns(?:\/#id\/jobs)?$/,
+  /^\/api\/media\/jobs\/#id\/(outputs|cancel|retry)$/,
+  /^\/api\/media\/assets\/#id\/(content|thumbnail|poster|playback)$/,
   /^\/api\/agents\/chat\/stream\/#id$/,
   /^\/api\/agents\/chat\/status\/#id$/,
   /^\/api\/files\/#id\/preview$/,
@@ -126,6 +149,7 @@ export const normalizePath = (rawPath: string): string => {
 };
 
 export interface PrometheusMetrics {
+  recordMediaEvent: (event: MediaMetricEvent) => void;
   metricsMiddleware: (req: Request, res: Response, next: NextFunction) => void;
   metricsRouter: Router;
 }
@@ -532,6 +556,7 @@ export function createMetrics(options: MetricsOptions = {}): PrometheusMetrics {
   if (!isMetricsConfigured()) {
     resetMetricRecorders();
     return {
+      recordMediaEvent: () => undefined,
       metricsMiddleware: (_req: Request, _res: Response, next: NextFunction) => next(),
       metricsRouter: createUnauthorizedMetricsRouter(),
     };
@@ -539,6 +564,67 @@ export function createMetrics(options: MetricsOptions = {}): PrometheusMetrics {
 
   const registry = new Registry();
   collectDefaultMetrics({ register: registry });
+  const mediaEvents = new Counter({
+    name: 'media_lifecycle_events_total',
+    help: 'Media execution attempts and durable transitions; retries are separate observations, not new jobs',
+    labelNames: ['kind', 'result', 'api', 'operation', 'phase', 'execution_owner'] as const,
+    registers: [registry],
+  });
+  const mediaDuration = new Histogram({
+    name: 'media_lifecycle_duration_seconds',
+    help: 'Duration of media execution attempts, phase transitions, settlement, and cleanup',
+    labelNames: ['kind', 'result', 'api', 'operation', 'phase', 'execution_owner'] as const,
+    buckets: [0.01, 0.1, 1, 5, 15, 60, 300, 900, 3600],
+    registers: [registry],
+  });
+  const mediaQueueWait = new Histogram({
+    name: 'media_queue_wait_seconds',
+    help: 'Elapsed queue age when a media job is claimed',
+    labelNames: ['api', 'operation'] as const,
+    buckets: [0.01, 0.1, 1, 5, 15, 60, 300, 900, 3600],
+    registers: [registry],
+  });
+  const recordMediaEvent = (event: MediaMetricEvent) => {
+    if (
+      !['attempt', 'transition', 'settlement', 'cleanup', 'cancellation'].includes(event.kind) ||
+      !['started', 'completed', 'failed', 'interrupted'].includes(event.result)
+    )
+      return;
+    const labels = {
+      kind: event.kind,
+      result: event.result,
+      api: event.api ?? 'none',
+      operation: event.operation ?? 'none',
+      phase: event.phase ?? 'none',
+      execution_owner:
+        event.executionOwner === 'chat' || event.executionOwner === 'media'
+          ? event.executionOwner
+          : 'none',
+    };
+    labels.api = mediaApiSchema.safeParse(event.api).success ? labels.api : 'none';
+    labels.operation = mediaOperationSchema.safeParse(event.operation).success
+      ? labels.operation
+      : 'none';
+    labels.phase = mediaJobPhaseSchema.safeParse(event.phase).success ? labels.phase : 'none';
+    mediaEvents.inc(labels);
+    if (
+      event.durationMs !== undefined &&
+      Number.isFinite(event.durationMs) &&
+      event.durationMs >= 0
+    ) {
+      mediaDuration.observe(labels, event.durationMs / 1000);
+    }
+    if (
+      event.queueWaitMs !== undefined &&
+      Number.isFinite(event.queueWaitMs) &&
+      event.queueWaitMs >= 0
+    ) {
+      mediaQueueWait.observe(
+        { api: labels.api, operation: labels.operation },
+        event.queueWaitMs / 1000,
+      );
+    }
+  };
 
   observeLocatorTraversal = () => undefined;
   const locatorTraversalFailuresTotal = new Counter({
@@ -1083,5 +1169,5 @@ export function createMetrics(options: MetricsOptions = {}): PrometheusMetrics {
 
   metricsRouter.get('/', metricsHandler);
 
-  return { metricsMiddleware, metricsRouter };
+  return { metricsMiddleware, metricsRouter, recordMediaEvent };
 }

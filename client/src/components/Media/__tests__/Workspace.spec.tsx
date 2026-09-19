@@ -289,6 +289,38 @@ test('keeps parameters in the sidebar and restores the prompt and gallery densit
   );
 });
 
+test('a long thread uses authoritative latest image context beyond the current page', async () => {
+  jest.mocked(dataService.getMediaCatalog).mockResolvedValue(imageCatalog());
+  jest.mocked(dataService.getMediaThread).mockResolvedValue({
+    ...detail,
+    thread: { ...detail.thread, turnCount: 30 },
+    turns: {
+      items: Array.from({ length: 24 }, (_, index) => turn(30 - index)),
+      nextCursor: 'older',
+    },
+    latestImageContext: { turnId: 'turn-2', asset: imageAsset(2) },
+  });
+  jest.spyOn(dataService, 'getMediaSubmission').mockRejectedValue(new Error('Not published'));
+  const submit = jest.spyOn(dataService, 'submitMedia').mockResolvedValue({
+    schemaVersion: 1,
+    phase: 'accepted',
+    clientRequestId: 'context-request',
+    threadId: 'thread',
+    turnId: 'turn-31',
+    jobId: 'job-31',
+  });
+  mount({ initialThread: 'thread' });
+  const prompt = await screen.findByRole('textbox', { name: 'com_media_prompt' });
+  fireEvent.change(prompt, { target: { value: 'Use the latest completed image' } });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+  expect(submit.mock.calls[0][0]).toMatchObject({
+    operation: 'image.edit',
+    parentTurnId: 'turn-2',
+    inputs: [{ role: 'reference', file_id: 'image-2' }],
+  });
+});
+
 test('focuses the destination composer after deferred navigation replaces the old thread', async () => {
   let commitNavigation: (() => void) | undefined;
   const frames: FrameRequestCallback[] = [];

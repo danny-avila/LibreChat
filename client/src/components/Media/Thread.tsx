@@ -3,15 +3,7 @@ import { v4 } from 'uuid';
 import * as Ariakit from '@ariakit/react';
 import { useTranslation } from 'react-i18next';
 import { useSetAtom, useAtomValue } from 'jotai';
-import { useInfiniteQuery } from '@tanstack/react-query';
 import { Clock3, Ellipsis, HatGlasses, Images, Pen, Pencil, RotateCcw, Trash } from 'lucide-react';
-import {
-  dataService,
-  QueryKeys,
-  mediaJobPageSchema,
-  mediaOutputPageSchema,
-  mediaTurnPageSchema,
-} from 'librechat-data-provider';
 import {
   Button,
   Alert,
@@ -36,8 +28,14 @@ import type {
 } from 'librechat-data-provider';
 import type { MenuItemProps } from '~/common';
 import type { MediaSend } from './state';
+import {
+  useMediaJobMutations,
+  useMediaThreadMutations,
+  useMediaTurns,
+  useMediaTurnJobs,
+  useMediaJobOutputs,
+} from '~/data-provider/Media';
 import { mediaErrorLabels, mediaJobPhaseLabels, mediaOutputStateLabels } from './labels';
-import { useMediaJobMutations, useMediaThreadMutations } from '~/data-provider/Media';
 import { mediaDraftFamily, mediaPendingFamily } from './state';
 import { MediaImagePending } from './ImagePending';
 import { getMessageTimestamp } from '~/utils';
@@ -127,27 +125,7 @@ function Job({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [expanded, setExpanded] = useState(false);
-  const more = useInfiniteQuery(
-    [QueryKeys.mediaJobOutputs, host.scope, job.jobId, job.outputsNextCursor],
-    async ({ pageParam, signal }) => {
-      const page = mediaOutputPageSchema.parse(
-        await dataService.listMediaJobOutputs(
-          job.jobId,
-          { cursor: pageParam ?? job.outputsNextCursor },
-          signal,
-        ),
-      );
-      if (!host.isCurrentSession()) throw new Error('Session ended');
-      return page;
-    },
-    {
-      enabled: expanded && !!job.outputsNextCursor,
-      getNextPageParam: (page) => page.nextCursor,
-      retry: false,
-      refetchInterval: host.catchUpIntervalMs,
-      refetchIntervalInBackground: false,
-    },
-  );
+  const more = useMediaJobOutputs(host, job, expanded);
   const outputs = new Map(job.outputs.map((output) => [output.outputId, output]));
   more.data?.pages.forEach((page) =>
     page.items.forEach((output) => outputs.set(output.outputId, output)),
@@ -362,28 +340,7 @@ function Turn({
   const localize = useLocalize();
   const [expanded, setExpanded] = useState(false);
   const setDraft = useSetAtom(mediaDraftFamily(`${host.scope}:${turn.threadId}`));
-  const more = useInfiniteQuery(
-    [QueryKeys.mediaTurnJobs, host.scope, turn.threadId, turn.turnId, turn.jobsNextCursor],
-    async ({ pageParam, signal }) => {
-      const page = mediaJobPageSchema.parse(
-        await dataService.listMediaTurnJobs(
-          turn.threadId,
-          turn.turnId,
-          { cursor: pageParam ?? turn.jobsNextCursor },
-          signal,
-        ),
-      );
-      if (!host.isCurrentSession()) throw new Error('Session ended');
-      return page;
-    },
-    {
-      enabled: expanded && !!turn.jobsNextCursor,
-      getNextPageParam: (page) => page.nextCursor,
-      retry: false,
-      refetchInterval: host.pollIntervalMs,
-      refetchIntervalInBackground: false,
-    },
-  );
+  const more = useMediaTurnJobs(host, turn, expanded);
   const jobs = new Map(turn.jobs.map((job) => [job.jobId, job]));
   more.data?.pages.forEach((page) =>
     page.items.forEach((job) => {
@@ -428,7 +385,7 @@ function Turn({
       providerTag: turn.selection?.providerTag,
       providerOptionsText: undefined,
       operation: turn.operation ?? previous.operation,
-      parameters: { count: 1 },
+      parameters: turn.parameters ?? { count: 1 },
       inputs: turn.inputs,
       assets: turn.assets,
     }));
@@ -520,27 +477,7 @@ export function MediaThreadView({
   const busy = updateThread.isLoading || removeThread.isLoading;
   const [title, setTitle] = useState(detail.thread.title);
   const threadId = detail.thread.threadId;
-  const more = useInfiniteQuery(
-    [QueryKeys.mediaTurns, host.scope, threadId, detail.turns.nextCursor],
-    async ({ pageParam, signal }) => {
-      const page = mediaTurnPageSchema.parse(
-        await dataService.listMediaTurns(
-          threadId,
-          { cursor: pageParam ?? detail.turns.nextCursor },
-          signal,
-        ),
-      );
-      if (!host.isCurrentSession()) throw new Error('Session ended');
-      return page;
-    },
-    {
-      enabled: expanded && !!detail.turns.nextCursor,
-      getNextPageParam: (page) => page.nextCursor,
-      retry: false,
-      refetchInterval: detail.thread.pendingJobCount ? host.pollIntervalMs : host.catchUpIntervalMs,
-      refetchIntervalInBackground: false,
-    },
-  );
+  const more = useMediaTurns(host, detail, expanded);
   const turns = new Map(detail.turns.items.map((turn) => [turn.turnId, turn]));
   more.data?.pages.forEach((page) =>
     page.items.forEach((turn) => {

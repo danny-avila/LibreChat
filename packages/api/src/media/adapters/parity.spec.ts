@@ -22,6 +22,7 @@ function fixture(api: MediaProviderContext['connection']['api'], responses: unkn
     },
   };
   const context: MediaProviderContext = {
+    jobId: 'server-job',
     transport,
     connection: {
       id: 'native',
@@ -191,6 +192,41 @@ describe('native OpenAI model mappings', () => {
 
 describe('native Gemini models and continuation', () => {
   const [adapter] = createGoogleMediaAdapters();
+  it('preserves ordered empty signed text in the next provider history', async () => {
+    const { context, calls } = fixture('google.generateContent', [
+      {
+        candidates: [
+          {
+            content: {
+              parts: [
+                { text: '', thoughtSignature: 'empty-text-signature' },
+                { inlineData: { mimeType: 'image/png', data: imageResponse.data[0].b64_json } },
+              ],
+            },
+          },
+        ],
+      },
+      { candidates: [{ content: { parts: [{ text: 'continued' }] } }] },
+    ]);
+    const submission = request('gemini-3.1-flash-image');
+    const result = await adapter.submit(submission, [], context);
+    if (result.status !== 'completed') throw new Error('Expected completed output');
+    expect(result.parts[0]).toEqual({
+      kind: 'text',
+      ordinal: 0,
+      text: '',
+      thoughtSignature: 'empty-text-signature',
+    });
+    expect(result.parts).toHaveLength(2);
+    await adapter.submit(submission, [], {
+      ...context,
+      continuation: { prompt: submission.prompt, inputs: [], parts: result.parts },
+    });
+    expect(JSON.parse(calls[1].body as string).contents[1].parts[0]).toEqual({
+      text: '',
+      thoughtSignature: 'empty-text-signature',
+    });
+  });
   it.each([
     'google/gemini-3.1-flash-lite-image',
     'gemini-3.1-flash-image',

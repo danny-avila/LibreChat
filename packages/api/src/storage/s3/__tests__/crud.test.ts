@@ -1107,6 +1107,36 @@ describe('S3 CRUD', () => {
   });
 
   describe('getS3FileStream', () => {
+    it('sends byte ranges to S3 and accepts only the matching partial response', async () => {
+      const bytes = Buffer.alloc(32, 7);
+      const stream = sdkStreamMixin(Readable.from(bytes));
+      s3Mock
+        .on(GetObjectCommand)
+        .resolves({ Body: stream, ContentRange: 'bytes 8388576-8388607/8388608' });
+      const { getS3FileStream } = await import('../crud');
+      const result = await getS3FileStream({} as ServerRequest, 'images/user123/video.mp4', {
+        range: { start: 8388576, end: 8388607 },
+      });
+      const chunks: Buffer[] = [];
+      for await (const chunk of result) chunks.push(Buffer.from(chunk));
+      expect(Buffer.concat(chunks)).toEqual(bytes);
+      expect(s3Mock.commandCalls(GetObjectCommand)[0].args[0].input.Range).toBe(
+        'bytes=8388576-8388607',
+      );
+    });
+
+    it('closes an S3 full-object response when a byte range was requested', async () => {
+      const body = Readable.from(Buffer.alloc(64));
+      const stream = sdkStreamMixin(body);
+      s3Mock.on(GetObjectCommand).resolves({ Body: stream });
+      const { getS3FileStream } = await import('../crud');
+      await expect(
+        getS3FileStream({} as ServerRequest, 'images/user123/video.mp4', {
+          range: { start: 32, end: 63 },
+        }),
+      ).rejects.toThrow('requested byte range');
+      expect(body.destroyed).toBe(true);
+    });
     it('returns a readable stream for a file', async () => {
       const { getS3FileStream } = await import('../crud');
       const result = await getS3FileStream(

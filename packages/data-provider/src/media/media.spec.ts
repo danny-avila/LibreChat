@@ -326,7 +326,11 @@ describe('media configuration compatibility', () => {
   });
 
   it('keeps generated titles on by default while deferring the model choice to configuration', () => {
-    expect(resolveMediaConfig().titles).toEqual({ enabled: true, timeoutMs: 45_000 });
+    expect(resolveMediaConfig().titles).toEqual({
+      enabled: true,
+      timeoutMs: 45_000,
+      maxOutputTokens: 128,
+    });
     const config = mediaConfigSchema.parse({
       titles: { endpoint: ' openAI ', model: 'gpt-4o-mini', prompt: 'Name this: {prompt}' },
     });
@@ -336,6 +340,7 @@ describe('media configuration compatibility', () => {
       model: 'gpt-4o-mini',
       prompt: 'Name this: {prompt}',
       timeoutMs: 45_000,
+      maxOutputTokens: 128,
     });
     expect(mediaConfigSchema.parse({ titles: { enabled: false } }).titles.enabled).toBe(false);
   });
@@ -345,6 +350,9 @@ describe('media configuration compatibility', () => {
     { titles: { arbitrary: 'ignored' } },
     { titles: { endpoint: '' } },
     { titles: { timeoutMs: 0 } },
+    { titles: { maxOutputTokens: 0 } },
+    { titles: { maxOutputTokens: 1.5 } },
+    { titles: { maxOutputTokens: 1_000_001 } },
     { integrations: [integration, integration] },
     { worker: { leaseMs: 1_000, renewEveryMs: 1_000 } },
     { execution: { maxActiveTotal: 1 } },

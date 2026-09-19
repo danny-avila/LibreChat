@@ -16,6 +16,7 @@ import {
   createMediaNativeMethods,
   createMediaPresetMethods,
   createMediaAccountingMethods,
+  createMediaTitleMethods,
   getTempChatRetentionHours,
   runAsSystem,
   tenantStorage,
@@ -38,8 +39,10 @@ import type {
   MediaNativeMethods,
   MediaPresetMethods,
   MediaOwnerScope,
+  MediaTitleMethods,
 } from '@librechat/data-schemas';
 import type { Server } from 'node:http';
+import type { MediaLifecycleEvent } from './telemetry';
 import type { MediaFileStrategy } from './objects';
 import { mp4ReferenceFixture } from './__fixtures__/reference-content';
 import { createMediaStrategyObjectStores } from './objects';
@@ -89,13 +92,19 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
   let behavior: 'image' | 'uncertain' | 'rejected' | 'video' | 'unsafe-svg' | 'mislabeled' =
     'image';
   let accounting: ReturnType<typeof createMediaAccounting>;
-  let repository: MediaMethods & MediaNativeMethods & MediaPresetMethods;
+  let repository: MediaMethods & MediaNativeMethods & MediaPresetMethods & MediaTitleMethods;
   let scope: MediaOwnerScope;
   let config: AppConfig;
   let runtime: ReturnType<typeof createMediaRuntime>;
   let app: express.Express;
   let userRole = 'USER';
+  let banned = false;
+  let generationAdmissions = 0;
+  let uploadAdmissions = 0;
+  let denyAdmission = false;
+  const moderation = jest.fn(async (_inputs: readonly string[]) => false);
   let logged: Error[] = [];
+  let lifecycleEvents: MediaLifecycleEvent[] = [];
   let storageState: object | null = null;
   let cloudStrategy: MediaFileStrategy;
 
@@ -108,6 +117,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       ...mediaMethods,
       ...createMediaNativeMethods(mongoose, mediaMethods),
       ...createMediaPresetMethods(mongoose),
+      ...createMediaTitleMethods(mongoose),
     };
     await repository.ensureMediaIndexes();
     await repository.ensureMediaPresetIndexes();
@@ -326,7 +336,13 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     vertexAuthorizations = [];
     behavior = 'image';
     userRole = 'USER';
+    banned = false;
+    generationAdmissions = 0;
+    uploadAdmissions = 0;
+    denyAdmission = false;
+    moderation.mockReset().mockResolvedValue(false);
     logged = [];
+    lifecycleEvents = [];
     storageState = null;
     cloudStrategy = {
       getStorageState: async () => storageState,
@@ -373,7 +389,10 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
           },
         ],
       }),
-      endpoints: { custom: [{ name: 'Fixture', apiKey: 'fixture-secret', baseURL: root }] },
+      endpoints: {
+        allowedAddresses: [new URL(root).host],
+        custom: [{ name: 'Fixture', apiKey: 'fixture-secret', baseURL: root }],
+      },
     };
     const providerTransport = createMediaTransport({
       http: axios.create({ proxy: false }),
@@ -384,6 +403,9 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       now: Date.now,
     });
     runtime = createMediaRuntime({
+      observer: (event) => {
+        lifecycleEvents.push(event);
+      },
       appConfig: config,
       repository,
       getUserById: async () => ({ role: 'USER' }),
@@ -419,6 +441,27 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
           ),
       },
       upload: multer,
+      moderate: moderation,
+      admission: {
+        checkBan: (_req, res, next) => {
+          if (banned) res.status(403).json({ error: { code: 'forbidden' } });
+          else next();
+        },
+        generationLimiters: [
+          (_req, res, next) => {
+            generationAdmissions++;
+            if (denyAdmission) res.status(429).json({ error: { code: 'quota_exceeded' } });
+            else next();
+          },
+        ],
+        uploadLimiters: [
+          (_req, res, next) => {
+            uploadAdmissions++;
+            if (denyAdmission) res.status(429).json({ error: { code: 'quota_exceeded' } });
+            else next();
+          },
+        ],
+      },
       accounting,
       objectStores: createMediaStrategyObjectStores(() => cloudStrategy).filter(
         (store) => store.source === FileSources.firebase,
@@ -464,6 +507,96 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
         ...extra,
       });
   }
+  it('denies banned users and generation quota violations before accepting work, without charging receipt replay', async () => {
+    banned = true;
+    await request(app).get('/api/media/catalog').expect(403);
+    expect(generationAdmissions).toBe(0);
+    banned = false;
+    const first = await submit('admission-replay');
+    expect(first.status).toBe(202);
+    expect(generationAdmissions).toBe(1);
+    denyAdmission = true;
+    const replay = await submit('admission-replay');
+    expect(replay.status).toBe(202);
+    expect(replay.body.jobId).toBe(first.body.jobId);
+    expect(generationAdmissions).toBe(1);
+    expect((await submit('denied-admission')).status).toBe(429);
+    expect(await repository.getMediaSubmission(scope, 'denied-admission')).toBeNull();
+    expect(posts).toBe(0);
+  });
+
+  it('applies upload admission before multipart storage and hosted downloads', async () => {
+    denyAdmission = true;
+    await request(app)
+      .post('/api/media/uploads')
+      .attach('file', original, { filename: 'image.png', contentType: 'image/png' })
+      .expect(429);
+    await request(app)
+      .post('/api/media/uploads/url')
+      .send({ url: referenceURL, role: 'audio' })
+      .expect(429);
+    expect(uploadAdmissions).toBe(2);
+    expect(referenceReads).toBe(0);
+    expect(await mongoose.models.File.countDocuments({ user: scope.ownerId })).toBe(0);
+  });
+
+  it('applies shared moderation before admission and again before dispatch after policy changes', async () => {
+    moderation.mockResolvedValueOnce(true);
+    expect((await submit('moderated-input')).status).toBe(403);
+    expect(await repository.getMediaSubmission(scope, 'moderated-input')).toBeNull();
+    moderation.mockResolvedValue(false);
+    const accepted = await submit('moderated-at-dispatch');
+    expect(accepted.status).toBe(202);
+    moderation.mockResolvedValue(true);
+    const job = await run(accepted.body.jobId);
+    expect(job?.phase).toBe('failed');
+    expect(posts).toBe(0);
+  });
+
+  it('rechecks configured model parameter policy during preparation of previously accepted work', async () => {
+    config.media!.integrations = [
+      {
+        id: 'images',
+        api: 'alibaba.images',
+        endpointRef: { kind: 'custom', name: 'Fixture' },
+        catalog: { kind: 'configured', models: ['qwen/qwen-image-3'] },
+        operations: ['image.generate'],
+      },
+    ];
+    const submission = mediaSubmissionRequestSchema.parse({
+      clientRequestId: 'parameter-policy',
+      operation: 'image.generate',
+      prompt: 'A sailboat',
+      selection: {
+        connectionId: 'images',
+        modelId: 'qwen/qwen-image-3',
+        catalogVersion: 'stored-catalog',
+      },
+      parameters: { negativePrompt: 'PRIVATE-DESIGN' },
+    });
+    const context = {
+      scope,
+      config: config.media!,
+      appConfig: config,
+      canUse: true,
+      canCreate: true,
+    };
+    await expect(runtime.services.prepare(submission, context, false)).resolves.toBeDefined();
+    config.filters = {
+      modelParameters: {
+        pii: {
+          fields: ['request_fields'],
+          starterPatterns: [],
+          customPatterns: [{ id: 'private', label: 'private value', regex: 'PRIVATE-[A-Z]+' }],
+        },
+      },
+    };
+    await expect(runtime.services.prepare(submission, context, false)).rejects.toMatchObject({
+      code: 'forbidden',
+    });
+    expect(posts).toBe(0);
+  });
+
   test('honors existing image storage policy before catalog availability, uploads or submission', async () => {
     config.fileStrategies = { image: FileSources.s3 };
     const unavailable = mediaCatalogSchema.parse(
@@ -697,6 +830,8 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     const response = await submit('generated-title');
     expect(response.status).toBe(202);
     const receipt = mediaSubmissionReceiptSchema.parse(response.body);
+    expect(chatBodies).toHaveLength(0);
+    await run(receipt.jobId);
     const deadline = Date.now() + 10_000;
     let title: string | undefined;
     while (Date.now() < deadline) {
@@ -715,6 +850,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       parentTurnId: receipt.turnId,
     });
     expect(followUp.status).toBe(202);
+    await run(followUp.body.jobId);
     await new Promise((resolve) => setTimeout(resolve, 200));
     expect(chatBodies).toHaveLength(1);
     expect((await repository.getMediaThread(scope, receipt.threadId))?.title).toBe(
@@ -1157,6 +1293,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       ...mediaMethods,
       ...createMediaNativeMethods(mongoose, mediaMethods),
       ...createMediaPresetMethods(mongoose),
+      ...createMediaTitleMethods(mongoose),
     };
     expect((await run(response.body.jobId))?.phase).toBe('succeeded');
     expect(posts).toBe(1);
@@ -1495,12 +1632,8 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       asset: { type: 'video/mp4', bytes: 32 },
     });
     expect(posts).toBe(1);
-    expect(polls).toBe(2);
-    expect(vertexAuthorizations).toEqual([
-      'Bearer access-1',
-      'Bearer renewed-access-2',
-      'Bearer renewed-access-2',
-    ]);
+    expect(polls).toBe(1);
+    expect(vertexAuthorizations).toEqual(['Bearer access-1', 'Bearer renewed-access-2']);
     expect(
       JSON.stringify(
         (await request(app).get(`/api/media/jobs/${response.body.jobId}`).expect(200)).body,
@@ -1605,6 +1738,84 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     const next = await submit('after-lost-inline');
     expect((await run(next.body.jobId))?.phase).toBe('succeeded');
     expect(posts).toBe(2);
+  });
+
+  it('leaves plain Google text admission with the existing model credential policy', async () => {
+    const factory = await runtime.nativeFactory(
+      Object.assign(Object.create(express.request), {
+        user: { id: scope.ownerId, role: 'USER' },
+      }),
+      {
+        conversationId: 'plain-chat',
+        messageId: 'plain-message',
+        prompt: 'Hello',
+        temporary: false,
+      },
+    );
+    const port = await factory?.({
+      provider: 'google',
+      model: 'text-only-model',
+      apiKey: 'sdk-specific-key',
+      baseURL: 'https://another-sdk-proxy.example',
+    });
+    await expect(
+      port?.start({ modelRunId: 'plain-run', model: 'text-only-model' }),
+    ).resolves.toEqual({ responseModalities: ['TEXT'] });
+    expect(await repository.listMediaThreads({ scope, limit: 10 })).toMatchObject({ items: [] });
+  });
+
+  it('restores a 24-part native transcript in one authorized database batch', async () => {
+    const model = 'gemini-2.5-flash-image';
+    config.media!.integrations.push({
+      id: 'google-images',
+      api: 'google.generateContent',
+      endpointRef: { kind: 'builtin', endpoint: EModelEndpoint.google },
+      catalog: { kind: 'configured', models: [model] },
+      operations: ['image.generate'],
+    });
+    const factory = await runtime.nativeFactory(
+      Object.assign(Object.create(express.request), {
+        user: { id: scope.ownerId, role: 'USER' },
+      }),
+      {
+        conversationId: 'batch-chat',
+        messageId: 'batch-message',
+        prompt: 'Explain',
+        temporary: false,
+      },
+    );
+    const port = await factory?.({
+      provider: 'google',
+      model,
+      apiKey: 'fixture-google',
+      baseURL: root,
+    });
+    if (!port?.restoreBatch) throw new Error('Missing batched native port');
+    await port.start({ modelRunId: 'batch-run', model });
+    const parts: Array<{ continuationRef: string }> = [];
+    for (let index = 0; index < 24; index++) {
+      const content = await port.part({
+        modelRunId: 'batch-run',
+        chunkIndex: index,
+        partIndex: 0,
+        part: { kind: 'text', text: `Caption ${index}` },
+      });
+      parts.push(content.native_media!);
+    }
+    await port.complete({ modelRunId: 'batch-run' });
+    expect(lifecycleEvents).toEqual([
+      expect.objectContaining({ kind: 'attempt', result: 'started', executionOwner: 'chat' }),
+      expect.objectContaining({ kind: 'transition', phase: 'succeeded', executionOwner: 'chat' }),
+    ]);
+    expect(JSON.stringify(lifecycleEvents)).not.toContain('Caption');
+    const batch = jest.spyOn(repository, 'getMediaNativeContinuations');
+    const single = jest.spyOn(repository, 'getMediaNativeContinuation');
+    const restored = await port.restoreBatch({ parts });
+    expect(restored).toEqual(
+      parts.map((_part, index) => ({ kind: 'text', text: `Caption ${index}` })),
+    );
+    expect(batch).toHaveBeenCalledTimes(1);
+    expect(single).not.toHaveBeenCalled();
   });
 
   it('records native Gemini parts before exposure and restores only the original account', async () => {
@@ -1722,6 +1933,84 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     ).resolves.toBeNull();
   });
 
+  it.each([false, true])(
+    'awaits native failure billing and persists failure when billing rejects: %s',
+    async (rejectBilling) => {
+      const model = 'gemini-2.5-flash-image';
+      config.media!.integrations.push({
+        id: 'google-images',
+        api: 'google.generateContent',
+        endpointRef: { kind: 'builtin', endpoint: EModelEndpoint.google },
+        catalog: { kind: 'configured', models: [model] },
+        operations: ['image.generate'],
+      });
+      let release!: () => void;
+      const billing = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const onUsage = jest.fn(async () => {
+        await billing;
+        if (rejectBilling) throw new Error('Billing unavailable');
+      });
+      const factory = await runtime.nativeFactory(
+        Object.assign(Object.create(express.request), {
+          user: { id: scope.ownerId, role: 'USER' },
+        }),
+        {
+          conversationId: 'native-failure-chat',
+          messageId: 'native-failure-message',
+          prompt: 'Draw',
+          temporary: false,
+        },
+        onUsage,
+      );
+      const port = await factory?.({
+        provider: 'google',
+        model,
+        apiKey: 'fixture-google',
+        baseURL: root,
+        agentId: 'child',
+        usageType: 'subagent',
+      });
+      if (!port) throw new Error('Missing native port');
+      await port.start({ modelRunId: 'native-failed-call', model });
+      let settled = false;
+      const failure = port
+        .fail({
+          modelRunId: 'native-failed-call',
+          reason: 'storage',
+          usage: { input_tokens: 30, output_tokens: 8, total_tokens: 38 },
+        })
+        .finally(() => {
+          settled = true;
+        });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      expect(onUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          modelRunId: 'native-failed-call',
+          usageType: 'subagent',
+          agentId: 'child',
+        }),
+      );
+      release();
+      if (rejectBilling) await expect(failure).rejects.toThrow('Billing unavailable');
+      else await failure;
+      const threads = await repository.listMediaThreads({ scope, limit: 10 });
+      const detail = await runtime.services.queries.thread(threads.items[0].threadId, {
+        scope,
+        appConfig: config,
+        config: config.media!,
+        canUse: true,
+        canCreate: true,
+      });
+      expect(detail.turns.items[0].jobs[0]).toMatchObject({
+        phase: 'failed',
+        executionOwner: 'chat',
+      });
+    },
+  );
+
   it('removes late upload bytes when cleanup retired its reservation before the stream opened', async () => {
     const storage = createLocalMediaStorage({
       repository,
@@ -1787,6 +2076,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
   it('keeps a temporary creation out of the library and never asks the title model to name it', async () => {
     config.media!.titles.endpoint = 'Fixture';
     config.media!.titles.model = 'fixture-title';
+    const admittedAt = Date.now();
     const response = await submit('temporary-creation', { temporary: true });
     expect(response.status).toBe(202);
     const receipt = mediaSubmissionReceiptSchema.parse(response.body);
@@ -1796,16 +2086,19 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     const thread = mediaThreadSchema.parse(opened.body.thread);
     const retentionMs = getTempChatRetentionHours(config.interfaceConfig) * 3_600_000;
     expect(thread.expiresAt).toBe(
-      new Date(new Date(thread.createdAt).getTime() + retentionMs).toISOString(),
+      (await repository.getMediaJob(scope, receipt.jobId))?.publicationExpiresAt,
     );
+    expect(Date.parse(thread.expiresAt!)).toBeGreaterThanOrEqual(admittedAt + retentionMs);
+    expect(Date.parse(thread.expiresAt!)).toBeLessThanOrEqual(Date.now() + retentionMs);
     for (const query of ['', '?include=activity']) {
       const listed = await request(app).get(`/api/media/threads${query}`).expect(200);
       expect(listed.body.items).toEqual([]);
     }
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await run(receipt.jobId);
     expect(chatBodies).toHaveLength(0);
 
     const durable = mediaSubmissionReceiptSchema.parse((await submit('durable-creation')).body);
+    await run(durable.jobId);
     const deadline = Date.now() + 10_000;
     while (Date.now() < deadline && chatBodies.length === 0) {
       await new Promise((resolve) => setTimeout(resolve, 50));

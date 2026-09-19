@@ -220,7 +220,11 @@ export const mediaConfigSchema = z
       .strict()
       .default({}),
     recovery: z
-      .object({ attentionAfterMs: milliseconds.default(86_400_000) })
+      .object({
+        attentionAfterMs: milliseconds.default(86_400_000),
+        maxEvidenceChars: z.number().int().positive().max(65_536).default(2_000),
+        maxDecisionsPerJob: z.number().int().positive().max(1_000).default(32),
+      })
       .strict()
       .default({}),
     credentials: z
@@ -271,6 +275,8 @@ export const mediaConfigSchema = z
         model: z.string().trim().min(1).optional(),
         prompt: z.string().trim().min(1).optional(),
         timeoutMs: milliseconds.default(45_000),
+        /** Bounds paid title output and the corresponding shared balance reservation. */
+        maxOutputTokens: capacity.default(128),
       })
       .strict()
       .default({}),

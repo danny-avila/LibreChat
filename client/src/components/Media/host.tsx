@@ -11,6 +11,7 @@ export type MediaFeatures = {
 };
 export type MediaHost = {
   scope: string;
+  userId?: string;
   canCreate: boolean;
   pollIntervalMs: number;
   catchUpIntervalMs: number;

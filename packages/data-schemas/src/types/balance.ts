@@ -30,6 +30,7 @@ export interface IBalance extends Document {
   /** Sum of `reservations` amounts, maintained by the same writes */
   reservedCredits?: number;
   pendingRefill?: IBalancePendingRefill;
+  mediaGeneration?: string;
   mediaHolds?: MediaHold[];
   mediaDebtCredits?: number;
   mediaSettlementSequence?: number;

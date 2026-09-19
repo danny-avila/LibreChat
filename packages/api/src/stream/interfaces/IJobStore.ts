@@ -750,6 +750,8 @@ export interface ParkedSteerClaim {
  * ```
  */
 export interface UsageMetadata {
+  /** Provider-call identity, shared by normal and failure-only native usage handoffs. */
+  modelRunId?: string;
   /** Logical usage bucket for accounting/reporting. Defaults to model response usage. */
   usage_type?: 'message' | 'summarization' | 'subagent' | 'sequential';
   /** Total input tokens (prompt tokens) */

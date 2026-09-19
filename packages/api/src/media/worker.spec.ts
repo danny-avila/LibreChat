@@ -29,6 +29,7 @@ import type {
   MediaNativeMethods,
   MediaPresetMethods,
 } from '@librechat/data-schemas';
+import type { MediaLifecycleEvent } from './telemetry';
 import type { MediaTransport } from './transport';
 import { createMediaAccounting } from './accounting';
 import { createMediaRuntime } from './runtime';
@@ -50,6 +51,8 @@ describe('media worker admission with standalone MongoDB', () => {
   let app: express.Express;
   let currentOwner: string;
   let logged: Error[] = [];
+  let observations: MediaLifecycleEvent[] = [];
+  let telemetryFailure = false;
   let submissions: HeldSubmission[] = [];
   let holdSubmissions = true;
   let restartRuntime: () => void;
@@ -160,6 +163,8 @@ describe('media worker admission with standalone MongoDB', () => {
       Object.values(mongoose.models).map((model) => model.collection.deleteMany({})),
     );
     logged = [];
+    observations = [];
+    telemetryFailure = false;
     submissions = [];
     holdSubmissions = true;
     remote = undefined;
@@ -196,6 +201,10 @@ describe('media worker admission with standalone MongoDB', () => {
     });
     restartRuntime = () => {
       runtime = createMediaRuntime({
+        observer: (event) => {
+          observations.push(event);
+          if (telemetryFailure) throw new Error('export unavailable');
+        },
         appConfig: config,
         repository,
         getUserById: async () => ({ role: 'USER' }),
@@ -337,6 +346,39 @@ describe('media worker admission with standalone MongoDB', () => {
     expect(await mongoose.models.MediaPermit.countDocuments({ jobId: receipt.jobId })).toBe(0);
     expect(remote!.submissions).toBe(1);
     expect(remote!.deletes).toBe(1);
+    expect(observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'transition', phase: 'submitting', jobId: receipt.jobId }),
+        expect.objectContaining({ kind: 'transition', phase: 'cancelled', jobId: receipt.jobId }),
+        expect.objectContaining({ kind: 'settlement', result: 'completed', jobId: receipt.jobId }),
+      ]),
+    );
+    expect(JSON.stringify(observations)).not.toMatch(
+      /fixture-secret|A study for|thoughtSignature|base64/,
+    );
+  });
+
+  it('completes provider work and settlement when every lifecycle observer throws', async () => {
+    holdSubmissions = false;
+    telemetryFailure = true;
+    const receipt = await submitAs(currentOwner, 'observer-failure');
+    expect(await run(currentOwner, receipt.jobId)).toMatchObject({ phase: 'succeeded' });
+    expect(observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'attempt',
+          result: 'started',
+          queueWaitMs: expect.any(Number),
+        }),
+        expect.objectContaining({
+          kind: 'transition',
+          previousPhase: 'submitting',
+          phase: 'ingesting',
+        }),
+        expect.objectContaining({ kind: 'settlement', result: 'completed' }),
+        expect.objectContaining({ kind: 'attempt', result: 'completed', phase: 'succeeded' }),
+      ]),
+    );
   });
 
   it('preserves completed output and billing when provider completion wins cancellation', async () => {
@@ -352,6 +394,60 @@ describe('media worker admission with standalone MongoDB', () => {
     expect(remote!.deletes).toBe(0);
     expect(remote!.submissions).toBe(1);
   });
+
+  it.each(['before', 'after'] as const)(
+    'recovers durable outputs after a crash %s settlement without the revoked provider connection',
+    async (crash) => {
+      const receipt = await remoteJob('krea.images', `local-recovery-${crash}`);
+      remote!.status = 'completed';
+      const settle = accounting.settle;
+      const json = jest.spyOn(transport, 'json');
+      const stream = jest.spyOn(transport, 'stream');
+      const interrupted = jest
+        .spyOn(accounting, 'settle')
+        .mockImplementationOnce(async (...args) => {
+          if (crash === 'after') await settle(...args);
+          throw new Error('Interrupted between output publication and final job acknowledgement');
+        });
+      try {
+        expect(await run(currentOwner, receipt.jobId)).toMatchObject({
+          phase: 'ingesting',
+          provider: { certainty: 'terminal', recovery: { terminalStatus: 'completed' } },
+          outputs: [{ kind: 'image', state: 'ready' }],
+        });
+        expect(logged.splice(0)).toHaveLength(1);
+        const requests = json.mock.calls.length;
+        const downloads = stream.mock.calls.length;
+        config.endpoints!.custom = [];
+        config.media!.integrations = [];
+        restartRuntime();
+
+        expect(await run(currentOwner, receipt.jobId)).toMatchObject({
+          phase: 'succeeded',
+          accounting: { phase: 'settled', credits: 10 },
+          outputs: [{ kind: 'image', state: 'ready' }],
+        });
+        expect(await balance()).toMatchObject({ tokenCredits: 990, reservedCredits: 0 });
+        expect(
+          await mongoose.models.Transaction.countDocuments({ mediaJobId: receipt.jobId }),
+        ).toBe(1);
+        expect(await mongoose.models.MediaPermit.countDocuments({ jobId: receipt.jobId })).toBe(0);
+        expect(
+          await repository.prepareMediaAccountDeletion({
+            scope: { ownerId: currentOwner, tenantId: null },
+            token: 'delete-after-local-recovery',
+          }),
+        ).toBe(true);
+        expect(json).toHaveBeenCalledTimes(requests);
+        expect(stream).toHaveBeenCalledTimes(downloads);
+        expect(remote!.submissions).toBe(1);
+      } finally {
+        interrupted.mockRestore();
+        json.mockRestore();
+        stream.mockRestore();
+      }
+    },
+  );
 
   it('defers Krea mutation until the provider enters a cancellable lifecycle state', async () => {
     const receipt = await remoteJob('krea.images', 'deferred-krea');
@@ -543,5 +639,98 @@ describe('media worker admission with standalone MongoDB', () => {
       'owner',
       'queue',
     ]);
+  });
+
+  it('does not dispatch a database claim that finishes after shutdown returns', async () => {
+    const receipt = await submitAs(currentOwner, 'claim-during-stop');
+    config.media!.worker.shutdownTimeoutMs = 20;
+    let release: () => void = () => undefined;
+    let entered = false;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const claim = repository.claimMediaJob;
+    const delayed = jest.spyOn(repository, 'claimMediaJob').mockImplementation(async (input) => {
+      entered = true;
+      await held;
+      return claim(input);
+    });
+    try {
+      await runtime.worker.start();
+      await waitFor(() => entered);
+      await runtime.worker.stop();
+      expect(runtime.worker.available).toBe(false);
+      release();
+      await runtime.worker.stop();
+      expect(submissions).toHaveLength(0);
+      expect(
+        await repository.getMediaJob({ ownerId: currentOwner, tenantId: null }, receipt.jobId),
+      ).toMatchObject({ phase: 'queued', provider: { certainty: 'unsubmitted' } });
+    } finally {
+      release();
+      await runtime.worker.stop();
+      delayed.mockRestore();
+    }
+  });
+
+  it('continues dispatching while maintenance discovery fails repeatedly', async () => {
+    holdSubmissions = false;
+    config.media!.worker.tickMs = 5;
+    const maintenance = jest
+      .spyOn(repository, 'listMediaCleanupScopes')
+      .mockRejectedValue(new Error('Injected cleanup database failure'));
+    try {
+      const first = await submitAs(currentOwner, 'maintenance-outage-first');
+      await runtime.worker.start();
+      await waitFor(() => submissions.length === 1);
+      const second = await submitAs(currentOwner, 'maintenance-outage-second');
+      await waitFor(() => submissions.length === 2);
+      await runtime.worker.stop();
+      const scope = { ownerId: currentOwner, tenantId: null };
+      expect(await repository.getMediaJob(scope, first.jobId)).toMatchObject({
+        phase: 'succeeded',
+      });
+      expect(await repository.getMediaJob(scope, second.jobId)).toMatchObject({
+        phase: 'succeeded',
+      });
+      expect(logged.length).toBeGreaterThan(0);
+      expect(
+        logged.every(
+          (error) => error.message === 'The media worker could not discover cleanup work.',
+        ),
+      ).toBe(true);
+    } finally {
+      await runtime.worker.stop();
+      maintenance.mockRestore();
+      logged = [];
+    }
+  });
+
+  it('does not let a pending startup restart a stopped worker', async () => {
+    let release: () => void = () => undefined;
+    let entered = false;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const ensure = repository.ensureMediaIndexes;
+    const delayed = jest.spyOn(repository, 'ensureMediaIndexes').mockImplementation(async () => {
+      entered = true;
+      await held;
+      return ensure();
+    });
+    config.media!.worker.shutdownTimeoutMs = 20;
+    try {
+      const starting = runtime.worker.start();
+      await waitFor(() => entered);
+      await runtime.worker.stop();
+      release();
+      await starting;
+      expect(runtime.worker.available).toBe(false);
+      expect(submissions).toHaveLength(0);
+    } finally {
+      release();
+      await runtime.worker.stop();
+      delayed.mockRestore();
+    }
   });
 });

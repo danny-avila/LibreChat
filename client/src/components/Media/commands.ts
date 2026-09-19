@@ -68,6 +68,8 @@ export function useMediaCommands(visibleThreadIds: string[]) {
   const [sending, setSending] = useState<Set<string>>(new Set());
   const [error, setError] = useState<MediaErrorCode>();
   const observed = useRef(new Map<string, MediaReceipt['phase']>());
+  const inFlight = useRef(new Set<string>());
+  const attempted = useRef(new Set<string>());
   const queries: UseQueryOptions<MediaReceipt, unknown, MediaReceipt, string[]>[] = pending.map(
     (command) => ({
       queryKey: receiptKey(host.scope, command),
@@ -84,18 +86,78 @@ export function useMediaCommands(visibleThreadIds: string[]) {
         return receipt;
       },
       retry: false,
+      enabled: command.kind !== 'submission' || !command.after || !!command.request.threadId,
       refetchInterval: (data, query) => receiptInterval(data, query.state.error, host),
       refetchIntervalInBackground: false,
     }),
   );
   const receipts = useQueries({ queries });
   const send = useCallback(
-    async (command: PendingMedia): Promise<MediaReceipt | undefined> => {
+    async (input: PendingMedia): Promise<MediaReceipt | undefined> => {
       if (!host.canCreate || !host.isCurrentSession()) return undefined;
+      const saved = store.get(mediaPendingFamily(host.scope));
+      let command = input;
+      if (input.kind !== 'retry' && !(input.kind === 'submission' && input.after)) {
+        command =
+          saved.find(
+            (item) =>
+              item.kind === input.kind &&
+              !(item.kind === 'submission' && item.after) &&
+              item.draftKey === input.draftKey &&
+              item.draftRevision === input.draftRevision,
+          ) ?? input;
+      }
+      if (command.kind === 'submission' && command.following) {
+        const receipt = client.getQueryData<MediaReceipt>(receiptKey(host.scope, command));
+        if (receipt?.phase === 'accepted') {
+          const parent = command;
+          command = saved.find(
+            (item) => item.request.clientRequestId === parent.following!.clientRequestId,
+          ) ?? {
+            kind: 'submission',
+            request: parent.following!,
+            after: parent.request.clientRequestId,
+            draftKey: parent.draftKey,
+            draftRevision: parent.draftRevision,
+          };
+        }
+      }
+      if (command.kind === 'submission' && command.after) {
+        const after = command.after;
+        const parent = saved.find((item) => item.request.clientRequestId === after);
+        const receipt = parent && client.getQueryData<MediaReceipt>(receiptKey(host.scope, parent));
+        if (receipt?.phase !== 'accepted') return undefined;
+        command = {
+          ...command,
+          request: { ...command.request, threadId: receipt.threadId, temporary: undefined },
+        };
+      }
       const id = command.request.clientRequestId;
-      setPending((previous) =>
-        previous.some((p) => p.request.clientRequestId === id) ? previous : [...previous, command],
-      );
+      if (inFlight.current.has(id)) return undefined;
+      inFlight.current.add(id);
+      attempted.current.add(id);
+      const selected = command;
+      setPending((previous) => {
+        const next = previous.some((p) => p.request.clientRequestId === id)
+          ? previous.map((p) => (p.request.clientRequestId === id ? selected : p))
+          : [...previous, selected];
+        if (
+          selected.kind !== 'submission' ||
+          !selected.following ||
+          next.some((p) => p.request.clientRequestId === selected.following!.clientRequestId)
+        )
+          return next;
+        return [
+          ...next,
+          {
+            kind: 'submission',
+            request: selected.following,
+            after: id,
+            draftKey: selected.draftKey,
+            draftRevision: selected.draftRevision,
+          },
+        ];
+      });
       setSending((previous) => new Set(previous).add(id));
       setError(undefined);
       try {
@@ -123,7 +185,10 @@ export function useMediaCommands(visibleThreadIds: string[]) {
         if (host.isCurrentSession()) {
           setError(mediaErrorCode(failure));
           // A rejected command preserves its editable draft. A lost response keeps its identity.
-          if (definitiveRejection(failure))
+          if (
+            definitiveRejection(failure) &&
+            !(command.kind === 'submission' && (command.after || command.following))
+          )
             setPending((previous) =>
               previous.filter((item) => item.request.clientRequestId !== id),
             );
@@ -131,6 +196,7 @@ export function useMediaCommands(visibleThreadIds: string[]) {
         }
         return undefined;
       } finally {
+        inFlight.current.delete(id);
         if (host.isCurrentSession())
           setSending((previous) => {
             const next = new Set(previous);
@@ -151,6 +217,19 @@ export function useMediaCommands(visibleThreadIds: string[]) {
         void invalidateMedia(client, host.scope);
       }
       if (!receipt || receipt.phase !== 'accepted') return;
+      if (command.kind === 'submission' && command.after) return;
+      if (command.kind === 'submission' && command.following) {
+        const nextIndex = pending.findIndex(
+          (item) => item.request.clientRequestId === command.following!.clientRequestId,
+        );
+        const next = pending[nextIndex];
+        if (!next || receipts[nextIndex]?.data?.phase !== 'accepted') {
+          if (next && !attempted.current.has(next.request.clientRequestId)) void send(next);
+          return;
+        }
+        if (visibleThreadIds.includes(receipt.threadId))
+          published.add(next.request.clientRequestId);
+      }
       const draftAtom = mediaDraftFamily(command.draftKey);
       const draft = store.get(draftAtom);
       if (mayClearMediaDraft(draft.revision, command.draftRevision, receipt.phase)) {
@@ -167,7 +246,7 @@ export function useMediaCommands(visibleThreadIds: string[]) {
       setPending((previous) =>
         previous.filter((command) => !published.has(command.request.clientRequestId)),
       );
-  }, [pending, receipts, visibleThreadIds, host, setPending, store, client]);
+  }, [pending, receipts, visibleThreadIds, host, setPending, store, client, send]);
   return {
     pending,
     receipts,
@@ -175,8 +254,14 @@ export function useMediaCommands(visibleThreadIds: string[]) {
     error,
     send,
     dismiss: (id: string) =>
-      setPending((previous) =>
-        previous.filter((command) => command.request.clientRequestId !== id),
-      ),
+      setPending((previous) => {
+        const selected = previous.find((command) => command.request.clientRequestId === id);
+        const parentId = selected?.kind === 'submission' ? (selected.after ?? id) : id;
+        return previous.filter(
+          (command) =>
+            command.request.clientRequestId !== parentId &&
+            !(command.kind === 'submission' && command.after === parentId),
+        );
+      }),
   };
 }

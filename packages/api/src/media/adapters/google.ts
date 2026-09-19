@@ -156,7 +156,7 @@ async function submitGoogle(
       ) {
         throw new MediaProviderError('uncertain');
       }
-      if (part.text) {
+      if (part.text !== undefined) {
         parts.push({
           kind: 'text',
           ordinal: parts.length,

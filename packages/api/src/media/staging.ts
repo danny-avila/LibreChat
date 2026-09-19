@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { createWriteStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
 import { mkdir, readdir, lstat, rm, unlink } from 'node:fs/promises';
 import type { MediaConfig } from 'librechat-data-provider';
 import type { Request } from 'express';
@@ -51,43 +52,44 @@ export function createMediaStaging({
     directory: root,
     storage(config) {
       return {
-        _handleFile(_req, file, callback) {
-          const limit = mediaContentByteLimit(normalizeMediaContentType(file.mimetype), config);
+        _handleFile(req, file, callback) {
           const filename = id();
           const location = path.join(root, filename);
-          let settled = false;
-          const settle = (error: Error | null, info?: Partial<UploadFile>) => {
-            if (settled) return;
-            settled = true;
-            callback(error, info);
+          const controller = new AbortController();
+          const abort = () => controller.abort();
+          let sourceError: Error | undefined;
+          const rememberError = (error: Error) => {
+            sourceError = error;
           };
-          mkdir(root, { recursive: true }).then(
-            () => {
+          req.once('aborted', abort);
+          file.stream.once('error', rememberError);
+          const stage = async (): Promise<Partial<UploadFile>> => {
+            let created = false;
+            try {
+              await mkdir(root, { recursive: true });
+              if (req.aborted) abort();
+              controller.signal.throwIfAborted();
+              if (sourceError) throw sourceError;
+              if (file.stream.destroyed) throw new Error('The media upload ended prematurely.');
+              const limit = mediaContentByteLimit(normalizeMediaContentType(file.mimetype), config);
               const counter = new MediaByteCounter(limit);
               const out = createWriteStream(location, { flags: 'wx', mode: 0o600 });
-              const fail = (error: Error) => {
-                file.stream.unpipe(counter);
-                file.stream.resume();
-                const discard = () =>
-                  remove(location).then(
-                    () => settle(error),
-                    () => settle(error),
-                  );
-                if (out.closed) {
-                  void discard();
-                  return;
-                }
-                out.once('close', () => void discard());
-                out.destroy();
-              };
-              counter.once('error', fail);
-              out.once('error', fail);
-              out.once('finish', () =>
-                settle(null, { destination: root, filename, path: location, size: counter.bytes }),
-              );
-              file.stream.pipe(counter).pipe(out);
-            },
-            (error: unknown) => settle(asError(error, 'Media staging is unavailable.')),
+              out.once('open', () => {
+                created = true;
+              });
+              await pipeline(file.stream, counter, out, { signal: controller.signal });
+              return { destination: root, filename, path: location, size: counter.bytes };
+            } catch (error) {
+              if (created) await remove(location);
+              throw error;
+            } finally {
+              req.removeListener('aborted', abort);
+              file.stream.removeListener('error', rememberError);
+            }
+          };
+          void stage().then(
+            (info) => callback(null, info),
+            (error: unknown) => callback(asError(error, 'Media staging is unavailable.')),
           );
         },
         _removeFile(_req, file, callback) {

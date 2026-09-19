@@ -1,8 +1,8 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { runAsSystem, tenantStorage } from '~/config/tenantContext';
+import { createKeyMethods, getUserKeyBindingRevision } from './key';
 import { createKeyModel } from '~/models/key';
-import { createKeyMethods } from './key';
 
 jest.mock('~/crypto', () => ({
   encrypt: jest.fn(async (value: string) => `encrypted:${value}`),
@@ -33,6 +33,32 @@ describe('user key encrypted snapshot compare-and-set on MongoDB', () => {
   function identity() {
     return { userId, name: 'google' };
   }
+
+  it('retains one legacy media identity across expiry and envelope edits through both shared writers', async () => {
+    await mongoose.models.Key.create({
+      ...identity(),
+      value: 'encrypted:original',
+      expiresAt: new Date('2099-01-01'),
+    });
+    const original = await methods.getUserKeySnapshot(identity());
+    const legacy = getUserKeyBindingRevision(original!);
+    await methods.updateUserKey({ ...identity(), value: 'original', expiresAt: '2100-01-01' });
+    const extended = await methods.getUserKeySnapshot(identity());
+    expect(extended?.mediaBindingRevision).toBe(legacy);
+    expect(
+      await methods.compareAndSetUserKey({
+        ...identity(),
+        expected: extended,
+        value: 'envelope-with-another-service-key',
+      }),
+    ).toBe(true);
+    expect((await methods.getUserKeySnapshot(identity()))?.mediaBindingRevision).toBe(legacy);
+    await methods.deleteUserKey(identity());
+    await methods.updateUserKey({ ...identity(), value: 'original' });
+    const recreated = await methods.getUserKeySnapshot(identity());
+    expect(recreated?.id).not.toBe(original?.id);
+    expect(recreated?.mediaBindingRevision).toBeUndefined();
+  });
 
   it('returns encrypted snapshot data and atomically replaces value and expiry', async () => {
     await methods.updateUserKey({ ...identity(), value: 'before' });

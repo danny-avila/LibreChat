@@ -44,7 +44,7 @@ function mount({
   chat?: boolean;
 }) {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false, cacheTime: 0 } },
+    defaultOptions: { queries: { retry: false, cacheTime: 0, staleTime: Infinity } },
     logger: { log: console.log, warn: console.warn, error: () => {} },
   });
   clients.push(client);
@@ -124,7 +124,9 @@ test.each([
   expect(env.store.get(mediaChatHandoff)).toBeNull();
 });
 
-test('renders nothing when chat media is switched off', () => {
-  mount({ asset: image, chat: false });
+test('Studio handoff is consumed with the embedded creation surface switched off', async () => {
+  const env = mount({ asset: { ...image, bytes: 500 }, chat: false });
   expect(screen.queryByRole('button', { name: 'Create media' })).not.toBeInTheDocument();
+  await waitFor(() => expect(env.setFiles).toHaveBeenCalledTimes(1));
+  expect(env.store.get(mediaChatHandoff)).toBeNull();
 });

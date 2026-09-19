@@ -2,6 +2,8 @@
 
 The local implementation and enablement instructions are tracked in [implementation.md](implementation.md). The research below includes longer-term design beyond the implemented first cut.
 
+The [2026-09-19 remediation report](remediation.md) maps all 44 integration findings to implemented fixes and verification across the LibreChat and Agents SDK branches. Operational details cover [credential support](credentials.md), [retention and native consumers](retention.md), [operator recovery and account deletion](recovery.md), and [observability and Insights](observability.md). The [first audit](integration-audit.md) and [deeper audit](audit/README.md) preserve the original findings.
+
 **Status:** opt-in local implementation, 2026-09-17. The research and longer-term design below were prepared on 2026-09-15; [implementation.md](implementation.md) describes what is available now. [Native provider setup](native-providers.md) documents the current adapters, credentials and model coverage.
 **Branch:** `research/media-studio`, created from local `dev` at `385c6f8a1`.
 **Product direction:** a sidebar Media Studio with model selection, image/video creation, uploaded

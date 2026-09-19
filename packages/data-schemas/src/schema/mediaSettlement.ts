@@ -7,7 +7,7 @@ const mediaSettlementSchema: Schema<MediaSettlementRecord> = new Schema(
     ownerId: { type: String, required: true },
     tenantId: { type: String, default: null },
     jobId: { type: String, required: true },
-    balanceId: { type: String, required: true },
+    balanceId: { type: String },
     estimatedCredits: { type: Number, required: true },
     maxCredits: { type: Number, required: true },
     holdFingerprint: { type: String, required: true },
@@ -15,7 +15,7 @@ const mediaSettlementSchema: Schema<MediaSettlementRecord> = new Schema(
     reviewAt: { type: String, required: true },
     state: {
       type: String,
-      enum: ['holding', 'held', 'ready', 'applied', 'published'],
+      enum: ['initializing', 'holding', 'held', 'ready', 'applied', 'published'],
       required: true,
     },
     effect: {
@@ -24,6 +24,7 @@ const mediaSettlementSchema: Schema<MediaSettlementRecord> = new Schema(
           kind: { type: String, enum: ['charge', 'release', 'debt_collection'], required: true },
           credits: { type: Number, required: true },
           costUSD: Number,
+          costSource: { type: String, enum: ['provider', 'estimate'] },
           creditsPerUSD: Number,
           inputTokens: Number,
           outputTokens: Number,
