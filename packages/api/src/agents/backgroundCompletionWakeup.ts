@@ -4,7 +4,6 @@ import { AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2 } from
 import type {
   AgentTriggerProducerLeaseStatus,
   AgentTriggerDeliveryMethods,
-  BackgroundToolResultClaim,
   ConversationMethods,
   IMessage,
   MessageMethods,
@@ -63,25 +62,10 @@ export type PersistBackgroundToolCompletionResult = (
 ) => Promise<boolean>;
 
 type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &
-  Pick<MessageMethods, 'getMessages'> & {
-    claimBackgroundToolResults(params: {
-      userId: string;
-      conversationId: string;
-      messageId: string;
-      taskId: string;
-      agentId?: string;
-      kind: 'manual' | 'wakeup';
-      claimId: string;
-      limit?: number;
-    }): Promise<BackgroundToolResultClaim>;
-    releaseBackgroundToolResultClaims(params: {
-      userId: string;
-      conversationId: string;
-      messageId: string;
-      taskIds?: string[];
-      kind: 'manual' | 'wakeup';
-      claimId: string;
-    }): Promise<boolean>;
+  Pick<
+    MessageMethods,
+    'getMessages' | 'claimBackgroundToolResults' | 'releaseBackgroundToolResultClaims'
+  > & {
     getAgentTriggerDeliveryProducerLease(params: {
       deliveryKey: string;
       sourceId: string;
