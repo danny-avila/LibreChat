@@ -10,6 +10,7 @@ import {
   resolveAttachedWorkspaceCommandTimeoutMax,
   resolveAttachedWorkspaceQueueWaitMs,
 } from './command';
+import { BACKGROUND_TOOL_INVOCATION_CONFIG_KEY } from '~/agents/invocation';
 
 describe('programmatic Bash Git identity', () => {
   test('applies authorship before the SDK sends a programmatic script', async () => {
@@ -264,6 +265,41 @@ describe('createAttachedWorkspaceBashTool', () => {
       properties: { timeoutMs: { type: 'integer', minimum: 1, maximum: 120_000 } },
     });
     expect(resolveAttachedWorkspaceCommandTimeoutMax()).toBe(30_000);
+    expect(resolveAttachedWorkspaceCommandTimeoutMax(undefined, 90_000)).toBe(90_000);
+    expect(
+      resolveAttachedWorkspaceCommandTimeoutMax(
+        { limits: { maxCommandTimeoutMs: 120_000 } },
+        90_000,
+      ),
+    ).toBe(90_000);
+    expect(
+      resolveAttachedWorkspaceCommandTimeoutMax(
+        { limits: { maxCommandTimeoutMs: 60_000 } },
+        90_000,
+      ),
+    ).toBe(60_000);
+  });
+
+  test('uses the negotiated ceiling only for omitted detached background timeouts', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1',
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+      maxTimeoutMs: 90_000,
+      fetchImpl,
+    });
+
+    await bashTool.invoke(
+      { command: 'npm test' },
+      { configurable: { [BACKGROUND_TOOL_INVOCATION_CONFIG_KEY]: true } },
+    );
+    await bashTool.invoke({ command: 'npm test' });
+
+    const backgroundRequest = JSON.parse(String((fetchImpl as jest.Mock).mock.calls[0][1]?.body));
+    const foregroundRequest = JSON.parse(String((fetchImpl as jest.Mock).mock.calls[1][1]?.body));
+    expect(backgroundRequest).toMatchObject({ timeoutMs: 90_000 });
+    expect(foregroundRequest).toMatchObject({ timeoutMs: 30_000 });
   });
 
   test('resolves the administrator-configured admission budget', () => {

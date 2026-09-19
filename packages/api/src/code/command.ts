@@ -21,6 +21,7 @@ import {
   WORKSPACE_COMMAND_MAX_TIMEOUT_MS,
   WORKSPACE_QUEUE_MAX_WAIT_MS,
 } from './workspace';
+import { BACKGROUND_TOOL_INVOCATION_CONFIG_KEY } from '~/agents/invocation';
 
 const DEFAULT_OUTPUT_BYTES = 256 * 1024;
 
@@ -74,7 +75,7 @@ function buildAttachedTimeoutSchema(maxTimeoutMs: number): BoundedTimeoutSchema 
     type: 'integer',
     minimum: 1,
     maximum: maxTimeoutMs,
-    description: `Optional execution timeout in milliseconds, from 1 through ${maxTimeoutMs}. Defaults to ${defaultTimeoutMs}. Waiting for an available worker does not consume this execution budget.`,
+    description: `Optional execution timeout in milliseconds, from 1 through ${maxTimeoutMs}. Defaults to ${defaultTimeoutMs} for foreground calls and ${maxTimeoutMs} for detached background calls. Waiting for an available worker does not consume this execution budget.`,
   };
 }
 
@@ -87,11 +88,20 @@ function normalizeAttachedWorkspaceCommandTimeoutMax(maxTimeoutMs: number): numb
 
 export function resolveAttachedWorkspaceCommandTimeoutMax(
   configSchema?: CodeEnvironmentUserConfigSchema,
+  upstreamMaxTimeoutMs?: number,
 ): number {
   const configured = configSchema?.limits?.maxCommandTimeoutMs;
-  return configured == null
-    ? WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS
-    : normalizeAttachedWorkspaceCommandTimeoutMax(configured);
+  const upstream =
+    upstreamMaxTimeoutMs == null
+      ? WORKSPACE_COMMAND_MAX_TIMEOUT_MS
+      : normalizeAttachedWorkspaceCommandTimeoutMax(upstreamMaxTimeoutMs);
+  let requested = WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS;
+  if (configured != null) {
+    requested = normalizeAttachedWorkspaceCommandTimeoutMax(configured);
+  } else if (upstreamMaxTimeoutMs != null) {
+    requested = upstream;
+  }
+  return Math.min(requested, upstream);
 }
 
 /**
@@ -209,6 +219,7 @@ export function createContextProgrammaticBashTool(
             workspaceId: context.codeWorkspace?.workspaceId,
             runTimeoutMs: resolveAttachedWorkspaceCommandTimeoutMax(
               context.codeEnvironmentConfigSchema,
+              context.codeWorkspace?.maxCommandTimeoutMs,
             ),
           }
         : {}),
@@ -259,7 +270,7 @@ export function createAttachedWorkspaceBashTool({
   workspaceId: string;
   environment?: CodeWorkspaceDescriptor['environment'];
   gitIdentity?: AgentGitIdentity | null;
-  /** Deployment ceiling already intersected with the protocol hard cap. */
+  /** Effective admin/upstream ceiling already intersected with the protocol hard cap. */
   maxTimeoutMs?: number;
   /** Deployment admission budget; omitted keeps the built-in default. */
   maxQueueWaitMs?: number;
@@ -305,7 +316,10 @@ export function createAttachedWorkspaceBashTool({
         action ??
         commandWithGitIdentity(commandWithArguments(rawInput.command!, rawInput.args), gitIdentity);
       const timeoutMs =
-        rawInput.timeoutMs ?? Math.min(WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS, effectiveMaxTimeoutMs);
+        rawInput.timeoutMs ??
+        (config?.configurable?.[BACKGROUND_TOOL_INVOCATION_CONFIG_KEY] === true
+          ? effectiveMaxTimeoutMs
+          : Math.min(WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS, effectiveMaxTimeoutMs));
       const signal = config?.signal;
       const trace = {
         runId: config?.metadata?.run_id,
