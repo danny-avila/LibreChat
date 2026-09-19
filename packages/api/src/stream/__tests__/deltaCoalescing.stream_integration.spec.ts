@@ -238,9 +238,7 @@ describe.each([undefined, '25'])('Delta coalescing integration (window %s)', (wi
           await jest.advanceTimersByTimeAsync(25);
         }
         const evalshaKeyCounts = evalshaSpy.mock.calls.map((call) => call[1]);
-        expect(
-          evalshaKeyCounts.every((keyCount) => keyCount === 8 || keyCount === 3),
-        ).toBe(true);
+        expect(evalshaKeyCounts.every((keyCount) => keyCount === 8 || keyCount === 3)).toBe(true);
 
         /** A different connection reads only durable Redis state, never the owner's
          * local pending buffer. Its log and publication frontier must agree. */

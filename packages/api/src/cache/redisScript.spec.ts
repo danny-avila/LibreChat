@@ -246,9 +246,7 @@ describe('evalScript', () => {
   });
 
   test('does not reload a confirmed SHA after a permission error', async () => {
-    const failure = new Error(
-      "NOPERM this user has no permissions to run the 'EVALSHA' command",
-    );
+    const failure = new Error("NOPERM this user has no permissions to run the 'EVALSHA' command");
     const evalsha = jest.fn().mockResolvedValueOnce('warm').mockRejectedValueOnce(failure);
     const evalCommand = jest.fn();
     const client = { evalsha, eval: evalCommand } as unknown as RedisScriptClient;
