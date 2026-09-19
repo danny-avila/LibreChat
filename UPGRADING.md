@@ -8,21 +8,21 @@ publication; existing explicit values retain their behavior. In-memory streams
 are unchanged, including deployments using `USE_REDIS_STREAMS=false`.
 
 The same window batches durable appends and publications. It reduces Redis
-operations at the cost of up to one window of buffering latency and possible loss
+round trips and repeated guard/TTL work, but not Pub/Sub message count at the cost of up to one window of buffering latency and possible loss
 of unflushed deltas on process crash. Terminal and non-coalescable barriers still
 flush pending batches before proceeding.
 
-**Rolling upgrades from builds without batch-frame support:** older subscribers
-silently drop `chunk_batch` frames. Before introducing this default, configure
-`STREAM_DELTA_COALESCE_MS=0` on every API replica and restart them with that setting.
-Keep it set throughout the upgrade. Once every replica supports batch frames
-(introduced in #14614), remove the override and restart to use the 25 ms default.
-A mixed deployment of batch-capable builds can receive batches even if some
-replicas still publish per delta.
+Coalescing batches Redis requests, not the subscriber wire format: each event
+still publishes as an individually sequenced `chunk` frame. Subscribers from
+before batch-frame support can read these publications without a preparatory
+configuration change. New subscribers also retain `chunk_batch` decoding for
+interoperation with existing opt-in batching producers.
 
-**Rollback to a build without batch-frame support:** first set
-`STREAM_DELTA_COALESCE_MS=0` on every replica and restart all publishers with it;
-only then introduce the older build. Keep `0` set throughout the rollback.
+This removes the new default's batch-frame compatibility hazard; it does not
+promise compatibility across unrelated generation-protocol changes. If an
+existing producer already emits `chunk_batch` frames through explicit opt-in,
+keep those producers away from subscribers that predate batch-frame support,
+or disable coalescing on those producers before introducing older subscribers.
 
 ## Tenant index migration (v0.8.7 and earlier databases)
 
