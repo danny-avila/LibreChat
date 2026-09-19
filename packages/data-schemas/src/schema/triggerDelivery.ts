@@ -147,6 +147,21 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
     capabilityClaimToken: { type: String },
     /** Private process-owner heartbeat; never projected to legacy consumers. */
     producerLeaseUntil: { type: Date, select: false },
+    backgroundToolResult: {
+      type: new Schema(
+        {
+          status: {
+            type: String,
+            enum: ['completed', 'error', 'cancelled'],
+            required: true,
+          },
+          output: { type: String, required: true, maxlength: 24 * 1024 },
+          settledAt: { type: Date, required: true },
+        },
+        { _id: false },
+      ),
+      select: false,
+    },
     attempts: { type: Number, required: true, default: 0, min: 0 },
     availableAt: { type: Date, required: true },
     envelopeBytes: { type: Number, min: 0 },

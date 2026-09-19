@@ -449,6 +449,39 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toEqual({ status: 'live', leaseUntil: renewedUntil });
   });
 
+  it('persists one private background result receipt independently of message rows', async () => {
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-completion-result-receipt',
+        envelope: { event: { source } },
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      }),
+    );
+    const input = {
+      deliveryKey: queued.delivery.deliveryKey,
+      sourceId: source.id,
+      result: { status: 'completed' as const, output: 'durable output', settledAt: START },
+    };
+
+    await expect(methods.persistAgentBackgroundToolResult(input)).resolves.toBe(true);
+    await expect(methods.persistAgentBackgroundToolResult(input)).resolves.toBe(true);
+    await expect(
+      methods.getAgentBackgroundToolResult({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+      }),
+    ).resolves.toEqual(input.result);
+    await expect(
+      methods.persistAgentBackgroundToolResult({
+        ...input,
+        result: { ...input.result, output: 'conflicting output' },
+      }),
+    ).resolves.toBe(false);
+    const ordinaryRead = await Delivery.findById(queued.delivery.id).lean();
+    expect(ordinaryRead).not.toHaveProperty('backgroundToolResult');
+  });
+
   it('keeps capability-fenced work limited to capable workers through lease recovery', async () => {
     const queued = await methods.enqueueAgentTriggerDelivery(
       enqueueInput({

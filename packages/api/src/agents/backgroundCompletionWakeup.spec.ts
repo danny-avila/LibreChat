@@ -91,6 +91,7 @@ function resolverMethods() {
           leaseUntil: new Date(NOW + 30_000),
         }),
       ),
+      getAgentBackgroundToolResult: jest.fn(async () => null),
     },
   };
 }
@@ -111,7 +112,13 @@ describe('background tool completion wakeups', () => {
     >(async () => ({ deliveryKey: 'delivery-key-1' }));
     const retire = jest.fn(async () => true);
     const renew = jest.fn(async () => true);
-    const notify = createBackgroundToolCompletionWakeupHandler(enqueue, retire, renew);
+    const persistResult = jest.fn(async () => true);
+    const notify = createBackgroundToolCompletionWakeupHandler(
+      enqueue,
+      retire,
+      renew,
+      persistResult,
+    );
 
     const admission = await notify(registration());
     expect(admission).not.toBe(false);
@@ -145,6 +152,20 @@ describe('background tool completion wakeups', () => {
       'background-tool-completion',
       new Date(NOW + 30_000),
     );
+    if (admission !== false) {
+      await expect(
+        admission.persistResult?.({
+          status: 'completed',
+          output: 'done',
+          settledAt: new Date(NOW),
+        }),
+      ).resolves.toBe(true);
+    }
+    expect(persistResult).toHaveBeenCalledWith('delivery-key-1', 'background-tool-completion', {
+      status: 'completed',
+      output: 'done',
+      settledAt: new Date(NOW),
+    });
     if (admission !== false) {
       await expect(admission.retire('result unavailable')).resolves.toBe(true);
     }
@@ -426,6 +447,29 @@ describe('background tool completion wakeups', () => {
         claimId: 'delivery-1',
       }),
     );
+  });
+
+  it('continues from the independent delivery receipt before the parent projection lands', async () => {
+    const { methods } = resolverMethods();
+    methods.getAgentBackgroundToolResult.mockResolvedValueOnce({
+      status: 'completed',
+      output: 'independently durable',
+      settledAt: new Date(NOW),
+    } as never);
+    const resolve = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+
+    const prepared = await resolve(await envelope(), { idempotencyKey: 'delivery-1' });
+
+    expect(prepared).toMatchObject({ status: 'ready', parentMessageId: 'response-2' });
+    expect(prepared?.status === 'ready' && prepared.input).toContain('independently durable');
+    expect(methods.getAgentBackgroundToolResult).toHaveBeenCalledWith({
+      deliveryKey: 'delivery-1',
+      sourceId: 'background-tool-completion',
+    });
+    expect(methods.claimBackgroundToolResults).not.toHaveBeenCalled();
   });
 
   it('shares one bounded input budget across a full sibling batch', async () => {
