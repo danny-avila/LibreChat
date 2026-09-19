@@ -36,81 +36,37 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
   const handler = useCallback(
     ({ data, submission }: TContentHandler) => {
       const { type, messageId, thread_id, conversationId, index } = data;
-      const { initialResponse } = submission;
-      const initialResponseMessage = initialResponse as TMessage;
-      const cachedResponse = messageMap.get(messageId);
-
       const _messages = getMessages() ?? [];
       const messages: TMessage[] = [];
       let existingMessage: TMessage | undefined;
-      let responseThreadId: string | undefined = thread_id ?? cachedResponse?.thread_id;
       for (const msg of _messages) {
         if (msg.messageId === messageId) {
           existingMessage ??= msg;
-          if (thread_id == null && msg.thread_id != null) {
-            responseThreadId = msg.thread_id;
-          } else {
-            responseThreadId ??= msg.thread_id;
-          }
           continue;
         }
         messages.push(
           thread_id == null || msg.thread_id === thread_id ? msg : { ...msg, thread_id },
         );
       }
-      responseThreadId ??= initialResponseMessage.thread_id;
-      const parentMessageId =
-        cachedResponse?.parentMessageId ||
-        existingMessage?.parentMessageId ||
-        initialResponseMessage.parentMessageId;
-      let fallbackUserMessage: TMessage | undefined;
-      if (parentMessageId == null && thread_id == null && responseThreadId != null) {
-        for (let i = messages.length - 1; i >= 0; i--) {
-          const message = messages[i];
-          if (message.thread_id === responseThreadId && message.isCreatedByUser) {
-            fallbackUserMessage = message;
-            break;
-          }
-        }
-      }
-      const userMessage =
-        (parentMessageId
-          ? messages.find((message) => message.messageId === parentMessageId)
-          : undefined) ??
-        fallbackUserMessage ??
-        (thread_id != null || responseThreadId == null
-          ? (messages[messages.length - 1] as TMessage | undefined)
-          : undefined);
-      const resolvedParentMessageId = parentMessageId || userMessage?.messageId;
+      const userMessage = messages[messages.length - 1] as TMessage | undefined;
 
-      let response = cachedResponse;
+      const { initialResponse } = submission;
+
+      let response = messageMap.get(messageId);
       if (!response) {
-        const responseBase = existingMessage ?? initialResponseMessage;
-        responseThreadId ??= responseBase.thread_id;
+        const responseBase = existingMessage ?? (initialResponse as TMessage);
+        const responseThreadId =
+          thread_id ?? responseBase.thread_id ?? (initialResponse as TMessage).thread_id;
         response = {
           ...responseBase,
-          parentMessageId: resolvedParentMessageId ?? '',
+          parentMessageId: userMessage?.messageId ?? '',
           conversationId,
           messageId,
           ...(responseThreadId != null ? { thread_id: responseThreadId } : {}),
         };
         messageMap.set(messageId, response);
-      } else {
-        const responseUpdates: Partial<TMessage> = {};
-        if (responseThreadId != null && response.thread_id !== responseThreadId) {
-          responseUpdates.thread_id = responseThreadId;
-        }
-        if (
-          resolvedParentMessageId != null &&
-          response.parentMessageId !== resolvedParentMessageId
-        ) {
-          responseUpdates.parentMessageId = resolvedParentMessageId;
-        }
-        if (Object.keys(responseUpdates).length > 0) {
-          response = { ...response, ...responseUpdates };
-          messageMap.set(messageId, response);
-        }
       }
+
       // TODO: handle streaming for non-text
       const textPart: Text | string | undefined = data[ContentTypes.TEXT];
       const part: ContentPart =

@@ -161,7 +161,7 @@ describe('useContentHandler message reconciliation', () => {
     expect(output[2]).toBe(untaggedMessage);
     expect(output[3]).toMatchObject({
       messageId: 'response-1',
-      parentMessageId: 'user-1',
+      parentMessageId: 'legacy-1',
       thread_id: 'thread-1',
       content: [{ type: 'text', text: { value: 'streamed without thread metadata' } }],
     });
