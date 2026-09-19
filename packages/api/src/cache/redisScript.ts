@@ -7,18 +7,16 @@ export type RedisScriptResult = string | number | boolean | null | undefined | R
 export type RedisScriptClient = Pick<Redis | Cluster, 'eval' | 'evalsha'>;
 
 const scriptShas = new Map<string, string>();
-const unsupportedEvalshaScripts = new WeakMap<object, Set<string>>();
+const unsupportedEvalshaClients = new WeakSet<object>();
 
 const evalshaFallbackContext = new AsyncLocalStorage<boolean>();
 
-function scriptUsesEvalOnly(client: RedisScriptClient, script: string): boolean {
-  return unsupportedEvalshaScripts.get(client)?.has(script) === true;
+function scriptUsesEvalOnly(client: RedisScriptClient): boolean {
+  return unsupportedEvalshaClients.has(client);
 }
 
-function markScriptEvalOnly(client: RedisScriptClient, script: string): void {
-  const scripts = unsupportedEvalshaScripts.get(client) ?? new Set<string>();
-  scripts.add(script);
-  unsupportedEvalshaScripts.set(client, scripts);
+function markClientEvalOnly(client: RedisScriptClient): void {
+  unsupportedEvalshaClients.add(client);
 }
 
 function scriptSha(script: string): string {
@@ -72,7 +70,7 @@ export async function evalScript(
   numberOfKeys: number,
   ...args: RedisScriptArg[]
 ): Promise<RedisScriptResult> {
-  if (scriptUsesEvalOnly(client, script)) {
+  if (scriptUsesEvalOnly(client)) {
     return (await client.eval(script, numberOfKeys, ...args)) as RedisScriptResult;
   }
   try {
@@ -84,7 +82,7 @@ export async function evalScript(
       throw error;
     }
     if (isEvalshaPermissionError(error)) {
-      markScriptEvalOnly(client, script);
+      markClientEvalOnly(client);
     }
     return (await client.eval(script, numberOfKeys, ...args)) as RedisScriptResult;
   }
