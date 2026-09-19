@@ -30,6 +30,16 @@ describe('evalScript', () => {
     expect(evalsha).toHaveBeenCalledTimes(1);
     expect(evalCommand).toHaveBeenCalledTimes(2);
   });
+  test('memoizes an unsupported EVALSHA command', async () => {
+    const evalsha = jest.fn().mockRejectedValue(new Error('ERR unknown command EVALSHA'));
+    const evalCommand = jest.fn().mockResolvedValue(1);
+    const client = { evalsha, eval: evalCommand } as unknown as RedisScriptClient;
+
+    await expect(evalScript(client, 'return 2', 0)).resolves.toBe(1);
+    await expect(evalScript(client, 'return 2', 0)).resolves.toBe(1);
+    expect(evalsha).toHaveBeenCalledTimes(1);
+    expect(evalCommand).toHaveBeenCalledTimes(2);
+  });
 
   test('propagates non-NOSCRIPT EVALSHA failures without falling back', async () => {
     const failure = new Error('READONLY replica cannot accept writes');
