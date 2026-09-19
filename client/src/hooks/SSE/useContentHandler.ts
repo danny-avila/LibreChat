@@ -43,26 +43,31 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
       const _messages = getMessages() ?? [];
       const messages: TMessage[] = [];
       let existingMessage: TMessage | undefined;
-      let responseThreadId: string | undefined =
-        thread_id ?? cachedResponse?.thread_id ?? initialResponseMessage.thread_id;
+      let responseThreadId: string | undefined = thread_id ?? cachedResponse?.thread_id;
       for (const msg of _messages) {
         if (msg.messageId === messageId) {
           existingMessage ??= msg;
-          responseThreadId ??= msg.thread_id;
+          if (thread_id == null && msg.thread_id != null) {
+            responseThreadId = msg.thread_id;
+          } else {
+            responseThreadId ??= msg.thread_id;
+          }
           continue;
         }
         messages.push(
           thread_id == null || msg.thread_id === thread_id ? msg : { ...msg, thread_id },
         );
       }
+      responseThreadId ??= initialResponseMessage.thread_id;
       const parentMessageId =
         cachedResponse?.parentMessageId ||
         existingMessage?.parentMessageId ||
         initialResponseMessage.parentMessageId;
       const userMessage =
-        (parentMessageId != null
+        (parentMessageId
           ? messages.find((message) => message.messageId === parentMessageId)
           : undefined) ?? (messages[messages.length - 1] as TMessage | undefined);
+      const resolvedParentMessageId = parentMessageId || userMessage?.messageId;
 
       let response = cachedResponse;
       if (!response) {
@@ -70,7 +75,7 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
         responseThreadId ??= responseBase.thread_id;
         response = {
           ...responseBase,
-          parentMessageId: userMessage?.messageId ?? '',
+          parentMessageId: resolvedParentMessageId ?? '',
           conversationId,
           messageId,
           ...(responseThreadId != null ? { thread_id: responseThreadId } : {}),
@@ -81,8 +86,11 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
         if (responseThreadId != null && response.thread_id !== responseThreadId) {
           responseUpdates.thread_id = responseThreadId;
         }
-        if (userMessage != null && response.parentMessageId !== userMessage.messageId) {
-          responseUpdates.parentMessageId = userMessage.messageId;
+        if (
+          resolvedParentMessageId != null &&
+          response.parentMessageId !== resolvedParentMessageId
+        ) {
+          responseUpdates.parentMessageId = resolvedParentMessageId;
         }
         if (Object.keys(responseUpdates).length > 0) {
           response = { ...response, ...responseUpdates };
