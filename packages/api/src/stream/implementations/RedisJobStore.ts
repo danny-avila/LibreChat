@@ -4871,11 +4871,8 @@ export class RedisJobStore implements IJobStoreV2 {
     if (options?.coalesce === true && deliveredSteer == null && this.coalesceWindowMs > 0) {
       return this.enqueueCoalescedAppend(streamId, event, expectedCreatedAt);
     }
-    /** The chunk log is replayed in XADD order, so a per-event append (durable
-     * control events, steer receipts) is a barrier: pending coalesced deltas
-     * must be issued first. Same connection, so issue order is land order. */
     if (this.pendingAppends.has(streamId)) {
-      await this.flushCoalescedAppends(streamId);
+      void this.flushCoalescedAppends(streamId);
     }
     const key = KEYS.chunks(streamId);
     const jobKey = KEYS.job(streamId);

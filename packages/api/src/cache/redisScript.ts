@@ -8,6 +8,16 @@ export type RedisScriptClient = Pick<Redis | Cluster, 'eval' | 'evalsha'>;
 
 const scriptShas = new Map<string, string>();
 const unsupportedEvalshaClients = new WeakSet<object>();
+const inFlightScriptLoads = new WeakMap<object, Map<string, Promise<RedisScriptResult>>>();
+
+function scriptLoadsFor(client: RedisScriptClient): Map<string, Promise<RedisScriptResult>> {
+  let loads = inFlightScriptLoads.get(client);
+  if (loads == null) {
+    loads = new Map<string, Promise<RedisScriptResult>>();
+    inFlightScriptLoads.set(client, loads);
+  }
+  return loads;
+}
 
 const evalshaFallbackContext = new AsyncLocalStorage<boolean>();
 
@@ -73,17 +83,47 @@ export async function evalScript(
   if (scriptUsesEvalOnly(client)) {
     return (await client.eval(script, numberOfKeys, ...args)) as RedisScriptResult;
   }
+
+  const sha = scriptSha(script);
+  const evalshaCall = () =>
+    evalshaFallbackContext.run(true, () => client.evalsha(sha, numberOfKeys, ...args));
+  const inFlight = inFlightScriptLoads.get(client)?.get(sha);
+  if (inFlight) {
+    await inFlight;
+    if (scriptUsesEvalOnly(client)) {
+      return (await client.eval(script, numberOfKeys, ...args)) as RedisScriptResult;
+    }
+    return (await evalshaCall()) as RedisScriptResult;
+  }
+
   try {
-    return (await evalshaFallbackContext.run(true, () =>
-      client.evalsha(scriptSha(script), numberOfKeys, ...args),
-    )) as RedisScriptResult;
+    return (await evalshaCall()) as RedisScriptResult;
   } catch (error) {
     if (!isEvalshaFallbackError(error)) {
       throw error;
     }
+
+    const loads = scriptLoadsFor(client);
+    const existingLoad = loads.get(sha);
+    if (existingLoad) {
+      await existingLoad;
+      if (scriptUsesEvalOnly(client)) {
+        return (await client.eval(script, numberOfKeys, ...args)) as RedisScriptResult;
+      }
+      return (await evalshaCall()) as RedisScriptResult;
+    }
+
     if (isEvalshaPermissionError(error)) {
       markClientEvalOnly(client);
     }
-    return (await client.eval(script, numberOfKeys, ...args)) as RedisScriptResult;
+    const load = client.eval(script, numberOfKeys, ...args) as Promise<RedisScriptResult>;
+    loads.set(sha, load);
+    try {
+      return await load;
+    } finally {
+      if (loads.get(sha) === load) {
+        loads.delete(sha);
+      }
+    }
   }
 }
