@@ -100,14 +100,12 @@ export default function useLazyHighlight(
     if (!keyChanged && !throttleChanged) {
       return;
     }
-    if (!keyChanged) {
-      prevThrottleMs.current = throttleMs;
-      return;
-    }
-    prevKey.current = key;
+    prevKey.current = keyChanged ? key : prevKey.current;
     prevThrottleMs.current = throttleMs;
     generation.current += 1;
-    setHighlighted(null);
+    if (keyChanged) {
+      setHighlighted(null);
+    }
 
     if (timer.current) {
       clearTimeout(timer.current);

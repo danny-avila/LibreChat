@@ -99,6 +99,38 @@ describe('useLazyHighlight', () => {
 
     expect(result.current).toEqual(['a']);
   });
+  it('reschedules pending highlights when the configured throttle changes', async () => {
+    let throttleMs = HIGHLIGHT_THROTTLE_MS;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <CodeHighlightThrottleContext.Provider value={throttleMs}>
+        {children}
+      </CodeHighlightThrottleContext.Provider>
+    );
+    const { result, rerender } = renderHook(
+      ({ code }: { code: string }) => useLazyHighlight(code, 'js'),
+      {
+        initialProps: { code: 'a' },
+        wrapper,
+      },
+    );
+    await flush();
+    mockHighlight.mockClear();
+
+    rerender({ code: 'ab' });
+    act(() => jest.advanceTimersByTime(100));
+    throttleMs = HIGHLIGHT_THROTTLE_MS * 2;
+    rerender({ code: 'ab' });
+
+    act(() => jest.advanceTimersByTime(HIGHLIGHT_THROTTLE_MS * 2 - 101));
+    await flush();
+    expect(mockHighlight).not.toHaveBeenCalled();
+
+    act(() => jest.advanceTimersByTime(1));
+    await flush();
+    expect(mockHighlight).toHaveBeenCalledWith('js', 'ab');
+    expect(result.current).toEqual(['ab']);
+  });
+
   it('uses the configured throttle interval', async () => {
     const { result, rerender } = renderHook(({ code }) => useLazyHighlight(code, 'js'), {
       initialProps: { code: 'a' },
