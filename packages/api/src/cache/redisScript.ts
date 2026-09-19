@@ -46,10 +46,13 @@ export function isEvalshaFallbackError(error: unknown): boolean {
 }
 
 function isEvalshaPermissionError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const message = error.message.toUpperCase();
   return (
-    error instanceof Error &&
-    error.message.toUpperCase().includes('NOPERM') &&
-    error.message.toUpperCase().includes('EVALSHA')
+    message.includes('EVALSHA') &&
+    (message.includes('NOPERM') || message.includes('UNKNOWN COMMAND'))
   );
 }
 
