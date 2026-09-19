@@ -56,8 +56,8 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
         );
       }
       const parentMessageId =
-        cachedResponse?.parentMessageId ??
-        existingMessage?.parentMessageId ??
+        cachedResponse?.parentMessageId ||
+        existingMessage?.parentMessageId ||
         initialResponseMessage.parentMessageId;
       const userMessage =
         (parentMessageId != null
@@ -76,8 +76,19 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
           ...(responseThreadId != null ? { thread_id: responseThreadId } : {}),
         };
         messageMap.set(messageId, response);
+      } else {
+        const responseUpdates: Partial<TMessage> = {};
+        if (responseThreadId != null && response.thread_id !== responseThreadId) {
+          responseUpdates.thread_id = responseThreadId;
+        }
+        if (userMessage != null && response.parentMessageId !== userMessage.messageId) {
+          responseUpdates.parentMessageId = userMessage.messageId;
+        }
+        if (Object.keys(responseUpdates).length > 0) {
+          response = { ...response, ...responseUpdates };
+          messageMap.set(messageId, response);
+        }
       }
-
       // TODO: handle streaming for non-text
       const textPart: Text | string | undefined = data[ContentTypes.TEXT];
       const part: ContentPart =
