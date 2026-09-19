@@ -201,6 +201,7 @@ describe.each([undefined, '25'])('Delta coalescing integration (window %s)', (wi
         targetSize,
       );
       const immediate = targetSize >= MAX_COALESCED_BYTES || count >= MAX_COALESCED_EVENTS;
+      const clusterMode = process.env.USE_REDIS_CLUSTER === 'true';
       const evalshaSpy = jest.spyOn(ioredisClient!, 'evalsha');
       const appends: Array<Promise<boolean>> = [];
       const publications: Array<ReturnType<typeof emitChunkWithReceipt>> = [];
@@ -227,9 +228,13 @@ describe.each([undefined, '25'])('Delta coalescing integration (window %s)', (wi
             emitChunkWithReceipt(transport, streamId, event, generationId, { coalesce: true }),
           );
         }
-        /** Append script has eight keys; publication has three. Both must issue on
-         * the same boundary, with durable append first, or neither may issue yet. */
-        expect(evalshaSpy.mock.calls.map((call) => call[1])).toEqual(immediate ? [8, 3] : []);
+        /** On a single-node client both scripts share one connection, so the
+         * EVALSHA spy observes their durable-before-publication order. Cluster
+         * publication uses its routed connection; the durable log and sequence
+         * assertions below prove its effect while this spy sees only the append. */
+        expect(evalshaSpy.mock.calls.map((call) => call[1])).toEqual(
+          immediate ? (clusterMode ? [8] : [8, 3]) : [],
+        );
         if (!immediate) {
           expect(await reader.xlen(`stream:{${streamId}}:chunks`)).toBe(0);
           expect(await reader.get(`stream:{${streamId}}:seq`)).toBeNull();
@@ -247,7 +252,7 @@ describe.each([undefined, '25'])('Delta coalescing integration (window %s)', (wi
         ).toEqual(events);
         expect(await reader.get(`stream:{${streamId}}:seq`)).toBe(String(count));
         await jest.advanceTimersByTimeAsync(25);
-        expect(evalshaSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+        expect(evalshaSpy.mock.calls.length).toBeGreaterThanOrEqual(clusterMode ? 1 : 2);
       } finally {
         evalshaSpy.mockRestore();
         await store.destroy();
