@@ -1,10 +1,10 @@
 import { EventEmitter } from 'node:events';
 import { AgentCapabilities } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import { createLangfusePromptProvider } from '../../langfuse/prompts';
 import type { Request, Response } from 'express';
 import type { AgentInstructionPromptProvider } from './resolver';
 import { createAgentInstructionPromptPreviewHandler } from './handlers';
+import { createLangfusePromptProvider } from '../../langfuse/prompts';
 
 const enabledConfig = {
   endpoints: { agents: { capabilities: [AgentCapabilities.instruction_prompts] } },

@@ -25,6 +25,44 @@ const prompt = {
 };
 
 describe('Langfuse agent instruction prompts', () => {
+  it('does not let an older overlapping fetch replace a newer cached result', async () => {
+    let finishFirst!: (value: Response) => void;
+    let finishSecond!: (value: Response) => void;
+    const fetch = jest
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            finishFirst = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            finishSecond = resolve;
+          }),
+      );
+    const provider = createLangfusePromptProvider({
+      resolveDestinations: async () => [destination],
+      fetch,
+    });
+    const reference = { source: 'langfuse' as const, name: 'agent-policy' };
+    const context = { userId: 'user-1' };
+    const first = provider.resolve(reference, context);
+    const second = provider.resolve(reference, context);
+    await Promise.resolve();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    finishSecond(response(200, { ...prompt, version: 8 }));
+    await expect(second).resolves.toMatchObject({ version: 8 });
+    finishFirst(response(200, { ...prompt, version: 7 }));
+    await expect(first).resolves.toMatchObject({ version: 7 });
+    await expect(provider.resolve(reference, context)).resolves.toMatchObject({
+      version: 8,
+      cached: true,
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
   it('uses the latest label when no version is pinned', async () => {
     const fetch = jest.fn().mockResolvedValue(response(200, prompt));
     const provider = createLangfusePromptProvider({
