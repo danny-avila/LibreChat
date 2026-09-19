@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { Redis, Cluster } from 'ioredis';
 
 export type RedisScriptArg = string | number | Buffer;
@@ -6,6 +7,8 @@ export type RedisScriptResult = string | number | boolean | null | undefined | R
 export type RedisScriptClient = Pick<Redis | Cluster, 'eval' | 'evalsha'>;
 
 const scriptShas = new Map<string, string>();
+
+const evalshaFallbackContext = new AsyncLocalStorage<boolean>();
 
 function scriptSha(script: string): string {
   let sha = scriptShas.get(script);
@@ -31,6 +34,10 @@ export function isEvalshaFallbackError(error: unknown): boolean {
   );
 }
 
+export function isEvalshaFallbackInProgress(): boolean {
+  return evalshaFallbackContext.getStore() === true;
+}
+
 /**
  * Runs a Lua script by its SHA1 (EVALSHA) so only the 40-byte digest crosses the wire on
  * every call, and falls back to EVAL — which also loads the script into the server cache —
@@ -44,7 +51,9 @@ export async function evalScript(
   ...args: RedisScriptArg[]
 ): Promise<RedisScriptResult> {
   try {
-    return (await client.evalsha(scriptSha(script), numberOfKeys, ...args)) as RedisScriptResult;
+    return (await evalshaFallbackContext.run(true, () =>
+      client.evalsha(scriptSha(script), numberOfKeys, ...args),
+    )) as RedisScriptResult;
   } catch (error) {
     if (!isEvalshaFallbackError(error)) {
       throw error;
