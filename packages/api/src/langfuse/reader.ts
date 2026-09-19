@@ -21,6 +21,7 @@ import { TraceReadError } from '~/traces/types';
 import { mergeHeaders } from '~/utils/headers';
 import { redirectPolicyFor } from './utils';
 import { traceIdForMessage } from './trace';
+import { resolveTraceRole } from './roles';
 
 const OBSERVATIONS_PATH = '/api/public/v2/observations';
 const MAX_PAGE_SIZE = 1000;
@@ -184,12 +185,14 @@ function toRecord(
   const model = (observation.model ?? observation.providedModelName)?.trim();
   const usage = toUsage(observation.usageDetails);
   const cost = toCost(observation);
+  const kind = KIND_BY_TYPE[type] ?? 'span';
   return {
     id: observation.id,
     traceId: observation.traceId,
     messageId,
     parentId: observation.parentObservationId || null,
-    kind: KIND_BY_TYPE[type] ?? 'span',
+    kind,
+    ...resolveTraceRole(kind, name),
     name: clamp(name, NAME_MAX_LENGTH),
     startTime: new Date(observation.startTime).toISOString(),
     status,

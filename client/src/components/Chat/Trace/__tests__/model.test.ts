@@ -234,6 +234,7 @@ describe('buildTraceModel', () => {
       duration: 4000,
       turns: 1,
       generations: 2,
+      labels: 0,
       toolCalls: 1,
       errors: 1,
       running: 0,
@@ -880,5 +881,89 @@ describe('lanes', () => {
     expect(sequenceLane(record({ id: 'g', kind: 'generation' }))).toBe(0);
     expect(sequenceLane(record({ id: 't', kind: 'tool' }))).toBe(1);
     expect(sequenceLane(record({ id: 'e', kind: 'event' }))).toBe(2);
+  });
+});
+
+/** A response as the agents SDK exports it: wrappers around each model call, tool rounds the host ran, label calls. */
+const sdkRun: TTraceRecord[] = [
+  record({ id: 'run', kind: 'agent', role: 'run', name: 'AgentGraph', endTime: at(9000) }),
+  record({
+    id: 'scout',
+    parentId: 'run',
+    role: 'agent',
+    agentId: 'agent_scout',
+    name: 'agent_scout',
+    endTime: at(9000),
+  }),
+  record({ id: 'graph', parentId: 'scout', kind: 'agent', role: 'run', name: 'AgentGraph' }),
+  record({ id: 'node-1', parentId: 'graph', kind: 'agent', role: 'plumbing', name: 'agent' }),
+  record({
+    id: 'llm-1',
+    parentId: 'node-1',
+    kind: 'generation',
+    role: 'model',
+    name: 'llm',
+    startTime: at(100),
+    endTime: at(1000),
+    usage: { input: 100, output: 10, total: 110 },
+  }),
+  record({
+    id: 'label-1',
+    parentId: 'graph',
+    kind: 'generation',
+    role: 'stepLabel',
+    name: 'StepLabel',
+    startTime: at(1050),
+    endTime: at(1400),
+    usage: { input: 20, output: 5, total: 25 },
+  }),
+  record({
+    id: 'round-1',
+    parentId: 'graph',
+    role: 'tools',
+    name: 'tool-dispatch',
+    startTime: at(1100),
+    endTime: at(3000),
+  }),
+  record({ id: 'node-2', parentId: 'graph', kind: 'agent', role: 'plumbing', name: 'agent' }),
+  record({
+    id: 'llm-2',
+    parentId: 'node-2',
+    kind: 'generation',
+    role: 'model',
+    name: 'llm',
+    startTime: at(3100),
+    endTime: at(4000),
+    usage: { input: 200, output: 20, total: 220 },
+  }),
+];
+
+describe('roles', () => {
+  const model = buildTraceModel(sdkRun, 'simple');
+  const [turn] = model.turns;
+
+  it('counts a label call as spend, never as a model call or a step of the response', () => {
+    expect(turn.steps).toBe(2);
+    expect(turn.generations).toBe(2);
+    expect(turn.labels).toBe(1);
+    expect(model.summary).toMatchObject({ generations: 2, labels: 1, totalTokens: 355 });
+  });
+
+  it('lists a tool round the host ran and the label beside the model call that led to them', () => {
+    const first = model.steps.get(turn.stepKeys[0]);
+    expect(first?.generationId).toBe('llm-1');
+    expect(first?.rootIds).toEqual(['llm-1', 'label-1', 'round-1']);
+    expect(model.nodes.get('round-1')?.shown).toBe(true);
+    expect(model.nodes.get('node-1')?.shown).toBe(false);
+    expect(sequenceLane(sdkRun[6])).toBe(1);
+    expect(sequenceLane(sdkRun[5])).toBe(2);
+  });
+
+  it('stamps every record beneath a saved agent with that agent', () => {
+    expect(model.nodes.get('llm-2')?.agentId).toBe('agent_scout');
+    expect(model.nodes.get('round-1')?.agentId).toBe('agent_scout');
+    expect(model.nodes.get('run')?.agentId).toBeUndefined();
+    expect(model.steps.get(turn.stepKeys[1])?.agentId).toBe('agent_scout');
+    expect(turn.agents).toEqual([{ agentId: 'agent_scout', recordId: 'scout' }]);
   });
 });

@@ -1,12 +1,15 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { TraceModel } from './model';
+import { getActivityLabelPart, getActivityLabelText, isPhaseActivityLabel } from '~/utils';
+import { isModelCall, isToolWork } from './model';
 import { hasParallelLanes } from '~/utils/lanes';
 
 const PREVIEW_LENGTH = 160;
 const ELLIPSIS = '…';
 
-type ToolCallPreview = { name: string; args: string };
+/** `args` is the one-line preview; `input` and `output` are what the chat's own tool card holds. */
+export type ToolCallPreview = { name: string; args: string; input?: string; output?: string };
 
 /** What one model call of a response produced: the text it wrote and the tools it called. */
 export type StepPreview = { text: string; toolCalls: ToolCallPreview[] };
@@ -21,7 +24,11 @@ export type MessagePreview = {
   finalOnly: boolean;
   /** Agents ran in parallel lanes, whose output cannot be told apart by order. */
   parallel: boolean;
+  /** The activity labels the chat showed, in the order they were written, by the kind of label. */
+  labels: Record<LabelRole, string[]>;
 };
+
+type LabelRole = 'stepLabel' | 'phaseLabel';
 
 function compact(text: string): string {
   const collapsed = text.replace(/\s+/g, ' ').trim();
@@ -58,6 +65,13 @@ function argsPreview(args: string | object | undefined): string {
   return compact(pairs.join(', '));
 }
 
+function contentOf(value: string | object | null | undefined): string | undefined {
+  if (value == null || value === '') {
+    return undefined;
+  }
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
 type ToolCallPart = Extract<TMessageContentParts, { type: ContentTypes.TOOL_CALL }>['tool_call'];
 
 /** A tool call's name and arguments, whichever of the persisted call shapes carries them. */
@@ -66,10 +80,16 @@ function callOf(call: ToolCallPart | undefined): ToolCallPreview | null {
     return null;
   }
   if ('function' in call && call.function != null) {
-    return { name: call.function.name, args: argsPreview(call.function.arguments) };
+    const { name, arguments: input, output } = call.function;
+    return { name, args: argsPreview(input), input: contentOf(input), output: contentOf(output) };
   }
   if ('name' in call && typeof call.name === 'string') {
-    return { name: call.name, args: argsPreview(call.args) };
+    return {
+      name: call.name,
+      args: argsPreview(call.args),
+      input: contentOf(call.args),
+      output: 'output' in call ? contentOf(call.output) : undefined,
+    };
   }
   return null;
 }
@@ -95,6 +115,7 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
   let lastRunStep: string | undefined;
   let roundAgent: string | undefined;
   const parallel = hasParallelLanes(parts);
+  const labels: MessagePreview['labels'] = { stepLabel: [], phaseLabel: [] };
   let sealed = false;
   const begin = () => {
     current = { text: '', toolCalls: [] };
@@ -113,6 +134,14 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
   for (const part of parts) {
     /** A streaming message writes parts at provider indexes, so the array can hold holes. */
     if (part == null) {
+      continue;
+    }
+    if (part.type === ContentTypes.ACTIVITY_LABEL) {
+      const label = getActivityLabelPart(part);
+      const text = getActivityLabelText(label);
+      if (text) {
+        labels[isPhaseActivityLabel(label) ? 'phaseLabel' : 'stepLabel'].push(text);
+      }
       continue;
     }
     if (part.type === ContentTypes.TOOL_CALL) {
@@ -161,7 +190,12 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
     parts.some((part) => part?.type === ContentTypes.ERROR);
   /** A failed turn's row stores the failure as its text; the model never wrote it. */
   if (steps.length === 0 && message?.text && !endedEarly) {
-    return { steps: [{ text: compact(message.text), toolCalls: [] }], finalOnly: true, parallel };
+    return {
+      steps: [{ text: compact(message.text), toolCalls: [] }],
+      finalOnly: true,
+      parallel,
+      labels,
+    };
   }
   const finalOnly =
     !endedEarly &&
@@ -169,7 +203,7 @@ export function buildMessagePreview(message: TMessage | undefined): MessagePrevi
     steps.length === 1 &&
     steps[0].toolCalls.length === 0 &&
     steps[0].text !== '';
-  return { steps, finalOnly, parallel };
+  return { steps, finalOnly, parallel, labels };
 }
 
 export function buildStepPreviews(message: TMessage | undefined): StepPreview[] {
@@ -246,7 +280,7 @@ export function buildPreviewIndex(
     const ordinals = new Map<string, number>();
     for (const node of roots) {
       const { record } = node;
-      if (record.kind === 'generation') {
+      if (isModelCall(record)) {
         if (round.text) {
           index.set(record.id, round.text);
         }
@@ -279,4 +313,98 @@ export function buildPreviews(
     previews.set(message.messageId, buildMessagePreview(message));
   }
   return previews;
+}
+
+/** What the chat's messages say about records the trace only names: tool rounds and activity labels. */
+export type ActivityIndex = {
+  /** The calls of a tool round the host ran without recording each one, by the round's record id. */
+  calls: Map<string, ToolCallPreview[]>;
+  /** The text a label's model call wrote, by its record id. */
+  labels: Map<string, string>;
+  /** Tool calls the trace holds no record of, by response: what a turn's own count misses. */
+  unrecordedCalls: Map<string, number>;
+};
+
+const hasToolRecord = (model: TraceModel) => (id: string) => {
+  const record = model.nodes.get(id)?.record;
+  return record != null && isToolWork(record);
+};
+
+/**
+ * Attributes the message's tool calls and activity labels to trace records. A
+ * round's calls go to its one tool-round record that holds no recorded tools (a
+ * round re-entered after an approval pause has several, and only the last one
+ * ran them). Labels pair with their model calls in the order both were written,
+ * and only when the counts agree, under the rule the previews follow.
+ */
+export function buildActivityIndex(
+  model: TraceModel,
+  previewsByMessage: ReadonlyMap<string, MessagePreview>,
+  partialMessageId?: string,
+): ActivityIndex {
+  const calls: ActivityIndex['calls'] = new Map();
+  const labels: ActivityIndex['labels'] = new Map();
+  const unrecordedCalls: ActivityIndex['unrecordedCalls'] = new Map();
+  const stepsByTurn = new Map(model.turns.map((turn) => [turn.messageId, turn.steps]));
+  const aligned = (messageId: string): MessagePreview | undefined => {
+    const message = previewsByMessage.get(messageId);
+    return message == null || message.parallel || messageId === partialMessageId
+      ? undefined
+      : message;
+  };
+
+  for (const step of model.steps.values()) {
+    const message = aligned(step.messageId);
+    if (
+      message == null ||
+      message.finalOnly ||
+      step.origin === 'title' ||
+      message.steps.length !== stepsByTurn.get(step.messageId)
+    ) {
+      continue;
+    }
+    const round = message.steps[step.index - 1];
+    let target: string | undefined;
+    for (const id of step.rootIds) {
+      const node = model.nodes.get(id);
+      if (node?.record.role === 'tools' && !node.childIds.some(hasToolRecord(model))) {
+        target = id;
+      }
+    }
+    if (target == null || round == null || round.toolCalls.length === 0) {
+      continue;
+    }
+    calls.set(target, round.toolCalls);
+    unrecordedCalls.set(
+      step.messageId,
+      (unrecordedCalls.get(step.messageId) ?? 0) + round.toolCalls.length,
+    );
+  }
+
+  const labelRecords = new Map<string, Record<LabelRole, Array<{ id: string; start: number }>>>();
+  for (const node of model.nodes.values()) {
+    const { role, messageId, id } = node.record;
+    if (role !== 'stepLabel' && role !== 'phaseLabel') {
+      continue;
+    }
+    const byRole = labelRecords.get(messageId) ?? { stepLabel: [], phaseLabel: [] };
+    byRole[role].push({ id, start: node.start });
+    labelRecords.set(messageId, byRole);
+  }
+  for (const [messageId, byRole] of labelRecords) {
+    const message = aligned(messageId);
+    if (message == null) {
+      continue;
+    }
+    for (const role of ['stepLabel', 'phaseLabel'] as const) {
+      const records = byRole[role];
+      const texts = message.labels[role];
+      if (records.length !== texts.length) {
+        continue;
+      }
+      records.sort((a, b) => a.start - b.start || a.id.localeCompare(b.id));
+      records.forEach((record, index) => labels.set(record.id, texts[index]));
+    }
+  }
+  return { calls, labels, unrecordedCalls };
 }
