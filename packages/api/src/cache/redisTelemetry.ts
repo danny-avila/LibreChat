@@ -227,8 +227,7 @@ export async function observeRedisOperation<T>(
     }
     return result;
   } catch (error) {
-    status =
-      redisOperation === 'evalsha' && isEvalshaFallbackError(error) ? 'success' : 'error';
+    status = redisOperation === 'evalsha' && isEvalshaFallbackError(error) ? 'success' : 'error';
     throw error;
   } finally {
     const durationSeconds = Number(process.hrtime.bigint() - startedAt) / 1_000_000_000;
