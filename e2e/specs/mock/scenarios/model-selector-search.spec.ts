@@ -47,7 +47,7 @@ test.describe('model selector search', () => {
     await page.keyboard.press('Tab');
     await expect(tabbablePin).toBeFocused();
     await tabbablePin.press('Enter');
-    await expect(page.locator('button[aria-label="Unpin"]')).toHaveCount(1);
+    await expect(page.locator('button[aria-label="Unpin"][tabindex="0"]')).toHaveCount(1);
   });
 
   test('search options expose one global position sequence @scenario:model-selector-search-options-report-global-positions', async ({
