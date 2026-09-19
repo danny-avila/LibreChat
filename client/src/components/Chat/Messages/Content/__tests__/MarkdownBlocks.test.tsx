@@ -73,7 +73,12 @@ jest.mock('~/components/Messages/Content/CodeBlock', () => ({
 /** The real splitter, observed: whether a render paid for the block-boundary parse. */
 jest.mock('../splitMarkdown', () => {
   const actual = jest.requireActual<typeof import('../splitMarkdown')>('../splitMarkdown');
-  return { ...actual, splitMarkdownIntoBlocks: jest.fn(actual.splitMarkdownIntoBlocks) };
+  const splitSpy = jest.fn(actual.splitMarkdownIntoBlocks);
+  return {
+    ...actual,
+    splitMarkdownIntoBlocks: splitSpy,
+    createMarkdownSplitter: jest.fn(() => splitSpy),
+  };
 });
 
 const splitSpy = jest.mocked(splitMarkdownIntoBlocks);
