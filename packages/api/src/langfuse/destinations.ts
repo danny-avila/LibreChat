@@ -43,6 +43,20 @@ export type LangfuseScoreDestination = {
   headers?: Record<string, string>;
 };
 
+export type LangfusePromptDestinationOptions = {
+  destinationId?: string;
+};
+
+export function getLangfuseCredentialIdentity(destination: LangfuseScoreDestination): string {
+  const headers = Object.entries(destination.headers ?? {})
+    .map(([key, value]) => [key.toLowerCase(), value] as const)
+    .sort(([left], [right]) => left.localeCompare(right));
+  const identity = createHash('sha256')
+    .update(`${destination.baseUrl}\n${destination.authorization}\n${JSON.stringify(headers)}`)
+    .digest('hex');
+  return identity;
+}
+
 export type LangfuseScoreDestinationOptions = {
   waitForCentralProjectId?: boolean;
   /**
@@ -272,10 +286,20 @@ function getConfiguredScoreDestination(
  */
 export async function resolveLangfusePromptDestinations(
   appConfig?: AppConfig,
+  { destinationId }: LangfusePromptDestinationOptions = {},
 ): Promise<LangfuseScoreDestination[]> {
   const headers = resolveLangfuseHeaders(appConfig?.langfuse?.headers);
+  const configured = getConfiguredScoreDestination(appConfig, headers);
+  if (
+    configured &&
+    (destinationId == null ||
+      configured.id === destinationId ||
+      getLangfuseCredentialIdentity(configured) === destinationId)
+  ) {
+    return [configured];
+  }
   const destinations = [
-    getConfiguredScoreDestination(appConfig, headers),
+    configured,
     hasLangfuseEnvCredentials() ? await getCentralScoreDestination(true, headers) : undefined,
   ];
   return destinations.filter((destination): destination is LangfuseScoreDestination =>

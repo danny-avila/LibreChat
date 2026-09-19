@@ -119,7 +119,7 @@ describe('Langfuse agent instruction prompts', () => {
         );
       const older = provider.resolve(reference, context);
       const newer = provider.resolve(reference, context);
-      await Promise.resolve();
+      await new Promise<void>((resolve) => setImmediate(resolve));
       finishNewer(response(200, { ...prompt, version: 8 }));
       await newer;
       finishOlder(response(503, {}));
@@ -156,7 +156,7 @@ describe('Langfuse agent instruction prompts', () => {
     const context = { userId: 'user-1' };
     const older = provider.resolve(reference, context);
     const newer = provider.resolve(reference, context);
-    await Promise.resolve();
+    await new Promise<void>((resolve) => setImmediate(resolve));
     finishNewer(response(200, { ...prompt, version: 8 }));
     await newer;
     clock = 101;
@@ -192,7 +192,7 @@ describe('Langfuse agent instruction prompts', () => {
     const context = { userId: 'user-1' };
     const first = provider.resolve(reference, context);
     const second = provider.resolve(reference, context);
-    await Promise.resolve();
+    await new Promise<void>((resolve) => setImmediate(resolve));
     expect(fetch).toHaveBeenCalledTimes(2);
     finishSecond(response(200, { ...prompt, version: 8 }));
     await expect(second).resolves.toMatchObject({ version: 8 });
@@ -524,6 +524,7 @@ describe('Langfuse agent instruction prompts', () => {
     await provider.resolve({ source: 'langfuse', name: 'agent-policy' }, context);
     now = 11;
     const pending = provider.resolve({ source: 'langfuse', name: 'agent-policy' }, context);
+    await new Promise<void>((resolve) => setImmediate(resolve));
     controller.abort(reason);
 
     await expect(pending).rejects.toBe(reason);

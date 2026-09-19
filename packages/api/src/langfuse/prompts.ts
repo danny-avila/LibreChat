@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { createHash } from 'node:crypto';
 import {
   LANGFUSE_PROMPT_CACHE_TTL_DEFAULT_MS,
   LANGFUSE_PROMPT_REQUEST_TIMEOUT_DEFAULT_MS,
@@ -11,8 +10,10 @@ import type {
   AgentInstructionPromptProvider,
   AgentInstructionPromptResult,
 } from '~/agents/instructions';
-import type { LangfuseScoreDestination } from './destinations';
+import type { LangfuseScoreDestination, LangfusePromptDestinationOptions } from './destinations';
 import { AgentInstructionPromptError } from '~/agents/instructions';
+import { getLangfuseCredentialIdentity } from './destinations';
+import { detachOnAbort } from '~/utils/promises';
 import { mergeHeaders } from '~/utils/headers';
 import { redirectPolicyFor } from './utils';
 
@@ -37,7 +38,10 @@ type CacheEntry = {
 };
 
 export interface LangfusePromptProviderDeps {
-  resolveDestinations: (appConfig?: AppConfig) => Promise<LangfuseScoreDestination[]>;
+  resolveDestinations: (
+    appConfig?: AppConfig,
+    options?: LangfusePromptDestinationOptions,
+  ) => Promise<LangfuseScoreDestination[]>;
   fetch: (url: string, init: RequestInit) => Promise<Response>;
   cacheTtlMs?: number;
   timeoutMs?: number;
@@ -50,22 +54,12 @@ function isLangfuseReference(
   return reference.source === 'langfuse';
 }
 
-function cacheDestinationIdentity(destination: LangfuseScoreDestination): string {
-  const headers = Object.entries(destination.headers ?? {})
-    .map(([key, value]) => [key.toLowerCase(), value] as const)
-    .sort(([left], [right]) => left.localeCompare(right));
-  const identity = createHash('sha256')
-    .update(`${destination.baseUrl}\n${destination.authorization}\n${JSON.stringify(headers)}`)
-    .digest('hex');
-  return identity;
-}
-
 function destinationId(destination: LangfuseScoreDestination): string {
-  return destination.id ?? cacheDestinationIdentity(destination);
+  return destination.id ?? getLangfuseCredentialIdentity(destination);
 }
 
 function cacheKey(destination: LangfuseScoreDestination, name: string, version?: number): string {
-  return `${cacheDestinationIdentity(destination)}:${name}:${version ?? 'latest'}`;
+  return `${getLangfuseCredentialIdentity(destination)}:${name}:${version ?? 'latest'}`;
 }
 
 function pruneExpiredEntries(
@@ -181,67 +175,80 @@ export function createLangfusePromptProvider({
           422,
         );
       }
-      const destinations = (await resolveDestinations(context.appConfig)).sort(
-        (left, right) => destinationPreference[left.name] - destinationPreference[right.name],
-      );
-      const destination =
-        reference.destinationId == null
-          ? destinations[0]
-          : destinations.find(
-              (candidate) =>
-                destinationId(candidate) === reference.destinationId ||
-                cacheDestinationIdentity(candidate) === reference.destinationId,
-            );
-      if (!destination) {
-        throw new AgentInstructionPromptError(
-          'not_configured',
-          reference.destinationId == null
-            ? 'No Langfuse prompt connection is configured'
-            : 'The saved Langfuse prompt connection is not available',
-          503,
-        );
-      }
-
-      if (destination.name === 'central' && !destination.id) {
-        throw new AgentInstructionPromptError(
-          'not_configured',
-          'Langfuse project identity is unavailable; retry discovery or configure LANGFUSE_PROJECT_ID',
-          503,
-        );
-      }
-
-      const key = cacheKey(destination, reference.name, reference.version);
-      const currentTime = now();
       const promptConfig = context.appConfig?.langfuse?.prompts;
-      const effectiveCacheTtlMs = promptConfig?.cacheTtlMs ?? cacheTtlMs;
-      pruneExpiredEntries(cache, key, currentTime, activeRequests);
-      const cached = cache.get(key);
-      if (cached && currentTime - cached.fetchedAt < effectiveCacheTtlMs) {
-        return { ...cached.value, cached: true };
-      }
-      const effectiveTimeoutMs = promptConfig?.requestTimeoutMs ?? timeoutMs;
-      const requestId = ++nextRequestId;
-      const timeoutSignal = AbortSignal.timeout(effectiveTimeoutMs);
+      const timeoutSignal = AbortSignal.timeout(promptConfig?.requestTimeoutMs ?? timeoutMs);
       const signal = context.signal
         ? AbortSignal.any([context.signal, timeoutSignal])
         : timeoutSignal;
-
-      const activity = activeRequests.get(key) ?? { count: 0 };
-      activity.count++;
-      activeRequests.set(key, activity);
+      let key: string | undefined;
+      let cached: CacheEntry | undefined;
+      let activity: { count: number } | undefined;
       try {
-        const response = await fetch(promptUrl(destination, reference.name, reference.version), {
-          headers: mergeHeaders(destination.headers, {
-            Authorization: destination.authorization,
+        signal.throwIfAborted();
+        const destinations = [
+          ...(await detachOnAbort(
+            resolveDestinations(context.appConfig, { destinationId: reference.destinationId }),
+            signal,
+          )),
+        ].sort(
+          (left, right) => destinationPreference[left.name] - destinationPreference[right.name],
+        );
+        signal.throwIfAborted();
+        const destination =
+          reference.destinationId == null
+            ? destinations[0]
+            : destinations.find(
+                (candidate) =>
+                  destinationId(candidate) === reference.destinationId ||
+                  getLangfuseCredentialIdentity(candidate) === reference.destinationId,
+              );
+        if (!destination) {
+          throw new AgentInstructionPromptError(
+            'not_configured',
+            reference.destinationId == null
+              ? 'No Langfuse prompt connection is configured'
+              : 'The saved Langfuse prompt connection is not available',
+            503,
+          );
+        }
+
+        if (destination.name === 'central' && !destination.id) {
+          throw new AgentInstructionPromptError(
+            'not_configured',
+            'Langfuse project identity is unavailable; retry discovery or configure LANGFUSE_PROJECT_ID',
+            503,
+          );
+        }
+
+        key = cacheKey(destination, reference.name, reference.version);
+        const currentTime = now();
+        const effectiveCacheTtlMs = promptConfig?.cacheTtlMs ?? cacheTtlMs;
+        pruneExpiredEntries(cache, key, currentTime, activeRequests);
+        cached = cache.get(key);
+        if (cached && currentTime - cached.fetchedAt < effectiveCacheTtlMs) {
+          return { ...cached.value, cached: true };
+        }
+        const requestId = ++nextRequestId;
+        activity = activeRequests.get(key) ?? { count: 0 };
+        activity.count++;
+        activeRequests.set(key, activity);
+        const response = await detachOnAbort(
+          fetch(promptUrl(destination, reference.name, reference.version), {
+            headers: mergeHeaders(destination.headers, {
+              Authorization: destination.authorization,
+            }),
+            signal,
+            ...redirectPolicyFor(destination.headers),
           }),
           signal,
-          ...redirectPolicyFor(destination.headers),
-        });
+        );
         if (!response.ok) {
           throw statusError(response.status);
         }
+        const body = await detachOnAbort(response.json(), signal);
+        signal.throwIfAborted();
         const result = {
-          ...parsePrompt(await response.json()),
+          ...parsePrompt(body),
           destinationId: destinationId(destination),
         };
         const fetchedAt = now();
@@ -267,13 +274,13 @@ export function createLangfusePromptProvider({
                 502,
                 true,
               );
-        const fallback = cache.get(key) ?? cached;
+        const fallback = (key == null ? undefined : cache.get(key)) ?? cached;
         if (normalized.retryable && fallback) {
           return { ...fallback.value, cached: true };
         }
         throw normalized;
       } finally {
-        if (--activity.count === 0) {
+        if (activity && key != null && --activity.count === 0) {
           activeRequests.delete(key);
         }
       }
