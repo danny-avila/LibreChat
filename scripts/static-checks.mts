@@ -1555,15 +1555,32 @@ function newestModification(directory: string, skip?: (path: string) => boolean)
  * recorded baseline that disagrees with the same tree on a machine that did
  * build. Building here, rather than skipping, is the same choice the config
  * suite makes below.
+ *
+ * A zero exit is not the postcondition. The question `designMetadataIsFresh`
+ * asks is whether `dist` describes these sources, and a build that reports
+ * success while leaving the bundle incomplete or older than what it was built
+ * from answers it the same way it did before — so it is asked again. Otherwise
+ * the lint that follows classifies against a bundle that describes something
+ * else, which is the failure this whole function exists to prevent, arrived at
+ * through the branch that was supposed to fix it.
  */
 function buildClientPackage(): CheckOutcome | null {
   if (designMetadataIsFresh()) return null;
   const build = runCommand(NPM, ['run', 'build:client-package']);
-  if (build.status === 0) return null;
-  return {
-    ok: false,
-    output: `npm run build:client-package failed; the design rules cannot read the primitives' variants without it:\n${build.output}`,
-  };
+  if (build.status !== 0) {
+    return {
+      ok: false,
+      output: `npm run build:client-package failed; the design rules cannot read the primitives' variants without it:\n${build.output}`,
+    };
+  }
+  if (!designMetadataIsFresh()) {
+    return {
+      ok: false,
+      output:
+        'npm run build:client-package reported success, but packages/client/dist is still incomplete or older than the sources it is built from. The design rules would classify against a bundle that does not describe these primitives and report fewer violations than CI.',
+    };
+  }
+  return null;
 }
 
 // --------------------------------------------------------------- config migration tests

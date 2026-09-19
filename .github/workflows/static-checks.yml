@@ -11,7 +11,12 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'eslint.config.mjs'
+      # Both spellings: the trigger has to start the workflow for the root
+      # baseline and for a nested one outside the source trees above, which is
+      # exactly what the `suppressions` filter below and validateSuppressions()
+      # claim to cover.
       - 'eslint-suppressions.json'
+      - '**/eslint-suppressions.json'
       - '.github/workflows/static-checks.yml'
       - '!**.md'
 
