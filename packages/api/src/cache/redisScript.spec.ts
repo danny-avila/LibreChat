@@ -16,6 +16,37 @@ describe('evalScript', () => {
     expect(evalCommand).toHaveBeenCalledTimes(1);
     expect(evalCommand).toHaveBeenCalledWith('return ARGV[1]', 0, 'first');
   });
+  test('serializes concurrent cold loads for the same client and script', async () => {
+    let releaseFallback!: () => void;
+    const fallbackFinished = new Promise<void>((resolve) => {
+      releaseFallback = resolve;
+    });
+    let signalFallbackStarted!: () => void;
+    const fallbackStarted = new Promise<void>((resolve) => {
+      signalFallbackStarted = resolve;
+    });
+    const evalsha = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('NOSCRIPT No matching script'))
+      .mockResolvedValueOnce('cached-result');
+    const evalCommand = jest.fn(async () => {
+      signalFallbackStarted();
+      await fallbackFinished;
+      return 'fallback-result';
+    });
+    const client = { evalsha, eval: evalCommand } as unknown as RedisScriptClient;
+
+    const first = evalScript(client, 'return ARGV[1]', 0, 'first');
+    await fallbackStarted;
+    const second = evalScript(client, 'return ARGV[1]', 0, 'second');
+    await Promise.resolve();
+
+    expect(evalsha).toHaveBeenCalledTimes(1);
+    releaseFallback();
+    await expect(first).resolves.toBe('fallback-result');
+    await expect(second).resolves.toBe('cached-result');
+    expect(evalCommand).toHaveBeenCalledTimes(1);
+  });
   test('falls back and memoizes when EVALSHA is denied but EVAL is permitted', async () => {
     const evalsha = jest
       .fn()
