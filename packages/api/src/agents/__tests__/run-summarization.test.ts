@@ -1513,6 +1513,14 @@ describe('Azure deployment alias', () => {
     const summaryConfig = agents[0].summarizationConfig as Record<string, unknown>;
     const parameters = summaryConfig.parameters as Record<string, unknown>;
     expect(parameters).toHaveProperty('promptCacheExplicit', undefined);
+    /**
+     * And nothing of the agent's identity travels with it: a different
+     * provider builds its own client rather than layering over the agent's
+     * options, so there is no inherited key here to clear.
+     */
+    expect(parameters.promptCacheKey).toBeUndefined();
+    const summaryKwargs = (parameters.modelKwargs ?? {}) as Record<string, unknown>;
+    expect(summaryKwargs.prompt_cache_key).toBeUndefined();
   });
 
   it('withholds inherited explicit cache controls from an unsupported summary model', async () => {

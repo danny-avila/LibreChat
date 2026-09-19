@@ -8,7 +8,7 @@ import { canonicalize } from '~/utils/canonicalize';
  * stops colliding with keys written by the previous shape instead of pointing
  * two different prefixes at one cache entry.
  */
-export const PROMPT_CACHE_KEY_VERSION = 3;
+export const PROMPT_CACHE_KEY_VERSION = 4;
 
 /**
  * Models that accept the GPT-5.6 explicit cache controls the agents SDK emits
@@ -421,7 +421,22 @@ function clientOptionsIdentity(value: unknown): unknown {
  * key that stayed still. The shape is walked instead, guarded against the
  * cycles that made the schema unserializable in the first place.
  */
-const RUNTIME_SHAPE_DEPTH = 12;
+/**
+ * A work budget, not a depth limit. A depth cutoff collapsed every subtree
+ * below it to one constant, so two schemas sharing their first twelve levels
+ * and differing underneath hashed identically — a collision, which is the one
+ * failure mode this module exists to prevent. Cycles are already stopped by
+ * the `seen` set; what remains to bound is total work, and counting nodes
+ * bounds it without erasing structure at a fixed depth.
+ *
+ * The budget is a horizon, not a proof: two schemas identical for this many
+ * nodes and differing only past it still share `[truncated]` and so share an
+ * identity. That is the same class the depth cutoff made reachable at twelve
+ * levels, moved to a size no Zod schema written by hand reaches, and removing
+ * it for good means declining to key a request whose schema could not be
+ * represented. Tracked at berry-13/LibreChat#63.
+ */
+const RUNTIME_SHAPE_NODE_BUDGET = 5000;
 
 /**
  * The whole declared definition of a Zod schema, not a list of the fields
@@ -437,7 +452,11 @@ const RUNTIME_SHAPE_DEPTH = 12;
  * only: a refinement body cannot be hashed stably and does not reach the
  * wire.
  */
-function runtimeSchemaShape(value: unknown, seen: Set<object>, depth = 0): unknown {
+function runtimeSchemaShape(
+  value: unknown,
+  seen: Set<object>,
+  budget: { left: number } = { left: RUNTIME_SHAPE_NODE_BUDGET },
+): unknown {
   if (typeof value === 'function') {
     return '[fn]';
   }
@@ -459,16 +478,17 @@ function runtimeSchemaShape(value: unknown, seen: Set<object>, depth = 0): unkno
   if (seen.has(value)) {
     return '[cycle]';
   }
-  if (depth >= RUNTIME_SHAPE_DEPTH) {
-    return '[depth]';
+  if (budget.left <= 0) {
+    return '[truncated]';
   }
+  budget.left -= 1;
   seen.add(value);
   try {
     if (Array.isArray(value)) {
-      return value.map((entry) => runtimeSchemaShape(entry, seen, depth + 1));
+      return value.map((entry) => runtimeSchemaShape(entry, seen, budget));
     }
     const node = value as { _def?: unknown; shape?: unknown };
-    const walk = (entry: unknown): unknown => runtimeSchemaShape(entry, seen, depth + 1);
+    const walk = (entry: unknown): unknown => runtimeSchemaShape(entry, seen, budget);
     const entries = (source: unknown): unknown =>
       source != null && typeof source === 'object' && !Array.isArray(source)
         ? Object.keys(source as Record<string, unknown>)

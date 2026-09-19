@@ -138,6 +138,27 @@ describe('buildPromptCacheKey', () => {
       expect(key({ tools: [action(withPattern())] })).toBe(key({ tools: [action(withPattern())] }));
     });
 
+    it('retires the key for a difference far below the old depth cutoff', () => {
+      /**
+       * A fixed depth cutoff collapsed everything under it to one constant, so
+       * two schemas agreeing for twelve levels and differing at the leaf were
+       * one identity. The walk is bounded by total work now, not by depth.
+       */
+      const nested = (leaf: z.ZodTypeAny) => {
+        let schema: z.ZodTypeAny = z.object({ leaf });
+        for (let i = 0; i < 16; i++) {
+          schema = z.object({ next: schema });
+        }
+        return schema;
+      };
+      expect(key({ tools: [action(nested(z.string()))] })).not.toBe(
+        key({ tools: [action(nested(z.number()))] }),
+      );
+      expect(key({ tools: [action(nested(z.string()))] })).toBe(
+        key({ tools: [action(nested(z.string()))] }),
+      );
+    });
+
     it('keeps one key for an unchanged schema', () => {
       const unchanged = () =>
         z.object({
