@@ -161,27 +161,6 @@ export function captureConfiguredAdditionalInstructions(agent: {
  * instructions.
  */
 /**
- * Records text as part of the prompt cache identity without adding it to the
- * request, for a contribution the model receives in another form.
- *
- * One caller: instructions carrying temporal variables, whose resolved text is
- * moved into the dynamic tail so today's date cannot enter the cached prefix.
- * The template behind it is still configuration, and editing it has to retire
- * the identity.
- */
-export function recordStableInstructionText(
-  agent: { configuredAdditionalInstructions?: string },
-  text?: string | null,
-): void {
-  if (text == null || text === '') {
-    return;
-  }
-  agent.configuredAdditionalInstructions = [agent.configuredAdditionalInstructions, text]
-    .filter((value): value is string => typeof value === 'string' && value.length > 0)
-    .join('\n\n');
-}
-
-/**
  * Prepends to an agent's dynamic instruction tail, ahead of everything already
  * there, without recording the text as part of the identity.
  *
@@ -190,8 +169,13 @@ export function recordStableInstructionText(
  * instructions, the memory guard and the author's own tail, reversing an order
  * the agent was saved with. One caller: instructions carrying temporal
  * variables, whose resolved text leaves the cached prefix but must keep its
- * place in what the model reads. The configured form is recorded separately,
- * because the resolved text moves with the clock.
+ * place in what the model reads.
+ *
+ * `configured` is the identity's form of the same block, written to the same
+ * end of the recorded text. One writer owns both halves on purpose: the digest
+ * is a join of this field, so text placed first on the wire and recorded last
+ * makes two different prefixes read as one identity. They cannot drift while
+ * the same call places both.
  */
 export function prependAgentInstructionTail(
   agent: {
@@ -199,6 +183,7 @@ export function prependAgentInstructionTail(
     configuredAdditionalInstructions?: string;
   },
   text?: string | null,
+  options: { configured?: string | null } = {},
 ): void {
   if (text == null || text === '') {
     return;
@@ -206,6 +191,13 @@ export function prependAgentInstructionTail(
   captureConfiguredAdditionalInstructions(agent);
   agent.additional_instructions = [text, agent.additional_instructions ?? '']
     .filter(Boolean)
+    .join('\n\n');
+  const configured = options.configured;
+  if (configured == null || configured === '') {
+    return;
+  }
+  agent.configuredAdditionalInstructions = [configured, agent.configuredAdditionalInstructions]
+    .filter((value): value is string => typeof value === 'string' && value.length > 0)
     .join('\n\n');
 }
 

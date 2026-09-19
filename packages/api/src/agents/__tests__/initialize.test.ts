@@ -1443,6 +1443,52 @@ describe('initializeAgent — stable and dynamic instruction fields', () => {
     );
   });
 
+  it('does not give two different wire orders the same recorded identity', async () => {
+    /**
+     * The digest is a join of the recorded text, so a block sent first and
+     * recorded last would let `instructions: '{{current_date}}'` with a tail of
+     * 'X' and `instructions: 'X\n\n{{current_date}}'` with no tail read as one
+     * identity while the model reads two different prefixes.
+     */
+    const record = async (instructions: string, tail?: string) => {
+      const { agent, req, res, loadTools, db } = createMocks();
+      agent.instructions = instructions;
+      if (tail != null) {
+        agent.additional_instructions = tail;
+      }
+      req.turnStartedAt = new Date('2026-08-31T06:20:00.000Z').getTime();
+      req.body = { timezone: 'UTC' };
+      const result = (await initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent: true,
+        },
+        db,
+      )) as Agent & { configuredAdditionalInstructions?: string };
+      return {
+        wire: result.additional_instructions ?? '',
+        configured: result.configuredAdditionalInstructions ?? '',
+      };
+    };
+
+    const dateFirst = await record('{{current_date}}', 'X');
+    const dateLast = await record('X\n\n{{current_date}}');
+
+    expect(dateFirst.wire).not.toBe(dateLast.wire);
+    expect(dateFirst.configured).not.toBe(dateLast.configured);
+    expect(dateFirst.configured.indexOf('1970-01-01')).toBeLessThan(
+      dateFirst.configured.indexOf('X'),
+    );
+    expect(dateLast.configured.indexOf('X')).toBeLessThan(
+      dateLast.configured.indexOf('1970-01-01'),
+    );
+  });
+
   it('records the unresolved template and the relocated repository block as the configured surface', async () => {
     /**
      * Both blocks left the prefix, so both have to stay in the identity:
