@@ -697,8 +697,6 @@ export class BackgroundTaskRegistryClass {
     let fraction: number | undefined;
     if (Number.isFinite(update.total) && (update.total as number) > 0) {
       fraction = update.progress / (update.total as number);
-    } else if (update.progress >= 0 && update.progress <= 1) {
-      fraction = update.progress;
     }
     if (fraction != null) {
       task.progress = Math.min(Math.max(fraction, 0), 1);

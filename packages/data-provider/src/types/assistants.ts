@@ -553,10 +553,13 @@ export type PartMetadata = {
   agentId?: string;
   /** Group ID for parallel content - parts with same groupId are displayed in columns */
   groupId?: number;
+  /** Run-step id that produced this part — scopes live tool progress so parallel
+   *  agents reusing the same tool-call id don't overwrite each other's card. */
+  stepId?: string;
 };
 
 /** Metadata for parallel content rendering - subset of PartMetadata */
-export type ContentMetadata = Pick<PartMetadata, 'agentId' | 'groupId'>;
+export type ContentMetadata = Pick<PartMetadata, 'agentId' | 'groupId' | 'stepId'>;
 
 export type ContentPart = (
   | CodeToolCall

@@ -53,7 +53,11 @@ export type ToolProgressEvent = {
   /** Response message id of the run — scopes progress when providers reuse
    *  tool-call ids (e.g. `call_0`) across parallel agents in one submission. */
   runId?: string;
-  /** Raw progress value; a completion fraction when `total` is absent. */
+  /** Run-step id owning the call — distinguishes parallel agents that reuse the
+   *  same tool-call id within a single run (they share `runId`). */
+  stepId?: string;
+  /** Raw progress value in the server's own units; only meaningful as a
+   *  completion ratio when paired with a positive `total`. */
   progress: number;
   total?: number;
   message?: string;

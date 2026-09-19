@@ -282,34 +282,13 @@ export default function useStepHandler({
         if (!payload?.toolCallId) {
           return;
         }
-        const atomKey = toolProgressKey(payload.runId, payload.toolCallId);
+        const atomKey = toolProgressKey(payload.runId, payload.stepId, payload.toolCallId);
         knownToolProgressAtomKeys.current.add(atomKey);
         set(toolProgressByToolCallId(atomKey), {
           progress: payload.progress,
           total: payload.total,
           message: payload.message,
         });
-      },
-    [],
-  );
-
-  /**
-   * Clears live progress for the tool calls of a freshly-started run step:
-   * providers reissue ids (e.g. `call_0`) across tool turns within one run,
-   * so a new call must never inherit a prior call's progress state.
-   */
-  const clearToolProgressForStep = useRecoilCallback(
-    ({ set }) =>
-      (runId: string, toolCallIds: Array<string | undefined>): void => {
-        for (const toolCallId of toolCallIds) {
-          if (!toolCallId) {
-            continue;
-          }
-          const atomKey = toolProgressKey(runId, toolCallId);
-          if (knownToolProgressAtomKeys.current.has(atomKey)) {
-            set(toolProgressByToolCallId(atomKey), null);
-          }
-        }
       },
     [],
   );
@@ -521,34 +500,41 @@ export default function useStepHandler({
       };
     }
 
-    // Apply metadata to the content part for parallel rendering
-    // This must happen AFTER all content updates to avoid being overwritten
-    if (metadata?.agentId != null || metadata?.groupId != null) {
-      const part = updatedContent[index] as TMessageContentParts & ContentMetadata;
-      if (metadata.agentId != null) {
-        part.agentId = metadata.agentId;
+    // Apply metadata to the content part for parallel rendering and progress
+    // scoping. This must happen AFTER all content updates to avoid being overwritten.
+    const targetPart = updatedContent[index] as
+      | (TMessageContentParts & ContentMetadata)
+      | undefined;
+    if (targetPart != null) {
+      if (metadata?.agentId != null) {
+        targetPart.agentId = metadata.agentId;
       }
-      if (metadata.groupId != null) {
-        part.groupId = metadata.groupId;
+      if (metadata?.groupId != null) {
+        targetPart.groupId = metadata.groupId;
+      }
+      /** Live MCP progress is scoped per run step; only tool_call cards read it. */
+      if (metadata?.stepId != null && targetPart.type === ContentTypes.TOOL_CALL) {
+        targetPart.stepId = metadata.stepId;
       }
     }
 
     return { ...message, content: updatedContent as TMessageContentParts[] };
   };
 
-  /** Extract metadata from runStep for parallel content rendering */
+  /** Extract metadata from a run step: its step id (for tool-progress scoping)
+   *  plus agent/group ids for parallel content rendering. */
   const getStepMetadata = (runStep: Agents.RunStep | undefined): ContentMetadata | undefined => {
-    if (!runStep?.agentId && runStep?.groupId == null) {
+    if (!runStep?.id) {
       return undefined;
     }
-    const metadata = {
+    return {
+      stepId: runStep.id,
       agentId: runStep.agentId,
       // Only set groupId when explicitly provided by the server
       // Sequential handoffs have agentId but no groupId
       // Parallel execution has both agentId AND groupId
       groupId: runStep.groupId,
     };
-    return metadata;
   };
 
   const stepHandler = useCallback(
@@ -678,13 +664,6 @@ export default function useStepHandler({
         }
 
         stepMap.current.set(runStep.id, runStep);
-
-        if (runStep.stepDetails?.type === StepTypes.TOOL_CALLS) {
-          clearToolProgressForStep(
-            responseMessageId,
-            (runStep.stepDetails.tool_calls ?? []).map((toolCall) => toolCall.id),
-          );
-        }
 
         // Calculate content index - use server index, offset by initialContent for edit scenarios
         const contentIndex = runStep.index + initialContent.length;
@@ -1152,7 +1131,6 @@ export default function useStepHandler({
       getCurrentMessages,
       applySubagentUpdate,
       applyToolProgress,
-      clearToolProgressForStep,
       onSkillAuthoringComplete,
     ],
   );

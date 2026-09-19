@@ -55,6 +55,7 @@ describe('aggregateSubagentContent', () => {
       makeEvent({
         phase: 'run_step',
         data: {
+          id: 'step_child_1',
           stepDetails: {
             type: 'tool_calls',
             tool_calls: [
@@ -73,6 +74,36 @@ describe('aggregateSubagentContent', () => {
       'web_search',
     );
     expect((parts[0] as { tool_call: { progress: number } }).tool_call.progress).toBe(0.1);
+    /** The owning step id rides on the part so the dialog can scope live
+     *  progress to the child's step (parallel agents reuse `call_0`). */
+    expect((parts[0] as { stepId?: string }).stepId).toBe('step_child_1');
+    expect((parts[1] as { stepId?: string }).stepId).toBe('step_child_1');
+  });
+
+  it('preserves the step id when run_step_completed finalizes a TOOL_CALL part', () => {
+    const parts = aggregateSubagentContent([
+      makeEvent({
+        phase: 'run_step',
+        data: {
+          id: 'step_child_9',
+          stepDetails: {
+            type: 'tool_calls',
+            tool_calls: [{ id: 'call_0', name: 'calculator', args: '{}' }],
+          },
+        },
+      }),
+      makeEvent({
+        phase: 'run_step_completed',
+        data: {
+          result: {
+            id: 'step_child_9',
+            type: 'tool_call',
+            tool_call: { id: 'call_0', name: 'calculator', output: '4', progress: 1 },
+          },
+        },
+      }),
+    ]);
+    expect((parts[0] as { stepId?: string }).stepId).toBe('step_child_9');
   });
 
   it('finalizes a TOOL_CALL part on run_step_completed with output and progress=1', () => {

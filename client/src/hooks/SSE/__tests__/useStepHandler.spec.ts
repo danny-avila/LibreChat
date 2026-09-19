@@ -18,6 +18,7 @@ import type {
   Agents,
 } from 'librechat-data-provider';
 import { subagentProgressByToolCallId } from '~/store/subagents';
+import { toolProgressByToolCallId, toolProgressKey } from '~/store';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 
 /** `Constants` is a heterogeneous enum (`string | number`); annotate as
@@ -2832,6 +2833,76 @@ describe('useStepHandler', () => {
       });
 
       expect(getProgress('call_keep')).not.toBeNull();
+    });
+  });
+
+  describe('on_tool_progress event', () => {
+    /**
+     * Transient progress events bypass the durable reorder buffer, so an
+     * `on_tool_progress` can be processed *before* the `on_run_step` that
+     * starts its step. The step handler must never wipe such progress.
+     */
+    const renderStepHandlerWithProgressReader = (): {
+      result: ReturnType<typeof renderHook>['result'];
+      getProgress: (runId: string, stepId: string, toolCallId: string) => unknown;
+    } => {
+      const hookResult = renderHook(
+        () => {
+          const stepHandler = useStepHandler(createHookParams());
+          const read = useRecoilCallback(
+            ({ snapshot }) =>
+              (key: string): unknown =>
+                snapshot.getLoadable(toolProgressByToolCallId(key)).valueOrThrow(),
+            [],
+          );
+          return { ...stepHandler, read };
+        },
+        { wrapper: RecoilRoot },
+      );
+
+      const getProgress = (runId: string, stepId: string, toolCallId: string): unknown =>
+        (hookResult.result.current as any).read(toolProgressKey(runId, stepId, toolCallId));
+      return { result: hookResult.result, getProgress };
+    };
+
+    it('keeps progress that was processed before its run step arrived', () => {
+      const { result, getProgress } = renderStepHandlerWithProgressReader();
+      const response = createResponseMessage();
+      mockGetMessages.mockReturnValue([response]);
+      const submission = createSubmission({ initialResponse: response });
+
+      act(() => {
+        (result.current as any).stepHandler(
+          {
+            event: StepEvents.ON_TOOL_PROGRESS,
+            data: {
+              runId: 'response-msg-1',
+              stepId: 'step-tool-1',
+              toolCallId: 'tool-call-1',
+              progress: 0.5,
+              total: 1,
+            },
+          },
+          submission,
+        );
+      });
+
+      expect(getProgress('response-msg-1', 'step-tool-1', 'tool-call-1')).toMatchObject({
+        progress: 0.5,
+        total: 1,
+      });
+
+      act(() => {
+        (result.current as any).stepHandler(
+          { event: StepEvents.ON_RUN_STEP, data: createToolCallRunStep() },
+          submission,
+        );
+      });
+
+      expect(getProgress('response-msg-1', 'step-tool-1', 'tool-call-1')).toMatchObject({
+        progress: 0.5,
+        total: 1,
+      });
     });
   });
 });

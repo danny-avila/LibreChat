@@ -488,6 +488,10 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(registry.get('u1', 'c_progress', created.task.id)?.progress).toBe(0.5);
     expect(registry.get('u1', 'c_progress', created.task.id)?.progressMessage).toBe('step 7');
 
+    // a fractional-looking absolute count (<=1) must not be mistaken for a fraction
+    registry.setProgress('u1', 'c_progress', created.task.id, { progress: 1 });
+    expect(registry.get('u1', 'c_progress', created.task.id)?.progress).toBe(0.5);
+
     // settling wins: progress serializes as 1 and the message is dropped
     registry.complete('u1', 'c_progress', created.task.id, { content: 'DONE' });
     registry.setProgress('u1', 'c_progress', created.task.id, { progress: 0.1, message: 'late' });
