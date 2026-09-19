@@ -36,9 +36,9 @@ describe('evalScript', () => {
     });
     const client = { evalsha, eval: evalCommand } as unknown as RedisScriptClient;
 
-    const first = evalScript(client, 'return ARGV[1]', 0, 'first');
+    const first = evalScript(client, 'return ARGV[1]', 1, '{stream-a}chunks', 'first');
     await fallbackStarted;
-    const second = evalScript(client, 'return ARGV[1]', 0, 'second');
+    const second = evalScript(client, 'return ARGV[1]', 1, '{stream-a}chunks', 'second');
     await Promise.resolve();
 
     expect(evalsha).toHaveBeenCalledTimes(1);
@@ -60,11 +60,12 @@ describe('evalScript', () => {
     let loadCount = 0;
     const evalCommand = jest.fn(async () => {
       loadCount += 1;
+      const result = `fallback-result-${loadCount}`;
       if (loadCount === 1) {
         signalFirstLoadStarted();
         await firstLoadFinished;
       }
-      return `fallback-result-${loadCount}`;
+      return result;
     });
     const client = { evalsha, eval: evalCommand } as unknown as RedisScriptClient;
 
@@ -114,6 +115,37 @@ describe('evalScript', () => {
     await expect(batch).resolves.toBe('batch-result');
     await expect(direct).resolves.toBe('direct-result');
     expect(commandOrder).toEqual(['batch-evalsha', 'eval:batch-script', 'direct-evalsha']);
+  });
+  test('does not serialize cold loads for unrelated hash tags', async () => {
+    let releaseFirstLoad!: () => void;
+    const firstLoadFinished = new Promise<void>((resolve) => {
+      releaseFirstLoad = resolve;
+    });
+    let signalFirstLoadStarted!: () => void;
+    const firstLoadStarted = new Promise<void>((resolve) => {
+      signalFirstLoadStarted = resolve;
+    });
+    const evalsha = jest.fn(() => {
+      if (evalsha.mock.calls.length === 1) {
+        return Promise.reject(new Error('NOSCRIPT No matching script'));
+      }
+      return Promise.resolve('unrelated-result');
+    });
+    const evalCommand = jest.fn(async () => {
+      signalFirstLoadStarted();
+      await firstLoadFinished;
+      return 'first-result';
+    });
+    const client = { evalsha, eval: evalCommand } as unknown as RedisScriptClient;
+
+    const first = evalScript(client, 'first-script', 1, '{stream-a}chunks', 'first');
+    await firstLoadStarted;
+    const unrelated = evalScript(client, 'other-script', 1, '{stream-b}chunks', 'other');
+
+    await expect(unrelated).resolves.toBe('unrelated-result');
+    expect(evalsha).toHaveBeenCalledTimes(2);
+    releaseFirstLoad();
+    await expect(first).resolves.toBe('first-result');
   });
   test('does not share a failed cold load with a waiting caller', async () => {
     let releaseFirstLoad!: () => void;

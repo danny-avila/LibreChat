@@ -8,7 +8,29 @@ export type RedisScriptClient = Pick<Redis | Cluster, 'eval' | 'evalsha'>;
 
 const scriptShas = new Map<string, string>();
 const unsupportedEvalshaClients = new WeakSet<object>();
-const inFlightClientLoads = new WeakMap<object, Promise<RedisScriptResult>>();
+const inFlightLoadsByKey = new WeakMap<object, Map<string, Promise<RedisScriptResult>>>();
+
+function loadsFor(client: RedisScriptClient): Map<string, Promise<RedisScriptResult>> {
+  let loads = inFlightLoadsByKey.get(client);
+  if (loads == null) {
+    loads = new Map<string, Promise<RedisScriptResult>>();
+    inFlightLoadsByKey.set(client, loads);
+  }
+  return loads;
+}
+
+function scriptOrderingKey(args: RedisScriptArg[]): string {
+  const firstKey = args[0];
+  let value = '';
+  if (typeof firstKey === 'string') {
+    value = firstKey;
+  } else if (Buffer.isBuffer(firstKey)) {
+    value = firstKey.toString();
+  }
+  const open = value.indexOf('{');
+  const close = value.indexOf('}', open + 1);
+  return open >= 0 && close > open ? value.slice(open, close + 1) : value;
+}
 
 const evalshaFallbackContext = new AsyncLocalStorage<boolean>();
 
@@ -76,9 +98,10 @@ export async function evalScript(
   }
 
   const sha = scriptSha(script);
+  const orderingKey = scriptOrderingKey(args);
   const evalshaCall = () =>
     evalshaFallbackContext.run(true, () => client.evalsha(sha, numberOfKeys, ...args));
-  const inFlight = inFlightClientLoads.get(client);
+  const inFlight = inFlightLoadsByKey.get(client)?.get(orderingKey);
   if (inFlight) {
     try {
       await inFlight;
@@ -95,7 +118,7 @@ export async function evalScript(
       throw error;
     }
 
-    const existingLoad = inFlightClientLoads.get(client);
+    const existingLoad = inFlightLoadsByKey.get(client)?.get(orderingKey);
     if (existingLoad) {
       try {
         await existingLoad;
@@ -111,12 +134,13 @@ export async function evalScript(
     const load = Promise.resolve(
       client.eval(script, numberOfKeys, ...args),
     ) as Promise<RedisScriptResult>;
+    const loads = loadsFor(client);
     const trackedLoad = load.finally(() => {
-      if (inFlightClientLoads.get(client) === trackedLoad) {
-        inFlightClientLoads.delete(client);
+      if (loads.get(orderingKey) === trackedLoad) {
+        loads.delete(orderingKey);
       }
     });
-    inFlightClientLoads.set(client, trackedLoad);
+    loads.set(orderingKey, trackedLoad);
     return await trackedLoad;
   }
 }
