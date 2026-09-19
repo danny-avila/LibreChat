@@ -3,6 +3,57 @@ import type { CodeBridgeFetch } from './bridge';
 import { executeWorkspaceTool, WorkspaceToolHttpError } from './workspace';
 
 describe('workspace admission feedback', () => {
+  test('forwards a valid conversation workspace instance unchanged', async () => {
+    const workspaceInstanceId = 'd'.repeat(64);
+    const fetchImpl = jest.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          protocolVersion: 1,
+          operation: 'write_file',
+          workspaceId: 'primary',
+          path: 'notes.txt',
+          created: true,
+          bytesWritten: 5,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    await executeWorkspaceTool({
+      baseURL: 'https://code.example/v1',
+      authHeaders: {},
+      fetchImpl,
+      request: {
+        protocolVersion: 1,
+        operation: 'write_file',
+        workspaceId: 'primary',
+        workspaceInstanceId,
+        path: 'notes.txt',
+        content: 'ready',
+      },
+    });
+
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toMatchObject({ workspaceInstanceId });
+  });
+
+  test('rejects malformed workspace instance identifiers before transport', async () => {
+    const fetchImpl = jest.fn();
+    await expect(
+      executeWorkspaceTool({
+        baseURL: 'https://code.example/v1',
+        authHeaders: {},
+        fetchImpl,
+        request: {
+          protocolVersion: 1,
+          operation: 'list_files',
+          workspaceId: 'primary',
+          workspaceInstanceId: 'conversation-1',
+        },
+      }),
+    ).rejects.toBeInstanceOf(WorkspaceToolHttpError);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   test('identifies definite pre-execution expiry without retrying the operation', async () => {
     const fetchImpl = jest.fn().mockResolvedValue(
       new Response(JSON.stringify({ code: 'WORKSPACE_QUEUE_TIMEOUT' }), {

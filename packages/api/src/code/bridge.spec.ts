@@ -92,7 +92,11 @@ describe('getCodeBridgeWorkerStatus', () => {
               protocolVersion: 1,
               operations: ['read_file', 'execute_command'],
               workspaces: [
-                { id: 'project-a', name: 'Project A' },
+                {
+                  id: 'project-a',
+                  name: 'Project A',
+                  workspaceInstances: ['git_worktree'],
+                },
                 { id: 'docs', operations: ['read_file'] },
               ],
             },
@@ -118,7 +122,11 @@ describe('getCodeBridgeWorkerStatus', () => {
       runtimes: ['bash'],
       operations: ['read_file', 'execute_command'],
       workspaces: [
-        { id: 'project-a', name: 'Project A' },
+        {
+          id: 'project-a',
+          name: 'Project A',
+          workspaceInstances: ['git_worktree'],
+        },
         { id: 'docs', operations: ['read_file'] },
       ],
     });
@@ -189,6 +197,21 @@ describe('getCodeBridgeWorkerStatus', () => {
           protocolVersion: 1,
           operations: ['read_file'],
           workspaces: [{ id: '../escape' }],
+        },
+      },
+    },
+    {
+      online: true,
+      ready: true,
+      leaseExpiresInMs: 5_000,
+      capabilities: {
+        statefulWorkspace: true,
+        sandboxProfile: 'native-srt',
+        runtimes: ['bash'],
+        workspaceTools: {
+          protocolVersion: 1,
+          operations: ['read_file'],
+          workspaces: [{ id: 'project-a', workspaceInstances: ['container'] }],
         },
       },
     },

@@ -192,6 +192,7 @@ function validWorkspaceCapabilities(value: unknown): value is {
           key !== 'id' &&
           key !== 'name' &&
           key !== 'operations' &&
+          key !== 'workspaceInstances' &&
           key !== 'environment' &&
           key !== 'instructions',
       ) ||
@@ -203,6 +204,10 @@ function validWorkspaceCapabilities(value: unknown): value is {
           workspace.instructions.length > 1 ||
           !workspace.instructions.every(isRepositoryInstructionDescriptor))) ||
       (workspace.environment !== undefined && !isCodeWorkspaceEnvironment(workspace.environment)) ||
+      (workspace.workspaceInstances !== undefined &&
+        (!Array.isArray(workspace.workspaceInstances) ||
+          workspace.workspaceInstances.length !== 1 ||
+          workspace.workspaceInstances[0] !== 'git_worktree')) ||
       (workspace.name !== undefined &&
         (typeof workspace.name !== 'string' ||
           workspace.name.trim().length === 0 ||

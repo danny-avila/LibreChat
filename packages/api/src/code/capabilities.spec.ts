@@ -423,6 +423,34 @@ describe('resolveCodeExecutionWorkspaceContext', () => {
     expect(resolved.codeWorkspace?.environment).toEqual(environment);
   });
 
+  it('activates a server-derived instance only when the worker advertises worktree support', async () => {
+    const workspaceInstanceId = 'c'.repeat(64);
+    jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(
+        workspaceStatus([
+          { id: 'worktree', workspaceInstances: ['git_worktree'] },
+          { id: 'legacy' },
+        ]),
+      );
+
+    const supported = await resolveCodeExecutionWorkspaceContext({
+      context: { ...context, conversationWorkspaceInstanceId: workspaceInstanceId },
+      requestedSelections: [{ environmentId: 'personal', workspaceId: 'worktree' }],
+      environments,
+      getAppConfig,
+    });
+    const legacy = await resolveCodeExecutionWorkspaceContext({
+      context: { ...context, conversationWorkspaceInstanceId: workspaceInstanceId },
+      requestedSelections: [{ environmentId: 'personal', workspaceId: 'legacy' }],
+      environments,
+      getAppConfig,
+    });
+
+    expect(supported.codeWorkspace?.workspaceInstanceId).toBe(workspaceInstanceId);
+    expect(legacy.codeWorkspace).not.toHaveProperty('workspaceInstanceId');
+  });
+
   it('admits native workspace tools without enabling programmatic runtime execution', async () => {
     jest
       .spyOn(globalThis, 'fetch')

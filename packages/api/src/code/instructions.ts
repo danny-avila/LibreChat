@@ -82,6 +82,7 @@ export function createRepositoryInstructionLoader() {
       context.baseUrl,
       context.bridgeWorkerId,
       workspace.workspaceId,
+      workspace.workspaceInstanceId ?? null,
       descriptor.path,
       descriptor.sha256,
     ]);
@@ -103,6 +104,9 @@ export function createRepositoryInstructionLoader() {
             protocolVersion: 1,
             operation: 'read_file',
             workspaceId: workspace.workspaceId,
+            ...(workspace.workspaceInstanceId
+              ? { workspaceInstanceId: workspace.workspaceInstanceId }
+              : {}),
             path: descriptor.path,
             instructionSha256: descriptor.sha256,
           },

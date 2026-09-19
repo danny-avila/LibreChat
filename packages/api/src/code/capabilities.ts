@@ -178,6 +178,10 @@ export async function resolveCodeExecutionWorkspaceContext({
     codeWorkspace: {
       ...selection,
       operations: [...(workspace.operations ?? status.operations)],
+      ...(context.conversationWorkspaceInstanceId &&
+      workspace.workspaceInstances?.includes('git_worktree')
+        ? { workspaceInstanceId: context.conversationWorkspaceInstanceId }
+        : {}),
       ...(workspace.instructions ? { instructions: workspace.instructions } : {}),
       ...(workspace.environment ? { environment: workspace.environment } : {}),
     },

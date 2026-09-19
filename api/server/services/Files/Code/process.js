@@ -1112,6 +1112,7 @@ async function readSandboxFile({
  * @param {Object} params
  * @param {string} params.file_path
  * @param {string} params.workspace_id
+ * @param {string} [params.workspace_instance_id]
  * @param {number} params.start_line
  * @param {number} params.max_lines
  * @param {string} params.codeApiBaseUrl
@@ -1123,6 +1124,7 @@ async function readSandboxFile({
 async function readWorkspaceFile({
   file_path,
   workspace_id,
+  workspace_instance_id,
   start_line,
   max_lines,
   codeApiBaseUrl,
@@ -1144,6 +1146,7 @@ async function readWorkspaceFile({
       protocolVersion: 1,
       operation: 'read_file',
       workspaceId: workspace_id,
+      ...(workspace_instance_id ? { workspaceInstanceId: workspace_instance_id } : {}),
       path: file_path,
       startLine: start_line,
       maxLines: max_lines,
@@ -1158,6 +1161,7 @@ async function readWorkspaceFile({
  * @param {Object} params
  * @param {string} params.query
  * @param {string} params.workspace_id
+ * @param {string} [params.workspace_instance_id]
  * @param {string} [params.path]
  * @param {number} params.max_results
  * @param {string} params.codeApiBaseUrl
@@ -1169,6 +1173,7 @@ async function readWorkspaceFile({
 async function searchWorkspace({
   query,
   workspace_id,
+  workspace_instance_id,
   path,
   max_results,
   codeApiBaseUrl,
@@ -1190,6 +1195,7 @@ async function searchWorkspace({
       protocolVersion: 1,
       operation: 'search_text',
       workspaceId: workspace_id,
+      ...(workspace_instance_id ? { workspaceInstanceId: workspace_instance_id } : {}),
       query,
       ...(path ? { path } : {}),
       maxResults: max_results,
@@ -1203,6 +1209,7 @@ async function searchWorkspace({
  *
  * @param {Object} params
  * @param {string} params.workspace_id
+ * @param {string} [params.workspace_instance_id]
  * @param {string} [params.path]
  * @param {string} [params.after_path]
  * @param {number} params.max_results
@@ -1214,6 +1221,7 @@ async function searchWorkspace({
  */
 async function listWorkspaceFiles({
   workspace_id,
+  workspace_instance_id,
   path,
   after_path,
   max_results,
@@ -1236,6 +1244,7 @@ async function listWorkspaceFiles({
       protocolVersion: 1,
       operation: 'list_files',
       workspaceId: workspace_id,
+      ...(workspace_instance_id ? { workspaceInstanceId: workspace_instance_id } : {}),
       ...(path ? { path } : {}),
       ...(after_path ? { afterPath: after_path } : {}),
       maxResults: max_results,
@@ -1250,6 +1259,7 @@ async function writeWorkspaceFile({
   content,
   overwrite,
   workspace_id,
+  workspace_instance_id,
   codeApiBaseUrl,
   executionProfile,
   bridgeWorkerId,
@@ -1269,6 +1279,7 @@ async function writeWorkspaceFile({
       protocolVersion: 1,
       operation: 'write_file',
       workspaceId: workspace_id,
+      ...(workspace_instance_id ? { workspaceInstanceId: workspace_instance_id } : {}),
       path: file_path,
       content,
       overwrite,
@@ -1283,6 +1294,7 @@ async function editWorkspaceFile({
   edits,
   expected_base_sha256,
   workspace_id,
+  workspace_instance_id,
   codeApiBaseUrl,
   executionProfile,
   bridgeWorkerId,
@@ -1302,6 +1314,7 @@ async function editWorkspaceFile({
       protocolVersion: 1,
       operation: 'edit_file',
       workspaceId: workspace_id,
+      ...(workspace_instance_id ? { workspaceInstanceId: workspace_instance_id } : {}),
       path: file_path,
       edits,
       ...(expected_base_sha256 ? { expectedBaseSha256: expected_base_sha256 } : {}),
@@ -1315,6 +1328,7 @@ async function previewWorkspaceEdit({
   file_path,
   edits,
   workspace_id,
+  workspace_instance_id,
   codeApiBaseUrl,
   executionProfile,
   bridgeWorkerId,
@@ -1334,6 +1348,7 @@ async function previewWorkspaceEdit({
       protocolVersion: 1,
       operation: 'preview_edit',
       workspaceId: workspace_id,
+      ...(workspace_instance_id ? { workspaceInstanceId: workspace_instance_id } : {}),
       path: file_path,
       edits,
     },

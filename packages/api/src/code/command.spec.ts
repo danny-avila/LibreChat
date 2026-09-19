@@ -108,6 +108,26 @@ function commandResponse(overrides: Record<string, unknown> = {}): Response {
 }
 
 describe('createAttachedWorkspaceBashTool', () => {
+  test('dispatches commands to the resolved conversation workspace instance', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
+    const workspaceInstanceId = 'e'.repeat(64);
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1/',
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+      workspaceInstanceId,
+      fetchImpl,
+    });
+
+    await bashTool.invoke({ command: 'pwd' });
+
+    const [, options] = (fetchImpl as jest.Mock).mock.calls[0];
+    expect(JSON.parse(options.body)).toMatchObject({
+      workspaceId: 'project-a',
+      workspaceInstanceId,
+    });
+  });
+
   test('dispatches only advertised named actions with the resolved definition fingerprint', async () => {
     const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
     const bashTool = createAttachedWorkspaceBashTool({
