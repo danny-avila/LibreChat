@@ -187,50 +187,47 @@ export function splitMarkdownIntoBlocksUncached(content: string): MarkdownBlock[
 
 type SplitCache = SplitResult & { content: string };
 
-let lastSplit: SplitCache | null = null;
+export type MarkdownSplitter = (content: string) => MarkdownBlock[];
 
 /**
- * Split a markdown string into its top-level blocks. Completed blocks produce
- * byte-identical slices (and stable counts) across streamed updates, which is
- * what makes per-block memoization effective: only the final, still-growing
- * block changes from one token to the next.
- *
- * Streaming appends tokens to the previous content, so the split is
- * incremental for append-only updates: every block before the last one is
- * already closed (in CommonMark/GFM a top-level block, once followed by the
- * start of another, cannot be reopened by later input — setext underlines,
- * lazy continuation, unclosed fences/directives and open lists only extend
- * the final block), so only the text from the previous last block onward is
- * re-parsed. If that tail contains a construct that needs the whole message,
- * or the update is not an append, the content is re-split from scratch.
+ * Create an isolated splitter cache for one markdown surface. MarkdownBlocks
+ * keeps one instance per mounted message so concurrent streams cannot evict
+ * one another's active tail.
  */
-export function splitMarkdownIntoBlocks(content: string): MarkdownBlock[] {
-  if (!content) {
-    return [];
-  }
+export function createMarkdownSplitter(): MarkdownSplitter {
+  let lastSplit: SplitCache | null = null;
 
-  const prev = lastSplit;
-  if (prev != null && content.length > prev.content.length && content.startsWith(prev.content)) {
-    const tail = splitBlocks(content.slice(prev.lastBlockStart));
-    if (isSplit(tail)) {
-      lastSplit = {
-        content,
-        blocks: [...prev.blocks.slice(0, -1), ...tail.blocks],
-        lastBlockStart: prev.lastBlockStart + tail.lastBlockStart,
-      };
-      return lastSplit.blocks;
+  return (content: string): MarkdownBlock[] => {
+    if (!content) {
+      lastSplit = null;
+      return [];
     }
 
-  }
 
-  const split = splitBlocks(content);
-  if (!isSplit(split)) {
-    lastSplit = null;
-    return [{ raw: content, ...blockCounts(split.children) }];
-  }
-  lastSplit = { content, ...split };
-  return split.blocks;
+    const prev = lastSplit;
+    if (prev != null && content.length > prev.content.length && content.startsWith(prev.content)) {
+      const tail = splitBlocks(content.slice(prev.lastBlockStart));
+      if (isSplit(tail)) {
+        lastSplit = {
+          content,
+          blocks: [...prev.blocks.slice(0, -1), ...tail.blocks],
+          lastBlockStart: prev.lastBlockStart + tail.lastBlockStart,
+        };
+        return lastSplit.blocks;
+      }
+    }
+
+    const split = splitBlocks(content);
+    if (!isSplit(split)) {
+      lastSplit = null;
+      return [{ raw: content, ...blockCounts(split.children) }];
+    }
+    lastSplit = { content, ...split };
+    return split.blocks;
+  };
 }
+
+export const splitMarkdownIntoBlocks = createMarkdownSplitter();
 
 const blockCounts = (
   children: MdastNode[],
