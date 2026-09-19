@@ -188,6 +188,14 @@ const SUPPRESSION_LINT_CHUNK = 150;
  *  what carries a primitive's `cva` variants. */
 const DESIGN_SOURCE = /\.(?:ts|tsx|js|jsx)$/;
 
+/** Sources that look like design sources and cannot be one. Every design rule is
+ *  off inside a spec (`eslint.config.mjs`), and `packages/client/tsconfig.json`
+ *  keeps specs out of the bundle the caller rules resolve primitives through, so
+ *  a spec carries no `cva` variant to compare against and can report no design
+ *  diagnostic of its own. Editing one moves no count, in its own file or
+ *  anywhere else. */
+const DESIGN_TEST_SOURCE = /\.(?:test|spec)\.(?:ts|tsx|js|jsx)$/;
+
 /** What the design rules are configured by, and what they are installed from:
  *  narrowing a rule, widening a contract, or upgrading the plugin all change
  *  what every recorded count stands for, without touching a source file. */
@@ -856,11 +864,17 @@ async function validateSuppressions(context: CheckContext): Promise<CheckOutcome
  * anything yet — a directive over a clean file silences the first violation
  * anyone adds, and ESLint's own unused-directive report cannot see a blanket one
  * that is busy silencing some other rule. Neither design root carries one today.
+ *
+ * Specs are left out. Every design rule is already off inside one, so a
+ * directive there — blanket or named — takes no design diagnostic out of play
+ * now or later, and rejecting it would be this gate failing a commit over a
+ * comment about some other rule entirely.
  */
 async function inlineDirectives(context: CheckContext): Promise<string[]> {
   const files = context.sourceFiles.filter(
     (file) =>
       DESIGN_SOURCE.test(file) &&
+      !DESIGN_TEST_SOURCE.test(file) &&
       DESIGN_ROOTS.some((root) => file.startsWith(`${root}/`)) &&
       existsSync(resolve(ROOT, file)),
   );
@@ -1086,13 +1100,19 @@ async function unusedCapacity(target: string, context: CheckContext): Promise<st
    *  `cva` variants are what `no-restyle` compares a caller's className
    *  against; the config decides which classes each rule can classify at all;
    *  and this runner decides what a count has to match. Any of them validates
-   *  the whole record. */
+   *  the whole record.
+   *
+   *  A spec under either root is none of them: nothing it contains reaches the
+   *  bundle or carries a variant, so it cannot move a caller's diagnostic and
+   *  does not buy a two-root sweep. Both roots are full of them. */
   const wholeRecord = context.files.some(
     (file) =>
       file === GATE_SOURCE ||
       DESIGN_INPUTS.includes(file) ||
       DESIGN_METADATA_FILES.includes(file) ||
-      (DESIGN_SOURCE.test(file) && DESIGN_METADATA_ROOTS.some((root) => file.startsWith(root))),
+      (DESIGN_SOURCE.test(file) &&
+        !DESIGN_TEST_SOURCE.test(file) &&
+        DESIGN_METADATA_ROOTS.some((root) => file.startsWith(root))),
   );
   /** When the whole record is in question the targets are the roots themselves,
    *  not the recorded paths: a primitive's new contract can give a caller that
@@ -1227,6 +1247,10 @@ async function unusedCapacity(target: string, context: CheckContext): Promise<st
  * the violations beyond that growth. A violation that only moved keeps its
  * message and is not reported; a file with no version at the base brings no
  * allowance with it; a renamed file brings the one its violations came with.
+ *
+ * Specs are left out: with every design rule off inside one, neither its base
+ * nor its head version can report a design diagnostic, so fetching the base
+ * version and linting it answers a question with one possible answer.
  */
 async function introducedWithinAllowance(
   target: string,
@@ -1237,7 +1261,9 @@ async function introducedWithinAllowance(
   const changed = new Set(
     context.sourceFiles.filter(
       (file) =>
-        DESIGN_SOURCE.test(file) && DESIGN_ROOTS.some((root) => file.startsWith(`${root}/`)),
+        DESIGN_SOURCE.test(file) &&
+        !DESIGN_TEST_SOURCE.test(file) &&
+        DESIGN_ROOTS.some((root) => file.startsWith(`${root}/`)),
     ),
   );
   const subjects = head.filter((file) => changed.has(reportedPath(file.filePath)));
@@ -1436,9 +1462,15 @@ function editedEntries(target: string, context: CheckContext): string[] {
  * proof. And the build has to be newer than everything it is built from — the
  * library's manifest, build config and compiler options, which decide what is
  * emitted, and the root manifests, which decide what `build:client-package`
- * runs and which toolchain it runs with — while every file under `src` stays
- * older than the last build. CI always builds, so either divergence would only
- * appear locally.
+ * runs and which toolchain it runs with — while every file under `src` the
+ * tsconfig actually emits stays older than the last build. CI always builds, so
+ * either divergence would only appear locally.
+ *
+ * Specs are not among those sources: `packages/client/tsconfig.json` excludes
+ * them, so no edit to one can make the bundle describe something else. Adding or
+ * deleting a spec still moves its directory's own mtime, which is read because a
+ * deleted source leaves no file behind to be newer than the build; that errs
+ * toward rebuilding, which is the safe direction.
  */
 function designMetadataIsFresh(): boolean {
   const dist = resolve(ROOT, 'packages/client/dist');
@@ -1447,7 +1479,9 @@ function designMetadataIsFresh(): boolean {
     return false;
   }
   const builtAt = newestModification(dist);
-  let sourcedAt = newestModification(resolve(ROOT, 'packages/client/src'));
+  let sourcedAt = newestModification(resolve(ROOT, 'packages/client/src'), (path) =>
+    DESIGN_TEST_SOURCE.test(path),
+  );
   for (const file of [...DESIGN_METADATA_FILES, 'package.json', 'package-lock.json']) {
     const path = resolve(ROOT, file);
     if (existsSync(path)) sourcedAt = Math.max(sourcedAt, statSync(path).mtimeMs);
@@ -1489,8 +1523,11 @@ function declaredBundleFiles(): string[] {
  * directories count too, not only the files in them: deleting a source leaves
  * every surviving file older than the build, and the parent directory's mtime is
  * the only record that the module a stale `dist` still exports is gone.
+ *
+ * `skip` drops files the caller does not build from, by absolute path. It is not
+ * applied to directories, for the reason above.
  */
-function newestModification(directory: string): number {
+function newestModification(directory: string, skip?: (path: string) => boolean): number {
   if (!existsSync(directory)) return 0;
   let newest = statSync(directory).mtimeMs;
   const walk = (current: string): void => {
@@ -1502,6 +1539,7 @@ function newestModification(directory: string): number {
         walk(path);
         continue;
       }
+      if (skip?.(path)) continue;
       newest = Math.max(newest, statSync(path).mtimeMs);
     }
   };
