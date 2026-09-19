@@ -115,10 +115,47 @@ export type TTraceContent = {
   truncated: boolean;
 };
 
+export type TTraceMessageRole = 'system' | 'user' | 'assistant' | 'tool';
+
+export type TTraceToolCall = {
+  name: string;
+  args?: TTraceContent;
+};
+
+/** One message of a model call's conversation, each bounded on its own so a long one hides no other. */
+export type TTraceMessage = {
+  role: TTraceMessageRole;
+  text?: TTraceContent;
+  /** The tool a `tool` message answers for. */
+  toolName?: string;
+  /** The tools an `assistant` message asked for. */
+  toolCalls?: TTraceToolCall[];
+  /** Parts that are not text (an image, a file), by their type. */
+  attachments?: string[];
+};
+
+/**
+ * What a model call was given, as a conversation. A long one keeps its system
+ * message and its newest messages, which are what the call answered, and
+ * `omitted` counts the older ones left out between them.
+ */
+export type TTracePrompt = {
+  messages: TTraceMessage[];
+  /** Every message the call was given, listed or not. */
+  total: number;
+  omitted: number;
+  /** Names of the tools the model could call. */
+  tools?: string[];
+};
+
 export type TTraceRecordDetail = {
   record: TTraceRecord;
   /** False when the deployment withholds input, output and metadata. */
   contentAvailable: boolean;
+  /** Set when the input is a conversation the backend could read as one; `input` stays the raw form. */
+  prompt?: TTracePrompt;
+  /** Set when the output is a message the backend could read as one; `output` stays the raw form. */
+  reply?: TTraceMessage;
   input?: TTraceContent;
   output?: TTraceContent;
   metadata?: TTraceContent;

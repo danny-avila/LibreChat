@@ -1376,6 +1376,48 @@ describe('createLangfuseTraceReader', () => {
       });
     });
 
+    it('reads a model call as a conversation, and only a model call', async () => {
+      const io = {
+        input:
+          '{"messages":[{"role":"system","content":"Be brief."},{"role":"user","content":"hello"}]}',
+        output: '{"role":"assistant","content":[{"type":"text","text":"Hi."}]}',
+      };
+      const settings = resolveTraceViewerConfig({ enabled: true, showInputOutput: true });
+      const { reader } = setup({
+        responses: [
+          jsonResponse({ data: [observation({ id: 'obs-llm', type: 'GENERATION', ...io })] }),
+          jsonResponse({ data: [observation(io)] }),
+        ],
+      });
+
+      const modelCall = await reader.getRecord({
+        ...createQuery({ settings }),
+        recordId: 'obs-llm',
+        messageId: 'response-1',
+      });
+      const wrapper = await reader.getRecord({
+        ...createQuery({ settings }),
+        recordId: 'obs-root',
+        messageId: 'response-1',
+      });
+
+      expect(modelCall?.prompt).toEqual({
+        total: 2,
+        omitted: 0,
+        messages: [
+          { role: 'system', text: { value: 'Be brief.', truncated: false } },
+          { role: 'user', text: { value: 'hello', truncated: false } },
+        ],
+      });
+      expect(modelCall?.reply).toEqual({
+        role: 'assistant',
+        text: { value: 'Hi.', truncated: false },
+      });
+      expect(modelCall?.input?.value).toBe(io.input);
+      expect(wrapper?.prompt).toBeUndefined();
+      expect(wrapper?.reply).toBeUndefined();
+    });
+
     it('keeps literal strings that spell an empty object or null', async () => {
       const { reader } = setup({
         responses: [
