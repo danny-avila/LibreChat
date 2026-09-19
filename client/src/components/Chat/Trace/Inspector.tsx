@@ -3,7 +3,7 @@ import copy from 'copy-to-clipboard';
 import { Link } from 'react-router-dom';
 import { X, Copy, Check, MessageSquare } from 'lucide-react';
 import { Button, Spinner, buttonVariants } from '@librechat/client';
-import type { TTraceContent } from 'librechat-data-provider';
+import type { TTraceContent, TTraceRecordDetail } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type { RecordPresentation, ToolCallView } from './present';
 import type { TranslationKeys } from '~/hooks';
@@ -14,10 +14,12 @@ import { useTraceFormat, recordDurationText } from './format';
 import { formatCost, formatTokens } from '~/utils/tokens';
 import { appearanceOf, STATUS_LABEL } from './kinds';
 import { cn, renderAgentAvatar } from '~/utils';
+import Conversation from './Conversation';
 import { formatJSON } from '~/utils/json';
 import { useLocalize } from '~/hooks';
 
 type Field = { label: TranslationKeys; value: ReactNode };
+type ToolFor = (name: string) => Pick<RecordPresentation, 'title' | 'caption'>;
 
 function Section({ title, fields }: { title: TranslationKeys; fields: Field[] }) {
   const localize = useLocalize();
@@ -69,13 +71,21 @@ function RecordContent({
   recordId,
   messageId,
   sourceId,
+  toolFor,
+  mcpIconMap,
+  placeholder,
 }: {
   conversationId: string;
   recordId: string;
   messageId: string;
   sourceId?: string;
+  toolFor: ToolFor;
+  mcpIconMap: Map<string, string>;
+  /** What the chat already knows the record wrote: shown at once, until the record's own reply loads. */
+  placeholder?: ReactNode;
 }) {
   const localize = useLocalize();
+  const [raw, setRaw] = useState(false);
   const { data, isLoading, isError, refetch } = useConversationTraceRecordQuery(
     { conversationId, recordId, messageId, sourceId },
     true,
@@ -83,10 +93,13 @@ function RecordContent({
 
   if (isLoading) {
     return (
-      <div className="flex justify-center py-4" role="status">
-        <Spinner className="size-4 text-text-secondary" />
-        <span className="sr-only">{localize('com_ui_trace_loading')}</span>
-      </div>
+      <>
+        {placeholder}
+        <div className="flex justify-center py-4" role="status">
+          <Spinner className="size-4 text-text-secondary" />
+          <span className="sr-only">{localize('com_ui_trace_loading')}</span>
+        </div>
+      </>
     );
   }
   if (isError || !data) {
@@ -105,11 +118,46 @@ function RecordContent({
   if (!data.input && !data.output && !data.metadata) {
     return <p className="text-sm text-text-secondary">{localize('com_ui_trace_content_empty')}</p>;
   }
+  const readable = data.prompt != null || data.reply != null;
   return (
     <div className="flex flex-col gap-3">
-      <ContentBlock label="com_ui_trace_input" content={data.input} />
-      <ContentBlock label="com_ui_trace_output" content={data.output} />
-      <ContentBlock label="com_ui_trace_metadata" content={data.metadata} />
+      {data.reply == null && placeholder}
+      {readable && (
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-pressed={raw}
+          className="self-end"
+          onClick={() => setRaw((current) => !current)}
+        >
+          {localize(raw ? 'com_ui_trace_view_conversation' : 'com_ui_trace_view_raw')}
+        </Button>
+      )}
+      {readable && !raw && (
+        <Conversation
+          prompt={data.prompt}
+          reply={data.reply}
+          toolTitleFor={toolFor}
+          mcpIconMap={mcpIconMap}
+        />
+      )}
+      {(!readable || raw) && (
+        <RawContent input={data.input} output={data.output} metadata={data.metadata} />
+      )}
+    </div>
+  );
+}
+
+function RawContent({
+  input,
+  output,
+  metadata,
+}: Pick<TTraceRecordDetail, 'input' | 'output' | 'metadata'>) {
+  return (
+    <div className="flex flex-col gap-3">
+      <ContentBlock label="com_ui_trace_input" content={input} />
+      <ContentBlock label="com_ui_trace_output" content={output} />
+      <ContentBlock label="com_ui_trace_metadata" content={metadata} />
     </div>
   );
 }
@@ -208,6 +256,7 @@ function Inspector({
   node,
   presentation,
   mcpIconMap,
+  toolFor,
   turnStart,
   sourceId,
   conversationId,
@@ -219,6 +268,7 @@ function Inspector({
   node: TraceNode;
   presentation: RecordPresentation;
   mcpIconMap: Map<string, string>;
+  toolFor: ToolFor;
   turnStart: number;
   /** The page source that listed this record. */
   sourceId?: string;
@@ -275,6 +325,25 @@ function Inspector({
       value: formatCost(record.cost, currency),
     });
   }
+
+  const preview = presentation.calls == null && presentation.preview != null && (
+    <p className="whitespace-pre-wrap break-words rounded-lg border border-border-light bg-surface-primary-alt p-2 text-sm">
+      {presentation.preview}
+    </p>
+  );
+  /** A model call is read as a conversation, which is what the panel is opened for, so it leads. */
+  const leadsWithContent = showContent && record.kind === 'generation';
+  const content = (
+    <RecordContent
+      conversationId={conversationId}
+      recordId={record.id}
+      messageId={record.messageId}
+      sourceId={sourceId}
+      toolFor={toolFor}
+      mcpIconMap={mcpIconMap}
+      placeholder={leadsWithContent ? preview : undefined}
+    />
+  );
 
   return (
     <aside
@@ -342,11 +411,8 @@ function Inspector({
         {record.agentId != null && presentation.agent !== undefined && (
           <AgentCard agent={presentation.agent} agentId={record.agentId} />
         )}
-        {presentation.calls == null && presentation.preview != null && (
-          <p className="whitespace-pre-wrap break-words rounded-lg border border-border-light bg-surface-primary-alt p-2 text-sm">
-            {presentation.preview}
-          </p>
-        )}
+        {!leadsWithContent && preview}
+        {leadsWithContent && content}
         {presentation.calls != null && (
           <ToolCalls calls={presentation.calls} mcpIconMap={mcpIconMap} />
         )}
@@ -379,17 +445,12 @@ function Inspector({
             },
           ]}
         />
-        {showContent && (
+        {showContent && !leadsWithContent && (
           <section className="flex flex-col gap-2">
             <h4 className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
               {localize('com_ui_trace_content')}
             </h4>
-            <RecordContent
-              conversationId={conversationId}
-              recordId={record.id}
-              messageId={record.messageId}
-              sourceId={sourceId}
-            />
+            {content}
           </section>
         )}
       </div>
