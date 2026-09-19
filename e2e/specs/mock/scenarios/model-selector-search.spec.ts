@@ -26,6 +26,11 @@ test.describe('model selector search', () => {
       await search.press('ArrowDown');
       await expect(search).toHaveAttribute('aria-activedescendant', /.+/);
     }
+    const announcement = page.locator('[role="alert"]').first();
+    const initialAnnouncement = await announcement.textContent();
+    await search.fill('zzzz-no-results');
+    await expect(announcement).toHaveText(/no results/i);
+    expect(await announcement.textContent()).not.toBe(initialAnnouncement);
   });
 
   test('pinning a search result is keyboard reachable @scenario:model-selector-search-result-pin-is-keyboard-reachable', async ({
