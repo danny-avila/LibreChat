@@ -753,6 +753,8 @@ export interface MessageMethods {
     /** Manual owner-process takeover after automatic delivery was retired. */
     allowUnfinished?: boolean;
     limit?: number;
+    /** Includes JSON escaping, delimiters, and empty result fields. */
+    maxMetadataChars?: number;
   }): Promise<BackgroundToolResultClaim>;
   releaseBackgroundToolResultClaims(params: {
     userId: string;
@@ -1585,20 +1587,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     allowUnfinished = false,
     limit = kind === 'wakeup' ? 8 : 1,
     maxMetadataChars,
-  }: {
-    userId: string;
-    conversationId: string;
-    messageId?: string;
-    taskId: string;
-    agentId?: string;
-    kind: 'manual' | 'wakeup';
-    claimId: string;
-    generationId?: string;
-    allowUnfinished?: boolean;
-    limit?: number;
-    /** Includes JSON escaping, delimiters, and empty result fields. */
-    maxMetadataChars?: number;
-  }): Promise<BackgroundToolResultClaim> {
+  }: Parameters<
+    MessageMethods['claimBackgroundToolResults']
+  >[0]): Promise<BackgroundToolResultClaim> {
     const requestedMessageId = messageId?.trim();
     const requestedGenerationId = generationId?.trim();
     if (
