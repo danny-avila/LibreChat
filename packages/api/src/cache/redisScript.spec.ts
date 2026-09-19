@@ -202,7 +202,7 @@ describe('evalScript', () => {
 
     const first = evalScript(client, 'return ARGV[1]', 1, '{stream-a}chunks', 'first');
     await firstLoadStarted;
-    const second = evalScript(client, 'return ARGV[1]', 1, '{stream-b}chunks', 'second');
+    const second = evalScript(client, 'return ARGV[1]', 1, '{stream-a}chunks', 'second');
     releaseFirstLoad();
 
     await expect(first).rejects.toThrow('EVAL load failed');

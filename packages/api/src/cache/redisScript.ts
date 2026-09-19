@@ -38,21 +38,28 @@ function loadsFor(client: RedisScriptClient): Map<string, Promise<RedisScriptRes
   return loads;
 }
 
-function firstScriptKey(args: RedisScriptArg[]): string | Buffer {
+function firstScriptKey(args: RedisScriptArg[], numberOfKeys: number): string | Buffer {
+  if (numberOfKeys <= 0) {
+    return '';
+  }
   const firstKey = args[0];
   return typeof firstKey === 'string' || Buffer.isBuffer(firstKey) ? firstKey : '';
 }
 
-function scriptOrderingKey(args: RedisScriptArg[]): string {
-  const firstKey = firstScriptKey(args);
+function scriptOrderingKey(args: RedisScriptArg[], numberOfKeys: number): string {
+  const firstKey = firstScriptKey(args, numberOfKeys);
   const value = Buffer.isBuffer(firstKey) ? firstKey.toString() : firstKey;
   const open = value.indexOf('{');
   const close = value.indexOf('}', open + 1);
   return open >= 0 && close > open ? value.slice(open, close + 1) : value;
 }
 
-function scriptRoutingKey(client: RedisScriptClient, args: RedisScriptArg[]): string | Buffer {
-  const key = firstScriptKey(args);
+function scriptRoutingKey(
+  client: RedisScriptClient,
+  args: RedisScriptArg[],
+  numberOfKeys: number,
+): string | Buffer {
+  const key = firstScriptKey(args, numberOfKeys);
   const prefix = client.options?.keyPrefix;
   if (!prefix) {
     return key;
@@ -130,9 +137,9 @@ export async function evalScript(
     return (await client.eval(script, numberOfKeys, ...args)) as RedisScriptResult;
   }
   const sha = scriptSha(script);
-  const orderingKey = scriptOrderingKey(args);
+  const orderingKey = scriptOrderingKey(args, numberOfKeys);
   const confirmationKey = (client as RedisScriptClient & { isCluster?: boolean }).isCluster
-    ? String(calculateSlot(scriptRoutingKey(client, args)))
+    ? String(calculateSlot(scriptRoutingKey(client, args, numberOfKeys)))
     : '';
   const confirmed = confirmedShasFor(client, confirmationKey);
   const loads = loadsFor(client);
