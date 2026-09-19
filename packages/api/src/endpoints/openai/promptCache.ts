@@ -446,6 +446,16 @@ function runtimeSchemaShape(value: unknown, seen: Set<object>, depth = 0): unkno
       ? value
       : null;
   }
+  /**
+   * A regular expression carries everything it means on two non-enumerable
+   * properties, so the generic branch below would read no own keys and file
+   * every pattern under one empty identity — while the schema the model is
+   * shown spells the pattern out. A Zod `regex` check, and an OpenAPI
+   * `pattern` translated into one, both arrive here.
+   */
+  if (value instanceof RegExp) {
+    return { source: value.source, flags: value.flags };
+  }
   if (seen.has(value)) {
     return '[cycle]';
   }
