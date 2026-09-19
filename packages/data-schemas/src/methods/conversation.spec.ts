@@ -1144,21 +1144,70 @@ describe('Conversation Operations', () => {
       expect(stored?.codeWorkspaces).toEqual([vm]);
     });
 
-    it.each([{}, { codeWorkspaces: [mac] }])(
-      'preserves a legacy decision: %j',
-      async (decision) => {
-        const conversationId = uuidv4();
-        await Conversation.collection.insertOne({ conversationId, user: userId, ...decision });
-        await saveConvo(
-          { userId },
-          { conversationId, codeEnvironmentMode: 'attached', codeWorkspaces: [vm] },
-          { unsetFields },
-        );
-        const stored = await getConvo(userId, conversationId);
-        expect(stored?.codeEnvironmentMode).toBeUndefined();
-        expect(stored?.codeWorkspaces).toEqual(decision.codeWorkspaces);
-      },
-    );
+    it('preserves a legacy decision', async () => {
+      const conversationId = uuidv4();
+      await Conversation.collection.insertOne({
+        conversationId,
+        user: userId,
+        codeWorkspaces: [mac],
+      });
+      await saveConvo(
+        { userId },
+        { conversationId, codeEnvironmentMode: 'attached', codeWorkspaces: [vm] },
+        { unsetFields },
+      );
+      const stored = await getConvo(userId, conversationId);
+      expect(stored?.codeEnvironmentMode).toBeUndefined();
+      expect(stored?.codeWorkspaces).toEqual([mac]);
+    });
+
+    it('records the first decision of a saved chat that holds none', async () => {
+      const conversationId = uuidv4();
+      await Conversation.collection.insertOne({ conversationId, user: userId, title: 'Saved' });
+
+      const saved = await saveConvo(
+        { userId },
+        { conversationId, codeEnvironmentMode: 'attached', codeWorkspaces: [mac] },
+        { unsetFields },
+      );
+
+      expect(saved?.codeEnvironmentMode).toBe('attached');
+      expect(saved?.codeWorkspaces).toEqual([mac]);
+      const stored = await getConvo(userId, conversationId);
+      expect(stored?.codeEnvironmentMode).toBe('attached');
+      expect(stored?.codeWorkspaces).toEqual([mac]);
+    });
+
+    it('keeps the decision it recorded when a later turn resolves another', async () => {
+      const conversationId = uuidv4();
+      await Conversation.collection.insertOne({ conversationId, user: userId, title: 'Saved' });
+      await saveConvo(
+        { userId },
+        { conversationId, codeEnvironmentMode: 'attached', codeWorkspaces: [mac] },
+        { unsetFields },
+      );
+
+      await saveConvo(
+        { userId },
+        { conversationId, codeEnvironmentMode: 'without_attached', codeWorkspaces: [vm] },
+        { unsetFields },
+      );
+
+      const stored = await getConvo(userId, conversationId);
+      expect(stored?.codeEnvironmentMode).toBe('attached');
+      expect(stored?.codeWorkspaces).toEqual([mac]);
+    });
+
+    it('leaves a chat undecided when a save carries selections without a mode', async () => {
+      const conversationId = uuidv4();
+      await Conversation.collection.insertOne({ conversationId, user: userId, title: 'Saved' });
+
+      await saveConvo({ userId }, { conversationId, codeWorkspaces: [vm] }, { unsetFields });
+
+      const stored = await getConvo(userId, conversationId);
+      expect(stored?.codeEnvironmentMode).toBeUndefined();
+      expect(stored?.codeWorkspaces).toBeUndefined();
+    });
   });
 
   describe('replaceConvoCodeEnvironmentDecision', () => {
