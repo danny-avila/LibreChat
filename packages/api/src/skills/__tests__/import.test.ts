@@ -843,6 +843,107 @@ describe('createImportHandler', () => {
     expect(deps.deleteFile).toHaveBeenCalledTimes(1);
   });
 
+  describe.each([false, true])('persisted path validation with preflight=%s', (preflight) => {
+    const config = preflight
+      ? mockAppConfig({
+          files: {
+            pii: {
+              fields: ['content'],
+              starterPatterns: [],
+              customPatterns: [{ id: 'private_token', label: 'private token', regex: 'PRIVATE' }],
+            },
+          },
+        })
+      : undefined;
+
+    it.each(['references/' + 'a'.repeat(486) + '.txt', 'SKILL.md/resource.txt'])(
+      'rejects %s before writing storage',
+      async (relativePath) => {
+        const deps = mockImportDeps();
+        const zip = await JSZip.loadAsync(await zipWithAdditionalFiles(0, 0));
+        zip.file(`bundle/${relativePath}`, 'safe content');
+        const markdown = await zip.file('SKILL.md')!.async('string');
+        zip.remove('SKILL.md');
+        zip.file('bundle/SKILL.md', markdown);
+        const res = mockResponse();
+
+        await createImportHandler(deps)(
+          mockZipRequest(await zip.generateAsync({ type: 'nodebuffer' }), config),
+          res,
+        );
+
+        expect(res.statusCode).toBe(422);
+        expect(importFailure(res.body).failedFiles).toEqual([
+          { path: relativePath, reason: 'invalid_path' },
+        ]);
+        expect(deps.saveBuffer).not.toHaveBeenCalled();
+        expect(deps.upsertSkillFile).not.toHaveBeenCalled();
+      },
+    );
+
+    it('accepts a persisted path at the 500-character boundary', async () => {
+      const deps = mockImportDeps();
+      const zip = await JSZip.loadAsync(await zipWithAdditionalFiles(0, 0));
+      const relativePath = 'references/' + 'a'.repeat(485) + '.txt';
+      zip.file(relativePath, 'safe content');
+      const res = mockResponse();
+
+      await createImportHandler(deps)(
+        mockZipRequest(await zip.generateAsync({ type: 'nodebuffer' }), config),
+        res,
+      );
+
+      expect(relativePath).toHaveLength(500);
+      expect(res.statusCode).toBe(201);
+      expect(deps.upsertSkillFile).toHaveBeenCalledWith(expect.objectContaining({ relativePath }));
+    });
+  });
+
+  it.each([1, 3, undefined])(
+    'awaits every blob cleanup with concurrency=%s even when deletions fail',
+    async (concurrency) => {
+      const deps = mockImportDeps();
+      const zip = await JSZip.loadAsync(await zipWithAdditionalFiles(20, 64));
+      zip.file('invalid path.txt', 'trigger rollback after the successful writes');
+      let active = 0;
+      let peak = 0;
+      let started = 0;
+      let finished = 0;
+      const failures: number[] = [];
+      deps.deleteFile = jest.fn(async () => {
+        const index = started++;
+        active++;
+        peak = Math.max(peak, active);
+        try {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          if (index === 0 || index === 19) {
+            failures.push(index);
+            throw new Error('storage unavailable');
+          }
+        } finally {
+          active--;
+          finished++;
+        }
+      });
+      const config = mockAppConfig({});
+      config.fileConfig = { skills: { importCleanupConcurrency: concurrency } };
+      const res = mockResponse();
+
+      await createImportHandler(deps)(
+        mockZipRequest(await zip.generateAsync({ type: 'nodebuffer' }), config),
+        res,
+      );
+
+      expect(peak).toBe(concurrency ?? 8);
+      expect(finished).toBe(20);
+      expect(active).toBe(0);
+      expect(failures).toEqual([0, 19]);
+      expect(deps.deleteFile).toHaveBeenCalledTimes(20);
+      expect(res.statusCode).toBe(500);
+      expect(importFailure(res.body).error).toBe('skill_import_cleanup_incomplete');
+    },
+  );
+
   it('bounds SKILL.md inflation even when archive headers understate its size', async () => {
     const kib = 1024;
     const deps = mockImportDeps({

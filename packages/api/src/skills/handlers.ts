@@ -35,7 +35,7 @@ import type { Response } from 'express';
 import type { Types } from 'mongoose';
 import type { ServerRequest, StrategyFunctions } from '~/types';
 import { extractSkillContent, inspectContentWithTraversal } from '~/protection';
-import { deleteSkillWithRetry, mergeDeleteSkillResults } from './deleteCleanup';
+import { deleteSkillWithRetry, mergeDeleteSkillResults } from './cleanup';
 import { contentFilterBlockResponse } from '~/middleware/contentFilter';
 import { getDeploymentSkillIds } from './deployment';
 import { resolveDownloadPath } from '~/storage/path';

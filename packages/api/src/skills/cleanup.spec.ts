@@ -1,5 +1,5 @@
 import type { DeleteSkillResult } from '@librechat/data-schemas';
-import { deleteSkillWithRetry, mergeDeleteSkillResults } from './deleteCleanup';
+import { deleteSkillWithRetry, mergeDeleteSkillResults } from './cleanup';
 
 function incomplete(...failedCleanupSteps: DeleteSkillResult['failedCleanupSteps']) {
   return {

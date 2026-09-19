@@ -1,9 +1,10 @@
 import path from 'path';
 import JSZip from 'jszip';
 import crypto from 'crypto';
-import { logger } from '@librechat/data-schemas';
+import { logger, validateRelativePath } from '@librechat/data-schemas';
 import {
   ResourceType,
+  DEFAULT_SKILL_IMPORT_CLEANUP_CONCURRENCY,
   AccessRoleIds,
   PrincipalType,
   hasActivePiiFields,
@@ -39,11 +40,11 @@ import {
   contentFilterUninspectableResponse,
   getBlockedUninspectableSkillFileField,
 } from '~/protection';
-import { deleteSkillWithRetry, mergeDeleteSkillResults } from './deleteCleanup';
+import { deleteSkillWithRetry, mergeDeleteSkillResults } from './cleanup';
 import { contentFilterBlockResponse } from '~/middleware/contentFilter';
 import { resolveRequestTenantId } from '~/middleware/tenant';
+import { createConcurrencyLimiter } from '~/utils/promise';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from './limits';
-import { isSafeSkillFilePath } from './path';
 import { parseSkillMarkdown } from './parse';
 import { isBinaryBuffer } from './binary';
 
@@ -621,9 +622,9 @@ async function scanArchiveFiles(
     if (callbacks.onName?.(relativePath || normalized) === true) {
       return { files, results, blocked: true, cumulativeLimitExceeded };
     }
-    if (!relativePath || !isSafeSkillFilePath(relativePath)) {
+    if (validateRelativePath(relativePath).length > 0) {
       results.push({
-        path: normalized,
+        path: relativePath,
         status: 'error',
         reason: 'invalid_path',
         error: 'Invalid path',
@@ -815,19 +816,33 @@ async function cleanupArchiveBlobs(
     return false;
   }
 
+  const limit = createConcurrencyLimiter(
+    req.config?.fileConfig?.skills?.importCleanupConcurrency ??
+      DEFAULT_SKILL_IMPORT_CLEANUP_CONCURRENCY,
+  );
+  const results = await Promise.allSettled(
+    blobs.map((blob) =>
+      limit(() =>
+        deleteFile(req, {
+          filepath: blob.filepath,
+          storageKey: blob.storageKey,
+          storageRegion: blob.storageRegion,
+          source: blob.source,
+          user: context.authorId,
+          tenantId: context.tenantId,
+        }),
+      ),
+    ),
+  );
   let complete = true;
-  for (const blob of blobs) {
-    await deleteFile(req, {
-      filepath: blob.filepath,
-      storageKey: blob.storageKey,
-      storageRegion: blob.storageRegion,
-      source: blob.source,
-      user: context.authorId,
-      tenantId: context.tenantId,
-    }).catch((error) => {
+  for (const [index, result] of results.entries()) {
+    if (result.status === 'rejected') {
       complete = false;
-      logger.error(`[importSkill] Rollback blob cleanup failed for ${blob.relativePath}:`, error);
-    });
+      logger.error(
+        `[importSkill] Rollback blob cleanup failed for ${blobs[index].relativePath}:`,
+        result.reason,
+      );
+    }
   }
   return complete;
 }
@@ -1010,6 +1025,9 @@ async function handleZip(
   let skillMdPath: string | null = null;
   let prefix = '';
   for (const p of entries) {
+    if (zip.files[p].dir) {
+      continue;
+    }
     const normalized = p.replace(/\\/g, '/');
     const segments = normalized.split('/').filter(Boolean);
     const basename = segments[segments.length - 1];
