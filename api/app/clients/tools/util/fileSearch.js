@@ -105,6 +105,9 @@ const createFileSearchTool = async ({
       if (files.length === 0) {
         return ['No files to search. Instruct the user to add files for the search.', undefined];
       }
+      if (typeof query !== 'string' || query.trim().length === 0) {
+        return ['A non-empty query is required to search the files.', undefined];
+      }
       const jwtToken = generateShortLivedToken(userId);
       if (!jwtToken) {
         return ['There was an error authenticating the file search request.', undefined];
