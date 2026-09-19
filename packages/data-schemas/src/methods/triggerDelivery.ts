@@ -37,6 +37,7 @@ const HISTORY_LIMIT = 64;
 const MAX_BATCH_SIZE = 8;
 const MAX_BATCH_BYTES = 512 * 1024;
 const MAX_BACKGROUND_TOOL_RESULT_CHARS = 24 * 1024;
+const MAX_BACKGROUND_TOOL_RESULT_BATCH = 8;
 /** Bounds the claim's compare-and-swap retries. Each lost round means another
  * worker claimed the row this one read, so the queue is making progress. */
 export const CLAIM_CAS_MAX_ATTEMPTS = 16;
@@ -136,6 +137,20 @@ export interface PersistAgentBackgroundToolResultInput {
   sourceId: string;
   result: AgentBackgroundToolResultReceipt;
 }
+
+export type AgentBackgroundToolResultClaim =
+  | { status: 'not_ready' }
+  | { status: 'claimed'; claimId: string }
+  | {
+      status: 'acquired';
+      results: Array<{
+        taskId: string;
+        toolCallId: string;
+        toolName: string;
+        status: AgentBackgroundToolResultReceipt['status'];
+        output: string;
+      }>;
+    };
 
 export interface AgentTriggerDeliveryFence {
   id: string;
@@ -292,6 +307,23 @@ export interface AgentTriggerDeliveryMethods {
     deliveryKey: string;
     sourceId: string;
   }) => Promise<AgentBackgroundToolResultReceipt | null>;
+  claimAgentBackgroundToolResults: (input: {
+    deliveryKey: string;
+    sourceId: string;
+    userId: string;
+    conversationId: string;
+    parentMessageId: string;
+    agentId?: string;
+    claimId: string;
+    limit?: number;
+  }) => Promise<AgentBackgroundToolResultClaim>;
+  releaseAgentBackgroundToolResultClaims: (input: {
+    sourceId: string;
+    userId: string;
+    conversationId: string;
+    parentMessageId: string;
+    claimId: string;
+  }) => Promise<boolean>;
   settleAgentTriggerHandlingOutcome: (
     input: SettleAgentTriggerHandlingOutcomeInput,
   ) => Promise<boolean>;
@@ -2258,6 +2290,215 @@ export function createAgentTriggerDeliveryMethods(
     return delivery?.backgroundToolResult ?? null;
   }
 
+  function backgroundResultIdentity(input: {
+    sourceId: string;
+    userId: string;
+    conversationId: string;
+    parentMessageId: string;
+    agentId?: string;
+  }) {
+    return {
+      user: input.userId,
+      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      'envelope.event.source.type': 'internal',
+      'envelope.event.source.id': input.sourceId,
+      'envelope.target.conversationId': input.conversationId,
+      'envelope.target.parentMessageId': input.parentMessageId,
+      ...(input.agentId == null ? {} : { 'envelope.target.agentId': input.agentId }),
+    };
+  }
+
+  function projectBackgroundResult(delivery: {
+    envelope?: unknown;
+    backgroundToolResult?: AgentBackgroundToolResultReceipt;
+  }) {
+    const envelope = delivery.envelope;
+    if (envelope == null || typeof envelope !== 'object' || Array.isArray(envelope)) {
+      return null;
+    }
+    const event = (envelope as { event?: unknown }).event;
+    if (event == null || typeof event !== 'object' || Array.isArray(event)) {
+      return null;
+    }
+    const payload = (event as { payload?: unknown }).payload;
+    if (payload == null || typeof payload !== 'object' || Array.isArray(payload)) {
+      return null;
+    }
+    const { taskId, toolCallId, toolName } = payload as Record<string, unknown>;
+    const receipt = delivery.backgroundToolResult;
+    if (
+      receipt == null ||
+      typeof taskId !== 'string' ||
+      typeof toolCallId !== 'string' ||
+      typeof toolName !== 'string'
+    ) {
+      return null;
+    }
+    return {
+      taskId,
+      toolCallId,
+      toolName,
+      status: receipt.status,
+      output: receipt.output,
+    };
+  }
+
+  /** Elects one automatic continuation and coalesces already-settled sibling
+   * receipts from the same originating response. Every row is CAS-claimed, so
+   * concurrent delivery workers may split a batch but can never duplicate it. */
+  async function claimAgentBackgroundToolResults(input: {
+    deliveryKey: string;
+    sourceId: string;
+    userId: string;
+    conversationId: string;
+    parentMessageId: string;
+    agentId?: string;
+    claimId: string;
+    limit?: number;
+  }): Promise<AgentBackgroundToolResultClaim> {
+    if (
+      input.deliveryKey.length === 0 ||
+      input.deliveryKey.length > 256 ||
+      input.sourceId.length === 0 ||
+      input.sourceId.length > 256 ||
+      input.userId.length === 0 ||
+      input.conversationId.length === 0 ||
+      input.conversationId.length > 256 ||
+      input.parentMessageId.length === 0 ||
+      input.parentMessageId.length > 256 ||
+      input.claimId.length === 0 ||
+      input.claimId.length > 128
+    ) {
+      throw new TypeError('Invalid background tool result receipt claim');
+    }
+    const scope = backgroundResultIdentity(input);
+    const projection = 'envelope +backgroundToolResult';
+    let requested = await Delivery()
+      .findOne({ ...scope, deliveryKey: input.deliveryKey })
+      .select(projection)
+      .lean<Pick<IAgentTriggerDelivery, 'envelope' | 'backgroundToolResult'>>();
+    if (requested?.backgroundToolResult == null) {
+      return { status: 'not_ready' };
+    }
+    const existingClaim = requested.backgroundToolResult.resultClaim;
+    if (existingClaim != null && existingClaim.claimId !== input.claimId) {
+      return { status: 'claimed', claimId: existingClaim.claimId };
+    }
+    const claimedAt = new Date();
+    if (existingClaim == null) {
+      const claimed = await Delivery().updateOne(
+        {
+          ...scope,
+          deliveryKey: input.deliveryKey,
+          backgroundToolResult: { $exists: true },
+          'backgroundToolResult.resultClaim': { $exists: false },
+        },
+        {
+          $set: {
+            'backgroundToolResult.resultClaim': {
+              kind: 'wakeup',
+              claimId: input.claimId,
+              claimedAt,
+            },
+          },
+        },
+        { timestamps: false },
+      );
+      if (claimed.modifiedCount !== 1) {
+        requested = await Delivery()
+          .findOne({ ...scope, deliveryKey: input.deliveryKey })
+          .select(projection)
+          .lean<Pick<IAgentTriggerDelivery, 'envelope' | 'backgroundToolResult'>>();
+        const winner = requested?.backgroundToolResult?.resultClaim;
+        if (winner?.claimId !== input.claimId) {
+          return winner == null
+            ? { status: 'not_ready' }
+            : { status: 'claimed', claimId: winner.claimId };
+        }
+      }
+    }
+    const limit = Math.max(1, Math.min(MAX_BACKGROUND_TOOL_RESULT_BATCH, input.limit ?? 8));
+    if (limit > 1) {
+      const siblings = await Delivery()
+        .find({
+          ...scope,
+          deliveryKey: { $ne: input.deliveryKey },
+          backgroundToolResult: { $exists: true },
+          'backgroundToolResult.resultClaim': { $exists: false },
+        })
+        .select({ deliveryKey: 1 })
+        .sort({ 'backgroundToolResult.settledAt': 1, _id: 1 })
+        .limit(limit - 1)
+        .lean<Array<Pick<IAgentTriggerDelivery, 'deliveryKey'>>>();
+      await Promise.all(
+        siblings.map((sibling) =>
+          Delivery().updateOne(
+            {
+              ...scope,
+              deliveryKey: sibling.deliveryKey,
+              backgroundToolResult: { $exists: true },
+              'backgroundToolResult.resultClaim': { $exists: false },
+            },
+            {
+              $set: {
+                'backgroundToolResult.resultClaim': {
+                  kind: 'wakeup',
+                  claimId: input.claimId,
+                  claimedAt,
+                },
+              },
+            },
+            { timestamps: false },
+          ),
+        ),
+      );
+    }
+    const owned = await Delivery()
+      .find({ ...scope, 'backgroundToolResult.resultClaim.claimId': input.claimId })
+      .select(projection)
+      .sort({ 'backgroundToolResult.settledAt': 1, _id: 1 })
+      .limit(limit)
+      .lean<Array<Pick<IAgentTriggerDelivery, 'envelope' | 'backgroundToolResult'>>>();
+    return {
+      status: 'acquired',
+      results: owned.map(projectBackgroundResult).filter((result) => result != null),
+    };
+  }
+
+  async function releaseAgentBackgroundToolResultClaims(input: {
+    sourceId: string;
+    userId: string;
+    conversationId: string;
+    parentMessageId: string;
+    claimId: string;
+  }): Promise<boolean> {
+    if (
+      input.sourceId.length === 0 ||
+      input.sourceId.length > 256 ||
+      input.userId.length === 0 ||
+      input.conversationId.length === 0 ||
+      input.conversationId.length > 256 ||
+      input.parentMessageId.length === 0 ||
+      input.parentMessageId.length > 256 ||
+      input.claimId.length === 0 ||
+      input.claimId.length > 128
+    ) {
+      throw new TypeError('Invalid background tool result receipt claim release');
+    }
+    const scope = backgroundResultIdentity(input);
+    await Delivery().updateMany(
+      { ...scope, 'backgroundToolResult.resultClaim.claimId': input.claimId },
+      { $unset: { 'backgroundToolResult.resultClaim': 1 } },
+      { timestamps: false },
+    );
+    return (
+      (await Delivery().exists({
+        ...scope,
+        'backgroundToolResult.resultClaim.claimId': input.claimId,
+      })) == null
+    );
+  }
+
   async function settleAgentTriggerHandlingOutcome(
     input: SettleAgentTriggerHandlingOutcomeInput,
   ): Promise<boolean> {
@@ -3663,6 +3904,8 @@ export function createAgentTriggerDeliveryMethods(
     getAgentTriggerDeliveryProducerLease,
     persistAgentBackgroundToolResult,
     getAgentBackgroundToolResult,
+    claimAgentBackgroundToolResults,
+    releaseAgentBackgroundToolResultClaims,
     settleAgentTriggerHandlingOutcome,
     admitAgentEventActorAction,
     releaseAgentEventActorAction,

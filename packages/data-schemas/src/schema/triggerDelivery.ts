@@ -157,6 +157,17 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
           },
           output: { type: String, required: true, maxlength: 24 * 1024 },
           settledAt: { type: Date, required: true },
+          resultClaim: {
+            type: new Schema(
+              {
+                kind: { type: String, enum: ['wakeup'], required: true },
+                claimId: { type: String, required: true, maxlength: 128 },
+                claimedAt: { type: Date, required: true },
+              },
+              { _id: false },
+            ),
+            required: false,
+          },
         },
         { _id: false },
       ),
@@ -239,6 +250,17 @@ triggerDeliverySchema.index({ 'actorReceipt.resolution': 1 }, { sparse: true });
 triggerDeliverySchema.index({ user: 1, actorActionAdmittedAt: 1 }, { sparse: true });
 triggerDeliverySchema.index({ stagingRecoveryAt: 1 }, { sparse: true });
 triggerDeliverySchema.index({ laneCleanupPendingAt: 1 }, { sparse: true });
+triggerDeliverySchema.index(
+  {
+    user: 1,
+    requiredWorkerCapability: 1,
+    'envelope.target.conversationId': 1,
+    'envelope.target.parentMessageId': 1,
+    'envelope.target.agentId': 1,
+    'backgroundToolResult.settledAt': 1,
+  },
+  { sparse: true },
+);
 // Only successful rows receive expiresAt. Dead letters remain available until
 // an operator explicitly requeues or removes them.
 triggerDeliverySchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });

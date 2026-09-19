@@ -92,6 +92,8 @@ function resolverMethods() {
         }),
       ),
       getAgentBackgroundToolResult: jest.fn(async () => null),
+      claimAgentBackgroundToolResults: jest.fn(async () => ({ status: 'not_ready' as const })),
+      releaseAgentBackgroundToolResultClaims: jest.fn(async () => true),
     },
   };
 }
@@ -451,10 +453,24 @@ describe('background tool completion wakeups', () => {
 
   it('continues from the independent delivery receipt before the parent projection lands', async () => {
     const { methods } = resolverMethods();
-    methods.getAgentBackgroundToolResult.mockResolvedValueOnce({
-      status: 'completed',
-      output: 'independently durable',
-      settledAt: new Date(NOW),
+    methods.claimAgentBackgroundToolResults.mockResolvedValueOnce({
+      status: 'acquired',
+      results: [
+        {
+          taskId: 'task-1',
+          toolCallId: 'call-1',
+          toolName: 'slow_tool',
+          status: 'completed',
+          output: 'independently durable',
+        },
+        {
+          taskId: 'task-2',
+          toolCallId: 'call-2',
+          toolName: 'other_tool',
+          status: 'completed',
+          output: 'coalesced sibling',
+        },
+      ],
     } as never);
     const resolve = createBackgroundToolCompletionWakeupResolver({
       methods: methods as never,
@@ -465,11 +481,23 @@ describe('background tool completion wakeups', () => {
 
     expect(prepared).toMatchObject({ status: 'ready', parentMessageId: 'response-2' });
     expect(prepared?.status === 'ready' && prepared.input).toContain('independently durable');
-    expect(methods.getAgentBackgroundToolResult).toHaveBeenCalledWith({
+    expect(prepared?.status === 'ready' && prepared.input).toContain('coalesced sibling');
+    expect(methods.claimAgentBackgroundToolResults).toHaveBeenCalledWith({
       deliveryKey: 'delivery-1',
       sourceId: 'background-tool-completion',
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+      parentMessageId: 'response-1',
+      agentId: 'agent_parent_1',
+      claimId: 'delivery-1',
     });
     expect(methods.claimBackgroundToolResults).not.toHaveBeenCalled();
+    if (prepared?.status === 'ready') {
+      await prepared.releaseOnDefiniteFailure?.();
+    }
+    expect(methods.releaseAgentBackgroundToolResultClaims).toHaveBeenCalledWith(
+      expect.objectContaining({ claimId: 'delivery-1' }),
+    );
   });
 
   it('shares one bounded input budget across a full sibling batch', async () => {
@@ -529,6 +557,7 @@ describe('background tool completion wakeups', () => {
         deferWithoutAttempt: true,
       },
     );
+    expect(methods.claimAgentBackgroundToolResults).not.toHaveBeenCalled();
     expect(methods.claimBackgroundToolResults).not.toHaveBeenCalled();
   });
 

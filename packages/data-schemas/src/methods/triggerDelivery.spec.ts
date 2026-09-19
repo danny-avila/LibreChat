@@ -482,6 +482,108 @@ describe('agent trigger delivery methods', () => {
     expect(ordinaryRead).not.toHaveProperty('backgroundToolResult');
   });
 
+  it('atomically coalesces sibling completion receipts under one wakeup claim', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const makeEnvelope = (taskId: string) => ({
+      event: {
+        source,
+        payload: { taskId, toolCallId: `call-${taskId}`, toolName: 'slow_tool' },
+      },
+      target: {
+        agentId: 'agent-1',
+        conversationId: 'conversation-1',
+        parentMessageId: 'response-1',
+      },
+    });
+    const first = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-result-first',
+        user,
+        envelope: makeEnvelope('task-first'),
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      }),
+    );
+    const second = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        deliveryKey: 'background-result-second',
+        user,
+        envelope: makeEnvelope('task-second'),
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      }),
+    );
+    for (const [delivery, output] of [
+      [first, 'first output'],
+      [second, 'second output'],
+    ] as const) {
+      await methods.persistAgentBackgroundToolResult({
+        deliveryKey: delivery.delivery.deliveryKey,
+        sourceId: source.id,
+        result: { status: 'completed', output, settledAt: START },
+      });
+    }
+    const scope = {
+      sourceId: source.id,
+      userId: user.toString(),
+      conversationId: 'conversation-1',
+      parentMessageId: 'response-1',
+      agentId: 'agent-1',
+    };
+
+    await expect(
+      methods.claimAgentBackgroundToolResults({
+        ...scope,
+        deliveryKey: first.delivery.deliveryKey,
+        claimId: 'first-claim',
+      }),
+    ).resolves.toMatchObject({
+      status: 'acquired',
+      results: [
+        { taskId: 'task-first', output: 'first output' },
+        { taskId: 'task-second', output: 'second output' },
+      ],
+    });
+    await expect(
+      methods.claimAgentBackgroundToolResults({
+        ...scope,
+        deliveryKey: second.delivery.deliveryKey,
+        claimId: 'second-claim',
+      }),
+    ).resolves.toEqual({ status: 'claimed', claimId: 'first-claim' });
+    await expect(
+      methods.releaseAgentBackgroundToolResultClaims({ ...scope, claimId: 'first-claim' }),
+    ).resolves.toBe(true);
+    await expect(
+      methods.claimAgentBackgroundToolResults({
+        ...scope,
+        deliveryKey: second.delivery.deliveryKey,
+        claimId: 'second-claim',
+        limit: 1,
+      }),
+    ).resolves.toMatchObject({
+      status: 'acquired',
+      results: [{ taskId: 'task-second', output: 'second output' }],
+    });
+    await methods.releaseAgentBackgroundToolResultClaims({ ...scope, claimId: 'second-claim' });
+
+    const concurrent = await Promise.all([
+      methods.claimAgentBackgroundToolResults({
+        ...scope,
+        deliveryKey: first.delivery.deliveryKey,
+        claimId: 'concurrent-first',
+      }),
+      methods.claimAgentBackgroundToolResults({
+        ...scope,
+        deliveryKey: second.delivery.deliveryKey,
+        claimId: 'concurrent-second',
+      }),
+    ]);
+    const deliveredTaskIds = concurrent.flatMap((claim) =>
+      claim.status === 'acquired' ? claim.results.map((result) => result.taskId) : [],
+    );
+    expect(deliveredTaskIds.sort()).toEqual(['task-first', 'task-second']);
+  });
+
   it('keeps capability-fenced work limited to capable workers through lease recovery', async () => {
     const queued = await methods.enqueueAgentTriggerDelivery(
       enqueueInput({
