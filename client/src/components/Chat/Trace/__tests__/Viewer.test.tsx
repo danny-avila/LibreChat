@@ -992,6 +992,58 @@ describe('Trace Viewer', () => {
       expect(dataService.getConversationTraceRecord).not.toHaveBeenCalled();
     });
 
+    it('shows a model call as a conversation, newest messages open, with the raw form one click away', async () => {
+      mockStartupConfig = {
+        interface: { traceViewer: { enabled: true, showInputOutput: true } },
+      };
+      const content = (value: string) => ({ value, truncated: false });
+      jest.spyOn(dataService, 'getConversationTraceRecord').mockResolvedValue({
+        record: sdkRecords[2],
+        contentAvailable: true,
+        input: { value: '{"messages":[{"role":"sys', truncated: true },
+        prompt: {
+          total: 40,
+          omitted: 37,
+          tools: ['web_search', 'read_file'],
+          messages: [
+            { role: 'system', text: content('You are Codebase Scout.') },
+            { role: 'user', text: content('Where does it read from?') },
+            { role: 'tool', toolName: 'web_search', text: content('ten results') },
+          ],
+        },
+        reply: {
+          role: 'assistant',
+          text: content('Let me look that up.'),
+          toolCalls: [{ name: 'web_search', args: content('{"query":"weather"}') }],
+        },
+      });
+      renderSdkRun();
+
+      await userEvent.click(await recordRow('com_ui_model: Let me look that up\\.'));
+
+      const inspector = screen.getByTestId('trace-inspector');
+      expect(await within(inspector).findByText('com_ui_trace_reply')).toBeInTheDocument();
+      expect(within(inspector).getByText('Where does it read from?')).toBeVisible();
+      expect(within(inspector).getByText('com_ui_trace_prompt_omitted 37')).toBeInTheDocument();
+      expect(
+        within(inspector).getByText('com_ui_trace_message_tool com_ui_tool_name_web_search'),
+      ).toBeInTheDocument();
+      expect(
+        within(inspector).getByText('com_ui_trace_message_asked_tool com_ui_tool_name_web_search'),
+      ).toBeInTheDocument();
+      expect(
+        within(inspector).getByText('You are Codebase Scout.').closest('details'),
+      ).not.toHaveAttribute('open');
+      expect(within(inspector).queryByText(/"messages":\[/)).not.toBeInTheDocument();
+
+      await userEvent.click(
+        within(inspector).getByRole('button', { name: 'com_ui_trace_view_raw' }),
+      );
+
+      expect(within(inspector).getByText(/"messages":\[/)).toBeInTheDocument();
+      expect(within(inspector).queryByText('com_ui_trace_reply')).not.toBeInTheDocument();
+    });
+
     it('shows the agent by name with its id to copy and a chat one click away', async () => {
       renderSdkRun();
       await recordRow('com_ui_model: Let me look that up\\.');

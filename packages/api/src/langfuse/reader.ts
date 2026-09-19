@@ -16,6 +16,7 @@ import type {
 import type { LangfuseScoreDestination } from './destinations';
 import type { TraceQuery, TraceReader } from '~/traces/types';
 import { exportsInternalTraceUserId } from './identity';
+import { toTracePrompt, toTraceReply } from './prompt';
 import { getScoreDestinations } from './destinations';
 import { TraceReadError } from '~/traces/types';
 import { mergeHeaders } from '~/utils/headers';
@@ -1091,9 +1092,14 @@ export function createLangfuseTraceReader({
       const input = toContent(observation.input, maxLength);
       const output = toContent(observation.output, maxLength);
       const metadata = toContent(observation.metadata, maxLength);
+      const isModelCall = record.kind === 'generation';
+      const prompt = isModelCall ? toTracePrompt(observation.input, maxLength) : undefined;
+      const reply = isModelCall ? toTraceReply(observation.output, maxLength) : undefined;
       return {
         record,
         contentAvailable: true,
+        ...(prompt ? { prompt } : {}),
+        ...(reply ? { reply } : {}),
         ...(input ? { input } : {}),
         ...(output ? { output } : {}),
         ...(metadata ? { metadata } : {}),
