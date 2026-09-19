@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { FilterQuery, Model, Types } from 'mongoose';
 import type {
+  AgentBackgroundToolResultReceipt,
   AgentEventActorDetachedAction,
   AgentTriggerDeliveryClaim,
   AgentEventActorReceipt,
@@ -35,6 +36,7 @@ const MAX_PURGE_RECOVERY_LIMIT = 200;
 const HISTORY_LIMIT = 64;
 const MAX_BATCH_SIZE = 8;
 const MAX_BATCH_BYTES = 512 * 1024;
+const MAX_BACKGROUND_TOOL_RESULT_CHARS = 24 * 1024;
 /** Bounds the claim's compare-and-swap retries. Each lost round means another
  * worker claimed the row this one read, so the queue is making progress. */
 export const CLAIM_CAS_MAX_ATTEMPTS = 16;
@@ -128,6 +130,12 @@ export type AgentTriggerProducerLeaseStatus =
   | { status: 'live'; leaseUntil: Date }
   | { status: 'expired'; leaseUntil: Date }
   | { status: 'missing' };
+
+export interface PersistAgentBackgroundToolResultInput {
+  deliveryKey: string;
+  sourceId: string;
+  result: AgentBackgroundToolResultReceipt;
+}
 
 export interface AgentTriggerDeliveryFence {
   id: string;
@@ -277,6 +285,13 @@ export interface AgentTriggerDeliveryMethods {
     sourceId: string;
     now: Date;
   }) => Promise<AgentTriggerProducerLeaseStatus>;
+  persistAgentBackgroundToolResult: (
+    input: PersistAgentBackgroundToolResultInput,
+  ) => Promise<boolean>;
+  getAgentBackgroundToolResult: (input: {
+    deliveryKey: string;
+    sourceId: string;
+  }) => Promise<AgentBackgroundToolResultReceipt | null>;
   settleAgentTriggerHandlingOutcome: (
     input: SettleAgentTriggerHandlingOutcomeInput,
   ) => Promise<boolean>;
@@ -2175,6 +2190,74 @@ export function createAgentTriggerDeliveryMethods(
       : { status: 'expired', leaseUntil: delivery.producerLeaseUntil };
   }
 
+  /** Stores terminal output on the pre-admitted delivery before attempting the
+   * parent-message projection. The first terminal receipt wins; exact retries
+   * are idempotent and conflicting rewrites fail closed. */
+  async function persistAgentBackgroundToolResult(
+    input: PersistAgentBackgroundToolResultInput,
+  ): Promise<boolean> {
+    const { result } = input;
+    if (
+      input.deliveryKey.length === 0 ||
+      input.deliveryKey.length > 256 ||
+      input.sourceId.length === 0 ||
+      input.sourceId.length > 256 ||
+      !['completed', 'error', 'cancelled'].includes(result.status) ||
+      result.output.length > MAX_BACKGROUND_TOOL_RESULT_CHARS ||
+      !(result.settledAt instanceof Date) ||
+      !Number.isFinite(result.settledAt.getTime())
+    ) {
+      throw new TypeError('Invalid background tool result receipt');
+    }
+    const identity = {
+      deliveryKey: input.deliveryKey,
+      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      'envelope.event.source.type': 'internal',
+      'envelope.event.source.id': input.sourceId,
+    };
+    const updated = await Delivery().updateOne(
+      { ...identity, backgroundToolResult: { $exists: false } },
+      { $set: { backgroundToolResult: result } },
+      { timestamps: false },
+    );
+    if (updated.matchedCount === 1) {
+      return true;
+    }
+    const existing = await Delivery()
+      .findOne(identity)
+      .select('+backgroundToolResult')
+      .lean<Pick<IAgentTriggerDelivery, 'backgroundToolResult'>>();
+    return (
+      existing?.backgroundToolResult?.status === result.status &&
+      existing.backgroundToolResult.output === result.output &&
+      existing.backgroundToolResult.settledAt.getTime() === result.settledAt.getTime()
+    );
+  }
+
+  async function getAgentBackgroundToolResult(input: {
+    deliveryKey: string;
+    sourceId: string;
+  }): Promise<AgentBackgroundToolResultReceipt | null> {
+    if (
+      input.deliveryKey.length === 0 ||
+      input.deliveryKey.length > 256 ||
+      input.sourceId.length === 0 ||
+      input.sourceId.length > 256
+    ) {
+      throw new TypeError('Invalid background tool result receipt lookup');
+    }
+    const delivery = await Delivery()
+      .findOne({
+        deliveryKey: input.deliveryKey,
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+        'envelope.event.source.type': 'internal',
+        'envelope.event.source.id': input.sourceId,
+      })
+      .select('+backgroundToolResult')
+      .lean<Pick<IAgentTriggerDelivery, 'backgroundToolResult'>>();
+    return delivery?.backgroundToolResult ?? null;
+  }
+
   async function settleAgentTriggerHandlingOutcome(
     input: SettleAgentTriggerHandlingOutcomeInput,
   ): Promise<boolean> {
@@ -3578,6 +3661,8 @@ export function createAgentTriggerDeliveryMethods(
     retireAgentTriggerDelivery,
     renewAgentTriggerDeliveryProducerLease,
     getAgentTriggerDeliveryProducerLease,
+    persistAgentBackgroundToolResult,
+    getAgentBackgroundToolResult,
     settleAgentTriggerHandlingOutcome,
     admitAgentEventActorAction,
     releaseAgentEventActorAction,

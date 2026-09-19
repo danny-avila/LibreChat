@@ -51,6 +51,16 @@ export type RenewBackgroundToolCompletionProducerLease = (
   leaseUntil: Date,
 ) => Promise<boolean>;
 
+export type PersistBackgroundToolCompletionResult = (
+  deliveryKey: string,
+  sourceId: string,
+  result: {
+    status: 'completed' | 'error' | 'cancelled';
+    output: string;
+    settledAt: Date;
+  },
+) => Promise<boolean>;
+
 type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &
   Pick<MessageMethods, 'getMessages'> & {
     claimBackgroundToolResults(params: {
@@ -76,6 +86,11 @@ type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &
       sourceId: string;
       now: Date;
     }): Promise<AgentTriggerProducerLeaseStatus>;
+    getAgentBackgroundToolResult?(params: { deliveryKey: string; sourceId: string }): Promise<{
+      status: 'completed' | 'error' | 'cancelled';
+      output: string;
+      settledAt: Date;
+    } | null>;
   };
 
 interface GenerationState {
@@ -318,6 +333,23 @@ export function createBackgroundToolCompletionWakeupResolver({
         status: 404,
       });
     }
+    const receipt = await methods.getAgentBackgroundToolResult?.({
+      deliveryKey: context.idempotencyKey,
+      sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+    });
+    if (receipt != null) {
+      return {
+        status: 'ready',
+        parentMessageId,
+        input: buildWakeupInput([
+          {
+            ...registration,
+            status: receipt.status,
+            output: receipt.output,
+          },
+        ]),
+      };
+    }
     const claim = await methods.claimBackgroundToolResults({
       userId,
       conversationId: envelope.target.conversationId,
@@ -394,6 +426,7 @@ export function createBackgroundToolCompletionWakeupHandler(
   enqueue: EnqueueBackgroundToolCompletion,
   retire: RetireBackgroundToolCompletion,
   renewProducerLease: RenewBackgroundToolCompletionProducerLease,
+  persistResult?: PersistBackgroundToolCompletionResult,
 ): (
   registration: BackgroundToolWakeupRegistration,
 ) => Promise<BackgroundToolWakeupAdmission | false> {
@@ -447,6 +480,12 @@ export function createBackgroundToolCompletionWakeupHandler(
           BACKGROUND_TOOL_COMPLETION_SOURCE,
           new Date(Date.now() + BACKGROUND_TOOL_PRODUCER_LEASE_MS),
         ),
+      ...(persistResult == null
+        ? {}
+        : {
+            persistResult: (result) =>
+              persistResult(admitted.deliveryKey, BACKGROUND_TOOL_COMPLETION_SOURCE, result),
+          }),
       retire: (reason, options) =>
         options == null
           ? retire(admitted.deliveryKey, BACKGROUND_TOOL_COMPLETION_SOURCE, reason)
