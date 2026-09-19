@@ -68,6 +68,53 @@ export const PROMPT_CACHE_WIRE_FIELDS = [
 ] as const;
 
 /**
+ * Each prompt-cache lever under every name an operator can drop it by.
+ *
+ * A lever does not stay where it was written: a value an administrator placed
+ * in `modelKwargs` under the request-body spelling is promoted onto the
+ * constructor field, because the serializer spreads the kwargs first and would
+ * otherwise overwrite it with `undefined`. The generic `dropParams` cascade
+ * looks only for the name it was given, so a lever resolved in one alphabet
+ * and dropped in the other survived the drop. Matching and removal both read
+ * this table, once, after that cascade has run.
+ */
+export const PROMPT_CACHE_KEY_LEVER = {
+  field: 'promptCacheKey',
+  wire: ['prompt_cache_key'],
+} as const;
+
+export const PROMPT_CACHE_RETENTION_LEVER = {
+  field: 'promptCacheRetention',
+  wire: ['prompt_cache_retention'],
+} as const;
+
+export const PROMPT_CACHE_EXPLICIT_LEVER = {
+  field: 'promptCacheExplicit',
+  wire: ['prompt_cache_options', 'prompt_cache_breakpoint'],
+} as const;
+
+export const PROMPT_CACHE_LEVERS = [
+  PROMPT_CACHE_KEY_LEVER,
+  PROMPT_CACHE_RETENTION_LEVER,
+  PROMPT_CACHE_EXPLICIT_LEVER,
+] as const;
+
+export type PromptCacheLever = (typeof PROMPT_CACHE_LEVERS)[number];
+
+/**
+ * Whether an operator dropped this lever, under either of its names.
+ */
+export function isPromptCacheLeverDropped(
+  lever: PromptCacheLever,
+  dropParams?: string[] | null,
+): boolean {
+  if (dropParams == null) {
+    return false;
+  }
+  return dropParams.includes(lever.field) || lever.wire.some((name) => dropParams.includes(name));
+}
+
+/**
  * Everything prompt caching is configured with, which is an administrator's
  * decision alone: the markers above plus the three wire levers. Stripped from
  * author-owned model parameters before policy resolution.

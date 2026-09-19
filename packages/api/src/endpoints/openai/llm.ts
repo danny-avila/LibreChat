@@ -12,6 +12,16 @@ import type { SettingDefinition } from 'librechat-data-provider';
 import type { OpenAI } from 'openai';
 import type * as t from '~/types';
 import {
+  PROMPT_CACHE_ADMIN_FIELDS,
+  PROMPT_CACHE_WIRE_FIELDS,
+  PROMPT_CACHE_LEVERS,
+  PROMPT_CACHE_KEY_LEVER,
+  PROMPT_CACHE_RETENTION_LEVER,
+  PROMPT_CACHE_EXPLICIT_LEVER,
+  isPromptCacheLeverDropped,
+  supportsExplicitPromptCache,
+} from './promptCache';
+import {
   sanitizeModelName,
   constructAzureURL,
   isCanonicalAzureURL,
@@ -19,11 +29,6 @@ import {
   constructAzureChatBasePath,
   constructAzureInstanceBasePath,
 } from '~/utils/azure';
-import {
-  PROMPT_CACHE_ADMIN_FIELDS,
-  PROMPT_CACHE_WIRE_FIELDS,
-  supportsExplicitPromptCache,
-} from './promptCache';
 import { isEnabled } from '~/utils/common';
 
 type OpenAILLMConfig = Omit<Partial<t.OAIClientOptions>, 'verbosity'> &
@@ -1058,9 +1063,7 @@ export function getOpenAILLMConfig({
   const promptCacheKeyPinned =
     typeof llmConfig.promptCacheKey === 'string' ||
     typeof modelKwargs.prompt_cache_key === 'string';
-  const promptCacheKeyDropped =
-    dropParams?.includes('promptCacheKey') === true ||
-    dropParams?.includes('prompt_cache_key') === true;
+  const promptCacheKeyDropped = isPromptCacheLeverDropped(PROMPT_CACHE_KEY_LEVER, dropParams);
   /**
    * Moved onto the constructor field, not left where it landed: LangChain
    * spreads `modelKwargs` before writing its own `promptCacheKey` on Chat
@@ -1100,9 +1103,10 @@ export function getOpenAILLMConfig({
    * it straight back to the field they excluded — with billed retention
    * attached, which is the version of this mistake that costs money.
    */
-  const promptCacheRetentionDropped =
-    dropParams?.includes('promptCacheRetention') === true ||
-    dropParams?.includes('prompt_cache_retention') === true;
+  const promptCacheRetentionDropped = isPromptCacheLeverDropped(
+    PROMPT_CACHE_RETENTION_LEVER,
+    dropParams,
+  );
   /**
    * The endpoint value is a default, not an override. `addParams` is the most
    * specific layer an operator has — a model group's own retention, in either
@@ -1143,10 +1147,10 @@ export function getOpenAILLMConfig({
    * base URL, neither of which is resolved yet here.
    */
   /** Either spelling disables it: the raw names are what OpenAI's own docs use. */
-  const promptCacheExplicitDropped =
-    dropParams?.includes('promptCacheExplicit') === true ||
-    dropParams?.includes('prompt_cache_options') === true ||
-    dropParams?.includes('prompt_cache_breakpoint') === true;
+  const promptCacheExplicitDropped = isPromptCacheLeverDropped(
+    PROMPT_CACHE_EXPLICIT_LEVER,
+    dropParams,
+  );
   const applyExplicitPromptCache = (deploymentName?: string) => {
     /**
      * Every name the request can address. `modelKwargs.model` overrides the
@@ -1209,6 +1213,34 @@ export function getOpenAILLMConfig({
       delete llmConfig.promptCacheExplicit;
       delete modelKwargs.prompt_cache_options;
       delete modelKwargs.prompt_cache_breakpoint;
+    }
+  };
+
+  /**
+   * The last word on every lever, after the generic drop cascade has run.
+   *
+   * The cascade removes the exact name an operator wrote, and by the time it
+   * runs the value is no longer under that name: a request-body spelling has
+   * been promoted onto the constructor field so the serializer cannot
+   * overwrite it, which is what let `dropParams: ['prompt_cache_key']` pass
+   * over a key it had already moved. Each lever is therefore re-read here from
+   * one table and removed under both of its names, so a drop means the same
+   * thing in either alphabet no matter which one the value was resolved from.
+   * A gateway keeps whatever it is configured with.
+   */
+  const finalizePromptCachePolicy = (deploymentName?: string) => {
+    applyExplicitPromptCache(deploymentName);
+    if (!firstPartyEndpoint) {
+      return;
+    }
+    for (const lever of PROMPT_CACHE_LEVERS) {
+      if (!isPromptCacheLeverDropped(lever, dropParams)) {
+        continue;
+      }
+      delete (llmConfig as Record<string, unknown>)[lever.field];
+      for (const name of lever.wire) {
+        delete modelKwargs[name];
+      }
     }
   };
 
@@ -1309,7 +1341,7 @@ export function getOpenAILLMConfig({
   }
 
   if (!azure) {
-    applyExplicitPromptCache();
+    finalizePromptCachePolicy();
     llmConfig.apiKey = apiKey;
     return { llmConfig, tools };
   }
@@ -1322,7 +1354,7 @@ export function getOpenAILLMConfig({
     : azure.azureOpenAIApiDeploymentName ||
       getAzureDeploymentName(baseURL, azure) ||
       (firstPartyAstra || llmConfig.useResponsesApi ? model : undefined);
-  applyExplicitPromptCache(updatedAzure.azureOpenAIApiDeploymentName);
+  finalizePromptCachePolicy(updatedAzure.azureOpenAIApiDeploymentName);
 
   if (process.env.AZURE_OPENAI_DEFAULT_MODEL) {
     llmConfig.model = process.env.AZURE_OPENAI_DEFAULT_MODEL;
