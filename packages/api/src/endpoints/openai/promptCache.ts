@@ -252,10 +252,13 @@ const nonPrefixClientOptionNames: readonly string[] = [
   /**
    * Which of the bound tools the model may call this turn. The schemas it
    * chooses among are hashed above; the choice policy is not part of the
-   * prefix they form.
+   * prefix they form. `functionCall` is the legacy spelling of the same
+   * decision, and `knownOpenAIParams` still accepts it, so it belongs here
+   * with its successors rather than partitioning the cache on its own.
    */
   'toolChoice',
   'parallelToolCalls',
+  'functionCall',
 ];
 
 const nonPrefixClientOptionKeys = normalizedKeySet(nonPrefixClientOptionNames);

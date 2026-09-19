@@ -184,6 +184,20 @@ describe('buildPromptCacheKey', () => {
     });
   });
 
+  it.each([['tool_choice'], ['parallel_tool_calls'], ['function_call']])(
+    'keeps one key when only %s changes',
+    (option) => {
+      /**
+       * A choice policy picks among schemas already in the prefix; it does not
+       * change them. The legacy spelling is accepted by knownOpenAIParams and
+       * reaches clientOptions exactly as its successors do.
+       */
+      expect(key({ clientOptions: { [option]: 'auto' } })).toBe(
+        key({ clientOptions: { [option]: 'none' } }),
+      );
+    },
+  );
+
   it('ignores the key order tool schemas happen to be serialized in', () => {
     expect(
       key({
