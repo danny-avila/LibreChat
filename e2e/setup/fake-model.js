@@ -686,6 +686,19 @@ class UsageEmittingFakeChatModel extends FakeChatModel {
 
     if (toolCalls?.length) {
       await new Promise((resolve) => setTimeout(resolve, this.streamSleep));
+      if (!toolCalls.some((toolCall) => toolCall.streamArgs)) {
+        const toolCallChunks = toolCalls.map((toolCall, index) => ({
+          name: toolCall.name,
+          args: JSON.stringify(toolCall.args),
+          id: toolCall.id,
+          index,
+          type: 'tool_call_chunk',
+        }));
+        yield this._createResponseChunk('', toolCallChunks);
+        void runManager?.handleLLMNewToken('');
+        return;
+      }
+
       for (const [index, toolCall] of toolCalls.entries()) {
         const serializedArgs = JSON.stringify(toolCall.args);
         const chunks = toolCall.streamArgs
