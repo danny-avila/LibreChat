@@ -92,6 +92,22 @@ describe('useLazyHighlight', () => {
     await flush();
     expect(result.current).toEqual(['ab']);
   });
+  it('keeps the throttle window stable when the wall clock moves backwards', async () => {
+    const { result, rerender } = renderHook(({ code }) => useLazyHighlight(code, 'js'), {
+      initialProps: { code: 'a' },
+    });
+    await flush();
+    mockHighlight.mockClear();
+
+    rerender({ code: 'ab' });
+    act(() => jest.setSystemTime(new Date(Date.now() - 60_000)));
+    act(() => jest.advanceTimersByTime(HIGHLIGHT_THROTTLE_MS - 1));
+    expect(result.current).toEqual(['a']);
+    act(() => jest.advanceTimersByTime(1));
+    await flush();
+    expect(result.current).toEqual(['ab']);
+  });
+
 
   it('clears immediately when code becomes empty', async () => {
     const { result, rerender } = renderHook(
