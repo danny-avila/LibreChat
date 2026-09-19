@@ -254,6 +254,107 @@ describe('useConversationsInfiniteQuery', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.pages[0].conversations[0].isArchived).toBe(false);
   });
+
+  it('keeps an active optimistic conversation while the server write is deferred', async () => {
+    const activeConversation = {
+      conversationId: 'convo-active',
+      title: 'New Chat',
+      endpoint: 'agents',
+      updatedAt: '2026-09-18T12:00:00.000Z',
+    } as TConversation;
+    listConversations.mockResolvedValue(listResponse([]));
+    const queryClient = createQueryClient();
+    queryClient.setQueryData([QueryKeys.activeJobs], { activeJobIds: ['convo-active'] });
+    queryClient.setQueryData([QueryKeys.conversation, 'convo-active'], activeConversation);
+
+    const { result } = renderHook(() => useConversationsInfiniteQuery({}), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.pages[0].conversations).toEqual([activeConversation]);
+  });
+
+  it('keeps filtered conversation lists server-authoritative', async () => {
+    const activeConversation = {
+      conversationId: 'convo-active',
+      title: 'New Chat',
+      endpoint: 'agents',
+    } as TConversation;
+    listConversations.mockResolvedValue(listResponse([]));
+    const queryClient = createQueryClient();
+    queryClient.setQueryData([QueryKeys.activeJobs], { activeJobIds: ['convo-active'] });
+    queryClient.setQueryData([QueryKeys.conversation, 'convo-active'], activeConversation);
+
+    const { result } = renderHook(() => useConversationsInfiniteQuery({ search: 'missing' }), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.pages[0].conversations).toEqual([]);
+  });
+
+  it('rebuilds a minimal active conversation after a page reload', async () => {
+    listConversations.mockResolvedValue(listResponse([]));
+    const queryClient = createQueryClient();
+    queryClient.setQueryData([QueryKeys.activeJobs], {
+      activeJobIds: ['stream-active'],
+      activeJobs: [
+        {
+          jobId: 'stream-active',
+          conversationId: 'convo-active',
+          createdAt: Date.parse('2026-09-18T12:00:00.000Z'),
+          endpoint: 'agents',
+          model: 'gpt-4.1-mini',
+          agent_id: 'agent-1',
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useConversationsInfiniteQuery({}), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.pages[0].conversations).toEqual([
+      expect.objectContaining({
+        conversationId: 'convo-active',
+        title: '',
+        endpoint: 'agents',
+        model: 'gpt-4.1-mini',
+        agent_id: 'agent-1',
+        createdAt: '2026-09-18T12:00:00.000Z',
+        updatedAt: '2026-09-18T12:00:00.000Z',
+      }),
+    ]);
+  });
+
+  it('refetches the default list when active metadata arrives after it', async () => {
+    listConversations.mockResolvedValue(listResponse([]));
+    const queryClient = createQueryClient();
+    const { result } = renderHook(() => useConversationsInfiniteQuery({}), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await act(async () => {
+      queryClient.setQueryData([QueryKeys.activeJobs], {
+        activeJobIds: ['stream-active'],
+        activeJobs: [
+          {
+            jobId: 'stream-active',
+            conversationId: 'convo-active',
+            createdAt: Date.parse('2026-09-18T12:00:00.000Z'),
+          },
+        ],
+      });
+    });
+
+    await waitFor(() =>
+      expect(result.current.data?.pages[0].conversations[0]?.conversationId).toBe('convo-active'),
+    );
+    expect(listConversations).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('pinned list cache synchronization', () => {

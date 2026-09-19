@@ -60,6 +60,7 @@ export {
 } from './api-endpoints';
 export { default as request } from './request';
 export { dataService };
+export type { ActiveJob, ActiveJobsResponse } from './data-service';
 import * as dataService from './data-service';
 /* provider identity */
 export * from './providers';

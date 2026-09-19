@@ -1,7 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import { apiBaseUrl, QueryKeys, request, dataService } from 'librechat-data-provider';
-import type { Agents, TConversation, TPendingSteer } from 'librechat-data-provider';
+import type {
+  ActiveJobsResponse as ActiveJobsResponseType,
+  Agents,
+  TConversation,
+  TPendingSteer,
+} from 'librechat-data-provider';
+export type { ActiveJobsResponse } from 'librechat-data-provider';
 import { isNotFoundError, updateConvoInAllQueries, setDocumentTitle } from '~/utils';
 import { generationProtocolHeaders, withGenerationProtocolQuery } from './protocol';
 import { useGetStartupConfig } from '../Endpoints';
@@ -52,11 +58,6 @@ export function useStreamStatus(conversationId: string | undefined, enabled = tr
 }
 
 export const genTitleQueryKey = (conversationId: string) => ['genTitle', conversationId] as const;
-
-/** Response type for active jobs query */
-export interface ActiveJobsResponse {
-  activeJobIds: string[];
-}
 
 /** Module-level queue for title generation (survives re-renders).
  * Stores conversationIds that need title generation once their job completes */
@@ -258,7 +259,7 @@ export function extendActiveJobsGrace(): void {
 }
 
 export function getActiveJobsRefetchInterval(
-  data?: ActiveJobsResponse,
+  data?: ActiveJobsResponseType,
   expectsSuccessor = false,
 ): number | false {
   if ((data?.activeJobIds?.length ?? 0) > 0) {
@@ -294,7 +295,7 @@ export function useActiveJobs(enabled = true, expectsSuccessor = false) {
      *  invisible until some unrelated refetch, and returning to the tab is
      *  exactly when a pane needs to know whether its history has moved. */
     refetchOnWindowFocus: 'always',
-    refetchInterval: (data?: ActiveJobsResponse) =>
+    refetchInterval: (data?: ActiveJobsResponseType) =>
       getActiveJobsRefetchInterval(data, expectsSuccessor),
     retry: false,
   });

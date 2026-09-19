@@ -1651,8 +1651,20 @@ export function getDomainServerBaseUrl(): string {
 }
 
 /* Active Jobs */
+export interface ActiveJob {
+  jobId: string;
+  conversationId?: string;
+  createdAt: number;
+  endpoint?: string;
+  iconURL?: string;
+  model?: string;
+  agent_id?: string;
+  isTemporary?: boolean;
+}
+
 export interface ActiveJobsResponse {
   activeJobIds: string[];
+  activeJobs?: ActiveJob[];
 }
 
 export const getActiveJobs = (): Promise<ActiveJobsResponse> => {

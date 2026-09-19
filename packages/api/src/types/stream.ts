@@ -126,6 +126,20 @@ export interface GenerationJobMetadata {
   resolvedAskUserQuestions?: ResolvedAskUserQuestion[];
 }
 
+/** Non-sensitive metadata used to keep an active conversation visible while its
+ * first message is still deferred. This deliberately excludes prompt text,
+ * files, and other request payload fields from the active-jobs endpoint. */
+export interface ActiveGenerationJob {
+  jobId: string;
+  conversationId?: string;
+  createdAt: number;
+  endpoint?: string;
+  iconURL?: string;
+  model?: string;
+  agent_id?: string;
+  isTemporary?: boolean;
+}
+
 export type GenerationJobStatus = 'running' | 'complete' | 'error' | 'aborted' | 'requires_action';
 
 export interface GenerationJob {

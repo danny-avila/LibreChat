@@ -422,16 +422,16 @@ router.get('/chat/stream/:streamId', async (req, res) => {
 
 /**
  * @route GET /chat/active
- * @desc Get all active generation job IDs for the current user
+ * @desc Get active generation jobs for the current user
  * @access Private
- * @returns { activeJobIds: string[] }
+ * @returns { activeJobIds: string[], activeJobs: ActiveGenerationJob[] }
  */
 router.get('/chat/active', async (req, res) => {
-  const activeJobIds = await GenerationJobManager.getActiveJobIdsForUser(
+  const { activeJobIds, activeJobs } = await GenerationJobManager.getActiveJobsForUser(
     req.user.id,
     req.user.tenantId,
   );
-  res.json({ activeJobIds });
+  res.json({ activeJobIds, activeJobs });
 });
 
 /**
