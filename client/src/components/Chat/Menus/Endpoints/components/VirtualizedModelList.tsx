@@ -73,26 +73,56 @@ export default function VirtualizedModelList({
     };
     const handleBoundaryNavigation = (event: KeyboardEvent) => {
       const delta = deltaFor(event.key);
-      if (delta === 0) {
+      if (delta === 0 || !containerRef.current) {
         return;
       }
       const activeId = combobox.getState().activeId;
       const activeRow = activeId ? document.getElementById(activeId) : null;
       const wrapper = activeRow?.closest<HTMLElement>('[data-row-index]');
-      if (!wrapper || !containerRef.current?.contains(wrapper)) {
-        return;
+      let next: number | null = null;
+
+      if (wrapper && containerRef.current.contains(wrapper)) {
+        const currentIndex = Number(wrapper.dataset.rowIndex);
+        const candidate = currentIndex + delta;
+        /** Let Ariakit own both the in-window case and the ends of the list. */
+        if (candidate < 0 || candidate >= rowCount || rowAt(candidate)) {
+          return;
+        }
+        next = candidate;
+      } else {
+        const listbox = containerRef.current.closest<HTMLElement>('[role="listbox"]');
+        const options = listbox
+          ? Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"], [role="menuitem"]'))
+          : [];
+        const before = options.filter(
+          (option) =>
+            (containerRef.current!.compareDocumentPosition(option) &
+              Node.DOCUMENT_POSITION_PRECEDING) !==
+            0,
+        );
+        const after = options.filter(
+          (option) =>
+            (containerRef.current!.compareDocumentPosition(option) &
+              Node.DOCUMENT_POSITION_FOLLOWING) !==
+            0,
+        );
+        const entersFromBefore = delta === 1 && before.at(-1) === activeRow;
+        const entersFromAfter = delta === -1 && after[0] === activeRow;
+        if (entersFromBefore) {
+          next = 0;
+        } else if (entersFromAfter) {
+          next = rowCount - 1;
+        } else {
+          return;
+        }
       }
-      const next = Number(wrapper.dataset.rowIndex) + delta;
-      /** Let Ariakit own both the in-window case and the ends of the list. */
-      if (next < 0 || next >= rowCount || rowAt(next)) {
-        return;
-      }
+
       event.preventDefault();
       event.stopPropagation();
       listRef.current?.scrollToRow(next);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          const id = rowAt(next)?.id;
+          const id = rowAt(next!)?.id;
           if (id) {
             combobox.move(id);
           }

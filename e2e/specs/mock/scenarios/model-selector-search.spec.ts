@@ -14,6 +14,9 @@ async function openModelSearch(page: Page, query: string) {
 }
 
 test.describe('model selector search', () => {
+  test.afterEach(async ({ page }) => {
+    await resetPinnedState(page);
+  });
   test('keyboard navigation reaches every rendered search result @scenario:model-selector-search-keyboard-navigation-reaches-every-rendered-result', async ({
     page,
   }) => {
