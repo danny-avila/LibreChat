@@ -283,6 +283,12 @@ class BaseClient {
     return false;
   }
 
+  /** Whether a deferred parent write may still create a new conversation's row up front, so
+   * the conversation lists can return it while the run is in flight. */
+  shouldSeedDeferredConversation() {
+    return false;
+  }
+
   /** Returns the request-scoped deferred parent-write controller, when any. */
   getModelBoundUserMessagePersistence() {
     return this.modelBoundUserMessagePersistence;
@@ -910,6 +916,18 @@ class BaseClient {
       if (this.shouldDeferUserMessagePersistence()) {
         let state = 'pending';
         let startPersistence = startUserMessagePersistence;
+        if (this.shouldSeedDeferredConversation()) {
+          const conversationSeed = this.seedConversation(userMessage.conversationId, saveOptions);
+          let seedPending = true;
+          conversationSeed.finally(() => {
+            seedPending = false;
+          });
+          /** The parent write upserts the same row, so it waits out a seed still in flight. */
+          startPersistence = () =>
+            seedPending
+              ? conversationSeed.then(startUserMessagePersistence)
+              : startUserMessagePersistence();
+        }
         let resolvePersistence;
         let removeAbortListener = () => {};
         const persistencePromise = new Promise((resolve) => {
@@ -1324,25 +1342,10 @@ class BaseClient {
 
     const hasAddedConvo = options?.req?.body?.addedConvo != null;
     const req = options?.req;
-    if (
-      req?.config?.interfaceConfig?.retentionMode === 'all' &&
-      req?.config?.interfaceConfig?.generalChatRetention !== undefined &&
-      !Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')
-    ) {
+    if (this.needsRetentionConversation(req)) {
       req.resolvedConversation = await db.getConvo(req.user.id, message.conversationId);
     }
-    const hasResolvedConversation =
-      req != null && Object.prototype.hasOwnProperty.call(req, 'resolvedConversation');
-    const resolvedRetention = hasResolvedConversation ? req.resolvedConversation : null;
-    const reqCtx = {
-      userId: req?.user?.id,
-      isTemporary:
-        req?._agentEventBindingRetention?.isTemporary ??
-        resolvedRetention?.isTemporary ??
-        req?.body?.isTemporary,
-      expiredAt: req?._agentEventBindingRetention?.expiredAt ?? resolvedRetention?.expiredAt,
-      interfaceConfig: req?.config?.interfaceConfig,
-    };
+    const reqCtx = this.getPersistenceContext(req);
     const savedMessage = await db.saveMessage(
       reqCtx,
       {
@@ -1359,8 +1362,99 @@ class BaseClient {
       return { message: savedMessage };
     }
 
-    const fieldsToKeep = {
+    const conversation = await this.saveConversationToDatabase({
+      options,
+      reqCtx,
       conversationId: message.conversationId,
+      endpointOptions,
+      savedMessageId: savedMessage?._id,
+    });
+
+    return { message: savedMessage, conversation };
+  }
+
+  /**
+   * Creates a new conversation's row ahead of a deferred first message, without the message.
+   * The conversation lists read that row, so without it a refetch drops a running chat.
+   * @param {string} conversationId
+   * @param {Partial<TConversation>} endpointOptions
+   * @returns {Promise<void>} Settles once the write has finished; never rejects.
+   */
+  async seedConversation(conversationId, endpointOptions) {
+    const options = this.options;
+    if (!options || this.skipSaveConvo) {
+      return;
+    }
+    try {
+      const req = options.req;
+      if (this.needsRetentionConversation(req)) {
+        req.resolvedConversation = await db.getConvo(req.user.id, conversationId);
+      }
+      await this.saveConversationToDatabase({
+        options,
+        reqCtx: this.getPersistenceContext(req),
+        conversationId,
+        endpointOptions,
+        seedOnly: true,
+      });
+    } catch (err) {
+      logger.error('[BaseClient] Failed to seed the conversation for a deferred message:', err);
+    }
+  }
+
+  /** Whether `retentionMode: all` still needs the stored conversation to stamp this write. */
+  needsRetentionConversation(req) {
+    return (
+      req?.config?.interfaceConfig?.retentionMode === 'all' &&
+      req?.config?.interfaceConfig?.generalChatRetention !== undefined &&
+      !Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')
+    );
+  }
+
+  /**
+   * Builds the retention context a message or conversation write runs under.
+   * @param {ServerRequest | undefined} req
+   */
+  getPersistenceContext(req) {
+    const resolvedRetention =
+      req != null && Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')
+        ? req.resolvedConversation
+        : null;
+    return {
+      userId: req?.user?.id,
+      isTemporary:
+        req?._agentEventBindingRetention?.isTemporary ??
+        resolvedRetention?.isTemporary ??
+        req?.body?.isTemporary,
+      expiredAt: req?._agentEventBindingRetention?.expiredAt ?? resolvedRetention?.expiredAt,
+      interfaceConfig: req?.config?.interfaceConfig,
+    };
+  }
+
+  /**
+   * Writes the conversation row for a turn. With `seedOnly`, writes only when the row does not
+   * exist yet and leaves the first-save bookkeeping to the turn's own message write.
+   * @param {Object} params
+   * @param {Object} params.options - The client options snapshot.
+   * @param {Object} params.reqCtx - The retention context from `getPersistenceContext`.
+   * @param {string} params.conversationId
+   * @param {Partial<TConversation>} params.endpointOptions
+   * @param {unknown} [params.savedMessageId] - The saved message to append to the conversation.
+   * @param {boolean} [params.seedOnly]
+   */
+  async saveConversationToDatabase({
+    options,
+    reqCtx,
+    conversationId,
+    endpointOptions,
+    savedMessageId,
+    seedOnly = false,
+  }) {
+    const req = options?.req;
+    const hasResolvedConversation =
+      req != null && Object.prototype.hasOwnProperty.call(req, 'resolvedConversation');
+    const fieldsToKeep = {
+      conversationId,
       endpoint: options.endpoint,
       endpointType: options.endpointType,
       ...endpointOptions,
@@ -1378,7 +1472,10 @@ class BaseClient {
     if (!skippedExistingConvoLookup && hasResolvedConversation) {
       existingConvo = req.resolvedConversation;
     } else if (!skippedExistingConvoLookup) {
-      existingConvo = await db.getConvo(req?.user?.id, message.conversationId);
+      existingConvo = await db.getConvo(req?.user?.id, conversationId);
+    }
+    if (seedOnly && (skippedExistingConvoLookup || existingConvo != null)) {
+      return existingConvo;
     }
     // Keep the authenticated conversation available for response, abort, and retry saves.
     // fetchedConvo already prevents repeating the conversation initialization work.
@@ -1410,19 +1507,21 @@ class BaseClient {
     }
 
     const conversation = await db.saveConvo(reqCtx, fieldsToKeep, {
-      context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
+      context: seedOnly
+        ? 'api/app/clients/BaseClient.js - seedConversation #saveConvo'
+        : 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveConvo',
       unsetFields,
       noUpsert: req?._agentEventBindingParentConversationId != null,
       initialAgentId: hasNonEphemeralAgent ? options.agent?.id : null,
       createdAtOnInsert: shouldSetCreatedAtOnInsert ? validCreatedAtOnInsert : undefined,
-      ...(savedMessage?._id != null ? { appendMessageIds: [savedMessage._id] } : {}),
+      ...(savedMessageId != null ? { appendMessageIds: [savedMessageId] } : {}),
     });
 
     if (req != null && conversation != null) {
       req.resolvedConversation = conversation;
     }
 
-    return { message: savedMessage, conversation };
+    return conversation;
   }
 
   /**
