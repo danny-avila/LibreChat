@@ -36,29 +36,38 @@ export default function useContentHandler({ setMessages, getMessages }: TUseCont
   const handler = useCallback(
     ({ data, submission }: TContentHandler) => {
       const { type, messageId, thread_id, conversationId, index } = data;
+      const { initialResponse } = submission;
+      const initialResponseMessage = initialResponse as TMessage;
+      const cachedResponse = messageMap.get(messageId);
 
       const _messages = getMessages() ?? [];
       const messages: TMessage[] = [];
       let existingMessage: TMessage | undefined;
+      let responseThreadId: string | undefined =
+        thread_id ?? cachedResponse?.thread_id ?? initialResponseMessage.thread_id;
       for (const msg of _messages) {
         if (msg.messageId === messageId) {
           existingMessage ??= msg;
+          responseThreadId ??= msg.thread_id;
           continue;
         }
         messages.push(
           thread_id == null || msg.thread_id === thread_id ? msg : { ...msg, thread_id },
         );
       }
+      if (thread_id == null && responseThreadId != null) {
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].thread_id !== responseThreadId) {
+            messages.splice(i, 1);
+          }
+        }
+      }
       const userMessage = messages[messages.length - 1] as TMessage | undefined;
 
-      const { initialResponse } = submission;
-
-      let response = messageMap.get(messageId);
+      let response = cachedResponse;
       if (!response) {
-        const initialResponseMessage = initialResponse as TMessage;
         const responseBase = existingMessage ?? initialResponseMessage;
-        const responseThreadId =
-          thread_id ?? responseBase.thread_id ?? initialResponseMessage.thread_id;
+        responseThreadId ??= responseBase.thread_id;
         response = {
           ...responseBase,
           parentMessageId: userMessage?.messageId ?? '',
