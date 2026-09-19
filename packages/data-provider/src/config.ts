@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { ZodError } from 'zod';
 import type { TEndpointsConfig, TModelsConfig, TConfig } from './types';
+import type { ArtifactAppsConfig } from './artifactApps';
 import {
   filtersConfigSchema,
   MAX_PII_CUSTOM_REGEX_CHARACTERS,
@@ -31,6 +32,7 @@ import { CODE_ENVIRONMENT_DECISION_VERSION, CODE_ENVIRONMENT_MOVE_VERSION } from
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
+import { artifactAppsConfigSchema } from './artifactApps';
 import { fileConfigSchema } from './file-config';
 import { isActionTool } from './types/tools';
 import { apiBaseUrl } from './api-endpoints';
@@ -2069,6 +2071,17 @@ export const interfaceSchema = z
         }),
       ])
       .optional(),
+    artifacts: z
+      .union([
+        z.boolean(),
+        z.object({
+          use: z.boolean().optional(),
+          create: z.boolean().optional(),
+          share: z.boolean().optional(),
+          public: z.boolean().optional(),
+        }),
+      ])
+      .optional(),
     temporaryChat: z.boolean().optional(),
     temporaryChatRetention: z.number().min(1).max(8760).optional(),
     generalChatRetention: z.number().min(1).max(8760).optional(),
@@ -2180,6 +2193,12 @@ export const interfaceSchema = z
       share: false,
       public: false,
     },
+    artifacts: {
+      use: true,
+      create: true,
+      share: true,
+      public: false,
+    },
     temporaryChat: true,
     autoSubmitFromUrl: true,
     runCode: true,
@@ -2277,6 +2296,7 @@ export type EndpointsDropParamsMap = Record<string, string[] | Record<string, st
 
 export type TStartupConfig = {
   appTitle: string;
+  artifactApps?: ArtifactAppsConfig;
   socialLogins?: string[];
   langfuseFanoutEnabled?: boolean;
   langfuseConnectionAccess?: boolean;
@@ -2881,6 +2901,7 @@ export type TOpenIdDiscoveryConfig = z.infer<typeof openIdDiscoverySchema>;
 export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
+  artifactApps: artifactAppsConfigSchema,
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
   langfuse: langfuseConfigSchema.optional(),

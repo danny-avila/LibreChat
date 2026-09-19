@@ -1,4 +1,5 @@
 import { createAgentQueuedTurnModel, createAgentQueuedTurnSequenceModel } from './queuedTurn';
+import { createArtifactSourceTombstoneModel } from './artifactSourceTombstone';
 import { createAgentTriggerLaneSequenceModel } from './triggerLaneSequence';
 import { createScheduleModel, createScheduleRunModel } from './schedule';
 import { createSkillSyncCredentialModel } from './skillSyncCredential';
@@ -9,12 +10,14 @@ import { createAgentTriggerDeliveryModel } from './triggerDelivery';
 import { createSkillSyncStatusModel } from './skillSyncStatus';
 import { createConversationTagModel } from './conversationTag';
 import { createCodeEnvironmentModel } from './codeEnvironment';
+import { createArtifactVersionModel } from './artifactVersion';
 import { createAgentCategoryModel } from './agentCategory';
 import { createChatProjectModel } from './chatProject';
 import { createAgentApiKeyModel } from './agentApiKey';
 import { createTransactionModel } from './transaction';
 import { createPromptGroupModel } from './promptGroup';
 import { createSystemGrantModel } from './systemGrant';
+import { createArtifactAppModel } from './artifactApp';
 import { createPluginAuthModel } from './pluginAuth';
 import { createSharedLinkModel } from './sharedLink';
 import { createAccessRoleModel } from './accessRole';
@@ -96,6 +99,9 @@ export function createModels(mongoose: typeof import('mongoose')): {
   ScheduleRun: ReturnType<typeof createScheduleRunModel>;
   RefreshTokenBridge: ReturnType<typeof createRefreshTokenBridgeModel>;
   OpenIDRefreshFlight: ReturnType<typeof createOpenIDRefreshFlightModel>;
+  ArtifactApp: ReturnType<typeof createArtifactAppModel>;
+  ArtifactSourceTombstone: ReturnType<typeof createArtifactSourceTombstoneModel>;
+  ArtifactVersion: ReturnType<typeof createArtifactVersionModel>;
 } {
   const models = {
     User: createUserModel(mongoose),
@@ -145,6 +151,9 @@ export function createModels(mongoose: typeof import('mongoose')): {
     ScheduleRun: createScheduleRunModel(mongoose),
     RefreshTokenBridge: createRefreshTokenBridgeModel(mongoose),
     OpenIDRefreshFlight: createOpenIDRefreshFlightModel(mongoose),
+    ArtifactApp: createArtifactAppModel(mongoose),
+    ArtifactSourceTombstone: createArtifactSourceTombstoneModel(mongoose),
+    ArtifactVersion: createArtifactVersionModel(mongoose),
   };
   /**
    * Background index builds fail silently unless an 'index' listener is

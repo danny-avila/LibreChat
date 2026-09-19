@@ -3,6 +3,7 @@ import { Button, Sidebar, Skeleton } from '@librechat/client';
 import type { NavLink } from '~/common';
 import AgentMarketplaceButton from '~/components/Nav/AgentMarketplaceButton';
 import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
+import ArtifactAppsButton from '~/components/Nav/ArtifactAppsButton';
 import { useShortcutAriaKey } from '~/hooks/useKeyboardShortcuts';
 import { useLocalize } from '~/hooks';
 import Switcher from './Switcher';
@@ -76,6 +77,7 @@ function Header({
         routeActiveId={routeActiveId}
       />
       <AgentMarketplaceButton side="bottom" onNavigate={onClose} />
+      <ArtifactAppsButton side="bottom" onNavigate={onClose} />
       <Suspense fallback={<Skeleton className="size-9 rounded-lg" />}>
         <AccountSettings collapsed />
       </Suspense>
