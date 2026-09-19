@@ -281,6 +281,8 @@ jest.mock('@librechat/api', () => ({
     jest.requireActual('@librechat/api').getCodeWorkspaceSelectionErrorDetails,
   shouldPersistCodeWorkspaceInitializationError:
     jest.requireActual('@librechat/api').shouldPersistCodeWorkspaceInitializationError,
+  resolvePersistableCodeEnvironmentDecision: (...args) =>
+    jest.requireActual('@librechat/api').resolvePersistableCodeEnvironmentDecision(...args),
   getSafeErrorMetadata: jest.requireActual('@librechat/api').getSafeErrorMetadata,
   getSafeErrorText: jest.requireActual('@librechat/api').getSafeErrorText,
   resolveFailedTurnContent: jest.requireActual('@librechat/api').resolveFailedTurnContent,
@@ -4018,6 +4020,30 @@ describe('ResumableAgentController resume metadata', () => {
       expect(mockSaveConvo).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'user-123' }),
         { conversationId, codeEnvironmentMode: 'attached', codeWorkspaces },
+        expect.objectContaining({ noUpsert: true }),
+      );
+    });
+
+    it('does not rewrite the decision a chat already holds', async () => {
+      const req = createFailedRequest();
+      req.resolvedConversation = {
+        conversationId,
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }],
+      };
+      const initializeClient = jest.fn().mockImplementation(async ({ req: request }) => {
+        request._codeEnvironmentDecision = {
+          mode: 'attached',
+          codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-b' }],
+        };
+        throw new Error('model unavailable');
+      });
+
+      await AgentController(req, createResumableResponse(), jest.fn(), initializeClient, null);
+
+      expect(mockSaveConvo).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user-123' }),
+        { conversationId },
         expect.objectContaining({ noUpsert: true }),
       );
     });

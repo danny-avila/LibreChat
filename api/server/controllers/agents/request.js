@@ -45,6 +45,7 @@ const {
   logAgentMemorySnapshot,
   getCodeWorkspaceSelectionErrorDetails,
   shouldPersistCodeWorkspaceInitializationError,
+  resolvePersistableCodeEnvironmentDecision,
   getFailedTurnTraceFields,
   resolveFailedTurnContent,
 } = require('@librechat/api');
@@ -502,20 +503,16 @@ async function saveErrorTurn(
     const agentId = endpointOption?.agent_id ?? req.body?.agent_id;
     const chatProjectId = endpointOption?.chatProjectId ?? req.body?.chatProjectId;
     const seedConvo = isNewConvo || req.resolvedConversation === null;
-    const codeEnvironmentDecision = req._codeEnvironmentDecision;
     /** A stored turn seals the decision it ran under, on a saved chat as much as on a new one: the
      * error turn below enters the conversation, so leaving its validated decision out would let a
-     * retry choose a different workspace than the failure already recorded. `saveConvo` only fills
-     * a chat that holds no decision, so this can never replace one. */
-    const decisionFields =
-      codeEnvironmentDecision?.mode != null
-        ? {
-            codeEnvironmentMode: codeEnvironmentDecision.mode,
-            ...(codeEnvironmentDecision.codeWorkspaces != null && {
-              codeWorkspaces: codeEnvironmentDecision.codeWorkspaces,
-            }),
-          }
-        : {};
+     * retry choose a different workspace than the failure already recorded. The resolver the
+     * streaming saves already use decides what this turn may write, so an error turn and a
+     * completed one record a decision under one rule. */
+    const decisionFields = resolvePersistableCodeEnvironmentDecision({
+      conversationId,
+      decision: req._codeEnvironmentDecision,
+      conversation: req.resolvedConversation,
+    });
     const convoFields = seedConvo
       ? {
           ...(endpoint != null && { endpoint }),
