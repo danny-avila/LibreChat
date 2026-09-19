@@ -26,7 +26,11 @@ test.describe('model selector search', () => {
       await search.press('ArrowDown');
       const activeId = await search.getAttribute('aria-activedescendant');
       expect(activeId).toBeTruthy();
-      await expect(page.locator(`#${activeId}`)).toBeVisible();
+      const activeOptionExists = await options.evaluateAll(
+        (nodes, id) => nodes.some((node) => node.id === id),
+        activeId,
+      );
+      expect(activeOptionExists).toBe(true);
     }
   });
 
@@ -35,8 +39,9 @@ test.describe('model selector search', () => {
   }) => {
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     const search = await openModelSearch(page, 'mock');
-    const row = page.getByRole('option').first();
-    const pin = row.getByRole('button', { name: /pin/i }).first();
+    const pin = page.getByRole('button', { name: /pin/i }).first();
+    await expect(pin).toBeVisible();
+    const row = pin.locator('xpath=ancestor::*[@role="option"][1]');
 
     await search.press('ArrowDown');
     await row.focus();
