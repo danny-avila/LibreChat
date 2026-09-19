@@ -17,24 +17,30 @@ test.describe('model selector search', () => {
     page,
   }) => {
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
-    const search = await openModelSearch(page, 'mock-model-a');
+    const search = await openModelSearch(page, 'mock');
+    const options = page.locator('[role="option"]');
+    const optionCount = await options.count();
+    expect(optionCount).toBeGreaterThan(1);
 
-    await search.press('ArrowDown');
-    await expect(page.locator('[data-active-item="true"]')).toBeVisible();
-    await search.press('ArrowDown');
-    await expect(page.locator('[data-active-item="true"]')).toBeVisible();
+    for (let index = 0; index < Math.min(optionCount, 3); index++) {
+      await search.press('ArrowDown');
+      const activeId = await search.getAttribute('aria-activedescendant');
+      expect(activeId).toBeTruthy();
+      await expect(page.locator(`#${activeId}`)).toBeVisible();
+    }
   });
 
   test('pinning a search result is keyboard reachable @scenario:model-selector-search-result-pin-is-keyboard-reachable', async ({
     page,
   }) => {
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
-    const search = await openModelSearch(page, 'mock-model-a');
-    const row = page.getByRole('option', { name: /mock-model-a/i }).first();
+    const search = await openModelSearch(page, 'mock');
+    const row = page.getByRole('option').first();
     const pin = row.getByRole('button', { name: /pin/i }).first();
 
     await search.press('ArrowDown');
-    await pin.focus();
+    await row.focus();
+    await page.keyboard.press('Tab');
     await expect(pin).toBeFocused();
     await pin.press('Enter');
     await expect(row.getByRole('button', { name: /unpin/i })).toBeVisible();
@@ -66,9 +72,9 @@ test.describe('model selector search', () => {
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
-    await openModelSearch(page, 'mock-model-a');
+    await openModelSearch(page, 'mock');
 
-    const row = page.getByRole('option', { name: /mock-model-a/i }).first();
+    const row = page.getByRole('option').first();
     const pin = row.getByRole('button', { name: /pin/i }).first();
     const menu = page.locator('[role="listbox"]').first();
     const rowBox = await row.boundingBox();
