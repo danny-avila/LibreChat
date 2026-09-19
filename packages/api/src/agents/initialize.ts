@@ -72,12 +72,6 @@ import {
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
 import {
-  appendAgentInstructionTail,
-  prependAgentInstructionTail,
-  captureConfiguredAdditionalInstructions,
-  recordStableInstructionText,
-} from './context';
-import {
   normalizeStatefulCodeEnvironment,
   resolveCodeExecutionContext,
   type CodeEnvironmentConfig,
@@ -101,6 +95,11 @@ import {
   registerFileAuthoringTools,
   isFileAuthoringToolDefinition,
 } from './tools';
+import {
+  appendAgentInstructionTail,
+  prependAgentInstructionTail,
+  captureConfiguredAdditionalInstructions,
+} from './context';
 import {
   normalizeServerName,
   requiresEphemeralUserConnection,
@@ -2332,19 +2331,19 @@ export async function initializeAgent(
     /**
      * The stable blocks leave the prefix together and in their own order, at
      * the front of the tail, so what the model reads is what it read before
-     * the prefix was made cacheable. Recorded in their place is the configured
-     * form: the unresolved template, joined to the repository block that
-     * traveled with it, because the identity still has to follow both.
+     * the prefix was made cacheable. Recorded at the same end is the
+     * configured form: the unresolved template, joined to the repository
+     * block that traveled with it, because the identity has to follow both and
+     * has to read them in the order the model does.
      */
     prependAgentInstructionTail(
       agent,
       [temporalInstructions, agent.instructions].filter(Boolean).join('\n\n'),
+      {
+        configured: [instructionTemplate, repositoryInstructionBlock].filter(Boolean).join('\n\n'),
+      },
     );
     agent.instructions = undefined;
-    recordStableInstructionText(
-      agent as Agent & { configuredAdditionalInstructions?: string },
-      [instructionTemplate, repositoryInstructionBlock].filter(Boolean).join('\n\n'),
-    );
   }
 
   if (typeof agent.artifacts === 'string' && agent.artifacts !== '') {

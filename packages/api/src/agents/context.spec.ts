@@ -12,7 +12,7 @@ import {
   applyContextToAgent,
   appendAgentInstructionTail,
   captureConfiguredAdditionalInstructions,
-  recordStableInstructionText,
+  prependAgentInstructionTail,
 } from './context';
 
 // Test schema for DynamicStructuredTool
@@ -317,17 +317,41 @@ describe('Agent Context Utilities', () => {
       } as unknown as Logger;
     });
 
-    it('records instruction text for the identity without adding it to the request', () => {
+    it('places a relocated block first on the wire and first in the identity', () => {
       const agent: { additional_instructions: string; configuredAdditionalInstructions?: string } =
         {
-          additional_instructions: 'Today is September 18',
+          additional_instructions: 'Use company terminology',
         };
 
-      recordStableInstructionText(agent, 'Answer as of {{current_date}}');
+      prependAgentInstructionTail(agent, 'Today is September 18', {
+        configured: 'Answer as of {{current_date}}',
+      });
 
-      /** The resolved text is already in the tail; only the template is recorded. */
-      expect(agent.additional_instructions).toBe('Today is September 18');
-      expect(agent.configuredAdditionalInstructions).toBe('Answer as of {{current_date}}');
+      /**
+       * Same end, both halves. The digest is a join of the recorded text, so a
+       * block sent first and recorded last would let two different prefixes
+       * read as one identity.
+       */
+      expect(agent.additional_instructions).toBe(
+        'Today is September 18\n\nUse company terminology',
+      );
+      expect(agent.configuredAdditionalInstructions).toBe(
+        'Answer as of {{current_date}}\n\nUse company terminology',
+      );
+    });
+
+    it('records the resolved text nowhere when no configured form is given', () => {
+      const agent: { additional_instructions: string; configuredAdditionalInstructions?: string } =
+        {
+          additional_instructions: 'Use company terminology',
+        };
+
+      prependAgentInstructionTail(agent, 'Today is September 18');
+
+      expect(agent.additional_instructions).toBe(
+        'Today is September 18\n\nUse company terminology',
+      );
+      expect(agent.configuredAdditionalInstructions).toBe('Use company terminology');
     });
 
     it('records a configuration-derived addition to the tail by default', () => {
