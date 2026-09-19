@@ -1,4 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import useLazyHighlight, {
   CodeHighlightThrottleContext,
   HIGHLIGHT_THROTTLE_MS,
@@ -49,6 +50,8 @@ describe('useLazyHighlight', () => {
     const { result } = renderHook(() => useLazyHighlight('a', 'js'));
     expect([null, ['a']]).toContainEqual(result.current);
     await flush();
+    expect(mockHighlight).toHaveBeenCalledTimes(1);
+    expect(mockHighlight).toHaveBeenCalledWith('js', 'a');
     expect(result.current).toEqual(['a']);
   });
 
@@ -72,6 +75,29 @@ describe('useLazyHighlight', () => {
     expect(mockHighlight).toHaveBeenCalledTimes(1);
     expect(mockHighlight).toHaveBeenLastCalledWith('js', 'abcde');
     expect(result.current).toEqual(['abcde']);
+  });
+
+  it('keeps completed highlights when the configured throttle changes', async () => {
+    let throttleMs = HIGHLIGHT_THROTTLE_MS;
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <CodeHighlightThrottleContext.Provider value={throttleMs}>
+        {children}
+      </CodeHighlightThrottleContext.Provider>
+    );
+    const { result, rerender } = renderHook(
+      ({ code }: { code: string }) => useLazyHighlight(code, 'js'),
+      {
+        initialProps: { code: 'a' },
+        wrapper,
+      },
+    );
+    await flush();
+    expect(result.current).toEqual(['a']);
+
+    throttleMs += 100;
+    rerender({ code: 'a' });
+
+    expect(result.current).toEqual(['a']);
   });
   it('uses the configured throttle interval', async () => {
     const { result, rerender } = renderHook(({ code }) => useLazyHighlight(code, 'js'), {
