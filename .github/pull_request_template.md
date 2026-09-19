@@ -1,39 +1,35 @@
-# Pull Request Template
+# Pull Request
 
-⚠️ Before Submitting a PR, Please Review:
-- Please ensure that you have thoroughly read and understood the [Contributing Docs](https://github.com/danny-avila/LibreChat/blob/main/.github/CONTRIBUTING.md) before submitting your Pull Request.
-
-⚠️ Documentation Updates Notice:
-- Kindly note that documentation updates are managed in this repository: [librechat.ai](https://github.com/LibreChat-AI/librechat.ai)
+> Before submitting, please review the [Contributing Guide](https://github.com/danny-avila/LibreChat/blob/main/.github/CONTRIBUTING.md).
+>
+> Documentation changes belong in the [LibreChat documentation repository](https://github.com/LibreChat-AI/librechat.ai).
 
 ## Summary
 
 <!--
-Say what breaks or is missing today, what triggers it, and how it behaves after this
-change. Link the issue with `Fixes #N`, and list any dependency your change needs.
-Two or three sentences is usually enough:
+Briefly explain:
+- What problem or limitation exists today?
+- What does this PR change?
+- What is the resulting behavior?
 
-"Pasting an image while the composer had focus left Send disabled until the user
-clicked back into the textarea: the upload dialog took focus and never returned it.
-Focus now returns to the composer as soon as the attachment mounts."
+Keep this focused on the final state of the code rather than the history of the
+branch or previous review iterations.
 
-Describe the code as it stands. A reader who has not followed the branch has no
-context for what earlier commits tried or what a review round changed. Naming the
-merged pull request that caused the bug is different — that is history the reader
-needs.
+Link related issues where applicable:
+Fixes #123
+Related to #123
 -->
 
 ## How it works
 
 <!--
-Optional. Delete this section when the summary already explains the change.
+Optional. Remove this section if the implementation is already obvious from the
+summary and diff.
 
-Pick one or two views that make the change reviewable, and put a sentence beside
-each. These show the format, not a required implementation pattern — replace them
-with real names from your change. Do not paste the whole diff or list every file
-you touched.
+Explain the mechanism reviewers need to understand. Prefer the smallest useful
+representation rather than describing every changed file.
 
-The mechanism, as a focused diff, when the surrounding shape already exists:
+Focused diff:
 
 ```diff
 -const parts = content.filter(isText);
@@ -41,7 +37,7 @@ The mechanism, as a focused diff, when the surrounding shape already exists:
 +const { parts, files } = splitContent(content);
 ```
 
-Runtime order, as a call tree, keeping only the calls that carry the change:
+Runtime flow:
 
 ```text
 submitMessage
@@ -50,16 +46,16 @@ submitMessage
     setSubmission   # opens the SSE stream
 ```
 
-Ownership, as a shallow file tree, for a new module or a broad refactor:
+Ownership:
 
 ```text
 packages/api/src/agents/
-├── run.ts      # builds the run and its callbacks
+├── run.ts      # builds the run and callbacks
 ├── tools.ts    # resolves tools for the request
-└── client.ts   # streams provider output back to the route
+└── client.ts   # streams provider output
 ```
 
-Client/server or cross-service flow, as Mermaid:
+Cross-service flow:
 
 ```mermaid
 sequenceDiagram
@@ -71,42 +67,88 @@ sequenceDiagram
     Provider->>API: content parts
     API->>Client: SSE events
 ```
-
-Editing this file: keep the arrows in the example above solid (`->>`). A dashed
-Mermaid arrow spells the comment terminator, so it would close this comment early
-and spill the rest of the guidance into every description. Your own diagram sits
-outside the comment, where dashed arrows are fine.
-
-Show a whole block instead of a diff when most of it is new, or when the omitted
-context would hide execution order or ownership.
 -->
 
-## Change Type
+## Type of change
 
-Please delete any irrelevant options.
+<!-- Select all that apply. -->
 
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] This change requires a documentation update
-- [ ] Translation update
+* [ ] Bug fix
+* [ ] Feature
+* [ ] Refactor
+* [ ] Performance improvement
+* [ ] Breaking change
+* [ ] Documentation
+* [ ] Translation
+* [ ] Tests / tooling / CI
 
 ## Testing
 
-Please describe your test process and include instructions so that we can reproduce your test. If there are any important variables for your testing configuration, list them here.
+<!--
+Describe how you verified the change.
 
-### **Test Configuration**:
+Include only the configuration that matters for reproducing the test.
+
+Example:
+
+1. Start LibreChat with Agents enabled.
+2. Create an agent using an Ollama endpoint.
+3. Add the Ask User tool.
+4. Send a message that triggers the tool.
+5. Confirm the question is rendered and the conversation continues after answering.
+-->
+
+**Tested environments/configuration:**
+
+<!--
+Examples:
+- Browser:
+- Provider/model:
+- Database:
+- Feature flags:
+- OS:
+-->
+
+**Automated tests:**
+
+<!--
+Examples:
+- `npm run test:client`
+- `npm run test:api`
+- Added tests in `foo.spec.ts`
+
+Write "Not applicable" when appropriate.
+-->
+
+## Screenshots / recordings
+
+<!--
+For user-facing changes, include before/after screenshots or a short recording.
+Remove this section when not applicable.
+-->
+
+## Risk / compatibility
+
+<!--
+Optional for small changes.
+
+Call out anything reviewers should pay particular attention to, such as:
+- migrations or schema changes
+- API/configuration changes
+- provider-specific behavior
+- backwards compatibility
+- performance implications
+- security-sensitive behavior
+
+Write "None" when there are no notable risks.
+-->
 
 ## Checklist
 
-Please delete any irrelevant options.
-
-- [ ] My code adheres to this project's style guidelines
-- [ ] I have performed a self-review of my own code
-- [ ] I have commented in any complex areas of my code
-- [ ] I have made pertinent documentation changes
-- [ ] My changes do not introduce new warnings
-- [ ] I have written tests demonstrating that my changes are effective or that my feature works
-- [ ] Local unit tests pass with my changes
-- [ ] Any changes dependent on mine have been merged and published in downstream modules.
-- [ ] A pull request for updating the documentation has been submitted.
+* [ ] I reviewed my own changes
+* [ ] Relevant tests have been added or updated
+* [ ] Existing relevant tests pass
+* [ ] The change does not introduce new warnings or errors
+* [ ] User-facing or complex behavior is documented where necessary
+* [ ] Required dependency changes have been merged/published
+* [ ] Required documentation PR: <!-- link or N/A -->
