@@ -98,7 +98,7 @@
     "@babel/preset-typescript": "^7.28.5",
     "@tanstack/react-query": "^4.28.0",
     "@tanstack/react-table": "^8.21.3",
-    "@tanstack/react-virtual": "^3.13.13",
+    "@tanstack/react-virtual": "3.13.23",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^14.0.0",
     "@tsdown/css": "^0.22.2",
