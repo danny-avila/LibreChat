@@ -78,15 +78,18 @@ export default function useLazyHighlight(
   lang: string,
 ): React.ReactNode[] | null {
   const throttleMs = React.useContext(CodeHighlightThrottleContext);
+  const initialKey = code && lowlightModule ? `${lang}\0${code}` : '';
+  const hasInitialHighlight = Boolean(code && lowlightModule);
   const [highlighted, setHighlighted] = useState<React.ReactNode[] | null>(() => {
-    if (!code || !lowlightModule) {
+    if (!hasInitialHighlight) {
       return null;
     }
-    return highlightCode(lowlightModule, code, lang);
+    return highlightCode(lowlightModule!, code!, lang);
   });
-  const prevKey = useRef('');
-  const prevThrottleMs = useRef<number | null>(null);
-  const lastRunAt = useRef<number | null>(null);
+  const prevKey = useRef(initialKey);
+  const prevThrottleMs = useRef<number | null>(hasInitialHighlight ? throttleMs : null);
+  const currentTime = typeof performance === 'undefined' ? Date.now() : performance.now();
+  const lastRunAt = useRef<number | null>(hasInitialHighlight ? currentTime : null);
   const generation = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -166,6 +169,5 @@ export default function useLazyHighlight(
     },
     [],
   );
-
-  return highlighted;
+  return highlighted ?? (code ? [code] : null);
 }

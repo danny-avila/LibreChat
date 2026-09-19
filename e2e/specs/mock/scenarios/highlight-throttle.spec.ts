@@ -39,6 +39,7 @@ test.describe('streamed code highlighting', () => {
 
     await expect(stopButton(page)).toBeVisible({ timeout: 30000 });
     const code = await expectHighlightedCode(page);
+    await expect(code).toContainText('line-119-☃');
     await expect(stopButton(page)).toBeHidden({ timeout: 120000 });
     await expect(code).toContainText('line-119-☃');
     await expect.poll(() => code.locator('span').count()).toBeGreaterThan(0);

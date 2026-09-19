@@ -1,10 +1,9 @@
 import { act, renderHook } from '@testing-library/react';
-import useLazyHighlight, { HIGHLIGHT_THROTTLE_MS } from '../useLazyHighlight';
-import { useGetStartupConfig } from '~/data-provider';
+import useLazyHighlight, {
+  CodeHighlightThrottleContext,
+  HIGHLIGHT_THROTTLE_MS,
+} from '../useLazyHighlight';
 
-jest.mock('~/data-provider', () => ({
-  useGetStartupConfig: jest.fn(() => ({ data: undefined })),
-}));
 const mockHighlight = jest.fn((_lang: string, code: string) => ({
   type: 'root',
   children: [{ type: 'text', value: code }],
@@ -25,7 +24,6 @@ describe('useLazyHighlight', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     mockHighlight.mockClear();
-    jest.mocked(useGetStartupConfig).mockReturnValue({ data: undefined } as never);
   });
 
   afterEach(() => {
@@ -40,7 +38,7 @@ describe('useLazyHighlight', () => {
     rerender({ code: 'b', lang: 'js' });
 
     await flush();
-    expect(result.current).toBeNull();
+    expect(result.current).toEqual(['b']);
 
     act(() => jest.advanceTimersByTime(HIGHLIGHT_THROTTLE_MS));
     await flush();
@@ -67,7 +65,7 @@ describe('useLazyHighlight', () => {
       act(() => jest.advanceTimersByTime(20));
     }
     expect(mockHighlight).not.toHaveBeenCalled();
-    expect(result.current).toBeNull();
+    expect(result.current).toEqual(['abcde']);
 
     act(() => jest.advanceTimersByTime(HIGHLIGHT_THROTTLE_MS));
     await flush();
@@ -76,18 +74,20 @@ describe('useLazyHighlight', () => {
     expect(result.current).toEqual(['abcde']);
   });
   it('uses the configured throttle interval', async () => {
-    jest.mocked(useGetStartupConfig).mockReturnValue({
-      data: { interface: { codeHighlightThrottleMs: 300 } },
-    } as never);
     const { result, rerender } = renderHook(({ code }) => useLazyHighlight(code, 'js'), {
       initialProps: { code: 'a' },
+      wrapper: ({ children }) => (
+        <CodeHighlightThrottleContext.Provider value={300}>
+          {children}
+        </CodeHighlightThrottleContext.Provider>
+      ),
     });
     await flush();
     mockHighlight.mockClear();
 
     rerender({ code: 'ab' });
     act(() => jest.advanceTimersByTime(299));
-    expect(result.current).toBeNull();
+    expect(result.current).toEqual(['ab']);
     act(() => jest.advanceTimersByTime(1));
     await flush();
     expect(result.current).toEqual(['ab']);
@@ -102,10 +102,16 @@ describe('useLazyHighlight', () => {
     rerender({ code: 'ab' });
     act(() => jest.setSystemTime(new Date(Date.now() - 60_000)));
     act(() => jest.advanceTimersByTime(HIGHLIGHT_THROTTLE_MS - 1));
-    expect(result.current).toBeNull();
+    expect(result.current).toEqual(['ab']);
     act(() => jest.advanceTimersByTime(1));
     await flush();
     expect(result.current).toEqual(['ab']);
+  });
+  it('does not parse an initialized value twice on mount', async () => {
+    const { result } = renderHook(() => useLazyHighlight('initialized', 'js'));
+    await flush();
+    expect(result.current).toEqual(['initialized']);
+    expect(mockHighlight).toHaveBeenCalledTimes(1);
   });
 
   it('clears immediately when code becomes empty', async () => {
