@@ -8,6 +8,7 @@ import {
   createAttachedWorkspaceBashTool,
   createGitIdentityProgrammaticBashTool,
   resolveAttachedWorkspaceCommandTimeoutMax,
+  resolveAttachedWorkspaceProgrammaticTimeout,
   resolveAttachedWorkspaceQueueWaitMs,
 } from './command';
 import { BACKGROUND_TOOL_INVOCATION_CONFIG_KEY } from '~/agents/invocation';
@@ -88,6 +89,22 @@ describe('programmatic Bash Git identity', () => {
       server.close();
       await once(server, 'close');
     }
+  });
+
+  test('preserves the foreground timeout while bounding an explicit admin override', () => {
+    expect(resolveAttachedWorkspaceProgrammaticTimeout(undefined, 90_000)).toBe(30_000);
+    expect(
+      resolveAttachedWorkspaceProgrammaticTimeout(
+        { limits: { maxCommandTimeoutMs: 120_000 } },
+        90_000,
+      ),
+    ).toBe(90_000);
+    expect(
+      resolveAttachedWorkspaceProgrammaticTimeout(
+        { limits: { maxCommandTimeoutMs: 60_000 } },
+        90_000,
+      ),
+    ).toBe(60_000);
   });
 });
 

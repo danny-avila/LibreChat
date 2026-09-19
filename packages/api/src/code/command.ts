@@ -105,6 +105,27 @@ export function resolveAttachedWorkspaceCommandTimeoutMax(
 }
 
 /**
+ * Programmatic calls do not currently carry the detached-invocation marker.
+ * Preserve their historical foreground default while still enforcing both an
+ * explicit administrator override and the live upstream ceiling.
+ */
+export function resolveAttachedWorkspaceProgrammaticTimeout(
+  configSchema?: CodeEnvironmentUserConfigSchema,
+  upstreamMaxTimeoutMs?: number,
+): number {
+  const configured = configSchema?.limits?.maxCommandTimeoutMs;
+  const requested =
+    configured == null
+      ? WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS
+      : normalizeAttachedWorkspaceCommandTimeoutMax(configured);
+  const upstream =
+    upstreamMaxTimeoutMs == null
+      ? WORKSPACE_COMMAND_MAX_TIMEOUT_MS
+      : normalizeAttachedWorkspaceCommandTimeoutMax(upstreamMaxTimeoutMs);
+  return Math.min(requested, upstream);
+}
+
+/**
  * Client retry horizon for one capacity-blocked invocation. `0` surfaces the
  * first capacity expiry without retrying; an in-flight server admission window
  * and execution retain their own budgets.
@@ -217,7 +238,7 @@ export function createContextProgrammaticBashTool(
       ...(attached
         ? {
             workspaceId: context.codeWorkspace?.workspaceId,
-            runTimeoutMs: resolveAttachedWorkspaceCommandTimeoutMax(
+            runTimeoutMs: resolveAttachedWorkspaceProgrammaticTimeout(
               context.codeEnvironmentConfigSchema,
               context.codeWorkspace?.maxCommandTimeoutMs,
             ),
