@@ -634,7 +634,9 @@ export class InMemoryTokenStore {
       token: data.token ?? existing.token,
       expiresAt:
         data.expiresAt ??
-        (data.expiresIn ? new Date(Date.now() + expiresIn * 1000) : existing.expiresAt),
+        (data.expiresIn !== undefined
+          ? new Date(Date.now() + expiresIn * 1000)
+          : existing.expiresAt),
       metadata: data.metadata ?? existing.metadata,
     };
     this.tokens.set(existingKey, updated);

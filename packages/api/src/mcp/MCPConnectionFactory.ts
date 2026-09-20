@@ -1023,12 +1023,65 @@ export class MCPConnectionFactory {
     await this.onOAuthCredentialsAdopted?.(tokens.publication_generation);
   }
 
+  /**
+   * Callback completion means credentials were persisted, not that their access token is still
+   * usable. Both OAuth waiters and token-flow waiters can receive that exact completed result.
+   * Re-read storage once instead of installing it or misclassifying expiry as a binding failure.
+   */
+  private async renewExpiredFlowResult(
+    tokens: MCPOAuthTokens | null,
+  ): Promise<MCPOAuthTokens | null> {
+    const expiry = tokens?.expires_at;
+    // Match storeTokens' whole-second persistence precision, including a rounded-to-zero TTL.
+    if (
+      expiry == null ||
+      !Number.isFinite(expiry) ||
+      Math.floor((expiry - Date.now()) / 1000) > 0
+    ) {
+      return tokens;
+    }
+
+    this.signal?.throwIfAborted();
+    const leaseId = getMCPOAuthLeaseId(this.userId!, this.serverName, this.tenantId);
+    try {
+      const generation = await this.flowManager!.getLeaseGeneration(leaseId);
+      const lease =
+        generation == null
+          ? null
+          : await this.flowManager!.acquireLease(leaseId, {
+              expectedGeneration: generation,
+              waitMs: Math.min(
+                this.serverConfig.oauthPersistenceWaitTimeout ?? Infinity,
+                this.getSilentRefreshTimeoutMs(),
+              ),
+            });
+      if (!lease) {
+        throw new Error('OAuth publication is not settled');
+      }
+      // A callback settles waiters while its rollback journal is still live. Cross its persistence
+      // fence before redeeming, then RELEASE it: refresh persistence acquires this same fence.
+      await lease.release();
+    } catch (error) {
+      throw new MCPTokenStorageUnavailableError(this.serverName, error);
+    }
+    this.signal?.throwIfAborted();
+    await this.invalidateGetTokensFlow();
+    const renewed = await this.loadOAuthTokens();
+    if (renewed?.expires_at != null && Math.floor((renewed.expires_at - Date.now()) / 1000) <= 0) {
+      throw new MCPTokenRefreshUnavailableError(
+        this.serverName,
+        new Error('Refreshed access token has no usable lifetime'),
+      );
+    }
+    return renewed;
+  }
+
   /** Retrieves existing OAuth tokens from storage or returns null */
   protected async getOAuthTokens(): Promise<MCPOAuthTokens | null> {
     if (!this.tokenMethods?.findToken) return null;
 
     try {
-      const tokens = await this.loadOAuthTokens();
+      const tokens = await this.renewExpiredFlowResult(await this.loadOAuthTokens());
 
       if (tokens) {
         const [isCurrentAccessToken, storedClient] = await this.runWithCapturedTenant(() =>
@@ -1073,6 +1126,9 @@ export class MCPConnectionFactory {
       }
       return tokens;
     } catch (error) {
+      if (this.signal?.aborted) {
+        throw error;
+      }
       if (MCPConnectionFactory.isReauthenticationRequired(error)) {
         logger.info(`${this.logPrefix} Reauthentication required; triggering OAuth flow`);
         return null;
@@ -1927,8 +1983,18 @@ export class MCPConnectionFactory {
       const result = await this.handleOAuthRequired(oauthLeaseGeneration);
 
       if (result?.tokens) {
-        const { tokens } = result;
         try {
+          if (
+            !this.tokenMethods?.findToken ||
+            typeof result.tokens.credential_set_id !== 'string' ||
+            !result.tokens.credential_set_id
+          ) {
+            throw new ReauthenticationRequiredError(this.serverName, 'binding');
+          }
+          const tokens = await this.renewExpiredFlowResult(result.tokens);
+          if (!tokens) {
+            throw new ReauthenticationRequiredError(this.serverName, 'expired');
+          }
           if (
             !this.tokenMethods?.findToken ||
             typeof tokens.credential_set_id !== 'string' ||
