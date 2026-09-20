@@ -15,7 +15,7 @@ import { boundIntentLabel, getToolCallIntent } from './Parts/intent';
 import { areToolCallArgsComplete } from './Parts/parseJsonField';
 import { getToolDisplayLabel } from '~/utils/toolLabels';
 import { isBashProgrammaticToolCall } from './routing';
-import { summarizeSpan } from './outcome';
+import { getToolMeta, summarizeSpan } from './outcome';
 
 /** How often a live fold's header may repaint. A streamed intent moves the
  *  newest line on nearly every delta; the header is a glanceable status, not a
@@ -213,11 +213,15 @@ export function getSpanIconNames(parts: ReadonlyArray<TMessageContentParts | und
     }
     const part = parts[position];
     const toolCall = part == null ? undefined : getStandardToolCall(part);
-    if (toolCall == null) {
+    if (toolCall != null) {
+      const name = toolCall.name ?? '';
+      icons.add(isBashProgrammaticToolCall(name, toolCall.args) ? Tools.bash_tool : name);
       continue;
     }
-    const name = toolCall.name ?? '';
-    icons.add(isBashProgrammaticToolCall(name, toolCall.args) ? Tools.bash_tool : name);
+    const legacy = part == null ? null : getToolMeta(part);
+    if (legacy != null) {
+      icons.add(legacy.iconName);
+    }
   }
   return Array.from(icons).reverse();
 }

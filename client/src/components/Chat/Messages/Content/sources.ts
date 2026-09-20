@@ -47,25 +47,26 @@ const NO_DOMAINS: string[] = [];
  * The domains a collapsed header can show in place of the generic search
  * glyph. A header stands for rows it hides, so it should carry the most
  * specific glyph those rows show — for a web search, the sites it read.
+ * Only ownership-filtered attachments qualify, including live SSE snapshots.
+ * Message-wide search context is derived from those same attachments but loses
+ * call/agent/step ownership. Repeated turn numbers are local to each owner.
  * Returns a shared empty array when there are none, so a memoized consumer
  * does not see a new value on every attachment churn.
  */
-export function getSourceDomains(
-  attachments: TAttachment[] | undefined,
-  max: number,
-  /** The message's streamed results. While a search is live its sources reach
-   *  the page through this context before any attachment exists, which is how
-   *  the search row itself shows favicons early. */
-  streamed?: Record<string, SearchResultData>,
-): string[] {
+export function getSourceDomains(attachments: TAttachment[] | undefined, max: number): string[] {
   const turns: Record<string, SearchResultData> = {};
   for (const attachment of attachments ?? []) {
     const data = attachment.type === Tools.web_search ? attachment[Tools.web_search] : undefined;
     if (data != null) {
-      turns[typeof data.turn === 'number' ? String(data.turn) : '0'] = data;
+      const owner = JSON.stringify([
+        attachment.toolCallId,
+        attachment.agentId,
+        attachment.stepId,
+        data.turn ?? 0,
+      ]);
+      turns[owner] = data;
     }
   }
-  const found = Object.keys(turns).length > 0 ? turns : (streamed ?? turns);
-  const sources = getUniqueDomainSources(collectSources(found), max);
+  const sources = getUniqueDomainSources(collectSources(turns), max);
   return sources.length === 0 ? NO_DOMAINS : sources.map((source) => getCleanDomain(source.link));
 }

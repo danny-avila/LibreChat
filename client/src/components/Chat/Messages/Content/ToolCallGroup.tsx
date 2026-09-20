@@ -19,12 +19,11 @@ import { ASK_USER_QUESTION, getSubmittedAskAnswer } from '~/utils/approval';
 import { ToolAuthWarning, ToolAuthWarningContext } from './auth';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { AttachmentGroup, ReasoningCompact } from './Parts';
+import { getOutcomeStatus, summarizeSpan } from './outcome';
 import { StackedToolIcons } from './ToolOutput';
-import { useSearchContext } from '~/Providers';
 import { mapAttachments } from '~/utils/map';
 import { getSourceDomains } from './sources';
 import SearchVerticals from './verticals';
-import { getToolMeta } from './outcome';
 import { ROW_GLYPH_SLOT } from './rows';
 import store from '~/store';
 
@@ -41,7 +40,7 @@ interface ToolCallGroupProps {
   ) => React.ReactNode;
   lastContentIdx: number;
   groupAttachments?: TAttachment[];
-  /** The group's attachments for the header's glyphs only. Present even when
+  /** The group's owned attachments for header glyphs AND outcomes, even when
    *  a parent phase hoists the files and `groupAttachments` is withheld. */
   sourceAttachments?: TAttachment[];
   initialExpansionState?: ToolCallGroupExpansionState;
@@ -88,19 +87,19 @@ export default function ToolCallGroup({
   /** Re-keyed by tool-call id so each part's metadata sees only its own
    *  attachments: `groupAttachments` arrives flattened across the group. */
   const attachmentsByToolCallId = useMemo(
-    () => mapAttachments(groupAttachments ?? []),
-    [groupAttachments],
+    () => mapAttachments(sourceAttachments ?? groupAttachments ?? []),
+    [sourceAttachments, groupAttachments],
   );
   /** `parts` may include interleaved reasoning ("Thoughts") parts that render
    *  inside the body but are not actions. Count and summarize only the real
    *  tool calls so the header and stacked icons stay accurate. */
-  const toolMetadata = useMemo(
-    () =>
-      parts
-        .map((p) => getToolMeta(p.part, attachmentsByToolCallId))
-        .filter((m): m is ToolMeta => m != null),
-    [parts, attachmentsByToolCallId],
-  );
+  const toolMetadata = useMemo(() => {
+    const summary = summarizeSpan(
+      parts.map(({ part }) => part),
+      attachmentsByToolCallId,
+    );
+    return parts.map(({ part }) => summary.metaOf(part)).filter((m): m is ToolMeta => m != null);
+  }, [parts, attachmentsByToolCallId]);
   const count = toolMetadata.length;
   /** Approval state is read from the RAW parts, not `toolMetadata`: a pending
    *  call can be nested inside a subagent's content, which never surfaces as
@@ -123,10 +122,9 @@ export default function ToolCallGroup({
     () => labelSettled || toolMetadata.every((m) => m.hasOutput === true),
     [toolMetadata, labelSettled],
   );
-  const { searchResults } = useSearchContext();
   const sourceDomains = useMemo(
-    () => getSourceDomains(sourceAttachments ?? groupAttachments, 3, searchResults),
-    [sourceAttachments, groupAttachments, searchResults],
+    () => getSourceDomains(sourceAttachments ?? groupAttachments, 3),
+    [sourceAttachments, groupAttachments],
   );
   const iconToolNames = useMemo(() => toolMetadata.map((m) => m.iconName), [toolMetadata]);
 
@@ -442,6 +440,10 @@ export default function ToolCallGroup({
     .join(', ');
   /** Single category glyph for homogeneous groups (else StackedToolIcons). */
   const CategoryIcon = allSubagents ? Users : MessageCircleQuestion;
+  const iconStatus = getOutcomeStatus({
+    failed: activityFailed ? 1 : activitySummary.failedCount,
+    cancelled: activitySummary.cancelledCount,
+  });
 
   const hasActiveToolCall = useMemo(
     () => isSubmitting && toolMetadata.some((m) => m && !m.hasOutput),
@@ -469,7 +471,7 @@ export default function ToolCallGroup({
         aria-expanded={isExpanded}
         aria-label={groupAriaLabel}
       >
-        {allSubagents || allAskQuestions ? (
+        {iconStatus == null && (allSubagents || allAskQuestions) ? (
           /** Homogeneous category groups get a single category glyph instead
            *  of StackedToolIcons' generic wrenches: a Users glyph for
            *  subagents, a question glyph for ask_user_question — matching
@@ -492,6 +494,7 @@ export default function ToolCallGroup({
               mcpIconMap={mcpIconMap}
               maxIcons={4}
               sourceDomains={sourceDomains}
+              status={iconStatus}
               isAnimating={isGroupLive}
             />
           </div>

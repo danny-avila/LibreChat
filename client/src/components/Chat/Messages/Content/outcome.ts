@@ -182,6 +182,20 @@ export function getToolMeta(
 
 export type SpanOutcome = { failed: number; cancelled: number };
 
+/** The most severe terminal outcome replaces identity glyphs on every summary. */
+export function getOutcomeStatus({
+  failed,
+  cancelled,
+}: SpanOutcome): 'failed' | 'cancelled' | undefined {
+  if (failed > 0) {
+    return 'failed';
+  }
+  if (cancelled > 0) {
+    return 'cancelled';
+  }
+  return undefined;
+}
+
 export type SpanSummary = SpanOutcome & {
   /** The verdict for one part of the span, scoped the way the count was. */
   metaOf: (part: TMessageContentParts) => ToolMeta | null;

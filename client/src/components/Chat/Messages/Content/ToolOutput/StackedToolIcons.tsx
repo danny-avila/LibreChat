@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { TriangleAlert, X } from 'lucide-react';
 import type { ToolIconType } from './ToolIcon';
 import ToolIcon, { getToolIconType, getMCPServerName } from './ToolIcon';
 import { FaviconImage } from '~/components/Web/SourceHovercard';
@@ -18,6 +19,8 @@ interface StackedToolIconsProps {
   mcpIconMap?: Map<string, string>;
   maxIcons?: number;
   isAnimating?: boolean;
+  /** A hidden action's terminal warning takes precedence over its identity. */
+  status?: 'failed' | 'cancelled';
   /** Sites the stack's web searches read. They take the generic search
    *  glyph's place: a header stands for rows it hides, so it shows the most
    *  specific glyph those rows do. */
@@ -30,6 +33,7 @@ export default function StackedToolIcons({
   maxIcons = 3,
   isAnimating = false,
   sourceDomains,
+  status,
 }: StackedToolIconsProps) {
   const mcpServerNames = useMCPServerNames();
   const uniqueIcons = useMemo(() => {
@@ -56,6 +60,11 @@ export default function StackedToolIcons({
     }
     return result;
   }, [toolNames, mcpIconMap, mcpServerNames, sourceDomains]);
+
+  if (status != null) {
+    const StatusIcon = status === 'failed' ? TriangleAlert : X;
+    return <StatusIcon className="size-4 shrink-0 text-text-warning" aria-hidden="true" />;
+  }
 
   const visibleIcons = uniqueIcons.slice(0, maxIcons);
   const overflowCount = uniqueIcons.length - visibleIcons.length;

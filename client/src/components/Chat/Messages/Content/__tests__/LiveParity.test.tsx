@@ -1,9 +1,14 @@
 import React from 'react';
 import { RecoilRoot, useSetRecoilState } from 'recoil';
-import { ContentTypes, Tools, Constants } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
-import type { TAttachment, TMessage, TMessageContentParts } from 'librechat-data-provider';
+import { ContentTypes, Tools, Constants, ToolCallTypes } from 'librechat-data-provider';
+import type {
+  TAttachment,
+  TMessage,
+  TMessageContentParts,
+  SearchResultData,
+} from 'librechat-data-provider';
 import { resolveAskUserQuestionPart } from '~/utils/approval';
 import { sandboxStartingByToolCallId } from '~/store';
 import ContentParts from '../ContentParts';
@@ -129,6 +134,7 @@ const mount = (
   content: TMessageContentParts[],
   attachments: TAttachment[] | undefined,
   fold: boolean,
+  searchResults?: Record<string, SearchResultData>,
 ) =>
   render(
     <QueryClientProvider client={new QueryClient()}>
@@ -136,6 +142,7 @@ const mount = (
         <ContentParts
           content={content}
           attachments={attachments}
+          searchResults={searchResults}
           messageId="m1"
           conversationId="c1"
           isCreatedByUser={false}
@@ -346,6 +353,129 @@ describe('live fold parity with the cards it hides', () => {
     const search = toPart({ name: Tools.web_search, output: 'results' });
     const sites = (root: HTMLElement) =>
       Array.from(root.querySelectorAll('img')).map((image) => image.getAttribute('alt'));
+
+    const summary = (end: number, label = 'Reviewed the work'): TMessageContentParts =>
+      ({
+        type: ContentTypes.ACTIVITY_LABEL,
+        [ContentTypes.ACTIVITY_LABEL]: label,
+        activity_label_type: 'phase',
+        activity_start_index: 0,
+        activity_end_index: end,
+        activity_count: end,
+        pending: false,
+      }) as TMessageContentParts;
+
+    it.each([true, false])('does not borrow another span’s streamed sites (fold=%s)', (fold) => {
+      const content = [search, toPart({ name: Tools.web_search }, 't2')];
+      const view = mount(content, [], fold, {
+        0: searchAttachment[Tools.web_search] as SearchResultData,
+      });
+      const header = within(view.container).getAllByRole('button')[0];
+      expect(sites(header)).toEqual([]);
+      expect(header.querySelector('.lucide-globe')).not.toBeNull();
+    });
+
+    it('keeps sources from different calls whose search turn numbers repeat', () => {
+      const second = toPart({ name: Tools.web_search, output: 'results' }, 't2');
+      const secondAttachment = {
+        ...searchAttachment,
+        toolCallId: 't2',
+        [Tools.web_search]: {
+          turn: 0,
+          organic: [{ link: 'https://example.com/story', title: 'd' }],
+        },
+      } as TAttachment;
+      mount([search, second], [searchAttachment, secondAttachment], true);
+      const header = within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0];
+      expect(sites(header)).toEqual(['youtube.com', 'cnbc.com', 'example.com']);
+    });
+
+    it.each([
+      [ToolCallTypes.CODE_INTERPRETER, { code_interpreter: { outputs: [] } }, '.lucide-terminal'],
+      [ToolCallTypes.RETRIEVAL, {}, '.lucide-file-search'],
+      [ToolCallTypes.FILE_SEARCH, {}, '.lucide-file-search'],
+      [
+        ToolCallTypes.FUNCTION,
+        { function: { name: 'read_file', output: 'done' } },
+        '.lucide-file-text',
+      ],
+    ])('retains the real glyph for a settled legacy %s call', (type, payload, selector) => {
+      const legacy = {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: { id: 'legacy', type, ...payload },
+      } as TMessageContentParts;
+      mount([legacy, summary(1)], undefined, true);
+      expect(
+        screen.getByRole('button', { name: 'Reviewed the work' }).querySelector(selector),
+      ).not.toBeNull();
+    });
+
+    it('retains the subagent glyph inside a mixed settled span', () => {
+      mount(
+        [
+          toPart({ name: Constants.SUBAGENT, output: 'done' }),
+          toPart({ name: 'read_file', output: 'done' }, 't2'),
+          summary(2),
+        ],
+        undefined,
+        true,
+      );
+      const header = screen.getByRole('button', { name: 'Reviewed the work' });
+      expect(header.querySelector('.lucide-users')).not.toBeNull();
+      expect(header.querySelector('.lucide-file-text')).not.toBeNull();
+    });
+
+    it.each([true, false])('puts failure ahead of site identity (fold=%s)', (fold) => {
+      const failed = toPart({ name: Tools.web_search, output: 'results', runStepStatus: 'failed' });
+      const view = mount(
+        [failed, toPart({ name: 'lookup', output: 'ok' }, 't2')],
+        [searchAttachment],
+        fold,
+      );
+      const header = within(view.container).getAllByRole('button')[0];
+      expect(header.querySelector('.lucide-triangle-alert')).not.toBeNull();
+      expect(sites(header)).toEqual([]);
+    });
+
+    it.each([true, false])('puts cancellation ahead of tool identity (fold=%s)', (fold) => {
+      const cancelled = toPart({ name: 'lookup', runStepStatus: 'cancelled' });
+      const view = mount(
+        [cancelled, toPart({ name: 'read_file', output: 'ok' }, 't2')],
+        undefined,
+        fold,
+      );
+      const header = within(view.container).getAllByRole('button')[0];
+      expect(header.querySelector('.lucide-x')).not.toBeNull();
+    });
+
+    it.each(['failed', 'cancelled'] as const)('retains %s after a span settles', (status) => {
+      mount(
+        [toPart({ name: 'read_file', output: 'done', runStepStatus: status }), summary(1)],
+        undefined,
+        true,
+      );
+      const header = screen.getByRole('button', { name: 'Reviewed the work' });
+      expect(
+        header.querySelector(status === 'failed' ? '.lucide-triangle-alert' : '.lucide-x'),
+      ).not.toBeNull();
+    });
+
+    it('retains attachment-backed failure on the nested group after files are hoisted', () => {
+      mount(
+        [
+          toPart({ name: 'set_memory', output: 'Memory saved' }),
+          toPart({ name: 'lookup', output: 'ok' }, 't2'),
+          summary(2),
+        ],
+        [memoryErrorAttachment],
+        true,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Reviewed the work' }));
+      const group = screen.getByTestId('tool-call-group-panel')
+        .previousElementSibling as HTMLElement;
+      expect(group).toHaveAccessibleName(/1 failed/);
+      expect(group.querySelector('.lucide-triangle-alert')).not.toBeNull();
+    });
 
     it('shows the sites a search read on the live row, one per domain, with no card mounted', () => {
       mount([search], [searchAttachment], true);

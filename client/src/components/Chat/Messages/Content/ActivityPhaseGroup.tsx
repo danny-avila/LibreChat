@@ -16,9 +16,9 @@ import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import useThrottledValue from '~/hooks/Messages/useThrottledValue';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { getActivityLabelText } from '~/utils/activityLabels';
+import { getOutcomeStatus, summarizeSpan } from './outcome';
 import { ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from './rows';
 import { StackedToolIcons } from './ToolOutput';
-import { useSearchContext } from '~/Providers';
 import { getSourceDomains } from './sources';
 import { mapAttachments } from '~/utils/map';
 import SearchVerticals from './verticals';
@@ -213,12 +213,12 @@ function SpanGlyph({
 }) {
   const mcpIconMap = useMCPIconMap();
   const iconNames = useMemo(() => getSpanIconNames(parts), [parts]);
-  const { searchResults } = useSearchContext();
-  const sourceDomains = useMemo(
-    () => getSourceDomains(attachments, SPAN_SITES, searchResults),
-    [attachments, searchResults],
+  const outcome = useMemo(
+    () => summarizeSpan(parts, mapAttachments(attachments ?? [])),
+    [parts, attachments],
   );
-  if (iconNames.length === 0) {
+  const sourceDomains = useMemo(() => getSourceDomains(attachments, SPAN_SITES), [attachments]);
+  if (iconNames.length === 0 && outcome.failed === 0 && outcome.cancelled === 0) {
     return <PhaseGlyph failed={false} />;
   }
   return (
@@ -228,6 +228,7 @@ function SpanGlyph({
         mcpIconMap={mcpIconMap}
         maxIcons={SPAN_ICONS}
         sourceDomains={sourceDomains}
+        status={getOutcomeStatus(outcome)}
       />
     </span>
   );
@@ -270,11 +271,7 @@ function LivePhaseHeader({
   const painted = useThrottledValue(line, LIVE_ACTIVITY_THROTTLE_MS);
   const iconKey = activity.iconNames.join('|');
   const iconNames = useMemo(() => (iconKey ? iconKey.split('|') : []), [iconKey]);
-  const { searchResults } = useSearchContext();
-  const sourceDomains = useMemo(
-    () => getSourceDomains(attachments, SPAN_SITES, searchResults),
-    [attachments, searchResults],
-  );
+  const sourceDomains = useMemo(() => getSourceDomains(attachments, SPAN_SITES), [attachments]);
 
   /** The span's verdict, separate from its newest line: an earlier call can
    *  fail while a later one runs, and the line alone would never say so. The
@@ -322,6 +319,7 @@ function LivePhaseHeader({
           mcpIconMap={mcpIconMap}
           maxIcons={SPAN_ICONS}
           sourceDomains={sourceDomains}
+          status={getOutcomeStatus(activity.outcome)}
           isAnimating
         />
       </span>
