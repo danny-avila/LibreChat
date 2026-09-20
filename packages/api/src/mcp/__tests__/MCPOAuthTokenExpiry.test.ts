@@ -11,8 +11,8 @@
  * Also tests the happy path: access token expired but refresh succeeds.
  */
 
-import jwt from 'jsonwebtoken';
 import { Keyv } from 'keyv';
+import jwt from 'jsonwebtoken';
 import { logger } from '@librechat/data-schemas';
 import type { IUser } from '@librechat/data-schemas';
 import type { OAuthTestServer } from './helpers/oauthTestServer';
