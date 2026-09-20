@@ -13,7 +13,8 @@ import type { TTraceRecord, TTraceRecordRole } from 'librechat-data-provider';
 const AGENT_NODE_NAME = 'agent';
 const PROMPT_NAME = 'prompt';
 const MODEL_CALL_NAME = 'llm';
-const TOOL_DISPATCH_NAME = 'tool-dispatch';
+/** One round of tool calls; the SDK scopes its input to the calls the round ran. */
+export const TOOL_ROUND_NAME = 'tool-dispatch';
 /** The SDK names an agent's workflow node with the saved agent's bare id. */
 const SAVED_AGENT_ID = /^agent_[A-Za-z0-9_-]+$/;
 
@@ -25,7 +26,7 @@ const ROLE_BY_NAME: Record<string, TTraceRecordRole> = {
   [PROMPT_NAME]: 'plumbing',
   [ACTIVITY_PHASE_RUN_NAME]: 'plumbing',
   [MODEL_CALL_NAME]: 'model',
-  [TOOL_DISPATCH_NAME]: 'tools',
+  [TOOL_ROUND_NAME]: 'tools',
   [ACTIVITY_LABEL_RUN_NAME]: 'stepLabel',
   [REASONING_LABEL_RUN_NAME]: 'reasoningLabel',
   [ACTIVITY_PHASE_LABEL_RUN_NAME]: 'phaseLabel',

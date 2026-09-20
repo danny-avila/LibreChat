@@ -58,16 +58,18 @@ export function presentTool(
 
 function presentToolRound(record: TTraceRecord, sources: PresentationSources): RecordPresentation {
   const { localize, activity } = sources;
-  const calls = activity.calls.get(record.id);
+  /** The trace's own names say what ran; the chat's message, when it matches, adds what was sent and returned. */
+  const calls =
+    activity.calls.get(record.id) ?? record.tools?.map((name) => ({ name, args: '' })) ?? [];
   const technicalName = record.name;
-  if (calls == null || calls.length === 0) {
+  if (calls.length === 0) {
     return { title: localize('com_ui_trace_role_tools'), technicalName };
   }
   const views = calls.map((call) => ({ ...call, ...presentTool(call.name, sources) }));
   const toolNames = calls.map((call) => call.name);
   if (views.length === 1) {
     const [{ title, caption, args }] = views;
-    return { title, caption, preview: args, technicalName, toolNames, calls: views };
+    return { title, caption, preview: args || undefined, technicalName, toolNames, calls: views };
   }
   const titles = [...new Set(views.map((view) => view.title))];
   return {

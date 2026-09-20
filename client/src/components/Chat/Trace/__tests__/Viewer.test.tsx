@@ -251,12 +251,13 @@ describe('Trace Viewer', () => {
     expect(screen.queryByRole('treeitem', { name: recordName('later-a') })).not.toBeInTheDocument();
   });
 
-  it('withholds previews for a response split across pages until its earlier steps load', async () => {
+  it('previews a response split across pages from its end, then its earlier steps as they load', async () => {
     const generation = (id: string, offset: number) =>
       record({
         id,
         messageId: 'response-2',
         traceId: 'trace-2',
+        parentId: 'wrapper-the-limit-cut',
         name: id,
         kind: 'generation',
         startTime: at(offset),
@@ -286,10 +287,8 @@ describe('Trace Viewer', () => {
         ],
       ),
     );
-    await recordRow('later-2,');
-    expect(
-      screen.queryByRole('treeitem', { name: /later-2: First round/ }),
-    ).not.toBeInTheDocument();
+    expect(await recordRow('later-2: Second round\\.')).toBeInTheDocument();
+    expect(screen.getByRole('treeitem', { name: /^com_ui_trace_step 2,/ })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'com_ui_trace_load_older' }));
 

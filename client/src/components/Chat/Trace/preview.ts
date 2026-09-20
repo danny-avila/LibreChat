@@ -220,23 +220,95 @@ export function buildStepPreviews(message: TMessage | undefined): StepPreview[] 
  * tool's nested calls). Tool records are matched to the message's tool calls by
  * name, in the order they ran within their step; same-name calls that started in
  * the same millisecond have no reliable order and get none. The turn a page
- * boundary splits (`partialMessageId`) gets none until its earlier steps load.
+ * boundary splits (`partialMessageId`) is matched from its end (`alignTurns`).
  */
+/** How a response's steps line up with its message's rounds: `offset` rounds ran before its first loaded step. */
+export type TurnAlignment = { message: MessagePreview; offset: number; split: boolean };
+
+/**
+ * Lines each response's steps up with its message's rounds, or leaves the response out when the
+ * two cannot be trusted to match. There is no call id shared by a trace and a message, so the
+ * match is by order, and an order is only evidence when something else agrees with it:
+ *
+ * - A whole response must match round for round. Filtering, incomplete traces and silent calls
+ *   can remove rounds on either side, and an unequal count cannot be aligned by ordinal.
+ * - The response a record limit split is matched from its end. Records load newest first, so what
+ *   is loaded is the end of the response and its steps are the message's last rounds. That holds
+ *   only for a response the limit really cut (`turn.split`): the oldest loaded response is often
+ *   whole, with the next page holding an older response, and a whole response that disagrees with
+ *   its message is simply unmatched.
+ * - Wherever the trace names the tools of a round, the message's round must name the same tools.
+ *   One disagreement means the order is off somewhere, so the whole response goes unmatched rather
+ *   than showing one round's arguments and output under another's name.
+ */
+export function alignTurns(
+  model: TraceModel,
+  previewsByMessage: ReadonlyMap<string, MessagePreview>,
+  partialMessageId?: string,
+): Map<string, TurnAlignment> {
+  const alignments = new Map<string, TurnAlignment>();
+  for (const turn of model.turns) {
+    const message = previewsByMessage.get(turn.messageId);
+    if (message == null || message.parallel || message.finalOnly) {
+      continue;
+    }
+    const split = turn.split && turn.messageId === partialMessageId;
+    const missing = message.steps.length - turn.steps;
+    if (split ? missing < 0 : missing !== 0) {
+      continue;
+    }
+    alignments.set(turn.messageId, { message, offset: missing, split });
+  }
+  for (const step of model.steps.values()) {
+    const alignment = step.origin === 'run' ? alignments.get(step.messageId) : undefined;
+    if (alignment == null) {
+      continue;
+    }
+    const round = alignment.message.steps[alignment.offset + step.index - 1];
+    if (!namesAgree(model, step.rootIds, round?.toolCalls ?? [])) {
+      alignments.delete(step.messageId);
+    }
+  }
+  return alignments;
+}
+
+/**
+ * Whether every round the trace names in a step names exactly the message round's calls. A round
+ * an approval paused is recorded again when it resumes, so a step may hold several records, and
+ * each holds the same calls; two same-name calls in one record are two calls, never a repeat.
+ */
+function namesAgree(
+  model: TraceModel,
+  rootIds: readonly string[],
+  calls: readonly ToolCallPreview[],
+): boolean {
+  for (const id of rootIds) {
+    const tools = model.nodes.get(id)?.record.tools;
+    if (tools == null) {
+      continue;
+    }
+    if (tools.length !== calls.length || tools.some((name, at) => name !== calls[at].name)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function buildPreviewIndex(
   model: TraceModel,
   previewsByMessage: ReadonlyMap<string, MessagePreview>,
   partialMessageId?: string,
+  alignments: ReadonlyMap<string, TurnAlignment> = alignTurns(
+    model,
+    previewsByMessage,
+    partialMessageId,
+  ),
 ): Map<string, string> {
   const index = new Map<string, string>();
   const stepsByTurn = new Map(model.turns.map((turn) => [turn.messageId, turn.steps]));
   for (const step of model.steps.values()) {
     const message = previewsByMessage.get(step.messageId);
-    if (
-      message == null ||
-      message.parallel ||
-      step.origin === 'title' ||
-      step.messageId === partialMessageId
-    ) {
+    if (message == null || message.parallel || step.origin === 'title') {
       continue;
     }
     if (message.finalOnly) {
@@ -246,15 +318,15 @@ export function buildPreviewIndex(
       }
       continue;
     }
-    /** Filtering, incomplete traces and silent calls can remove rounds on either side.
-     *  Without a shared call id, an unequal count cannot be aligned by ordinal. */
-    if (message.steps.length !== stepsByTurn.get(step.messageId)) {
+    const alignment = alignments.get(step.messageId);
+    const round = alignment?.message.steps[alignment.offset + step.index - 1];
+    if (alignment == null || !round) {
       continue;
     }
-    const round = message.steps[step.index - 1];
-    if (!round) {
-      continue;
-    }
+    /** The cut is by record, not by round, so the first loaded step of a split response may hold
+     *  only the last of its round's tools, and counting those from the round's first call would
+     *  show one call's arguments under another. */
+    const boundary = alignment.split && step.index === 1;
     const callsByName = new Map<string, string[]>();
     for (const call of round.toolCalls) {
       const bucket = callsByName.get(call.name);
@@ -286,7 +358,7 @@ export function buildPreviewIndex(
         }
         continue;
       }
-      if (record.kind !== 'tool') {
+      if (record.kind !== 'tool' || boundary) {
         continue;
       }
       const ordinal = ordinals.get(record.name) ?? 0;
@@ -323,6 +395,8 @@ export type ActivityIndex = {
   labels: Map<string, string>;
   /** Tool calls the trace holds no record of, by response: what a turn's own count misses. */
   unrecordedCalls: Map<string, number>;
+  /** Steps of a response that ran before its first loaded one, so its steps keep their real numbers. */
+  stepOffsets: Map<string, number>;
 };
 
 const hasToolRecord = (model: TraceModel) => (id: string) => {
@@ -341,44 +415,40 @@ export function buildActivityIndex(
   model: TraceModel,
   previewsByMessage: ReadonlyMap<string, MessagePreview>,
   partialMessageId?: string,
+  alignments: ReadonlyMap<string, TurnAlignment> = alignTurns(
+    model,
+    previewsByMessage,
+    partialMessageId,
+  ),
 ): ActivityIndex {
   const calls: ActivityIndex['calls'] = new Map();
   const labels: ActivityIndex['labels'] = new Map();
   const unrecordedCalls: ActivityIndex['unrecordedCalls'] = new Map();
-  const stepsByTurn = new Map(model.turns.map((turn) => [turn.messageId, turn.steps]));
-  const aligned = (messageId: string): MessagePreview | undefined => {
-    const message = previewsByMessage.get(messageId);
-    return message == null || message.parallel || messageId === partialMessageId
-      ? undefined
-      : message;
-  };
+  const stepOffsets: ActivityIndex['stepOffsets'] = new Map();
 
   for (const step of model.steps.values()) {
-    const message = aligned(step.messageId);
-    if (
-      message == null ||
-      message.finalOnly ||
-      step.origin === 'title' ||
-      message.steps.length !== stepsByTurn.get(step.messageId)
-    ) {
+    const alignment = step.origin === 'run' ? alignments.get(step.messageId) : undefined;
+    if (alignment == null) {
       continue;
     }
-    const round = message.steps[step.index - 1];
-    let target: string | undefined;
-    for (const id of step.rootIds) {
-      const node = model.nodes.get(id);
-      if (node?.record.role === 'tools' && !node.childIds.some(hasToolRecord(model))) {
-        target = id;
-      }
+    if (alignment.offset > 0) {
+      stepOffsets.set(step.messageId, alignment.offset);
     }
+    const round = alignment.message.steps[alignment.offset + step.index - 1];
+    /** A round that holds recorded tools is described by them, not by the message. */
+    const ran = step.roundId != null ? model.nodes.get(step.roundId) : undefined;
+    const target = ran != null && !ran.childIds.some(hasToolRecord(model)) ? step.roundId : null;
     if (target == null || round == null || round.toolCalls.length === 0) {
       continue;
     }
     calls.set(target, round.toolCalls);
-    unrecordedCalls.set(
-      step.messageId,
-      (unrecordedCalls.get(step.messageId) ?? 0) + round.toolCalls.length,
-    );
+    /** A round the trace names is already counted from its names. */
+    if (model.nodes.get(target)?.record.tools == null) {
+      unrecordedCalls.set(
+        step.messageId,
+        (unrecordedCalls.get(step.messageId) ?? 0) + round.toolCalls.length,
+      );
+    }
   }
 
   const labelRecords = new Map<string, Record<LabelRole, Array<{ id: string; start: number }>>>();
@@ -391,20 +461,26 @@ export function buildActivityIndex(
     byRole[role].push({ id, start: node.start });
     labelRecords.set(messageId, byRole);
   }
+  const splitTurns = new Set(
+    model.turns.filter((turn) => turn.split).map((turn) => turn.messageId),
+  );
   for (const [messageId, byRole] of labelRecords) {
-    const message = aligned(messageId);
-    if (message == null) {
+    const message = previewsByMessage.get(messageId);
+    /** A split response holds the last of its labels, and only its matched rounds vouch for that. */
+    const split = splitTurns.has(messageId);
+    if (message == null || message.parallel || (split && !alignments.has(messageId))) {
       continue;
     }
     for (const role of ['stepLabel', 'phaseLabel'] as const) {
       const records = byRole[role];
       const texts = message.labels[role];
-      if (records.length !== texts.length) {
+      const missing = texts.length - records.length;
+      if (split ? missing < 0 : missing !== 0) {
         continue;
       }
       records.sort((a, b) => a.start - b.start || a.id.localeCompare(b.id));
-      records.forEach((record, index) => labels.set(record.id, texts[index]));
+      records.forEach((record, index) => labels.set(record.id, texts[missing + index]));
     }
   }
-  return { calls, labels, unrecordedCalls };
+  return { calls, labels, unrecordedCalls, stepOffsets };
 }

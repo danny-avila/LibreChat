@@ -40,6 +40,12 @@ export type TraceStep = {
   index: number;
   origin: 'run' | 'title';
   generationId: string | null;
+  /**
+   * The tool round that ran the step's calls. A model call asks for one round, so a step holding
+   * several is one an approval paused: the round is recorded again when it resumes, with the same
+   * calls, and the last record is the one that ran them.
+   */
+  roundId: string | null;
   agentId?: string;
   rootIds: string[];
   start: number;
@@ -67,6 +73,12 @@ export type TraceTurn = {
   /** Model calls that wrote an activity label; they are spend, not work of the response. */
   labels: number;
   toolCalls: number;
+  /**
+   * Some of the response's records hang from a parent that is not loaded. Records load newest
+   * first and a run's root starts first, so this is what a record limit leaves of a response it
+   * cut: its end.
+   */
+  split: boolean;
   /** Saved agents that ran in the response, each with the record that stands for it. */
   agents: Array<{ agentId: string; recordId: string }>;
   sequence: TraceSpan;
@@ -374,7 +386,9 @@ function groupSteps(
   nodes: Map<string, TraceNode>,
   steps: Map<string, TraceStep>,
   rootIds: readonly string[],
-): void {
+  privateWrappers: ReadonlySet<string>,
+): number {
+  let namedCalls = 0;
   const compare = byStart(nodes);
   const rootsByOrigin = new Map<TraceStep['origin'], string[]>();
   for (const id of rootIds) {
@@ -384,6 +398,17 @@ function groupSteps(
     rootsByOrigin.set(origin, roots);
   }
 
+  const unloadedParentOf = (id: string): string | undefined => {
+    const parentId = nodes.get(id)?.record.parentId;
+    return parentId != null && !nodes.has(parentId) ? parentId : undefined;
+  };
+  /**
+   * A record limit cuts a long response's earliest records, its root and graph among them, so a
+   * walk can end at a wrapper that only frames one model call. That wrapper is no lane of its
+   * own: the lane is the unloaded parent it shares with the tool round the model call asked for.
+   */
+  const laneAbove = (id: string): string | undefined =>
+    nodes.get(id)?.record.role === 'plumbing' ? unloadedParentOf(id) : undefined;
   /** A wrapper's branch immediately below its structural root, cached for nested failure rows. */
   const branches = new Map<string, string>();
   const branchOf = (id: string): string => {
@@ -398,8 +423,15 @@ function groupSteps(
       }
       path.push(current);
       const parent = nodes.get(current)?.parentId;
-      if (parent == null || nodes.get(parent)?.parentId == null) {
-        branch = current;
+      if (parent == null) {
+        branch = laneAbove(current) ?? current;
+        break;
+      }
+      if (nodes.get(parent)?.parentId == null) {
+        /** A wrapper framing one model call is never a lane, so when the cut left the graph as
+         *  the topmost loaded record, the lane is that graph, where its tool rounds hang too. */
+        const framing = nodes.get(current)?.record.role === 'plumbing';
+        branch = laneAbove(parent) ?? (framing ? parent : current);
         break;
       }
       current = parent;
@@ -415,8 +447,7 @@ function groupSteps(
     if (node?.parentId != null) {
       return branchOf(node.parentId);
     }
-    const unloaded = node?.record.parentId;
-    return unloaded != null && !nodes.has(unloaded) ? unloaded : '';
+    return unloadedParentOf(id) ?? '';
   };
 
   for (const [origin, roots] of rootsByOrigin) {
@@ -428,11 +459,22 @@ function groupSteps(
       const record = nodes.get(id)?.record;
       const lane = laneOf(id);
       const current = groups[groups.length - 1];
+      /** The cut can fall inside a model call's own wrappers. Its lane is then one of those
+       *  wrappers, which names no lane at all, so the round it asked for, arriving in a lane no
+       *  model call holds, is its round rather than a step of its own. */
+      const asked =
+        record != null &&
+        isToolWork(record) &&
+        !latestByLane.has(lane) &&
+        current != null &&
+        privateWrappers.has(current.lane)
+          ? current
+          : undefined;
       /** A tool whose lane has no model call loaded yet (an older page holds it) leads its own step.
        *  A label's model call describes a step; it never starts one. */
       if (
         record != null &&
-        (isModelCall(record) || (isToolWork(record) && !latestByLane.has(lane)))
+        (isModelCall(record) || (isToolWork(record) && !latestByLane.has(lane) && asked == null))
       ) {
         const group = { rootIds: [...leading, id], lane };
         groups.push(group);
@@ -441,7 +483,10 @@ function groupSteps(
       } else if (current == null) {
         leading.push(id);
       } else {
-        (latestByLane.get(lane) ?? current).rootIds.push(id);
+        (latestByLane.get(lane) ?? asked ?? current).rootIds.push(id);
+        if (asked != null) {
+          latestByLane.set(lane, asked);
+        }
       }
     }
     if (leading.length > 0) {
@@ -449,6 +494,12 @@ function groupSteps(
     }
     groups.forEach(({ rootIds }, index) => {
       const generationId = rootIds.find(isGenerationId(nodes)) ?? null;
+      let roundId: string | null = null;
+      for (const id of rootIds) {
+        if (nodes.get(id)?.record.role === 'tools') {
+          roundId = id;
+        }
+      }
       const key = stepKey(turn.messageId, origin, generationId ?? rootIds[0]);
       const step: TraceStep = {
         key,
@@ -456,6 +507,7 @@ function groupSteps(
         index: index + 1,
         origin,
         generationId,
+        roundId,
         agentId: nodes.get(generationId ?? rootIds[0])?.agentId,
         rootIds,
         start: Number.POSITIVE_INFINITY,
@@ -479,9 +531,16 @@ function groupSteps(
         if (node.record.status === 'error') {
           step.errorCount++;
         }
-        if (node.record.kind === 'tool') {
+        /** Names stand in for tools that were never recorded, so only for the round that ran, and
+         *  only when it holds no recorded tool of its own to count instead. */
+        const named =
+          node.record.id === roundId && !node.childIds.some(isToolWorkId(nodes))
+            ? (node.record.tools ?? [])
+            : [];
+        namedCalls += named.length;
+        for (const name of node.record.kind === 'tool' ? [node.record.name] : named) {
           step.toolCalls++;
-          step.toolNames.set(node.record.name, (step.toolNames.get(node.record.name) ?? 0) + 1);
+          step.toolNames.set(name, (step.toolNames.get(name) ?? 0) + 1);
         }
         for (let i = node.viewChildIds.length - 1; i >= 0; i--) {
           stack.push(node.viewChildIds[i]);
@@ -503,7 +562,13 @@ function groupSteps(
       (left?.origin === 'title' ? 1 : 0) - (right?.origin === 'title' ? 1 : 0)
     );
   });
+  return namedCalls;
 }
+
+const isToolWorkId = (nodes: Map<string, TraceNode>) => (id: string) => {
+  const record = nodes.get(id)?.record;
+  return record != null && isToolWork(record);
+};
 
 const isGenerationId = (nodes: Map<string, TraceNode>) => (id: string) => {
   const record = nodes.get(id)?.record;
@@ -614,6 +679,7 @@ export function buildTraceModel(
         generations: 0,
         labels: 0,
         toolCalls: 0,
+        split: false,
         agents: [],
         sequence: EMPTY_SPAN,
       };
@@ -665,6 +731,32 @@ export function buildTraceModel(
 
   const compare = byStart(nodes);
   const turns = [...turnsByMessage.values()].sort((a, b) => a.start - b.start);
+  /**
+   * Parents a record limit cut off, and which of them frame a single model call. The SDK wraps
+   * each model call in wrappers of its own, so an unloaded parent whose loaded children are only
+   * such wrappers and a model call is one of those, wherever in the chain the cut fell. A graph
+   * is told apart by what else hangs from it: the tool rounds.
+   */
+  const shared = new Set<string>();
+  const privateWrappers = new Set<string>();
+  for (const node of nodes.values()) {
+    const { parentId, role, origin, messageId } = node.record;
+    if (parentId == null || nodes.has(parentId)) {
+      continue;
+    }
+    if (role === 'plumbing' || role === 'model') {
+      privateWrappers.add(parentId);
+    } else {
+      shared.add(parentId);
+    }
+    const turn = origin == null ? turnsByMessage.get(messageId) : undefined;
+    if (turn != null) {
+      turn.split = true;
+    }
+  }
+  for (const id of shared) {
+    privateWrappers.delete(id);
+  }
   let sequence = 0;
   for (const turn of turns) {
     turn.rootIds.sort(compare);
@@ -680,7 +772,15 @@ export function buildTraceModel(
         stack.push(...node.childIds.map((childId) => ({ id: childId, depth: entry.depth + 1 })));
       }
     }
-    groupSteps(turn, nodes, steps, rootsByTurn.get(turn.messageId) ?? []);
+    const namedCalls = groupSteps(
+      turn,
+      nodes,
+      steps,
+      rootsByTurn.get(turn.messageId) ?? [],
+      privateWrappers,
+    );
+    turn.toolCalls += namedCalls;
+    summary.toolCalls += namedCalls;
     const turnSequenceStart = sequence;
     if (mode === 'simple') {
       for (const key of turn.stepKeys) {
