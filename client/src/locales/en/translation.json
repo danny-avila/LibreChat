@@ -3227,7 +3227,7 @@
   "com_media_error_reference_unavailable": "This reference link could not be downloaded. Use a public HTTPS link that works without signing in and has not expired.",
   "com_media_error_reference_changed": "The file at this reference link has changed. Add the link again or restore the original file, and keep it unchanged until generation finishes.",
   "com_files_retained_media": "Some originals are retained by Studio creations or chats and cannot be deleted here. Remove the creations or chats using them first; cleanup follows the configured retention period.",
-  "com_media_activity_running": "{{total}} media jobs running",
+  "com_media_activity_unfinished": "{{total}} unfinished media jobs",
   "com_media_worker_status": "Worker status",
   "com_media_worker_last_scan": "Last scan attempt",
   "com_media_worker_starting": "Starting",

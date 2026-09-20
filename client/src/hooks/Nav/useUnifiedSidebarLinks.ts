@@ -52,7 +52,7 @@ export default function useUnifiedSidebarLinks() {
   const mediaActivityCount = `${mediaActivity.count}${mediaActivity.hasMore ? '+' : ''}`;
   const mediaActivityLabel =
     mediaActivity.count > 0
-      ? localize('com_media_activity_running', { total: mediaActivityCount })
+      ? localize('com_media_activity_unfinished', { total: mediaActivityCount })
       : undefined;
   const insightsFeatureEnabled = startupConfig?.insightsEnabled === true;
   const isInsightsRoute = location.pathname.startsWith('/insights');

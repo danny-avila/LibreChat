@@ -46,7 +46,7 @@ function rejected(status: number) {
 
 beforeEach(() => jest.mocked(dataService.listMediaThreads).mockReset());
 
-test('shell activity polls only active work and wakes on invalidation', async () => {
+test('shell activity includes unfinished work awaiting attention and wakes on invalidation', async () => {
   const env = setup();
   const load = jest.mocked(dataService.listMediaThreads).mockResolvedValue({ items: [] });
   const hook = renderHook(() => useMediaActivity(env.host, true), { wrapper: env.wrapper });
@@ -65,6 +65,14 @@ test('shell activity polls only active work and wakes on invalidation', async ()
     updatedAt: '2026-09-19T12:00:00Z',
     pendingJobCount: 2,
     turnCount: 1,
+    activity: {
+      readyOutputs: 0,
+      latestJob: {
+        phase: 'requires_attention' as const,
+        operation: 'video.generate' as const,
+        selection: { connectionId: 'video', modelId: 'model', catalogVersion: 'catalog' },
+      },
+    },
   };
   load.mockResolvedValue({ items: [thread] });
   await act(async () => {
