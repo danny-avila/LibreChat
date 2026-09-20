@@ -68,6 +68,30 @@ describe('splitMarkdownIntoBlocks', () => {
       expect(incremental).toEqual(reference);
     });
 
+    it.each([
+      'Intro\n***important***.',
+      'Intro\n#hashtag',
+      'Intro\n```inline```',
+      '- item\n***important***.',
+      '> quote\n***important***.',
+      'Intro\n$$inline$$',
+      'Intro\n:::artifact{title="t"}\nbody\n:::',
+    ])('reconsiders provisional boundaries at every prefix of %j', (content) => {
+      const document = `# Stable heading\n\nEarlier paragraph.\n\n${content}\n\nFinal.`;
+      const { incremental, reference } = streamed(document);
+      expect(incremental).toEqual(reference);
+    });
+
+    it('reuses blocks before the two-block tail', () => {
+      const split = createMarkdownSplitter();
+      const content = '# Stable heading\n\nEarlier paragraph.\n\nIntro\n***';
+      const before = split(content);
+      const after = split(`${content}important***.`);
+      expect(after).toEqual(splitMarkdownIntoBlocksUncached(`${content}important***.`));
+      expect(after[0]).toBe(before[0]);
+      expect(after[1]).toBe(before[1]);
+    });
+
     it('matches a full parse when a streamed definition forces whole-message rendering', () => {
       const { incremental, reference } = streamed(
         'See [docs][d] for details.\n\nMore text.\n\n[d]: https://example.com/docs\n\nEnd.',

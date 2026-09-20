@@ -103,8 +103,10 @@ const parseToMdast = (content: string): MdastNode =>
 
 type SplitResult = {
   blocks: MarkdownBlock[];
-  /** Offset in the parsed text where the last block starts. */
-  lastBlockStart: number;
+  /** Offset where the final two blocks start; the last boundary may still disappear. */
+  reparseStart: number;
+  /** Number of blocks before reparseStart, even after the tail merges into one block. */
+  stableBlockCount: number;
 };
 
 /** The parsed top-level nodes, returned when the text cannot be split. */
@@ -141,7 +143,8 @@ const splitBlocks = (text: string): SplitResult | WholeMessage => {
   }
 
   const blocks: MarkdownBlock[] = [];
-  let lastBlockStart = 0;
+  const stableBlockCount = Math.max(0, children.length - 2);
+  let reparseStart = 0;
 
   for (const node of children) {
     if (node.type === 'html' || containsDefinition(node)) {
@@ -155,16 +158,18 @@ const splitBlocks = (text: string): SplitResult | WholeMessage => {
     const counts = { code: 0, artifact: 0, mermaid: 0 };
     countWithin(node, counts);
     const rawStart = lineStartOf(text, start);
+    if (blocks.length === stableBlockCount) {
+      reparseStart = rawStart;
+    }
     blocks.push({
       raw: text.slice(rawStart, end),
       codeBlockCount: counts.code,
       artifactCount: counts.artifact,
       mermaidCount: counts.mermaid,
     });
-    lastBlockStart = rawStart;
   }
 
-  return { blocks, lastBlockStart };
+  return { blocks, reparseStart, stableBlockCount };
 };
 
 /**
@@ -192,7 +197,10 @@ export type MarkdownSplitter = (content: string) => MarkdownBlock[];
 /**
  * Create an isolated splitter cache for one markdown surface. MarkdownBlocks
  * keeps one instance per mounted message so concurrent streams cannot evict
- * one another's active tail.
+ * one another's active tail. The tail includes the preceding block because an
+ * unfinished marker (such as `***` or `#`) can stop interrupting it when more
+ * text arrives. Reusing that block before the boundary settles loses paragraph
+ * and lazy list/blockquote continuations.
  */
 export function createMarkdownSplitter(): MarkdownSplitter {
   let lastSplit: SplitCache | null = null;
@@ -205,12 +213,13 @@ export function createMarkdownSplitter(): MarkdownSplitter {
 
     const prev = lastSplit;
     if (prev != null && content.length > prev.content.length && content.startsWith(prev.content)) {
-      const tail = splitBlocks(content.slice(prev.lastBlockStart));
+      const tail = splitBlocks(content.slice(prev.reparseStart));
       if (isSplit(tail)) {
         lastSplit = {
           content,
-          blocks: [...prev.blocks.slice(0, -1), ...tail.blocks],
-          lastBlockStart: prev.lastBlockStart + tail.lastBlockStart,
+          blocks: [...prev.blocks.slice(0, prev.stableBlockCount), ...tail.blocks],
+          reparseStart: prev.reparseStart + tail.reparseStart,
+          stableBlockCount: prev.stableBlockCount + tail.stableBlockCount,
         };
         return lastSplit.blocks;
       }
