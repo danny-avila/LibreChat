@@ -93,10 +93,12 @@ jest.mock('@librechat/api', () => {
     isMCPInspectionFailedError: (error) => error?.code === 'MCP_INSPECTION_FAILED',
     isMCPOAuthSecretReentryRequiredError: (error) =>
       error?.code === 'MCP_OAUTH_SECRET_REENTRY_REQUIRED',
+    isMCPApiKeyReentryRequiredError: (error) => error?.code === 'MCP_API_KEY_REENTRY_REQUIRED',
     MCPErrorCodes: {
       DOMAIN_NOT_ALLOWED: 'MCP_DOMAIN_NOT_ALLOWED',
       INSPECTION_FAILED: 'MCP_INSPECTION_FAILED',
       OAUTH_SECRET_REENTRY_REQUIRED: 'MCP_OAUTH_SECRET_REENTRY_REQUIRED',
+      API_KEY_REENTRY_REQUIRED: 'MCP_API_KEY_REENTRY_REQUIRED',
     },
   };
 });
@@ -4476,6 +4478,36 @@ describe('MCP Routes', () => {
         error: 'MCP_OAUTH_SECRET_REENTRY_REQUIRED',
         message:
           'Re-enter oauth.client_secret when changing OAuth credential binding fields: oauth.token_url',
+      });
+    });
+
+    it('should require API key re-entry when its credential binding changes', async () => {
+      const error = Object.assign(
+        new Error('Re-enter apiKey.key when changing API key credential binding fields: url'),
+        {
+          code: 'MCP_API_KEY_REENTRY_REQUIRED',
+          statusCode: 400,
+        },
+      );
+      mockRegistryInstance.inspectServerUpdate.mockRejectedValue(error);
+
+      const response = await request(app)
+        .patch('/api/mcp/servers/test-server')
+        .send({
+          config: {
+            type: 'sse',
+            url: 'https://attacker.example.com/sse',
+            apiKey: {
+              source: 'admin',
+              authorization_type: 'bearer',
+            },
+          },
+        });
+
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({
+        error: 'MCP_API_KEY_REENTRY_REQUIRED',
+        message: 'Re-enter apiKey.key when changing API key credential binding fields: url',
       });
     });
 

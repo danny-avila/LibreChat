@@ -24,6 +24,7 @@ const {
   isMCPDomainNotAllowedError,
   isMCPInspectionFailedError,
   isMCPOAuthSecretReentryRequiredError,
+  isMCPApiKeyReentryRequiredError,
   prepareMCPServerOAuthDeletion,
   cleanupDeletedMCPServerOAuthUsers,
 } = require('@librechat/api');
@@ -76,6 +77,13 @@ function handleMCPError(error, res) {
   }
 
   if (isMCPOAuthSecretReentryRequiredError(error)) {
+    return res.status(error.statusCode).json({
+      error: error.code,
+      message: error.message,
+    });
+  }
+
+  if (isMCPApiKeyReentryRequiredError(error)) {
     return res.status(error.statusCode).json({
       error: error.code,
       message: error.message,
