@@ -1,0 +1,25 @@
+{
+  "sourceCommit": "5afee47dff90d09bdec5d192a6c5254d0c7846b2",
+  "node": "v24.16.0",
+  "redisVersion": "7.4.11",
+  "date": "2026-09-20T10:34:58.710Z",
+  "eventsPerStream": {
+    "paced": 64,
+    "burst": 256
+  },
+  "cpu": "Intel(R) Xeon(R) Platinum 8488C",
+  "availableParallelism": 16,
+  "hostLoadAverage": [
+    0.6,
+    0.4,
+    0.22
+  ],
+  "matrixFilter": {
+    "oneWayMs": "5",
+    "repetition": "0"
+  },
+  "pacedIntervalMs": 20,
+  "repeats": 3,
+  "topology": "private standalone Redis, local Unix socket behind TCP delay proxy",
+  "limitations": "Synthetic provider deltas through real manager/store/transport. No LLM, HTTP/SSE, TLS, Cluster, cloud, bandwidth cap, or cache-failure claim. SHA diagnostic preloads scripts and never retries NOSCRIPT."
+}
