@@ -988,14 +988,18 @@ export default function mongoMeili(schema: Schema, options: MongoMeiliOptions): 
         },
       },
     );
+    /* The legacy branch of `buildExcludedIndexedQuery` selects documents whose
+     * `_meiliCleanupVersion` is MISSING. MongoDB rewrites `$exists: false` into `$not`,
+     * which `partialFilterExpression` rejects, so that condition lives in the key
+     * instead: a missing field indexes as null, and the query reaches it on the same
+     * scan. The filter keeps the two conditions a partial index can express. */
     schema.index(
       { _meiliIndex: 1, _meiliCleanupVersion: 1, [options.primaryKey]: 1 },
       {
-        name: 'meili_excluded_legacy_cleanup_v3',
+        name: 'meili_excluded_legacy_cleanup_v4',
         partialFilterExpression: {
           [options.excludeFromIndexPath]: { $exists: true },
           _meiliIndex: { $eq: false },
-          _meiliCleanupVersion: { $exists: false },
         },
       },
     );

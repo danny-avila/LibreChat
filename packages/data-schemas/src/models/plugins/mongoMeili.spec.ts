@@ -921,11 +921,10 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(conversationIndexes).toContainEqual([
       { _meiliIndex: 1, _meiliCleanupVersion: 1, conversationId: 1 },
       expect.objectContaining({
-        name: 'meili_excluded_legacy_cleanup_v3',
+        name: 'meili_excluded_legacy_cleanup_v4',
         partialFilterExpression: {
           subagentThread: { $exists: true },
           _meiliIndex: { $eq: false },
-          _meiliCleanupVersion: { $exists: false },
         },
       }),
     ]);
@@ -952,11 +951,10 @@ describe('Meilisearch Mongoose plugin', () => {
     expect(messageIndexes).toContainEqual([
       { _meiliIndex: 1, _meiliCleanupVersion: 1, messageId: 1 },
       expect.objectContaining({
-        name: 'meili_excluded_legacy_cleanup_v3',
+        name: 'meili_excluded_legacy_cleanup_v4',
         partialFilterExpression: {
           subagentTask: { $exists: true },
           _meiliIndex: { $eq: false },
-          _meiliCleanupVersion: { $exists: false },
         },
       }),
     ]);
@@ -2428,6 +2426,59 @@ describe('Meilisearch Mongoose plugin', () => {
         _meiliIndex: true,
       });
       expect(afterSync.length).toBe(2);
+    });
+  });
+
+  describe('excluded-document cleanup indexes', () => {
+    test('builds every cleanup index the plugin declares', async () => {
+      const messageModel = createMessageModel(mongoose);
+
+      await expect(messageModel.createIndexes()).resolves.toBeUndefined();
+
+      const builtIndexes = await messageModel.collection.listIndexes().toArray();
+      expect(builtIndexes.map((builtIndex) => builtIndex.name)).toEqual(
+        expect.arrayContaining([
+          'meili_excluded_indexed_cleanup_v3',
+          'meili_excluded_attempted_cleanup_v3',
+          'meili_excluded_legacy_cleanup_v4',
+        ]),
+      );
+
+      const legacyCleanup = builtIndexes.find(
+        (builtIndex) => builtIndex.name === 'meili_excluded_legacy_cleanup_v4',
+      );
+      expect(legacyCleanup?.key).toEqual({
+        _meiliIndex: 1,
+        _meiliCleanupVersion: 1,
+        messageId: 1,
+      });
+      /** The missing-version condition belongs to the key: `$exists: false` is the
+       *  operator MongoDB rejects in a partial filter, so it must not reappear here. */
+      expect(legacyCleanup?.partialFilterExpression).toEqual({
+        subagentTask: { $exists: true },
+        _meiliIndex: { $eq: false },
+      });
+    });
+
+    test('cleans up an excluded document stored before the cleanup version existed', async () => {
+      const messageModel = createMessageModel(mongoose) as unknown as SchemaWithMeiliMethods;
+      const messageId = new mongoose.Types.ObjectId().toString();
+      await messageModel.collection.insertOne({
+        messageId,
+        conversationId: new mongoose.Types.ObjectId().toString(),
+        user: 'user-legacy-cleanup',
+        isCreatedByUser: true,
+        text: 'Indexed before the private child marker existed',
+        subagentTask: { attemptKey: 'attempt-key', status: 'completed' },
+        _meiliIndex: false,
+      });
+
+      await messageModel.cleanupExcludedMeiliIndex();
+
+      expect(mockDeleteDocuments).toHaveBeenCalledWith(expect.arrayContaining([messageId]));
+      const cleaned = await messageModel.collection.findOne({ messageId });
+      expect(cleaned?._meiliCleanupVersion).toBe(1);
+      expect(cleaned?._meiliIndex).toBeUndefined();
     });
   });
 });
