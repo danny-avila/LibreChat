@@ -292,10 +292,7 @@ function writeRuntimeMockConfig() {
   config = config
     .split('127.0.0.1:8768')
     .join(`127.0.0.1:${mediaFixturePort}`)
-    .replace(
-      '# __E2E_MEDIA_CONFIG__',
-      `media: ${JSON.stringify(mediaFixtureConfig(replicaCount === 1))}`,
-    );
+    .replace('# __E2E_MEDIA_CONFIG__', `media: ${JSON.stringify(mediaFixtureConfig())}`);
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.writeFileSync(configPath, config);
   if (enableDynamicMcp) {
@@ -378,19 +375,15 @@ export default defineConfig({
     },
   ],
   webServer: [
-    ...(replicaCount === 1
-      ? [
-          {
-            command: `node ${mediaServerPath}`,
-            cwd: rootPath,
-            env: { ...process.env, E2E_MEDIA_PORT: mediaFixturePort },
-            url: `${mediaFixtureURL}/health`,
-            stdout: 'pipe' as const,
-            timeout: 60_000,
-            reuseExistingServer: false,
-          },
-        ]
-      : []),
+    {
+      command: `node ${mediaServerPath}`,
+      cwd: rootPath,
+      env: { ...process.env, E2E_MEDIA_PORT: mediaFixturePort },
+      url: `${mediaFixtureURL}/health`,
+      stdout: 'pipe',
+      timeout: 60_000,
+      reuseExistingServer: false,
+    },
     {
       // URL-based MCP fixture for the allowlist-override spec (its health route is GET /).
       command: `node ${mcpHttpServerPath}`,
