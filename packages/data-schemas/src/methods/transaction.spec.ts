@@ -1901,6 +1901,12 @@ describe('shared balance and credits contracts', () => {
   test('uses a unique settlement key while preserving chronological transaction IDs', async () => {
     await Transaction.createIndexes();
     const user = String(new mongoose.Types.ObjectId());
+    await mongoose.models.MediaOwner.create({
+      ownerId: user,
+      status: 'active',
+      workIds: [],
+      updatedAt: new Date(),
+    });
     const earlier = await Transaction.create({ user, tokenType: 'credits', rawAmount: 1 });
     const receipt = {
       user,

@@ -240,7 +240,10 @@ export function createMediaAccountMethods({
         {
           user: scope.ownerId,
           tenantId: scope.tenantId,
-          context: { $in: ['media', 'media_debt'] },
+          $or: [
+            { mediaSettlementId: { $exists: true } },
+            { context: { $in: ['media', 'media_debt'] } },
+          ],
         },
         { writeConcern: durable },
       ),

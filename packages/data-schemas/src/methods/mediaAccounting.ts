@@ -19,6 +19,7 @@ import { migrateMediaDates, migrateMediaHoldDates } from '~/utils/mediaDates';
 import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { createMediaSettlementModel } from '~/models/mediaSettlement';
 import { createCreditsTransactionWriter } from './transaction';
+import { createMediaLedgerReconciler } from './media/ledger';
 import { createIndexesWithRetry } from '~/utils/retry';
 import { createMediaOwnerModel } from '~/models/media';
 import { createBalanceModel } from '~/models/balance';
@@ -65,6 +66,7 @@ export function createMediaAccountingMethods(
 ): MediaAccountingMethods {
   const upsertCreditsTransaction =
     hooks.upsertCreditsTransaction ?? createCreditsTransactionWriter(mongoose);
+  const reconcileLedger = createMediaLedgerReconciler(mongoose);
   const settlements = () => createMediaSettlementModel(mongoose);
   const balances = () => createBalanceModel(mongoose);
   const owners = () => createMediaOwnerModel(mongoose);
@@ -238,7 +240,7 @@ export function createMediaAccountingMethods(
           ],
         }
       : {};
-    const [pending, debt] = await Promise.all([
+    const [pending, debt, ledger] = await Promise.all([
       settlements()
         .find({ balanceAcknowledged: false, ...settlementAfter })
         .select('ownerId tenantId')
@@ -262,10 +264,16 @@ export function createMediaAccountingMethods(
         .sort({ user: 1, tenantId: 1 })
         .limit(limit + 1)
         .lean<IBalance[]>(),
+      mongoose.models.Transaction.find({ mediaAccountPending: true, ...balanceAfter })
+        .select('user tenantId')
+        .sort({ user: 1, tenantId: 1 })
+        .limit(limit + 1)
+        .lean<Pick<IBalance, 'user' | 'tenantId'>[]>(),
     ]);
     const combined = [
       ...pending,
       ...debt.map((row) => ({ ownerId: String(row.user), tenantId: row.tenantId ?? null })),
+      ...ledger.map((row) => ({ ownerId: String(row.user), tenantId: row.tenantId ?? null })),
     ];
     const rows = [
       ...new Map(
@@ -279,7 +287,8 @@ export function createMediaAccountingMethods(
       .slice(0, limit)
       .map((scope) => ({ ownerId: scope.ownerId, tenantId: scope.tenantId ?? null }));
     const last = items[items.length - 1];
-    const hasMore = rows.length > limit || pending.length > limit || debt.length > limit;
+    const hasMore =
+      rows.length > limit || pending.length > limit || debt.length > limit || ledger.length > limit;
     return {
       items,
       ...(hasMore && last
@@ -997,6 +1006,7 @@ export function createMediaAccountingMethods(
     if (!Number.isSafeInteger(limit) || limit < 1) {
       throw new MediaAccountingError('invariant', 'Invalid reconciliation limit');
     }
+    const reconciledLedger = await reconcileLedger(scope, limit);
     const deletedOwner = await owners().exists({ ...scopeFilter(scope), status: 'deleted' });
     if (deletedOwner) {
       const unfunded = await settlements()
@@ -1171,7 +1181,7 @@ export function createMediaAccountingMethods(
       );
       await reconcileSettlement(scope, settlementId, policy);
     }
-    return records.length + safeReleases.length + debtBalances.length;
+    return reconciledLedger + records.length + safeReleases.length + debtBalances.length;
   }
 
   return {

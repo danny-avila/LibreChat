@@ -19,6 +19,7 @@ export interface ITransaction extends Document {
   updatedAt?: Date;
   tenantId?: string;
   mediaSettlementId?: string;
+  mediaAccountPending?: boolean;
   mediaJobId?: string;
   debtCredits?: number;
   /** Legacy receipt column; new writes use debtCredits. */
@@ -74,6 +75,7 @@ const transactionSchema: Schema<ITransaction> = new Schema(
     readTokens: { type: Number },
     messageId: { type: String },
     mediaSettlementId: String,
+    mediaAccountPending: { type: Boolean, select: false },
     mediaJobId: String,
     debtCredits: Number,
     mediaDebtCredits: Number,
@@ -98,6 +100,10 @@ const transactionSchema: Schema<ITransaction> = new Schema(
 );
 
 transactionSchema.index({ mediaJobId: 1 });
+transactionSchema.index(
+  { mediaAccountPending: 1, user: 1, tenantId: 1, _id: 1 },
+  { partialFilterExpression: { mediaAccountPending: true } },
+);
 transactionSchema.index(
   { mediaSettlementId: 1 },
   { unique: true, partialFilterExpression: { mediaSettlementId: { $type: 'string' } } },

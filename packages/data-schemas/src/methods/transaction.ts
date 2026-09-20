@@ -17,6 +17,7 @@ import type {
 import type { ITransaction } from '~/schema/transaction';
 import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { createMediaLedgerReconciler } from './media/ledger';
 import logger from '~/config/winston';
 
 const cancelRate = 1.15;
@@ -88,6 +89,7 @@ export interface TransactionResult {
 export function createCreditsTransactionWriter(
   mongoose: typeof import('mongoose'),
 ): CreditsTransactionWriter {
+  const reconcileLedger = createMediaLedgerReconciler(mongoose);
   return async ({ transactionId, tenantId, mediaSettlementId, ...fields }) => {
     const activeTenant = tenantStorage.getStore()?.tenantId;
     if (activeTenant && activeTenant !== SYSTEM_TENANT_ID && activeTenant !== tenantId) {
@@ -102,14 +104,21 @@ export function createCreditsTransactionWriter(
         ? { $or: [{ tenantId: null }, { tenantId: { $exists: false } }] }
         : { tenantId }),
     };
-    let receipt: { mediaFingerprint?: string } | null;
+    type Receipt = {
+      _id: Types.ObjectId;
+      mediaFingerprint?: string;
+      mediaAccountPending?: boolean;
+    };
+    let receipt: Receipt | null;
     try {
       receipt = await Transaction.findOneAndUpdate(
         filter,
         {
           $setOnInsert: {
             ...fields,
-            ...(mediaSettlementId ? { _id: new mongoose.Types.ObjectId(), mediaSettlementId } : {}),
+            ...(mediaSettlementId
+              ? { _id: new mongoose.Types.ObjectId(), mediaSettlementId, mediaAccountPending: true }
+              : {}),
             ...(tenantId == null ? {} : { tenantId }),
             tokenType: 'credits',
             ...(fields.tokenValue === undefined ? {} : { rate: 1 }),
@@ -117,15 +126,22 @@ export function createCreditsTransactionWriter(
         },
         { upsert: true, new: true, writeConcern: { w: 'majority', j: true } },
       )
-        .select({ mediaFingerprint: 1 })
-        .lean<{ mediaFingerprint?: string }>();
+        .select('_id mediaFingerprint +mediaAccountPending')
+        .lean<Receipt>();
     } catch (error) {
       if (!error || typeof error !== 'object' || !('code' in error) || error.code !== 11000)
         throw error;
       receipt = await Transaction.findOne(filter)
-        .select({ mediaFingerprint: 1 })
-        .lean<{ mediaFingerprint?: string }>();
+        .select('_id mediaFingerprint +mediaAccountPending')
+        .lean<Receipt>();
       if (!receipt) throw error;
+    }
+    if (receipt?.mediaAccountPending) {
+      await reconcileLedger(
+        { ownerId: fields.user, tenantId: tenantId ?? null },
+        1,
+        String(receipt._id),
+      );
     }
     return { fingerprint: receipt?.mediaFingerprint };
   };

@@ -411,7 +411,7 @@ describe('media accounting on standalone MongoDB', () => {
       stopped.resume();
     }
     await work;
-    expect(await mongoose.models.Transaction.countDocuments({ mediaJobId: jobId })).toBe(1);
+    expect(await mongoose.models.Transaction.countDocuments({ mediaJobId: jobId })).toBe(0);
     await media.reconcileMediaAccountDeletion({ scope, limit: 10 });
     expect(await mongoose.models.Transaction.countDocuments({ mediaJobId: jobId })).toBe(0);
     expect(await mongoose.models.MediaSettlement.countDocuments(scope)).toBe(0);
@@ -1011,6 +1011,143 @@ describe('media accounting on standalone MongoDB', () => {
     expect(await mongoose.models.MediaSettlement.countDocuments(scope)).toBe(0);
     expect(await media.getMediaJob(scope, jobId)).toBeNull();
     expect(await balance()).toBeNull();
+  });
+
+  it.each([
+    ['balance', false],
+    ['balance', true],
+    ['transactions', false],
+    ['transactions', true],
+  ] as const)(
+    'reclaims a real %s image ledger receipt inserted after owner tombstone removal (interrupted=%s)',
+    async (mode, interrupted) => {
+      const User = createUserModel(mongoose);
+      await User.create({ _id: scope.ownerId, email: 'late-ledger@example.test' });
+      const jobId = await job('late-ledger');
+      if (mode === 'balance') await accounting.acquireMediaHold(hold(jobId));
+      const stopped = pause();
+      const delayed = createMediaAccountingMethods(mongoose, {
+        upsertCreditsTransaction: async (input) => {
+          await stopped.wait();
+          return ordinary.upsertCreditsTransaction(input);
+        },
+      });
+      const charge = {
+        ...settle(jobId),
+        effect: { ...settle(jobId).effect, operation: 'image.generate' as const },
+      };
+      const usage = { scope, jobId, credits: 250, costUSD: 0.25 };
+      const publish = (repository: MediaAccountingMethods) =>
+        mode === 'balance' ? repository.settleMediaJob(charge) : repository.recordMediaUsage(usage);
+      const late = publish(delayed).catch((error: Error) => error);
+      await stopped.entered;
+      let ownerRead: jest.SpyInstance | undefined;
+      try {
+        await publish(accounting);
+        expect(
+          await mongoose.models.Transaction.findOne({ mediaJobId: jobId }).lean(),
+        ).toMatchObject({
+          context: 'image_generation',
+        });
+        await mongoose.models.MediaJob.updateOne(
+          { ...scope, jobId },
+          { $set: { phase: 'failed', 'provider.certainty': 'terminal' } },
+        );
+        expect(await media.prepareMediaAccountDeletion({ scope, token: 'late-ledger' })).toBe(true);
+        await User.deleteOne({ _id: scope.ownerId });
+        await media.completeMediaAccountDeletion({ scope, token: 'late-ledger' });
+        expect(await mongoose.models.Transaction.countDocuments({ mediaJobId: jobId })).toBe(0);
+        await media.reconcileMediaAccountDeletion({ scope, limit: 10 });
+        await mongoose.models.MediaOwner.deleteOne(scope);
+        if (interrupted) {
+          ownerRead = jest
+            .spyOn(mongoose.models.MediaOwner, 'findOne')
+            .mockImplementationOnce(() => {
+              throw new Error('Interrupted after ledger insertion');
+            });
+        }
+      } finally {
+        stopped.resume();
+      }
+      const result = await late;
+      ownerRead?.mockRestore();
+      if (interrupted) {
+        expect(result).toEqual(new Error('Interrupted after ledger insertion'));
+        expect(
+          await mongoose.models.Transaction.findOne({ mediaJobId: jobId })
+            .select('+mediaAccountPending')
+            .lean(),
+        ).toMatchObject({ context: 'image_generation', mediaAccountPending: true });
+        const scopes = await tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, () =>
+          accounting.listMediaAccountingScopes({ limit: 1 }),
+        );
+        expect(scopes.items).toContainEqual(scope);
+        await accounting.reconcileMediaAccounting({ scope, limit: 1, policy });
+      }
+      expect(await mongoose.models.Transaction.countDocuments({ mediaJobId: jobId })).toBe(0);
+      expect(await balance()).toBeNull();
+      expect(await mongoose.models.MediaOwner.exists(scope)).toBeNull();
+    },
+  );
+
+  it('does not recreate a ledger row deleted after its owner validation', async () => {
+    const jobId = await job('validation-race');
+    const Owner = mongoose.models.MediaOwner;
+    const findOwner = Owner.findOne.bind(Owner);
+    const validation = jest.spyOn(Owner, 'findOne').mockImplementationOnce((...args) => {
+      const query = findOwner(...args);
+      const execute = query.exec.bind(query);
+      jest.spyOn(query, 'exec').mockImplementationOnce(async () => {
+        const result = await execute();
+        await mongoose.models.Transaction.deleteMany({ mediaJobId: jobId });
+        return result;
+      });
+      return query;
+    });
+    try {
+      await accounting.recordMediaUsage({ scope, jobId, credits: 250, costUSD: 0.25 });
+    } finally {
+      validation.mockRestore();
+    }
+    expect(await mongoose.models.Transaction.countDocuments({ mediaJobId: jobId })).toBe(0);
+  });
+
+  it('bounds pending-ledger reconciliation and keeps another tenant and deleting owner fenced', async () => {
+    await job('pending-ledger-scope');
+    const Transaction = mongoose.models.Transaction;
+    await Transaction.insertMany([
+      ...['first', 'second'].map((id) => ({
+        user: scope.ownerId,
+        tenantId: null,
+        tokenType: 'credits',
+        mediaSettlementId: id,
+        mediaAccountPending: true,
+      })),
+      {
+        user: scope.ownerId,
+        tenantId: 'other-tenant',
+        tokenType: 'credits',
+        mediaSettlementId: 'foreign',
+        mediaAccountPending: true,
+      },
+    ]);
+    await accounting.reconcileMediaAccounting({ scope, limit: 1, policy });
+    expect(await Transaction.countDocuments({ tenantId: null, mediaAccountPending: true })).toBe(1);
+    expect(
+      await Transaction.countDocuments({ tenantId: 'other-tenant', mediaAccountPending: true }),
+    ).toBe(1);
+    expect(await Transaction.findOne({ mediaSettlementId: 'second' }).lean()).not.toHaveProperty(
+      'mediaAccountPending',
+    );
+    await mongoose.models.MediaOwner.updateOne(scope, { $set: { status: 'deleting' } });
+    await accounting.reconcileMediaAccounting({ scope, limit: 1, policy });
+    expect(await Transaction.countDocuments({ tenantId: null, mediaAccountPending: true })).toBe(1);
+    await mongoose.models.MediaOwner.updateOne(scope, { $set: { status: 'active' } });
+    await accounting.reconcileMediaAccounting({ scope, limit: 1, policy });
+    expect(await Transaction.countDocuments({ tenantId: null, mediaAccountPending: true })).toBe(0);
+    expect(
+      await Transaction.countDocuments({ tenantId: 'other-tenant', mediaAccountPending: true }),
+    ).toBe(1);
   });
 
   it('releases only a certain no-charge result and never charges native chat again', async () => {
