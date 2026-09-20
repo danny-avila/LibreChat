@@ -5325,6 +5325,80 @@ function buildToolCallConfig(
   return toolCallConfig;
 }
 
+/**
+ * One-shot handoff of the files a `skill` call uploads to the code calls that
+ * share its batch.
+ *
+ * The graph hands every call in a batch the code-session snapshot it took when
+ * it planned the batch, and folds a `skill` call's artifact back into the
+ * session only after the whole batch settles. A code call dispatched beside a
+ * `skill` call therefore reads a context with none of the skill's bundled
+ * files: `_injected_files` omits them and the sandbox has no
+ * `/mnt/data/skills/<name>/` for that batch. Waiting here, then merging the
+ * uploaded refs into the code call's own context, is what makes the files
+ * visible on the turn that loaded them.
+ */
+interface SkillFilesHandoff {
+  /** Records a settled `skill` call; the last one releases every waiter. */
+  record(result: ToolExecuteResult): void;
+  /** Resolves once every `skill` call in the batch has settled, then merges
+   *  their uploaded files into this call's own code-session context. Never
+   *  rejects: a skill whose files failed to load contributes nothing and the
+   *  waiting call runs with the context it already had. */
+  applyTo(tc: ToolCallRequest): Promise<void>;
+}
+
+function createSkillFilesHandoff(
+  skillToolCallIds: ReadonlySet<string>,
+  signal?: AbortSignal,
+): SkillFilesHandoff {
+  const pendingSkillCallIds = new Set(skillToolCallIds);
+  const uploadedFiles: CodeEnvFile[] = [];
+  let release!: () => void;
+  const settled = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  /** A Stop ends the turn for every call in the batch, so waiters are released
+   *  the moment it lands instead of riding out the upload's own cancellation. */
+  const onAbort = (): void => release();
+  if (signal?.aborted === true) {
+    release();
+  } else {
+    signal?.addEventListener('abort', onAbort, { once: true });
+  }
+  return {
+    record(result: ToolExecuteResult): void {
+      if (!pendingSkillCallIds.delete(result.toolCallId)) {
+        return;
+      }
+      const files =
+        result.status === 'success'
+          ? (result.artifact as { files?: CodeEnvFile[] } | undefined)?.files
+          : undefined;
+      if (files && files.length > 0) {
+        uploadedFiles.push(...files);
+      }
+      if (pendingSkillCallIds.size === 0) {
+        signal?.removeEventListener('abort', onAbort);
+        release();
+      }
+    },
+    async applyTo(tc: ToolCallRequest): Promise<void> {
+      await settled;
+      /* Same call shape as the provisioned-attachment fold in the executor, so
+       * identity (`storage_session_id` + `id`) and destination rules stay
+       * consistent. Returns undefined when no skill contributed a file. */
+      const merged = mergeCodeFilesIntoContext(
+        tc.codeSessionContext as CodeSessionContext | undefined,
+        uploadedFiles,
+      );
+      if (merged) {
+        tc.codeSessionContext = merged;
+      }
+    },
+  };
+}
+
 export function createToolExecuteHandler(options: ToolExecuteOptions): EventHandler {
   const {
     runSignal: hostRunSignal,
@@ -5393,10 +5467,18 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
           onResult?: (result: ToolExecuteResult) => void;
         }
       ).onResult;
+      /** Set only for a batch that mixes `skill` calls with code calls (see
+       * {@link createSkillFilesHandoff}); `undefined` leaves every other batch
+       * fully concurrent. */
+      let skillFilesHandoff: SkillFilesHandoff | undefined;
       /** Reports a settled result so the agent graph can emit that call's
        * completion immediately instead of waiting for the whole batch;
        * `resolve` below remains the authoritative batch outcome. */
       const reportResult = (result: ToolExecuteResult): ToolExecuteResult => {
+        /* Every per-call return in the batch funnels through here, so this is
+         * the one place that observes a `skill` call settling whatever path
+         * produced its result, including the filtered and error paths. */
+        skillFilesHandoff?.record(result);
         try {
           onResult?.(result);
         } catch (callbackError) {
@@ -5483,6 +5565,21 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   tc.codeSessionContext = merged;
                 }
               }
+            }
+
+            /* A code call in this batch reads its code-session context when it
+             * executes, while the `skill` call beside it is still uploading the
+             * files that belong in that context. Only a batch carrying both
+             * kinds of call waits; every other batch stays fully concurrent. */
+            const waitsForSkillFiles = (tc: ToolCallRequest): boolean =>
+              tc.name !== Constants.SKILL_TOOL &&
+              (isCodeSessionAwareToolCall(tc.name, mergedConfigurable) ||
+                (runFileSharingActive && isCodeFileToolName(tc.name)));
+            const skillToolCallIds = new Set(
+              allowedToolCalls.filter((tc) => tc.name === Constants.SKILL_TOOL).map((tc) => tc.id),
+            );
+            if (skillToolCallIds.size > 0 && allowedToolCalls.some(waitsForSkillFiles)) {
+              skillFilesHandoff = createSkillFilesHandoff(skillToolCallIds, runSignal);
             }
 
             const codeExecutionContext = getCodeExecutionContext(mergedConfigurable);
@@ -6689,6 +6786,20 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   return reportResult(
                     errorResult(tc, 'Shared-file code tools require foreground execution.'),
                   );
+                }
+
+                /* Before the background dispatch and before the sandbox
+                 * authoring context is cloned below: both capture this call's
+                 * code-session context, and a copy taken now would stay the
+                 * pre-skill snapshot for the rest of the call's life. */
+                if (skillFilesHandoff != null && waitsForSkillFiles(tc)) {
+                  await skillFilesHandoff.applyTo(tc);
+                  if (runSignal?.aborted === true) {
+                    /** The Stop landed while the skill upload held this call.
+                     *  Starting the tool now would send a request the turn has
+                     *  already abandoned. */
+                    return reportResult(errorResult(tc, 'This operation was aborted'));
+                  }
                 }
 
                 if (
