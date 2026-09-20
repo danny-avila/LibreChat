@@ -91,33 +91,52 @@ describe('VirtualizedModelList', () => {
     expect(screen.getByTestId('model-agent-1')).toBeInTheDocument();
     expect(screen.queryByTestId('model-agent-100')).not.toBeInTheDocument();
   });
-  it('enters from adjacent options at the logical virtualized boundaries', async () => {
+  it('uses logical positions when two virtualized groups share a listbox', async () => {
     const modelIds = Array.from({ length: 101 }, (_, index) => `agent-${index}`);
     render(
       <div role="listbox">
-        <div id="before" role="option">
-          before
-        </div>
+        <div
+          id="before"
+          role="option"
+          aria-selected={false}
+          aria-posinset={2}
+          data-testid="before"
+        />
         <VirtualizedModelList
           endpoint={endpoint}
           modelIds={modelIds}
           globalByName={new Map()}
           isFavorite={() => false}
           onToggleFavorite={() => undefined}
-          precedingOptionCount={1}
+          precedingOptionCount={2}
         />
-        <div id="after" role="option">
-          after
-        </div>
+        <div
+          id="after-first"
+          role="option"
+          aria-selected={false}
+          aria-posinset={104}
+          data-testid="after-first"
+        />
+        <VirtualizedModelList
+          endpoint={{ ...endpoint, value: 'agents-b' }}
+          modelIds={modelIds}
+          globalByName={new Map()}
+          isFavorite={() => false}
+          onToggleFavorite={() => undefined}
+          precedingOptionCount={103}
+        />
       </div>,
     );
 
     mockActiveIdForTest = 'before';
     fireEvent.keyDown(document, { key: 'ArrowDown' });
-    await waitFor(() => expect(mockScrollToRowForTest).toHaveBeenCalledWith(0));
+    await waitFor(() => expect(mockScrollToRowForTest).toHaveBeenCalledTimes(1));
+    expect(mockScrollToRowForTest).toHaveBeenLastCalledWith(0);
 
-    mockActiveIdForTest = 'after';
+    mockScrollToRowForTest.mockClear();
+    mockActiveIdForTest = 'after-first';
     fireEvent.keyDown(document, { key: 'ArrowUp' });
-    await waitFor(() => expect(mockScrollToRowForTest).toHaveBeenLastCalledWith(100));
+    await waitFor(() => expect(mockScrollToRowForTest).toHaveBeenCalledTimes(1));
+    expect(mockScrollToRowForTest).toHaveBeenLastCalledWith(100);
   });
 });

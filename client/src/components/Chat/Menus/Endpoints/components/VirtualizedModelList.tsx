@@ -90,26 +90,10 @@ export default function VirtualizedModelList({
         }
         next = candidate;
       } else {
-        const listbox = containerRef.current.closest<HTMLElement>('[role="listbox"]');
-        const options = listbox
-          ? Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"], [role="menuitem"]'))
-          : [];
-        const before = options.filter(
-          (option) =>
-            !containerRef.current!.contains(option) &&
-            (containerRef.current!.compareDocumentPosition(option) &
-              Node.DOCUMENT_POSITION_PRECEDING) !==
-              0,
-        );
-        const after = options.filter(
-          (option) =>
-            !containerRef.current!.contains(option) &&
-            (containerRef.current!.compareDocumentPosition(option) &
-              Node.DOCUMENT_POSITION_FOLLOWING) !==
-              0,
-        );
-        const entersFromBefore = delta === 1 && before.at(-1) === activeRow;
-        const entersFromAfter = delta === -1 && after[0] === activeRow;
+        const activePosition = Number(activeRow?.getAttribute('aria-posinset'));
+        const entersFromBefore = delta === 1 && activePosition === precedingOptionCount;
+        const entersFromAfter =
+          delta === -1 && activePosition === precedingOptionCount + rowCount + 1;
         if (entersFromBefore) {
           next = 0;
         } else if (entersFromAfter) {
@@ -133,7 +117,7 @@ export default function VirtualizedModelList({
     };
     document.addEventListener('keydown', handleBoundaryNavigation, true);
     return () => document.removeEventListener('keydown', handleBoundaryNavigation, true);
-  }, [combobox, rowCount, rowAt]);
+  }, [combobox, precedingOptionCount, rowCount, rowAt]);
 
   const height = useMemo(
     () => Math.min(MAX_LIST_HEIGHT, Math.max(ROW_HEIGHT, rowCount * ROW_HEIGHT)),
@@ -158,8 +142,8 @@ export default function VirtualizedModelList({
       );
     },
     [
-      endpoint,
       globalByName,
+      endpoint,
       isFavorite,
       listboxSetSize,
       modelIds,
