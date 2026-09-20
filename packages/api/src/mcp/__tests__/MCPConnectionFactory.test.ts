@@ -227,6 +227,99 @@ describe('MCPConnectionFactory', () => {
     (getTenantId as jest.Mock).mockReturnValue(undefined);
   });
 
+  describe('Expired flow result recovery', () => {
+    const expired = (): MCPOAuthTokens => ({
+      access_token: 'expired-callback',
+      token_type: 'Bearer',
+      obtained_at: Date.now(),
+      expires_at: Date.now() - 1000,
+      credential_set_id: 'persisted-generation',
+    });
+    const factory = (signal?: AbortSignal) =>
+      new InspectableMCPConnectionFactory(
+        {
+          serverName: 'test-server',
+          serverConfig: { type: 'sse', url: 'https://api.example.com' },
+        },
+        {
+          useOAuth: true,
+          user: mockUser,
+          flowManager: mockFlowManager,
+          signal,
+          tokenMethods: {
+            findToken: jest.fn(),
+            createToken: jest.fn(),
+            updateToken: jest.fn(),
+            deleteTokens: jest.fn(),
+          },
+        },
+      );
+
+    it.each(['getLeaseGeneration', 'acquireLease'] as const)(
+      'does not turn a %s outage into missing authorization',
+      async (operation) => {
+        mockFlowManager.createFlowWithHandler.mockResolvedValue(expired());
+        mockFlowManager[operation].mockRejectedValue(new Error('Redis unavailable'));
+        await expect(factory().getOAuthTokensForTest()).rejects.toMatchObject({
+          name: 'MCPTokenStorageUnavailableError',
+        });
+        expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledTimes(1);
+        expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+      },
+    );
+
+    it('defers when teardown supersedes the publication fence', async () => {
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(expired());
+      mockFlowManager.acquireLease.mockResolvedValue(null);
+      await expect(factory().getOAuthTokensForTest()).rejects.toMatchObject({
+        name: 'MCPTokenStorageUnavailableError',
+      });
+      expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves transient refresh failure instead of prompting again', async () => {
+      const failure = Object.assign(new Error('Provider unavailable'), {
+        name: 'MCPTokenRefreshUnavailableError',
+      });
+      mockFlowManager.createFlowWithHandler
+        .mockResolvedValueOnce(expired())
+        .mockRejectedValueOnce(failure);
+      await expect(factory().getOAuthTokensForTest()).rejects.toBe(failure);
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+    });
+
+    it('does not loop when the refreshed result is also expired', async () => {
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(expired());
+      await expect(factory().getOAuthTokensForTest()).rejects.toMatchObject({
+        name: 'MCPTokenRefreshUnavailableError',
+      });
+      expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledTimes(2);
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+    });
+
+    it('releases the publication fence without redeeming after caller cancellation', async () => {
+      const controller = new AbortController();
+      const cancelled = new Error('Caller stopped');
+      const release = jest.fn(async () => {
+        controller.abort(cancelled);
+      });
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(expired());
+      mockFlowManager.acquireLease.mockResolvedValue({ generation: 0, release });
+      await expect(factory(controller.signal).getOAuthTokensForTest()).rejects.toBe(cancelled);
+      expect(release).toHaveBeenCalledTimes(1);
+      expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledTimes(1);
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+    });
+
+    it('does not add a fence or another read to usable flow results', async () => {
+      const current = { ...expired(), expires_at: Date.now() + 60000 };
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(current);
+      await expect(factory().getOAuthTokensForTest()).resolves.toEqual(current);
+      expect(mockFlowManager.acquireLease).not.toHaveBeenCalled();
+      expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('cancels pending retry backoff when the connection deadline expires', async () => {
     jest.useFakeTimers();
     try {
