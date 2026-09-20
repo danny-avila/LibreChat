@@ -1688,6 +1688,7 @@
   "com_ui_max_favorites_reached_items": "Maximum favorites reached ({{0}}). Remove a favorite to add more.",
   "com_ui_max_tags": "Maximum number allowed is {{0}}, using latest values.",
   "com_ui_mcp_authenticated_success": "MCP server '{{0}}' authenticated successfully",
+  "com_ui_mcp_api_key_reentry_required": "Connection settings changed. Re-enter the API key to save this MCP server.",
   "com_ui_mcp_background": "Background",
   "com_ui_mcp_background_all": "Mark all as background",
   "com_ui_mcp_click_to_background": "Runs this tool in the background: it returns immediately and the agent polls for the result, so it can keep working while the tool runs.",
