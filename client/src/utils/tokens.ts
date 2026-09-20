@@ -94,6 +94,8 @@ export interface BranchTotals {
   containsAnchor: boolean;
   /** Provider usage/cost summed along the active branch */
   usage: BranchUsage;
+  /** Known cost of the assistant tail only; absent for unpriced or user tails. */
+  lastResponseCost?: number;
   /** Compacted-context baseline from the deepest summarized response on the
    *  branch (0 if none). The branch walk stops there, so `input`/`output` cover
    *  only the post-summary messages; the estimate adds this to avoid counting
@@ -485,7 +487,16 @@ export function sumBranch(
     currentId = entry.parentMessageId;
   }
 
-  return { ...totals, tailEstTokens, tailEstToolTokens, tailId, usage, summaryBaseline };
+  return {
+    ...totals,
+    tailEstTokens,
+    tailEstToolTokens,
+    tailId,
+    usage,
+    summaryBaseline,
+    lastResponseCost:
+      !tailEntry?.isCreatedByUser && tailEntry?.usage?.costKnown ? tailEntry.usage.cost : undefined,
+  };
 }
 
 /**
