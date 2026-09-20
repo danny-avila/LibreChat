@@ -11,16 +11,20 @@ export type TConfiguredFooterSource = Pick<Partial<TStartupConfig>, 'customFoote
 /**
  * Whether a deployment configured footer content of its own.
  *
- * Only the custom footer counts. A privacy policy and terms of service are read
- * where they are agreed to, at registration, and on the welcome screen the
- * conversation starts from; a started conversation carries neither, so neither
- * one puts a bar beneath its composer.
+ * Only a custom footer with content counts. A privacy policy and terms of
+ * service are read where they are agreed to, on the auth screens, and on the
+ * welcome screen the conversation starts from; a started conversation carries
+ * neither, so neither one puts a bar beneath its composer. An empty footer is
+ * an operator suppressing the default disclaimer on the welcome screen, and it
+ * renders nothing in a conversation, so it is no bar either.
  *
  * The footer bar is absolutely positioned in a zero-height wrapper, so the
  * composer above it is what reserves its band: this answer decides both the
- * bar and the clearance. The client and the server share it because the two
- * answering differently is exactly the layout correction it exists to remove.
+ * bar and the clearance, and it has to match what the bar renders or the
+ * composer reserves a band for nothing. The client and the server share it
+ * because the two answering differently is exactly the layout correction it
+ * exists to remove.
  */
 export function hasConfiguredFooter(source?: TConfiguredFooterSource | null): boolean {
-  return typeof source?.customFooter === 'string';
+  return typeof source?.customFooter === 'string' && source.customFooter !== '';
 }

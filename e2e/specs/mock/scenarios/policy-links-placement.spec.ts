@@ -79,6 +79,40 @@ test.describe('policy link placement', () => {
     }
   });
 
+  test('an empty custom footer reserves no band either @scenario:an-empty-custom-footer-leaves-no-band-in-a-conversation', async ({
+    page,
+  }) => {
+    test.setTimeout(60000);
+    const conversationId = randomUUID();
+    await seedConversations(getE2EUser().email, [
+      { conversationId, title: 'Empty custom footer', updatedAt: new Date() },
+    ]);
+
+    try {
+      await page.goto(`/c/${conversationId}`, { timeout: 15000 });
+      await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible();
+      const withoutFooter = await composerBottom(page);
+
+      /** An operator who sets the footer to nothing is suppressing the welcome
+       *  screen's disclaimer; a conversation renders no bar for it. */
+      await page.route('**/api/config', async (route) => {
+        const response = await route.fetch();
+        const config = await response.json();
+        await route.fulfill({ response, json: { ...config, customFooter: '' } });
+      });
+      await page.reload({ timeout: 15000 });
+      await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible();
+
+      expect(
+        await composerBottom(page),
+        'the conversation reserved a band for an empty footer',
+      ).toBe(withoutFooter);
+    } finally {
+      await deleteMessagesByConversation([conversationId]);
+      await deleteConversations([conversationId]);
+    }
+  });
+
   test('a deployment with policies alone reserves no band in a conversation @scenario:a-policy-only-deployment-leaves-no-band-in-a-conversation', async ({
     page,
   }) => {

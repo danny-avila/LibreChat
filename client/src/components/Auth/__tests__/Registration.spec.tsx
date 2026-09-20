@@ -309,6 +309,19 @@ test('says nothing about policies a deployment never configured', () => {
   expect(queryByText(/By continuing/i)).not.toBeInTheDocument();
 });
 
+/** A deployment that collects an explicit acceptance after sign-in is not one
+ *  where continuing is the agreement, so the form states nothing. */
+test('says nothing on a deployment that accepts its terms in a modal', () => {
+  const { queryByText } = setup({
+    useGetStartupConfigReturnValue: withInterface({
+      privacyPolicy: { externalUrl: 'https://example.com/privacy' },
+      termsOfService: { externalUrl: 'https://example.com/terms', modalAcceptance: true },
+    }),
+  });
+
+  expect(queryByText(/By continuing/i)).not.toBeInTheDocument();
+});
+
 test('says nothing when every configured policy url is blank', () => {
   const { queryByText } = setup({
     useGetStartupConfigReturnValue: withInterface({

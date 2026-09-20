@@ -165,6 +165,22 @@ describe('AuthLayout legal placement', () => {
     expect(footerBar()).toBeNull();
   });
 
+  /** A deployment that asks for explicit acceptance in a modal after sign-in
+   *  must not be told it already agreed by continuing. */
+  test('a modal-acceptance deployment keeps the bare links instead', () => {
+    setup({
+      pathname: 'register',
+      interfaceConfig: {
+        privacyPolicy: { externalUrl: PRIVACY_URL },
+        termsOfService: { externalUrl: TERMS_URL, modalAcceptance: true },
+      },
+    });
+
+    expect(consent()).not.toBeInTheDocument();
+    expect(footerBar()).not.toBeNull();
+    expect(document.querySelectorAll(`a[href="${TERMS_URL}"]`)).toHaveLength(1);
+  });
+
   test('a deployment with no policies keeps the footer bar it always had', () => {
     setup({ pathname: 'register', interfaceConfig: undefined });
 

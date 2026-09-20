@@ -23,10 +23,18 @@ export function policyUrls(startupConfig: PolicySource | null | undefined) {
   };
 }
 
-/** Whether the deployment published anything to consent to. The auth layout
- *  reads this to choose between the consent and its footer bar, so the two
- *  cannot disagree about whether the sentence is on the screen. */
+/** Whether the deployment published anything to consent to by continuing. The
+ *  auth layout reads this to choose between the consent and its footer bar, so
+ *  the two cannot disagree about whether the sentence is on the screen.
+ *
+ *  A deployment that asks for the terms to be accepted in a modal has its own
+ *  explicit acceptance after sign-in (`routes/Root.tsx`), so a sentence saying
+ *  the reader already agreed by continuing would contradict the dialog it is
+ *  about to show; those screens keep the bare links they always had. */
 export function hasPublishedPolicies(startupConfig: PolicySource | null | undefined): boolean {
+  if (startupConfig?.interface?.termsOfService?.modalAcceptance === true) {
+    return false;
+  }
   const { privacyPolicyUrl, termsOfServiceUrl } = policyUrls(startupConfig);
   return privacyPolicyUrl != null || termsOfServiceUrl != null;
 }

@@ -168,6 +168,30 @@ test.describe('registration consent', () => {
     }
   });
 
+  test('a modal-acceptance deployment keeps the bare links @scenario:a-modal-acceptance-deployment-states-no-passive-consent', async ({
+    browser,
+    baseURL,
+  }) => {
+    test.setTimeout(60000);
+    /** That deployment asks for the terms to be accepted in a dialog after
+     *  sign-in, so a sentence saying the reader already agreed by continuing
+     *  would contradict the dialog it is about to show. */
+    const { context, page } = await openAuthScreen(browser, baseURL, '/register', {
+      interface: {
+        privacyPolicy: { externalUrl: PRIVACY_URL },
+        termsOfService: { externalUrl: TERMS_URL, modalAcceptance: true },
+      },
+    });
+
+    try {
+      await expect(page.getByText(/By continuing/i)).toHaveCount(0);
+      await expect(page.locator(`a[href="${PRIVACY_URL}"]`)).toHaveCount(1);
+      await expect(page.locator(`a[href="${TERMS_URL}"]`)).toHaveCount(1);
+    } finally {
+      await context.close();
+    }
+  });
+
   test('a login screen that can create an account states the consent @scenario:a-social-login-screen-states-the-consent', async ({
     browser,
     baseURL,

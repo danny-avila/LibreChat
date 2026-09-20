@@ -1,6 +1,6 @@
 import { Trans } from 'react-i18next';
 import type { TStartupConfig } from 'librechat-data-provider';
-import { policyUrls } from '~/utils/policies';
+import { hasPublishedPolicies, policyUrls } from '~/utils/policies';
 import { useLocalize } from '~/hooks';
 
 /** The links sit inside a sentence, so they keep an underline of their own:
@@ -32,7 +32,10 @@ function LegalConsent({ startupConfig }: { startupConfig: TStartupConfig | null 
   const localize = useLocalize();
   const { privacyPolicyUrl, termsOfServiceUrl } = policyUrls(startupConfig);
 
-  if (privacyPolicyUrl == null && termsOfServiceUrl == null) {
+  /** The same answer the layout uses to drop its footer bar, so the two cannot
+   *  both be on the screen: it is false with nothing published, and on a
+   *  deployment that collects an explicit acceptance of its own. */
+  if (!hasPublishedPolicies(startupConfig)) {
     return null;
   }
 
