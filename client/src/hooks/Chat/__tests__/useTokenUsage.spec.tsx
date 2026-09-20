@@ -87,7 +87,11 @@ const renderTokenUsage = (
     ['a1', anchorSnapshot(196000)],
     ['a2', anchorSnapshot(195000)],
   ]),
-  overrides: { messages?: TMessage[]; snapshot?: ContextSnapshot } = {},
+  overrides: {
+    messages?: TMessage[];
+    snapshot?: ContextSnapshot;
+    isSubmitting?: boolean;
+  } = {},
 ) => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -102,7 +106,7 @@ const renderTokenUsage = (
       useTokenUsage({
         index: 0,
         conversation: { conversationId: convo, endpoint: 'agents' } as TConversation,
-        isSubmitting: false,
+        isSubmitting: overrides.isSubmitting ?? false,
       }),
     {
       wrapper: ({ children }) => (
@@ -111,6 +115,52 @@ const renderTokenUsage = (
     },
   );
 };
+
+describe('useTokenUsage — last response cost', () => {
+  const pricedMessages = messages.map((message) =>
+    message.isCreatedByUser
+      ? message
+      : {
+          ...message,
+          metadata: {
+            ...message.metadata,
+            usage: {
+              input: 100,
+              output: 50,
+              cacheWrite: 0,
+              cacheRead: 0,
+              cost: message.messageId === 'a2' ? 0.02 : 0.01,
+            },
+          },
+        },
+  );
+
+  it.each([true, false])('exposes the saved cost with snapshot-backed=%s', (withSnapshot) => {
+    const { result } = renderTokenUsage(withSnapshot ? undefined : new Map(), {
+      messages: pricedMessages,
+      snapshot: withSnapshot ? tailSnapshot : { ...tailSnapshot, anchorMessageId: 'other-branch' },
+    });
+
+    expect(result.current.isEstimate).toBe(!withSnapshot);
+    expect(result.current.lastResponseCost).toBe(0.02);
+    expect(result.current.branchCost).toBeCloseTo(0.03);
+    expect(result.current.totalCost).toBeCloseTo(0.03);
+  });
+
+  it('withholds the response price while a generation is in flight', () => {
+    const { result } = renderTokenUsage(undefined, {
+      messages: pricedMessages,
+      isSubmitting: true,
+    });
+
+    expect(result.current.lastResponseCost).toBeUndefined();
+  });
+
+  it('does not invent a price for a response without saved usage', () => {
+    const { result } = renderTokenUsage();
+    expect(result.current.lastResponseCost).toBeUndefined();
+  });
+});
 
 describe('useTokenUsage — post-snapshot output', () => {
   it('charges the finalized output against the runway projection', () => {
