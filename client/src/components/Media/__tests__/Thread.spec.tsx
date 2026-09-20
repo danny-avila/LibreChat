@@ -9,7 +9,10 @@ import { clearMediaSessionStorage, mediaDraftFamily } from '../state';
 import { MediaHostProvider } from '../host';
 import { MediaThreadView } from '../Thread';
 
-jest.mock('~/hooks', () => ({ useLocalize: () => (key: string) => key }));
+jest.mock('~/hooks', () => ({
+  useLocalize: () => (key: string, values?: { model: string; number: number }) =>
+    key === 'com_media_attempt_label' ? `${values?.model}, attempt ${values?.number}` : key,
+}));
 jest.mock('librechat-data-provider', () => {
   const actual =
     jest.requireActual<typeof import('librechat-data-provider')>('librechat-data-provider');
@@ -192,6 +195,58 @@ test('preserves retry behavior while the catalog has not loaded', async () => {
   expect(retry).toBeEnabled();
   fireEvent.click(retry);
   await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
+});
+
+test('restored retries expose distinct attempt groups and keep actions with the failed attempt', async () => {
+  const original = detail.turns.items[0];
+  const failed = original.jobs[0];
+  const env = setup(undefined, {
+    ...detail,
+    turns: {
+      items: [
+        {
+          ...original,
+          assets: [],
+          jobs: [
+            failed,
+            {
+              ...failed,
+              jobId: 'retry-job',
+              retryOfJobId: failed.jobId,
+              createdAt: '2026-09-17T12:01:00.000Z',
+              phase: 'succeeded',
+              allowedActions: { cancel: false, retry: false },
+              outputs: [
+                { outputId: 'retry-output', kind: 'image', ordinal: 0, state: 'ready', asset },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  });
+  const first = screen.getByRole('group', { name: 'image-model, attempt 1' });
+  const second = screen.getByRole('group', { name: 'image-model, attempt 2' });
+  expect(first.tagName).toBe('DIV');
+  expect(second.tagName).toBe('DIV');
+  expect(within(first).getByRole('status')).toHaveTextContent('com_media_phase_failed');
+  expect(
+    within(second).getByText('com_media_phase_succeeded').closest('[role="status"]'),
+  ).toBeInTheDocument();
+  expect(within(first).queryByRole('link', { name: 'com_media_download' })).not.toBeInTheDocument();
+  expect(within(second).getByRole('link', { name: 'com_media_download' })).toHaveAttribute(
+    'href',
+    asset.filepath,
+  );
+  expect(
+    within(second).queryByRole('button', { name: 'com_media_retry_job' }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(within(first).getByRole('button', { name: 'com_media_retry_job' }));
+  await waitFor(() =>
+    expect(env.send).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'retry', jobId: failed.jobId }),
+    ),
+  );
 });
 
 function withJob(change: Partial<MediaJob>): MediaThreadDetail {
@@ -435,8 +490,10 @@ test('turns that share a comparison render one prompt with their results side by
   });
   const comparison = screen.getByRole('group', { name: 'com_media_comparison' });
   expect(within(comparison).getAllByRole('group', { name: 'com_media_request' })).toHaveLength(1);
-  expect(within(comparison).getByRole('group', { name: selection.modelId })).toBeVisible();
-  expect(within(comparison).getByRole('group', { name: 'other-model' })).toBeVisible();
+  expect(
+    within(comparison).getByRole('group', { name: `${selection.modelId}, attempt 1` }),
+  ).toBeVisible();
+  expect(within(comparison).getByRole('group', { name: 'other-model, attempt 1' })).toBeVisible();
   expect(screen.getAllByRole('group', { name: 'com_media_request' })).toHaveLength(2);
 });
 

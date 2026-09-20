@@ -3065,6 +3065,7 @@
   "com_media_cancellation_confirmed": "The provider closed this job. Any remaining charge still needs to be confirmed.",
   "com_media_retry_job": "Retry generation",
   "com_media_retry_attempt": "Retry of an earlier attempt",
+  "com_media_attempt_label": "{{model}}, attempt {{number}}",
   "com_media_set_cover": "Use as library cover",
   "com_media_refine": "Refine this result",
   "com_media_download": "Download original",

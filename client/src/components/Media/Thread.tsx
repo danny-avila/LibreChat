@@ -99,6 +99,7 @@ function Outputs({
 }
 function Job({
   job,
+  attemptNumber,
   send,
   refine,
   cover,
@@ -107,6 +108,7 @@ function Job({
   imageDimensions,
 }: {
   job: MediaJob;
+  attemptNumber: number;
   send: MediaSend;
   refine?: (asset: MediaAsset) => void;
   cover: (asset: MediaAsset) => void;
@@ -122,7 +124,6 @@ function Job({
   const localize = useLocalize();
   const { cancel } = useMediaJobMutations(host);
   const retryUnavailableId = useId();
-  const headingId = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [expanded, setExpanded] = useState(false);
@@ -148,12 +149,19 @@ function Job({
     (output) => output.kind === 'image' && output.asset?.width && output.asset?.height,
   );
   return (
-    <section className="space-y-4" role="group" aria-labelledby={headingId}>
+    <div
+      className="space-y-4"
+      role="group"
+      aria-label={localize('com_media_attempt_label', {
+        model: offering?.modelName ?? job.selection.modelId,
+        number: attemptNumber,
+      })}
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <Images className="size-5 shrink-0 text-text-secondary" aria-hidden="true" />
           <div className="min-w-0">
-            <h3 id={headingId} className="break-words text-sm font-semibold">
+            <h3 className="break-words text-sm font-semibold">
               {offering?.modelName ?? job.selection.modelId}
             </h3>
             <p className="mt-1 text-xs text-text-secondary">
@@ -286,7 +294,7 @@ function Job({
         </p>
       )}
       {error && <p role="alert">{error}</p>}
-    </section>
+    </div>
   );
 }
 function TurnPrompt({ turn }: { turn: MediaTurn }) {
@@ -417,10 +425,11 @@ function Turn({
       ))}
       {[...jobs.values()]
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-        .map((job) => (
+        .map((job, index) => (
           <Job
             key={job.jobId}
             job={job}
+            attemptNumber={index + 1}
             catalog={catalog}
             send={send}
             refine={canRefine ? refine : undefined}
