@@ -209,6 +209,24 @@ describe('useArtifactProps', () => {
       expect(result.current.fileKey).toBe('index.svg');
       expect(result.current.files['index.html']).toContain('<svg></svg>');
     });
+
+    it('exposes deriveFiles so edited source can rebuild the derived preview entry', () => {
+      const artifact = createArtifact({ type: 'image/svg+xml', content: svg });
+      const { result } = renderHook(() => useArtifactProps({ artifact }));
+
+      const edited = '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="5" r="4"/></svg>';
+      const rebuilt = result.current.deriveFiles?.(edited) ?? {};
+
+      expect(rebuilt['index.svg']).toBe(edited);
+      expect(rebuilt['index.html']).toContain(edited);
+      expect(rebuilt['index.html']).not.toContain('<rect');
+    });
+
+    it('leaves deriveFiles unset when the edited file is the preview entry', () => {
+      const artifact = createArtifact({ type: 'text/html', content: '<p>hi</p>' });
+      const { result } = renderHook(() => useArtifactProps({ artifact }));
+      expect(result.current.deriveFiles).toBeUndefined();
+    });
   });
 
   describe('edge cases', () => {

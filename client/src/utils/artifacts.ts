@@ -196,12 +196,22 @@ export function getTemplate(type: string, language?: string): SandpackPredefined
   return artifactTemplate[key] ?? (artifactTemplate.default as SandpackPredefinedTemplate);
 }
 
+/** `image/svg` is the alias some callers emit for `image/svg+xml`. */
+export function isSvgArtifactType(type: string): boolean {
+  return type === 'image/svg+xml' || type === 'image/svg';
+}
+
 /**
  * Files for an `image/svg+xml` (or `image/svg`) artifact. The Sandpack
  * `static` template always loads `index.html`; a bare SVG in that slot
  * renders blank. Keep the source on `index.svg` for the code tab and wrap
  * a copy in a full-viewport HTML shell for the preview. viewBox-only
  * sources fill the panel via `svg { width/height: 100% }`.
+ *
+ * The shell holds a *copy* of the source, so an edit cannot be applied by
+ * replacing `index.svg` alone — both entries have to be rebuilt from the
+ * new text. `useArtifactProps` exposes this builder as `deriveFiles` for
+ * exactly that.
  */
 export function getSvgFiles(content: string): Record<string, string> {
   const svg = content.replace(/^\uFEFF?\s*<\?xml\b[^?]*\?>\s*/i, '');

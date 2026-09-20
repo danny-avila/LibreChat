@@ -12,6 +12,7 @@ import {
   fileToArtifact,
   isCodeOnlyArtifact,
   isPreviewOnlyArtifact,
+  isSvgArtifactType,
   languageForFilename,
   TOOL_ARTIFACT_TYPES,
 } from '../artifacts';
@@ -46,6 +47,22 @@ describe('SVG artifact template mapping (#16087)', () => {
     const files = getSvgFiles(`<?xml version="1.0" encoding="UTF-8"?>\n${svg}`);
     expect(files['index.html']).not.toMatch(/<\?xml/i);
     expect(files['index.html']).toContain(svg);
+  });
+
+  it('recognizes both SVG artifact types and nothing else', () => {
+    expect(isSvgArtifactType('image/svg+xml')).toBe(true);
+    expect(isSvgArtifactType('image/svg')).toBe(true);
+    expect(isSvgArtifactType('image/png')).toBe(false);
+    expect(isSvgArtifactType('text/html')).toBe(false);
+    expect(isSvgArtifactType('')).toBe(false);
+  });
+
+  it('rebuilds both entries so no original source survives an edit', () => {
+    const edited = '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="5" cy="5" r="4"/></svg>';
+    const files = getSvgFiles(edited);
+    expect(files['index.svg']).toBe(edited);
+    expect(files['index.html']).toContain(edited);
+    expect(files['index.html']).not.toContain('<rect');
   });
 });
 
