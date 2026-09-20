@@ -1477,6 +1477,9 @@ export const agentsEndpointSchema = baseEndpointSchema
             .max(AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_HARD_MAX)
             .optional()
             .default(AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_DEFAULT),
+          /** Maximum message-backed sibling results in one continuation.
+           * Independent receipts retain task-local delivery ownership. */
+          completionResultBatchSize: z.number().int().min(1).max(16).optional().default(8),
           /** Cooperative cancellation for process-local ordinary tools. Off
            * by default so existing deployments opt into the new control. */
           ordinaryToolCancellation: z.boolean().optional().default(false),

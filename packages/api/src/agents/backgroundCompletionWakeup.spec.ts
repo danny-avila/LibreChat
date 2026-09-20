@@ -622,6 +622,54 @@ describe('background tool completion wakeups', () => {
     );
   });
 
+  it('passes the configured batch size and escaped metadata budget to the atomic claim', async () => {
+    const { methods } = resolverMethods();
+    const resolve = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+      getResultBatchSize: () => 16,
+    });
+    await resolve(await envelope(), { idempotencyKey: 'delivery-1' });
+    expect(methods.claimBackgroundToolResults).toHaveBeenCalledWith(
+      expect.objectContaining({
+        limit: 16,
+        maxMetadataChars: BACKGROUND_TOOL_WAKEUP_INPUT_MAX_CHARS - 256,
+      }),
+    );
+  });
+
+  it('releases projections acquired after receipt arbitration when admission fails', async () => {
+    const { methods } = resolverMethods();
+    methods.claimBackgroundToolResults.mockResolvedValueOnce({ status: 'not_ready', results: [] });
+    methods.claimAgentBackgroundToolResults.mockResolvedValueOnce({
+      status: 'acquired',
+      results: [
+        {
+          taskId: 'task-1',
+          toolCallId: 'call-1',
+          toolName: 'slow_tool',
+          status: 'completed',
+          output: 'done',
+        },
+      ],
+    } as never);
+    const resolve = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+    const prepared = await resolve(await envelope(), { idempotencyKey: 'delivery-1' });
+    if (prepared?.status !== 'ready') throw new Error('Expected ready');
+    await prepared.releaseOnDefiniteFailure?.();
+    expect(methods.releaseBackgroundToolResultClaims).toHaveBeenCalledWith({
+      userId: 'user-1',
+      conversationId: 'conversation-1',
+      messageId: 'response-1',
+      kind: 'wakeup',
+      claimId: 'delivery-1',
+    });
+    expect(methods.releaseAgentBackgroundToolResultClaims).toHaveBeenCalled();
+  });
+
   it('defers without claiming while the invoking generation is active', async () => {
     const { methods } = resolverMethods();
     const resolve = createBackgroundToolCompletionWakeupResolver({

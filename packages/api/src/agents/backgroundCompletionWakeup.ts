@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { isEphemeralAgentId } from 'librechat-data-provider';
+import { backgroundResultMetadata, isEphemeralAgentId } from 'librechat-data-provider';
 import { AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2 } from '@librechat/data-schemas';
 import type {
   AgentTriggerProducerLeaseStatus,
   AgentTriggerDeliveryMethods,
-  BackgroundToolResultClaim,
   ConversationMethods,
   IMessage,
   MessageMethods,
@@ -63,25 +62,10 @@ export type PersistBackgroundToolCompletionResult = (
 ) => Promise<boolean>;
 
 type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &
-  Pick<MessageMethods, 'getMessages'> & {
-    claimBackgroundToolResults(params: {
-      userId: string;
-      conversationId: string;
-      messageId: string;
-      taskId: string;
-      agentId?: string;
-      kind: 'manual' | 'wakeup';
-      claimId: string;
-      limit?: number;
-    }): Promise<BackgroundToolResultClaim>;
-    releaseBackgroundToolResultClaims(params: {
-      userId: string;
-      conversationId: string;
-      messageId: string;
-      taskIds?: string[];
-      kind: 'manual' | 'wakeup';
-      claimId: string;
-    }): Promise<boolean>;
+  Pick<
+    MessageMethods,
+    'getMessages' | 'claimBackgroundToolResults' | 'releaseBackgroundToolResultClaims'
+  > & {
     getAgentTriggerDeliveryProducerLease(params: {
       deliveryKey: string;
       sourceId: string;
@@ -109,6 +93,7 @@ interface GenerationState {
 export interface BackgroundToolCompletionWakeupResolverDeps {
   methods: WakeupMethods;
   getGenerationJob: (conversationId: string) => Promise<GenerationState | null>;
+  getResultBatchSize?: () => number | undefined;
 }
 
 function executionError(
@@ -245,13 +230,7 @@ function buildWakeupInput(
     results.length === 1
       ? 'A background tool task has finished. Continue using its durable result below.'
       : `${results.length} background tool tasks have finished. Continue using their durable results below.`;
-  const payload = results.map((result) => ({
-    background_task_id: result.taskId,
-    tool_call_id: result.toolCallId,
-    tool: result.toolName,
-    status: result.status,
-    result: '',
-  }));
+  const payload = results.map(backgroundResultMetadata);
   let remaining = Math.max(
     0,
     BACKGROUND_TOOL_WAKEUP_INPUT_MAX_CHARS - header.length - 1 - JSON.stringify(payload).length,
@@ -272,6 +251,7 @@ function buildWakeupInput(
 export function createBackgroundToolCompletionWakeupResolver({
   methods,
   getGenerationJob,
+  getResultBatchSize,
 }: BackgroundToolCompletionWakeupResolverDeps): NonNullable<
   AgentTriggerExecutionHostDeps['prepareContinue']
 > {
@@ -345,7 +325,8 @@ export function createBackgroundToolCompletionWakeupResolver({
       agentId: envelope.target.agentId,
       kind: 'wakeup',
       claimId: context.idempotencyKey,
-      limit: 1,
+      limit: getResultBatchSize?.() ?? 8,
+      maxMetadataChars: BACKGROUND_TOOL_WAKEUP_INPUT_MAX_CHARS - 256,
     });
     if (claim.status === 'claimed') {
       const receiptOwner = await methods.getAgentBackgroundToolResultClaim?.({

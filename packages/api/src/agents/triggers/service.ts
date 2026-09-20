@@ -40,6 +40,7 @@ const DEFAULT_PURGE_RECOVERY_INTERVAL_MS = 30_000;
 const DEFAULT_PURGE_RECOVERY_LIMIT = 25;
 
 export interface AgentTriggerServiceOptions {
+  completionResultBatchSize?: number;
   address?: BoundAddress | string | null;
 }
 
@@ -184,6 +185,7 @@ export interface AgentTriggerService {
   getBackgroundToolResultClaim: (
     input: Parameters<AgentTriggerDeliveryMethods['getAgentBackgroundToolResultClaim']>[0],
   ) => ReturnType<AgentTriggerDeliveryMethods['getAgentBackgroundToolResultClaim']>;
+  getBackgroundCompletionResultBatchSize: () => number;
   releaseBackgroundToolResultClaims: AgentTriggerDeliveryMethods['releaseAgentBackgroundToolResultClaims'];
   drainUser: (userId: string) => Promise<void>;
   prepareUserPurge: (userId: string, fenceStartedAt: Date, tenantId?: string) => Promise<void>;
@@ -272,6 +274,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     throw new TypeError('purgeRecoveryLimit must be a positive integer');
   }
   let boundOrigin: string | undefined;
+  let backgroundCompletionResultBatchSize = 8;
   let deliveryEngine: AgentTriggerDeliveryEngine | undefined;
   let initializePromise: Promise<void> | undefined;
   let purgeRecoveryPromise: Promise<void> | undefined;
@@ -485,6 +488,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
 
   return {
     initialize: (options = {}) => {
+      backgroundCompletionResultBatchSize = options.completionResultBatchSize ?? 8;
       boundOrigin = selfOriginFromAddress(options.address) ?? boundOrigin;
       if (deps.methods == null || deliveryReady) {
         return Promise.resolve();
@@ -628,6 +632,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         const getClaim = requireMethods().getAgentBackgroundToolResultClaim;
         return getClaim == null ? null : getClaim(input);
       }),
+    getBackgroundCompletionResultBatchSize: () => backgroundCompletionResultBatchSize,
     releaseBackgroundToolResultClaims: (input) =>
       runAsSystem(async () => {
         const release = requireMethods().releaseAgentBackgroundToolResultClaims;

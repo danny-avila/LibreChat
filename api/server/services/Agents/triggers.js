@@ -28,6 +28,7 @@ const subagentCompletionAdapter = createSubagentCompletionWakeupResolver({
 const backgroundToolCompletionAdapter = createBackgroundToolCompletionWakeupResolver({
   methods,
   getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),
+  getResultBatchSize: () => service.getBackgroundCompletionResultBatchSize(),
 });
 const eventActorAdapter = createAgentEventContinueResolver({
   methods,

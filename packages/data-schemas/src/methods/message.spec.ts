@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { Constants, RetentionMode } from 'librechat-data-provider';
+import { backgroundResultMetadata, Constants, RetentionMode } from 'librechat-data-provider';
 import type { AppConfig, IMessage } from '..';
 import {
   createMessageMethods,
@@ -1681,6 +1681,118 @@ describe('Message Operations', () => {
         status: 'claimed',
         claim: { kind: 'wakeup', claimId: 'delivery-1' },
       });
+      /** V1 producers have no completionReceipt marker, but the V1 resolver
+       * acquires resultClaim before delivery. A later batch must exclude it. */
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'task-3',
+          kind: 'wakeup',
+          claimId: 'delivery-2',
+        }),
+      ).resolves.toMatchObject({
+        status: 'acquired',
+        results: [{ taskId: 'task-3', output: 'three' }],
+      });
+    });
+
+    it.each([true, false])(
+      'keeps independent receipt ownership out of message batches (root=%s)',
+      async (receiptRoot) => {
+        const terminal = (taskId: string, receipt: boolean) => ({
+          type: 'tool_call',
+          tool_call: {
+            id: taskId,
+            output: taskId,
+            backgroundTask: {
+              taskId,
+              toolName: 'tool',
+              status: 'completed',
+              completionWakeup: true,
+              ...(receipt ? { completionReceipt: true } : {}),
+            },
+          },
+        });
+        await saveMessage(mockCtx, {
+          ...mockMessageData,
+          content: [
+            terminal('root', receiptRoot),
+            terminal('independent', true),
+            terminal('message-only', false),
+          ],
+        });
+        const input = {
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'root',
+          kind: 'wakeup' as const,
+          claimId: 'delivery',
+          limit: 16,
+        };
+        const claim = await claimBackgroundToolResults(input);
+        expect(claim.status).toBe('acquired');
+        if (claim.status !== 'acquired') throw new Error('Expected acquired claim');
+        expect(claim.results.map((r) => r.taskId)).toEqual(
+          receiptRoot ? ['root'] : ['root', 'message-only'],
+        );
+        await expect(claimBackgroundToolResults({ ...input, limit: 1 })).resolves.toEqual(claim);
+        await expect(
+          claimBackgroundToolResults({ ...input, taskId: 'independent', claimId: 'other' }),
+        ).resolves.toMatchObject({
+          status: 'acquired',
+          results: [{ taskId: 'independent' }],
+        });
+      },
+    );
+
+    it('bounds escaped metadata before claiming and freezes membership across competing same-owner preparations', async () => {
+      const ids = Array.from({ length: 16 }, (_, i) => `${i}${'\u0001'.repeat(250)}`);
+      const terminal = (id: string) => ({
+        type: 'tool_call',
+        tool_call: {
+          id,
+          output: 'done',
+          backgroundTask: {
+            taskId: id,
+            toolName: '\u0001'.repeat(256),
+            status: 'completed',
+            completionWakeup: true,
+          },
+        },
+      });
+      await saveMessage(mockCtx, { ...mockMessageData, content: ids.map(terminal) });
+      const input = {
+        userId: 'user123',
+        conversationId: mockMessageData.conversationId as string,
+        messageId: 'msg123',
+        taskId: ids[15],
+        kind: 'wakeup' as const,
+        claimId: 'delivery',
+        limit: 16,
+        maxMetadataChars: 16 * 1024 - 256,
+      };
+      const attempts = await Promise.all([
+        claimBackgroundToolResults(input),
+        claimBackgroundToolResults(input),
+      ]);
+      const claim = attempts.find((result) => result.status === 'acquired');
+      if (claim?.status !== 'acquired') throw new Error('No claim elected');
+      expect(claim.results.some((r) => r.taskId === ids[15])).toBe(true);
+      expect(claim.results.length).toBeLessThan(16);
+      expect(
+        JSON.stringify(claim.results.map(backgroundResultMetadata)).length,
+      ).toBeLessThanOrEqual(input.maxMetadataChars);
+      await Message.updateOne(
+        { messageId: 'msg123', user: 'user123' },
+        { $push: { content: terminal('late') } },
+      );
+      await expect(claimBackgroundToolResults({ ...input, limit: 1 })).resolves.toEqual(claim);
+      await expect(
+        claimBackgroundToolResults({ ...input, taskId: 'late', claimId: 'later' }),
+      ).resolves.toMatchObject({ status: 'acquired' });
     });
 
     it('revalidates each sibling inside the atomic batch claim', async () => {
