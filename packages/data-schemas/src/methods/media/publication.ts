@@ -84,13 +84,30 @@ export function createMediaPublicationMethods({
     await activateMedia();
     const scope = scopeFilter(input.scope);
     const request = structuredClone(input.request);
-    if (retry) request.temporary = retry.request.temporary;
-    else if (input.temporary !== undefined) request.temporary = input.temporary;
+    const temporary = retry
+      ? (retry.temporary ?? retry.request.temporary ?? false)
+      : (input.temporary ?? request.temporary ?? false);
+    if (retry) {
+      if (retry.request.temporary === undefined) delete request.temporary;
+      else request.temporary = retry.request.temporary;
+    }
     const publicationExpiresAt = retry ? retry.publicationExpiresAt : input.publicationExpiresAt;
-    const fingerprint = digest({ request, retryOfJobId: retry?.jobId });
-    const replay = await Job.findOne({ ...scope, clientRequestId: request.clientRequestId }).lean();
+    const fingerprint = digest({ request, temporary, retryOfJobId: retry?.jobId });
+    const matches = (stored: MediaStoredJob): boolean => {
+      if (stored.fingerprint === fingerprint) return true;
+      if (stored.temporary !== undefined || (stored.request.temporary ?? false) !== temporary)
+        return false;
+      const legacyRequest: MediaStoredJob['request'] = { ...request };
+      if (stored.request.temporary === undefined) delete legacyRequest.temporary;
+      else legacyRequest.temporary = temporary;
+      return stored.fingerprint === digest({ request: legacyRequest, retryOfJobId: retry?.jobId });
+    };
+    const replay = await Job.findOne({
+      ...scope,
+      clientRequestId: request.clientRequestId,
+    }).lean<MediaStoredJob | null>();
     if (replay) {
-      if (replay.fingerprint !== fingerprint) {
+      if (!matches(replay)) {
         throw new MediaPersistenceError(
           'conflict',
           'Media request key was used for different content',
@@ -138,7 +155,8 @@ export function createMediaPublicationMethods({
       newThread: !thread,
       threadEpoch: thread?.epoch ?? 1,
       phase: 'queued',
-      executionOwner: input.executionOwner ?? 'media',
+      executionOwner: 'media',
+      temporary,
       provider: { certainty: 'unsubmitted' },
       operation: request.operation,
       selection: request.selection,
@@ -157,24 +175,6 @@ export function createMediaPublicationMethods({
       ...(retry ? { retryOfJobId: retry.jobId } : {}),
     };
     const capacity = positive(input.maxActiveJobs);
-    if (record.executionOwner === 'chat') {
-      try {
-        await new Job(record).save(durable);
-        return receipt;
-      } catch (error) {
-        if (!duplicate(error)) {
-          throw error;
-        }
-        const winner = await Job.findOne({
-          ...scope,
-          clientRequestId: request.clientRequestId,
-        }).lean();
-        if (!winner || winner.fingerprint !== fingerprint || winner.executionOwner !== 'chat') {
-          throw new MediaPersistenceError('conflict', 'Native media recording identity changed');
-        }
-        return winner.receipt;
-      }
-    }
     const start = parseInt(fingerprint.slice(0, 8), 16) % capacity;
     for (let offset = 0; offset < capacity; offset++) {
       try {
@@ -187,9 +187,9 @@ export function createMediaPublicationMethods({
         const winner = await Job.findOne({
           ...scope,
           clientRequestId: request.clientRequestId,
-        }).lean();
+        }).lean<MediaStoredJob | null>();
         if (winner) {
-          if (winner.fingerprint !== fingerprint) {
+          if (!matches(winner)) {
             throw new MediaPersistenceError(
               'conflict',
               'Media request key was used for different content',
@@ -203,9 +203,6 @@ export function createMediaPublicationMethods({
   }
 
   async function admitQueue(job: MediaStoredJob): Promise<MediaSubmissionReceipt> {
-    if (job.executionOwner === 'chat') {
-      return job.receipt;
-    }
     if (
       await acquireMediaPermit({
         scope: job,
@@ -442,9 +439,13 @@ export function createMediaPublicationMethods({
         options.maxRetainers,
         options.maxTitleChars,
         job.publicationExpiresAt === undefined
-          ? temporaryExpiry(turn, job.request.temporary, options.temporaryRetentionMs)
+          ? temporaryExpiry(
+              turn,
+              job.temporary ?? job.request.temporary,
+              options.temporaryRetentionMs,
+            )
           : (job.publicationExpiresAt ?? undefined),
-        job.request.temporary,
+        job.temporary ?? job.request.temporary,
       );
       await Turn.updateOne(
         { ...scope, turnId: job.turnId },

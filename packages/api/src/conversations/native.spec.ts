@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { ContentTypes, mediaSubmissionRequestSchema } from 'librechat-data-provider';
 import {
@@ -45,29 +46,65 @@ describe('native conversation clone publication', () => {
   });
 
   async function source() {
-    const job = await native.startMediaNativeRecording({
-      scope,
-      source: { conversationId: 'source', messageId: 'source-message', modelRunId: 'run' },
-      execution,
-      request: mediaSubmissionRequestSchema.parse({
-        clientRequestId: 'native',
-        operation: 'image.generate',
-        prompt: 'image',
-        selection: { connectionId: 'google', modelId: 'image-model', catalogVersion: 'v1' },
-      }),
-      maxRetainers: 4,
-      maxTitleChars: 20,
-      limits: { maxParts: 4, maxPartBytes: 1024, maxRecordingBytes: 4096 },
+    const jobId = randomUUID();
+    const threadId = randomUUID();
+    const turnId = randomUUID();
+    const reference = { continuationRef: randomUUID() };
+    const now = new Date();
+    const request = mediaSubmissionRequestSchema.parse({
+      clientRequestId: 'native',
+      operation: 'image.generate',
+      prompt: 'image',
+      selection: { connectionId: 'google', modelId: 'image-model', catalogVersion: 'v1' },
     });
-    const reference = await native.recordMediaNativePart({
-      scope,
-      jobId: job.jobId,
+    await mongoose.models.MediaThread.create({
+      ...scope,
+      threadId,
+      title: 'Legacy caption',
+      status: 'active',
+      epoch: 0,
+      originRequestId: 'native',
+      createdAt: now,
+      updatedAt: now,
+    });
+    await mongoose.models.MediaJob.create({
+      ...scope,
+      jobId,
+      threadId,
+      turnId,
+      threadEpoch: 0,
+      createdAt: now,
+      updatedAt: now,
+      dueAt: now,
+      clientRequestId: 'native',
+      fingerprint: 'legacy-fixture',
+      request,
+      execution,
+      executionOwner: 'chat',
+      phase: 'succeeded',
+      operation: request.operation,
+      selection: request.selection,
+      queueCapacity: 1,
+      receipt: { phase: 'accepted', jobId, threadId, turnId, clientRequestId: 'native' },
+      provider: { certainty: 'terminal', recovery: { terminalStatus: 'completed' } },
+      nativeSource: { conversationId: 'source', messageId: 'source-message', modelRunId: 'run' },
+      nativeLimits: { maxParts: 4, maxPartBytes: 1024, maxRecordingBytes: 4096 },
+      nativePartKeys: [{ key: '0:0', fingerprint: 'legacy-fixture', bytes: 1 }],
+      nativePartBytes: 1,
+      nativeConsumers: ['source'],
+      nativeRetentionState: 'live',
+      outputs: [{ kind: 'text', ordinal: 0, outputId: reference.continuationRef, text: 'caption' }],
+    });
+    await mongoose.models.MediaNativePart.create({
+      ...scope,
+      ...reference,
+      jobId,
       chunkIndex: 0,
       partIndex: 0,
+      fingerprint: 'legacy-fixture',
+      createdAt: now,
       part: { kind: 'text', text: 'caption' },
-      maxRetainers: 4,
     });
-    await native.completeMediaNativeRecording({ scope, jobId: job.jobId });
     const content = [
       { type: ContentTypes.TEXT as const, text: 'caption', native_media: reference },
     ];
@@ -77,7 +114,7 @@ describe('native conversation clone publication', () => {
       messageId: 'source-message',
       content,
     });
-    return { reference, content, job };
+    return { reference, content, job: { jobId, threadId } };
   }
 
   it('retains after publication, survives concurrent maintenance, and keeps source and fork independent', async () => {

@@ -102,6 +102,39 @@ describe('operator media recovery on standalone MongoDB', () => {
     now: now(),
   });
 
+  async function legacy(text: string, thoughtSignature: string) {
+    const job = await attention('legacy-native');
+    const part = { continuationRef: 'legacy-native-part' };
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: job.jobId },
+      {
+        $set: {
+          executionOwner: 'chat',
+          provider: { certainty: 'unknown' },
+          nativeSource: { conversationId: 'saved-chat', messageId: 'assistant', modelRunId: 'run' },
+          nativeLimits: { maxParts: 10, maxPartBytes: 1024, maxRecordingBytes: 4096 },
+          nativePartKeys: [{ key: '0:0', fingerprint: 'legacy-fixture', bytes: 1 }],
+          nativePartBytes: 1,
+          nativeConsumers: ['saved-chat'],
+          nativeRetentionState: 'live',
+        },
+        $unset: { accounting: 1, activeSlot: 1 },
+      },
+    );
+    await mongoose.models.MediaPermit.deleteMany({ jobId: job.jobId });
+    await mongoose.models.MediaNativePart.create({
+      ...scope,
+      ...part,
+      jobId: job.jobId,
+      chunkIndex: 0,
+      partIndex: 0,
+      fingerprint: 'legacy-fixture',
+      createdAt: new Date(),
+      part: { kind: 'text', text, thoughtSignature },
+    });
+    return { job: (await media.getMediaJob(scope, job.jobId))!, part };
+  }
+
   it('commits one decision under concurrent identical retries and preserves the financial obligation', async () => {
     const job = await attention();
     await media.acquireMediaPermit({ scope, jobId: job.jobId, kind: 'deployment', capacity: 1 });
@@ -237,28 +270,8 @@ describe('operator media recovery on standalone MongoDB', () => {
     ).rejects.toMatchObject({ code: 'not_found' });
   });
 
-  it('fences interrupted native writes and completes acknowledgement after a process restart', async () => {
-    const job = await native.startMediaNativeRecording({
-      scope,
-      source: { conversationId: 'saved-chat', messageId: 'assistant', modelRunId: 'run' },
-      request: submission('native'),
-      execution,
-      maxRetainers: 8,
-      maxTitleChars: 20,
-      limits: { maxParts: 10, maxPartBytes: 1024, maxRecordingBytes: 4096 },
-    });
-    const part = await native.recordMediaNativePart({
-      scope,
-      jobId: job.jobId,
-      chunkIndex: 0,
-      partIndex: 0,
-      part: { kind: 'text', text: 'Known partial output', thoughtSignature: 'private-signature' },
-      maxRetainers: 8,
-    });
-    await mongoose.models.MediaJob.updateOne(
-      { ...scope, jobId: job.jobId },
-      { $set: { phase: 'requires_attention' } },
-    );
+  it('completes a legacy native acknowledgement after a process restart without replaying generation', async () => {
+    const { job, part } = await legacy('Known partial output', 'private-signature');
     const request = {
       clientRequestId: 'acknowledge-one',
       expectedVersion: job.version + 1,
@@ -268,16 +281,9 @@ describe('operator media recovery on standalone MongoDB', () => {
     const current = (await media.getMediaJob(scope, job.jobId))!;
     request.expectedVersion = current.version;
     await recovery.resolveMediaRecovery({ ...command(current), request });
-    await expect(
-      native.recordMediaNativePart({
-        scope,
-        jobId: job.jobId,
-        chunkIndex: 1,
-        partIndex: 0,
-        part: { kind: 'text', text: 'Late write' },
-        maxRetainers: 8,
-      }),
-    ).rejects.toMatchObject({ code: 'retired' });
+    expect(
+      await media.claimMediaJob({ scope, workerId: 'worker', now: now(), leaseMs: 1000 }),
+    ).toBeNull();
     native = createMediaNativeMethods(mongoose, media);
     await native.reconcileMediaNativeRecordings({
       scope,
@@ -311,23 +317,7 @@ describe('operator media recovery on standalone MongoDB', () => {
   });
 
   it('requires the exact credential binding, owner, model, and consumer for native continuation', async () => {
-    const job = await native.startMediaNativeRecording({
-      scope,
-      source: { conversationId: 'saved-chat', messageId: 'assistant', modelRunId: 'run' },
-      request: submission('native'),
-      execution,
-      maxRetainers: 8,
-      maxTitleChars: 20,
-      limits: { maxParts: 10, maxPartBytes: 1024, maxRecordingBytes: 4096 },
-    });
-    const part = await native.recordMediaNativePart({
-      scope,
-      jobId: job.jobId,
-      chunkIndex: 0,
-      partIndex: 0,
-      part: { kind: 'text', text: 'Signed output', thoughtSignature: 'signature' },
-      maxRetainers: 8,
-    });
+    const { part } = await legacy('Signed output', 'signature');
     const input = {
       scope,
       continuationRef: part.continuationRef,

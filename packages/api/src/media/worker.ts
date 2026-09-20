@@ -333,7 +333,7 @@ export function createMediaWorker(
           await observe({ phase: 'queued', releaseLease: true });
           return;
         }
-        if (deps.titles && !job.request.threadId && !job.request.temporary) {
+        if (deps.titles && !job.request.threadId && !(job.temporary ?? job.request.temporary)) {
           await deps.titles({
             context,
             jobId: job.jobId,

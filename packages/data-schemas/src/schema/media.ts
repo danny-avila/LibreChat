@@ -154,6 +154,7 @@ export const mediaJobSchema: Schema<MediaStoredJob> = new Schema(
     accounting: Schema.Types.Mixed,
     accountingReview: Schema.Types.Mixed,
     nativeSource: Schema.Types.Mixed,
+    temporary: Boolean,
     nativeLimits: Schema.Types.Mixed,
     nativePartKeys: { type: Schema.Types.Mixed, default: undefined },
     nativePartBytes: Number,

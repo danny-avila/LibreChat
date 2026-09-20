@@ -1,14 +1,20 @@
 import mongoose from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { FileSources, mediaSubmissionRequestSchema } from 'librechat-data-provider';
 import type { FileStorage } from 'librechat-data-provider';
-import type { MediaNativeMethods, MediaNativeLimits } from '~/types/mediaNative';
-import type { MediaMethods, MediaOwnerScope } from '~/types/media';
+import type {
+  MediaNativeMethods,
+  MediaNativeLimits,
+  MediaNativePart,
+  MediaNativePartRecord,
+} from '~/types/mediaNative';
+import type { MediaMethods, MediaOwnerScope, MediaStoredJob } from '~/types/media';
 import { createMediaNativeMethods } from './mediaNative';
 import { createMessageMethods } from './message';
 import { createMediaMethods } from './media';
 
-describe('native chat media persistence', () => {
+describe('legacy native recording readers and cleanup', () => {
   let mongo: MongoMemoryServer;
   let media: MediaMethods;
   let native: MediaNativeMethods;
@@ -42,43 +48,175 @@ describe('native chat media persistence', () => {
     native = createMediaNativeMethods(mongoose, media);
   });
 
+  /** Seeds the persisted prerelease shape; production has no side-table writer. */
   async function start(
     modelRunId = 'run-one',
     configuredLimits = limits,
-    maxTitleChars = 20,
+    _maxTitleChars = 20,
     expiresAt?: string,
-  ) {
-    return native.startMediaNativeRecording({
-      scope,
-      source: {
+  ): Promise<MediaStoredJob> {
+    const jobId = randomUUID();
+    const threadId = randomUUID();
+    const turnId = randomUUID();
+    const now = new Date();
+    const request = mediaSubmissionRequestSchema.parse({
+      clientRequestId: modelRunId,
+      prompt: 'Create an image',
+      operation: 'image.generate',
+      selection: {
+        connectionId: execution.connectionId,
+        modelId: execution.modelId,
+        catalogVersion: execution.catalogVersion,
+      },
+    });
+    await mongoose.models.MediaThread.create({
+      ...scope,
+      threadId,
+      title: 'Legacy image',
+      status: 'active',
+      epoch: 0,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+      lastTurnAt: now,
+      originRequestId: modelRunId,
+      nextTurnSequence: 1,
+      pendingJobCount: 1,
+    });
+    await mongoose.models.MediaJob.create({
+      ...scope,
+      jobId,
+      threadId,
+      turnId,
+      threadEpoch: 0,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+      dueAt: now,
+      clientRequestId: modelRunId,
+      fingerprint: 'legacy-fixture',
+      request,
+      execution,
+      executionOwner: 'chat',
+      receipt: { phase: 'accepted', jobId, threadId, turnId, clientRequestId: modelRunId },
+      phase: 'running',
+      operation: request.operation,
+      selection: request.selection,
+      provider: { certainty: 'unknown' },
+      queueCapacity: 1,
+      nativeSource: {
         conversationId: 'conversation',
         messageId: 'assistant-message',
         modelRunId,
         ...(expiresAt ? { expiresAt } : {}),
       },
-      request: mediaSubmissionRequestSchema.parse({
-        clientRequestId: 'ignored-client-key',
-        prompt: 'Create an image',
-        operation: 'image.generate',
-        selection: {
-          connectionId: execution.connectionId,
-          modelId: execution.modelId,
-          catalogVersion: execution.catalogVersion,
-        },
-      }),
-      execution,
-      maxRetainers: 4,
-      maxTitleChars,
-      limits: configuredLimits,
+      nativeLimits: configuredLimits,
+      nativePartKeys: [],
+      nativePartBytes: 0,
+      nativeConsumers: ['conversation'],
+      nativeRetentionState: 'live',
+      publicationExpiresAt: expiresAt ? new Date(expiresAt) : null,
     });
+    return (await media.getMediaJob(scope, jobId))!;
   }
 
-  it('bounds native tile titles without changing the original chat prompt', async () => {
-    const job = await start('bounded-title', limits, 5);
-    expect((await media.getMediaThread(scope, job.threadId))?.title).toBe('Creat');
-    expect(job.request.prompt).toBe('Create an image');
-    expect((await start('bounded-title', limits, 5)).jobId).toBe(job.jobId);
-  });
+  async function seedPart(input: {
+    scope: MediaOwnerScope;
+    jobId: string;
+    chunkIndex: number;
+    partIndex: number;
+    part: MediaNativePart;
+    maxRetainers: number;
+  }): Promise<{ continuationRef: string }> {
+    const continuationRef = randomUUID();
+    const job = (await media.getMediaJob(input.scope, input.jobId))!;
+    await mongoose.models.MediaNativePart.create({
+      ...input.scope,
+      jobId: input.jobId,
+      chunkIndex: input.chunkIndex,
+      partIndex: input.partIndex,
+      continuationRef,
+      fingerprint: 'legacy-fixture',
+      part: input.part,
+      createdAt: new Date(),
+      ...(input.part.kind === 'image' ? { fileId: input.part.fileId } : {}),
+      ...(job.nativeSource?.expiresAt ? { expiresAt: new Date(job.nativeSource.expiresAt) } : {}),
+    });
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: input.jobId },
+      {
+        $push: {
+          nativePartKeys: {
+            key: input.chunkIndex + ':' + input.partIndex,
+            fingerprint: 'legacy-fixture',
+            bytes: 1,
+          },
+        },
+        $inc: { nativePartBytes: 1 },
+      },
+    );
+    if (input.part.kind === 'image') {
+      await mongoose.models.File.updateOne(
+        { file_id: input.part.fileId },
+        {
+          $addToSet: { mediaRetainers: 'native:' + input.jobId },
+        },
+      );
+    }
+    return { continuationRef };
+  }
+
+  async function seedCompleted(input: { scope: MediaOwnerScope; jobId: string }) {
+    const job = (await media.getMediaJob(input.scope, input.jobId))!;
+    const parts = await mongoose.models.MediaNativePart.find({ jobId: input.jobId })
+      .sort({ chunkIndex: 1, partIndex: 1 })
+      .lean<MediaNativePartRecord[]>();
+    const outputs: MediaStoredJob['outputs'] = [];
+    for (const [ordinal, entry] of parts.entries()) {
+      if (entry.part.kind === 'text') {
+        outputs.push({
+          kind: 'text',
+          outputId: entry.continuationRef,
+          ordinal,
+          text: entry.part.text,
+        });
+      } else {
+        const asset = (await media.getMediaAsset(input.scope, entry.part.fileId))!;
+        outputs.push({
+          kind: 'image',
+          outputId: entry.continuationRef,
+          ordinal,
+          state: 'ready',
+          asset,
+        });
+      }
+    }
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: input.jobId },
+      {
+        $set: {
+          phase: 'succeeded',
+          outputs,
+          provider: {
+            certainty: 'terminal',
+            recovery: {
+              terminalStatus: 'completed',
+              parts: parts.map((entry, ordinal) => ({ ...entry.part, ordinal })),
+            },
+          },
+        },
+      },
+    );
+    const cover = outputs.find((output) => output.kind === 'image');
+    await mongoose.models.MediaThread.updateOne(
+      { threadId: job.threadId },
+      {
+        $set: { pendingJobCount: 0, ...(cover?.kind === 'image' ? { cover: cover.asset } : {}) },
+      },
+    );
+    return media.getMediaJob(input.scope, input.jobId);
+  }
+
   async function original(source: FileStorage = FileSources.local, thumbnail = false) {
     const storageKey = `images/t/${scope.tenantId ?? 'default'}/${scope.ownerId}/immutable.png`;
     const filepath =
@@ -120,29 +258,10 @@ describe('native chat media persistence', () => {
     });
   }
 
-  it('records one existing invocation without a queue permit, lease, or second accounting owner', async () => {
-    const [one, two] = await Promise.all([start(), start()]);
-    expect(one.jobId).toBe(two.jobId);
-    expect(one).toMatchObject({ executionOwner: 'chat', phase: 'running' });
-    expect(one.activeSlot).toBeUndefined();
-    expect(await mongoose.models.MediaPermit.countDocuments()).toBe(0);
-    expect(
-      await media.claimMediaJob({
-        scope,
-        workerId: 'media-worker',
-        now: new Date(Date.now() + 1000).toISOString(),
-        leaseMs: 10000,
-      }),
-    ).toBeNull();
-    expect(
-      await media.acquireMediaPermit({ scope, jobId: one.jobId, kind: 'deployment', capacity: 10 }),
-    ).toBe(false);
-  });
-
-  it('persists ordered text/image/signature facts and restores them after repository restart', async () => {
+  it('reads ordered stored text/image/signature facts and restores them after repository restart', async () => {
     const job = await start();
     const image = await original();
-    const imagePart = await native.recordMediaNativePart({
+    const imagePart = await seedPart({
       scope,
       jobId: job.jobId,
       chunkIndex: 1,
@@ -155,7 +274,7 @@ describe('native chat media persistence', () => {
       },
       maxRetainers: 4,
     });
-    const text = await native.recordMediaNativePart({
+    const text = await seedPart({
       scope,
       jobId: job.jobId,
       chunkIndex: 0,
@@ -163,7 +282,7 @@ describe('native chat media persistence', () => {
       part: { kind: 'text', text: 'Before', thoughtSignature: 'private-text-signature' },
       maxRetainers: 4,
     });
-    await native.recordMediaNativePart({
+    await seedPart({
       scope,
       jobId: job.jobId,
       chunkIndex: 2,
@@ -171,7 +290,7 @@ describe('native chat media persistence', () => {
       part: { kind: 'text', text: 'After' },
       maxRetainers: 4,
     });
-    const complete = await native.completeMediaNativeRecording({ scope, jobId: job.jobId });
+    const complete = await seedCompleted({ scope, jobId: job.jobId });
     expect(complete?.outputs.map((part) => part.kind)).toEqual(['text', 'image', 'text']);
     expect(complete?.provider.recovery?.parts?.map((part) => part.ordinal)).toEqual([0, 1, 2]);
     expect(JSON.stringify(await media.getMediaJobView(scope, job.jobId))).not.toContain('private-');
@@ -203,7 +322,7 @@ describe('native chat media persistence', () => {
       scope.tenantId = 'tenant-one';
       const job = await start();
       const image = await original(source, true);
-      await native.recordMediaNativePart({
+      await seedPart({
         scope,
         jobId: job.jobId,
         chunkIndex: 0,
@@ -215,7 +334,7 @@ describe('native chat media persistence', () => {
         mongoose,
         createMediaMethods(mongoose, { ownerExists: async () => true }),
       );
-      const completed = await native.completeMediaNativeRecording({ scope, jobId: job.jobId });
+      const completed = await seedCompleted({ scope, jobId: job.jobId });
       expect(completed?.outputs).toEqual([
         expect.objectContaining({ kind: 'image', state: 'ready', asset: image }),
       ]);
@@ -236,64 +355,10 @@ describe('native chat media persistence', () => {
     },
   );
 
-  it('deduplicates part replay and rejects a changed body at the same position', async () => {
-    const job = await start();
-    const input = {
-      scope,
-      jobId: job.jobId,
-      chunkIndex: 0,
-      partIndex: 0,
-      part: { kind: 'text' as const, text: 'Stable' },
-      maxRetainers: 4,
-    };
-    const receipts = await Promise.all(
-      Array.from({ length: 4 }, () => native.recordMediaNativePart(input)),
-    );
-    expect(new Set(receipts.map((receipt) => receipt.continuationRef)).size).toBe(1);
-    expect((await media.getMediaJob(scope, job.jobId))?.nativePartKeys).toHaveLength(1);
-    await expect(
-      native.recordMediaNativePart({ ...input, part: { kind: 'text', text: 'Different' } }),
-    ).rejects.toMatchObject({ code: 'conflict' });
-  });
-
-  it('enforces cumulative descriptor and part limits under concurrent writers', async () => {
-    const job = await start('bounded', { maxParts: 1, maxPartBytes: 256, maxRecordingBytes: 256 });
-    const results = await Promise.allSettled(
-      [0, 1].map((chunkIndex) =>
-        native.recordMediaNativePart({
-          scope,
-          jobId: job.jobId,
-          chunkIndex,
-          partIndex: 0,
-          part: { kind: 'text', text: 'One' },
-          maxRetainers: 4,
-        }),
-      ),
-    );
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    expect(await mongoose.models.MediaNativePart.countDocuments()).toBe(1);
-  });
-
-  it('does not complete a recording whose reserved part was not durably published', async () => {
-    const job = await start();
-    await mongoose.models.MediaJob.updateOne(
-      { jobId: job.jobId },
-      {
-        $push: {
-          nativePartKeys: { key: '0:0', fingerprint: 'reserved-before-crash', bytes: 10 },
-        },
-      },
-    );
-    await expect(
-      native.completeMediaNativeRecording({ scope, jobId: job.jobId }),
-    ).rejects.toMatchObject({ code: 'conflict' });
-    expect((await media.getMediaJob(scope, job.jobId))?.phase).toBe('running');
-  });
-
   it('rejects continuation access across owner, model, account, and ref/file identity', async () => {
     const job = await start();
     const asset = await original();
-    const receipt = await native.recordMediaNativePart({
+    const receipt = await seedPart({
       scope,
       jobId: job.jobId,
       chunkIndex: 0,
@@ -339,7 +404,7 @@ describe('native chat media persistence', () => {
   it('retains source and fork continuations independently of the Studio projection until the final consumer leaves', async () => {
     const job = await start();
     const asset = await original();
-    const reference = await native.recordMediaNativePart({
+    const reference = await seedPart({
       scope,
       jobId: job.jobId,
       chunkIndex: 0,
@@ -352,7 +417,7 @@ describe('native chat media persistence', () => {
       },
       maxRetainers: 4,
     });
-    await native.completeMediaNativeRecording({ scope, jobId: job.jobId });
+    await seedCompleted({ scope, jobId: job.jobId });
     expect(
       await native.retainMediaNativeConversation({
         scope,
@@ -409,7 +474,7 @@ describe('native chat media persistence', () => {
 
   it('recovers a crash after source-consumer release before presentation cleanup', async () => {
     const job = await start();
-    const reference = await native.recordMediaNativePart({
+    const reference = await seedPart({
       scope,
       jobId: job.jobId,
       chunkIndex: 0,
@@ -417,7 +482,7 @@ describe('native chat media persistence', () => {
       part: { kind: 'text', text: 'sensitive' },
       maxRetainers: 4,
     });
-    await native.completeMediaNativeRecording({ scope, jobId: job.jobId });
+    await seedCompleted({ scope, jobId: job.jobId });
     const failure = jest
       .spyOn(media, 'retireMediaThread')
       .mockRejectedValueOnce(new Error('interrupted database connection'));
@@ -444,7 +509,7 @@ describe('native chat media persistence', () => {
     const references = [];
     for (let index = 0; index < 24; index++) {
       references.push(
-        await native.recordMediaNativePart({
+        await seedPart({
           scope,
           jobId: job.jobId,
           chunkIndex: index,
@@ -489,7 +554,7 @@ describe('native chat media persistence', () => {
   it('stores part expiry as a TTL-backed date and hides an expired continuation', async () => {
     const expiresAt = new Date(Date.now() + 60_000).toISOString();
     const job = await start('expiring-run', limits, 20, expiresAt);
-    const receipt = await native.recordMediaNativePart({
+    const receipt = await seedPart({
       scope,
       jobId: job.jobId,
       chunkIndex: 0,
@@ -516,7 +581,7 @@ describe('native chat media persistence', () => {
 
   it('legacy maintenance after message deletion releases only absent consumers, preserving a saved fork and other messages', async () => {
     const job = await start();
-    const reference = await native.recordMediaNativePart({
+    const reference = await seedPart({
       scope,
       jobId: job.jobId,
       chunkIndex: 0,
@@ -524,7 +589,7 @@ describe('native chat media persistence', () => {
       part: { kind: 'text', text: 'caption' },
       maxRetainers: 4,
     });
-    await native.completeMediaNativeRecording({ scope, jobId: job.jobId });
+    await seedCompleted({ scope, jobId: job.jobId });
     const content = [{ type: 'text', text: 'caption', native_media: reference }];
     await mongoose.models.Message.create([
       { user: scope.ownerId, conversationId: 'conversation', messageId: 'source', content },
@@ -586,7 +651,7 @@ describe('native chat media persistence', () => {
 
   it('protects unpublished clone claims and reclaims an abandoned clone after the claim expires', async () => {
     const job = await start();
-    const reference = await native.recordMediaNativePart({
+    const reference = await seedPart({
       scope,
       jobId: job.jobId,
       chunkIndex: 0,
@@ -594,7 +659,7 @@ describe('native chat media persistence', () => {
       part: { kind: 'text', text: 'caption' },
       maxRetainers: 4,
     });
-    await native.completeMediaNativeRecording({ scope, jobId: job.jobId });
+    await seedCompleted({ scope, jobId: job.jobId });
     await mongoose.models.Message.create({
       user: scope.ownerId,
       conversationId: 'conversation',
@@ -643,7 +708,7 @@ describe('native chat media persistence', () => {
 
   it('renews one pending clone without losing another and releases only the requested consumer', async () => {
     const job = await start();
-    const reference = await native.recordMediaNativePart({
+    const reference = await seedPart({
       scope,
       jobId: job.jobId,
       chunkIndex: 0,
@@ -683,7 +748,7 @@ describe('native chat media persistence', () => {
 
   it('releases an edited text-only native consumer without retaining private original text forever', async () => {
     const job = await start();
-    const reference = await native.recordMediaNativePart({
+    const reference = await seedPart({
       scope,
       jobId: job.jobId,
       chunkIndex: 0,
@@ -691,7 +756,7 @@ describe('native chat media persistence', () => {
       part: { kind: 'text', text: 'old caption' },
       maxRetainers: 4,
     });
-    await native.completeMediaNativeRecording({ scope, jobId: job.jobId });
+    await seedCompleted({ scope, jobId: job.jobId });
     const content = [{ type: 'text', text: 'corrected caption', native_media: reference }];
     await mongoose.models.Message.create({
       user: scope.ownerId,
@@ -716,7 +781,7 @@ describe('native chat media persistence', () => {
 
   it('does not reconstruct prerelease consumer state from arbitrary message references', async () => {
     const job = await start();
-    const reference = await native.recordMediaNativePart({
+    const reference = await seedPart({
       scope,
       jobId: job.jobId,
       chunkIndex: 0,
@@ -724,7 +789,7 @@ describe('native chat media persistence', () => {
       part: { kind: 'text', text: 'legacy caption' },
       maxRetainers: 4,
     });
-    await native.completeMediaNativeRecording({ scope, jobId: job.jobId });
+    await seedCompleted({ scope, jobId: job.jobId });
     await mongoose.models.MediaJob.updateOne(
       { jobId: job.jobId },
       { $unset: { nativeConsumers: 1, nativeRetentionState: 1 } },
@@ -756,16 +821,7 @@ describe('native chat media persistence', () => {
       phase: 'failed',
       allowedActions: { cancel: false, retry: false },
     });
-    await expect(
-      native.recordMediaNativePart({
-        scope,
-        jobId: job.jobId,
-        chunkIndex: 0,
-        partIndex: 0,
-        part: { kind: 'text', text: 'late' },
-        maxRetainers: 4,
-      }),
-    ).rejects.toMatchObject({ code: 'retired' });
+
     expect(
       await media.claimMediaJob({
         scope,
@@ -779,7 +835,7 @@ describe('native chat media persistence', () => {
   it('preserves emitted partial outputs and signatures when the original chat invocation fails', async () => {
     const job = await start();
     const image = await original();
-    const receipt = await native.recordMediaNativePart({
+    const receipt = await seedPart({
       scope,
       jobId: job.jobId,
       chunkIndex: 0,
@@ -815,7 +871,7 @@ describe('native chat media persistence', () => {
 
   it('recovers stale native recordings from known facts without replaying the chat call', async () => {
     const job = await start();
-    await native.recordMediaNativePart({
+    await seedPart({
       scope,
       jobId: job.jobId,
       chunkIndex: 0,
@@ -834,30 +890,9 @@ describe('native chat media persistence', () => {
     });
     expect(stale?.provider.recovery?.terminalStatus).toBeUndefined();
     expect(await media.claimMediaJob({ scope, now, workerId: 'worker', leaseMs: 1000 })).toBeNull();
-    expect((await native.completeMediaNativeRecording({ scope, jobId: job.jobId }))?.phase).toBe(
-      'succeeded',
-    );
-  });
-
-  it('respects an explicitly cleared cover when native completion projects its first image', async () => {
-    const job = await start();
-    const thread = (await media.getMediaThread(scope, job.threadId))!;
-    await media.updateMediaThread({
-      scope,
-      threadId: thread.threadId,
-      expectedVersion: thread.version,
-      coverFileId: null,
-    });
-    const image = await original();
-    await native.recordMediaNativePart({
-      scope,
-      jobId: job.jobId,
-      chunkIndex: 0,
-      partIndex: 0,
-      part: { kind: 'image', mimeType: 'image/png', fileId: image.file_id },
-      maxRetainers: 4,
-    });
-    await native.completeMediaNativeRecording({ scope, jobId: job.jobId });
-    expect((await media.getMediaThread(scope, job.threadId))?.cover).toBeUndefined();
+    expect(
+      (await native.failMediaNativeRecording({ scope, jobId: job.jobId, reason: 'provider' }))
+        ?.phase,
+    ).toBe('failed');
   });
 });

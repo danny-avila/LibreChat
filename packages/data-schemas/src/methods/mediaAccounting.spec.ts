@@ -71,13 +71,19 @@ describe('media accounting on standalone MongoDB', () => {
       request,
       maxActiveJobs: 20,
       maxPendingTotal: 100,
-      executionOwner,
       execution: { ...request.selection, api: 'openrouter.images', bindingRevision: 'binding' },
     });
     await media.publishMediaSubmission(scope, receipt.jobId, {
       maxRetainers: 4,
       maxTitleChars: 20,
     });
+    if (executionOwner === 'chat') {
+      // Seed the legacy persisted owner; new native output never creates a Studio job.
+      await mongoose.models.MediaJob.updateOne(
+        { ...scope, jobId: receipt.jobId },
+        { $set: { executionOwner }, $unset: { activeSlot: 1 } },
+      );
+    }
     return receipt.jobId;
   }
   const hold = (jobId: string, maxCredits = 400) => ({

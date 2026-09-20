@@ -64,7 +64,8 @@ export function createNativeMediaFactory({
   onUsage,
 }: {
   deps: MediaServiceDependencies;
-  repository: MediaNativeMethods & Partial<NativeMessageMethods>;
+  repository: Pick<MediaNativeMethods, 'getMediaNativeContinuations'> &
+    Partial<NativeMessageMethods>;
   files?: {
     save(part: Extract<NativeMediaPart, { kind: 'image' }>): Promise<GeneratedImageFile>;
     read(scope: MediaOwnerScope, file: NativeMessageFile, maxBytes: number): Promise<Buffer>;

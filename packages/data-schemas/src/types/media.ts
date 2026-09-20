@@ -126,6 +126,7 @@ export type MediaStoredJob = Omit<MediaJob, 'createdAt' | 'updatedAt'> &
       credits?: number;
       debtCredits?: number;
     };
+    temporary?: boolean;
     nativeSource?: {
       conversationId: string;
       messageId: string;
@@ -204,7 +205,7 @@ export type StageMediaSubmissionInput = {
   execution: MediaExecutionSnapshot;
   maxActiveJobs: number;
   maxPendingTotal: number;
-  executionOwner?: 'media' | 'chat';
+  executionOwner?: 'media';
   /** Host-derived chat retention overrides the public request when provided. */
   temporary?: boolean;
   /** Resolved at admission; null explicitly preserves a permanent presentation across recovery. */

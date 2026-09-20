@@ -21,6 +21,7 @@ import type {
 import { createMediaMethods, deriveMediaThreadTitle } from './media';
 import { runAsSystem, tenantStorage } from '~/config/tenantContext';
 import { createFileMethods } from './file';
+import { digest } from './media/scope';
 
 describe('media persistence on standalone MongoDB', () => {
   let mongo: MongoMemoryServer;
@@ -71,6 +72,14 @@ describe('media persistence on standalone MongoDB', () => {
     const published = await methods.publishMediaSubmission(scope, receipt.jobId, options);
     expect(published?.phase).toBe('accepted');
     return (await methods.getMediaJob(scope, receipt.jobId))!;
+  }
+
+  async function markLegacyChatJob(jobId: string) {
+    // Existing chat records remain readable; production no longer stages this ownership lane.
+    await mongoose.models.MediaJob.updateOne(
+      { ...scope, jobId },
+      { $set: { executionOwner: 'chat' }, $unset: { activeSlot: 1 } },
+    );
   }
 
   it('stores BSON lifecycle dates and omits the platform tenant while preserving ISO views', async () => {
@@ -780,11 +789,9 @@ describe('media persistence on standalone MongoDB', () => {
   });
 
   it('leaves chat-owned work to its own cancellation protocol', async () => {
-    const receipt = await methods.stageMediaSubmission({
-      ...submission('cancel-native'),
-      executionOwner: 'chat',
-    });
+    const receipt = await methods.stageMediaSubmission(submission('cancel-native'));
     await methods.publishMediaSubmission(scope, receipt.jobId, options);
+    await markLegacyChatJob(receipt.jobId);
     const before = await methods.getMediaJob(scope, receipt.jobId);
     expect(await methods.cancelMediaJob(scope, receipt.jobId)).toMatchObject({
       phase: 'queued',
@@ -842,11 +849,9 @@ describe('media persistence on standalone MongoDB', () => {
   });
 
   it('never claims a native chat-owned job for paid execution', async () => {
-    const receipt = await methods.stageMediaSubmission({
-      ...submission('native'),
-      executionOwner: 'chat',
-    });
+    const receipt = await methods.stageMediaSubmission(submission('native'));
     await methods.publishMediaSubmission(scope, receipt.jobId, options);
+    await markLegacyChatJob(receipt.jobId);
     expect(
       await methods.claimMediaJob({
         scope,
@@ -1813,9 +1818,9 @@ describe('media persistence on standalone MongoDB', () => {
       const { asset } = await original();
       const receipt = await methods.stageMediaSubmission({
         ...submission('projection-crash'),
-        executionOwner,
       });
       await methods.publishMediaSubmission(scope, receipt.jobId, options);
+      if (executionOwner === 'chat') await markLegacyChatJob(receipt.jobId);
       await methods.retainMediaThreadAsset({
         scope,
         threadId: receipt.threadId,
@@ -2058,14 +2063,17 @@ describe('media persistence on standalone MongoDB', () => {
       const publicationExpiresAt =
         retention === 'bounded' ? new Date(Date.now() + 60_000).toISOString() : null;
       const input = { ...submission('temporary-tool'), publicationExpiresAt };
-      // Existing public receipts keep the same fingerprint when the host supplies retention.
+      // Host retention is frozen independently of the public command descriptor.
       const receipt = await methods.stageMediaSubmission({
         ...input,
-        request: { ...input.request, temporary: true },
+        temporary: true,
       });
       expect(await methods.stageMediaSubmission({ ...input, temporary: true })).toEqual(receipt);
       await methods.publishMediaSubmission(scope, receipt.jobId, options);
-      expect((await methods.getMediaJob(scope, receipt.jobId))?.request.temporary).toBe(true);
+      expect((await methods.getMediaJob(scope, receipt.jobId))?.request).not.toHaveProperty(
+        'temporary',
+      );
+      expect((await methods.getMediaJob(scope, receipt.jobId))?.temporary).toBe(true);
       await expect(
         methods.stageMediaSubmission({ ...input, temporary: false }),
       ).rejects.toMatchObject({ code: 'conflict' });
@@ -2078,7 +2086,7 @@ describe('media persistence on standalone MongoDB', () => {
         maxPendingTotal: 100,
       });
       expect(await methods.getMediaJob(scope, retried.jobId)).toMatchObject({
-        request: { temporary: true },
+        temporary: true,
         publicationExpiresAt: publicationExpiresAt ? new Date(publicationExpiresAt) : null,
       });
       await methods.publishMediaSubmission(scope, retried.jobId, {
@@ -2347,4 +2355,88 @@ describe('media persistence on standalone MongoDB', () => {
     ).items;
     expect(plainTurn).not.toHaveProperty('comparisonId');
   });
+
+  it('keeps every image submission in the billed queue despite an unsupported caller lane', async () => {
+    const input = submission('unsupported-lane');
+    Object.assign(input, { executionOwner: 'chat', maxActiveJobs: 1, maxPendingTotal: 1 });
+    const receipt = await methods.stageMediaSubmission(input);
+    expect(await methods.getMediaJob(scope, receipt.jobId)).toMatchObject({
+      executionOwner: 'media',
+      activeSlot: 0,
+      queueCapacity: 1,
+    });
+    await expect(
+      methods.stageMediaSubmission({
+        ...submission('billed-capacity'),
+        maxActiveJobs: 1,
+        maxPendingTotal: 1,
+      }),
+    ).rejects.toMatchObject({ code: 'capacity' });
+  });
+
+  it.each(['frozen', 'legacy', 'permanent'] as const)(
+    'recovers and retries an old temporary request without an internal flag (%s deadline)',
+    async (retention) => {
+      const deadline = new Date(Date.now() + 60_000).toISOString();
+      const input = {
+        ...submission('old-temporary'),
+        temporary: true,
+        ...(retention === 'legacy'
+          ? {}
+          : { publicationExpiresAt: retention === 'frozen' ? deadline : null }),
+      };
+      const receipt = await methods.stageMediaSubmission(input);
+      const legacyRequest = { ...input.request, temporary: true };
+      const legacyFingerprint = digest({ request: legacyRequest });
+      await mongoose.models.MediaJob.updateOne(
+        { jobId: receipt.jobId },
+        {
+          $unset: { temporary: 1 },
+          $set: { request: legacyRequest, fingerprint: legacyFingerprint },
+        },
+      );
+      await expect(methods.stageMediaSubmission(input)).resolves.toEqual(receipt);
+      await expect(
+        methods.stageMediaSubmission({ ...input, temporary: false }),
+      ).rejects.toMatchObject({ code: 'conflict' });
+      await expect(
+        methods.stageMediaSubmission({
+          ...input,
+          request: { ...input.request, prompt: 'Changed content' },
+        }),
+      ).rejects.toMatchObject({ code: 'conflict' });
+      await methods.recoverMediaPublications({
+        scope,
+        limit: 10,
+        ...options,
+        temporaryRetentionMs: 120_000,
+      });
+      const thread = (await methods.getMediaThread(scope, receipt.threadId))!;
+      const expiresAt = {
+        legacy: new Date(Date.parse(thread.createdAt) + 120_000).toISOString(),
+        frozen: deadline,
+        permanent: undefined,
+      }[retention];
+      expect(thread.temporary).toBe(true);
+      expect(thread.expiresAt).toBe(expiresAt);
+      expect((await methods.listMediaThreads({ scope, limit: 10 })).items).toEqual([]);
+      expect((await methods.getMediaJob(scope, receipt.jobId))?.fingerprint).toBe(
+        legacyFingerprint,
+      );
+      await methods.cancelMediaJob(scope, receipt.jobId);
+      const retry = await methods.retryMediaJob({
+        scope,
+        jobId: receipt.jobId,
+        clientRequestId: 'old-temporary-retry',
+        maxActiveJobs: 10,
+        maxPendingTotal: 100,
+      });
+      expect(await methods.getMediaJob(scope, retry.jobId)).toMatchObject({ temporary: true });
+      await methods.publishMediaSubmission(scope, retry.jobId, {
+        ...options,
+        temporaryRetentionMs: 1,
+      });
+      expect((await methods.getMediaThread(scope, receipt.threadId))?.expiresAt).toBe(expiresAt);
+    },
+  );
 });
