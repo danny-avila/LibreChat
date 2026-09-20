@@ -34,7 +34,7 @@ import type {
   MediaURLUploadRequest,
   MediaURLUploadResponse,
   MediaUserKey,
-  MediaImageContext,
+  MediaThreadDetail,
   MediaActivity,
 } from 'librechat-data-provider';
 import type {
@@ -248,14 +248,7 @@ export interface MediaServices {
   queries: {
     catalog(context: MediaContext): Promise<MediaCatalog>;
     threads(query: MediaThreadListRequest, context: MediaContext): Promise<MediaPage<MediaThread>>;
-    thread(
-      threadId: string,
-      context: MediaContext,
-    ): Promise<{
-      thread: MediaThread;
-      turns: MediaPage<MediaTurn>;
-      latestImageContext: MediaImageContext | null;
-    }>;
+    thread(threadId: string, context: MediaContext): Promise<MediaThreadDetail>;
     turns(
       threadId: string,
       cursor: string | undefined,
@@ -791,7 +784,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
         if (!thread) {
           throw new MediaServiceError('not_found', 404, 'The thread is unavailable.');
         }
-        return { thread, turns, latestImageContext };
+        return { thread, turns, latestImageContext: latestImageContext ?? undefined };
       },
       async turns(
         threadId: string,

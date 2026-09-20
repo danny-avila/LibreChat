@@ -35,6 +35,7 @@ import {
   mediaPresetSchema,
   mediaPresetListSchema,
   mediaThreadSchema,
+  mediaThreadDetailSchema,
   mediaSubmissionRequestSchema,
   mediaSubmissionReceiptSchema,
   mediaURLUploadResponseSchema,
@@ -2431,6 +2432,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     expect(receipt.phase).toBe('accepted');
     await request(app).get(`/api/media/threads/${receipt.threadId}`).expect(200);
     const opened = await request(app).get(`/api/media/threads/${receipt.threadId}`).expect(200);
+    expect(mediaThreadDetailSchema.parse(opened.body).latestImageContext).toBeUndefined();
     const thread = mediaThreadSchema.parse(opened.body.thread);
     const retentionMs = getTempChatRetentionHours(config.interfaceConfig) * 3_600_000;
     expect(thread.expiresAt).toBe(
