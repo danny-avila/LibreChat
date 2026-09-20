@@ -2827,6 +2827,309 @@ describe('createToolExecuteHandler', () => {
     });
   });
 
+  describe('same-batch skill file handoff to code calls', () => {
+    /** Code API batch-upload response shape: one bundled file plus the
+     *  SKILL.md the handler excludes from the artifact. */
+    function uploadFor(skillName: string) {
+      return {
+        storage_session_id: `session-${skillName}`,
+        files: [
+          { fileId: `file-${skillName}`, filename: `skills/${skillName}/references/style.md` },
+          { fileId: `skillmd-${skillName}`, filename: `skills/${skillName}/SKILL.md` },
+        ],
+      };
+    }
+
+    /** The artifact ref `primeSkillFiles` derives from {@link uploadFor}. */
+    function primedRefFor(skillName: string) {
+      return {
+        id: `file-${skillName}`,
+        resource_id: `${skillName}-id`,
+        storage_session_id: `session-${skillName}`,
+        name: `skills/${skillName}/references/style.md`,
+        kind: 'skill',
+        version: 1,
+      };
+    }
+
+    /** A skill with one bundled file and every dependency the priming gate
+     *  needs, loaded alongside real code tools so one batch carries both. */
+    function makeHandler(params: {
+      batchUploadCodeEnvFiles: jest.Mock;
+      tools?: unknown[];
+      configurable?: Record<string, unknown>;
+      options?: Partial<ToolExecuteOptions>;
+    }) {
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: (params.tools ?? []) as never[],
+        configurable: {
+          accessibleSkillIds: skillsInScope(),
+          codeEnvAvailable: true,
+          req: {
+            user: { id: 'user-1', tenantId: 'tenant-1' },
+            app: { locals: { codeApiUploadRegistry: createCodeApiUploadRegistry() } },
+            config: {
+              endpoints: {
+                agents: { codeApiUploadConcurrency: 2, codeApiMaxRetryWaitMs: 1_000 },
+              },
+            },
+          },
+          ...(params.configurable ?? {}),
+        },
+      }));
+      return createToolExecuteHandler({
+        loadTools,
+        getSkillByName: jest.fn(async (name) => ({
+          _id: `${name}-id` as unknown as never,
+          name: name as string,
+          body: 'skill body',
+          fileCount: 1,
+          version: 1,
+        })) as unknown as ToolExecuteOptions['getSkillByName'],
+        listSkillFiles: jest.fn(async (skillId: unknown) => [
+          {
+            relativePath: 'references/style.md',
+            filename: 'style.md',
+            filepath: `/storage/${String(skillId)}/references/style.md`,
+            source: 's3',
+            bytes: 256,
+          },
+        ]) as unknown as ToolExecuteOptions['listSkillFiles'],
+        getStrategyFunctions: jest.fn(() => ({
+          getDownloadStream: jest.fn(async () => Readable.from(Buffer.from(''))),
+        })) as unknown as ToolExecuteOptions['getStrategyFunctions'],
+        batchUploadCodeEnvFiles:
+          params.batchUploadCodeEnvFiles as unknown as ToolExecuteOptions['batchUploadCodeEnvFiles'],
+        ...(params.options ?? {}),
+      });
+    }
+
+    it('injects the files a skill just uploaded into an execute_code call in the same batch', async () => {
+      const capturedConfigs: Record<string, unknown>[] = [];
+      const batchUploadCodeEnvFiles = jest.fn(async ({ id }: { id: string }) =>
+        uploadFor(id.replace(/-id$/, '')),
+      );
+      const handler = makeHandler({
+        batchUploadCodeEnvFiles,
+        tools: [createMockTool(Constants.EXECUTE_CODE, capturedConfigs)],
+      });
+
+      const results = await invokeHandler(handler, [
+        { id: 'call_skill', name: Constants.SKILL_TOOL, args: { skillName: 'brand-kit' } },
+        {
+          id: 'call_code',
+          name: Constants.EXECUTE_CODE,
+          args: { lang: 'python', code: 'print(1)' },
+        },
+      ]);
+
+      expect(results.map((result) => result.status)).toEqual(['success', 'success']);
+      expect(capturedConfigs).toHaveLength(1);
+      expect(capturedConfigs[0].session_id).toBe('session-brand-kit');
+      expect(capturedConfigs[0]._injected_files).toEqual([primedRefFor('brand-kit')]);
+    });
+
+    it('injects the files of every skill invoked in the batch', async () => {
+      const capturedConfigs: Record<string, unknown>[] = [];
+      const batchUploadCodeEnvFiles = jest.fn(async ({ id }: { id: string }) =>
+        uploadFor(id.replace(/-id$/, '')),
+      );
+      const handler = makeHandler({
+        batchUploadCodeEnvFiles,
+        tools: [createMockTool(Constants.EXECUTE_CODE, capturedConfigs)],
+      });
+
+      const results = await invokeHandler(handler, [
+        { id: 'call_skill_a', name: Constants.SKILL_TOOL, args: { skillName: 'brand-kit' } },
+        { id: 'call_skill_b', name: Constants.SKILL_TOOL, args: { skillName: 'chart-lib' } },
+        {
+          id: 'call_code',
+          name: Constants.EXECUTE_CODE,
+          args: { lang: 'python', code: 'print(1)' },
+        },
+      ]);
+
+      expect(results.map((result) => result.status)).toEqual(['success', 'success', 'success']);
+      expect(capturedConfigs[0]._injected_files).toEqual(
+        expect.arrayContaining([primedRefFor('brand-kit'), primedRefFor('chart-lib')]),
+      );
+      expect(capturedConfigs[0]._injected_files).toHaveLength(2);
+    });
+
+    it('hands the files to a backgrounded code call and to a sandbox authoring call', async () => {
+      const capturedConfigs: Record<string, unknown>[] = [];
+      const batchUploadCodeEnvFiles = jest.fn(async ({ id }: { id: string }) =>
+        uploadFor(id.replace(/-id$/, '')),
+      );
+      const writeSandboxFile = jest.fn(async () => ({
+        stdout: 'WROTE 11 bytes to /mnt/data/new.txt\n',
+        session_id: 'sess-new',
+        files: [{ id: 'file-new', name: 'new.txt', storage_session_id: 'sess-new' }],
+      }));
+      const handler = makeHandler({
+        batchUploadCodeEnvFiles,
+        tools: [createMockTool(Constants.EXECUTE_CODE, capturedConfigs)],
+        configurable: {
+          backgroundToolNames: [Constants.EXECUTE_CODE],
+          fileAuthoringToolNames: new Set(['create_file', 'edit_file']),
+        },
+        options: {
+          persistBackgroundCodeResult: jest.fn(async () => ({ attachments: [] })),
+          readSandboxFile: jest.fn(async () => {
+            throw new Error('cat: /mnt/data/new.txt: No such file or directory');
+          }),
+          writeSandboxFile,
+        } as unknown as Partial<ToolExecuteOptions>,
+      });
+
+      const results = await invokeHandlerWithConfig(
+        handler,
+        [
+          { id: 'call_skill', name: Constants.SKILL_TOOL, args: { skillName: 'brand-kit' } },
+          {
+            id: 'call_code_background',
+            name: Constants.EXECUTE_CODE,
+            args: { lang: 'python', code: 'print(1)', run_in_background: true },
+          },
+          {
+            id: 'call_create_sandbox',
+            name: 'create_file',
+            args: { path: '/mnt/data/new.txt', content: 'hello world' },
+          },
+        ],
+        { thread_id: 'convo-1' },
+      );
+
+      expect(results.map((result) => result.status)).toEqual(['success', 'success', 'success']);
+      /* The sandbox authoring call sends the context it cloned. */
+      expect(writeSandboxFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file_path: '/mnt/data/new.txt',
+          session_id: 'session-brand-kit',
+          files: [primedRefFor('brand-kit')],
+        }),
+      );
+      /* The detached code invoke starts after the dispatch returns its handle. */
+      await new Promise((resolve) => setImmediate(resolve));
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(capturedConfigs).toHaveLength(1);
+      expect(capturedConfigs[0]._injected_files).toEqual([primedRefFor('brand-kit')]);
+    });
+
+    it('runs the code call with its original files when the skill upload fails', async () => {
+      const capturedConfigs: Record<string, unknown>[] = [];
+      const batchUploadCodeEnvFiles = jest.fn(async () => {
+        throw new Error('Request failed with status code 500');
+      });
+      const handler = makeHandler({
+        batchUploadCodeEnvFiles,
+        tools: [createMockTool(Constants.EXECUTE_CODE, capturedConfigs)],
+      });
+
+      const ownFile = {
+        storage_session_id: 'sess-own',
+        id: 'own-1',
+        resource_id: 'user_alice',
+        name: 'data.parquet',
+        kind: 'user' as const,
+      };
+      const [skillResult, codeResult] = await invokeHandler(handler, [
+        { id: 'call_skill', name: Constants.SKILL_TOOL, args: { skillName: 'brand-kit' } },
+        {
+          id: 'call_code',
+          name: Constants.EXECUTE_CODE,
+          args: { lang: 'python', code: 'print(1)' },
+          codeSessionContext: { session_id: 'sess-own', files: [ownFile] },
+        },
+      ]);
+
+      expect(skillResult.status).toBe('success');
+      expect(skillResult.content).toContain('could not be loaded into the code environment');
+      expect(codeResult.status).toBe('success');
+      expect(capturedConfigs).toHaveLength(1);
+      expect(capturedConfigs[0].session_id).toBe('sess-own');
+      expect(capturedConfigs[0]._injected_files).toEqual([ownFile]);
+    });
+
+    it('keeps code calls concurrent when the batch has no skill call', async () => {
+      const order: string[] = [];
+      let releaseFirst: () => void = () => undefined;
+      const secondStarted = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      const codeTool = {
+        name: Constants.EXECUTE_CODE,
+        invoke: jest.fn(async (_args: unknown, config: Record<string, unknown>) => {
+          const callId = (config.toolCall as { id: string }).id;
+          order.push(`start:${callId}`);
+          if (callId === 'call_code_a') {
+            await secondStarted;
+          } else {
+            releaseFirst();
+          }
+          order.push(`end:${callId}`);
+          return { content: 'ok' };
+        }),
+      };
+      const handler = makeHandler({
+        batchUploadCodeEnvFiles: jest.fn(),
+        tools: [codeTool],
+      });
+
+      const results = await invokeHandler(handler, [
+        { id: 'call_code_a', name: Constants.EXECUTE_CODE, args: { lang: 'python', code: 'a()' } },
+        { id: 'call_code_b', name: Constants.EXECUTE_CODE, args: { lang: 'python', code: 'b()' } },
+      ]);
+
+      expect(results.map((result) => result.status)).toEqual(['success', 'success']);
+      /* The second call ran to completion while the first was still in
+         flight: a batch without a skill call serializes nothing. */
+      expect(order).toEqual([
+        'start:call_code_a',
+        'start:call_code_b',
+        'end:call_code_b',
+        'end:call_code_a',
+      ]);
+    });
+
+    it('does not start the code call when the run is aborted while skill files load', async () => {
+      const capturedConfigs: Record<string, unknown>[] = [];
+      const controller = new AbortController();
+      const batchUploadCodeEnvFiles = jest.fn(
+        ({ signal }: { signal?: AbortSignal }) =>
+          new Promise<never>((_resolve, reject) => {
+            signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+          }),
+      );
+      const codeTool = createMockTool(Constants.EXECUTE_CODE, capturedConfigs);
+      const handler = makeHandler({ batchUploadCodeEnvFiles, tools: [codeTool] });
+
+      const resultsPromise = new Promise<ToolExecuteResult[]>((resolve, reject) => {
+        handler.handle('on_tool_execute', {
+          toolCalls: [
+            { id: 'call_skill', name: Constants.SKILL_TOOL, args: { skillName: 'brand-kit' } },
+            {
+              id: 'call_code',
+              name: Constants.EXECUTE_CODE,
+              args: { lang: 'python', code: 'print(1)' },
+            },
+          ],
+          signal: controller.signal,
+          resolve,
+          reject,
+        } as ToolExecuteBatchRequest);
+      });
+      setTimeout(() => controller.abort(), 10);
+
+      const [skillResult, codeResult] = await resultsPromise;
+
+      expect(skillResult.status).toBe('error');
+      expect(codeResult.status).toBe('error');
+      expect(codeTool.invoke).not.toHaveBeenCalled();
+      expect(capturedConfigs).toHaveLength(0);
+    });
+  });
+
   describe('file authoring tools for skills', () => {
     const { Types } = jest.requireActual('mongoose') as typeof import('mongoose');
     const SKILL_ID = new Types.ObjectId();
