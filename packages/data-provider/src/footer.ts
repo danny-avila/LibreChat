@@ -14,9 +14,10 @@ export type TConfiguredFooterSource = Pick<Partial<TStartupConfig>, 'customFoote
  * Only a custom footer with content counts. A privacy policy and terms of
  * service are read where they are agreed to, on the auth screens, and on the
  * welcome screen the conversation starts from; a started conversation carries
- * neither, so neither one puts a bar beneath its composer. An empty footer is
- * an operator suppressing the default disclaimer on the welcome screen, and it
- * renders nothing in a conversation, so it is no bar either.
+ * neither, so neither one puts a bar beneath its composer. A footer of
+ * nothing, or of whitespace the bar trims away, is an operator suppressing the
+ * default disclaimer on the welcome screen; it renders nothing in a
+ * conversation, so it is no bar either.
  *
  * The footer bar is absolutely positioned in a zero-height wrapper, so the
  * composer above it is what reserves its band: this answer decides both the
@@ -26,5 +27,5 @@ export type TConfiguredFooterSource = Pick<Partial<TStartupConfig>, 'customFoote
  * exists to remove.
  */
 export function hasConfiguredFooter(source?: TConfiguredFooterSource | null): boolean {
-  return typeof source?.customFooter === 'string' && source.customFooter !== '';
+  return typeof source?.customFooter === 'string' && source.customFooter.trim() !== '';
 }

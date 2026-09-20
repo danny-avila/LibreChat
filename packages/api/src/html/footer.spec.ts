@@ -13,7 +13,7 @@ const flagOf = (html: string): boolean | undefined => {
 describe('injectConfiguredFooterBootstrap', () => {
   it('answers yes for the footer the deployment configured', () => {
     expect(flagOf(injectConfiguredFooterBootstrap(SHELL, { customFooter: 'Operator' }))).toBe(true);
-    expect(flagOf(injectConfiguredFooterBootstrap(SHELL, { customFooter: ' ' }))).toBe(true);
+    expect(flagOf(injectConfiguredFooterBootstrap(SHELL, { customFooter: 'A | B' }))).toBe(true);
   });
 
   it('answers no for a deployment that configured nothing', () => {
@@ -24,6 +24,7 @@ describe('injectConfiguredFooterBootstrap', () => {
     /** Set to nothing: the welcome screen's disclaimer is suppressed, and a
      *  conversation renders no bar to reserve a band for. */
     expect(flagOf(injectConfiguredFooterBootstrap(SHELL, { customFooter: '' }))).toBe(false);
+    expect(flagOf(injectConfiguredFooterBootstrap(SHELL, { customFooter: '  ' }))).toBe(false);
   });
 
   it('places the answer ahead of the app that reads it', () => {
