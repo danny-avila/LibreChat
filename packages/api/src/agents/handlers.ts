@@ -543,6 +543,7 @@ export interface ToolExecuteOptions {
   readWorkspaceFile?: (params: {
     file_path: string;
     workspace_id: string;
+    workspace_instance_id?: string;
     start_line: number;
     max_lines: number;
     codeApiBaseUrl: string;
@@ -556,6 +557,7 @@ export interface ToolExecuteOptions {
   searchWorkspace?: (params: {
     query: string;
     workspace_id: string;
+    workspace_instance_id?: string;
     path?: string;
     max_results: number;
     codeApiBaseUrl: string;
@@ -568,6 +570,7 @@ export interface ToolExecuteOptions {
   /** Lists relative file paths within an attached worker's logical workspace. */
   listWorkspaceFiles?: (params: {
     workspace_id: string;
+    workspace_instance_id?: string;
     path?: string;
     after_path?: string;
     max_results: number;
@@ -584,6 +587,7 @@ export interface ToolExecuteOptions {
     content: string;
     overwrite: boolean;
     workspace_id: string;
+    workspace_instance_id?: string;
     codeApiBaseUrl: string;
     executionProfile: CodeExecutionContext['executionProfile'];
     bridgeWorkerId?: string;
@@ -596,6 +600,7 @@ export interface ToolExecuteOptions {
     file_path: string;
     edits: Array<{ oldText: string; newText: string }>;
     workspace_id: string;
+    workspace_instance_id?: string;
     codeApiBaseUrl: string;
     executionProfile: CodeExecutionContext['executionProfile'];
     bridgeWorkerId?: string;
@@ -609,6 +614,7 @@ export interface ToolExecuteOptions {
     edits: Array<{ oldText: string; newText: string }>;
     expected_base_sha256?: string;
     workspace_id: string;
+    workspace_instance_id?: string;
     codeApiBaseUrl: string;
     executionProfile: CodeExecutionContext['executionProfile'];
     bridgeWorkerId?: string;
@@ -2434,6 +2440,9 @@ async function handleWorkspaceFileRead(
     const result = await readWorkspaceFile({
       file_path: filePath,
       workspace_id: workspaceId,
+      ...(codeExecutionContext.codeWorkspace?.workspaceInstanceId
+        ? { workspace_instance_id: codeExecutionContext.codeWorkspace.workspaceInstanceId }
+        : {}),
       start_line: startLine,
       max_lines: maxLines,
       codeApiBaseUrl: codeExecutionContext.baseUrl,
@@ -2539,6 +2548,9 @@ async function handleWorkspaceSearchCall(
     const result = await options.searchWorkspace({
       query: args.query,
       workspace_id: workspaceId,
+      ...(codeExecutionContext.codeWorkspace?.workspaceInstanceId
+        ? { workspace_instance_id: codeExecutionContext.codeWorkspace.workspaceInstanceId }
+        : {}),
       ...(typeof args.path === 'string' && args.path.length > 0 ? { path: args.path } : {}),
       max_results: Number(maxResults),
       codeApiBaseUrl: codeExecutionContext.baseUrl,
@@ -2626,6 +2638,9 @@ async function handleWorkspaceListCall(
   try {
     const result = await options.listWorkspaceFiles({
       workspace_id: workspaceId,
+      ...(codeExecutionContext.codeWorkspace?.workspaceInstanceId
+        ? { workspace_instance_id: codeExecutionContext.codeWorkspace.workspaceInstanceId }
+        : {}),
       ...(typeof args.path === 'string' && args.path.length > 0 ? { path: args.path } : {}),
       ...(typeof args.after_path === 'string' && args.after_path.length > 0
         ? { after_path: args.after_path }
@@ -3793,6 +3808,7 @@ function attachedWorkspaceMutationParams(
   signal: AbortSignal | undefined,
 ): {
   workspace_id: string;
+  workspace_instance_id?: string;
   codeApiBaseUrl: string;
   executionProfile: CodeExecutionContext['executionProfile'];
   bridgeWorkerId?: string;
@@ -3802,6 +3818,9 @@ function attachedWorkspaceMutationParams(
 } {
   return {
     workspace_id: workspaceId,
+    ...(codeExecutionContext.codeWorkspace?.workspaceInstanceId
+      ? { workspace_instance_id: codeExecutionContext.codeWorkspace.workspaceInstanceId }
+      : {}),
     codeApiBaseUrl: codeExecutionContext.baseUrl,
     maxQueueWaitMs: resolveAttachedWorkspaceQueueWaitMs(
       codeExecutionContext.codeEnvironmentConfigSchema,

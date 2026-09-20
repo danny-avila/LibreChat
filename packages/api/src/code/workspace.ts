@@ -99,6 +99,7 @@ export interface WorkspaceReadRequest {
   protocolVersion: 1;
   operation: 'read_file';
   workspaceId: string;
+  workspaceInstanceId?: string;
   path: string;
   startLine?: number;
   maxLines?: number;
@@ -109,6 +110,7 @@ export interface WorkspaceSearchRequest {
   protocolVersion: 1;
   operation: 'search_text';
   workspaceId: string;
+  workspaceInstanceId?: string;
   query: string;
   path?: string;
   maxResults?: number;
@@ -118,6 +120,7 @@ export interface WorkspaceListRequest {
   protocolVersion: 1;
   operation: 'list_files';
   workspaceId: string;
+  workspaceInstanceId?: string;
   path?: string;
   maxResults?: number;
   afterPath?: string;
@@ -127,6 +130,7 @@ export interface WorkspaceExecuteCommandRequest {
   protocolVersion: 1;
   operation: 'execute_command';
   workspaceId: string;
+  workspaceInstanceId?: string;
   command: string;
   cwd?: string;
   timeoutMs?: number;
@@ -138,6 +142,7 @@ export interface WorkspaceWriteRequest {
   protocolVersion: 1;
   operation: 'write_file';
   workspaceId: string;
+  workspaceInstanceId?: string;
   path: string;
   content: string;
   overwrite?: boolean;
@@ -152,6 +157,7 @@ export interface WorkspaceEditRequest {
   protocolVersion: 1;
   operation: 'edit_file';
   workspaceId: string;
+  workspaceInstanceId?: string;
   path: string;
   edits: WorkspaceTextEdit[];
   expectedBaseSha256?: string;
@@ -161,6 +167,7 @@ export interface WorkspacePreviewEditRequest {
   protocolVersion: 1;
   operation: 'preview_edit';
   workspaceId: string;
+  workspaceInstanceId?: string;
   path: string;
   edits: WorkspaceTextEdit[];
 }
@@ -486,7 +493,9 @@ async function readBoundedJson(response: Response, signal?: AbortSignal): Promis
 function isValidRequest(request: WorkspaceToolRequest): boolean {
   if (
     request.protocolVersion !== 1 ||
-    !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(request.workspaceId)
+    !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(request.workspaceId) ||
+    (request.workspaceInstanceId !== undefined &&
+      !/^[a-f0-9]{64}$/.test(request.workspaceInstanceId))
   ) {
     return false;
   }
