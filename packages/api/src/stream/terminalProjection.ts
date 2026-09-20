@@ -22,17 +22,19 @@ import type {
  */
 export const TRANSIENT_MESSAGE_FIELDS = ['fileContext', 'image_urls'] as const;
 
-/** Storage bookkeeping present on both nested collections. Never display data. */
-const STORAGE_FILE_FIELDS = ['_id', '__v'] as const;
-
 /**
  * Transient fields on a message's `files` entries. `files` carries the user's
  * uploads, whose `text` is the body extracted for the prompt, so it is excluded
- * along with storage bookkeeping. Every other property is display and download
- * metadata the client needs to keep rendering the attachment after FINAL, so
- * entries are projected field-by-field rather than dropped.
+ * along with the storage bookkeeping (`_id`, `__v`) that both collections share.
+ * Every other property is display and download metadata the client needs to keep
+ * rendering the attachment after FINAL, so entries are projected field-by-field
+ * rather than dropped.
+ *
+ * Spelled out rather than composed from a shared bookkeeping tuple: `tsdown`
+ * builds this package with `--isolatedDeclarations`, which rejects a spread
+ * element in an inferred array type (TS9018).
  */
-export const TRANSIENT_FILE_FIELDS = ['text', ...STORAGE_FILE_FIELDS] as const;
+export const TRANSIENT_FILE_FIELDS = ['text', '_id', '__v'] as const;
 
 /**
  * Transient fields on a message's `attachments` entries.
@@ -48,7 +50,7 @@ export const TRANSIENT_FILE_FIELDS = ['text', ...STORAGE_FILE_FIELDS] as const;
  * cross-replica subscriber whose only source is the stored FINAL would render a
  * blank preview with no path back to the text.
  */
-export const TRANSIENT_ATTACHMENT_FIELDS = STORAGE_FILE_FIELDS;
+export const TRANSIENT_ATTACHMENT_FIELDS = ['_id', '__v'] as const;
 
 /** Message-valued slots of a terminal event that can carry transient inputs. */
 const MESSAGE_SLOTS = ['requestMessage', 'responseMessage'] as const;
