@@ -9,12 +9,12 @@ import type { TOptions } from 'i18next';
 import type { TranslationKeys } from '~/hooks';
 import { getBatchActivityLabelPart, getActivityLabelText } from '~/utils/activityLabels';
 import { hasPendingApprovalInPart, hasPendingAuthInPart } from '~/utils/groupToolCalls';
+import { parseBackgroundHandle, splitBackgroundAttachments } from './Parts/handle';
 import { ASK_USER_QUESTION, getSubmittedAskAnswer } from '~/utils/approval';
+import { boundIntentLabel, getToolCallIntent } from './Parts/intent';
 import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import { getToolDisplayLabel } from '~/utils/toolLabels';
-import { parseBackgroundHandle, splitBackgroundAttachments } from './Parts/handle';
 import { isBashProgrammaticToolCall } from './routing';
-import { boundIntentLabel, getToolCallIntent } from './Parts/intent';
 import { isError } from './ToolOutput';
 
 /** How often a live fold's header may repaint. A streamed intent moves the
