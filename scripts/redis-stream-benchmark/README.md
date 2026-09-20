@@ -88,3 +88,43 @@ Cluster, managed AWS/Azure services, TLS, bandwidth saturation, long generations
 loss/retry ambiguity, or user-visible browser behavior. No production code is changed.
 
 The first measured results and recommendation are in `results/2026-09-20/REPORT.md`.
+
+## Local bandwidth sensitivity follow-up
+
+Live AWS/Azure tests are deferred. To ask whether script transmission becomes material under
+restricted bandwidth, the same harness supports a separate, explicitly synthetic profile:
+
+```bash
+REDIS_BENCH_BINARY="$(command -v redis-server)" \
+  bash scripts/redis-stream-benchmark/run.sh .review/redis-bandwidth bandwidth
+```
+
+This profile uses 16 streams, 25 ms coalescing, 1 ms injected one-way latency, and shared
+upstream budgets of unlimited, 1 MiB/s, and 10 MiB/s. Those budgets are sensitivity points,
+**not measured production network limits**. Paced runs contain 256 events per stream (about
+five seconds of offered input); bursts contain 1,024. Every configuration has three serial
+repetitions. The profile has 36 samples and is summarized separately from the latency matrix.
+It remains a short experiment, not a soak test.
+
+A FIFO scheduler reserves upstream serialization time in chunks of at most 16 KiB across all
+proxy connections. Responses/subscriber traffic have only the latency delay, no bandwidth cap.
+The rate is an application-level approximation, not packet-level network emulation: Node timer
+jitter can release overdue chunks together, and destination socket buffering is not modeled.
+`peakProxyQueuedBytes` describes bytes waiting inside this fixture, **not** the application's
+outstanding receipt queue or a production memory bound.
+
+Before each rate-limited slice, two concurrent Redis connections transfer a combined payload
+of approximately one quarter of the configured bytes/second budget. The observed duration must
+be at least 90% of its serialized budget and below twice that budget plus 50 ms. Calibration
+results are retained with the samples. This checks that the rate limit is shared and active;
+it does not certify fidelity under arbitrary congestion.
+
+The original latency-only profile and results are preserved. Harness changes are identified by
+a source-diff hash in the new metadata alongside the checkout commit. Use the matching PR
+revision to reproduce the experiment. A stable-cache SHA advantage under an imposed bottleneck
+is evidence of sensitivity, not proof that our deployments need another execution mechanism.
+
+Follow-up findings, exclusions, and raw samples are in
+`results/2026-09-20-bandwidth/REPORT.md`. The standalone FIFO fixture regression can be run with
+`--testPathPatterns=redisBandwidth.perf_benchmark.manual` using the same opt-in variables. The
+original latency report remains a historical result; the follow-up is a separate profile.

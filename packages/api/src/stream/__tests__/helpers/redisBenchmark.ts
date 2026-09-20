@@ -76,11 +76,38 @@ export async function startBenchmarkRedis(binary: string, outputDirectory: strin
   };
 }
 
-/** Symmetric per-chunk delay, not bandwidth shaping. Both publisher and subscriber use it. */
-export async function startLatencyProxy(socketPath: string, oneWayMs: number) {
+/** Symmetric latency plus an optional shared upstream serialization budget. Test-only. */
+export async function startLatencyProxy(
+  socketPath: string,
+  oneWayMs: number,
+  upstreamBytesPerSecond = 0,
+) {
+  if (!Number.isFinite(upstreamBytesPerSecond) || upstreamBytesPerSecond < 0) {
+    throw new Error('Invalid upstream bandwidth budget');
+  }
+  let upstreamFreeAt = 0;
+  const shaping = { queuedBytes: 0, peakQueuedBytes: 0 };
   const sockets = new Set<Socket>();
   const timers = new Set<ReturnType<typeof setTimeout>>();
   const bytes = { sent: 0, received: 0 };
+  const upstreamQueue: Array<{ destination: Socket; chunk: Buffer; readyAt: number }> = [];
+  let upstreamTimer: ReturnType<typeof setTimeout> | undefined;
+  const drainUpstream = (): void => {
+    if (upstreamTimer) timers.delete(upstreamTimer);
+    upstreamTimer = undefined;
+    while (upstreamQueue.length && upstreamQueue[0].readyAt <= performance.now()) {
+      const next = upstreamQueue.shift()!;
+      shaping.queuedBytes -= next.chunk.length;
+      if (!next.destination.destroyed) next.destination.write(next.chunk);
+    }
+    if (upstreamQueue.length) {
+      upstreamTimer = setTimeout(
+        drainUpstream,
+        Math.max(1, upstreamQueue[0].readyAt - performance.now()),
+      );
+      timers.add(upstreamTimer);
+    }
+  };
   const proxy = net.createServer((front) => {
     const back = net.connect(socketPath);
     for (const socket of [front, back]) {
@@ -105,7 +132,22 @@ export async function startLatencyProxy(socketPath: string, oneWayMs: number) {
     };
     front.on('data', (data: Buffer) => {
       bytes.sent += data.length;
-      forward(back, data);
+      if (upstreamBytesPerSecond === 0) {
+        forward(back, data);
+        return;
+      }
+      // Reserve a shared FIFO link budget in bounded chunks, not per connection.
+      // Downstream is deliberately unlimited apart from the symmetric latency.
+      for (let offset = 0; offset < data.length; offset += 16384) {
+        const chunk = data.subarray(offset, offset + 16384);
+        const now = performance.now();
+        upstreamFreeAt =
+          Math.max(upstreamFreeAt, now) + (chunk.length / upstreamBytesPerSecond) * 1000;
+        shaping.queuedBytes += chunk.length;
+        shaping.peakQueuedBytes = Math.max(shaping.peakQueuedBytes, shaping.queuedBytes);
+        upstreamQueue.push({ destination: back, chunk, readyAt: upstreamFreeAt + oneWayMs });
+        if (!upstreamTimer) drainUpstream();
+      }
     });
     back.on('data', (data: Buffer) => {
       bytes.received += data.length;
@@ -121,6 +163,7 @@ export async function startLatencyProxy(socketPath: string, oneWayMs: number) {
   return {
     port: address.port,
     bytes,
+    shaping,
     async stop(): Promise<void> {
       for (const timer of timers) clearTimeout(timer);
       for (const socket of sockets) socket.destroy();

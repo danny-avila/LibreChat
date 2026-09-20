@@ -27,6 +27,7 @@ interface Scenario {
   oneWayMs: number;
   workload: Workload;
   repetition: number;
+  upstreamBytesPerSecond: number;
 }
 
 function percentile(values: number[], fraction: number): number {
@@ -44,7 +45,16 @@ describeBenchmark('real Redis streaming evidence (manual, no production changes)
     if (!binary) throw new Error('REDIS_BENCH_BINARY must name a local redis-server executable');
     const output = path.resolve(process.env.REDIS_BENCH_OUTPUT ?? '../../.review/stream-evidence');
     const smoke = process.env.REDIS_BENCH_SMOKE === 'true';
-    const eventCounts = { paced: smoke ? 16 : 64, burst: smoke ? 16 : 256 };
+    const bandwidthProfile = process.env.REDIS_BENCH_PROFILE === 'bandwidth';
+    const profileEvents = bandwidthProfile
+      ? { paced: 256, burst: 1024 }
+      : { paced: 64, burst: 256 };
+    const eventCounts = smoke ? { paced: 16, burst: 16 } : profileEvents;
+    const profileDelays = bandwidthProfile ? [1] : [0, 1, 5];
+    const profileStreams = bandwidthProfile ? [16] : [1, 16];
+    const upstreamBytesPerSecond = Number(process.env.REDIS_BENCH_UPSTREAM_BYTES_PER_SECOND ?? 0);
+    if (!Number.isFinite(upstreamBytesPerSecond) || upstreamBytesPerSecond < 0)
+      throw new Error('Invalid bandwidth budget');
     const repeats = smoke ? 1 : 3;
     const instance = await startBenchmarkRedis(binary, output);
     const originalWindow = process.env.STREAM_DELTA_COALESCE_MS;
@@ -54,6 +64,19 @@ describeBenchmark('real Redis streaming evidence (manual, no production changes)
     const metadata = {
       sourceCommit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
       node: process.version,
+      harnessSourceHash: createHash('sha256')
+        .update(
+          execFileSync('git', [
+            'diff',
+            'HEAD',
+            '--',
+            'src/stream/__tests__/helpers/redisBenchmark.ts',
+            'src/stream/__tests__/redisStreaming.perf_benchmark.manual.spec.ts',
+          ]),
+        )
+        .digest('hex'),
+      profile: bandwidthProfile ? 'bandwidth' : 'latency',
+      upstreamBytesPerSecond,
       redisVersion,
       date: new Date().toISOString(),
       eventsPerStream: eventCounts,
@@ -68,11 +91,44 @@ describeBenchmark('real Redis streaming evidence (manual, no production changes)
       repeats,
       topology: 'private standalone Redis, local Unix socket behind TCP delay proxy',
       limitations:
-        'Synthetic provider deltas through real manager/store/transport. No LLM, HTTP/SSE, TLS, Cluster, cloud, bandwidth cap, or cache-failure claim. SHA diagnostic preloads scripts and never retries NOSCRIPT.',
+        'Synthetic provider deltas through real manager/store/transport. No LLM, HTTP/SSE, TLS, Cluster, cloud, or cache-failure claim. Bandwidth budget, when nonzero, is synthetic upstream only, shared by both connections. SHA diagnostic preloads scripts and never retries NOSCRIPT.',
     };
     await writeFile(path.join(output, 'metadata.json'), JSON.stringify(metadata, null, 2) + '\n');
     await writeFile(path.join(output, 'samples.jsonl'), '');
     try {
+      if (upstreamBytesPerSecond > 0) {
+        const proxy = await startLatencyProxy(instance.socketPath, 1, upstreamBytesPerSecond);
+        const clients = Array.from(
+          { length: 2 },
+          () => new Redis({ host: '127.0.0.1', port: proxy.port, lazyConnect: true }),
+        );
+        try {
+          await Promise.all(clients.map((client) => client.connect()));
+          await Promise.all(clients.map((client) => client.ping()));
+          const payload = 'x'.repeat(Math.ceil(upstreamBytesPerSecond / 8));
+          const before = proxy.bytes.sent;
+          const start = performance.now();
+          await Promise.all(
+            clients.map((client, index) => client.set(`calibration-${index}`, payload)),
+          );
+          const elapsedMs = performance.now() - start;
+          const sentBytes = proxy.bytes.sent - before;
+          const budgetMs = (sentBytes / upstreamBytesPerSecond) * 1000;
+          expect(elapsedMs).toBeGreaterThanOrEqual(budgetMs * 0.9);
+          expect(elapsedMs).toBeLessThan(budgetMs * 2 + 50);
+          await writeFile(
+            path.join(output, 'calibration.json'),
+            JSON.stringify(
+              { upstreamBytesPerSecond, clients: 2, sentBytes, elapsedMs, budgetMs },
+              null,
+              2,
+            ) + '\n',
+          );
+        } finally {
+          for (const client of clients) client.disconnect();
+          await proxy.stop();
+        }
+      }
       const cases: Scenario[] = [];
       for (let repetition = 0; repetition < repeats; repetition++) {
         if (
@@ -80,22 +136,30 @@ describeBenchmark('real Redis streaming evidence (manual, no production changes)
           repetition !== Number(process.env.REDIS_BENCH_REPETITION)
         )
           continue;
-        for (const oneWayMs of smoke ? [0] : [0, 1, 5]) {
+        for (const oneWayMs of smoke ? [0] : profileDelays) {
           if (
             process.env.REDIS_BENCH_ONE_WAY_MS != null &&
             oneWayMs !== Number(process.env.REDIS_BENCH_ONE_WAY_MS)
           )
             continue;
-          for (const streams of smoke ? [1] : [1, 16]) {
+          for (const streams of smoke ? [1] : profileStreams) {
             for (const workload of ['paced', 'burst'] as const) {
-              for (const windowMs of [0, 25]) {
+              for (const windowMs of bandwidthProfile ? [25] : [0, 25]) {
                 // Alternate mode order to reduce systematic warm-up and time drift bias.
                 const modes: Mode[] =
                   repetition % 2
                     ? ['warm-sha-diagnostic', 'eval']
                     : ['eval', 'warm-sha-diagnostic'];
                 for (const mode of modes)
-                  cases.push({ mode, windowMs, streams, oneWayMs, workload, repetition });
+                  cases.push({
+                    mode,
+                    windowMs,
+                    streams,
+                    oneWayMs,
+                    workload,
+                    repetition,
+                    upstreamBytesPerSecond,
+                  });
               }
             }
           }
@@ -107,7 +171,11 @@ describeBenchmark('real Redis streaming evidence (manual, no production changes)
         process.env.STREAM_DELTA_COALESCE_MS = String(scenario.windowMs);
         // Only this harness's own disposable instance is ever flushed.
         await instance.admin.flushdb();
-        const proxy = await startLatencyProxy(instance.socketPath, scenario.oneWayMs);
+        const proxy = await startLatencyProxy(
+          instance.socketPath,
+          scenario.oneWayMs,
+          scenario.upstreamBytesPerSecond,
+        );
         const redis = new Redis({
           host: '127.0.0.1',
           port: proxy.port,
@@ -237,6 +305,8 @@ describeBenchmark('real Redis streaming evidence (manual, no production changes)
           }, 10);
           const beforeCpu = process.cpuUsage();
           const beforeBytes = { ...proxy.bytes };
+          await waitUntil(() => proxy.shaping.queuedBytes === 0);
+          proxy.shaping.peakQueuedBytes = 0;
           const started = performance.now();
           diagnostic = scenario.mode === 'warm-sha-diagnostic';
           measured = true;
@@ -332,6 +402,7 @@ describeBenchmark('real Redis streaming evidence (manual, no production changes)
               infoNumber(afterInfo, 'used_memory') - infoNumber(beforeInfo, 'used_memory'),
             eventLoopP99Ms: loopDelay.percentile(99) / 1e6,
             peakActiveEmissions: peakActive,
+            peakProxyQueuedBytes: proxy.shaping.peakQueuedBytes,
             scripts: [...scripts.values()].filter((script) => script.calls > 0),
           };
           await appendFile(path.join(output, 'samples.jsonl'), JSON.stringify(result) + '\n');

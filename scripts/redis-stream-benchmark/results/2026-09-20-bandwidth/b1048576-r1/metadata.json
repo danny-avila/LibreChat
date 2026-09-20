@@ -1,0 +1,27 @@
+{
+  "sourceCommit": "e8269bf6fd7983565db0706a6375f30e4e9ef697",
+  "node": "v24.16.0",
+  "harnessSourceHash": "deac0e12c0534277aa3c4e2d9134142648558805b5451b1d7a92d7b2c027918b",
+  "profile": "bandwidth",
+  "upstreamBytesPerSecond": 1048576,
+  "redisVersion": "7.4.11",
+  "date": "2026-09-20T11:08:04.540Z",
+  "eventsPerStream": {
+    "paced": 256,
+    "burst": 1024
+  },
+  "cpu": "Intel(R) Xeon(R) Platinum 8488C",
+  "availableParallelism": 16,
+  "hostLoadAverage": [
+    0.4,
+    0.32,
+    0.25
+  ],
+  "matrixFilter": {
+    "repetition": "1"
+  },
+  "pacedIntervalMs": 20,
+  "repeats": 3,
+  "topology": "private standalone Redis, local Unix socket behind TCP delay proxy",
+  "limitations": "Synthetic provider deltas through real manager/store/transport. No LLM, HTTP/SSE, TLS, Cluster, cloud, or cache-failure claim. Bandwidth budget, when nonzero, is synthetic upstream only, shared by both connections. SHA diagnostic preloads scripts and never retries NOSCRIPT."
+}

@@ -1,0 +1,7 @@
+{
+  "upstreamBytesPerSecond": 1048576,
+  "clients": 2,
+  "sentBytes": 262232,
+  "elapsedMs": 254.158371,
+  "budgetMs": 250.08392333984375
+}
