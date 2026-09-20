@@ -380,6 +380,7 @@ export interface AgentTriggerDeliveryMethods {
       attempt: number;
       error: AgentTriggerDeliveryFailure;
       settledAt: Date;
+      receiptRetryAt?: Date;
     },
   ) => Promise<boolean>;
   getAgentTriggerDelivery: (deliveryKey: string) => Promise<AgentTriggerDeliveryRecord | null>;
@@ -3407,9 +3408,25 @@ export function createAgentTriggerDeliveryMethods(
       availableAt: Date;
     },
   ): Promise<boolean> {
+    return retryDelivery(input);
+  }
+
+  async function retryDelivery(
+    input: Parameters<AgentTriggerDeliveryMethods['retryAgentTriggerDelivery']>[0],
+    recoverReceipt = false,
+  ): Promise<boolean> {
     const error = normalizeFailure(input.error);
+    const receiptFence = recoverReceipt
+      ? {
+          requiredWorkerCapability:
+            AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+          backgroundToolResult: { $exists: true },
+        }
+      : {};
+    const recoveredAttempt = recoverReceipt ? { attempts: 0 } : {};
     const retryUpdate = (status: 'pending' | 'capability_pending') => ({
       $set: {
+        ...recoveredAttempt,
         status,
         availableAt: input.availableAt,
         claimAvailableAt: input.availableAt,
@@ -3438,9 +3455,10 @@ export function createAgentTriggerDeliveryMethods(
       },
     });
     const shieldResult = await Delivery().updateOne(
-      { _id: input.id, ...shieldCapabilityFence(input) },
+      { _id: input.id, ...shieldCapabilityFence(input), ...receiptFence },
       {
         $set: {
+          ...recoveredAttempt,
           status: 'leased',
           availableAt: input.availableAt,
           capabilityStatus: 'pending',
@@ -3464,14 +3482,14 @@ export function createAgentTriggerDeliveryMethods(
       return true;
     }
     const capabilityResult = await Delivery().updateOne(
-      { _id: input.id, ...legacyCapabilityFence(input) },
+      { _id: input.id, ...legacyCapabilityFence(input), ...receiptFence },
       retryUpdate('capability_pending'),
     );
     if (capabilityResult.modifiedCount === 1) {
       return true;
     }
     const result = await Delivery().updateOne(
-      { _id: input.id, ...ordinaryFence(input) },
+      { _id: input.id, ...ordinaryFence(input), ...receiptFence },
       retryUpdate('pending'),
     );
     return result.modifiedCount === 1;
@@ -3482,13 +3500,21 @@ export function createAgentTriggerDeliveryMethods(
       attempt: number;
       error: AgentTriggerDeliveryFailure;
       settledAt: Date;
+      receiptRetryAt?: Date;
     },
   ): Promise<boolean> {
     const error = normalizeFailure(input.error);
-    /** Receipt publication and producer-loss settlement must contend on the
-     * same row. A late liveness observation cannot retire committed output. */
+    if (
+      error.retryable &&
+      input.receiptRetryAt != null &&
+      (await retryDelivery({ ...input, availableAt: input.receiptRetryAt }, true))
+    ) {
+      return false;
+    }
+    /** Publication must contend with every retryable terminal transition,
+     * including a receipt committed between recovery and the dead-letter CAS. */
     const receiptFence =
-      error.code === 'BACKGROUND_TOOL_PRODUCER_LOST'
+      error.retryable || error.code === 'BACKGROUND_TOOL_PRODUCER_LOST'
         ? { backgroundToolResult: { $exists: false } }
         : {};
     const deadUpdate = (status: 'dead' | 'capability_dead') => ({

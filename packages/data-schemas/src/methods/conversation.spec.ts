@@ -2289,6 +2289,65 @@ describe('Conversation Operations', () => {
       expect(eraseAgentTriggerDeliveryConversationResults).not.toHaveBeenCalled();
     });
 
+    it('finishes descendant bookkeeping and message cleanup when receipt erasure fails', async () => {
+      const parentId = uuidv4();
+      const childId = uuidv4();
+      const grandchildId = uuidv4();
+      const ids = [parentId, childId, grandchildId];
+      const project = await ChatProject.create({ user: 'user123', name: 'Receipt cleanup' });
+      await ConversationTag.create({ user: 'user123', tag: 'work', count: 3, position: 0 });
+      await Conversation.create(
+        ids.map((conversationId, depth) => ({
+          conversationId,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          tags: ['work'],
+          chatProjectId: project._id.toString(),
+          ...(depth === 0
+            ? {}
+            : {
+                subagentThread: {
+                  rootConversationId: parentId,
+                  parentConversationId: ids[depth - 1],
+                  parentMessageId: `message-${depth}`,
+                  parentToolCallId: `call-${depth}`,
+                  subagentType: 'agent-child',
+                  subagentKind: 'agent',
+                  depth,
+                },
+              }),
+        })),
+      );
+      const prepare = jest.fn(async () => undefined);
+      const erase = jest.fn(async () => {
+        throw new Error('receipt storage unavailable');
+      });
+      const scopedMethods = createConversationMethods(mongoose, {
+        getMessages,
+        deleteMessages,
+        prepareAgentTriggerConversationResultErasure: prepare,
+        eraseAgentTriggerDeliveryConversationResults: erase,
+      });
+
+      const result = await scopedMethods.deleteConvos('user123', { conversationId: parentId });
+      expect(result).toMatchObject({ deletedCount: 3, conversationIds: ids });
+      expect(prepare.mock.calls).toHaveLength(3);
+      expect(erase.mock.calls).toHaveLength(3);
+      expect(await Conversation.countDocuments({ user: 'user123' })).toBe(0);
+      expect((await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean())?.count).toBe(
+        0,
+      );
+      expect((await ChatProject.findById(project._id).lean())?.conversationCount).toBe(0);
+      expect(deleteMessages).toHaveBeenCalledWith({
+        user: 'user123',
+        conversationId: { $in: ids },
+      });
+
+      await expect(
+        scopedMethods.deleteConvos('user123', { conversationId: parentId }, { allowEmpty: true }),
+      ).resolves.toMatchObject({ deletedCount: 0, conversationIds: [parentId] });
+    });
+
     it('fails closed before deleting a conversation when queued-turn retirement fails', async () => {
       const conversationId = uuidv4();
       await Conversation.create({

@@ -3249,7 +3249,11 @@ export function createConversationMethods(
           /** Result erasure is irreversible. Keep receipts intact when a
            * pre-delete hook or the conversation delete itself fails, so a
            * retained conversation cannot lose a receipt-only completion. */
-          await deps?.eraseAgentTriggerDeliveryConversationResults?.(user, waveIds);
+          try {
+            await deps?.eraseAgentTriggerDeliveryConversationResults?.(user, waveIds);
+          } catch (error) {
+            logger.error('[deleteConvos] Receipt erasure deferred to durable cleanup', error);
+          }
         }
         acknowledged &&= result.acknowledged;
         deletedCount += result.deletedCount;
@@ -3281,7 +3285,11 @@ export function createConversationMethods(
             allTenants: true,
           })),
         );
-        await deps?.eraseAgentTriggerDeliveryConversationResults?.(user, recoveryConversationIds);
+        try {
+          await deps?.eraseAgentTriggerDeliveryConversationResults?.(user, recoveryConversationIds);
+        } catch (error) {
+          logger.error('[deleteConvos] Receipt erasure deferred to durable cleanup', error);
+        }
       }
 
       const deleteConvoResult: DeleteResult = { acknowledged, deletedCount };

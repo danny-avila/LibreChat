@@ -573,9 +573,48 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toBe(false);
   });
 
-  it.each(['receipt', 'death'])(
-    'atomically fences producer loss when %s wins first',
-    async (winner) => {
+  it.each([
+    ['receipt', 'BACKGROUND_TOOL_PRODUCER_LOST'],
+    ['death', 'BACKGROUND_TOOL_PRODUCER_LOST'],
+    ['receipt', 'PARENT_STATE_UNAVAILABLE'],
+    ['death', 'PARENT_STATE_UNAVAILABLE'],
+  ])('atomically fences result publication when %s wins before %s', async (winner, code) => {
+    const source = { id: 'background-tool-completion', type: 'internal' };
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({
+        envelope: { event: { source } },
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+      }),
+    );
+    const owner = { workerId: 'worker', claimToken: 'claim', now: START };
+    const claimed = await methods.claimNextAgentTriggerDelivery({
+      ...owner,
+      leaseUntil: new Date(START.getTime() + 60_000),
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2],
+    });
+    expect(claimed).not.toBeNull();
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({ ...owner, id: claimed!.id });
+    const write = () =>
+      methods.persistAgentBackgroundToolResult({
+        deliveryKey: queued.delivery.deliveryKey,
+        sourceId: source.id,
+        result: { status: 'completed', output: 'late output', settledAt: START },
+      });
+    const dead = () =>
+      methods.deadLetterAgentTriggerDelivery({
+        ...owner,
+        id: claimed!.id,
+        attempt: attempt!,
+        settledAt: START,
+        error: transientFailure({ code, retryable: code !== 'BACKGROUND_TOOL_PRODUCER_LOST' }),
+      });
+    await expect(winner === 'receipt' ? write() : dead()).resolves.toBe(true);
+    await expect(winner === 'receipt' ? dead() : write()).resolves.toBe(false);
+  });
+
+  it.each(['shield', 'legacy'] as const)(
+    'recovers a committed receipt after generic retry exhaustion through the %s fence',
+    async (format) => {
       const source = { id: 'background-tool-completion', type: 'internal' };
       const queued = await methods.enqueueAgentTriggerDelivery(
         enqueueInput({
@@ -590,24 +629,80 @@ describe('agent trigger delivery methods', () => {
         leaseUntil: new Date(START.getTime() + 60_000),
         workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2],
       });
-      expect(claimed).not.toBeNull();
-      const attempt = await methods.beginAgentTriggerDeliveryAttempt({ ...owner, id: claimed!.id });
-      const write = () =>
-        methods.persistAgentBackgroundToolResult({
-          deliveryKey: queued.delivery.deliveryKey,
-          sourceId: source.id,
-          result: { status: 'completed', output: 'late output', settledAt: START },
-        });
-      const dead = () =>
-        methods.deadLetterAgentTriggerDelivery({
+      const id = claimed!.id;
+      const attempt = await methods.beginAgentTriggerDeliveryAttempt({ ...owner, id });
+      if (format !== 'shield') {
+        await Delivery.updateOne(
+          { _id: id },
+          {
+            $set: {
+              status: 'capability_leased',
+              leaseBy: owner.workerId,
+              claimToken: owner.claimToken,
+              leaseUntil: new Date(START.getTime() + 60_000),
+            },
+            $unset: {
+              capabilityStatus: 1,
+              capabilityLeaseBy: 1,
+              capabilityLeaseUntil: 1,
+              capabilityClaimToken: 1,
+            },
+          },
+        );
+      }
+      const receipt = { deliveryKey: queued.delivery.deliveryKey, sourceId: source.id };
+      await methods.persistAgentBackgroundToolResult({
+        ...receipt,
+        result: { status: 'completed', output: 'saved output', settledAt: START },
+      });
+      const receiptRetryAt = new Date(START.getTime() + 300_000);
+      const terminal = {
+        ...owner,
+        id,
+        attempt: attempt!,
+        settledAt: START,
+        receiptRetryAt,
+        error: transientFailure({ code: 'PARENT_STATE_UNAVAILABLE' }),
+      };
+      await expect(
+        methods.deadLetterAgentTriggerDelivery({ ...terminal, claimToken: 'stale' }),
+      ).resolves.toBe(false);
+      expect((await Delivery.findById(id).lean())?.attempts).toBe(attempt);
+      await expect(methods.deadLetterAgentTriggerDelivery(terminal)).resolves.toBe(false);
+      expect(await Delivery.findById(id).lean()).toMatchObject({
+        attempts: 0,
+        claimAvailableAt: receiptRetryAt,
+        ...(format === 'shield'
+          ? { capabilityStatus: 'pending' }
+          : { status: 'capability_pending' }),
+      });
+      await expect(methods.getAgentBackgroundToolResult(receipt)).resolves.toMatchObject({
+        output: 'saved output',
+      });
+      const recovered = await methods.claimNextAgentTriggerDelivery({
+        ...owner,
+        claimToken: 'recovered',
+        now: receiptRetryAt,
+        leaseUntil: new Date(receiptRetryAt.getTime() + 60_000),
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2],
+      });
+      expect(recovered?.id).toBe(id);
+      expect(
+        await methods.beginAgentTriggerDeliveryAttempt({
           ...owner,
-          id: claimed!.id,
-          attempt: attempt!,
-          settledAt: START,
-          error: transientFailure({ code: 'BACKGROUND_TOOL_PRODUCER_LOST', retryable: false }),
-        });
-      await expect(winner === 'receipt' ? write() : dead()).resolves.toBe(true);
-      await expect(winner === 'receipt' ? dead() : write()).resolves.toBe(false);
+          id,
+          claimToken: 'recovered',
+          now: receiptRetryAt,
+        }),
+      ).toBe(1);
+      await expect(
+        methods.deadLetterAgentTriggerDelivery({
+          ...terminal,
+          claimToken: 'recovered',
+          settledAt: receiptRetryAt,
+          error: transientFailure({ code: 'PARENT_NOT_FOUND', retryable: false }),
+        }),
+      ).resolves.toBe(true);
     },
   );
 
