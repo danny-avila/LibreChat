@@ -6,6 +6,7 @@ export interface MockPublisher {
   get: jest.Mock;
   set: jest.Mock;
   del: jest.Mock;
+  evalsha: jest.Mock;
   eval: jest.Mock;
 }
 
@@ -54,6 +55,9 @@ export function createMockPublisher(): MockPublisher {
       }
       return Promise.resolve(keys.length);
     }),
+    evalsha: jest
+      .fn()
+      .mockRejectedValue(new Error('NOSCRIPT No matching script. Please use EVAL.')),
     eval: jest.fn(),
   };
 
