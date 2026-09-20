@@ -66,6 +66,7 @@ export * from './fading';
 export * from './publication';
 export * from './runtime';
 export * from './testHook';
+export * from './titleGate';
 export * from './tools';
 export * from './validation';
 export * from './added';

@@ -273,6 +273,7 @@ jest.mock('@librechat/api', () => ({
   getViolationInfo: (...args) => mockGetViolationInfo(...args),
   buildMessageFiles: jest.fn(() => []),
   resolveTitleTiming: jest.fn(() => 'immediate'),
+  createTitlePersistenceGate: jest.requireActual('@librechat/api').createTitlePersistenceGate,
   resolveConversationAnchor: jest.requireActual('@librechat/api').resolveConversationAnchor,
   resolveRunCodeWorkspaces: jest.requireActual('@librechat/api').resolveRunCodeWorkspaces,
   AttachmentStorageError: jest.requireActual('@librechat/api').AttachmentStorageError,
@@ -5909,6 +5910,124 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockCheckAndIncrementPendingRequest).not.toHaveBeenCalled();
     expect(mockGenerationJobManager.createJob).not.toHaveBeenCalled();
     expect(mockGenerationJobManager.releaseGeneration).not.toHaveBeenCalled();
+  });
+
+  describe('immediate title persistence gate', () => {
+    const { Constants } = require('librechat-data-provider');
+
+    /**
+     * Starts a first turn that stays mid-run until the returned `release` is
+     * called, so the gate an immediate title waits on can be observed while the
+     * generation is still going. `userMessageWrite` is what the client hands back
+     * through `getReqData`, exactly as BaseClient does once it has started the
+     * user-message write.
+     */
+    const startHeldFirstTurn = async ({ userMessageWrite }) => {
+      let signalFinished;
+      const finished = new Promise((resolve) => {
+        signalFinished = resolve;
+      });
+      mockGenerationJobManager.finishTerminalJob.mockImplementation(async () => signalFinished());
+
+      let release;
+      const held = new Promise((resolve) => {
+        release = resolve;
+      });
+
+      let convoReadyResolved = false;
+      const addTitle = jest.fn(async (_req, options) => {
+        void options?.convoReady?.then(() => {
+          convoReadyResolved = true;
+        });
+      });
+
+      const client = {
+        options: {},
+        savedMessageIds: new Set(),
+        skipSaveUserMessage: false,
+        sendMessage: jest.fn(async (_text, options) => {
+          const userMessage = {
+            messageId: 'user-msg',
+            parentMessageId: Constants.NO_PARENT,
+            conversationId: options.conversationId,
+            text: 'First message',
+          };
+          options.onStart(userMessage, 'response-msg');
+          options.getReqData({ userMessagePromise: userMessageWrite(options.conversationId) });
+          await held;
+          return {
+            messageId: 'response-msg',
+            parentMessageId: 'user-msg',
+            conversationId: options.conversationId,
+            content: [{ type: 'text', text: 'Answer' }],
+            databasePromise: Promise.resolve({
+              conversation: { conversationId: options.conversationId, title: null },
+            }),
+          };
+        }),
+      };
+
+      await AgentController(
+        {
+          user: { id: 'user-123' },
+          body: {
+            text: 'First message',
+            messageId: 'user-msg',
+            parentMessageId: Constants.NO_PARENT,
+            conversationId: 'new',
+            endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+          },
+          config: {},
+        },
+        createResumableResponse(),
+        jest.fn(),
+        jest.fn().mockResolvedValue({ client }),
+        addTitle,
+      );
+      await nextTick();
+      await nextTick();
+
+      return {
+        addTitle,
+        isConvoReadyResolved: () => convoReadyResolved,
+        finish: async () => {
+          release();
+          await finished;
+          await nextTick();
+          await nextTick();
+        },
+      };
+    };
+
+    /** The bug this covers: gating the title's save on the end of the turn left
+     *  the row on "New Chat" for the whole run, so every reader without the live
+     *  stream — a reloaded tab, the sidebar on another device — read the
+     *  placeholder until the turn finished. */
+    it('lets an immediate title persist as soon as the user message write creates the row', async () => {
+      const turn = await startHeldFirstTurn({
+        userMessageWrite: (conversationId) =>
+          Promise.resolve({ message: { messageId: 'user-msg' }, conversation: { conversationId } }),
+      });
+
+      expect(turn.addTitle).toHaveBeenCalledTimes(1);
+      expect(mockGenerationJobManager.finishTerminalJob).not.toHaveBeenCalled();
+      expect(turn.isConvoReadyResolved()).toBe(true);
+
+      await turn.finish();
+    });
+
+    it('keeps the title waiting until the turn ends when no conversation was persisted', async () => {
+      const turn = await startHeldFirstTurn({
+        userMessageWrite: () => Promise.resolve({}),
+      });
+
+      expect(turn.addTitle).toHaveBeenCalledTimes(1);
+      expect(turn.isConvoReadyResolved()).toBe(false);
+
+      await turn.finish();
+
+      expect(turn.isConvoReadyResolved()).toBe(true);
+    });
   });
 
   describe('preempt-incomplete title gating', () => {

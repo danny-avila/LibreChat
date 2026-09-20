@@ -14,6 +14,7 @@ const {
   getReferencedQuotes,
   resolveTitleTiming,
   GenerationJobManager,
+  createTitlePersistenceGate,
   filterPersistableAbortContent,
   decrementPendingRequest,
   sanitizeMessageForTransmit,
@@ -2088,6 +2089,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     let userMessage;
     let liveResponseMessageId = preallocatedResponseMessageId;
 
+    /** What an immediate-mode title waits on before its `noUpsert` save. Declared
+     *  out here because the fact that opens it arrives through `getReqData`, which
+     *  the client calls from inside `sendMessage`. */
+    const convoGate = createTitlePersistenceGate();
+
     const getReqData = (data = {}) => {
       if (data.userMessage) {
         userMessage = data.userMessage;
@@ -2095,6 +2101,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       if (data.responseMessageId) {
         liveResponseMessageId = data.responseMessageId;
       }
+      /** The user-message write upserts the conversation, so its result is the
+       *  earliest proof the title's row exists. Waiting for the turn to end
+       *  instead leaves the database on "New Chat" for the whole run, and every
+       *  reader without the live stream reads that. */
+      convoGate.openWhenConversationPersisted(data.userMessagePromise);
       // conversationId is pre-generated, no need to update from callback
     };
 
@@ -2179,15 +2190,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     const startGeneration = async () => {
       /** Immediate-mode title generation runs in parallel with the response, so
        *  the conversation row may not exist when the title resolves. `convoReady`
-       *  resolves once the response (and thus the conversation) has been saved,
-       *  gating the title's `saveConvo`. Declared here so both the success tail
-       *  and the catch block can settle it and gate `disposeClient` on the title. */
+       *  resolves once that row is known to exist — normally the user-message
+       *  write reporting it, and otherwise the success tail or the catch block,
+       *  which also gate `disposeClient` on the title. */
       let titleEventPromise = null;
       let acceptsTitleEvents = true;
-      let resolveConvoReady;
-      const convoReady = new Promise((resolve) => {
-        resolveConvoReady = resolve;
-      });
+      const convoReady = convoGate.ready;
+      const resolveConvoReady = () => convoGate.open();
       /** Dedicated controller so a user Stop (or a replaced stream) cancels the
        *  in-flight title — kept separate from `job.abortController`, which
        *  `completeJob` also aborts on *successful* completion and would otherwise
@@ -3008,16 +3017,18 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         // If the user stopped this turn — or an empty preempt boundary truncated
         // it, which persists under the same honest `unfinished` contract — cancel
-        // the title BEFORE unblocking its persistence wait; otherwise resolving
-        // `convoReady` lets the title task resume and save before the later abort runs.
+        // the title still being generated, which never reaches its save. A title
+        // that finished generating is kept, and is normally already persisted: the
+        // gate opened when the user-message write created its row.
         if (terminalWasAborted || preemptIncomplete) {
           titleAbortController.abort();
         } else {
           job.abortController.signal.removeEventListener('abort', abortTitleOnJobAbort);
         }
 
-        // The conversation row now exists and this stream is authoritative; allow
-        // any in-flight immediate title generation to persist (saveConvo uses noUpsert).
+        // Backstop for a turn whose user-message write never reported a conversation
+        // (a deferred or skipped write): the row exists by now, so let any title
+        // waiting on it persist (saveConvo uses noUpsert).
         resolveConvoReady();
         acceptsTitleEvents = false;
 

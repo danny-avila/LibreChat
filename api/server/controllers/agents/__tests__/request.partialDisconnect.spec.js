@@ -63,6 +63,7 @@ jest.mock('@librechat/api', () => ({
   })),
   buildMessageFiles: jest.fn(() => []),
   resolveTitleTiming: jest.fn(() => 'immediate'),
+  createTitlePersistenceGate: jest.requireActual('@librechat/api').createTitlePersistenceGate,
   resolveConversationAnchor: jest.requireActual('@librechat/api').resolveConversationAnchor,
   resolveRunCodeWorkspaces: jest.requireActual('@librechat/api').resolveRunCodeWorkspaces,
   shouldPersistCodeWorkspaceInitializationError:
