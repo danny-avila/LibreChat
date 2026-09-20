@@ -281,6 +281,39 @@ describe('buildTraceModel', () => {
     expect(second.cost).toBeCloseTo(0.501);
   });
 
+  it('gives no cost to a response the record limit cut, whose loaded records are not all it spent', () => {
+    const model = buildTraceModel([
+      record({ id: 'llm', parentId: 'not-loaded', kind: 'generation', cost: 0.2 }),
+      record({ id: 'whole', messageId: 'response-2', kind: 'generation', cost: 0.5 }),
+    ]);
+    const [cut, whole] = model.turns;
+
+    expect(cut.split).toBe(true);
+    expect(cut.cost).toBeUndefined();
+    expect(model.steps.get(cut.stepKeys[0])?.cost).toBeCloseTo(0.2);
+    expect(whole.cost).toBeCloseTo(0.5);
+  });
+
+  it('counts what a step spent in records the simple mode rolls out of sight', () => {
+    const records = [
+      record({ id: 'tool', kind: 'tool', cost: 0.01, startTime: at(0) }),
+      record({ id: 'hidden-span', parentId: 'tool', cost: 0.04, startTime: at(10) }),
+      record({
+        id: 'nested-llm',
+        parentId: 'hidden-span',
+        kind: 'generation',
+        cost: 0.1,
+        startTime: at(20),
+      }),
+    ];
+    for (const mode of ['simple', 'full'] as const) {
+      const model = buildTraceModel(records, mode);
+      expect(model.nodes.get('hidden-span')?.shown).toBe(mode === 'full');
+      expect(model.steps.get(model.turns[0].stepKeys[0])?.cost).toBeCloseTo(0.15);
+      expect(model.turns[0].cost).toBeCloseTo(0.15);
+    }
+  });
+
   it('withholds the cost total when any model call has no price, with or without usage', () => {
     const priced = record({ id: 'priced', kind: 'generation', usage: { total: 100 }, cost: 0.02 });
     const withUsage = buildTraceModel([

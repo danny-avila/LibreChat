@@ -167,6 +167,11 @@ function Ledger({
   const format = useTraceFormat();
   const idPrefix = useId();
   const grid = showCost ? GRID_WITH_COST : GRID;
+  /** The rows name themselves with `aria-label`, so what a column shows has to be said there too. */
+  const costText = (cost?: number) =>
+    showCost && cost != null
+      ? `, ${localize('com_ui_trace_summary_cost')} ${formatCost(cost, currency)}`
+      : '';
   const costCell = (cost?: number) =>
     showCost && (
       <span className="hidden truncate text-right text-xs font-normal tabular-nums text-text-secondary md:block">
@@ -359,7 +364,7 @@ function Ledger({
         aria-level={row.level}
         aria-expanded={row.expanded}
         aria-selected={false}
-        aria-label={`${label}, ${description}, ${localize('com_ui_trace_turn_records', { 0: String(recordCount) })}`}
+        aria-label={`${label}, ${description}, ${localize('com_ui_trace_turn_records', { 0: String(recordCount) })}${costText(row.type === 'turn' ? row.turn.cost : row.step.cost)}`}
         style={{ top: HEADER_HEIGHT + index * ROW_HEIGHT, height: ROW_HEIGHT }}
         onClick={() => activate(row)}
         className={cn(
@@ -482,7 +487,7 @@ function Ledger({
         aria-label={localize('com_ui_trace_bar_description', {
           0: `${name}, ${localize(appearance.label)}`,
           1: format.duration(node.start - (turnStart ?? model.start)),
-          2: statusText,
+          2: `${statusText}${costText(record.cost)}`,
         })}
         style={{ top: HEADER_HEIGHT + index * ROW_HEIGHT, height: ROW_HEIGHT }}
         onClick={() => activate(row)}

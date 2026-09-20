@@ -342,6 +342,9 @@ describe('Trace Viewer', () => {
     const ledger = screen.getByTestId('trace-ledger');
     expect(within(ledger).getByText('com_ui_trace_summary_cost')).toBeInTheDocument();
     expect(within(modelCall).getByText('$0.02')).toBeInTheDocument();
+    /** Rows name themselves, so a screen reader hears the cost only if the name carries it. */
+    expect(modelCall).toHaveAccessibleName(/com_ui_trace_summary_cost \$0\.02/);
+    expect(stepRow(1)).toHaveAccessibleName(/com_ui_trace_summary_cost \$0\.02/);
     expect(within(stepRow(1)).getByText('$0.02')).toBeInTheDocument();
     expect(
       within(screen.getByRole('treeitem', { name: /^com_ui_trace_turn/ })).getByText('$0.02'),
@@ -351,7 +354,7 @@ describe('Trace Viewer', () => {
   it('shows no cost anywhere while the deployment does not show context cost', async () => {
     renderViewer();
 
-    await recordRow('llm');
+    expect(await recordRow('llm')).not.toHaveAccessibleName(/com_ui_trace_summary_cost/);
     expect(screen.queryByText('com_ui_trace_summary_cost')).not.toBeInTheDocument();
     expect(screen.queryByText('$0.02')).not.toBeInTheDocument();
   });

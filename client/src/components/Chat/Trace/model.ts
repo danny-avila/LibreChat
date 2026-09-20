@@ -103,7 +103,8 @@ export type TraceTurn = {
   split: boolean;
   /** Saved agents that ran in the response, each with the record that stands for it. */
   agents: Array<{ agentId: string; recordId: string }>;
-  /** What the response's records cost, title and label calls included, when every model call has a price. */
+  /** What the response's records cost, title and label calls included, when every model call has a
+   *  price and the whole response is loaded. */
   cost?: number;
   sequence: TraceSpan;
 };
@@ -554,7 +555,6 @@ function groupSteps(
           continue;
         }
         node.stepKey = key;
-        spendOn(spend, node.record);
         step.recordCount++;
         step.start = Math.min(step.start, node.start);
         step.end = Math.max(step.end, node.end ?? node.start);
@@ -575,6 +575,20 @@ function groupSteps(
         for (let i = node.viewChildIds.length - 1; i >= 0; i--) {
           stack.push(node.viewChildIds[i]);
         }
+      }
+      /** Spend is the whole subtree's, not the listed projection's: the simple mode rolls spans
+       *  and events up out of sight, and any record may carry a cost. */
+      const below = [...rootIds];
+      const counted = new Set<string>();
+      while (below.length > 0) {
+        const id = below.pop() ?? '';
+        const node = nodes.get(id);
+        if (!node || counted.has(id)) {
+          continue;
+        }
+        counted.add(id);
+        spendOn(spend, node.record);
+        below.push(...node.childIds);
       }
       step.cost = costOf(spend);
       steps.set(key, step);
@@ -834,8 +848,9 @@ export function buildTraceModel(
   if (total != null) {
     summary.cost = total;
   }
+  /** A response the record limit cut holds only its newest records, and their sum is not its cost. */
   for (const turn of turns) {
-    turn.cost = costOf(spendByTurn.get(turn.messageId) ?? noSpend());
+    turn.cost = turn.split ? undefined : costOf(spendByTurn.get(turn.messageId) ?? noSpend());
   }
   return { mode, nodes, steps, turns, start, end, count: sequence, summary };
 }
