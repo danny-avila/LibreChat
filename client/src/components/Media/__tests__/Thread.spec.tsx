@@ -1,12 +1,9 @@
-import { Provider, createStore } from 'jotai';
 import userEvent from '@testing-library/user-event';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { dataService, QueryKeys, mediaCatalogSchema } from 'librechat-data-provider';
 import type { MediaCatalog, MediaThreadDetail, MediaJob } from 'librechat-data-provider';
-import type { ReactNode } from 'react';
 import { clearMediaSessionStorage, emptyDraft, mediaDraftFamily } from '../state';
-import { MediaHostProvider } from '../host';
+import { createMediaTestEnvironment } from 'test/media';
 import { MediaThreadView } from '../Thread';
 
 jest.mock('~/hooks', () => ({
@@ -107,29 +104,9 @@ const configured = catalog([
 ]);
 
 function setup(initialCatalog?: MediaCatalog, initialDetail = detail) {
-  const store = createStore();
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const { store, client, wrapper } = createMediaTestEnvironment();
   const send = jest.fn().mockResolvedValue(undefined);
   const compose = jest.fn();
-  const Wrapper = ({ children }: { children: ReactNode }) => (
-    <Provider store={store}>
-      <QueryClientProvider client={client}>
-        <MediaHostProvider
-          value={{
-            scope: 'owner',
-            canCreate: true,
-            pollIntervalMs: 5000,
-            catchUpIntervalMs: 60000,
-            enterToSend: false,
-            isCurrentSession: () => true,
-            openThread: () => {},
-          }}
-        >
-          {children}
-        </MediaHostProvider>
-      </QueryClientProvider>
-    </Provider>
-  );
   const tree = (value?: MediaCatalog, snapshot = initialDetail) => (
     <MediaThreadView
       detail={snapshot}
@@ -139,7 +116,7 @@ function setup(initialCatalog?: MediaCatalog, initialDetail = detail) {
       catalog={value}
     />
   );
-  const view = render(tree(initialCatalog), { wrapper: Wrapper });
+  const view = render(tree(initialCatalog), { wrapper });
   return {
     store,
     client,
@@ -682,26 +659,8 @@ test('deleting from the creation menu confirms first and reports back to the hos
     .spyOn(dataService, 'deleteMediaThread')
     .mockResolvedValue({ threadId: 'thread', phase: 'retiring' });
   const onDeleted = jest.fn();
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
-    <Provider store={createStore()}>
-      <QueryClientProvider client={client}>
-        <MediaHostProvider
-          value={{
-            scope: 'owner',
-            canCreate: true,
-            pollIntervalMs: 5000,
-            catchUpIntervalMs: 60000,
-            enterToSend: false,
-            isCurrentSession: () => true,
-            openThread: () => {},
-          }}
-        >
-          <MediaThreadView detail={detail} send={jest.fn()} onDeleted={onDeleted} />
-        </MediaHostProvider>
-      </QueryClientProvider>
-    </Provider>,
-  );
+  const { wrapper } = createMediaTestEnvironment();
+  render(<MediaThreadView detail={detail} send={jest.fn()} onDeleted={onDeleted} />, { wrapper });
   await userEvent.click(screen.getByRole('button', { name: 'com_media_thread_options' }));
   await userEvent.click(await screen.findByRole('menuitem', { name: 'com_ui_delete' }));
   const dialog = await screen.findByRole('dialog', { name: 'com_media_delete_title' });

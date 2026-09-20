@@ -22,7 +22,7 @@ export function createMediaTitleMethods(mongoose: typeof import('mongoose')): Me
       threadId,
       newThread: true,
       executionOwner: 'media',
-      phase: 'queued',
+      phase: { $in: ['queued', 'submitting', 'running', 'ingesting'] },
       'receipt.phase': 'accepted',
       'request.temporary': { $ne: true },
       cancelRequestedAt: null,

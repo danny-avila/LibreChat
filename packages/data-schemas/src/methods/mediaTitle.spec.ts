@@ -101,6 +101,37 @@ describe('durable media title admission', () => {
     expect(await titles.claimMediaThreadTitle(first)).toBe(true);
   });
 
+  it.each(['submitting', 'running', 'ingesting'])(
+    'admits the origin title once after generation advances to %s',
+    async (phase) => {
+      const input = await stage({ balance: true });
+      await mongoose.models.MediaJob.updateOne(
+        { jobId: input.jobId },
+        {
+          $set: {
+            phase,
+            accounting: {
+              settlementId: 'generation',
+              phase: 'held',
+            },
+          },
+        },
+      );
+      const titles = createMediaTitleMethods(mongoose);
+      expect(await titles.claimMediaThreadTitle(input)).toBe(true);
+      expect(await titles.claimMediaThreadTitle(input)).toBe(false);
+    },
+  );
+
+  it.each(['failed', 'cancelled', 'reconciling', 'requires_attention', 'succeeded'])(
+    'does not start a late title for a %s generation',
+    async (phase) => {
+      const input = await stage();
+      await mongoose.models.MediaJob.updateOne({ jobId: input.jobId }, { $set: { phase } });
+      expect(await createMediaTitleMethods(mongoose).claimMediaThreadTitle(input)).toBe(false);
+    },
+  );
+
   it.each(['renamed', 'retired', 'cancelled'])(
     'declines paid title dispatch once its target is %s',
     async (state) => {

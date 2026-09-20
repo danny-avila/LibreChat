@@ -20,6 +20,7 @@ import {
   createMediaMethods,
   createMediaNativeMethods,
   createMediaPresetMethods,
+  createMediaTitleMethods,
   createMediaAccountingMethods,
   runAsSystem,
   tenantStorage,
@@ -30,12 +31,16 @@ import type {
   KeyMethods,
   MediaNativeMethods,
   MediaPresetMethods,
+  MediaTitleMethods,
 } from '@librechat/data-schemas';
 import type { MediaLifecycleEvent } from './telemetry';
 import type { MediaTransport } from './transport';
+import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
 import { createMediaAccounting } from './accounting';
 import { createMediaRuntime } from './runtime';
+import { MediaActivityStream } from './events';
 import { MediaProviderError } from './errors';
+import * as mediaTitle from './title';
 
 interface HeldSubmission {
   release(): void;
@@ -57,7 +62,8 @@ describe('media worker admission with standalone MongoDB', () => {
   let repository: Pick<KeyMethods, 'getUserKeySnapshot'> &
     MediaMethods &
     MediaNativeMethods &
-    MediaPresetMethods;
+    MediaPresetMethods &
+    MediaTitleMethods;
   let config: AppConfig;
   let runtime: ReturnType<typeof createMediaRuntime>;
   let accounting: ReturnType<typeof createMediaAccounting>;
@@ -73,6 +79,7 @@ describe('media worker admission with standalone MongoDB', () => {
   let submissions: HeldSubmission[] = [];
   let holdSubmissions = true;
   let restartRuntime: () => void;
+  let eventTransport: InMemoryEventTransport | undefined;
   let remote:
     | {
         status: string;
@@ -171,6 +178,7 @@ describe('media worker admission with standalone MongoDB', () => {
       ...mediaMethods,
       ...createMediaNativeMethods(mongoose, mediaMethods),
       ...createMediaPresetMethods(mongoose),
+      ...createMediaTitleMethods(mongoose),
     };
     await repository.ensureMediaIndexes();
     await repository.ensureMediaPresetIndexes();
@@ -201,6 +209,7 @@ describe('media worker admission with standalone MongoDB', () => {
     onObservation = undefined;
     holdSubmissions = true;
     remote = undefined;
+    eventTransport = undefined;
     currentOwner = owner();
     config = {
       config: {},
@@ -235,6 +244,7 @@ describe('media worker admission with standalone MongoDB', () => {
     restartRuntime = () => {
       runtime = createMediaRuntime({
         now: () => clock ?? Date.now(),
+        eventTransport,
         isLeader: async () => leader,
         observer: (event) => {
           observations.push(event);
@@ -253,6 +263,16 @@ describe('media worker admission with standalone MongoDB', () => {
         transport,
         upload: multer,
         accounting,
+        titles: {
+          db: {
+            getUserKey: async () => {
+              throw new Error('Unexpected title key lookup');
+            },
+            getUserKeyValues: async () => {
+              throw new Error('Unexpected title key lookup');
+            },
+          },
+        },
         log: (message, error) => {
           logged.push(new Error(message, { cause: error }));
         },
@@ -315,7 +335,11 @@ describe('media worker admission with standalone MongoDB', () => {
     return repository.getMediaJob(scope, jobId);
   }
 
-  async function remoteJob(api: 'runway.videos' | 'krea.images', clientRequestId: string) {
+  async function remoteJob(
+    api: 'runway.videos' | 'krea.images',
+    clientRequestId: string,
+    runImmediately = true,
+  ) {
     config.balance = { enabled: true };
     config.media!.integrations[0] = {
       ...config.media!.integrations[0],
@@ -335,10 +359,11 @@ describe('media worker admission with standalone MongoDB', () => {
     await accounting.ensureReady();
     await mongoose.models.Balance.create({ user: currentOwner, tokenCredits: 1000 });
     const receipt = await submitAs(currentOwner, clientRequestId);
-    expect(await run(currentOwner, receipt.jobId)).toMatchObject({
-      phase: 'running',
-      execution: { cancellation: 'best-effort' },
-    });
+    if (runImmediately)
+      expect(await run(currentOwner, receipt.jobId)).toMatchObject({
+        phase: 'running',
+        execution: { cancellation: 'best-effort' },
+      });
     return receipt;
   }
 
@@ -837,6 +862,259 @@ describe('media worker admission with standalone MongoDB', () => {
       'owner',
       'queue',
     ]);
+  });
+
+  it('publishes the running provider job immediately and keeps its lease until the concurrent title settles', async () => {
+    const title = deferred();
+    const started = deferred();
+    const running = deferred();
+    const generate = jest.fn(async () => {
+      started.resolve();
+      await title.promise;
+      return undefined;
+    });
+    jest.spyOn(mediaTitle, 'createMediaTitleGenerator').mockReturnValue(generate);
+    restartRuntime();
+    onObservation = (event) => {
+      if (event.kind === 'transition' && event.phase === 'running') running.resolve();
+    };
+    const receipt = await remoteJob('krea.images', 'pending-title', false);
+    const pending = run(currentOwner, receipt.jobId);
+    try {
+      await started.promise;
+      await running.promise;
+      expect(remote!.submissions).toBe(1);
+      const scope = { ownerId: currentOwner, tenantId: null };
+      const job = await repository.getMediaJob(scope, receipt.jobId);
+      expect(job).toMatchObject({ phase: 'running', leaseToken: expect.any(String) });
+      expect(
+        await repository.claimMediaJob({
+          scope,
+          workerId: 'other-worker',
+          now: new Date().toISOString(),
+          leaseMs: 120_000,
+        }),
+      ).toBeNull();
+      title.resolve();
+      expect(await pending).toMatchObject({ phase: 'running' });
+      expect((await repository.getMediaJob(scope, receipt.jobId))?.leaseToken).toBeUndefined();
+      expect(generate).toHaveBeenCalledTimes(1);
+    } finally {
+      title.resolve();
+      await pending;
+      await runtime.worker.stop();
+    }
+  });
+
+  it('aborts a title and drains its cleanup within the shutdown budget', async () => {
+    const started = deferred();
+    const aborted = deferred();
+    const cleanup = deferred();
+    jest.spyOn(mediaTitle, 'createMediaTitleGenerator').mockReturnValue(async ({ signal }) => {
+      started.resolve();
+      await new Promise<void>((resolve) => {
+        signal.addEventListener(
+          'abort',
+          () => {
+            aborted.resolve();
+            resolve();
+          },
+          { once: true },
+        );
+      });
+      await cleanup.promise;
+      return undefined;
+    });
+    restartRuntime();
+    const receipt = await submitAs(currentOwner, 'title-shutdown');
+    const pending = run(currentOwner, receipt.jobId);
+    await waitForSubmissions(1);
+    await started.promise;
+    let stopped = false;
+    const stopping = runtime.worker.stop({ budgetMs: 1_000 }).then(() => {
+      stopped = true;
+    });
+    try {
+      await aborted.promise;
+      submissions[0].release();
+      expect(stopped).toBe(false);
+    } finally {
+      cleanup.resolve();
+      await stopping;
+      await pending;
+    }
+    expect(stopped).toBe(true);
+  });
+
+  it('keeps title cleanup rejection out of the generation result', async () => {
+    const failure = new Error('Title reservation release failed');
+    jest.spyOn(mediaTitle, 'createMediaTitleGenerator').mockReturnValue(async () => {
+      throw failure;
+    });
+    restartRuntime();
+    const receipt = await submitAs(currentOwner, 'title-failure');
+    const pending = run(currentOwner, receipt.jobId);
+    await waitForSubmissions(1);
+    submissions[0].release();
+    expect((await pending)?.phase).toBe('succeeded');
+    await runtime.worker.stop();
+    expect(logged).toEqual([
+      expect.objectContaining({ message: '[media] Title generation failed.', cause: failure }),
+    ]);
+    logged = [];
+  });
+
+  it('hands off a running job after title completion without waiting for activity delivery', async () => {
+    const delivery = deferred();
+    eventTransport = new InMemoryEventTransport();
+    const publish = jest
+      .spyOn(MediaActivityStream.prototype, 'publish')
+      .mockReturnValue(delivery.promise);
+    jest
+      .spyOn(mediaTitle, 'createMediaTitleGenerator')
+      .mockReturnValue(async () => 'A generated title');
+    restartRuntime();
+    try {
+      const receipt = await remoteJob('krea.images', 'delayed-title-activity');
+      expect(publish).toHaveBeenCalled();
+      expect(
+        (await repository.getMediaJob({ ownerId: currentOwner, tenantId: null }, receipt.jobId))
+          ?.leaseToken,
+      ).toBeUndefined();
+    } finally {
+      delivery.resolve();
+      await runtime.worker.stop();
+      runtime.closeActivity();
+    }
+  });
+
+  it('prevents a prepared title from starting a paid invocation after pre-drain', async () => {
+    const resolving = deferred();
+    const resolved = deferred();
+    const invoke = jest.fn().mockResolvedValue({ text: 'A generated title' });
+    const generate = mediaTitle.createMediaTitleGenerator({
+      repository,
+      resolveModel: async () => {
+        resolving.resolve();
+        await resolved.promise;
+        return { provider: 'openAI', clientOptions: { model: 'fixture-title' } };
+      },
+      withScope: async (_scope, operation) => operation(),
+      invoke,
+      log: jest.fn(),
+    });
+    jest.spyOn(mediaTitle, 'createMediaTitleGenerator').mockReturnValue(generate);
+    config.media!.titles.endpoint = 'Fixture';
+    config.media!.titles.model = 'fixture-title';
+    restartRuntime();
+    const receipt = await submitAs(currentOwner, 'prepared-title');
+    const pending = run(currentOwner, receipt.jobId);
+    await waitForSubmissions(1);
+    await resolving.promise;
+    await runtime.worker.prepareForShutdown();
+    try {
+      resolved.resolve();
+      submissions[0].release();
+      expect((await pending)?.phase).toBe('succeeded');
+      await runtime.worker.stop();
+      expect(invoke).not.toHaveBeenCalled();
+      expect(
+        (
+          await repository.getMediaThread(
+            { ownerId: currentOwner, tenantId: null },
+            receipt.threadId,
+          )
+        )?.title,
+      ).toBe('A study for prepared-title');
+    } finally {
+      resolved.resolve();
+      submissions[0].release();
+      await runtime.worker.stop();
+    }
+  });
+
+  it('cancels concurrent title work before releasing the lease for provider cancellation', async () => {
+    const started = deferred();
+    const aborted = deferred();
+    const running = deferred();
+    jest.spyOn(mediaTitle, 'createMediaTitleGenerator').mockReturnValue(async ({ signal }) => {
+      started.resolve();
+      await new Promise<void>((resolve) => {
+        signal.addEventListener(
+          'abort',
+          () => {
+            aborted.resolve();
+            resolve();
+          },
+          { once: true },
+        );
+      });
+      return undefined;
+    });
+    config.media!.worker.renewEveryMs = 10;
+    restartRuntime();
+    onObservation = (event) => {
+      if (event.kind === 'transition' && event.phase === 'running') running.resolve();
+    };
+    const receipt = await remoteJob('krea.images', 'title-following-cancellation', false);
+    const pending = run(currentOwner, receipt.jobId);
+    try {
+      await started.promise;
+      await running.promise;
+      await request(app).post(`/api/media/jobs/${receipt.jobId}/cancel`).expect(200);
+      await aborted.promise;
+      await pending;
+      await run(currentOwner, receipt.jobId);
+      expect(remote!.submissions).toBe(1);
+    } finally {
+      await runtime.worker.stop({ budgetMs: 100 });
+    }
+  });
+
+  it('keeps account deletion fenced until terminal title accounting cleanup has drained', async () => {
+    const started = deferred();
+    const aborted = deferred();
+    const cleanup = deferred();
+    let accounted = false;
+    jest.spyOn(mediaTitle, 'createMediaTitleGenerator').mockReturnValue(async ({ signal }) => {
+      started.resolve();
+      await new Promise<void>((resolve) => {
+        signal.addEventListener(
+          'abort',
+          () => {
+            aborted.resolve();
+            resolve();
+          },
+          { once: true },
+        );
+      });
+      await cleanup.promise;
+      accounted = true;
+      return undefined;
+    });
+    restartRuntime();
+    const receipt = await submitAs(currentOwner, 'title-account-deletion');
+    const pending = run(currentOwner, receipt.jobId);
+    await waitForSubmissions(1);
+    await started.promise;
+    submissions[0].release();
+    const deletion = { scope: { ownerId: currentOwner, tenantId: null }, token: 'after-title' };
+    try {
+      await aborted.promise;
+      expect(accounted).toBe(false);
+      expect(await repository.prepareMediaAccountDeletion(deletion)).toBe(false);
+      expect((await repository.getMediaJob(deletion.scope, receipt.jobId))?.phase).toBe(
+        'ingesting',
+      );
+      cleanup.resolve();
+      expect((await pending)?.phase).toBe('succeeded');
+      expect(accounted).toBe(true);
+      expect(await repository.prepareMediaAccountDeletion(deletion)).toBe(true);
+    } finally {
+      cleanup.resolve();
+      await pending;
+      await runtime.worker.stop();
+    }
   });
 
   it('stops admitting work before drain while an existing paid request completes', async () => {

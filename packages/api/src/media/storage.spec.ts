@@ -21,8 +21,8 @@ import {
 } from './content';
 import { mp4ReferenceFixture, webmReferenceFixture } from './__fixtures__/reference-content';
 import { createMediaDerivativeProcessor, createFFmpegMediaProcessor } from './derivatives';
-import { createLocalMediaStorage } from './storage';
 import { deleteMediaAwareFile } from './deletion';
+import { createMediaStorage } from './storage';
 
 const svg = Buffer.from(`<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="24" viewBox="0 0 32 24">
@@ -324,7 +324,7 @@ describe('Media original storage', () => {
       expect(entries).toEqual([]);
     }
   }
-  let storage: ReturnType<typeof createLocalMediaStorage>;
+  let storage: ReturnType<typeof createMediaStorage>;
   const config = resolveMediaConfig();
 
   beforeAll(async () => {
@@ -334,7 +334,7 @@ describe('Media original storage', () => {
     repository = createMediaMethods(mongoose, { ownerExists: async () => true });
     await repository.ensureMediaIndexes();
     directory = await mkdtemp(path.join(tmpdir(), 'librechat-media-storage-'));
-    storage = createLocalMediaStorage({
+    storage = createMediaStorage({
       repository,
       imageDirectory: path.join(directory, 'images'),
       uploadDirectory: path.join(directory, 'uploads'),
@@ -371,7 +371,7 @@ describe('Media original storage', () => {
       imageOutput: path.join(directory, 'images'),
       uploads: path.join(directory, 'uploads'),
     };
-    const withDerivatives = createLocalMediaStorage({
+    const withDerivatives = createMediaStorage({
       repository,
       imageDirectory: paths.imageOutput,
       uploadDirectory: paths.uploads,

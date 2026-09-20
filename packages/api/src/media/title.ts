@@ -1,7 +1,7 @@
 import { HumanMessage } from '@langchain/core/messages';
+import { initializeModel, Providers } from '@librechat/agents';
 import { deriveMediaThreadTitle } from '@librechat/data-schemas';
 import { Constants, TOKEN_CREDITS_PER_USD } from 'librechat-data-provider';
-import { initializeModel, Providers, getMaxOutputTokensKey } from '@librechat/agents';
 import type {
   AppConfig,
   MediaMethods,
@@ -101,7 +101,7 @@ export function buildMediaTitlePrompt(input: {
   }
   return [
     `Write a concise title of 5 words or less for ${titleSubjects[input.operation]}.`,
-    'Use title case. Do not use quotes or punctuation. Respond with the title only.',
+    'Use title case. Do not use quotes or punctuation. Respond with the title as plain text only, no markdown or bullets.',
     '',
     input.prompt,
   ].join('\n');
@@ -212,14 +212,22 @@ function cleanMediaTitle(
   appConfig: AppConfig,
   maxTitleChars: number,
 ): string | undefined {
-  if (!raw.trim()) {
+  const firstLine = raw
+    .replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, '')
+    .split(/\r?\n/)
+    .find((line) => line.trim());
+  if (!firstLine) {
     return undefined;
   }
-  const sanitized = sanitizeTitle(raw);
+  const sanitized = sanitizeTitle(firstLine);
   if (sanitized === DEFAULT_TITLE_FALLBACK) {
     return undefined;
   }
-  const candidate = stripWrappingQuotes(sanitized).replace(/\.$/, '').trim();
+  const plain = sanitized
+    .replace(/^(?:(?:[*+-]|\d+[.)]|#{1,6})\s+)+/, '')
+    .replace(/^[*_`]+|[*_`]+$/g, '')
+    .trim();
+  const candidate = stripWrappingQuotes(plain).replace(/\.$/, '').trim();
   const allowed = resolveConversationTitle({
     filters: appConfig.filters,
     candidate,
@@ -324,8 +332,9 @@ export function createMediaTitleGenerator(
       if (!target) {
         return undefined;
       }
-      const resolved = await deps.resolveModel({ context: input.context, target });
-      if (!resolved) {
+      const model = await deps.resolveModel({ context: input.context, target });
+      input.signal.throwIfAborted();
+      if (!model) {
         return undefined;
       }
       const { scope, appConfig, config } = input.context;
@@ -334,13 +343,6 @@ export function createMediaTitleGenerator(
         operation: input.operation,
         template: target.prompt,
       });
-      const model: MediaTitleModel = {
-        ...resolved,
-        clientOptions: {
-          ...resolved.clientOptions,
-          [getMaxOutputTokensKey(resolved.provider as Providers)]: config.titles.maxOutputTokens,
-        },
-      };
       const balanceConfig = getBalanceConfig(appConfig);
       if (balanceConfig?.enabled) {
         const admission = deps.admission;
@@ -393,6 +395,7 @@ export function createMediaTitleGenerator(
           )
         : await invokeModel();
       await recordUsage(input, target, model, result.usage);
+      signal.throwIfAborted();
       const title = cleanMediaTitle(result.text, appConfig, config.limits.maxTitleChars);
       const applied =
         title !== undefined && title !== input.currentTitle

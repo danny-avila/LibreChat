@@ -67,7 +67,7 @@
     "frontend:dev": "cd client && npm run dev",
     "test:agents-contract": "node --test config/native-media-contract.test.mjs",
     "e2e:media": "npm run e2e:prepare && npm run e2e:media:run",
-    "e2e:media:run": "playwright test --config=e2e/playwright.config.mock.ts studio.spec.ts",
+    "e2e:media:run": "playwright test --config=e2e/playwright.config.mock.ts \"(studio|media-.*)\\.spec\\.ts$\"",
     "e2e:prepare": "npm run frontend",
     "test:client-build": "node --test e2e/client-build.test.mjs",
     "e2e": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.local.ts",

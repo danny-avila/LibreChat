@@ -5,8 +5,7 @@ import { stat, unlink } from 'node:fs/promises';
 import { FileSources } from 'librechat-data-provider';
 import type { MediaOwnerScope } from '@librechat/data-schemas';
 import type { FileStorage } from 'librechat-data-provider';
-import type { StorageByteRange, StorageReadOptions } from '~/storage/types';
-import type { FileStreamStorage } from '~/storage/types';
+import type { FileStreamStorage, StorageReadOptions } from '~/storage/types';
 import { createLocalStreamStorage } from '~/storage/write';
 import { parseS3Key } from '~/storage/s3/crud';
 import { MediaServiceError } from './errors';
@@ -18,7 +17,6 @@ export type MediaObjectLocation = {
   storageRegion?: string;
   filepath: string;
 };
-export type MediaObjectRange = StorageByteRange;
 export type MediaObjectReadOptions = StorageReadOptions;
 
 export interface MediaObjectStore {

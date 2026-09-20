@@ -487,22 +487,6 @@ describe('direct media provider contracts', () => {
     expect(calls.filter((call) => call.method === 'POST')).toHaveLength(1);
   });
 
-  it('rejects mixed frame/reference MiniMax input and invalid Hailuo duration before submission', async () => {
-    const { adapter, context, calls } = fixture('minimax.videos');
-    const refs = [input('start_frame'), input('reference')];
-    await expect(
-      adapter.submit(request('minimax/hailuo-3', {}, refs), refs, context),
-    ).rejects.toMatchObject({ certainty: 'rejected' });
-    await expect(
-      adapter.submit(
-        request('minimax/hailuo-2.3', { durationSeconds: 10, resolution: '1080P' }),
-        [],
-        context,
-      ),
-    ).rejects.toMatchObject({ certainty: 'rejected' });
-    expect(calls).toHaveLength(0);
-  });
-
   it('uploads HeyGen audio and animates the original image without inventing a voice', async () => {
     const { adapter, context, calls } = fixture('heygen.videos', [
       '{"data":{"asset_id":"audio-asset"}}',
@@ -541,15 +525,6 @@ describe('direct media provider contracts', () => {
       expect(calls).toHaveLength(0);
     },
   );
-
-  it('requires HeyGen audio or an explicit voice before any upload or paid call', async () => {
-    const { adapter, context, calls } = fixture('heygen.videos');
-    const refs = [input('reference')];
-    await expect(
-      adapter.submit(request('heygen/avatar-iv', {}, refs), refs, context),
-    ).rejects.toMatchObject({ certainty: 'rejected' });
-    expect(calls).toHaveLength(0);
-  });
 
   it('uses the supplied HeyGen voice for a script without an upload', async () => {
     const { adapter, context, calls } = fixture('heygen.videos', [

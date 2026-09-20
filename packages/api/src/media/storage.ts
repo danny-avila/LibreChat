@@ -480,4 +480,3 @@ export function createMediaStorage({
   };
   return storage;
 }
-export const createLocalMediaStorage: typeof createMediaStorage = createMediaStorage;

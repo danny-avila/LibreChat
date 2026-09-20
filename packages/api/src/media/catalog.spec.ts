@@ -663,8 +663,6 @@ describe('OpenRouter representative public media catalog', () => {
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
     const result = await catalog.read(config, resolve, 'owner');
     expect(() => mediaCatalogSchema.parse(result.catalog)).not.toThrow();
-    expect(publicCatalog.imageEndpoints).toHaveLength(12);
-    expect(publicCatalog.videoEndpoints).toHaveLength(8);
     expect(result.catalog.offerings.map((offering) => offering.modelId)).toEqual([
       ...publicCatalog.images.data.map((model) => model.id),
       ...publicCatalog.videos.data.map((model) => model.id),

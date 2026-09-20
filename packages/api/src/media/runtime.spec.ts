@@ -61,8 +61,8 @@ import { createMediaStrategyObjectStores } from './objects';
 import { saveGeneratedImage } from '~/files/generated';
 import { createDeferredNativeMediaPort } from './sdk';
 import { createMediaAccounting } from './accounting';
-import { createLocalMediaStorage } from './storage';
 import { createMediaTransport } from './transport';
+import { createMediaStorage } from './storage';
 import { createMediaRuntime } from './runtime';
 
 const fixtureEncryptionKey = randomBytes(32);
@@ -97,6 +97,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
   let chunkedReference = false;
   let referenceStatus = 200;
   let holdReference: ((response: express.Response) => void) | undefined;
+  let holdGeneration: (() => Promise<void>) | undefined;
   const referenceURL = 'https://media-fixture.example/reference';
   let vertexToken = 'access-1';
   let vertexAuthorizations: Array<string | undefined> = [];
@@ -208,7 +209,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       routedBodies.push(JSON.stringify(req.body));
       res.json({ data: [{ b64_json: original.toString('base64') }] });
     });
-    api.post('/v1/images/generations', (req, res) => {
+    api.post('/v1/images/generations', async (req, res) => {
       posts++;
       providerHeaders.push({
         authorization: req.get('authorization'),
@@ -238,6 +239,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
         });
         return;
       }
+      await holdGeneration?.();
       res.json({ data: [{ b64_json: original.toString('base64') }] });
     });
     api.post('/v1/chat/completions', (req, res) => {
@@ -341,6 +343,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       Object.values(mongoose.models).map((model) => model.collection.deleteMany({})),
     );
     posts = 0;
+    holdGeneration = undefined;
     polls = 0;
     providerHeaders = [];
     routedBodies = [];
@@ -972,7 +975,29 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     expect(response.status).toBe(202);
     const receipt = mediaSubmissionReceiptSchema.parse(response.body);
     expect(chatBodies).toHaveLength(0);
-    await run(receipt.jobId);
+    let releaseGeneration!: () => void;
+    const generation = new Promise<void>((resolve) => {
+      releaseGeneration = resolve;
+    });
+    holdGeneration = () => generation;
+    const running = run(receipt.jobId);
+    try {
+      const titleDeadline = Date.now() + 10_000;
+      while (
+        (await repository.getMediaThread(scope, receipt.threadId))?.title !== 'Small Observatory' &&
+        Date.now() < titleDeadline
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(posts).toBe(1);
+      expect((await repository.getMediaThread(scope, receipt.threadId))?.title).toBe(
+        'Small Observatory',
+      );
+    } finally {
+      releaseGeneration();
+      await running;
+      holdGeneration = undefined;
+    }
     expect((await repository.getMediaThread(scope, receipt.threadId))?.title).toBe(
       'Small Observatory',
     );
@@ -1920,8 +1945,14 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
           video: { mimeType: 'video/mp4', bytesBase64Encoded: bytes.toString('base64') },
         },
       ],
-      parameters: { task: 'extend' },
+      parameters: {
+        aspectRatio: '16:9',
+        generateAudio: false,
+        resolution: '720p',
+        sampleCount: 1,
+      },
     });
+    expect(vertexBodies[1]).not.toHaveProperty('parameters.task');
     expect(posts).toBe(2);
   });
 
@@ -2551,7 +2582,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
   );
 
   it('removes late upload bytes when cleanup retired its reservation before the stream opened', async () => {
-    const storage = createLocalMediaStorage({
+    const storage = createMediaStorage({
       repository,
       imageDirectory: path.join(directory, 'images'),
       uploadDirectory: path.join(directory, 'uploads'),

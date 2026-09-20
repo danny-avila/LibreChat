@@ -48,6 +48,7 @@ export function createMediaWorker(
   let accountingCursor: string | undefined;
   let permitCursor: string | undefined;
   const active = new Map<string, Promise<void>>();
+  const titleControllers = new Set<AbortController>();
   const controllers = new Set<AbortController>();
   const adapters = new Map(deps.adapters.map((adapter) => [adapter.api, adapter]));
   const workerId = deps.id();
@@ -77,6 +78,57 @@ export function createMediaWorker(
     }
   }
 
+  function startTitle(job: MediaStoredJob, context: MediaContext, parentSignal: AbortSignal) {
+    const generate = deps.titles;
+    if (
+      !generate ||
+      job.request.threadId ||
+      (job.temporary ?? job.request.temporary) ||
+      parentSignal.aborted ||
+      !dispatchGate.accepting
+    )
+      return;
+    const controller = new AbortController();
+    const signal = AbortSignal.any([parentSignal, controller.signal]);
+    titleControllers.add(controller);
+    const work = Promise.resolve()
+      .then(async () => {
+        if (!dispatchGate.accepting || signal.aborted) return;
+        const title = await generate({
+          context,
+          jobId: job.jobId,
+          threadId: job.threadId,
+          prompt: job.request.prompt,
+          operation: job.operation,
+          currentTitle: deriveMediaThreadTitle(
+            job.request.prompt,
+            context.config.limits.maxTitleChars,
+          ),
+          signal,
+        });
+        if (title)
+          void deps
+            .publishActivity?.(context.scope, {
+              threadId: job.threadId,
+              version: job.version,
+            })
+            .catch((error: unknown) =>
+              deps.log(
+                'Media activity delivery failed; snapshots remain available.',
+                error instanceof Error ? error : undefined,
+              ),
+            );
+      })
+      .catch((error: unknown) => {
+        if (!signal.aborted)
+          deps.log('[media] Title generation failed.', error instanceof Error ? error : undefined);
+      })
+      .finally(() => {
+        titleControllers.delete(controller);
+      });
+    return { work, controller };
+  }
+
   async function execute(initial: MediaStoredJob): Promise<void> {
     let job = initial;
     const startedAt = deps.now();
@@ -84,6 +136,11 @@ export function createMediaWorker(
     let attemptFailed = false;
     let failureCode: MediaErrorCode | undefined;
     let finishDispatch: (() => void) | undefined;
+    let title: ReturnType<typeof startTitle>;
+    const finishTitle = async () => {
+      title?.controller.abort();
+      await title?.work;
+    };
     observeMedia(deps.observer, {
       ...mediaJobEvent(job),
       kind: 'attempt',
@@ -151,9 +208,15 @@ export function createMediaWorker(
         throw new MediaServiceError('version_conflict', 409, 'The job lease changed.');
       }
       job = current;
+      if (job.cancelRequestedAt) title?.controller.abort();
     };
-    const observe = (observation: MediaJobObservation) =>
-      leased(async () => {
+    const observe = async (observation: MediaJobObservation) => {
+      if (
+        observation.releaseLease ||
+        ['succeeded', 'failed', 'cancelled'].includes(observation.phase)
+      )
+        await finishTitle();
+      return leased(async () => {
         await refresh();
         const changed = await deps.repository.recordMediaJobObservation({
           ...fence(),
@@ -190,6 +253,7 @@ export function createMediaWorker(
           phaseStartedAt = deps.now();
         }
       });
+    };
     const renewal = setInterval(() => {
       void leased(async () => {
         await refresh();
@@ -351,21 +415,6 @@ export function createMediaWorker(
           await observe({ phase: 'queued', releaseLease: true });
           return;
         }
-        if (deps.titles && !job.request.threadId && !(job.temporary ?? job.request.temporary)) {
-          await deps.titles({
-            context,
-            jobId: job.jobId,
-            threadId: job.threadId,
-            prompt: job.request.prompt,
-            operation: job.operation,
-            currentTitle: deriveMediaThreadTitle(
-              job.request.prompt,
-              context.config.limits.maxTitleChars,
-            ),
-            signal: controller.signal,
-          });
-          controller.signal.throwIfAborted();
-        }
         finishDispatch = dispatchGate.enter();
         if (!finishDispatch) {
           await observe({ phase: 'queued', releaseLease: true });
@@ -395,7 +444,9 @@ export function createMediaWorker(
         const submit = () => {
           controller.signal.throwIfAborted();
           try {
-            return adapter.submit(job.request, prepared.inputs, providerContext);
+            const submission = adapter.submit(job.request, prepared.inputs, providerContext);
+            title = startTitle(job, currentContext, controller.signal);
+            return submission;
           } finally {
             finishDispatch?.();
             finishDispatch = undefined;
@@ -496,15 +547,24 @@ export function createMediaWorker(
         return;
       }
       if (result.status === 'running') {
+        const pendingTitle = title && titleControllers.has(title.controller) ? title : undefined;
+        const dueAt = new Date(
+          deps.now() + context.config.polling.providerIntervalMs,
+        ).toISOString();
         await observe({
           phase: 'running',
           provider: { ...job.provider, certainty: 'submitted', operationId: result.operationId },
-          dueAt: new Date(deps.now() + context.config.polling.providerIntervalMs).toISOString(),
-          releaseLease: true,
+          dueAt,
+          releaseLease: !pendingTitle,
         });
+        if (pendingTitle) {
+          await pendingTitle.work;
+          await observe({ phase: 'running', dueAt, releaseLease: true });
+        }
         return;
       }
       if (result.status === 'failed' || result.status === 'cancelled') {
+        title?.controller.abort();
         await observe({
           phase: 'reconciling',
           provider: {
@@ -550,6 +610,7 @@ export function createMediaWorker(
         provider: { ...job.provider, certainty: 'terminal' },
       });
     } catch (error) {
+      title?.controller.abort();
       if (controller.signal.aborted) {
         return;
       }
@@ -670,6 +731,7 @@ export function createMediaWorker(
       }
     } finally {
       finishDispatch?.();
+      await finishTitle();
       const attemptResult = attemptFailed ? 'failed' : 'completed';
       observeMedia(deps.observer, {
         ...mediaJobEvent(job),
@@ -993,6 +1055,7 @@ export function createMediaWorker(
     lifecycle++;
     clearTimeout(timer);
     clearTimeout(maintenanceTimer);
+    for (const controller of titleControllers) controller.abort();
     await Promise.allSettled([dispatchGate.close(), starting, scanning, maintaining]);
   }
 
@@ -1055,6 +1118,7 @@ export function createMediaWorker(
       const budget = Math.max(0, Math.min(budgetMs, baseConfig.worker.shutdownTimeoutMs));
       const expiresAt = Date.now() + budget;
       const closing = dispatchGate.close();
+      for (const controller of titleControllers) controller.abort();
       const drain = async () => {
         await Promise.allSettled([closing, starting, scanning, maintaining]);
         await Promise.allSettled(active.values());

@@ -119,6 +119,7 @@ describe('buildMediaTitlePrompt', () => {
   it('words the default prompt per operation and ends with the request', () => {
     const image = buildMediaTitlePrompt({ prompt: 'A lake at dawn', operation: 'image.generate' });
     expect(image).toContain('5 words or less for an image generation request');
+    expect(image).toContain('plain text only, no markdown or bullets');
     expect(image.endsWith('\nA lake at dawn')).toBe(true);
     expect(buildMediaTitlePrompt({ prompt: 'x', operation: 'image.edit' })).toContain(
       'an image editing request',
@@ -264,15 +265,21 @@ describe('createMediaTitleGenerator', () => {
     signal: new AbortController().signal,
   });
 
-  it('applies a cleaned title inside the owner scope', async () => {
-    const { generate, repo, scopes, errors } = generator(
-      reply('<think>naming...</think>\n “Quiet Observatory Sketch.” \n'),
-    );
-    await expect(generate(request())).resolves.toBe('Quiet Observatory Sketch');
-    expect(repo.thread).toEqual({ title: 'Quiet Observatory Sketch', version: 2 });
-    expect(repo.calls).toEqual([
-      { expectedTitle: currentTitle, title: 'Quiet Observatory Sketch' },
-    ]);
+  it.each([
+    [
+      '<think>naming...\nstill thinking</think>\n “Quiet Observatory Sketch.” \n',
+      'Quiet Observatory Sketch',
+    ],
+    ['* **Hot-Air Balloon**\n* alt', 'Hot-Air Balloon'],
+    ['**Retro-futuristic**', 'Retro-futuristic'],
+    ['\n\n# _Paper City_\nAnother option', 'Paper City'],
+    ['- `Cloud Castle`', 'Cloud Castle'],
+    ['1. __Ocean City__', 'Ocean City'],
+  ])('applies the first plain title inside the owner scope: %s', async (text, title) => {
+    const { generate, repo, scopes, errors } = generator(reply(text));
+    await expect(generate(request())).resolves.toBe(title);
+    expect(repo.thread).toEqual({ title, version: 2 });
+    expect(repo.calls).toEqual([{ expectedTitle: currentTitle, title }]);
     expect(scopes).toEqual([scope, scope]);
     expect(errors).toEqual([]);
   });
@@ -377,6 +384,41 @@ describe('createMediaTitleGenerator', () => {
     expect(spendTokens).toHaveBeenCalledTimes(2);
   });
 
+  it('does not reserve or invoke a title when shutdown interrupts model resolution', async () => {
+    const controller = new AbortController();
+    const invoke = jest.fn().mockResolvedValue({ text: 'Quiet Observatory' });
+    const ledger = admission();
+    const { generate, repo } = generator(invoke, {
+      resolveModel: async () => {
+        controller.abort();
+        return model;
+      },
+      admission: ledger,
+      usage: paidUsage(),
+    });
+    await generate({ ...paidRequest(), signal: controller.signal });
+    expect(ledger.reserveBalance).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+    expect(repo.calls).toEqual([]);
+  });
+
+  it('accounts for a late response after cancellation without replacing the title', async () => {
+    const controller = new AbortController();
+    const ledger = admission();
+    const usage = paidUsage();
+    const { generate, repo } = generator(
+      async () => {
+        controller.abort();
+        return { text: 'Quiet Observatory', usage: { input_tokens: 10, output_tokens: 2 } };
+      },
+      { admission: ledger, usage },
+    );
+    await generate({ ...paidRequest(), signal: controller.signal });
+    expect(usage.spendTokens).toHaveBeenCalledTimes(1);
+    expect(ledger.releaseBalanceReservation).toHaveBeenCalledTimes(1);
+    expect(repo.calls).toEqual([]);
+  });
+
   it('records paid usage even when title publication throws', async () => {
     const spendTokens = jest.fn().mockResolvedValue(undefined);
     const publicationError = new Error('title write unavailable');
@@ -461,7 +503,7 @@ describe('createMediaTitleGenerator', () => {
     expect(ledger.releaseBalanceReservation).not.toHaveBeenCalled();
   });
 
-  it('admits title input and capped output using the shared endpoint pricing', async () => {
+  it('estimates title output for admission without overriding the resolved model options', async () => {
     const ledger = admission();
     const usage = paidUsage();
     const getMultiplier = jest.fn().mockReturnValue(2);
@@ -485,7 +527,7 @@ describe('createMediaTitleGenerator', () => {
         endpointTokenConfig,
       }),
     );
-    expect(invoke.mock.calls[0][0].clientOptions.maxTokens).toBe(128);
+    expect(invoke.mock.calls[0][0].clientOptions).toEqual(model.clientOptions);
     expect(ledger.releaseBalanceReservation).toHaveBeenCalledWith({
       user: scope.ownerId,
       reservationId: held.reservationId,

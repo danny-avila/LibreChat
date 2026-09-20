@@ -371,7 +371,7 @@ export const mediaConfigSchema = z
         model: z.string().trim().min(1).optional(),
         prompt: z.string().trim().min(1).optional(),
         timeoutMs: milliseconds.default(45_000),
-        /** Bounds paid title output and the corresponding shared balance reservation. */
+        /** Estimates title output for the shared balance reservation; does not cap model output. */
         maxOutputTokens: capacity.default(128),
       })
       .strict()

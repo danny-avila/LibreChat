@@ -1,6 +1,5 @@
 import type { MediaExecutionSnapshot, MediaOwnerScope, MediaStoredJob } from './media';
 
-export type MediaNativeSource = NonNullable<MediaStoredJob['nativeSource']>;
 export type MediaNativeLimits = NonNullable<MediaStoredJob['nativeLimits']>;
 export type MediaNativePart =
   | { kind: 'text'; text: string; thoughtSignature?: string }
@@ -21,7 +20,6 @@ export type MediaNativePartDocument = Omit<MediaNativePartRecord, 'expiresAt' | 
   expiresAt?: Date;
   createdAt: Date;
 };
-export type MediaNativePartReservation = NonNullable<MediaStoredJob['nativePartKeys']>[number];
 export type MediaNativeReference = { continuationRef?: string; fileId?: string };
 export type MediaNativeExecution = Pick<
   MediaExecutionSnapshot,
