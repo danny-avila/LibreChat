@@ -726,6 +726,15 @@ export class MCPTokenStorage {
 
       let accessTokenExpiry: Date;
       let expiresInSeconds: number;
+      /**
+       * Whether the response itself stated this credential's lifetime. A stated lifetime is
+       * persisted as it stands, including when it has already elapsed, because substituting
+       * `defaultTTL` would record a dead credential as valid for a year and leave `getTokens`
+       * unable to refresh it until the resource server rejects a request. Unlike a JWT `exp`,
+       * which the provider's clock produces, these values are measured against our own clock,
+       * so an elapsed lifetime here is not clock skew.
+       */
+      let lifetimeIsStated = true;
       if ('expires_at' in tokens && tokens.expires_at) {
         /** MCPOAuthTokens format - already has calculated expiry */
         logger.debug(`${logPrefix} Using expires_at: ${tokens.expires_at}`);
@@ -751,6 +760,7 @@ export class MCPTokenStorage {
           expiresInSeconds = Math.floor((jwtExpiryMs - Date.now()) / 1000);
         } else {
           logger.debug(`${logPrefix} No expiry provided, using default`);
+          lifetimeIsStated = false;
           expiresInSeconds = defaultTTL;
           accessTokenExpiry = new Date(Date.now() + defaultTTL * 1000);
         }
@@ -760,8 +770,15 @@ export class MCPTokenStorage {
 
       if (isNaN(accessTokenExpiry.getTime())) {
         logger.error(`${logPrefix} Invalid expiry date calculated, using default`);
+        lifetimeIsStated = false;
         accessTokenExpiry = new Date(Date.now() + defaultTTL * 1000);
         expiresInSeconds = defaultTTL;
+      }
+
+      if (lifetimeIsStated && expiresInSeconds <= 0) {
+        logger.info(
+          `${logPrefix} Stored access token is already expired (expires_at: ${accessTokenExpiry.toISOString()}); the next read refreshes it`,
+        );
       }
 
       const accessTokenData = {
@@ -769,7 +786,7 @@ export class MCPTokenStorage {
         type: 'mcp_oauth',
         identifier,
         token: encryptedAccessToken,
-        expiresIn: expiresInSeconds > 0 ? expiresInSeconds : defaultTTL,
+        expiresIn: lifetimeIsStated ? expiresInSeconds : defaultTTL,
         metadata: tokenMetadata,
       };
 
