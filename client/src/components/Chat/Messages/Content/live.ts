@@ -98,6 +98,13 @@ function toolCallLine(
     const subject = intent ?? label;
     return subject ? localize('com_ui_failed_subject', { 0: subject }) : localize('com_ui_failed');
   }
+  /** Ahead of the intent, as on `BashCall`/`ExecuteCode`: a returned handle
+   *  is not a result, and "Ran …" would turn ongoing work into a success. */
+  if (meta?.background != null) {
+    return localize(
+      meta.background === 'running' ? 'com_ui_background_running' : 'com_ui_background_finished',
+    );
+  }
   if (intent != null) {
     return intent;
   }
@@ -122,7 +129,11 @@ const REASONING_TAIL_CHARS = 1200;
  */
 function lastReasoningSentence(reasoning: string): { text: string; offset: number } | undefined {
   const body = reasoning.replace(/^\s*<think>\s*/, '').replace(/\s*<\/think>\s*$/, '');
-  const tail = body.slice(-REASONING_TAIL_CHARS).trimEnd();
+  /** The offset is measured on the UNTRIMMED window: a delta that only adds
+   *  whitespace must not move the line's identity, or the same sentence would
+   *  be announced again each time the stream pauses after a space. */
+  const window = body.slice(-REASONING_TAIL_CHARS);
+  const tail = window.trimEnd();
   if (!tail) {
     return undefined;
   }
@@ -138,7 +149,7 @@ function lastReasoningSentence(reasoning: string): { text: string; offset: numbe
     }
   }
   const text = boundIntentLabel(tail.slice(start));
-  return text == null ? undefined : { text, offset: body.length - tail.length + start };
+  return text == null ? undefined : { text, offset: body.length - window.length + start };
 }
 
 /**

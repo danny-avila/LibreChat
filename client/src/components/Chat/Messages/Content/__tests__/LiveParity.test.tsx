@@ -169,7 +169,7 @@ const foldVerdict = (): Verdict => {
   if (outcome.includes('cancelled')) {
     return 'cancelled';
   }
-  return /^Running /.test(within(card).getAllByRole('button')[0].textContent ?? '')
+  return /^Running (?!in background)/.test(within(card).getAllByRole('button')[0].textContent ?? '')
     ? 'running'
     : 'completed';
 };
@@ -270,6 +270,61 @@ describe('live fold parity with the cards it hides', () => {
     const button = within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0];
 
     expect(button).toHaveTextContent('接下来检查顺序约定。');
+  });
+
+  it.each([
+    ['still running, with no status marker yet', undefined, 'Running in background'],
+    [
+      'finished, once its status marker arrives',
+      [statusAttachment('completed')],
+      'Finished in background',
+    ],
+  ])('says what the real card says for a detached task %s', (_name, attachments, text) => {
+    const call = { name: Tools.execute_code, output: HANDLE, runStepStatus: 'completed' };
+    jest.useFakeTimers();
+    const cards = mount([toPart(call)], attachments, false);
+    act(() => {
+      jest.advanceTimersByTime(2000);
+    });
+    expect(cards.container).toHaveTextContent(text);
+    cards.unmount();
+
+    mount([toPart(call)], attachments, true);
+    expect(
+      within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0],
+    ).toHaveTextContent(text);
+  });
+
+  it('does not re-announce a sentence when the stream pauses after a space', () => {
+    jest.useFakeTimers();
+    const frame = (think: string) => (
+      <QueryClientProvider client={new QueryClient()}>
+        <RecoilRoot>
+          <ContentParts
+            content={[
+              toPart({ name: 'lookup', output: 'rows' }),
+              { type: ContentTypes.THINK, think } as unknown as TMessageContentParts,
+            ]}
+            messageId="m1"
+            conversationId="c1"
+            isCreatedByUser={false}
+            isLast
+            isLatestMessage
+            isSubmitting
+            showThinking={false}
+          />
+        </RecoilRoot>
+      </QueryClientProvider>
+    );
+    const view = render(frame('Both refs share'));
+    for (const next of ['Both refs share ', 'Both refs share a', 'Both refs share a ']) {
+      view.rerender(frame(next));
+      act(() => {
+        jest.advanceTimersByTime(500);
+      });
+    }
+
+    expect(screen.getByTestId('activity-phase-announcer')).toBeEmptyDOMElement();
   });
 
   it('keeps an earlier failure on the row while a newer call is the line', () => {

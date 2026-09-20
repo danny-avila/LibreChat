@@ -27,6 +27,10 @@ export interface ToolMeta {
   hasOutput: boolean;
   failed: boolean;
   cancelled: boolean;
+  /** Set for a detached task: its dispatch step is long closed, so whether the
+   *  WORK is still going is a separate fact — the cards say "Running in
+   *  background" until a status marker or harvested files arrive. */
+  background?: 'running' | 'finished';
 }
 
 function hasFailedOutput(output: unknown): boolean {
@@ -126,7 +130,8 @@ export function getToolMeta(
      *  same way the child is, since provider tool-call ids repeat across agents
      *  and execution steps in handoff responses. */
     const backgroundHandle = parseBackgroundHandle(tc.output);
-    const backgroundStatus = splitBackgroundAttachments(ownAttachments, tc.id).backgroundStatus;
+    const { backgroundStatus, fileAttachments } = splitBackgroundAttachments(ownAttachments, tc.id);
+    const backgroundSettled = backgroundStatus != null || (fileAttachments?.length ?? 0) > 0;
     const backgroundFailed = backgroundHandle != null && backgroundStatus === 'error';
     const backgroundCancelled =
       tc.backgroundTask?.cancelled === true ||
@@ -134,6 +139,9 @@ export function getToolMeta(
     return {
       name,
       iconName,
+      ...(backgroundHandle != null && {
+        background: backgroundSettled ? ('finished' as const) : ('running' as const),
+      }),
       ...resolveOutcome(
         backgroundCancelled ? 'cancelled' : runStepStatus,
         completed,
