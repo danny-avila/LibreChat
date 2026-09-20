@@ -211,6 +211,56 @@ describe('live fold parity with the cards it hides', () => {
     expect(button).not.toHaveTextContent(/^Failed/);
   });
 
+  it('leaves a running foreground subagent unfolded, then folds once it settles', () => {
+    /** Its card follows the subagent progress atom, which the row cannot. */
+    const running = mount([toPart({ name: 'subagent', output: '' })], undefined, true);
+    expect(screen.queryByTestId('activity-phase-card')).toBeNull();
+    running.unmount();
+
+    mount([toPart({ name: 'subagent', output: 'done' })], undefined, true);
+    expect(screen.getByTestId('activity-phase-card')).toBeInTheDocument();
+  });
+
+  it('treats a second call that reuses a provider id as a new line', () => {
+    jest.useFakeTimers();
+    const first = toPart({ name: 'lookup', args: '{"intent":"First pass"}', output: 'ok' }, 'dup');
+    const second = toPart({ name: 'lookup', args: '{"intent":"Second pass"}', output: '' }, 'dup');
+    const view = mount([first], undefined, true);
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <RecoilRoot>
+          <ContentParts
+            content={[first, second]}
+            messageId="m1"
+            conversationId="c1"
+            isCreatedByUser={false}
+            isLast
+            isLatestMessage
+            isSubmitting
+            showThinking={false}
+          />
+        </RecoilRoot>
+      </QueryClientProvider>,
+    );
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+
+    expect(screen.getByTestId('activity-phase-announcer')).toHaveTextContent('First pass');
+  });
+
+  it('previews CJK reasoning sentence by sentence', () => {
+    const think = {
+      type: ContentTypes.THINK,
+      think: '两个引用共享一个提交。接下来检查顺序约定',
+    } as unknown as TMessageContentParts;
+    mount([toPart({ name: 'lookup', output: 'rows' }), think], undefined, true);
+    const button = within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0];
+
+    expect(button).toHaveTextContent('接下来检查顺序约定');
+    expect(button).not.toHaveTextContent('两个引用');
+  });
+
   it('keeps an earlier failure on the row while a newer call is the line', () => {
     mount(
       [

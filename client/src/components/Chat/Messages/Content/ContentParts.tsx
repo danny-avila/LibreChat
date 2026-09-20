@@ -35,7 +35,7 @@ import { EmptyText, AgentUpdate } from './Parts';
 import ApprovalProvider from './ApprovalContext';
 import Sources from '~/components/Web/Sources';
 import ToolCallGroup from './ToolCallGroup';
-import { needsReader } from './live';
+import { blocksLiveFold } from './live';
 import Container from './Container';
 import Part from './Part';
 
@@ -923,7 +923,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
              *  can raise one long after its parent's label filled. The span
              *  renders exactly as it would without the feature until it
              *  clears, then folds. */
-            const awaitsReader = live ? segment.content.some(needsReader) : hasPendingApproval;
+            const awaitsReader = live ? segment.content.some(blocksLiveFold) : hasPendingApproval;
             if (synthesized && awaitsReader) {
               return renderSegment(
                 segment.content,

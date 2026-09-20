@@ -1,4 +1,4 @@
-import { Tools, ContentTypes } from 'librechat-data-provider';
+import { Tools, Constants, ContentTypes } from 'librechat-data-provider';
 import type {
   Agents,
   TAttachment,
@@ -127,12 +127,34 @@ function lastReasoningSentence(reasoning: string): { text: string; offset: numbe
     return undefined;
   }
   let start = 0;
-  const boundary = /[.!?]\s+/g;
+  /** CJK sentences end in full-width marks with no space after them. */
+  const boundary = /[.!?]\s+|[。！？]\s*/g;
   for (let match = boundary.exec(tail); match != null; match = boundary.exec(tail)) {
     start = match.index + match[0].length;
   }
   const text = boundIntentLabel(tail.slice(start));
   return text == null ? undefined : { text, offset: body.length - tail.length + start };
+}
+
+/**
+ * A foreground subagent still running. Its card is a live surface of its own:
+ * the ticker and the terminal error/stop state come from the subagent progress
+ * atom, not from the outer tool-call part, so a folded header could not follow
+ * it. The span stays unfolded until the subagent settles.
+ */
+function isLiveSubagent(part: TMessageContentParts): boolean {
+  const toolCall = getStandardToolCall(part);
+  return (
+    toolCall?.name === Constants.SUBAGENT &&
+    (toolCall.output?.length ?? 0) === 0 &&
+    toolCall.progress !== 1 &&
+    toolCall.runStepStatus == null
+  );
+}
+
+/** True when a live fold cannot stand for this part right now. */
+export function blocksLiveFold(part: TMessageContentParts | undefined): boolean {
+  return part != null && (needsReader(part) || isLiveSubagent(part));
 }
 
 /** Icons the header stack can show. */
@@ -189,7 +211,10 @@ function newestLine(
     if (toolCall != null) {
       return {
         text: toolCallLine(part, toolCall, localize, serverNames, span),
-        source: `tool:${toolCall.id ?? position}`,
+        /** Provider ids repeat across batches, so the position is part of the
+         *  identity: a second call reusing an id is a new line, not the first
+         *  one still growing. */
+        source: `tool:${toolCall.id ?? ''}:${position}`,
       };
     }
   }
