@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { Constants, Tools } from 'librechat-data-provider';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import type { TokenUsageView } from '~/hooks/Chat/useTokenUsage';
+import { formatCost } from '~/utils';
 import Breakdown from './Breakdown';
 
 jest.mock('~/hooks', () => ({
@@ -101,6 +102,83 @@ beforeEach(() => {
 });
 
 describe('TokenUsage Breakdown', () => {
+  describe('last response cost', () => {
+    const pricedView: TokenUsageView = {
+      ...view,
+      lastResponseCost: 0.01,
+      branchCost: 0.03,
+      totalCost: 0.03,
+    };
+
+    it('shows the latest price and cumulative price as separate rows', async () => {
+      renderBreakdown({ view: pricedView, showCost: true });
+      await userEvent.click(toggle());
+
+      expect(screen.getByText('com_ui_context_cost_response').parentElement?.textContent).toContain(
+        formatCost(0.01),
+      );
+      expect(screen.getByText('com_ui_context_cost').parentElement?.textContent).toContain(
+        formatCost(0.03),
+      );
+      expect(screen.queryByText('com_ui_context_cost_total')).not.toBeInTheDocument();
+    });
+
+    it('retains the all-branches total without adding the latest response twice', async () => {
+      renderBreakdown({ view: { ...pricedView, totalCost: 0.04 }, showCost: true });
+      await userEvent.click(toggle());
+
+      expect(screen.getByText('com_ui_context_cost_response').parentElement?.textContent).toContain(
+        formatCost(0.01),
+      );
+      expect(screen.getByText('com_ui_context_cost_branch').parentElement?.textContent).toContain(
+        formatCost(0.03),
+      );
+      expect(screen.getByText('com_ui_context_cost_total').parentElement?.textContent).toContain(
+        formatCost(0.04),
+      );
+    });
+
+    it('shows a known latest cost when cumulative cost coverage is incomplete', async () => {
+      renderBreakdown({
+        view: {
+          ...pricedView,
+          branchUsage: { ...view.branchUsage, costKnown: false },
+          totalUsage: { ...view.totalUsage, costKnown: false },
+        },
+        showCost: true,
+      });
+      await userEvent.click(toggle());
+
+      expect(screen.getByText('com_ui_context_cost_response')).toBeInTheDocument();
+      expect(screen.queryByText('com_ui_context_cost')).not.toBeInTheDocument();
+      expect(screen.queryByText('com_ui_context_cost_total')).not.toBeInTheDocument();
+    });
+
+    it('renders a known zero instead of treating it as missing', async () => {
+      renderBreakdown({ view: { ...pricedView, lastResponseCost: 0 }, showCost: true });
+      await userEvent.click(toggle());
+
+      expect(screen.getByText('com_ui_context_cost_response').parentElement?.textContent).toContain(
+        formatCost(0),
+      );
+    });
+
+    it('does not show a latest-response row without a known price', async () => {
+      renderBreakdown({ view, showCost: true });
+      await userEvent.click(toggle());
+
+      expect(screen.queryByText('com_ui_context_cost_response')).not.toBeInTheDocument();
+    });
+
+    it('keeps every price hidden when cost display is disabled', async () => {
+      renderBreakdown({ view: pricedView, showCost: false });
+      await userEvent.click(toggle());
+
+      expect(screen.queryByTestId('token-usage-cost')).not.toBeInTheDocument();
+      expect(screen.queryByText('com_ui_context_cost_response')).not.toBeInTheDocument();
+    });
+  });
+
   describe('collapse', () => {
     it('opens showing only the gauge, with the detail behind the disclosure', () => {
       renderBreakdown();
