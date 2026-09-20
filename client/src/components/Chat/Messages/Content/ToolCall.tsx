@@ -318,7 +318,7 @@ export default function ToolCall({
      */
     if (phase === 'failed') {
       return function_name
-        ? `${localize('com_ui_failed')}: ${function_name}`
+        ? localize('com_ui_failed_subject', { 0: function_name })
         : localize('com_ui_failed');
     }
     if (intent != null) {

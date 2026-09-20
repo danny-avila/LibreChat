@@ -49,6 +49,7 @@ import {
 import { instrumentIORedisClient, RedisUseCases } from '~/cache/redisTelemetry';
 import { RecoveredSteerPayloadMismatchError } from '~/stream/SteerRecovery';
 import { createCheckpointNamespace } from '~/stream/checkpoints';
+import { evalScript } from '~/cache/redisScript';
 
 const CLIENT_REQUEST_ID_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/;
 
@@ -2982,7 +2983,10 @@ export class RedisJobStore implements IJobStoreV2 {
     value: IdempotencyClaimValue,
     ttlSeconds: number,
   ): Promise<IdempotencyClaimResult> {
-    const result = await this.redis.eval(
+    // Contenders need one atomic winner, not dispatch-order fairness. Callers await
+    // this claim before dependent writes, so a cache miss may safely delay it.
+    const result = await evalScript(
+      this.redis,
       IDEMPOTENCY_CLAIM_LUA,
       1,
       KEYS.idempotency(key),

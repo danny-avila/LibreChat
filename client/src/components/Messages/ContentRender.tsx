@@ -117,6 +117,7 @@ const ContentRender = memo(function ContentRender({
     chatContext,
   });
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+  const autoExpandTools = useRecoilValue(store.autoExpandTools);
   const showThinking = useAtomValue(showThinkingAtom);
 
   const handleRegenerateMessage = useCallback(() => regenerateMessage(), [regenerateMessage]);
@@ -235,6 +236,7 @@ const ContentRender = memo(function ContentRender({
             isSubmitting={isSubmitting}
             isCreatedByUser={msg.isCreatedByUser}
             createdAt={msg.createdAt ?? msg.clientTimestamp}
+            foldLiveActivity={!autoExpandTools}
             showThinking={showThinking}
             conversationId={conversation?.conversationId}
             content={msg.content as Array<TMessageContentParts | undefined>}

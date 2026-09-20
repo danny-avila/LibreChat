@@ -229,24 +229,25 @@ export function createContextProgrammaticBashTool(
   identity?: AgentGitIdentity | null,
 ): DynamicStructuredTool {
   const attached = context?.environmentType === 'attached';
-  return createGitIdentityProgrammaticBashTool(
-    {
-      authHeaders,
-      baseUrl: context?.baseUrl,
-      executionProfile: context?.executionProfile,
-      runtimeSessionHint: context?.runtimeSessionHint,
-      ...(attached
-        ? {
-            workspaceId: context.codeWorkspace?.workspaceId,
-            runTimeoutMs: resolveAttachedWorkspaceProgrammaticTimeout(
-              context.codeEnvironmentConfigSchema,
-              context.codeWorkspace?.maxCommandTimeoutMs,
-            ),
-          }
-        : {}),
-    },
-    attached ? identity : undefined,
-  );
+  const options: Parameters<typeof createBashProgrammaticToolCallingTool>[0] & {
+    workspaceInstanceId?: string;
+  } = {
+    authHeaders,
+    baseUrl: context?.baseUrl,
+    executionProfile: context?.executionProfile,
+    runtimeSessionHint: context?.runtimeSessionHint,
+    ...(attached
+      ? {
+          workspaceId: context.codeWorkspace?.workspaceId,
+          workspaceInstanceId: context.codeWorkspace?.workspaceInstanceId,
+          runTimeoutMs: resolveAttachedWorkspaceProgrammaticTimeout(
+            context.codeEnvironmentConfigSchema,
+            context.codeWorkspace?.maxCommandTimeoutMs,
+          ),
+        }
+      : {}),
+  };
+  return createGitIdentityProgrammaticBashTool(options, attached ? identity : undefined);
 }
 
 /** Apply authorship before the SDK prepares the script and its replay requests. */
@@ -280,6 +281,7 @@ export function createAttachedWorkspaceBashTool({
   baseUrl,
   authHeaders,
   workspaceId,
+  workspaceInstanceId,
   environment,
   gitIdentity,
   maxTimeoutMs = WORKSPACE_COMMAND_DEFAULT_TIMEOUT_MS,
@@ -289,6 +291,7 @@ export function createAttachedWorkspaceBashTool({
   baseUrl: string;
   authHeaders: () => Promise<Record<string, string>> | Record<string, string>;
   workspaceId: string;
+  workspaceInstanceId?: string;
   environment?: CodeWorkspaceDescriptor['environment'];
   gitIdentity?: AgentGitIdentity | null;
   /** Effective admin/upstream ceiling already intersected with the protocol hard cap. */
@@ -361,6 +364,7 @@ export function createAttachedWorkspaceBashTool({
             protocolVersion: 1,
             operation: 'execute_command',
             workspaceId,
+            ...(workspaceInstanceId ? { workspaceInstanceId } : {}),
             command,
             ...(action && environment
               ? { environmentAction: { name: action, fingerprint: environment.fingerprint } }

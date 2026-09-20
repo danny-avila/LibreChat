@@ -40,6 +40,8 @@ export interface BackgroundToolResultState {
   settledAt: Date;
   /** This exact task owns a pre-registered automatic continuation delivery. */
   completionWakeup?: true;
+  /** Independent receipts retain task-local delivery ownership. */
+  completionReceipt?: true;
   resultClaim?: {
     kind: 'manual' | 'wakeup';
     claimId: string;

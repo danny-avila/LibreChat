@@ -2392,7 +2392,7 @@ describe('Agent Methods', () => {
         },
       );
 
-      const firstUpdate = await getAgent({ id: agentId });
+      const firstUpdate = await getAgent({ id: agentId }, {});
       expect(firstUpdate!.description).toBe('Updated description');
       expect(firstUpdate!.tools).toContain('tool1');
       expect(firstUpdate!.tools).toContain('tool2');
@@ -2405,7 +2405,7 @@ describe('Agent Methods', () => {
         },
       );
 
-      const secondUpdate = await getAgent({ id: agentId });
+      const secondUpdate = await getAgent({ id: agentId }, {});
       expect(secondUpdate!.tools).toHaveLength(2);
       expect(secondUpdate!.tools).toContain('tool2');
       expect(secondUpdate!.tools).toContain('tool3');
@@ -2419,7 +2419,7 @@ describe('Agent Methods', () => {
         },
       );
 
-      const thirdUpdate = await getAgent({ id: agentId });
+      const thirdUpdate = await getAgent({ id: agentId }, {});
       const toolCount = thirdUpdate!.tools!.filter((t) => t === 'tool3').length;
       expect(toolCount).toBe(2);
       expect(thirdUpdate!.versions).toHaveLength(4);
@@ -2489,14 +2489,14 @@ describe('Agent Methods', () => {
         },
       );
 
-      const complexAgent = await getAgent({ id: agentId });
+      const complexAgent = await getAgent({ id: agentId }, {});
       expect(complexAgent!.versions).toHaveLength(3);
       expect(complexAgent!.model_parameters?.temperature).toBe(0.8);
       expect(complexAgent!.model_parameters?.max_tokens).toBe(1000);
 
       await updateAgent({ id: agentId }, { model_parameters: {} });
 
-      const emptyParamsAgent = await getAgent({ id: agentId });
+      const emptyParamsAgent = await getAgent({ id: agentId }, {});
       expect(emptyParamsAgent!.versions).toHaveLength(4);
       expect(emptyParamsAgent!.model_parameters).toEqual({});
     });
@@ -2524,7 +2524,7 @@ describe('Agent Methods', () => {
 
         expect(duplicateUpdate!.versions).toHaveLength(2); // No new version created
 
-        const agent = await getAgent({ id: testAgentId });
+        const agent = await getAgent({ id: testAgentId }, {});
         expect(agent!.versions).toHaveLength(2);
       }
     });
@@ -2546,7 +2546,7 @@ describe('Agent Methods', () => {
        *  same shape `addAgentResourceFile` produces when it attaches a file. */
       await updateAgent({ id: agentId }, { $addToSet: { tools: 'file_search' } });
 
-      const afterAdd = await getAgent({ id: agentId });
+      const afterAdd = await getAgent({ id: agentId }, {});
       expect(afterAdd!.tools).toEqual(['file_search']);
       expect(afterAdd!.versions).toHaveLength(2);
       expect((afterAdd!.versions![1] as VersionEntry).tools).toEqual([]);
@@ -2558,7 +2558,7 @@ describe('Agent Methods', () => {
       expect(removed!.tools).toEqual([]);
       expect(removed!.versions).toHaveLength(2);
 
-      const reloaded = await getAgent({ id: agentId });
+      const reloaded = await getAgent({ id: agentId }, {});
       expect(reloaded!.tools).toEqual([]);
       expect(reloaded!.versions).toHaveLength(2);
     });
@@ -2594,7 +2594,7 @@ describe('Agent Methods', () => {
 
       /** The re-attach snapshots the current state, so the document now equals the newest
        *  version and the next attach is judged a duplicate. */
-      const settled = await getAgent({ id: agentId });
+      const settled = await getAgent({ id: agentId }, {});
       const newestVersion = settled!.versions![settled!.versions!.length - 1] as VersionEntry;
       expect(fileIdsOf(settled)).toEqual(['f1']);
       expect(newestVersion.tool_resources).toEqual(settled!.tool_resources);
@@ -2634,7 +2634,7 @@ describe('Agent Methods', () => {
 
       /** The document now equals its newest version, so the snapshot is a duplicate and
        *  only the operator can justify recording an entry. */
-      const settled = await getAgent({ id: agentId });
+      const settled = await getAgent({ id: agentId }, {});
       const versionCount = settled!.versions!.length;
 
       /** Re-attaching an id the agent already holds makes `$addToSet` a Mongo no-op. An
@@ -2645,7 +2645,7 @@ describe('Agent Methods', () => {
         file_id: 'f1',
       });
 
-      const after = await getAgent({ id: agentId });
+      const after = await getAgent({ id: agentId }, {});
       expect(after!.versions).toHaveLength(versionCount);
       expect(
         (after?.tool_resources as Record<string, { file_ids?: string[] }> | undefined)?.file_search
@@ -2677,7 +2677,7 @@ describe('Agent Methods', () => {
         file_id: 'f1',
       });
 
-      const settled = await getAgent({ id: agentId });
+      const settled = await getAgent({ id: agentId }, {});
       const versionCount = settled!.versions!.length;
 
       /** The no-op reading comes from a document fetched before the write, so a `$pull`
@@ -2699,7 +2699,7 @@ describe('Agent Methods', () => {
       expect(suppressedUpdate.$addToSet).toBeUndefined();
       expect(suppressedUpdate.$push).toBeUndefined();
       expect(suppressedUpdate.$pull).toBeUndefined();
-      expect((await getAgent({ id: agentId }))!.versions).toHaveLength(versionCount);
+      expect((await getAgent({ id: agentId }, {}))!.versions).toHaveLength(versionCount);
     });
 
     test('should record a version when a duplicate direct update carries an atomic operator', async () => {
@@ -2726,7 +2726,7 @@ describe('Agent Methods', () => {
       expect(updated!.tools).toEqual(['appended_tool']);
       expect(updated!.versions).toHaveLength(3);
 
-      const reloaded = await getAgent({ id: agentId });
+      const reloaded = await getAgent({ id: agentId }, {});
       expect(reloaded!.tools).toEqual(['appended_tool']);
       expect(reloaded!.versions).toHaveLength(3);
     });
@@ -2774,7 +2774,7 @@ describe('Agent Methods', () => {
         { avatar: { filepath: '/images/a.png', source: 'local' } },
         { skipVersioning: true },
       );
-      const withAvatar = await getAgent({ id: agentId });
+      const withAvatar = await getAgent({ id: agentId }, {});
       expect(withAvatar!.avatar).toBeTruthy();
       expect((withAvatar!.versions![1] as VersionEntry).avatar).toBeUndefined();
 
@@ -2800,13 +2800,13 @@ describe('Agent Methods', () => {
       });
       await updateAgent({ id: agentId }, { name: 'Idempotent' });
 
-      const before = await getAgent({ id: agentId });
+      const before = await getAgent({ id: agentId }, {});
       const duplicate = await updateAgent({ id: agentId }, { name: 'Idempotent' });
 
       /** The suppressed path reports the unchanged version count as `version`. */
       expect((duplicate as IAgent & { version?: number }).version).toBe(before!.versions!.length);
 
-      const after = await getAgent({ id: agentId });
+      const after = await getAgent({ id: agentId }, {});
       expect(after!.name).toBe(before!.name);
       expect(after!.tools).toEqual(before!.tools);
       expect(after!.versions).toHaveLength(before!.versions!.length);
@@ -3456,7 +3456,7 @@ describe('Agent Methods', () => {
 
       // Since we're updating back to the same model_parameters but with a different description,
       // it should create a new version
-      const agent = await getAgent({ id: agentId });
+      const agent = await getAgent({ id: agentId }, {});
       expect(agent!.versions).toHaveLength(3);
     });
 
@@ -3624,7 +3624,7 @@ describe('Agent Methods', () => {
       expect(repopulated?.versions).toHaveLength(3);
 
       // Verify all versions have correct support_contact
-      const finalAgent = await getAgent({ id: agentId });
+      const finalAgent = await getAgent({ id: agentId }, {});
       expect(finalAgent!.versions![0]?.support_contact).toEqual({
         name: 'Support',
         email: 'support@test.com',
@@ -3674,7 +3674,7 @@ describe('Agent Methods', () => {
         },
       );
 
-      const finalAgent = await getAgent({ id: agentId });
+      const finalAgent = await getAgent({ id: agentId }, {});
 
       // Verify version history
       expect(finalAgent!.versions).toHaveLength(3);
@@ -3833,7 +3833,7 @@ describe('Agent Methods', () => {
           await updateAgent({ id: agentId }, { description: `Version ${i}` });
         }
 
-        const agent = await getAgent({ id: agentId });
+        const agent = await getAgent({ id: agentId }, {});
         expect(agent!.versions).toHaveLength(21);
         expect(agent!.description).toBe('Version 19');
       });
@@ -4866,7 +4866,7 @@ describe('Agent Methods', () => {
 
       await updateAgent({ id: agentId }, { agent_ids: ['agent3'] });
 
-      const finalAgent = await getAgent({ id: agentId });
+      const finalAgent = await getAgent({ id: agentId }, {});
 
       expect(finalAgent!.versions).toHaveLength(3);
       expect(finalAgent!.versions![0]?.agent_ids).toEqual(['agent1']);

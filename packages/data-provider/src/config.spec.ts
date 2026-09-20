@@ -509,6 +509,25 @@ describe('attached code environment user config schema', () => {
   });
 });
 
+describe('agent background completion batch config', () => {
+  it('defaults and bounds automatic completion coalescing', () => {
+    const defaults = configSchema.parse({
+      version: '1.0',
+      endpoints: { agents: { backgroundTasks: {} } },
+    });
+    expect(defaults.endpoints?.agents?.backgroundTasks?.completionResultBatchSize).toBe(8);
+
+    for (const completionResultBatchSize of [0, 17, 1.5]) {
+      expect(
+        configSchema.safeParse({
+          version: '1.0',
+          endpoints: { agents: { backgroundTasks: { completionResultBatchSize } } },
+        }).success,
+      ).toBe(false);
+    }
+  });
+});
+
 describe('agent event runtime config', () => {
   it('accepts the routing choice and ignores removed rollout fields', () => {
     const result = configSchema.safeParse({
@@ -576,7 +595,9 @@ describe('agent background task config', () => {
       return;
     }
     expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({
+      completionResultBatchSize: 8,
       completionWakeups: true,
+      completionResultMaxChars: 24 * 1024,
       ordinaryToolCancellation: false,
     });
   });
@@ -592,7 +613,9 @@ describe('agent background task config', () => {
       return;
     }
     expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({
+      completionResultBatchSize: 8,
       completionWakeups: false,
+      completionResultMaxChars: 24 * 1024,
       ordinaryToolCancellation: false,
     });
   });
@@ -608,9 +631,32 @@ describe('agent background task config', () => {
       return;
     }
     expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({
+      completionResultBatchSize: 8,
       completionWakeups: true,
+      completionResultMaxChars: 24 * 1024,
       ordinaryToolCancellation: true,
     });
+  });
+
+  it('accepts a bounded durable completion result limit', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: { agents: { backgroundTasks: { completionResultMaxChars: 4096 } } },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.endpoints?.agents?.backgroundTasks?.completionResultMaxChars).toBe(4096);
+    }
+  });
+
+  it.each([0, 64 * 1024 + 1])('rejects an unsafe completion result limit: %s', (limit) => {
+    expect(
+      configSchema.safeParse({
+        version: '1.0',
+        endpoints: { agents: { backgroundTasks: { completionResultMaxChars: limit } } },
+      }).success,
+    ).toBe(false);
   });
 });
 

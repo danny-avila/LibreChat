@@ -1174,6 +1174,47 @@ describe('MCPTokenStorage', () => {
       );
     });
 
+    it.each(['invalid_client', 'invalid_grant', 'invalid_scope', 'unauthorized_client'])(
+      'preserves a typed temporary failure even when its message contains %s',
+      async (serverName) => {
+        await createBoundToken(store, {
+          userId: 'u1',
+          type: 'mcp_oauth',
+          identifier: 'mcp:srv1',
+          token: 'enc:expired-token',
+          expiresIn: -1,
+        });
+        await createBoundToken(store, {
+          userId: 'u1',
+          type: 'mcp_oauth_refresh',
+          identifier: 'mcp:srv1:refresh',
+          token: 'enc:rt',
+          expiresIn: 86400,
+        });
+        const failure = new MCPTokenRefreshUnavailableError(serverName, new Error('HTTP 503'));
+        const deleteTokens = jest.fn(store.deleteTokens);
+        await expect(
+          MCPTokenStorage.getTokens({
+            userId: 'u1',
+            serverName: 'srv1',
+            findToken: store.findToken,
+            createToken: store.createToken,
+            updateToken: store.updateToken,
+            deleteTokens,
+            refreshTokens: jest.fn().mockRejectedValue(failure),
+          }),
+        ).rejects.toBe(failure);
+        expect(deleteTokens).not.toHaveBeenCalled();
+        expect(
+          await store.findToken({
+            userId: 'u1',
+            type: 'mcp_oauth_refresh',
+            identifier: 'mcp:srv1:refresh',
+          }),
+        ).toMatchObject({ token: 'enc:rt' });
+      },
+    );
+
     it('reports transient refresh failures separately from reauthentication', async () => {
       await createBoundToken(store, {
         userId: 'u1',

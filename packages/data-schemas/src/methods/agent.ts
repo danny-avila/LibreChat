@@ -548,14 +548,19 @@ async function generateActionMetadataHash(
   return hashHex;
 }
 
+export interface GetAgent {
+  (searchParameter: FilterQuery<IAgent>): Promise<Omit<IAgent, 'versions'> | null>;
+  (
+    searchParameter: FilterQuery<IAgent>,
+    projection: ProjectionType<IAgent>,
+  ): Promise<IAgent | null>;
+}
+
 export function createAgentMethods(
   mongoose: typeof import('mongoose'),
   deps: AgentDeps,
 ): {
-  getAgent: (
-    searchParameter: FilterQuery<IAgent>,
-    projection?: ProjectionType<IAgent>,
-  ) => Promise<IAgent | null>;
+  getAgent: GetAgent;
   getAgentVersions: (searchParameter: FilterQuery<IAgent>) => Promise<IAgent['versions'] | null>;
   getAgentWithVersionCount: (
     searchParameter: FilterQuery<IAgent>,
@@ -742,14 +747,16 @@ export function createAgentMethods(
 
   /**
    * Get an agent document based on the provided search parameter.
+   * Without an explicit projection, the unbounded `versions` history is excluded;
+   * pass `{}` (or a projection including `versions`) to read the full history.
    */
-  async function getAgent(
+  const getAgent: GetAgent = async (
     searchParameter: FilterQuery<IAgent>,
-    projection?: ProjectionType<IAgent>,
-  ): Promise<IAgent | null> {
+    projection: ProjectionType<IAgent> = { versions: 0 },
+  ): Promise<IAgent | null> => {
     const Agent = mongoose.models.Agent as Model<IAgent>;
     return await Agent.findOne(searchParameter, projection).lean<IAgent>();
-  }
+  };
 
   /**
    * Get an agent's version history only, without the rest of the document.

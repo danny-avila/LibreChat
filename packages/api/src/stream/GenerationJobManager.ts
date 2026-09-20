@@ -62,6 +62,7 @@ import {
   STEER_QUEUE_MAX_DEPTH,
 } from './interfaces/IJobStore';
 import { isRecoveredSteerPayload, RecoveredSteerPayloadMismatchError } from './SteerRecovery';
+import { projectTerminalEvent } from './terminalProjection';
 import { assertJobStoreV2 } from './jobStoreCapabilities';
 
 /**
@@ -3014,7 +3015,12 @@ class GenerationJobManagerClass {
     let finalEvent: t.ServerSentEvent | undefined;
     if (jobData.finalEvent) {
       try {
-        finalEvent = sanitizeFinalEvent(JSON.parse(jobData.finalEvent) as t.ServerSentEvent);
+        /** Records written before projection shipped, or by an older replica,
+         * are projected on read so replay never re-delivers or re-caches an
+         * oversized payload or private native metadata. */
+        finalEvent = sanitizeFinalEvent(
+          projectTerminalEvent(JSON.parse(jobData.finalEvent) as t.ServerSentEvent),
+        );
       } catch {
         // Ignore parse errors
       }
@@ -3961,7 +3967,14 @@ class GenerationJobManagerClass {
       conversationId: claim.conversationId,
       status: claim.status,
     });
-    const desiredEvent = finalEvent ? sanitizeFinalEvent(finalEvent) : reconcileEvent;
+    /** The caller's event still carries prompt-building inputs and private
+     * metadata, so everything this method stores, publishes or caches uses the
+     * projected, sanitized payload. These transformations can allocate a new object, so
+     * `intendedEvent` — not the caller's reference — is what the success
+     * bookkeeping below compares identity against. */
+    const intendedEvent =
+      finalEvent == null ? null : sanitizeFinalEvent(projectTerminalEvent(finalEvent));
+    const desiredEvent = intendedEvent ?? reconcileEvent;
     let publicationEvent: t.ServerSentEvent | null = null;
     let durable = false;
 
@@ -3981,8 +3994,11 @@ class GenerationJobManagerClass {
           settledJob.terminalPersistencePending !== true &&
           settledJob.finalEvent
         ) {
+          /** Written by whichever side won the CAS, possibly a replica that
+           * predates projection. Project on read so a legacy oversized record
+           * or private native metadata is not republished unchanged. */
           publicationEvent = sanitizeFinalEvent(
-            JSON.parse(settledJob.finalEvent) as t.ServerSentEvent,
+            projectTerminalEvent(JSON.parse(settledJob.finalEvent) as t.ServerSentEvent),
           );
           durable = true;
         }
@@ -4004,9 +4020,9 @@ class GenerationJobManagerClass {
       runtime.finalEvent = publicationEvent;
     }
     const persistenceFailed =
-      finalEvent == null ||
+      intendedEvent == null ||
       !durable ||
-      publicationEvent !== desiredEvent ||
+      publicationEvent !== intendedEvent ||
       ('reconcile' in publicationEvent && publicationEvent.reconcile === true);
 
     try {
@@ -4926,10 +4942,9 @@ class GenerationJobManagerClass {
         return;
       }
       terminalEventDelivered = true;
-      const safeEvent = sanitizeFinalEvent(event);
-      runtime.finalEvent = safeEvent;
+      runtime.finalEvent = event;
       try {
-        onDone?.(safeEvent);
+        onDone?.(event);
       } finally {
         subscription?.unsubscribe();
       }
@@ -4961,13 +4976,20 @@ class GenerationJobManagerClass {
       }
       deliverChunk(event);
     };
-    const queueDone = (event: t.ServerSentEvent, generationId?: number): void => {
+    const queueDone = (rawEvent: t.ServerSentEvent, generationId?: number): void => {
       if (generationId != null && generationId !== runtime.createdAt) {
         return;
       }
       if (!subscriptionActive || terminalEventDelivered || terminalEventQueued) {
         return;
       }
+      /** The only choke point every terminal delivery to this subscriber passes
+       * through, so it is where a frame published by a replica that predates
+       * projection gets excluded. Store-read paths are already projected; a live
+       * Pub/Sub FINAL from an old generation owner during a rolling deploy is
+       * not, and without this it would be cached on the runtime and forwarded to
+       * the browser with its prompt inputs or private native metadata intact. */
+      const event = sanitizeFinalEvent(projectTerminalEvent(rawEvent));
       if (!deliveryActivated) {
         terminalEventQueued = true;
         runtime.finalEvent = event;
@@ -5430,8 +5452,10 @@ class GenerationJobManagerClass {
         let finalEvent = runtime.finalEvent;
         if (!finalEvent && terminalJob.finalEvent) {
           try {
+            /** Same mixed-deployment concern as the cross-replica runtime: a
+             * stored record may predate projection. */
             finalEvent = sanitizeFinalEvent(
-              JSON.parse(terminalJob.finalEvent) as t.ServerSentEvent,
+              projectTerminalEvent(JSON.parse(terminalJob.finalEvent) as t.ServerSentEvent),
             );
           } catch (err) {
             logger.warn(
@@ -8755,27 +8779,29 @@ class GenerationJobManagerClass {
    */
   async emitDone(
     streamId: string,
-    event: t.ServerSentEvent,
+    rawEvent: t.ServerSentEvent,
     expectedCreatedAt?: number,
   ): Promise<void> {
-    const safeEvent = sanitizeFinalEvent(event);
+    /** Exclude prompt-building inputs and private native metadata before this
+     * event reaches the runtime cache, the durable job hash or the transport. */
+    const event = sanitizeFinalEvent(projectTerminalEvent(rawEvent));
     const runtime = this.runtimeState.get(streamId);
     const generationId = expectedCreatedAt ?? runtime?.createdAt;
     const matchingRuntime =
       runtime && (generationId == null || runtime.createdAt === generationId) ? runtime : undefined;
     if (matchingRuntime) {
-      matchingRuntime.finalEvent = safeEvent;
+      matchingRuntime.finalEvent = event;
     }
     if (matchingRuntime?.createdEventPublication) {
       await matchingRuntime.createdEventPublication;
     }
     // Persist finalEvent to Redis for cross-replica consistency
     this.jobStore
-      .updateJob(streamId, { finalEvent: JSON.stringify(safeEvent) }, generationId)
+      .updateJob(streamId, { finalEvent: JSON.stringify(event) }, generationId)
       .catch((err) => {
         logger.error(`[GenerationJobManager] Failed to persist finalEvent:`, err);
       });
-    await this.eventTransport.emitDone(streamId, safeEvent, generationId);
+    await this.eventTransport.emitDone(streamId, event, generationId);
     if (matchingRuntime?.startupTelemetry) {
       this.recordStartupEvent(matchingRuntime, event);
     }

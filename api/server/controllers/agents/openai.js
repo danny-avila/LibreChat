@@ -490,6 +490,8 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       const allowedProviders = new Set(agentsEConfig?.allowedProviders);
       const ordinaryToolCancellationEnabled =
         agentsEConfig?.backgroundTasks?.ordinaryToolCancellation === true;
+      const backgroundCompletionResultMaxChars =
+        agentsEConfig?.backgroundTasks?.completionResultMaxChars;
 
       // Create tool loader
       const loadTools = createToolLoader({ req, res, signal: execution.signal });
@@ -840,6 +842,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         runSignal: execution.signal,
         foregroundRunId: responseId,
         ordinaryToolCancellation: ordinaryToolCancellationEnabled,
+        backgroundCompletionResultMaxChars,
         provisionFiles: createProvisionFilesCallback({
           req,
           agentToolContexts,

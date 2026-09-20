@@ -71,6 +71,9 @@ jest.mock('../Studio', () => ({
   StudioProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 jest.mock('../Landing', () => () => <div data-testid="landing" />);
+jest.mock('../Trace', () => ({
+  TraceSurface: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
 jest.mock('../Footer', () => ({
   __esModule: true,
   default: () => <div data-testid="footer" />,

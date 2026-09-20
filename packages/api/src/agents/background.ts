@@ -2212,8 +2212,11 @@ export async function runCheckBackgroundTask(params: {
           if (durableClaim.status === 'not_found' || durableClaim.status === 'not_ready') {
             const localReplay =
               task.resultClaim?.kind === 'manual' && task.resultClaim.claimId === invocationId;
-            let localClaimNeedsNoDurableConfirmation =
-              localReplay && task.liveArtifactPollRequired === true;
+            const pollOwnsOriginatingGeneration =
+              params.generationId != null && params.generationId === task.messageId;
+            const localClaimAllowed =
+              pollOwnsOriginatingGeneration || task.liveArtifactPollRequired === true;
+            let localClaimNeedsNoDurableConfirmation = localReplay && localClaimAllowed;
             if (!localReplay) {
               /** Retire the still-unclaimed delivery before creating local
                * ownership. A live resolver lease wins. Once that resolver is
@@ -2261,7 +2264,7 @@ export async function runCheckBackgroundTask(params: {
                     'The task is finished and completion ownership is being settled. Retry this poll shortly.',
                 });
               }
-              if (task.liveArtifactPollRequired === true) {
+              if (localClaimAllowed) {
                 const localClaim = backgroundTaskRegistry.claimResult(
                   userId,
                   conversationId,
@@ -2287,21 +2290,21 @@ export async function runCheckBackgroundTask(params: {
                       'The task is finished and its result is being made durable. Retry this poll shortly.',
                   });
                 }
-                /** The poll is executing inside the still-unfinished dispatch
-                 * generation, so waiting for the durable row would require
-                 * that generation to end before it can obey its mandatory
-                 * live-artifact poll. The retired unclaimed wakeup plus this
-                 * local manual claim is authoritative for this owner process;
-                 * the persistence retry re-reads and copies the claim after
-                 * the generation finalizes. */
+                /** The poll is executing inside the unfinished dispatch
+                 * generation, or it must deliver a live artifact. Waiting for
+                 * the durable row would require that generation to end first.
+                 * The retired unclaimed wakeup plus this local manual claim is
+                 * authoritative for this owner process; the persistence retry
+                 * re-reads and copies the claim after finalization. */
                 localClaimNeedsNoDurableConfirmation = true;
               }
             }
             /** Ordinary polls claim the durable terminal receipt directly.
              * They never reserve a process-local claim while the receipt is
              * absent: a later poll has a different provider tool-call id and
-             * could never take over that abandoned reservation. The live-
-             * artifact exception above cannot wait for its own generation. */
+             * could never take over that abandoned reservation. A poll owned
+             * by the originating generation cannot wait for that same
+             * generation to finalize its durable response row. */
             if (!localClaimNeedsNoDurableConfirmation) {
               const reconciledClaim = await params.claimBackgroundToolResult({
                 ...durableClaimInput,

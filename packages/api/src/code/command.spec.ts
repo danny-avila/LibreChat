@@ -76,15 +76,20 @@ describe('programmatic Bash Git identity', () => {
     }
   });
 
-  test('pins a selected project on the real SDK no-tools route', async () => {
-    const received: { url?: string; workspace?: string | string[]; code: string }[] = [];
+  test('pins the selected project and conversation instance on the real SDK no-tools route', async () => {
+    const received: {
+      url?: string;
+      workspace?: string | string[];
+      code: string;
+      workspace_instance_id?: string;
+    }[] = [];
     const server = createServer(async (req, res) => {
       let body = '';
       for await (const chunk of req) body += chunk;
       received.push({
         url: req.url,
         workspace: req.headers['x-librechat-code-workspace-id'],
-        code: JSON.parse(body).code,
+        ...JSON.parse(body),
       });
       res.setHeader('Content-Type', 'application/json');
       res.end(JSON.stringify({ status: 'completed', stdout: 'done', stderr: '', files: [] }));
@@ -92,11 +97,13 @@ describe('programmatic Bash Git identity', () => {
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
     const { port } = server.address() as AddressInfo;
+    const workspaceInstanceId = 'a'.repeat(64);
     try {
       const bashTool = createGitIdentityProgrammaticBashTool(
         {
           baseUrl: `http://127.0.0.1:${port}/v1`,
           workspaceId: 'project-a',
+          workspaceInstanceId,
           authHeaders: () => ({}),
         },
         { name: 'Lia', email: 'lia@example.com' },
@@ -108,7 +115,11 @@ describe('programmatic Bash Git identity', () => {
         invocationConfig,
       );
       expect(received).toHaveLength(1);
-      expect(received[0]).toMatchObject({ url: '/v1/exec/programmatic', workspace: 'project-a' });
+      expect(received[0]).toMatchObject({
+        url: '/v1/exec/programmatic',
+        workspace: 'project-a',
+        workspace_instance_id: workspaceInstanceId,
+      });
       expect(received[0].code).toContain("GIT_AUTHOR_NAME='Lia'");
       expect(bashTool.description).toContain('selected persistent workspace');
     } finally {
@@ -152,6 +163,26 @@ function commandResponse(overrides: Record<string, unknown> = {}): Response {
 }
 
 describe('createAttachedWorkspaceBashTool', () => {
+  test('dispatches commands to the resolved conversation workspace instance', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
+    const workspaceInstanceId = 'e'.repeat(64);
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1/',
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+      workspaceInstanceId,
+      fetchImpl,
+    });
+
+    await bashTool.invoke({ command: 'pwd' });
+
+    const [, options] = (fetchImpl as jest.Mock).mock.calls[0];
+    expect(JSON.parse(options.body)).toMatchObject({
+      workspaceId: 'project-a',
+      workspaceInstanceId,
+    });
+  });
+
   test('dispatches only advertised named actions with the resolved definition fingerprint', async () => {
     const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
     const bashTool = createAttachedWorkspaceBashTool({
