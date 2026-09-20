@@ -1,4 +1,5 @@
 import { memo, useRef, useMemo, useEffect, useCallback, Fragment } from 'react';
+import { useRecoilValue } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
@@ -35,7 +36,9 @@ import { EmptyText, AgentUpdate } from './Parts';
 import ApprovalProvider from './ApprovalContext';
 import Sources from '~/components/Web/Sources';
 import ToolCallGroup from './ToolCallGroup';
+import { needsReader } from './live';
 import Container from './Container';
+import store from '~/store';
 import Part from './Part';
 
 /** An empty TEXT part — the placeholder some endpoints seed in
@@ -364,9 +367,17 @@ const ContentPartsBody = memo(function ContentPartsBody({
     [laneGroups, content],
   );
 
+  /** The span a run is still writing folds into one row from its first tool
+   *  call. "Expand tools by default" is the reader asking for the opposite, so
+   *  it keeps the unfolded rendering. */
+  const autoExpandTools = useRecoilValue(store.autoExpandTools);
+  const foldsLiveTail = isLast && effectiveIsSubmitting && !autoExpandTools;
   const phaseSegments = useMemo(
-    () => (nestedActivityPhase ? undefined : groupActivityPhases(content, messageLaneGroups)),
-    [nestedActivityPhase, content, messageLaneGroups],
+    () =>
+      nestedActivityPhase
+        ? undefined
+        : groupActivityPhases(content, messageLaneGroups, foldsLiveTail),
+    [nestedActivityPhase, content, messageLaneGroups, foldsLiveTail],
   );
   /** Every file a phase's parts produced, in transcript order, deduplicated
    *  across parts that share a tool call. */
@@ -854,6 +865,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
               );
             }
             const synthesized = segment.synthesized === true;
+            const live = segment.live === true;
             /** Entrance bookkeeping still keys on the marker. */
             const phaseKeyIndex = getPartKeyIndex(segment.labelPart, segment.labelIndex);
             /** The RENDER key is the span, not the header. A synthesized card's
@@ -911,7 +923,8 @@ const ContentPartsBody = memo(function ContentPartsBody({
              *  can raise one long after its parent's label filled. The span
              *  renders exactly as it would without the feature until it
              *  clears, then folds. */
-            if (synthesized && hasPendingApproval) {
+            const awaitsReader = live ? segment.content.some(needsReader) : hasPendingApproval;
+            if (synthesized && awaitsReader) {
               return renderSegment(
                 segment.content,
                 absoluteIndexAt(segment.startIndex),
@@ -926,6 +939,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
                 hasContent={segment.hasContent}
                 attachments={phaseAttachments}
                 hasPendingApproval={hasPendingApproval}
+                liveParts={live ? segment.content : undefined}
                 animateEntrance={
                   /** Never for a synthesized card. The entrance mounts a card
                    *  OPEN and folds it shut, and this component remounts
@@ -943,8 +957,10 @@ const ContentPartsBody = memo(function ContentPartsBody({
                       (previousPhases.labels.get(labelText) ?? 0))
                 }
                 showCursor={
+                  /** A live header shimmers; a cursor row beneath it would be
+                   *  a second liveness signal and a second row. */
                   synthesized
-                    ? ownsCursor
+                    ? ownsCursor && !live
                     : isLast &&
                       effectiveIsSubmitting &&
                       absoluteIndexAt(segment.labelIndex) === globalLastContentIdx
@@ -955,7 +971,10 @@ const ContentPartsBody = memo(function ContentPartsBody({
                   absoluteIndexAt(segment.startIndex),
                   segmentIndices,
                   `phase-content-${cardKey}`,
-                  true,
+                  /** Opening a live row should show the calls running, so its
+                   *  groups keep their own live expansion rather than the
+                   *  settled-phase default of staying shut. */
+                  !live,
                   ownsCursor,
                   true,
                 )}

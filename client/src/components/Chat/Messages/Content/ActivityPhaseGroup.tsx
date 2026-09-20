@@ -1,18 +1,23 @@
-import { useId, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useId, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
 import { Check, ChevronDown, TriangleAlert } from 'lucide-react';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import type { CSSProperties, ReactNode } from 'react';
 import {
+  useLocalize,
   useExpandCollapse,
   useLazyCollapseBody,
   scheduleMessageContentLayoutReconcile,
   EXPAND_TRANSITION,
 } from '~/hooks';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
+import { getLiveActivity, LIVE_ACTIVITY_THROTTLE_MS } from './live';
+import useThrottledValue from '~/hooks/Messages/useThrottledValue';
+import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { getActivityLabelText } from '~/utils/activityLabels';
 import { ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from './rows';
+import { StackedToolIcons } from './ToolOutput';
 import SearchVerticals from './verticals';
 import { AttachmentGroup } from './Parts';
 import { cn } from '~/utils';
@@ -82,26 +87,42 @@ function PhaseGlyph({ failed }: { failed: boolean }) {
  * row while the new summary comes up from below, so the work visibly moves
  * into the line that now stands for it.
  */
-function PhaseLabel({
+const PhaseLabel = memo(function PhaseLabel({
   text,
   animate,
   failed,
+  source,
+  live = false,
 }: {
   text: string;
   animate: boolean;
   failed: boolean;
+  /** Identity of what produced `text`. A streamed sentence keeps its source
+   *  while it grows, and sliding a line out to bring a longer copy of itself
+   *  in would read as flicker — so an unchanged source extends in place. */
+  source?: string;
+  live?: boolean;
 }) {
-  const [lines, setLines] = useState<{ current: string; retired: string | null; entered: boolean }>(
-    { current: text, retired: null, entered: false },
-  );
+  const [lines, setLines] = useState<{
+    current: string;
+    retired: string | null;
+    entered: boolean;
+    source?: string;
+  }>({ current: text, retired: null, entered: false, source });
 
   /** Adjusted during render rather than in an effect. A passive effect runs
    *  after paint, so a swap with no animation would leave the previous summary
    *  on screen for a frame while the button's `aria-label` already carried the
    *  new one. React re-renders this component immediately instead. */
   if (lines.current !== text) {
-    const swaps = animate && lines.current.length > 0;
-    setLines({ current: text, retired: swaps ? lines.current : null, entered: swaps });
+    const swaps =
+      animate && lines.current.length > 0 && (source == null || source !== lines.source);
+    setLines({
+      current: text,
+      retired: swaps ? lines.current : null,
+      entered: swaps || (lines.entered && source != null && source === lines.source),
+      source,
+    });
   }
 
   /** Clears only the retired line. `entered` outlives it on purpose: dropping
@@ -116,7 +137,9 @@ function PhaseLabel({
   return (
     <span
       className="tool-status-text relative block min-w-0 flex-1 overflow-hidden text-left"
-      role="status"
+      /** A live line moves twice a second; a polite region would re-announce
+       *  it each time. The settled summary is what gets announced. */
+      role={live ? undefined : 'status'}
       title={text}
     >
       {lines.retired != null && (
@@ -127,6 +150,7 @@ function PhaseLabel({
             'animate-out fade-out-0 slide-out-to-top-5 fill-mode-forwards',
             FOLD_EASING,
             failed && 'text-text-warning',
+            live && 'shimmer',
           )}
           onAnimationEnd={clearRetired}
           aria-hidden="true"
@@ -135,16 +159,63 @@ function PhaseLabel({
         </span>
       )}
       <span
-        key={`current-${lines.current}`}
+        /** Keyed by source while live, so a growing sentence updates one
+         *  element instead of remounting — and replaying its slide — per paint. */
+        key={`current-${source ?? lines.current}`}
         className={cn(
           'block truncate',
           lines.entered && `animate-in fade-in-0 slide-in-from-bottom-5 ${FOLD_EASING}`,
           failed && 'text-text-warning',
+          live && 'shimmer max-w-full',
         )}
       >
         {lines.current}
       </span>
     </span>
+  );
+});
+
+/**
+ * The header of a span the run is still writing: the span's tool icons,
+ * pulsing, in the slot the settled check takes over, beside the newest line.
+ *
+ * Its own component so only a live card pays for it — the localization and MCP
+ * lookups, and the throttle. `liveParts` is rebuilt on every streamed delta;
+ * the throttle is what keeps that from reaching the DOM more than twice a
+ * second.
+ */
+function LivePhaseHeader({
+  parts,
+  animate,
+}: {
+  parts: ReadonlyArray<TMessageContentParts | undefined>;
+  animate: boolean;
+}) {
+  const localize = useLocalize();
+  const mcpIconMap = useMCPIconMap();
+  const mcpServerNames = useMCPServerNames();
+  const activity = useMemo(
+    () => getLiveActivity(parts, localize, mcpServerNames),
+    [parts, localize, mcpServerNames],
+  );
+  const { text, source } = activity;
+  const line = useMemo(() => ({ text, source }), [text, source]);
+  const painted = useThrottledValue(line, LIVE_ACTIVITY_THROTTLE_MS);
+  const iconKey = activity.iconNames.join('|');
+  const iconNames = useMemo(() => (iconKey ? iconKey.split('|') : []), [iconKey]);
+  return (
+    <>
+      <span className={ROW_GLYPH_SLOT} aria-hidden="true">
+        <StackedToolIcons toolNames={iconNames} mcpIconMap={mcpIconMap} maxIcons={4} isAnimating />
+      </span>
+      <PhaseLabel
+        text={painted.text}
+        source={painted.source}
+        failed={false}
+        animate={animate}
+        live
+      />
+    </>
   );
 }
 
@@ -156,6 +227,7 @@ export default function ActivityPhaseGroup({
   showCursor = false,
   animateEntrance = false,
   hasPendingApproval = false,
+  liveParts,
 }: {
   labelPart: ActivityPhasePart;
   children: ReactNode;
@@ -170,7 +242,12 @@ export default function ActivityPhaseGroup({
   showCursor?: boolean;
   animateEntrance?: boolean;
   hasPendingApproval?: boolean;
+  /** The span's parts while the run is still writing it. Present, the header
+   *  reads the newest activity out of them — throttled — instead of a
+   *  generated label, and renders as a live row rather than a settled one. */
+  liveParts?: ReadonlyArray<TMessageContentParts | undefined>;
 }) {
+  const isLive = liveParts != null;
   const label = getActivityLabelText(labelPart);
   const hasFailure = labelPart.status === 'failed' || labelPart.status === 'partial';
   /** Already `smoothStreaming && !reducedMotion` — it owns the media query, so
@@ -298,7 +375,7 @@ export default function ActivityPhaseGroup({
         <AttachmentGroup attachments={attachments} />
       </>
     ) : null;
-  if (!label) {
+  if (!label && !isLive) {
     return (
       <>
         {children}
@@ -347,10 +424,18 @@ export default function ActivityPhaseGroup({
             onClick={handleToggle}
             aria-expanded={isExpanded}
             aria-controls={panelId}
-            aria-label={label}
+            /** A live header is named by its own content: the line it shows
+             *  is resolved inside `LivePhaseHeader`, below this component. */
+            aria-label={isLive ? undefined : label}
           >
-            <PhaseGlyph failed={hasFailure} />
-            <PhaseLabel text={label} failed={hasFailure} animate={smoothStreaming} />
+            {isLive ? (
+              <LivePhaseHeader parts={liveParts} animate={smoothStreaming} />
+            ) : (
+              <>
+                <PhaseGlyph failed={hasFailure} />
+                <PhaseLabel text={label} failed={hasFailure} animate={smoothStreaming} />
+              </>
+            )}
             <ChevronDown
               className={cn(
                 'size-4 shrink-0 transition-transform duration-200 ease-out motion-reduce:transition-none',

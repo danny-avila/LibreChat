@@ -14,6 +14,7 @@ import type { PartWithIndex } from './ParallelContent';
 import {
   cn,
   getToolDisplayLabel,
+  hasPendingAuthInPart,
   hasPendingApprovalInPart,
   getBatchActivityLabelPart,
   getActivityLabelText,
@@ -79,29 +80,6 @@ function resolveOutcome(
      *  panel. */
     cancelled: phase === 'cancelled',
   };
-}
-
-function hasPendingAuth(part: TMessageContentParts): boolean {
-  if (part.type !== ContentTypes.TOOL_CALL) {
-    return false;
-  }
-  const toolCall = part[ContentTypes.TOOL_CALL];
-  if (!toolCall || !('args' in toolCall)) {
-    return false;
-  }
-  /** A step the run already closed can never be waiting on a sign-in, whatever
-   *  its progress says. `ToolCall` hides the sign-in button on a terminal
-   *  status, so counting it as pending here left the group showing a trust
-   *  warning with no authentication action behind it. */
-  if (toolCall.runStepStatus != null) {
-    return false;
-  }
-  const standardToolCall = toolCall as Agents.ToolCall & { progress?: number };
-  const progress = standardToolCall.progress ?? 0.1;
-
-  return (
-    typeof standardToolCall.auth === 'string' && standardToolCall.auth.length > 0 && progress < 1
-  );
 }
 
 function getToolMeta(
@@ -609,7 +587,7 @@ export default function ToolCallGroup({
     [toolMetadata, isSubmitting],
   );
   const hasPendingAuthRequest = useMemo(
-    () => parts.some(({ part }) => hasPendingAuth(part)),
+    () => parts.some(({ part }) => hasPendingAuthInPart(part)),
     [parts],
   );
 
