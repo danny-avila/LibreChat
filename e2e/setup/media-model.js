@@ -7,12 +7,14 @@ function mediaImageResponses({
   findLastToolMessage,
   getContentText,
 }) {
-  const label = getMarkerValue(text, 'E2E_MEDIA_IMAGE:');
+  const video = !!getMarkerValue(text, 'E2E_MEDIA_VIDEO:');
+  const kind = video ? 'video' : 'image';
+  const label = getMarkerValue(text, video ? 'E2E_MEDIA_VIDEO:' : 'E2E_MEDIA_IMAGE:');
   if (!label) return null;
   if (!toolNames.has('media_generate')) {
-    return { responses: ['E2E media image failed: media_generate was not advertised'] };
+    return { responses: [`E2E media ${kind} failed: media_generate was not advertised`] };
   }
-  const toolCallId = `call_e2e_media_image_${label}`;
+  const toolCallId = `call_e2e_media_${kind}_${label}`;
   return {
     responses: ['', ''],
     toolCalls: [
@@ -20,10 +22,10 @@ function mediaImageResponses({
         id: toolCallId,
         name: 'media_generate',
         args: {
-          operation: 'image.generate',
+          operation: video ? 'video.generate' : 'image.generate',
           prompt: label,
-          connectionId: 'fixture-images',
-          modelId: 'gpt-image-1',
+          connectionId: video ? 'fixture-videos' : 'fixture-images',
+          modelId: video ? 'sora-2' : 'gpt-image-1',
           inputs: [],
           parameters: { count: 1 },
         },
@@ -37,30 +39,32 @@ function mediaImageResponses({
       try {
         output = JSON.parse(getContentText(result.content));
       } catch {
-        return { responses: ['E2E media image failed: invalid tool response'] };
+        return { responses: [`E2E media ${kind} failed: invalid tool response`] };
       }
       const receipt = mediaToolReceiptSchema.safeParse(output?.media);
       if (
         !receipt.success ||
-        receipt.data.operation !== 'image.generate' ||
-        receipt.data.phase !== 'succeeded'
+        receipt.data.operation !== (video ? 'video.generate' : 'image.generate') ||
+        (!video && receipt.data.phase !== 'succeeded') ||
+        ['failed', 'cancelled', 'expired'].includes(receipt.data.phase)
       ) {
-        return { responses: ['E2E media image failed: no successful durable receipt'] };
+        return { responses: [`E2E media ${kind} failed: no valid durable receipt`] };
       }
       if (
-        !Array.isArray(output.files) ||
-        output.files.length !== 1 ||
-        output.files.some(
-          (file) =>
-            typeof file.file_id !== 'string' ||
-            !file.file_id ||
-            typeof file.type !== 'string' ||
-            !file.type.startsWith('image/'),
-        )
+        !video &&
+        (!Array.isArray(output.files) ||
+          output.files.length !== 1 ||
+          output.files.some(
+            (file) =>
+              typeof file.file_id !== 'string' ||
+              !file.file_id ||
+              typeof file.type !== 'string' ||
+              !file.type.startsWith('image/'),
+          ))
       ) {
         return { responses: ['E2E media image failed: no persisted image File'] };
       }
-      return { responses: ['E2E media image ready'] };
+      return { responses: [video ? 'E2E media video queued' : 'E2E media image ready'] };
     },
   };
 }

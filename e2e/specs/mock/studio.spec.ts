@@ -1,25 +1,9 @@
 import { expect, test } from '@playwright/test';
-import AxeBuilder from '@axe-core/playwright';
-import type { Page } from '@playwright/test';
+import { mediaRecoveryPageSchema } from 'librechat-data-provider';
 import { mediaFixtureURL } from '../../setup/media';
 import { MOCK_ENDPOINTS, selectMockEndpoint, uniqueName } from './helpers';
 
-async function expectAccessible(page: Page) {
-  // Dialog fades blend theme colors with the scrim; scan the settled interface.
-  // Leave continuous progress animations and paused animations alone.
-  await page.evaluate(async () => {
-    const animations = document
-      .getAnimations()
-      .filter(
-        (animation) =>
-          animation.playState === 'running' &&
-          Number.isFinite(animation.effect?.getComputedTiming().endTime ?? Infinity),
-      );
-    await Promise.all(animations.map((animation) => animation.finished.catch(() => {})));
-  });
-  const scan = await new AxeBuilder({ page }).analyze();
-  expect(scan.violations).toEqual([]);
-}
+import { expectAccessible } from './accessibility';
 
 test('Generate recovers accepted work after a lost response without another provider request', async ({
   page,
@@ -289,7 +273,7 @@ test('read-only media recovery is reachable without an external admin panel', as
   );
   await page.route('**/api/admin/media/jobs', (route) =>
     route.fulfill({
-      json: {
+      json: mediaRecoveryPageSchema.parse({
         maxEvidenceChars: 200,
         items: [
           {
@@ -299,7 +283,7 @@ test('read-only media recovery is reachable without an external admin panel', as
             version: 1,
             phase: 'requires_attention',
             executionOwner: 'media',
-            operation: 'video.generate',
+            operation: 'image.generate',
             selection: {
               connectionId: 'fixture-images',
               modelId: 'fixture-model',
@@ -312,7 +296,7 @@ test('read-only media recovery is reachable without an external admin panel', as
             updatedAt: '2026-09-19T12:00:00.000Z',
           },
         ],
-      },
+      }),
     }),
   );
   await page.goto('/studio');

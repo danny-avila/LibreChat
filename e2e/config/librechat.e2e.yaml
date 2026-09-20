@@ -5,6 +5,7 @@ version: 1.3.11
 cache: true
 
 interface:
+  presets: true
   media:
     use: true
     create: true
@@ -24,7 +25,7 @@ interface:
     use: true
     minIntervalMinutes: 1
 
-# Filled with the shared local provider config on the single-replica lane.
+# Filled with the shared local image provider config.
 # __E2E_MEDIA_CONFIG__
 
 # Enables the memory feature so the MEMORIES.USE permission is granted and the
@@ -255,6 +256,12 @@ modelSpecs:
     - 'Mock Provider F'
     - 'agents'
   list:
+    - name: 'e2e-native-gemini'
+      label: 'E2E Native Gemini'
+      preset:
+        endpoint: 'google'
+        model: 'gemini-3-pro-image-preview'
+
     - name: 'e2e-mock-provider-a'
       label: 'Mock Provider A'
       preset:

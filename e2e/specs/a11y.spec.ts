@@ -34,17 +34,6 @@ async function loadApp(page: Page) {
   await page.getByTestId('text-input').waitFor({ state: 'visible', timeout: 30000 });
 }
 
-test('Studio page should be accessible when enabled', async ({ page }) => {
-  const response = await page.request.get('/api/config');
-  expect(response.ok()).toBe(true);
-  const config = await response.json();
-  test.skip(!config.media?.studio, 'This local deployment does not enable Studio.');
-  await page.goto('/studio');
-  await expect(page.getByTestId('media-composer')).toBeVisible({ timeout: 30000 });
-  const accessibilityScanResults = await new AxeBuilder({ page }).analyze();
-  expect(accessibilityScanResults.violations).toEqual([]);
-});
-
 test('Landing page should not have any automatically detectable accessibility issues', async ({
   page,
 }) => {
