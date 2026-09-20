@@ -159,7 +159,8 @@ export default function Viewer({
     pages.every((page) => page.sourceId === langfuseSession.destinationId)
       ? langfuseSession.url
       : undefined;
-  const model = useMemo(() => buildTraceModel(records, mode), [records, mode]);
+  const hasOlder = recordsQuery.hasNextPage === true;
+  const model = useMemo(() => buildTraceModel(records, mode, hasOlder), [records, mode, hasOlder]);
   const bounds = useMemo(() => boundsOf(model, scale), [model, scale]);
   const minSpan = minimumSpan(bounds, scale);
   const previews = useMemo(() => buildPreviews(messages), [messages]);
@@ -536,6 +537,8 @@ export default function Viewer({
                 unrecordedCalls={activity.unrecordedCalls}
                 stepOffsets={activity.stepOffsets}
                 mcpIconMap={mcpIconMap}
+                showCost={showCost}
+                currency={currency}
                 onSelect={setSelectedId}
                 onToggle={toggle}
               />
