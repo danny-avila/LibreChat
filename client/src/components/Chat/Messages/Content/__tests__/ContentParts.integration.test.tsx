@@ -4,7 +4,6 @@ import { ContentTypes, Tools } from 'librechat-data-provider';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import ContentParts from '../ContentParts';
-import store from '~/store';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: Record<string | number, string>) => {
@@ -1305,18 +1304,61 @@ describe('ContentParts — live activity fold', () => {
     expect(screen.getByTestId('tool-call')).toBeInTheDocument();
   });
 
-  it('leaves the run unfolded when the reader expands tools by default', () => {
-    render(
-      <RecoilRoot initializeState={({ set }) => set(store.autoExpandTools, true)}>
-        <ContentParts
-          {...liveProps}
-          content={[makeMcpToolCall('t1', false), makeMcpToolCall('t2', false)]}
-        />
-      </RecoilRoot>,
-    );
+  it('leaves the run unfolded when the host opts out (tools expanded by default, subagent panel)', () => {
+    renderContentParts({
+      ...liveProps,
+      foldLiveActivity: false,
+      content: [makeMcpToolCall('t1', false), makeMcpToolCall('t2', false)],
+    });
 
     expect(screen.queryByTestId('activity-phase-card')).toBeNull();
     expect(screen.getAllByTestId('tool-call')).toHaveLength(2);
+  });
+
+  it('names short commentary streamed after a call instead of holding the stale call', () => {
+    renderContentParts({
+      ...liveProps,
+      content: [
+        intentCall('t1', 'Reading the lens file', 'ok'),
+        { type: ContentTypes.TEXT, text: 'Now checking the callers.', phase: 'commentary' },
+      ] as TMessageContentParts[],
+    });
+
+    expect(liveHeader()).toHaveTextContent('Now checking the callers.');
+  });
+
+  it('reports a call the run closed as failed or cancelled, never as completed', () => {
+    const closed = (runStepStatus: string): TMessageContentParts =>
+      ({
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: {
+          id: 't1',
+          name: 'lookup',
+          args: '{}',
+          output: '',
+          runStepStatus,
+        },
+      }) as unknown as TMessageContentParts;
+    const { unmount } = renderContentParts({ ...liveProps, content: [closed('failed')] });
+    expect(liveHeader()).toHaveTextContent('com_ui_failed: lookup');
+    unmount();
+
+    renderContentParts({ ...liveProps, content: [closed('cancelled')] });
+    expect(liveHeader()).toHaveTextContent('com_ui_cancelled');
+  });
+
+  it('leaves a span of legacy Assistants calls, which the header cannot name, unfolded', () => {
+    const codeInterpreter = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: {
+        id: 'ci1',
+        type: 'code_interpreter',
+        code_interpreter: { input: 'print(1)', outputs: [] },
+      },
+    } as unknown as TMessageContentParts;
+    renderContentParts({ ...liveProps, content: [codeInterpreter] });
+
+    expect(screen.queryByTestId('activity-phase-card')).toBeNull();
   });
 
   it('stops folding once the answer starts, leaving the settled rendering', () => {

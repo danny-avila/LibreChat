@@ -334,7 +334,10 @@ function buildSynthesizedPhaseLabel(run: FoldRun): SynthesizedPhaseHeader | unde
 function buildLivePhaseLabel(run: FoldRun): SynthesizedPhaseHeader | undefined {
   let activities = 0;
   for (const part of run.content) {
-    if (part?.type === ContentTypes.TOOL_CALL && claimsActivity(part)) {
+    /** Only an agents-shaped call can be named by the live header; the legacy
+     *  Assistants variants carry no top-level `args` and keep their own cards. */
+    const toolCall = part?.type === ContentTypes.TOOL_CALL ? part[ContentTypes.TOOL_CALL] : null;
+    if (toolCall != null && 'args' in toolCall && claimsActivity(part)) {
       activities += 1;
     }
   }

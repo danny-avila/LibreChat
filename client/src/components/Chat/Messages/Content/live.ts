@@ -1,13 +1,15 @@
 import { Tools, ContentTypes } from 'librechat-data-provider';
-import type { Agents, TMessageContentParts } from 'librechat-data-provider';
+import type { Agents, PartMetadata, TMessageContentParts } from 'librechat-data-provider';
 import type { TOptions } from 'i18next';
 import type { TranslationKeys } from '~/hooks';
 import { getBatchActivityLabelPart, getActivityLabelText } from '~/utils/activityLabels';
 import { hasPendingApprovalInPart, hasPendingAuthInPart } from '~/utils/groupToolCalls';
 import { ASK_USER_QUESTION, getSubmittedAskAnswer } from '~/utils/approval';
+import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import { getToolDisplayLabel } from '~/utils/toolLabels';
 import { isBashProgrammaticToolCall } from './routing';
-import { getToolCallIntent } from './Parts/intent';
+import { boundIntentLabel, getToolCallIntent } from './Parts/intent';
+import { isError } from './ToolOutput';
 
 /** How often a live fold's header may repaint. A streamed intent moves the
  *  newest line on nearly every delta; the header is a glanceable status, not a
@@ -26,9 +28,14 @@ export type LiveActivity = {
 
 type Localize = (phraseKey: TranslationKeys, options?: TOptions) => string;
 
-type LiveToolCall = Agents.ToolCall & { progress?: number; runStepStatus?: string };
+type LiveToolCall = Agents.ToolCall & Pick<PartMetadata, 'runStepStatus'> & { progress?: number };
 
-const getStandardToolCall = (part: TMessageContentParts): LiveToolCall | undefined => {
+/**
+ * The agents-shaped call — the only variant a live header can name. The
+ * legacy Assistants variants (code interpreter, retrieval, function) carry no
+ * top-level `args`; a span made only of those is left unfolded.
+ */
+export const getStandardToolCall = (part: TMessageContentParts): LiveToolCall | undefined => {
   if (part.type !== ContentTypes.TOOL_CALL) {
     return undefined;
   }
@@ -61,18 +68,35 @@ function toolCallLine(
   serverNames: readonly string[],
 ): string {
   const intent = getToolCallIntent(toolCall.args);
+  const label = getToolDisplayLabel(toolCall.name ?? '', localize, serverNames);
+  const output = toolCall.output ?? '';
+  const progress = output.length > 0 || toolCall.progress === 1 ? 1 : (toolCall.progress ?? 0.1);
+  /** The same resolver the card uses, so a collapsed row never reads as a
+   *  success while the card it hides shows a failure or a stop. */
+  const phase = resolveToolCallPhase({
+    runStepStatus: toolCall.runStepStatus,
+    displayProgress: progress,
+    reportedProgress: progress,
+    isSubmitting: true,
+    hasError: isError(output),
+  });
+  if (phase === 'cancelled') {
+    return localize('com_ui_cancelled');
+  }
+  if (phase === 'failed') {
+    const subject = intent ?? label;
+    return subject ? `${localize('com_ui_failed')}: ${subject}` : localize('com_ui_failed');
+  }
   if (intent != null) {
     return intent;
   }
-  const label = getToolDisplayLabel(toolCall.name ?? '', localize, serverNames);
   if (!label) {
     return localize('com_assistants_running_action');
   }
-  const settled =
-    (toolCall.output?.length ?? 0) > 0 || toolCall.progress === 1 || toolCall.runStepStatus != null;
-  return localize(settled ? 'com_assistants_completed_function' : 'com_assistants_running_var', {
-    0: label,
-  });
+  return localize(
+    phase === 'completed' ? 'com_assistants_completed_function' : 'com_assistants_running_var',
+    { 0: label },
+  );
 }
 
 /** Icons the header stack can show; collecting more is wasted work. */
@@ -97,6 +121,18 @@ function newestLine(
       const label = part.reasoning_label?.trim();
       if (label || reasoning.trim()) {
         return { text: label || localize('com_ui_thinking'), source: `think:${position}` };
+      }
+      continue;
+    }
+    if (part.type === ContentTypes.TEXT) {
+      /** Only short commentary can sit inside a fold. It is the model talking
+       *  about what it is doing, which is exactly what this line is for —
+       *  leaving it unnamed would hold a stale call on screen while new prose
+       *  piles up behind the disclosure. */
+      const value = typeof part.text === 'string' ? part.text : (part.text?.value ?? '');
+      const commentary = boundIntentLabel(value);
+      if (commentary != null) {
+        return { text: commentary, source: `text:${position}` };
       }
       continue;
     }

@@ -1,13 +1,9 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
 import { ContentTypes, Tools } from 'librechat-data-provider';
-import { fireEvent, render as renderBare, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { TMessageContentParts, TAttachment } from 'librechat-data-provider';
 import { preserveStreamedContentIdentity } from '~/utils/messages';
 import { groupSequentialToolCalls } from '~/utils';
-
-/** `ContentParts` reads the "expand tools by default" preference. */
-const render = (ui: React.ReactElement) => renderBare(ui, { wrapper: RecoilRoot });
 
 jest.mock('~/utils', () => ({
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),

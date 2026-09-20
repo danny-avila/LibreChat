@@ -1,5 +1,4 @@
 import { memo, useRef, useMemo, useEffect, useCallback, Fragment } from 'react';
-import { useRecoilValue } from 'recoil';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
@@ -38,7 +37,6 @@ import Sources from '~/components/Web/Sources';
 import ToolCallGroup from './ToolCallGroup';
 import { needsReader } from './live';
 import Container from './Container';
-import store from '~/store';
 import Part from './Part';
 
 /** An empty TEXT part — the placeholder some endpoints seed in
@@ -227,6 +225,11 @@ type ContentPartsProps = {
     | ((value: number) => void | React.Dispatch<React.SetStateAction<number>>)
     | null
     | undefined;
+  /** Whether the span a run is still writing folds into one row. The host
+   *  decides: false when the reader asked for tools expanded by default, and
+   *  for a surface that IS the detail view of a run — a subagent's activity
+   *  panel — where one row would hide what the panel was opened to watch. */
+  foldLiveActivity?: boolean;
   /** Internal recursion guard for nested phase segments. */
   nestedActivityPhase?: boolean;
   /** Internal signal that the parent phase card lifted this segment's
@@ -283,6 +286,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
   showThinking,
   isLatestMessage,
   createdAt,
+  foldLiveActivity = true,
   nestedActivityPhase = false,
   withinActivityPhase = false,
   cursorOwnedElsewhere = false,
@@ -367,11 +371,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
     [laneGroups, content],
   );
 
-  /** The span a run is still writing folds into one row from its first tool
-   *  call. "Expand tools by default" is the reader asking for the opposite, so
-   *  it keeps the unfolded rendering. */
-  const autoExpandTools = useRecoilValue(store.autoExpandTools);
-  const foldsLiveTail = isLast && effectiveIsSubmitting && !autoExpandTools;
+  const foldsLiveTail = foldLiveActivity && isLast && effectiveIsSubmitting;
   const phaseSegments = useMemo(
     () =>
       nestedActivityPhase

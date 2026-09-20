@@ -29,7 +29,7 @@ const INTENT_SCAN_CHARS = 2048;
  */
 const INTENT_PREFIX_REGEX = /^\s*\{\s*"intent"\s*:\s*"((?:[^"\\]|\\.)*)(")?/;
 
-function boundIntentLabel(label: string): string | undefined {
+export function boundIntentLabel(label: string): string | undefined {
   const singleLine = label.replace(/\s+/g, ' ').trim();
   if (singleLine === '') {
     return undefined;
