@@ -823,6 +823,8 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
             presetId,
             write,
             maxPresets: context.config.limits.maxPresets,
+            maxInputs: context.config.limits.maxInputs,
+            consumerConfig: context.config.limits,
           })
           .catch(presetError);
       },
@@ -841,6 +843,8 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
           scope: context.scope,
           presetId,
           update,
+          maxInputs: context.config.limits.maxInputs,
+          consumerConfig: context.config.limits,
         });
         if (!preset) {
           throw new MediaServiceError('not_found', 404, 'The preset is unavailable.');
@@ -849,7 +853,9 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
       },
       async remove(presetId: string, context: MediaContext) {
         assertMediaAccess(context, true);
-        if (!(await deps.repository.deleteMediaPreset(context.scope, presetId))) {
+        if (
+          !(await deps.repository.deleteMediaPreset(context.scope, presetId, context.config.limits))
+        ) {
           throw new MediaServiceError('not_found', 404, 'The preset is unavailable.');
         }
         return { presetId };

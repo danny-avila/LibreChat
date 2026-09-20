@@ -73,7 +73,9 @@ const file: Schema<IMongoFile> = new Schema(
     mediaEpoch: Number,
     mediaRetainers: { type: [String], default: undefined },
     mediaConsumerClaims: {
-      type: [{ token: String, conversationId: String, expiresAt: Date, _id: false }],
+      type: [
+        { token: String, conversationId: String, presetId: String, expiresAt: Date, _id: false },
+      ],
       default: undefined,
     },
     mediaConsumerRevision: Number,

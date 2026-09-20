@@ -1,11 +1,11 @@
 import { resolveMediaConfig } from 'librechat-data-provider';
 import type { FilterQuery } from 'mongoose';
-import type { MediaFileConsumerMethods } from '~/types/mediaConsumers';
+import type { MediaConsumerClaim, MediaFileConsumerMethods } from '~/types/mediaConsumers';
 import type { MediaOwnerScope } from '~/types/media';
 import type { IMongoFile } from '~/types/file';
+import { createMediaOwnerModel, createMediaPresetModel } from '~/models/media';
 import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { messageFileReferenceFilter } from '~/utils/messageFiles';
-import { createMediaOwnerModel } from '~/models/media';
 import { createMessageModel } from '~/models/message';
 import { MediaPersistenceError } from './media';
 import { createFileModel } from '~/models/file';
@@ -13,6 +13,13 @@ import { isMediaFileId } from '~/types/media';
 
 const durable = { w: 'majority' as const, j: true };
 const prefix = 'conversation:';
+const presetPrefix = 'preset:';
+
+function consumerRetainer(target: Pick<MediaConsumerClaim, 'conversationId' | 'presetId'>) {
+  return target.presetId
+    ? `${presetPrefix}${target.presetId}`
+    : `${prefix}${target.conversationId}`;
+}
 
 function fileScope(scope: MediaOwnerScope) {
   const tenant = tenantStorage.getStore()?.tenantId;
@@ -26,13 +33,14 @@ function fileScope(scope: MediaOwnerScope) {
   return { user: scope.ownerId, tenantId: scope.tenantId ?? null };
 }
 
-/** File mutations arbitrate with retirement; Message rows establish durable consumer liveness. */
+/** File mutations arbitrate with retirement; persisted Message and Preset references establish liveness. */
 export function createMediaFileConsumerMethods(
   mongoose: typeof import('mongoose'),
 ): MediaFileConsumerMethods {
   const File = createFileModel(mongoose);
   const Message = createMessageModel(mongoose);
   const Owner = createMediaOwnerModel(mongoose);
+  const Preset = createMediaPresetModel(mongoose);
 
   async function reconcileFile(scope: MediaOwnerScope, fileId: string, now: Date, retryMs: number) {
     const identity = { ...fileScope(scope), file_id: fileId, mediaLifecycle: 'live' };
@@ -42,21 +50,36 @@ export function createMediaFileConsumerMethods(
     const conversations = (file.mediaRetainers ?? [])
       .filter((retainer) => retainer.startsWith(prefix))
       .map((retainer) => retainer.slice(prefix.length));
-    const live = new Set<string>(claims.map((claim) => claim.conversationId));
-    if (conversations.length) {
-      const refs = await Message.distinct('conversationId', {
-        user: scope.ownerId,
-        tenantId: scope.tenantId ?? null,
-        conversationId: { $in: conversations },
-        $and: [
-          { $or: [{ expiredAt: null }, { expiredAt: { $gt: now } }] },
-          messageFileReferenceFilter(fileId),
-        ],
-      });
-      for (const id of refs) live.add(id);
-    }
+    const presets = (file.mediaRetainers ?? [])
+      .filter((retainer) => retainer.startsWith(presetPrefix))
+      .map((retainer) => retainer.slice(presetPrefix.length));
+    const live = new Set<string>(claims.map(consumerRetainer));
+    const [conversationRefs, presetRefs] = await Promise.all([
+      conversations.length
+        ? Message.distinct('conversationId', {
+            user: scope.ownerId,
+            tenantId: scope.tenantId ?? null,
+            conversationId: { $in: conversations },
+            $and: [
+              { $or: [{ expiredAt: null }, { expiredAt: { $gt: now } }] },
+              messageFileReferenceFilter(fileId),
+            ],
+          })
+        : [],
+      presets.length
+        ? Preset.distinct('presetId', {
+            ownerId: scope.ownerId,
+            tenantId: scope.tenantId ?? null,
+            presetId: { $in: presets },
+            'settings.inputs.file_id': fileId,
+          })
+        : [],
+    ]);
+    for (const id of conversationRefs) live.add(`${prefix}${id}`);
+    for (const id of presetRefs) live.add(`${presetPrefix}${id}`);
     const retainers = (file.mediaRetainers ?? []).filter(
-      (retainer) => !retainer.startsWith(prefix) || live.has(retainer.slice(prefix.length)),
+      (retainer) =>
+        (!retainer.startsWith(prefix) && !retainer.startsWith(presetPrefix)) || live.has(retainer),
     );
     const deadline = retainers.length ? file.mediaHardExpiresAt : now;
     await File.updateOne(
@@ -97,9 +120,19 @@ export function createMediaFileConsumerMethods(
   const acquireMediaFileConsumers: MediaFileConsumerMethods['acquireMediaFileConsumers'] = async (
     input,
   ) => {
-    const { scope, token, conversationId, config } = input;
+    const { scope, token, config } = input;
+    const target =
+      input.presetId !== undefined
+        ? { presetId: input.presetId }
+        : { conversationId: input.conversationId };
     const identity = fileScope(scope);
-    if (!conversationId || !token || config.maxAssetRetainers < 1 || config.consumerClaimMs < 1) {
+    if (
+      !(input.presetId || input.conversationId) ||
+      (input.presetId && input.conversationId) ||
+      !token ||
+      config.maxAssetRetainers < 1 ||
+      config.consumerClaimMs < 1
+    ) {
       throw new MediaPersistenceError(
         'invalid_input',
         'A media consumer requires a bounded identity',
@@ -118,12 +151,12 @@ export function createMediaFileConsumerMethods(
     if (fileIds.some((id) => !isMediaFileId(id))) {
       throw new MediaPersistenceError(
         'invalid_input',
-        'Only media originals accept chat consumers',
+        'Only media originals accept durable consumers',
       );
     }
     try {
       for (const fileId of fileIds) {
-        const retainer = `${prefix}${conversationId}`;
+        const retainer = consumerRetainer(input);
         const file = await File.findOne({ ...identity, file_id: fileId, mediaLifecycle: 'live' })
           .select({ mediaHardExpiresAt: 1 })
           .lean();
@@ -132,7 +165,7 @@ export function createMediaFileConsumerMethods(
         const now = new Date();
         const claim = {
           token,
-          conversationId,
+          ...target,
           expiresAt: new Date(now.getTime() + config.consumerClaimMs),
         };
         const filter: FilterQuery<IMongoFile> = {
@@ -216,6 +249,7 @@ export function createMediaFileConsumerMethods(
       limit,
       cursor,
       conversationId,
+      presetId,
       now = new Date().toISOString(),
       retryMs = resolveMediaConfig().limits.consumerReconcileMs,
     }) => {
@@ -223,12 +257,13 @@ export function createMediaFileConsumerMethods(
         throw new MediaPersistenceError('invalid_input', 'Consumer reconciliation must be bounded');
       }
       const at = new Date(now);
+      let retainer: string | undefined;
+      if (presetId) retainer = `${presetPrefix}${presetId}`;
+      else if (conversationId) retainer = `${prefix}${conversationId}`;
       const files = await File.find({
         ...fileScope(scope),
         mediaLifecycle: 'live',
-        ...(conversationId
-          ? { mediaRetainers: `${prefix}${conversationId}` }
-          : { mediaConsumerReconcileAt: { $lte: at } }),
+        ...(retainer ? { mediaRetainers: retainer } : { mediaConsumerReconcileAt: { $lte: at } }),
         ...(cursor ? { file_id: { $gt: cursor } } : {}),
       })
         .select({ file_id: 1 })

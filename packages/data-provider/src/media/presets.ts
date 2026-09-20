@@ -2,10 +2,12 @@ import { z } from 'zod';
 import {
   MEDIA_SCHEMA_VERSION,
   mediaIdSchema,
+  mediaInputSchema,
   mediaOperationSchema,
   mediaImageParametersSchema,
   mediaVideoParametersSchema,
 } from './requests';
+import { mediaAssetSchema } from './responses';
 
 const timestamp = z.string().datetime();
 
@@ -17,6 +19,9 @@ export const mediaPresetSettingsSchema = z
     modelId: mediaIdSchema,
     providerTag: mediaIdSchema.optional(),
     parameters: mediaImageParametersSchema.merge(mediaVideoParametersSchema).default({}),
+    inputs: z
+      .array(mediaInputSchema.refine((input) => !input.sourceURL, 'Save an uploaded reference'))
+      .optional(),
   })
   .strict();
 export const mediaPresetWriteSchema = z
@@ -47,6 +52,7 @@ export const mediaPresetSchema = z
     settings: mediaPresetSettingsSchema,
     createdAt: timestamp,
     updatedAt: timestamp,
+    assets: z.array(mediaAssetSchema).default([]),
   })
   .strict();
 export const mediaPresetListSchema = z.object({ items: z.array(mediaPresetSchema) }).strict();
@@ -58,16 +64,29 @@ export type MediaPresetUpdate = z.infer<typeof mediaPresetUpdateSchema>;
 export type MediaPreset = z.infer<typeof mediaPresetSchema>;
 export type MediaPresetList = z.infer<typeof mediaPresetListSchema>;
 
-export function createMediaPresetSchema(limits: { maxTitleChars: number }) {
-  return mediaPresetWriteSchema.refine((value) => value.title.length <= limits.maxTitleChars, {
-    path: ['title'],
-    message: 'Title exceeds the configured limit',
-  });
+export function createMediaPresetSchema(limits: { maxTitleChars: number; maxInputs: number }) {
+  return mediaPresetWriteSchema
+    .refine((value) => value.title.length <= limits.maxTitleChars, {
+      path: ['title'],
+      message: 'Title exceeds the configured limit',
+    })
+    .refine((value) => (value.settings.inputs?.length ?? 0) <= limits.maxInputs, {
+      path: ['settings', 'inputs'],
+      message: 'References exceed the configured limit',
+    });
 }
 
-export function createMediaPresetUpdateSchema(limits: { maxTitleChars: number }) {
-  return mediaPresetUpdateSchema.refine(
-    (value) => value.title === undefined || value.title.length <= limits.maxTitleChars,
-    { path: ['title'], message: 'Title exceeds the configured limit' },
-  );
+export function createMediaPresetUpdateSchema(limits: {
+  maxTitleChars: number;
+  maxInputs: number;
+}) {
+  return mediaPresetUpdateSchema
+    .refine((value) => value.title === undefined || value.title.length <= limits.maxTitleChars, {
+      path: ['title'],
+      message: 'Title exceeds the configured limit',
+    })
+    .refine((value) => (value.settings?.inputs?.length ?? 0) <= limits.maxInputs, {
+      path: ['settings', 'inputs'],
+      message: 'References exceed the configured limit',
+    });
 }

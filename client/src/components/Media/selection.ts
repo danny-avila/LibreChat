@@ -2,7 +2,13 @@ import { resolveMediaParameters, validateMediaCapability } from 'librechat-data-
 import type { MediaOffering, MediaOperation, MediaPresetSettings } from 'librechat-data-provider';
 import type { MediaDraftForm } from './useMediaDraftForm';
 import type { MediaDraft } from './state';
-import { comparisonParameters, offeringId, sameParameters, supportsMode } from './options';
+import {
+  comparisonParameters,
+  offeringId,
+  sameInputs,
+  sameParameters,
+  supportsMode,
+} from './options';
 export function getMediaSelection(form: MediaDraftForm) {
   const {
     catalog,
@@ -118,6 +124,7 @@ export function getMediaSelection(form: MediaDraftForm) {
     modelId: offering.modelId,
     providerTag,
     parameters,
+    inputs: draft.inputs.map(({ file_id, role, sourceURL }) => ({ file_id, role, sourceURL })),
   };
   const activePresetId = presets.data?.find(
     (preset) =>
@@ -125,10 +132,15 @@ export function getMediaSelection(form: MediaDraftForm) {
       preset.settings.connectionId === offering.connectionId &&
       preset.settings.modelId === offering.modelId &&
       (preset.settings.providerTag ?? undefined) === (providerTag ?? undefined) &&
+      sameInputs(preset.settings.inputs ?? [], draft.inputs) &&
       sameParameters(
-        resolveMediaParameters({ ...preset.settings, inputs: [] }, capability, {
-          optionalChoices: true,
-        }),
+        resolveMediaParameters(
+          { ...preset.settings, inputs: preset.settings.inputs ?? [] },
+          capability,
+          {
+            optionalChoices: true,
+          },
+        ),
         parameters,
       ),
   )?.presetId;

@@ -582,7 +582,10 @@ describe('media command contracts', () => {
       false,
     );
     expect(
-      createMediaPresetSchema({ maxTitleChars: 3 }).safeParse({ title: 'Long', settings }).success,
+      createMediaPresetSchema({ maxTitleChars: 3, maxInputs: 1 }).safeParse({
+        title: 'Long',
+        settings,
+      }).success,
     ).toBe(false);
     expect(mediaPresetUpdateSchema.safeParse({}).success).toBe(false);
     expect(mediaPresetUpdateSchema.parse({ isDefault: true })).toEqual({ isDefault: true });
@@ -599,6 +602,32 @@ describe('media command contracts', () => {
     ).toBe(2);
     expect(resolveMediaConfig().limits.maxPresets).toBe(50);
     expect(endpoints.mediaPreset('a b')).toBe('/api/media/presets/a%20b');
+  });
+
+  it('stores bounded preset reference IDs without accepting hosted references or client asset descriptors', () => {
+    const input = { file_id: 'f17ecafe-0000-4000-8000-000000000001', role: 'reference' };
+    const settings = {
+      operation: 'image.generate',
+      connectionId: 'images',
+      modelId: 'gpt-image-1',
+      inputs: [input],
+    };
+    const schema = createMediaPresetSchema({ maxTitleChars: 40, maxInputs: 1 });
+    expect(schema.parse({ title: 'Reference', settings }).settings.inputs).toEqual([input]);
+    expect(
+      schema.safeParse({ title: 'Reference', settings: { ...settings, inputs: [input, input] } })
+        .success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        title: 'Reference',
+        settings: {
+          ...settings,
+          inputs: [{ ...input, sourceURL: 'https://example.com/reference.png' }],
+        },
+      }).success,
+    ).toBe(false);
+    expect(schema.safeParse({ title: 'Reference', settings, assets: [] }).success).toBe(false);
   });
 
   it('canonicalizes omitted version, inputs and parameters', () => {

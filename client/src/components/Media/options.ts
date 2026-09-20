@@ -57,6 +57,8 @@ const canonical = (value: unknown): string =>
   );
 export const sameParameters = (left: MediaDraft['parameters'], right: MediaDraft['parameters']) =>
   canonical(left) === canonical(right);
+export const sameInputs = (left: MediaDraft['inputs'], right: MediaDraft['inputs']) =>
+  canonical(left) === canonical(right);
 
 /** A comparison run keeps the batch size and otherwise takes the other model's own defaults. */
 export function comparisonParameters(

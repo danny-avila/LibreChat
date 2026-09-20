@@ -4,6 +4,7 @@ export const mediaFixtureURL = `http://127.0.0.1:${mediaFixturePort}`;
 export function mediaFixtureConfig(enabled = true) {
   return {
     enabled,
+    surfaces: { tools: true },
     integrations: enabled
       ? [
           {

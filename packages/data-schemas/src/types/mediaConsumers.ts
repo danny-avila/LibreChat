@@ -6,15 +6,17 @@ export type MediaConsumerConfig = {
   consumerReconcileMs: number;
 };
 
-export type MediaConsumerClaim = {
+type MediaConsumerTarget =
+  | { conversationId: string; presetId?: never }
+  | { presetId: string; conversationId?: never };
+
+export type MediaConsumerClaim = MediaConsumerTarget & {
   token: string;
-  conversationId: string;
   expiresAt: Date;
 };
 
-export type MediaFileConsumerWrite = {
+export type MediaFileConsumerWrite = MediaConsumerTarget & {
   scope: MediaOwnerScope;
-  conversationId: string;
   fileIds: string[];
   token: string;
   config: MediaConsumerConfig;
@@ -29,6 +31,7 @@ export interface MediaFileConsumerMethods {
     limit: number;
     cursor?: string;
     conversationId?: string;
+    presetId?: string;
     now?: string;
     retryMs?: number;
   }): Promise<{ inspected: number; nextCursor?: string }>;

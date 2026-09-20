@@ -535,6 +535,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       req.user = { id: scope.ownerId, role: userRole } as Express.User;
       next();
     });
+    app.use('/api/media/assets', runtime.contentRouter);
     app.use('/api/media', runtime.router);
   });
 
@@ -2464,6 +2465,72 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
         selection: { connectionId: 'images', modelId: 'gpt-image-1', catalogVersion: 'v1' },
       })
       .expect(422);
+  });
+
+  it('saves owned uploaded preset references, restores scoped previews and releases the last consumer', async () => {
+    const uploaded = await request(app)
+      .post('/api/media/uploads')
+      .attach('file', original, { filename: 'preset-reference.png', contentType: 'image/png' })
+      .expect(201);
+    const fileId = uploaded.body.file.file_id as string;
+    const settings = {
+      operation: 'image.edit',
+      connectionId: 'images',
+      modelId: 'gpt-image-1',
+      parameters: { quality: 'high' },
+      inputs: [{ file_id: fileId, role: 'reference' }],
+    };
+    const created = mediaPresetSchema.parse(
+      (
+        await request(app)
+          .post('/api/media/presets')
+          .send({ title: 'Reference', settings })
+          .expect(201)
+      ).body,
+    );
+    expect(created.settings.inputs).toEqual(settings.inputs);
+    expect(created.assets).toEqual([
+      expect.objectContaining({ file_id: fileId, filepath: `/api/media/assets/${fileId}/content` }),
+    ]);
+    expect(created.assets[0]).not.toHaveProperty('source');
+    const stored = await mongoose.models.File.findOne({ file_id: fileId }).lean<{
+      mediaRetainers: string[];
+      expiredAt?: Date;
+    }>();
+    expect(stored?.mediaRetainers).toEqual([`preset:${created.presetId}`]);
+    expect(stored?.expiredAt).toBeUndefined();
+    expect(
+      mediaPresetListSchema.parse((await request(app).get('/api/media/presets').expect(200)).body)
+        .items,
+    ).toEqual([created]);
+    await request(app).get(created.assets[0].filepath).expect(200);
+    const stranger = { ...scope, ownerId: new mongoose.Types.ObjectId().toString() };
+    expect(await repository.listMediaPresets(stranger)).toEqual([]);
+    expect(await repository.listMediaPresets({ ...scope, tenantId: 'other' })).toEqual([]);
+    await request(app)
+      .post('/api/media/presets')
+      .send({
+        title: 'Hosted',
+        settings: {
+          ...settings,
+          inputs: [{ ...settings.inputs[0], sourceURL: 'https://example.com/reference.png' }],
+        },
+      })
+      .expect(422);
+    config.media!.limits.maxInputs = 1;
+    await request(app)
+      .patch(`/api/media/presets/${created.presetId}`)
+      .send({ settings: { ...settings, inputs: [...settings.inputs, ...settings.inputs] } })
+      .expect(422);
+    await request(app).delete(`/api/media/presets/${created.presetId}`).expect(200);
+    expect(
+      (await mongoose.models.File.findOne({ file_id: fileId }).lean<{ mediaRetainers: string[] }>())
+        ?.mediaRetainers,
+    ).toEqual([]);
+    expect(
+      await repository.claimMediaAssetDeletion({ scope, fileId, token: 'preset-deleted' }),
+    ).not.toBeNull();
+    expect(posts).toBe(0);
   });
 
   it('saves, lists, promotes and deletes Studio presets over HTTP with role and limit guards', async () => {

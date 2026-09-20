@@ -5,7 +5,7 @@ import {
   resolveMediaParameters,
   validateMediaCapability,
 } from 'librechat-data-provider';
-import type { MediaCatalog, MediaPresetSettings, MediaSelection } from 'librechat-data-provider';
+import type { MediaCatalog, MediaPreset, MediaSelection } from 'librechat-data-provider';
 import type { MediaEditTarget } from './context';
 import type { FormControls } from './options';
 import type { MediaDraft } from './state';
@@ -120,7 +120,7 @@ export function useMediaDraftForm({
   ]);
   const change = (update: Partial<MediaDraft>) =>
     setDraft((previous) => ({ ...previous, ...update, revision: previous.revision + 1 }));
-  const applyPreset = (settings: MediaPresetSettings, onlyIfUntouched = false) => {
+  const applyPreset = ({ settings, assets }: MediaPreset, onlyIfUntouched = false) => {
     const next = offerings.find(
       (item) => item.connectionId === settings.connectionId && item.modelId === settings.modelId,
     );
@@ -130,9 +130,15 @@ export function useMediaDraftForm({
     );
     if (!next || !cap) return false;
     if (settings.providerTag && !route) return false;
+    const inputs = settings.inputs ?? [];
+    const references = inputs.map((input) =>
+      assets.find((asset) => asset.file_id === input.file_id),
+    );
+    // The server omits deleted or expired files. Never restore only part of a saved reference set.
+    if (inputs.some((input, index) => input.sourceURL || !references[index])) return false;
     if (
-      validateMediaCapability({ ...settings, inputs: [] }, cap, catalog.limits, {
-        checkInputs: false,
+      validateMediaCapability({ ...settings, inputs }, cap, catalog.limits, {
+        checkInputs: inputs.length > 0,
       }).length
     )
       return false;
@@ -143,11 +149,12 @@ export function useMediaDraftForm({
       operation: settings.operation,
       parameters: settings.parameters,
     };
-    if (settings.operation === 'image.generate') {
-      update.autoEdit = false;
+    if (settings.inputs !== undefined || settings.operation === 'image.generate') {
+      update.autoEdit = settings.operation === 'image.edit' && inputs.length === 0;
       update.parentTurnId = undefined;
-      update.inputs = [];
-      update.assets = [];
+      update.referenceURL = undefined;
+      update.inputs = inputs.map(({ file_id, role }) => ({ file_id, role }));
+      update.assets = references.filter((asset) => asset !== undefined);
     } else if (
       settings.operation === 'image.edit' &&
       !savedDraft.inputs.length &&
@@ -157,7 +164,11 @@ export function useMediaDraftForm({
     }
     if (onlyIfUntouched)
       setDraft((previous) =>
-        previous.offering && previous.revision > 1
+        (previous.offering && previous.revision > 1) ||
+        previous.prompt ||
+        previous.inputs.length ||
+        previous.assets.length ||
+        previous.parentTurnId
           ? previous
           : { ...previous, ...update, revision: previous.revision + 1 },
       );
@@ -165,12 +176,17 @@ export function useMediaDraftForm({
     return true;
   };
   const defaultPreset = presets.data?.find((preset) => preset.isDefault);
-  const untouched = !savedDraft.offering && !initialOffering;
+  const untouched =
+    !savedDraft.offering &&
+    !initialOffering &&
+    !savedDraft.prompt &&
+    savedDraft.inputs.length === 0 &&
+    savedDraft.assets.length === 0 &&
+    !savedDraft.parentTurnId;
   const seedPreset = useRef(applyPreset);
   seedPreset.current = applyPreset;
   useEffect(() => {
-    if (normalizeDraft && untouched && defaultPreset)
-      seedPreset.current(defaultPreset.settings, true);
+    if (normalizeDraft && untouched && defaultPreset) seedPreset.current(defaultPreset, true);
   }, [defaultPreset, untouched, normalizeDraft]);
   const param = <K extends keyof MediaDraft['parameters']>(
     key: K,

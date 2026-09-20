@@ -36,8 +36,8 @@ export function MediaPresets({
   /** The preset the current settings still match, so the field can name it. */
   activePresetId?: string;
   portal: boolean;
-  /** Restores a preset into the draft; false when its model is unavailable. */
-  onApply: (settings: MediaPresetSettings) => boolean;
+  /** Restores a complete preset; false when its model or references are unavailable. */
+  onApply: (preset: MediaPreset) => boolean;
 }) {
   const host = useMediaHost();
   const localize = useLocalize();
@@ -53,6 +53,7 @@ export function MediaPresets({
   const busy = create.isLoading || update.isLoading || remove.isLoading;
   const items = presets.data ?? [];
   const active = items.find((preset) => preset.presetId === activePresetId);
+  const hasHostedInputs = current?.inputs?.some((input) => !!input.sourceURL) ?? false;
   const modelName = (settings: MediaPresetSettings) =>
     catalog.offerings.find(
       (item) => item.connectionId === settings.connectionId && item.modelId === settings.modelId,
@@ -61,6 +62,9 @@ export function MediaPresets({
     [
       modelName(preset.settings),
       localize(mediaOperationLabels[preset.settings.operation]),
+      ...(preset.settings.inputs?.length
+        ? [localize('com_media_preset_references', { count: preset.settings.inputs.length })]
+        : []),
       ...(preset.isDefault ? [localize('com_ui_default')] : []),
     ].join(' · ');
   const close = (next: boolean) => {
@@ -70,7 +74,7 @@ export function MediaPresets({
     setNotice(undefined);
   };
   const save = async () => {
-    if (!current || !title.trim()) return;
+    if (!current || !title.trim() || hasHostedInputs) return;
     setNotice(undefined);
     try {
       await create.mutateAsync({ title: title.trim(), isDefault: asDefault, settings: current });
@@ -83,7 +87,7 @@ export function MediaPresets({
     }
   };
   const apply = (preset: MediaPreset) => {
-    if (onApply(preset.settings)) {
+    if (onApply(preset)) {
       close(false);
       return;
     }
@@ -141,9 +145,7 @@ export function MediaPresets({
         setValue={(value) => {
           const preset = items.find((item) => item.presetId === value);
           if (!preset) return;
-          setFieldNotice(
-            onApply(preset.settings) ? undefined : localize('com_media_preset_unavailable'),
-          );
+          setFieldNotice(onApply(preset) ? undefined : localize('com_media_preset_unavailable'));
         }}
       />
       {fieldNotice && (
@@ -184,6 +186,16 @@ export function MediaPresets({
               <p className="text-xs text-text-secondary">
                 {modelName(current)} · {localize(mediaOperationLabels[current.operation])}
               </p>
+              {!!current.inputs?.length && (
+                <p className="text-xs text-text-secondary">
+                  {localize('com_media_preset_references', { count: current.inputs.length })}
+                </p>
+              )}
+              {hasHostedInputs && (
+                <p role="status" className="text-sm text-text-secondary">
+                  {localize('com_media_preset_hosted_inputs')}
+                </p>
+              )}
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
                   <Checkbox
@@ -196,7 +208,7 @@ export function MediaPresets({
                     {localize('com_media_preset_default')}
                   </Label>
                 </div>
-                <Button type="submit" size="sm" disabled={busy || !title.trim()}>
+                <Button type="submit" size="sm" disabled={busy || !title.trim() || hasHostedInputs}>
                   {create.isLoading && <Spinner className="size-4" />}
                   {localize('com_media_preset_save')}
                 </Button>
@@ -234,10 +246,7 @@ export function MediaPresets({
                       <span className="truncate">{preset.title}</span>
                       {preset.isDefault && <Chip>{localize('com_ui_default')}</Chip>}
                     </p>
-                    <p className="truncate text-xs text-text-secondary">
-                      {modelName(preset.settings)} ·{' '}
-                      {localize(mediaOperationLabels[preset.settings.operation])}
-                    </p>
+                    <p className="truncate text-xs text-text-secondary">{describe(preset)}</p>
                   </div>
                   {confirming === preset.presetId ? (
                     <span className="flex items-center gap-1">

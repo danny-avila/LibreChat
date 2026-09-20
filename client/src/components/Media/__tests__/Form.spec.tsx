@@ -1717,6 +1717,7 @@ const preset = {
     modelId: 'image-model',
     parameters: { count: 2, quality: 'low' },
   },
+  assets: [],
   createdAt: '2026-09-17T12:00:00.000Z',
   updatedAt: '2026-09-17T12:00:00.000Z',
 };
@@ -1773,6 +1774,166 @@ test('a default preset seeds an untouched draft', async () => {
   expect(screen.getByRole('combobox', { name: 'com_media_presets' })).toHaveTextContent(
     'Quick draft',
   );
+});
+
+const presetReference = {
+  file_id: 'saved-reference',
+  filename: 'saved.png',
+  type: 'image/png',
+  bytes: 32,
+  filepath: '/api/media/assets/saved-reference',
+};
+const referencePreset = {
+  ...preset,
+  settings: {
+    ...preset.settings,
+    operation: 'image.edit' as const,
+    inputs: [{ file_id: presetReference.file_id, role: 'reference' as const }],
+  },
+  assets: [presetReference],
+};
+const presetCatalog = makeCatalog({
+  offerings: [
+    {
+      ...catalog.offerings[0],
+      capabilities: [
+        {
+          ...catalog.offerings[0].capabilities[0],
+          operation: 'image.edit',
+          inputs: { roles: ['reference'], min: 1, max: 2 },
+        },
+      ],
+    },
+  ],
+});
+
+test('reference presets restore complete assets without lineage and save only input identities', async () => {
+  const env = setup(true, { presets: true });
+  jest.spyOn(dataService, 'listMediaPresets').mockResolvedValue({ items: [referencePreset] });
+  const create = jest.spyOn(dataService, 'createMediaPreset').mockResolvedValue(referencePreset);
+  const atom = mediaDraftFamily('owner:new');
+  env.store.set(atom, {
+    ...emptyDraft(),
+    offering: JSON.stringify(['connection', 'image-model']),
+    prompt: 'Keep this prompt',
+    parentTurnId: 'old-turn',
+    autoEdit: true,
+    revision: 2,
+  });
+  render(<MediaForm catalog={presetCatalog} send={env.send} busy={false} />, {
+    wrapper: env.wrapper,
+  });
+  fireEvent.click(await screen.findByRole('button', { name: 'com_ui_manage' }));
+  const dialog = await screen.findByRole('dialog', { name: 'com_media_presets' });
+  fireEvent.click(await within(dialog).findByRole('button', { name: 'com_media_preset_apply' }));
+  await waitFor(() => expect(env.store.get(atom).inputs).toEqual(referencePreset.settings.inputs));
+  expect(env.store.get(atom)).toMatchObject({
+    prompt: 'Keep this prompt',
+    parentTurnId: undefined,
+    autoEdit: false,
+    assets: [presetReference],
+  });
+  expect(screen.getByRole('combobox', { name: 'com_media_presets' })).toHaveTextContent(
+    preset.title,
+  );
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: 'com_ui_manage' }));
+  const saveDialog = await screen.findByRole('dialog', { name: 'com_media_presets' });
+  fireEvent.change(within(saveDialog).getByRole('textbox', { name: 'com_media_preset_name' }), {
+    target: { value: 'Reference look' },
+  });
+  fireEvent.click(within(saveDialog).getByRole('button', { name: 'com_media_preset_save' }));
+  await waitFor(() => expect(create).toHaveBeenCalled());
+  expect(create.mock.calls[0][0].settings.inputs).toEqual(referencePreset.settings.inputs);
+  expect(create.mock.calls[0][0]).not.toHaveProperty('assets');
+  fireEvent.keyDown(saveDialog, { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  act(() => env.store.set(atom, { ...env.store.get(atom), inputs: [] }));
+  expect(screen.getByRole('combobox', { name: 'com_media_presets' })).toHaveTextContent(
+    'com_ui_custom',
+  );
+});
+
+test.each(['missing reference', 'unsupported role'])(
+  'a preset with a %s preserves the current draft',
+  async (reason) => {
+    const env = setup(true, { presets: true });
+    const unavailable =
+      reason === 'missing reference'
+        ? { ...referencePreset, assets: [] }
+        : {
+            ...referencePreset,
+            settings: {
+              ...referencePreset.settings,
+              inputs: [{ file_id: presetReference.file_id, role: 'start_frame' as const }],
+            },
+          };
+    jest.spyOn(dataService, 'listMediaPresets').mockResolvedValue({ items: [unavailable] });
+    const atom = mediaDraftFamily('owner:new');
+    const draft = {
+      ...emptyDraft(),
+      offering: JSON.stringify(['connection', 'image-model']),
+      operation: 'image.edit' as const,
+      prompt: 'Keep every setting',
+      parentTurnId: 'old-turn',
+      inputs: [{ file_id: 'current-file', role: 'reference' as const }],
+      assets: [{ ...presetReference, file_id: 'current-file' }],
+      revision: 2,
+    };
+    env.store.set(atom, draft);
+    render(<MediaForm catalog={presetCatalog} send={env.send} busy={false} />, {
+      wrapper: env.wrapper,
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'com_ui_manage' }));
+    const dialog = await screen.findByRole('dialog', { name: 'com_media_presets' });
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'com_media_preset_apply' }));
+    expect(await within(dialog).findByText('com_media_preset_unavailable')).toBeVisible();
+    expect(env.store.get(atom)).toEqual(draft);
+  },
+);
+
+test.each([false, true])(
+  'a default reference preset respects an explicitly seeded draft: %s',
+  async (seeded) => {
+    const env = setup(true, { presets: true });
+    jest.spyOn(dataService, 'listMediaPresets').mockResolvedValue({
+      items: [{ ...referencePreset, isDefault: true }],
+    });
+    const atom = mediaDraftFamily('owner:new');
+    const seededInputs = [{ file_id: 'seeded-reference', role: 'reference' as const }];
+    if (seeded) env.store.set(atom, { ...emptyDraft(), inputs: seededInputs });
+    render(<MediaForm catalog={presetCatalog} send={env.send} busy={false} />, {
+      wrapper: env.wrapper,
+    });
+    await waitFor(() => expect(env.store.get(atom).offering).toBeTruthy());
+    expect(env.store.get(atom).inputs).toEqual(
+      seeded ? seededInputs : referencePreset.settings.inputs,
+    );
+    expect(env.store.get(atom).parameters.count).toBe(seeded ? 1 : 2);
+  },
+);
+
+test('presets explain why hosted references cannot be saved', async () => {
+  const env = setup(true, { presets: true });
+  jest.spyOn(dataService, 'listMediaPresets').mockResolvedValue({ items: [] });
+  const create = jest.spyOn(dataService, 'createMediaPreset');
+  env.store.set(mediaDraftFamily('owner:new'), {
+    ...emptyDraft(),
+    offering: JSON.stringify(['connection', 'image-model']),
+    inputs: [{ file_id: 'hosted', role: 'video', sourceURL: 'https://example.com/reference.mp4' }],
+    revision: 2,
+  });
+  render(<MediaForm catalog={presetCatalog} send={env.send} busy={false} />, {
+    wrapper: env.wrapper,
+  });
+  fireEvent.click(await screen.findByRole('button', { name: 'com_ui_manage' }));
+  const dialog = await screen.findByRole('dialog', { name: 'com_media_presets' });
+  fireEvent.change(within(dialog).getByRole('textbox', { name: 'com_media_preset_name' }), {
+    target: { value: 'Hosted reference' },
+  });
+  expect(within(dialog).getByText('com_media_preset_hosted_inputs')).toBeVisible();
+  expect(within(dialog).getByRole('button', { name: 'com_media_preset_save' })).toBeDisabled();
+  expect(create).not.toHaveBeenCalled();
 });
 
 test('comparing hands both validated model requests to the command owner before dispatch', async () => {
