@@ -29,6 +29,7 @@ const policies = {
 type Options = {
   pathname?: string;
   socialLoginEnabled?: boolean;
+  ldapEnabled?: boolean;
   /** What `socialLogins` lists, and whether the listed provider's own flag is
    *  set: a button needs both, not just the global switch. */
   providers?: string[];
@@ -41,12 +42,14 @@ type Options = {
 function setup({
   pathname = 'register',
   socialLoginEnabled = false,
+  ldapEnabled = false,
   providers,
   googleLoginEnabled,
   interfaceConfig,
 }: Options) {
   const startupConfig = {
     appTitle: 'LibreChat',
+    ldap: { enabled: ldapEnabled },
     socialLoginEnabled,
     socialLogins: providers ?? (socialLoginEnabled ? ['google'] : []),
     googleLoginEnabled: googleLoginEnabled ?? socialLoginEnabled,
@@ -135,6 +138,15 @@ describe('AuthLayout legal placement', () => {
 
     expect(consent()).not.toBeInTheDocument();
     expect(footerBar()).not.toBeNull();
+  });
+
+  /** LDAP has no button of its own: a first sign-in through the ordinary login
+   *  form creates the account (api/strategies/ldapStrategy.js). */
+  test('an LDAP login screen states it without any provider button', () => {
+    setup({ pathname: 'login', ldapEnabled: true, interfaceConfig: policies });
+
+    expect(consent()).toBeInTheDocument();
+    expect(footerBar()).toBeNull();
   });
 
   test('the second factor is not where an account is created', () => {

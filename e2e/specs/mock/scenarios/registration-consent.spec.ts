@@ -147,6 +147,29 @@ test.describe('registration consent', () => {
     }
   });
 
+  test('an LDAP login screen states the consent without any provider button @scenario:an-ldap-login-screen-states-the-consent', async ({
+    browser,
+    baseURL,
+  }) => {
+    test.setTimeout(60000);
+    /** LDAP creates the account on a first sign-in through the ordinary login
+     *  form (api/strategies/ldapStrategy.js), so that form is account creation
+     *  even with no provider button beside it. */
+    const { context, page } = await openAuthScreen(browser, baseURL, '/login', {
+      ...bothPolicies,
+      ldap: { enabled: true },
+    });
+
+    try {
+      await expect(page.getByRole('link', { name: /Continue with/i })).toHaveCount(0);
+      await expect(page.getByText(/By continuing, you agree to the/i)).toBeVisible();
+      await expect(page.locator(`a[href="${PRIVACY_URL}"]`)).toHaveCount(1);
+      await expect(page.locator(`a[href="${TERMS_URL}"]`)).toHaveCount(1);
+    } finally {
+      await context.close();
+    }
+  });
+
   test('a login screen that can create an account states the consent @scenario:a-social-login-screen-states-the-consent', async ({
     browser,
     baseURL,
