@@ -1508,6 +1508,7 @@ export function createAgentMethods(
       projection.stateful_code_sessions = 1;
       projection.code_environment_id = 1;
       projection.code_workspace_id = 1;
+      projection.repositoryInstructions = 1;
       projection.agent_ids = 1;
       projection['edges.from'] = 1;
       projection['edges.to'] = 1;
@@ -1675,6 +1676,7 @@ export function createAgentMethods(
     for (const field of [
       'code_environment_id',
       'code_workspace_id',
+      'repositoryInstructions',
       'git_identity',
       'skills_scope',
       'skill_authoring_enabled',

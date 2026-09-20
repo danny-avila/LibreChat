@@ -4568,7 +4568,11 @@ describe('Agent Methods', () => {
 
       await updateAgent(
         { id: agentId },
-        { name: 'Updated Name', description: 'Updated description' },
+        {
+          name: 'Updated Name',
+          description: 'Updated description',
+          repositoryInstructions: 'off',
+        },
       );
 
       const revertedAgent = await revertAgentVersion({ id: agentId }, 0);
@@ -4576,6 +4580,7 @@ describe('Agent Methods', () => {
       expect(revertedAgent.name).toBe('Original Name');
       expect(revertedAgent.description).toBe('Original description');
       expect(revertedAgent.author.toString()).toBe(authorId.toString());
+      expect(revertedAgent.repositoryInstructions).toBeUndefined();
     });
 
     test('should handle action-related updates with getActions error', async () => {
@@ -5177,6 +5182,7 @@ describe('Support Contact Field', () => {
         stateful_code_sessions: true,
         code_environment_id: 'machine-a',
         code_workspace_id: 'project-a',
+        repositoryInstructions: 'defer',
         agent_ids: [agentA1.id],
         edges: [{ from: 'source', to: agentA1.id, prompt: 'Private routing prompt' }],
         subagents: {
@@ -5201,6 +5207,7 @@ describe('Support Contact Field', () => {
       });
       expect(defaultResult.data[0].tools).toBeUndefined();
       expect(defaultResult.data[0].code_workspace_id).toBeUndefined();
+      expect(defaultResult.data[0].repositoryInstructions).toBeUndefined();
       expect(defaultResult.data[0].edges).toBeUndefined();
 
       const result = await getListAgentsByAccess({
@@ -5214,6 +5221,7 @@ describe('Support Contact Field', () => {
         stateful_code_sessions: true,
         code_environment_id: 'machine-a',
         code_workspace_id: 'project-a',
+        repositoryInstructions: 'defer',
         agent_ids: [agentA1.id],
         edges: [{ from: 'source', to: agentA1.id }],
         subagents: {
