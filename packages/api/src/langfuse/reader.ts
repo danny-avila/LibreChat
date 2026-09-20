@@ -16,11 +16,13 @@ import type {
 import type { LangfuseScoreDestination } from './destinations';
 import type { TraceQuery, TraceReader } from '~/traces/types';
 import { exportsInternalTraceUserId } from './identity';
+import { toTracePrompt, toTraceReply } from './prompt';
 import { getScoreDestinations } from './destinations';
 import { TraceReadError } from '~/traces/types';
 import { mergeHeaders } from '~/utils/headers';
 import { redirectPolicyFor } from './utils';
 import { traceIdForMessage } from './trace';
+import { resolveTraceRole } from './roles';
 
 const OBSERVATIONS_PATH = '/api/public/v2/observations';
 const MAX_PAGE_SIZE = 1000;
@@ -184,12 +186,14 @@ function toRecord(
   const model = (observation.model ?? observation.providedModelName)?.trim();
   const usage = toUsage(observation.usageDetails);
   const cost = toCost(observation);
+  const kind = KIND_BY_TYPE[type] ?? 'span';
   return {
     id: observation.id,
     traceId: observation.traceId,
     messageId,
     parentId: observation.parentObservationId || null,
-    kind: KIND_BY_TYPE[type] ?? 'span',
+    kind,
+    ...resolveTraceRole(kind, name),
     name: clamp(name, NAME_MAX_LENGTH),
     startTime: new Date(observation.startTime).toISOString(),
     status,
@@ -1088,9 +1092,14 @@ export function createLangfuseTraceReader({
       const input = toContent(observation.input, maxLength);
       const output = toContent(observation.output, maxLength);
       const metadata = toContent(observation.metadata, maxLength);
+      const isModelCall = record.kind === 'generation';
+      const prompt = isModelCall ? toTracePrompt(observation.input, maxLength) : undefined;
+      const reply = isModelCall ? toTraceReply(observation.output, maxLength) : undefined;
       return {
         record,
         contentAvailable: true,
+        ...(prompt ? { prompt } : {}),
+        ...(reply ? { reply } : {}),
         ...(input ? { input } : {}),
         ...(output ? { output } : {}),
         ...(metadata ? { metadata } : {}),

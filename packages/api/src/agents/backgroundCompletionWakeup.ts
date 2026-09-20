@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { isEphemeralAgentId } from 'librechat-data-provider';
-import { AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1 } from '@librechat/data-schemas';
+import { backgroundResultMetadata, isEphemeralAgentId } from 'librechat-data-provider';
+import { AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2 } from '@librechat/data-schemas';
 import type {
   AgentTriggerProducerLeaseStatus,
-  BackgroundToolResultClaim,
+  AgentTriggerDeliveryMethods,
   ConversationMethods,
   IMessage,
   MessageMethods,
@@ -51,31 +51,34 @@ export type RenewBackgroundToolCompletionProducerLease = (
   leaseUntil: Date,
 ) => Promise<boolean>;
 
+export type PersistBackgroundToolCompletionResult = (
+  deliveryKey: string,
+  sourceId: string,
+  result: {
+    status: 'completed' | 'error' | 'cancelled';
+    output: string;
+    settledAt: Date;
+  },
+) => Promise<boolean>;
+
 type WakeupMethods = Pick<ConversationMethods, 'getConvo'> &
-  Pick<MessageMethods, 'getMessages'> & {
-    claimBackgroundToolResults(params: {
-      userId: string;
-      conversationId: string;
-      messageId: string;
-      taskId: string;
-      agentId?: string;
-      kind: 'manual' | 'wakeup';
-      claimId: string;
-      limit?: number;
-    }): Promise<BackgroundToolResultClaim>;
-    releaseBackgroundToolResultClaims(params: {
-      userId: string;
-      conversationId: string;
-      messageId: string;
-      taskIds?: string[];
-      kind: 'manual' | 'wakeup';
-      claimId: string;
-    }): Promise<boolean>;
+  Pick<
+    MessageMethods,
+    'getMessages' | 'claimBackgroundToolResults' | 'releaseBackgroundToolResultClaims'
+  > & {
     getAgentTriggerDeliveryProducerLease(params: {
       deliveryKey: string;
       sourceId: string;
       now: Date;
     }): Promise<AgentTriggerProducerLeaseStatus>;
+    getAgentBackgroundToolResult?(params: { deliveryKey: string; sourceId: string }): Promise<{
+      status: 'completed' | 'error' | 'cancelled';
+      output: string;
+      settledAt: Date;
+    } | null>;
+    claimAgentBackgroundToolResults?: AgentTriggerDeliveryMethods['claimAgentBackgroundToolResults'];
+    getAgentBackgroundToolResultClaim?: AgentTriggerDeliveryMethods['getAgentBackgroundToolResultClaim'];
+    releaseAgentBackgroundToolResultClaims?: AgentTriggerDeliveryMethods['releaseAgentBackgroundToolResultClaims'];
   };
 
 interface GenerationState {
@@ -90,6 +93,7 @@ interface GenerationState {
 export interface BackgroundToolCompletionWakeupResolverDeps {
   methods: WakeupMethods;
   getGenerationJob: (conversationId: string) => Promise<GenerationState | null>;
+  getResultBatchSize?: () => number | undefined;
 }
 
 function executionError(
@@ -226,13 +230,7 @@ function buildWakeupInput(
     results.length === 1
       ? 'A background tool task has finished. Continue using its durable result below.'
       : `${results.length} background tool tasks have finished. Continue using their durable results below.`;
-  const payload = results.map((result) => ({
-    background_task_id: result.taskId,
-    tool_call_id: result.toolCallId,
-    tool: result.toolName,
-    status: result.status,
-    result: '',
-  }));
+  const payload = results.map(backgroundResultMetadata);
   let remaining = Math.max(
     0,
     BACKGROUND_TOOL_WAKEUP_INPUT_MAX_CHARS - header.length - 1 - JSON.stringify(payload).length,
@@ -253,6 +251,7 @@ function buildWakeupInput(
 export function createBackgroundToolCompletionWakeupResolver({
   methods,
   getGenerationJob,
+  getResultBatchSize,
 }: BackgroundToolCompletionWakeupResolverDeps): NonNullable<
   AgentTriggerExecutionHostDeps['prepareContinue']
 > {
@@ -326,8 +325,34 @@ export function createBackgroundToolCompletionWakeupResolver({
       agentId: envelope.target.agentId,
       kind: 'wakeup',
       claimId: context.idempotencyKey,
+      limit: getResultBatchSize?.() ?? 8,
+      maxMetadataChars: BACKGROUND_TOOL_WAKEUP_INPUT_MAX_CHARS - 256,
     });
     if (claim.status === 'claimed') {
+      const receiptOwner = await methods.getAgentBackgroundToolResultClaim?.({
+        sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+        userId,
+        conversationId: envelope.target.conversationId,
+        parentMessageId: envelope.target.parentMessageId,
+        taskId: registration.taskId,
+      });
+      if (receiptOwner?.claimId === context.idempotencyKey) {
+        const released = await methods.releaseAgentBackgroundToolResultClaims?.({
+          sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+          userId,
+          conversationId: envelope.target.conversationId,
+          parentMessageId: envelope.target.parentMessageId,
+          claimId: context.idempotencyKey,
+        });
+        if (released === false)
+          throw new Error('Background receipt claim release was not confirmed');
+        throw executionError('Background result ownership is being reconciled.', {
+          code: 'BACKGROUND_TOOL_CLAIM_RECONCILING',
+          retryable: true,
+          deferWithoutAttempt: true,
+          retryAfter: '1',
+        });
+      }
       return { status: 'settled' };
     }
     if (claim.status === 'outcome_unknown') {
@@ -336,47 +361,17 @@ export function createBackgroundToolCompletionWakeupResolver({
         retryable: false,
       });
     }
-    if (claim.status !== 'acquired') {
-      let producerLease: AgentTriggerProducerLeaseStatus;
-      try {
-        producerLease = await methods.getAgentTriggerDeliveryProducerLease({
-          deliveryKey: context.idempotencyKey,
-          sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
-          now: new Date(),
-        });
-      } catch (error) {
-        throw executionError(
-          `Background tool producer liveness is temporarily unavailable: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-          { code: 'BACKGROUND_TOOL_PRODUCER_STATE_UNAVAILABLE', retryable: true },
-        );
-      }
-      if (producerLease.status === 'expired') {
-        throw executionError('The process-local background tool executor was lost.', {
-          code: 'BACKGROUND_TOOL_PRODUCER_LOST',
-          retryable: false,
-        });
-      }
-      /** A live lease proves the invocation or its durable persistence retry
-       * still has an owner. Missing remains defer-only for compatibility with
-       * completion rows admitted before producer leases existed. */
-      throw executionError('The background tool result is not durable yet.', {
-        code: 'BACKGROUND_TOOL_RESULT_NOT_READY',
-        retryable: true,
-        status: 409,
-        retryAfter: '1',
-        deferWithoutAttempt: true,
+    if (claim.status === 'acquired') {
+      const taskIds = claim.results.map((result) => result.taskId);
+      const receiptOwner = await methods.getAgentBackgroundToolResultClaim?.({
+        sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+        userId,
+        conversationId: envelope.target.conversationId,
+        parentMessageId: envelope.target.parentMessageId,
+        taskId: registration.taskId,
       });
-    }
-    const taskIds = claim.results.map((result) => result.taskId);
-    const input = buildWakeupInput(claim.results);
-    return {
-      status: 'ready',
-      parentMessageId,
-      input,
-      releaseOnDefiniteFailure: async () => {
-        await methods.releaseBackgroundToolResultClaims({
+      if (receiptOwner != null && receiptOwner.claimId !== context.idempotencyKey) {
+        const released = await methods.releaseBackgroundToolResultClaims({
           userId,
           conversationId: envelope.target.conversationId,
           messageId: envelope.target.parentMessageId,
@@ -384,8 +379,153 @@ export function createBackgroundToolCompletionWakeupResolver({
           kind: 'wakeup',
           claimId: context.idempotencyKey,
         });
-      },
-    };
+        if (!released) throw new Error('Background projection claim release was not confirmed');
+        return { status: 'settled' };
+      }
+      const input = buildWakeupInput(claim.results);
+      return {
+        status: 'ready',
+        parentMessageId,
+        input,
+        releaseOnDefiniteFailure: async () => {
+          const released = await methods.releaseBackgroundToolResultClaims({
+            userId,
+            conversationId: envelope.target.conversationId,
+            messageId: envelope.target.parentMessageId,
+            kind: 'wakeup',
+            claimId: context.idempotencyKey,
+          });
+          if (!released) throw new Error('Background projection claim release was not confirmed');
+          const receiptReleased = await methods.releaseAgentBackgroundToolResultClaims?.({
+            sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+            userId,
+            conversationId: envelope.target.conversationId,
+            parentMessageId: envelope.target.parentMessageId,
+            claimId: context.idempotencyKey,
+          });
+          if (receiptReleased === false)
+            throw new Error('Background receipt claim release was not confirmed');
+        },
+      };
+    }
+    const receiptClaim = await methods.claimAgentBackgroundToolResults?.({
+      deliveryKey: context.idempotencyKey,
+      sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+      userId,
+      conversationId: envelope.target.conversationId,
+      parentMessageId: envelope.target.parentMessageId,
+      agentId: envelope.target.agentId,
+      claimId: context.idempotencyKey,
+      limit: 1,
+    });
+    if (receiptClaim?.status === 'claimed') {
+      return { status: 'settled' };
+    }
+    if (receiptClaim?.status === 'acquired') {
+      /** Reconcile with a parent projection that may have appeared while the
+       * receipt CAS was in flight. A manual poll that already owns the message
+       * wins; otherwise stamp this same automatic owner before dispatch. */
+      const projectedClaim = await methods.claimBackgroundToolResults({
+        userId,
+        conversationId: envelope.target.conversationId,
+        messageId: envelope.target.parentMessageId,
+        taskId: registration.taskId,
+        agentId: envelope.target.agentId,
+        kind: 'wakeup',
+        claimId: context.idempotencyKey,
+        limit: 1,
+      });
+      if (projectedClaim.status === 'claimed') {
+        const released = await methods.releaseAgentBackgroundToolResultClaims?.({
+          sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+          userId,
+          conversationId: envelope.target.conversationId,
+          parentMessageId: envelope.target.parentMessageId,
+          claimId: context.idempotencyKey,
+        });
+        if (released === false)
+          throw new Error('Background receipt claim release was not confirmed');
+        throw executionError('Background result ownership is being reconciled.', {
+          code: 'BACKGROUND_TOOL_CLAIM_RECONCILING',
+          retryable: true,
+          deferWithoutAttempt: true,
+          retryAfter: '1',
+        });
+      }
+      return {
+        status: 'ready',
+        parentMessageId,
+        input: buildWakeupInput(receiptClaim.results),
+        releaseOnDefiniteFailure: async () => {
+          const projectionReleased = await methods.releaseBackgroundToolResultClaims({
+            userId,
+            conversationId: envelope.target.conversationId,
+            messageId: envelope.target.parentMessageId,
+            kind: 'wakeup',
+            claimId: context.idempotencyKey,
+          });
+          if (projectedClaim.status === 'acquired' && !projectionReleased) {
+            throw new Error('Background projection claim release was not confirmed');
+          }
+          const receiptReleased = await methods.releaseAgentBackgroundToolResultClaims?.({
+            sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+            userId,
+            conversationId: envelope.target.conversationId,
+            parentMessageId: envelope.target.parentMessageId,
+            claimId: context.idempotencyKey,
+          });
+          if (receiptReleased === false)
+            throw new Error('Background receipt claim release was not confirmed');
+        },
+      };
+    }
+    const receipt =
+      methods.claimAgentBackgroundToolResults == null
+        ? await methods.getAgentBackgroundToolResult?.({
+            deliveryKey: context.idempotencyKey,
+            sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+          })
+        : null;
+    if (receipt != null) {
+      return {
+        status: 'ready',
+        parentMessageId,
+        input: buildWakeupInput([
+          { ...registration, status: receipt.status, output: receipt.output },
+        ]),
+      };
+    }
+    let producerLease: AgentTriggerProducerLeaseStatus;
+    try {
+      producerLease = await methods.getAgentTriggerDeliveryProducerLease({
+        deliveryKey: context.idempotencyKey,
+        sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+        now: new Date(),
+      });
+    } catch (error) {
+      throw executionError(
+        `Background tool producer liveness is temporarily unavailable: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        { code: 'BACKGROUND_TOOL_PRODUCER_STATE_UNAVAILABLE', retryable: true },
+      );
+    }
+    if (producerLease.status === 'expired') {
+      throw executionError('The process-local background tool executor was lost.', {
+        code: 'BACKGROUND_TOOL_PRODUCER_LOST',
+        retryable: false,
+      });
+    }
+    /** A live lease proves the invocation or its durable persistence retry
+     * still has an owner. Missing remains defer-only for compatibility with
+     * completion rows admitted before producer leases existed. */
+    throw executionError('The background tool result is not durable yet.', {
+      code: 'BACKGROUND_TOOL_RESULT_NOT_READY',
+      retryable: true,
+      status: 409,
+      retryAfter: '1',
+      deferWithoutAttempt: true,
+    });
   };
 }
 
@@ -394,6 +534,7 @@ export function createBackgroundToolCompletionWakeupHandler(
   enqueue: EnqueueBackgroundToolCompletion,
   retire: RetireBackgroundToolCompletion,
   renewProducerLease: RenewBackgroundToolCompletionProducerLease,
+  persistResult?: PersistBackgroundToolCompletionResult,
 ): (
   registration: BackgroundToolWakeupRegistration,
 ) => Promise<BackgroundToolWakeupAdmission | false> {
@@ -437,7 +578,7 @@ export function createBackgroundToolCompletionWakeupHandler(
       availableAt: new Date(
         Math.max(Date.now(), registration.createdAt) + WAKEUP_ADMISSION_DELAY_MS,
       ),
-      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
       producerLeaseUntil: new Date(Date.now() + BACKGROUND_TOOL_PRODUCER_LEASE_MS),
     });
     return {
@@ -447,6 +588,12 @@ export function createBackgroundToolCompletionWakeupHandler(
           BACKGROUND_TOOL_COMPLETION_SOURCE,
           new Date(Date.now() + BACKGROUND_TOOL_PRODUCER_LEASE_MS),
         ),
+      ...(persistResult == null
+        ? {}
+        : {
+            persistResult: (result) =>
+              persistResult(admitted.deliveryKey, BACKGROUND_TOOL_COMPLETION_SOURCE, result),
+          }),
       retire: (reason, options) =>
         options == null
           ? retire(admitted.deliveryKey, BACKGROUND_TOOL_COMPLETION_SOURCE, reason)
@@ -469,6 +616,7 @@ export function createBackgroundToolDeadClaimRecovery(
     conversationId: string;
     claimId: string;
   }) => Promise<'fenced' | 'started' | 'unavailable'>,
+  releaseReceiptClaims?: AgentTriggerDeliveryMethods['releaseAgentBackgroundToolResultClaims'],
 ): BackgroundToolDeadClaimRecovery {
   return async ({ userId, conversationId, messageId, claimId, kind, generationId }) => {
     if (kind === 'manual') {
@@ -518,12 +666,24 @@ export function createBackgroundToolDeadClaimRecovery(
     if (await claimGenerationIsActive()) {
       return false;
     }
-    return releaseClaims({
+    const released = await releaseClaims({
       userId,
       conversationId,
       messageId,
       kind: 'wakeup',
       claimId,
     });
+    if (!released) {
+      return false;
+    }
+    return (
+      (await releaseReceiptClaims?.({
+        sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+        userId,
+        conversationId,
+        parentMessageId: messageId,
+        claimId,
+      })) ?? true
+    );
   };
 }

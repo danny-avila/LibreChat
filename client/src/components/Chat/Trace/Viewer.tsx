@@ -42,9 +42,12 @@ import {
   buildTraceModel,
   collapsibleKeys,
 } from './model';
-import { buildPreviews, buildPreviewIndex } from './preview';
+import { buildPreviews, buildPreviewIndex, buildActivityIndex } from './preview';
+import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { traceModeAtom, traceScaleAtom } from './store';
-import { KIND_APPEARANCE, STATUS_LABEL } from './kinds';
+import { presentTool, presentRecord } from './present';
+import { appearanceOf, STATUS_LABEL } from './kinds';
+import { useAgentsMapContext } from '~/Providers';
 import { useTraceFormat } from './format';
 import { useLocalize } from '~/hooks';
 import Inspector from './Inspector';
@@ -63,6 +66,8 @@ const ERROR_MESSAGES: Partial<Record<TTraceErrorCode, TranslationKeys>> = {
 };
 
 const PRESSED = 'bg-surface-active-alt';
+/** A response's header quotes the question it answered; the row truncates what does not fit. */
+const ASKED_LENGTH = 120;
 
 function errorCodeOf(error: unknown): TTraceErrorCode | undefined {
   return axios.isAxiosError<TTraceErrorResponse>(error)
@@ -170,17 +175,68 @@ export default function Viewer({
     (node: TraceNode) => previewIndex.get(node.record.id),
     [previewIndex],
   );
+  const activity = useMemo(
+    () => buildActivityIndex(model, previews, partialMessageId),
+    [model, previews, partialMessageId],
+  );
+  const agentsMap = useAgentsMapContext();
+  const mcpIconMap = useMCPIconMap();
+  const mcpServerNames = useMCPServerNames();
+  const agentOf = useCallback((agentId: string) => agentsMap?.[agentId], [agentsMap]);
+  const presentFor = useMemo(() => {
+    const sources = { localize, activity, previewOf, mcpServerNames, agentOf };
+    const presented = new Map<string, ReturnType<typeof presentRecord>>();
+    return (node: TraceNode) => {
+      const cached = presented.get(node.record.id);
+      if (cached != null) {
+        return cached;
+      }
+      const presentation = presentRecord(node, sources);
+      presented.set(node.record.id, presentation);
+      return presentation;
+    };
+  }, [localize, activity, previewOf, mcpServerNames, agentOf]);
+  const toolFor = useCallback(
+    (name: string) => presentTool(name, { localize, mcpServerNames }),
+    [localize, mcpServerNames],
+  );
+  const toolTitleFor = useCallback((name: string) => toolFor(name).title, [toolFor]);
+  /** The user message each response answered: what tells one response from another in the ledger. */
+  const askedByResponse = useMemo(() => {
+    const textById = new Map<string, string>();
+    const asked = new Map<string, string>();
+    for (const message of messages ?? []) {
+      if (message.isCreatedByUser) {
+        textById.set(message.messageId, message.text);
+      }
+    }
+    for (const message of messages ?? []) {
+      const text = message.isCreatedByUser
+        ? undefined
+        : textById.get(message.parentMessageId ?? '')?.trim();
+      if (text) {
+        asked.set(message.messageId, text.replace(/\s+/g, ' ').slice(0, ASKED_LENGTH));
+      }
+    }
+    return asked;
+  }, [messages]);
+  const askedFor = useCallback(
+    (messageId: string) => askedByResponse.get(messageId),
+    [askedByResponse],
+  );
   const labelsFor = useCallback(
     (record: TTraceRecord) => {
       const node = model.nodes.get(record.id);
-      const preview = node != null ? previewOf(node) : undefined;
+      const presentation = node != null ? presentFor(node) : undefined;
       return [
-        localize(KIND_APPEARANCE[record.kind].label),
+        localize(appearanceOf(record).label),
         localize(STATUS_LABEL[record.status]),
-        ...(preview != null ? [preview] : []),
+        ...[presentation?.title, presentation?.caption, presentation?.preview].filter(
+          (label): label is string => label != null,
+        ),
       ];
     },
-    [localize, model, previewOf],
+    [localize, model, presentFor],
   );
   const rows = useMemo(
     () => flattenRows(model, { collapsed, query: deferredQuery, window: view, scale, labelsFor }),
@@ -193,7 +249,11 @@ export default function Viewer({
   useEffect(() => {
     const previous = previousModel.current;
     previousModel.current = model;
-    setSelectedId((id) => (id != null && model.nodes.get(id)?.shown !== true ? null : id));
+    /** An agent is opened from its response's header, which lists it whether or not the mode does. */
+    setSelectedId((id) => {
+      const node = id != null ? model.nodes.get(id) : undefined;
+      return node != null && (node.shown || node.record.role === 'agent') ? id : null;
+    });
     setView((current) =>
       current != null ? rebaseWindow(current, previous, model, scale) : current,
     );
@@ -350,7 +410,12 @@ export default function Viewer({
       <>
         <div className="flex flex-col gap-3 border-b border-border-light px-3 py-3 md:px-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <Summary summary={model.summary} showCost={showCost} currency={currency} />
+            <Summary
+              summary={model.summary}
+              unrecordedCalls={activity.unrecordedCalls}
+              showCost={showCost}
+              currency={currency}
+            />
             {recordsQuery.hasNextPage === true && (
               <p className="text-xs text-text-secondary">
                 {localize('com_ui_trace_partial', { 0: String(records.length) })}
@@ -460,7 +525,12 @@ export default function Viewer({
                 view={view}
                 selectedId={selectedId}
                 treeRef={treeRef}
-                previewFor={previewOf}
+                presentFor={presentFor}
+                askedFor={askedFor}
+                toolTitleFor={toolTitleFor}
+                agentOf={agentOf}
+                unrecordedCalls={activity.unrecordedCalls}
+                mcpIconMap={mcpIconMap}
                 onSelect={setSelectedId}
                 onToggle={toggle}
               />
@@ -505,6 +575,9 @@ export default function Viewer({
           {selectedNode && (
             <Inspector
               node={selectedNode}
+              presentation={presentFor(selectedNode)}
+              mcpIconMap={mcpIconMap}
+              toolFor={toolFor}
               turnStart={selectedTurnStart}
               sourceId={recordSources.get(selectedNode.record.id)}
               conversationId={conversationId}
