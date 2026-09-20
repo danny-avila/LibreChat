@@ -112,6 +112,9 @@ describe('File Routes - Delete with Agent Access', () => {
         storageKey: 'private-original-key',
         storageRegion: 'private-region',
         mediaOutputKey: 'private-job',
+        mediaLifecycle: 'live',
+        mediaEpoch: 1,
+        mediaRetainers: [],
         mediaContentDigest: 'private-digest',
         mediaRenditions: { thumbnail: { filepath: 'private-thumbnail.png', bytes: 32 } },
       });

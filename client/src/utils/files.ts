@@ -252,9 +252,13 @@ export function addFileToCache(queryClient: QueryClient, newfile: TFile) {
 export function addFilesToCache(queryClient: QueryClient, files: TFile[]) {
   if (!files.length) return;
   queryClient.setQueryData<TFile[]>([QueryKeys.files], (previous = []) => {
-    const merged = new Map(previous.map((file) => [file.file_id, file]));
-    for (const file of files) merged.set(file.file_id, { ...merged.get(file.file_id), ...file });
-    return [...merged.values()];
+    const existing = new Map(previous.map((file) => [file.file_id, file]));
+    const added = new Map<string, TFile>();
+    for (const file of files) {
+      const target = existing.has(file.file_id) ? existing : added;
+      target.set(file.file_id, { ...target.get(file.file_id), ...file });
+    }
+    return [...added.values(), ...existing.values()];
   });
 }
 

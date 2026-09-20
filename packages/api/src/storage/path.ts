@@ -18,12 +18,6 @@ export function resolveDownloadPath(file: StoredFileRef): string {
     : file.filepath;
 }
 
-/** Strip a local filepath's cache query; remote URLs must retain presigned query parameters. */
-export function stripCacheBust(filepath: string): string {
-  const queryIndex = filepath.indexOf('?');
-  return queryIndex === -1 ? filepath : filepath.slice(0, queryIndex);
-}
-
 /**
  * Strips the query string from a stored `filepath` before it is resolved on disk.
  *

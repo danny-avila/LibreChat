@@ -109,6 +109,8 @@ export function createMessageLimiters({
     return factory({
       windowMs,
       max: Number(environment.AGENT_EVENT_USER_MAX ?? 40),
+      // YAML is projected after module loading; this one instance is shared after first use.
+      validate: { creationStack: false },
       handler: (request, response) => {
         const { retryAfterSeconds } = getRateLimitReset(
           (request as LimitRequest).rateLimit,

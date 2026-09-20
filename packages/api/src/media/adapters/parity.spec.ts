@@ -6,6 +6,7 @@ import type { MediaProviderContext, MediaProviderInput } from '../provider';
 import type { MediaTransport, MediaTransportRequest } from '../transport';
 import { createOpenAIMediaAdapters, openAIImageCapabilities } from './openai';
 import { createGoogleMediaAdapters, googleImageCapabilities } from './google';
+import { createMediaCatalog, validateMediaOffering } from '../catalog';
 import { createMicrosoftImageAdapter } from './microsoft';
 
 function fixture(api: MediaProviderContext['connection']['api'], responses: unknown[] = []) {
@@ -147,6 +148,88 @@ describe('native OpenAI model mappings', () => {
     expect(calls[0].headers).toMatchObject({ 'api-key': 'azure-key' });
     expect(JSON.parse(calls[0].body as string).model).toBe('studio-image');
   });
+
+  it.each(['sora-2', 'openai/sora-2'])(
+    'admits configured Azure %s and uses v1 submit, poll, and content routes',
+    async (modelId) => {
+      const { context, calls, downloads } = fixture('openai.videos', [
+        { id: 'azure-video', status: 'queued' },
+        { id: 'azure-video', status: 'in_progress', progress: 50 },
+        { id: 'azure-video', status: 'completed' },
+      ]);
+      context.connection.baseURL = 'https://resource.openai.azure.com/openai/v1/';
+      context.connection.headers = { 'api-key': 'azure-key' };
+      context.connection.options = { deployments: { 'sora-2': 'studio-video' } };
+      context.config = resolveMediaConfig({
+        enabled: true,
+        integrations: [
+          {
+            id: 'native',
+            api: 'openai.videos',
+            endpointRef: {
+              kind: 'direct',
+              apiKey: 'azure-key',
+              baseURL: context.connection.baseURL,
+              headers: context.connection.headers,
+              options: context.connection.options,
+            },
+            catalog: { kind: 'configured', models: [modelId] },
+            operations: ['video.generate'],
+          },
+        ],
+      });
+      const catalog = await createMediaCatalog({
+        transport: context.transport,
+        adapters: [videos],
+        now: () => 0,
+      }).read(context.config, async () => context.connection, 'owner');
+      const submission = request(modelId, 'video.generate', {
+        durationSeconds: 8,
+        resolution: '1280x720',
+      });
+      expect(catalog.catalog.offerings).toHaveLength(1);
+      expect(validateMediaOffering(submission, catalog.catalog.offerings[0])).toMatchObject({
+        operation: 'video.generate',
+      });
+      expect(calls).toHaveLength(0);
+
+      await expect(videos.submit(submission, [], context)).resolves.toMatchObject({
+        status: 'running',
+        operationId: 'azure-video',
+      });
+      expect(Object.fromEntries((calls[0].body as FormData).entries())).toEqual({
+        model: 'studio-video',
+        prompt: 'A red ceramic teapot',
+        seconds: '8',
+        size: '1280x720',
+      });
+      await expect(videos.poll!('azure-video', context)).resolves.toMatchObject({
+        status: 'running',
+        operationId: 'azure-video',
+        progress: 50,
+      });
+      const completed = await videos.poll!('azure-video', context);
+      if (completed.status !== 'completed' || completed.parts[0].kind !== 'video')
+        throw new Error('Expected completed Azure video');
+      const output = await videos.download(completed.parts[0], context);
+      const chunks = [];
+      for await (const chunk of output) chunks.push(Buffer.from(chunk));
+      expect(Buffer.concat(chunks).toString()).toBe('video');
+      expect(calls.map(({ method, url }) => ({ method, url }))).toEqual([
+        { method: 'POST', url: 'https://resource.openai.azure.com/openai/v1/videos' },
+        { method: 'GET', url: 'https://resource.openai.azure.com/openai/v1/videos/azure-video' },
+        { method: 'GET', url: 'https://resource.openai.azure.com/openai/v1/videos/azure-video' },
+      ]);
+      expect(downloads[0].url).toBe(
+        'https://resource.openai.azure.com/openai/v1/videos/azure-video/content',
+      );
+      for (const call of [...calls, ...downloads]) {
+        expect(call.headers).toEqual({ 'api-key': 'azure-key' });
+        expect(call.signal).toBe(context.signal);
+        expect(new URL(call.url).search).toBe('');
+      }
+    },
+  );
 
   it.each(['openai/gpt-image-2.5-flare', 'gpt-image-2.5-flare', 'gpt-image-1.5'])(
     'uses the Image API for %s and preserves output controls',

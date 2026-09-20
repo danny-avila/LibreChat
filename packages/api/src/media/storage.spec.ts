@@ -309,6 +309,21 @@ describe('Media original storage', () => {
   let repository: MediaMethods;
   let directory: string;
   let scope: MediaOwnerScope;
+
+  async function expectNoOwnerFiles(): Promise<void> {
+    for (const location of [
+      path.join(directory, 'images', scope.ownerId),
+      path.join(directory, 'uploads', 'temp', scope.ownerId, 'media'),
+    ]) {
+      const entries = await readdir(location, { recursive: true }).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') return [];
+          throw error;
+        },
+      );
+      expect(entries).toEqual([]);
+    }
+  }
   let storage: ReturnType<typeof createLocalMediaStorage>;
   const config = resolveMediaConfig();
 
@@ -517,7 +532,7 @@ describe('Media original storage', () => {
       expect(
         await repository.getPublishedMediaAsset({ scope, outputKey, rendition: 'original' }),
       ).toBeNull();
-      expect(await readdir(path.join(directory, 'images', scope.ownerId))).toEqual([]);
+      await expectNoOwnerFiles();
     },
   );
 
@@ -532,7 +547,7 @@ describe('Media original storage', () => {
     await expect(
       storage.publish({ ...input, stream: Readable.from([wav().subarray(0, 32), wav()]) }),
     ).rejects.toMatchObject({ status: 413 });
-    expect(await readdir(path.join(directory, 'images', scope.ownerId))).toEqual([]);
+    await expectNoOwnerFiles();
     const stream = Readable.from(
       (async function* () {
         yield Buffer.from('RIFF');
@@ -542,7 +557,7 @@ describe('Media original storage', () => {
     await expect(storage.publish({ ...input, outputKey: 'cancelled', stream })).rejects.toThrow(
       'Upload cancelled',
     );
-    expect(await readdir(path.join(directory, 'images', scope.ownerId))).toEqual([]);
+    await expectNoOwnerFiles();
     expect(
       await repository.getPublishedMediaAsset({
         scope,
