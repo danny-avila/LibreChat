@@ -172,6 +172,26 @@ describe('a response the record limit split', () => {
   });
 });
 
+describe('a response with an orphaned record that the record limit did not cut', () => {
+  it('pairs no labels when the chat showed more than the trace kept', () => {
+    const labelled = {
+      ...response,
+      content: [
+        { type: ContentTypes.ACTIVITY_LABEL, activity_label: 'An earlier label' },
+        ...(response.content ?? []),
+      ],
+    } as TMessage;
+    /** Its root never reached the backend, so records hang from nothing loaded, on any page. */
+    const model = buildTraceModel(records.filter((entry) => entry.id !== 'run'));
+
+    expect(model.turns[0].split).toBe(true);
+    expect(buildActivityIndex(model, buildPreviews([labelled])).labels.size).toBe(0);
+    expect(
+      buildActivityIndex(model, buildPreviews([labelled]), 'another-response').labels.size,
+    ).toBe(0);
+  });
+});
+
 describe('rounds the trace names itself', () => {
   const named = (tools: Record<string, string[]>) =>
     records.map((entry) => (tools[entry.id] ? { ...entry, tools: tools[entry.id] } : entry));

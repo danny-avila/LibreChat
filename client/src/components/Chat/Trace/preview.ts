@@ -461,16 +461,15 @@ export function buildActivityIndex(
     byRole[role].push({ id, start: node.start });
     labelRecords.set(messageId, byRole);
   }
-  const splitTurns = new Set(
-    model.turns.filter((turn) => turn.split).map((turn) => turn.messageId),
-  );
   for (const [messageId, byRole] of labelRecords) {
     const message = previewsByMessage.get(messageId);
-    /** A split response holds the last of its labels, and only its matched rounds vouch for that. */
-    const split = splitTurns.has(messageId);
-    if (message == null || message.parallel || (split && !alignments.has(messageId))) {
+    if (message == null || message.parallel) {
       continue;
     }
+    /** One notion of a cut response, the alignment's: its matched rounds are what vouch for reading
+     *  the labels from the end. A response that merely lost a record is whole, and pairs only when
+     *  the counts agree. */
+    const split = alignments.get(messageId)?.split === true;
     for (const role of ['stepLabel', 'phaseLabel'] as const) {
       const records = byRole[role];
       const texts = message.labels[role];
