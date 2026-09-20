@@ -110,6 +110,31 @@ function toolCallLine(
   );
 }
 
+/** Bounds the sentence scan on long reasoning, like the streaming peek. */
+const REASONING_TAIL_CHARS = 1200;
+
+/**
+ * The sentence a streaming thought is currently writing, with its offset in
+ * the full text. The offset is the line's identity: it holds still while the
+ * sentence grows, so the header extends it in place, and moves when the next
+ * sentence starts, so the header ticks over — a line-by-line preview in a
+ * single row.
+ */
+function lastReasoningSentence(reasoning: string): { text: string; offset: number } | undefined {
+  const body = reasoning.replace(/^\s*<think>\s*/, '').replace(/\s*<\/think>\s*$/, '');
+  const tail = body.slice(-REASONING_TAIL_CHARS).trimEnd();
+  if (!tail) {
+    return undefined;
+  }
+  let start = 0;
+  const boundary = /[.!?]\s+/g;
+  for (let match = boundary.exec(tail); match != null; match = boundary.exec(tail)) {
+    start = match.index + match[0].length;
+  }
+  const text = boundIntentLabel(tail.slice(start));
+  return text == null ? undefined : { text, offset: body.length - tail.length + start };
+}
+
 /** Icons the header stack can show; collecting more is wasted work. */
 const MAX_LIVE_ICONS = 4;
 
@@ -125,10 +150,13 @@ function newestLine(
     }
     if (part.type === ContentTypes.THINK) {
       /** Reached before any call or label, this thought IS the tail — the
-       *  model is reasoning about its next step. Its streaming peek stays
-       *  inside the fold, so the header names it: the generated reasoning
-       *  label when one exists, the generic word until then. */
+       *  model is reasoning about its next step. Its multi-line peek stays
+       *  inside the fold, so the header previews it one sentence at a time. */
       const reasoning = typeof part.think === 'string' ? part.think : (part.think?.value ?? '');
+      const sentence = lastReasoningSentence(reasoning);
+      if (sentence != null) {
+        return { text: sentence.text, source: `think:${position}:${sentence.offset}` };
+      }
       const label = part.reasoning_label?.trim();
       if (label || reasoning.trim()) {
         return { text: label || localize('com_ui_thinking'), source: `think:${position}` };

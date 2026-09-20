@@ -1243,36 +1243,32 @@ describe('ContentParts — live activity fold', () => {
     expect(liveHeader()).toHaveTextContent('Confirmed the missing lens');
   });
 
-  it('names reasoning that streams between calls instead of growing a peek row', () => {
+  it('previews reasoning between calls one sentence at a time, in the same single row', () => {
     jest.useFakeTimers();
-    const think = (extra: object = {}): TMessageContentParts =>
-      ({
-        type: ContentTypes.THINK,
-        think: 'Weighing the two refs.',
-        ...extra,
-      }) as unknown as TMessageContentParts;
-    const { rerender } = renderContentParts({
-      ...liveProps,
-      content: [intentCall('t1', 'Reading the lens file', 'ok'), think()],
-    });
-    expect(liveHeader()).toHaveTextContent('com_ui_thinking');
-    expect(screen.queryByTestId('reasoning')).toBeNull();
-
-    rerender(
+    const frame = (think: string) => (
       <RecoilRoot>
         <ContentParts
           {...liveProps}
           content={[
             intentCall('t1', 'Reading the lens file', 'ok'),
-            think({ reasoning_label: 'Comparing recovery refs' }),
+            { type: ContentTypes.THINK, think } as unknown as TMessageContentParts,
           ]}
         />
-      </RecoilRoot>,
+      </RecoilRoot>
     );
+    const { rerender } = render(frame('Both refs share a commit.'));
+    expect(liveHeader()).toHaveTextContent('Both refs share a commit.');
+    expect(screen.queryByTestId('reasoning')).toBeNull();
+
+    rerender(frame('Both refs share a commit. That leaves the ordering'));
     act(() => {
       jest.advanceTimersByTime(500);
     });
-    expect(liveHeader()).toHaveTextContent('Comparing recovery refs');
+    expect(liveHeader()).toHaveTextContent('That leaves the ordering');
+    /** The previous sentence is the `aria-hidden` line sliding out, which is
+     *  the tick itself; the row's current line is the new sentence alone. */
+    expect(within(liveHeader()).getByTitle('That leaves the ordering')).toBeInTheDocument();
+    expect(screen.getAllByRole('button')).toHaveLength(1);
   });
 
   it('leaves reasoning that has not reached a tool call on its own row', () => {
