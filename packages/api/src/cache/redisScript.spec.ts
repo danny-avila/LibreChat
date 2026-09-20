@@ -1,3 +1,4 @@
+import Redis from 'ioredis';
 import { evalScript, type RedisScriptArg, type RedisScriptClient } from './redisScript';
 
 describe('evalScript', () => {
@@ -329,5 +330,100 @@ describe('evalScript', () => {
     await expect(evalScript(clusterClient, 'return 7', 0)).resolves.toBe(7);
     expect(evalsha).toHaveBeenCalledWith(expect.any(String), 0);
     expect(evalCommand).not.toHaveBeenCalled();
+  });
+});
+
+describe('confirmed Redis script recovery', () => {
+  function createClient() {
+    const client = new Redis({ lazyConnect: true });
+    const evalsha = jest.spyOn(client, 'evalsha').mockResolvedValue(1);
+    const evalCommand = jest.spyOn(client, 'eval').mockResolvedValue(1);
+    return { client, evalsha, evalCommand };
+  }
+
+  test('falls back directly after a confirmed SHA misses', async () => {
+    const { client, evalsha, evalCommand } = createClient();
+    await evalScript(client, 'return 1', 1, '{recovery}key');
+    evalsha.mockRejectedValueOnce(new Error('NOSCRIPT No matching script'));
+
+    await expect(evalScript(client, 'return 1', 1, '{recovery}key')).resolves.toBe(1);
+    expect(evalsha).toHaveBeenCalledTimes(2);
+    expect(evalCommand).toHaveBeenCalledTimes(1);
+    await expect(evalScript(client, 'return 1', 1, '{recovery}key')).resolves.toBe(1);
+    expect(evalsha).toHaveBeenCalledTimes(3);
+    expect(evalCommand).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([false, true])(
+    'keeps queued calls in FIFO order after a stale load (failed: %s)',
+    async (failLoad) => {
+      const { client, evalsha, evalCommand } = createClient();
+      await evalScript(client, 'batch', 1, '{recovery}chunks');
+      await evalScript(client, 'direct', 1, '{recovery}job');
+      let rejectMiss!: (error: Error) => void;
+      evalsha.mockImplementationOnce(
+        () =>
+          new Promise((_, reject) => {
+            rejectMiss = reject;
+          }),
+      );
+      const order: string[] = [];
+      evalCommand.mockImplementationOnce(async () => {
+        order.push('batch');
+        if (failLoad) {
+          throw new Error('load failed');
+        }
+        return 1;
+      });
+      evalsha.mockImplementation(async (...args) => {
+        order.push(String(args[3]));
+        return 1;
+      });
+
+      const first = evalScript(client, 'batch', 1, '{recovery}chunks', 'first');
+      const firstResult = first.catch((error: Error) => error);
+      const second = evalScript(client, 'direct', 1, '{recovery}job', 'second');
+      const third = evalScript(client, 'direct', 1, '{recovery}job', 'third');
+      expect(evalsha).toHaveBeenCalledTimes(3);
+      rejectMiss(new Error('NOSCRIPT No matching script'));
+      expect(await firstResult).toEqual(failLoad ? new Error('load failed') : 1);
+      await expect(second).resolves.toBe(1);
+      await expect(third).resolves.toBe(1);
+      expect(order).toEqual(['batch', 'second', 'third']);
+    },
+  );
+
+  test('does not let an eval-only caller overtake the capability fallback', async () => {
+    const { client, evalsha, evalCommand } = createClient();
+    let release!: () => void;
+    let started!: () => void;
+    const fallbackStarted = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const fallbackFinished = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    evalsha.mockRejectedValueOnce(new Error('NOPERM no permissions for EVALSHA'));
+    const order: string[] = [];
+    evalCommand
+      .mockImplementationOnce(async () => {
+        started();
+        await fallbackFinished;
+        order.push('first');
+        return 1;
+      })
+      .mockImplementationOnce(async () => {
+        order.push('second');
+        return 2;
+      });
+    const first = evalScript(client, 'first', 1, '{recovery}key');
+    await fallbackStarted;
+    const second = evalScript(client, 'second', 1, '{recovery}key');
+    expect(evalCommand).toHaveBeenCalledTimes(1);
+    release();
+    await expect(first).resolves.toBe(1);
+    await expect(second).resolves.toBe(2);
+    expect(order).toEqual(['first', 'second']);
+    expect(evalsha).toHaveBeenCalledTimes(1);
   });
 });

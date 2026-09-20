@@ -4873,8 +4873,8 @@ export class RedisJobStore implements IJobStoreV2 {
     }
     /** The chunk log is replayed in XADD order, so a per-event append (durable
      * control events, steer receipts) is a barrier: pending coalesced deltas
-     * must be issued first. The pre-issue RedisScriptClient gate preserves that
-     * order through a cold EVALSHA fallback, while warm calls remain unblocked. */
+     * must be issued first. The per-stream RedisScriptClient queue preserves that
+     * order even when a previously confirmed SHA needs an EVAL fallback. */
     if (this.pendingAppends.has(streamId)) {
       void this.flushCoalescedAppends(streamId);
     }

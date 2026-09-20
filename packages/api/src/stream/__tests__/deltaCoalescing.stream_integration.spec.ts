@@ -228,14 +228,9 @@ describe.each([undefined, '25'])('Delta coalescing integration (window %s)', (wi
             emitChunkWithReceipt(transport, streamId, event, generationId, { coalesce: true }),
           );
         }
-        /** On a single-node client both scripts share one connection, so the
-         * EVALSHA spy observes their durable-before-publication order. Cluster
-         * publication uses its routed connection; the durable log and sequence
-         * assertions below prove its effect while this spy sees only the append. */
-        const expectedImmediateCalls = clusterMode ? [8] : [8, 3];
-        expect(evalshaSpy.mock.calls.map((call) => call[1])).toEqual(
-          immediate ? expectedImmediateCalls : [],
-        );
+        /** The durable append dispatches at the boundary; the same-stream script
+         * queue holds publication behind it, including on a stale SHA fallback. */
+        expect(evalshaSpy.mock.calls.map((call) => call[1])).toEqual(immediate ? [8] : []);
         if (!immediate) {
           expect(await reader.xlen(`stream:{${streamId}}:chunks`)).toBe(0);
           expect(await reader.get(`stream:{${streamId}}:seq`)).toBeNull();

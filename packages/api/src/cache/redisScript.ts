@@ -117,8 +117,12 @@ function isEvalshaPermissionError(error: unknown): boolean {
   );
 }
 
-export function isEvalshaFallbackInProgress(): boolean {
-  return evalshaFallbackContext.getStore() === true;
+export function isEvalshaFallbackInProgress(error: unknown): boolean {
+  const allowPermissionFallback = evalshaFallbackContext.getStore();
+  return (
+    allowPermissionFallback !== undefined &&
+    (isNoScriptError(error) || (allowPermissionFallback && isEvalshaFallbackError(error)))
+  );
 }
 
 /**
@@ -133,9 +137,6 @@ export async function evalScript(
   numberOfKeys: number,
   ...args: RedisScriptArg[]
 ): Promise<RedisScriptResult> {
-  if (scriptUsesEvalOnly(client)) {
-    return (await client.eval(script, numberOfKeys, ...args)) as RedisScriptResult;
-  }
   const sha = scriptSha(script);
   const orderingKey = scriptOrderingKey(args, numberOfKeys);
   const confirmationKey = (client as RedisScriptClient & { isCluster?: boolean }).isCluster
@@ -143,44 +144,23 @@ export async function evalScript(
     : '';
   const confirmed = confirmedShasFor(client, confirmationKey);
   const loads = loadsFor(client);
-  const evalshaCall = (fallbackExpected: boolean) =>
-    evalshaFallbackContext.run(fallbackExpected, () => client.evalsha(sha, numberOfKeys, ...args));
-
-  const inFlight = loads.get(orderingKey);
-  if (inFlight) {
-    try {
-      await inFlight;
-    } catch {
-      // A failed load belongs to the caller that issued it; retry independently.
+  const execute = async (): Promise<RedisScriptResult> => {
+    if (scriptUsesEvalOnly(client)) {
+      return (await client.eval(script, numberOfKeys, ...args)) as RedisScriptResult;
     }
-    return evalScript(client, script, numberOfKeys, ...args);
-  }
-
-  if (confirmed.has(sha)) {
+    const wasConfirmed = confirmed.has(sha);
     try {
-      return (await evalshaCall(false)) as RedisScriptResult;
-    } catch (error) {
-      if (!isNoScriptError(error)) {
-        throw error;
-      }
-      // SCRIPT FLUSH or a node restart can invalidate a previously confirmed SHA.
-      confirmed.delete(sha);
-      return evalScript(client, script, numberOfKeys, ...args);
-    }
-  }
-
-  // Register the gate before issuing EVALSHA. This closes the cold window where a
-  // direct append could otherwise overtake a batch call that has not yet returned NOSCRIPT.
-  const load = (async () => {
-    try {
-      const result = await evalshaCall(true);
+      const result = await evalshaFallbackContext.run(!wasConfirmed, () =>
+        client.evalsha(sha, numberOfKeys, ...args),
+      );
       confirmed.add(sha);
       return result as RedisScriptResult;
     } catch (error) {
-      if (!isEvalshaFallbackError(error)) {
+      if (!isNoScriptError(error) && (wasConfirmed || !isEvalshaFallbackError(error))) {
         throw error;
       }
 
+      confirmed.delete(sha);
       if (isEvalshaPermissionError(error)) {
         markClientEvalOnly(client);
       }
@@ -190,7 +170,13 @@ export async function evalScript(
       }
       return result as RedisScriptResult;
     }
-  })();
+  };
+
+  /** Even confirmed SHAs can miss after a flush or failover. Reserve each caller's
+   * place before waiting so neither a warm script nor an eval-only caller can pass
+   * a recovering predecessor. A failed predecessor does not fail its successors. */
+  const inFlight = loads.get(orderingKey);
+  const load = inFlight ? inFlight.then(execute, execute) : execute();
   const trackedLoad = load.finally(() => {
     if (loads.get(orderingKey) === trackedLoad) {
       loads.delete(orderingKey);
