@@ -1,3 +1,4 @@
+import axios from 'axios';
 import {
   resolveMediaConfig,
   mediaConfigSchema,
@@ -9,12 +10,14 @@ import {
   mediaStartupConfigSchema,
   mediaNumberControlSchema,
   mediaThreadListRequestSchema,
+  mediaThreadDetailRequestSchema,
   mediaOptionValueSchema,
   mediaInputSchema,
   mediaURLUploadRequestSchema,
   mediaCatalogSchema,
   mediaUserKeySchema,
   mediaThreadSchema,
+  mediaThreadDetailSchema,
   mediaTurnSchema,
   mediaPresetSchema,
   mediaPresetWriteSchema,
@@ -25,6 +28,7 @@ import { PermissionTypes, Permissions, permissionsSchema } from '../permissions'
 import { configSchema, BASE_ONLY_CONFIG_SECTIONS } from '../config';
 import { roleDefaults, SystemRoles } from '../roles';
 import { TOKEN_CREDITS_PER_USD } from '../balance';
+import { getMediaThread } from '../data-service';
 import * as endpoints from '../api-endpoints';
 import { EModelEndpoint } from '../schemas';
 
@@ -512,6 +516,45 @@ describe('media command contracts', () => {
     expect(new URL(endpoints.mediaThreads(), 'http://localhost').searchParams.has('include')).toBe(
       false,
     );
+  });
+
+  it('distinguishes unavailable video context from a legacy server without video context', async () => {
+    const legacy = {
+      thread: {
+        schemaVersion: 1,
+        threadId: 'thread-1',
+        version: 1,
+        title: 'Lake',
+        createdAt: '2026-09-17T12:00:00.000Z',
+        updatedAt: '2026-09-17T12:00:00.000Z',
+        pendingJobCount: 0,
+        turnCount: 1,
+      },
+      turns: { items: [] },
+    };
+    expect(mediaThreadDetailSchema.parse(legacy)).not.toHaveProperty('latestVideoContext');
+    expect(
+      mediaThreadDetailSchema.parse({ ...legacy, latestVideoContext: null }).latestVideoContext,
+    ).toBeNull();
+    expect(mediaThreadDetailSchema.safeParse({ ...legacy, latestVideoContext: {} }).success).toBe(
+      false,
+    );
+    expect(
+      mediaThreadDetailSchema.omit({ latestVideoContext: true }).safeParse(legacy).success,
+    ).toBe(true);
+    const params = { include: 'videoContext', videoContextVersion: '2' };
+    expect(mediaThreadDetailRequestSchema.parse(params)).toEqual(params);
+    expect(
+      mediaThreadDetailRequestSchema.omit({ videoContextVersion: true }).parse(params),
+    ).toEqual({ include: 'videoContext' });
+    expect(mediaThreadDetailRequestSchema.parse({ include: 'videoContext' })).toEqual({
+      include: 'videoContext',
+    });
+    const response = { ...legacy, latestVideoContext: null };
+    const read = jest.spyOn(axios, 'get').mockResolvedValue({ data: response });
+    const signal = new AbortController().signal;
+    expect(await getMediaThread('thread/1', signal)).toEqual(response);
+    expect(read).toHaveBeenCalledWith(endpoints.mediaThread('thread/1'), { signal, params });
   });
 
   it('accepts temporary and comparison markers only where they mean something', () => {

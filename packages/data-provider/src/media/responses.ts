@@ -246,7 +246,7 @@ export const mediaThreadDetailSchema = z
     thread: mediaThreadSchema,
     turns: mediaTurnPageSchema,
     latestImageContext: mediaImageContextSchema.optional(),
-    latestVideoContext: mediaAssetContextSchema.optional(),
+    latestVideoContext: mediaAssetContextSchema.nullable().optional(),
   })
   .strict();
 export const mediaDeletionReceiptSchema = z

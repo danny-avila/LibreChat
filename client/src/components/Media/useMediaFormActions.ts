@@ -33,6 +33,7 @@ export function useMediaFormActions(
     hostedRoles,
     referenceURL,
     unsupportedContext,
+    unavailableContext,
     change,
     parameters,
     invalidSettings,
@@ -64,6 +65,7 @@ export function useMediaFormActions(
       staleRoute ||
       !inputsValid ||
       unsupportedContext ||
+      unavailableContext ||
       compareInvalid
     )
       return;
@@ -161,7 +163,7 @@ export function useMediaFormActions(
     }
     setError(undefined);
     change({
-      autoEdit: false,
+      autoEdit: unavailableContext ? currentDraft.autoEdit : false,
       parentTurnId: currentDraft.parentTurnId,
       inputs: currentDraft.inputs,
       assets: currentDraft.assets,
@@ -174,6 +176,7 @@ export function useMediaFormActions(
       setDraft((previous) => ({
         ...previous,
         revision: previous.revision + 1,
+        autoEdit: false,
         assets: [...previous.assets, response.file],
         inputs: [
           ...previous.inputs,
@@ -223,13 +226,18 @@ export function useMediaFormActions(
       return false;
     setError(undefined);
     const payload = referenceURL.data;
-    change({ autoEdit: false, inputs: draft.inputs, assets: draft.assets });
+    change({
+      autoEdit: unavailableContext ? draft.autoEdit : false,
+      inputs: draft.inputs,
+      assets: draft.assets,
+    });
     try {
       const response = await uploads.uploadURL(payload);
       if (!response) return false;
       setDraft((previous) => ({
         ...previous,
         revision: previous.revision + 1,
+        autoEdit: false,
         referenceURL: previous.referenceURL?.trim() === payload.url ? '' : previous.referenceURL,
         assets: [...previous.assets, response.file],
         inputs: [

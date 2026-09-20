@@ -24,12 +24,14 @@ function Settings({
   detail?: MediaThreadDetail;
 }) {
   const { latestTurn, image, video } = mediaThreadContext(detail?.turns.items ?? []);
+  const latestVideoContext = detail?.latestVideoContext;
   const form = useMediaDraftForm({
     catalog,
     threadId,
     initialSelection: latestTurn?.selection,
     imageContext: detail?.latestImageContext ?? image,
-    videoContext: detail?.latestVideoContext ?? video,
+    videoContext: latestVideoContext === undefined ? video : (latestVideoContext ?? undefined),
+    videoContextUnavailable: latestVideoContext === null && !!video,
     portal: true,
     normalizeDraft: false,
   });

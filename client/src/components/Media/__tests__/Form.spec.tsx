@@ -763,8 +763,11 @@ test('video follow-ups use the latest result, preserve a typed prompt and allow 
   const env = setup();
   const choices = makeCatalog({
     offerings: [
+      catalog.offerings[0],
       {
         ...catalog.offerings[0],
+        modelId: 'video-model',
+        modelName: 'Video model',
         api: 'google.vertex.videos',
         capabilities: [
           {
@@ -786,7 +789,17 @@ test('video follow-ups use the latest result, preserve a typed prompt and allow 
       },
     ],
   });
-  const props = { catalog: choices, threadId: 'thread', send: env.send, busy: false };
+  const props = {
+    catalog: choices,
+    threadId: 'thread',
+    initialSelection: {
+      connectionId: 'connection',
+      modelId: 'video-model',
+      catalogVersion: choices.version,
+    },
+    send: env.send,
+    busy: false,
+  };
   const view = render(<MediaForm {...props} />, { wrapper: env.wrapper });
   const prompt = screen.getByRole('textbox', { name: 'com_media_prompt' });
   fireEvent.change(prompt, { target: { value: 'Follow the boat past the lighthouse' } });
@@ -810,7 +823,21 @@ test('video follow-ups use the latest result, preserve a typed prompt and allow 
     inputs: [{ role: 'video', file_id: asset.file_id }],
     parameters: { durationSeconds: 7 },
   });
+  fireEvent.click(screen.getByRole('radio', { name: 'com_media_image' }));
+  expect(screen.queryByText('com_media_using_latest_video')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('radio', { name: 'com_media_video' }));
+  expect(screen.getByText('com_media_using_latest_video')).toBeVisible();
+  expect(prompt).toHaveValue('Follow the boat past the lighthouse');
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(2));
+  expect(env.send.mock.calls[1][0].request).toMatchObject({
+    parentTurnId: 'latest-turn',
+    inputs: [{ role: 'video', file_id: asset.file_id }],
+    parameters: { durationSeconds: 7 },
+  });
   fireEvent.click(screen.getByRole('button', { name: 'com_media_remove_reference' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'com_media_image' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'com_media_video' }));
   view.rerender(
     <MediaForm
       {...props}
@@ -819,13 +846,168 @@ test('video follow-ups use the latest result, preserve a typed prompt and allow 
   );
   expect(screen.queryByText('com_media_using_latest_video')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
-  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(2));
-  expect(env.send.mock.calls[1][0].request).toMatchObject({
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(3));
+  expect(env.send.mock.calls[2][0].request).toMatchObject({
     inputs: [],
     parameters: { durationSeconds: 4 },
   });
-  expect(env.send.mock.calls[1][0].request.parentTurnId).toBeUndefined();
+  expect(env.send.mock.calls[2][0].request.parentTurnId).toBeUndefined();
 });
+
+test.each(['live', 'unavailable'] as const)(
+  'preserves a fresh video choice with %s context after changing modes and restoring the session',
+  async (context) => {
+    const env = setup();
+    const choices = makeCatalog({
+      offerings: [
+        catalog.offerings[0],
+        {
+          ...catalog.offerings[0],
+          modelId: 'video-model',
+          modelName: 'Video model',
+          api: 'google.vertex.videos',
+          capabilities: [
+            {
+              operation: 'video.generate',
+              inputs: { roles: ['video'], min: 0, max: 1 },
+              execution: { kind: 'remote-job', cancellation: 'unsupported' },
+              controls: { count: { min: 1, max: 1 } },
+            },
+          ],
+        },
+      ],
+    });
+    const props = {
+      catalog: choices,
+      threadId: 'thread',
+      initialSelection: {
+        connectionId: 'connection',
+        modelId: 'video-model',
+        catalogVersion: choices.version,
+      },
+      videoContext:
+        context === 'live'
+          ? {
+              turnId: 'latest-turn',
+              asset: {
+                file_id: 'latest-video',
+                filename: 'video.mp4',
+                filepath: '/video.mp4',
+                type: 'video/mp4',
+                bytes: 10,
+              },
+            }
+          : undefined,
+      videoContextUnavailable: context === 'unavailable',
+      busy: false,
+    };
+    const view = render(<MediaForm {...props} send={env.send} />, { wrapper: env.wrapper });
+    fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
+      target: { value: 'A different video' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: context === 'live' ? 'com_media_remove_reference' : 'com_media_start_new_video',
+      }),
+    );
+    fireEvent.click(screen.getByRole('radio', { name: 'com_media_image' }));
+    view.unmount();
+    mediaDraftFamily.remove('owner:thread');
+    const restored = setup();
+    render(<MediaForm {...props} send={restored.send} />, { wrapper: restored.wrapper });
+    fireEvent.click(screen.getByRole('radio', { name: 'com_media_video' }));
+    expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue(
+      'A different video',
+    );
+    expect(screen.queryByText('com_media_using_latest_video')).not.toBeInTheDocument();
+    expect(screen.queryByText('com_media_video_reference_unavailable')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+    await waitFor(() => expect(restored.send).toHaveBeenCalledTimes(1));
+    expect(restored.send.mock.calls[0][0].request).toMatchObject({
+      operation: 'video.generate',
+      inputs: [],
+    });
+    expect(restored.send.mock.calls[0][0].request.parentTurnId).toBeUndefined();
+  },
+);
+
+test.each(['reference', 'parent'] as const)(
+  'switching back to Video preserves an explicit %s instead of the automatic latest clip',
+  async (pinned) => {
+    const env = setup();
+    const choices = makeCatalog({
+      offerings: [
+        {
+          ...catalog.offerings[0],
+          capabilities: [
+            {
+              operation: 'image.edit',
+              inputs: { roles: ['reference'], min: 1, max: 1 },
+              execution: { kind: 'direct', previews: false },
+              controls: { count: { min: 1, max: 1 } },
+            },
+          ],
+        },
+        {
+          ...catalog.offerings[0],
+          modelId: 'video-model',
+          modelName: 'Video model',
+          api: 'google.vertex.videos',
+          capabilities: [
+            {
+              operation: 'video.generate',
+              inputs: { roles: ['video'], min: 0, max: 1 },
+              execution: { kind: 'remote-job', cancellation: 'unsupported' },
+              controls: { count: { min: 1, max: 1 } },
+            },
+          ],
+        },
+      ],
+    });
+    const asset = {
+      file_id: 'chosen-video',
+      filename: 'chosen.mp4',
+      filepath: '/video/chosen.mp4',
+      type: 'video/mp4',
+      bytes: 10,
+    };
+    const inputs =
+      pinned === 'reference' ? [{ role: 'video' as const, file_id: asset.file_id }] : [];
+    env.store.set(mediaDraftFamily('owner:thread'), {
+      ...emptyDraft(),
+      operation: 'video.generate',
+      offering: JSON.stringify(['connection', 'video-model']),
+      prompt: 'Use my chosen reference',
+      autoEdit: false,
+      inputs,
+      assets: pinned === 'reference' ? [asset] : [],
+      parentTurnId: pinned === 'parent' ? 'chosen-parent' : undefined,
+      revision: 3,
+    });
+    render(
+      <MediaForm
+        catalog={choices}
+        threadId="thread"
+        videoContext={{ turnId: 'latest-turn', asset: { ...asset, file_id: 'latest-video' } }}
+        send={env.send}
+        busy={false}
+      />,
+      { wrapper: env.wrapper },
+    );
+    fireEvent.click(screen.getByRole('radio', { name: 'com_ui_edit' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'com_media_video' }));
+    expect(screen.queryByText('com_media_using_latest_video')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+    await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
+    expect(env.send.mock.calls[0][0].request).toMatchObject({
+      operation: 'video.generate',
+      inputs,
+    });
+    expect(env.send.mock.calls[0][0].request.parentTurnId).toBe(
+      pinned === 'parent' ? 'chosen-parent' : undefined,
+    );
+  },
+);
 
 test.each(['unsupported', 'hosted'] as const)(
   'a %s video model cannot silently omit the previous result',
@@ -879,6 +1061,68 @@ test.each(['unsupported', 'hosted'] as const)(
     expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeEnabled();
   },
 );
+
+test('an unavailable video reference remains blocked after a failed replacement upload', async () => {
+  const env = setup();
+  const choices = makeCatalog({
+    offerings: [
+      {
+        ...catalog.offerings[0],
+        api: 'google.vertex.videos',
+        capabilities: [
+          {
+            operation: 'video.generate',
+            inputs: { roles: ['video'], min: 0, max: 1 },
+            execution: { kind: 'remote-job', cancellation: 'unsupported' },
+            controls: { count: { min: 1, max: 1 } },
+          },
+        ],
+      },
+    ],
+  });
+  const view = render(
+    <MediaForm
+      catalog={choices}
+      threadId="thread"
+      videoContextUnavailable
+      send={env.send}
+      busy={false}
+    />,
+    { wrapper: env.wrapper },
+  );
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
+    target: { value: 'Continue from my replacement clip' },
+  });
+  const generate = screen.getByRole('button', { name: 'com_media_queue' });
+  expect(generate).toBeDisabled();
+  const upload = view.container.querySelector<HTMLInputElement>('input[type=file]')!;
+  jest.mocked(dataService.uploadMedia).mockRejectedValueOnce(new Error('Upload failed'));
+  fireEvent.change(upload, {
+    target: { files: [new File(['clip'], 'clip.mp4', { type: 'video/mp4' })] },
+  });
+  await waitFor(() => expect(screen.getByRole('alert')).toBeVisible());
+  expect(screen.getByText('com_media_video_reference_unavailable')).toBeVisible();
+  expect(generate).toBeDisabled();
+  jest.mocked(dataService.uploadMedia).mockResolvedValueOnce({
+    file: {
+      file_id: 'replacement-video',
+      filename: 'replacement.mp4',
+      filepath: '/replacement.mp4',
+      type: 'video/mp4',
+      bytes: 10,
+    },
+  });
+  fireEvent.change(upload, {
+    target: { files: [new File(['clip'], 'replacement.mp4', { type: 'video/mp4' })] },
+  });
+  await waitFor(() => expect(generate).toBeEnabled());
+  expect(screen.queryByText('com_media_video_reference_unavailable')).not.toBeInTheDocument();
+  fireEvent.click(generate);
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
+  expect(env.send.mock.calls[0][0].request.inputs).toEqual([
+    { role: 'video', file_id: 'replacement-video' },
+  ]);
+});
 
 test('a model without editing support cannot silently send a follow-up without its image', () => {
   const env = setup();

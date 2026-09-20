@@ -75,6 +75,9 @@ export function getMediaSelection(form: MediaDraftForm) {
       operation,
       parameters: { count: cap.controls.count?.default ?? cap.controls.count?.min ?? 1 },
     };
+    if (switchMode && activeOperation === 'video.generate' && operation !== activeOperation) {
+      update.videoAutoEdit = savedDraft.autoEdit !== false;
+    }
     if (switchMode && operation === 'image.generate') {
       update.autoEdit = false;
       update.parentTurnId = undefined;
@@ -82,11 +85,12 @@ export function getMediaSelection(form: MediaDraftForm) {
       update.assets = [];
     } else if (
       switchMode &&
-      operation === 'image.edit' &&
+      (operation === 'image.edit' ||
+        (operation === 'video.generate' && activeOperation !== 'video.generate')) &&
       !savedDraft.inputs.length &&
       !savedDraft.parentTurnId
     ) {
-      update.autoEdit = true;
+      update.autoEdit = operation === 'video.generate' ? (savedDraft.videoAutoEdit ?? true) : true;
     }
     change(update);
   };

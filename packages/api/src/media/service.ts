@@ -796,7 +796,10 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
           thread,
           turns,
           latestImageContext: latestImageContext ?? undefined,
-          latestVideoContext: latestVideoContext ?? undefined,
+          ...(query.include === 'videoContext' &&
+          (latestVideoContext || query.videoContextVersion === '2')
+            ? { latestVideoContext: latestVideoContext ?? null }
+            : {}),
         };
       },
       async turns(

@@ -265,6 +265,7 @@ export const mediaThreadListRequestSchema = mediaPageRequestSchema.extend({
 });
 export const mediaThreadDetailRequestSchema = z.object({
   include: z.literal('videoContext').optional(),
+  videoContextVersion: z.literal('2').optional(),
 });
 export const mediaThreadsDeleteRequestSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('selected'), threadIds: z.array(mediaIdSchema).min(1) }).strict(),

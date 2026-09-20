@@ -36,6 +36,7 @@ import {
   mediaPresetListSchema,
   mediaThreadSchema,
   mediaThreadDetailSchema,
+  mediaAssetContextSchema,
   mediaSubmissionRequestSchema,
   mediaSubmissionReceiptSchema,
   mediaURLUploadResponseSchema,
@@ -1806,7 +1807,17 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       .query({ include: 'videoContext' })
       .expect(200);
     const context = mediaThreadDetailSchema.parse(restored.body).latestVideoContext!;
+    expect(
+      mediaThreadDetailSchema
+        .extend({ latestVideoContext: mediaAssetContextSchema.optional() })
+        .safeParse(restored.body).success,
+    ).toBe(true);
     expect(context).toEqual({ turnId: first.body.turnId, asset: output.asset });
+    const versioned = await request(app)
+      .get(`/api/media/threads/${first.body.threadId}`)
+      .query({ include: 'videoContext', videoContextVersion: '2' })
+      .expect(200);
+    expect(mediaThreadDetailSchema.parse(versioned.body).latestVideoContext).toEqual(context);
     const followUp = await submit('follow-up-video', {
       operation: 'video.generate',
       selection,
@@ -1837,6 +1848,98 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     });
     expect(posts).toBe(2);
   });
+
+  it.each(['expired', 'deleted'] as const)(
+    'returns authoritative null video context for a %s original without serializing thread reads',
+    async (unavailable) => {
+      const catalog = mediaCatalogSchema.parse((await request(app).get('/api/media/catalog')).body);
+      const first = await submit(`unavailable-video-${unavailable}`, {
+        operation: 'video.generate',
+        selection: {
+          connectionId: 'vertex',
+          modelId: vertexModel,
+          catalogVersion: catalog.version,
+        },
+      });
+      expect(first.status).toBe(202);
+      await run(first.body.jobId);
+      const completed = await run(first.body.jobId);
+      expect(completed?.phase).toBe('succeeded');
+      const output = completed!.outputs[0];
+      if (output.kind !== 'video' || output.state !== 'ready' || !output.asset)
+        throw new Error('Missing video');
+      const asset = output.asset;
+      const url = `/api/media/threads/${first.body.threadId}`;
+      const live = await request(app).get(url).query({ include: 'videoContext' }).expect(200);
+      expect(mediaThreadDetailSchema.parse(live.body).latestVideoContext?.asset).toEqual(asset);
+      const file = {
+        user: new mongoose.Types.ObjectId(scope.ownerId),
+        tenantId: scope.tenantId,
+        file_id: asset.file_id,
+      };
+      // Simulate external expiry or deletion beyond the immutable-original write guard.
+      if (unavailable === 'expired') {
+        const expired = await mongoose.models.File.collection.updateOne(file, {
+          $set: { mediaHardExpiresAt: new Date(Date.now() - 1000) },
+        });
+        expect(expired.matchedCount).toBe(1);
+      } else {
+        const deleted = await mongoose.models.File.collection.deleteOne(file);
+        expect(deleted.deletedCount).toBe(1);
+      }
+      const readThread = repository.getMediaThread.bind(repository);
+      let releaseThread!: () => void;
+      let enterThread!: () => void;
+      const released = new Promise<void>((resolve) => {
+        releaseThread = resolve;
+      });
+      const entered = new Promise<void>((resolve) => {
+        enterThread = resolve;
+      });
+      jest.spyOn(repository, 'getMediaThread').mockImplementationOnce(async (...args) => {
+        enterThread();
+        await released;
+        return readThread(...args);
+      });
+      const turnsRead = jest.spyOn(repository, 'listMediaTurns');
+      const imageRead = jest.spyOn(repository, 'getMediaLatestImageContext');
+      const videoRead = jest.spyOn(repository, 'getMediaLatestVideoContext');
+      const restored = request(app)
+        .get(url)
+        .query({ include: 'videoContext', videoContextVersion: '2' })
+        .expect(200)
+        .then((response) => response);
+      try {
+        await entered;
+        expect(turnsRead).toHaveBeenCalledTimes(1);
+        expect(imageRead).toHaveBeenCalledTimes(1);
+        expect(videoRead).toHaveBeenCalledTimes(1);
+      } finally {
+        releaseThread();
+        await restored;
+      }
+      const detail = mediaThreadDetailSchema.parse((await restored).body);
+      expect(detail.latestVideoContext).toBeNull();
+      expect(detail.turns.items[0].jobs[0].outputs).toContainEqual(output);
+      const legacy = await request(app).get(url).expect(200);
+      expect(legacy.body).not.toHaveProperty('latestVideoContext');
+      expect(
+        mediaThreadDetailSchema.omit({ latestVideoContext: true }).safeParse(legacy.body).success,
+      ).toBe(true);
+      expect(videoRead).toHaveBeenCalledTimes(1);
+      const previous = await request(app).get(url).query({ include: 'videoContext' }).expect(200);
+      expect(previous.body).not.toHaveProperty('latestVideoContext');
+      expect(
+        mediaThreadDetailSchema
+          .extend({ latestVideoContext: mediaAssetContextSchema.optional() })
+          .safeParse(previous.body).success,
+      ).toBe(true);
+      expect(videoRead).toHaveBeenCalledTimes(2);
+      const excluded = await request(app).get(url).query({ videoContextVersion: '2' }).expect(200);
+      expect(excluded.body).not.toHaveProperty('latestVideoContext');
+      expect(videoRead).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it('recovers a direct original committed before its acknowledgment without a second inference', async () => {
     const commit = repository.commitMediaAssetWrite.bind(repository);

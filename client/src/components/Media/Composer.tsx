@@ -38,6 +38,7 @@ export function MediaComposer({
     referenceURLRole,
     referenceURL,
     unsupportedContext,
+    unavailableContext,
     change,
     invalidSettings,
     optionsInvalid,
@@ -169,6 +170,16 @@ export function MediaComposer({
         </div>
       )}
       <MediaReferences form={form} />
+      {unavailableContext && (
+        <Alert variant="neutral" role="status">
+          <div className="space-y-2">
+            <p>{localize('com_media_video_reference_unavailable')}</p>
+            <Button variant="outline" size="sm" onClick={() => change({ autoEdit: false })}>
+              {localize('com_media_start_new_video')}
+            </Button>
+          </div>
+        </Alert>
+      )}
       {promptInvalid && (
         <p role="status" className="text-sm text-text-secondary">
           {localize('com_media_prompt_limit', { max: maxPromptChars })}
@@ -247,6 +258,7 @@ export function MediaComposer({
             !busy &&
             !uploading &&
             !unsupportedContext &&
+            !unavailableContext &&
             !staleRoute &&
             !optionsInvalid &&
             !promptInvalid &&

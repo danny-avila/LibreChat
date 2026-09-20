@@ -21,6 +21,7 @@ export type MediaDraftFormProps = {
   initialSelection?: MediaSelection;
   imageContext?: MediaEditTarget;
   videoContext?: MediaEditTarget;
+  videoContextUnavailable?: boolean;
   portal?: boolean;
   normalizeDraft?: boolean;
 };
@@ -30,6 +31,7 @@ export function useMediaDraftForm({
   initialSelection,
   imageContext,
   videoContext,
+  videoContextUnavailable = false,
   portal = false,
   normalizeDraft = true,
 }: MediaDraftFormProps) {
@@ -99,6 +101,12 @@ export function useMediaDraftForm({
     (automaticReference &&
       draft.operation === 'video.generate' &&
       !capability?.inputs.roles.includes('video'));
+  const unavailableContext =
+    videoContextUnavailable &&
+    selectedCapability?.operation === 'video.generate' &&
+    draft.autoEdit !== false &&
+    !draft.inputs.length &&
+    !draft.parentTurnId;
   const presetsPending = features.presets && presets.isLoading && presets.fetchStatus !== 'idle';
   useEffect(() => {
     if (!normalizeDraft || !offering || !capability || presetsPending) return;
@@ -278,6 +286,7 @@ export function useMediaDraftForm({
     referenceURLRole,
     referenceURL,
     unsupportedContext,
+    unavailableContext,
     change,
     applyPreset,
     param,

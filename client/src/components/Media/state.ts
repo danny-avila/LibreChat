@@ -24,6 +24,7 @@ const draftSchema = z.object({
   offering: z.string(),
   parentTurnId: z.string().optional(),
   autoEdit: z.boolean().optional(),
+  videoAutoEdit: z.boolean().optional(),
   providerTag: z.string().optional(),
   providerOptionsText: z.string().optional(),
   referenceURL: z.string().optional(),

@@ -13,7 +13,7 @@ test('video generation restores playable originals with authenticated range down
   const before = await (await page.request.get(`${mediaFixtureURL}/counts`)).json();
   await page.getByRole('button', { name: 'Generate', exact: true }).click();
   await expect(page).toHaveURL(/\/studio\/threads\//);
-  const video = page.getByLabel('Video preview', { exact: true });
+  const video = page.getByTestId('media-transcript').getByLabel('Video preview', { exact: true });
   await expect(video).toBeVisible();
   await expect
     .poll(() => video.evaluate((node: HTMLVideoElement) => node.readyState))

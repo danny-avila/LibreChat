@@ -107,7 +107,8 @@ export default function MediaWorkspace({
     [detail.data?.turns.items],
   );
   const imageContext = detail.data?.latestImageContext ?? image;
-  const videoContext = detail.data?.latestVideoContext ?? video;
+  const latestVideoContext = detail.data?.latestVideoContext;
+  const videoContext = latestVideoContext === undefined ? video : (latestVideoContext ?? undefined);
   const hasDetail = !!detail.data;
   const hasCatalog = !!catalog.data;
   const studioTitle = localize('com_media_studio');
@@ -493,6 +494,7 @@ export default function MediaWorkspace({
       initialSelection={latestTurn?.selection}
       imageContext={imageContext}
       videoContext={videoContext}
+      videoContextUnavailable={latestVideoContext === null && !!video}
       send={commands.send}
       busy={commands.sending.size > 0}
       portal={!!settingsToggle}

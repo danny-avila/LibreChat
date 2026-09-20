@@ -69,7 +69,9 @@ for (const kind of ['image', 'video'] as const) {
         page.getByRole('link', { name: 'Download original', exact: true }),
       ).toBeVisible();
       if (kind === 'video') {
-        const video = page.getByLabel('Video preview', { exact: true });
+        const video = page
+          .getByTestId('media-transcript')
+          .getByLabel('Video preview', { exact: true });
         await expect(video).toBeVisible();
         await expect
           .poll(() => video.evaluate((node: HTMLVideoElement) => node.readyState))

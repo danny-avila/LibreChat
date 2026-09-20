@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Provider, createStore } from 'jotai';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { dataService, mediaSubmissionRequestSchema } from 'librechat-data-provider';
+import { dataService, mediaSubmissionRequestSchema, QueryKeys } from 'librechat-data-provider';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type {
   MediaAsset,
@@ -144,6 +144,61 @@ const imageCatalog = (
     },
   ],
 });
+
+const videoCatalog = (): MediaCatalog => ({
+  ...catalog,
+  offerings: [
+    {
+      ...catalog.offerings[0],
+      api: 'google.vertex.videos',
+      capabilities: [
+        {
+          operation: 'video.generate',
+          inputs: { min: 0, max: 1, roles: ['video'] },
+          execution: { kind: 'remote-job', cancellation: 'unsupported' },
+          controls: {
+            count: { min: 1, max: 1 },
+            durationSeconds: { min: 4, max: 7, values: [4, 7], default: 4 },
+          },
+          constraints: [
+            {
+              when: [{ kind: 'input', role: 'video', present: true }],
+              anyOf: [{ kind: 'parameter', name: 'durationSeconds', values: [7] }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+const videoTurn = (): MediaTurn => {
+  const result = turn(1);
+  return {
+    ...result,
+    operation: 'video.generate',
+    jobs: [
+      {
+        ...result.jobs[0],
+        operation: 'video.generate',
+        outputs: [
+          {
+            kind: 'video',
+            outputId: 'video-output',
+            ordinal: 0,
+            state: 'ready',
+            asset: {
+              file_id: 'video',
+              filename: 'video.mp4',
+              filepath: '/video.mp4',
+              type: 'video/mp4',
+              bytes: 100,
+            },
+          },
+        ],
+      },
+    ],
+  };
+};
 
 const header = () => within(screen.getByRole('banner'));
 function Settings({ threadId }: { threadId?: string }) {
@@ -351,6 +406,84 @@ test.each(['image', 'video'] as const)(
       parentTurnId: 'turn-2',
       inputs: [{ role: kind === 'image' ? 'reference' : 'video', file_id: `${kind}-2` }],
     });
+  },
+);
+
+test('expired video context blocks a fresh generation until the user explicitly starts one', async () => {
+  const previous = videoTurn();
+  const output = previous.jobs[0].outputs[0];
+  if (output.kind !== 'video' || !output.asset) throw new Error('Expected a video fixture');
+  const restored: MediaThreadDetail = {
+    ...detail,
+    turns: { items: [previous] },
+    latestVideoContext: { turnId: previous.turnId, asset: output.asset },
+  };
+  jest.mocked(dataService.getMediaCatalog).mockResolvedValue(videoCatalog());
+  jest.mocked(dataService.getMediaThread).mockResolvedValue(restored);
+  const submit = jest.spyOn(dataService, 'submitMedia').mockResolvedValue({
+    schemaVersion: 1,
+    phase: 'accepted',
+    clientRequestId: 'fresh-video',
+    threadId: 'thread',
+    turnId: 'fresh-turn',
+    jobId: 'fresh-job',
+  });
+  mount({ initialThread: 'thread' });
+  await screen.findByText('com_media_using_latest_video');
+  const prompt = screen.getByRole('textbox', { name: 'com_media_prompt' });
+  fireEvent.change(prompt, { target: { value: 'Continue the scene' } });
+  expect(screen.getByRole('combobox', { name: 'com_media_duration_seconds' })).toHaveTextContent(
+    '7',
+  );
+  jest.mocked(dataService.getMediaThread).mockResolvedValue({
+    ...restored,
+    latestVideoContext: null,
+  });
+  await act(async () => {
+    await clients[0].invalidateQueries([QueryKeys.mediaThread, 'owner', 'thread']);
+  });
+  expect(await screen.findByText('com_media_video_reference_unavailable')).toBeVisible();
+  expect(screen.queryByText('com_media_using_latest_video')).not.toBeInTheDocument();
+  expect(screen.queryByRole('list', { name: 'com_media_references' })).not.toBeInTheDocument();
+  expect(screen.getByRole('combobox', { name: 'com_media_duration_seconds' })).toHaveTextContent(
+    '4',
+  );
+  expect(prompt).toHaveValue('Continue the scene');
+  const generate = screen.getByRole('button', { name: 'com_media_queue' });
+  expect(generate).toBeDisabled();
+  fireEvent.click(generate);
+  expect(submit).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_start_new_video' }));
+  expect(generate).toBeEnabled();
+  fireEvent.click(generate);
+  await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
+  expect(submit.mock.calls[0][0]).toMatchObject({
+    operation: 'video.generate',
+    inputs: [],
+    parameters: { durationSeconds: 4 },
+  });
+  expect(submit.mock.calls[0][0].parentTurnId).toBeUndefined();
+});
+
+test.each(['legacy', 'empty'] as const)(
+  'video context from a %s thread preserves the appropriate generation mode',
+  async (mode) => {
+    jest.mocked(dataService.getMediaCatalog).mockResolvedValue(videoCatalog());
+    jest.mocked(dataService.getMediaThread).mockResolvedValue({
+      ...detail,
+      turns: { items: mode === 'legacy' ? [videoTurn()] : [] },
+      ...(mode === 'empty' ? { latestVideoContext: null } : {}),
+    });
+    mount({ initialThread: 'thread' });
+    const prompt = await screen.findByRole('textbox', { name: 'com_media_prompt' });
+    fireEvent.change(prompt, { target: { value: 'A video request' } });
+    expect(screen.queryByText('com_media_video_reference_unavailable')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeEnabled();
+    expect(screen.getByRole('combobox', { name: 'com_media_duration_seconds' })).toHaveTextContent(
+      mode === 'legacy' ? '7' : '4',
+    );
+    if (mode === 'legacy') expect(screen.getByText('com_media_using_latest_video')).toBeVisible();
+    else expect(screen.queryByText('com_media_using_latest_video')).not.toBeInTheDocument();
   },
 );
 
