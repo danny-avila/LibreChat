@@ -1,8 +1,12 @@
 import mongoose from 'mongoose';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import type { Filter, Document as MongoDocument } from 'mongodb';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
-import mongoMeili, { MEILI_INDEX_SCHEMA_VERSION } from '~/models/plugins/mongoMeili';
+import mongoMeili, {
+  MEILI_INDEX_SCHEMA_VERSION,
+  buildExcludedIndexedQuery,
+} from '~/models/plugins/mongoMeili';
 import { createConversationModel } from '~/models/convo';
 import { createMessageModel } from '~/models/message';
 import meiliLogger from '~/config/meiliLogger';
@@ -925,6 +929,7 @@ describe('Meilisearch Mongoose plugin', () => {
         partialFilterExpression: {
           subagentThread: { $exists: true },
           _meiliIndex: { $eq: false },
+          _meiliCleanupVersion: { $eq: null },
         },
       }),
     ]);
@@ -955,6 +960,7 @@ describe('Meilisearch Mongoose plugin', () => {
         partialFilterExpression: {
           subagentTask: { $exists: true },
           _meiliIndex: { $eq: false },
+          _meiliCleanupVersion: { $eq: null },
         },
       }),
     ]);
@@ -2452,11 +2458,12 @@ describe('Meilisearch Mongoose plugin', () => {
         _meiliCleanupVersion: 1,
         messageId: 1,
       });
-      /** The missing-version condition belongs to the key: `$exists: false` is the
-       *  operator MongoDB rejects in a partial filter, so it must not reappear here. */
+      /** `$exists: false` is the operator MongoDB rejects in a partial filter, so the
+       *  unstamped state is expressed as a null equality and must stay that way. */
       expect(legacyCleanup?.partialFilterExpression).toEqual({
         subagentTask: { $exists: true },
         _meiliIndex: { $eq: false },
+        _meiliCleanupVersion: { $eq: null },
       });
     });
 
@@ -2479,6 +2486,63 @@ describe('Meilisearch Mongoose plugin', () => {
       const cleaned = await messageModel.collection.findOne({ messageId });
       expect(cleaned?._meiliCleanupVersion).toBe(1);
       expect(cleaned?._meiliIndex).toBeUndefined();
+    });
+
+    test('holds only excluded documents still awaiting cleanup', async () => {
+      const messageModel = createMessageModel(mongoose);
+      await messageModel.createIndexes();
+      const conversationId = new mongoose.Types.ObjectId().toString();
+      const awaitingCleanup = new mongoose.Types.ObjectId().toString();
+      const alreadyStamped = new mongoose.Types.ObjectId().toString();
+      await messageModel.collection.insertMany([
+        {
+          messageId: awaitingCleanup,
+          conversationId,
+          user: 'user-index-population',
+          isCreatedByUser: true,
+          text: 'Written before the cleanup version existed',
+          subagentTask: { attemptKey: 'attempt-key', status: 'completed' },
+          _meiliIndex: false,
+        },
+        {
+          messageId: alreadyStamped,
+          conversationId,
+          user: 'user-index-population',
+          isCreatedByUser: true,
+          text: 'Written by the current schema, nothing to clean up',
+          subagentTask: { attemptKey: 'attempt-key', status: 'completed' },
+          _meiliIndex: false,
+          _meiliCleanupVersion: 1,
+        },
+      ]);
+
+      /** Hinting the partial index reaches only the documents it holds, which is the
+       *  invariant that keeps it from growing with every private subagent document. */
+      const indexedMessageIds = await messageModel.collection
+        .find({ user: 'user-index-population' })
+        .hint('meili_excluded_legacy_cleanup_v4')
+        .project({ messageId: 1, _id: 0 })
+        .toArray();
+
+      expect(indexedMessageIds.map((document) => document.messageId)).toEqual([awaitingCleanup]);
+    });
+
+    test('serves the legacy cleanup branch from the index', async () => {
+      const messageModel = createMessageModel(mongoose);
+      await messageModel.createIndexes();
+      const excludedQuery = buildExcludedIndexedQuery('subagentTask');
+      const branches = (excludedQuery?.$or ?? []) as Filter<MongoDocument>[];
+      const legacyBranch = branches.find((branch) => branch._meiliIndex === false);
+      const legacyFilter: Filter<MongoDocument> = {
+        subagentTask: { $exists: true },
+        ...legacyBranch,
+      };
+
+      const plan = await messageModel.collection.find(legacyFilter).explain('queryPlanner');
+
+      expect(JSON.stringify(plan.queryPlanner.winningPlan)).toContain(
+        'meili_excluded_legacy_cleanup_v4',
+      );
     });
   });
 });
