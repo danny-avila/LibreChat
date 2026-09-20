@@ -294,6 +294,35 @@ describe('buildTraceModel', () => {
     expect(whole.cost).toBeCloseTo(0.5);
   });
 
+  it('gives the oldest loaded response no cost while older records remain, parents intact or not', () => {
+    /** A page that ended between a response's traces: its title run loaded, its own run not. */
+    const records = [
+      record({
+        id: 'title',
+        traceId: 'title-trace',
+        origin: 'title',
+        kind: 'generation',
+        cost: 0.001,
+      }),
+      record({
+        id: 'newer',
+        messageId: 'response-2',
+        kind: 'generation',
+        cost: 0.5,
+        startTime: at(9000),
+      }),
+    ];
+    const paging = buildTraceModel(records, 'simple', true);
+    const settled = buildTraceModel(records, 'simple', false);
+
+    expect(paging.turns[0].split).toBe(false);
+    expect(paging.turns.map((turn) => turn.cost)).toEqual([undefined, expect.closeTo(0.5)]);
+    expect(settled.turns.map((turn) => turn.cost)).toEqual([
+      expect.closeTo(0.001),
+      expect.closeTo(0.5),
+    ]);
+  });
+
   it('counts what a step spent in records the simple mode rolls out of sight', () => {
     const records = [
       record({ id: 'tool', kind: 'tool', cost: 0.01, startTime: at(0) }),

@@ -671,6 +671,8 @@ function numberSubtree(nodes: Map<string, TraceNode>, rootIds: string[], next: n
 export function buildTraceModel(
   records: readonly TTraceRecord[],
   mode: TraceMode = 'simple',
+  /** Older records are still to load, so the oldest loaded response may not be all there. */
+  hasOlder = false,
 ): TraceModel {
   const nodes = new Map<string, TraceNode>();
   const steps = new Map<string, TraceStep>();
@@ -848,10 +850,16 @@ export function buildTraceModel(
   if (total != null) {
     summary.cost = total;
   }
-  /** A response the record limit cut holds only its newest records, and their sum is not its cost. */
-  for (const turn of turns) {
-    turn.cost = turn.split ? undefined : costOf(spendByTurn.get(turn.messageId) ?? noSpend());
-  }
+  /**
+   * A response that is not all loaded holds only its newest records, and their sum is not its
+   * cost. A missing parent proves a cut (`split`), but a page can also end between a response's
+   * traces, its title run loaded and its own run not, with every parent in place. So while older
+   * records remain, the oldest loaded response is not known to be whole.
+   */
+  turns.forEach((turn, index) => {
+    const partial = turn.split || (hasOlder && index === 0);
+    turn.cost = partial ? undefined : costOf(spendByTurn.get(turn.messageId) ?? noSpend());
+  });
   return { mode, nodes, steps, turns, start, end, count: sequence, summary };
 }
 
