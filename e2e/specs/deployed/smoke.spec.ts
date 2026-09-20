@@ -14,6 +14,8 @@ type PersistedMessage = {
   isCreatedByUser?: boolean;
   unfinished?: boolean;
   error?: boolean;
+  endpoint?: string;
+  thread_id?: string;
   text?: string;
   content?: Array<{ type?: string }>;
 };
@@ -112,9 +114,9 @@ async function getPersistedMessages(page: Page, conversationId: string, token: s
         headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (!response.ok) {
-        throw new Error(`Message read failed with status ${response.status}.`);
+        return { status: response.status };
       }
-      return (await response.json()) as PersistedMessage[];
+      return { status: response.status, messages: (await response.json()) as PersistedMessage[] };
     },
     { appBaseURL: baseURL.toString(), id: conversationId, accessToken: token },
   );
@@ -142,6 +144,27 @@ async function deleteConversation(page: Page, conversationId: string) {
         };
       }
 
+      const messagesResponse = await fetch(
+        new URL(`api/messages/${encodeURIComponent(id)}`, appBaseURL),
+        {
+          credentials: 'include',
+          headers: { Authorization: `Bearer ${token}` },
+          signal,
+        },
+      );
+      if (!messagesResponse.ok) {
+        return { ok: false, step: 'messages', status: messagesResponse.status };
+      }
+      const messages = (await messagesResponse.json()) as PersistedMessage[];
+      const latestMessageWithEndpoint = messages
+        .slice()
+        .reverse()
+        .find((message) => message.endpoint);
+      const latestMessageWithThread = messages
+        .slice()
+        .reverse()
+        .find((message) => message.thread_id);
+
       const deleteResponse = await fetch(new URL('api/convos', appBaseURL), {
         method: 'DELETE',
         credentials: 'include',
@@ -151,7 +174,12 @@ async function deleteConversation(page: Page, conversationId: string) {
         },
         signal,
         body: JSON.stringify({
-          arg: { conversationId: id, source: 'e2e-deployed' },
+          arg: {
+            conversationId: id,
+            endpoint: latestMessageWithEndpoint?.endpoint,
+            thread_id: latestMessageWithThread?.thread_id,
+            source: 'e2e-deployed',
+          },
         }),
       });
       return {
@@ -215,15 +243,23 @@ test.describe('deployed LibreChat smoke', () => {
     expect(createdConversationId).toBeTruthy();
 
     await expect(messageBodies.getByText(prompt, { exact: true })).toBeVisible();
-    const accessToken = await getAccessToken(page);
+    let accessToken = await getAccessToken(page);
     await expect
       .poll(
         async () => {
-          const messages = await getPersistedMessages(
+          let result = await getPersistedMessages(
             page,
             createdConversationId as string,
             accessToken,
           );
+          if (result.status === 401) {
+            accessToken = await getAccessToken(page);
+            result = await getPersistedMessages(page, createdConversationId as string, accessToken);
+          }
+          if (!result.messages) {
+            return false;
+          }
+          const messages = result.messages;
           const userMessageIds = new Set(
             messages
               .filter((message) => message.isCreatedByUser === true)

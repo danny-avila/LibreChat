@@ -38,7 +38,8 @@ export default defineConfig({
     headless: process.env.E2E_HEADED !== 'true',
     ignoreHTTPSErrors: process.env.E2E_IGNORE_HTTPS_ERRORS === 'true',
     screenshot: 'only-on-failure',
-    trace: 'retain-on-failure',
+    /** Refresh responses contain real account credentials and must not be recorded. */
+    trace: 'off',
     video: 'retain-on-failure',
   },
   expect: {
