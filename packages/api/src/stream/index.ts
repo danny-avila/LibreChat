@@ -64,6 +64,16 @@ export { createStreamServices } from './createStreamServices';
 export type { StreamServicesConfig, StreamServices } from './createStreamServices';
 export { filterPersistableAbortContent, hasPersistableAbortContent } from './abortContent';
 export { getGenerationElapsedMs } from './elapsed';
+export {
+  projectTerminalEvent,
+  TRANSIENT_MESSAGE_FIELDS,
+  TRANSIENT_FILE_FIELDS,
+} from './terminalProjection';
+export type {
+  ProjectedFinalEvent,
+  ProjectedMessageFields,
+  TransientMessageField,
+} from './terminalProjection';
 
 // Implementations (for advanced use cases)
 export { InMemoryJobStore } from './implementations/InMemoryJobStore';
