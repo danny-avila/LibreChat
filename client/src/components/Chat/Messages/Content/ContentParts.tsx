@@ -35,6 +35,7 @@ import { EmptyText, AgentUpdate } from './Parts';
 import ApprovalProvider from './ApprovalContext';
 import Sources from '~/components/Web/Sources';
 import ToolCallGroup from './ToolCallGroup';
+import { blocksLiveFold } from './live';
 import Container from './Container';
 import Part from './Part';
 
@@ -224,6 +225,11 @@ type ContentPartsProps = {
     | ((value: number) => void | React.Dispatch<React.SetStateAction<number>>)
     | null
     | undefined;
+  /** Whether the span a run is still writing folds into one row. The host
+   *  decides: false when the reader asked for tools expanded by default, and
+   *  for a surface that IS the detail view of a run — a subagent's activity
+   *  panel — where one row would hide what the panel was opened to watch. */
+  foldLiveActivity?: boolean;
   /** Internal recursion guard for nested phase segments. */
   nestedActivityPhase?: boolean;
   /** Internal signal that the parent phase card lifted this segment's
@@ -280,6 +286,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
   showThinking,
   isLatestMessage,
   createdAt,
+  foldLiveActivity = true,
   nestedActivityPhase = false,
   withinActivityPhase = false,
   cursorOwnedElsewhere = false,
@@ -364,9 +371,13 @@ const ContentPartsBody = memo(function ContentPartsBody({
     [laneGroups, content],
   );
 
+  const foldsLiveTail = foldLiveActivity && isLast && effectiveIsSubmitting;
   const phaseSegments = useMemo(
-    () => (nestedActivityPhase ? undefined : groupActivityPhases(content, messageLaneGroups)),
-    [nestedActivityPhase, content, messageLaneGroups],
+    () =>
+      nestedActivityPhase
+        ? undefined
+        : groupActivityPhases(content, messageLaneGroups, foldsLiveTail),
+    [nestedActivityPhase, content, messageLaneGroups, foldsLiveTail],
   );
   /** Every file a phase's parts produced, in transcript order, deduplicated
    *  across parts that share a tool call. */
@@ -671,16 +682,21 @@ const ContentPartsBody = memo(function ContentPartsBody({
       const occurrence =
         resolvedToolGroupOccurrences.get(getToolGroupAnchorIndex(group.parts)) ?? 1;
       const groupId = occurrence === 1 ? baseGroupId : `${baseGroupId}:occurrence:${occurrence}`;
+      /** Collected even when a parent phase hoists the files: the header still
+       *  reads them for the sites a web search visited. */
       const seenAttachments = new Set<TAttachment>();
-      if (!hideAttachments) {
-        for (const { part } of group.parts) {
-          for (const attachment of attachmentsForPart(part) ?? []) {
-            seenAttachments.add(attachment);
-          }
+      for (const { part } of group.parts) {
+        for (const attachment of attachmentsForPart(part) ?? []) {
+          seenAttachments.add(attachment);
         }
       }
       const groupAttachments = hideAttachments ? undefined : Array.from(seenAttachments);
-      return { ...group, groupId, groupAttachments };
+      return {
+        ...group,
+        groupId,
+        groupAttachments,
+        sourceAttachments: Array.from(seenAttachments),
+      };
     });
   }, [
     sequentialParts,
@@ -854,6 +870,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
               );
             }
             const synthesized = segment.synthesized === true;
+            const live = segment.live === true;
             /** Entrance bookkeeping still keys on the marker. */
             const phaseKeyIndex = getPartKeyIndex(segment.labelPart, segment.labelIndex);
             /** The RENDER key is the span, not the header. A synthesized card's
@@ -911,7 +928,18 @@ const ContentPartsBody = memo(function ContentPartsBody({
              *  can raise one long after its parent's label filled. The span
              *  renders exactly as it would without the feature until it
              *  clears, then folds. */
-            if (synthesized && hasPendingApproval) {
+            /** "Open thinking dropdowns by default" is the reader asking to
+             *  see reasoning as it streams. A collapsed live row would unmount
+             *  it, so a reasoning-bearing span stays unfolded for them — the
+             *  same exception `ToolCallGroup` makes to its auto-collapse. */
+            const keepsThinkingOpen =
+              live &&
+              showThinking &&
+              segment.content.some((part) => part?.type === ContentTypes.THINK);
+            const awaitsReader = live
+              ? keepsThinkingOpen || segment.content.some(blocksLiveFold)
+              : hasPendingApproval;
+            if (synthesized && awaitsReader) {
               return renderSegment(
                 segment.content,
                 absoluteIndexAt(segment.startIndex),
@@ -926,6 +954,8 @@ const ContentPartsBody = memo(function ContentPartsBody({
                 hasContent={segment.hasContent}
                 attachments={phaseAttachments}
                 hasPendingApproval={hasPendingApproval}
+                liveParts={live ? segment.content : undefined}
+                spanParts={segment.hasContent ? segment.content : undefined}
                 animateEntrance={
                   /** Never for a synthesized card. The entrance mounts a card
                    *  OPEN and folds it shut, and this component remounts
@@ -943,8 +973,10 @@ const ContentPartsBody = memo(function ContentPartsBody({
                       (previousPhases.labels.get(labelText) ?? 0))
                 }
                 showCursor={
+                  /** A live header shimmers; a cursor row beneath it would be
+                   *  a second liveness signal and a second row. */
                   synthesized
-                    ? ownsCursor
+                    ? ownsCursor && !live
                     : isLast &&
                       effectiveIsSubmitting &&
                       absoluteIndexAt(segment.labelIndex) === globalLastContentIdx
@@ -955,7 +987,10 @@ const ContentPartsBody = memo(function ContentPartsBody({
                   absoluteIndexAt(segment.startIndex),
                   segmentIndices,
                   `phase-content-${cardKey}`,
-                  true,
+                  /** Opening a live row should show the calls running, so its
+                   *  groups keep their own live expansion rather than the
+                   *  settled-phase default of staying shut. */
+                  !live,
                   ownsCursor,
                   true,
                 )}
@@ -1067,6 +1102,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
               renderPart={renderGroupedPart}
               lastContentIdx={lastContentIdx}
               groupAttachments={group.groupAttachments}
+              sourceAttachments={group.sourceAttachments}
               initialExpansionState={expansionState.get(groupId)}
               showThinking={showThinking}
               onExpansionChange={(state) => handleGroupExpansionChange(groupId, state)}

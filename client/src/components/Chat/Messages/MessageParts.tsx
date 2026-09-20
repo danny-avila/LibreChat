@@ -57,6 +57,7 @@ function MessageParts(props: TMessageProps) {
   } = useMessageHelpers(props, searchResults);
 
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
+  const autoExpandTools = useRecoilValue(store.autoExpandTools);
   const showThinking = useAtomValue(showThinkingAtom);
   const { messageId = null, isCreatedByUser } = message ?? {};
 
@@ -189,6 +190,7 @@ function MessageParts(props: TMessageProps) {
                 setSiblingIdx={setSiblingIdx}
                 isCreatedByUser={message.isCreatedByUser}
                 conversationId={conversation?.conversationId}
+                foldLiveActivity={!autoExpandTools}
                 showThinking={showThinking}
                 isLatestMessage={messageId === latestMessageId}
                 content={message.content as Array<TMessageContentParts | undefined>}

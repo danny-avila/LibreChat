@@ -1462,6 +1462,7 @@
   "com_ui_export_tool": "Tool",
   "com_ui_export_video": "Video",
   "com_ui_failed": "Failed",
+  "com_ui_failed_subject": "Failed: {{0}}",
   "com_ui_favorite": "Add to favorites",
   "com_ui_feedback_more": "More...",
   "com_ui_feedback_more_information": "Provide additional feedback",

@@ -1,5 +1,5 @@
 import { ContentTypes, Tools } from 'librechat-data-provider';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import { ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from '../rows';
 import ActivityPhaseGroup from '../ActivityPhaseGroup';
@@ -225,14 +225,18 @@ describe('ActivityPhaseGroup', () => {
     const retired = screen.getByText(LABEL);
     expect(retired).toHaveClass('animate-out', 'slide-out-to-top-5');
     expect(retired).toHaveAttribute('aria-hidden', 'true');
-    expect(screen.getByText(NEXT_LABEL)).toHaveClass('animate-in', 'slide-in-from-bottom-5');
+    expect(
+      within(screen.getByRole('button', { name: NEXT_LABEL })).getByText(NEXT_LABEL),
+    ).toHaveClass('animate-in', 'slide-in-from-bottom-5');
 
     /** Retiring the outgoing line must not strip the incoming one's animation
      *  class: both run for the same 300ms, so removing it on the partner's
      *  `animationend` would snap a slide that is still in flight. */
     fireEvent.animationEnd(retired);
     expect(screen.queryByText(LABEL)).not.toBeInTheDocument();
-    expect(screen.getByText(NEXT_LABEL)).toHaveClass('animate-in', 'slide-in-from-bottom-5');
+    expect(
+      within(screen.getByRole('button', { name: NEXT_LABEL })).getByText(NEXT_LABEL),
+    ).toHaveClass('animate-in', 'slide-in-from-bottom-5');
   });
 
   test('swaps the header outright when smooth streaming is off', () => {
@@ -251,7 +255,9 @@ describe('ActivityPhaseGroup', () => {
     );
 
     expect(screen.queryByText(LABEL)).not.toBeInTheDocument();
-    expect(screen.getByText(NEXT_LABEL)).not.toHaveClass('animate-in');
+    expect(
+      within(screen.getByRole('button', { name: NEXT_LABEL })).getByText(NEXT_LABEL),
+    ).not.toHaveClass('animate-in');
   });
 
   test('keeps historical phases closed without replaying the entrance', () => {
