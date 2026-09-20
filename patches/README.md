@@ -2,7 +2,7 @@
 
 This development bridge adds an injected `NativeMediaPort`, provider-neutral usage-bearing errors, structured native content, and the high-level `traceModelInvocation` API to the published `@librechat/agents` 3.8.7 package. The SDK owns model execution and tracing lifecycle. The host authorizes native generation, saves ordinary `image_generation` Files, and restores private signatures from assistant Message metadata before replay. New native chat output does not depend on Studio jobs or threads.
 
-The current published 3.8.8 package was inspected and does not contain `NativeMediaPort`. The corresponding source is local review branch `review/native-media-port-tracing` at commit `e0f692ce37e5f30c0df42d01d591fe62735d1ea8` in the `agents-media-studio-sdk` checkout for the canonical `LibreChat-AI/agents` repository. It has not been pushed, submitted or released upstream. The existing `feat/native-media-port` integration branch is preserved. This bridge remains an upstream release prerequisite, not a completed dependency integration.
+The inspected published 3.8.8 package does not contain `NativeMediaPort`. The upstream work is in draft [LibreChat-AI/agents#553](https://github.com/LibreChat-AI/agents/pull/553). This bridge remains necessary until the SDK contracts are merged, published, and consumed here.
 
 Both consumers pin 3.8.7. Root `postinstall` applies `patch-package --error-on-fail`; container builds copy the patch before installation, and dependency/build cache keys include its content. The patch contains production source and matching CommonJS, ESM and declaration artifacts because the application loads the published package layout.
 
