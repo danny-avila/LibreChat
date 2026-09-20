@@ -35,11 +35,13 @@ export function isMediaFileId(fileId: string): boolean {
 export type MediaOwnerScope = { tenantId: string | null; ownerId: string };
 /** Durable account fence. It survives removal of the User document. */
 export type MediaStoredOwner = MediaOwnerScope & {
-  status: 'active' | 'deleting' | 'deleted';
+  status: 'initializing' | 'active' | 'deleting' | 'deleted';
+  creationToken?: string;
   workIds: string[];
   deletionToken?: string;
   deletionPrepared?: boolean;
-  updatedAt: string;
+  updatedAt: Date;
+  expiresAt?: Date;
 };
 export type MediaPage<T> = { items: T[]; nextCursor?: string };
 export type MediaPublicationOptions = {
@@ -49,6 +51,16 @@ export type MediaPublicationOptions = {
   temporaryRetentionMs?: number;
 };
 export type MediaPageInput = { scope: MediaOwnerScope; limit: number; cursor?: string };
+export type MediaTokenPricing = {
+  source: 'tokenValues' | 'imageTokenValues' | 'endpointTokenConfig';
+  valueKey: string;
+  prompt: number;
+  completion: number;
+  imagePrompt?: number;
+  cacheRead?: number;
+  imageCacheRead?: number;
+  premium?: { threshold: number; prompt: number; completion: number };
+};
 export type MediaExecutionSnapshot = {
   connectionId: string;
   modelId: string;
@@ -61,6 +73,8 @@ export type MediaExecutionSnapshot = {
   billing?: MediaIntegration['billing'];
   providerTag?: string;
   accountingMode?: 'balance' | 'transactions' | 'none';
+  tokenPricing?: MediaTokenPricing;
+  accountingShortfall?: 'debt' | 'absorb';
   cancellation?: 'best-effort' | 'confirmed';
 };
 export type MediaJobFence = {
@@ -88,12 +102,23 @@ export type MediaProviderState = {
           thoughtSignature?: string;
         }
     >;
-    usage?: { inputTokens?: number; outputTokens?: number; costUSD?: number };
+    usage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+      textInputTokens?: number;
+      imageInputTokens?: number;
+      cachedTextInputTokens?: number;
+      cachedImageInputTokens?: number;
+      cachedInputTokens?: number;
+      costUSD?: number;
+    };
     terminalStatus?: 'completed' | 'failed' | 'cancelled';
   };
 };
-export type MediaStoredJob = MediaJob &
+export type MediaStoredJob = Omit<MediaJob, 'createdAt' | 'updatedAt'> &
   MediaOwnerScope & {
+    createdAt: Date;
+    updatedAt: Date;
     queueCapacity: number;
     accounting?: {
       settlementId: string;
@@ -115,10 +140,10 @@ export type MediaStoredJob = MediaJob &
     nativeRetentionState?: 'live' | 'purging' | 'purged';
     nativeCleanupPending?: boolean;
     nativeConsumerClaims?: Array<{ conversationId: string; expiresAt: string }>;
-    nativeConsumersCheckedAt?: string;
+    nativeConsumersCheckedAt?: Date;
     nativeConsumersTracked?: boolean;
-    publicationExpiresAt?: string | null;
-    payloadPurgedAt?: string;
+    publicationExpiresAt?: Date | null;
+    payloadPurgedAt?: Date;
     recoveryDecisions?: MediaRecoveryDecision[];
     clientRequestId: string;
     fingerprint: string;
@@ -128,17 +153,24 @@ export type MediaStoredJob = MediaJob &
     newThread: boolean;
     threadEpoch: number;
     provider: MediaProviderState;
-    dueAt: string;
+    dueAt: Date;
+    recoveryFailures?: number;
     activeSlot?: number;
     leaseToken?: string;
     leaseOwner?: string;
-    leaseUntil?: string;
-    cancelRequestedAt?: string;
-    dispatchGrantedAt?: string;
+    leaseUntil?: Date;
+    cancelRequestedAt?: Date;
+    dispatchGrantedAt?: Date;
+    /** Prior durable phase retained when an overdue credit hold needs operator review. */
+    accountingReview?: { reviewAt: string; overdueAt: string; previousPhase: MediaJob['phase'] };
   };
-export type MediaStoredThread = MediaThread &
+export type MediaStoredThread = Omit<MediaThread, 'createdAt' | 'updatedAt' | 'expiresAt'> &
   MediaOwnerScope & {
+    createdAt: Date;
+    updatedAt: Date;
+    expiresAt?: Date;
     status: 'active' | 'retiring' | 'retired';
+    retiredAt?: Date;
     epoch: number;
     originRequestId: string;
     nextTurnSequence: number;
@@ -146,13 +178,14 @@ export type MediaStoredThread = MediaThread &
     /** Admission intents are bounded by the active-job capacity. */
     dispatchJobIds: string[];
     coverExplicit?: boolean;
-    payloadPurgedAt?: string;
+    payloadPurgedAt?: Date;
     /** Paid title dispatch is one-shot: an ambiguous invocation is never retried automatically. */
-    titleClaim?: { jobId: string; claimedAt: string };
+    titleClaim?: { jobId: string; claimedAt: Date };
   };
-export type MediaStoredTurn = Omit<MediaTurn, 'jobs' | 'assets'> &
+export type MediaStoredTurn = Omit<MediaTurn, 'jobs' | 'assets' | 'createdAt'> &
   MediaOwnerScope & {
-    updatedAt: string;
+    updatedAt: Date;
+    createdAt: Date;
     sequence?: number;
     threadEpoch: number;
     sourceJobId?: string;
@@ -163,7 +196,7 @@ export type MediaStoredTurn = Omit<MediaTurn, 'jobs' | 'assets'> &
     clientRequestId?: string;
     fingerprint?: string;
     publicationPhase: 'preparing' | 'accepted' | 'rejected';
-    publicationExpiresAt?: string | null;
+    publicationExpiresAt?: Date | null;
   };
 export type StageMediaSubmissionInput = {
   scope: MediaOwnerScope;
@@ -180,10 +213,20 @@ export type MediaJobObservation = {
   provider?: MediaProviderState;
   outputs?: MediaOutput[];
   error?: MediaJob['error'];
-  dueAt?: string;
+  dueAt?: Date | string;
+  recoveryFailures?: number;
   /** Keep the lease while writing a provider response, or release it for polling. */
   releaseLease?: boolean;
 };
+export interface MediaBacklogMetrics {
+  queued: number;
+  requiresAttention: number;
+  activePermits: number;
+  activeJobs: number;
+  oldestQueuedAgeSeconds: number;
+  oldestExpiredLeaseSeconds: number;
+  pendingAccountDeletions: number;
+}
 export type MediaRenditionContent = MediaRendition & {
   source: FileStorage;
   storageKey: string;
@@ -220,12 +263,12 @@ export type MediaAssetWrite = MediaOwnerScope & {
   renditionLocations?: MediaRenditionLocation[];
   fingerprint: string;
   state: 'reserved' | 'committing' | 'published' | 'abandoned' | 'deleted';
-  createdAt: string;
-  updatedAt: string;
+  createdAt: Date;
+  updatedAt: Date;
   asset?: MediaAsset;
   publicationContent?: MediaAssetContent;
   deletionToken?: string;
-  deletionRetryAt?: string;
+  deletionRetryAt?: Date;
   deletionAttempts?: number;
 };
 export type MediaSourceFile = Omit<MediaAssetContent, 'contentDigest'> & { sourceRevision: string };
@@ -236,14 +279,20 @@ export type MediaPermit = MediaOwnerScope & {
   slot: number;
   jobId: string;
   jobIdentity: string;
-  createdAt: string;
+  createdAt: Date;
 };
 
 export interface MediaMethods {
+  assertMediaOwnerActive(scope: MediaOwnerScope): Promise<void>;
+  getMediaBacklogMetrics(): Promise<MediaBacklogMetrics>;
   prepareMediaAccountDeletion(input: { scope: MediaOwnerScope; token: string }): Promise<boolean>;
   cancelMediaAccountDeletion(input: { scope: MediaOwnerScope; token: string }): Promise<void>;
   completeMediaAccountDeletion(input: { scope: MediaOwnerScope; token: string }): Promise<void>;
-  reconcileMediaAccountDeletion(input: { scope: MediaOwnerScope; limit: number }): Promise<number>;
+  reconcileMediaAccountDeletion(input: {
+    scope: MediaOwnerScope;
+    limit: number;
+    retentionMs?: number;
+  }): Promise<number>;
   activateMedia(): Promise<void>;
   hasMediaActivation(): Promise<boolean>;
   ensureMediaIndexes(): Promise<void>;
@@ -274,7 +323,7 @@ export interface MediaMethods {
   ): Promise<MediaImportReceipt | null>;
   getMediaThread(scope: MediaOwnerScope, threadId: string): Promise<MediaThread | null>;
   listMediaThreads(
-    input: MediaPageInput & Pick<MediaThreadListRequest, 'filter' | 'include'>,
+    input: MediaPageInput & Pick<MediaThreadListRequest, 'filter' | 'include' | 'search'>,
   ): Promise<MediaPage<MediaThread>>;
   listMediaTurns(
     input: MediaPageInput & { threadId: string; jobsPerTurn: number },
@@ -310,12 +359,16 @@ export interface MediaMethods {
   claimMediaJob(input: {
     scope: MediaOwnerScope;
     workerId: string;
-    now: string;
+    now: Date | string;
     leaseMs: number;
+    takeoverSkewMs?: number;
   }): Promise<MediaStoredJob | null>;
   renewMediaJob(
-    input: MediaJobFence & { now: string; leaseMs: number },
+    input: MediaJobFence & { now: Date | string; leaseMs: number },
   ): Promise<MediaStoredJob | null>;
+  releaseMediaJobLease(
+    input: Pick<MediaJobFence, 'scope' | 'jobId' | 'leaseToken'>,
+  ): Promise<boolean>;
   beginMediaSubmission(input: MediaJobFence & { now: string }): Promise<MediaStoredJob | null>;
   recordMediaJobObservation(
     input: MediaJobFence & { observation: MediaJobObservation; now: string },
@@ -335,28 +388,22 @@ export interface MediaMethods {
     execution?: MediaExecutionSnapshot;
   }): Promise<MediaSubmissionReceipt>;
   retireMediaThread(scope: MediaOwnerScope, threadId: string): Promise<boolean>;
+  retireAllMediaThreads(scope: MediaOwnerScope): Promise<number>;
   /** Retires temporary threads whose `expiresAt` has passed; returns how many were retired. */
   retireExpiredMediaThreads(input: {
     scope: MediaOwnerScope;
-    now: string;
+    now: Date | string;
     limit: number;
   }): Promise<number>;
   /** Only call in an explicit system tenant context. Returns identities, never content. */
   listDueMediaScopes(input: {
-    now: string;
+    now: Date | string;
     limit: number;
     cursor?: string;
   }): Promise<MediaPage<MediaOwnerScope>>;
   recoverMediaPublications(
     input: { scope: MediaOwnerScope; limit: number } & MediaPublicationOptions,
   ): Promise<number>;
-  getStoredMediaCredential(input: { scope: MediaOwnerScope; name: string }): Promise<{
-    value: string;
-    expiresAt: string | null;
-    bindingRevision: string;
-    id?: string;
-    legacyBindingRevision?: string;
-  } | null>;
   reserveMediaAssetWrite(input: {
     scope: MediaOwnerScope;
     outputKey: string;
@@ -378,8 +425,8 @@ export interface MediaMethods {
   listMediaAssetWritesForCleanup(input: {
     scope: MediaOwnerScope;
     limit: number;
-    staleBefore: string;
-    now?: string;
+    staleBefore: Date | string;
+    now?: Date | string;
   }): Promise<MediaAssetWrite[]>;
   incrementMediaAssetWriteDeletionAttempts(input: {
     scope: MediaOwnerScope;
@@ -388,13 +435,13 @@ export interface MediaMethods {
   deferMediaAssetWriteCleanup(input: {
     scope: MediaOwnerScope;
     writeId: string;
-    retryAt: string;
+    retryAt: Date | string;
   }): Promise<void>;
   claimMediaAssetWriteDeletion(input: {
     scope: MediaOwnerScope;
     writeId: string;
     token: string;
-    staleBefore: string;
+    staleBefore: Date | string;
   }): Promise<
     | (Pick<
         MediaAssetWrite,
@@ -474,14 +521,14 @@ export interface MediaMethods {
   listMediaCleanupScopes(input: {
     limit: number;
     cursor?: string;
-    now: string;
+    now: Date | string;
   }): Promise<MediaPage<MediaOwnerScope>>;
   reconcileMediaRetirements(input: { scope: MediaOwnerScope; limit: number }): Promise<number>;
   /** Erases retired presentation payloads after provider/accounting and surviving consumers settle. */
   purgeMediaThreadPayloads(input: { scope: MediaOwnerScope; threadId: string }): Promise<boolean>;
-  listMediaExpiredAssets(input: {
+  listMediaRetiringAssets(input: {
     scope: MediaOwnerScope;
     limit: number;
-    now: string;
+    now: Date | string;
   }): Promise<MediaSourceFile[]>;
 }

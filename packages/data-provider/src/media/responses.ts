@@ -9,6 +9,7 @@ import {
   mediaImageParametersSchema,
   mediaVideoParametersSchema,
 } from './requests';
+import { mediaUserKeySchema } from './credentials';
 
 const version = z.number().int().positive().safe();
 const timestamp = z.string().datetime();
@@ -27,6 +28,7 @@ export const mediaErrorCodeSchema = z.enum([
   'quota_exceeded',
   'queue_expired',
   'credentials_required',
+  'gemini_key_required',
   'credentials_expired',
   'provider_rejected',
   'submission_uncertain',
@@ -145,7 +147,8 @@ export const mediaThreadSchema = z
     pendingJobCount: z.number().int().nonnegative(),
     turnCount: z.number().int().nonnegative(),
     cover: mediaAssetSchema.optional(),
-    /** Present on temporary creations; the thread retires itself at this time. */
+    temporary: z.boolean().optional(),
+    /** Retention deadline for temporary creations or the operator's general retention policy. */
     expiresAt: timestamp.optional(),
     activity: z
       .object({
@@ -161,7 +164,6 @@ export const mediaThreadSchema = z
       })
       .strict()
       .optional(),
-    retiredAt: timestamp.optional(),
   })
   .strict();
 export const mediaTurnSchema = z
@@ -250,6 +252,12 @@ export const mediaDeletionReceiptSchema = z
     phase: z.enum(['retiring', 'retired']),
   })
   .strict();
+export const mediaThreadsDeletionReceiptSchema = z
+  .object({
+    retired: z.number().int().nonnegative(),
+    failures: z.array(z.object({ threadId: mediaIdSchema, error: mediaErrorSchema }).strict()),
+  })
+  .strict();
 export const mediaUploadResponseSchema = z.object({ file: mediaAssetSchema }).strict();
 export const mediaURLUploadResponseSchema = z
   .object({ file: mediaAssetSchema, sourceURL: mediaSourceURLSchema })
@@ -259,9 +267,22 @@ export const mediaStartupConfigSchema = z
     enabled: z.boolean(),
     studio: z.boolean(),
     chat: z.boolean(),
+    tools: z.boolean().optional(),
+    events: z.boolean().optional(),
     canCreate: z.boolean(),
     clientPollIntervalMs: z.number().int().positive(),
     clientCatchUpIntervalMs: z.number().int().positive(),
+    integrations: z
+      .array(
+        z
+          .object({
+            connectionId: mediaIdSchema,
+            connectionName: z.string().min(1),
+            userKey: mediaUserKeySchema.optional(),
+          })
+          .strict(),
+      )
+      .optional(),
   })
   .strict();
 
@@ -284,6 +305,7 @@ export type MediaJobPage = z.infer<typeof mediaJobPageSchema>;
 export type MediaOutputPage = z.infer<typeof mediaOutputPageSchema>;
 export type MediaThreadDetail = z.infer<typeof mediaThreadDetailSchema>;
 export type MediaDeletionReceipt = z.infer<typeof mediaDeletionReceiptSchema>;
+export type MediaThreadsDeletionReceipt = z.infer<typeof mediaThreadsDeletionReceiptSchema>;
 export type MediaUploadResponse = z.infer<typeof mediaUploadResponseSchema>;
 export type MediaURLUploadResponse = z.infer<typeof mediaURLUploadResponseSchema>;
 export type MediaStartupConfig = z.infer<typeof mediaStartupConfigSchema>;

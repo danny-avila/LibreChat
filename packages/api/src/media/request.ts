@@ -1,5 +1,6 @@
 import { RetentionMode } from 'librechat-data-provider';
 import { createChatExpirationDate } from '@librechat/data-schemas';
+import type { NativeSignatures } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { Request } from 'express';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
@@ -13,6 +14,7 @@ type NativeRequest = Request & {
   config?: AppConfig;
   resolvedConversation?: Retention | null;
   _agentEventBindingRetention?: Retention;
+  _resumableStreamId?: string;
 };
 
 /** Reuse the request's loaded conversation and effective policy, including its original deadline. */
@@ -22,9 +24,11 @@ export function resolveNativeMediaFactory(
   messageId: string,
   collectedUsage: UsageMetadata[] = [],
   usageOptions: ModelUsageSinkOptions = {},
+  runtime?: Pick<MediaRuntime, 'nativeFactory'>,
+  nativeSignatures?: NativeSignatures,
+  previousContent?: unknown[],
+  onSignatures?: (signatures: NativeSignatures) => Promise<void>,
 ): Promise<NativeMediaFactory | undefined> | undefined {
-  const runtime: Pick<MediaRuntime, 'nativeFactory'> | undefined =
-    request.app?.locals?.mediaRuntime;
   if (!runtime?.nativeFactory) return undefined;
   const collectUsage = createModelUsageSink(collectedUsage, {
     ...usageOptions,
@@ -45,6 +49,9 @@ export function resolveNativeMediaFactory(
       messageId,
       prompt: typeof request.body?.text === 'string' ? request.body.text : '',
       temporary,
+      nativeSignatures,
+      previousContent,
+      onSignatures,
       ...(deadline ? { expiresAt: new Date(deadline).toISOString() } : {}),
     },
     ({ usage, modelRunId, model, provider, agentId, usageType }) =>
@@ -57,4 +64,56 @@ export function resolveNativeMediaFactory(
         ...(usageType ? { usage_type: usageType } : {}),
       }),
   );
+}
+
+/** Wiring adapter shared by initial and resumed agent runs. */
+export function buildNativeMediaFactory(
+  client: {
+    options: { req: NativeRequest; mediaRuntime?: Pick<MediaRuntime, 'nativeFactory'> };
+    conversationId: string;
+    responseMessageId: string;
+    collectedUsage: UsageMetadata[];
+    collectedNativeSignatures?: NativeSignatures;
+    contentParts?: unknown[];
+    jobCreatedAt?: number;
+  },
+  usageOptions: ModelUsageSinkOptions,
+  jobs?: {
+    updateMetadata(
+      streamId: string,
+      metadata: { nativeSignatures: NativeSignatures },
+      expectedCreatedAt?: number,
+    ): Promise<void>;
+  },
+): ReturnType<typeof resolveNativeMediaFactory> {
+  const streamId = client.options.req._resumableStreamId;
+  let pending = Promise.resolve();
+  const publish =
+    jobs && streamId
+      ? (signatures: NativeSignatures) => {
+          const snapshot = { ...signatures };
+          pending = pending.then(() =>
+            jobs.updateMetadata(streamId, { nativeSignatures: snapshot }, client.jobCreatedAt),
+          );
+          return pending;
+        }
+      : undefined;
+  return resolveNativeMediaFactory(
+    client.options.req,
+    client.conversationId,
+    client.responseMessageId,
+    client.collectedUsage,
+    usageOptions,
+    client.options.mediaRuntime,
+    (client.collectedNativeSignatures ??= {}),
+    client.contentParts,
+    publish,
+  );
+}
+
+export function getNativeResponseMetadata(client: {
+  collectedNativeSignatures?: NativeSignatures;
+}): { nativeSignatures?: NativeSignatures } {
+  const signatures = client.collectedNativeSignatures;
+  return signatures && Object.keys(signatures).length ? { nativeSignatures: signatures } : {};
 }

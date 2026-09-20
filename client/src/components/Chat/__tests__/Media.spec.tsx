@@ -7,9 +7,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { MediaAsset, TConversation } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { mediaChatHandoff, mediaSessionScope } from '~/routes/mediaHandoff';
 import { makeAuthContext, makeStartupConfig, testUser } from 'test/auth';
 import { clearMediaSessionStorage } from '~/components/Media/state';
+import { mediaSessionScope } from '~/components/Media/session';
+import { mediaChatHandoff } from '~/components/Media/handoff';
 import { startupConfigKey } from '~/data-provider';
 import { AuthContext } from '~/hooks/AuthContext';
 import ChatMedia from '../Media';
@@ -49,6 +50,7 @@ function mount({
   });
   clients.push(client);
   client.setQueryData(startupConfigKey(false), makeStartupConfig({ chat }));
+  client.setQueryData([QueryKeys.endpoints], { openAI: {} });
   client.setQueryData([QueryKeys.fileConfig], {
     endpoints: { openAI: { fileLimit: 1, fileSizeLimit: 0.001 } },
   });
@@ -66,6 +68,8 @@ function mount({
           <Provider store={store}>
             <AuthContext.Provider value={makeAuthContext()}>
               <ChatMedia
+                open={false}
+                onOpenChange={() => {}}
                 conversation={conversation}
                 files={files}
                 setFiles={setFiles}

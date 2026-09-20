@@ -74,7 +74,7 @@ test('awaits Enter submission and keeps key input after a rejected save', async 
   await userEvent.keyboard('{Enter}');
   await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
   expect(save.mock.calls[0][0]).toBe(JSON.stringify({ GOOGLE_API_KEY: 'test-api-value' }));
-  expect(save.mock.calls[0][2]).toEqual({ preserveGoogleServiceKey: true });
+  expect(save.mock.calls[0]).toHaveLength(2);
   expect(close).not.toHaveBeenCalled();
   expect(mockToast).not.toHaveBeenCalled();
   expect(screen.getByRole('button', { name: 'com_ui_submit' })).toBeDisabled();
@@ -113,7 +113,6 @@ test('validates required API URLs and saves their exact envelope', async () => {
     expect(save).toHaveBeenCalledWith(
       JSON.stringify({ apiKey: 'test-key', baseURL: 'https://example.com/v1' }),
       expect.any(Number),
-      undefined,
     ),
   );
 });

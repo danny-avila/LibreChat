@@ -65,6 +65,7 @@ let revertAgentVersion: AgentMethods['revertAgentVersion'];
 let addAgentResourceFile: AgentMethods['addAgentResourceFile'];
 let removeAgentResourceFiles: AgentMethods['removeAgentResourceFiles'];
 let removeAgentResourceFilesFromAllAgents: AgentMethods['removeAgentResourceFilesFromAllAgents'];
+let getSharedResourceFileIds: AgentMethods['getSharedResourceFileIds'];
 let getListAgentsByAccess: AgentMethods['getListAgentsByAccess'];
 let getAgentManagementListByAccess: AgentMethods['getAgentManagementListByAccess'];
 let generateActionMetadataHash: AgentMethods['generateActionMetadataHash'];
@@ -117,6 +118,7 @@ beforeAll(async () => {
   addAgentResourceFile = methods.addAgentResourceFile;
   removeAgentResourceFiles = methods.removeAgentResourceFiles;
   removeAgentResourceFilesFromAllAgents = methods.removeAgentResourceFilesFromAllAgents;
+  getSharedResourceFileIds = methods.getSharedResourceFileIds;
   getListAgentsByAccess = methods.getListAgentsByAccess;
   getAgentManagementListByAccess = methods.getAgentManagementListByAccess;
   generateActionMetadataHash = methods.generateActionMetadataHash;
@@ -4236,6 +4238,148 @@ describe('Agent Methods', () => {
           files: [{ tool_resource: 'file_search', file_id: 'file123' }],
         }),
       ).rejects.toThrow('Agent not found for removing resource files');
+    });
+
+    describe('getSharedResourceFileIds', () => {
+      beforeEach(async () => {
+        await Agent.deleteMany({});
+      });
+
+      test('reports a file another agent still references, across tool resources', async () => {
+        const sharedFileId = `file_${uuidv4()}`;
+        const soleFileId = `file_${uuidv4()}`;
+
+        const agent = await createBasicAgent();
+        const duplicate = await createBasicAgent();
+
+        await addAgentResourceFile({
+          agent_id: agent.id,
+          tool_resource: EToolResources.file_search,
+          file_id: sharedFileId,
+        });
+        await addAgentResourceFile({
+          agent_id: agent.id,
+          tool_resource: EToolResources.file_search,
+          file_id: soleFileId,
+        });
+        await addAgentResourceFile({
+          agent_id: duplicate.id,
+          tool_resource: EToolResources.context,
+          file_id: sharedFileId,
+        });
+
+        const shared = await getSharedResourceFileIds({
+          file_ids: [sharedFileId, soleFileId],
+          excludeAgentObjectId: String(agent._id),
+        });
+
+        expect(shared).toEqual([sharedFileId]);
+      });
+
+      test('does not count the excluded agent’s own reference', async () => {
+        const fileId = `file_${uuidv4()}`;
+        const agent = await createBasicAgent();
+
+        await addAgentResourceFile({
+          agent_id: agent.id,
+          tool_resource: EToolResources.file_search,
+          file_id: fileId,
+        });
+
+        expect(
+          await getSharedResourceFileIds({
+            file_ids: [fileId],
+            excludeAgentObjectId: String(agent._id),
+          }),
+        ).toEqual([]);
+        expect(await getSharedResourceFileIds({ file_ids: [fileId] })).toEqual([fileId]);
+      });
+
+      test('reports a file the same agent still holds under another tool resource', async () => {
+        const fileId = `file_${uuidv4()}`;
+        const agent = await createBasicAgent();
+
+        await addAgentResourceFile({
+          agent_id: agent.id,
+          tool_resource: EToolResources.file_search,
+          file_id: fileId,
+        });
+        await addAgentResourceFile({
+          agent_id: agent.id,
+          tool_resource: EToolResources.context,
+          file_id: fileId,
+        });
+
+        expect(
+          await getSharedResourceFileIds({
+            file_ids: [fileId],
+            excludeAgentObjectId: String(agent._id),
+            excludeToolResource: EToolResources.file_search,
+          }),
+        ).toEqual([fileId]);
+      });
+
+      test('does not count the pair being removed', async () => {
+        const fileId = `file_${uuidv4()}`;
+        const agent = await createBasicAgent();
+
+        await addAgentResourceFile({
+          agent_id: agent.id,
+          tool_resource: EToolResources.file_search,
+          file_id: fileId,
+        });
+
+        expect(
+          await getSharedResourceFileIds({
+            file_ids: [fileId],
+            excludeAgentObjectId: String(agent._id),
+            excludeToolResource: EToolResources.file_search,
+          }),
+        ).toEqual([]);
+      });
+
+      test('does not skip another tenant’s agent that shares the logical id', async () => {
+        const sharedId = `agent_${uuidv4()}`;
+        const fileId = `file_${uuidv4()}`;
+        const tenantA = `tenant-${uuidv4()}`;
+        const tenantB = `tenant-${uuidv4()}`;
+
+        /* `id` is unique only with `tenantId`, so two tenants can hold the same logical agent id.
+           Excluding by `id` would call the file unreferenced and destroy tenant B's bytes. */
+        const agentA = await tenantStorage.run({ tenantId: tenantA }, () =>
+          createBasicAgent({ id: sharedId }),
+        );
+        await tenantStorage.run({ tenantId: tenantB }, () => createBasicAgent({ id: sharedId }));
+
+        await tenantStorage.run({ tenantId: tenantA }, () =>
+          addAgentResourceFile({
+            agent_id: sharedId,
+            tool_resource: EToolResources.file_search,
+            file_id: fileId,
+          }),
+        );
+        await tenantStorage.run({ tenantId: tenantB }, () =>
+          addAgentResourceFile({
+            agent_id: sharedId,
+            tool_resource: EToolResources.file_search,
+            file_id: fileId,
+          }),
+        );
+
+        expect(
+          await tenantStorage.run({ tenantId: tenantA }, () =>
+            getSharedResourceFileIds({
+              file_ids: [fileId],
+              excludeAgentObjectId: String(agentA._id),
+              excludeToolResource: EToolResources.file_search,
+            }),
+          ),
+        ).toEqual([fileId]);
+      });
+
+      test('answers without querying when given no file_ids', async () => {
+        expect(await getSharedResourceFileIds({ file_ids: [] })).toEqual([]);
+      });
     });
 
     describe('removeAgentResourceFilesFromAllAgents', () => {

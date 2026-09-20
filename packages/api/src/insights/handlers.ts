@@ -1,10 +1,12 @@
 import { logger } from '@librechat/data-schemas';
 import {
+  INSIGHTS_PAGE_SIZE_MIN,
+  INSIGHTS_PAGE_SIZE_MAX,
   INSIGHTS_SEARCH_MAX_LENGTH,
   INSIGHTS_SEARCH_MIN_LENGTH,
   INSIGHTS_AGENT_ID_MAX_LENGTH,
 } from 'librechat-data-provider';
-import type { TInsightsAgent, TInsightsParams } from 'librechat-data-provider';
+import type { TInsightsParams } from 'librechat-data-provider';
 import type { InsightsMethods } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { InsightsAccess, InsightsAccessUser } from './access';
@@ -13,22 +15,10 @@ import type { ServerRequest } from '~/types';
 type InsightsHandlerDeps = {
   isInsightsEnabled: () => boolean;
   getInsights: InsightsMethods['getInsights'];
-  getAccessibleAgents?: (user: NonNullable<ServerRequest['user']>) => Promise<TInsightsAgent[]>;
-  getAccess?: (user: InsightsAccessUser) => Promise<InsightsAccess>;
+  getAccess: (user: InsightsAccessUser) => Promise<InsightsAccess>;
 };
 
-type InsightsAccessHandlerDeps = Pick<
-  InsightsHandlerDeps,
-  'isInsightsEnabled' | 'getAccessibleAgents' | 'getAccess'
->;
-
-async function resolveAccess(
-  deps: InsightsAccessHandlerDeps,
-  user: NonNullable<ServerRequest['user']>,
-): Promise<InsightsAccess> {
-  if (deps.getAccess) return deps.getAccess(user);
-  return { agents: (await deps.getAccessibleAgents?.(user)) ?? [], media: false };
-}
+type InsightsAccessHandlerDeps = Pick<InsightsHandlerDeps, 'isInsightsEnabled' | 'getAccess'>;
 
 const firstQueryValue = (value: unknown): string | undefined => {
   if (Array.isArray(value)) {
@@ -76,7 +66,6 @@ const timeZoneValue = (value: unknown): string | undefined => {
 
 export function createInsightsAccessHandler({
   isInsightsEnabled,
-  getAccessibleAgents,
   getAccess,
 }: InsightsAccessHandlerDeps) {
   return async (req: ServerRequest, res: Response): Promise<void> => {
@@ -90,10 +79,7 @@ export function createInsightsAccessHandler({
         res.status(401).json({ message: 'Authentication required' });
         return;
       }
-      const access = await resolveAccess(
-        { isInsightsEnabled, getAccessibleAgents, getAccess },
-        req.user,
-      );
+      const access = await getAccess(req.user);
       if (access.agents.length === 0 && !access.media) {
         res.status(403).json({ message: 'Forbidden' });
         return;
@@ -110,7 +96,6 @@ export function createInsightsAccessHandler({
 export function createInsightsHandler({
   isInsightsEnabled,
   getInsights,
-  getAccessibleAgents,
   getAccess,
 }: InsightsHandlerDeps) {
   return async (req: ServerRequest, res: Response): Promise<void> => {
@@ -124,10 +109,7 @@ export function createInsightsHandler({
         return;
       }
 
-      const { agents, media } = await resolveAccess(
-        { isInsightsEnabled, getAccessibleAgents, getAccess },
-        req.user,
-      );
+      const { agents, media } = await getAccess(req.user);
       if (agents.length === 0 && !media) {
         res.status(403).json({ message: 'Forbidden' });
         return;
@@ -146,7 +128,10 @@ export function createInsightsHandler({
       const agentIds = requestedAgentIds.length > 0 ? requestedAgentIds : [...authorizedAgentIds];
 
       const page = positiveInteger(req.query.page, 1);
-      const pageSize = Math.min(50, Math.max(5, positiveInteger(req.query.pageSize, 10)));
+      const pageSize = Math.min(
+        INSIGHTS_PAGE_SIZE_MAX,
+        Math.max(INSIGHTS_PAGE_SIZE_MIN, positiveInteger(req.query.pageSize, 10)),
+      );
       const tenantId = stringValue(req.user?.tenantId);
       const requestedSearch = stringValue(req.query.search)?.slice(0, INSIGHTS_SEARCH_MAX_LENGTH);
       const search =

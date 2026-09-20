@@ -1,4 +1,3 @@
-import sharp from 'sharp';
 import path from 'node:path';
 import { stat } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
@@ -6,7 +5,8 @@ import { pipeline } from 'node:stream/promises';
 import { createReadStream, createWriteStream } from 'node:fs';
 import type { MediaConfig, MediaRendition, MediaRenditionKind } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import { createRemoteFileByteLimitTransform } from '../storage/url';
+import { createRemoteFileByteLimitTransform } from '~/storage/url';
+import { createImageTransform } from '~/files/resize';
 
 export interface MediaDerivative extends Omit<MediaRendition, 'filepath'> {
   kind: MediaRenditionKind;
@@ -14,6 +14,7 @@ export interface MediaDerivative extends Omit<MediaRendition, 'filepath'> {
 }
 
 export interface MediaDerivativeProcessor {
+  prepare?(config: MediaConfig): Promise<void>;
   generate(input: {
     path: string;
     type: string;
@@ -23,6 +24,7 @@ export interface MediaDerivativeProcessor {
 }
 
 export interface MediaVideoProcessor {
+  available?(config: MediaConfig): Promise<boolean>;
   render(input: {
     path: string;
     type: string;
@@ -35,7 +37,30 @@ export interface MediaVideoProcessor {
 
 /** FFmpeg writes bounded output through stdout, so a size limit cannot publish a truncated movie. */
 export function createFFmpegMediaProcessor(): MediaVideoProcessor {
+  const availability = new Map<string, Promise<boolean>>();
   return {
+    available(config) {
+      const { ffmpegPath, timeoutMs } = config.assets.derivatives;
+      let pending = availability.get(ffmpegPath);
+      if (!pending) {
+        pending = new Promise<boolean>((resolve) => {
+          const child = spawn(ffmpegPath, ['-version'], {
+            shell: false,
+            windowsHide: true,
+            stdio: 'ignore',
+          });
+          const timeout = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
+          const finish = (available: boolean) => {
+            clearTimeout(timeout);
+            resolve(available);
+          };
+          child.once('error', () => finish(false));
+          child.once('close', (code) => finish(code === 0));
+        });
+        availability.set(ffmpegPath, pending);
+      }
+      return pending;
+    },
     async render(input) {
       const { maxWidth, maxHeight, ffmpegPath } = input.config.assets.derivatives;
       const playback = input.kind === 'playback';
@@ -136,10 +161,22 @@ export function createMediaDerivativeProcessor({
 }: {
   imageOutputType: AppConfig['imageOutputType'];
   video: MediaVideoProcessor;
-  log(error: Error): void;
+  log(message: string, error?: Error): void;
 }): MediaDerivativeProcessor {
   const format = imageOutputType === 'jpeg' || imageOutputType === 'webp' ? imageOutputType : 'png';
   const type = `image/${format}`;
+  const unavailable = new Set<string>();
+  const checkVideo = async (config: MediaConfig): Promise<boolean> => {
+    if (!video.available || (await video.available(config))) return true;
+    const { ffmpegPath } = config.assets.derivatives;
+    if (!unavailable.has(ffmpegPath)) {
+      unavailable.add(ffmpegPath);
+      log(
+        '[media] FFmpeg is unavailable. Install FFmpeg or configure media.assets.derivatives.ffmpegPath; video originals remain available without posters or playback derivatives.',
+      );
+    }
+    return false;
+  };
 
   async function image(
     input: string,
@@ -149,11 +186,12 @@ export function createMediaDerivativeProcessor({
   ): Promise<Omit<MediaDerivative, 'kind'>> {
     const { maxWidth, maxHeight } = config.assets.derivatives;
     const dimensions: Pick<MediaRendition, 'width' | 'height'> = {};
-    const transform = sharp()
-      .rotate()
-      .resize({ width: maxWidth, height: maxHeight, fit: 'inside', withoutEnlargement: true })
-      .timeout({ seconds: Math.max(1, Math.ceil(timeoutMs / 1_000)) })
-      .toFormat(format);
+    const transform = createImageTransform({
+      rotate: true,
+      resize: { width: maxWidth, height: maxHeight, fit: 'inside', withoutEnlargement: true },
+      timeoutMs,
+      format,
+    });
     transform.once('info', (info) => {
       dimensions.width = info.width;
       dimensions.height = info.height;
@@ -170,6 +208,9 @@ export function createMediaDerivativeProcessor({
   }
 
   return {
+    async prepare(config) {
+      if (config.assets.derivatives.enabled) await checkVideo(config);
+    },
     async generate(input) {
       const { config } = input;
       const settings = config.assets.derivatives;
@@ -194,7 +235,7 @@ export function createMediaDerivativeProcessor({
         try {
           results.push(await work());
         } catch (error) {
-          log(error instanceof Error ? error : new Error('Media derivative creation failed.'));
+          log('[media] Derivative creation failed.', error instanceof Error ? error : undefined);
         }
       };
       if (input.type.startsWith('image/')) {
@@ -204,7 +245,8 @@ export function createMediaDerivativeProcessor({
         }));
         return results;
       }
-      if (!['video/mp4', 'video/webm'].includes(input.type)) return results;
+      if (!['video/mp4', 'video/webm'].includes(input.type) || !(await checkVideo(config)))
+        return results;
       await attempt(async () => {
         const frame = output('poster-frame.png');
         await video.render({

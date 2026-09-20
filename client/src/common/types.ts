@@ -104,6 +104,8 @@ export enum IconContext {
 }
 
 export type NavLink = {
+  activity?: { count: string; label: string };
+  route?: string;
   title: TranslationKeys;
   label?: string;
   icon: LucideIcon | React.FC;

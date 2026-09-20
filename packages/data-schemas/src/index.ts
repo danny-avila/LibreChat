@@ -11,6 +11,7 @@ export {
   createMediaMethods,
   createMediaAccountingMethods,
   createMediaNativeMethods,
+  createNativeMessageMethods,
   createMediaPresetMethods,
   createMediaRecoveryMethods,
   createMediaTitleMethods,

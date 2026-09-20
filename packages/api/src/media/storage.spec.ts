@@ -3,11 +3,11 @@ import path from 'node:path';
 import mongoose from 'mongoose';
 import { tmpdir } from 'node:os';
 import { Readable } from 'node:stream';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { resolveMediaConfig } from 'librechat-data-provider';
-import { createMediaMethods } from '@librechat/data-schemas';
 import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { createModels, createMethods, createMediaMethods } from '@librechat/data-schemas';
 import type { MediaMethods, MediaOwnerScope } from '@librechat/data-schemas';
 import {
   detectMediaReferenceType,
@@ -315,7 +315,8 @@ describe('Media original storage', () => {
   beforeAll(async () => {
     mongo = await MongoMemoryServer.create();
     await mongoose.connect(mongo.getUri());
-    repository = createMediaMethods(mongoose);
+    createModels(mongoose);
+    repository = createMediaMethods(mongoose, { ownerExists: async () => true });
     await repository.ensureMediaIndexes();
     directory = await mkdtemp(path.join(tmpdir(), 'librechat-media-storage-'));
     storage = createLocalMediaStorage({
@@ -328,6 +329,21 @@ describe('Media original storage', () => {
 
   beforeEach(() => {
     scope = { ownerId: new mongoose.Types.ObjectId().toString(), tenantId: null };
+  });
+
+  it('sanitizes provider filenames before saving or returning the asset', async () => {
+    const asset = await storage.publish({
+      scope,
+      outputKey: 'provider-filename',
+      config,
+      stream: Readable.from(svg),
+      filename: '../../日本語\r\n"bad.svg',
+      type: 'image/svg+xml',
+    });
+    expect(asset.filename).toBe('日本語___bad.svg');
+    expect((await repository.getMediaAssetContent(scope, asset.file_id))?.filename).toBe(
+      asset.filename,
+    );
   });
 
   it('deletes physical originals and thumbnails through the shared Files entry point', async () => {
@@ -378,6 +394,64 @@ describe('Media original storage', () => {
     for (const location of locations)
       await expect(readFile(location)).rejects.toMatchObject({ code: 'ENOENT' });
     expect(await repository.getMediaAssetContent(scope, asset.file_id)).toBeNull();
+  });
+
+  it('reads the same original after Studio releases it and deletes bytes only after the final chat reference', async () => {
+    const asset = await storage.publish({
+      scope,
+      outputKey: 'chat-retained',
+      config,
+      stream: Readable.from(svg),
+      filename: 'original.svg',
+      type: 'image/svg+xml',
+    });
+    await repository.retainMediaAsset({
+      scope,
+      fileId: asset.file_id,
+      retainer: 'thread:studio:1',
+      maxRetainers: 4,
+    });
+    const messages = createMethods(mongoose);
+    const conversationId = randomUUID();
+    await messages.saveMessage(
+      { userId: scope.ownerId },
+      {
+        conversationId,
+        messageId: randomUUID(),
+        files: [{ file_id: asset.file_id }],
+      },
+    );
+    await repository.releaseMediaAsset({
+      scope,
+      fileId: asset.file_id,
+      retainer: 'thread:studio:1',
+    });
+    const original = await repository.getMediaAssetContent(scope, asset.file_id);
+    const location = path.join(directory, original!.filepath.slice(1));
+    const remove = () =>
+      deleteMediaAwareFile({
+        request: {
+          user: { id: scope.ownerId },
+          config: {
+            paths: {
+              imageOutput: path.join(directory, 'images'),
+              uploads: path.join(directory, 'uploads'),
+            },
+          },
+        },
+        file: asset,
+        repository,
+        deleteFile: jest.fn(),
+        resolveStrategy: () => {
+          throw new Error('Local original');
+        },
+      });
+    await expect(remove()).rejects.toMatchObject({ status: 409 });
+    expect((await storage.read(scope, asset.file_id, svg.length)).data).toEqual(svg);
+    expect(await readFile(location)).toEqual(svg);
+    await messages.deleteMessages({ user: scope.ownerId, conversationId });
+    await remove();
+    await expect(readFile(location)).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   afterAll(async () => {

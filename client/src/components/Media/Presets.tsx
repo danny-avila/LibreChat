@@ -16,7 +16,7 @@ import {
 } from '@librechat/client';
 import type { MediaCatalog, MediaPreset, MediaPresetSettings } from 'librechat-data-provider';
 import type { UseQueryResult } from '@tanstack/react-query';
-import { useMediaPresetMutations } from '~/data-provider/Media';
+import { useMediaPresetMutations } from '~/data-provider';
 import { mediaOperationLabels } from './labels';
 import { useLocalize } from '~/hooks';
 import { useMediaHost } from './host';
@@ -111,7 +111,8 @@ export function MediaPresets({
         <Button
           ref={trigger}
           variant="ghost"
-          className="-mr-2 h-7 shrink-0 gap-1.5 px-2 text-xs font-medium text-text-secondary hover:text-text-primary"
+          size="xs"
+          className="-mr-2 shrink-0 text-text-secondary"
           aria-haspopup="dialog"
           onClick={() => setOpen(true)}
         >

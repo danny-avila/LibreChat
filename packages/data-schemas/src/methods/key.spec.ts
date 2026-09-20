@@ -1,24 +1,32 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import type { createKeyMethods } from './key';
 import { runAsSystem, tenantStorage } from '~/config/tenantContext';
-import { createKeyMethods, getUserKeyBindingRevision } from './key';
 import { createKeyModel } from '~/models/key';
 
-jest.mock('~/crypto', () => ({
-  encrypt: jest.fn(async (value: string) => `encrypted:${value}`),
-  decrypt: jest.fn(async (value: string) => value.replace(/^encrypted:/, '')),
-}));
-
-describe('user key encrypted snapshot compare-and-set on MongoDB', () => {
+describe('user key storage', () => {
   let mongo: MongoMemoryServer;
   let methods: ReturnType<typeof createKeyMethods>;
   let userId: string;
-
+  let decrypt: typeof import('~/crypto').decrypt;
+  let encrypt: typeof import('~/crypto').encrypt;
   beforeAll(async () => {
+    const previous = { key: process.env.CREDS_KEY, iv: process.env.CREDS_IV };
+    process.env.CREDS_KEY = '11'.repeat(32);
+    process.env.CREDS_IV = '22'.repeat(16);
+    let factory!: typeof createKeyMethods;
+    jest.isolateModules(() => {
+      ({ encrypt, decrypt } = jest.requireActual('~/crypto'));
+      ({ createKeyMethods: factory } = jest.requireActual('./key'));
+    });
+    if (previous.key === undefined) delete process.env.CREDS_KEY;
+    else process.env.CREDS_KEY = previous.key;
+    if (previous.iv === undefined) delete process.env.CREDS_IV;
+    else process.env.CREDS_IV = previous.iv;
     mongo = await MongoMemoryServer.create();
     await mongoose.connect(mongo.getUri());
     createKeyModel(mongoose);
-    methods = createKeyMethods(mongoose);
+    methods = factory(mongoose);
   }, 60000);
   afterAll(async () => {
     await mongoose.disconnect();
@@ -30,160 +38,50 @@ describe('user key encrypted snapshot compare-and-set on MongoDB', () => {
     });
     userId = new mongoose.Types.ObjectId().toString();
   });
-  function identity() {
-    return { userId, name: 'google' };
-  }
-
-  it('retains one legacy media identity across expiry and envelope edits through both shared writers', async () => {
-    await mongoose.models.Key.create({
-      ...identity(),
-      value: 'encrypted:original',
-      expiresAt: new Date('2099-01-01'),
-    });
-    const original = await methods.getUserKeySnapshot(identity());
-    const legacy = getUserKeyBindingRevision(original!);
-    await methods.updateUserKey({ ...identity(), value: 'original', expiresAt: '2100-01-01' });
-    const extended = await methods.getUserKeySnapshot(identity());
-    expect(extended?.mediaBindingRevision).toBe(legacy);
-    expect(
-      await methods.compareAndSetUserKey({
-        ...identity(),
-        expected: extended,
-        value: 'envelope-with-another-service-key',
-      }),
-    ).toBe(true);
-    expect((await methods.getUserKeySnapshot(identity()))?.mediaBindingRevision).toBe(legacy);
-    await methods.deleteUserKey(identity());
-    await methods.updateUserKey({ ...identity(), value: 'original' });
-    const recreated = await methods.getUserKeySnapshot(identity());
-    expect(recreated?.id).not.toBe(original?.id);
-    expect(recreated?.mediaBindingRevision).toBeUndefined();
-  });
-
-  it('returns encrypted snapshot data and atomically replaces value and expiry', async () => {
-    await methods.updateUserKey({ ...identity(), value: 'before' });
-    const expected = await methods.getUserKeySnapshot(identity());
-    expect(expected).toEqual({
-      id: expect.any(String),
-      value: 'encrypted:before',
-      expiresAt: null,
-    });
-    expect(
-      await methods.compareAndSetUserKey({
-        ...identity(),
-        expected,
-        value: 'after',
-        expiresAt: '2099-01-01T00:00:00Z',
-      }),
-    ).toBe(true);
-    expect(await methods.getUserKey(identity())).toBe('after');
-    expect(await methods.getUserKeySnapshot(identity())).toMatchObject({
-      value: 'encrypted:after',
+  it('replaces complete envelopes and clears expiry without changing the row identity', async () => {
+    const identity = { userId, name: 'google' };
+    await methods.updateUserKey({ ...identity, value: 'first', expiresAt: '2099-01-01' });
+    const before = await methods.getUserKeySnapshot(identity);
+    expect(before).toMatchObject({
       expiresAt: '2099-01-01T00:00:00.000Z',
     });
-  });
-
-  it('removes an old expiry when replacing with an unlimited key', async () => {
-    await methods.updateUserKey({ ...identity(), value: 'before', expiresAt: '2099-01-01' });
-    const expected = await methods.getUserKeySnapshot(identity());
-    expect(await methods.compareAndSetUserKey({ ...identity(), expected, value: 'after' })).toBe(
-      true,
-    );
-    expect(await methods.getUserKeyExpiry(identity())).toEqual({ expiresAt: 'never' });
-  });
-
-  it.each(['value', 'expiry', 'delete', 'recreate'])(
-    'rejects a stale snapshot after concurrent %s change',
-    async (change) => {
-      await methods.updateUserKey({ ...identity(), value: 'before' });
-      const expected = await methods.getUserKeySnapshot(identity());
-      if (change === 'value') await methods.updateUserKey({ ...identity(), value: 'newer-value' });
-      if (change === 'expiry')
-        await methods.updateUserKey({ ...identity(), value: 'before', expiresAt: '2099-01-01' });
-      if (change === 'delete' || change === 'recreate') await methods.deleteUserKey(identity());
-      if (change === 'recreate') await methods.updateUserKey({ ...identity(), value: 'before' });
-      const changed = await methods.getUserKeySnapshot(identity());
-      expect(
-        await methods.compareAndSetUserKey({ ...identity(), expected, value: 'stale-merged' }),
-      ).toBe(false);
-      expect(await methods.getUserKeySnapshot(identity())).toEqual(changed);
-    },
-  );
-
-  it('allows exactly one competing merge from the same snapshot', async () => {
-    await methods.updateUserKey({ ...identity(), value: 'before' });
-    const expected = await methods.getUserKeySnapshot(identity());
-    const results = await Promise.all(
-      ['first', 'second'].map((value) =>
-        methods.compareAndSetUserKey({ ...identity(), expected, value }),
-      ),
-    );
-    expect(results.filter(Boolean)).toHaveLength(1);
-    expect(await methods.getUserKey(identity())).toBe(results[0] ? 'first' : 'second');
-  });
-
-  it('does not preserve a credential that expires before the atomic write', async () => {
-    await methods.updateUserKey({
-      ...identity(),
-      value: 'expired',
-      expiresAt: new Date(Date.now() - 1000),
+    expect(before!.value).not.toBe('first');
+    expect(await decrypt(before!.value)).toBe('first');
+    await methods.updateUserKey({ ...identity, value: 'replacement', expiresAt: null });
+    expect(await methods.getUserKeySnapshot(identity)).toMatchObject({
+      id: before!.id,
+      expiresAt: null,
     });
-    const expected = await methods.getUserKeySnapshot(identity());
-    expect(expected).not.toBeNull();
+    expect(await methods.getUserKey(identity)).toBe('replacement');
+  });
+  it('uses a single upsert and no read for a plain key update', async () => {
+    const read = jest.spyOn(mongoose.models.Key, 'findOne');
+    const write = jest.spyOn(mongoose.models.Key, 'findOneAndUpdate');
+    await methods.updateUserKey({ userId, name: 'openAI', value: 'secret' });
+    expect(read).not.toHaveBeenCalled();
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+  it('applies the shared tenant scope when reading encrypted snapshots', async () => {
+    const identity = { userId, name: 'google' };
+    await tenantStorage.run({ tenantId: 'tenant-one' }, async () => {
+      await methods.updateUserKey({ ...identity, value: 'private' });
+      expect(await methods.getUserKeySnapshot(identity)).not.toBeNull();
+    });
+    await tenantStorage.run({ tenantId: 'tenant-two' }, async () => {
+      expect(await methods.getUserKeySnapshot(identity)).toBeNull();
+    });
+  });
+  it('does not read another tenant key when the caller explicitly selects the default tenant', async () => {
+    const identity = { userId, name: 'google' };
+    const value = await encrypt('private');
+    await mongoose.models.Key.create({
+      ...identity,
+      tenantId: 'other-tenant',
+      value,
+    });
+    expect(await methods.getUserKeySnapshot({ ...identity, tenantId: null })).toBeNull();
     expect(
-      await methods.compareAndSetUserKey({
-        ...identity(),
-        expected,
-        value: 'revived',
-        requireActive: true,
-      }),
-    ).toBe(false);
-  });
-
-  it('inserts missing records without overwriting a record created after the read', async () => {
-    expect(await methods.getUserKeySnapshot(identity())).toBeNull();
-    expect(
-      await methods.compareAndSetUserKey({ ...identity(), expected: null, value: 'first' }),
-    ).toBe(true);
-    expect(
-      await methods.compareAndSetUserKey({ ...identity(), expected: null, value: 'stale' }),
-    ).toBe(false);
-    expect(await methods.getUserKey(identity())).toBe('first');
-    expect(await mongoose.models.Key.countDocuments(identity())).toBe(1);
-  });
-
-  it('does not apply another owner snapshot even with its exact ciphertext and id', async () => {
-    await methods.updateUserKey({ ...identity(), value: 'before' });
-    const expected = await methods.getUserKeySnapshot(identity());
-    const other = { userId: new mongoose.Types.ObjectId().toString(), name: 'google' };
-    expect(await methods.getUserKeySnapshot(other)).toBeNull();
-    expect(await methods.compareAndSetUserKey({ ...other, expected, value: 'stolen' })).toBe(false);
-    expect(await methods.getUserKey(identity())).toBe('before');
-  });
-
-  it('scopes snapshots, compare-and-set and inserts to the current tenant', async () => {
-    await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
-      await methods.updateUserKey({ ...identity(), value: 'tenant-a-key' });
-    });
-    const expected = await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
-      methods.getUserKeySnapshot(identity()),
-    );
-    await tenantStorage.run({ tenantId: 'tenant-b' }, async () => {
-      expect(await methods.getUserKeySnapshot(identity())).toBeNull();
-      expect(await methods.compareAndSetUserKey({ ...identity(), expected, value: 'stolen' })).toBe(
-        false,
-      );
-      expect(
-        await methods.compareAndSetUserKey({
-          ...identity(),
-          expected: null,
-          value: 'tenant-b-key',
-        }),
-      ).toBe(true);
-      expect(await methods.getUserKey(identity())).toBe('tenant-b-key');
-    });
-    await tenantStorage.run({ tenantId: 'tenant-a' }, async () => {
-      expect(await methods.getUserKey(identity())).toBe('tenant-a-key');
-    });
+      await methods.getUserKeySnapshot({ ...identity, tenantId: 'other-tenant' }),
+    ).toMatchObject({ value });
   });
 });

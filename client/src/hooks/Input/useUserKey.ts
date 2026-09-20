@@ -1,7 +1,6 @@
 import { useMemo, useCallback } from 'react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { useUserKeyQuery, useUpdateUserKeysMutation } from 'librechat-data-provider/react-query';
-import type { TUpdateUserKeyRequest } from 'librechat-data-provider';
 import { useGetEndpointsQuery } from '~/data-provider';
 
 const useUserKey = (endpoint: string, options?: { keyName?: string; enabled?: boolean }) => {
@@ -30,17 +29,12 @@ const useUserKey = (endpoint: string, options?: { keyName?: string; enabled?: bo
   }, [getExpiry]);
 
   const saveUserKey = useCallback(
-    (
-      userKey: string,
-      expiresAt: number | null,
-      saveOptions?: Pick<TUpdateUserKeyRequest, 'preserveGoogleServiceKey'>,
-    ) => {
+    (userKey: string, expiresAt: number | null) => {
       const dateStr = expiresAt ? new Date(expiresAt).toISOString() : '';
       return updateKey.mutateAsync({
         name: keyName,
         value: userKey,
         expiresAt: dateStr,
-        ...saveOptions,
       });
     },
     [updateKey, keyName],

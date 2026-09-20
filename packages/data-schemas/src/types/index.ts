@@ -53,6 +53,7 @@ export * from './web';
 export * from './mcp';
 export * from './mcpAuthority';
 export type * from './media';
+export type * from './mediaConsumers';
 export type * from './mediaAccounting';
 export type * from './mediaNative';
 export type * from './mediaRecovery';

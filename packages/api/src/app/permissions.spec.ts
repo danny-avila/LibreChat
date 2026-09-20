@@ -1,5 +1,11 @@
 import { loadDefaultInterface } from '@librechat/data-schemas';
-import { SystemRoles, Permissions, PermissionTypes, roleDefaults } from 'librechat-data-provider';
+import {
+  SystemRoles,
+  Permissions,
+  PermissionTypes,
+  roleDefaults,
+  FileSources,
+} from 'librechat-data-provider';
 import type { TConfigDefaults, TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import { updateInterfacePermissions } from './permissions';
@@ -8,6 +14,35 @@ const mockUpdateAccessPermissions = jest.fn();
 const mockGetRoleByName = jest.fn();
 
 describe('updateInterfacePermissions - permissions', () => {
+  it.each([true, false])(
+    'accepts media boolean shorthand %s without changing stored create permission',
+    async (enabled) => {
+      const config: TCustomConfig = { version: '1.3.5', interface: { media: enabled } };
+      const interfaceConfig = await loadDefaultInterface({
+        config,
+        configDefaults: { interface: {} } as TConfigDefaults,
+      });
+      const appConfig: AppConfig = {
+        config,
+        interfaceConfig,
+        fileStrategy: FileSources.local,
+        imageOutputType: 'png',
+      };
+      mockGetRoleByName.mockResolvedValue({
+        permissions: { MEDIA: { USE: !enabled, CREATE: false } },
+      });
+      await updateInterfacePermissions({
+        appConfig,
+        getRoleByName: mockGetRoleByName,
+        updateAccessPermissions: mockUpdateAccessPermissions,
+      });
+      for (const call of mockUpdateAccessPermissions.mock.calls) {
+        expect(call[1].MEDIA).toEqual({ USE: enabled });
+      }
+      expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(2);
+    },
+  );
+
   beforeEach(() => {
     jest.clearAllMocks();
     // Mock getRoleByName to return null (no existing permissions)

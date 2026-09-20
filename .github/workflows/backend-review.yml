@@ -73,6 +73,9 @@ jobs:
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: npm ci
 
+      - name: Check consumed agents SDK contract
+        run: npm run test:agents-contract
+
       - name: Restore data-provider build cache
         id: cache-data-provider
         uses: actions/cache@v5
@@ -673,6 +676,11 @@ jobs:
           key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
           restore-keys: |
             mongodb-binaries-${{ runner.os }}-
+      - name: Install and verify FFmpeg for video derivative tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version
       - name: Run unit tests (shard ${{ matrix.shard }}/4)
         env:
           SELECTED: ${{ needs.codegraph_select.outputs.pkgapi_files }}

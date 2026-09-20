@@ -4,6 +4,7 @@ import {
   MutationKeys,
   mediaImportReceiptSchema,
   mediaSubmissionReceiptSchema,
+  mediaThreadsDeletionReceiptSchema,
 } from 'librechat-data-provider';
 import type {
   MediaImportInput,
@@ -12,6 +13,7 @@ import type {
   MediaSubmissionInput,
   MediaSubmissionReceipt,
   MediaThreadUpdate,
+  MediaThreadsDeleteRequest,
 } from 'librechat-data-provider';
 import type { MediaQueryScope } from './queries';
 import { invalidateMedia } from './queries';
@@ -42,6 +44,16 @@ export function useMediaThreadMutations(host: MutationScope) {
     { onSuccess: settle },
   );
   return { update, remove };
+}
+
+export function useDeleteMediaThreads(host: MutationScope) {
+  const settle = useSettle(host);
+  return useMutation(
+    [MutationKeys.deleteMediaThreads],
+    async (input: MediaThreadsDeleteRequest) =>
+      mediaThreadsDeletionReceiptSchema.parse(await dataService.deleteMediaThreads(input)),
+    { onSettled: settle },
+  );
 }
 
 export function useMediaJobMutations(host: MutationScope) {

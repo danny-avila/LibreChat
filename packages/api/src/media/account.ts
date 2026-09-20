@@ -3,18 +3,7 @@ import type {
   MediaMethods,
   MediaOwnerScope,
 } from '@librechat/data-schemas';
-import type { Response } from 'express';
 import { MediaServiceError } from './errors';
-
-export function sendMediaAccountDeletionError(
-  res: Pick<Response, 'status'>,
-  error: Error,
-): Response {
-  if (error instanceof MediaServiceError) {
-    return res.status(error.status).json({ message: error.message, code: error.code });
-  }
-  return res.status(500).json({ message: 'Something went wrong.' });
-}
 
 export interface MediaAccountDeletion {
   scope: MediaOwnerScope;
@@ -74,7 +63,7 @@ export async function cancelMediaAccountDeletion({
   repository: MediaAccountDeletionRepository;
   session?: MediaAccountDeletion;
   userDeleted: boolean;
-  log(error: Error): void;
+  log(message: string, error?: Error): void;
 }): Promise<void> {
   if (!session || userDeleted) {
     return;
@@ -83,6 +72,7 @@ export async function cancelMediaAccountDeletion({
     await repository.cancelMediaAccountDeletion(session);
   } catch (error) {
     log(
+      '[media] Account deletion fence could not be released.',
       error instanceof Error
         ? error
         : new Error('Media account deletion fence could not be released.'),

@@ -1,3 +1,4 @@
+import { TOKEN_CREDITS_PER_USD } from 'librechat-data-provider';
 import type {
   MediaAccountingMethods,
   MediaOwnerScope,
@@ -6,7 +7,9 @@ import type {
 import type { MediaConfig, MediaIntegration } from 'librechat-data-provider';
 import type { MediaAccounting, MediaContext } from './service';
 import type { MediaProviderUsage } from './provider';
+import type { MediaPricing } from './pricing';
 import { buildInitialBalance } from '~/middleware/checkBalance';
+import { snapshotMediaPricing } from './pricing';
 import { mediaAccountingMode } from './service';
 import { MediaServiceError } from './errors';
 
@@ -27,24 +30,89 @@ function frozenMode(job: MediaStoredJob): 'balance' | 'transactions' | 'none' {
   return job.execution.accountingMode;
 }
 
-function cost(job: MediaStoredJob, usage?: MediaProviderUsage): number | undefined {
+function cost(
+  job: MediaStoredJob,
+  usage?: MediaProviderUsage,
+): { costUSD?: number; costSource?: 'provider' | 'tokens' | 'estimate' } {
+  const tokenPricing = job.execution.tokenPricing;
+  const hasTokens = usage?.inputTokens !== undefined || usage?.outputTokens !== undefined;
+  const counts = [
+    usage?.inputTokens,
+    usage?.outputTokens,
+    usage?.textInputTokens,
+    usage?.imageInputTokens,
+    usage?.cachedInputTokens,
+    usage?.cachedTextInputTokens,
+    usage?.cachedImageInputTokens,
+  ];
+  if (counts.some((count) => count !== undefined && (!Number.isFinite(count) || count < 0))) {
+    throw new MediaServiceError('not_ready', 409, 'The provider token usage needs reconciliation.');
+  }
+  const rates =
+    tokenPricing?.premium && (usage?.inputTokens ?? 0) > tokenPricing.premium.threshold
+      ? tokenPricing.premium
+      : tokenPricing;
+  let tokenCost =
+    hasTokens && rates
+      ? ((usage?.inputTokens ?? 0) * rates.prompt + (usage?.outputTokens ?? 0) * rates.completion) /
+        TOKEN_CREDITS_PER_USD
+      : undefined;
+  if (tokenPricing?.imagePrompt !== undefined) {
+    // Images report distinct text/image input. Never apply a guessed blended prompt rate.
+    tokenCost = undefined;
+    const text = usage?.textInputTokens ?? (usage?.inputTokens === 0 ? 0 : undefined);
+    const image = usage?.imageInputTokens ?? (usage?.inputTokens === 0 ? 0 : undefined);
+    const cachedText = usage?.cachedTextInputTokens ?? 0;
+    const cachedImage = usage?.cachedImageInputTokens ?? 0;
+    const cached = usage?.cachedInputTokens ?? cachedText + cachedImage;
+    if (
+      text !== undefined &&
+      image !== undefined &&
+      usage?.outputTokens !== undefined &&
+      cached === cachedText + cachedImage
+    ) {
+      if (
+        cachedText > text ||
+        cachedImage > image ||
+        (usage.inputTokens !== undefined && text + image !== usage.inputTokens)
+      ) {
+        throw new MediaServiceError(
+          'not_ready',
+          409,
+          'The provider image usage needs reconciliation.',
+        );
+      }
+      tokenCost =
+        ((text - cachedText) * tokenPricing.prompt +
+          (image - cachedImage) * tokenPricing.imagePrompt +
+          cachedText * (tokenPricing.cacheRead ?? tokenPricing.prompt) +
+          cachedImage * (tokenPricing.imageCacheRead ?? tokenPricing.imagePrompt) +
+          usage.outputTokens * tokenPricing.completion) /
+        TOKEN_CREDITS_PER_USD;
+    }
+  }
   const value =
     usage?.costUSD ??
+    tokenCost ??
     (job.provider.recovery?.terminalStatus === 'completed'
       ? job.execution.billing?.estimatedCostUSD
       : undefined);
   if (value !== undefined && (!Number.isFinite(value) || value < 0)) {
     throw new MediaServiceError('not_ready', 409, 'The provider cost needs reconciliation.');
   }
-  return value;
+  if (value === undefined) return { costUSD: value, costSource: undefined };
+  if (usage?.costUSD !== undefined) return { costUSD: value, costSource: 'provider' };
+  return { costUSD: value, costSource: tokenCost !== undefined ? 'tokens' : 'estimate' };
 }
 
 export function createMediaAccounting({
   repository,
   now,
+  pricing,
 }: {
   repository: MediaAccountingMethods;
   now: () => number;
+  pricing?: MediaPricing;
 }): MediaAccountingService {
   async function reserve(
     job: MediaStoredJob,
@@ -76,7 +144,7 @@ export function createMediaAccounting({
       jobId: job.jobId,
       estimatedCredits: (billing.estimatedCostUSD ?? billing.maxCostUSD) * billing.creditsPerUSD,
       maxCredits: billing.maxCostUSD * billing.creditsPerUSD,
-      now: new Date(now()).toISOString(),
+      now: new Date(now()),
       reviewAt: new Date(now() + context.config.recovery.attentionAfterMs).toISOString(),
       policy: context.config.accounting,
       initialBalance: buildInitialBalance(context.scope.ownerId, context.appConfig.balance),
@@ -104,11 +172,7 @@ export function createMediaAccounting({
     if (job.executionOwner === 'chat') return;
     const mode = frozenMode(job);
     if (mode === 'none') return;
-    const costUSD = cost(job, usage);
-    let costSource: 'provider' | 'estimate' | undefined;
-    if (costUSD !== undefined) {
-      costSource = usage?.costUSD !== undefined ? 'provider' : 'estimate';
-    }
+    const { costUSD, costSource } = cost(job, usage);
     const creditsPerUSD = job.execution.billing?.creditsPerUSD;
     const credits =
       costUSD !== undefined && creditsPerUSD !== undefined ? costUSD * creditsPerUSD : undefined;
@@ -133,6 +197,8 @@ export function createMediaAccounting({
       jobId: job.jobId,
       effect: {
         kind: 'charge',
+        operation: job.operation,
+        shortfall: job.execution.accountingShortfall,
         credits,
         costUSD,
         costSource,
@@ -166,6 +232,8 @@ export function createMediaAccounting({
   }
 
   return {
+    snapshot: (model, integration, appConfig) =>
+      pricing ? snapshotMediaPricing(pricing, model, integration, appConfig) : undefined,
     reserve,
     settle,
     release,

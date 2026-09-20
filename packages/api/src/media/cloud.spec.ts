@@ -37,7 +37,7 @@ function objectService(source: MediaStorageSource) {
         storageRegion: source === 'cloudfront' ? 'us-test-1' : undefined,
         useInlinePath: params.useInlinePath,
       });
-    return `${params.basePath ?? 'images'}/${params.userId}/${params.fileName}`;
+    return `${params.tenantId ? `t/${params.tenantId}/` : ''}${params.basePath ?? 'images'}/${params.userId}/${params.fileName}`;
   };
   const url = (value: string) =>
     source === 'firebase'
@@ -47,32 +47,24 @@ function objectService(source: MediaStorageSource) {
   let failRenditionUpload = false;
   let failDeletion = false;
   const strategy: MediaFileStrategy = {
-    async getFileURL(params) {
-      return url(key(params));
+    async planFile(params) {
+      return {
+        filepath: url(key(params)),
+        storageKey: key(params),
+        storageRegion: source === 'cloudfront' ? 'us-test-1' : undefined,
+      };
     },
-    async saveBuffer(params) {
+    async saveStream(params) {
       const name = key(params);
-      objects.set(name, Buffer.from(params.buffer));
-      if (failAfterUpload || (failRenditionUpload && name.includes('.thumbnail.')))
-        throw new Error('Upload acknowledgement lost');
-      return url(name);
-    },
-    async handleFileUpload(params) {
-      const name = key({
-        ...params,
-        userId: params.req.user.id,
-        fileName: `${params.file_id}__${source === 'azure_blob' ? path.basename(params.file.path) : params.file.originalname}`,
-      });
-      const data = await readFile(params.file.path);
+      const data = await readFile(params.path);
       objects.set(name, data);
       if (failAfterUpload || (failRenditionUpload && name.includes('.thumbnail.')))
         throw new Error('Upload acknowledgement lost');
       return {
         filepath: url(name),
         bytes: data.length,
-        ...(source === 's3' || source === 'cloudfront'
-          ? { storageKey: name, storageRegion: source === 'cloudfront' ? 'us-test-1' : undefined }
-          : {}),
+        storageKey: name,
+        storageRegion: source === 'cloudfront' ? 'us-test-1' : undefined,
       };
     },
     async getDownloadStream(_req, filename, options) {
@@ -118,7 +110,7 @@ describe('media storage through existing cloud strategies', () => {
   beforeAll(async () => {
     mongo = await MongoMemoryServer.create();
     await mongoose.connect(mongo.getUri());
-    repository = createMediaMethods(mongoose);
+    repository = createMediaMethods(mongoose, { ownerExists: async () => true });
     await repository.ensureMediaIndexes();
     directory = await mkdtemp(path.join(tmpdir(), 'librechat-media-cloud-'));
     png = await sharp({ create: { width: 48, height: 32, channels: 3, background: '#224466' } })
@@ -152,8 +144,8 @@ describe('media storage through existing cloud strategies', () => {
             throw new Error('No video in image fixture');
           },
         },
-        log: (error) => {
-          throw error;
+        log: (message, error) => {
+          throw error ?? new Error(message);
         },
       }),
     });
@@ -264,7 +256,9 @@ describe('media storage through existing cloud strategies', () => {
       );
       expect(await storage.remove(scope, asset.file_id)).toBe(true);
       expect(remote.objects.size).toBe(0);
-      expect(await readdir(path.join(directory, 'uploads', 'media-staging'))).toEqual([]);
+      expect(
+        await readdir(path.join(directory, 'uploads', 'temp', scope.ownerId, 'media')),
+      ).toEqual([]);
     },
   );
 

@@ -261,7 +261,12 @@ export const mediaPageRequestSchema = z
 export const mediaThreadListRequestSchema = mediaPageRequestSchema.extend({
   filter: z.enum(['all', 'pending', 'completed']).optional(),
   include: z.literal('activity').optional(),
+  search: z.string().trim().optional(),
 });
+export const mediaThreadsDeleteRequestSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('selected'), threadIds: z.array(mediaIdSchema).min(1) }).strict(),
+  z.object({ mode: z.literal('all') }).strict(),
+]);
 
 export type MediaOperation = z.infer<typeof mediaOperationSchema>;
 export type MediaApi = z.infer<typeof mediaApiSchema>;
@@ -278,6 +283,7 @@ export type MediaRetryRequest = z.infer<typeof mediaRetryRequestSchema>;
 export type MediaThreadUpdate = z.infer<typeof mediaThreadUpdateSchema>;
 export type MediaPageRequest = z.infer<typeof mediaPageRequestSchema>;
 export type MediaThreadListRequest = z.infer<typeof mediaThreadListRequestSchema>;
+export type MediaThreadsDeleteRequest = z.infer<typeof mediaThreadsDeleteRequestSchema>;
 
 export type MediaRequestLimits = {
   maxPromptChars: number;

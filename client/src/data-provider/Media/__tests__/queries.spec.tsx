@@ -4,7 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { dataService, QueryKeys, mediaCatalogSchema } from 'librechat-data-provider';
 import type { MediaThreadDetail } from 'librechat-data-provider';
-import { useMediaThreads, useMediaCatalog, useMediaThread } from '../queries';
+import { useMediaThreads, useMediaCatalog, useMediaThread, useMediaActivity } from '../queries';
 
 jest.mock('librechat-data-provider', () => {
   const actual =
@@ -46,6 +46,45 @@ function rejected(status: number) {
 
 beforeEach(() => jest.mocked(dataService.listMediaThreads).mockReset());
 
+test('shell activity polls only active work and wakes on invalidation', async () => {
+  const env = setup();
+  const load = jest.mocked(dataService.listMediaThreads).mockResolvedValue({ items: [] });
+  const hook = renderHook(() => useMediaActivity(env.host, true), { wrapper: env.wrapper });
+  await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+  jest.useFakeTimers();
+  await act(async () => {
+    jest.advanceTimersByTime(120000);
+  });
+  expect(load).toHaveBeenCalledTimes(1);
+  const thread = {
+    schemaVersion: 1 as const,
+    threadId: 'background',
+    title: 'Video',
+    version: 1,
+    createdAt: '2026-09-19T12:00:00Z',
+    updatedAt: '2026-09-19T12:00:00Z',
+    pendingJobCount: 2,
+    turnCount: 1,
+  };
+  load.mockResolvedValue({ items: [thread] });
+  await act(async () => {
+    await env.client.invalidateQueries([QueryKeys.mediaThreads, env.host.scope]);
+    jest.advanceTimersByTime(1);
+  });
+  expect(hook.result.current.count).toBe(2);
+  load.mockResolvedValue({ items: [] });
+  await act(async () => {
+    jest.advanceTimersByTime(60001);
+  });
+  await act(async () => {
+    jest.advanceTimersByTime(1);
+  });
+  expect(hook.result.current.count).toBe(0);
+  hook.unmount();
+  env.client.clear();
+  jest.useRealTimers();
+});
+
 test('refreshes at a known saved-key expiry without fetching individual keys on startup', async () => {
   const env = setup();
   const catalog = mediaCatalogSchema.parse({
@@ -53,8 +92,6 @@ test('refreshes at a known saved-key expiry without fetching individual keys on 
     version: 'catalog',
     offerings: [],
     limits: {},
-    clientPollIntervalMs: 60000,
-    clientCatchUpIntervalMs: 60000,
     integrations: [
       {
         connectionId: 'native',

@@ -246,8 +246,8 @@ describe('createMediaTitleGenerator', () => {
         scopes.push(requested);
         return operation();
       },
-      log: (error) => {
-        errors.push(error);
+      log: (message, error) => {
+        errors.push(error ?? new Error(message));
       },
       ...overrides,
     });

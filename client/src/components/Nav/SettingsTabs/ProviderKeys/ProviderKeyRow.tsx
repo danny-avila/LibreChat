@@ -88,9 +88,12 @@ export default function ProviderKeyRow({
           open={dialogOpen}
           onOpenChange={setDialogOpen}
           endpoint={endpoint}
-          keyConfiguration={keyConfiguration}
+          keyConfiguration={keyConfiguration?.encoding === 'google' ? undefined : keyConfiguration}
           endpointType={endpointType}
-          userProvideURL={getEndpointField(endpointsConfig, endpoint, 'userProvideURL')}
+          userProvideURL={
+            keyConfiguration?.userProvideURL ??
+            getEndpointField(endpointsConfig, endpoint, 'userProvideURL')
+          }
           userProvideAccessKeyId={getEndpointField(
             endpointsConfig,
             endpoint,

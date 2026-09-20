@@ -54,7 +54,9 @@ export function useMediaCredentials(catalog: MediaCatalog, selectId: string) {
       <SetKeyDialog
         open
         endpoint={active.keyName}
-        keyConfiguration={active}
+        label={active.label}
+        keyConfiguration={active.encoding === 'google' ? undefined : active}
+        userProvideURL={active.userProvideURL}
         onOpenChange={close}
         onCloseAutoFocus={restoreFocus}
       />

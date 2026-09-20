@@ -53,3 +53,4 @@ export {
 } from './media';
 export { default as mediaSettlementSchema } from './mediaSettlement';
 export { default as mediaNativePartSchema } from './mediaNativePart';
+export { default as mediaPresetSchema } from './mediaPreset';

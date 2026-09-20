@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import copy from 'copy-to-clipboard';
 import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
+import { useTranslation } from 'react-i18next';
 import {
   Button,
   OGDialog,
@@ -26,6 +27,7 @@ import {
 import { getDownloadFilename, logger, sortPagesByRelevance, triggerDownload } from '~/utils';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useFileMapContext, useShareContext } from '~/Providers';
+import { formatBytes } from '~/utils/files';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -42,17 +44,6 @@ interface FilePreviewDialogProps {
   fileSource?: string;
   fileSize?: number;
   deliveryPath?: TFile['llmDeliveryPath'];
-}
-
-/** Formats bytes with unit suffix (differs from ~/utils/formatBytes which returns a raw number). */
-function formatBytes(bytes: number): string {
-  if (bytes >= 1048576) {
-    return `${(bytes / 1048576).toFixed(1)} MB`;
-  }
-  if (bytes >= 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`;
-  }
-  return `${bytes} B`;
 }
 
 function getDisplayType(fileType?: string, fileName?: string): string {
@@ -100,6 +91,7 @@ export default function FilePreviewDialog({
   deliveryPath,
 }: FilePreviewDialogProps) {
   const localize = useLocalize();
+  const { i18n } = useTranslation();
   const user = useRecoilValue(store.user);
   const { shareId } = useShareContext();
   const fileMap = useFileMapContext();
@@ -242,7 +234,7 @@ export default function FilePreviewDialog({
     metaParts.push(`${localize('com_ui_relevance')}: ${Math.round(relevance * 100)}%`);
   }
   if (fileSize != null && fileSize > 0) {
-    metaParts.push(formatBytes(fileSize));
+    metaParts.push(formatBytes(fileSize, i18n.language));
   }
   if (sortedPages && sortedPages.length > 0) {
     metaParts.push(localize('com_file_pages', { pages: sortedPages.join(', ') }));

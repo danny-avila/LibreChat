@@ -1,9 +1,9 @@
-import type { MediaCatalog, MediaUserKey } from 'librechat-data-provider';
+import type { MediaStartupConfig, MediaUserKey } from 'librechat-data-provider';
 
 export type MediaKeyConfiguration = MediaUserKey & { label: string; conflict: boolean };
 
 /** Image/video connections can share a saved key, including its user-supplied URL. */
-export function mergeMediaUserKeys(integrations: MediaCatalog['integrations']) {
+export function mergeMediaUserKeys(integrations: MediaStartupConfig['integrations']) {
   const keys = new Map<string, MediaKeyConfiguration>();
   for (const integration of integrations ?? []) {
     const key = integration.userKey;

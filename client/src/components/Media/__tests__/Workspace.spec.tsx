@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { createPortal } from 'react-dom';
-import { Provider, createStore, useAtomValue } from 'jotai';
+import { Provider, createStore } from 'jotai';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { dataService, mediaSubmissionRequestSchema } from 'librechat-data-provider';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -13,9 +12,11 @@ import type {
 } from 'librechat-data-provider';
 import type { MediaHost } from '../host';
 import { clearMediaSessionStorage, mediaDraftFamily, mediaLibraryFamily } from '../state';
-import SidebarPortal, { sidebarPortalTarget } from '~/components/UnifiedSidebar/portal';
+import { MediaSettingsContent } from '../Panel';
 import { MediaHostProvider } from '../host';
 import MediaWorkspace from '../Workspace';
+import { makeCatalog } from 'test/media';
+import { useMediaHost } from '../host';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: { count?: number }) =>
@@ -27,26 +28,7 @@ jest.mock('librechat-data-provider', () => {
   return { ...actual, dataService: { ...actual.dataService } };
 });
 
-const catalog: MediaCatalog = {
-  schemaVersion: 1,
-  version: 'catalog',
-  clientPollIntervalMs: 5000,
-  clientCatchUpIntervalMs: 60000,
-  limits: {
-    maxPromptChars: 1000,
-    maxTitleChars: 200,
-    maxInputs: 4,
-    maxOutputs: 2,
-    pageSize: 24,
-    maxPageSize: 100,
-    maxAssetRetainers: 100,
-    maxNativeParts: 100,
-    maxNativePartBytes: 1000000,
-    maxNativeRecordingBytes: 4194304,
-    maxProviderOptionBytes: 32768,
-    maxProviderOptionDepth: 8,
-    maxPresets: 50,
-  },
+const catalog = makeCatalog({
   offerings: [
     {
       connectionId: 'provider',
@@ -65,7 +47,7 @@ const catalog: MediaCatalog = {
       ],
     },
   ],
-};
+});
 const selection = { connectionId: 'provider', modelId: 'image-model', catalogVersion: 'catalog' };
 const createdAt = '2026-09-17T12:00:00.000Z';
 const turn = (sequence: number): MediaTurn => ({
@@ -164,6 +146,10 @@ const imageCatalog = (
 });
 
 const header = () => within(screen.getByRole('banner'));
+function Settings({ threadId }: { threadId?: string }) {
+  const host = useMediaHost();
+  return <MediaSettingsContent host={host} threadId={threadId} />;
+}
 function Harness({
   initialThread,
   embedded = false,
@@ -176,7 +162,6 @@ function Harness({
   navigate?: (id: string, commit: () => void) => void;
 }) {
   const [threadId, setThreadId] = useState(initialThread);
-  const target = useAtomValue(sidebarPortalTarget);
   return (
     <MediaHostProvider
       value={{
@@ -186,6 +171,7 @@ function Harness({
         catchUpIntervalMs: 60000,
         enterToSend: false,
         isCurrentSession: () => true,
+        useInChat: async () => {},
         openThread: (id) => {
           const commit = () => setThreadId(id || undefined);
           if (navigate) navigate(id, commit);
@@ -196,20 +182,10 @@ function Harness({
     >
       {!embedded && (
         <aside aria-label="Studio sidebar">
-          <SidebarPortal />
+          <Settings threadId={threadId} />
         </aside>
       )}
-      <MediaWorkspace
-        threadId={threadId}
-        settingsHost={
-          embedded
-            ? undefined
-            : {
-                render: (settings) => target && createPortal(settings, target),
-                toggle: null,
-              }
-        }
-      />
+      <MediaWorkspace threadId={threadId} settingsToggle={embedded ? undefined : <span />} />
     </MediaHostProvider>
   );
 }
@@ -263,7 +239,7 @@ test('keeps parameters in the sidebar and restores the prompt and gallery densit
     const option = density.getByRole('radio', { name: String(columns) });
     fireEvent.click(option);
     expect(option).toHaveAttribute('aria-checked', 'true');
-    expect(document.querySelector('[data-media-gallery]')).toHaveAttribute(
+    expect(document.querySelector('[data-testid="media-gallery"]')).toHaveAttribute(
       'data-columns',
       String(columns),
     );
@@ -279,14 +255,46 @@ test('keeps parameters in the sidebar and restores the prompt and gallery densit
   await screen.findByRole('heading', { name: 'com_media_gallery' });
   expect(screen.getByRole('radio', { name: '4' })).toHaveAttribute('aria-checked', 'true');
   await waitFor(() =>
-    expect(document.querySelector('[data-media-composer] textarea')).toHaveValue(
-      'A paper boat on a lake',
-    ),
+    expect(
+      within(screen.getByTestId('media-composer')).getByRole('textbox', { hidden: true }),
+    ).toHaveValue('A paper boat on a lake'),
   );
   fireEvent.click(header().getByRole('button', { name: 'com_media_back_creation' }));
   expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue(
     'A paper boat on a lake',
   );
+});
+
+test('creates an independent draft from a result without carrying the source thread identity', async () => {
+  jest.mocked(dataService.getMediaCatalog).mockResolvedValue(imageCatalog());
+  jest
+    .mocked(dataService.getMediaThread)
+    .mockResolvedValue({ ...detail, turns: { items: [imageTurn(1)] } });
+  mount({ initialThread: 'thread' });
+  const action = await screen.findByRole('button', { name: 'com_media_create_from_result' });
+  fireEvent.click(action);
+  await waitFor(() =>
+    expect(header().getByRole('button', { name: 'com_media_open_gallery' })).toBeVisible(),
+  );
+  const prompt = await screen.findByRole('textbox', { name: 'com_media_prompt' });
+  fireEvent.change(prompt, { target: { value: 'A different composition' } });
+  const submit = jest.spyOn(dataService, 'submitMedia').mockResolvedValue({
+    schemaVersion: 1,
+    phase: 'accepted',
+    clientRequestId: 'new',
+    threadId: 'new-thread',
+    turnId: 'new-turn',
+    jobId: 'new-job',
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(submit).toHaveBeenCalled());
+  expect(submit.mock.calls[0][0]).toMatchObject({
+    operation: 'image.edit',
+    prompt: 'A different composition',
+    inputs: [{ file_id: 'image-1', role: 'reference' }],
+  });
+  expect(submit.mock.calls[0][0]).not.toHaveProperty('threadId', 'thread');
+  expect(submit.mock.calls[0][0].parentTurnId).toBeUndefined();
 });
 
 test('a long thread uses authoritative latest image context beyond the current page', async () => {
@@ -501,7 +509,7 @@ test('removing the automatic image starts fresh and preserves that choice and th
     'A different subject',
   );
   expect(screen.queryByText('com_media_editing_latest')).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('radio', { name: 'com_media_edit' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'com_ui_edit' }));
   expect(screen.getByText('com_media_editing_latest')).toBeVisible();
   fireEvent.click(screen.getByRole('radio', { name: 'com_media_image' }));
   expect(screen.queryByText('com_media_editing_latest')).not.toBeInTheDocument();
@@ -578,3 +586,71 @@ test('a pending request the server does not know can be recovered or dismissed',
   );
   expect(sessionStorage.getItem('librechat:media:owner:pending')).toBe('[]');
 });
+
+test('an empty library offers a first creation and returns to its composer', async () => {
+  jest.mocked(dataService.listMediaThreads).mockResolvedValue({ items: [] });
+  mount();
+  await screen.findByRole('textbox', { name: 'com_media_prompt' });
+  fireEvent.click(header().getByRole('button', { name: 'com_media_open_gallery' }));
+  expect(await screen.findByText('com_media_empty_title')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_create' }));
+  expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toBeVisible();
+});
+
+test('an unavailable thread offers retry and recovers its composer', async () => {
+  jest.mocked(dataService.getMediaThread).mockRejectedValueOnce(new Error('Unavailable'));
+  mount({ initialThread: 'thread' });
+  const alert = await within(screen.getByTestId('media-workspace')).findByRole('alert');
+  expect(alert).toHaveTextContent('com_media_thread_unavailable');
+  fireEvent.click(within(alert).getByRole('button', { name: 'com_ui_retry' }));
+  expect(await screen.findByRole('textbox', { name: 'com_media_prompt' })).toBeVisible();
+});
+
+test.each([403, 404])(
+  'an unavailable thread (%s) stops polling and still permits a new creation',
+  async (status) => {
+    const load = jest
+      .mocked(dataService.getMediaThread)
+      .mockRejectedValue({ response: { status } });
+    const view = mount({ initialThread: 'thread' });
+    expect(
+      await within(screen.getByTestId('media-workspace')).findByRole('alert'),
+    ).toHaveTextContent('com_media_thread_unavailable');
+    const calls = load.mock.calls.length;
+    jest.useFakeTimers();
+    try {
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(120000);
+      });
+      expect(load).toHaveBeenCalledTimes(calls);
+      fireEvent.click(header().getByRole('button', { name: 'com_media_new_thread' }));
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1);
+      });
+      expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toBeVisible();
+    } finally {
+      view.unmount();
+      jest.useRealTimers();
+    }
+  },
+);
+
+test.each([false, true])(
+  'expiry preserves explicit temporary=%s for labels and chat attachment',
+  async (temporary) => {
+    jest.mocked(dataService.getMediaThread).mockResolvedValue({
+      ...detail,
+      thread: { ...detail.thread, temporary, expiresAt: '2099-09-20T00:00:00.000Z' },
+      turns: { items: [imageTurn(1)] },
+    });
+    mount({ initialThread: 'thread' });
+    const attach = await screen.findByRole('button', { name: 'com_media_use_chat' });
+    if (temporary) {
+      expect(attach).toBeDisabled();
+      expect(screen.getByText(/com_media_temporary_creation/)).toBeVisible();
+    } else {
+      expect(attach).toBeEnabled();
+      expect(screen.queryByText(/com_media_temporary_creation/)).not.toBeInTheDocument();
+    }
+  },
+);

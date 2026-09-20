@@ -22,8 +22,10 @@ function AttachFileChat({
   files,
   setFiles,
   setFilesLoading,
+  onCreateMedia,
 }: {
   disableInputs: boolean;
+  onCreateMedia?: () => void;
   conversation: TConversation | null;
   files: Map<string, ExtendedFile>;
   setFiles: FileSetter;
@@ -90,6 +92,7 @@ function AttachFileChat({
   } else if ((isAgents || endpointSupportsFiles) && !isUploadDisabled) {
     return (
       <AttachFileMenu
+        onCreateMedia={onCreateMedia}
         endpoint={endpoint}
         /* Inert until the config resolves: the menu is an action, not just a display, and
          * offering the chooser here submits an explicit destination a unified deployment

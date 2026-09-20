@@ -6,14 +6,13 @@ const path = require('path');
 require('module-alias')({ base: path.resolve(__dirname, '..') });
 const cors = require('cors');
 const axios = require('axios');
-const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const mongoSanitize = require('express-mongo-sanitize');
-const { logger, runAsSystem, tenantStorage, decrypt } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   isEnabled,
   issueCsp,
@@ -34,8 +33,8 @@ const {
   agentStartupIngressMiddleware,
   agentStartupTelemetryMiddleware,
   initializeFileStorage,
-  createMediaRuntimeFromApp,
-  createAdminMediaRouter,
+  isLeader,
+  startMediaWorker,
   initializeDeploymentSkills,
   initializeDeploymentPlugins,
   getDeploymentPluginSkills,
@@ -49,7 +48,6 @@ const {
   injectConfiguredFooterBootstrap,
   preAuthTenantMiddleware,
   requestContextMiddleware,
-  tenantContextMiddleware,
   registerShutdownTask,
   getRemainingShutdownMs,
   configureServerTimeouts,
@@ -73,7 +71,7 @@ const {
   seedDatabase,
 } = require('~/models');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
-const { capabilityContextMiddleware, hasCapability } = require('./middleware/roles/capabilities');
+const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
 const { initializeAgentTriggerService } = require('./services/Agents/triggers');
@@ -83,11 +81,7 @@ const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { checkMigrations } = require('./services/start/migration');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
-const optionalShareFileAuth = require('./middleware/optionalShareFileAuth');
-const requireJwtAuth = require('./middleware/requireJwtAuth');
-const checkBan = require('./middleware/checkBan');
-const { messageIpLimiter, messageUserLimiter } = require('./middleware/limiters/messageLimiters');
-const { createFileLimiters } = require('./middleware/limiters/uploadLimiters');
+const mediaApplication = require('./services/Media');
 const initializeMCPs = require('./services/initializeMCPs');
 const { configureSubagentTaskRouting } = require('./services/Endpoints/agents/subagentThreadStore');
 const configureSocialLogins = require('./socialLogins');
@@ -181,6 +175,7 @@ const startServer = async () => {
   await waitForKeyvRedisClient();
   await configureSubagentTaskRouting();
   const { metricsMiddleware, metricsRouter, recordMediaEvent } = createMetrics({
+    collectMediaBacklogMetrics: () => runAsSystem(agentEventMethods.getMediaBacklogMetrics),
     collectAgentEventActorStorageMetrics: () =>
       runAsSystem(async () => {
         const now = new Date();
@@ -243,26 +238,6 @@ const startServer = async () => {
   configureAgentEventRuntime(appConfig?.endpoints?.agents?.eventDriven);
   warnOnUnreachableDeliveryPaths(appConfig);
   initializeFileStorage(appConfig);
-  const mediaRuntime = createMediaRuntimeFromApp({
-    mediaMetrics: recordMediaEvent,
-    appConfig,
-    db: agentEventMethods,
-    getRoleByName,
-    getAppConfig,
-    tenantContext: tenantStorage,
-    asSystem: runAsSystem,
-    environment: process.env,
-    http: axios,
-    upload: multer,
-    admission: { checkBan, messageIpLimiter, messageUserLimiter, createFileLimiters },
-    getStorageStrategy: require('~/server/services/Files/strategies').getStrategyFunctions,
-    readFile: fs.promises.readFile,
-    decrypt,
-    log: logger.error.bind(logger),
-  });
-  app.locals.mediaRuntime = mediaRuntime;
-  await mediaRuntime.worker.start();
-  registerShutdownTask('media worker', mediaRuntime.worker.stop, { priority: 100 });
   const projectRoot = path.resolve(__dirname, '../..');
   // Plugin hooks execute only when the operator opts in via DEPLOYMENT_PLUGIN_HOOKS;
   // without it, declared hook documents load as parsed-but-inert with a warning.
@@ -296,6 +271,12 @@ const startServer = async () => {
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);
     await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
+  });
+  const mediaRuntime = mediaApplication.initialize({
+    app,
+    appConfig,
+    mediaMetrics: recordMediaEvent,
+    isLeader,
   });
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
@@ -435,16 +416,7 @@ const startServer = async () => {
   app.use('/api/admin/roles', routes.adminRoles);
   app.use('/api/admin/skills', routes.adminSkills);
   app.use('/api/admin/users', routes.adminUsers);
-  app.use(
-    '/api/admin/media',
-    createAdminMediaRouter({
-      services: mediaRuntime.recovery,
-      hasCapability,
-      recordAuditEntry: agentEventMethods.recordAuditEntry,
-      requireJwtAuth,
-      log: logger.error.bind(logger),
-    }),
-  );
+  app.use('/api/admin/media', routes.adminMedia);
   app.use('/api/admin/audit-log', routes.adminAuditLog);
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
@@ -465,14 +437,7 @@ const startServer = async () => {
   app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', await routes.files.initialize());
-  app.use(
-    '/api/media/assets',
-    optionalJwtAuth,
-    optionalShareFileAuth,
-    tenantContextMiddleware,
-    mediaRuntime.contentRouter,
-  );
-  app.use('/api/media', requireJwtAuth, mediaRuntime.router);
+  mediaApplication.mount(app, mediaRuntime);
   app.use(
     '/images/',
     createValidateImageRequest({
@@ -532,6 +497,7 @@ const startServer = async () => {
      * failures and leave the server listening but only partially
      * initialized — passing liveness checks while serving broken requests.
      */
+    void startMediaWorker(mediaRuntime.worker, logger);
     try {
       await runAsSystem(async () => {
         await initializeMCPs();

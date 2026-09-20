@@ -11,14 +11,6 @@ import { mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import type { WriteStream } from 'node:fs';
 import { createMediaStaging } from './staging';
 
-async function eventually(check: () => Promise<boolean> | boolean): Promise<void> {
-  for (let attempt = 0; attempt < 200; attempt++) {
-    if (await check()) return;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error('The upload did not settle.');
-}
-
 describe('media upload staging', () => {
   let directory: string;
   beforeEach(async () => {
@@ -31,9 +23,33 @@ describe('media upload staging', () => {
 
   it('settles an interrupted multipart upload once, closes its file and removes partial bytes', async () => {
     const writes: WriteStream[] = [];
+    let resolveWritten: () => void;
+    const written = new Promise<void>((resolve) => {
+      resolveWritten = resolve;
+    });
+    let resolveSettled: () => void;
+    const settled = new Promise<void>((resolve) => {
+      resolveSettled = resolve;
+    });
+    let resolveStored: () => void;
+    const stored = new Promise<void>((resolve) => {
+      resolveStored = resolve;
+    });
     const createWriteStream = fs.createWriteStream;
     jest.spyOn(fs, 'createWriteStream').mockImplementation((...args) => {
       const stream = createWriteStream(...args);
+      const writtenCallback =
+        (callback: (error?: Error | null) => void) => (error?: Error | null) => {
+          callback(error);
+          if (!error && stream.bytesWritten === 65_536) resolveWritten();
+        };
+      const write = stream._write;
+      stream._write = (chunk, encoding, callback) =>
+        write.call(stream, chunk, encoding, writtenCallback(callback));
+      const writev = stream._writev;
+      if (writev)
+        stream._writev = (chunks, callback) =>
+          writev.call(stream, chunks, writtenCallback(callback));
       writes.push(stream);
       return stream;
     });
@@ -43,6 +59,10 @@ describe('media upload staging', () => {
     let callbacks = 0;
     let failed = false;
     const app = express();
+    app.use((req, _res, next) => {
+      req.user = { id: 'owner' } as Express.User;
+      next();
+    });
     app.post('/', (req, res) =>
       multer({
         storage: {
@@ -51,12 +71,14 @@ describe('media upload staging', () => {
             storage._handleFile(incoming, file, (error, info) => {
               callbacks++;
               callback(error, info);
+              resolveStored();
             });
           },
         },
       }).single('file')(req, res, (error) => {
         failed = !!error;
         if (!res.destroyed) res.sendStatus(error ? 400 : 204);
+        resolveSettled();
       }),
     );
     const server = createServer(app);
@@ -76,14 +98,12 @@ describe('media upload staging', () => {
         '--staging-test\r\nContent-Disposition: form-data; name="file"; filename="image.png"\r\nContent-Type: image/png\r\n\r\n',
       );
       client.write(Buffer.alloc(65_536));
-      await eventually(
-        async () =>
-          (await stat(path.join(directory, 'interrupted')).catch(() => null))?.size === 65_536,
-      );
+      await written;
+      expect((await stat(path.join(directory, 'owner', 'media', 'interrupted'))).size).toBe(65_536);
       client.destroy();
-      await eventually(
-        async () => callbacks === 1 && failed && (await readdir(directory)).length === 0,
-      );
+      await Promise.all([settled, stored]);
+      expect(failed).toBe(true);
+      expect(await readdir(path.join(directory, 'owner', 'media'))).toEqual([]);
       expect(writes).toHaveLength(1);
       expect(writes[0].closed).toBe(true);
       expect(writes[0].destroyed).toBe(true);
@@ -101,6 +121,10 @@ describe('media upload staging', () => {
       resolveMediaConfig({ transfers: { maxImageBytes: 1024 } }),
     );
     const app = express();
+    app.use((req, _res, next) => {
+      req.user = { id: 'owner' } as Express.User;
+      next();
+    });
     app.post('/', (req, res) =>
       multer({ storage }).single('file')(req, res, (error) => {
         if (error) {
@@ -115,21 +139,42 @@ describe('media upload staging', () => {
       .attach('file', Buffer.alloc(64), 'image.png')
       .expect(200, { size: 64 });
     await request(app).post('/').attach('file', Buffer.alloc(2048), 'image.png').expect(413);
-    expect(await readdir(directory)).toEqual(['upload-1']);
+    expect(await readdir(path.join(directory, 'owner', 'media'))).toEqual(['upload-1']);
   });
 
   it('does not delete an existing file when exclusive creation fails', async () => {
-    await writeFile(path.join(directory, 'existing'), 'preserved');
+    await fs.promises.mkdir(path.join(directory, 'owner', 'media'), { recursive: true });
+    await writeFile(path.join(directory, 'owner', 'media', 'existing'), 'preserved');
     const storage = createMediaStaging({ directory, id: () => 'existing' }).storage(
       resolveMediaConfig(),
     );
     const app = express();
+    app.use((req, _res, next) => {
+      req.user = { id: 'owner' } as Express.User;
+      next();
+    });
     app.post('/', (req, res) =>
       multer({ storage }).single('file')(req, res, (error) => {
         res.sendStatus(error ? 409 : 204);
       }),
     );
     await request(app).post('/').attach('file', Buffer.alloc(64), 'image.png').expect(409);
-    expect(await fs.promises.readFile(path.join(directory, 'existing'), 'utf8')).toBe('preserved');
+    expect(
+      await fs.promises.readFile(path.join(directory, 'owner', 'media', 'existing'), 'utf8'),
+    ).toBe('preserved');
+  });
+  it('sweeps only stale media staging inside owner temp folders', async () => {
+    const staging = createMediaStaging({ directory, id: () => 'unused' });
+    const owner = path.join(directory, 'owner');
+    const media = path.join(owner, 'media');
+    await fs.promises.mkdir(media, { recursive: true });
+    await writeFile(path.join(owner, 'ordinary-upload'), 'keep');
+    await writeFile(path.join(media, 'old-upload'), 'remove');
+    await writeFile(path.join(media, 'fresh-upload'), 'keep');
+    const cutoff = Date.now() - 1000;
+    await fs.promises.utimes(path.join(media, 'old-upload'), new Date(0), new Date(0));
+    expect(await staging.sweep(cutoff)).toBe(1);
+    expect(await readdir(owner)).toEqual(expect.arrayContaining(['ordinary-upload', 'media']));
+    expect(await readdir(media)).toEqual(['fresh-upload']);
   });
 });

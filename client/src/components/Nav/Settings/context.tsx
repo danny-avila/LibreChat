@@ -5,7 +5,8 @@ import type { SettingsContextValue } from './types';
 import useProviderKeys, {
   useMediaProviderKeyScope,
 } from '../SettingsTabs/ProviderKeys/useProviderKeys';
-import { useHasAccess, useAuthContext, useGetAgentsConfig } from '~/hooks';
+import { useHasAccess, useAuthContext, useGetAgentsConfig, useMediaAccess } from '~/hooks';
+import { useMediaRecoveryAccess } from '~/hooks/Media/useMediaRecoveryAccess';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
 import { useGetStartupConfig } from '~/data-provider';
 import store from '~/store';
@@ -42,6 +43,8 @@ export function useSettingsContext(): SettingsContextValue {
   const engineTTS = useRecoilValue<string>(store.engineTTS);
   const chatProviderKeys = useProviderKeys();
   const mediaProviderKeyScope = useMediaProviderKeyScope();
+  const { studio: hasMediaStudio } = useMediaAccess();
+  const { canRead: canReadMediaRecovery } = useMediaRecoveryAccess();
   const hasUserProvidedEndpoints = chatProviderKeys.length > 0 || !!mediaProviderKeyScope;
   const hasStatefulCodeSessions =
     agentsConfig?.capabilities.includes(AgentCapabilities.stateful_code_sessions) ?? false;
@@ -52,6 +55,8 @@ export function useSettingsContext(): SettingsContextValue {
       hasAnyPersonalizationFeature,
       hasMemoryOptOut,
       hasStatefulCodeSessions,
+      hasMediaStudio,
+      canReadMediaRecovery,
       hasRemoteAgents: hasRemoteAgentsBool,
       hasUserProvidedEndpoints,
       hasMultiConvo: hasMultiConvoBool,
@@ -69,6 +74,8 @@ export function useSettingsContext(): SettingsContextValue {
       hasAnyPersonalizationFeature,
       hasMemoryOptOut,
       hasStatefulCodeSessions,
+      hasMediaStudio,
+      canReadMediaRecovery,
       hasRemoteAgentsBool,
       hasUserProvidedEndpoints,
       hasMultiConvoBool,

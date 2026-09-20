@@ -110,7 +110,7 @@ function renderPanel({
   onCollapse = jest.fn(),
   onExpand = jest.fn(),
   onNavigate,
-  onLeaveInsights,
+  onLeaveRoute,
   initialPanel = DEFAULT_PANEL,
   path = '/',
   initializeState,
@@ -120,7 +120,7 @@ function renderPanel({
   onCollapse?: jest.Mock;
   onExpand?: jest.Mock;
   onNavigate?: jest.Mock;
-  onLeaveInsights?: jest.Mock;
+  onLeaveRoute?: jest.Mock;
   initialPanel?: string;
   path?: string;
   initializeState?: (snapshot: MutableSnapshot) => void;
@@ -136,11 +136,14 @@ function renderPanel({
           <ActivePanelProvider>
             <ExpandedPanel
               links={links}
+              routeActiveId={['media-studio', 'insights'].find((id) =>
+                path.startsWith(id === 'media-studio' ? '/studio' : '/insights'),
+              )}
               expanded={expanded}
               onCollapse={onCollapse}
               onExpand={onExpand}
               onNavigate={onNavigate}
-              onLeaveInsights={onLeaveInsights}
+              onLeaveRoute={onLeaveRoute}
             />
           </ActivePanelProvider>
         </RecoilRoot>
@@ -161,15 +164,15 @@ describe('ExpandedPanel', () => {
     it.each([false, true])(
       'leaves Studio when opening another sidebar panel (%s)',
       async (expanded) => {
-        const onLeaveInsights = jest.fn();
+        const onLeaveRoute = jest.fn();
         const { onExpand } = renderPanel({
           expanded,
           path: '/studio/threads/saved',
-          onLeaveInsights,
+          onLeaveRoute,
         });
         await screen.findByTestId('account-settings');
         fireEvent.click(screen.getByRole('button', { name: 'com_ui_prompts' }));
-        expect(onLeaveInsights).toHaveBeenCalledTimes(1);
+        expect(onLeaveRoute).toHaveBeenCalledTimes(1);
         expect(onExpand).toHaveBeenCalledTimes(expanded ? 0 : 1);
         expect(localStorage.getItem('side:active-panel')).toBe('prompts');
       },

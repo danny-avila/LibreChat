@@ -15,8 +15,9 @@ import type {
 import type { MediaTransport, MediaTransportRequest } from './transport';
 import type { MediaConnection, MediaProviderAdapter } from './provider';
 import type { ResolvedMediaOffering } from './discovery';
-import { vertexVideoCapabilities, vertexVideoModelName } from './adapters/vertexVideo';
+import type { MediaCatalogCache } from './catalogCache';
 import { openAIImageCapabilities, openAIVideoCapabilities } from './adapters/openai';
+import { vertexVideoCapabilities, vertexVideoModelName } from './adapters/veo';
 import { googleImageCapabilities } from './adapters/google';
 import { discoverOpenRouter } from './discovery';
 import { MediaServiceError } from './errors';
@@ -52,10 +53,12 @@ export function createMediaCatalog({
   transport,
   adapters,
   now,
+  cache: sharedCache,
 }: {
   transport: MediaTransport;
   adapters: readonly MediaProviderAdapter[];
   now: () => number;
+  cache?: MediaCatalogCache;
 }) {
   const cache = new Map<string, { expires: number; value: ResolvedOffering[] }>();
   const pending = new Map<string, Promise<ResolvedOffering[]>>();
@@ -181,6 +184,7 @@ export function createMediaCatalog({
             const key = createHash('sha256')
               .update(
                 JSON.stringify({
+                  scope,
                   integration,
                   binding: connection.binding,
                   routing: connection.routing,
@@ -191,10 +195,12 @@ export function createMediaCatalog({
                 }),
               )
               .digest('hex');
-            const current = cache.get(key);
+            const current = sharedCache ? await sharedCache.get(key) : cache.get(key);
             if (current && current.expires > now()) {
-              cache.delete(key);
-              cache.set(key, current);
+              if (!sharedCache) {
+                cache.delete(key);
+                cache.set(key, current);
+              }
               return current.value;
             }
             let work = pending.get(key);
@@ -203,8 +209,14 @@ export function createMediaCatalog({
                 throw new MediaServiceError('not_ready', 503, 'The media catalog is busy.');
               }
               work = load(integration, connection, config)
-                .then((value) => {
-                  store(key, value, config);
+                .then(async (value) => {
+                  if (sharedCache)
+                    await sharedCache.set(
+                      key,
+                      { expires: now() + config.catalog.refreshMs, value },
+                      config.catalog.refreshMs,
+                    );
+                  else store(key, value, config);
                   return value;
                 })
                 .finally(() => pending.delete(key));
@@ -215,6 +227,7 @@ export function createMediaCatalog({
             const code =
               error instanceof MediaServiceError &&
               (error.code === 'credentials_required' ||
+                error.code === 'gemini_key_required' ||
                 error.code === 'credentials_expired' ||
                 error.code === 'unsupported')
                 ? error.code
@@ -268,8 +281,6 @@ export function createMediaCatalog({
           version,
           offerings: entries.map((entry) => entry.offering),
           limits: config.limits,
-          clientPollIntervalMs: config.polling.clientIntervalMs,
-          clientCatchUpIntervalMs: config.polling.clientCatchUpIntervalMs,
           integrations,
         },
         resolved: new Map(

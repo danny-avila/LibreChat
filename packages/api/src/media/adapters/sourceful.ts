@@ -169,7 +169,6 @@ export function createSourcefulMediaAdapters(): MediaProviderAdapter[] {
       configuration: {
         baseURL: 'https://www.riverflow.ai',
         keyPrefix: 'Riverflow-Key ',
-        requiredOptions: ['brandId'],
       },
       operations: ['image.generate', 'image.edit'],
       catalog,

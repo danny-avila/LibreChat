@@ -22,7 +22,8 @@ const {
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
-  resolveNativeMediaFactory,
+  buildNativeMediaFactory,
+  getNativeResponseMetadata,
   resolveRunUsageContext,
   recordFallbackTokenUsage,
   createDetachedSubagentUsageRecorder,
@@ -3600,7 +3601,7 @@ class AgentClient extends BaseClient {
      *   contextUsage?: import('librechat-data-provider').TContextUsageEvent,
      *   usage?: import('librechat-data-provider').TResponseUsage,
      * }} */
-    const metadata = {};
+    const metadata = getNativeResponseMetadata(this);
     const signatures = this.collectedThoughtSignatures;
     if (signatures && Object.keys(signatures).length > 0) {
       metadata.thoughtSignatures = signatures;
@@ -4900,15 +4901,13 @@ class AgentClient extends BaseClient {
           transactionsConfig,
         );
         const createRunPromise = createRun({
-          nativeMediaFactory: await resolveNativeMediaFactory(
-            this.options.req,
-            this.conversationId,
-            this.responseMessageId,
-            this.collectedUsage,
+          nativeMediaFactory: await buildNativeMediaFactory(
+            this,
             {
               onUsage: subagentUsageEmitter,
               recordDetachedUsage: detachedUsageRecorder,
             },
+            GenerationJobManager,
           ),
           agents,
           // Conversation-stable identity for the e2e run hook; a resumed run
@@ -5693,15 +5692,13 @@ class AgentClient extends BaseClient {
         transactionsConfig,
       );
       run = await createRun({
-        nativeMediaFactory: await resolveNativeMediaFactory(
-          this.options.req,
-          this.conversationId,
-          this.responseMessageId,
-          this.collectedUsage,
+        nativeMediaFactory: await buildNativeMediaFactory(
+          this,
           {
             onUsage: subagentUsageEmitter,
             recordDetachedUsage: detachedUsageRecorder,
           },
+          GenerationJobManager,
         ),
         agents,
         conversationId: this.conversationId,

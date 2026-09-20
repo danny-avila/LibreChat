@@ -53,12 +53,9 @@ const {
   withCodeApiUploadRecovery,
   isLeader,
   deleteMediaAwareFile,
+  saveGeneratedImage,
 } = require('@librechat/api');
-const {
-  convertImage,
-  resizeAndConvert,
-  resizeImageBuffer,
-} = require('~/server/services/Files/images');
+const { convertImage, resizeAndConvert } = require('~/server/services/Files/images');
 const { addResourceFileId, deleteResourceFileId } = require('~/server/controllers/assistants/v2');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
@@ -273,16 +270,8 @@ const processDeleteRequest = async ({ req, files }) => {
     await initializeClients();
   }
 
-  const agentFiles = [];
-
   for (const file of files) {
     const source = file.source ?? FileSources.local;
-    if (req.body.agent_id && req.body.tool_resource) {
-      agentFiles.push({
-        tool_resource: req.body.tool_resource,
-        file_id: file.file_id,
-      });
-    }
 
     if (source === FileSources.text) {
       resolvedFileIds.add(file.file_id);
@@ -321,15 +310,6 @@ const processDeleteRequest = async ({ req, files }) => {
     });
   }
 
-  if (agentFiles.length > 0) {
-    promises.push(
-      db.removeAgentResourceFiles({
-        agent_id: req.body.agent_id,
-        files: agentFiles,
-      }),
-    );
-  }
-
   await Promise.allSettled(promises);
   const deletedFileIds = [...resolvedFileIds];
   let metadataDeletedFileIds = deletedFileIds;
@@ -342,6 +322,9 @@ const processDeleteRequest = async ({ req, files }) => {
       metadataDeletedFileIds = [];
       throw error;
     }
+    /* The only place a delete removes agent references, and it runs after the metadata delete
+       succeeded: a file that kept its storage, its chunks or its record keeps its references too,
+       so the agent it was removed from can be asked again (see issue #12776). */
     if (metadataDeletedFileIds.length > 0) {
       try {
         await db.removeAgentResourceFilesFromAllAgents({ file_ids: metadataDeletedFileIds });
@@ -1579,78 +1562,13 @@ async function retrieveAndProcessFile({
  * @param {string} base64String
  * @returns {Buffer<ArrayBufferLike>}
  */
-function base64ToBuffer(base64String) {
-  try {
-    const typeMatch = base64String.match(/^data:([A-Za-z-+/]+);base64,/);
-    const type = typeMatch ? typeMatch[1] : '';
-
-    const base64Data = base64String.replace(/^data:([A-Za-z-+/]+);base64,/, '');
-
-    if (!base64Data) {
-      throw new Error('Invalid base64 string');
-    }
-
-    return {
-      buffer: Buffer.from(base64Data, 'base64'),
-      type,
-    };
-  } catch (error) {
-    throw new Error(`Failed to convert base64 to buffer: ${error.message}`);
-  }
-}
-
-async function saveBase64Image(
-  url,
-  { req, file_id: _file_id, filename: _filename, endpoint, context, resolution },
-) {
-  const retentionExpiryPromise = getRetentionExpiry(req);
-  const appConfig = req.config;
-  const effectiveResolution = resolution ?? appConfig.fileConfig?.imageGeneration ?? 'high';
-  const file_id = _file_id ?? v4();
-  let filename = `${file_id}-${_filename}`;
-  const { buffer: inputBuffer, type: declaredType } = base64ToBuffer(url);
-
-  const image = await resizeImageBuffer(inputBuffer, effectiveResolution, endpoint);
-  /** Sharp re-encodes what it resizes, so the bytes being saved are not necessarily in the
-   * format the data URL declared — an SVG arrives here and is rasterized to PNG. The record has
-   * to describe the bytes, because `file.type` is handed to providers verbatim as `media_type`
-   * (Anthropic), `inlineData.mimeType` (Google), and the `data:` prefix (OpenAI). */
-  const type = image.type ?? declaredType;
-  if (!path.extname(_filename)) {
-    const extension = mime.getExtension(type);
-    if (extension) {
-      filename += `.${extension}`;
-    } else {
-      throw new Error(`Could not determine file extension from MIME type: ${type}`);
-    }
-  }
-  const source = getFileStrategy(appConfig, { isImage: true });
-  const { saveBuffer } = getStrategyFunctions(source);
-  const filepath = await saveBuffer({
-    userId: req.user.id,
-    fileName: filename,
-    buffer: image.buffer,
-    tenantId: req.user.tenantId,
+function saveBase64Image(url, options) {
+  return saveGeneratedImage(url, options, {
+    getExtension: mime.getExtension,
+    getRetentionExpiry,
+    getStrategy: getStrategyFunctions,
+    createFile: db.createFile,
   });
-  const storageMetadata = getStorageMetadata({ filepath, source });
-  return await db.createFile(
-    {
-      type,
-      source,
-      context,
-      file_id,
-      filepath,
-      ...storageMetadata,
-      filename,
-      user: req.user.id,
-      bytes: image.bytes,
-      width: image.width,
-      ...(await retentionExpiryPromise),
-      height: image.height,
-      tenantId: req.user.tenantId,
-    },
-    true,
-  );
 }
 
 /**

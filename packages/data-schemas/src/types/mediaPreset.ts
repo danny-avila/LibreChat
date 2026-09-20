@@ -1,7 +1,8 @@
 import type { MediaPreset, MediaPresetUpdate, MediaPresetWrite } from 'librechat-data-provider';
 import type { MediaOwnerScope } from './media';
 
-export type MediaStoredPreset = MediaPreset & MediaOwnerScope & { version: number };
+export type MediaStoredPreset = Omit<MediaPreset, 'createdAt' | 'updatedAt'> &
+  MediaOwnerScope & { version: number; createdAt: Date; updatedAt: Date };
 
 export interface MediaPresetMethods {
   ensureMediaPresetIndexes(): Promise<void>;

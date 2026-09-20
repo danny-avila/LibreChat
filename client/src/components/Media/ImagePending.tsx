@@ -50,7 +50,7 @@ export function MediaImagePending({
   hint: string;
 }) {
   return (
-    <div role="status" aria-label={label} className="space-y-3" data-media-image-pending>
+    <div role="status" aria-label={label} className="space-y-3" data-testid="media-image-pending">
       <div className="relative" style={mediaImageFrame(dimensions)} aria-hidden="true">
         <div className="absolute inset-0">
           <MediaImagePixels createdAt={createdAt} />

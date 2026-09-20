@@ -1816,6 +1816,7 @@ const initializeClientWithProvider = async ({
   const client = new AgentClient({
     req,
     res,
+    mediaRuntime: req.app.locals.mediaRuntime,
     sender,
     contentParts,
     stepMap,

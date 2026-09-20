@@ -305,8 +305,10 @@ function processSingleValue({
   body = undefined,
   isHeader = false,
   dbSourced = false,
+  environment,
 }: {
   originalValue: string;
+  environment?: Record<string, string | undefined>;
   customUserVars?: Record<string, string>;
   user?: SafeUserInput;
   body?: RequestBody;
@@ -329,7 +331,7 @@ function processSingleValue({
    * patterns would otherwise be expanded against process.env.
    */
   if (!dbSourced) {
-    value = extractEnvVariable(value);
+    value = extractEnvVariable(value, environment);
   }
 
   /** Runs for both dbSourced and non-dbSourced — it is the only resolution DB-stored servers get */
@@ -641,8 +643,16 @@ export function resolveHeaders(options?: {
   body?: RequestBody;
   customUserVars?: Record<string, string>;
   stripUnresolved?: boolean;
+  environment?: Record<string, string | undefined>;
 }): Record<string, string> {
-  const { headers, user, body, customUserVars, stripUnresolved = false } = options ?? {};
+  const {
+    headers,
+    user,
+    body,
+    customUserVars,
+    stripUnresolved = false,
+    environment,
+  } = options ?? {};
   const inputHeaders = headers ?? {};
 
   const resolvedHeaders: Record<string, string> = { ...inputHeaders };
@@ -651,6 +661,7 @@ export function resolveHeaders(options?: {
     Object.keys(inputHeaders).forEach((key) => {
       const processed = processSingleValue({
         originalValue: inputHeaders[key],
+        environment,
         customUserVars,
         user,
         body,

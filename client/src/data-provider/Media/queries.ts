@@ -88,14 +88,19 @@ export function useMediaCatalog(host: MediaQueryScope) {
   }, [client, scope, catchUpIntervalMs, isCurrentSession, keyNames]);
   return query;
 }
-export function useMediaThreads(host: MediaQueryScope, filter: MediaThreadListRequest['filter']) {
+export function useMediaThreads(
+  host: MediaQueryScope,
+  filter: MediaThreadListRequest['filter'],
+  search = '',
+  options: { enabled?: boolean; pollWhenIdle?: boolean } = {},
+) {
   const client = useQueryClient();
   const activity = useRef(true);
-  const key = [QueryKeys.mediaThreads, host.scope, filter, 'activity'];
+  const key = [QueryKeys.mediaThreads, host.scope, filter, 'activity', search];
   return useInfiniteQuery(
     key,
     async ({ pageParam, signal }): Promise<MediaThreadPage> => {
-      const params = { cursor: pageParam, filter };
+      const params = { cursor: pageParam, filter, ...(search ? { search } : {}) };
       const load = async () => {
         try {
           return await dataService.listMediaThreads(
@@ -126,15 +131,36 @@ export function useMediaThreads(host: MediaQueryScope, filter: MediaThreadListRe
       };
     },
     {
+      enabled: options.enabled,
       getNextPageParam: (page) => page.nextCursor,
-      refetchInterval: (data) =>
-        data?.pages.some((page) => page.items.some((thread) => thread.pendingJobCount > 0))
-          ? host.pollIntervalMs
-          : host.catchUpIntervalMs,
+      refetchOnWindowFocus: 'always',
+      refetchInterval: (data, query) => {
+        const status = (query.state.error as { response?: { status?: number } } | null)?.response
+          ?.status;
+        if (status === 403 || status === 404) return false;
+        if (data?.pages.some((page) => page.items.some((thread) => thread.pendingJobCount > 0)))
+          return host.pollIntervalMs;
+        return options.pollWhenIdle === false ? false : host.catchUpIntervalMs;
+      },
       refetchIntervalInBackground: false,
       retry: false,
     },
   );
+}
+
+/** Shell observer stays alive outside Studio; local submissions and event nudges wake an idle query. */
+export function useMediaActivity(host: MediaQueryScope, enabled: boolean) {
+  const query = useMediaThreads(host, 'pending', '', { enabled, pollWhenIdle: false });
+  return {
+    count: enabled
+      ? (query.data?.pages.reduce(
+          (total, page) =>
+            total + page.items.reduce((count, thread) => count + thread.pendingJobCount, 0),
+          0,
+        ) ?? 0)
+      : 0,
+    hasMore: query.hasNextPage === true,
+  };
 }
 export function useMediaThread(host: MediaQueryScope, threadId?: string) {
   const client = useQueryClient();
@@ -162,8 +188,14 @@ export function useMediaThread(host: MediaQueryScope, threadId?: string) {
     },
     {
       enabled: !!threadId,
-      refetchInterval: (data) =>
-        (data?.thread.pendingJobCount ?? 0) > 0 ? host.pollIntervalMs : host.catchUpIntervalMs,
+      refetchInterval: (data, query) => {
+        const status = (query.state.error as { response?: { status?: number } } | null)?.response
+          ?.status;
+        if (status === 403 || status === 404) return false;
+        return (data?.thread.pendingJobCount ?? 0) > 0
+          ? host.pollIntervalMs
+          : host.catchUpIntervalMs;
+      },
       refetchIntervalInBackground: false,
       retry: false,
     },

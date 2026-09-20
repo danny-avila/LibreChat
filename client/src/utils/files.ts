@@ -258,12 +258,30 @@ export function addFilesToCache(queryClient: QueryClient, files: TFile[]) {
   });
 }
 
-export function formatBytes(bytes: number, decimals = 2) {
+export function formatBytes(bytes: number, decimals?: number): number;
+export function formatBytes(bytes: number, locale: string): string;
+export function formatBytes(bytes: number, decimalsOrLocale: number | string = 2): number | string {
+  if (typeof decimalsOrLocale === 'string') {
+    let unit = 'byte';
+    let divisor = 1;
+    if (bytes >= 1000000) {
+      unit = 'megabyte';
+      divisor = 1000000;
+    } else if (bytes >= 1000) {
+      unit = 'kilobyte';
+      divisor = 1000;
+    }
+    return new Intl.NumberFormat(decimalsOrLocale, {
+      style: 'unit',
+      unit,
+      maximumFractionDigits: 1,
+    }).format(bytes / divisor);
+  }
   if (bytes === 0) {
     return 0;
   }
   const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
+  const dm = decimalsOrLocale < 0 ? 0 : decimalsOrLocale;
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(dm));
 }

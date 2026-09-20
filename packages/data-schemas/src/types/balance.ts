@@ -1,6 +1,23 @@
 import type { RefillIntervalUnit } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
-import type { MediaHold, MediaPendingSettlement } from './mediaBalance';
+
+export type IBalanceHold = { settlementId: string; jobId: string; amount: number; reviewAt: Date };
+export type IBalanceAppliedSettlement = {
+  debitedCredits: number;
+  debtCredits: number;
+  /** Charge above this media job's reservation that could not be paid. */
+  overrunDebtCredits?: number;
+  /** Unpaid reserved credits already consumed by another balance writer. */
+  holdShortfallCredits?: number;
+  releasedCredits: number;
+  remainingCredits: number;
+};
+export type IBalancePendingSettlement = {
+  settlementId: string;
+  sequence: number;
+  phase: 'allocated' | 'applied';
+  result?: IBalanceAppliedSettlement;
+};
 
 /** Whole credits held against a balance while the request that reserved them is in flight */
 export interface IBalanceReservation {
@@ -27,14 +44,16 @@ export interface IBalance extends Document {
   tenantId?: string;
   /** Reservation state is excluded from reads unless explicitly selected */
   reservations?: IBalanceReservation[];
-  /** Sum of `reservations` amounts, maintained by the same writes */
+  /** Sum of in-flight reservations and durable holds, maintained by their atomic writes. */
   reservedCredits?: number;
+  availableCredits?: number;
+  mediaHeldCredits?: number;
   pendingRefill?: IBalancePendingRefill;
   mediaGeneration?: string;
-  mediaHolds?: MediaHold[];
+  mediaHolds?: IBalanceHold[];
   mediaDebtCredits?: number;
   mediaSettlementSequence?: number;
-  mediaPendingSettlement?: MediaPendingSettlement;
+  mediaPendingSettlement?: IBalancePendingSettlement;
 }
 
 /** Plain data fields for creating or updating a balance record (no Mongoose Document methods) */
@@ -47,6 +66,13 @@ export interface IBalanceUpdate {
   refillAmount?: number;
   lastRefill?: Date;
 }
+
+/** Deferred records still have durable media obligations and are left intact. */
+export type BalanceDeletionResult = {
+  acknowledged: boolean;
+  deletedCount: number;
+  deferredCount: number;
+};
 
 /** Holds credits against a user's balance for the lifetime of one in-flight request */
 export interface BalanceReservationRequest {

@@ -1,5 +1,6 @@
 import { forwardRef, useState } from 'react';
 import type {
+  ClipboardEventHandler,
   ForwardRefExoticComponent,
   KeyboardEvent,
   ReactNode,
@@ -22,6 +23,7 @@ export type ComposerKeyVerdict = 'submit' | 'block' | 'newline' | 'none';
 export interface ComposerProps {
   value: string;
   onChange: (value: string) => void;
+  onPaste?: ClipboardEventHandler<HTMLTextAreaElement>;
   /** Given the key event that asked for the submission, or nothing when a
    *  pointer asked. Hosts that vary the action by chord resolve it from this
    *  event rather than from state left behind by an earlier keypress. */
@@ -101,6 +103,7 @@ const Composer: ForwardRefExoticComponent<
   {
     value,
     onChange,
+    onPaste,
     onSubmit,
     canSubmit,
     submitLabel,
@@ -184,6 +187,7 @@ const Composer: ForwardRefExoticComponent<
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={handleKeyDown}
+        onPaste={onPaste}
         onCompositionStart={() => setIsComposing(true)}
         onCompositionEnd={() => setIsComposing(false)}
         placeholder={placeholder}

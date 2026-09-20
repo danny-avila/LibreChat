@@ -16,8 +16,8 @@ import {
 } from '~/components/Conversations/chatFilters';
 import { AuthContextProvider, useAuthContext } from '../AuthContext';
 import { clearMediaSessionStorage } from '~/components/Media/state';
+import { mediaChatHandoff } from '~/components/Media/handoff';
 import { registerSessionCleanup } from '~/store/session';
-import { mediaChatHandoff } from '~/routes/mediaHandoff';
 import { SESSION_KEY } from '~/utils';
 
 const mockNavigate = jest.fn();

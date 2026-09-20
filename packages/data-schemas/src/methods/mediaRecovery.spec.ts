@@ -37,7 +37,7 @@ describe('operator media recovery on standalone MongoDB', () => {
   beforeAll(async () => {
     mongo = await MongoMemoryServer.create();
     await mongoose.connect(mongo.getUri());
-    media = createMediaMethods(mongoose);
+    media = createMediaMethods(mongoose, { ownerExists: async () => true });
     native = createMediaNativeMethods(mongoose, media);
     recovery = createMediaRecoveryMethods(mongoose);
     await media.ensureMediaIndexes();
@@ -310,7 +310,7 @@ describe('operator media recovery on standalone MongoDB', () => {
     ).rejects.toMatchObject({ code: 'conflict' });
   });
 
-  it('accepts a verified legacy credential alias without weakening owner, model, or consumer checks', async () => {
+  it('requires the exact credential binding, owner, model, and consumer for native continuation', async () => {
     const job = await native.startMediaNativeRecording({
       scope,
       source: { conversationId: 'saved-chat', messageId: 'assistant', modelRunId: 'run' },
@@ -331,14 +331,18 @@ describe('operator media recovery on standalone MongoDB', () => {
     const input = {
       scope,
       continuationRef: part.continuationRef,
-      execution: { ...execution, bindingRevision: 'current-binding' },
+      execution,
       conversationId: 'saved-chat',
-      bindingAliases: [execution.bindingRevision],
     };
     expect(await native.getMediaNativeContinuation(input)).toMatchObject({
       part: { thoughtSignature: 'signature' },
     });
-    expect(await native.getMediaNativeContinuation({ ...input, bindingAliases: [] })).toBeNull();
+    expect(
+      await native.getMediaNativeContinuation({
+        ...input,
+        execution: { ...execution, bindingRevision: 'different-binding' },
+      }),
+    ).toBeNull();
     expect(
       await native.getMediaNativeContinuation({
         ...input,

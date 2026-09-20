@@ -8,14 +8,12 @@ const { createModels, createMethods, runAsSystem } = require('@librechat/data-sc
 const {
   Key,
   User,
-  File,
   Agent,
   Token,
   Group,
   Action,
   Preset,
   Prompt,
-  Balance,
   Message,
   Session,
   AclEntry,
@@ -36,6 +34,9 @@ const {
   createStreamServices,
   revokeUserCodeEnvironmentWorkers,
   waitForKeyvRedisClient,
+  prepareMediaAccountDeletion,
+  completeMediaAccountDeletion,
+  cancelMediaAccountDeletion,
 } = require('@librechat/api');
 const getLogStores = require('~/cache/getLogStores');
 const { getAppConfig } = require('~/server/services/Config');
@@ -123,6 +124,7 @@ async function gracefulExit(code = 0) {
   let deletionFence;
   let scheduleSuspensionToken;
   let userDeleted = false;
+  let mediaDeletion;
 
   try {
     deletionFence = new Date();
@@ -197,6 +199,13 @@ async function gracefulExit(code = 0) {
     }
 
     const deletionAppConfig = await getAppConfig({ baseOnly: true });
+    mediaDeletion = await runAsSystem(() =>
+      prepareMediaAccountDeletion({
+        repository: methods,
+        scope: { ownerId: uid, tenantId: user.tenantId ?? null },
+        token: randomUUID(),
+      }),
+    );
 
     // 5) Build and run deletion tasks
     const tasks = [
@@ -204,11 +213,11 @@ async function gracefulExit(code = 0) {
       Agent.deleteMany({ author: uid }),
       AgentApiKey.deleteMany({ user: uid }),
       Assistant.deleteMany({ user: uid }),
-      Balance.deleteMany({ user: uid }),
+      methods.deleteBalances({ user: uid }),
       ConversationTag.deleteMany({ user: uid }),
       Conversation.deleteMany({ user: uid }),
       Message.deleteMany({ user: uid }),
-      File.deleteMany({ user: uid }),
+      methods.deleteFiles(null, uid),
       Key.deleteMany({ userId: uid }),
       MemoryEntry.deleteMany({ userId: uid }),
       PluginAuth.deleteMany({ userId: uid }),
@@ -238,6 +247,9 @@ async function gracefulExit(code = 0) {
       throw new Error('User disappeared before account deletion could commit');
     }
     userDeleted = true;
+    await runAsSystem(() =>
+      completeMediaAccountDeletion({ repository: methods, session: mediaDeletion }),
+    );
     let codeEnvironmentCleanupSafe = true;
     try {
       await revokeUserCodeEnvironmentWorkers({
@@ -256,6 +268,14 @@ async function gracefulExit(code = 0) {
     }
     await runAsSystem(() => methods.deleteAgentTriggerDeliveriesByUser(uid));
   } finally {
+    await runAsSystem(() =>
+      cancelMediaAccountDeletion({
+        repository: methods,
+        session: mediaDeletion,
+        userDeleted,
+        log: console.error,
+      }),
+    );
     // RESTORE BEFORE RELEASING THE FENCE. While the user-deletion fence is still armed, new
     // schedule writes/claims are refused, so this restore cannot race an owner PATCH nor be
     // superseded by a second deletion attempt re-suspending these rows under a new token.

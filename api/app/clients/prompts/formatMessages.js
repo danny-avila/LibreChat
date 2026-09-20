@@ -1,4 +1,8 @@
-const { ATTACHMENT_ONLY_TEXT, collapseAssistantReplayContent } = require('@librechat/api');
+const {
+  ATTACHMENT_ONLY_TEXT,
+  collapseAssistantReplayContent,
+  prepareAssistantToolReplayContent,
+} = require('@librechat/api');
 const { EModelEndpoint, ContentTypes } = require('librechat-data-provider');
 const {
   AIMessage,
@@ -220,7 +224,7 @@ const formatAgentMessages = (payload) => {
         For Anthropic models, the "tool_calls" field on a message is only respected if content is a string.
          */
         if (currentContent.length > 0) {
-          const content = collapseAssistantReplayContent([...currentContent, part]);
+          const content = prepareAssistantToolReplayContent(currentContent, part);
           lastAIMessage = new AIMessage({ content });
           messages.push(lastAIMessage);
           currentContent = [];
@@ -229,7 +233,7 @@ const formatAgentMessages = (payload) => {
 
         // Create a new AIMessage with this text and prepare for tool calls
         lastAIMessage = new AIMessage({
-          content: collapseAssistantReplayContent([part]),
+          content: prepareAssistantToolReplayContent([], part),
         });
 
         messages.push(lastAIMessage);

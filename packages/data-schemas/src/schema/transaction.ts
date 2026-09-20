@@ -20,12 +20,22 @@ export interface ITransaction extends Document {
   tenantId?: string;
   mediaSettlementId?: string;
   mediaJobId?: string;
+  debtCredits?: number;
+  /** Legacy receipt column; new writes use debtCredits. */
   mediaDebtCredits?: number;
+  overrunDebtCredits?: number;
+  /** Legacy receipt column; new writes use overrunDebtCredits. */
+  mediaOverrunDebtCredits?: number;
+  holdShortfallCredits?: number;
+  /** Legacy receipt column; new writes use holdShortfallCredits. */
+  mediaHoldShortfallCredits?: number;
+  costUSD?: number;
+  /** Legacy receipt column; new writes use costUSD. */
   mediaCostUSD?: number;
-  mediaCostSource?: 'provider' | 'estimate';
+  costSource?: 'provider' | 'tokens' | 'estimate';
   mediaFingerprint?: string;
   mediaAccountingMode?: 'balance' | 'transactions';
-  mediaOutputTokens?: number;
+  outputTokens?: number;
 }
 
 const transactionSchema: Schema<ITransaction> = new Schema(
@@ -65,12 +75,18 @@ const transactionSchema: Schema<ITransaction> = new Schema(
     messageId: { type: String },
     mediaSettlementId: String,
     mediaJobId: String,
+    debtCredits: Number,
     mediaDebtCredits: Number,
+    overrunDebtCredits: Number,
+    mediaOverrunDebtCredits: Number,
+    holdShortfallCredits: Number,
+    mediaHoldShortfallCredits: Number,
+    costUSD: Number,
     mediaCostUSD: Number,
-    mediaCostSource: { type: String, enum: ['provider', 'estimate'] },
+    costSource: { type: String, enum: ['provider', 'tokens', 'estimate'] },
     mediaFingerprint: String,
     mediaAccountingMode: { type: String, enum: ['balance', 'transactions'] },
-    mediaOutputTokens: Number,
+    outputTokens: Number,
     tenantId: {
       type: String,
       index: true,
@@ -81,9 +97,10 @@ const transactionSchema: Schema<ITransaction> = new Schema(
   },
 );
 
+transactionSchema.index({ mediaJobId: 1 });
 transactionSchema.index(
-  { tenantId: 1, mediaJobId: 1, user: 1 },
-  { partialFilterExpression: { mediaJobId: { $exists: true } } },
+  { mediaSettlementId: 1 },
+  { unique: true, partialFilterExpression: { mediaSettlementId: { $type: 'string' } } },
 );
 
 export default transactionSchema;

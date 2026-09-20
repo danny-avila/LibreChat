@@ -6,8 +6,8 @@ import mongoose from 'mongoose';
 import request from 'supertest';
 import { tmpdir } from 'node:os';
 import { Readable } from 'node:stream';
-import { mkdtemp, rm } from 'node:fs/promises';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { mkdtemp, rm, mkdir, writeFile, utimes, stat } from 'node:fs/promises';
 import {
   FileSources,
   resolveMediaConfig,
@@ -16,6 +16,7 @@ import {
 } from 'librechat-data-provider';
 import {
   createModels,
+  createMethods,
   createMediaMethods,
   createMediaNativeMethods,
   createMediaPresetMethods,
@@ -26,6 +27,7 @@ import {
 import type {
   AppConfig,
   MediaMethods,
+  KeyMethods,
   MediaNativeMethods,
   MediaPresetMethods,
 } from '@librechat/data-schemas';
@@ -40,11 +42,22 @@ interface HeldSubmission {
   aborted: boolean;
 }
 
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 describe('media worker admission with standalone MongoDB', () => {
   let mongo: MongoMemoryServer;
   let directory: string;
   let original: Buffer;
-  let repository: MediaMethods & MediaNativeMethods & MediaPresetMethods;
+  let repository: Pick<KeyMethods, 'getUserKeySnapshot'> &
+    MediaMethods &
+    MediaNativeMethods &
+    MediaPresetMethods;
   let config: AppConfig;
   let runtime: ReturnType<typeof createMediaRuntime>;
   let accounting: ReturnType<typeof createMediaAccounting>;
@@ -53,6 +66,10 @@ describe('media worker admission with standalone MongoDB', () => {
   let logged: Error[] = [];
   let observations: MediaLifecycleEvent[] = [];
   let telemetryFailure = false;
+  let clock: number | undefined;
+  let onObservation: ((event: MediaLifecycleEvent) => void) | undefined;
+  let submissionChanged = deferred();
+  let leader = true;
   let submissions: HeldSubmission[] = [];
   let holdSubmissions = true;
   let restartRuntime: () => void;
@@ -87,6 +104,7 @@ describe('media worker admission with standalone MongoDB', () => {
           return schema.parse({});
         }
         if (remote.status === 'missing') throw new MediaProviderError('rejected', 404);
+        if (remote.status === 'unavailable') throw new MediaProviderError('uncertain', 503);
         return schema.parse(
           runway
             ? { id: 'remote-job', status: remote.status }
@@ -104,6 +122,8 @@ describe('media worker admission with standalone MongoDB', () => {
       }
       const held: HeldSubmission = { release: () => undefined, aborted: false };
       submissions.push(held);
+      submissionChanged.resolve();
+      submissionChanged = deferred();
       if (holdSubmissions) {
         await new Promise<void>((resolve, reject) => {
           held.release = resolve;
@@ -126,19 +146,17 @@ describe('media worker admission with standalone MongoDB', () => {
   };
 
   const owner = () => new mongoose.Types.ObjectId().toString();
-  const waitFor = async (condition: () => boolean) => {
-    for (let attempt = 0; attempt < 400 && !condition(); attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-    expect(condition()).toBe(true);
+  const waitForSubmissions = async (count: number) => {
+    while (submissions.length < count) await submissionChanged.promise;
   };
 
   beforeAll(async () => {
     mongo = await MongoMemoryServer.create();
     await mongoose.connect(mongo.getUri());
     createModels(mongoose);
-    const mediaMethods = createMediaMethods(mongoose);
+    const mediaMethods = createMediaMethods(mongoose, { ownerExists: async () => true });
     repository = {
+      getUserKeySnapshot: createMethods(mongoose).getUserKeySnapshot,
       ...mediaMethods,
       ...createMediaNativeMethods(mongoose, mediaMethods),
       ...createMediaPresetMethods(mongoose),
@@ -165,7 +183,11 @@ describe('media worker admission with standalone MongoDB', () => {
     logged = [];
     observations = [];
     telemetryFailure = false;
+    leader = true;
     submissions = [];
+    submissionChanged = deferred();
+    clock = undefined;
+    onObservation = undefined;
     holdSubmissions = true;
     remote = undefined;
     currentOwner = owner();
@@ -201,8 +223,11 @@ describe('media worker admission with standalone MongoDB', () => {
     });
     restartRuntime = () => {
       runtime = createMediaRuntime({
+        now: () => clock ?? Date.now(),
+        isLeader: async () => leader,
         observer: (event) => {
           observations.push(event);
+          onObservation?.(event);
           if (telemetryFailure) throw new Error('export unavailable');
         },
         appConfig: config,
@@ -217,8 +242,8 @@ describe('media worker admission with standalone MongoDB', () => {
         transport,
         upload: multer,
         accounting,
-        log: (error) => {
-          logged.push(error);
+        log: (message, error) => {
+          logged.push(new Error(message, { cause: error }));
         },
       });
       app = express();
@@ -520,7 +545,7 @@ describe('media worker admission with standalone MongoDB', () => {
     const b1 = await submitAs(ownerB, 'b-1');
 
     const first = run(ownerA, a1.jobId);
-    await waitFor(() => submissions.length === 1);
+    await waitForSubmissions(1);
     for (const waiting of [a2, a3]) {
       expect(await run(ownerA, waiting.jobId)).toMatchObject({
         phase: 'queued',
@@ -528,7 +553,7 @@ describe('media worker admission with standalone MongoDB', () => {
       });
     }
     const second = run(ownerB, b1.jobId);
-    await waitFor(() => submissions.length === 2);
+    await waitForSubmissions(2);
 
     const executionPermits = async () =>
       mongoose.models.MediaPermit.find({ kind: { $ne: 'queue' } }).lean<
@@ -552,9 +577,14 @@ describe('media worker admission with standalone MongoDB', () => {
   });
 
   it('fails work that outlived the queue with a code that names expiry', async () => {
+    clock = Date.now();
     config.media!.queue.maxQueueAgeMs = 1;
     const receipt = await submitAs(currentOwner, 'expired');
-    await new Promise((resolve) => setTimeout(resolve, 5));
+    const queued = await repository.getMediaJob(
+      { ownerId: currentOwner, tenantId: null },
+      receipt.jobId,
+    );
+    clock = queued!.createdAt.getTime() + 2;
     expect(await run(currentOwner, receipt.jobId)).toMatchObject({
       phase: 'failed',
       error: { code: 'queue_expired' },
@@ -603,7 +633,7 @@ describe('media worker admission with standalone MongoDB', () => {
   it('rejects cancellation after dispatch without recording unsupported provider intent', async () => {
     const receipt = await submitAs(currentOwner, 'cancel-dispatched');
     const pending = run(currentOwner, receipt.jobId);
-    await waitFor(() => submissions.length === 1);
+    await waitForSubmissions(1);
     try {
       const response = await request(app)
         .post(`/api/media/jobs/${receipt.jobId}/cancel`)
@@ -625,7 +655,7 @@ describe('media worker admission with standalone MongoDB', () => {
   it('aborts the in-flight provider request when the worker stops and keeps its capacity reserved', async () => {
     const receipt = await submitAs(currentOwner, 'stopped');
     const pending = run(currentOwner, receipt.jobId);
-    await waitFor(() => submissions.length === 1);
+    await waitForSubmissions(1);
     await runtime.worker.stop();
     const job = await pending;
     expect(submissions[0].aborted).toBe(true);
@@ -641,31 +671,189 @@ describe('media worker admission with standalone MongoDB', () => {
     ]);
   });
 
+  it('stops admitting work before drain while an existing paid request completes', async () => {
+    config.media!.execution.maxActiveTotal = 1;
+    config.media!.worker.tickMs = 5;
+    const first = await submitAs(currentOwner, 'draining-first');
+    const queued = await submitAs(currentOwner, 'draining-queued');
+    const claims = jest.spyOn(repository, 'claimMediaJob');
+    try {
+      await runtime.worker.start();
+      await waitForSubmissions(1);
+      await runtime.worker.prepareForShutdown();
+      expect(runtime.worker.available).toBe(false);
+      expect(submissions[0].aborted).toBe(false);
+      submissions[0].release();
+      await runtime.worker.stop();
+      const scope = { ownerId: currentOwner, tenantId: null };
+      expect(await repository.getMediaJob(scope, first.jobId)).toMatchObject({
+        phase: 'succeeded',
+      });
+      const pending = await repository.getMediaJob(scope, queued.jobId);
+      expect(pending).toMatchObject({ phase: 'queued', provider: { certainty: 'unsubmitted' } });
+      expect(pending?.leaseToken).toBeUndefined();
+      expect(claims).toHaveBeenCalledTimes(1);
+      expect(submissions).toHaveLength(1);
+    } finally {
+      submissions[0]?.release();
+      await runtime.worker.stop();
+      claims.mockRestore();
+    }
+  });
+
+  it('aborts an active request within the remaining shutdown budget', async () => {
+    config.media!.worker.shutdownTimeoutMs = 5_000;
+    const receipt = await submitAs(currentOwner, 'shutdown-budget');
+    await runtime.worker.start();
+    await waitForSubmissions(1);
+    const started = Date.now();
+    try {
+      await runtime.worker.stop({ budgetMs: 0 });
+      expect(Date.now() - started).toBeLessThan(1_000);
+      expect(submissions[0].aborted).toBe(true);
+      await runtime.worker.stop();
+      expect(
+        await repository.getMediaJob({ ownerId: currentOwner, tenantId: null }, receipt.jobId),
+      ).toMatchObject({ phase: 'submitting', provider: { certainty: 'unknown' } });
+    } finally {
+      submissions[0]?.release();
+      await runtime.worker.stop();
+    }
+  });
+
+  it('returns a prepared but unsubmitted job to the queue after drain starts', async () => {
+    const receipt = await submitAs(currentOwner, 'prepared-during-drain');
+    const entered = deferred();
+    const resumed = deferred();
+    const prepare = runtime.services.prepare;
+    const held = jest.spyOn(runtime.services, 'prepare').mockImplementation(async (...args) => {
+      const prepared = await prepare(...args);
+      entered.resolve();
+      await resumed.promise;
+      return prepared;
+    });
+    try {
+      const pending = run(currentOwner, receipt.jobId);
+      await entered.promise;
+      await runtime.worker.prepareForShutdown();
+      resumed.resolve();
+      expect(await pending).toMatchObject({
+        phase: 'queued',
+        provider: { certainty: 'unsubmitted' },
+      });
+      expect(submissions).toHaveLength(0);
+      expect(
+        await repository.getMediaJob({ ownerId: currentOwner, tenantId: null }, receipt.jobId),
+      ).not.toHaveProperty('leaseToken');
+    } finally {
+      resumed.resolve();
+      held.mockRestore();
+    }
+  });
+
+  it('waits for an admitted dispatch handoff before drain preparation returns', async () => {
+    const receipt = await submitAs(currentOwner, 'dispatch-during-drain');
+    const entered = deferred();
+    const resumed = deferred();
+    const begin = repository.beginMediaSubmission;
+    const held = jest
+      .spyOn(repository, 'beginMediaSubmission')
+      .mockImplementation(async (input) => {
+        const job = await begin(input);
+        entered.resolve();
+        await resumed.promise;
+        return job;
+      });
+    try {
+      const pending = run(currentOwner, receipt.jobId);
+      await entered.promise;
+      let prepared = false;
+      const preparing = runtime.worker.prepareForShutdown().then(() => {
+        prepared = true;
+      });
+      await Promise.resolve();
+      expect(prepared).toBe(false);
+      resumed.resolve();
+      await preparing;
+      expect(submissions).toHaveLength(1);
+      expect(submissions[0].aborted).toBe(false);
+      submissions[0].release();
+      expect(await pending).toMatchObject({ phase: 'succeeded' });
+    } finally {
+      resumed.resolve();
+      submissions[0]?.release();
+      held.mockRestore();
+    }
+  });
+
+  it('waits for post-abort permit cleanup within its reserved shutdown budget', async () => {
+    const receipt = await submitAs(currentOwner, 'abort-cleanup');
+    const entered = deferred();
+    const resumed = deferred();
+    const release = repository.releaseMediaPermits;
+    const held = jest.spyOn(repository, 'releaseMediaPermits').mockImplementation(async (input) => {
+      if (input.jobId === receipt.jobId) {
+        entered.resolve();
+        await resumed.promise;
+      }
+      return release(input);
+    });
+    try {
+      const pending = run(currentOwner, receipt.jobId);
+      await waitForSubmissions(1);
+      let stopped = false;
+      const stopping = runtime.worker.stop({ budgetMs: 1_000 }).then(() => {
+        stopped = true;
+      });
+      await entered.promise;
+      expect(submissions[0].aborted).toBe(true);
+      expect(stopped).toBe(false);
+      resumed.resolve();
+      await stopping;
+      await pending;
+      expect(stopped).toBe(true);
+    } finally {
+      resumed.resolve();
+      submissions[0]?.release();
+      held.mockRestore();
+    }
+  });
+
   it('does not dispatch a database claim that finishes after shutdown returns', async () => {
     const receipt = await submitAs(currentOwner, 'claim-during-stop');
     config.media!.worker.shutdownTimeoutMs = 20;
     let release: () => void = () => undefined;
-    let entered = false;
+    const entered = deferred();
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
     const claim = repository.claimMediaJob;
     const delayed = jest.spyOn(repository, 'claimMediaJob').mockImplementation(async (input) => {
-      entered = true;
+      entered.resolve();
       await held;
       return claim(input);
     });
     try {
       await runtime.worker.start();
-      await waitFor(() => entered);
+      await entered.promise;
       await runtime.worker.stop();
       expect(runtime.worker.available).toBe(false);
       release();
       await runtime.worker.stop();
       expect(submissions).toHaveLength(0);
+      const scope = { ownerId: currentOwner, tenantId: null };
+      const queued = await repository.getMediaJob(scope, receipt.jobId);
+      expect(queued).toMatchObject({ phase: 'queued', provider: { certainty: 'unsubmitted' } });
+      expect(queued?.leaseToken).toBeUndefined();
+      expect(queued?.leaseUntil).toBeUndefined();
       expect(
-        await repository.getMediaJob({ ownerId: currentOwner, tenantId: null }, receipt.jobId),
-      ).toMatchObject({ phase: 'queued', provider: { certainty: 'unsubmitted' } });
+        await repository.claimMediaJob({
+          scope,
+          workerId: 'replacement-worker',
+          now: new Date().toISOString(),
+          leaseMs: 10_000,
+        }),
+      ).toMatchObject({ jobId: receipt.jobId, leaseOwner: 'replacement-worker' });
     } finally {
       release();
       await runtime.worker.stop();
@@ -682,9 +870,9 @@ describe('media worker admission with standalone MongoDB', () => {
     try {
       const first = await submitAs(currentOwner, 'maintenance-outage-first');
       await runtime.worker.start();
-      await waitFor(() => submissions.length === 1);
+      await waitForSubmissions(1);
       const second = await submitAs(currentOwner, 'maintenance-outage-second');
-      await waitFor(() => submissions.length === 2);
+      await waitForSubmissions(2);
       await runtime.worker.stop();
       const scope = { ownerId: currentOwner, tenantId: null };
       expect(await repository.getMediaJob(scope, first.jobId)).toMatchObject({
@@ -696,7 +884,7 @@ describe('media worker admission with standalone MongoDB', () => {
       expect(logged.length).toBeGreaterThan(0);
       expect(
         logged.every(
-          (error) => error.message === 'The media worker could not discover cleanup work.',
+          (error) => error.message === '[media] The media worker could not discover cleanup work.',
         ),
       ).toBe(true);
     } finally {
@@ -706,22 +894,68 @@ describe('media worker admission with standalone MongoDB', () => {
     }
   });
 
+  it('cleans process-local staging on a follower without running repository maintenance', async () => {
+    leader = false;
+    const stage = path.join(directory, 'uploads', 'media-staging', 'stale-upload');
+    await mkdir(path.dirname(stage), { recursive: true });
+    await writeFile(stage, 'abandoned upload');
+    const old = new Date(Date.now() - config.media!.assets.orphanRetentionMs - 60_000);
+    await utimes(stage, old, old);
+    const discovery = jest.spyOn(repository, 'listMediaCleanupScopes');
+    try {
+      await runtime.worker.start();
+      await runtime.worker.prepareForShutdown();
+      await expect(stat(stage)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(discovery).not.toHaveBeenCalled();
+    } finally {
+      await runtime.worker.stop();
+      discovery.mockRestore();
+    }
+  });
+
+  it('backs off failed polls durably and stops at the configured recovery attempt cap', async () => {
+    const receipt = await remoteJob('krea.images', 'poll-backoff');
+    config.media!.polling.providerIntervalMs = 100;
+    config.media!.recovery.maxRetryMs = 1_000;
+    config.media!.recovery.maxAttempts = 3;
+    remote!.status = 'unavailable';
+    try {
+      const firstStartedAt = Date.now();
+      const first = await run(currentOwner, receipt.jobId);
+      expect(first).toMatchObject({ phase: 'running', recoveryFailures: 1 });
+      expect(first!.dueAt.getTime()).toBeGreaterThanOrEqual(firstStartedAt + 100);
+      restartRuntime();
+      const secondStartedAt = Date.now();
+      const second = await run(currentOwner, receipt.jobId);
+      expect(second).toMatchObject({ phase: 'running', recoveryFailures: 2 });
+      expect(second!.dueAt.getTime()).toBeGreaterThanOrEqual(secondStartedAt + 200);
+      expect(await run(currentOwner, receipt.jobId)).toMatchObject({
+        phase: 'requires_attention',
+        recoveryFailures: 3,
+      });
+      expect(remote!.submissions).toBe(1);
+      expect(await balance()).toMatchObject({ reservedCredits: 20 });
+    } finally {
+      logged = [];
+    }
+  });
+
   it('does not let a pending startup restart a stopped worker', async () => {
     let release: () => void = () => undefined;
-    let entered = false;
+    const entered = deferred();
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
     const ensure = repository.ensureMediaIndexes;
     const delayed = jest.spyOn(repository, 'ensureMediaIndexes').mockImplementation(async () => {
-      entered = true;
+      entered.resolve();
       await held;
       return ensure();
     });
     config.media!.worker.shutdownTimeoutMs = 20;
     try {
       const starting = runtime.worker.start();
-      await waitFor(() => entered);
+      await entered.promise;
       await runtime.worker.stop();
       release();
       await starting;
@@ -732,5 +966,47 @@ describe('media worker admission with standalone MongoDB', () => {
       await runtime.worker.stop();
       delayed.mockRestore();
     }
+  });
+
+  it('reports repeated scan failure, recovery and pre-drain without a request readiness gate', async () => {
+    config.media!.worker.tickMs = 10;
+    config.media!.worker.scanFailureThreshold = 2;
+    restartRuntime();
+    const unavailable = deferred();
+    const recovered = deferred();
+    let recover = false;
+    const scan = repository.listDueMediaScopes;
+    const failing = jest.spyOn(repository, 'listDueMediaScopes').mockImplementation((input) => {
+      if (!recover) return Promise.reject(new Error('scan unavailable'));
+      return scan(input);
+    });
+    onObservation = (event) => {
+      if (event.worker?.state === 'unavailable' && event.worker.consecutiveScanFailures >= 2)
+        unavailable.resolve();
+      if (recover && event.worker?.state === 'armed') recovered.resolve();
+    };
+    try {
+      await runtime.worker.start();
+      await unavailable.promise;
+      expect(runtime.worker.health).toMatchObject({
+        state: 'unavailable',
+        consecutiveScanFailures: 2,
+      });
+      expect(runtime.worker.available).toBe(false);
+      recover = true;
+      await recovered.promise;
+      expect(runtime.worker.health).toMatchObject({
+        state: 'armed',
+        consecutiveScanFailures: 0,
+        lastScanAt: expect.any(String),
+      });
+      await runtime.worker.prepareForShutdown();
+      expect(runtime.worker.health.state).toBe('draining');
+    } finally {
+      await runtime.worker.stop();
+      failing.mockRestore();
+      logged = [];
+    }
+    expect(runtime.worker.health.state).toBe('unavailable');
   });
 });

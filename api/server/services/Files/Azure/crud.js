@@ -1,6 +1,6 @@
 const fs = require('fs');
-const path = require('path');
 const mime = require('mime');
+const path = require('path');
 const fetch = require('node-fetch');
 const { logger } = require('@librechat/data-schemas');
 const {
@@ -8,6 +8,7 @@ const {
   assertRemoteFileURL,
   getAzureContainerClient,
   createAzureFileStream,
+  createAzureStreamStorage,
   getRemoteFileFetchMaxBytes,
   getRemoteFileFetchTimeoutMs,
   assertRemoteFileContentLength,
@@ -141,64 +142,15 @@ async function deleteFileFromAzure(req, file) {
   }
 }
 
-/**
- * Streams a file from disk directly to Azure Blob Storage without loading
- * the entire file into memory.
- *
- * @param {Object} params
- * @param {string} params.userId - The user's id.
- * @param {string} params.filePath - The local file path to upload.
- * @param {string} params.fileName - The name of the file in Azure.
- * @param {string} [params.basePath='images'] - The base folder within the container.
- * @param {string} [params.containerName] - The Azure Blob container name.
- * @returns {Promise<string>} The URL of the uploaded blob.
- */
-async function streamFileToAzure({
-  userId,
-  filePath,
-  fileName,
-  basePath = defaultBasePath,
-  containerName,
-}) {
-  try {
-    const containerClient = await getAzureContainerClient(containerName);
-    const access = AZURE_STORAGE_PUBLIC_ACCESS?.toLowerCase() === 'true' ? 'blob' : undefined;
-
-    // Create the container if it doesn't exist
-    await containerClient.createIfNotExists({ access });
-
-    const blobPath = `${basePath}/${userId}/${fileName}`;
-    const blockBlobClient = containerClient.getBlockBlobClient(blobPath);
-
-    // Get file size for proper content length
-    const stats = await fs.promises.stat(filePath);
-
-    // Create read stream from the file
-    const fileStream = fs.createReadStream(filePath);
-
-    const blobContentType = mime.getType(fileName);
-    await blockBlobClient.uploadStream(
-      fileStream,
-      undefined, // Use default concurrency (5)
-      undefined, // Use default buffer size (8MB)
-      {
-        blobHTTPHeaders: {
-          blobContentType,
-        },
-        onProgress: (progress) => {
-          logger.debug(
-            `[streamFileToAzure] Upload progress: ${progress.loadedBytes} bytes of ${stats.size}`,
-          );
-        },
-      },
-    );
-
-    return blockBlobClient.url;
-  } catch (error) {
-    logger.error('[streamFileToAzure] Error streaming file:', error);
-    throw error;
-  }
-}
+const {
+  planFile: planAzureFile,
+  saveStream: saveStreamToAzure,
+  streamFile: streamFileToAzure,
+} = createAzureStreamStorage({
+  getContainerClient: getAzureContainerClient,
+  getContentType: mime.getType,
+  publicAccess: AZURE_STORAGE_PUBLIC_ACCESS,
+});
 
 /**
  * Uploads a file from the local file system to Azure Blob Storage.
@@ -246,6 +198,8 @@ async function uploadFileToAzure({
 const getAzureFileStream = createAzureFileStream({ getContainerClient: getAzureContainerClient });
 
 module.exports = {
+  planAzureFile,
+  saveStreamToAzure,
   saveBufferToAzure,
   saveURLToAzure,
   getAzureURL,

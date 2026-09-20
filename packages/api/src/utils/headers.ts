@@ -112,18 +112,21 @@ export function resolveModelHeaders({
   tenantId,
   body,
   customUserVars,
+  environment,
 }: {
   headers: Record<string, string> | undefined;
   user?: SafeUserInput;
   tenantId?: string;
   body?: RequestBody;
   customUserVars?: Record<string, string>;
+  environment?: Record<string, string | undefined>;
 }): Record<string, string> {
   const resolved = resolveHeaders({
     headers,
     user,
     body,
     customUserVars,
+    environment,
     stripUnresolved: true,
   });
 

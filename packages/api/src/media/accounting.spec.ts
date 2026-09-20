@@ -1,3 +1,5 @@
+import mongoose from 'mongoose';
+import { createTxMethods } from '@librechat/data-schemas';
 import {
   FileSources,
   mediaSubmissionRequestSchema,
@@ -5,6 +7,7 @@ import {
 } from 'librechat-data-provider';
 import type { MediaAccountingMethods, MediaStoredJob } from '@librechat/data-schemas';
 import type { MediaContext } from './service';
+import { matchModelName, findMatchingPattern } from '~/utils/tokens';
 import { createMediaAccounting } from './accounting';
 
 describe('media accounting provider bridge', () => {
@@ -52,8 +55,8 @@ describe('media accounting provider bridge', () => {
     executionOwner: 'media',
     operation: 'image.generate',
     selection: request.selection,
-    createdAt: '2026-09-16T00:00:00.000Z',
-    updatedAt: '2026-09-16T00:00:00.000Z',
+    createdAt: new Date('2026-09-16T00:00:00.000Z'),
+    updatedAt: new Date('2026-09-16T00:00:00.000Z'),
     outputs: [],
     allowedActions: { cancel: true, retry: false },
     queueCapacity: 20,
@@ -78,7 +81,7 @@ describe('media accounting provider bridge', () => {
     newThread: true,
     threadEpoch: 1,
     provider: { certainty: 'unsubmitted' },
-    dueAt: '2026-09-16T00:00:00.000Z',
+    dueAt: new Date('2026-09-16T00:00:00.000Z'),
   };
   let repository: jest.Mocked<MediaAccountingMethods>;
   beforeEach(() => {
@@ -96,6 +99,195 @@ describe('media accounting provider bridge', () => {
   });
   const bridge = () =>
     createMediaAccounting({ repository, now: () => Date.parse('2026-09-16T00:00:00.000Z') });
+
+  const pricing = createTxMethods(mongoose, {
+    matchModelName: (model) => matchModelName(model),
+    findMatchingPattern: (model, rows) => findMatchingPattern(model, rows) ?? undefined,
+  });
+
+  it('freezes exact OpenAI image modality rates and does not guess when detail is missing', async () => {
+    const service = createMediaAccounting({ repository, now: Date.now, pricing });
+    const integration = { ...config.integrations[0], api: 'openai.images' as const };
+    const tokenPricing = service.snapshot!('gpt-image-1', integration, context.appConfig);
+    expect(tokenPricing).toMatchObject({
+      source: 'imageTokenValues',
+      prompt: 5,
+      imagePrompt: 10,
+      completion: 40,
+    });
+    const priced = {
+      ...job,
+      execution: { ...job.execution, modelId: 'gpt-image-1', tokenPricing },
+      provider: {
+        certainty: 'terminal' as const,
+        recovery: { terminalStatus: 'completed' as const },
+      },
+    };
+    await service.settle(
+      priced,
+      {
+        inputTokens: 130,
+        outputTokens: 250,
+        textInputTokens: 30,
+        imageInputTokens: 100,
+        cachedInputTokens: 25,
+        cachedTextInputTokens: 5,
+        cachedImageInputTokens: 20,
+      },
+      context,
+    );
+    expect(repository.settleMediaJob).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        effect: expect.objectContaining({
+          costUSD: (25 * 5 + 80 * 10 + 5 * 1.25 + 20 * 2.5 + 250 * 40) / 1_000_000,
+          costSource: 'tokens',
+          operation: 'image.generate',
+        }),
+      }),
+    );
+    await service.settle(priced, { inputTokens: 130, outputTokens: 250 }, context);
+    expect(repository.settleMediaJob).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        effect: expect.objectContaining({
+          costUSD: 0.2,
+          costSource: 'estimate',
+        }),
+      }),
+    );
+    expect(service.snapshot!('gpt-image-future', integration, context.appConfig)).toBeUndefined();
+    expect(service.snapshot!('gpt-5-image', integration, context.appConfig)).toBeUndefined();
+  });
+
+  it('honors explicit per-model image input overrides without changing a frozen snapshot', () => {
+    const service = createMediaAccounting({ repository, now: Date.now, pricing });
+    const integration = { ...config.integrations[0], api: 'openai.images' as const };
+    const override = {
+      prompt: 2,
+      completion: 7,
+      imagePrompt: 4,
+      cacheRead: 1,
+      imageCacheRead: 2,
+      context: 4096,
+    };
+    const appConfig = {
+      ...context.appConfig,
+      endpoints: {
+        custom: [
+          {
+            name: 'OpenRouter',
+            apiKey: 'fixture',
+            baseURL: 'https://example.test',
+            models: { default: ['gpt-image-1'] },
+            tokenConfig: { 'gpt-image-1': override },
+          },
+        ],
+      },
+    };
+    const frozen = service.snapshot!('gpt-image-1', integration, appConfig);
+    override.imagePrompt = 99;
+    expect(frozen).toMatchObject({
+      source: 'endpointTokenConfig',
+      prompt: 2,
+      imagePrompt: 4,
+      completion: 7,
+    });
+  });
+
+  it('prices Gemini image tokens with the shared table and records token provenance', async () => {
+    const service = createMediaAccounting({ repository, now: Date.now, pricing });
+    const model = 'gemini-2.5-flash-image';
+    const tokenPricing = service.snapshot!(model, config.integrations[0], context.appConfig);
+    const priced = {
+      ...job,
+      execution: {
+        ...job.execution,
+        modelId: model,
+        tokenPricing,
+        accountingMode: 'transactions' as const,
+        billing: { creditsPerUSD: 1_000_000 },
+      },
+    };
+    await service.settle(priced, { inputTokens: 12, outputTokens: 30 }, context);
+    const credits =
+      12 * pricing.getMultiplier({ model, tokenType: 'prompt' }) +
+      30 * pricing.getMultiplier({ model, tokenType: 'completion' });
+    expect(repository.recordMediaUsage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        credits,
+        costUSD: credits / 1_000_000,
+        costSource: 'tokens',
+        inputTokens: 12,
+        outputTokens: 30,
+      }),
+    );
+  });
+
+  it('freezes an explicit endpoint override and lets reported cost take precedence', async () => {
+    const service = createMediaAccounting({ repository, now: Date.now, pricing });
+    const appConfig = {
+      ...context.appConfig,
+      endpoints: {
+        custom: [
+          {
+            name: 'OpenRouter',
+            apiKey: 'test',
+            baseURL: 'https://example.test',
+            tokenConfig: { 'model-a': { prompt: 2, completion: 4, context: 8192 } },
+          },
+        ],
+      },
+    };
+    const tokenPricing = service.snapshot!('model-a', config.integrations[0], appConfig);
+    appConfig.endpoints.custom[0].tokenConfig['model-a'].prompt = 99;
+    const priced = { ...job, execution: { ...job.execution, tokenPricing } };
+    await service.settle(priced, { inputTokens: 10, outputTokens: 20 }, context);
+    expect(repository.settleMediaJob).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        effect: expect.objectContaining({ costUSD: 0.0001, costSource: 'tokens' }),
+      }),
+    );
+    await service.settle(priced, { inputTokens: 10, outputTokens: 20, costUSD: 0.1 }, context);
+    expect(repository.settleMediaJob).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        effect: expect.objectContaining({ costUSD: 0.1, costSource: 'provider' }),
+      }),
+    );
+  });
+
+  it('does not apply defaultRate to unknown models and freezes premium token tiers', async () => {
+    const service = createMediaAccounting({ repository, now: Date.now, pricing });
+    expect(
+      service.snapshot!('unpriced-vendor-model', config.integrations[0], context.appConfig),
+    ).toBeUndefined();
+    const model = 'gemini-3.1';
+    const tokenPricing = service.snapshot!(model, config.integrations[0], context.appConfig)!;
+    expect(tokenPricing.premium).toBeDefined();
+    const inputTokens = tokenPricing.premium!.threshold + 1;
+    await service.settle(
+      {
+        ...job,
+        execution: {
+          ...job.execution,
+          modelId: model,
+          tokenPricing,
+          accountingMode: 'transactions',
+          billing: { creditsPerUSD: 1_000_000 },
+        },
+      },
+      { inputTokens, outputTokens: 10 },
+      context,
+    );
+    expect(repository.recordMediaUsage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        credits:
+          inputTokens *
+            pricing.getMultiplier({ model, tokenType: 'prompt', inputTokenCount: inputTokens }) +
+          10 *
+            pricing.getMultiplier({ model, tokenType: 'completion', inputTokenCount: inputTokens }),
+        costSource: 'tokens',
+      }),
+    );
+  });
 
   it('holds the explicit maximum and settles the reported cost using frozen rates', async () => {
     await bridge().reserve(job, config.integrations[0], context);

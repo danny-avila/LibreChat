@@ -3,6 +3,45 @@ import type { Readable } from 'node:stream';
 import type { AxiosInstance } from 'axios';
 import type { StorageReadOptions, StorageByteRange } from './types';
 
+/** Parses a single HTTP byte range, including open-ended and suffix requests. */
+export function parseStorageRange(value: string, bytes: number): StorageByteRange | undefined {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(value);
+  if (!match || (!match[1] && !match[2]) || !Number.isSafeInteger(bytes) || bytes <= 0) return;
+  const first = Number(match[1]);
+  const last = Number(match[2]);
+  if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last)) return;
+  const start = match[1] ? first : Math.max(0, bytes - last);
+  const end = match[1] && match[2] ? Math.min(bytes - 1, last) : bytes - 1;
+  if (start < 0 || start >= bytes || end < start) return;
+  return { start, end };
+}
+
+/** HTTP framing for any authorized file stream; callers retain content/auth policy. */
+export function storageRangeResponse(
+  value: string | undefined,
+  bytes: number,
+): {
+  status: 200 | 206 | 416;
+  headers: Record<string, string>;
+  range?: StorageByteRange;
+} {
+  const range = value ? parseStorageRange(value, bytes) : undefined;
+  if (value && !range)
+    return {
+      status: 416,
+      headers: { 'Accept-Ranges': 'bytes', 'Content-Range': `bytes */${bytes}` },
+    };
+  return {
+    status: range ? 206 : 200,
+    headers: {
+      'Accept-Ranges': 'bytes',
+      'Content-Length': String(range ? range.end - range.start + 1 : bytes),
+      ...(range ? { 'Content-Range': `bytes ${range.start}-${range.end}/${bytes}` } : {}),
+    },
+    range,
+  };
+}
+
 export function storageRangeHeader(range?: StorageByteRange): string | undefined {
   if (!range) return undefined;
   if (

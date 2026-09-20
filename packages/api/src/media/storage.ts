@@ -26,8 +26,10 @@ import {
   validateMediaAudio,
   validateMediaSvg,
 } from './content';
-import { createLocalMediaObjectStore } from './objects';
-import { removeMediaObjectLocations } from './objects';
+import { createLocalMediaObjectStore, removeMediaObjectLocations } from './objects';
+import { mediaTemporaryDirectory } from './temporary';
+import { resolveImageMimeType } from '~/files/mime';
+import { sanitizeFilename } from '~/utils/files';
 import { removeMediaAsset } from './deletion';
 import { MediaServiceError } from './errors';
 
@@ -143,10 +145,9 @@ async function inspect(
       'Image content does not match its media type.',
     );
   const metadata = await sharp(await readFile(location)).metadata();
-  const mime = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp', svg: 'image/svg+xml' };
-  if (!metadata.format || !(metadata.format in mime))
-    throw new MediaServiceError('unsupported', 422, 'Unsupported image content.');
-  if (mime[metadata.format as keyof typeof mime] !== type)
+  const mime = metadata.format === 'svg' ? 'image/svg+xml' : resolveImageMimeType(metadata);
+  if (!mime) throw new MediaServiceError('unsupported', 422, 'Unsupported image content.');
+  if (mime !== type)
     throw new MediaServiceError(
       'invalid_request',
       422,
@@ -183,7 +184,7 @@ export function createMediaStorage({
   stores?: readonly MediaObjectStore[];
   derivatives?: MediaDerivativeProcessor;
   imageOutputType?: string;
-  log?(error: Error): void;
+  log?(message: string, error?: Error): void;
 }): MediaStorage {
   const objects = new Map<string, MediaObjectStore>(
     [createLocalMediaObjectStore({ imageDirectory, uploadDirectory }), ...stores].map((store) => [
@@ -204,7 +205,7 @@ export function createMediaStorage({
   const imageExtension = ['png', 'jpeg', 'webp'].includes(imageOutputType)
     ? imageOutputType
     : 'png';
-  const stagingRoot = path.resolve(uploadDirectory, 'media-staging');
+  const stagingRoot = path.resolve(uploadDirectory, 'temp');
   const cleanupLocations = (scope: MediaOwnerScope, locations: MediaObjectLocation[]) =>
     removeMediaObjectLocations(scope, locations, objectStore);
   const storage: MediaStorage = {
@@ -244,7 +245,10 @@ export function createMediaStorage({
         source: store.source,
         renditionLocations: derivativePlans,
       });
-      const directory = path.join(stagingRoot, ingestToken);
+      const directory = path.join(
+        mediaTemporaryDirectory(stagingRoot, input.scope.ownerId),
+        ingestToken,
+      );
       const stagedPath = path.join(directory, originalName);
       const counter = new MediaByteCounter(mediaContentByteLimit(type, input.config));
       let publicationAttempted = false;
@@ -266,6 +270,7 @@ export function createMediaStorage({
             })
             .catch((error: unknown) => {
               log?.(
+                '[media] Derivative generation failed.',
                 error instanceof Error ? error : new Error('Media derivative generation failed.'),
               );
               return [];
@@ -321,6 +326,7 @@ export function createMediaStorage({
                 .remove(input.scope, { ...plan, filepath: plan.filepath ?? plan.storageKey })
                 .catch(() => undefined);
             log?.(
+              '[media] Rendition publication failed.',
               error instanceof Error ? error : new Error('Media rendition publication failed.'),
             );
           }
@@ -332,7 +338,7 @@ export function createMediaStorage({
           content: {
             ...original,
             file_id: receipt.fileId,
-            filename: path.basename(input.filename),
+            filename: sanitizeFilename(input.filename),
             type,
             bytes: counter.bytes,
             contentDigest: counter.hash.digest('hex'),

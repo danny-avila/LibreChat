@@ -35,6 +35,62 @@ const integration = {
   catalog: { kind: 'configured' as const, models: ['publisher/model'] },
   operations: ['image.generate' as const, 'image.edit' as const],
 };
+test('validates provider options and rejects reserved APIs during config loading', () => {
+  const direct = {
+    ...integration,
+    api: 'openai.images' as const,
+    endpointRef: {
+      kind: 'direct' as const,
+      apiKey: 'key',
+      options: { deployments: { 'gpt-image-1': 'studio-image' } },
+    },
+  };
+  expect(resolveMediaConfig({ integrations: [direct] }).integrations[0].endpointRef).toMatchObject({
+    options: { deployments: { 'gpt-image-1': 'studio-image' } },
+  });
+  expect(() => resolveMediaConfig({ integrations: [{ ...direct, api: 'bfl.images' }] })).toThrow(
+    'Deployment mappings',
+  );
+  expect(() =>
+    resolveMediaConfig({ integrations: [{ ...direct, api: 'google.interactions' }] }),
+  ).toThrow('no media adapter');
+  expect(() =>
+    resolveMediaConfig({
+      integrations: [
+        { ...direct, api: 'sourceful.images', endpointRef: { kind: 'direct', apiKey: 'key' } },
+      ],
+    }),
+  ).toThrow('UUID brandId');
+  expect(
+    resolveMediaConfig({
+      integrations: [
+        {
+          ...direct,
+          api: 'sourceful.images',
+          endpointRef: {
+            kind: 'direct',
+            apiKey: 'key',
+            options: { brandId: '${SOURCEFUL_BRAND_ID}' },
+          },
+        },
+      ],
+    }).integrations,
+  ).toHaveLength(1);
+  expect(() =>
+    mediaConfigSchema.parse({
+      integrations: [
+        {
+          ...direct,
+          endpointRef: {
+            ...direct.endpointRef,
+            options: { ...direct.endpointRef.options, typo: 'invalid' },
+          },
+        },
+      ],
+    }),
+  ).toThrow();
+});
+
 const submission = {
   clientRequestId: 'request-1',
   selection: { connectionId: 'router', modelId: 'publisher/model', catalogVersion: 'opaque-token' },
@@ -69,8 +125,6 @@ describe('media configuration compatibility', () => {
       version: 'catalog-version',
       offerings: [],
       limits: {},
-      clientPollIntervalMs: 5_000,
-      clientCatchUpIntervalMs: 30_000,
       integrations: [
         {
           connectionId: 'router',
@@ -220,6 +274,7 @@ describe('media configuration compatibility', () => {
       source: null,
       retention: 'inherit',
       orphanRetentionMs: 86_400_000,
+      deletedAccountRetentionMs: 604_800_000,
       derivatives: {
         enabled: true,
         maxWidth: 640,
@@ -403,7 +458,6 @@ describe('media configuration compatibility', () => {
     expect(config.integrations[0].endpointRef).toEqual({
       kind: 'vertex',
       keyFile: '${GOOGLE_SERVICE_KEY_FILE}',
-      location: 'us-central1',
     });
     expect(configSchema.parse({ version: '1.3.1', media: config }).media).toEqual(config);
   });
@@ -485,6 +539,14 @@ describe('media command contracts', () => {
       turnCount: 1,
     };
     expect(mediaThreadSchema.parse(thread).expiresAt).toBeUndefined();
+    expect(mediaThreadSchema.parse(thread).temporary).toBeUndefined();
+    expect(
+      mediaThreadSchema.parse({
+        ...thread,
+        temporary: false,
+        expiresAt: '2026-10-17T12:00:00.000Z',
+      }).temporary,
+    ).toBe(false);
     expect(
       mediaThreadSchema.parse({ ...thread, expiresAt: '2026-10-17T12:00:00.000Z' }).expiresAt,
     ).toBe('2026-10-17T12:00:00.000Z');
@@ -616,7 +678,7 @@ describe('media command contracts', () => {
     ).toBe(false);
   });
 
-  it('keeps startup projection strict and excludes integration/credential material', () => {
+  it('keeps startup projection strict and permits only public key descriptors', () => {
     const startup = {
       enabled: false,
       studio: false,
@@ -626,6 +688,20 @@ describe('media command contracts', () => {
       clientCatchUpIntervalMs: 30_000,
     };
     expect(mediaStartupConfigSchema.parse(startup)).toEqual(startup);
+    const descriptor = {
+      connectionId: 'studio',
+      connectionName: 'Studio',
+      userKey: { keyName: 'google', encoding: 'google', userProvideURL: false },
+    };
+    expect(
+      mediaStartupConfigSchema.safeParse({ ...startup, integrations: [descriptor] }).success,
+    ).toBe(true);
+    expect(
+      mediaStartupConfigSchema.safeParse({
+        ...startup,
+        integrations: [{ ...descriptor, apiKey: 'secret' }],
+      }).success,
+    ).toBe(false);
     expect(
       mediaStartupConfigSchema.safeParse({ ...startup, integrations: [integration] }).success,
     ).toBe(false);

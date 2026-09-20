@@ -1,15 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useForm, FormProvider } from 'react-hook-form';
 import {
+  useRevokeUserKeyMutation,
+  useRevokeAllUserKeysMutation,
+} from 'librechat-data-provider/react-query';
+import {
   AuthKeys,
+  isValidProviderBaseURL,
   EModelEndpoint,
   alternateName,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
-import {
-  useRevokeUserKeyMutation,
-  useRevokeAllUserKeysMutation,
-} from 'librechat-data-provider/react-query';
 import {
   Label,
   Button,
@@ -176,6 +177,7 @@ const SetKeyDialog = ({
   userProvideSessionToken,
   userProvideBearerToken,
   keyConfiguration,
+  label,
   onCloseAutoFocus,
 }: Pick<TDialogProps, 'open' | 'onOpenChange'> & {
   endpoint: EModelEndpoint | string;
@@ -186,6 +188,7 @@ const SetKeyDialog = ({
   userProvideSessionToken?: boolean;
   userProvideBearerToken?: boolean;
   keyConfiguration?: MediaUserKey & { label: string };
+  label?: string;
   onCloseAutoFocus?: (event: Event) => void;
 }) => {
   const methods = useForm({
@@ -224,7 +227,7 @@ const SetKeyDialog = ({
     label: localize(option.label),
   }));
   const configuredEndpoint = endpointType ?? endpoint;
-  const displayName = keyConfiguration?.label ?? alternateName[endpoint] ?? endpoint;
+  const displayName = label ?? keyConfiguration?.label ?? alternateName[endpoint] ?? endpoint;
   const pending = isSaving || revoking || methods.formState.isSubmitting;
   useEffect(() => {
     if (open) return;
@@ -252,14 +255,7 @@ const SetKeyDialog = ({
 
     const saveKey = async (key: string) => {
       try {
-        await saveUserKey(
-          key,
-          expiresAt,
-          keyConfiguration?.encoding === 'google' &&
-            keyConfiguration.keyName === EModelEndpoint.google
-            ? { preserveGoogleServiceKey: true }
-            : undefined,
-        );
+        await saveUserKey(key, expiresAt);
         showToast({
           message: localize('com_ui_save_key_success'),
           status: NotificationSeverity.SUCCESS,
@@ -289,18 +285,7 @@ const SetKeyDialog = ({
         }
         const url = baseURL.trim();
         if (keyConfiguration.userProvideURL) {
-          try {
-            const parsed = new URL(url);
-            if (
-              !['http:', 'https:'].includes(parsed.protocol) ||
-              parsed.username ||
-              parsed.password ||
-              parsed.search ||
-              parsed.hash ||
-              /\/(chat\/completions|responses)\/?$/.test(parsed.pathname)
-            )
-              throw new Error('Invalid API URL');
-          } catch {
+          if (!isValidProviderBaseURL(url)) {
             methods.setError(
               'baseURL',
               { message: localize('com_endpoint_config_url_invalid') },
@@ -447,6 +432,23 @@ const SetKeyDialog = ({
         status: NotificationSeverity.ERROR,
       });
       return;
+    }
+
+    if (configuredEndpoint === EModelEndpoint.google && userProvideURL) {
+      let baseURL = '';
+      try {
+        const credentials: { baseURL?: string } = JSON.parse(userKey);
+        baseURL = credentials.baseURL ?? '';
+      } catch {
+        baseURL = '';
+      }
+      if (!isValidProviderBaseURL(baseURL)) {
+        showToast({
+          message: localize('com_endpoint_config_url_invalid'),
+          status: NotificationSeverity.ERROR,
+        });
+        return;
+      }
     }
 
     if (await saveKey(userKey)) setUserKey('');

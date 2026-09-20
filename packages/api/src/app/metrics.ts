@@ -2,12 +2,13 @@ import { Router } from 'express';
 import { timingSafeEqual } from 'crypto';
 import { Registry, collectDefaultMetrics, Counter, Gauge, Histogram } from 'prom-client';
 import { logger, setAgentEventActorReceiptMetricObserver } from '@librechat/data-schemas';
-import { mediaApiSchema, mediaOperationSchema, mediaJobPhaseSchema } from 'librechat-data-provider';
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
+import type { MediaBacklogMetrics } from '@librechat/data-schemas';
 import type { Mongoose } from 'mongoose';
 import type { AgentStartupMilestone, AgentStartupResult } from '~/agents/phases';
 import type { LocatorTraversalFailure } from '../protection/diagnostics';
 import type { MediaMetricEvent } from '../media/telemetry';
+import { createMediaBacklogGauges, createMediaLifecycleMetrics } from '../media/metrics';
 import { agentStartupMilestones, agentStartupResults } from '~/agents/phases';
 
 const PATH_NORMALIZATIONS: [RegExp, string][] = [
@@ -167,6 +168,7 @@ export interface AgentEventActorStorageMetricsSnapshot {
 }
 
 export interface MetricsOptions {
+  collectMediaBacklogMetrics?: () => Promise<MediaBacklogMetrics>;
   collectAgentEventActorStorageMetrics?: () => Promise<AgentEventActorStorageMetricsSnapshot>;
 }
 
@@ -563,68 +565,13 @@ export function createMetrics(options: MetricsOptions = {}): PrometheusMetrics {
   }
 
   const registry = new Registry();
+  createMediaBacklogGauges({
+    registry,
+    load: options.collectMediaBacklogMetrics,
+    cacheMs: AGENT_EVENT_ACTOR_STORAGE_METRICS_CACHE_MS,
+  });
   collectDefaultMetrics({ register: registry });
-  const mediaEvents = new Counter({
-    name: 'media_lifecycle_events_total',
-    help: 'Media execution attempts and durable transitions; retries are separate observations, not new jobs',
-    labelNames: ['kind', 'result', 'api', 'operation', 'phase', 'execution_owner'] as const,
-    registers: [registry],
-  });
-  const mediaDuration = new Histogram({
-    name: 'media_lifecycle_duration_seconds',
-    help: 'Duration of media execution attempts, phase transitions, settlement, and cleanup',
-    labelNames: ['kind', 'result', 'api', 'operation', 'phase', 'execution_owner'] as const,
-    buckets: [0.01, 0.1, 1, 5, 15, 60, 300, 900, 3600],
-    registers: [registry],
-  });
-  const mediaQueueWait = new Histogram({
-    name: 'media_queue_wait_seconds',
-    help: 'Elapsed queue age when a media job is claimed',
-    labelNames: ['api', 'operation'] as const,
-    buckets: [0.01, 0.1, 1, 5, 15, 60, 300, 900, 3600],
-    registers: [registry],
-  });
-  const recordMediaEvent = (event: MediaMetricEvent) => {
-    if (
-      !['attempt', 'transition', 'settlement', 'cleanup', 'cancellation'].includes(event.kind) ||
-      !['started', 'completed', 'failed', 'interrupted'].includes(event.result)
-    )
-      return;
-    const labels = {
-      kind: event.kind,
-      result: event.result,
-      api: event.api ?? 'none',
-      operation: event.operation ?? 'none',
-      phase: event.phase ?? 'none',
-      execution_owner:
-        event.executionOwner === 'chat' || event.executionOwner === 'media'
-          ? event.executionOwner
-          : 'none',
-    };
-    labels.api = mediaApiSchema.safeParse(event.api).success ? labels.api : 'none';
-    labels.operation = mediaOperationSchema.safeParse(event.operation).success
-      ? labels.operation
-      : 'none';
-    labels.phase = mediaJobPhaseSchema.safeParse(event.phase).success ? labels.phase : 'none';
-    mediaEvents.inc(labels);
-    if (
-      event.durationMs !== undefined &&
-      Number.isFinite(event.durationMs) &&
-      event.durationMs >= 0
-    ) {
-      mediaDuration.observe(labels, event.durationMs / 1000);
-    }
-    if (
-      event.queueWaitMs !== undefined &&
-      Number.isFinite(event.queueWaitMs) &&
-      event.queueWaitMs >= 0
-    ) {
-      mediaQueueWait.observe(
-        { api: labels.api, operation: labels.operation },
-        event.queueWaitMs / 1000,
-      );
-    }
-  };
+  const recordMediaEvent = createMediaLifecycleMetrics(registry);
 
   observeLocatorTraversal = () => undefined;
   const locatorTraversalFailuresTotal = new Counter({

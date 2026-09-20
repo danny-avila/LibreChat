@@ -7,31 +7,40 @@ import type {
   MediaStoredThread,
   MediaStoredTurn,
 } from '~/types/media';
+import { omitDefaultTenant } from '~/models/plugins/optionalTenant';
 
 const common = {
   schemaVersion: { type: Number, required: true, default: 1 as const },
-  tenantId: { type: String, default: null },
+  tenantId: { type: String },
   ownerId: { type: String, required: true },
-  createdAt: { type: String, required: true },
-  updatedAt: { type: String, required: true },
+  createdAt: { type: Date, required: true },
+  updatedAt: { type: Date, required: true },
   version: { type: Number, required: true, default: 1 as const },
 };
-const options = { minimize: false, versionKey: false } as const;
+const options = { minimize: false, versionKey: false, timestamps: true } as const;
 
 export const mediaOwnerSchema: Schema<MediaStoredOwner> = new Schema(
   {
-    tenantId: { type: String, default: null },
+    tenantId: { type: String },
     ownerId: { type: String, required: true },
-    status: { type: String, enum: ['active', 'deleting', 'deleted'], required: true },
+    status: {
+      type: String,
+      enum: ['initializing', 'active', 'deleting', 'deleted'],
+      required: true,
+    },
+    creationToken: String,
     workIds: { type: [String], default: [] },
     deletionToken: String,
     deletionPrepared: Boolean,
-    updatedAt: { type: String, required: true },
+    expiresAt: Date,
+    updatedAt: { type: Date, required: true },
   },
   options,
 );
+omitDefaultTenant(mediaOwnerSchema);
 mediaOwnerSchema.index({ tenantId: 1, ownerId: 1 }, { unique: true });
 mediaOwnerSchema.index({ status: 1, ownerId: 1, tenantId: 1 });
+mediaOwnerSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export const mediaThreadSchema: Schema<MediaStoredThread> = new Schema(
   {
@@ -48,18 +57,27 @@ export const mediaThreadSchema: Schema<MediaStoredThread> = new Schema(
     coverExplicit: Boolean,
     pendingJobCount: { type: Number, default: 0 },
     turnCount: { type: Number, default: 0 },
-    retiredAt: String,
-    expiresAt: String,
-    payloadPurgedAt: String,
+    retiredAt: Date,
+    temporary: Boolean,
+    expiresAt: Date,
+    payloadPurgedAt: Date,
     titleClaim: {
-      type: new Schema({ jobId: String, claimedAt: String }, { _id: false }),
+      type: new Schema({ jobId: String, claimedAt: Date }, { _id: false }),
       default: undefined,
     },
   },
   options,
 );
+omitDefaultTenant(mediaThreadSchema);
 mediaThreadSchema.index({ tenantId: 1, ownerId: 1, threadId: 1 }, { unique: true });
-mediaThreadSchema.index({ tenantId: 1, ownerId: 1, status: 1, createdAt: -1, threadId: -1 });
+mediaThreadSchema.index({
+  tenantId: 1,
+  ownerId: 1,
+  status: 1,
+  temporary: 1,
+  createdAt: -1,
+  threadId: -1,
+});
 mediaThreadSchema.index(
   { tenantId: 1, ownerId: 1, status: 1, expiresAt: 1 },
   { partialFilterExpression: { expiresAt: { $exists: true } } },
@@ -87,10 +105,11 @@ export const mediaTurnSchema: Schema<MediaStoredTurn> = new Schema(
     clientRequestId: String,
     fingerprint: String,
     publicationPhase: { type: String, enum: ['preparing', 'accepted', 'rejected'], required: true },
-    publicationExpiresAt: String,
+    publicationExpiresAt: Date,
   },
   options,
 );
+omitDefaultTenant(mediaTurnSchema);
 mediaTurnSchema.index({ tenantId: 1, ownerId: 1, turnId: 1 }, { unique: true });
 mediaTurnSchema.index(
   { tenantId: 1, ownerId: 1, threadId: 1, sequence: 1 },
@@ -133,6 +152,7 @@ export const mediaJobSchema: Schema<MediaStoredJob> = new Schema(
     activeSlot: Number,
     queueCapacity: { type: Number, required: true },
     accounting: Schema.Types.Mixed,
+    accountingReview: Schema.Types.Mixed,
     nativeSource: Schema.Types.Mixed,
     nativeLimits: Schema.Types.Mixed,
     nativePartKeys: { type: Schema.Types.Mixed, default: undefined },
@@ -144,20 +164,22 @@ export const mediaJobSchema: Schema<MediaStoredJob> = new Schema(
       type: [{ _id: false, conversationId: String, expiresAt: String }],
       default: undefined,
     },
-    nativeConsumersCheckedAt: String,
+    nativeConsumersCheckedAt: Date,
     nativeConsumersTracked: Boolean,
     recoveryDecisions: { type: [Schema.Types.Mixed], default: undefined },
-    publicationExpiresAt: String,
-    payloadPurgedAt: String,
-    dueAt: { type: String, required: true },
+    publicationExpiresAt: Date,
+    payloadPurgedAt: Date,
+    dueAt: { type: Date, required: true },
+    recoveryFailures: { type: Number, min: 0 },
     leaseToken: String,
     leaseOwner: String,
-    leaseUntil: String,
-    cancelRequestedAt: String,
-    dispatchGrantedAt: String,
+    leaseUntil: Date,
+    cancelRequestedAt: Date,
+    dispatchGrantedAt: Date,
   },
   options,
 );
+omitDefaultTenant(mediaJobSchema);
 mediaJobSchema.index({ tenantId: 1, ownerId: 1, jobId: 1 }, { unique: true });
 mediaJobSchema.index({ tenantId: 1, ownerId: 1, clientRequestId: 1 }, { unique: true });
 mediaJobSchema.index(
@@ -170,6 +192,7 @@ mediaJobSchema.index(
 mediaJobSchema.index({ tenantId: 1, ownerId: 1, turnId: 1, createdAt: 1, jobId: 1 });
 mediaJobSchema.index({ tenantId: 1, ownerId: 1, threadId: 1, 'receipt.phase': 1, phase: 1 });
 mediaJobSchema.index({ executionOwner: 1, 'receipt.phase': 1, phase: 1, dueAt: 1, leaseUntil: 1 });
+mediaJobSchema.index({ executionOwner: 1, 'receipt.phase': 1, phase: 1, createdAt: 1 });
 mediaJobSchema.index({ 'receipt.phase': 1, updatedAt: 1, jobId: 1 });
 mediaJobSchema.index({ tenantId: 1, ownerId: 1, nativeConsumers: 1 });
 mediaJobSchema.index({ tenantId: 1, phase: 1, jobId: 1, ownerId: 1 });
@@ -213,11 +236,12 @@ export const mediaAssetWriteSchema: Schema<MediaAssetWrite> = new Schema(
     asset: Schema.Types.Mixed,
     publicationContent: Schema.Types.Mixed,
     deletionToken: String,
-    deletionRetryAt: String,
+    deletionRetryAt: Date,
     deletionAttempts: Number,
   },
   options,
 );
+omitDefaultTenant(mediaAssetWriteSchema);
 mediaAssetWriteSchema.index({ tenantId: 1, ownerId: 1, writeId: 1 }, { unique: true });
 mediaAssetWriteSchema.index(
   { tenantId: 1, ownerId: 1, outputKey: 1, rendition: 1, ingestToken: 1 },
@@ -229,7 +253,7 @@ mediaAssetWriteSchema.index({ state: 1, updatedAt: 1, writeId: 1 });
 /** Capacity spans tenants. All access is through the owner/job-derived repository methods. */
 export const mediaPermitSchema: Schema<MediaPermit> = new Schema(
   {
-    tenantId: { type: String, default: null },
+    tenantId: { type: String },
     ownerId: { type: String, required: true },
     permitId: { type: String, required: true },
     capacityKey: { type: String, required: true },
@@ -237,19 +261,20 @@ export const mediaPermitSchema: Schema<MediaPermit> = new Schema(
     slot: { type: Number, required: true },
     jobId: { type: String, required: true },
     jobIdentity: { type: String, required: true },
-    createdAt: { type: String, required: true },
+    createdAt: { type: Date, required: true },
   },
   options,
 );
+omitDefaultTenant(mediaPermitSchema);
 mediaPermitSchema.index({ capacityKey: 1, slot: 1 }, { unique: true });
 mediaPermitSchema.index({ capacityKey: 1, jobIdentity: 1 }, { unique: true });
 mediaPermitSchema.index({ permitId: 1 }, { unique: true });
 mediaPermitSchema.index({ ownerId: 1, tenantId: 1, jobId: 1 });
 
-export const mediaActivationSchema: Schema<{ key: string; activatedAt: string }> = new Schema(
+export const mediaActivationSchema: Schema<{ key: string; activatedAt: Date }> = new Schema(
   {
     key: { type: String, required: true },
-    activatedAt: { type: String, required: true },
+    activatedAt: { type: Date, required: true },
   },
   options,
 );

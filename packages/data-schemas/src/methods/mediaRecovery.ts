@@ -6,21 +6,11 @@ import type {
   MediaRecoveryDecision,
 } from '~/types/mediaRecovery';
 import type { MediaStoredJob } from '~/types/media';
-import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
+import { assertMediaTenant as assertTenant, positiveMediaLimit } from '~/utils/media';
+import { durable, cursorParts } from './media/scope';
 import { createMediaJobModel } from '~/models/media';
 import { MediaPersistenceError } from './media';
 
-const durable = { w: 'majority' as const, j: true };
-function assertTenant(tenantId: string | null): void {
-  const active = tenantStorage.getStore()?.tenantId;
-  if (
-    tenantId === '' ||
-    tenantId === SYSTEM_TENANT_ID ||
-    (active && active !== SYSTEM_TENANT_ID && active !== tenantId)
-  ) {
-    throw new MediaPersistenceError('not_found', 'Media recovery tenant is unavailable');
-  }
-}
 function fingerprint(request: MediaRecoveryRequest): string {
   return createHash('sha256')
     .update(
@@ -44,23 +34,8 @@ export function createMediaRecoveryMethods(
     cursor,
   }) => {
     assertTenant(tenantId);
-    if (!Number.isSafeInteger(limit) || limit <= 0)
-      throw new MediaPersistenceError('invalid_input', 'Invalid media recovery page');
-    let after: [string, string] | undefined;
-    if (cursor) {
-      try {
-        const decoded: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString());
-        if (
-          !Array.isArray(decoded) ||
-          decoded.length !== 2 ||
-          !decoded.every((value) => typeof value === 'string')
-        )
-          throw new Error();
-        after = decoded as [string, string];
-      } catch {
-        throw new MediaPersistenceError('invalid_input', 'Invalid media recovery cursor');
-      }
-    }
+    positiveMediaLimit(limit);
+    const after = cursorParts(cursor);
     const rows = await Job.aggregate<MediaRecoveryRecord>([
       {
         $match: {
@@ -200,10 +175,10 @@ export function createMediaRecoveryMethods(
         ...query,
         phase: 'requires_attention',
         version: input.request.expectedVersion,
-        $or: [{ leaseUntil: { $exists: false } }, { leaseUntil: { $lte: now.toISOString() } }],
+        $or: [{ leaseUntil: { $exists: false } }, { leaseUntil: { $lte: now } }],
       },
       {
-        $set: { phase: nextPhase, dueAt: now.toISOString(), updatedAt: now.toISOString() },
+        $set: { phase: nextPhase, dueAt: now, updatedAt: now },
         $unset: { leaseToken: 1, leaseOwner: 1, leaseUntil: 1, error: 1 },
         $push: { recoveryDecisions: decision },
         $inc: { version: 1 },

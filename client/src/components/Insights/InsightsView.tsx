@@ -29,7 +29,9 @@ import { useAuthContext, useDocumentTitle, useLocalize } from '~/hooks';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
 import { LocalizedDateRangePicker } from '~/components/ui';
 import { getRollingDateRange } from './dateRange';
+import { PaginationFooter } from './Pagination';
 import { Panel, EmptyState } from './Panel';
+import { formatExactValue } from './format';
 import MediaInsights from './Media';
 import { cn } from '~/utils';
 
@@ -59,10 +61,6 @@ function formatValue(value: number, locale: string) {
     notation: 'compact',
     maximumFractionDigits: 1,
   }).format(value);
-}
-
-function formatExactValue(value: number, locale: string) {
-  return new Intl.NumberFormat(locale).format(value);
 }
 
 function formatDate(value: string, locale: string) {
@@ -504,27 +502,7 @@ function LatestConversations({
           }
         />
       )}
-      <div className="mt-3 flex items-center justify-between gap-3 border-t border-border-light pt-3 text-sm text-text-secondary">
-        <span>{localize('com_insights_page_of', { page, pages })}</span>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={isFetching || page <= 1}
-            onClick={() => setPage((value) => Math.max(1, value - 1))}
-          >
-            {localize('com_ui_prev')}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={isFetching || page >= pages}
-            onClick={() => setPage((value) => value + 1)}
-          >
-            {localize('com_ui_next')}
-          </Button>
-        </div>
-      </div>
+      <PaginationFooter page={page} pages={pages} isFetching={isFetching} onPage={setPage} />
     </Panel>
   );
 }
@@ -570,7 +548,6 @@ export default function InsightsView() {
     }
     return { ...params, range };
   }, [customDateRange, page, mediaPage, range, search, selectedAgentIds, timeZone]);
-  useEffect(() => setMediaPage(1), [customDateRange, range]);
   const displayDateRange = useMemo(
     () => customDateRange ?? getShortcutDateRange(range),
     [customDateRange, range],
@@ -676,6 +653,7 @@ export default function InsightsView() {
     dateRangeSelectionTimeout.current = window.setTimeout(() => {
       setCustomDateRange({ startDate: new Date(startDate), endDate: new Date(endDate) });
       setPage(1);
+      setMediaPage(1);
       dateRangeSelectionTimeout.current = undefined;
     }, dateRangeSelectionDelayMs);
   };
@@ -823,6 +801,7 @@ export default function InsightsView() {
                   setRange(item.value);
                   setCustomDateRange(undefined);
                   setPage(1);
+                  setMediaPage(1);
                 }}
               >
                 {localize(item.labelKey)}
@@ -866,13 +845,6 @@ export default function InsightsView() {
           )}
           {data && (
             <>
-              {data.media && (
-                <MediaInsights
-                  data={data.media}
-                  isFetching={insights.isFetching}
-                  onPage={setMediaPage}
-                />
-              )}
               {/** Use explicit responsive counts: one column on narrow screens,
                *  two through mid-range, and four at xl. This avoids auto-fit's
                *  three-plus-one orphan without making mobile cards too narrow. */}
@@ -881,6 +853,14 @@ export default function InsightsView() {
                   <KpiCard key={card.id} card={card} locale={locale} />
                 ))}
               </div>
+              {data.media && (
+                <MediaInsights
+                  data={data.media}
+                  locale={locale}
+                  isFetching={insights.isFetching}
+                  onPage={setMediaPage}
+                />
+              )}
               <div className="grid w-full grid-cols-[repeat(auto-fit,minmax(min(100%,580px),1fr))] gap-3">
                 <TopUsersTable rows={data.topUsers} localize={localize} locale={locale} />
                 <ChurnedUsersTable rows={data.churnedUsers} localize={localize} locale={locale} />

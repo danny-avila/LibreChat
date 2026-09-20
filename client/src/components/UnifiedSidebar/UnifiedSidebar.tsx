@@ -59,12 +59,15 @@ function UnifiedSidebar() {
   const resizeHandlers = useRef<{ move: (e: MouseEvent) => void; up: () => void } | null>(null);
 
   const links = useUnifiedSidebarLinks();
-  let routeActiveId: string | undefined;
-  if (location.pathname.startsWith('/studio')) routeActiveId = 'media-studio';
-  else if (location.pathname.startsWith('/insights')) routeActiveId = 'insights';
-  const isInsightsRoute = routeActiveId === 'insights';
-  const routePanelId = routeActiveId === 'media-studio' ? routeActiveId : undefined;
-  const panelExpanded = expanded && !isInsightsRoute;
+  const routeLink = links.find(
+    (link) =>
+      link.route &&
+      (location.pathname === link.route || location.pathname.startsWith(`${link.route}/`)),
+  );
+  const routeActiveId = routeLink?.id;
+  const isRoutePanel = !!routeLink;
+  const routePanelId = routeLink?.Component ? routeActiveId : undefined;
+  const panelExpanded = expanded && (!isRoutePanel || !!routePanelId);
 
   /** The aside's max width is a viewport percentage, so the announced range has to track
    *  the viewport rather than a render-time snapshot of it. */
@@ -93,16 +96,16 @@ function UnifiedSidebar() {
     setSidebarOpen(true);
   }, [setSidebarOpen]);
 
-  const handleLeaveInsights = useCallback(() => {
+  const handleLeaveRoute = useCallback(() => {
     navigate('/c/new');
   }, [navigate]);
 
   const handlePanelExpand = useCallback(() => {
-    if (isInsightsRoute) {
-      handleLeaveInsights();
+    if (isRoutePanel && !routePanelId) {
+      handleLeaveRoute();
     }
     handleExpand();
-  }, [handleExpand, handleLeaveInsights, isInsightsRoute]);
+  }, [handleExpand, handleLeaveRoute, isRoutePanel, routePanelId]);
 
   const handleResizeStart = useCallback(() => {
     setIsResizing(true);
@@ -177,6 +180,9 @@ function UnifiedSidebar() {
     return (
       <div
         id={MOBILE_DRAWER_ID}
+        role="dialog"
+        aria-modal={expanded || undefined}
+        aria-label={localize('com_nav_control_panel')}
         className={cn(
           /** The close swipe reads horizontal touches here (the drawer holds no
            * horizontal scrollers), while pinch-zoom stays with the browser —
@@ -200,7 +206,7 @@ function UnifiedSidebar() {
               links={links}
               expanded={expanded}
               onClose={handleCollapse}
-              onLeaveInsights={handleLeaveInsights}
+              onLeaveRoute={handleLeaveRoute}
               routeActiveId={routeActiveId}
             />
             <nav
@@ -211,7 +217,7 @@ function UnifiedSidebar() {
             </nav>
             <MobileShortcutTargets
               links={links}
-              onLeaveInsights={handleLeaveInsights}
+              onLeaveRoute={handleLeaveRoute}
               routeActiveId={routeActiveId}
             />
             {!routePanelId && <MobileBottomBar links={links} onNewChat={handleCollapse} />}
@@ -239,13 +245,14 @@ function UnifiedSidebar() {
           <Sidebar
             links={links}
             activeId={routePanelId}
+            routeActiveId={routeActiveId}
             expanded={panelExpanded}
             width={resizeNow}
             minWidth={panelExpanded ? EXPANDED_MIN : COLLAPSED_WIDTH}
             maxWidth={panelExpanded ? resizeMax : COLLAPSED_WIDTH}
             onCollapse={handleCollapse}
             onExpand={handlePanelExpand}
-            onLeaveInsights={handleLeaveInsights}
+            onLeaveRoute={handleLeaveRoute}
             onResizeStart={handleResizeStart}
             onResizeKeyboard={handleResizeKeyboard}
           />

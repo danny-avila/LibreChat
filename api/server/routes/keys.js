@@ -1,28 +1,11 @@
 const express = require('express');
-const { decrypt } = require('@librechat/data-schemas');
 const { createUserKeyUpdateHandler } = require('@librechat/api');
-const {
-  updateUserKey,
-  deleteUserKey,
-  getUserKeyExpiry,
-  getUserKeySnapshot,
-  compareAndSetUserKey,
-} = require('~/models');
+const { updateUserKey, deleteUserKey, getUserKeyExpiry } = require('~/models');
 const { requireJwtAuth } = require('~/server/middleware');
 
 const router = express.Router();
 
-router.put(
-  '/',
-  requireJwtAuth,
-  createUserKeyUpdateHandler({
-    updateUserKey,
-    getUserKeySnapshot,
-    compareAndSetUserKey,
-    decrypt,
-    now: Date.now,
-  }),
-);
+router.put('/', requireJwtAuth, createUserKeyUpdateHandler({ updateUserKey }));
 
 router.delete('/:name', requireJwtAuth, async (req, res) => {
   const { name } = req.params;

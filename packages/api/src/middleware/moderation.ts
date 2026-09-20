@@ -3,7 +3,7 @@ import type { AxiosInstance } from 'axios';
 import { isEnabled } from '../utils/common';
 
 const moderationResponse = z.object({
-  results: z.array(z.object({ flagged: z.boolean() })).min(1),
+  results: z.array(z.object({ flagged: z.boolean() })),
 });
 export type ModerationCheck = (inputs: readonly string[]) => Promise<boolean>;
 

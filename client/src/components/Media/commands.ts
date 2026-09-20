@@ -10,13 +10,9 @@ import {
 } from 'librechat-data-provider';
 import type { MediaErrorCode } from 'librechat-data-provider';
 import type { UseQueryOptions } from '@tanstack/react-query';
-import type { MediaReceipt } from '~/data-provider/Media';
+import type { MediaReceipt } from '~/data-provider';
 import type { PendingMedia } from './state';
-import {
-  invalidateMedia,
-  mayClearMediaDraft,
-  useMediaCommandMutations,
-} from '~/data-provider/Media';
+import { invalidateMedia, mayClearMediaDraft, useMediaCommandMutations } from '~/data-provider';
 import { emptyDraft, mediaDraftFamily, mediaPendingFamily } from './state';
 import { useMediaHost } from './host';
 

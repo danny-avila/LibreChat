@@ -6,7 +6,7 @@ import { useStudioAvailable } from '~/components/Chat/Studio/context';
 import { cn, toAbsoluteFilePath } from '~/utils';
 import DialogImage from './DialogImage';
 
-const OpenInStudio = lazy(() => import('~/components/Chat/OpenInStudio'));
+const OpenInStudio = lazy(() => import('~/components/Chat/Media/Open'));
 
 /** Max display height for chat images (Tailwind JIT class) */
 export const IMAGE_MAX_H = 'max-h-[45vh]' as const;
@@ -128,12 +128,15 @@ const Image = ({
           )}
         />
       </button>
-      {studio && file?.file_id && (
-        <Suspense fallback={null}>
-          <OpenInStudio file={file} />
-        </Suspense>
-      )}
       <DialogImage
+        actions={
+          studio &&
+          file?.file_id && (
+            <Suspense fallback={null}>
+              <OpenInStudio file={file} />
+            </Suspense>
+          )
+        }
         isOpen={isOpen}
         onOpenChange={setIsOpen}
         src={absoluteImageUrl}

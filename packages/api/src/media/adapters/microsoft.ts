@@ -88,7 +88,7 @@ export function createMicrosoftImageAdapter(): MediaProviderAdapter {
         throw new MediaProviderError('rejected');
       const [width, height] = dimensions.get(ratio ?? '1:1') ?? [1024, 1024];
       const fields = {
-        model: context.connection.options?.[`deployment.${model}`] ?? model,
+        model: context.connection.options?.deployments?.[model] ?? model,
         prompt: request.prompt,
         ...(request.operation === 'image.generate' ? { width, height } : {}),
         ...extra.data,

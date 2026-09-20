@@ -1,4 +1,6 @@
-const overlaySelector = '[role="menu"], [role="listbox"], [role="dialog"]';
+import { MOBILE_DRAWER_ID } from './constants';
+
+const overlaySelector = `[role="menu"], [role="listbox"], [role="dialog"]:not(#${MOBILE_DRAWER_ID})`;
 
 export function shouldCloseSidebar(event: KeyboardEvent, root: Document): boolean {
   if (event.key !== 'Escape' || event.defaultPrevented) return false;

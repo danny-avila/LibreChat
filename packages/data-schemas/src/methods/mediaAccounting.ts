@@ -5,7 +5,7 @@ import type {
   MediaAccountingDependencies,
   MediaAccountingMethods,
   MediaAccountingPolicy,
-  MediaAppliedSettlement,
+  IBalanceAppliedSettlement,
   MediaHoldResult,
   MediaSettlementEffect,
   MediaSettlementRecord,
@@ -15,11 +15,15 @@ import type {
 } from '~/types/mediaAccounting';
 import type { MediaOwnerScope, MediaStoredJob, MediaPage } from '~/types/media';
 import type { IBalance, BalancePreparationRequest } from '~/types/balance';
+import { migrateMediaDates, migrateMediaHoldDates } from '~/utils/mediaDates';
 import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { createMediaSettlementModel } from '~/models/mediaSettlement';
+import { createCreditsTransactionWriter } from './transaction';
 import { createIndexesWithRetry } from '~/utils/retry';
 import { createMediaOwnerModel } from '~/models/media';
 import { createBalanceModel } from '~/models/balance';
+import { isMediaTenantScope } from '~/utils/media';
+import { durable } from './media/scope';
 
 export class MediaAccountingError extends Error {
   constructor(
@@ -39,18 +43,28 @@ export class MediaAccountingError extends Error {
 type StoredSettlement = MediaSettlementRecord & { _id: Types.ObjectId };
 
 const balanceSelection =
-  '+mediaGeneration +mediaHolds +mediaDebtCredits +mediaSettlementSequence +mediaPendingSettlement +reservedCredits';
-const durable = { w: 'majority' as const, j: true };
+  '+mediaGeneration +mediaHolds +mediaDebtCredits +mediaSettlementSequence +mediaPendingSettlement +reservedCredits +reservations';
+
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex');
 const identity = (scope: MediaOwnerScope, jobId: string): string =>
   digest(JSON.stringify([scope.tenantId, scope.ownerId, jobId]));
 const finiteCredits = (value: number): boolean =>
   Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER;
+const operationContext = (operation?: MediaStoredJob['operation']): string =>
+  operation
+    ? {
+        'image.generate': 'image_generation',
+        'image.edit': 'image_edit',
+        'video.generate': 'video_generation',
+      }[operation]
+    : 'media';
 
 export function createMediaAccountingMethods(
   mongoose: typeof import('mongoose'),
   hooks: MediaAccountingDependencies = {},
 ): MediaAccountingMethods {
+  const upsertCreditsTransaction =
+    hooks.upsertCreditsTransaction ?? createCreditsTransactionWriter(mongoose);
   const settlements = () => createMediaSettlementModel(mongoose);
   const balances = () => createBalanceModel(mongoose);
   const owners = () => createMediaOwnerModel(mongoose);
@@ -69,12 +83,7 @@ export function createMediaAccountingMethods(
   ) => settlements().updateOne(filter, update, { ...options, writeConcern: durable });
   const jobs = (): Model<MediaStoredJob> => mongoose.models.MediaJob as Model<MediaStoredJob>;
   const scopeFilter = (scope: MediaOwnerScope): MediaOwnerScope => {
-    const context = tenantStorage.getStore()?.tenantId;
-    if (
-      !scope.ownerId ||
-      scope.tenantId === SYSTEM_TENANT_ID ||
-      (context && context !== SYSTEM_TENANT_ID && context !== scope.tenantId)
-    ) {
+    if (!scope.ownerId || !isMediaTenantScope(scope.tenantId)) {
       throw new MediaAccountingError(
         'invalid_job',
         'Media accounting scope does not match tenant context',
@@ -112,14 +121,22 @@ export function createMediaAccountingMethods(
       !Number.isSafeInteger(policy.maxAttempts) ||
       policy.maxAttempts < 1 ||
       !Number.isSafeInteger(policy.maxHoldsPerUser) ||
-      policy.maxHoldsPerUser < 1
+      policy.maxHoldsPerUser < 1 ||
+      (policy.shortfall !== undefined && !['debt', 'absorb'].includes(policy.shortfall))
     ) {
       throw new MediaAccountingError('invariant', 'Invalid accounting policy');
     }
   }
 
   async function ensureMediaAccountingIndexes(): Promise<void> {
-    await createIndexesWithRetry(settlements());
+    await Promise.all([
+      migrateMediaDates(settlements().collection, ['createdAt', 'reviewAt']),
+      migrateMediaHoldDates(balances().collection),
+    ]);
+    await Promise.all([
+      createIndexesWithRetry(settlements()),
+      createIndexesWithRetry(mongoose.models.Transaction),
+    ]);
     const indexes = await settlements().listIndexes();
     for (const keys of [
       ['tenantId', 'ownerId', 'jobId'],
@@ -287,8 +304,8 @@ export function createMediaAccountingMethods(
       !finiteCredits(input.maxCredits) ||
       input.maxCredits < input.estimatedCredits ||
       input.maxCredits <= 0 ||
-      !Number.isFinite(Date.parse(now)) ||
-      !Number.isFinite(Date.parse(reviewAt))
+      !Number.isFinite(new Date(now).getTime()) ||
+      !Number.isFinite(new Date(reviewAt).getTime())
     ) {
       throw new MediaAccountingError('invalid_amount', 'Invalid media hold amount or review time');
     }
@@ -327,8 +344,8 @@ export function createMediaAccountingMethods(
               estimatedCredits,
               maxCredits,
               holdFingerprint: fingerprint,
-              createdAt: now,
-              reviewAt,
+              createdAt: new Date(now),
+              reviewAt: new Date(reviewAt),
               state: 'initializing',
               balanceAcknowledged: false,
             },
@@ -460,7 +477,9 @@ export function createMediaAccountingMethods(
             $expr: { $lt: [{ $size: { $ifNull: ['$mediaHolds', []] } }, policy.maxHoldsPerUser] },
           },
           {
-            $push: { mediaHolds: { settlementId, jobId, amount: maxCredits, reviewAt } },
+            $push: {
+              mediaHolds: { settlementId, jobId, amount: maxCredits, reviewAt: new Date(reviewAt) },
+            },
             $inc: { reservedCredits: maxCredits },
           },
         );
@@ -638,7 +657,15 @@ export function createMediaAccountingMethods(
         const credits = Math.max(0, balance.tokenCredits ?? 0);
         const collectingDebt = active.effect.kind === 'debt_collection';
         const releasedCredits = hold?.amount ?? 0;
-        const reservedCredits = (balance.reservedCredits ?? 0) - releasedCredits;
+        const now = new Date();
+        const reservations = (balance.reservations ?? []).filter(
+          (reservation) => reservation.expiresAt > now,
+        );
+        const expiredCredits = (balance.reservations ?? []).reduce(
+          (sum, reservation) => sum + (reservation.expiresAt <= now ? reservation.amount : 0),
+          0,
+        );
+        const reservedCredits = (balance.reservedCredits ?? 0) - expiredCredits - releasedCredits;
         if (reservedCredits < 0)
           throw new MediaAccountingError(
             'invariant',
@@ -648,11 +675,19 @@ export function createMediaAccountingMethods(
         const debitedCredits = collectingDebt
           ? Math.min(active.effect.credits, balance.mediaDebtCredits ?? 0, availableCredits)
           : Math.min(availableCredits, active.effect.credits);
-        const result: MediaAppliedSettlement = {
+        const shortfallCredits =
+          active.effect.shortfall === 'absorb' ? 0 : active.effect.credits - debitedCredits;
+        const overrunDebtCredits = collectingDebt
+          ? 0
+          : Math.min(shortfallCredits, Math.max(0, active.effect.credits - releasedCredits));
+        const holdShortfallCredits = collectingDebt ? 0 : shortfallCredits - overrunDebtCredits;
+        const result: IBalanceAppliedSettlement = {
           debitedCredits,
-          debtCredits: collectingDebt ? -debitedCredits : active.effect.credits - debitedCredits,
+          debtCredits: collectingDebt ? -debitedCredits : shortfallCredits,
           releasedCredits,
           remainingCredits: credits - debitedCredits,
+          ...(overrunDebtCredits ? { overrunDebtCredits } : {}),
+          ...(holdShortfallCredits ? { holdShortfallCredits } : {}),
         };
         const applied = await writeBalance(
           {
@@ -664,12 +699,14 @@ export function createMediaAccountingMethods(
             'mediaPendingSettlement.phase': 'allocated',
             tokenCredits: balance.tokenCredits ?? null,
             reservedCredits: balance.reservedCredits ?? null,
+            reservations: balance.reservations ?? null,
             mediaDebtCredits: balance.mediaDebtCredits ?? null,
           },
           {
             $set: {
               tokenCredits: result.remainingCredits,
               reservedCredits,
+              reservations,
               mediaDebtCredits: (balance.mediaDebtCredits ?? 0) + result.debtCredits,
               mediaPendingSettlement: { ...pending, phase: 'applied', result },
             },
@@ -693,52 +730,64 @@ export function createMediaAccountingMethods(
         },
       );
       await hooks.afterStep?.('projected');
-      const transactionId = new mongoose.Types.ObjectId(
-        digest(`media:${active.settlementId}`).slice(0, 24),
-      );
-      await mongoose.models.Transaction.updateOne(
-        { _id: transactionId, tenantId: scope.tenantId },
-        {
-          $setOnInsert: {
-            user: scope.ownerId,
-            tenantId: scope.tenantId,
-            tokenType: 'credits',
-            context: active.effect.kind === 'debt_collection' ? 'media_debt' : 'media',
-            model: active.effect.model,
-            rawAmount:
-              active.effect.kind === 'debt_collection'
-                ? -pending.result.debitedCredits
-                : -active.effect.credits,
-            tokenValue: -pending.result.debitedCredits,
-            rate: 1,
-            mediaSettlementId: active.settlementId,
-            mediaJobId: active.effect.kind === 'debt_collection' ? undefined : active.jobId,
-            mediaDebtCredits: pending.result.debtCredits,
-            mediaCostUSD: active.effect.costUSD,
-            mediaCostSource: active.effect.costSource,
-            mediaFingerprint: active.effectFingerprint,
-            mediaAccountingMode: 'balance',
-            inputTokens: active.effect.inputTokens,
-            mediaOutputTokens: active.effect.outputTokens,
-          },
-        },
-        { upsert: true, writeConcern: durable },
-      );
+      await upsertCreditsTransaction({
+        user: scope.ownerId,
+        tenantId: scope.tenantId,
+        context:
+          active.effect.kind === 'debt_collection'
+            ? 'media_debt'
+            : operationContext(active.effect.operation),
+        model: active.effect.model,
+        rawAmount:
+          active.effect.kind === 'debt_collection'
+            ? -pending.result.debitedCredits
+            : -active.effect.credits,
+        tokenValue: -pending.result.debitedCredits,
+        mediaSettlementId: active.settlementId,
+        mediaJobId: active.effect.kind === 'debt_collection' ? undefined : active.jobId,
+        debtCredits: pending.result.debtCredits,
+        overrunDebtCredits: pending.result.overrunDebtCredits,
+        holdShortfallCredits: pending.result.holdShortfallCredits,
+        costUSD: active.effect.costUSD,
+        costSource: active.effect.costSource,
+        inputTokens: active.effect.inputTokens,
+        outputTokens: active.effect.outputTokens,
+      });
       await hooks.afterStep?.('ledger');
-      await jobs().updateOne(
-        { ...scopeFilter(scope), jobId: active.jobId },
-        {
-          $set: {
-            accounting: {
-              settlementId: active.settlementId,
-              phase: 'settled',
-              credits: active.effect.credits,
-              debtCredits: pending.result.debtCredits,
+      const priorJob = await jobs()
+        .findOneAndUpdate(
+          { ...scopeFilter(scope), jobId: active.jobId },
+          {
+            $set: {
+              accounting: {
+                settlementId: active.settlementId,
+                phase: 'settled',
+                credits: active.effect.credits,
+                debtCredits: pending.result.debtCredits,
+              },
             },
           },
-        },
-        { writeConcern: durable },
-      );
+          { writeConcern: durable },
+        )
+        .select('version phase accountingReview')
+        .lean<Pick<MediaStoredJob, 'version' | 'phase' | 'accountingReview'>>();
+      if (priorJob?.accountingReview && priorJob.phase === 'requires_attention') {
+        await jobs().updateOne(
+          {
+            ...scopeFilter(scope),
+            jobId: active.jobId,
+            version: priorJob.version,
+            phase: 'requires_attention',
+            'accounting.phase': 'settled',
+            'accountingReview.overdueAt': priorJob.accountingReview.overdueAt,
+          },
+          {
+            $set: { phase: priorJob.accountingReview.previousPhase },
+            $unset: { accountingReview: 1, error: 1 },
+          },
+          { writeConcern: durable },
+        );
+      }
       await writeSettlement(
         {
           ...scopeFilter(scope),
@@ -790,9 +839,11 @@ export function createMediaAccountingMethods(
     if (
       !['charge', 'release'].includes(effect.kind) ||
       !finiteCredits(effect.credits) ||
+      (effect.shortfall !== undefined && !['debt', 'absorb'].includes(effect.shortfall)) ||
       (effect.kind === 'release' && effect.credits !== 0) ||
       (effect.costUSD !== undefined && !finiteCredits(effect.costUSD)) ||
-      (effect.costSource !== undefined && !['provider', 'estimate'].includes(effect.costSource)) ||
+      (effect.costSource !== undefined &&
+        !['provider', 'tokens', 'estimate'].includes(effect.costSource)) ||
       (effect.creditsPerUSD !== undefined &&
         (!Number.isFinite(effect.creditsPerUSD) || effect.creditsPerUSD <= 0)) ||
       [effect.inputTokens, effect.outputTokens].some(
@@ -811,6 +862,9 @@ export function createMediaAccountingMethods(
     const normalized: MediaSettlementEffect = {
       kind: effect.kind,
       credits: Math.ceil(effect.credits),
+      ...(effect.kind === 'charge' && (effect.shortfall ?? policy.shortfall) === 'absorb'
+        ? { shortfall: 'absorb' }
+        : {}),
       ...(effect.costUSD !== undefined ? { costUSD: effect.costUSD } : {}),
       ...(effect.creditsPerUSD !== undefined ? { creditsPerUSD: effect.creditsPerUSD } : {}),
       ...(effect.inputTokens !== undefined ? { inputTokens: effect.inputTokens } : {}),
@@ -820,6 +874,7 @@ export function createMediaAccountingMethods(
     // Provenance does not change the financial effect or invalidate receipts written before it existed.
     const fingerprint = digest(JSON.stringify(normalized));
     if (effect.costSource !== undefined) normalized.costSource = effect.costSource;
+    if (effect.operation !== undefined) normalized.operation = effect.operation;
     await writeSettlement(
       { ...scopeFilter(scope), settlementId, _id: record._id, effect: { $exists: false } },
       {
@@ -863,46 +918,53 @@ export function createMediaAccountingMethods(
       if (value !== undefined && !finiteCredits(value))
         throw new MediaAccountingError('invalid_amount', 'Invalid media usage value');
     }
-    if (input.costSource !== undefined && !['provider', 'estimate'].includes(input.costSource)) {
+    if (
+      input.costSource !== undefined &&
+      !['provider', 'tokens', 'estimate'].includes(input.costSource)
+    ) {
       throw new MediaAccountingError('invalid_amount', 'Invalid media cost provenance');
     }
     const settlementId = identity(scope, jobId);
-    const transactionId = new mongoose.Types.ObjectId(digest(`media:${settlementId}`).slice(0, 24));
     const fields = {
       user: scope.ownerId,
       tenantId: scope.tenantId,
-      tokenType: 'credits',
       context: 'media',
       model: input.model,
       rawAmount: input.credits === undefined ? undefined : -input.credits,
       tokenValue: input.credits === undefined ? undefined : -input.credits,
-      rate: input.credits === undefined ? undefined : 1,
       inputTokens: input.inputTokens,
-      mediaOutputTokens: input.outputTokens,
+      outputTokens: input.outputTokens,
       mediaSettlementId: settlementId,
       mediaJobId: jobId,
-      mediaCostUSD: input.costUSD,
-      mediaAccountingMode: 'transactions',
+      costUSD: input.costUSD,
     };
-    const fingerprint = digest(JSON.stringify(fields));
-    await mongoose.models.Transaction.updateOne(
-      { _id: transactionId, tenantId: scope.tenantId },
-      {
-        $setOnInsert: {
-          ...fields,
-          mediaFingerprint: fingerprint,
-          mediaCostSource: input.costSource,
-        },
-      },
-      { upsert: true, writeConcern: durable },
+    // Receipt identity is immutable: column renames and the shared writer must not change this
+    // original descriptor, or an acknowledged ledger insert could fail its publication replay.
+    const fingerprint = digest(
+      JSON.stringify({
+        user: fields.user,
+        tenantId: fields.tenantId,
+        tokenType: 'credits',
+        context: fields.context,
+        model: fields.model,
+        rawAmount: fields.rawAmount,
+        tokenValue: fields.tokenValue,
+        rate: input.credits === undefined ? undefined : 1,
+        inputTokens: fields.inputTokens,
+        mediaOutputTokens: fields.outputTokens,
+        mediaSettlementId: fields.mediaSettlementId,
+        mediaJobId: fields.mediaJobId,
+        mediaCostUSD: fields.costUSD,
+        mediaAccountingMode: 'transactions',
+      }),
     );
-    const stored = await mongoose.models.Transaction.findOne({
-      _id: transactionId,
-      tenantId: scope.tenantId,
-    })
-      .select('mediaFingerprint')
-      .lean<{ mediaFingerprint?: string }>();
-    if (stored?.mediaFingerprint !== fingerprint)
+    const stored = await upsertCreditsTransaction({
+      ...fields,
+      context: operationContext(job.operation),
+      mediaFingerprint: fingerprint,
+      costSource: input.costSource,
+    });
+    if (stored.fingerprint !== fingerprint)
       throw new MediaAccountingError(
         'conflict',
         'Media usage was already recorded with different accounting',
@@ -981,6 +1043,53 @@ export function createMediaAccountingMethods(
       .limit(limit)
       .lean<MediaSettlementRecord[]>();
     for (const record of records) await reconcileSettlement(scope, record.settlementId, policy);
+    const now = new Date();
+    const overdue = await settlements()
+      .find({
+        ...scopeFilter(scope),
+        balanceAcknowledged: false,
+        effect: { $exists: false },
+        reviewAt: { $lte: now },
+      })
+      .sort({ reviewAt: 1, settlementId: 1 })
+      .limit(limit)
+      .lean<MediaSettlementRecord[]>();
+    for (const record of overdue) {
+      const job = await jobs()
+        .findOne({
+          ...scopeFilter(scope),
+          jobId: record.jobId,
+          'accounting.phase': 'held',
+          accountingReview: { $exists: false },
+          phase: { $ne: 'requires_attention' },
+          $or: [{ leaseUntil: null }, { leaseUntil: { $lte: now } }],
+        })
+        .lean<MediaStoredJob>();
+      if (!job) continue;
+      await jobs().updateOne(
+        {
+          ...scopeFilter(scope),
+          jobId: record.jobId,
+          version: job.version,
+          'accounting.phase': 'held',
+          $or: [{ leaseUntil: null }, { leaseUntil: { $lte: now } }],
+        },
+        {
+          $set: {
+            phase: 'requires_attention',
+            error: { code: 'not_ready' },
+            updatedAt: now,
+            accountingReview: {
+              reviewAt: record.reviewAt.toISOString(),
+              overdueAt: now.toISOString(),
+              previousPhase: job.phase,
+            },
+          },
+          $inc: { version: 1 },
+        },
+        { writeConcern: durable },
+      );
+    }
     const debtBalances = await balances()
       .find({
         ...balanceFilter(scope),
@@ -989,7 +1098,29 @@ export function createMediaAccountingMethods(
         $expr: {
           $gt: [
             {
-              $subtract: [{ $ifNull: ['$tokenCredits', 0] }, { $ifNull: ['$reservedCredits', 0] }],
+              $add: [
+                {
+                  $subtract: [
+                    { $ifNull: ['$tokenCredits', 0] },
+                    { $ifNull: ['$reservedCredits', 0] },
+                  ],
+                },
+                {
+                  $sum: {
+                    $map: {
+                      input: { $ifNull: ['$reservations', []] },
+                      as: 'reservation',
+                      in: {
+                        $cond: [
+                          { $lte: ['$$reservation.expiresAt', new Date(now)] },
+                          '$$reservation.amount',
+                          0,
+                        ],
+                      },
+                    },
+                  },
+                },
+              ],
             },
             0,
           ],
@@ -1000,9 +1131,14 @@ export function createMediaAccountingMethods(
       .limit(limit)
       .lean<IBalance[]>();
     for (const balance of debtBalances) {
+      const expiredCredits = (balance.reservations ?? []).reduce(
+        (sum, reservation) =>
+          sum + (reservation.expiresAt <= new Date(now) ? reservation.amount : 0),
+        0,
+      );
       const credits = Math.min(
         balance.mediaDebtCredits ?? 0,
-        Math.max(0, (balance.tokenCredits ?? 0) - (balance.reservedCredits ?? 0)),
+        Math.max(0, (balance.tokenCredits ?? 0) - (balance.reservedCredits ?? 0) + expiredCredits),
       );
       if (credits <= 0 || balance.mediaPendingSettlement) {
         continue;
@@ -1010,7 +1146,7 @@ export function createMediaAccountingMethods(
       const jobId = `debt:${String(balance._id)}:${balance.mediaSettlementSequence ?? 0}`;
       const settlementId = identity(scope, jobId);
       const effect: MediaSettlementEffect = { kind: 'debt_collection', credits };
-      const createdAt = new Date().toISOString();
+      const createdAt = new Date();
       await hooks.afterStep?.('registering');
       await writeSettlement(
         { ...scopeFilter(scope), settlementId },

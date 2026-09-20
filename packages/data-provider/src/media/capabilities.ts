@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { mediaUserKeySchema } from './credentials';
+export { mediaUserKeySchema } from './credentials';
 import {
   MEDIA_SCHEMA_VERSION,
   mediaApiSchema,
@@ -192,6 +194,10 @@ export const mediaLimitsSchema = z
     pageSize: z.number().int().positive().max(1_000).default(24),
     maxPageSize: z.number().int().positive().max(1_000).default(100),
     maxAssetRetainers: z.number().int().positive().max(10_000).default(128),
+    /** A message writer revalidates its files after saving; expiry never permits a late acknowledgement. */
+    consumerClaimMs: z.number().int().positive().max(86_400_000).default(60_000),
+    /** Recheck durable chat consumers after TTL deletion or an interrupted message write. */
+    consumerReconcileMs: z.number().int().positive().max(86_400_000).default(60_000),
     maxNativeParts: z.number().int().positive().max(4_096).default(1_024),
     maxNativePartBytes: z.number().int().positive().max(16_777_216).default(1_048_576),
     maxNativeRecordingBytes: z.number().int().positive().max(4_194_304).default(4_194_304),
@@ -202,23 +208,12 @@ export const mediaLimitsSchema = z
   .strict()
   .refine((value) => value.pageSize <= value.maxPageSize, 'Page size exceeds maximum');
 
-/** Public setup instructions only; saved credential values never belong in the catalog. */
-export const mediaUserKeySchema = z
-  .object({
-    keyName: z.string().min(1),
-    encoding: z.enum(['google', 'apiKey']),
-    userProvideURL: z.boolean(),
-  })
-  .strict();
-
 export const mediaCatalogSchema = z
   .object({
     schemaVersion: z.literal(MEDIA_SCHEMA_VERSION),
     version: mediaIdSchema,
     offerings: z.array(mediaOfferingSchema),
     limits: mediaLimitsSchema,
-    clientPollIntervalMs: z.number().int().positive(),
-    clientCatchUpIntervalMs: z.number().int().positive(),
     integrations: z
       .array(
         z

@@ -115,10 +115,8 @@ export async function encodeAndFormatImages(
       (source === FileSources.local && isMediaFileId(file.file_id))
     ) {
       try {
-        // The local stream strategy takes a public path; media originals must skip legacy writes.
-        const storedFile = source === FileSources.local ? { ...file, storageKey: undefined } : file;
         const processedFile = await runGuardedEncode(file.bytes ?? 0, () =>
-          getFileStream(req, storedFile, encodingMethods, getStrategyFunctions),
+          getFileStream(req, file, encodingMethods, getStrategyFunctions),
         );
         promises.push([file, processedFile?.content ?? null]);
       } catch (error) {

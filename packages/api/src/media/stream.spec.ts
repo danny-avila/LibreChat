@@ -12,7 +12,7 @@ import { createMediaMethods } from '@librechat/data-schemas';
 import { resolveMediaConfig } from 'librechat-data-provider';
 import type { MediaAsset } from 'librechat-data-provider';
 import { createFFmpegMediaProcessor, createMediaDerivativeProcessor } from './derivatives';
-import { createOptionalCookieAuth } from '../images/cookies';
+import { createOptionalCookieAuth } from '~/images/cookies';
 import { createMediaContentRouter } from './stream';
 import { createMediaStorage } from './storage';
 import { MediaServiceError } from './errors';
@@ -36,7 +36,7 @@ describe('private native browser media streaming', () => {
     mongo = await MongoMemoryServer.create();
     await mongoose.connect(mongo.getUri());
     directory = await mkdtemp(path.join(tmpdir(), 'media-stream-'));
-    repository = createMediaMethods(mongoose);
+    repository = createMediaMethods(mongoose, { ownerExists: async () => true });
     const config = resolveMediaConfig();
     storage = createMediaStorage({
       repository,
@@ -118,6 +118,32 @@ describe('private native browser media streaming', () => {
     expect(response.status).toBe(200);
     expect(response.body.length).toBe(asset.renditions?.thumbnail?.bytes);
     expect((await sharp(response.body).metadata()).width).toBe(16);
+  });
+  it('downloads SVG originals with an encoded filename and keeps raster previews inline', async () => {
+    const svg = await storage.publish({
+      scope,
+      outputKey: 'svg-stream',
+      type: 'image/svg+xml',
+      filename: '日本語.svg',
+      stream: Readable.from(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="red"/></svg>',
+      ),
+      config: resolveMediaConfig(),
+    });
+    const response = await request(app)
+      .get(`/api/media/assets/${svg.file_id}/content`)
+      .set('Cookie', cookie());
+    expect(response.status).toBe(200);
+    expect(response.headers['content-disposition']).toContain('attachment; filename="');
+    expect(response.headers['content-disposition']).toContain(
+      `filename*=UTF-8''${encodeURIComponent('日本語.svg')}`,
+    );
+    const thumbnail = await request(app)
+      .get(`/api/media/assets/${svg.file_id}/content?rendition=thumbnail`)
+      .set('Cookie', cookie());
+    expect(thumbnail.status).toBe(200);
+    expect(thumbnail.headers['content-type']).toContain('image/png');
+    expect(thumbnail.headers['content-disposition']).toMatch(/^inline;/);
   });
   it.each(['bytes=2-8', 'bytes=2-', 'bytes=-5'])(
     'supports browser seeking with %s',

@@ -13,6 +13,7 @@ import type { AgentToolResources } from 'librechat-data-provider';
 import type { IAgent, IAclEntry, ActionQuery } from '~/types';
 import { withCodeEnvironmentReference } from './codeEnvironment';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { runAsSystem } from '~/config/tenantContext';
 import { filterExistingSkillIds } from './skill';
 import logger from '~/config/winston';
 
@@ -650,6 +651,15 @@ export function createAgentMethods(
   }: {
     file_ids: string[];
   }) => Promise<{ matchedCount: number; modifiedCount: number }>;
+  getSharedResourceFileIds: ({
+    file_ids,
+    excludeAgentObjectId,
+    excludeToolResource,
+  }: {
+    file_ids: string[];
+    excludeAgentObjectId?: string;
+    excludeToolResource?: string;
+  }) => Promise<string[]>;
 } {
   const { removeAllPermissions, getActions, getSoleOwnedResourceIds, isExternalSkillId } = deps;
 
@@ -1230,6 +1240,70 @@ export function createAgentMethods(
   }
 
   /**
+   * Reports which of the given file_ids keep a reference once the caller's own is removed, so a
+   * caller can tell a last reference from a shared one.
+   *
+   * The unit of a reference is the `(agent, tool_resource)` pair rather than the agent:
+   * `addAgentResourceFile` stores `file_ids` per resource, so one agent can hold the same file under
+   * both `file_search` and `context`, and removing it from one leaves the other needing the bytes.
+   * `excludeToolResource` narrows the exclusion to the pair being removed; omitting it excludes the
+   * whole agent.
+   *
+   * The agent is excluded by `_id`, because `id` is unique only together with `tenantId`: matching on
+   * `id` alone would skip another tenant's agent of the same name and call its file unreferenced.
+   *
+   * Duplicating an agent copies `file_ids` rather than the files behind them, so one file record
+   * can back two agents; destroying its bytes on behalf of one agent would empty the other. This
+   * is deliberately not scoped by tenant: a reference is a reference, whoever holds it.
+   */
+  async function getSharedResourceFileIds({
+    file_ids,
+    excludeAgentObjectId,
+    excludeToolResource,
+  }: {
+    file_ids: string[];
+    excludeAgentObjectId?: string;
+    excludeToolResource?: string;
+  }): Promise<string[]> {
+    if (!file_ids || file_ids.length === 0) {
+      return [];
+    }
+
+    const Agent = mongoose.models.Agent as Model<IAgent>;
+    const requested = new Set(file_ids);
+    const searchParameter: FilterQuery<IAgent> = {
+      $or: TOOL_RESOURCE_KEYS.map((key) => ({
+        [`tool_resources.${key}.file_ids`]: { $in: file_ids },
+      })),
+    };
+
+    const agents = await runAsSystem(async () =>
+      Agent.find(searchParameter, { _id: 1, tool_resources: 1 }).lean(),
+    );
+    const shared = new Set<string>();
+    for (const agent of agents) {
+      const isExcludedAgent =
+        excludeAgentObjectId != null && String(agent._id) === excludeAgentObjectId;
+      for (const key of TOOL_RESOURCE_KEYS) {
+        if (isExcludedAgent && (excludeToolResource == null || key === excludeToolResource)) {
+          continue;
+        }
+        const fileIds = agent.tool_resources?.[key]?.file_ids;
+        if (fileIds == null) {
+          continue;
+        }
+        for (const fileId of fileIds) {
+          if (requested.has(fileId)) {
+            shared.add(fileId);
+          }
+        }
+      }
+    }
+
+    return [...shared];
+  }
+
+  /**
    * Deletes an agent based on the provided search parameter.
    */
   async function deleteAgent(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
@@ -1696,6 +1770,7 @@ export function createAgentMethods(
     generateActionMetadataHash,
     removeAgentFromUserFavorites,
     removeAgentResourceFilesFromAllAgents,
+    getSharedResourceFileIds,
   };
 }
 

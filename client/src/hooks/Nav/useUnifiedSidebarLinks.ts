@@ -3,27 +3,31 @@ import { useRecoilValue } from 'recoil';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { BarChart3, MessagesSquare, Images } from 'lucide-react';
 import { useUserKeyQuery } from 'librechat-data-provider/react-query';
-import {
-  getConfigDefaults,
-  getEndpointField,
-  Permissions,
-  PermissionTypes,
-} from 'librechat-data-provider';
+import { getConfigDefaults, getEndpointField } from 'librechat-data-provider';
 import type { TEndpointsConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
-import { useGetEndpointsQuery, useGetStartupConfig, useInsightsAccessQuery } from '~/data-provider';
+import {
+  useGetEndpointsQuery,
+  useGetStartupConfig,
+  useInsightsAccessQuery,
+  useMediaActivity,
+  useMediaEvents,
+} from '~/data-provider';
 import ConversationsSection from '~/components/UnifiedSidebar/ConversationsSection';
-import SidebarPortal from '~/components/UnifiedSidebar/portal';
+import { useMediaSessionGuard } from '~/components/Media/session';
+import { useMediaAccess } from '~/hooks/Media/useMediaAccess';
+import MediaSettingsPanel from '~/components/Media/Panel';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
-import { useAuthContext, useHasAccess } from '~/hooks';
+import { useAuthContext, useLocalize } from '~/hooks';
 import store from '~/store';
 
 const defaultInterface = getConfigDefaults().interface;
 
 export default function useUnifiedSidebarLinks() {
   const navigate = useNavigate();
+  const localize = useLocalize();
   const location = useLocation();
-  const { user } = useAuthContext();
+  const { user, token } = useAuthContext();
   /** Selector instead of the full conversation atom: the links only depend on
    * the endpoint, so parameter edits and other conversation writes stay out. */
   const endpoint = useRecoilValue(store.conversationEndpointByIndex(0)) ?? undefined;
@@ -34,11 +38,22 @@ export default function useUnifiedSidebarLinks() {
     () => startupConfig?.interface ?? defaultInterface,
     [startupConfig],
   );
-  const canUseMedia = useHasAccess({
-    permissionType: PermissionTypes.MEDIA,
-    permission: Permissions.USE,
-  });
-  const mediaVisible = startupConfig?.media?.studio === true && canUseMedia;
+  const { studio: mediaVisible, scope: mediaScope, isAuthenticated } = useMediaAccess();
+  const isCurrentSession = useMediaSessionGuard(mediaScope, isAuthenticated);
+  const mediaActivityHost = {
+    scope: mediaScope ?? '',
+    userId: user?.id,
+    pollIntervalMs: startupConfig?.media?.clientPollIntervalMs ?? 0,
+    catchUpIntervalMs: startupConfig?.media?.clientCatchUpIntervalMs ?? 0,
+    isCurrentSession,
+  };
+  const mediaActivity = useMediaActivity(mediaActivityHost, mediaVisible);
+  useMediaEvents(mediaActivityHost, token, mediaVisible && startupConfig?.media?.events === true);
+  const mediaActivityCount = `${mediaActivity.count}${mediaActivity.hasMore ? '+' : ''}`;
+  const mediaActivityLabel =
+    mediaActivity.count > 0
+      ? localize('com_media_activity_running', { total: mediaActivityCount })
+      : undefined;
   const insightsFeatureEnabled = startupConfig?.insightsEnabled === true;
   const isInsightsRoute = location.pathname.startsWith('/insights');
   const { data: insightsAccess, isLoading: isInsightsAccessLoading } = useInsightsAccessQuery(
@@ -89,9 +104,13 @@ export default function useUnifiedSidebarLinks() {
       nextLinks.splice(agentIndex >= 0 ? agentIndex + 1 : nextLinks.length, 0, {
         title: 'com_media_studio',
         label: '',
+        activity: mediaActivityLabel
+          ? { count: mediaActivityCount, label: mediaActivityLabel }
+          : undefined,
         icon: Images,
         id: 'media-studio',
-        Component: SidebarPortal,
+        Component: MediaSettingsPanel,
+        route: '/studio',
         onClick: () => {
           if (!location.pathname.startsWith('/studio')) navigate('/studio');
         },
@@ -110,6 +129,7 @@ export default function useUnifiedSidebarLinks() {
       label: '',
       icon: BarChart3,
       id: 'insights',
+      route: '/insights',
       disabled: !isInsightsRoute && isInsightsAccessLoading,
       onClick: () => {
         if (!location.pathname.startsWith('/insights')) {
@@ -123,6 +143,8 @@ export default function useUnifiedSidebarLinks() {
     return [conversationLink, ...nextLinks];
   }, [
     mediaVisible,
+    mediaActivityCount,
+    mediaActivityLabel,
     insightsAccess?.access,
     insightsFeatureEnabled,
     isInsightsAccessLoading,

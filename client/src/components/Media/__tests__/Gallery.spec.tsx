@@ -1,33 +1,15 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import type { MediaCatalog, MediaThread } from 'librechat-data-provider';
+import type { MediaThread } from 'librechat-data-provider';
 import type { useMediaThreads, MediaTile } from '~/data-provider/Media';
 import { MediaGallery } from '../Gallery';
+import { makeCatalog } from 'test/media';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: { title?: string }) =>
     values?.title == null ? key : key + ':' + values.title,
 }));
 
-const catalog: MediaCatalog = {
-  schemaVersion: 1,
-  version: 'catalog',
-  clientPollIntervalMs: 5000,
-  clientCatchUpIntervalMs: 60000,
-  limits: {
-    maxPromptChars: 1000,
-    maxTitleChars: 200,
-    maxInputs: 4,
-    maxOutputs: 2,
-    pageSize: 24,
-    maxPageSize: 100,
-    maxAssetRetainers: 100,
-    maxNativeParts: 100,
-    maxNativePartBytes: 1000000,
-    maxNativeRecordingBytes: 4194304,
-    maxProviderOptionBytes: 32768,
-    maxProviderOptionDepth: 8,
-    maxPresets: 50,
-  },
+const catalog = makeCatalog({
   offerings: [
     {
       connectionId: 'provider',
@@ -39,7 +21,7 @@ const catalog: MediaCatalog = {
       capabilities: [],
     },
   ],
-};
+});
 const selection = { connectionId: 'provider', modelId: 'image-model', catalogVersion: 'catalog' };
 const recent = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
 const thread = (change: Partial<MediaThread>): MediaThread => ({
@@ -111,7 +93,10 @@ test('cards show the cover, model, and a relative time without a status for fini
   expect(within(card).queryByText('com_media_phase_succeeded')).not.toBeInTheDocument();
   fireEvent.click(card);
   expect(props.onOpen).toHaveBeenCalledWith('thread');
-  expect(document.querySelector('[data-media-gallery]')).toHaveAttribute('data-columns', '3');
+  expect(document.querySelector('[data-testid="media-gallery"]')).toHaveAttribute(
+    'data-columns',
+    '3',
+  );
 });
 
 test('unfinished work carries its status in the caption and video covers show a play glyph', () => {
@@ -175,13 +160,31 @@ test('a receipt without a projection reads as preparing', () => {
   expect(within(card).getByText('com_media_preparing')).toBeInTheDocument();
 });
 
-test('the density control is a single radiogroup and search matches the model name', () => {
-  const props = mount([tile(thread({}))], { search: 'painter' });
+test('the density control is a single radiogroup and search matches the title', () => {
+  const props = mount([tile(thread({}))], { search: 'harbor' });
   expect(screen.getByRole('button', { name: 'com_media_open_named:Harbor at dusk' })).toBeVisible();
   const density = within(screen.getByRole('radiogroup', { name: 'com_media_columns' }));
   expect(density.getByRole('radio', { name: '3' })).toHaveAttribute('aria-checked', 'true');
   fireEvent.click(density.getByRole('radio', { name: '4' }));
   expect(props.onColumns).toHaveBeenCalledWith(4);
+});
+
+test('selection is independent of opening a creation and respects the server batch limit', () => {
+  const onSelect = jest.fn();
+  const onDelete = jest.fn();
+  mount([tile(thread({})), tile(thread({ threadId: 'other', title: 'Other' }))], {
+    selected: new Set(['thread']),
+    onSelect,
+    onDelete,
+    catalog: { ...catalog, limits: { ...catalog.limits, maxPageSize: 1 } },
+  });
+  expect(
+    screen.getByRole('checkbox', { name: 'com_media_select_named:Harbor at dusk' }),
+  ).toBeChecked();
+  expect(screen.getByRole('checkbox', { name: 'com_media_select_named:Other' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_delete_selected' }));
+  expect(onDelete).toHaveBeenCalledTimes(1);
+  expect(onSelect).not.toHaveBeenCalled();
 });
 
 test('filtered views that match nothing offer a way back to everything', () => {

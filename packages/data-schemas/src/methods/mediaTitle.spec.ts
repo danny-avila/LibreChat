@@ -14,7 +14,7 @@ describe('durable media title admission', () => {
   beforeAll(async () => {
     mongo = await MongoMemoryServer.create();
     await mongoose.connect(mongo.getUri());
-    media = createMediaMethods(mongoose);
+    media = createMediaMethods(mongoose, { ownerExists: async () => true });
     await media.ensureMediaIndexes();
   }, 60_000);
   afterAll(async () => {
@@ -75,7 +75,7 @@ describe('durable media title admission', () => {
     const thread = await mongoose.models.MediaThread.findOne({ threadId: input.threadId })
       .select('titleClaim')
       .lean<Pick<MediaStoredThread, 'titleClaim'>>();
-    expect(thread?.titleClaim).toMatchObject({ jobId: input.jobId, claimedAt: expect.any(String) });
+    expect(thread?.titleClaim).toMatchObject({ jobId: input.jobId, claimedAt: expect.any(Date) });
   });
 
   it('will not admit a title for a generation lacking its required media hold', async () => {

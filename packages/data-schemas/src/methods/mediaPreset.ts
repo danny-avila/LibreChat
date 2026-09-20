@@ -1,33 +1,13 @@
 import type { MediaPreset } from 'librechat-data-provider';
 import type { MediaPresetMethods, MediaStoredPreset } from '~/types/mediaPreset';
-import type { MediaOwnerScope } from '~/types/media';
-import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
+import type { MediaMethods, MediaOwnerScope } from '~/types/media';
+import { mediaScopeFilter as scopeFilter, positiveMediaLimit as positive } from '~/utils/media';
+import { createMediaMethods, MediaPersistenceError } from './media';
 import { createMediaPresetModel } from '~/models/media';
 import { createIndexesWithRetry } from '~/utils/retry';
-import { MediaPersistenceError } from './media';
 
-const durable = { w: 'majority' as const, j: true };
-function scopeFilter(scope: MediaOwnerScope): MediaOwnerScope {
-  const current = tenantStorage.getStore()?.tenantId;
-  if (
-    !scope.ownerId ||
-    scope.tenantId === '' ||
-    scope.tenantId === SYSTEM_TENANT_ID ||
-    (current && current !== SYSTEM_TENANT_ID && current !== scope.tenantId)
-  ) {
-    throw new MediaPersistenceError('not_found', 'Media preset owner scope is unavailable');
-  }
-  return { ownerId: scope.ownerId, tenantId: scope.tenantId ?? null };
-}
-function duplicate(error: unknown): boolean {
-  return !!error && typeof error === 'object' && 'code' in error && error.code === 11000;
-}
-function positive(value: number): number {
-  if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new MediaPersistenceError('invalid_input', 'A positive media limit is required');
-  }
-  return value;
-}
+import { durable, duplicate } from './media/scope';
+
 function presetView(preset: MediaStoredPreset): MediaPreset {
   return {
     schemaVersion: 1,
@@ -35,13 +15,16 @@ function presetView(preset: MediaStoredPreset): MediaPreset {
     title: preset.title,
     isDefault: preset.isDefault,
     settings: preset.settings,
-    createdAt: preset.createdAt,
-    updatedAt: preset.updatedAt,
+    createdAt: preset.createdAt.toISOString(),
+    updatedAt: preset.updatedAt.toISOString(),
   };
 }
 
 /** Saved Studio generation settings. One preset per owner may be the default. */
-export function createMediaPresetMethods(mongoose: typeof import('mongoose')): MediaPresetMethods {
+export function createMediaPresetMethods(
+  mongoose: typeof import('mongoose'),
+  deps: Pick<MediaMethods, 'assertMediaOwnerActive'> = createMediaMethods(mongoose),
+): MediaPresetMethods {
   const Preset = createMediaPresetModel(mongoose);
   let indexPromise: Promise<void> | undefined;
 
@@ -58,7 +41,7 @@ export function createMediaPresetMethods(mongoose: typeof import('mongoose')): M
   async function clearOtherDefaults(
     owner: MediaOwnerScope,
     presetId: string,
-    now: string,
+    now: Date,
   ): Promise<void> {
     await Preset.updateMany(
       { ...owner, presetId: { $ne: presetId }, isDefault: true },
@@ -81,10 +64,11 @@ export function createMediaPresetMethods(mongoose: typeof import('mongoose')): M
     maxPresets,
   }) => {
     const owner = scopeFilter(scope);
+    await deps.assertMediaOwnerActive(owner);
     if ((await Preset.countDocuments(owner)) >= positive(maxPresets)) {
       throw new MediaPersistenceError('capacity', 'Media preset limit reached');
     }
-    const now = new Date().toISOString();
+    const now = new Date();
     if (write.isDefault === true) {
       await clearOtherDefaults(owner, presetId, now);
     }
@@ -99,13 +83,21 @@ export function createMediaPresetMethods(mongoose: typeof import('mongoose')): M
       updatedAt: now,
       version: 1,
     };
+    const document = new Preset(record);
     try {
-      await new Preset(record).save(durable);
+      await document.save(durable);
     } catch (error) {
       if (!duplicate(error)) {
         throw error;
       }
       throw new MediaPersistenceError('conflict', 'Media preset identity already exists');
+    }
+    try {
+      await deps.assertMediaOwnerActive(owner);
+    } catch (error) {
+      // Fence a delayed insert after account cleanup without removing a replacement writer's row.
+      await Preset.deleteOne({ ...owner, _id: document._id }, { writeConcern: durable });
+      throw error;
     }
     return presetView(record);
   };
@@ -116,7 +108,8 @@ export function createMediaPresetMethods(mongoose: typeof import('mongoose')): M
     update,
   }) => {
     const owner = scopeFilter(scope);
-    const now = new Date().toISOString();
+    await deps.assertMediaOwnerActive(owner);
+    const now = new Date();
     const preset = await Preset.findOneAndUpdate(
       { ...owner, presetId },
       {
@@ -135,6 +128,15 @@ export function createMediaPresetMethods(mongoose: typeof import('mongoose')): M
     }
     if (update.isDefault === true) {
       await clearOtherDefaults(owner, presetId, now);
+    }
+    try {
+      await deps.assertMediaOwnerActive(owner);
+    } catch (error) {
+      await Preset.deleteOne(
+        { ...owner, presetId, version: preset.version, updatedAt: preset.updatedAt },
+        { writeConcern: durable },
+      );
+      throw error;
     }
     return presetView(preset);
   };

@@ -5,6 +5,7 @@ import type { MediaAsset, TMessage } from 'librechat-data-provider';
 type FileView = Pick<MediaAsset, 'file_id' | 'filepath'> &
   Partial<Pick<MediaAsset, 'filename' | 'type' | 'bytes'>> & {
     source?: string;
+    mediaRetainers?: readonly string[];
   };
 type PrivateMediaFields<T> =
   | Extract<keyof T, `media${string}`>
@@ -13,7 +14,9 @@ type PrivateMediaFields<T> =
   | 'contentDigest';
 
 /** Response-only projection. Storage and provider reads retain the unmodified canonical File. */
-export function toPublicFile<T extends FileView>(file: T): Omit<T, PrivateMediaFields<T>> {
+export function toPublicFile<T extends FileView>(
+  file: T,
+): Omit<T, PrivateMediaFields<T>> & { deletionRestriction?: 'retained_media' } {
   if (!isMediaFileId(file.file_id)) return file;
   const publicFields: Partial<T> = { ...file };
   for (const key in publicFields) {
@@ -29,7 +32,11 @@ export function toPublicFile<T extends FileView>(file: T): Omit<T, PrivateMediaF
     bytes: file.bytes ?? 0,
     source: file.source ?? 'local',
   });
-  return { ...publicFields, filepath: original.filepath } as Omit<T, PrivateMediaFields<T>>;
+  return {
+    ...publicFields,
+    filepath: original.filepath,
+    ...(file.mediaRetainers?.length ? { deletionRestriction: 'retained_media' as const } : {}),
+  } as Omit<T, PrivateMediaFields<T>> & { deletionRestriction?: 'retained_media' };
 }
 
 export function toPublicFiles<T extends FileView>(

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, Paperclip, Upload } from 'lucide-react';
 import {
   Button,
+  FileUpload,
   ControlCombobox,
   Input,
   Label,
@@ -88,20 +89,21 @@ export function MediaReferenceUpload({
   return (
     <>
       {localAccept && (
-        <Input
+        <FileUpload
           ref={fileInput}
           id={`${id}-upload`}
-          type="file"
+          multiple={false}
           accept={localAccept}
           aria-label={localize('com_media_upload')}
-          className="hidden"
           disabled={disabled || uploading}
-          onChange={(event) => {
+          handleFileChange={(event) => {
             const file = event.target.files?.[0];
             event.target.value = '';
             if (file) void run(() => uploadFile(file));
           }}
-        />
+        >
+          {null}
+        </FileUpload>
       )}
       <TooltipAnchor
         description={localize('com_media_upload')}

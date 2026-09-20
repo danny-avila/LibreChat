@@ -16,8 +16,15 @@ function useBalance(): Partial<TBalanceResponse> {
 }
 
 export function TokenCredits() {
-  const { tokenCredits = 0 } = useBalance();
-  return <TokenCreditsItem tokenCredits={tokenCredits} />;
+  const balance = useBalance();
+  return (
+    <TokenCreditsItem
+      tokenCredits={balance.tokenCredits}
+      reservedCredits={balance.reservedCredits}
+      mediaDebtCredits={balance.mediaDebtCredits}
+      availableCredits={balance.availableCredits}
+    />
+  );
 }
 
 export function AutoRefill() {

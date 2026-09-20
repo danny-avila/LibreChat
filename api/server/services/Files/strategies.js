@@ -1,6 +1,10 @@
 const { FileSources } = require('librechat-data-provider');
 const {
   getS3URL,
+  planS3File,
+  saveStreamToS3,
+  planCloudFrontFile,
+  saveStreamToCloudFront,
   saveURLToS3WithMetadata,
   ImageService,
   parseDocument,
@@ -26,6 +30,8 @@ const {
 } = require('@librechat/api');
 const {
   getFirebaseURL,
+  planFirebaseFile,
+  saveStreamToFirebase,
   prepareImageURL,
   saveURLToFirebase,
   deleteFirebaseFile,
@@ -38,6 +44,8 @@ const {
 } = require('./Firebase');
 const {
   uploadLocalFile,
+  planLocalFile,
+  saveStreamToLocal,
   getLocalFileURL,
   saveFileFromURL,
   saveLocalBuffer,
@@ -67,6 +75,8 @@ const prepareCloudFrontImageURL = (_req, file) => cloudFrontImageService.prepare
 const processCloudFrontAvatar = (params) => cloudFrontImageService.processAvatar(params);
 const {
   saveBufferToAzure,
+  planAzureFile,
+  saveStreamToAzure,
   saveURLToAzure,
   getAzureURL,
   deleteFileFromAzure,
@@ -85,6 +95,8 @@ const { uploadVectors, deleteVectors } = require('./VectorDB');
  *
  * */
 const firebaseStrategy = () => ({
+  planFile: planFirebaseFile,
+  saveStream: saveStreamToFirebase,
   getStorageState: getFirebaseStorage,
   handleFileUpload: uploadFileToFirebase,
   saveURL: saveURLToFirebase,
@@ -103,6 +115,8 @@ const firebaseStrategy = () => ({
  *
  * */
 const localStrategy = () => ({
+  planFile: planLocalFile,
+  saveStream: saveStreamToLocal,
   handleFileUpload: uploadLocalFile,
   saveURL: saveFileFromURL,
   getFileURL: getLocalFileURL,
@@ -119,6 +133,8 @@ const localStrategy = () => ({
  *
  * */
 const s3Strategy = () => ({
+  planFile: planS3File,
+  saveStream: saveStreamToS3,
   getStorageState: initializeS3,
   handleFileUpload: uploadFileToS3,
   saveURL: saveURLToS3WithMetadata,
@@ -137,6 +153,8 @@ const s3Strategy = () => ({
  * Uses S3 for storage, CloudFront for URL delivery
  */
 const cloudfrontStrategy = () => ({
+  planFile: planCloudFrontFile,
+  saveStream: saveStreamToCloudFront,
   getStorageState: getCloudFrontConfig,
   handleFileUpload: uploadFileToCloudFront,
   saveURL: saveURLToCloudFrontWithMetadata,
@@ -155,6 +173,8 @@ const cloudfrontStrategy = () => ({
  *
  * */
 const azureStrategy = () => ({
+  planFile: planAzureFile,
+  saveStream: saveStreamToAzure,
   getStorageState: getAzureContainerClient,
   handleFileUpload: uploadFileToAzure,
   saveURL: saveURLToAzure,

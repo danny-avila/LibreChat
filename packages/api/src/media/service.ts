@@ -29,10 +29,13 @@ import type {
   MediaImportReceipt,
   MediaThreadListRequest,
   MediaThreadUpdate,
+  MediaThreadsDeleteRequest,
+  MediaThreadsDeletionReceipt,
   MediaURLUploadRequest,
   MediaURLUploadResponse,
   MediaUserKey,
   MediaImageContext,
+  MediaActivity,
 } from 'librechat-data-provider';
 import type {
   AppConfig,
@@ -53,20 +56,21 @@ import type {
   MediaProviderPart,
   MediaProviderInput,
 } from './provider';
-import type { ModerationCheck } from '../middleware/moderation';
+import type { ModerationCheck } from '~/middleware/moderation';
 import type { MediaLifecycleObserver } from './telemetry';
 import type { MediaHostedDependencies } from './hosted';
+import type { MediaCatalogCache } from './catalogCache';
 import type { MediaTitleGenerator } from './title';
 import type { MediaModelTracer } from './tracing';
-import type { SafeUserInput } from '../utils/env';
+import type { SafeUserInput } from '~/utils/env';
 import type { MediaContext } from './context';
 import { createMediaCatalog, selectMediaRoute, validateMediaOffering } from './catalog';
 import { importHostedMediaReference, verifyHostedMediaReference } from './hosted';
-import { extractModelParameterContent } from '../protection/adapters/submissions';
+import { extractModelParameterContent } from '~/protection/adapters/submissions';
 import { mediaInputByteLimit, prepareMediaInputContent } from './content';
-import { assertModelBoundContent } from '../middleware/modelBoundContent';
-import { isContentFilterError } from '../middleware/contentFilter';
-import { UninspectableFileError } from '../protection/files';
+import { assertModelBoundContent } from '~/middleware/modelBoundContent';
+import { isContentFilterError } from '~/middleware/contentFilter';
+import { UninspectableFileError } from '~/protection/files';
 import { isMediaConnectionBinding } from './provider';
 import { assertMediaStorage } from './storage';
 import { MediaServiceError } from './errors';
@@ -75,6 +79,11 @@ import { observeMedia } from './telemetry';
 export type { MediaContext } from './context';
 
 export interface MediaAccounting {
+  snapshot?(
+    model: string,
+    integration: MediaIntegration,
+    appConfig: AppConfig,
+  ): MediaExecutionSnapshot['tokenPricing'];
   ensureReady?(): Promise<void>;
   scopes?: MediaAccountingMethods['listMediaAccountingScopes'];
   reconcile?(scope: MediaOwnerScope, config: MediaConfig): Promise<number>;
@@ -88,6 +97,8 @@ export interface MediaAccounting {
 }
 
 export interface MediaServiceDependencies extends MediaHostedDependencies {
+  publishActivity?(scope: MediaOwnerScope, activity: MediaActivity): Promise<void>;
+  catalogCache?: MediaCatalogCache;
   observer?: MediaLifecycleObserver;
   modelTracer?: MediaModelTracer;
   repository: MediaMethods & MediaPresetMethods;
@@ -95,12 +106,14 @@ export interface MediaServiceDependencies extends MediaHostedDependencies {
   /** Retention window for temporary creations recovered outside a request; derived from the host config. */
   temporaryRetentionMs?: number;
   reconcileNative?(scope: MediaOwnerScope, config: MediaConfig): Promise<void>;
+  reconcileFileConsumers?(scope: MediaOwnerScope, config: MediaConfig): Promise<void>;
+  isLeader?(): Promise<boolean>;
   /** Removes abandoned upload staging files older than `staleBefore`. */
   sweepStaging?(staleBefore: number): Promise<number>;
   /** Applies the host's existing file deletion retry policy to a failed media original. */
   deferAssetDeletion?(scope: MediaOwnerScope, fileId: string): Promise<void>;
   deferAssetWriteDeletion?(scope: MediaOwnerScope, writeId: string): Promise<void>;
-  migrateNativeConsumers?(
+  reconcileNativeConsumers?(
     scope: MediaOwnerScope,
     config: MediaConfig,
     threadId?: string,
@@ -124,7 +137,9 @@ export interface MediaServiceDependencies extends MediaHostedDependencies {
   accounting: MediaAccounting;
   /** Names new threads in the background after the submission receipt is returned. */
   titles?: MediaTitleGenerator;
-  log(error: Error): void;
+  log(message: string, error?: Error): void;
+  warn?(message: string, error?: Error): void;
+  info?(message: string): void;
 }
 
 export function assertMediaAccess(context: MediaContext, create = false): void {
@@ -160,6 +175,7 @@ function preparedExecution(
   selection: MediaSubmissionRequest['selection'],
   ready: PreparedMedia,
   appConfig: AppConfig,
+  accounting: MediaAccounting,
 ): MediaExecutionSnapshot {
   const accountingMode = mediaAccountingMode(appConfig);
   return {
@@ -176,6 +192,8 @@ function preparedExecution(
       ? {}
       : { endpointRef: ready.integration.endpointRef }),
     accountingMode,
+    tokenPricing: accounting.snapshot?.(selection.modelId, ready.integration, appConfig),
+    accountingShortfall: appConfig.media?.accounting.shortfall ?? 'debt',
     cancellation: ready.cancellation,
   };
 }
@@ -200,6 +218,7 @@ export interface MediaServices {
     context: MediaContext,
     requireCatalogVersion: boolean,
     signal?: AbortSignal,
+    admission?: boolean,
   ): Promise<PreparedMedia>;
   commands: {
     uploadURL(input: MediaURLUploadRequest, context: MediaContext): Promise<MediaURLUploadResponse>;
@@ -220,6 +239,10 @@ export interface MediaServices {
       threadId: string,
       context: MediaContext,
     ): Promise<{ threadId: string; phase: 'retiring' }>;
+    retireMany(
+      input: MediaThreadsDeleteRequest,
+      context: MediaContext,
+    ): Promise<MediaThreadsDeletionReceipt>;
   };
   queries: {
     catalog(context: MediaContext): Promise<MediaCatalog>;
@@ -253,6 +276,7 @@ export interface MediaServices {
 
 export function createMediaServices(deps: MediaServiceDependencies): MediaServices {
   const catalog = createMediaCatalog({
+    cache: deps.catalogCache,
     transport: deps.transport,
     adapters: deps.adapters,
     now: deps.now,
@@ -288,6 +312,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
     context: MediaContext,
     requireCatalogVersion: boolean,
     signal?: AbortSignal,
+    admission = false,
   ) {
     assertMediaAccess(context, true);
     const integration = context.config.integrations.find(
@@ -454,11 +479,12 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
         modelParameters: { options: request.parameters },
       });
       if (
-        await deps.moderate?.([
+        admission &&
+        (await deps.moderate?.([
           request.prompt,
           ...(continuation ? [continuation.prompt] : []),
           ...extractModelParameterContent({ options: request.parameters }).map((part) => part.text),
-        ])
+        ]))
       ) {
         throw new MediaServiceError('forbidden', 403, 'Media input was blocked by content policy.');
       }
@@ -499,18 +525,20 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
       ): Promise<MediaSubmissionReceipt> {
         assertMediaAccess(context, true);
         const request = createMediaSubmissionSchema(context.config.limits).parse(input);
-        const replay = await deps.repository.getMediaSubmission(
-          context.scope,
-          request.clientRequestId,
-        );
+        const replay =
+          context.submissionReplay?.clientRequestId === request.clientRequestId
+            ? context.submissionReplay.receipt
+            : await deps.repository.getMediaSubmission(context.scope, request.clientRequestId);
         if (!replay) await context.admitGeneration?.();
-        const ready = replay ? undefined : await prepare(request, context, true);
+        const ready = replay ? undefined : await prepare(request, context, true, undefined, true);
         const existing = replay
           ? await deps.repository.getMediaJob(context.scope, replay.jobId)
           : undefined;
         const execution =
           existing?.execution ??
-          (ready ? preparedExecution(request.selection, ready, context.appConfig) : undefined);
+          (ready
+            ? preparedExecution(request.selection, ready, context.appConfig, deps.accounting)
+            : undefined);
         if (!execution) {
           throw new MediaServiceError('not_found', 404, 'Submission is unavailable.');
         }
@@ -528,12 +556,20 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
             staged.jobId,
             publicationOptions(context),
           )) ?? staged;
+        void deps
+          .publishActivity?.(context.scope, { threadId: receipt.threadId, version: 0 })
+          .catch((error) =>
+            deps.log('Media activity delivery failed.', error instanceof Error ? error : undefined),
+          );
         return receipt;
       },
       async import(input: MediaImportRequest, context: MediaContext): Promise<MediaImportReceipt> {
         assertMediaAccess(context, true);
         const parsed = createMediaImportSchema(context.config.limits).parse(input);
-        const replay = await deps.repository.getMediaImport(context.scope, parsed.clientRequestId);
+        const replay =
+          context.importReplay?.clientRequestId === parsed.clientRequestId
+            ? context.importReplay.receipt
+            : await deps.repository.getMediaImport(context.scope, parsed.clientRequestId);
         if (replay) {
           return deps.repository.stageMediaImport({
             scope: context.scope,
@@ -573,9 +609,14 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
         if (!old) {
           throw new MediaServiceError('not_found', 404, 'The job is unavailable.');
         }
-        const replay = await deps.repository.getMediaSubmission(context.scope, clientRequestId);
+        const replay =
+          context.submissionReplay?.clientRequestId === clientRequestId
+            ? context.submissionReplay.receipt
+            : await deps.repository.getMediaSubmission(context.scope, clientRequestId);
         if (!replay) await context.admitGeneration?.();
-        const ready = replay ? undefined : await prepare(old.request, context, false);
+        const ready = replay
+          ? undefined
+          : await prepare(old.request, context, false, undefined, true);
         const receipt = await deps.repository.retryMediaJob({
           scope: context.scope,
           jobId,
@@ -583,7 +624,14 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
           maxActiveJobs: context.config.queue.maxPendingPerUser,
           maxPendingTotal: context.config.queue.maxPendingTotal,
           ...(ready
-            ? { execution: preparedExecution(old.request.selection, ready, context.appConfig) }
+            ? {
+                execution: preparedExecution(
+                  old.request.selection,
+                  ready,
+                  context.appConfig,
+                  deps.accounting,
+                ),
+              }
             : {}),
         });
         return (
@@ -620,6 +668,11 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
           executionOwner: job.executionOwner,
           operation: job.operation,
         });
+        void deps
+          .publishActivity?.(context.scope, { threadId: job.threadId, version: job.version })
+          .catch((error) =>
+            deps.log('Media activity delivery failed.', error instanceof Error ? error : undefined),
+          );
         return job;
       },
       async updateThread(threadId: string, update: MediaThreadUpdate, context: MediaContext) {
@@ -643,11 +696,40 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
       },
       async retire(threadId: string, context: MediaContext) {
         assertMediaAccess(context);
-        await deps.migrateNativeConsumers?.(context.scope, context.config, threadId);
+        await deps.reconcileNativeConsumers?.(context.scope, context.config, threadId);
         if (!(await deps.repository.retireMediaThread(context.scope, threadId))) {
           throw new MediaServiceError('not_found', 404, 'The thread is unavailable.');
         }
         return { threadId, phase: 'retiring' as const };
+      },
+      async retireMany(input: MediaThreadsDeleteRequest, context: MediaContext) {
+        assertMediaAccess(context);
+        if (input.mode === 'all') {
+          await deps.reconcileNativeConsumers?.(context.scope, context.config);
+          const retired = await deps.repository.retireAllMediaThreads(context.scope);
+          return { retired, failures: [] };
+        }
+        if (input.threadIds.length > context.config.limits.maxPageSize) {
+          throw new MediaServiceError('invalid_request', 422, 'Too many selected creations.');
+        }
+        const result: MediaThreadsDeletionReceipt = { retired: 0, failures: [] };
+        for (const threadId of new Set(input.threadIds)) {
+          try {
+            await deps.reconcileNativeConsumers?.(context.scope, context.config, threadId);
+            if (!(await deps.repository.retireMediaThread(context.scope, threadId))) {
+              throw new MediaServiceError('not_found', 404, 'The thread is unavailable.');
+            }
+            result.retired++;
+          } catch (error) {
+            result.failures.push({
+              threadId,
+              error: {
+                code: error instanceof MediaServiceError ? error.code : 'internal_error',
+              },
+            });
+          }
+        }
+        return result;
       },
     },
     queries: {
@@ -659,20 +741,26 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
             version: 'disabled',
             offerings: [],
             limits: context.config.limits,
-            clientPollIntervalMs: context.config.polling.clientIntervalMs,
-            clientCatchUpIntervalMs: context.config.polling.clientCatchUpIntervalMs,
           };
         }
         return (await snapshot(context)).catalog;
       },
       async threads(query: MediaThreadListRequest, context: MediaContext) {
         assertMediaAccess(context);
+        if (query.search && query.search.length > context.config.limits.maxTitleChars) {
+          throw new MediaServiceError(
+            'invalid_request',
+            422,
+            'The search exceeds the configured title limit.',
+          );
+        }
         return deps.repository.listMediaThreads({
           scope: context.scope,
           cursor: query.cursor,
           limit: pageLimit(context, query.limit),
           filter: query.filter,
           include: query.include,
+          search: query.search,
         });
       },
       async thread(threadId: string, context: MediaContext) {
@@ -716,6 +804,14 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
       async create(presetId: string, input: MediaPresetWrite, context: MediaContext) {
         assertMediaAccess(context, true);
         const write = createMediaPresetSchema(context.config.limits).parse(input);
+        assertModelBoundContent({
+          filters: context.appConfig.filters,
+          legacyPii: context.appConfig.messageFilter?.pii
+            ? messageFilterPiiSchema.parse(context.appConfig.messageFilter.pii)
+            : undefined,
+          submittedMessages: [{ role: 'user', content: write.title }],
+          modelParameters: { options: write.settings.parameters },
+        });
         return deps.repository
           .createMediaPreset({
             scope: context.scope,
@@ -728,6 +824,14 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
       async update(presetId: string, input: MediaPresetUpdate, context: MediaContext) {
         assertMediaAccess(context, true);
         const update = createMediaPresetUpdateSchema(context.config.limits).parse(input);
+        assertModelBoundContent({
+          filters: context.appConfig.filters,
+          legacyPii: context.appConfig.messageFilter?.pii
+            ? messageFilterPiiSchema.parse(context.appConfig.messageFilter.pii)
+            : undefined,
+          submittedMessages: update.title ? [{ role: 'user', content: update.title }] : [],
+          modelParameters: { options: update.settings?.parameters },
+        });
         const preset = await deps.repository.updateMediaPreset({
           scope: context.scope,
           presetId,

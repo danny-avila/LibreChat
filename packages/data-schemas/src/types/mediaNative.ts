@@ -18,8 +18,9 @@ export type MediaNativePartRecord = MediaOwnerScope & {
   expiresAt?: string;
 };
 /** Stored shape: the expiry is a Date so the collection's TTL index can act on it. */
-export type MediaNativePartDocument = Omit<MediaNativePartRecord, 'expiresAt'> & {
+export type MediaNativePartDocument = Omit<MediaNativePartRecord, 'expiresAt' | 'createdAt'> & {
   expiresAt?: Date;
+  createdAt: Date;
 };
 export type MediaNativePartReservation = NonNullable<MediaStoredJob['nativePartKeys']>[number];
 export type MediaNativeReference = { continuationRef?: string; fileId?: string };
@@ -69,14 +70,12 @@ export interface MediaNativeMethods {
     fileId?: string;
     execution: MediaNativeExecution;
     conversationId?: string;
-    bindingAliases?: readonly string[];
   }): Promise<MediaNativePartRecord | null>;
   getMediaNativeContinuations(input: {
     scope: MediaOwnerScope;
     references: readonly MediaNativeReference[];
     execution: MediaNativeExecution;
     conversationId?: string;
-    bindingAliases?: readonly string[];
     limit: number;
   }): Promise<Array<MediaNativePartRecord | null>>;
   retainMediaNativeConversation(input: {
@@ -91,7 +90,7 @@ export interface MediaNativeMethods {
     scope: MediaOwnerScope;
     conversationId: string;
   }): Promise<void>;
-  prepareMediaNativeMessageDeletion(input: {
+  detachMediaNativeConversation(input: {
     scope: MediaOwnerScope;
     conversationId: string;
     continuationRefs: readonly string[];
@@ -105,7 +104,7 @@ export interface MediaNativeMethods {
     conversationId: string;
     maxRetainers: number;
   }): Promise<void>;
-  migrateMediaNativeConsumers(input: {
+  reconcileMediaNativeConsumers(input: {
     scope: MediaOwnerScope;
     threadId?: string;
     maxRetainers: number;

@@ -1,14 +1,20 @@
+import type { MediaOperation } from 'librechat-data-provider';
 import type {
   BalancePreparationRequest,
   BalanceReservationResult,
   IBalanceUpdate,
 } from './balance';
-import type { MediaAppliedSettlement } from './mediaBalance';
+import type { CreditsTransactionWriter } from './transaction';
+import type { IBalanceAppliedSettlement } from './balance';
 import type { MediaOwnerScope, MediaPage } from './media';
 
-export type { MediaHold, MediaAppliedSettlement, MediaPendingSettlement } from './mediaBalance';
+export type { IBalanceHold, IBalanceAppliedSettlement, IBalancePendingSettlement } from './balance';
 
-export type MediaAccountingPolicy = { maxHoldsPerUser: number; maxAttempts: number };
+export type MediaAccountingPolicy = {
+  maxHoldsPerUser: number;
+  maxAttempts: number;
+  shortfall?: 'debt' | 'absorb';
+};
 export type MediaAccountingStep =
   | 'registering'
   | 'checked'
@@ -27,16 +33,19 @@ export type MediaAccountingStep =
 export type MediaAccountingHooks = { afterStep?: (step: MediaAccountingStep) => Promise<void> };
 export type MediaAccountingDependencies = MediaAccountingHooks & {
   prepareBalance?: (request: BalancePreparationRequest) => Promise<BalanceReservationResult | null>;
+  upsertCreditsTransaction?: CreditsTransactionWriter;
 };
 export type MediaSettlementEffect = {
   kind: 'charge' | 'release' | 'debt_collection';
   credits: number;
   costUSD?: number;
-  costSource?: 'provider' | 'estimate';
+  costSource?: 'provider' | 'tokens' | 'estimate';
+  shortfall?: 'debt' | 'absorb';
   creditsPerUSD?: number;
   inputTokens?: number;
   outputTokens?: number;
   model?: string;
+  operation?: MediaOperation;
 };
 export type MediaSettlementRecord = MediaOwnerScope & {
   settlementId: string;
@@ -45,13 +54,13 @@ export type MediaSettlementRecord = MediaOwnerScope & {
   estimatedCredits: number;
   maxCredits: number;
   holdFingerprint: string;
-  createdAt: string;
-  reviewAt: string;
+  createdAt: Date;
+  reviewAt: Date;
   state: 'initializing' | 'holding' | 'held' | 'ready' | 'applied' | 'published';
   effect?: MediaSettlementEffect;
   effectFingerprint?: string;
   sequence?: number;
-  result?: MediaAppliedSettlement;
+  result?: IBalanceAppliedSettlement;
   balanceAcknowledged: boolean;
 };
 export type MediaHoldResult = {
@@ -62,15 +71,15 @@ export type MediaHoldResult = {
 export type MediaSettlementResult = {
   status: 'settled' | 'pending';
   settlementId: string;
-  result?: MediaAppliedSettlement;
+  result?: IBalanceAppliedSettlement;
 };
 export type AcquireMediaHoldInput = {
   scope: MediaOwnerScope;
   jobId: string;
   estimatedCredits: number;
   maxCredits: number;
-  reviewAt: string;
-  now: string;
+  reviewAt: Date | string;
+  now: Date | string;
   policy: MediaAccountingPolicy;
   initialBalance?: IBalanceUpdate;
 };

@@ -386,8 +386,7 @@ registration:
 # from the same token-credit balance as chat. With balance disabled, transactions default on
 # and record reported provider usage without debiting a balance. Native chat output keeps
 # the chat invocation's existing accounting and is not charged again by Media Studio.
-# Further tuning groups keep their schema defaults when omitted: accounting, catalog, worker,
-# polling, timeouts, recovery, credentials, transfers.
+# Omitted tuning fields retain the schema defaults shown below.
 # media:
 #   enabled: false
 #   cancellation:
@@ -396,7 +395,11 @@ registration:
 #     enabled: true
 #   surfaces:
 #     studio: true   # The Media Studio surface
-#     chat: true     # Native image output from Google image models inside chat
+#     chat: true     # Native images through Gemini Developer API; Vertex integrations serve Studio only
+#     tools: false   # Agent toolkit: media_generate and media_status
+#   tools:
+#     imageTimeoutMs: 120000 # Return a durable receipt if an image is still pending
+#     pollIntervalMs: 1000
 #   integrations:
 #     # Reuse the OpenAI chat endpoint's credentials for image generation and editing.
 #     - id: openai-images
@@ -406,13 +409,21 @@ registration:
 #       operations: ['image.generate', 'image.edit']
 #       # Required for balance enforcement. Amounts cover the entire provider request.
 #       # maxCostUSD reserves credits; it is not a provider-side spending cap.
-#       # estimatedCostUSD is the fallback charge when the provider omits a USD cost.
+#       # Pricing: provider-reported USD, frozen explicit model rates, then a completed-result estimate.
+#       # Shared imageTokenValues separate OpenAI text/image inputs; unknown models never use a default rate.
+#       # Custom endpoint tokenConfig can override prompt, imagePrompt, completion, cacheRead, imageCacheRead.
+#       # Missing image token details keep the estimate/reconciliation path; Responses wrappers need an estimate.
+#       # estimatedCostUSD applies only to completed results without provider USD or known token rates.
 #       # Omit creditsPerUSD to use the existing 1,000,000 token credits per USD.
 #       # billing: { estimatedCostUSD: 0.04, maxCostUSD: 0.25 }
-#     # Vertex AI video with a service-account key file; Vertex requires explicit models.
+#     # Vertex AI video; keyFile is optional and Vertex requires explicit models.
+#     # Defaults: GOOGLE_SERVICE_KEY_FILE, api/data/auth.json, then application default credentials.
+#     # Location defaults: GOOGLE_CLOUD_LOCATION, GOOGLE_LOC, then us-central1.
+#     # Project defaults: VERTEX_PROJECT_ID, GOOGLE_CLOUD_PROJECT, GCLOUD_PROJECT, GOOGLE_PROJECT_ID.
 #     - id: vertex-video
 #       api: google.vertex.videos
-#       endpointRef: { kind: vertex, keyFile: '/run/secrets/vertex-media.json', location: us-central1 }
+#       endpointRef: { kind: vertex }
+#       # Optional isolated account: keyFile accepts a file, URL, base64 or inline JSON.
 #       catalog: { kind: configured, models: ['veo-3.1-fast-generate-001'] }
 #       operations: ['video.generate']
 #     # Reuse the custom OpenRouter endpoint below, including its saved personal-key slot,
@@ -422,6 +433,30 @@ registration:
 #       endpointRef: { kind: custom, name: OpenRouter }
 #       catalog: { kind: discovered, allowModels: ['black-forest-labs/flux.2-pro'] }
 #       operations: ['image.generate', 'image.edit']
+#     # Builtin google uses GOOGLE_KEY, then GEMINI_API_KEY. user_provided selects the saved
+#     # Google envelope; a service-account-only envelope needs kind: vertex instead.
+#     # catalog.kind is model selection: native APIs use static profiles; OpenRouter reads
+#     # remote capabilities. Configured OpenRouter images fetch only listed /endpoints documents.
+#     # OpenRouter videos also read the video and modality indexes to populate controls.
+#     # Azure OpenAI v1 reuses ${AZURE_API_KEY} without re-entering the key. Chat Azure groups
+#     # and their model picker are separate; media deployment names belong to this integration.
+#     # - id: azure-images
+#     #   api: openai.images
+#     #   endpointRef:
+#     #     kind: direct
+#     #     apiKey: '${AZURE_API_KEY}'
+#     #     baseURL: 'https://YOUR_RESOURCE.openai.azure.com/openai/v1'
+#     #     headers: { api-key: '${AZURE_API_KEY}' }
+#     #     options: { deployments: { gpt-image-1: YOUR_IMAGE_DEPLOYMENT } }
+#     #   catalog: { kind: configured, models: ['gpt-image-1'] }
+#     #   operations: ['image.generate', 'image.edit']
+#     # No api-version query is needed for Azure v1. Legacy jobs-style Azure video is unsupported.
+#     # Configured DALL-E 2/3 models use their reduced Images controls. Other compatible
+#     # deployment names expose generation with one image and an optional 1024x1024 size;
+#     # quality, background, format and compression are omitted unless the profile supports them.
+#     # Unknown deployments do not advertise image editing or infer provider-specific controls.
+#     # Sourceful requires options: { brandId: '${SOURCEFUL_BRAND_ID}' } with a UUID brand ID.
+#     # Other arbitrary connection option keys are rejected at startup.
 #     # For providers without a chat endpoint, use a direct connection instead:
 #     # endpointRef: { kind: direct, apiKey: '${OPENROUTER_KEY}' }
 #     # Use apiKey: user_provided and credentialName to share one saved key across
@@ -434,6 +469,8 @@ registration:
 #     pageSize: 24
 #     maxPageSize: 100
 #     maxAssetRetainers: 128
+#     consumerClaimMs: 60000       # Pending message writes hold attachments until confirmed or reconciled
+#     consumerReconcileMs: 60000   # Delay before checking a tracked attachment's durable consumers again
 #     maxNativeParts: 1024
 #     maxNativePartBytes: 1048576
 #     maxNativeRecordingBytes: 4194304
@@ -444,10 +481,36 @@ registration:
 #     maxPendingPerUser: 20
 #     maxPendingTotal: 200
 #     maxQueueAgeMs: 3600000       # Queued work older than this fails with `queue_expired`
+#     deniedRequeueMs: 5000        # Capacity release wakes the oldest eligible waiting job sooner
 #   execution:
 #     maxActivePerUser: 2
 #     maxActivePerIntegration: 4
 #     maxActiveTotal: 8
+#   worker:
+#     scanFailureThreshold: 3 # Consecutive failed scans before this process reports unavailable
+#     tickMs: 1000
+#     maintenanceIntervalMs: 30000 # Repository maintenance follows shared leader election
+#     maintenanceJitterMs: 2000    # Pending pages continue at tickMs; local staging runs on every host
+#     leaseMs: 60000
+#     renewEveryMs: 20000
+#     takeoverSkewMs: 30000        # Additional grace after expiry before another worker can claim
+#     shutdownTimeoutMs: 10000
+#     shutdownCleanupMs: 1000     # Reserved within the host deadline for abort and cleanup
+#   events:
+#     enabled: true               # Live refetch hints; snapshots and polling remain authoritative
+#     heartbeatMs: 15000
+#     demandTtlMs: 45000           # Must outlive the heartbeat
+#     demandCacheMs: 250
+#   polling:
+#     providerIntervalMs: 30000
+#     clientIntervalMs: 5000
+#     clientCatchUpIntervalMs: 30000
+#   recovery:
+#     attentionAfterMs: 86400000
+#     maxAttempts: 24             # Failed polls/ingestion back off exponentially, then require attention
+#     maxRetryMs: 1800000
+#     maxEvidenceChars: 2000
+#     maxDecisionsPerJob: 32
 #   titles:
 #     enabled: true                # Ask once for a short title after funded worker admission
 #     # endpoint: openAI           # Falls back to endpoints.all.titleEndpoint
@@ -455,17 +518,43 @@ registration:
 #     # prompt: 'Name this media request in five words or fewer.'
 #     timeoutMs: 45000
 #     maxOutputTokens: 128         # Limits title output and its separate balance reservation
+#   accounting:
+#     shortfall: debt              # Or absorb; overage uses free credits before this policy applies
+#     # Chat keeps its existing admission-only reservations. Media receipts distinguish its own overrun
+#     # from reserved credits consumed by another writer; both remain included in total outstanding debt.
+#     # Overdue holds enter operator recovery after attentionAfterMs, without interrupting a live lease.
+#     maxHoldsPerUser: 128
+#     maxAttempts: 20
+#   catalog:
+#     refreshMs: 900000
+#     requestTimeoutMs: 10000
+#     maxResponseBytes: 10485760
+#     maxConcurrentRequests: 4
+#     maxModels: 256
+#     maxCacheEntries: 256         # Bounds local fallback entries and in-flight catalog work
+#   credentials:
+#     minValidityAtDispatchMs: 60000
+#   timeouts:
+#     submitMs: 300000
+#     pollRequestMs: 10000
+#     downloadMs: 120000
+#   transfers:
+#     maxImageBytes: 20971520
+#     maxVideoBytes: 536870912
+#     maxAudioBytes: 20971520
+#     maxRedirects: 3
 #   assets:
 #     source: null                 # Inherits fileStrategies.image, then .default, then fileStrategy
 #                                  # local, s3, cloudfront, azure_blob and firebase use existing credentials
 #     retention: inherit           # Originals follow the chat retention policy
 #     orphanRetentionMs: 86400000  # Unreferenced uploads and staging files are removed after this
+#     deletedAccountRetentionMs: 604800000 # Completed owner deletion fences expire after seven days
 #     derivatives:
 #       enabled: true             # Best-effort thumbnails and video posters; originals stay unchanged
 #       maxWidth: 640             # Preview/playback bounds; aspect ratio is preserved
 #       maxHeight: 640
 #       timeoutMs: 120000
-#       ffmpegPath: ffmpeg        # Included in the container; install FFmpeg for a local deployment
+#       ffmpegPath: ffmpeg        # Included in official container images; install FFmpeg or set its path for other deployments
 #       transcodeVideo: false     # Also generate H.264/AAC MP4 playback within the same bounds
 #     # Image previews use imageOutputType; byte caps use media.transfers. Derivative failure
 #     # falls back to the original, and deleting an original removes its sidecars together.
@@ -1191,6 +1280,8 @@ endpoints:
 #     tokens: 2000 # Also preserve up to this many recent tokens
 
 # fileConfig:
+#   # Maximum expired originals reclaimed per shared sweep pass (all owners and storage backends).
+#   retentionSweepLimit: 100
 #   # Store best-effort text for inferred tool-routed message attachments. On each turn,
 #   # deliver it only if no available tool can read the type. Off by default; also configurable
 #   # under endpoints.default or a provider/custom endpoint name. Explicit destinations stand.

@@ -7,6 +7,7 @@ const {
   deleteRagFile,
   getFirebaseStorage,
   createFirebaseFileStream,
+  createBufferStreamStorage,
   assertRemoteFileURL,
   getRemoteFileFetchMaxBytes,
   getRemoteFileFetchTimeoutMs,
@@ -255,7 +256,13 @@ const getFirebaseFileStream = createFirebaseFileStream({
   http: axios,
 });
 
+const { planFile: planFirebaseFile, saveStream: saveStreamToFirebase } = createBufferStreamStorage({
+  saveBuffer: saveBufferToFirebase,
+});
+
 module.exports = {
+  planFirebaseFile,
+  saveStreamToFirebase,
   deleteFile,
   getFirebaseURL,
   saveURLToFirebase,

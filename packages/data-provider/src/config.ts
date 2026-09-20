@@ -58,6 +58,7 @@ export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'd
 /** How long a started social login may take to return to its callback before its `state` expires. */
 export const DEFAULT_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
+/** Filters enforce security; media owns credential-bearing integrations and process-wide worker/capacity policy. Use interface.media for per-role access. */
 export const BASE_ONLY_CONFIG_SECTIONS = ['filters', 'media'] as const;
 /** Sections that may be stored in the tenant's base config document but must
  * not be overridden or tombstoned by role, group, or user config documents. */
@@ -1557,6 +1558,9 @@ export const endpointSchema = baseEndpointSchema.merge(
           context: z.number(),
           cacheRead: z.number().optional(),
           cacheWrite: z.number().optional(),
+          /** Image input rates in USD per million tokens; prompt/cacheRead price text input. */
+          imagePrompt: z.number().nonnegative().optional(),
+          imageCacheRead: z.number().nonnegative().optional(),
         }),
       )
       .optional(),
@@ -2097,11 +2101,15 @@ export const interfaceSchema = z
       ])
       .optional(),
     media: z
-      .object({
-        use: z.boolean().optional(),
-        create: z.boolean().optional(),
-      })
-      .strict()
+      .union([
+        z.boolean(),
+        z
+          .object({
+            use: z.boolean().optional(),
+            create: z.boolean().optional(),
+          })
+          .strict(),
+      ])
       .optional(),
     schedules: z
       .union([
@@ -3435,6 +3443,7 @@ export enum CacheKeys {
    * Key for the model queries cache.
    */
   MODEL_QUERIES = 'MODEL_QUERIES',
+  MEDIA_CATALOG = 'MEDIA_CATALOG',
   /**
    * Key for the default startup config cache.
    */

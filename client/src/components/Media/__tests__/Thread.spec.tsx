@@ -92,8 +92,6 @@ const catalog = (integrations: MediaCatalog['integrations']): MediaCatalog =>
     offerings: [],
     limits: {},
     integrations,
-    clientPollIntervalMs: 5000,
-    clientCatchUpIntervalMs: 60000,
   });
 const configured = catalog([
   {
@@ -221,7 +219,7 @@ test.each(['queued', 'submitting', 'running', 'ingesting', 'reconciling'] as con
   'restored %s image jobs show the shared pixels without reporting a provider percentage',
   (phase) => {
     const env = setup(undefined, withJob({ phase, operation: 'image.generate' }));
-    expect(env.container.querySelector('[data-media-image-pending]')).toBeInTheDocument();
+    expect(env.container.querySelector('[data-testid="media-image-pending"]')).toBeInTheDocument();
     const pixels = screen.getByTestId('pixels');
     expect(pixels).toHaveAttribute('tabindex', '-1');
     expect(Number(pixels.dataset.fill)).toBeLessThan(0.9);
@@ -229,6 +227,24 @@ test.each(['queued', 'submitting', 'running', 'ingesting', 'reconciling'] as con
     expect(screen.queryByText(/\d+%/)).not.toBeInTheDocument();
   },
 );
+
+test('restored completed originals paint eagerly without replaying the generation fade', () => {
+  setup(
+    undefined,
+    withJob({
+      phase: 'succeeded',
+      operation: 'image.generate',
+      outputs: [{ outputId: 'first', kind: 'image', ordinal: 0, state: 'ready', asset }],
+    }),
+  );
+  const image = screen.getByRole('img');
+  expect(image).toHaveAttribute('loading', 'eager');
+  expect(image).not.toHaveClass('opacity-0');
+  expect(image).not.toHaveClass('transition-opacity');
+  expect(screen.queryByTestId('pixels')).not.toBeInTheDocument();
+  fireEvent.load(image);
+  expect(screen.queryByText('com_media_preview_loading')).not.toBeInTheDocument();
+});
 
 test('text and partial images do not hide a pending batch, and its final original replaces the loading pixels', () => {
   const env = setup(undefined, withJob({ phase: 'running', operation: 'image.edit' }));
@@ -244,7 +260,7 @@ test('text and partial images do not hide a pending batch, and its final origina
   ];
   env.rerenderDetail(withJob({ phase: 'ingesting', outputs }));
   expect(screen.getByText('A note about the images')).toBeInTheDocument();
-  expect(env.container.querySelector('[data-media-image-pending]')).toBeInTheDocument();
+  expect(env.container.querySelector('[data-testid="media-image-pending"]')).toBeInTheDocument();
   expect(screen.getAllByTestId('pixels')).toHaveLength(2);
   expect(screen.getByRole('link', { name: 'com_media_download' })).toHaveAttribute(
     'href',
@@ -267,7 +283,9 @@ test('text and partial images do not hide a pending batch, and its final origina
       ],
     }),
   );
-  expect(env.container.querySelector('[data-media-image-pending]')).not.toBeInTheDocument();
+  expect(
+    env.container.querySelector('[data-testid="media-image-pending"]'),
+  ).not.toBeInTheDocument();
   expect(screen.getByTestId('pixels')).toBeInTheDocument();
   fireEvent.load(screen.getAllByRole('img')[1]);
   expect(screen.queryByTestId('pixels')).not.toBeInTheDocument();
@@ -283,7 +301,9 @@ test.each(['failed', 'cancelled', 'requires_attention', 'succeeded'] as const)(
     const env = setup(undefined, withJob({ phase: 'running', outputs }));
     fireEvent.load(screen.getByRole('img'));
     env.rerenderDetail(withJob({ phase, outputs }));
-    expect(env.container.querySelector('[data-media-image-pending]')).not.toBeInTheDocument();
+    expect(
+      env.container.querySelector('[data-testid="media-image-pending"]'),
+    ).not.toBeInTheDocument();
     expect(screen.queryByTestId('pixels')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'com_media_download' })).toBeInTheDocument();
   },
@@ -300,7 +320,7 @@ test('a new retry shows a fresh image animation while video keeps the existing p
   });
   retry.turns.items[0].jobs.unshift(detail.turns.items[0].jobs[0]);
   env.rerenderDetail(retry);
-  expect(env.container.querySelectorAll('[data-media-image-pending]')).toHaveLength(1);
+  expect(env.container.querySelectorAll('[data-testid="media-image-pending"]')).toHaveLength(1);
   expect(Number(screen.getByTestId('pixels').dataset.fill)).toBeLessThan(0.2);
   expect(screen.getByText('com_media_retry_attempt')).toBeInTheDocument();
   env.rerenderDetail(withJob({ phase: 'running', operation: 'video.generate' }));

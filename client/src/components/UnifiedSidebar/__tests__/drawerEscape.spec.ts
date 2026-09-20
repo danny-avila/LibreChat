@@ -1,3 +1,4 @@
+import { MOBILE_DRAWER_ID } from '../constants';
 import { shouldCloseSidebar } from '../escape';
 
 const addMenu = ({ hidden, role = 'menu' }: { hidden: boolean; role?: string }) => {
@@ -31,6 +32,24 @@ describe('drawer Escape guard', () => {
 
   it('collapses the drawer when no menu exists at all', () => {
     expect(shouldCloseSidebar(escape(), document)).toBe(true);
+  });
+
+  it('closes the drawer dialog itself while preserving nested dialog ownership', () => {
+    const drawer = addMenu({ hidden: false, role: 'dialog' });
+    drawer.id = MOBILE_DRAWER_ID;
+    const button = document.createElement('button');
+    drawer.appendChild(button);
+    const decisions: boolean[] = [];
+    const listener = (event: KeyboardEvent) => decisions.push(shouldCloseSidebar(event, document));
+    document.addEventListener('keydown', listener);
+    try {
+      button.dispatchEvent(escape());
+      drawer.appendChild(addMenu({ hidden: false, role: 'dialog' }));
+      button.dispatchEvent(escape());
+      expect(decisions).toEqual([true, false]);
+    } finally {
+      document.removeEventListener('keydown', listener);
+    }
   });
 
   it('stands down when an open menu sits alongside a closed one', () => {

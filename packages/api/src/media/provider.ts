@@ -4,6 +4,7 @@ import type {
   MediaSubmissionRequest,
   MediaCapability,
   MediaErrorCode,
+  MediaProviderOptions,
 } from 'librechat-data-provider';
 import type { Readable } from 'node:stream';
 import type { MediaRoutingPolicy } from './routing';
@@ -15,10 +16,9 @@ export interface MediaConnection {
   baseURL: string;
   headers: Record<string, string>;
   binding: string;
-  bindingAliases?: string[];
   allowedAddresses?: string[];
   routing?: MediaRoutingPolicy;
-  options?: Record<string, string>;
+  options?: MediaProviderOptions;
 }
 
 export interface MediaProviderInput {
@@ -43,6 +43,11 @@ export type MediaProviderPart =
 export interface MediaProviderUsage {
   inputTokens?: number;
   outputTokens?: number;
+  textInputTokens?: number;
+  imageInputTokens?: number;
+  cachedTextInputTokens?: number;
+  cachedImageInputTokens?: number;
+  cachedInputTokens?: number;
   costUSD?: number;
 }
 
@@ -69,7 +74,7 @@ export interface MediaProviderContext {
 }
 
 export function isMediaConnectionBinding(connection: MediaConnection, binding: string): boolean {
-  return connection.binding === binding || connection.bindingAliases?.includes(binding) === true;
+  return connection.binding === binding;
 }
 
 export interface MediaModelProfile {
@@ -87,7 +92,6 @@ export interface MediaProviderAdapter {
     keyHeader?: string;
     keyPrefix?: string;
     headers?: Record<string, string>;
-    requiredOptions?: readonly string[];
   };
   catalog?: (config: MediaConfig) => MediaModelProfile[];
   submit(

@@ -226,9 +226,14 @@ export async function discoverOpenRouter(
     maxBytes: config.catalog.maxResponseBytes,
   });
   const images = integration.api === 'openrouter.images';
-  const index = images
-    ? await fetch(request('images/models'), imageIndex, config)
-    : await fetch(request('videos/models'), videoIndex, config);
+  let index: z.infer<typeof videoIndex>;
+  if (images && integration.catalog.kind === 'configured') {
+    index = { data: integration.catalog.models.map((id) => ({ id })) };
+  } else if (images) {
+    index = await fetch(request('images/models'), imageIndex, config);
+  } else {
+    index = await fetch(request('videos/models'), videoIndex, config);
+  }
   const byId = new Map(index.data.map((model) => [model.id, model]));
   const configured =
     integration.catalog.kind === 'configured'

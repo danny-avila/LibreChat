@@ -1,20 +1,31 @@
+import { randomUUID } from 'node:crypto';
 import {
   HITL_MESSAGE_FILTER_FIELDS,
   RetentionMode,
   detachEditedNativeContent,
+  detachEditedNativeMetadata,
+  parseNativeMessageReference,
   getNativeContinuationRefs,
+  resolveMediaConfig,
 } from 'librechat-data-provider';
 import type { DeleteResult, FilterQuery, Model, Types, UpdateQuery } from 'mongoose';
 import type { UserSubmittedMessageFieldPath } from 'librechat-data-provider';
 import type { SearchParams } from 'meilisearch';
+import type {
+  MediaConsumerConfig,
+  MediaFileConsumerMethods,
+  MediaFileConsumerWrite,
+} from '~/types/mediaConsumers';
 import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type { AppConfig, IConversation, IMessage } from '~/types';
+import type { MessageFileFields } from '~/utils/messageFiles';
 import { createChatExpirationDate, createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { activeExpirationFilter, createFallbackRetentionDate } from '~/utils/retention';
+import { collectMessageFileIds, removeMessageFileIds } from '~/utils/messageFiles';
+import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
-import { createMediaNativeMethods } from './mediaNative';
-import { tenantStorage } from '~/config/tenantContext';
-import { createMediaMethods } from './media';
+import { MediaPersistenceError } from './media';
+import { isMediaFileId } from '~/types/media';
 import logger from '~/config/winston';
 
 /** Simple UUID v4 regex to replace zod validation */
@@ -273,6 +284,39 @@ function getSteerUserSubmittedPaths(content: unknown): string[] {
   return paths;
 }
 
+/** Atomically detach private replay metadata in the same write as an edited part. */
+function withNativeSignatureEdits(
+  update: UpdateQuery<IMessage>,
+  content: unknown,
+  paths: readonly string[],
+): UpdateQuery<IMessage> {
+  if (!Array.isArray(content) || !paths.length) return update;
+  const edited = detachEditedNativeContent(content, paths);
+  const indexes = content.flatMap((part, index) =>
+    part !== edited[index]
+      ? getNativeContinuationRefs([part]).flatMap((ref) => {
+          const parsed = parseNativeMessageReference(ref);
+          return parsed ? [parsed.index] : [];
+        })
+      : [],
+  );
+  if (!indexes.length) return update;
+  const operators = Object.keys(update).some((key) => key.startsWith('$'));
+  const set = { ...(operators ? update.$set : update) };
+  if (set.metadata && typeof set.metadata === 'object') {
+    set.metadata = detachEditedNativeMetadata(set.metadata, content, paths);
+    return operators ? { ...update, $set: set } : set;
+  }
+  return {
+    ...(operators ? update : {}),
+    $set: set,
+    $unset: {
+      ...(operators ? update.$unset : {}),
+      ...Object.fromEntries(indexes.map((index) => [`metadata.nativeSignatures.${index}`, 1])),
+    },
+  };
+}
+
 /**
  * A terminal save that must drop a stored `contextMeta` unsets it in the same
  * update that persists the response, so no failure between two writes can
@@ -316,6 +360,7 @@ async function findOneAndMergeMessageProvenance(
     stampModelOutputOnInsert?: boolean;
     unsetContextMeta?: boolean;
     retentionOnInsert?: { expiredAt: Date; isTemporary: false };
+    nativeContent?: unknown;
   },
 ) {
   const safeUpdate = { ...update };
@@ -356,12 +401,16 @@ async function findOneAndMergeMessageProvenance(
     try {
       const message = await Message.findOneAndUpdate(
         filter,
-        {
-          $set: { ...safeUpdate, ...provenance },
-          ...(current == null &&
-            options.retentionOnInsert != null && { $setOnInsert: options.retentionOnInsert }),
-          ...(options.unsetContextMeta && { $unset: { contextMeta: 1 } }),
-        },
+        withNativeSignatureEdits(
+          {
+            $set: { ...safeUpdate, ...provenance },
+            ...(current == null &&
+              options.retentionOnInsert != null && { $setOnInsert: options.retentionOnInsert }),
+            ...(options.unsetContextMeta && { $unset: { contextMeta: 1 } }),
+          },
+          options.nativeContent,
+          userSubmittedPaths,
+        ),
         { upsert: options.upsert && current == null, new: true },
       );
       if (message != null) {
@@ -460,6 +509,7 @@ const SERVER_AUTHORED_SAMPLED_RESPONSE = {
 export const CLIENT_MESSAGE_SELECT: string = [
   '-_id',
   '-__v',
+  '-mediaConsumerToken',
   '-user',
   '-clientId',
   '-invocationId',
@@ -471,6 +521,7 @@ export const CLIENT_MESSAGE_SELECT: string = [
   '-langfuseDestinationIds',
   '-langfuseRunId',
   '-metadata.thoughtSignatures',
+  '-metadata.nativeSignatures',
   '-content.tool_call.backgroundTask.resultClaim',
   '-content.tool_call.backgroundTask.completionWakeup',
   '-attachments.web_search.knowledgeGraph',
@@ -707,6 +758,7 @@ export interface MessageMethods {
   bulkSaveMessages(
     messages: Array<Partial<IMessage>>,
     overrideTimestamp?: boolean,
+    options?: { unavailableMedia?: 'placeholder' },
   ): Promise<unknown>;
   recordMessage(params: {
     user: string;
@@ -842,28 +894,109 @@ function agentOwnershipFilter(prefix: string, agentId: string): Record<string, u
   };
 }
 
-export function createMessageMethods(mongoose: typeof import('mongoose')): MessageMethods {
-  async function reconcileEditedNativeParts(
-    identity: Pick<IMessage, 'user' | 'conversationId' | 'tenantId'>,
-    content: unknown,
-    paths: readonly string[],
-  ): Promise<void> {
-    if (!Array.isArray(content) || !paths.length) return;
-    const edited = detachEditedNativeContent(content, paths);
-    const changed = content.filter((part, index) => part !== edited[index]);
-    const continuationRefs = getNativeContinuationRefs(changed);
-    if (!continuationRefs.length) return;
-    const native = createMediaNativeMethods(mongoose, createMediaMethods(mongoose));
-    const consumer = {
+export type MessageMediaDeps = {
+  mediaFiles?: MediaFileConsumerMethods;
+  getMediaConsumerConfig?: () => Promise<MediaConsumerConfig>;
+};
+
+export function createMessageMethods(
+  mongoose: typeof import('mongoose'),
+  deps: MessageMediaDeps = {},
+): MessageMethods {
+  async function withMediaFileWrite<T>(
+    identity: { user: string; conversationId?: string; tenantId?: string | null },
+    fields: MessageFileFields,
+    write: (token?: string) => Promise<T>,
+    onUnavailable?: (fileIds: string[]) => void,
+  ): Promise<T> {
+    const fileIds = collectMessageFileIds(fields).filter(isMediaFileId);
+    if (!deps.mediaFiles || !fileIds.length) return write();
+    if (!identity.conversationId)
+      throw new Error('Media attachments require a conversation identity');
+    const config = deps.getMediaConsumerConfig
+      ? await deps.getMediaConsumerConfig()
+      : resolveMediaConfig().limits;
+    const claim: MediaFileConsumerWrite = {
       scope: {
         ownerId: identity.user,
-        tenantId: identity.tenantId ?? tenantStorage.getStore()?.tenantId ?? null,
+        tenantId:
+          identity.tenantId === undefined
+            ? (tenantStorage.getStore()?.tenantId ?? null)
+            : identity.tenantId,
       },
       conversationId: identity.conversationId,
+      fileIds,
+      token: randomUUID(),
+      config,
     };
-    await native.prepareMediaNativeMessageDeletion({ ...consumer, continuationRefs });
-    await native.reconcileMediaNativeMessageDeletion(consumer);
+    const unavailable = (error: unknown) =>
+      error instanceof MediaPersistenceError &&
+      ['retired', 'capacity', 'not_found'].includes(error.code);
+    if (onUnavailable) {
+      claim.fileIds = [];
+      try {
+        for (const fileId of fileIds) {
+          try {
+            await deps.mediaFiles.acquireMediaFileConsumers({ ...claim, fileIds: [fileId] });
+            claim.fileIds.push(fileId);
+          } catch (error) {
+            if (!unavailable(error)) throw error;
+            onUnavailable([fileId]);
+          }
+        }
+      } catch (error) {
+        await deps.mediaFiles.releaseMediaFileConsumerClaims(claim);
+        throw error;
+      }
+    } else await deps.mediaFiles.acquireMediaFileConsumers(claim);
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const published = {
+      user: claim.scope.ownerId,
+      tenantId: claim.scope.tenantId,
+      conversationId: claim.conversationId,
+      mediaConsumerToken: claim.token,
+    };
+    const compensate = async (ids: string[]) => {
+      const rows = Message.find(published)
+        .select({ files: 1, attachments: 1, content: 1 })
+        .lean()
+        .cursor();
+      for await (const row of rows) {
+        await Message.updateOne(
+          { ...published, _id: row._id },
+          { $set: removeMessageFileIds(row, new Set(ids)) },
+        );
+      }
+    };
+    try {
+      const result = await write(claim.token);
+      if (onUnavailable) {
+        const missing: string[] = [];
+        for (const fileId of claim.fileIds) {
+          try {
+            await deps.mediaFiles.confirmMediaFileConsumers({ ...claim, fileIds: [fileId] });
+          } catch (error) {
+            if (!unavailable(error)) throw error;
+            missing.push(fileId);
+          }
+        }
+        if (missing.length) {
+          await compensate(missing);
+          onUnavailable(missing);
+        }
+      } else await deps.mediaFiles.confirmMediaFileConsumers(claim);
+      await Message.updateMany(published, { $unset: { mediaConsumerToken: 1 } });
+      return result;
+    } catch (error) {
+      // A token fences compensation against later writers of the same message.
+      await compensate(claim.fileIds);
+      await Message.updateMany(published, { $unset: { mediaConsumerToken: 1 } });
+      throw error;
+    } finally {
+      await deps.mediaFiles.releaseMediaFileConsumerClaims(claim);
+    }
   }
+
   /**
    * Saves a message in the database.
    */
@@ -905,6 +1038,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         user: userId,
         messageId: params.newMessageId || params.messageId,
       };
+      delete update.mediaConsumerToken;
       delete update.isTemporary;
       delete update.expiredAt;
       let retentionOnInsert: { expiredAt: Date; isTemporary: false } | undefined;
@@ -989,29 +1123,41 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         params.isCreatedByUser === false && params.isUserSubmitted === undefined;
       const hasProvenance =
         userSubmittedPaths.length > 0 || userSubmittedMessageFieldPaths.length > 0;
-      const message = hasProvenance
-        ? await findOneAndMergeMessageProvenance(
-            Message,
-            { messageId: params.messageId, user: userId },
-            update,
-            userSubmittedPaths,
-            userSubmittedMessageFieldPaths,
-            { upsert: true, stampModelOutputOnInsert, unsetContextMeta, retentionOnInsert },
-          )
-        : await Message.findOneAndUpdate(
-            { messageId: params.messageId, user: userId },
-            buildMessageSaveUpdate(update, {
-              stampModelOutputOnInsert,
-              unsetContextMeta,
-              retentionOnInsert,
-            }),
-            { upsert: true, new: true },
-          );
+      const message = await withMediaFileWrite(
+        { user: userId, conversationId, tenantId: params.tenantId },
+        params,
+        async (token) => {
+          if (token) update.mediaConsumerToken = token;
+          return hasProvenance
+            ? findOneAndMergeMessageProvenance(
+                Message,
+                { messageId: params.messageId, user: userId },
+                update,
+                userSubmittedPaths,
+                userSubmittedMessageFieldPaths,
+                {
+                  upsert: true,
+                  stampModelOutputOnInsert,
+                  unsetContextMeta,
+                  retentionOnInsert,
+                  nativeContent: params.content,
+                },
+              )
+            : Message.findOneAndUpdate(
+                { messageId: params.messageId, user: userId },
+                buildMessageSaveUpdate(update, {
+                  stampModelOutputOnInsert,
+                  unsetContextMeta,
+                  retentionOnInsert,
+                }),
+                { upsert: true, new: true },
+              );
+        },
+      );
 
       if (message == null) {
         return message;
       }
-      await reconcileEditedNativeParts(message, params.content, userSubmittedPaths);
 
       /** Reuse the saved row's chat type when callers omit it, preserving existing deadlines. */
       if (
@@ -1048,7 +1194,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         message.isTemporary = false;
       }
 
-      return message.toObject();
+      const saved = message.toObject();
+      delete saved.mediaConsumerToken;
+      return saved;
     } catch (err: unknown) {
       logger.error('Error saving message:', err);
       logger.info(`---\`saveMessage\` context: ${metadata?.context}`);
@@ -1087,58 +1235,101 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   async function bulkSaveMessages(
     messages: Array<Record<string, unknown>>,
     overrideTimestamp = false,
+    options?: { unavailableMedia?: 'placeholder' },
   ) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      const bulkOps = messages.map((message) => {
-        const normalizedMessage = { ...message };
-        const provenance = capNormalizedProvenance(
-          normalizeUserSubmittedPaths(message.userSubmittedPaths),
-          normalizeUserSubmittedMessageFieldPaths(message.userSubmittedMessageFieldPaths),
-        );
-        if (normalizedMessage.content != null) {
-          normalizedMessage.content = detachEditedNativeContent(
-            normalizedMessage.content,
-            provenance.userSubmittedPaths,
-          );
+      const tokens = new Map<Record<string, unknown>, string>();
+      const groups = new Map<
+        string,
+        {
+          identity: { user: string; conversationId: string; tenantId?: string };
+          messages: Array<Record<string, unknown>>;
         }
-        if (provenance.userSubmittedPaths.length > 0) {
-          normalizedMessage.userSubmittedPaths = provenance.userSubmittedPaths;
-        } else {
-          delete normalizedMessage.userSubmittedPaths;
-        }
-        if (provenance.userSubmittedMessageFieldPaths.length > 0) {
-          normalizedMessage.userSubmittedMessageFieldPaths =
-            provenance.userSubmittedMessageFieldPaths;
-        } else {
-          delete normalizedMessage.userSubmittedMessageFieldPaths;
-        }
-        if (provenance.promoteWholeMessage) {
-          normalizedMessage.isUserSubmitted = true;
-        }
-        return {
-          updateOne: {
-            filter: { messageId: message.messageId },
-            update: normalizedMessage,
-            timestamps: !overrideTimestamp,
-            upsert: true,
-          },
-        };
-      });
-      const result = await tenantSafeBulkWrite(Message, bulkOps);
+      >();
       for (const message of messages) {
-        if (typeof message.user === 'string' && typeof message.conversationId === 'string') {
-          await reconcileEditedNativeParts(
-            {
-              user: message.user,
-              conversationId: message.conversationId,
-              tenantId: typeof message.tenantId === 'string' ? message.tenantId : undefined,
-            },
-            message.content,
-            normalizeUserSubmittedPaths(message.userSubmittedPaths),
-          );
+        if (!collectMessageFileIds(message).some(isMediaFileId)) continue;
+        if (typeof message.user !== 'string' || typeof message.conversationId !== 'string') {
+          throw new Error('Media attachments require an authenticated conversation owner');
         }
+        const identity = {
+          user: message.user,
+          conversationId: message.conversationId,
+          tenantId: typeof message.tenantId === 'string' ? message.tenantId : undefined,
+        };
+        const key = JSON.stringify(identity);
+        const group = groups.get(key) ?? { identity, messages: [] };
+        group.messages.push(message);
+        groups.set(key, group);
       }
+      const pending = [...groups.values()];
+      const persist = async (
+        index: number,
+      ): Promise<Awaited<ReturnType<typeof tenantSafeBulkWrite>>> => {
+        const group = pending[index];
+        if (group)
+          return withMediaFileWrite(
+            group.identity,
+            {
+              files: group.messages.flatMap((message) =>
+                collectMessageFileIds(message).map((file_id) => ({ file_id })),
+              ),
+            },
+            async (token) => {
+              if (token) for (const message of group.messages) tokens.set(message, token);
+              return persist(index + 1);
+            },
+            options?.unavailableMedia === 'placeholder'
+              ? (ids) => {
+                  for (const message of group.messages)
+                    Object.assign(message, removeMessageFileIds(message, new Set(ids)));
+                }
+              : undefined,
+          );
+        const bulkOps = messages.map((message) => {
+          const normalizedMessage = { ...message };
+          delete normalizedMessage.mediaConsumerToken;
+          if (tokens.has(message)) normalizedMessage.mediaConsumerToken = tokens.get(message);
+          const provenance = capNormalizedProvenance(
+            normalizeUserSubmittedPaths(message.userSubmittedPaths),
+            normalizeUserSubmittedMessageFieldPaths(message.userSubmittedMessageFieldPaths),
+          );
+          if (normalizedMessage.content != null) {
+            normalizedMessage.content = detachEditedNativeContent(
+              normalizedMessage.content,
+              provenance.userSubmittedPaths,
+            );
+          }
+          if (provenance.userSubmittedPaths.length > 0) {
+            normalizedMessage.userSubmittedPaths = provenance.userSubmittedPaths;
+          } else {
+            delete normalizedMessage.userSubmittedPaths;
+          }
+          if (provenance.userSubmittedMessageFieldPaths.length > 0) {
+            normalizedMessage.userSubmittedMessageFieldPaths =
+              provenance.userSubmittedMessageFieldPaths;
+          } else {
+            delete normalizedMessage.userSubmittedMessageFieldPaths;
+          }
+          if (provenance.promoteWholeMessage) {
+            normalizedMessage.isUserSubmitted = true;
+          }
+          return {
+            updateOne: {
+              filter: { messageId: message.messageId, user: message.user },
+              update: withNativeSignatureEdits(
+                normalizedMessage,
+                message.content,
+                provenance.userSubmittedPaths,
+              ),
+              timestamps: !overrideTimestamp,
+              upsert: true,
+            },
+          };
+        });
+        return tenantSafeBulkWrite(Message, bulkOps);
+      };
+      const result = await persist(0);
       return result;
     } catch (err) {
       logger.error('Error saving messages in bulk:', err);
@@ -1190,6 +1381,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         }),
         ...(provenance.promoteWholeMessage && { isUserSubmitted: true }),
       };
+      delete message.mediaConsumerToken;
       if (safeRest.content != null) {
         message.content = detachEditedNativeContent(
           safeRest.content,
@@ -1203,12 +1395,23 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           ? { $set: message, $setOnInsert: { isUserSubmitted: false } }
           : message;
 
-      const recorded = await Message.findOneAndUpdate({ user, messageId }, update, {
-        upsert: true,
-        new: true,
-      });
-      if (recorded)
-        await reconcileEditedNativeParts(recorded, rest.content, provenance.userSubmittedPaths);
+      const recorded = await withMediaFileWrite(
+        {
+          user,
+          conversationId,
+          tenantId: typeof rest.tenantId === 'string' ? rest.tenantId : undefined,
+        },
+        message,
+        async (token) => {
+          if (token) message.mediaConsumerToken = token;
+          return Message.findOneAndUpdate(
+            { user, messageId },
+            withNativeSignatureEdits(update, rest.content, provenance.userSubmittedPaths),
+            { upsert: true, new: true },
+          );
+        },
+      );
+      recorded?.set('mediaConsumerToken', undefined);
       return recorded;
     } catch (err) {
       logger.error('Error recording message:', err);
@@ -1446,18 +1649,27 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         }
         const prior = Array.isArray(row.attachments) ? row.attachments : [];
         const merged = [...prior.filter((entry) => !replacesEntry(entry)), ...attachments];
-        const result = await Message.findOneAndUpdate(
-          {
-            ...messageFilter,
-            _id: row._id,
-            attachments: row.attachments == null ? null : row.attachments,
-          },
-          {
-            ...settleUpdate,
-            $set: { ...partPatch, attachments: merged },
-          },
-          settleOptions,
-        ).lean<{ unfinished?: boolean } | null>();
+        const result = await withMediaFileWrite(
+          { user: userId, conversationId },
+          { attachments: merged },
+          async (token) =>
+            Message.findOneAndUpdate(
+              {
+                ...messageFilter,
+                _id: row._id,
+                attachments: row.attachments == null ? null : row.attachments,
+              },
+              {
+                ...settleUpdate,
+                $set: {
+                  ...partPatch,
+                  attachments: merged,
+                  ...(token ? { mediaConsumerToken: token } : {}),
+                },
+              },
+              settleOptions,
+            ).lean<{ unfinished?: boolean } | null>(),
+        );
         if (result != null) {
           return { matched: true, unfinished: result.unfinished === true };
         }
@@ -1976,15 +2188,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
               update,
               submittedPaths,
               submittedMessageFields,
-              { upsert: false },
+              { upsert: false, nativeContent: message.content },
             )
           : await Message.findOneAndUpdate({ messageId, user: userId }, update, { new: true });
 
       if (!updatedMessage) {
         throw new Error('Message not found or user not authorized.');
       }
-
-      await reconcileEditedNativeParts(updatedMessage, message.content, submittedPaths);
 
       return {
         messageId: updatedMessage.messageId,
@@ -3591,30 +3801,26 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   async function deleteMessages(filter: FilterQuery<IMessage>) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      let nativeDeleted = 0;
-      const nativeMessages = Message.find({
-        $and: [filter, { 'content.native_media.continuationRef': { $exists: true } }],
-      })
-        .select({ _id: 1, user: 1, tenantId: 1, conversationId: 1, content: 1 })
-        .lean<IMessage>()
-        .cursor();
-      let native: ReturnType<typeof createMediaNativeMethods> | undefined;
-      for await (const message of nativeMessages) {
-        native ??= createMediaNativeMethods(mongoose, createMediaMethods(mongoose));
-        const identity = {
-          scope: { ownerId: message.user, tenantId: message.tenantId ?? null },
-          conversationId: message.conversationId,
-        };
-        await native.prepareMediaNativeMessageDeletion({
-          ...identity,
-          continuationRefs: getNativeContinuationRefs(message.content),
-        });
-        const removed = await Message.deleteOne({ $and: [filter, { _id: message._id }] });
-        nativeDeleted += removed.deletedCount;
-        await native.reconcileMediaNativeMessageDeletion(identity);
-      }
+      const tenantId = tenantStorage.getStore()?.tenantId;
+      const explicitTenant = typeof filter.tenantId === 'string' || filter.tenantId === null;
+      const ownerTenant = explicitTenant ? filter.tenantId : (tenantId ?? null);
       const result = await Message.deleteMany(filter);
-      return { ...result, deletedCount: result.deletedCount + nativeDeleted };
+      if (
+        deps.mediaFiles &&
+        typeof filter.user === 'string' &&
+        typeof filter.conversationId === 'string' &&
+        ownerTenant !== SYSTEM_TENANT_ID
+      ) {
+        await deps.mediaFiles.reconcileMediaFileConsumers({
+          scope: {
+            ownerId: filter.user,
+            tenantId: ownerTenant,
+          },
+          conversationId: filter.conversationId,
+          limit: resolveMediaConfig().limits.maxPageSize,
+        });
+      }
+      return result;
     } catch (err) {
       logger.error('Error deleting messages:', err);
       throw err;

@@ -1,10 +1,12 @@
+import logger from '~/utils/logger';
+
 type SessionCleanup = () => void;
 
 const cleanups = new Set<SessionCleanup>();
 
-/** Client state that belongs to one signed-in account registers how it is cleared here, so the
- * auth boundary can end a session without importing every feature that keeps such state. The
- * returned function unregisters, for tests and for modules that are torn down. */
+/** Features can register account-specific cleanup without adding imports to the auth boundary.
+ * Existing auth cleanups in AuthContext remain there until their features adopt this registry.
+ * The returned function unregisters, for tests and for modules that are torn down. */
 export function registerSessionCleanup(cleanup: SessionCleanup): () => void {
   cleanups.add(cleanup);
   return () => {
@@ -18,7 +20,7 @@ export function runSessionCleanups(): void {
     try {
       cleanup();
     } catch (error) {
-      console.error('Session cleanup failed', error);
+      logger.error('Session cleanup failed', error);
     }
   });
 }

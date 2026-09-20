@@ -11,6 +11,7 @@ jest.mock('~/hooks', () => ({
   useGetAgentsConfig: jest.fn(),
   useFileHandlingNoChatContext: jest.fn(),
   useLocalize: jest.fn(),
+  useHasAccess: () => true,
 }));
 
 jest.mock('~/hooks/Files/useSharePointFileHandling', () => ({
@@ -548,4 +549,24 @@ describe('AttachFileMenu', () => {
       expect(screen.getByRole('button', { name: /attach file options/i })).toBeInTheDocument();
     });
   });
+});
+
+it.each([false, true])(
+  'opens media creation from the attachment sources (unified=%s)',
+  (isUnifiedMode) => {
+    setupMocks();
+    mockUseGetStartupConfig.mockReturnValue({ data: { media: { chat: true, canCreate: true } } });
+    const create = jest.fn();
+    renderMenu({ isUnifiedMode, onCreateMedia: create });
+    openMenu();
+    fireEvent.click(screen.getByRole('button', { name: 'com_media_create' }));
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Upload from SharePoint')).not.toBeInTheDocument();
+  },
+);
+it('hides creation when the media surface is switched off', () => {
+  setupMocks();
+  renderMenu({ onCreateMedia: jest.fn() });
+  openMenu();
+  expect(screen.queryByRole('button', { name: 'com_media_create' })).not.toBeInTheDocument();
 });

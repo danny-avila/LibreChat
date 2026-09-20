@@ -1,13 +1,16 @@
-import { Readable } from 'node:stream';
-import { EModelEndpoint } from 'librechat-data-provider';
 import { createHash, timingSafeEqual } from 'node:crypto';
-import type { MediaNativeMethods, MediaStoredJob } from '@librechat/data-schemas';
-import type { NativeMediaPart, NativeMediaPort } from '@librechat/agents';
-import type { MediaIntegration } from 'librechat-data-provider';
+import { EModelEndpoint, parseNativeMessageReference } from 'librechat-data-provider';
+import type {
+  MediaNativeMethods,
+  NativeMessageMethods,
+  NativeMessageFile,
+  MediaOwnerScope,
+} from '@librechat/data-schemas';
+import type { MediaConfig, MediaIntegration, NativeSignatures } from 'librechat-data-provider';
+import type { NativeMediaPart, NativeMediaPort, NativeMediaContent } from '@librechat/agents';
 import type { MediaContext, MediaServiceDependencies } from './service';
+import type { GeneratedImageFile } from '~/files/generated';
 import type { MediaConnection } from './provider';
-import { observeMedia, mediaJobEvent } from './telemetry';
-import { assertMediaStorage } from './storage';
 import { assertMediaAccess } from './service';
 import { MediaServiceError } from './errors';
 
@@ -29,6 +32,9 @@ export interface MediaChatSource {
   prompt: string;
   temporary: boolean;
   expiresAt?: string;
+  nativeSignatures?: NativeSignatures;
+  previousContent?: unknown[];
+  onSignatures?(signatures: NativeSignatures): Promise<void>;
 }
 
 export type NativeMediaUsageSink = (input: {
@@ -51,21 +57,37 @@ function secretsMatch(candidate: string | undefined, expected: string | undefine
 export function createNativeMediaFactory({
   deps,
   repository,
-  context,
+  config,
+  resolveContext,
   source,
+  files,
   onUsage,
 }: {
   deps: MediaServiceDependencies;
-  repository: MediaNativeMethods;
-  context: MediaContext;
+  repository: MediaNativeMethods & Partial<NativeMessageMethods>;
+  files?: {
+    save(part: Extract<NativeMediaPart, { kind: 'image' }>): Promise<GeneratedImageFile>;
+    read(scope: MediaOwnerScope, file: NativeMessageFile, maxBytes: number): Promise<Buffer>;
+  };
+  config: MediaConfig;
+  resolveContext(): Promise<MediaContext>;
   source: MediaChatSource;
   onUsage?: NativeMediaUsageSink;
 }): NativeMediaFactory {
+  const signatures = source.nativeSignatures ?? {};
+  const saved = new Map<string, NativeMediaPart>();
+  const contentByPosition = new Map<string, NativeMediaContent>();
+  const fingerprints = new Map<string, string>();
+  const fileByReference = new Map<string, string>();
+  let metadataBytes = Buffer.byteLength(JSON.stringify(signatures));
+  let nextIndex = Object.keys(signatures).reduce((max, key) => Math.max(max, Number(key) + 1), 0);
   return async (selection) => {
     if (selection.provider.toLowerCase() !== 'google') {
       return undefined;
     }
-    const integration = context.config.integrations.find(
+    let contextPromise: Promise<MediaContext> | undefined;
+    const getContext = () => (contextPromise ??= resolveContext());
+    const integration = config.integrations.find(
       (entry) =>
         entry.enabled !== false &&
         entry.api === 'google.generateContent' &&
@@ -88,6 +110,7 @@ export function createNativeMediaFactory({
     let connectionPromise: Promise<MediaConnection> | undefined;
     const getConnection = () =>
       (connectionPromise ??= (async () => {
+        const context = await getContext();
         const connection = await deps.resolveConnection({
           scope: context.scope,
           integration: historyIntegration,
@@ -121,16 +144,9 @@ export function createNativeMediaFactory({
         accountingMode: 'none' as const,
       };
     };
-    const runs = new Map<string, MediaStoredJob>();
-    const imageKeys = new Map<string, Set<string>>();
-    const getRun = (modelRunId: string) => {
-      const job = runs.get(modelRunId);
-      if (!job) {
-        throw new MediaServiceError('not_ready', 409, 'Native media recording has not started.');
-      }
-      return job;
-    };
-    const assertOutput = () => {
+    const runs = new Map<string, { images: number; bytes: number; parts: number }>();
+    const assertOutput = async () => {
+      const context = await getContext();
       assertMediaAccess(context, true);
       if (source.prompt.length > context.config.limits.maxPromptChars) {
         throw new MediaServiceError(
@@ -146,22 +162,21 @@ export function createNativeMediaFactory({
           'Enable this Google image model in media configuration.',
         );
       }
-      if (source.temporary) {
-        throw new MediaServiceError(
-          'unsupported',
-          422,
-          'Native media generation requires a saved conversation.',
-        );
-      }
-      assertMediaStorage(context);
+      if (!files)
+        throw new MediaServiceError('not_ready', 503, 'Native image storage is unavailable.');
+      if (source.expiresAt && Date.parse(source.expiresAt) <= deps.now())
+        throw new MediaServiceError('not_found', 404, 'The native conversation has expired.');
+      return context;
     };
     return {
       async start({ modelRunId, model, signal }) {
         if (!wantsImages) {
-          return { responseModalities: modalities };
+          return selection.responseModalities == null
+            ? undefined
+            : { responseModalities: modalities };
         }
-        assertOutput();
-        const execution = await getExecution();
+        const context = await assertOutput();
+        await getConnection();
         if (signal?.aborted || model !== selection.model) {
           throw new MediaServiceError(
             'invalid_request',
@@ -176,48 +191,13 @@ export function createNativeMediaFactory({
             'Too many native recordings are active.',
           );
         }
-        const clientRequestId = createHash('sha256')
-          .update(JSON.stringify({ ...source, modelRunId }))
-          .digest('hex');
-        const job = await repository.startMediaNativeRecording({
-          scope: context.scope,
-          source: {
-            conversationId: source.conversationId,
-            messageId: source.messageId,
-            modelRunId,
-            ...(source.expiresAt ? { expiresAt: source.expiresAt } : {}),
-          },
-          execution,
-          request: {
-            schemaVersion: 1,
-            clientRequestId,
-            operation: 'image.generate',
-            prompt: source.prompt,
-            selection: {
-              connectionId: execution.connectionId,
-              modelId: execution.modelId,
-              catalogVersion: execution.catalogVersion,
-            },
-            inputs: [],
-            parameters: { count: 1 },
-          },
-          maxRetainers: context.config.limits.maxAssetRetainers,
-          maxTitleChars: context.config.limits.maxTitleChars,
-          limits: {
-            maxParts: context.config.limits.maxNativeParts,
-            maxPartBytes: context.config.limits.maxNativePartBytes,
-            maxRecordingBytes: context.config.limits.maxNativeRecordingBytes,
-          },
-        });
-        runs.set(modelRunId, job);
-        observeMedia(deps.observer, { ...mediaJobEvent(job), kind: 'attempt', result: 'started' });
-        imageKeys.set(modelRunId, new Set());
+        runs.set(modelRunId, { images: 0, bytes: 0, parts: 0 });
         return { responseModalities: modalities };
       },
       async part({ modelRunId, chunkIndex, partIndex, part }) {
         if (!wantsImages) {
           if (part.kind !== 'text') {
-            assertOutput();
+            await assertOutput();
             throw new MediaServiceError(
               'unsupported',
               422,
@@ -226,119 +206,101 @@ export function createNativeMediaFactory({
           }
           return { type: 'text', text: part.text };
         }
-        const job = getRun(modelRunId);
-        if (part.kind === 'text') {
-          const reference = await repository.recordMediaNativePart({
-            scope: context.scope,
-            jobId: job.jobId,
-            chunkIndex,
-            partIndex,
-            part,
-            maxRetainers: context.config.limits.maxAssetRetainers,
-          });
-          return { type: 'text', text: part.text, native_media: reference };
+        const run = runs.get(modelRunId);
+        if (!run)
+          throw new MediaServiceError('not_ready', 409, 'Native media recording has not started.');
+        if (part.kind === 'text' && part.thoughtSignature == null)
+          return { type: 'text', text: part.text };
+        const position = `${modelRunId}:${chunkIndex}:${partIndex}`;
+        const fingerprint = createHash('sha256').update(JSON.stringify(part)).digest('hex');
+        const existing = contentByPosition.get(position);
+        if (existing) {
+          if (fingerprints.get(position) !== fingerprint)
+            throw new MediaServiceError('invalid_request', 409, 'Native part bytes changed.');
+          return existing;
         }
-        const positions = imageKeys.get(modelRunId)!;
-        const position = `${chunkIndex}:${partIndex}`;
-        if (!positions.has(position) && positions.size >= context.config.limits.maxOutputs) {
-          throw new MediaServiceError(
-            'quota_exceeded',
-            429,
-            'The native image output limit was reached.',
-          );
-        }
+        const context = await getContext();
+        const signature =
+          part.kind === 'text'
+            ? { thoughtSignature: part.thoughtSignature, text: part.text }
+            : { thoughtSignature: part.thoughtSignature, mimeType: part.mimeType };
+        const bytes = Buffer.byteLength(JSON.stringify(signature));
         if (
-          part.data.length > Math.ceil(context.config.transfers.maxImageBytes / 3) * 4 ||
-          !/^[A-Za-z0-9+/]*={0,2}$/.test(part.data)
+          nextIndex >= context.config.limits.maxNativeParts ||
+          bytes > context.config.limits.maxNativePartBytes ||
+          metadataBytes + bytes > context.config.limits.maxNativeRecordingBytes
         ) {
           throw new MediaServiceError(
-            'invalid_request',
+            'quota_exceeded',
             413,
-            'Native image exceeds the configured limit.',
+            'Native replay metadata exceeds the configured limit.',
           );
         }
-        const asset = await deps.storage.publish({
-          scope: context.scope,
-          outputKey: `${job.jobId}:native:${chunkIndex}:${partIndex}`,
-          stream: Readable.from([Buffer.from(part.data, 'base64')]),
-          type: part.mimeType,
-          filename: `${job.jobId}-${chunkIndex}-${partIndex}.${part.mimeType.split('/')[1]}`,
-          config: context.config,
-          expiredAt: new Date(deps.now() + context.config.assets.orphanRetentionMs).toISOString(),
-        });
-        const reference = await repository.recordMediaNativePart({
-          scope: context.scope,
-          jobId: job.jobId,
-          chunkIndex,
-          partIndex,
-          part: {
-            kind: 'image',
-            mimeType: part.mimeType,
-            fileId: asset.file_id,
-            thoughtSignature: part.thoughtSignature,
-          },
-          maxRetainers: context.config.limits.maxAssetRetainers,
-        });
-        positions.add(position);
-        return { type: 'image_file', image_file: asset, native_media: reference };
+        if (part.kind === 'image') {
+          if (run.images >= context.config.limits.maxOutputs)
+            throw new MediaServiceError(
+              'quota_exceeded',
+              429,
+              'The native image output limit was reached.',
+            );
+          if (
+            part.data.length > Math.ceil(context.config.transfers.maxImageBytes / 3) * 4 ||
+            !/^[A-Za-z0-9+/]*={0,2}$/.test(part.data)
+          ) {
+            throw new MediaServiceError(
+              'invalid_request',
+              413,
+              'Native image exceeds the configured limit.',
+            );
+          }
+        }
+        const index = String(nextIndex++);
+        const continuationRef = `${source.messageId}:${index}`;
+        let content: NativeMediaContent;
+        if (part.kind === 'text')
+          content = { type: 'text', text: part.text, native_media: { continuationRef } };
+        else {
+          const file = await files!.save(part);
+          content = {
+            type: 'image_file',
+            image_file: {
+              file_id: file.file_id,
+              filepath: file.filepath,
+              filename: file.filename,
+              bytes: file.bytes,
+              type: file.type,
+              width: file.width,
+              height: file.height,
+            },
+            native_media: { continuationRef },
+          };
+          fileByReference.set(continuationRef, file.file_id);
+          run.images++;
+        }
+        signatures[index] = signature;
+        await source.onSignatures?.(signatures);
+        saved.set(continuationRef, part);
+        contentByPosition.set(position, content);
+        fingerprints.set(position, fingerprint);
+        metadataBytes += bytes;
+        run.parts++;
+        run.bytes += bytes;
+        return content;
       },
       async complete({ modelRunId }) {
-        const job = runs.get(modelRunId);
-        if (!job) {
-          return;
-        }
-        const completed = await repository.completeMediaNativeRecording({
-          scope: context.scope,
-          jobId: job.jobId,
-        });
-        if (completed)
-          observeMedia(deps.observer, {
-            ...mediaJobEvent(completed),
-            kind: 'transition',
-            result: 'completed',
-            previousPhase: job.phase,
-            durationMs: Math.max(0, deps.now() - Date.parse(job.createdAt)),
-          });
         runs.delete(modelRunId);
-        imageKeys.delete(modelRunId);
       },
-      async fail({ modelRunId, reason, usage }) {
-        const results = await Promise.allSettled([
-          Promise.resolve().then(() =>
-            usage
-              ? onUsage?.({
-                  modelRunId,
-                  usage,
-                  model: selection.model,
-                  provider: selection.provider,
-                  agentId: selection.agentId,
-                  usageType: selection.usageType,
-                })
-              : undefined,
-          ),
-          (async () => {
-            const job = runs.get(modelRunId);
-            if (!job) return;
-            const failed = await repository.failMediaNativeRecording({
-              scope: context.scope,
-              jobId: job.jobId,
-              reason,
-            });
-            if (failed)
-              observeMedia(deps.observer, {
-                ...mediaJobEvent(failed),
-                kind: 'transition',
-                result: 'completed',
-                previousPhase: job.phase,
-                durationMs: Math.max(0, deps.now() - Date.parse(job.createdAt)),
-              });
-            runs.delete(modelRunId);
-            imageKeys.delete(modelRunId);
-          })(),
-        ]);
-        for (const result of results) {
-          if (result.status === 'rejected') throw result.reason;
-        }
+      async fail({ modelRunId, usage }) {
+        runs.delete(modelRunId);
+        if (usage)
+          await onUsage?.({
+            modelRunId,
+            usage,
+            model: selection.model,
+            provider: selection.provider,
+            agentId: selection.agentId,
+            usageType: selection.usageType,
+          });
       },
       async restore(input) {
         return (await restoreBatch({ parts: [input] }))[0];
@@ -350,48 +312,115 @@ export function createNativeMediaFactory({
       parts,
       signal,
     }: Parameters<NonNullable<NativeMediaPort['restoreBatch']>>[0]): Promise<NativeMediaPart[]> {
+      const context = await getContext();
       assertMediaAccess(context);
       signal?.throwIfAborted();
-      const execution = await getExecution();
-      const connection = await getConnection();
       const result: NativeMediaPart[] = [];
       const limit = context.config.limits.maxNativeParts;
       for (let offset = 0; offset < parts.length; offset += limit) {
         signal?.throwIfAborted();
-        const storedParts = await repository.getMediaNativeContinuations({
-          scope: context.scope,
-          execution,
-          bindingAliases: connection.bindingAliases,
-          conversationId: source.conversationId,
-          references: parts
-            .slice(offset, offset + limit)
-            .map(({ file_id, continuationRef }) => ({ fileId: file_id, continuationRef })),
-          limit,
-        });
-        for (const stored of storedParts) {
+        const batch = parts.slice(offset, offset + limit);
+        const modern = batch.filter(
+          ({ continuationRef }) =>
+            continuationRef &&
+            parseNativeMessageReference(continuationRef) &&
+            !saved.has(continuationRef),
+        );
+        const modernParts =
+          modern.length && repository.getNativeMessageParts
+            ? await repository.getNativeMessageParts({
+                scope: context.scope,
+                conversationId: source.conversationId,
+                references: modern.map(({ continuationRef, file_id }) => ({
+                  continuationRef: continuationRef!,
+                  fileId: file_id,
+                })),
+                limit,
+              })
+            : [];
+        const byRef = new Map(
+          modern.map((part, index) => [part.continuationRef, modernParts[index]]),
+        );
+        const legacy = batch.filter(
+          ({ continuationRef }) =>
+            !continuationRef || !parseNativeMessageReference(continuationRef),
+        );
+        const legacyParts = legacy.length
+          ? await repository.getMediaNativeContinuations({
+              scope: context.scope,
+              execution: await getExecution(),
+              conversationId: source.conversationId,
+              references: legacy.map(({ file_id, continuationRef }) => ({
+                fileId: file_id,
+                continuationRef,
+              })),
+              limit,
+            })
+          : [];
+        let legacyIndex = 0;
+        for (const reference of batch) {
           signal?.throwIfAborted();
-          if (!stored) {
+          const cached = reference.continuationRef && saved.get(reference.continuationRef);
+          if (cached) {
+            if (
+              reference.file_id &&
+              reference.file_id !== fileByReference.get(reference.continuationRef!)
+            )
+              throw new MediaServiceError('not_found', 404, 'Native file reference changed.');
+            result.push(cached);
+            continue;
+          }
+          if (reference.continuationRef && parseNativeMessageReference(reference.continuationRef)) {
+            const part = byRef.get(reference.continuationRef);
+            if (!part)
+              throw new MediaServiceError(
+                'not_found',
+                404,
+                'Native message continuation is unavailable.',
+              );
+            if (part.kind === 'text') result.push(part);
+            else {
+              if (!files)
+                throw new MediaServiceError(
+                  'not_ready',
+                  503,
+                  'Native image storage is unavailable.',
+                );
+              const data = await files.read(
+                context.scope,
+                part.file,
+                context.config.transfers.maxImageBytes,
+              );
+              result.push({
+                kind: 'image',
+                mimeType: part.file.type,
+                data: data.toString('base64'),
+                thoughtSignature: part.thoughtSignature,
+              });
+            }
+            continue;
+          }
+          const stored = legacyParts[legacyIndex++];
+          if (!stored)
             throw new MediaServiceError(
               'not_found',
               404,
               'Native continuation is unavailable for this connection.',
             );
+          if (stored.part.kind === 'text') result.push(stored.part);
+          else {
+            const { asset, data } = await deps.storage.read(
+              context.scope,
+              stored.part.fileId,
+              context.config.transfers.maxImageBytes,
+            );
+            result.push({
+              kind: 'image',
+              mimeType: asset.type,
+              data: data.toString('base64'),
+              thoughtSignature: stored.part.thoughtSignature,
+            });
           }
-          if (stored.part.kind === 'text') {
-            result.push(stored.part);
-            continue;
-          }
-          const { asset, data } = await deps.storage.read(
-            context.scope,
-            stored.part.fileId,
-            context.config.transfers.maxImageBytes,
-          );
-          result.push({
-            kind: 'image',
-            mimeType: asset.type,
-            data: data.toString('base64'),
-            thoughtSignature: stored.part.thoughtSignature,
-          });
         }
       }
       return result;

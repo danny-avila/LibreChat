@@ -1,5 +1,9 @@
 import { logger } from '@librechat/data-schemas';
-import { inputTokensIncludesCache, reconcileContextUsageFromEvent } from 'librechat-data-provider';
+import {
+  inputTokensIncludesCache,
+  reconcileContextUsageFromEvent,
+  TOKEN_CREDITS_PER_USD,
+} from 'librechat-data-provider';
 import type {
   TCustomConfig,
   TResponseUsage,
@@ -8,6 +12,7 @@ import type {
   TTransactionsConfig,
 } from 'librechat-data-provider';
 import type { SubagentUsageEvent as AgentsSubagentUsageEvent } from '@librechat/agents';
+import type { NativeSignatures } from 'librechat-data-provider';
 import type {
   StructuredTokenUsage,
   BulkWriteDeps,
@@ -30,6 +35,32 @@ import { countRetainedToolTokens } from './client';
 import { collectModelUsage } from './collection';
 
 export { collectModelUsage } from './collection';
+
+interface ModelUsageContext {
+  isSubagent?: boolean;
+  hideSequentialOutputs?: boolean;
+  isLastAgent?: boolean;
+}
+
+/** Successful and failed provider calls share the same attribution rules. */
+export function resolveUsageType({
+  isSubagent,
+  hideSequentialOutputs,
+  isLastAgent,
+}: ModelUsageContext): 'subagent' | 'sequential' | undefined {
+  if (isSubagent) return 'subagent';
+  if (hideSequentialOutputs && !isLastAgent) return 'sequential';
+  return undefined;
+}
+
+export function withModelUsageType(
+  usage: UsageMetadata,
+  context: ModelUsageContext,
+): UsageMetadata {
+  if (usage.usage_type != null) return usage;
+  const usageType = resolveUsageType(context);
+  return usageType ? { ...usage, usage_type: usageType } : usage;
+}
 
 type SpendTokensFn = (txData: TxMetadata, tokenUsage: TokenUsage) => Promise<unknown>;
 
@@ -247,7 +278,7 @@ export function computeUsageCostUSD(
           pricing,
         );
   const credits = entries.reduce((sum, entry) => sum + Math.abs(entry.tokenValue), 0);
-  return credits / 1e6;
+  return credits / TOKEN_CREDITS_PER_USD;
 }
 
 /**
@@ -614,8 +645,17 @@ function parseUsageEvents(value?: string | null): TTokenUsageEvent[] {
  * partial answer text on top (no overlap to cancel).
  */
 export function buildAbortedResponseMetadata(
-  job: { tokenUsage?: string | null; contextUsage?: string | null } | null | undefined,
-): { usage?: TResponseUsage; summaryUsedTokens?: number } | undefined {
+  job:
+    | {
+        tokenUsage?: string | null;
+        contextUsage?: string | null;
+        nativeSignatures?: NativeSignatures;
+      }
+    | null
+    | undefined,
+):
+  | { usage?: TResponseUsage; summaryUsedTokens?: number; nativeSignatures?: NativeSignatures }
+  | undefined {
   const events = parseUsageEvents(job?.tokenUsage);
   const usage = aggregateEmittedUsage(events);
 
@@ -632,7 +672,13 @@ export function buildAbortedResponseMetadata(
    *  marker and the client's partial-text addition has no overlap to cancel. */
   const summaryUsedTokens = computeSummaryUsedTokens(snapshot);
 
-  const metadata: { usage?: TResponseUsage; summaryUsedTokens?: number } = {};
+  const metadata: {
+    usage?: TResponseUsage;
+    summaryUsedTokens?: number;
+    nativeSignatures?: NativeSignatures;
+  } = {};
+  if (job?.nativeSignatures && Object.keys(job.nativeSignatures).length)
+    metadata.nativeSignatures = job.nativeSignatures;
   if (usage) {
     metadata.usage = usage;
   }

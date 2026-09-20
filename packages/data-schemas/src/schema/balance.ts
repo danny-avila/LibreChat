@@ -1,5 +1,4 @@
 import { Schema } from 'mongoose';
-import { randomUUID } from 'node:crypto';
 import { REFILL_INTERVAL_UNITS } from 'librechat-data-provider';
 import type * as t from '~/types';
 
@@ -59,6 +58,7 @@ const balanceSchema: Schema<t.IBalance> = new Schema<t.IBalance>({
     type: Number,
     select: false,
   },
+  /** Reservations expire automatically; durable holds are released only by their settlement owner. */
   mediaHolds: {
     type: [
       new Schema(
@@ -66,7 +66,7 @@ const balanceSchema: Schema<t.IBalance> = new Schema<t.IBalance>({
           settlementId: { type: String, required: true },
           jobId: { type: String, required: true },
           amount: { type: Number, required: true },
-          reviewAt: { type: String, required: true },
+          reviewAt: { type: Date, required: true },
         },
         { _id: false },
       ),
@@ -75,7 +75,7 @@ const balanceSchema: Schema<t.IBalance> = new Schema<t.IBalance>({
     select: false,
   },
   /** Fences a delayed media CAS when the same balance id is deleted and recreated. */
-  mediaGeneration: { type: String, default: () => randomUUID(), select: false },
+  mediaGeneration: { type: String, select: false },
   mediaDebtCredits: { type: Number, select: false },
   mediaSettlementSequence: { type: Number, select: false },
   mediaPendingSettlement: {
@@ -89,6 +89,8 @@ const balanceSchema: Schema<t.IBalance> = new Schema<t.IBalance>({
             {
               debitedCredits: Number,
               debtCredits: Number,
+              overrunDebtCredits: Number,
+              holdShortfallCredits: Number,
               releasedCredits: Number,
               remainingCredits: Number,
             },

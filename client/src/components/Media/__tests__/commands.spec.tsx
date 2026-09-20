@@ -1,8 +1,5 @@
-import React from 'react';
-import { Provider, createStore } from 'jotai';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { MediaSubmissionReceipt } from 'librechat-data-provider';
 import type { PendingMedia } from '../state';
 import {
@@ -12,7 +9,7 @@ import {
   mediaPendingFamily,
 } from '../state';
 import { receiptInterval, useMediaCommands } from '../commands';
-import { MediaHostProvider } from '../host';
+import { createMediaTestEnvironment } from 'test/media';
 
 jest.mock('librechat-data-provider', () => {
   const actual =
@@ -47,31 +44,13 @@ const preparing: MediaSubmissionReceipt = {
 };
 
 function setup(intervals = { pollIntervalMs: 60000, catchUpIntervalMs: 60000 }) {
-  const store = createStore();
   const openThread = jest.fn();
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    logger: { log: console.log, warn: console.warn, error: () => {} },
-  });
   let active = true;
-  const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <Provider store={store}>
-      <QueryClientProvider client={client}>
-        <MediaHostProvider
-          value={{
-            scope: 'owner',
-            canCreate: true,
-            ...intervals,
-            enterToSend: false,
-            isCurrentSession: () => active,
-            openThread,
-          }}
-        >
-          {children}
-        </MediaHostProvider>
-      </QueryClientProvider>
-    </Provider>
-  );
+  const { store, client, wrapper } = createMediaTestEnvironment({
+    ...intervals,
+    openThread,
+    isCurrentSession: () => active,
+  });
   return {
     store,
     client,
@@ -212,7 +191,11 @@ test('a pending request the server does not know stops polling and can be dismis
   env.store.set(mediaPendingFamily('owner'), [command]);
   const hook = renderHook(() => useMediaCommands([]), { wrapper: env.wrapper });
   await waitFor(() => expect(hook.result.current.receipts[0]?.isError).toBe(true));
-  await new Promise((resolve) => setTimeout(resolve, 80));
+  jest.useFakeTimers();
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(80);
+  });
+  jest.useRealTimers();
   expect(load).toHaveBeenCalledTimes(1);
   expect(hook.result.current.pending).toHaveLength(1);
   act(() => hook.result.current.dismiss('request'));
@@ -225,8 +208,14 @@ test('an outage keeps a pending receipt polling at the catch-up cadence', async 
   const load = jest.mocked(dataService.getMediaSubmission).mockRejectedValue(new Error('offline'));
   const env = setup(intervals);
   env.store.set(mediaPendingFamily('owner'), [command]);
+  jest.useFakeTimers();
   const hook = renderHook(() => useMediaCommands([]), { wrapper: env.wrapper });
-  await waitFor(() => expect(load.mock.calls.length).toBeGreaterThanOrEqual(3), { timeout: 2000 });
+  await act(async () => {
+    await jest.advanceTimersByTimeAsync(80);
+  });
+  expect(load.mock.calls.length).toBeGreaterThanOrEqual(3);
+  hook.unmount();
+  jest.useRealTimers();
   expect(hook.result.current.pending).toHaveLength(1);
   env.client.clear();
 });

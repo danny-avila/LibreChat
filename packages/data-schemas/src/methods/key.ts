@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { ErrorTypes } from 'librechat-data-provider';
 // Note: checkUserKeyExpiry moved to @librechat/api (utils/key.ts) as it's a pure validation utility
 import { encrypt, decrypt } from '~/crypto';
@@ -8,20 +7,6 @@ export interface UserKeySnapshot {
   id: string;
   value: string;
   expiresAt: string | null;
-  mediaBindingRevision?: string;
-}
-
-/** Preserve the one pre-migration media binding; expiry and other key-envelope fields are metadata. */
-export function getUserKeyBindingRevision(key: UserKeySnapshot): string {
-  return createHash('sha256')
-    .update(
-      JSON.stringify({
-        ...(key.expiresAt ? { expiresAt: key.expiresAt } : {}),
-        id: key.id,
-        value: key.value,
-      }),
-    )
-    .digest('hex');
 }
 
 export interface UserKeyUpdate {
@@ -35,10 +20,11 @@ export interface UserKeyUpdate {
 export function createKeyMethods(mongoose: typeof import('mongoose')): {
   getUserKey: (params: { userId: string; name: string }) => Promise<string>;
   updateUserKey: (params: UserKeyUpdate) => Promise<unknown>;
-  getUserKeySnapshot: (params: { userId: string; name: string }) => Promise<UserKeySnapshot | null>;
-  compareAndSetUserKey: (
-    params: UserKeyUpdate & { expected: UserKeySnapshot | null; requireActive?: boolean },
-  ) => Promise<boolean>;
+  getUserKeySnapshot: (params: {
+    userId: string;
+    name: string;
+    tenantId?: string | null;
+  }) => Promise<UserKeySnapshot | null>;
   deleteUserKey: (params: { userId: string; name?: string; all?: boolean }) => Promise<unknown>;
   getUserKeyValues: (params: { userId: string; name: string }) => Promise<Record<string, string>>;
   getUserKeyExpiry: (params: {
@@ -138,82 +124,35 @@ export function createKeyMethods(mongoose: typeof import('mongoose')): {
    *              after encrypting the provided value. It sets the provided expiry date for the key (or unsets for no expiry).
    */
   async function updateUserKey(params: UserKeyUpdate): Promise<unknown> {
-    const identity = { userId: params.userId, name: params.name };
-    for (;;) {
-      const expected = await getUserKeySnapshot(identity);
-      if (await compareAndSetUserKey({ ...params, expected })) {
-        return mongoose.models.Key.findOne(identity).lean();
-      }
-    }
+    const { userId, name, value, expiresAt } = params;
+    const encrypted = await encrypt(value);
+    return mongoose.models.Key.findOneAndUpdate(
+      { userId, name },
+      {
+        $set: { value: encrypted, ...(expiresAt ? { expiresAt: new Date(expiresAt) } : {}) },
+        ...(!expiresAt ? { $unset: { expiresAt: '' } } : {}),
+      },
+      { upsert: true, new: true },
+    ).lean();
   }
 
   async function getUserKeySnapshot(params: {
     userId: string;
     name: string;
+    tenantId?: string | null;
   }): Promise<UserKeySnapshot | null> {
-    const key = await mongoose.models.Key.findOne(params)
-      .select('_id value expiresAt mediaBindingRevision')
-      .lean<{
-        _id: { toString(): string };
-        value: string;
-        expiresAt?: Date;
-        mediaBindingRevision?: string;
-      }>();
+    const key = await mongoose.models.Key.findOne(params).select('_id value expiresAt').lean<{
+      _id: { toString(): string };
+      value: string;
+      expiresAt?: Date;
+    }>();
     return key
       ? {
           id: key._id.toString(),
           value: key.value,
           expiresAt: key.expiresAt?.toISOString() ?? null,
-          ...(key.mediaBindingRevision ? { mediaBindingRevision: key.mediaBindingRevision } : {}),
         }
       : null;
-  }
-
-  /** Atomically applies a merged credential only while its encrypted source is unchanged. */
-  async function compareAndSetUserKey(
-    params: UserKeyUpdate & { expected: UserKeySnapshot | null; requireActive?: boolean },
-  ): Promise<boolean> {
-    const { userId, name, value, expiresAt, expected } = params;
-    const encrypted = await encrypt(value);
-    const expiry = expiresAt ? new Date(expiresAt) : undefined;
-    const Key = mongoose.models.Key;
-    if (!expected) {
-      const result = await Key.updateOne(
-        { userId, name },
-        {
-          $setOnInsert: {
-            userId,
-            name,
-            value: encrypted,
-            ...(expiry ? { expiresAt: expiry } : {}),
-          },
-        },
-        { upsert: true },
-      );
-      return result.upsertedCount === 1;
-    }
-    const result = await Key.updateOne(
-      {
-        _id: expected.id,
-        userId,
-        name,
-        value: expected.value,
-        expiresAt: expected.expiresAt ? new Date(expected.expiresAt) : null,
-        ...(params.requireActive && expected.expiresAt
-          ? { $expr: { $gt: ['$expiresAt', '$$NOW'] } }
-          : {}),
-      },
-      {
-        $set: {
-          value: encrypted,
-          mediaBindingRevision:
-            expected.mediaBindingRevision ?? getUserKeyBindingRevision(expected),
-          ...(expiry ? { expiresAt: expiry } : {}),
-        },
-        ...(!expiry ? { $unset: { expiresAt: '' } } : {}),
-      },
-    );
-    return result.matchedCount === 1;
   }
 
   /**
@@ -247,7 +186,6 @@ export function createKeyMethods(mongoose: typeof import('mongoose')): {
     getUserKeyValues,
     getUserKeyExpiry,
     getUserKeySnapshot,
-    compareAndSetUserKey,
   };
 }
 

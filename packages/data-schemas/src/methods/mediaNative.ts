@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'crypto';
+import { detachNativeIdentity, getNativeContinuationRefs } from 'librechat-data-provider';
 import type { MediaOutput } from 'librechat-data-provider';
 import type {
   MediaNativeMethods,
@@ -12,33 +13,17 @@ import type {
   MediaStoredJob,
   MediaProviderState,
 } from '~/types/media';
+import { MediaPersistenceError, mediaScopeFilter as scopeFilter } from '~/utils/media';
 import { createMediaJobModel, createMediaThreadModel } from '~/models/media';
-import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { createMediaNativePartModel } from '~/models/mediaNativePart';
 import { createIndexesWithRetry } from '~/utils/retry';
+import { migrateMediaDates } from '~/utils/mediaDates';
 import { createMessageModel } from '~/models/message';
+import { durable, duplicate } from './media/scope';
 import { createFileModel } from '~/models/file';
-import { MediaPersistenceError } from './media';
 import { toMediaAsset } from '~/utils/media';
-
-const durable = { w: 'majority' as const, j: true };
-function scopeFilter(scope: MediaOwnerScope): MediaOwnerScope {
-  const current = tenantStorage.getStore()?.tenantId;
-  if (
-    !scope.ownerId ||
-    scope.tenantId === '' ||
-    scope.tenantId === SYSTEM_TENANT_ID ||
-    (current && current !== SYSTEM_TENANT_ID && current !== scope.tenantId)
-  ) {
-    throw new MediaPersistenceError('not_found', 'Native recording owner scope is unavailable');
-  }
-  return { ownerId: scope.ownerId, tenantId: scope.tenantId ?? null };
-}
 function hash(value: unknown): string {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
-}
-function duplicate(error: unknown): boolean {
-  return !!error && typeof error === 'object' && 'code' in error && error.code === 11000;
 }
 function canonicalPart(part: MediaNativePart): MediaNativePart {
   const thoughtSignature =
@@ -68,6 +53,7 @@ export function createMediaNativeMethods(
   const Message = createMessageModel(mongoose);
 
   const ensureMediaNativeIndexes: MediaNativeMethods['ensureMediaNativeIndexes'] = async () => {
+    await migrateMediaDates(Part.collection, ['createdAt']);
     await createIndexesWithRetry(Part);
   };
 
@@ -120,7 +106,7 @@ export function createMediaNativeMethods(
           nativeRetentionState: 'live',
           phase: 'running',
           provider: { certainty: 'unknown' },
-          updatedAt: new Date().toISOString(),
+          updatedAt: new Date(),
         },
         $inc: { version: 1 },
       },
@@ -218,7 +204,7 @@ export function createMediaNativeMethods(
           $inc: { nativePartBytes: bytes, version: 1 },
           $set: {
             phase: 'running',
-            updatedAt: new Date().toISOString(),
+            updatedAt: new Date(),
             'provider.certainty': 'submitted',
           },
         },
@@ -242,7 +228,7 @@ export function createMediaNativeMethods(
       fingerprint,
       part,
       ...(part.kind === 'image' ? { fileId: part.fileId } : {}),
-      createdAt: new Date().toISOString(),
+      createdAt: new Date(),
       ...(job?.nativeSource?.expiresAt ? { expiresAt: new Date(job.nativeSource.expiresAt) } : {}),
     };
     try {
@@ -353,7 +339,7 @@ export function createMediaNativeMethods(
           phase: 'succeeded',
           outputs: content.outputs,
           provider: { certainty: 'terminal', recovery: content.recovery },
-          updatedAt: new Date().toISOString(),
+          updatedAt: new Date(),
         },
         $unset: { error: 1 },
         $inc: { version: 1 },
@@ -410,7 +396,7 @@ export function createMediaNativeMethods(
             },
           },
           error: { code: reason === 'storage' ? 'storage_failed' : 'provider_rejected' },
-          updatedAt: new Date().toISOString(),
+          updatedAt: new Date(),
         },
         $inc: { version: 1 },
       },
@@ -634,9 +620,7 @@ export function createMediaNativeMethods(
       executionOwner: 'chat',
       'execution.api': input.execution.api,
       'execution.modelId': input.execution.modelId,
-      'execution.bindingRevision': {
-        $in: [input.execution.bindingRevision, ...(input.bindingAliases ?? [])],
-      },
+      'execution.bindingRevision': input.execution.bindingRevision,
       nativeRetentionState: { $nin: ['purging', 'purged'] },
       $or: [
         { 'nativeSource.expiresAt': { $exists: false } },
@@ -647,14 +631,8 @@ export function createMediaNativeMethods(
       .lean();
     const activeJobs = new Map(jobs.map((job) => [job.jobId, job]));
     const candidates = jobs.filter((job) => !job.nativeConsumers?.length);
-    const legacyIds = new Set(
-      jobs.filter((job) => job.nativeConsumers === undefined).map((job) => job.jobId),
-    );
-    const legacyRefs = parts
-      .filter((part) => legacyIds.has(part.jobId))
-      .map((part) => part.continuationRef);
     const imageIds = [...new Set(parts.flatMap((part) => (part.fileId ? [part.fileId] : [])))];
-    const [threads, files, legacyConsumers] = await Promise.all([
+    const [threads, files] = await Promise.all([
       candidates.length
         ? Thread.find({
             ...scope,
@@ -675,26 +653,9 @@ export function createMediaNativeMethods(
             .select({ file_id: 1 })
             .lean()
         : [],
-      legacyRefs.length
-        ? Message.aggregate<{ _id: string }>([
-            {
-              $match: {
-                user: scope.ownerId,
-                tenantId: scope.tenantId,
-                ...(input.conversationId ? { conversationId: input.conversationId } : {}),
-                'content.native_media.continuationRef': { $in: legacyRefs },
-                $or: [{ expiredAt: null }, { expiredAt: { $gt: now } }],
-              },
-            },
-            { $unwind: '$content' },
-            { $match: { 'content.native_media.continuationRef': { $in: legacyRefs } } },
-            { $group: { _id: '$content.native_media.continuationRef' } },
-          ])
-        : [],
     ]);
     const liveThreads = new Set(threads.map((thread) => thread.threadId));
     const liveFiles = new Set(files.map((file) => file.file_id));
-    const legacyAuthorized = new Set(legacyConsumers.map((consumer) => consumer._id));
     const byRef = new Map<string, MediaNativePartRecord>();
     const byFile = new Map<string, MediaNativePartRecord>();
     for (const part of parts) {
@@ -702,22 +663,20 @@ export function createMediaNativeMethods(
       if (!job || (part.fileId && !liveFiles.has(part.fileId))) {
         continue;
       }
-      const consumers =
-        job.nativeConsumers ??
-        (job.nativeSource && ['queued', 'running'].includes(job.phase)
-          ? [job.nativeSource.conversationId]
-          : []);
-      const legacyConsumer =
-        job.nativeConsumers === undefined && legacyAuthorized.has(part.continuationRef);
+      const consumers = job.nativeConsumers ?? [];
       if (
         input.conversationId
-          ? !consumers.includes(input.conversationId) && !legacyConsumer
-          : !consumers.length && !liveThreads.has(job.threadId) && !legacyConsumer
+          ? !consumers.includes(input.conversationId)
+          : !consumers.length && !liveThreads.has(job.threadId)
       ) {
         continue;
       }
-      const { expiresAt, ...stored } = part;
-      const record = { ...stored, ...(expiresAt ? { expiresAt: expiresAt.toISOString() } : {}) };
+      const { expiresAt, createdAt, ...stored } = part;
+      const record = {
+        ...stored,
+        createdAt: createdAt.toISOString(),
+        ...(expiresAt ? { expiresAt: expiresAt.toISOString() } : {}),
+      };
       byRef.set(part.continuationRef, record);
       if (part.fileId) {
         byFile.set(part.fileId, record);
@@ -759,7 +718,7 @@ export function createMediaNativeMethods(
     }
     for (const jobId of new Set(parts.map((part) => part.jobId))) {
       const job = await media.getMediaJob(scope, jobId);
-      if (!job || !(await migrateNativeJob(scope, job, input.maxRetainers))) {
+      if (!job || !job.nativeConsumers) {
         return false;
       }
       const result = await Job.updateOne(
@@ -768,6 +727,9 @@ export function createMediaNativeMethods(
           jobId,
           executionOwner: 'chat',
           nativeRetentionState: { $nin: ['purging', 'purged'] },
+          ...(input.pendingUntil
+            ? { nativeConsumerClaims: job.nativeConsumerClaims ?? { $exists: false } }
+            : {}),
           $and: [
             {
               $or: [
@@ -782,7 +744,7 @@ export function createMediaNativeMethods(
                   $expr: {
                     $lt: [
                       {
-                        $size: { $ifNull: ['$nativeConsumers', ['$nativeSource.conversationId']] },
+                        $size: '$nativeConsumers',
                       },
                       input.maxRetainers,
                     ],
@@ -792,36 +754,22 @@ export function createMediaNativeMethods(
             },
           ],
         },
-        [
-          {
-            $set: {
-              nativeConsumers: {
-                $setUnion: [
-                  { $ifNull: ['$nativeConsumers', ['$nativeSource.conversationId']] },
-                  [input.conversationId],
-                ],
-              },
-              nativeRetentionState: 'live',
-              ...(input.pendingUntil
-                ? {
-                    nativeConsumersTracked: true,
-                    nativeConsumerClaims: {
-                      $concatArrays: [
-                        {
-                          $filter: {
-                            input: { $ifNull: ['$nativeConsumerClaims', []] },
-                            as: 'claim',
-                            cond: { $ne: ['$$claim.conversationId', input.conversationId] },
-                          },
-                        },
-                        [{ conversationId: input.conversationId, expiresAt: input.pendingUntil }],
-                      ],
-                    },
-                  }
-                : {}),
-            },
+        {
+          $addToSet: { nativeConsumers: input.conversationId },
+          $set: {
+            nativeRetentionState: 'live',
+            ...(input.pendingUntil
+              ? {
+                  nativeConsumerClaims: [
+                    ...(job.nativeConsumerClaims ?? []).filter(
+                      (claim) => claim.conversationId !== input.conversationId,
+                    ),
+                    { conversationId: input.conversationId, expiresAt: input.pendingUntil },
+                  ],
+                }
+              : {}),
           },
-        ],
+        },
         { writeConcern: durable },
       );
       if (!result.matchedCount) {
@@ -848,27 +796,15 @@ export function createMediaNativeMethods(
         ],
       }).lean<MediaStoredJob[]>();
       for (const job of jobs) {
-        if (!(await migrateNativeJob(scope, job, input.maxRetainers))) {
-          throw new MediaPersistenceError(
-            'capacity',
-            'Existing native consumers exceed the configured retention limit',
-          );
-        }
         await Job.updateOne(
           { ...scope, jobId: job.jobId },
-          [
-            {
-              $set: {
-                nativeCleanupPending: true,
-                nativeConsumers: {
-                  $setDifference: [
-                    { $ifNull: ['$nativeConsumers', ['$nativeSource.conversationId']] },
-                    [input.conversationId],
-                  ],
-                },
-              },
+          {
+            $set: { nativeCleanupPending: true },
+            $pull: {
+              nativeConsumers: input.conversationId,
+              nativeConsumerClaims: { conversationId: input.conversationId },
             },
-          ],
+          },
           { writeConcern: durable },
         );
         if (job.nativeSource?.conversationId === input.conversationId) {
@@ -877,78 +813,6 @@ export function createMediaNativeMethods(
         await media.purgeMediaThreadPayloads({ scope, threadId: job.threadId });
       }
     };
-
-  async function migrateNativeJob(
-    scope: MediaOwnerScope,
-    job: MediaStoredJob,
-    maxRetainers?: number,
-  ): Promise<boolean> {
-    if (job.nativeConsumers !== undefined) {
-      return true;
-    }
-    if (
-      !job.nativeSource ||
-      (maxRetainers !== undefined && (!Number.isSafeInteger(maxRetainers) || maxRetainers <= 0))
-    ) {
-      throw new MediaPersistenceError('invalid_input', 'Invalid native consumer migration');
-    }
-    const parts = await Part.find({ ...scope, jobId: job.jobId })
-      .select({ continuationRef: 1, fileId: 1 })
-      .limit(job.nativeLimits?.maxParts ?? 1)
-      .lean();
-    const now = new Date();
-    const expired = !!job.nativeSource.expiresAt && job.nativeSource.expiresAt <= now.toISOString();
-    const consumers = expired
-      ? []
-      : await Message.aggregate<{ conversationId: string }>([
-          {
-            $match: {
-              user: scope.ownerId,
-              tenantId: scope.tenantId,
-              'content.native_media.continuationRef': {
-                $in: parts.map((part) => part.continuationRef),
-              },
-              $or: [{ expiredAt: null }, { expiredAt: { $gt: now } }],
-            },
-          },
-          { $group: { _id: '$conversationId' } },
-          ...(maxRetainers !== undefined ? [{ $limit: maxRetainers + 1 }] : []),
-          { $project: { _id: 0, conversationId: '$_id' } },
-        ]);
-    const ids = new Set(consumers.map((consumer) => consumer.conversationId));
-    if (!expired && ['queued', 'running'].includes(job.phase)) {
-      ids.add(job.nativeSource.conversationId);
-    }
-    if (maxRetainers !== undefined && ids.size > maxRetainers) {
-      return false;
-    }
-    const fileIds = parts.flatMap((part) => (part.fileId ? [part.fileId] : []));
-    if (fileIds.length) {
-      await File.updateMany(
-        {
-          user: scope.ownerId,
-          tenantId: scope.tenantId,
-          file_id: { $in: fileIds },
-          mediaLifecycle: 'live',
-        },
-        { $addToSet: { mediaRetainers: `native:${job.jobId}` } },
-        { writeConcern: durable },
-      );
-    }
-    await Job.updateOne(
-      { ...scope, jobId: job.jobId, nativeConsumers: { $exists: false } },
-      { $set: { nativeConsumers: [...ids], nativeRetentionState: 'live' } },
-      { writeConcern: durable },
-    );
-    if (job.nativeSource.expiresAt) {
-      await Thread.updateOne(
-        { ...scope, threadId: job.threadId, expiresAt: { $exists: false } },
-        { $set: { expiresAt: job.nativeSource.expiresAt } },
-        { writeConcern: durable },
-      );
-    }
-    return true;
-  }
 
   const confirmMediaNativeConversation: MediaNativeMethods['confirmMediaNativeConversation'] =
     async (input) => {
@@ -960,33 +824,50 @@ export function createMediaNativeMethods(
       );
     };
 
-  const prepareMediaNativeMessageDeletion: MediaNativeMethods['prepareMediaNativeMessageDeletion'] =
-    async (input) => {
-      const scope = scopeFilter(input.scope);
-      if (!input.continuationRefs.length) return;
-      const parts = await Part.find({
-        ...scope,
-        continuationRef: { $in: [...input.continuationRefs] },
-      })
-        .select({ jobId: 1 })
-        .lean();
-      for (const jobId of new Set(parts.map((part) => part.jobId))) {
-        const job = await media.getMediaJob(scope, jobId);
-        if (!job) continue;
-        await migrateNativeJob(scope, job);
-        await Job.updateOne(
-          { ...scope, jobId },
-          { $set: { nativeConsumersTracked: true } },
-          { writeConcern: durable },
-        );
-      }
+  const detachMediaNativeConversation: MediaNativeMethods['detachMediaNativeConversation'] = async (
+    input,
+  ) => {
+    const scope = scopeFilter(input.scope);
+    const references = new Set(input.continuationRefs);
+    if (!references.size) return;
+    const identity = {
+      user: scope.ownerId,
+      tenantId: scope.tenantId,
+      conversationId: input.conversationId,
     };
+    const rows = Message.find({
+      ...identity,
+      'content.native_media.continuationRef': { $in: [...references] },
+    })
+      .select({ content: 1 })
+      .lean()
+      .cursor();
+    for await (const row of rows) {
+      if (!Array.isArray(row.content)) continue;
+      const content = row.content.map((part) =>
+        part &&
+        typeof part === 'object' &&
+        getNativeContinuationRefs([part]).some((reference) => references.has(reference))
+          ? detachNativeIdentity(part)
+          : part,
+      );
+      const updated = await Message.updateOne(
+        { ...identity, _id: row._id, content: row.content },
+        { $set: { content } },
+        { writeConcern: durable },
+      );
+      if (!updated.matchedCount)
+        throw new MediaPersistenceError(
+          'conflict',
+          'The cloned conversation changed during native detachment',
+        );
+    }
+  };
 
   async function reconcileNativeConsumers(
     scope: MediaOwnerScope,
     job: MediaStoredJob,
   ): Promise<void> {
-    await migrateNativeJob(scope, job);
     const current = await media.getMediaJob(scope, job.jobId);
     if (!current?.nativeConsumers || current.nativeRetentionState === 'purged') return;
     const now = new Date();
@@ -1028,7 +909,7 @@ export function createMediaNativeMethods(
         $set: {
           nativeConsumers: retained,
           nativeConsumerClaims: claims,
-          nativeConsumersCheckedAt: now.toISOString(),
+          nativeConsumersCheckedAt: now,
         },
       },
       { writeConcern: durable },
@@ -1046,7 +927,6 @@ export function createMediaNativeMethods(
       const jobs = Job.find({
         ...scope,
         executionOwner: 'chat',
-        nativeConsumersTracked: true,
         $or: [
           { nativeConsumers: input.conversationId },
           { 'nativeSource.conversationId': input.conversationId },
@@ -1057,7 +937,7 @@ export function createMediaNativeMethods(
       for await (const job of jobs) await reconcileNativeConsumers(scope, job);
     };
 
-  const migrateMediaNativeConsumers: MediaNativeMethods['migrateMediaNativeConsumers'] = async (
+  const reconcileMediaNativeConsumers: MediaNativeMethods['reconcileMediaNativeConsumers'] = async (
     input,
   ) => {
     const scope = scopeFilter(input.scope);
@@ -1067,36 +947,23 @@ export function createMediaNativeMethods(
       !Number.isSafeInteger(input.maxRetainers) ||
       input.maxRetainers <= 0
     ) {
-      throw new MediaPersistenceError('invalid_input', 'Invalid native consumer migration bounds');
+      throw new MediaPersistenceError(
+        'invalid_input',
+        'Invalid native consumer reconciliation bounds',
+      );
     }
     const jobs = await Job.find({
       ...scope,
       executionOwner: 'chat',
       nativeSource: { $exists: true },
-      $or: [
-        { nativeConsumers: { $exists: false } },
-        { nativeConsumersTracked: true, nativeRetentionState: { $ne: 'purged' } },
-      ],
+      nativeConsumers: { $exists: true },
+      nativeRetentionState: { $ne: 'purged' },
       ...(input.threadId ? { threadId: input.threadId } : {}),
     })
       .sort({ nativeConsumersCheckedAt: 1, jobId: 1 })
       .limit(input.limit)
       .lean<MediaStoredJob[]>();
-    for (const job of jobs) {
-      if (!(await migrateNativeJob(scope, job, input.maxRetainers))) {
-        throw new MediaPersistenceError(
-          'capacity',
-          'Existing native consumers exceed the configured retention limit',
-        );
-      }
-      if (job.nativeConsumersTracked) await reconcileNativeConsumers(scope, job);
-      else
-        await Job.updateOne(
-          { ...scope, jobId: job.jobId },
-          { $set: { nativeConsumersCheckedAt: new Date().toISOString() } },
-          { writeConcern: durable },
-        );
-    }
+    for (const job of jobs) await reconcileNativeConsumers(scope, job);
     return jobs.length;
   };
 
@@ -1110,10 +977,10 @@ export function createMediaNativeMethods(
     getMediaNativeContinuations,
     retainMediaNativeConversation,
     confirmMediaNativeConversation,
-    prepareMediaNativeMessageDeletion,
+    detachMediaNativeConversation,
     reconcileMediaNativeMessageDeletion,
     releaseMediaNativeConversation,
-    migrateMediaNativeConsumers,
+    reconcileMediaNativeConsumers,
     reconcileMediaNativeRecordings,
   };
 }

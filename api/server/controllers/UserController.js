@@ -14,10 +14,10 @@ const {
   deleteAllSharedLinksWithCleanup,
   revokeUserCodeEnvironmentWorkers,
   finalizeMCPAuthorizationMutation,
-  prepareMediaAccountDeletion,
-  completeMediaAccountDeletion,
-  cancelMediaAccountDeletion,
-  sendMediaAccountDeletionError,
+  prepareAccountDeletion,
+  completeAccountDeletion,
+  cancelAccountDeletion,
+  sendAccountDeletionError,
 } = require('@librechat/api');
 const { Tools, Constants, FileSources, ResourceType } = require('librechat-data-provider');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
@@ -433,7 +433,7 @@ const deleteUserController = async (req, res) => {
     if (fenceState === 'missing') {
       triggerDeletionFence = undefined;
     }
-    mediaDeletion = await prepareMediaAccountDeletion({
+    mediaDeletion = await prepareAccountDeletion({
       repository: db,
       scope: { ownerId: user.id, tenantId: tenantId ?? null },
       token: randomUUID(),
@@ -540,7 +540,7 @@ const deleteUserController = async (req, res) => {
       throw new Error('User disappeared before account deletion could commit');
     }
     userDeleted = true;
-    await completeMediaAccountDeletion({ repository: db, session: mediaDeletion });
+    await completeAccountDeletion({ repository: db, session: mediaDeletion });
     let codeEnvironmentCleanupSafe = true;
     try {
       await revokeUserCodeEnvironmentWorkers({
@@ -566,7 +566,7 @@ const deleteUserController = async (req, res) => {
     logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {
-    await cancelMediaAccountDeletion({
+    await cancelAccountDeletion({
       repository: db,
       session: mediaDeletion,
       userDeleted,
@@ -615,7 +615,7 @@ const deleteUserController = async (req, res) => {
       }
     }
     logger.error('[deleteUserController]', err);
-    return sendMediaAccountDeletionError(res, err);
+    return sendAccountDeletionError(res, err);
   }
 };
 

@@ -1,9 +1,27 @@
+import type { NativeSignatures } from 'librechat-data-provider';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { NativeMediaUsageSink } from './native';
 import type { MediaRuntime } from './runtime';
 import { collectModelUsage, createSubagentUsageSink, recordCollectedUsage } from '~/agents/usage';
+import { resolveNativeMediaFactory as resolveFactory, buildNativeMediaFactory } from './request';
 import { runWithDetachedSubagentUsage } from '~/agents/subagentTaskContext';
-import { resolveNativeMediaFactory } from './request';
+
+function resolveNativeMediaFactory(
+  request: Parameters<typeof resolveFactory>[0],
+  conversationId: string,
+  messageId: string,
+  collectedUsage?: UsageMetadata[],
+  usageOptions?: Parameters<typeof resolveFactory>[4],
+) {
+  return resolveFactory(
+    request,
+    conversationId,
+    messageId,
+    collectedUsage,
+    usageOptions,
+    request.app.locals.mediaRuntime,
+  );
+}
 
 function fixture(retention?: { expiredAt: string | null; isTemporary?: boolean }) {
   const nativeFactory = jest.fn(
@@ -245,4 +263,61 @@ it('does not mistake retained usage for a billing acknowledgement', async () => 
   expect(recordDetachedUsage).toHaveBeenCalledTimes(1);
   expect(detached).toHaveLength(1);
   expect(collected).toEqual([]);
+});
+
+it('takes the runtime from injected client wiring for initial and resumed runs', async () => {
+  const { request, nativeFactory } = fixture();
+  const client = {
+    options: { req: request, mediaRuntime: { nativeFactory } },
+    conversationId: 'conversation',
+    responseMessageId: 'message',
+    collectedUsage: [],
+  };
+  await buildNativeMediaFactory(client, {});
+  expect(nativeFactory).toHaveBeenCalledTimes(1);
+  await expect(
+    Promise.resolve(resolveFactory(request, 'conversation', 'message')),
+  ).resolves.toBeUndefined();
+  expect(nativeFactory).toHaveBeenCalledTimes(1);
+});
+
+it('serializes private native snapshots onto the same generation before streamed parts return', async () => {
+  const { request, nativeFactory } = fixture();
+  request._resumableStreamId = 'stream';
+  const client = {
+    options: { req: request, mediaRuntime: { nativeFactory } },
+    conversationId: 'conversation',
+    responseMessageId: 'message',
+    collectedUsage: [],
+    jobCreatedAt: 123,
+  };
+  let release!: () => void;
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const updateMetadata = jest.fn(async () => {
+    await blocked;
+  });
+  await buildNativeMediaFactory(client, {}, { updateMetadata });
+  const source = nativeFactory.mock.calls[0][1];
+  const signatures: NativeSignatures = { '0': { text: 'First', thoughtSignature: 'private-0' } };
+  const first = source.onSignatures!(signatures);
+  signatures['1'] = { mimeType: 'image/png', thoughtSignature: 'private-1' };
+  const second = source.onSignatures!(signatures);
+  await Promise.resolve();
+  expect(updateMetadata).toHaveBeenCalledTimes(1);
+  expect(updateMetadata).toHaveBeenNthCalledWith(
+    1,
+    'stream',
+    { nativeSignatures: { '0': signatures['0'] } },
+    123,
+  );
+  release();
+  await Promise.all([first, second]);
+  expect(updateMetadata).toHaveBeenNthCalledWith(
+    2,
+    'stream',
+    { nativeSignatures: signatures },
+    123,
+  );
 });

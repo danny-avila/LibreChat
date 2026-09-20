@@ -1,8 +1,8 @@
 import type { MediaTitleMethods } from '~/types/mediaTitle';
 import type { MediaStoredJob } from '~/types/media';
 import { createMediaJobModel, createMediaThreadModel } from '~/models/media';
-import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
-import { MediaPersistenceError } from './media';
+import { mediaScopeFilter } from '~/utils/media';
+import { durable } from './media/scope';
 
 /** A durable one-shot claim prevents duplicate paid title calls after concurrent submit or restart. */
 export function createMediaTitleMethods(mongoose: typeof import('mongoose')): MediaTitleMethods {
@@ -15,16 +15,7 @@ export function createMediaTitleMethods(mongoose: typeof import('mongoose')): Me
     threadId,
     expectedTitle,
   }) => {
-    const current = tenantStorage.getStore()?.tenantId;
-    if (
-      !scope.ownerId ||
-      scope.tenantId === '' ||
-      scope.tenantId === SYSTEM_TENANT_ID ||
-      (current && current !== SYSTEM_TENANT_ID && current !== scope.tenantId)
-    ) {
-      throw new MediaPersistenceError('not_found', 'Media title owner scope is unavailable');
-    }
-    const owner = { ownerId: scope.ownerId, tenantId: scope.tenantId ?? null };
+    const owner = mediaScopeFilter(scope);
     const job = await Job.findOne({
       ...owner,
       jobId,
@@ -51,8 +42,8 @@ export function createMediaTitleMethods(mongoose: typeof import('mongoose')): Me
         status: 'active',
         titleClaim: null,
       },
-      { $set: { titleClaim: { jobId, claimedAt: new Date().toISOString() } } },
-      { writeConcern: { w: 'majority', j: true } },
+      { $set: { titleClaim: { jobId, claimedAt: new Date() } } },
+      { writeConcern: durable },
     );
     return result.modifiedCount === 1;
   };

@@ -9,6 +9,7 @@ import type {
   MediaTitleMethods,
 } from '@librechat/data-schemas';
 import type { MediaOperation, TEndpoint } from 'librechat-data-provider';
+import type { Callbacks } from '@langchain/core/callbacks/manager';
 import type { ClientOptions } from '@librechat/agents';
 import type { BalanceCreditReservationDeps, BalanceReservation } from '~/middleware/checkBalance';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
@@ -164,6 +165,7 @@ export type MediaTitleInvoker = (
   model: MediaTitleModel,
   prompt: string,
   signal: AbortSignal,
+  callbacks?: Callbacks,
 ) => Promise<MediaTitleInvocation>;
 
 type TitleContentBlock = string | { type?: string; text?: string };
@@ -182,11 +184,11 @@ function extractText(content: TitleResponse['content']): string {
   return content.map((block) => (typeof block === 'string' ? block : (block.text ?? ''))).join('');
 }
 
-const invokeTitleModel: MediaTitleInvoker = async (model, prompt, signal) => {
+const invokeTitleModel: MediaTitleInvoker = async (model, prompt, signal, callbacks) => {
   const response: TitleResponse = await initializeModel({
     provider: model.provider as Providers,
     clientOptions: { ...model.clientOptions, streaming: false } as ClientOptions,
-  }).invoke(prompt, { signal });
+  }).invoke(prompt, { signal, callbacks });
   return { text: extractText(response.content), usage: response.usage_metadata };
 };
 
@@ -250,7 +252,7 @@ export interface MediaTitleGeneratorDependencies {
   /** Defaults to a real model call; tests substitute a fake to exercise the surrounding logic. */
   invoke?: MediaTitleInvoker;
   withScope<T>(scope: MediaOwnerScope, operation: () => Promise<T>): Promise<T>;
-  log(error: Error): void;
+  log(message: string, error?: Error): void;
 }
 
 const toError = (error: unknown): Error =>
@@ -310,7 +312,7 @@ export function createMediaTitleGenerator(
       });
       await Promise.all(pending);
     } catch (error) {
-      deps.log(toError(error));
+      deps.log('[media] Title generation failed.', toError(error));
     }
   }
 
@@ -375,7 +377,7 @@ export function createMediaTitleGenerator(
       if (!claimed) return undefined;
       const signal = AbortSignal.any([input.signal, AbortSignal.timeout(target.timeoutMs)]);
       signal.throwIfAborted();
-      const invokeModel = () => invoke(model, prompt, signal);
+      const invokeModel = (callbacks?: Callbacks) => invoke(model, prompt, signal, callbacks);
       const result = deps.modelTracer
         ? await deps.modelTracer.run(
             {
@@ -405,7 +407,7 @@ export function createMediaTitleGenerator(
           : false;
       return applied ? title : undefined;
     } catch (error) {
-      deps.log(toError(error));
+      deps.log('[media] Title generation failed.', toError(error));
       return undefined;
     } finally {
       if (reservation) {

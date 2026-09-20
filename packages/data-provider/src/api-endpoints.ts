@@ -29,12 +29,14 @@ const mediaQuery = (params: MediaThreadListRequest = {}): string => {
   if (params.limit !== undefined) query.set('limit', String(params.limit));
   if (params.filter) query.set('filter', params.filter);
   if (params.include) query.set('include', params.include);
+  if (params.search) query.set('search', params.search);
   const suffix = query.toString();
   return suffix ? `?${suffix}` : '';
 };
 export const mediaCatalog = () => `${mediaRoot()}/catalog`;
 export const mediaRecoveryJobs = (params: MediaPageRequest = {}) =>
   `${BASE_URL}/api/admin/media/jobs${mediaQuery(params)}`;
+export const mediaRecoveryCapabilities = () => `${BASE_URL}/api/admin/media/capabilities`;
 export const mediaRecoveryJob = (ownerId: string, jobId: string) =>
   `${mediaRecoveryJobs()}/${encodeURIComponent(ownerId)}/${encodeURIComponent(jobId)}/recovery`;
 export const mediaThreads = (params: MediaThreadListRequest = {}) =>
@@ -568,8 +570,6 @@ export const toolFavorite = (itemType: string, itemId: string) =>
 /* Roles */
 export const roles = () => `${BASE_URL}/api/roles`;
 export const adminRoles = () => `${BASE_URL}/api/admin/roles`;
-export const updateMediaPermissions = (roleName: string) =>
-  `${adminRoles()}/${encodeURIComponent(roleName)}/permissions`;
 export const getRole = (roleName: string) => `${roles()}/${encodeURIComponent(roleName)}`;
 export const updatePromptPermissions = (roleName: string) => `${getRole(roleName)}/prompts`;
 export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName)}/memories`;

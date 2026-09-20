@@ -30,7 +30,7 @@ const job: MediaRecoveryJob = {
   updatedAt: '2026-09-17T12:00:00.000Z',
 };
 const clients: QueryClient[] = [];
-function mount() {
+function mount(canManage = true) {
   const store = createStore();
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -41,7 +41,10 @@ function mount() {
   const view = render(
     <Provider store={store}>
       <QueryClientProvider client={client}>
-        <MediaRecovery host={{ scope: 'admin', isCurrentSession: () => active }} />
+        <MediaRecovery
+          canManage={canManage}
+          host={{ scope: 'admin', isCurrentSession: () => active }}
+        />
       </QueryClientProvider>
     </Provider>,
   );
@@ -63,6 +66,30 @@ beforeEach(() => {
   jest
     .spyOn(dataService, 'listMediaRecoveryJobs')
     .mockResolvedValue({ items: [job], maxEvidenceChars: 200 });
+});
+
+test('shows the serving worker health independently of available recovery jobs', async () => {
+  jest.mocked(dataService.listMediaRecoveryJobs).mockResolvedValue({
+    items: [],
+    maxEvidenceChars: 200,
+    worker: { state: 'unavailable', consecutiveScanFailures: 3 },
+  });
+  mount(false);
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_recovery_open' }));
+  expect(await screen.findByText(/com_media_worker_unavailable/)).toBeVisible();
+  expect(screen.getByText('com_media_worker_scope')).toBeVisible();
+  expect(screen.getByText('com_media_recovery_empty')).toBeVisible();
+});
+
+test('read-only reviewers can inspect jobs but cannot dispatch a resolution', async () => {
+  const recover = jest.spyOn(dataService, 'recoverMediaJob');
+  mount(false);
+  await openJob();
+  expect(screen.getByText('com_media_recovery_read_only')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'com_media_recovery_apply' })).toBeDisabled();
+  expect(screen.getByRole('textbox', { name: 'com_media_recovery_evidence' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_recovery_apply' }));
+  expect(recover).not.toHaveBeenCalled();
 });
 afterEach(() => {
   cleanup();

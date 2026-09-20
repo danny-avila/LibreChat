@@ -11,6 +11,8 @@ const exec = promisify(execFile);
 const ffmpeg = process.env.MEDIA_TEST_FFMPEG ?? 'ffmpeg';
 const installed =
   spawnSync(ffmpeg, ['-version'], { stdio: 'ignore', windowsHide: true }).status === 0;
+if (process.env.CI && !installed)
+  throw new Error('FFmpeg is required in CI. Install it or set MEDIA_TEST_FFMPEG.');
 const videoTests = installed ? describe : describe.skip;
 
 describe('media derivative processing', () => {
@@ -138,7 +140,13 @@ describe('media derivative processing', () => {
         }),
       }),
     ).toEqual([]);
+    await processor.prepare?.(
+      resolveMediaConfig({
+        assets: { derivatives: { ffmpegPath: path.join(directory, 'missing-ffmpeg') } },
+      }),
+    );
     expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0][0]).toContain('media.assets.derivatives.ffmpegPath');
     expect(await readFile(original)).toBeInstanceOf(Buffer);
   });
 });
@@ -267,6 +275,7 @@ videoTests('media derivatives with installed ffmpeg', () => {
   });
 
   it('kills timed-out processing and publishes no partial derivative', async () => {
+    await processor.prepare?.(config);
     const results = await processor.generate({
       path: original,
       type: 'video/mp4',
@@ -278,8 +287,10 @@ videoTests('media derivatives with installed ffmpeg', () => {
     });
     expect(results).toEqual([]);
     expect(log).toHaveBeenCalled();
-    expect(log.mock.calls.some(([error]) => (error as Error).message.includes('timeout'))).toBe(
-      true,
-    );
+    expect(
+      log.mock.calls.some(
+        ([, error]) => error instanceof Error && error.message.includes('timeout'),
+      ),
+    ).toBe(true);
   });
 });

@@ -1,6 +1,11 @@
 const mongoose = require('mongoose');
 const { createMethods } = require('@librechat/data-schemas');
-const { matchModelName, findMatchingPattern, isDeploymentSkillId } = require('@librechat/api');
+const {
+  matchModelName,
+  findMatchingPattern,
+  isDeploymentSkillId,
+  createMediaConsumerConfigProvider,
+} = require('@librechat/api');
 const getLogStores = require('~/cache/getLogStores');
 
 const methods = createMethods(mongoose, {
@@ -8,6 +13,7 @@ const methods = createMethods(mongoose, {
   findMatchingPattern,
   isExternalSkillId: isDeploymentSkillId,
   getCache: getLogStores,
+  getMediaConsumerConfig: createMediaConsumerConfigProvider(getLogStores),
 });
 
 const seedDatabase = async () => {

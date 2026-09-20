@@ -3,7 +3,7 @@ import { Provider, createStore } from 'jotai';
 import { dataService } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { MediaCatalog, MediaSubmissionReceipt } from 'librechat-data-provider';
+import type { MediaSubmissionReceipt } from 'librechat-data-provider';
 import {
   clearMediaSessionStorage,
   mediaPendingFamily,
@@ -14,6 +14,7 @@ import { useMediaCommands } from '~/components/Media/commands';
 import { MediaHostProvider } from '~/components/Media/host';
 import { runSessionCleanups } from '~/store/session';
 import { MediaForm } from '~/components/Media/Form';
+import { makeCatalog } from 'test/media';
 
 jest.mock('~/hooks', () => ({ useLocalize: () => (key: string) => key }));
 jest.mock('librechat-data-provider', () => {
@@ -32,26 +33,8 @@ const capability = {
   execution: { kind: 'direct' as const, previews: false },
   controls: { count: { min: 1, max: 1, default: 1 } },
 };
-const catalog: MediaCatalog = {
-  schemaVersion: 1,
+const catalog = makeCatalog({
   version: 'audit',
-  clientPollIntervalMs: 60_000,
-  clientCatchUpIntervalMs: 60_000,
-  limits: {
-    maxPromptChars: 1000,
-    maxTitleChars: 200,
-    maxInputs: 4,
-    maxOutputs: 2,
-    pageSize: 24,
-    maxPageSize: 100,
-    maxAssetRetainers: 100,
-    maxNativeParts: 100,
-    maxNativePartBytes: 1000000,
-    maxNativeRecordingBytes: 10000000,
-    maxProviderOptionBytes: 32768,
-    maxProviderOptionDepth: 8,
-    maxPresets: 50,
-  },
   offerings: ['model-a', 'model-b'].map((modelId) => ({
     connectionId: 'audit',
     connectionName: 'Audit connection',
@@ -61,7 +44,7 @@ const catalog: MediaCatalog = {
     available: true,
     capabilities: [capability],
   })),
-};
+});
 
 const clients: QueryClient[] = [];
 const recoveryLabel = 'Recover persisted request';

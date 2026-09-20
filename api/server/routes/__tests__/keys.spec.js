@@ -5,8 +5,6 @@ jest.mock('~/models', () => ({
   updateUserKey: jest.fn(),
   deleteUserKey: jest.fn(),
   getUserKeyExpiry: jest.fn(),
-  getUserKeySnapshot: jest.fn(),
-  compareAndSetUserKey: jest.fn(),
 }));
 
 jest.mock('~/server/middleware/requireJwtAuth', () => (req, res, next) => next());

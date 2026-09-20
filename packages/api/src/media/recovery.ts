@@ -4,6 +4,7 @@ import type {
   MediaRecoveryMethods,
   MediaRecoveryRecord,
   MediaNativeMethods,
+  AuditOutcome,
 } from '@librechat/data-schemas';
 import type {
   MediaConfig,
@@ -103,8 +104,8 @@ export function createMediaRecoveryServices(
       executionOwner: job.executionOwner,
       operation: job.operation,
       selection: job.selection,
-      createdAt: job.createdAt,
-      updatedAt: job.updatedAt,
+      createdAt: job.createdAt.toISOString(),
+      updatedAt: job.updatedAt.toISOString(),
       ...(job.error ? { errorCode: job.error.code } : {}),
       provider: {
         certainty: job.provider.certainty,
@@ -148,7 +149,7 @@ export function createMediaRecoveryServices(
       jobId: string;
       actorId: string;
       request: MediaRecoveryRequest;
-      audit(outcome: 'pending' | 'success'): Promise<void>;
+      audit(outcome: AuditOutcome, errorCode?: string): Promise<void>;
     }): Promise<MediaRecoveryJob> {
       const job = await deps.repository.getMediaJob(input.scope, input.jobId);
       if (!job) throw new MediaServiceError('not_found', 404, 'The media job is unavailable.');
@@ -215,23 +216,38 @@ export function createMediaRecoveryServices(
         }
         await input.audit('pending');
       }
-      let resolved = await repository.resolveMediaRecovery({
-        ...input,
-        maxEvidenceChars: config.recovery.maxEvidenceChars,
-        maxDecisions: config.recovery.maxDecisionsPerJob,
-        now: new Date(deps.now()).toISOString(),
-      });
-      if (input.request.action === 'acknowledge') {
-        resolved =
-          (await repository.failMediaNativeRecording({
-            scope: input.scope,
-            jobId: input.jobId,
-            reason: 'provider',
-            resolutionId: input.request.clientRequestId,
-          })) ?? resolved;
+      try {
+        let resolved = await repository.resolveMediaRecovery({
+          ...input,
+          maxEvidenceChars: config.recovery.maxEvidenceChars,
+          maxDecisions: config.recovery.maxDecisionsPerJob,
+          now: new Date(deps.now()).toISOString(),
+        });
+        if (input.request.action === 'acknowledge') {
+          resolved =
+            (await repository.failMediaNativeRecording({
+              scope: input.scope,
+              jobId: input.jobId,
+              reason: 'provider',
+              resolutionId: input.request.clientRequestId,
+            })) ?? resolved;
+        }
+        await input.audit('success');
+        return view(resolved);
+      } catch (error) {
+        try {
+          await input.audit(
+            'failure',
+            error instanceof MediaServiceError ? error.code : 'recovery_failed',
+          );
+        } catch (auditError) {
+          deps.log(
+            '[media] Recovery failure audit could not be recorded.',
+            auditError instanceof Error ? auditError : undefined,
+          );
+        }
+        throw error;
       }
-      await input.audit('success');
-      return view(resolved);
     },
   };
 }
@@ -246,6 +262,6 @@ export interface MediaRecoveryServices {
     jobId: string;
     actorId: string;
     request: MediaRecoveryRequest;
-    audit(outcome: 'pending' | 'success'): Promise<void>;
+    audit(outcome: AuditOutcome, errorCode?: string): Promise<void>;
   }): Promise<MediaRecoveryJob>;
 }

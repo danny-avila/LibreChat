@@ -1,11 +1,13 @@
 import { FileSources, resolveMediaConfig } from 'librechat-data-provider';
+import type { ModelInvocationTrace, traceModelInvocation } from '@librechat/agents';
+import type { LLMResult } from '@langchain/core/outputs';
 import type { MediaModelTraceInput } from './tracing';
 import { createMediaModelTracer } from './tracing';
 
 const input: MediaModelTraceInput = {
   jobId: 'job',
   threadId: 'thread',
-  kind: 'title',
+  kind: 'submission',
   provider: 'openai',
   model: 'text-model',
   context: {
@@ -23,30 +25,20 @@ const response = {
 };
 
 function fixture() {
-  const callback = {
-    handleLLMStart: jest.fn(async () => undefined),
-    handleLLMEnd: jest.fn(async () => undefined),
-    handleLLMError: jest.fn(async () => undefined),
+  const calls: ModelInvocationTrace[] = [];
+  const projections: Array<LLMResult | undefined> = [];
+  const trace: typeof traceModelInvocation = async (params, work, project) => {
+    calls.push(params);
+    const result = await work();
+    projections.push(project?.(result));
+    return result;
   };
-  type HandlerFactory = NonNullable<
-    NonNullable<Parameters<typeof createMediaModelTracer>[0]>['handler']
-  >;
-  const handler = jest.fn<ReturnType<HandlerFactory>, Parameters<HandlerFactory>>(() => callback);
   const config = jest.fn(() => ({ enabled: true }));
-  const dispose = jest.fn(async () => undefined);
-  const initialize = jest.fn(() => undefined);
-  const tracer = createMediaModelTracer({
-    handler,
-    config,
-    dispose,
-    initialize,
-    attributes: (_params, work) => work(),
-  });
-  return { tracer, callback, handler, config, dispose, initialize };
+  return { tracer: createMediaModelTracer({ trace, config }), calls, projections, config };
 }
 
-it('routes through existing tenant policy and records usage with content omitted', async () => {
-  const { tracer, callback, config, handler, initialize } = fixture();
+it('passes existing tenant policy and redacted usage projection to the SDK lifecycle', async () => {
+  const { tracer, calls, projections, config } = fixture();
   await expect(
     tracer.run(
       input,
@@ -59,82 +51,54 @@ it('routes through existing tenant policy and records usage with content omitted
       tenantId: 'tenant-a',
       appConfig: input.context.appConfig,
       user: input.context.user,
+      traceContext: { conversationId: 'thread', provider: 'openai', model: 'text-model' },
     }),
   );
-  expect(initialize).toHaveBeenCalledWith({ enabled: true });
-  expect(callback.handleLLMEnd).toHaveBeenCalledWith(
-    expect.objectContaining({
-      generations: [
-        [
-          expect.objectContaining({
-            message: expect.objectContaining({ usage_metadata: response.usage }),
-          }),
-        ],
+  expect(calls[0]).toMatchObject({
+    langfuse: { enabled: true },
+    userId: 'user',
+    sessionId: 'thread',
+    tags: ['librechat', 'media', 'submission'],
+    traceIdSeed: 'job',
+  });
+  expect(projections[0]).toMatchObject({
+    generations: [
+      [
+        {
+          message: { usage_metadata: response.usage },
+        },
       ],
-    }),
-    expect.any(String),
-  );
-  expect(JSON.stringify(callback.handleLLMStart.mock.calls)).not.toContain('private');
-  expect(JSON.stringify(callback.handleLLMEnd.mock.calls)).not.toContain(response.text);
-  const firstSeed = handler.mock.calls[0][0].traceIdSeed;
-  await tracer.run(
-    { ...input, context: { ...input.context, scope: { ownerId: 'user', tenantId: 'tenant-b' } } },
-    async () => response,
-    (result) => result.usage,
-  );
-  expect(handler.mock.calls[1][0].traceIdSeed).not.toBe(firstSeed);
+    ],
+  });
+  expect(JSON.stringify(projections)).not.toContain(response.text);
 });
 
-it('preserves successful paid results when callbacks or usage projection fail', async () => {
-  const { tracer, callback } = fixture();
-  callback.handleLLMStart.mockRejectedValue(new Error('offline'));
-  callback.handleLLMEnd.mockRejectedValue(new Error('offline'));
-  const work = jest.fn(async () => response);
-  await expect(tracer.run(input, work, (result) => result.usage)).resolves.toBe(response);
-  await expect(
-    tracer.run(input, work, () => {
-      throw new Error('projection failed');
-    }),
-  ).resolves.toBe(response);
-  expect(work).toHaveBeenCalledTimes(2);
-});
-
-it('preserves provider failure without exporting its sensitive message', async () => {
-  const { tracer, callback } = fixture();
-  const error = new Error('provider-secret-and-prompt');
+it('delegates real title callbacks without a synthetic external-model result projection', async () => {
+  const { tracer, calls, projections, config } = fixture();
   await expect(
     tracer.run(
-      input,
-      async () => {
-        throw error;
-      },
-      () => undefined,
+      { ...input, kind: 'title' },
+      async () => response,
+      (result) => result.usage,
     ),
-  ).rejects.toBe(error);
-  expect(callback.handleLLMError).toHaveBeenCalledWith(
-    new Error('Media model call failed.'),
-    expect.any(String),
-  );
-  expect(callback.handleLLMEnd).not.toHaveBeenCalled();
+  ).resolves.toBe(response);
+  expect(projections).toEqual([undefined]);
+  expect(calls[0].traceIdSeed).toBe('title-job');
+  expect(config).toHaveBeenCalledWith(expect.objectContaining({ runId: 'title-job' }));
 });
 
-it('does not deny inference when tracing is disabled or configuration is unavailable', async () => {
+it('preserves inference when host tracing configuration is unavailable', async () => {
   const work = jest.fn(async () => response);
-  const disabled = createMediaModelTracer({
-    config: () => ({ enabled: false }),
-    handler: () => undefined,
-  });
-  await expect(disabled.run(input, work, (result) => result.usage)).resolves.toBe(response);
-  const failed = createMediaModelTracer({
+  const tracer = createMediaModelTracer({
     config: () => {
       throw new Error('unavailable');
     },
   });
-  await expect(failed.run(input, work, (result) => result.usage)).resolves.toBe(response);
-  expect(work).toHaveBeenCalledTimes(2);
+  await expect(tracer.run(input, work, (result) => result.usage)).resolves.toBe(response);
+  expect(work).toHaveBeenCalledTimes(1);
 });
 
-it('initializes the first tenant-only destination before constructing its SDK handler', async () => {
+it('resolves the tenant-only destination before handing it to the SDK lifecycle', async () => {
   const keys = [
     'CREDS_KEY',
     'LANGFUSE_PUBLIC_KEY',
@@ -145,49 +109,44 @@ it('initializes the first tenant-only destination before constructing its SDK ha
     'LANGFUSE_FANOUT_ENABLED',
   ];
   const original = new Map(keys.map((key) => [key, process.env[key]]));
+  const calls: ModelInvocationTrace[] = [];
   try {
     for (const key of keys) delete process.env[key];
     process.env.CREDS_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
-    const initialize = jest.fn(() => undefined);
-    const handler = jest.fn(() => undefined);
     await jest.isolateModulesAsync(async () => {
       const { encryptV3 } = await import('@librechat/data-schemas');
       const { createMediaModelTracer: isolatedFactory } = await import('./tracing');
-      const tracer = isolatedFactory({ initialize, handler });
-      const tenantInput: MediaModelTraceInput = {
-        ...input,
-        context: {
-          ...input.context,
-          appConfig: {
-            ...input.context.appConfig,
-            langfuse: {
-              enabled: true,
-              publicKey: 'pk-tenant',
-              secretKey: encryptV3('sk-tenant'),
-              destination: 'us',
+      const trace: typeof traceModelInvocation = async (params, work) => {
+        calls.push(params);
+        return work();
+      };
+      const tracer = isolatedFactory({ trace });
+      await tracer.run(
+        {
+          ...input,
+          context: {
+            ...input.context,
+            appConfig: {
+              ...input.context.appConfig,
+              langfuse: {
+                enabled: true,
+                publicKey: 'pk-tenant',
+                secretKey: encryptV3('sk-tenant'),
+                destination: 'us',
+              },
             },
           },
         },
-      };
-      await expect(
-        tracer.run(
-          tenantInput,
-          async () => response,
-          (result) => result.usage,
-        ),
-      ).resolves.toBe(response);
+        async () => response,
+        (result) => result.usage,
+      );
     });
-    expect(initialize).toHaveBeenCalledWith(
-      expect.objectContaining({
-        publicKey: 'pk-tenant',
-        secretKey: 'sk-tenant',
-        baseUrl: 'https://us.cloud.langfuse.com',
-        metadata: { 'librechat.tenant.id': 'tenant-a' },
-      }),
-    );
-    expect(initialize.mock.invocationCallOrder[0]).toBeLessThan(
-      handler.mock.invocationCallOrder[0],
-    );
+    expect(calls[0].langfuse).toMatchObject({
+      publicKey: 'pk-tenant',
+      secretKey: 'sk-tenant',
+      baseUrl: 'https://us.cloud.langfuse.com',
+      metadata: { 'librechat.tenant.id': 'tenant-a' },
+    });
   } finally {
     for (const [key, value] of original) {
       if (value === undefined) delete process.env[key];

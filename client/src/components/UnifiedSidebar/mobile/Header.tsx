@@ -21,13 +21,13 @@ function Header({
   links,
   expanded,
   onClose,
-  onLeaveInsights,
+  onLeaveRoute,
   routeActiveId,
 }: {
   links: NavLink[];
   expanded: boolean;
   onClose: () => void;
-  onLeaveInsights?: () => void;
+  onLeaveRoute?: () => void;
   routeActiveId?: string;
 }) {
   const localize = useLocalize();
@@ -71,7 +71,7 @@ function Header({
       </Button>
       <Switcher
         links={links}
-        onLeaveInsights={onLeaveInsights}
+        onLeaveRoute={onLeaveRoute}
         onNavigate={onClose}
         routeActiveId={routeActiveId}
       />

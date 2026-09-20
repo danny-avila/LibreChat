@@ -106,7 +106,7 @@ async function abortMessage(req, res) {
           isCreatedByUser: true,
         })
       : null,
-    responseMessage,
+    responseMessage: sanitizeMessageForTransmit(responseMessage),
   };
 
   logger.debug(

@@ -63,6 +63,91 @@ const imageResponse = { data: [{ b64_json: Buffer.from('complete-image').toStrin
 describe('native OpenAI model mappings', () => {
   const [images, videos] = createOpenAIMediaAdapters();
 
+  it.each(['dall-e-3', 'FLUX.1-Kontext-pro'])(
+    'uses a reduced Images profile for a configured compatible deployment %s',
+    async (model) => {
+      const { context, calls } = fixture('openai.images', [imageResponse]);
+      context.connection.baseURL = 'https://resource.openai.azure.com/openai/v1';
+      const capabilities = openAIImageCapabilities(model, context.config);
+      expect(capabilities).toHaveLength(1);
+      expect(capabilities[0].controls).not.toHaveProperty('format');
+      expect(capabilities[0].controls).not.toHaveProperty('background');
+      expect(capabilities[0].controls).not.toHaveProperty('outputCompression');
+      await images.submit(request(model), [], context);
+      expect(JSON.parse(calls[0].body as string)).toEqual({
+        model,
+        prompt: 'A red ceramic teapot',
+        n: 1,
+      });
+      expect(calls[0].url).toBe('https://resource.openai.azure.com/openai/v1/images/generations');
+    },
+  );
+
+  it('rejects unsupported compatible controls and edits before dispatch', async () => {
+    const { context, calls } = fixture('openai.images');
+    for (const parameters of [{ quality: 'auto' }, { background: 'transparent' }, { count: 2 }]) {
+      await expect(
+        images.submit(request('dall-e-3', 'image.generate', parameters), [], context),
+      ).rejects.toThrow();
+    }
+    await expect(
+      images.submit(request('dall-e-3', 'image.edit'), [reference], context),
+    ).rejects.toThrow();
+    expect(calls).toHaveLength(0);
+  });
+
+  it('keeps the DALL-E 2 single-image edit field and explicit DALL-E 3 quality', async () => {
+    const { context, calls } = fixture('openai.images', [imageResponse, imageResponse]);
+    await images.submit(request('dall-e-2', 'image.edit'), [reference], context);
+    const form = calls[0].body as FormData;
+    expect(form.has('image')).toBe(true);
+    expect(form.has('image[]')).toBe(false);
+    expect(form.has('output_format')).toBe(false);
+    expect(form.has('quality')).toBe(false);
+    await images.submit(request('dall-e-3', 'image.generate', { quality: 'hd' }), [], context);
+    expect(JSON.parse(calls[1].body as string).quality).toBe('hd');
+  });
+
+  it('preserves text, image and cached input counters for exact image pricing', async () => {
+    const { context } = fixture('openai.images', [
+      {
+        ...imageResponse,
+        usage: {
+          input_tokens: 130,
+          output_tokens: 250,
+          input_tokens_details: {
+            text_tokens: 30,
+            image_tokens: 100,
+            cached_tokens: 25,
+            cached_tokens_details: { text_tokens: 5, image_tokens: 20 },
+          },
+        },
+      },
+    ]);
+    expect(await images.submit(request('gpt-image-1'), [], context)).toMatchObject({
+      usage: {
+        inputTokens: 130,
+        outputTokens: 250,
+        textInputTokens: 30,
+        imageInputTokens: 100,
+        cachedInputTokens: 25,
+        cachedTextInputTokens: 5,
+        cachedImageInputTokens: 20,
+      },
+    });
+  });
+
+  it('uses Azure OpenAI v1 with a media deployment mapping and no legacy api-version query', async () => {
+    const { context, calls } = fixture('openai.images', [imageResponse]);
+    context.connection.baseURL = 'https://resource.openai.azure.com/openai/v1';
+    context.connection.headers = { 'api-key': 'azure-key' };
+    context.connection.options = { deployments: { 'gpt-image-1': 'studio-image' } };
+    await images.submit(request('gpt-image-1'), [], context);
+    expect(calls[0].url).toBe('https://resource.openai.azure.com/openai/v1/images/generations');
+    expect(calls[0].headers).toMatchObject({ 'api-key': 'azure-key' });
+    expect(JSON.parse(calls[0].body as string).model).toBe('studio-image');
+  });
+
   it.each(['openai/gpt-image-2.5-flare', 'gpt-image-2.5-flare', 'gpt-image-1.5'])(
     'uses the Image API for %s and preserves output controls',
     async (model) => {
@@ -301,7 +386,7 @@ describe('Microsoft MAI native API', () => {
     const { context, calls } = fixture('microsoft.images', [imageResponse]);
     context.connection.baseURL = 'https://resource.services.ai.azure.com/mai/v1/';
     context.connection.headers = { 'api-key': 'fixture' };
-    context.connection.options = { 'deployment.MAI-Image-2.6': 'production-image' };
+    context.connection.options = { deployments: { 'MAI-Image-2.6': 'production-image' } };
     await adapter.submit(
       request('microsoft/mai-image-2.6', 'image.generate', {
         aspectRatio: '16:9',

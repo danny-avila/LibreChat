@@ -3,6 +3,9 @@ const path = require('path');
 const axios = require('axios');
 const {
   deleteRagFile,
+  stripCacheBust,
+  unlinkLocalFile,
+  createLocalStreamStorage,
   assertRemoteFileURL,
   getRemoteFileFetchMaxBytes,
   getRemoteFileFetchTimeoutMs,
@@ -207,13 +210,7 @@ const isValidPath = (req, base, subfolder, filepath) => {
 /**
  * @param {string} filepath
  */
-const unlinkFile = async (filepath) => {
-  try {
-    await fs.promises.unlink(filepath);
-  } catch (error) {
-    logger.error('Error deleting file:', error);
-  }
-};
+const unlinkFile = (filepath) => unlinkLocalFile(filepath, { unlink: fs.promises.unlink, logger });
 
 /**
  * Deletes a file from the filesystem. This function takes a file object, constructs the full path, and
@@ -232,7 +229,7 @@ const deleteLocalFile = async (req, file) => {
   const { publicPath, uploads } = appConfig.paths;
 
   /** Filepath stripped of query parameters (e.g., ?manual=true) */
-  const cleanFilepath = file.filepath.split('?')[0];
+  const cleanFilepath = stripCacheBust(file.filepath);
 
   await deleteRagFile({ userId: req.user.id, file });
 
@@ -324,9 +321,10 @@ async function uploadLocalFile({ req, file, file_id }) {
  * @param {string} filepath - The filepath.
  * @returns {ReadableStream} A readable stream of the file.
  */
-async function getLocalFileStream(req, filepath) {
+async function getLocalFileStream(req, requestedFilepath, { range, signal } = {}) {
   try {
     const appConfig = req.config;
+    const filepath = stripCacheBust(requestedFilepath);
     if (filepath.includes('/uploads/')) {
       const basePath = filepath.split('/uploads/')[1];
 
@@ -344,7 +342,7 @@ async function getLocalFileStream(req, filepath) {
         throw new Error(`Invalid file path: ${filepath}`);
       }
 
-      return fs.createReadStream(fullPath);
+      return fs.createReadStream(fullPath, { start: range?.start, end: range?.end, signal });
     } else if (filepath.includes('/images/')) {
       const basePath = filepath.split('/images/')[1];
 
@@ -362,16 +360,23 @@ async function getLocalFileStream(req, filepath) {
         throw new Error(`Invalid file path: ${filepath}`);
       }
 
-      return fs.createReadStream(fullPath);
+      return fs.createReadStream(fullPath, { start: range?.start, end: range?.end, signal });
     }
-    return fs.createReadStream(filepath);
+    return fs.createReadStream(filepath, { start: range?.start, end: range?.end, signal });
   } catch (error) {
     logger.error('Error getting local file stream:', error);
     throw error;
   }
 }
 
+const { planFile: planLocalFile, saveStream: saveStreamToLocal } = createLocalStreamStorage({
+  imageDirectory: paths.imageOutput,
+  uploadDirectory: paths.uploads,
+});
+
 module.exports = {
+  planLocalFile,
+  saveStreamToLocal,
   saveLocalFile,
   saveLocalImage,
   saveLocalBuffer,

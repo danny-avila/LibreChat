@@ -20,7 +20,11 @@ interface Props {
  *  (`EXCLUDED_BACKGROUND_TOOL_NAMES`): artifact-first tools whose files can't
  *  attach to an already-saved turn never get the switch. */
 const isBackgroundEligibleTool = (toolId: string): boolean =>
-  !imageGenTools.has(toolId) && toolId !== 'image_gen_oai' && toolId !== 'image_edit_oai';
+  !imageGenTools.has(toolId) &&
+  toolId !== 'image_gen_oai' &&
+  toolId !== 'image_edit_oai' &&
+  toolId !== 'media_generate' &&
+  toolId !== 'media_status';
 
 export default function ToolSection({ item }: Props) {
   const localize = useLocalize();

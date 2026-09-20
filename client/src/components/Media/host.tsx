@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { MediaAsset } from 'librechat-data-provider';
+import type { MediaAsset, TBalanceResponse } from 'librechat-data-provider';
 import type { ComposerProps } from '@librechat/client';
 import type { ReactNode } from 'react';
 
@@ -13,12 +13,16 @@ export type MediaHost = {
   scope: string;
   userId?: string;
   canCreate: boolean;
+  canUseInChat?: boolean;
+  balance?: TBalanceResponse;
+  refreshBalance?: () => void;
   pollIntervalMs: number;
   catchUpIntervalMs: number;
   enterToSend: boolean;
   resolveKeyVerdict?: ComposerProps['resolveKeyVerdict'];
   isCurrentSession: () => boolean;
   useInChat?: (asset: MediaAsset) => Promise<void>;
+  createFromAsset?: (asset: MediaAsset) => void;
   openThread: (threadId: string) => void;
   features?: Partial<MediaFeatures>;
 };

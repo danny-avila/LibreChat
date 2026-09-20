@@ -20,8 +20,14 @@ import {
   mediaRecoveryJobSchema,
   mediaSubmissionRequestSchema,
 } from 'librechat-data-provider';
-import type { AppConfig, MediaStoredJob, IBalance } from '@librechat/data-schemas';
+import type {
+  AppConfig,
+  MediaStoredJob,
+  IBalance,
+  SystemCapability,
+} from '@librechat/data-schemas';
 import type { MediaRecoveryRequest } from 'librechat-data-provider';
+import { generateCapabilityCheck } from '~/middleware/capabilities';
 import { createAdminMediaRouter } from '~/admin/media';
 import { createMediaAccounting } from './accounting';
 import { createMediaRuntime } from './runtime';
@@ -34,9 +40,10 @@ describe('administrative media recovery through the API and worker', () => {
   let config: AppConfig;
   let ownerId: string;
   let app: express.Express;
-  let grants: string[];
+  let grants: SystemCapability[];
   let tenantId: string | undefined;
   let auditFailure: 'pending' | 'success' | undefined;
+  let recoveryFailure = false;
   const logs: Error[] = [];
   const network = jest.fn(async (): Promise<never> => {
     throw new Error('No provider requests are permitted in recovery fixtures');
@@ -63,10 +70,16 @@ describe('administrative media recovery through the API and worker', () => {
       Object.values(mongoose.models).map((model) => model.collection.deleteMany({})),
     );
     ownerId = new mongoose.Types.ObjectId().toString();
+    await mongoose.models.User.collection.insertOne({
+      _id: new mongoose.Types.ObjectId(ownerId),
+      tenantId: null,
+      role: 'USER',
+    });
     tenantId = undefined;
-    grants = [SystemCapabilities.ACCESS_ADMIN, SystemCapabilities.MANAGE_USERS];
+    grants = [SystemCapabilities.ACCESS_ADMIN, SystemCapabilities.MANAGE_MEDIA];
     logs.length = 0;
     auditFailure = undefined;
+    recoveryFailure = false;
     network.mockClear();
     config = {
       config: {},
@@ -95,7 +108,13 @@ describe('administrative media recovery through the API and worker', () => {
     };
     runtime = createMediaRuntime({
       appConfig: config,
-      repository,
+      repository: {
+        ...repository,
+        resolveMediaRecovery: (...args) => {
+          if (recoveryFailure) return Promise.reject(new Error('private database detail'));
+          return repository.resolveMediaRecovery(...args);
+        },
+      },
       getUserById: async () => ({ role: 'USER' }),
       getRoleByName: async () => ({ permissions: { MEDIA: { USE: true, CREATE: true } } }),
       getAppConfig: async () => config,
@@ -106,7 +125,7 @@ describe('administrative media recovery through the API and worker', () => {
       transport: { json: network, stream: network },
       upload: multer,
       accounting: createMediaAccounting({ repository, now: Date.now }),
-      log: (error) => logs.push(error),
+      log: (message, error) => logs.push(new Error(message, { cause: error })),
     });
     app = express();
     app.use(express.json());
@@ -118,12 +137,19 @@ describe('administrative media recovery through the API and worker', () => {
           req.user = { id: 'operator', role: 'ADMIN', tenantId } as Express.User;
           next();
         },
-        hasCapability: async (_user, capability) => grants.includes(capability),
+        ...generateCapabilityCheck({
+          getUserPrincipals: async () => [],
+          hasCapabilityForPrincipals: async ({ capability }) =>
+            grants.includes(capability) ||
+            (capability === SystemCapabilities.READ_MEDIA &&
+              grants.includes(SystemCapabilities.MANAGE_MEDIA)),
+          getHeldCapabilities: async () => new Set(grants),
+        }),
         recordAuditEntry: async (input, options) => {
           if (input.outcome === auditFailure) throw new Error('Audit store unavailable');
           return repository.recordAuditEntry(input, options);
         },
-        log: (error) => logs.push(error),
+        log: (message, error) => logs.push(new Error(message, { cause: error })),
       }),
     );
     await mongoose.models.Balance.create({ user: ownerId, tokenCredits: 1000 });
@@ -258,12 +284,12 @@ describe('administrative media recovery through the API and worker', () => {
     const job = await attention();
     for (const held of [[SystemCapabilities.ACCESS_ADMIN], [SystemCapabilities.MANAGE_USERS], []]) {
       grants = held;
-      await request(app)
-        .get('/api/admin/media/jobs')
-        .expect(403, { error: { code: 'forbidden' } });
-      await post(job, body(job)).expect(403, { error: { code: 'forbidden' } });
+      await request(app).get('/api/admin/media/jobs').expect(403, { message: 'Forbidden' });
+      await post(job, body(job)).expect(403, { message: 'Forbidden' });
     }
-    expect((await repository.listAuditLogPage(undefined, { limit: 10 })).entries).toHaveLength(0);
+    const denied = (await repository.listAuditLogPage(undefined, { limit: 10 })).entries;
+    expect(denied).toHaveLength(6);
+    expect(denied.every((entry) => entry.outcome === 'denied')).toBe(true);
     expect((await repository.getMediaJob(scope(), job.jobId))?.phase).toBe('requires_attention');
   });
 
@@ -287,6 +313,30 @@ describe('administrative media recovery through the API and worker', () => {
     expect(await balance()).toMatchObject({ tokenCredits: 750, reservedCredits: 0 });
     expect(await mongoose.models.Transaction.countDocuments({ mediaJobId: job.jobId })).toBe(1);
     expect(network).not.toHaveBeenCalled();
+  });
+
+  it('allows recovery readers to inspect jobs but requires manage:media for changes', async () => {
+    const job = await attention();
+    grants = [SystemCapabilities.ACCESS_ADMIN, SystemCapabilities.READ_MEDIA];
+    await request(app)
+      .get('/api/admin/media/capabilities')
+      .expect(200, { canRead: true, canManage: false });
+    await request(app).get('/api/admin/media/jobs').expect(200);
+    await post(job, body(job)).expect(403);
+    grants = [SystemCapabilities.ACCESS_ADMIN, SystemCapabilities.MANAGE_USERS];
+    await request(app)
+      .get('/api/admin/media/capabilities')
+      .expect(200, { canRead: false, canManage: false });
+    expect((await repository.getMediaJob(scope(), job.jobId))?.phase).toBe('requires_attention');
+  });
+
+  it('records a failed durable recovery write without exposing its exception text', async () => {
+    const job = await attention();
+    recoveryFailure = true;
+    await post(job, body(job)).expect(500);
+    const audit = await repository.listAuditLogPage(undefined, { limit: 10 });
+    expect(audit.entries.map((entry) => entry.outcome)).toEqual(['failure', 'pending']);
+    expect(JSON.stringify(audit)).not.toContain('private database detail');
   });
 
   it('resumes a completed local publication after its provider credential was removed', async () => {

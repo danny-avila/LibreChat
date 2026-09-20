@@ -35,13 +35,10 @@ test('uses the exact configured name and propagates save failures', async () => 
     'CaseSensitive',
     expect.objectContaining({ enabled: false }),
   );
-  await expect(
-    result.current.saveUserKey('test-value', null, { preserveGoogleServiceKey: true }),
-  ).rejects.toThrow('Save failed');
+  await expect(result.current.saveUserKey('test-value', null)).rejects.toThrow('Save failed');
   expect(mockSave).toHaveBeenCalledWith({
     name: 'CaseSensitive',
     value: 'test-value',
     expiresAt: '',
-    preserveGoogleServiceKey: true,
   });
 });

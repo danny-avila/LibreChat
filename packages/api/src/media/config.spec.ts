@@ -1,5 +1,5 @@
-import { resolveMediaConfig } from 'librechat-data-provider';
-import { sanitizeMediaStartupConfig } from './config';
+import { resolveMediaConfig, FileSources } from 'librechat-data-provider';
+import { sanitizeMediaStartupConfig, resolveMediaStartupConfig } from './config';
 
 describe('sanitizeMediaStartupConfig', () => {
   const access = { authenticated: true, canUse: true, canCreate: true };
@@ -25,6 +25,8 @@ describe('sanitizeMediaStartupConfig', () => {
       enabled: true,
       studio: true,
       chat: true,
+      tools: false,
+      events: true,
       canCreate: true,
       clientPollIntervalMs: 5_000,
       clientCatchUpIntervalMs: 30_000,
@@ -48,4 +50,36 @@ describe('sanitizeMediaStartupConfig', () => {
       canCreate: false,
     });
   });
+});
+
+it('publishes startup key descriptors from static config without catalog discovery', () => {
+  const startup = resolveMediaStartupConfig({
+    appConfig: {
+      config: {},
+      fileStrategy: FileSources.local,
+      imageOutputType: 'png',
+      media: resolveMediaConfig({
+        enabled: true,
+        integrations: [
+          {
+            id: 'studio',
+            label: 'Studio provider',
+            api: 'bfl.images',
+            endpointRef: { kind: 'direct', apiKey: 'user_provided' },
+            catalog: { kind: 'configured', models: ['black-forest-labs/flux.2-pro'] },
+            operations: ['image.generate'],
+          },
+        ],
+      }),
+    },
+    authenticated: true,
+    environment: {},
+  });
+  expect(startup?.integrations).toEqual([
+    {
+      connectionId: 'studio',
+      connectionName: 'Studio provider',
+      userKey: { keyName: 'studio', encoding: 'apiKey', userProvideURL: false },
+    },
+  ]);
 });

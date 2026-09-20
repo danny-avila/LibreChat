@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { atom } from 'jotai';
 import { atomFamily } from 'jotai/utils';
 import {
   mediaAssetSchema,
@@ -14,8 +13,9 @@ import {
   mediaRecoveryRequestSchema,
 } from 'librechat-data-provider';
 import type { MediaImportReceipt, MediaSubmissionReceipt } from 'librechat-data-provider';
-import type { SetStateAction } from 'react';
+import type { PendingMediaRecovery } from '~/data-provider';
 import { registerSessionCleanup } from '~/store/session';
+import { createSessionAtom } from '~/store/jotai-utils';
 
 const prefix = 'librechat:media:';
 const draftSchema = z.object({
@@ -74,46 +74,23 @@ export type MediaSend = (
   command: PendingMedia,
 ) => Promise<MediaSubmissionReceipt | MediaImportReceipt | undefined>;
 
-function storedAtom<T>(key: string, fallback: T, schema: z.ZodType<T, z.ZodTypeDef, unknown>) {
-  let initial = fallback;
-  try {
-    const raw = sessionStorage.getItem(prefix + key);
-    if (raw) {
-      const parsed = schema.safeParse(JSON.parse(raw));
-      if (parsed.success) initial = parsed.data;
-    }
-  } catch {
-    initial = fallback;
-  }
-  const base = atom(initial);
-  return atom(
-    (get) => get(base),
-    (get, set, update: SetStateAction<T>) => {
-      const next =
-        typeof update === 'function' ? (update as (previous: T) => T)(get(base)) : update;
-      set(base, next);
-      try {
-        sessionStorage.setItem(prefix + key, JSON.stringify(next));
-      } catch {
-        // In-memory state remains usable when browser storage is unavailable.
-      }
-    },
-  );
-}
-
 export const mediaDraftFamily = atomFamily((key: string) =>
-  storedAtom(key, emptyDraft(), draftSchema),
+  createSessionAtom(prefix + key, emptyDraft(), draftSchema),
 );
 export const mediaPendingFamily = atomFamily((scope: string) =>
-  storedAtom<PendingMedia[]>(`${scope}:pending`, [], z.array(pendingSchema)),
+  createSessionAtom<PendingMedia[]>(prefix + `${scope}:pending`, [], z.array(pendingSchema)),
 );
 const recoverySchema = z.object({
   job: mediaRecoveryJobSchema,
   request: mediaRecoveryRequestSchema,
 });
-export type PendingMediaRecovery = z.infer<typeof recoverySchema>;
+export type { PendingMediaRecovery } from '~/data-provider';
 export const mediaRecoveryFamily = atomFamily((scope: string) =>
-  storedAtom<PendingMediaRecovery[]>(`${scope}:recovery`, [], z.array(recoverySchema)),
+  createSessionAtom<PendingMediaRecovery[]>(
+    prefix + `${scope}:recovery`,
+    [],
+    z.array(recoverySchema),
+  ),
 );
 const librarySchema = z.object({
   filter: z.enum(['all', 'pending', 'completed']),
@@ -124,8 +101,8 @@ const librarySchema = z.object({
 });
 export type MediaLibrary = z.infer<typeof librarySchema>;
 export const mediaLibraryFamily = atomFamily((scope: string) =>
-  storedAtom(
-    `${scope}:library`,
+  createSessionAtom(
+    prefix + `${scope}:library`,
     { filter: 'all', search: '', columns: 2, view: 'thread' } as MediaLibrary,
     librarySchema,
   ),

@@ -1,33 +1,22 @@
-import { Button } from '@librechat/client';
-import { useTranslation } from 'react-i18next';
 import type { TMediaInsights } from 'librechat-data-provider';
+import { mediaOperationLabels } from '~/components/Media/labels';
+import { formatExactValue, formatMoney } from './format';
+import { PaginationFooter } from './Pagination';
 import { Panel, EmptyState } from './Panel';
-
-const operationLabel = (operation: string) => {
-  if (operation === 'image.edit') return 'com_media_image_edit';
-  if (operation === 'video.generate') return 'com_media_video_generate';
-  return 'com_media_image_generate';
-};
 import { useLocalize } from '~/hooks';
 
 export default function MediaInsights({
   data,
   isFetching,
   onPage,
+  locale,
 }: {
   data: TMediaInsights;
+  locale: string;
   isFetching: boolean;
   onPage(page: number): void;
 }) {
   const localize = useLocalize();
-  const { i18n } = useTranslation();
-  const locale = i18n.resolvedLanguage ?? i18n.language;
-  const money = new Intl.NumberFormat(locale, {
-    style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: 4,
-  });
-  const number = new Intl.NumberFormat(locale);
   const totals = [
     ['com_insights_media_submitted', data.summary.submitted],
     ['com_insights_media_completed', data.summary.completed],
@@ -46,19 +35,34 @@ export default function MediaInsights({
         {totals.map(([key, value]) => (
           <div key={key}>
             <dt className="text-sm text-text-secondary">{localize(key)}</dt>
-            <dd className="text-xl font-semibold tabular-nums">{number.format(value)}</dd>
+            <dd className="text-xl font-semibold tabular-nums">
+              {formatExactValue(value, locale)}
+            </dd>
           </div>
         ))}
       </dl>
       <p className="mb-3 text-sm text-text-secondary">
         {localize('com_insights_media_cost_summary', {
-          provider: money.format(data.summary.providerCostUSD),
-          estimate: money.format(data.summary.estimatedCostUSD),
-          operator: money.format(data.summary.operatorCostUSD),
-          unclassified: money.format(data.summary.unclassifiedCostUSD),
-          unknown: number.format(data.summary.unknownCostJobs),
+          provider: formatMoney(data.summary.providerCostUSD, locale),
+          tokens: formatMoney(data.summary.tokenCostUSD, locale),
+          estimate: formatMoney(data.summary.estimatedCostUSD, locale),
+          operator: formatMoney(data.summary.operatorCostUSD, locale),
+          unclassified: formatMoney(data.summary.unclassifiedCostUSD, locale),
+          unknown: formatExactValue(data.summary.unknownCostJobs, locale),
         })}
       </p>
+      {data.summary.balanceCostJobs > 0 && (
+        <p className="mb-3 text-sm text-text-secondary">
+          {localize('com_insights_media_credits_summary', {
+            credits: formatExactValue(data.summary.creditsCharged, locale),
+          })}
+        </p>
+      )}
+      {data.summary.unbilledJobs > 0 && (
+        <p className="mb-3 text-sm text-text-secondary">
+          {localize('com_insights_media_unbilled', { count: data.summary.unbilledJobs })}
+        </p>
+      )}
       {data.summary.submitted === 0 ? (
         <EmptyState message={localize('com_insights_no_data')} />
       ) : (
@@ -80,13 +84,19 @@ export default function MediaInsights({
                       'com_insights_media_active',
                       'com_insights_media_uncertain',
                       'com_insights_media_provider_cost',
+                      'com_insights_media_token_cost',
+                      'com_insights_media_credits',
                       'com_insights_media_operator_cost',
                       'com_insights_media_estimated_cost',
                       'com_insights_media_legacy_cost',
                       'com_insights_media_unknown_cost',
                     ] as const
                   ).map((key) => (
-                    <th scope="col" key={key} className="whitespace-nowrap px-2 py-2 font-medium">
+                    <th
+                      scope="col"
+                      key={key}
+                      className={`whitespace-nowrap px-2 py-2 font-medium ${['com_insights_media_provider', 'com_insights_media_model', 'com_insights_media_operation'].includes(key) ? '' : 'text-right'}`}
+                    >
                       {localize(key)}
                     </th>
                   ))}
@@ -98,7 +108,7 @@ export default function MediaInsights({
                     <td className="px-2 py-3">{row.provider}</td>
                     <td className="px-2 py-3">{row.model}</td>
                     <td className="whitespace-nowrap px-2 py-3">
-                      {localize(operationLabel(row.operation))}
+                      {localize(mediaOperationLabels[row.operation])}
                     </td>
                     {[
                       row.submitted,
@@ -108,43 +118,42 @@ export default function MediaInsights({
                       row.active,
                       row.uncertain,
                     ].map((value, index) => (
-                      <td key={index} className="px-2 py-3 tabular-nums">
-                        {number.format(value)}
+                      <td key={index} className="px-2 py-3 text-right tabular-nums">
+                        {formatExactValue(value, locale)}
                       </td>
                     ))}
-                    <td className="px-2 py-3 tabular-nums">{money.format(row.providerCostUSD)}</td>
-                    <td className="px-2 py-3 tabular-nums">{money.format(row.operatorCostUSD)}</td>
-                    <td className="px-2 py-3 tabular-nums">{money.format(row.estimatedCostUSD)}</td>
-                    <td className="px-2 py-3 tabular-nums">
-                      {money.format(row.unclassifiedCostUSD)}
+                    <td className="px-2 py-3 text-right tabular-nums">
+                      {formatMoney(row.providerCostUSD, locale)}
                     </td>
-                    <td className="px-2 py-3 tabular-nums">{number.format(row.unknownCostJobs)}</td>
+                    <td className="px-2 py-3 text-right tabular-nums">
+                      {formatMoney(row.tokenCostUSD, locale)}
+                    </td>
+                    <td className="px-2 py-3 text-right tabular-nums">
+                      {formatExactValue(row.creditsCharged, locale)}
+                    </td>
+                    <td className="px-2 py-3 text-right tabular-nums">
+                      {formatMoney(row.operatorCostUSD, locale)}
+                    </td>
+                    <td className="px-2 py-3 text-right tabular-nums">
+                      {formatMoney(row.estimatedCostUSD, locale)}
+                    </td>
+                    <td className="px-2 py-3 text-right tabular-nums">
+                      {formatMoney(row.unclassifiedCostUSD, locale)}
+                    </td>
+                    <td className="px-2 py-3 text-right tabular-nums">
+                      {formatExactValue(row.unknownCostJobs, locale)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <div className="mt-3 flex items-center justify-between gap-3 border-t border-border-light pt-3 text-sm text-text-secondary">
-            <span>{localize('com_insights_page_of', { page: data.page, pages: data.pages })}</span>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={isFetching || data.page <= 1}
-                onClick={() => onPage(data.page - 1)}
-              >
-                {localize('com_ui_prev')}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={isFetching || data.page >= data.pages}
-                onClick={() => onPage(data.page + 1)}
-              >
-                {localize('com_ui_next')}
-              </Button>
-            </div>
-          </div>
+          <PaginationFooter
+            page={data.page}
+            pages={data.pages}
+            isFetching={isFetching}
+            onPage={onPage}
+          />
         </>
       )}
     </Panel>

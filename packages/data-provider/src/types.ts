@@ -367,7 +367,6 @@ export type TUpdateUserKeyRequest = {
   name: string;
   value: string;
   expiresAt: string;
-  preserveGoogleServiceKey?: boolean;
 };
 
 export type TAgentApiKeyCreateRequest = {
@@ -630,6 +629,8 @@ export type TCodeEnvironmentMoveResponse = {
 };
 
 export type TConfig = {
+  /** Encoding of the saved Key value, declared by the endpoint owner. */
+  keyEncoding?: 'apiKey' | 'google' | 'azure' | 'bedrock';
   order: number;
   type?: EModelEndpoint;
   azure?: boolean;
@@ -976,6 +977,10 @@ export type TUpdateFeedbackResponse = {
 
 export type TBalanceResponse = {
   tokenCredits: number;
+  reservedCredits?: number;
+  mediaDebtCredits?: number;
+  availableCredits?: number;
+  mediaHeldCredits?: number;
   // Automatic refill settings
   autoRefillEnabled: boolean;
   refillIntervalValue?: number;

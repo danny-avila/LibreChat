@@ -172,7 +172,7 @@ describe('createMetrics', () => {
       .set('Authorization', 'Bearer test-secret')
       .expect(200);
     expect(result.text).toContain(
-      'media_lifecycle_events_total{kind="attempt",result="completed",api="openai.images",operation="image.generate",phase="succeeded",execution_owner="none"} 1',
+      'media_attempts_total{result="completed",api="openai.images",operation="image.generate",execution_owner="none"} 1',
     );
     expect(result.text).toMatch(/upload[^\n]*path="\/api\/media\/uploads\/url"/);
     expect(result.text).not.toContain('private-reference');

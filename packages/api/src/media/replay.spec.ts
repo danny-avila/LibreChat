@@ -1,5 +1,5 @@
 import type { MessageContentComplex } from '@librechat/agents';
-import { collapseAssistantReplayContent } from './replay';
+import { collapseAssistantReplayContent, prepareAssistantToolReplayContent } from './replay';
 
 describe('collapseAssistantReplayContent', () => {
   const image = (extra: Partial<MessageContentComplex> = {}): MessageContentComplex =>
@@ -30,5 +30,26 @@ describe('collapseAssistantReplayContent', () => {
       { type: 'text', text: 'Done.' },
     ];
     expect(collapseAssistantReplayContent(parts)).toBe(parts);
+  });
+
+  it('preserves the existing double newline before a tool anchor and its standalone whitespace', () => {
+    expect(
+      prepareAssistantToolReplayContent([{ type: 'text', text: 'First' }], {
+        type: 'text',
+        text: 'Tool anchor',
+      }),
+    ).toBe('First\n\nTool anchor');
+    expect(prepareAssistantToolReplayContent([], { type: 'text', text: '  Tool anchor\n\n' })).toBe(
+      '  Tool anchor\n\n',
+    );
+    expect(
+      prepareAssistantToolReplayContent([image()], { type: 'text', text: '  Tool anchor\n' }),
+    ).toBe('Tool anchor');
+  });
+
+  it('keeps native images and signed text ordered through a tool-anchor flush', () => {
+    const first = image({ native_media: { continuationRef: 'message:0' } });
+    const anchor: MessageContentComplex = { type: 'text', text: '  Tool anchor\n' };
+    expect(prepareAssistantToolReplayContent([first], anchor)).toEqual([first, anchor]);
   });
 });

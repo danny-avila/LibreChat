@@ -574,7 +574,7 @@ export async function updateInterfacePermissions({
       },
       [PermissionTypes.MEDIA]: {
         [Permissions.USE]: getPermissionValue(
-          loadedInterface.media?.use,
+          getConfigUse(loadedInterface.media),
           defaultPerms[PermissionTypes.MEDIA]?.[Permissions.USE],
           undefined,
         ),
@@ -582,7 +582,7 @@ export async function updateInterfacePermissions({
         !existingPermissions?.[PermissionTypes.MEDIA]
           ? {
               [Permissions.CREATE]: getPermissionValue(
-                loadedInterface.media?.create,
+                getConfigCreate(loadedInterface.media),
                 defaultPerms[PermissionTypes.MEDIA]?.[Permissions.CREATE],
                 undefined,
               ),

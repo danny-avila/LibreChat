@@ -1,4 +1,15 @@
 /** Server-owned continuation identity is never portable or valid after a text edit. */
+export type NativeSignature = { thoughtSignature?: string; mimeType?: string; text?: string };
+export type NativeSignatures = Record<string, NativeSignature>;
+
+export function parseNativeMessageReference(
+  reference: string,
+): { messageId: string; index: string } | undefined {
+  const match = /^(.+):(0|[1-9]\d*)$/.exec(reference);
+  if (!match || !Number.isSafeInteger(Number(match[2]))) return undefined;
+  return { messageId: match[1], index: match[2] };
+}
+
 type NativeContentPart = {
   type?: string;
   native_media?: { continuationRef?: string };
@@ -15,6 +26,26 @@ type NativeContentPart = {
 
 function isContentPart(value: unknown): value is NativeContentPart {
   return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Private replay data follows the assistant row and is dropped only for edited content. */
+export function detachEditedNativeMetadata<T extends Record<string, unknown>>(
+  metadata: T,
+  content: unknown,
+  submittedPaths: readonly string[],
+): T {
+  if (!Array.isArray(content) || !metadata.nativeSignatures || submittedPaths.length === 0)
+    return metadata;
+  const signatures = { ...(metadata.nativeSignatures as NativeSignatures) };
+  for (const path of submittedPaths) {
+    const match = /^\/content\/(\d+)(?:\/(?:text|think)(?:\/|$)|$)/.exec(path);
+    if (!match) continue;
+    const part: unknown = content[Number(match[1])];
+    if (!isContentPart(part) || !part.native_media?.continuationRef) continue;
+    const reference = parseNativeMessageReference(part.native_media.continuationRef);
+    if (reference) delete signatures[reference.index];
+  }
+  return { ...metadata, nativeSignatures: signatures };
 }
 
 export function detachNativeIdentity<T extends object>(part: T): T {
@@ -55,7 +86,7 @@ export function detachEditedNativeContent<T>(content: T, submittedPaths: readonl
   if (!Array.isArray(content) || submittedPaths.length === 0) return content;
   const edited = new Set<number>();
   for (const path of submittedPaths) {
-    const match = /^\/content\/(\d+)\/(?:text|think)(?:\/|$)/.exec(path);
+    const match = /^\/content\/(\d+)(?:\/(?:text|think)(?:\/|$)|$)/.exec(path);
     if (match) edited.add(Number(match[1]));
   }
   if (!edited.size) return content;

@@ -1,14 +1,14 @@
 import path from 'node:path';
 import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
+import { createReadStream } from 'node:fs';
+import { stat, unlink } from 'node:fs/promises';
 import { FileSources } from 'librechat-data-provider';
-import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, readFile, stat, unlink } from 'node:fs/promises';
 import type { MediaOwnerScope } from '@librechat/data-schemas';
 import type { FileStorage } from 'librechat-data-provider';
-import type { GetURLParams, SaveBufferParams, UploadResult } from '~/storage/types';
 import type { StorageByteRange, StorageReadOptions } from '~/storage/types';
-import { extractKeyFromS3Url, getStorageMetadataForKey, parseS3Key } from '~/storage/s3/crud';
+import type { FileStreamStorage } from '~/storage/types';
+import { createLocalStreamStorage } from '~/storage/write';
+import { parseS3Key } from '~/storage/s3/crud';
 import { MediaServiceError } from './errors';
 
 export type MediaStorageSource = FileStorage;
@@ -66,21 +66,9 @@ export async function removeMediaObjectLocations(
 type StorageRequest = { user: { id: string; tenantId?: string } };
 
 /** The existing host strategy contract, narrowed to byte storage without HTTP or database dependencies. */
-export interface MediaFileStrategy {
+export interface MediaFileStrategy extends FileStreamStorage {
   /** Host-supplied existing client/config getter; null means storage is not configured. */
   getStorageState?(): object | null | Promise<object | null>;
-  getFileURL(params: GetURLParams): Promise<string | null>;
-  saveBuffer(params: SaveBufferParams): Promise<string | null>;
-  handleFileUpload(params: {
-    req: StorageRequest;
-    file: Pick<Express.Multer.File, 'path' | 'originalname' | 'mimetype' | 'size'>;
-    file_id: string;
-    basePath?: string;
-    tenantId?: string | null;
-    storageRegion?: string | null;
-    includeRegionInPath?: boolean;
-    useInlinePath?: boolean;
-  }): Promise<UploadResult>;
   getDownloadStream(
     req: StorageRequest,
     filepath: string,
@@ -124,6 +112,7 @@ export function createLocalMediaObjectStore({
   imageDirectory: string;
   uploadDirectory: string;
 }): MediaObjectStore {
+  const writer = createLocalStreamStorage({ imageDirectory, uploadDirectory });
   const roots = { images: path.resolve(imageDirectory), uploads: path.resolve(uploadDirectory) };
   const resolve = (location: MediaObjectLocation): string => {
     const key = location.storageKey ?? location.filepath.replace(/^\//, '');
@@ -140,21 +129,24 @@ export function createLocalMediaObjectStore({
     source: FileSources.local,
     async plan(scope, filename) {
       assertScope(scope);
-      const key = `images/${scope.tenantId ? `t/${scope.tenantId}/` : ''}${scope.ownerId}/${path.basename(filename)}`;
-      await mkdir(
-        path.dirname(resolve({ source: 'local', storageKey: key, filepath: `/${key}` })),
-        { recursive: true },
-      );
-      return { source: 'local', storageKey: key, filepath: `/${key}` };
+      return {
+        source: 'local',
+        ...(await writer.planFile({
+          userId: scope.ownerId,
+          tenantId: scope.tenantId,
+          fileName: filename,
+        })),
+      };
     },
-    async put(_scope, location, stagedPath) {
-      const destination = resolve(location);
-      await mkdir(path.dirname(destination), { recursive: true });
-      await pipeline(
-        createReadStream(stagedPath),
-        createWriteStream(destination, { flags: 'wx', mode: 0o600 }),
-      );
-      return location;
+    async put(scope, location, stagedPath, type) {
+      const result = await writer.saveStream({
+        userId: scope.ownerId,
+        tenantId: scope.tenantId,
+        fileName: path.posix.basename(location.storageKey ?? ''),
+        path: stagedPath,
+        contentType: type,
+      });
+      return { source: 'local', ...result };
     },
     async open(_scope, location, options) {
       return createReadStream(resolve(location), { ...options?.range, signal: options?.signal });
@@ -183,10 +175,6 @@ export function createMediaStrategyObjectStores(
     const request = (scope: MediaOwnerScope): StorageRequest => ({
       user: { id: scope.ownerId, tenantId: scope.tenantId ?? undefined },
     });
-    const basePath = (scope: MediaOwnerScope) =>
-      source === 's3' || source === 'cloudfront' || !scope.tenantId
-        ? 'images'
-        : `t/${scope.tenantId}/images`;
     return {
       source,
       async isAvailable() {
@@ -200,80 +188,33 @@ export function createMediaStrategyObjectStores(
       },
       async plan(scope, filename, type) {
         assertScope(scope);
-        const name = `media__${path.basename(filename)}`;
-        const base = basePath(scope);
-        const storageKey = `${base}/${scope.ownerId}/${name}`;
-        if (source === 'firebase') return { source, storageKey, filepath: storageKey };
-        const filepath = await resolveStrategy(source).getFileURL({
+        const location = await resolveStrategy(source).planFile({
           userId: scope.ownerId,
-          fileName: name,
-          basePath: base,
+          fileName: filename,
+          basePath: 'images',
           tenantId: scope.tenantId,
           contentType: type,
           useInlinePath: source === 'cloudfront' && type.startsWith('image/'),
         });
-        if (!filepath)
-          throw new MediaServiceError(
-            'storage_failed',
-            503,
-            'Media storage could not locate the upload.',
-          );
-        return source === 's3' || source === 'cloudfront'
-          ? {
-              source,
-              filepath,
-              ...getStorageMetadataForKey(extractKeyFromS3Url(filepath)),
-              storageKey: extractKeyFromS3Url(filepath),
-            }
-          : { source, filepath, storageKey };
+        return { source, ...location };
       },
       async put(scope, location, stagedPath, type) {
-        const strategy = resolveStrategy(source);
-        if (source === 'firebase') {
-          const filepath = await strategy.saveBuffer({
-            userId: scope.ownerId,
-            buffer: await readFile(stagedPath),
-            fileName: path.posix.basename(location.storageKey ?? ''),
-            basePath: basePath(scope),
-          });
-          if (!filepath)
-            throw new MediaServiceError(
-              'storage_failed',
-              503,
-              'Media storage did not confirm the upload.',
-            );
-          return { ...location, filepath };
-        }
         const parts =
           source === 's3' || source === 'cloudfront'
             ? parseS3Key(location.storageKey ?? '')
             : undefined;
-        const result = await strategy.handleFileUpload({
-          req: request(scope),
-          file: {
-            path: stagedPath,
-            originalname: path.basename(stagedPath),
-            mimetype: type,
-            size: (await stat(stagedPath)).size,
-          },
-          file_id: 'media',
-          basePath: parts?.basePath ?? basePath(scope),
+        const result = await resolveStrategy(source).saveStream({
+          userId: scope.ownerId,
+          path: stagedPath,
+          fileName: parts?.fileName ?? path.posix.basename(location.storageKey ?? ''),
+          contentType: type,
+          basePath: parts?.basePath ?? 'images',
           tenantId: scope.tenantId,
           storageRegion: parts?.storageRegion,
           includeRegionInPath: parts?.includeRegionInPath,
           useInlinePath: parts?.useInlinePath,
         });
-        if (!result.filepath || (result.storageKey && result.storageKey !== location.storageKey))
-          throw new MediaServiceError(
-            'storage_failed',
-            409,
-            'Media storage changed the planned object key.',
-          );
-        return {
-          ...location,
-          filepath: result.filepath,
-          storageRegion: result.storageRegion ?? location.storageRegion,
-        };
+        return { ...location, ...result };
       },
       async open(scope, location, options) {
         const stream = await resolveStrategy(source).getDownloadStream(

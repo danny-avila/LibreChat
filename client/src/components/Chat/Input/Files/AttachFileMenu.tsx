@@ -3,6 +3,7 @@ import { useRecoilState } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import {
   FileSearch,
+  Images,
   ImageUpIcon,
   FileType2Icon,
   FileImageIcon,
@@ -43,6 +44,7 @@ import {
 import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
 import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
 import { SharePointPickerDialog } from '~/components/SharePoint';
+import { useMediaAccess } from '~/hooks/Media/useMediaAccess';
 import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
 import { MenuItemProps } from '~/common';
@@ -77,6 +79,7 @@ const fileTypeCapabilities: Record<FileUploadType, MimeUploadCapability> = {
 };
 
 interface AttachFileMenuProps {
+  onCreateMedia?: () => void;
   agentId?: string | null;
   endpoint?: string | null;
   disabled?: boolean | null;
@@ -93,6 +96,7 @@ interface AttachFileMenuProps {
 }
 
 const AttachFileMenu = ({
+  onCreateMedia,
   agentId,
   endpoint,
   disabled,
@@ -107,6 +111,8 @@ const AttachFileMenu = ({
   conversation,
 }: AttachFileMenuProps) => {
   const localize = useLocalize();
+  const mediaAccess = useMediaAccess();
+  const createMedia = mediaAccess.chat && mediaAccess.canCreate ? onCreateMedia : undefined;
   const isUploadDisabled = disabled ?? false;
   const inputRef = useRef<HTMLInputElement>(null);
   const [isPopoverActive, setIsPopoverActive] = useState(false);
@@ -198,16 +204,29 @@ const AttachFileMenu = ({
         onClick: handleUnifiedUpload,
         icon: <FileImageIcon className="icon-md" />,
       },
-      {
-        label: localize('com_files_upload_sharepoint'),
-        onClick: () => {
-          toolResourceRef.current = undefined;
-          setIsSharePointDialogOpen(true);
-        },
-        icon: <SharePointIcon className="icon-md" />,
-      },
+      ...(sharePointEnabled
+        ? [
+            {
+              label: localize('com_files_upload_sharepoint'),
+              onClick: () => {
+                toolResourceRef.current = undefined;
+                setIsSharePointDialogOpen(true);
+              },
+              icon: <SharePointIcon className="icon-md" />,
+            },
+          ]
+        : []),
+      ...(createMedia
+        ? [
+            {
+              label: localize('com_media_create'),
+              onClick: createMedia,
+              icon: <Images className="icon-md" />,
+            },
+          ]
+        : []),
     ],
-    [localize, handleUnifiedUpload, setIsSharePointDialogOpen],
+    [localize, handleUnifiedUpload, sharePointEnabled, createMedia],
   );
 
   const dropdownItems = useMemo(() => {
@@ -313,6 +332,12 @@ const AttachFileMenu = ({
     };
 
     const localItems = createMenuItems(handleUploadClick);
+    if (createMedia)
+      localItems.push({
+        label: localize('com_media_create'),
+        onClick: createMedia,
+        icon: <Images className="icon-md" />,
+      });
 
     if (sharePointEnabled) {
       const sharePointItems = createMenuItems(() => {
@@ -339,6 +364,7 @@ const AttachFileMenu = ({
     handleUploadClick,
     setEphemeralAgent,
     sharePointEnabled,
+    createMedia,
     endpointFileConfig?.supportedMimeTypes,
     codeAllowedByAgent,
     fileSearchAllowedByAgent,
@@ -386,7 +412,7 @@ const AttachFileMenu = ({
             handleFileChange(e, toolResourceRef.current);
           }}
         >
-          {sharePointEnabled === true ? (
+          {sharePointEnabled === true || createMedia ? (
             <DropdownPopup
               menuId="attach-file-menu"
               className="overflow-visible"

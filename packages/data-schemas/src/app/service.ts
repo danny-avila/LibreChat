@@ -111,7 +111,19 @@ export function loadMediaConfig(config: DeepPartial<TCustomConfig>): AppConfig['
   if (config.media === undefined) {
     return undefined;
   }
-  return mediaConfigSchema.parse(config.media);
+  const parsed = mediaConfigSchema.safeParse(config.media);
+  if (!parsed.success) {
+    logger.warn('[AppService] Invalid media config', parsed.error.flatten());
+    throw new Error('Invalid media config');
+  }
+  return parsed.data;
+}
+
+const defaultMediaConfig = mediaConfigSchema.parse({});
+
+/** An absent YAML section stays absent on AppConfig; all runtime defaults use this accessor. */
+export function getMediaConfig(config: Pick<AppConfig, 'media'>): NonNullable<AppConfig['media']> {
+  return config.media ?? defaultMediaConfig;
 }
 
 export type Paths = {

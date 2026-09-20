@@ -220,7 +220,8 @@ class ImportBatchBuilder {
     try {
       await executeConversationImportWrites({
         saveConversations: () => bulkSaveConvos(this.conversations),
-        saveMessages: () => bulkSaveMessages(this.messages, true),
+        saveMessages: () =>
+          bulkSaveMessages(this.messages, true, { unavailableMedia: 'placeholder' }),
         updateTagCounts: () => bulkIncrementTagCounts(this.requestUserId, tags),
         deleteMessages: () => deleteImportedMessages(cleanupScope),
         deleteConversations: () => deleteImportedConversations(cleanupScope),

@@ -10,6 +10,7 @@ import {
   WandSparkles,
   Image,
   AudioLines,
+  Plus,
 } from 'lucide-react';
 import {
   Button,
@@ -24,6 +25,7 @@ import type { MediaAsset, MediaRenditionKind } from 'librechat-data-provider';
 import type { CSSProperties, ReactNode } from 'react';
 import { MediaImagePixels, mediaImageFrame } from './ImagePending';
 import { toAbsoluteFilePath } from '~/utils/media';
+import { formatBytes } from '~/utils/files';
 import { useLocalize } from '~/hooks';
 import { useMediaHost } from './host';
 
@@ -216,7 +218,7 @@ function Preview({
               <MediaImagePixels createdAt={imagePendingSince!} />
             </span>
           ) : (
-            <Skeleton className="h-full w-full rounded-none motion-reduce:animate-none" />
+            <Skeleton className="h-full w-full rounded-none" />
           )}
           <span className="sr-only">{localize('com_media_preview_loading')}</span>
         </span>
@@ -248,23 +250,6 @@ function Preview({
       )}
     </span>
   );
-}
-
-function formatBytes(bytes: number, locale: string) {
-  let unit = 'byte';
-  let divisor = 1;
-  if (bytes >= 1000000) {
-    unit = 'megabyte';
-    divisor = 1000000;
-  } else if (bytes >= 1000) {
-    unit = 'kilobyte';
-    divisor = 1000;
-  }
-  return new Intl.NumberFormat(locale, {
-    style: 'unit',
-    unit,
-    maximumFractionDigits: 1,
-  }).format(bytes / divisor);
 }
 
 export function MediaAssetView({
@@ -324,7 +309,10 @@ export function MediaAssetView({
           <Button
             variant="outline"
             size="sm"
-            disabled={busy}
+            disabled={busy || host.canUseInChat === false}
+            aria-describedby={
+              host.canUseInChat === false ? `media-chat-unavailable-${asset.file_id}` : undefined
+            }
             onClick={async () => {
               setBusy(true);
               setError(false);
@@ -339,6 +327,17 @@ export function MediaAssetView({
           >
             <MessageSquare className="size-4" aria-hidden="true" />
             {localize('com_media_use_chat')}
+          </Button>
+        )}
+        {host.createFromAsset && asset.type.startsWith('image/') && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!host.canCreate}
+            onClick={() => host.createFromAsset?.(asset)}
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            {localize('com_media_create_from_result')}
           </Button>
         )}
         <span className="ml-auto flex items-center gap-0.5">
@@ -386,6 +385,11 @@ export function MediaAssetView({
           )}
         </span>
       </div>
+      {host.canUseInChat === false && host.useInChat && (
+        <p id={`media-chat-unavailable-${asset.file_id}`} className="text-xs text-text-secondary">
+          {localize('com_media_temporary_chat_unavailable')}
+        </p>
+      )}
       {error && (
         <p role="alert" className="text-sm text-text-secondary">
           {localize('com_media_chat_unsupported')}

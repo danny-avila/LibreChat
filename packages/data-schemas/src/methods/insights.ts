@@ -1,5 +1,7 @@
 import {
   INSIGHTS_MAX_RANGE_DAYS,
+  INSIGHTS_PAGE_SIZE_MIN,
+  INSIGHTS_PAGE_SIZE_MAX,
   INSIGHTS_SEARCH_MAX_LENGTH,
   INSIGHTS_SEARCH_MIN_LENGTH,
 } from 'librechat-data-provider';
@@ -14,7 +16,7 @@ import type {
 } from 'librechat-data-provider';
 import type { Model, PipelineStage } from 'mongoose';
 import type { IConversation, IMessage, IUser } from '~/types';
-import { getMediaInsights } from './mediaInsights';
+import { getMediaInsights } from './insights/media';
 
 export type InsightsOptions = TInsightsParams & {
   tenantId?: string;
@@ -293,7 +295,14 @@ export function createInsightsMethods(mongoose: typeof import('mongoose')): Insi
     const Message = mongoose.models.Message as Model<IMessage>;
     const User = mongoose.models.User as Model<IUser>;
     const page = Math.max(1, Math.floor(options.page ?? 1));
-    const pageSize = Math.min(50, Math.max(5, Math.floor(options.pageSize ?? 10)));
+    const pageSize = options.pageSize ?? 10;
+    if (
+      !Number.isInteger(pageSize) ||
+      pageSize < INSIGHTS_PAGE_SIZE_MIN ||
+      pageSize > INSIGHTS_PAGE_SIZE_MAX
+    ) {
+      throw new Error('Invalid Insights page size');
+    }
     const agentIds = [...new Set(options.agentIds ?? [])].sort((a, b) => a.localeCompare(b));
     const { from, to } = resolveRange(options);
     const timeZone = validTimeZone(options.timeZone);

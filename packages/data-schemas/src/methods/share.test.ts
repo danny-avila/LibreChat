@@ -1203,6 +1203,11 @@ describe('Share Methods', () => {
                 conversationId,
                 user: userId,
                 storageKey: 'private/native.png',
+                renditions: {
+                  thumbnail: {
+                    filepath: '/api/media/assets/private-native/content?rendition=thumbnail',
+                  },
+                },
               },
             },
           ],
@@ -1218,7 +1223,7 @@ describe('Share Methods', () => {
         const content = shared?.messages[0]?.content;
         expect(content?.[0]).toEqual({ type: 'text', text: 'caption' });
         expect(JSON.stringify(content)).not.toMatch(
-          /native_media|private-caption|private-image|storageKey/,
+          /native_media|private-caption|private-image|storageKey|renditions|private-native/,
         );
         if (includeFiles) {
           expect(content?.[1]).toEqual({

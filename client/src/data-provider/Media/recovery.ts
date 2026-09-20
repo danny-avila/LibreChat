@@ -1,15 +1,31 @@
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   dataService,
   QueryKeys,
   MutationKeys,
   mediaRecoveryJobSchema,
   mediaRecoveryPageSchema,
+  mediaRecoveryCapabilitiesSchema,
 } from 'librechat-data-provider';
-import type { PendingMediaRecovery } from '~/components/Media/state';
+import type { MediaRecoveryJob, MediaRecoveryRequest } from 'librechat-data-provider';
+export type PendingMediaRecovery = { job: MediaRecoveryJob; request: MediaRecoveryRequest };
 import type { MediaQueryScope } from './queries';
 
 export type MediaRecoveryScope = Pick<MediaQueryScope, 'scope' | 'isCurrentSession'>;
+
+export function useMediaRecoveryCapabilities(host: MediaRecoveryScope, enabled: boolean) {
+  return useQuery(
+    [QueryKeys.mediaRecoveryCapabilities, host.scope],
+    async ({ signal }) => {
+      const capabilities = mediaRecoveryCapabilitiesSchema.parse(
+        await dataService.getMediaRecoveryCapabilities(signal),
+      );
+      if (!host.isCurrentSession()) throw new Error('Session ended');
+      return capabilities;
+    },
+    { enabled, retry: false },
+  );
+}
 
 export function useMediaRecoveryJobs(host: MediaRecoveryScope, enabled: boolean) {
   return useInfiniteQuery(

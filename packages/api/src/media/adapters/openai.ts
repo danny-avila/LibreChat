@@ -1,10 +1,12 @@
 import { z } from 'zod';
+import { validateMediaCapability } from 'librechat-data-provider';
 import type { MediaCapability, MediaConfig, MediaSubmissionRequest } from 'librechat-data-provider';
 import type {
   MediaProviderAdapter,
   MediaProviderContext,
   MediaProviderInput,
   MediaProviderResult,
+  MediaProviderUsage,
 } from '../provider';
 import { dataURI, imageBytes, nativeDownload, nativeRequest, providerOptions } from './native';
 import { MediaProviderError } from '../errors';
@@ -36,11 +38,37 @@ function modelId(id: string): string {
   return id.replace(/^openai\//, '');
 }
 
+function compatibleImageCapabilities(model: string, config: MediaConfig): MediaCapability[] {
+  const dalle2 = model === 'dall-e-2';
+  const dalle3 = model === 'dall-e-3';
+  const operations: Array<'image.generate' | 'image.edit'> = dalle2
+    ? ['image.generate', 'image.edit']
+    : ['image.generate'];
+  const availableSizes = dalle2 ? ['256x256', '512x512', '1024x1024'] : ['1024x1024'];
+  if (dalle3) availableSizes.push('1792x1024', '1024x1792');
+  return operations.map((operation) => ({
+    operation,
+    inputs: {
+      roles: operation === 'image.edit' ? ['reference', 'mask'] : [],
+      min: operation === 'image.edit' ? 1 : 0,
+      max: operation === 'image.edit' ? Math.min(2, config.limits.maxInputs) : 0,
+    },
+    execution: { kind: 'direct', previews: false },
+    controls: {
+      count: { min: 1, max: dalle2 ? Math.min(10, config.limits.maxOutputs) : 1 },
+      size: { values: availableSizes },
+      ...(dalle3 ? { quality: { values: ['standard', 'hd'] } } : {}),
+    },
+  }));
+}
+
 export function openAIImageCapabilities(id: string, config: MediaConfig): MediaCapability[] {
   const selected = modelId(id);
   const wrapper = wrappers.get(selected);
   const model = wrapper?.image ?? selected;
-  if (!/^gpt-image-[A-Za-z0-9._-]+$/.test(model)) return [];
+  if (!/^gpt-image-[A-Za-z0-9._-]+$/.test(model)) {
+    return compatibleImageCapabilities(model, config);
+  }
   const second = model.startsWith('gpt-image-2');
   return (['image.generate', 'image.edit'] as const).map((operation) => ({
     operation,
@@ -75,8 +103,39 @@ const usageSchema = z
   .object({
     input_tokens: z.number().nonnegative().optional(),
     output_tokens: z.number().nonnegative().optional(),
+    input_tokens_details: z
+      .object({
+        text_tokens: z.number().nonnegative().optional(),
+        image_tokens: z.number().nonnegative().optional(),
+        cached_tokens: z.number().nonnegative().optional(),
+        cached_tokens_details: z
+          .object({
+            text_tokens: z.number().nonnegative().optional(),
+            image_tokens: z.number().nonnegative().optional(),
+          })
+          .optional(),
+      })
+      .optional(),
   })
   .optional();
+
+function imageUsage(usage: z.infer<typeof usageSchema>): MediaProviderUsage | undefined {
+  if (!usage) return;
+  const details = usage.input_tokens_details;
+  return {
+    inputTokens: usage.input_tokens,
+    outputTokens: usage.output_tokens,
+    ...(details
+      ? {
+          textInputTokens: details.text_tokens,
+          imageInputTokens: details.image_tokens,
+          cachedInputTokens: details.cached_tokens,
+          cachedTextInputTokens: details.cached_tokens_details?.text_tokens,
+          cachedImageInputTokens: details.cached_tokens_details?.image_tokens,
+        }
+      : {}),
+  };
+}
 
 async function submitImages(
   request: MediaSubmissionRequest,
@@ -85,21 +144,33 @@ async function submitImages(
 ): Promise<MediaProviderResult> {
   const selected = modelId(request.selection.modelId);
   const wrapper = wrappers.get(selected);
+  const gptImage = wrapper !== undefined || /^gpt-image-[A-Za-z0-9._-]+$/.test(selected);
+  const capability = openAIImageCapabilities(selected, context.config).find(
+    (entry) => entry.operation === request.operation,
+  );
   if (
     request.operation === 'video.generate' ||
-    !openAIImageCapabilities(selected, context.config).length ||
+    !capability ||
     inputs.some((input) => input.role !== 'reference' && input.role !== 'mask') ||
     inputs.filter((input) => input.role === 'mask').length > 1 ||
     (request.operation === 'image.edit' && !inputs.some((input) => input.role === 'reference')) ||
     (request.operation === 'image.generate' && inputs.length) ||
+    (selected === 'dall-e-2' && inputs.filter((input) => input.role === 'reference').length > 1) ||
+    (!gptImage &&
+      (request.parameters.format !== undefined ||
+        request.parameters.background !== undefined ||
+        request.parameters.outputCompression !== undefined)) ||
     (wrapper && request.parameters.count !== 1)
   ) {
+    throw new MediaProviderError('rejected');
+  }
+  if (!gptImage && validateMediaCapability(request, capability, context.config.limits).length) {
     throw new MediaProviderError('rejected');
   }
   providerOptions(request, []);
   const parameters = request.parameters;
   const fields = {
-    model: context.connection.options?.[`deployment.${selected}`] ?? selected,
+    model: context.connection.options?.deployments?.[selected] ?? selected,
     prompt: request.prompt,
     n: parameters.count,
     size: parameters.size,
@@ -111,7 +182,7 @@ async function submitImages(
   if (wrapper) {
     const mask = inputs.find((input) => input.role === 'mask');
     const body = JSON.stringify({
-      model: context.connection.options?.[`deployment.${wrapper.model}`] ?? wrapper.model,
+      model: context.connection.options?.deployments?.[wrapper.model] ?? wrapper.model,
       store: false,
       input: [
         {
@@ -127,7 +198,7 @@ async function submitImages(
       tools: [
         {
           type: 'image_generation',
-          model: context.connection.options?.[`deployment.${wrapper.image}`] ?? wrapper.image,
+          model: context.connection.options?.deployments?.[wrapper.image] ?? wrapper.image,
           size: fields.size,
           quality: fields.quality,
           output_format: fields.output_format,
@@ -171,9 +242,7 @@ async function submitImages(
         type: `image/${parameters.format ?? 'png'}`,
         data: imageBytes(part.result!, context),
       })),
-      usage: response.usage
-        ? { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens }
-        : undefined,
+      usage: imageUsage(response.usage),
     };
   }
   let body: string | FormData;
@@ -183,9 +252,10 @@ async function submitImages(
     const form = new FormData();
     for (const [key, value] of Object.entries(fields))
       if (value !== undefined) form.set(key, String(value));
+    const imageField = selected === 'dall-e-2' ? 'image' : 'image[]';
     for (const input of inputs)
       form.append(
-        input.role === 'mask' ? 'mask' : 'image[]',
+        input.role === 'mask' ? 'mask' : imageField,
         new Blob([new Uint8Array(input.data)], { type: input.type }),
         `${input.file_id}.${input.type.split('/')[1]}`,
       );
@@ -219,9 +289,7 @@ async function submitImages(
       data: part.b64_json ? imageBytes(part.b64_json, context) : undefined,
       url: part.url,
     })),
-    usage: response.usage
-      ? { inputTokens: response.usage.input_tokens, outputTokens: response.usage.output_tokens }
-      : undefined,
+    usage: imageUsage(response.usage),
   };
 }
 
@@ -325,7 +393,7 @@ export function createOpenAIMediaAdapters(): MediaProviderAdapter[] {
           throw new MediaProviderError('rejected');
         providerOptions(request, []);
         const body = new FormData();
-        body.set('model', context.connection.options?.[`deployment.${model}`] ?? model);
+        body.set('model', context.connection.options?.deployments?.[model] ?? model);
         body.set('prompt', request.prompt);
         if (request.parameters.durationSeconds != null)
           body.set('seconds', String(request.parameters.durationSeconds));

@@ -960,14 +960,14 @@ describe('GET /api/config', () => {
     });
   });
 
-  describe('media startup permissions', () => {
+  describe('media startup availability', () => {
     const { resolveMediaConfig } = require('librechat-data-provider');
     const mediaAppConfig = {
       ...baseAppConfig,
       media: { ...resolveMediaConfig(), enabled: true },
     };
 
-    it('resolves media access from the user role rather than granting it', async () => {
+    it('reports configured availability without rereading the role the client already owns', async () => {
       mockGetAppConfig.mockResolvedValue(mediaAppConfig);
       mockGetRoleByName.mockResolvedValue({
         permissions: { MEDIA: { USE: true, CREATE: false } },
@@ -977,17 +977,17 @@ describe('GET /api/config', () => {
       const response = await request(app).get('/api/config');
 
       expect(response.statusCode).toBe(200);
-      expect(mockGetRoleByName).toHaveBeenCalledWith('USER');
+      expect(mockGetRoleByName).not.toHaveBeenCalled();
       expect(response.body.media).toMatchObject({
         enabled: true,
         studio: true,
         chat: true,
-        canCreate: false,
+        canCreate: true,
       });
     });
 
-    it('reports media as unavailable when the role grants nothing', async () => {
-      mockGetAppConfig.mockResolvedValue(mediaAppConfig);
+    it('reports media as unavailable when the feature is disabled', async () => {
+      mockGetAppConfig.mockResolvedValue({ ...mediaAppConfig, media: resolveMediaConfig() });
       mockGetRoleByName.mockResolvedValue({ permissions: {} });
       const app = createApp(mockUser);
 
@@ -995,6 +995,7 @@ describe('GET /api/config', () => {
 
       expect(response.statusCode).toBe(200);
       expect(response.body.media).toMatchObject({ enabled: false, canCreate: false });
+      expect(mockGetRoleByName).not.toHaveBeenCalled();
     });
 
     it('omits media for unauthenticated requests without reading a role', async () => {

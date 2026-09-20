@@ -7,6 +7,7 @@ import {
 } from 'librechat-data-provider';
 import type { MediaIntegration } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import type { MediaCatalogCache, MediaCatalogCacheEntry } from './catalogCache';
 import type { MediaTransport, MediaTransportRequest } from './transport';
 import type { MediaConnection, MediaProviderContext } from './provider';
 import { createMediaCatalog, selectMediaRoute, validateMediaOffering } from './catalog';
@@ -161,6 +162,44 @@ function connection(integration: MediaIntegration): MediaConnection {
 }
 
 describe('media catalog provider conformance', () => {
+  it('makes configured OpenAI-compatible deployments available without remote discovery', async () => {
+    const { transport, calls } = fixtureTransport(() => {
+      throw new Error('Native profiles do not fetch a remote catalog');
+    });
+    const config = resolveMediaConfig({
+      enabled: true,
+      integrations: [
+        {
+          id: 'compatible',
+          api: 'openai.images',
+          endpointRef: { kind: 'direct', apiKey: 'fixture' },
+          catalog: { kind: 'configured', models: ['dall-e-3', 'FLUX.1-Kontext-pro'] },
+          operations: ['image.generate', 'image.edit'],
+        },
+      ],
+    });
+    const catalog = createMediaCatalog({
+      transport,
+      adapters: createRESTMediaAdapters(),
+      now: Date.now,
+    });
+    const snapshot = await catalog.read(
+      config,
+      async (integration) => connection(integration),
+      'owner',
+    );
+    expect(
+      snapshot.catalog.offerings.map(({ available, capabilities }) => ({
+        available,
+        operations: capabilities.map(({ operation }) => operation),
+      })),
+    ).toEqual([
+      { available: true, operations: ['image.generate'] },
+      { available: true, operations: ['image.generate'] },
+    ]);
+    expect(calls).toHaveLength(0);
+  });
+
   const adapters = createRESTMediaAdapters();
   const config = resolveMediaConfig({
     enabled: true,
@@ -227,7 +266,7 @@ describe('media catalog provider conformance', () => {
     expect(() => validateMediaOffering(request({ quality: 'high' }), offering)).toThrow();
     expect(() => validateMediaOffering(request({ size: '1024x1024' }), offering)).toThrow();
     expect(() => validateMediaOffering(request({ count: 3 }), offering)).toThrow();
-    expect(fixture.calls[1].url).toContain('/images/models/google/image/endpoints');
+    expect(fixture.calls[0].url).toContain('/images/models/google/image/endpoints');
     expect(JSON.stringify(result.catalog)).not.toContain('Bearer');
     expect(offering.routes?.map((route) => route.providerTag)).toEqual(['google-vertex/global']);
     expect(JSON.stringify(result.catalog)).not.toContain('revision');
@@ -514,10 +553,68 @@ describe('media catalog provider conformance', () => {
     await read('a');
     await read('c');
     await read('b');
-    expect(fixture.calls).toHaveLength(8);
+    expect(fixture.calls).toHaveLength(4);
     time = config.catalog.refreshMs + 1;
     await read('b');
-    expect(fixture.calls).toHaveLength(10);
+    expect(fixture.calls).toHaveLength(5);
+  });
+
+  it('shares cached offerings across catalog instances without crossing bindings or expiry', async () => {
+    let time = 0;
+    const entries = new Map<string, MediaCatalogCacheEntry>();
+    const shared: MediaCatalogCache = {
+      get: async (key) => entries.get(key),
+      set: jest.fn(async (key, entry) => {
+        entries.set(key, entry);
+      }),
+    };
+    const fixture = imageTransport(() => JSON.stringify(imageEndpoints));
+    const first = createMediaCatalog({ ...fixture, adapters, cache: shared, now: () => time });
+    const second = createMediaCatalog({ ...fixture, adapters, cache: shared, now: () => time });
+    await first.read(config, async (integration) => connection(integration), 'owner');
+    await second.read(config, async (integration) => connection(integration), 'owner');
+    expect(fixture.calls).toHaveLength(1);
+    expect(shared.set).toHaveBeenLastCalledWith(
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      expect.objectContaining({ expires: config.catalog.refreshMs }),
+      config.catalog.refreshMs,
+    );
+    await second.read(
+      config,
+      async (integration) => ({ ...connection(integration), binding: 'other' }),
+      'owner',
+    );
+    expect(fixture.calls).toHaveLength(2);
+    await second.read(config, async (integration) => connection(integration), 'other-tenant:owner');
+    expect(fixture.calls).toHaveLength(3);
+    time = config.catalog.refreshMs + 1;
+    await second.read(config, async (integration) => connection(integration), 'owner');
+    expect(fixture.calls).toHaveLength(4);
+  });
+
+  it('fetches only listed image endpoint documents and uses the index for discovery', async () => {
+    const fixture = imageTransport(() => JSON.stringify(imageEndpoints));
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    await catalog.read(config, async (integration) => connection(integration), 'owner');
+    expect(fixture.calls.map((call) => new URL(call.url).pathname)).toEqual([
+      '/api/v1/images/models/google/image/endpoints',
+    ]);
+    await catalog.read(
+      resolveMediaConfig({
+        ...config,
+        integrations: [
+          {
+            ...imageIntegration,
+            catalog: { kind: 'discovered', allModels: true, allowModels: [], excludeModels: [] },
+          },
+        ],
+      }),
+      async (integration) => connection(integration),
+      'owner',
+    );
+    expect(fixture.calls.map((call) => new URL(call.url).pathname)).toContain(
+      '/api/v1/images/models',
+    );
   });
 
   it('shares in-flight reads and bounds discovery concurrency across integrations', async () => {
@@ -545,12 +642,12 @@ describe('media catalog provider conformance', () => {
       catalog.read(bounded, resolve, 'owner'),
       catalog.read(bounded, resolve, 'owner'),
     ]);
-    expect(fixture.calls).toHaveLength(6);
+    expect(fixture.calls).toHaveLength(3);
     expect(peak).toBe(2);
   });
 });
 
-describe('OpenRouter complete public media catalog', () => {
+describe('OpenRouter representative public media catalog', () => {
   const adapters = createRESTMediaAdapters();
   const config = resolveMediaConfig({
     enabled: true,
@@ -561,18 +658,18 @@ describe('OpenRouter complete public media catalog', () => {
   });
   const resolve = async (integration: MediaIntegration) => connection(integration);
 
-  it('discovers all 52 image and 29 video entries and preserves unavailable Muse without exposing credentials', async () => {
+  it('discovers the representative image/video catalog and preserves unavailable Muse without exposing credentials', async () => {
     const fixture = publicTransport();
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
     const result = await catalog.read(config, resolve, 'owner');
     expect(() => mediaCatalogSchema.parse(result.catalog)).not.toThrow();
-    expect(publicCatalog.imageEndpoints).toHaveLength(52);
-    expect(publicCatalog.videoEndpoints).toHaveLength(29);
+    expect(publicCatalog.imageEndpoints).toHaveLength(12);
+    expect(publicCatalog.videoEndpoints).toHaveLength(8);
     expect(result.catalog.offerings.map((offering) => offering.modelId)).toEqual([
       ...publicCatalog.images.data.map((model) => model.id),
       ...publicCatalog.videos.data.map((model) => model.id),
     ]);
-    expect(result.catalog.offerings.filter((offering) => offering.available)).toHaveLength(80);
+    expect(result.catalog.offerings.filter((offering) => offering.available)).toHaveLength(19);
     expect(result.catalog.offerings.filter((offering) => !offering.available)).toEqual([
       expect.objectContaining({
         modelId: 'meta/muse-image',
@@ -580,8 +677,8 @@ describe('OpenRouter complete public media catalog', () => {
         capabilities: [],
       }),
     ]);
-    expect(fixture.calls).toHaveLength(84);
-    expect(fixture.calls.filter((call) => call.url.endsWith('/endpoints'))).toHaveLength(81);
+    expect(fixture.calls).toHaveLength(23);
+    expect(fixture.calls.filter((call) => call.url.endsWith('/endpoints'))).toHaveLength(20);
     expect(fixture.calls.every((call) => !call.method || call.method === 'GET')).toBe(true);
     expect(JSON.stringify(result.catalog)).not.toMatch(
       /Bearer fixture|revision|endpointRef|apiKey/,
@@ -855,7 +952,7 @@ describe('OpenRouter complete public media catalog', () => {
       result.catalog.offerings.filter(
         (offering) => offering.api === 'openrouter.videos' && offering.available,
       ),
-    ).toHaveLength(29);
+    ).toHaveLength(8);
     expect(
       result.resolved.get('videos:bytedance/seedance-2.0')?.offering.capabilities[0].inputs.roles,
     ).toContain('audio');
@@ -923,7 +1020,7 @@ describe('OpenRouter complete public media catalog', () => {
       ],
     });
     const expanded = await catalog.read(excluded, resolve, 'owner');
-    expect(expanded.catalog.offerings).toHaveLength(50);
+    expect(expanded.catalog.offerings).toHaveLength(10);
     expect(
       expanded.catalog.offerings.every(
         (offering) =>
@@ -990,7 +1087,7 @@ describe('OpenRouter complete public media catalog', () => {
     });
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
     const result = await catalog.read(config, resolve, 'owner');
-    expect(result.catalog.offerings).toHaveLength(82);
+    expect(result.catalog.offerings).toHaveLength(21);
     expect(result.resolved.get('images:future/new-image')?.offering).toMatchObject({
       modelName: 'New Image',
       available: true,
@@ -1018,8 +1115,8 @@ describe('OpenRouter complete public media catalog', () => {
     });
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
     const result = await catalog.read(config, resolve, 'owner');
-    expect(result.catalog.offerings).toHaveLength(81);
-    expect(result.catalog.offerings.filter((offering) => offering.available)).toHaveLength(78);
+    expect(result.catalog.offerings).toHaveLength(20);
+    expect(result.catalog.offerings.filter((offering) => offering.available)).toHaveLength(17);
     expect(result.resolved.get('images:black-forest-labs/flux.2-pro')?.offering).toMatchObject({
       available: false,
       unavailableReason: 'not_ready',
@@ -1139,7 +1236,7 @@ describe('media provider routing and continuation', () => {
   it('extracts only validated policy and invalidates binding when policy changes', async () => {
     const resolver = createMediaCredentialResolver({
       environment: { ROUTER_KEY: 'test-key' },
-      repository: { getStoredMediaCredential: async () => null },
+      repository: { getUserKeySnapshot: async () => null },
       decrypt: async (value) => value,
       now: () => 0,
     });

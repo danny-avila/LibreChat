@@ -43,6 +43,7 @@ describe('public media files at existing response boundaries', () => {
       height: media.height,
       usage: media.usage,
       metadata: media.metadata,
+      deletionRestriction: 'retained_media',
     });
     expect(JSON.stringify(projected)).not.toContain('private-');
     expect(projected.filepath).not.toContain('rendition');

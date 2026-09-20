@@ -1,5 +1,10 @@
 import { EModelEndpoint } from 'librechat-data-provider';
-import type { TConfig, TModelSpec, TEndpointsConfig, MediaCatalog } from 'librechat-data-provider';
+import type {
+  TConfig,
+  TModelSpec,
+  TEndpointsConfig,
+  MediaStartupConfig,
+} from 'librechat-data-provider';
 import { getProviderKeyEntries, getUserKeyEndpoints, isUserProvidedEndpointConfig } from './utils';
 
 const cfg = (overrides: Partial<TConfig> = {}): TConfig => ({ order: 0, ...overrides });
@@ -104,16 +109,13 @@ describe('getUserKeyEndpoints', () => {
   });
 });
 
-type Integration = NonNullable<MediaCatalog['integrations']>[number];
+type Integration = NonNullable<MediaStartupConfig['integrations']>[number];
 const media = (
   keyName: string,
   overrides: Partial<NonNullable<Integration['userKey']>> = {},
 ): Integration => ({
   connectionId: 'images',
   connectionName: 'Media provider',
-  api: 'openrouter.images',
-  available: false,
-  unavailableReason: 'credentials_required',
   userKey: { keyName, encoding: 'apiKey', userProvideURL: false, ...overrides },
 });
 
@@ -127,13 +129,10 @@ describe('getProviderKeyEntries', () => {
           ...media('My key / & ?', { userProvideURL: true }),
           connectionId: 'videos',
           connectionName: 'Video provider',
-          api: 'openrouter.videos',
         },
         {
           connectionId: 'managed',
           connectionName: 'Managed',
-          api: 'openai.images',
-          available: true,
         },
       ],
     });
@@ -161,7 +160,7 @@ describe('getProviderKeyEntries', () => {
       getProviderKeyEntries({
         chatEndpoints: ['Router'],
         endpointsConfig: {
-          Router: cfg({ type: EModelEndpoint.custom, userProvide: true }),
+          Router: cfg({ type: EModelEndpoint.custom, userProvide: true, keyEncoding: 'apiKey' }),
         },
         mediaIntegrations: [media('Router')],
       }),
@@ -172,7 +171,9 @@ describe('getProviderKeyEntries', () => {
     expect(
       getProviderKeyEntries({
         chatEndpoints: ['Router'],
-        endpointsConfig: { Router: cfg({ type: EModelEndpoint.custom, userProvide: true }) },
+        endpointsConfig: {
+          Router: cfg({ type: EModelEndpoint.custom, userProvide: true, keyEncoding: 'apiKey' }),
+        },
         mediaIntegrations: [media('Router', { userProvideURL: true })],
       })[0],
     ).toMatchObject({
@@ -189,7 +190,9 @@ describe('getProviderKeyEntries', () => {
       expect(
         getProviderKeyEntries({
           chatEndpoints: [endpoint],
-          endpointsConfig: { [endpoint]: cfg({ userProvide: true, userProvideURL: true }) },
+          endpointsConfig: {
+            [endpoint]: cfg({ userProvide: true, userProvideURL: true, keyEncoding: encoding }),
+          },
           mediaIntegrations: [media(endpoint, { encoding })],
         })[0],
       ).toMatchObject({
@@ -203,7 +206,7 @@ describe('getProviderKeyEntries', () => {
   it('preserves the existing Google chat editor for a shared Google credential', () => {
     const entries = getProviderKeyEntries({
       chatEndpoints: ['google'],
-      endpointsConfig: { google: cfg({ userProvide: true }) },
+      endpointsConfig: { google: cfg({ userProvide: true, keyEncoding: 'google' }) },
       mediaIntegrations: [media('google', { encoding: 'google' })],
     });
     expect(entries).toHaveLength(1);
@@ -211,7 +214,7 @@ describe('getProviderKeyEntries', () => {
     expect(entries[0].keyConfiguration).toBeUndefined();
   });
 
-  it.each(['anthropic', 'azureOpenAI', 'bedrock'])(
+  it.each(['unknown', 'azureOpenAI', 'bedrock'])(
     'blocks incompatible %s chat envelopes',
     (endpoint) => {
       const entries = getProviderKeyEntries({

@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { FileSources, resolveMediaConfig } from 'librechat-data-provider';
+import { FileSources } from 'librechat-data-provider';
+import { getMediaConfig } from '@librechat/data-schemas';
+import {
+  FileContext,
+  getNativeContinuationRefs,
+  parseNativeMessageReference,
+} from 'librechat-data-provider';
 import type {
   MediaMethods,
   MediaNativeMethods,
@@ -9,7 +15,10 @@ import type {
   AppConfig,
   IUser,
   MediaOwnerScope,
+  KeyMethods,
+  MediaFileConsumerMethods,
 } from '@librechat/data-schemas';
+import type { NativeMessageMethods } from '@librechat/data-schemas';
 import type { MediaConfig } from 'librechat-data-provider';
 import type { Request, Router } from 'express';
 import type {
@@ -19,13 +28,17 @@ import type {
   MediaServiceDependencies,
 } from './service';
 import type { MediaChatSource, NativeMediaFactory, NativeMediaUsageSink } from './native';
+import type { GeneratedImageFile, SaveGeneratedImageOptions } from '~/files/generated';
 import type { BalanceCreditReservationDeps } from '~/middleware/checkBalance';
-import type { MediaVertexCredentialProvider } from './vertexAuth';
-import type { ModerationCheck } from '../middleware/moderation';
+import type { IEventTransport } from '~/stream/interfaces/IJobStore';
+import type { ModerationCheck } from '~/middleware/moderation';
+import type { MediaVertexCredentialProvider } from './vertex';
 import type { MediaDerivativeProcessor } from './derivatives';
 import type { MediaLifecycleObserver } from './telemetry';
 import type { MediaRecoveryServices } from './recovery';
 import type { MediaAdmissionPolicy } from './admission';
+import type { MediaCatalogCache } from './catalogCache';
+import type { MediaStrategyResolver } from './objects';
 import type { MediaProviderAdapter } from './provider';
 import type { MediaEnvironment } from './credentials';
 import type { RecordUsageDeps } from '~/agents/usage';
@@ -41,10 +54,14 @@ import { createMediaStorage, resolveMediaStorageSource } from './storage';
 import { createMediaCredentialResolver } from './credentials';
 import { createRESTMediaAdapters } from './adapters/rest';
 import { createMediaRecoveryServices } from './recovery';
+import { readNativeMessageImage } from './nativeFiles';
+import { getRoleForAccess } from '~/middleware/access';
 import { createNativeMediaFactory } from './native';
 import { createMediaContentRouter } from './stream';
 import { resolveMediaPermissions } from './config';
 import { ALLOWED_USER_FIELDS } from '~/utils/env';
+import { createMediaTools } from '~/tools/media';
+import { MediaActivityStream } from './events';
 import { createMediaStaging } from './staging';
 import { createMediaWorker } from './worker';
 import { MediaServiceError } from './errors';
@@ -52,13 +69,22 @@ import { createMediaRouter } from './http';
 
 type MediaActor = NonNullable<MediaContext['user']>;
 export interface MediaRuntimeDependencies {
+  eventTransport?: IEventTransport;
+  now?(): number;
+  saveNativeImage?(url: string, options: SaveGeneratedImageOptions): Promise<GeneratedImageFile>;
+  getNativeFileStrategy?: MediaStrategyResolver;
+  catalogCache?: MediaCatalogCache;
+  isLeader?: () => Promise<boolean>;
   observer?: MediaLifecycleObserver;
   modelTracer?: MediaModelTracer;
   appConfig: AppConfig;
   repository: MediaMethods &
+    Pick<KeyMethods, 'getUserKeySnapshot'> &
     MediaNativeMethods &
     MediaPresetMethods &
-    Partial<MediaTitleMethods & MediaRecoveryMethods>;
+    Partial<
+      MediaTitleMethods & MediaRecoveryMethods & MediaFileConsumerMethods & NativeMessageMethods
+    >;
   /** Enables LLM-generated thread titles; provider credentials and billing come from the host. */
   titles?: {
     db: EndpointDbMethods;
@@ -92,15 +118,19 @@ export interface MediaRuntimeDependencies {
   derivatives?: MediaDerivativeProcessor;
   deferAssetDeletion?: MediaServiceDependencies['deferAssetDeletion'];
   deferAssetWriteDeletion?: MediaServiceDependencies['deferAssetWriteDeletion'];
-  log(error: Error): void;
+  log(message: string, error?: Error): void;
+  warn?(message: string, error?: Error): void;
+  info?(message: string): void;
 }
 
 export interface MediaRuntime {
+  closeActivity(): void;
   router: Router;
   contentRouter: Router;
   services: MediaServices;
   recovery?: MediaRecoveryServices;
   worker: MediaWorker;
+  tools(request: Request, signal?: AbortSignal): ReturnType<typeof createMediaTools>;
   nativeFactory(
     request: Request,
     source: MediaChatSource,
@@ -109,8 +139,13 @@ export interface MediaRuntime {
 }
 
 export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntime {
+  const now = input.now ?? Date.now;
   const { repository } = input;
-  const baseConfig = input.appConfig.media ?? resolveMediaConfig();
+  const baseConfig = getMediaConfig(input.appConfig);
+  const activity =
+    input.eventTransport && baseConfig.events.enabled
+      ? new MediaActivityStream(input.eventTransport, baseConfig.events)
+      : undefined;
   const imageDirectory = input.appConfig.paths?.imageOutput;
   const uploadDirectory = input.appConfig.paths?.uploads;
   if (!imageDirectory || !uploadDirectory) {
@@ -120,14 +155,15 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
     repository,
     imageDirectory,
     uploadDirectory,
-    now: Date.now,
+    now,
     stores: input.objectStores,
     derivatives: input.derivatives,
     imageOutputType: input.appConfig.imageOutputType,
     log: input.log,
   });
   const staging = createMediaStaging({
-    directory: `${uploadDirectory}/media-staging`,
+    directory: `${uploadDirectory}/temp`,
+    legacyDirectory: `${uploadDirectory}/media-staging`,
     id: randomUUID,
   });
   const adapters = input.adapters ?? createRESTMediaAdapters();
@@ -135,7 +171,7 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
     repository,
     environment: input.environment,
     decrypt: input.decrypt,
-    now: Date.now,
+    now,
     vertexCredentials: input.vertexCredentials,
     adapters,
     resolveConfigSecret: input.resolveConfigSecret,
@@ -143,6 +179,7 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
   async function actorContext(
     actor: MediaActor,
     effectiveConfig?: AppConfig,
+    request?: Request,
   ): Promise<MediaContext> {
     const [appConfig, role] = await Promise.all([
       effectiveConfig
@@ -154,9 +191,15 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
             idOnTheSource: actor.idOnTheSource,
             failClosed: true,
           }),
-      actor.role ? input.getRoleByName(actor.role) : Promise.resolve(null),
+      actor.role
+        ? getRoleForAccess({
+            req: request,
+            roleName: actor.role,
+            getRoleByName: input.getRoleByName,
+          })
+        : Promise.resolve(null),
     ]);
-    const configured = appConfig.media ?? resolveMediaConfig();
+    const configured = getMediaConfig(appConfig);
     const config = {
       ...configured,
       assets: {
@@ -185,7 +228,7 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
       scope.ownerId,
       `${ALLOWED_USER_FIELDS.join(' ')} tenantId idOnTheSource`,
     );
-    if (!actor || (actor.tenantId ?? null) !== scope.tenantId) {
+    if (!actor || (actor.tenantId ?? null) !== (scope.tenantId ?? null)) {
       throw new MediaServiceError('forbidden', 403, 'The media owner is unavailable.');
     }
     return actorContext({ ...actor, id: scope.ownerId });
@@ -208,6 +251,11 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
         })
       : undefined;
   const deps = {
+    publishActivity: activity?.publish.bind(activity),
+    catalogCache: input.catalogCache,
+    isLeader: input.isLeader,
+    warn: input.warn,
+    info: input.info,
     observer: input.observer,
     modelTracer: input.modelTracer,
     repository,
@@ -222,13 +270,14 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
       await Promise.all([
         repository.ensureMediaNativeIndexes(),
         repository.ensureMediaPresetIndexes(),
+        input.derivatives?.prepare?.(baseConfig),
       ]);
     },
     sweepStaging: staging.sweep,
     deferAssetDeletion: input.deferAssetDeletion,
     deferAssetWriteDeletion: input.deferAssetWriteDeletion,
-    async migrateNativeConsumers(scope: MediaOwnerScope, config: MediaConfig, threadId?: string) {
-      await repository.migrateMediaNativeConsumers({
+    async reconcileNativeConsumers(scope: MediaOwnerScope, config: MediaConfig, threadId?: string) {
+      await repository.reconcileMediaNativeConsumers({
         scope,
         threadId,
         maxRetainers: config.limits.maxAssetRetainers,
@@ -243,12 +292,19 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
         limit: config.limits.pageSize,
       });
     },
+    reconcileFileConsumers: async (scope: MediaOwnerScope, config: MediaConfig) => {
+      await repository.reconcileMediaFileConsumers?.({
+        scope,
+        limit: config.limits.pageSize,
+        retryMs: config.limits.consumerReconcileMs,
+      });
+    },
     adapters,
     transport: input.transport,
     moderate: input.moderate,
     asSystem: input.asSystem,
     withScope,
-    now: Date.now,
+    now,
     id: randomUUID,
     log: input.log,
   };
@@ -275,9 +331,13 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
   };
   const resolveContext = async (request: Request): Promise<MediaContext> => {
     const user = requestUser(request);
-    return { ...(await actorContext(user)), user };
+    return {
+      ...(await actorContext(user, (request as Request & { config?: AppConfig }).config, request)),
+      user,
+    };
   };
   const router = createMediaRouter({
+    activity,
     admission: input.admission,
     services,
     storage,
@@ -285,11 +345,16 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
     upload: input.upload,
     staging,
     id: randomUUID,
-    now: Date.now,
+    now,
     log: input.log,
     resolveContext,
+    resolveScope: (request) => {
+      const user = requestUser(request);
+      return { ownerId: user.id, tenantId: user.tenantId ?? null };
+    },
   });
   return {
+    closeActivity: () => activity?.close(),
     router,
     contentRouter: createMediaContentRouter({
       repository,
@@ -303,6 +368,20 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
     services,
     worker,
     recovery,
+    tools: (request, signal) =>
+      createMediaTools({
+        services,
+        repository,
+        resolveContext: () => resolveContext(request),
+        admitGeneration: async () => {
+          if (!input.admission?.admitToolGeneration) {
+            throw new MediaServiceError('not_ready', 503, 'Media tool admission is unavailable.');
+          }
+          await input.admission.admitToolGeneration(request);
+        },
+        signal,
+        now,
+      }),
     async nativeFactory(
       request: Request,
       source: MediaChatSource,
@@ -316,14 +395,58 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
         throw new MediaServiceError('forbidden', 403, 'Authentication is required.');
       }
       let currentContext: Promise<MediaContext> | undefined;
-      return async (selection) => {
-        if (selection.provider.toLowerCase() !== 'google') {
-          return undefined;
-        }
-        currentContext ??= actorContext(user, (request as Request & { config?: AppConfig }).config);
-        const context = await currentContext;
-        return createNativeMediaFactory({ deps, repository, context, source, onUsage })(selection);
-      };
+      const effectiveConfig =
+        (request as Request & { config?: AppConfig }).config ?? input.appConfig;
+      const references = getNativeContinuationRefs(source.previousContent).filter(
+        (ref) => parseNativeMessageReference(ref)?.messageId === source.messageId,
+      );
+      if (references.length) {
+        if (!repository.getNativeMessageParts)
+          throw new MediaServiceError('not_ready', 503, 'Native message replay is unavailable.');
+        const stored = await repository.getNativeMessageParts({
+          scope: { ownerId: user.id, tenantId: user.tenantId ?? null },
+          conversationId: source.conversationId,
+          references: references.map((continuationRef) => ({ continuationRef })),
+          limit: getMediaConfig(effectiveConfig).limits.maxNativeParts,
+        });
+        source.nativeSignatures ??= {};
+        stored.forEach((part, index) => {
+          if (!part)
+            throw new MediaServiceError(
+              'not_found',
+              404,
+              'Paused native message replay is unavailable.',
+            );
+          const parsed = parseNativeMessageReference(references[index])!;
+          source.nativeSignatures![parsed.index] =
+            part.kind === 'text'
+              ? { text: part.text, thoughtSignature: part.thoughtSignature }
+              : { mimeType: part.file.type, thoughtSignature: part.thoughtSignature };
+        });
+      }
+      return createNativeMediaFactory({
+        deps,
+        repository,
+        config: getMediaConfig(effectiveConfig),
+        resolveContext: () => (currentContext ??= actorContext(user, effectiveConfig, request)),
+        source,
+        files:
+          input.saveNativeImage && input.getNativeFileStrategy
+            ? {
+                save: (part) =>
+                  input.saveNativeImage!(`data:${part.mimeType};base64,${part.data}`, {
+                    req: Object.assign(Object.create(request), { config: effectiveConfig }),
+                    filename: 'native-image',
+                    endpoint: 'google',
+                    context: FileContext.image_generation,
+                    preserveOriginal: true,
+                  }),
+                read: (scope, file, maxBytes) =>
+                  readNativeMessageImage(input.getNativeFileStrategy!, scope, file, maxBytes),
+              }
+            : undefined,
+        onUsage,
+      });
     },
   };
 }

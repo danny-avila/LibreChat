@@ -5,6 +5,7 @@ import { mkdir, readdir, lstat, rm, unlink } from 'node:fs/promises';
 import type { MediaConfig } from 'librechat-data-provider';
 import type { Request } from 'express';
 import { mediaContentByteLimit, normalizeMediaContentType } from './content';
+import { mediaTemporaryDirectory } from './temporary';
 import { MediaByteCounter } from './storage';
 
 type UploadFile = Express.Multer.File;
@@ -37,9 +38,11 @@ function asError(error: unknown, fallback: string): Error {
 
 export function createMediaStaging({
   directory,
+  legacyDirectory,
   id,
 }: {
   directory: string;
+  legacyDirectory?: string;
   id: () => string;
 }): MediaStaging {
   const root = path.resolve(directory);
@@ -54,7 +57,17 @@ export function createMediaStaging({
       return {
         _handleFile(req, file, callback) {
           const filename = id();
-          const location = path.join(root, filename);
+          let ownerDirectory: string;
+          try {
+            ownerDirectory = mediaTemporaryDirectory(
+              root,
+              (req as Request & { user?: { id?: string } }).user?.id ?? '',
+            );
+          } catch (error) {
+            callback(asError(error, 'Media staging requires authentication.'));
+            return;
+          }
+          const location = path.join(ownerDirectory, filename);
           const controller = new AbortController();
           const abort = () => controller.abort();
           let sourceError: Error | undefined;
@@ -66,7 +79,7 @@ export function createMediaStaging({
           const stage = async (): Promise<Partial<UploadFile>> => {
             let created = false;
             try {
-              await mkdir(root, { recursive: true });
+              await mkdir(ownerDirectory, { recursive: true });
               if (req.aborted) abort();
               controller.signal.throwIfAborted();
               if (sourceError) throw sourceError;
@@ -78,7 +91,7 @@ export function createMediaStaging({
                 created = true;
               });
               await pipeline(file.stream, counter, out, { signal: controller.signal });
-              return { destination: root, filename, path: location, size: counter.bytes };
+              return { destination: ownerDirectory, filename, path: location, size: counter.bytes };
             } catch (error) {
               if (created) await remove(location);
               throw error;
@@ -101,32 +114,43 @@ export function createMediaStaging({
       };
     },
     async sweep(staleBefore) {
-      let entries: string[];
-      try {
-        entries = await readdir(root);
-      } catch (error) {
-        if (isMissing(error)) return 0;
-        throw error;
-      }
-      const removed = await Promise.all(
-        entries.map(async (entry) => {
-          const location = path.resolve(root, entry);
-          const relative = path.relative(root, location);
-          if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return false;
+      const sweepDirectory = async (folder: string): Promise<number> => {
+        const directoryInfo = await lstat(folder).catch((error: unknown) => {
+          if (isMissing(error)) return null;
+          throw error;
+        });
+        if (!directoryInfo?.isDirectory() || directoryInfo.isSymbolicLink()) return 0;
+        let removed = 0;
+        for (const entry of await readdir(folder)) {
+          const location = path.resolve(folder, entry);
+          const relative = path.relative(folder, location);
+          if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) continue;
           try {
             const info = await lstat(location);
-            if (info.isSymbolicLink() || info.mtimeMs >= staleBefore) return false;
+            if (info.isSymbolicLink() || info.mtimeMs >= staleBefore) continue;
             if (info.isDirectory()) await rm(location, { recursive: true, force: true });
             else if (info.isFile()) await remove(location);
-            else return false;
-            return true;
+            else continue;
+            removed++;
           } catch (error) {
-            if (isMissing(error)) return false;
-            throw error;
+            if (!isMissing(error)) throw error;
           }
-        }),
-      );
-      return removed.filter(Boolean).length;
+        }
+        return removed;
+      };
+      const owners = await readdir(root, { withFileTypes: true }).catch((error: unknown) => {
+        if (isMissing(error)) return [];
+        throw error;
+      });
+      let removed = 0;
+      for (const owner of owners) {
+        if (!owner.isDirectory() || owner.isSymbolicLink() || !/^[a-zA-Z0-9_-]+$/.test(owner.name))
+          continue;
+        removed += await sweepDirectory(mediaTemporaryDirectory(root, owner.name));
+      }
+      // Existing deployments can still have staged bytes from before the temp-tree migration.
+      if (legacyDirectory) removed += await sweepDirectory(path.resolve(legacyDirectory));
+      return removed;
     },
   };
 }

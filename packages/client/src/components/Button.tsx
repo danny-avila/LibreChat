@@ -29,6 +29,7 @@ type ButtonVariantOptions =
         | 'icon-xs'
         | 'icon-theme'
         | 'sm'
+        | 'xs'
         | 'lg'
         | 'theme'
         | null
@@ -109,6 +110,7 @@ const buttonVariantRecipe = cva(
       size: {
         default: 'h-10 px-4 py-2',
         sm: 'h-9 rounded-lg px-3',
+        xs: 'h-7 gap-1.5 px-2 text-xs',
         lg: 'h-11 rounded-lg px-8',
         icon: 'size-10',
         'icon-sm': 'size-8 p-0',

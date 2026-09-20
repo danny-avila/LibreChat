@@ -7,12 +7,7 @@ import {
   createMediaMethods,
   createMediaNativeMethods,
 } from '@librechat/data-schemas';
-import type {
-  MediaMethods,
-  MediaNativeMethods,
-  MediaOwnerScope,
-  ConversationImportMethods,
-} from '@librechat/data-schemas';
+import type { MediaMethods, MediaNativeMethods, MediaOwnerScope } from '@librechat/data-schemas';
 import { executeConversationImportWrites } from './import';
 import { saveNativeConversationClone } from './native';
 
@@ -21,7 +16,7 @@ describe('native conversation clone publication', () => {
   let media: MediaMethods;
   let native: MediaNativeMethods;
   let scope: MediaOwnerScope;
-  let repository: MediaNativeMethods & ConversationImportMethods;
+  let repository: ReturnType<typeof createMethods>;
   const execution = {
     api: 'google.generateContent' as const,
     modelId: 'image-model',
@@ -33,7 +28,7 @@ describe('native conversation clone publication', () => {
     mongo = await MongoMemoryServer.create();
     await mongoose.connect(mongo.getUri());
     createModels(mongoose);
-    media = createMediaMethods(mongoose);
+    media = createMediaMethods(mongoose, { ownerExists: async () => true });
     native = createMediaNativeMethods(mongoose, media);
     repository = createMethods(mongoose);
     await media.ensureMediaIndexes();
@@ -85,7 +80,7 @@ describe('native conversation clone publication', () => {
     return { reference, content, job };
   }
 
-  it('retains before publication, survives concurrent maintenance, and keeps source and fork independent', async () => {
+  it('retains after publication, survives concurrent maintenance, and keeps source and fork independent', async () => {
     const { reference, content, job } = await source();
     await saveNativeConversationClone({
       scope,
@@ -95,7 +90,7 @@ describe('native conversation clone publication', () => {
       repository,
       loadConfig: async () => ({}),
       save: async () => {
-        await native.migrateMediaNativeConsumers({ scope, limit: 10, maxRetainers: 4 });
+        await native.reconcileMediaNativeConsumers({ scope, limit: 10, maxRetainers: 4 });
         expect(
           await native.getMediaNativeContinuation({
             scope,
@@ -103,7 +98,7 @@ describe('native conversation clone publication', () => {
             ...reference,
             conversationId: 'fork',
           }),
-        ).not.toBeNull();
+        ).toBeNull();
         await mongoose.models.Message.create({
           user: scope.ownerId,
           conversationId: 'fork',
@@ -112,7 +107,7 @@ describe('native conversation clone publication', () => {
         });
       },
     });
-    expect((await media.getMediaJob(scope, job.jobId))?.nativeConsumerClaims).toEqual([]);
+    expect((await media.getMediaJob(scope, job.jobId))?.nativeConsumerClaims ?? []).toEqual([]);
     await native.releaseMediaNativeConversation({
       scope,
       conversationId: 'source',
@@ -206,7 +201,7 @@ describe('native conversation clone publication', () => {
     ).resolves.toBeUndefined();
     expect(onCleanupError).toHaveBeenCalledTimes(1);
     confirm.mockRestore();
-    await native.migrateMediaNativeConsumers({ scope, limit: 10, maxRetainers: 4 });
+    await native.reconcileMediaNativeConsumers({ scope, limit: 10, maxRetainers: 4 });
     expect(
       await native.getMediaNativeContinuation({
         scope,
@@ -217,7 +212,7 @@ describe('native conversation clone publication', () => {
     ).not.toBeNull();
   });
 
-  it('rolls back only the new clone if source retention expires during publication', async () => {
+  it('keeps a visible clone and detaches only unavailable native identity after retention expires', async () => {
     const { reference, content } = await source();
     await expect(
       saveNativeConversationClone({
@@ -240,13 +235,20 @@ describe('native conversation clone publication', () => {
           );
         },
       }),
-    ).rejects.toMatchObject({ statusCode: 409 });
+    ).resolves.toBeUndefined();
     expect(
       await mongoose.models.Message.countDocuments({
         user: scope.ownerId,
         conversationId: 'expired-copy',
       }),
-    ).toBe(0);
+    ).toBe(1);
+    expect(
+      (
+        await mongoose.models.Message.findOne({ messageId: 'expired-message' }).lean<{
+          content: Array<{ text?: string; native_media?: object }>;
+        }>()
+      )?.content,
+    ).toEqual([{ type: ContentTypes.TEXT, text: 'caption' }]);
     expect(
       await mongoose.models.Message.countDocuments({
         user: scope.ownerId,

@@ -8,9 +8,10 @@ import {
 import type { MediaPresetWriteInput } from 'librechat-data-provider';
 import type { MediaMethods, MediaOwnerScope } from '~/types/media';
 import type { MediaPresetMethods } from '~/types/mediaPreset';
+import { runAsSystem, tenantStorage } from '~/config/tenantContext';
 import { createMediaPresetMethods } from './mediaPreset';
-import { tenantStorage } from '~/config/tenantContext';
 import { createMediaMethods } from './media';
+import { createModels } from '~/models';
 
 describe('media presets on standalone MongoDB', () => {
   let mongo: MongoMemoryServer;
@@ -33,8 +34,9 @@ describe('media presets on standalone MongoDB', () => {
   beforeAll(async () => {
     mongo = await MongoMemoryServer.create();
     await mongoose.connect(mongo.getUri());
-    media = createMediaMethods(mongoose);
-    presets = createMediaPresetMethods(mongoose);
+    createModels(mongoose);
+    media = createMediaMethods(mongoose, { ownerExists: async () => true });
+    presets = createMediaPresetMethods(mongoose, media);
     await media.ensureMediaIndexes();
     await presets.ensureMediaPresetIndexes();
   }, 60000);
@@ -198,5 +200,68 @@ describe('media presets on standalone MongoDB', () => {
     await media.completeMediaAccountDeletion({ scope, token: 'delete' });
     expect(await presets.listMediaPresets(scope)).toEqual([]);
     expect(await ids(other)).toEqual([['p1', false]]);
+  });
+
+  it('compensates a preset insert that resumes after account cleanup and owner TTL expiry', async () => {
+    await mongoose.models.User.create({
+      _id: scope.ownerId,
+      email: 'preset-race@example.com',
+      provider: 'local',
+    });
+    const strict = createMediaMethods(mongoose);
+    let checks = 0;
+    const paused = createMediaPresetMethods(mongoose, {
+      assertMediaOwnerActive: async (owner) => {
+        await strict.assertMediaOwnerActive(owner);
+        if (++checks !== 1) return;
+        expect(await strict.prepareMediaAccountDeletion({ scope, token: 'delete' })).toBe(true);
+        await mongoose.models.User.deleteOne({ _id: scope.ownerId });
+        await strict.completeMediaAccountDeletion({ scope, token: 'delete' });
+        await strict.reconcileMediaAccountDeletion({ scope, limit: 10, retentionMs: 1 });
+        await mongoose.models.MediaOwner.deleteMany(scope);
+      },
+    });
+    await expect(
+      paused.createMediaPreset({ scope, presetId: 'late', write: write('Late'), maxPresets: 5 }),
+    ).rejects.toMatchObject({ code: 'retired' });
+    expect(await ids()).toEqual([]);
+    await expect(
+      createMediaPresetMethods(mongoose).createMediaPreset({
+        scope,
+        presetId: 'retry',
+        write: write('Retry'),
+        maxPresets: 5,
+      }),
+    ).rejects.toMatchObject({ code: 'retired' });
+  });
+
+  it('discovers a crashed late preset insert after the owner tombstone expired and prunes bounded rows', async () => {
+    await create('orphan-one', 'Orphan one');
+    await create('orphan-two', 'Orphan two');
+    await mongoose.models.MediaOwner.deleteMany(scope);
+    const liveScope = { ownerId: new mongoose.Types.ObjectId().toString(), tenantId: null };
+    await mongoose.models.User.create({
+      _id: liveScope.ownerId,
+      email: 'live-preset@example.com',
+      provider: 'local',
+    });
+    await presets.createMediaPreset({
+      scope: liveScope,
+      presetId: 'live',
+      write: write('Live'),
+      maxPresets: 5,
+    });
+    await mongoose.models.MediaOwner.deleteMany(liveScope);
+    const strict = createMediaMethods(mongoose);
+    const page = await runAsSystem(() =>
+      strict.listMediaCleanupScopes({ limit: 10, now: new Date().toISOString() }),
+    );
+    expect(page.items).toEqual(expect.arrayContaining([scope, liveScope]));
+    expect(await strict.reconcileMediaAccountDeletion({ scope, limit: 1 })).toBe(1);
+    expect(await ids()).toHaveLength(1);
+    expect(await strict.reconcileMediaAccountDeletion({ scope, limit: 1 })).toBe(1);
+    expect(await ids()).toEqual([]);
+    expect(await strict.reconcileMediaAccountDeletion({ scope: liveScope, limit: 1 })).toBe(0);
+    expect(await ids(liveScope)).toEqual([['live', false]]);
   });
 });

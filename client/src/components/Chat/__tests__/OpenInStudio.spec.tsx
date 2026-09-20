@@ -8,11 +8,11 @@ import type { TAuthContext, TMediaFileRef } from '~/common';
 import { clearMediaSessionStorage, mediaDraftFamily } from '~/components/Media/state';
 import { StudioProvider, useStudioAvailable } from '~/components/Chat/Studio';
 import { makeAuthContext, makeStartupConfig, testUser } from 'test/auth';
-import { mediaSessionScope } from '~/routes/mediaHandoff';
+import { mediaSessionScope } from '~/components/Media/session';
 import { startupConfigKey } from '~/data-provider';
 import { AuthContext } from '~/hooks/AuthContext';
 import { ShareContext } from '~/Providers';
-import OpenInStudio from '../OpenInStudio';
+import OpenInStudio from '../Media/Open';
 import store from '~/store';
 
 const file: TMediaFileRef = {

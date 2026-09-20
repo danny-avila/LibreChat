@@ -134,6 +134,16 @@ export function updateMediaThread(
 export function deleteMediaThread(threadId: string): Promise<media.MediaDeletionReceipt> {
   return request.delete(endpoints.mediaThread(threadId));
 }
+export function getMediaRecoveryCapabilities(
+  signal?: AbortSignal,
+): Promise<media.MediaRecoveryCapabilities> {
+  return request.get(endpoints.mediaRecoveryCapabilities(), signal ? { signal } : undefined);
+}
+export function deleteMediaThreads(
+  payload: media.MediaThreadsDeleteRequest,
+): Promise<media.MediaThreadsDeletionReceipt> {
+  return request.deleteWithOptions(endpoints.mediaThreads(), { data: payload });
+}
 export function listMediaPresets(signal?: AbortSignal): Promise<media.MediaPresetList> {
   return request.get(endpoints.mediaPresets(), signal ? { signal } : undefined);
 }
@@ -1589,16 +1599,6 @@ export function updateSkillPermissions(
   variables: m.UpdateSkillPermVars,
 ): Promise<m.UpdatePermResponse> {
   return request.put(endpoints.updateSkillPermissions(variables.roleName), variables.updates);
-}
-
-export async function updateMediaPermissions(
-  variables: m.UpdateMediaPermVars,
-): Promise<m.UpdatePermResponse> {
-  const response: { role: m.UpdatePermResponse } = await request.patch(
-    endpoints.updateMediaPermissions(variables.roleName),
-    { permissions: { MEDIA: variables.updates } },
-  );
-  return response.role;
 }
 
 /* Tags */

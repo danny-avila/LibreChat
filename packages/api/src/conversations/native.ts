@@ -1,6 +1,17 @@
-import { getNativeContinuationRefs, resolveMediaConfig } from 'librechat-data-provider';
+import {
+  collectMessageFileIds,
+  removeMessageFileIds,
+  isMediaFileId,
+} from '@librechat/data-schemas';
+import {
+  detachNativeIdentity,
+  getNativeContinuationRefs,
+  parseNativeMessageReference,
+  resolveMediaConfig,
+} from 'librechat-data-provider';
 import type {
   AppConfig,
+  MediaMethods,
   MediaNativeMethods,
   MediaOwnerScope,
   ConversationImportMethods,
@@ -13,7 +24,9 @@ type NativeCloneRepository = Pick<
   | 'retainMediaNativeConversation'
   | 'confirmMediaNativeConversation'
   | 'reconcileMediaNativeMessageDeletion'
+  | 'detachMediaNativeConversation'
 > &
+  Pick<MediaMethods, 'getMediaAssetContent'> &
   ConversationImportMethods;
 
 /** A local copy is a new durable consumer; only portable imports discard native identity. */
@@ -21,7 +34,7 @@ export async function saveNativeConversationClone(input: {
   scope: MediaOwnerScope;
   sourceConversationId: string;
   conversationId: string;
-  messages: ReadonlyArray<Pick<TMessage, 'content'>>;
+  messages: ReadonlyArray<Pick<TMessage, 'content' | 'files' | 'attachments'>>;
   appConfig?: Pick<AppConfig, 'media'>;
   loadConfig: () => Promise<Pick<AppConfig, 'media'>>;
   repository: NativeCloneRepository;
@@ -29,45 +42,51 @@ export async function saveNativeConversationClone(input: {
   onCleanupError?: (error: Error) => void;
 }): Promise<void> {
   const refs = new Set<string>();
+  const fileIds = new Set<string>();
   for (const message of input.messages) {
-    for (const ref of getNativeContinuationRefs(message.content)) refs.add(ref);
+    for (const ref of getNativeContinuationRefs(message.content))
+      if (!parseNativeMessageReference(ref)) refs.add(ref);
+    for (const fileId of collectMessageFileIds(message))
+      if (isMediaFileId(fileId)) fileIds.add(fileId);
   }
-  if (!refs.size) return input.save();
   if (input.conversationId === input.sourceConversationId) {
     throw new ConversationImportError('A native conversation copy requires a new identity', 400);
   }
+  const unavailable = new Set<string>();
+  for (const fileId of fileIds) {
+    if (!(await input.repository.getMediaAssetContent(input.scope, fileId)))
+      unavailable.add(fileId);
+  }
+  if (unavailable.size)
+    for (const message of input.messages)
+      Object.assign(message, removeMessageFileIds(message, unavailable));
+  if (!refs.size) return input.save();
   const config = resolveMediaConfig((input.appConfig ?? (await input.loadConfig())).media);
   const identity = { scope: input.scope, conversationId: input.conversationId };
-  const claim = () =>
-    input.repository.retainMediaNativeConversation({
-      ...identity,
-      continuationRefs: Array.from(refs),
-      maxRetainers: config.limits.maxAssetRetainers,
-      limit: refs.size,
-      pendingUntil: new Date(Date.now() + config.worker.leaseMs).toISOString(),
-    });
-  let renewal: Promise<void> | undefined;
-  let timer: ReturnType<typeof setInterval> | undefined;
   try {
-    if (!(await claim()))
-      throw new ConversationImportError('Native conversation content is no longer available', 409);
-    timer = setInterval(() => {
-      if (renewal) return;
-      renewal = claim()
-        .then(
-          () => undefined,
-          (error: Error) => {
-            input.onCleanupError?.(error);
-          },
-        )
-        .finally(() => {
-          renewal = undefined;
-        });
-    }, config.worker.renewEveryMs);
-    timer.unref();
     await input.save();
-    if (!(await claim()))
-      throw new ConversationImportError('Native conversation content is no longer available', 409);
+    for (const ref of refs) {
+      if (
+        await input.repository.retainMediaNativeConversation({
+          ...identity,
+          continuationRefs: [ref],
+          maxRetainers: config.limits.maxAssetRetainers,
+          limit: 1,
+        })
+      )
+        continue;
+      await input.repository.detachMediaNativeConversation({
+        ...identity,
+        continuationRefs: [ref],
+      });
+      for (const message of input.messages) {
+        message.content = message.content?.map((part) =>
+          part && typeof part === 'object' && getNativeContinuationRefs([part]).includes(ref)
+            ? detachNativeIdentity(part)
+            : part,
+        );
+      }
+    }
   } catch (error) {
     const cleanup = {
       user: input.scope.ownerId,
@@ -84,8 +103,6 @@ export async function saveNativeConversationClone(input: {
     }
     throw error;
   } finally {
-    if (timer) clearInterval(timer);
-    await renewal;
     try {
       await input.repository.confirmMediaNativeConversation(identity);
       await input.repository.reconcileMediaNativeMessageDeletion(identity);

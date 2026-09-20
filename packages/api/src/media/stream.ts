@@ -5,19 +5,9 @@ import type { MediaMethods, MediaOwnerScope } from '@librechat/data-schemas';
 import type { Request } from 'express';
 import type { MediaStorage } from './storage';
 import { classifyMediaError, sendMediaError } from './http';
+import { getContentDisposition } from '~/utils/files';
+import { storageRangeResponse } from '~/storage/read';
 import { MediaServiceError } from './errors';
-
-function byteRange(value: string, bytes: number): { start: number; end: number } | undefined {
-  const match = /^bytes=(\d*)-(\d*)$/.exec(value);
-  if (!match || (!match[1] && !match[2]) || bytes === 0) return;
-  const first = Number(match[1]);
-  const last = Number(match[2]);
-  if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last)) return;
-  const start = match[1] ? first : Math.max(0, bytes - last);
-  const end = match[1] && match[2] ? Math.min(bytes - 1, last) : bytes - 1;
-  if (start < 0 || start >= bytes || end < start) return;
-  return { start, end };
-}
 
 /** Browser-native reads only; mutations remain behind bearer authentication. */
 export function createMediaContentRouter({
@@ -29,7 +19,7 @@ export function createMediaContentRouter({
   repository: Pick<MediaMethods, 'getMediaAssetContent'>;
   storage: Pick<MediaStorage, 'open'>;
   resolveScope(request: Request): MediaOwnerScope;
-  log(error: Error): void;
+  log(message: string, error?: Error): void;
 }): Router {
   const router = Router();
   router.get('/:fileId/content', async (req, res) => {
@@ -46,20 +36,19 @@ export function createMediaContentRouter({
       if (!asset || !content) {
         throw new MediaServiceError('not_found', 404, 'Media content was not found.');
       }
-      const rangeHeader = req.headers.range;
-      const range = rangeHeader ? byteRange(rangeHeader, content.bytes) : undefined;
+      const framing = storageRangeResponse(req.headers.range, content.bytes);
+      const { range } = framing;
+      res.status(framing.status).set(framing.headers);
       res.set({
-        'Accept-Ranges': 'bytes',
         'Content-Type': content.type,
-        'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(asset.filename).replace(/'/g, '%27')}`,
+        'Content-Disposition': getContentDisposition(
+          asset.filename,
+          content.type === 'image/svg+xml' ? 'attachment' : 'inline',
+        ),
       });
-      if (rangeHeader && !range) {
-        res.status(416).set('Content-Range', `bytes */${content.bytes}`).end();
+      if (framing.status === 416) {
+        res.end();
         return;
-      }
-      res.set('Content-Length', String(range ? range.end - range.start + 1 : content.bytes));
-      if (range) {
-        res.status(206).set('Content-Range', `bytes ${range.start}-${range.end}/${content.bytes}`);
       }
       if (req.method === 'HEAD') {
         res.end();
@@ -74,7 +63,7 @@ export function createMediaContentRouter({
     } catch (error) {
       if (controller.signal.aborted) return;
       const failure = error instanceof Error ? error : new Error('Media streaming failed.');
-      if (!classifyMediaError(failure)) log(failure);
+      if (!classifyMediaError(failure)) log('[media] Content streaming failed.', failure);
       if (res.headersSent || res.destroyed) {
         res.destroy();
       } else {

@@ -9,8 +9,7 @@ const {
   resolveBuildInfo,
   resolveTitleTiming,
   sanitizeModelSpecs,
-  sanitizeMediaStartupConfig,
-  resolveMediaPermissions,
+  resolveMediaStartupConfig,
   excludeHiddenModelSpecs,
   isFileSnapshotEnabled,
   getEndpointsDropParamsMap,
@@ -23,7 +22,6 @@ const { hasCapability, hasConfigCapability } = require('~/server/middleware/role
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getRumConfig } = require('~/server/services/Config/rum');
 const { getAppConfig } = require('~/server/services/Config/app');
-const { getRoleByName } = require('~/models');
 
 const router = express.Router();
 const emailLoginEnabled =
@@ -253,10 +251,7 @@ router.get('/', async function (req, res) {
       return res.status(200).send(payload);
     }
 
-    const [appConfig, mediaRole] = await Promise.all([
-      getAppConfig(getAppConfigOptionsFromUser(req.user)),
-      req.user.role ? getRoleByName(req.user.role) : null,
-    ]);
+    const appConfig = await getAppConfig(getAppConfigOptionsFromUser(req.user));
     const codeEnvironmentDecisionVersion = resolveCodeEnvironmentDecisionVersion(
       process.env.CODE_ENVIRONMENT_DECISION_VERSION,
     );
@@ -308,10 +303,10 @@ router.get('/', async function (req, res) {
       turnstile: appConfig?.turnstileConfig,
       modelSpecs: sanitizeModelSpecs(excludeHiddenModelSpecs(appConfig?.modelSpecs)),
       balance: balanceConfig,
-      media: sanitizeMediaStartupConfig({
-        config: appConfig.media,
+      media: resolveMediaStartupConfig({
+        appConfig,
         authenticated: true,
-        ...resolveMediaPermissions(mediaRole),
+        environment: process.env,
         reconciliationAvailable: req.app.locals.mediaRuntime?.worker.available,
       }),
       bundlerURL: process.env.SANDPACK_BUNDLER_URL,

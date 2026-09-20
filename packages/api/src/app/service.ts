@@ -8,7 +8,7 @@ import {
 import type { AppConfig, IConfig } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 
-const BASE_CONFIG_KEY = '_BASE_';
+export const BASE_CONFIG_KEY = '_BASE_';
 
 export type AppConfigPrincipal = {
   principalType: string;

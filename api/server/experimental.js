@@ -14,13 +14,12 @@ const cluster = require('cluster');
 const Redis = require('ioredis');
 const cors = require('cors');
 const axios = require('axios');
-const multer = require('multer');
 const express = require('express');
 const mongoose = require('mongoose');
 const passport = require('passport');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { logger, runAsSystem, tenantStorage, decrypt } = require('@librechat/data-schemas');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
 const mongoSanitize = require('express-mongo-sanitize');
 const {
   isEnabled,
@@ -36,14 +35,14 @@ const {
   performStartupChecks,
   handleJsonParseError,
   initializeFileStorage,
-  createMediaRuntimeFromApp,
-  createAdminMediaRouter,
+  createMetrics,
+  isLeader,
+  startMediaWorker,
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   injectConfiguredFooterBootstrap,
   preAuthTenantMiddleware,
   requestContextMiddleware,
-  tenantContextMiddleware,
   configureServerTimeouts,
   setupGracefulShutdown,
   registerShutdownTask,
@@ -62,7 +61,7 @@ const {
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
-const { capabilityContextMiddleware, hasCapability } = require('./middleware/roles/capabilities');
+const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
@@ -88,11 +87,7 @@ const createSpaFallback = require('./utils/fallback');
 const { getAppConfig } = require('./services/Config');
 const staticCache = require('./utils/staticCache');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
-const optionalShareFileAuth = require('./middleware/optionalShareFileAuth');
-const requireJwtAuth = require('./middleware/requireJwtAuth');
-const checkBan = require('./middleware/checkBan');
-const { messageIpLimiter, messageUserLimiter } = require('./middleware/limiters/messageLimiters');
-const { createFileLimiters } = require('./middleware/limiters/uploadLimiters');
+const mediaApplication = require('./services/Media');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
 const agentEventMethods = require('~/models');
@@ -417,7 +412,11 @@ if (cluster.isMaster) {
   };
   // Tear down stream resources before shared caches and telemetry exporters shut down.
   registerShutdownTask('generation job manager', destroyGenerationJobManager, { priority: 100 });
-  const expiredFileSweep = createClusteredFileSweep(cacheConfig.USE_REDIS, startExpiredFileSweep);
+  const expiredFileSweep = createClusteredFileSweep(
+    cacheConfig.USE_REDIS,
+    startExpiredFileSweep,
+    isLeader,
+  );
   const SCHEDULE_ENGINE_OPTIONAL_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'DELETE']);
 
   const rejectScheduleWritesUntilReady = (req, res, next) => {
@@ -452,6 +451,11 @@ if (cluster.isMaster) {
     }
   });
   const startServer = async () => {
+    const { metricsMiddleware, metricsRouter, recordMediaEvent } = createMetrics({
+      collectMediaBacklogMetrics: () => runAsSystem(agentEventMethods.getMediaBacklogMetrics),
+    });
+    app.use(metricsMiddleware);
+    app.use('/metrics', metricsRouter);
     logger.info(`Worker ${process.pid} initializing...`);
 
     await waitForKeyvRedisClient();
@@ -510,25 +514,6 @@ if (cluster.isMaster) {
     /** Initialize app configuration */
     const appConfig = await getAppConfig();
     initializeFileStorage(appConfig);
-    const mediaRuntime = createMediaRuntimeFromApp({
-      appConfig,
-      db: agentEventMethods,
-      getRoleByName,
-      getAppConfig,
-      tenantContext: tenantStorage,
-      asSystem: runAsSystem,
-      environment: process.env,
-      http: axios,
-      upload: multer,
-      admission: { checkBan, messageIpLimiter, messageUserLimiter, createFileLimiters },
-      getStorageStrategy: require('~/server/services/Files/strategies').getStrategyFunctions,
-      readFile: fs.promises.readFile,
-      decrypt,
-      log: logger.error.bind(logger),
-    });
-    app.locals.mediaRuntime = mediaRuntime;
-    await mediaRuntime.worker.start();
-    registerShutdownTask('media worker', mediaRuntime.worker.stop, { priority: 100 });
     initializeGitHubSkillSync(appConfig);
     // Register configured tool-approval policy hooks (mirrors the standard startup path).
     // Honors the `enabled` kill switch; hooks are base-config-only, registered process-wide.
@@ -545,6 +530,13 @@ if (cluster.isMaster) {
     await runAsSystem(async () => {
       await performStartupChecks(appConfig);
       await updateInterfacePerms({ appConfig, getRoleByName, updateAccessPermissions });
+    });
+    const mediaRuntime = mediaApplication.initialize({
+      app,
+      appConfig,
+      mediaMetrics: recordMediaEvent,
+      isLeader: expiredFileSweep.isLeader,
+      externalDeadlineAt: () => clusterShutdownDeadlineAt,
     });
 
     /** Load index.html for SPA serving */
@@ -661,16 +653,7 @@ if (cluster.isMaster) {
     app.use('/api/admin', routes.adminAuth);
     app.use('/api/admin/skills', routes.adminSkills);
     app.use('/api/admin/code-environments', routes.adminCodeEnvironments);
-    app.use(
-      '/api/admin/media',
-      createAdminMediaRouter({
-        services: mediaRuntime.recovery,
-        hasCapability,
-        recordAuditEntry: agentEventMethods.recordAuditEntry,
-        requireJwtAuth,
-        log: logger.error.bind(logger),
-      }),
-    );
+    app.use('/api/admin/media', routes.adminMedia);
     app.use('/api/code-environments', routes.codeEnvironments);
     app.use('/api/actions', routes.actions);
     app.use('/api/keys', routes.keys);
@@ -690,14 +673,7 @@ if (cluster.isMaster) {
     app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
     app.use('/api/assistants', routes.assistants);
     app.use('/api/files', await routes.files.initialize());
-    app.use(
-      '/api/media/assets',
-      optionalJwtAuth,
-      optionalShareFileAuth,
-      tenantContextMiddleware,
-      mediaRuntime.contentRouter,
-    );
-    app.use('/api/media', requireJwtAuth, mediaRuntime.router);
+    mediaApplication.mount(app, mediaRuntime);
     app.use(
       '/images/',
       createValidateImageRequest({
@@ -744,6 +720,7 @@ if (cluster.isMaster) {
        * swallow init failures and leave the worker listening but only
        * partially initialized.
        */
+      void startMediaWorker(mediaRuntime.worker, logger);
       try {
         /** Initialize MCP servers and OAuth reconnection for this worker */
         await initializeMCPs();

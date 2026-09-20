@@ -7,25 +7,27 @@ import { cn } from '~/utils';
 function Sidebar({
   links,
   activeId,
+  routeActiveId,
   expanded,
   width,
   minWidth,
   maxWidth,
   onCollapse,
   onExpand,
-  onLeaveInsights,
+  onLeaveRoute,
   onResizeStart,
   onResizeKeyboard,
 }: {
   links: NavLink[];
   activeId?: string;
+  routeActiveId?: string;
   expanded: boolean;
   width: number;
   minWidth: number;
   maxWidth: number;
   onCollapse: () => void;
   onExpand: () => void;
-  onLeaveInsights: () => void;
+  onLeaveRoute: () => void;
   onResizeStart: (e: React.MouseEvent) => void;
   onResizeKeyboard: (direction: 'shrink' | 'grow') => void;
 }) {
@@ -34,10 +36,11 @@ function Sidebar({
       <div className="flex h-full w-full overflow-hidden">
         <ExpandedPanel
           links={links}
+          routeActiveId={routeActiveId}
           expanded={expanded}
           onCollapse={onCollapse}
           onExpand={onExpand}
-          onLeaveInsights={onLeaveInsights}
+          onLeaveRoute={onLeaveRoute}
         />
         <nav
           className={cn(

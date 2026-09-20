@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import dns from 'node:dns';
+import { gzipSync } from 'node:zlib';
 import { Readable } from 'node:stream';
 import { createServer } from 'node:http';
 import axios, { AxiosError } from 'axios';
 import type { CreateAxiosDefaults, InternalAxiosRequestConfig } from 'axios';
-import { createMediaTransport, scopeMediaTransport } from './transport';
+import { createMediaTransport, scopeMediaTransport, isMediaTransferLimitError } from './transport';
 
 describe('effective media network policy', () => {
   it('enforces each principal exemption list at the actual HTTP boundary', async () => {
@@ -81,6 +82,68 @@ describe('effective media network policy', () => {
 });
 
 describe('public media downloads', () => {
+  it('bounds actual HTTP response bytes, including chunked and decompressed streams', async () => {
+    const maxBytes = 1024;
+    const body = Buffer.alloc(maxBytes * 4, 97);
+    const compressed = gzipSync(body);
+    const server = createServer((request, response) => {
+      if (request.url === '/declared') {
+        response.writeHead(200, { 'Content-Length': body.length });
+        response.end(body);
+        return;
+      }
+      if (request.url === '/gzip') {
+        response.writeHead(200, {
+          'Content-Encoding': 'gzip',
+          'Content-Length': compressed.length,
+        });
+        response.end(compressed);
+        return;
+      }
+      response.writeHead(200, { 'Transfer-Encoding': 'chunked' });
+      response.write(body.subarray(0, maxBytes));
+      response.end(body.subarray(maxBytes));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing fixture address');
+    const host = `127.0.0.1:${address.port}`;
+    const transport = createMediaTransport({
+      http: axios.create({ proxy: false }),
+      allowedAddresses: [host],
+    });
+    const request = (route: string) => ({
+      url: `http://${host}/${route}`,
+      timeoutMs: 1000,
+      maxBytes,
+    });
+
+    try {
+      expect(compressed.length).toBeLessThan(maxBytes);
+      for (const route of ['chunked', 'gzip']) {
+        let received = 0;
+        let failure: unknown;
+        try {
+          for await (const chunk of await transport.stream(request(route))) {
+            received += (chunk as Buffer).length;
+          }
+        } catch (error) {
+          failure = error;
+        }
+        expect(failure).toBeInstanceOf(Error);
+        expect(isMediaTransferLimitError(failure as Error, maxBytes)).toBe(true);
+        expect(received).toBeLessThanOrEqual(maxBytes);
+      }
+      await expect(transport.stream(request('declared'))).rejects.toMatchObject({ status: 413 });
+      await expect(transport.json(request('chunked'), z.string())).rejects.toThrow();
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
   function fixture(defaults: CreateAxiosDefaults = {}) {
     const requests: InternalAxiosRequestConfig[] = [];
     const responses: Readable[] = [];

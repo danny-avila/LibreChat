@@ -91,6 +91,7 @@ import { toClientPendingAction } from '~/agents/hitl/policy';
 import { ApprovalLifecycle, pausePersistenceActionId } from './ApprovalLifecycle';
 import { projectPendingMCPOAuthPrompts } from '~/mcp/oauth/resume';
 import { sanitizeJobMetadata } from './metadata';
+import { sanitizeFinalEvent } from './internal/sanitizeFinalEvent';
 
 /** Terminal error surfaced to a client still attached when its approval window lapses. */
 const APPROVAL_EXPIRED_ERROR = 'Approval expired before a decision was made';
@@ -2926,6 +2927,7 @@ class GenerationJobManagerClass {
         activityPhaseSnapshot: jobData.activityPhaseSnapshot,
         compactionSemanticIndex: jobData.compactionSemanticIndex,
         contextMeta: jobData.contextMeta,
+        nativeSignatures: jobData.nativeSignatures,
         // Surface the owning replica's seal capability so the steer route can
         // honour it instead of probing its own (possibly older) SDK.
         preemptCapable: jobData.preemptCapable,
@@ -3012,7 +3014,7 @@ class GenerationJobManagerClass {
     let finalEvent: t.ServerSentEvent | undefined;
     if (jobData.finalEvent) {
       try {
-        finalEvent = JSON.parse(jobData.finalEvent) as t.ServerSentEvent;
+        finalEvent = sanitizeFinalEvent(JSON.parse(jobData.finalEvent) as t.ServerSentEvent);
       } catch {
         // Ignore parse errors
       }
@@ -3959,7 +3961,7 @@ class GenerationJobManagerClass {
       conversationId: claim.conversationId,
       status: claim.status,
     });
-    const desiredEvent = finalEvent ?? reconcileEvent;
+    const desiredEvent = finalEvent ? sanitizeFinalEvent(finalEvent) : reconcileEvent;
     let publicationEvent: t.ServerSentEvent | null = null;
     let durable = false;
 
@@ -3979,7 +3981,9 @@ class GenerationJobManagerClass {
           settledJob.terminalPersistencePending !== true &&
           settledJob.finalEvent
         ) {
-          publicationEvent = JSON.parse(settledJob.finalEvent) as t.ServerSentEvent;
+          publicationEvent = sanitizeFinalEvent(
+            JSON.parse(settledJob.finalEvent) as t.ServerSentEvent,
+          );
           durable = true;
         }
       }
@@ -4002,7 +4006,7 @@ class GenerationJobManagerClass {
     const persistenceFailed =
       finalEvent == null ||
       !durable ||
-      publicationEvent !== finalEvent ||
+      publicationEvent !== desiredEvent ||
       ('reconcile' in publicationEvent && publicationEvent.reconcile === true);
 
     try {
@@ -4650,8 +4654,14 @@ class GenerationJobManagerClass {
        * tier that produced its bytes, not the one seen before the claim. */
       try {
         const refreshed = await this.jobStore.getJob(streamId);
-        if (refreshed?.createdAt === jobData.createdAt && refreshed.contextMeta != null) {
-          jobData = { ...jobData, contextMeta: refreshed.contextMeta };
+        if (refreshed?.createdAt === jobData.createdAt) {
+          jobData = {
+            ...jobData,
+            ...(refreshed.contextMeta != null && { contextMeta: refreshed.contextMeta }),
+            ...(refreshed.nativeSignatures != null && {
+              nativeSignatures: refreshed.nativeSignatures,
+            }),
+          };
         }
       } catch (metadataError) {
         logger.warn(
@@ -4916,9 +4926,10 @@ class GenerationJobManagerClass {
         return;
       }
       terminalEventDelivered = true;
-      runtime.finalEvent = event;
+      const safeEvent = sanitizeFinalEvent(event);
+      runtime.finalEvent = safeEvent;
       try {
-        onDone?.(event);
+        onDone?.(safeEvent);
       } finally {
         subscription?.unsubscribe();
       }
@@ -5419,7 +5430,9 @@ class GenerationJobManagerClass {
         let finalEvent = runtime.finalEvent;
         if (!finalEvent && terminalJob.finalEvent) {
           try {
-            finalEvent = JSON.parse(terminalJob.finalEvent) as t.ServerSentEvent;
+            finalEvent = sanitizeFinalEvent(
+              JSON.parse(terminalJob.finalEvent) as t.ServerSentEvent,
+            );
           } catch (err) {
             logger.warn(
               `[GenerationJobManager] Failed to parse stored final event for ${streamId}:`,
@@ -8742,23 +8755,24 @@ class GenerationJobManagerClass {
     event: t.ServerSentEvent,
     expectedCreatedAt?: number,
   ): Promise<void> {
+    const safeEvent = sanitizeFinalEvent(event);
     const runtime = this.runtimeState.get(streamId);
     const generationId = expectedCreatedAt ?? runtime?.createdAt;
     const matchingRuntime =
       runtime && (generationId == null || runtime.createdAt === generationId) ? runtime : undefined;
     if (matchingRuntime) {
-      matchingRuntime.finalEvent = event;
+      matchingRuntime.finalEvent = safeEvent;
     }
     if (matchingRuntime?.createdEventPublication) {
       await matchingRuntime.createdEventPublication;
     }
     // Persist finalEvent to Redis for cross-replica consistency
     this.jobStore
-      .updateJob(streamId, { finalEvent: JSON.stringify(event) }, generationId)
+      .updateJob(streamId, { finalEvent: JSON.stringify(safeEvent) }, generationId)
       .catch((err) => {
         logger.error(`[GenerationJobManager] Failed to persist finalEvent:`, err);
       });
-    await this.eventTransport.emitDone(streamId, event, generationId);
+    await this.eventTransport.emitDone(streamId, safeEvent, generationId);
     if (matchingRuntime?.startupTelemetry) {
       this.recordStartupEvent(matchingRuntime, event);
     }

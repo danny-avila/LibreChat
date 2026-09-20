@@ -92,9 +92,3 @@ export function createInsightsAccessResolver(deps: InsightsAgentAccessDeps) {
     return { agents: choices, media: hasGlobalAccess };
   };
 }
-
-export function createInsightsAgentAccessResolver(deps: InsightsAgentAccessDeps) {
-  const resolve = createInsightsAccessResolver(deps);
-  return async (user: InsightsAccessUser): Promise<TInsightsAgent[]> =>
-    (await resolve(user)).agents;
-}

@@ -2,8 +2,8 @@ import React, { useCallback, useState } from 'react';
 import { createStore, Provider } from 'jotai';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { MediaAsset } from 'librechat-data-provider';
-import { useMediaChatHandoff } from '../useMediaChatHandoff';
-import { mediaChatHandoff } from '~/routes/mediaHandoff';
+import { mediaChatHandoff } from '~/components/Media/handoff';
+import { useMediaChatHandoff } from '../Media/handoff';
 
 const handoff = {
   scope: 'owner',

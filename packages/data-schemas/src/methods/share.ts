@@ -15,6 +15,7 @@ import {
   sanitizeUIResourceContent,
   stripMessageUIResourceMarkers,
 } from '~/utils/stripUIResourceMarkers';
+import { collectMessageFileIds } from '~/utils/messageFiles';
 import { activeExpirationFilter } from '~/utils/retention';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { MEILI_SEARCH_LIMIT } from '~/common/search';
@@ -120,6 +121,7 @@ const SENSITIVE_SHARED_FILE_FIELDS = new Set([
   'embedded',
   'usage',
   'metadata',
+  'renditions',
 ]);
 
 /**
@@ -183,21 +185,6 @@ function isLlmDeliveryPath(
   return value === 'provider' || value === 'text' || value === 'none';
 }
 
-/** Collect `file_id`s from a message's `files`/`attachments` array into `target`. */
-function collectFileIds(items: unknown, target: Set<string>): void {
-  if (!Array.isArray(items)) {
-    return;
-  }
-  for (const item of items) {
-    if (item && typeof item === 'object') {
-      const fileId = (item as { file_id?: unknown }).file_id;
-      if (typeof fileId === 'string' && fileId) {
-        target.add(fileId);
-      }
-    }
-  }
-}
-
 type SteerLikePart = { type?: unknown; files?: unknown };
 
 function isSteerPartWithFiles(part: unknown): part is SteerLikePart {
@@ -219,20 +206,6 @@ function isImageFilePart(part: unknown): part is ImageFilePart {
   );
 }
 
-/** All inline file parts follow the same discovery and inclusion policy. */
-function collectContentFileIds(content: unknown, target: Set<string>): void {
-  if (!Array.isArray(content)) {
-    return;
-  }
-  for (const part of content) {
-    if (isSteerPartWithFiles(part)) {
-      collectFileIds(part.files, target);
-    } else if (isImageFilePart(part)) {
-      collectFileIds([part.image_file], target);
-    }
-  }
-}
-
 /**
  * Build the per-share file snapshot from the messages being shared. Captures only
  * the metadata the share-scoped routes need to stream each file; references the
@@ -252,9 +225,7 @@ async function buildFileSnapshots(
 
   const fileIds = new Set<string>();
   for (const message of messages) {
-    collectFileIds(message.files, fileIds);
-    collectFileIds(message.attachments, fileIds);
-    collectContentFileIds(message.content, fileIds);
+    for (const fileId of collectMessageFileIds(message)) fileIds.add(fileId);
   }
 
   return readFileSnapshots(mongoose, fileIds, ownerId);

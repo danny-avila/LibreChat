@@ -2,7 +2,7 @@ import axios from 'axios';
 import type { InternalAxiosRequestConfig } from 'axios';
 import { createModerationCheck } from './moderation';
 
-test('shared moderation uses configured endpoint credentials, all inputs and fails closed on malformed replies', async () => {
+test('uses configured credentials and all inputs, rejects malformed replies, and respects disabled moderation', async () => {
   const calls: InternalAxiosRequestConfig[] = [];
   let data: object = { results: [{ flagged: false }, { flagged: true }] };
   const http = axios.create({
@@ -21,9 +21,22 @@ test('shared moderation uses configured endpoint credentials, all inputs and fai
   expect(calls[0].url).toBe(environment.OPENAI_MODERATION_REVERSE_PROXY);
   expect(calls[0].headers.Authorization).toBe('Bearer existing-key');
   expect(JSON.parse(calls[0].data).input).toEqual(['prompt', 'negative prompt']);
-  data = { results: [] };
+  data = { results: [{ flagged: 'invalid' }] };
   await expect(moderate(['prompt'])).rejects.toThrow();
   environment.OPENAI_MODERATION = 'false';
   expect(await moderate(['prompt'])).toBe(false);
   expect(calls).toHaveLength(2);
+});
+
+test('preserves chat moderation semantics for an empty provider result and still blocks flagged input', async () => {
+  const http = axios.create();
+  const response = jest.spyOn(http, 'post').mockResolvedValue({ data: { results: [] } });
+  const moderate = createModerationCheck({
+    http,
+    environment: { OPENAI_MODERATION: 'true', OPENAI_MODERATION_API_KEY: 'fixture-key' },
+  });
+  await expect(moderate(['question'])).resolves.toBe(false);
+  response.mockResolvedValue({ data: { results: [{ flagged: true }] } });
+  await expect(moderate(['blocked question'])).resolves.toBe(true);
+  expect(response).toHaveBeenCalledTimes(2);
 });

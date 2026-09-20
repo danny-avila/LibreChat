@@ -12,6 +12,45 @@ import { EModelEndpoint } from '../schemas';
 
 const milliseconds = z.number().int().positive().max(604_800_000);
 const capacity = z.number().int().positive().max(1_000_000);
+const configuredString = z.string().trim().min(1);
+export const mediaConnectionOptionsSchema = z
+  .object({
+    deployments: z.record(configuredString, configuredString).optional(),
+    brandId: configuredString.optional(),
+  })
+  .strict();
+export type MediaProviderOptions = z.infer<typeof mediaConnectionOptionsSchema>;
+
+/** Provider connection options are validated both before and after environment expansion. */
+export function mediaOptionsSchema(api: z.infer<typeof mediaApiSchema>, allowEnvironment = false) {
+  return mediaConnectionOptionsSchema.superRefine((options, ctx) => {
+    if (
+      options.deployments &&
+      !['openai.images', 'openai.responses', 'openai.videos', 'microsoft.images'].includes(api)
+    )
+      ctx.addIssue({
+        code: 'custom',
+        path: ['deployments'],
+        message: 'Deployment mappings require an OpenAI or Microsoft API',
+      });
+    if (api === 'sourceful.images') {
+      const valid =
+        z.string().uuid().safeParse(options.brandId).success ||
+        (allowEnvironment && /^\$\{[A-Z_][A-Z0-9_]*\}$/.test(options.brandId ?? ''));
+      if (!valid)
+        ctx.addIssue({
+          code: 'custom',
+          path: ['brandId'],
+          message: 'Sourceful requires a UUID brandId',
+        });
+    } else if (options.brandId !== undefined)
+      ctx.addIssue({
+        code: 'custom',
+        path: ['brandId'],
+        message: 'brandId is only supported by Sourceful',
+      });
+  });
+}
 export const mediaIntegrationSchema = z
   .object({
     id: mediaIdSchema,
@@ -20,6 +59,7 @@ export const mediaIntegrationSchema = z
     enabled: z.boolean().optional(),
     api: mediaApiSchema,
     endpointRef: z.discriminatedUnion('kind', [
+      /** Builtin Google uses GOOGLE_KEY, then GEMINI_API_KEY; user_provided selects the saved Google envelope. Service accounts use kind: vertex. */
       z.object({ kind: z.literal('builtin'), endpoint: z.nativeEnum(EModelEndpoint) }).strict(),
       z.object({ kind: z.literal('custom'), name: z.string().trim().min(1) }).strict(),
       z
@@ -29,21 +69,23 @@ export const mediaIntegrationSchema = z
           baseURL: z.string().trim().min(1).optional(),
           credentialName: mediaIdSchema.optional(),
           headers: z.record(z.string(), z.string()).optional(),
-          options: z.record(z.string(), z.string()).optional(),
+          options: mediaConnectionOptionsSchema.optional(),
         })
         .strict(),
       z
         .object({
           kind: z.literal('vertex'),
-          keyFile: z.string().trim().min(1),
+          /** Uses the shared file/URL/base64/JSON loader; omitted tries GOOGLE_SERVICE_KEY_FILE, the host auth.json path, then application default credentials. */
+          keyFile: z.string().trim().min(1).optional(),
           projectId: z.string().trim().min(1).optional(),
           location: z
             .string()
             .regex(/^[a-z][a-z0-9-]*$/)
-            .default('us-central1'),
+            .optional(),
         })
         .strict(),
     ]),
+    /** Selection policy, not a network toggle: OpenRouter enriches remotely; native adapters use static profiles. Configured images fetch selected endpoint documents; videos also need provider indexes. */
     catalog: z.discriminatedUnion('kind', [
       z
         .object({ kind: z.literal('configured'), models: z.array(mediaIdSchema).default([]) })
@@ -99,6 +141,18 @@ export const mediaIntegrationSchema = z
   })
   .strict()
   .superRefine((integration, ctx) => {
+    if (integration.api === 'google.interactions')
+      ctx.addIssue({
+        code: 'custom',
+        path: ['api'],
+        message: 'Google Interactions has no media adapter',
+      });
+    const options =
+      integration.endpointRef.kind === 'direct' ? integration.endpointRef.options : undefined;
+    const parsedOptions = mediaOptionsSchema(integration.api, true).safeParse(options ?? {});
+    if (!parsedOptions.success)
+      for (const issue of parsedOptions.error.issues)
+        ctx.addIssue({ ...issue, path: ['endpointRef', 'options', ...issue.path] });
     if (integration.endpointRef.kind === 'builtin') {
       const endpoint = integration.endpointRef.endpoint;
       if (endpoint !== EModelEndpoint.openAI && endpoint !== EModelEndpoint.google) {
@@ -151,10 +205,21 @@ export const mediaConfigSchema = z
     schemaVersion: z.literal(MEDIA_SCHEMA_VERSION).default(MEDIA_SCHEMA_VERSION),
     enabled: z.boolean().default(false),
     surfaces: z
-      .object({ studio: z.boolean().default(true), chat: z.boolean().default(true) })
+      .object({
+        studio: z.boolean().default(true),
+        chat: z.boolean().default(true),
+        tools: z.boolean().default(false),
+      })
       .strict()
       .default({}),
     integrations: z.array(mediaIntegrationSchema).default([]),
+    tools: z
+      .object({
+        imageTimeoutMs: milliseconds.max(3_600_000).default(120_000),
+        pollIntervalMs: milliseconds.min(100).max(60_000).default(1_000),
+      })
+      .strict()
+      .default({}),
     cancellation: z
       .object({ enabled: z.boolean().default(true) })
       .strict()
@@ -162,6 +227,7 @@ export const mediaConfigSchema = z
     limits: mediaLimitsSchema.default({}),
     accounting: z
       .object({
+        shortfall: z.enum(['debt', 'absorb']).default('debt'),
         maxHoldsPerUser: z.number().int().positive().max(10_000).default(128),
         maxAttempts: z.number().int().positive().max(1_000).default(20),
       })
@@ -183,6 +249,7 @@ export const mediaConfigSchema = z
         maxPendingPerUser: capacity.default(20),
         maxPendingTotal: capacity.default(200),
         maxQueueAgeMs: milliseconds.default(3_600_000),
+        deniedRequeueMs: milliseconds.default(5_000),
       })
       .strict()
       .default({}),
@@ -197,11 +264,26 @@ export const mediaConfigSchema = z
     worker: z
       .object({
         tickMs: milliseconds.default(1_000),
+        scanFailureThreshold: z.number().int().positive().max(1000).default(3),
+        maintenanceIntervalMs: milliseconds.default(30_000),
+        maintenanceJitterMs: z.number().int().nonnegative().max(60_000).default(2_000),
         leaseMs: milliseconds.default(60_000),
+        takeoverSkewMs: z.number().int().nonnegative().max(60_000).default(30_000),
         renewEveryMs: milliseconds.default(20_000),
         shutdownTimeoutMs: milliseconds.default(10_000),
+        shutdownCleanupMs: milliseconds.default(1_000),
       })
       .strict()
+      .default({}),
+    events: z
+      .object({
+        enabled: z.boolean().default(true),
+        heartbeatMs: milliseconds.default(15_000),
+        demandTtlMs: milliseconds.default(45_000),
+        demandCacheMs: milliseconds.default(250),
+      })
+      .strict()
+      .refine((value) => value.demandTtlMs > value.heartbeatMs, 'Demand must outlive its heartbeat')
       .default({}),
     polling: z
       .object({
@@ -222,6 +304,8 @@ export const mediaConfigSchema = z
     recovery: z
       .object({
         attentionAfterMs: milliseconds.default(86_400_000),
+        maxAttempts: z.number().int().positive().max(10_000).default(24),
+        maxRetryMs: milliseconds.default(1_800_000),
         maxEvidenceChars: z.number().int().positive().max(65_536).default(2_000),
         maxDecisionsPerJob: z.number().int().positive().max(1_000).default(32),
       })
@@ -245,6 +329,8 @@ export const mediaConfigSchema = z
         source: fileStorageSchema.nullable().default(null),
         retention: z.literal('inherit').default('inherit'),
         orphanRetentionMs: milliseconds.default(86_400_000),
+        /** Retain a deleted owner fence after its live metadata is gone. Minimal object-write cleanup receipts remain durable. */
+        deletedAccountRetentionMs: milliseconds.default(604_800_000),
         derivatives: z
           .object({
             enabled: z.boolean().default(true),

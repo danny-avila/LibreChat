@@ -1,10 +1,11 @@
-import { SpanStatusCode } from '@opentelemetry/api';
+import { SpanStatusCode, context, trace } from '@opentelemetry/api';
+import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 import {
   BasicTracerProvider,
   InMemorySpanExporter,
   SimpleSpanProcessor,
 } from '@opentelemetry/sdk-trace-base';
-import { createMediaLifecycleObserver, observeMedia } from './telemetry';
+import { createMediaLifecycleObserver, observeMedia, withMediaAttempt } from './telemetry';
 
 it('keeps durable job correlation in traces while limiting metrics to finite lifecycle dimensions', async () => {
   const exporter = new InMemorySpanExporter();
@@ -76,4 +77,43 @@ it('isolates broken metrics and lifecycle exporters, including disabled telemetr
   expect(exporter.getFinishedSpans()).toHaveLength(1);
   expect(exporter.getFinishedSpans()[0].events).toEqual([]);
   await provider.shutdown();
+});
+
+it('keeps the attempt span active across awaits and nests provider spans and durable events', async () => {
+  const manager = new AsyncHooksContextManager().enable();
+  context.setGlobalContextManager(manager);
+  const exporter = new InMemorySpanExporter();
+  const provider = new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(exporter)] });
+  const tracer = provider.getTracer('test');
+  const observer = createMediaLifecycleObserver({ tracer });
+  const event = {
+    kind: 'attempt' as const,
+    result: 'started' as const,
+    jobId: 'job',
+    tenantId: 'tenant',
+  };
+  try {
+    await withMediaAttempt(observer, event, async () => {
+      observer(event);
+      await Promise.resolve();
+      expect(trace.getSpan(context.active())).toBeDefined();
+      const child = tracer.startSpan('provider');
+      child.end();
+      observer({ ...event, kind: 'transition', phase: 'running', result: 'completed' });
+      expect(exporter.getFinishedSpans().map((span) => span.name)).toEqual(['provider']);
+    });
+    await provider.forceFlush();
+    const spans = exporter.getFinishedSpans();
+    expect(spans).toHaveLength(2);
+    const attempt = spans.find((span) => span.name === 'librechat.media.attempt')!;
+    expect(spans[0].parentSpanContext?.spanId).toBe(attempt.spanContext().spanId);
+    expect(attempt.events.map((event) => event.name)).toEqual([
+      'media.attempt',
+      'media.transition',
+    ]);
+  } finally {
+    context.disable();
+    manager.disable();
+    await provider.shutdown();
+  }
 });

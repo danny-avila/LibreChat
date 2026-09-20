@@ -2,9 +2,9 @@ import { z } from 'zod';
 import { isAxiosError } from 'axios';
 import type { AxiosInstance, AxiosRequestConfig, AxiosRequestHeaders } from 'axios';
 import type { Readable } from 'node:stream';
-import { isSSRFTarget, validateEndpointURL } from '../auth/domain';
-import { applySSRFSafeAgentIfDirect } from '../auth/agent';
-import { applyAxiosProxyConfig } from '../utils/proxy';
+import { isSSRFTarget, validateEndpointURL } from '~/auth/domain';
+import { applySSRFSafeAgentIfDirect } from '~/auth/agent';
+import { applyAxiosProxyConfig } from '~/utils/proxy';
 import { MediaProviderError } from './errors';
 
 export interface MediaTransportRequest {
@@ -18,6 +18,7 @@ export interface MediaTransportRequest {
   maxRedirects?: number;
   emptyResponse?: { status: number; body: string };
   successStatus?: number;
+  /** Direct hosted-reference fetch with connect-time SSRF protection; bypasses PROXY and HTTP(S)_PROXY. */
   publicOnly?: boolean;
   allowedAddresses?: string[];
 }

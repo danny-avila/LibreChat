@@ -8,7 +8,11 @@ const originalObserver = window.IntersectionObserver;
 let frameId = 0;
 let now = 0;
 let hidden = false;
-const context = { clearRect: jest.fn(), fillRect: jest.fn(), fillStyle: '' };
+const context: Pick<CanvasRenderingContext2D, 'clearRect' | 'fillRect' | 'fillStyle'> = {
+  clearRect: jest.fn(),
+  fillRect: jest.fn(),
+  fillStyle: '',
+};
 
 class WatchingIntersectionObserver implements IntersectionObserver {
   root = null;
@@ -73,8 +77,8 @@ beforeEach(() => {
   frameId = 0;
   now = 0;
   hidden = false;
-  context.clearRect.mockClear();
-  context.fillRect.mockClear();
+  jest.mocked(context.clearRect).mockClear();
+  jest.mocked(context.fillRect).mockClear();
   window.IntersectionObserver = WatchingIntersectionObserver;
   motion(false);
   jest.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
@@ -113,12 +117,14 @@ test('renders a stable decorative frame without animation when reduced motion is
   const view = render(<PixelCard noFocus progress={0.1} width="20px" height="20px" />);
   expect(context.fillRect).toHaveBeenCalled();
   expect(frameCallbacks.size).toBe(0);
-  const pixels = [...new Set(context.fillRect.mock.calls.map((call) => JSON.stringify(call)))];
-  context.fillRect.mockClear();
+  const pixels = [
+    ...new Set(jest.mocked(context.fillRect).mock.calls.map((call) => JSON.stringify(call))),
+  ];
+  jest.mocked(context.fillRect).mockClear();
   view.rerender(<PixelCard noFocus progress={0.8} width="20px" height="20px" />);
-  expect([...new Set(context.fillRect.mock.calls.map((call) => JSON.stringify(call)))]).toEqual(
-    pixels,
-  );
+  expect([
+    ...new Set(jest.mocked(context.fillRect).mock.calls.map((call) => JSON.stringify(call))),
+  ]).toEqual(pixels);
   expect(frameCallbacks.size).toBe(0);
   view.unmount();
 });
@@ -126,7 +132,7 @@ test('renders a stable decorative frame without animation when reduced motion is
 test('responds to reduced motion changes and releases every scheduled frame on unmount', () => {
   const changeMotion = motion(false);
   const view = render(<PixelCard progress={0.5} />);
-  const originalObserver = observers.at(-1)!;
+  const originalObserver = observers[observers.length - 1]!;
   expect(frameCallbacks.size).toBe(1);
   changeMotion(true);
   act(() => originalObserver.visible(true));
@@ -145,7 +151,7 @@ test('responds to reduced motion changes and releases every scheduled frame on u
 
 test('pauses hidden cards and resumes with the latest progress when visible again', () => {
   const view = render(<PixelCard progress={0.2} />);
-  const observer = observers.at(-1)!;
+  const observer = observers[observers.length - 1]!;
   act(() => observer.visible(false));
   expect(frameCallbacks.size).toBe(0);
   view.rerender(<PixelCard progress={0.8} />);

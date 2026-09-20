@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import {
   FileSources,
+  FileContext,
   mediaAssetSchema,
   mediaImportReceiptSchema,
   mediaSubmissionReceiptSchema,
@@ -19,7 +20,6 @@ import type {
 } from '~/types/media';
 import { createMediaMethods, deriveMediaThreadTitle } from './media';
 import { runAsSystem, tenantStorage } from '~/config/tenantContext';
-import { createKeyModel } from '~/models/key';
 import { createFileMethods } from './file';
 
 describe('media persistence on standalone MongoDB', () => {
@@ -31,8 +31,7 @@ describe('media persistence on standalone MongoDB', () => {
   beforeAll(async () => {
     mongo = await MongoMemoryServer.create();
     await mongoose.connect(mongo.getUri());
-    methods = createMediaMethods(mongoose);
-    createKeyModel(mongoose);
+    methods = createMediaMethods(mongoose, { ownerExists: async () => true });
     await methods.ensureMediaIndexes();
   }, 60000);
   afterAll(async () => {
@@ -44,7 +43,7 @@ describe('media persistence on standalone MongoDB', () => {
       Object.values(mongoose.models).map((model) => model.collection.deleteMany({})),
     );
     scope = { ownerId: new mongoose.Types.ObjectId().toString(), tenantId: null };
-    methods = createMediaMethods(mongoose);
+    methods = createMediaMethods(mongoose, { ownerExists: async () => true });
   });
 
   function submission(clientRequestId: string, extra = {}): StageMediaSubmissionInput {
@@ -73,6 +72,221 @@ describe('media persistence on standalone MongoDB', () => {
     expect(published?.phase).toBe('accepted');
     return (await methods.getMediaJob(scope, receipt.jobId))!;
   }
+
+  it('stores BSON lifecycle dates and omits the platform tenant while preserving ISO views', async () => {
+    const job = await accepted('stored-dates');
+    const now = new Date(Date.now() + 1000);
+    await methods.claimMediaJob({
+      scope,
+      workerId: 'date-worker',
+      now: now.toISOString(),
+      leaseMs: 60000,
+    });
+    const raw = await mongoose.models.MediaJob.collection.findOne({ jobId: job.jobId });
+    expect(raw).toMatchObject({
+      createdAt: expect.any(Date),
+      updatedAt: now,
+      dueAt: expect.any(Date),
+      leaseUntil: new Date(now.getTime() + 60000),
+    });
+    expect(raw).not.toHaveProperty('tenantId');
+    for (const name of ['MediaOwner', 'MediaThread', 'MediaTurn']) {
+      const row = await mongoose.models[name].collection.findOne({ ownerId: scope.ownerId });
+      expect(row?.updatedAt).toBeInstanceOf(Date);
+      expect(row).not.toHaveProperty('tenantId');
+    }
+    const [thread] = (await methods.listMediaThreads({ scope, limit: 10 })).items;
+    expect(typeof thread.createdAt).toBe('string');
+    expect(mediaThreadSchema.safeParse(thread).success).toBe(true);
+    const turns = await methods.listMediaTurns({
+      scope,
+      threadId: job.threadId,
+      limit: 10,
+      jobsPerTurn: 10,
+    });
+    expect(typeof turns.items[0].createdAt).toBe('string');
+    expect(typeof turns.items[0].jobs[0].updatedAt).toBe('string');
+    // Null remains an exact default-tenant fence and continues to read historical null rows.
+    await mongoose.models.MediaJob.collection.updateOne(
+      { jobId: job.jobId },
+      { $set: { tenantId: null } },
+    );
+    expect(await methods.getMediaJob(scope, job.jobId)).not.toBeNull();
+    expect(await methods.getMediaJob({ ...scope, tenantId: 'foreign' }, job.jobId)).toBeNull();
+  });
+
+  it('converts existing string lifecycle fields without rewriting provider envelopes', async () => {
+    const job = await accepted('date-upgrade');
+    const past = new Date(Date.now() - 60000);
+    await mongoose.models.MediaJob.collection.updateOne(
+      { jobId: job.jobId },
+      {
+        $set: {
+          createdAt: past.toISOString(),
+          updatedAt: past.toISOString(),
+          dueAt: past.toISOString(),
+          nativeSource: { expiresAt: past.toISOString() },
+        },
+      },
+    );
+    await mongoose.models.MediaThread.collection.updateOne(
+      { threadId: job.threadId },
+      {
+        $set: { expiresAt: past.toISOString(), 'titleClaim.claimedAt': past.toISOString() },
+      },
+    );
+    await mongoose.models.File.collection.insertOne({
+      file_id: 'legacy-unlink',
+      mediaUnlinkedAt: 'thread:legacy:1',
+    });
+    await createMediaMethods(mongoose, { ownerExists: async () => true }).ensureMediaIndexes();
+    const row = await mongoose.models.MediaJob.collection.findOne({ jobId: job.jobId });
+    expect(row).toMatchObject({
+      createdAt: past,
+      updatedAt: past,
+      dueAt: past,
+      nativeSource: { expiresAt: past.toISOString() },
+    });
+    expect((await methods.getMediaThread(scope, job.threadId))?.expiresAt).toBe(past.toISOString());
+    expect(
+      await mongoose.models.File.collection.findOne({ file_id: 'legacy-unlink' }),
+    ).toMatchObject({ mediaUnlinkedBy: 'thread:legacy:1' });
+    expect(await methods.retireExpiredMediaThreads({ scope, limit: 10, now: new Date() })).toBe(1);
+  });
+
+  it('measures queued age and active execution including ambiguous provider work', async () => {
+    const queued = await accepted('metric-queued');
+    const running = await accepted('metric-running');
+    const uncertain = await accepted('metric-uncertain');
+    const native = await accepted('metric-native');
+    await mongoose.models.MediaJob.collection.updateOne(
+      { jobId: queued.jobId },
+      { $set: { createdAt: new Date(Date.now() - 5000) } },
+    );
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: running.jobId },
+      { $set: { phase: 'running', cancelRequestedAt: new Date() } },
+    );
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: uncertain.jobId },
+      { $set: { phase: 'reconciling', 'provider.certainty': 'unknown' } },
+    );
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: native.jobId },
+      { $set: { executionOwner: 'chat', phase: 'running' } },
+    );
+    const metrics = await runAsSystem(() => methods.getMediaBacklogMetrics());
+    expect(metrics).toMatchObject({ queued: 1, activeJobs: 2 });
+    expect(metrics.oldestQueuedAgeSeconds).toBeGreaterThanOrEqual(5);
+    await methods.cancelMediaJob(scope, queued.jobId);
+    expect(await runAsSystem(() => methods.getMediaBacklogMetrics())).toMatchObject({
+      queued: 0,
+      oldestQueuedAgeSeconds: 0,
+    });
+  });
+
+  it('searches literal titles across pages while keeping tenant, owner and lifecycle fences', async () => {
+    const wanted = await accepted('literal', { prompt: 'A [star] appears' });
+    await accepted('plain', { prompt: 'Another star appears' });
+    for (const include of [undefined, 'activity'] as const) {
+      const page = await methods.listMediaThreads({ scope, limit: 1, search: '[STAR]', include });
+      expect(page.items.map((thread) => thread.threadId)).toEqual([wanted.threadId]);
+      expect(
+        await methods.listMediaThreads({
+          scope: { ...scope, tenantId: 'other' },
+          limit: 1,
+          search: '[star]',
+          include,
+        }),
+      ).toEqual({ items: [] });
+      expect(
+        await methods.listMediaThreads({
+          scope: { ...scope, ownerId: new mongoose.Types.ObjectId().toString() },
+          limit: 1,
+          search: '[star]',
+          include,
+        }),
+      ).toEqual({ items: [] });
+    }
+    await methods.retireMediaThread(scope, wanted.threadId);
+    expect((await methods.listMediaThreads({ scope, limit: 1, search: '[star]' })).items).toEqual(
+      [],
+    );
+  });
+
+  it('clears the owner library through retirement without deleting another tenant or later creation', async () => {
+    const first = await accepted('clear-first');
+    const second = await accepted('clear-second');
+    const foreign = await methods.stageMediaSubmission({
+      ...submission('foreign'),
+      scope: { ...scope, tenantId: 'other' },
+    });
+    await methods.publishMediaSubmission({ ...scope, tenantId: 'other' }, foreign.jobId, options);
+    expect(await methods.retireAllMediaThreads(scope)).toBe(2);
+    expect((await methods.listMediaThreads({ scope, limit: 10 })).items).toEqual([]);
+    expect((await methods.getMediaJob(scope, first.jobId))?.phase).toBe('cancelled');
+    expect((await methods.getMediaJob(scope, second.jobId))?.phase).toBe('cancelled');
+    expect((await methods.getMediaJob({ ...scope, tenantId: 'other' }, foreign.jobId))?.phase).toBe(
+      'queued',
+    );
+    const later = await accepted('after-clear');
+    expect(
+      (await methods.listMediaThreads({ scope, limit: 10 })).items.map((thread) => thread.threadId),
+    ).toEqual([later.threadId]);
+  });
+
+  it('fences takeover until both the lease and configured clock-skew margin expire', async () => {
+    const queued = await accepted('skew-margin');
+    const now = Date.now();
+    const first = await methods.claimMediaJob({
+      scope,
+      workerId: 'first',
+      now: new Date(now).toISOString(),
+      leaseMs: 60_000,
+    });
+    expect(first?.jobId).toBe(queued.jobId);
+    expect(
+      await methods.claimMediaJob({
+        scope,
+        workerId: 'early',
+        now: new Date(now + 65_000).toISOString(),
+        leaseMs: 60_000,
+        takeoverSkewMs: 30_000,
+      }),
+    ).toBeNull();
+    expect(
+      await methods.claimMediaJob({
+        scope,
+        workerId: 'replacement',
+        now: new Date(now + 90_001).toISOString(),
+        leaseMs: 60_000,
+        takeoverSkewMs: 30_000,
+      }),
+    ).toMatchObject({ jobId: queued.jobId, leaseOwner: 'replacement' });
+  });
+
+  it('wakes an older capacity-deferred job when a terminal job releases permits', async () => {
+    const active = await accepted('capacity-holder');
+    const waiting = await accepted('capacity-waiter');
+    expect(
+      await methods.acquireMediaPermit({ scope, jobId: active.jobId, kind: 'owner', capacity: 1 }),
+    ).toBe(true);
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: waiting.jobId },
+      { $set: { dueAt: new Date(Date.now() + 60_000).toISOString() } },
+    );
+    await methods.cancelMediaJob(scope, active.jobId);
+    const woken = await methods.getMediaJob(scope, waiting.jobId);
+    expect(woken!.dueAt.getTime()).toBeLessThanOrEqual(Date.now());
+    expect(
+      await methods.claimMediaJob({
+        scope,
+        workerId: 'next',
+        now: new Date().toISOString(),
+        leaseMs: 60_000,
+      }),
+    ).toMatchObject({ jobId: waiting.jobId });
+  });
 
   it('bounds creation titles without truncating prompts or changing replay identity', async () => {
     const prompt = 'A🌲 in a quiet forest at dawn';
@@ -150,7 +364,7 @@ describe('media persistence on standalone MongoDB', () => {
     expect((await methods.getMediaThread(scope, receipt.threadId))?.title).toBe('My long');
     expect((await methods.getMediaJob(scope, receipt.jobId))?.request.prompt).toBe(prompt);
   });
-  async function original(outputKey = 'upload:original') {
+  async function original(outputKey = 'upload:original', type = 'image/png') {
     const write = await methods.reserveMediaAssetWrite({
       scope,
       outputKey,
@@ -162,7 +376,7 @@ describe('media persistence on standalone MongoDB', () => {
     const content = {
       file_id: write.fileId,
       filename: 'original.png',
-      type: 'image/png',
+      type,
       bytes: 32,
       filepath: `/${write.storageKey}`,
       source: 'local',
@@ -172,6 +386,18 @@ describe('media persistence on standalone MongoDB', () => {
     const asset = await methods.commitMediaAssetWrite({ scope, writeId: write.writeId, content });
     return { write, content, asset };
   }
+
+  it.each([
+    ['upload:reference', 'image/png', FileContext.message_attachment],
+    ['capture:reference', 'video/mp4', FileContext.message_attachment],
+    ['job:generated-image', 'image/png', FileContext.image_generation],
+    ['job:generated-video', 'video/mp4', FileContext.video_generation],
+  ])('labels the Files entry for %s', async (outputKey, type, context) => {
+    const { asset } = await original(outputKey, type);
+    expect(await mongoose.models.File.findOne({ file_id: asset!.file_id }).lean()).toMatchObject({
+      context,
+    });
+  });
   function fence(job: MediaStoredJob, now: string) {
     return {
       scope,
@@ -213,7 +439,7 @@ describe('media persistence on standalone MongoDB', () => {
 
   it('repairs a staged command with a fresh repository after process loss', async () => {
     const receipt = await methods.stageMediaSubmission(submission('crash-before-links'));
-    methods = createMediaMethods(mongoose);
+    methods = createMediaMethods(mongoose, { ownerExists: async () => true });
     expect(await methods.recoverMediaPublications({ scope, limit: 10, ...options })).toBe(1);
     expect(await methods.getMediaSubmission(scope, 'crash-before-links')).toMatchObject({
       ...receipt,
@@ -271,7 +497,7 @@ describe('media persistence on standalone MongoDB', () => {
   it('enforces queue capacity with an index across independent repositories', async () => {
     const outcomes = await Promise.allSettled(
       Array.from({ length: 8 }, (_, index) =>
-        createMediaMethods(mongoose).stageMediaSubmission({
+        createMediaMethods(mongoose, { ownerExists: async () => true }).stageMediaSubmission({
           ...submission(`capacity-${index}`),
           maxActiveJobs: 2,
         }),
@@ -329,6 +555,35 @@ describe('media persistence on standalone MongoDB', () => {
     expect((await methods.stageMediaImport({ scope, request })).turnId).toBe(receipt.turnId);
   });
 
+  it.each([false, true])(
+    'preserves an import temporary flag of %s independently of retention',
+    async (temporary) => {
+      const { asset } = await original();
+      const expiresAt = new Date(Date.now() + 60_000).toISOString();
+      const receipt = await methods.stageMediaImport({
+        scope,
+        request: {
+          schemaVersion: 1,
+          clientRequestId: 'import-retention',
+          temporary,
+          inputs: [{ role: 'reference', file_id: asset.file_id }],
+        },
+        publicationExpiresAt: expiresAt,
+      });
+      await methods.publishMediaImport(scope, receipt.turnId, options);
+      expect(await methods.getMediaThread(scope, receipt.threadId)).toMatchObject({
+        temporary,
+        expiresAt,
+      });
+      for (const include of [undefined, 'activity'] as const) {
+        const listed = await methods.listMediaThreads({ scope, limit: 10, include });
+        expect(listed.items.map((thread) => thread.threadId)).toEqual(
+          temporary ? [] : [receipt.threadId],
+        );
+      }
+    },
+  );
+
   it('rejects an import of someone else’s original without publishing a job', async () => {
     const { asset } = await original();
     const other = { ...scope, ownerId: new mongoose.Types.ObjectId().toString() };
@@ -345,6 +600,32 @@ describe('media persistence on standalone MongoDB', () => {
       error: { code: 'invalid_request' },
     });
     expect(await mongoose.models.MediaJob.countDocuments()).toBe(0);
+  });
+
+  it('releases an owned lease immediately without releasing a replacement worker lease', async () => {
+    const job = await accepted('release-lease');
+    const now = new Date().toISOString();
+    const first = (await methods.claimMediaJob({
+      scope,
+      workerId: 'first',
+      now,
+      leaseMs: 10_000,
+    }))!;
+    const lease = { scope, jobId: job.jobId, leaseToken: first.leaseToken! };
+    expect(await methods.releaseMediaJobLease({ ...lease, leaseToken: 'wrong-token' })).toBe(false);
+    expect(await methods.releaseMediaJobLease(lease)).toBe(true);
+    const second = (await methods.claimMediaJob({
+      scope,
+      workerId: 'second',
+      now,
+      leaseMs: 10_000,
+    }))!;
+    expect(second).toMatchObject({ jobId: job.jobId, phase: 'queued', leaseOwner: 'second' });
+    expect(await methods.releaseMediaJobLease(lease)).toBe(false);
+    expect(await methods.getMediaJob(scope, job.jobId)).toMatchObject({
+      leaseToken: second.leaseToken,
+      leaseOwner: 'second',
+    });
   });
 
   it('allows only one claim and fences stale writes after takeover', async () => {
@@ -618,27 +899,6 @@ describe('media persistence on standalone MongoDB', () => {
       methods.listDueMediaScopes({ now: new Date().toISOString(), limit: 1 }),
     );
     expect(result.items).toEqual([scope]);
-  });
-
-  it('resolves credentials and expiry in one private snapshot', async () => {
-    const expiresAt = new Date(Date.now() + 60000);
-    await mongoose.models.Key.create({
-      userId: scope.ownerId,
-      tenantId: null,
-      name: 'images',
-      value: 'encrypted-only',
-      expiresAt,
-    });
-    expect(await methods.getStoredMediaCredential({ scope, name: 'images' })).toMatchObject({
-      value: 'encrypted-only',
-      expiresAt: expiresAt.toISOString(),
-    });
-    expect(
-      await methods.getStoredMediaCredential({
-        scope: { ...scope, tenantId: 'other' },
-        name: 'images',
-      }),
-    ).toBeNull();
   });
 
   it('replays immutable asset publication and detects changed bytes', async () => {
@@ -1102,7 +1362,7 @@ describe('media persistence on standalone MongoDB', () => {
       request: { ...secondInput.request, clientRequestId: 'global-third' },
     });
     await methods.publishMediaSubmission(secondInput.scope, second.jobId, options);
-    methods = createMediaMethods(mongoose);
+    methods = createMediaMethods(mongoose, { ownerExists: async () => true });
     expect(
       await methods.acquireMediaPermit({
         scope: secondInput.scope,
@@ -1244,10 +1504,8 @@ describe('media persistence on standalone MongoDB', () => {
       }),
     ).toBe(true);
     expect((await methods.getMediaAssetContent(scope, write.fileId))?.expiredAt).toBe(deadline);
-    const expired = await methods.listMediaExpiredAssets({
-      scope,
-      limit: 10,
-      now: new Date(Date.parse(deadline) + 1).toISOString(),
+    const expired = await createFileMethods(mongoose).getExpiredFiles(10, {
+      now: new Date(Date.parse(deadline) + 1),
     });
     expect(expired.map((asset) => asset.file_id)).toContain(write.fileId);
   });
@@ -1353,7 +1611,7 @@ describe('media persistence on standalone MongoDB', () => {
       }),
     ).toBeNull();
     expect(await methods.prepareMediaAccountDeletion({ scope, token: 'delete' })).toBe(false);
-    methods = createMediaMethods(mongoose);
+    methods = createMediaMethods(mongoose, { ownerExists: async () => true });
     expect(await methods.recoverMediaAssetWrites({ scope, limit: 1 })).toBe(1);
     expect(await methods.getMediaAsset(scope, write.fileId)).toMatchObject({
       file_id: write.fileId,
@@ -1586,7 +1844,7 @@ describe('media persistence on standalone MongoDB', () => {
         },
       );
       // The completion was durable; its summary write never ran before the process stopped.
-      methods = createMediaMethods(mongoose);
+      methods = createMediaMethods(mongoose, { ownerExists: async () => true });
       const staleList = (await methods.listMediaThreads({ scope, limit: 10 })).items[0];
       expect(staleList).toMatchObject({ pendingJobCount: 1, version: before.version });
       expect(staleList.cover).toBeUndefined();
@@ -1653,6 +1911,7 @@ describe('media persistence on standalone MongoDB', () => {
     });
     expect(published?.phase).toBe('accepted');
     const thread = mediaThreadSchema.parse(await methods.getMediaThread(scope, receipt.threadId));
+    expect(thread.temporary).toBe(true);
     expect(thread.expiresAt).toBe(
       new Date(new Date(thread.createdAt).getTime() + retention).toISOString(),
     );
@@ -1704,20 +1963,59 @@ describe('media persistence on standalone MongoDB', () => {
       await mongoose.models.MediaThread.findOne({ threadId: receipt.threadId }).lean(),
     ).toMatchObject({ status: 'retiring', epoch: 2 });
     expect((await methods.getMediaJob(scope, receipt.jobId))?.phase).toBe('cancelled');
-    expect((await methods.getMediaThread(scope, durable.threadId))?.retiredAt).toBeUndefined();
+    expect(
+      await mongoose.models.MediaThread.findOne({ ...scope, threadId: durable.threadId }).lean(),
+    ).not.toHaveProperty('retiredAt');
     expect(
       await methods.retireExpiredMediaThreads({ scope, now: thread.expiresAt!, limit: 10 }),
     ).toBe(0);
   });
 
-  it('keeps a temporary request durable when no retention window is configured', async () => {
+  it('keeps temporary requests out of the library even without a configured retention window', async () => {
     const receipt = await methods.stageMediaSubmission(
       submission('temporary-unbounded', { temporary: true }),
     );
     await methods.publishMediaSubmission(scope, receipt.jobId, options);
     const thread = await methods.getMediaThread(scope, receipt.threadId);
+    expect(thread?.temporary).toBe(true);
     expect(thread).not.toHaveProperty('expiresAt');
-    expect((await methods.listMediaThreads({ scope, limit: 10 })).items).toHaveLength(1);
+    expect((await methods.listMediaThreads({ scope, limit: 10 })).items).toHaveLength(0);
+  });
+
+  it('lists permanent creations with general retention deadlines and preserves legacy visibility', async () => {
+    const deadline = new Date(Date.now() + 60_000).toISOString();
+    const permanent = await methods.stageMediaSubmission({
+      ...submission('retained-permanent'),
+      publicationExpiresAt: deadline,
+    });
+    await methods.publishMediaSubmission(scope, permanent.jobId, options);
+    expect(await methods.getMediaThread(scope, permanent.threadId)).toMatchObject({
+      temporary: false,
+      expiresAt: deadline,
+    });
+    const legacyPermanent = await accepted('legacy-permanent');
+    const legacyTemporary = await accepted('legacy-temporary');
+    const expired = await accepted('expired-permanent');
+    await Promise.all([
+      mongoose.models.MediaThread.updateOne(
+        { threadId: legacyPermanent.threadId },
+        { $unset: { temporary: 1 } },
+      ),
+      mongoose.models.MediaThread.updateOne(
+        { threadId: legacyTemporary.threadId },
+        { $unset: { temporary: 1 }, $set: { expiresAt: deadline } },
+      ),
+      mongoose.models.MediaThread.updateOne(
+        { threadId: expired.threadId },
+        { $set: { expiresAt: new Date(Date.now() - 1_000).toISOString() } },
+      ),
+    ]);
+    for (const include of [undefined, 'activity'] as const) {
+      const listed = await methods.listMediaThreads({ scope, limit: 10, include });
+      expect(new Set(listed.items.map((item) => item.threadId))).toEqual(
+        new Set([permanent.threadId, legacyPermanent.threadId]),
+      );
+    }
   });
 
   it('recovers a staged deadline without adopting a later retention policy', async () => {
@@ -1733,7 +2031,7 @@ describe('media persistence on standalone MongoDB', () => {
     const legacy = await methods.stageMediaSubmission(
       submission('legacy-temporary', { temporary: true }),
     );
-    await createMediaMethods(mongoose).recoverMediaPublications({
+    await createMediaMethods(mongoose, { ownerExists: async () => true }).recoverMediaPublications({
       scope,
       limit: 10,
       ...options,
@@ -1901,6 +2199,49 @@ describe('media persistence on standalone MongoDB', () => {
     expect(await methods.getMediaLatestImageContext({ scope, threadId: job.threadId })).toBeNull();
   });
 
+  it('shares expiry selection while separately repairing interrupted unexpired deletions', async () => {
+    const expired = (await original('expired-shared')).asset;
+    const interrupted = (await original('interrupted-explicit')).asset;
+    const files = createFileMethods(mongoose);
+    await methods.releaseMediaAsset({ scope, fileId: expired.file_id, retainer: 'unused' });
+    await methods.claimMediaAssetDeletion({ scope, fileId: expired.file_id, token: 'expired' });
+    await methods.claimMediaAssetDeletion({
+      scope,
+      fileId: interrupted.file_id,
+      token: 'explicit',
+    });
+    const now = new Date(Date.now() + 1000);
+    expect((await files.getExpiredFiles(10, { now })).map((file) => file.file_id)).toEqual([
+      expired.file_id,
+    ]);
+    expect(
+      (await methods.listMediaRetiringAssets({ scope, limit: 10, now })).map(
+        (file) => file.file_id,
+      ),
+    ).toEqual([interrupted.file_id]);
+    expect(
+      await methods.listMediaRetiringAssets({
+        scope: { ...scope, tenantId: 'foreign' },
+        limit: 10,
+        now,
+      }),
+    ).toEqual([]);
+    expect(
+      (await runAsSystem(() => methods.listMediaCleanupScopes({ limit: 10, now }))).items,
+    ).toContainEqual(scope);
+    await methods.completeMediaAssetDeletion({
+      scope,
+      fileId: interrupted.file_id,
+      token: 'explicit',
+    });
+    // An expired original is exclusively owned by the shared sweep, not rediscovered by both workers.
+    expect(
+      (await runAsSystem(() => methods.listMediaCleanupScopes({ limit: 10, now }))).items,
+    ).toEqual([]);
+    await methods.completeMediaAssetDeletion({ scope, fileId: expired.file_id, token: 'expired' });
+    expect(await files.getExpiredFiles(10, { now })).toEqual([]);
+  });
+
   it('defers poisoned media originals and write cleanup using durable retry deadlines', async () => {
     const { asset } = await original('poisoned-original');
     await methods.releaseMediaAsset({ scope, fileId: asset.file_id, retainer: 'unused' });
@@ -1917,10 +2258,8 @@ describe('media persistence on standalone MongoDB', () => {
     expect(await files.incrementFileDeletionAttempts(asset.file_id, ownerScope)).toBe(1);
     await files.deferExpiredFile(asset.file_id, retryAt, ownerScope);
     await files.deferExpiredFile(asset.file_id, new Date(now), ownerScope);
-    expect(await methods.listMediaExpiredAssets({ scope, now, limit: 10 })).toEqual([]);
-    expect(
-      await methods.listMediaExpiredAssets({ scope, now: retryAt.toISOString(), limit: 10 }),
-    ).toHaveLength(1);
+    expect(await files.getExpiredFiles(10, { now: new Date(now) })).toEqual([]);
+    expect(await files.getExpiredFiles(10, { now: retryAt })).toHaveLength(1);
     const write = await methods.reserveMediaAssetWrite({
       scope,
       outputKey: 'poisoned-write',

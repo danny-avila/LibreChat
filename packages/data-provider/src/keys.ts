@@ -1,6 +1,7 @@
 export enum QueryKeys {
   mediaCatalog = 'mediaCatalog',
   mediaRecovery = 'mediaRecovery',
+  mediaRecoveryCapabilities = 'mediaRecoveryCapabilities',
   mediaThreads = 'mediaThreads',
   mediaThread = 'mediaThread',
   mediaTurns = 'mediaTurns',
@@ -130,6 +131,7 @@ export enum MutationKeys {
   retryMediaJob = 'retryMediaJob',
   updateMediaThread = 'updateMediaThread',
   deleteMediaThread = 'deleteMediaThread',
+  deleteMediaThreads = 'deleteMediaThreads',
   subagentControl = 'subagentControl',
   enqueueAgentQueuedTurn = 'enqueueAgentQueuedTurn',
   cancelAgentQueuedTurn = 'cancelAgentQueuedTurn',

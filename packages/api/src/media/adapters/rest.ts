@@ -12,7 +12,6 @@ import type {
 import { mediaImageRouting, mediaVideoPolicySupported } from '../routing';
 import { createSourcefulMediaAdapters } from './sourceful';
 import { createMicrosoftImageAdapter } from './microsoft';
-import { createVertexVideoAdapter } from './vertexVideo';
 import { createRecraftMediaAdapters } from './recraft';
 import { createAlibabaMediaAdapters } from './alibaba';
 import { createMinimaxMediaAdapters } from './minimax';
@@ -21,6 +20,7 @@ import { createHeygenMediaAdapters } from './heygen';
 import { createOpenAIMediaAdapters } from './openai';
 import { createGoogleMediaAdapters } from './google';
 import { createAtlasMediaAdapters } from './atlas';
+import { createVertexVideoAdapter } from './veo';
 import { createKreaMediaAdapters } from './krea';
 import { createSeedMediaAdapters } from './seed';
 import { createBFLMediaAdapters } from './bfl';

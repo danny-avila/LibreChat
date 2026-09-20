@@ -6,6 +6,7 @@ import type {
   RunFileProvenance,
   TFile,
 } from 'librechat-data-provider';
+import type { MediaConsumerClaim } from './mediaConsumers';
 import type { MediaAssetContent } from './media';
 
 export type RunArtifactRunScope = {
@@ -143,8 +144,13 @@ export interface IMongoFile extends Omit<Document, 'model'> {
   mediaLifecycle?: 'live' | 'retiring' | 'retired';
   mediaEpoch?: number;
   mediaRetainers?: string[];
+  mediaConsumerClaims?: MediaConsumerClaim[];
+  mediaConsumerRevision?: number;
+  mediaConsumerReconcileAt?: Date;
+  mediaUseUntil?: Date;
   mediaDeletionToken?: string;
-  mediaUnlinkedAt?: string;
+  /** Thread epoch whose retainer removal may still need its expiry projection repaired. */
+  mediaUnlinkedBy?: string;
   mediaHardExpiresAt?: Date;
   durationSeconds?: number;
   object: 'file';

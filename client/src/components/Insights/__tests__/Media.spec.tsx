@@ -14,6 +14,10 @@ const summary = {
   active: 1,
   uncertain: 1,
   providerCostUSD: 1,
+  tokenCostUSD: 0.2,
+  creditsCharged: 700,
+  balanceCostJobs: 1,
+  unbilledJobs: 0,
   operatorCostUSD: 4,
   estimatedCostUSD: 2,
   unclassifiedCostUSD: 3,
@@ -31,7 +35,7 @@ const data: TMediaInsights = {
 
 it('exposes explicit Studio activity and paginates offerings without changing chat filters', async () => {
   const onPage = jest.fn();
-  render(<MediaInsights data={data} isFetching={false} onPage={onPage} />);
+  render(<MediaInsights locale="en" data={data} isFetching={false} onPage={onPage} />);
   const panel = screen.getByRole('region', { name: 'com_insights_media_title' });
   expect(within(panel).getByText('com_insights_media_scope')).toBeVisible();
   expect(within(panel).getByText('openai.images')).toBeVisible();
@@ -42,10 +46,13 @@ it('exposes explicit Studio activity and paginates offerings without changing ch
 });
 
 it('shows the shared empty state and disables pagination during refetch', () => {
-  const { rerender } = render(<MediaInsights data={data} isFetching onPage={() => undefined} />);
+  const { rerender } = render(
+    <MediaInsights locale="en" data={data} isFetching onPage={() => undefined} />,
+  );
   expect(screen.getByRole('button', { name: 'com_ui_next' })).toBeDisabled();
   rerender(
     <MediaInsights
+      locale="en"
       data={{ ...data, summary: { ...summary, submitted: 0 }, offerings: [] }}
       isFetching={false}
       onPage={() => undefined}
@@ -53,4 +60,20 @@ it('shows the shared empty state and disables pagination during refetch', () => 
   );
   expect(screen.getByText('com_insights_no_data')).toBeVisible();
   expect(screen.queryByRole('table')).not.toBeInTheDocument();
+});
+
+it('does not describe transaction-only or unbilled work as a balance charge', () => {
+  render(
+    <MediaInsights
+      locale="en"
+      data={{
+        ...data,
+        summary: { ...summary, balanceCostJobs: 0, unbilledJobs: 2, creditsCharged: 0 },
+      }}
+      isFetching={false}
+      onPage={() => {}}
+    />,
+  );
+  expect(screen.queryByText('com_insights_media_credits_summary')).not.toBeInTheDocument();
+  expect(screen.getByText('com_insights_media_unbilled')).toBeVisible();
 });

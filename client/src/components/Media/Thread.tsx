@@ -34,7 +34,7 @@ import {
   useMediaTurns,
   useMediaTurnJobs,
   useMediaJobOutputs,
-} from '~/data-provider/Media';
+} from '~/data-provider';
 import { mediaErrorLabels, mediaJobPhaseLabels, mediaOutputStateLabels } from './labels';
 import { mediaDraftFamily, mediaPendingFamily } from './state';
 import { MediaImagePending } from './ImagePending';
@@ -140,6 +140,8 @@ function Job({
       (item) => item.connectionId === job.selection.connectionId,
     );
   const active = !['succeeded', 'failed', 'cancelled', 'requires_attention'].includes(job.phase);
+  // Animate the completion of work observed in progress, while restored originals paint directly.
+  const [animateResult] = useState(active);
   const imageJob = job.operation === 'image.generate' || job.operation === 'image.edit';
   const outputImage = [...outputs.values()].find(
     (output) => output.kind === 'image' && output.asset?.width && output.asset?.height,
@@ -208,7 +210,7 @@ function Job({
         outputs={[...outputs.values()]}
         refine={refine}
         cover={cover}
-        imagePendingSince={imageJob ? job.createdAt : undefined}
+        imagePendingSince={imageJob && animateResult ? job.createdAt : undefined}
       />
       {job.outputsNextCursor && (
         <Button
@@ -289,24 +291,23 @@ function Job({
 function TurnPrompt({ turn }: { turn: MediaTurn }) {
   const localize = useLocalize();
   const { i18n } = useTranslation();
+  const when = getMessageTimestamp(turn.createdAt, i18n.language);
   return (
     <div className="flex justify-end" role="group" aria-label={localize('com_media_request')}>
       <div className="max-w-[90%] space-y-2 sm:max-w-[85%]">
         <p className="whitespace-pre-wrap break-words rounded-theme-surface rounded-br-theme-control bg-surface-tertiary px-theme-normal py-2.5 text-sm leading-6 text-text-primary">
           {turn.prompt || localize('com_media_imported')}
         </p>
-        <time
-          className="flex items-center justify-end gap-1.5 text-xs text-text-secondary"
-          dateTime={turn.createdAt}
-        >
-          <Clock3 className="size-3.5" aria-hidden="true" />
-          {new Date(turn.createdAt).toLocaleString(i18n.language, {
-            month: 'short',
-            day: 'numeric',
-            hour: 'numeric',
-            minute: '2-digit',
-          })}
-        </time>
+        {when && (
+          <time
+            className="flex items-center justify-end gap-1.5 text-xs text-text-secondary"
+            dateTime={when.iso}
+            title={when.absolute}
+          >
+            <Clock3 className="size-3.5" aria-hidden="true" />
+            {when.relative}
+          </time>
+        )}
       </div>
     </div>
   );
@@ -403,7 +404,7 @@ function Turn({
         (capability.operation === 'video.generate' && capability.inputs.roles.includes('video')),
     );
   return (
-    <article className="space-y-6" data-media-turn={turn.turnId}>
+    <article className="space-y-6">
       {showPrompt && <TurnPrompt turn={turn} />}
       {turn.assets.map((asset) => (
         <MediaAssetView
@@ -524,7 +525,7 @@ export function MediaThreadView({
           <h2 className="line-clamp-2 break-words text-lg font-semibold">{detail.thread.title}</h2>
           <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-text-secondary">
             <span>{localize('com_media_revision_count', { count: detail.thread.turnCount })}</span>
-            {expires && (
+            {(detail.thread.temporary ?? !!detail.thread.expiresAt) && expires && (
               <Chip
                 role="status"
                 title={expires.absolute}
@@ -596,7 +597,6 @@ export function MediaThreadView({
             key={block[0].comparisonId}
             className="space-y-6"
             aria-label={localize('com_media_comparison')}
-            data-media-comparison={block[0].comparisonId}
           >
             <TurnPrompt turn={block[0]} />
             <div className="grid gap-6 lg:grid-cols-2">

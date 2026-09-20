@@ -18,10 +18,10 @@ export const mediaOperationLabels = {
 
 export const mediaControlLabels = {
   count: 'com_media_count',
-  durationSeconds: 'com_media_durationSeconds',
+  durationSeconds: 'com_media_duration_seconds',
   seed: 'com_media_seed',
   size: 'com_media_size',
-  aspectRatio: 'com_media_aspectRatio',
+  aspectRatio: 'com_media_aspect_ratio',
   quality: 'com_media_quality',
   format: 'com_media_format',
   background: 'com_media_background',
@@ -85,6 +85,7 @@ export const mediaErrorLabels = {
   queue_expired: 'com_media_error_queue_expired',
   credentials_required: 'com_media_error_credentials_required',
   credentials_expired: 'com_media_error_credentials_expired',
+  gemini_key_required: 'com_media_error_gemini_key_required',
   provider_rejected: 'com_media_error_provider_rejected',
   submission_uncertain: 'com_media_error_submission_uncertain',
   storage_failed: 'com_media_error_storage_failed',

@@ -63,6 +63,26 @@ export function getTransactionsConfig(
   return transactionsConfig;
 }
 
+/** Exact endpoint identities win; case-insensitive aliases must be unique. */
+export function findCustomEndpointConfig(
+  endpoints: AppConfig['endpoints'],
+  name: string,
+  allowCaseInsensitive = false,
+): Partial<TEndpoint> | undefined {
+  const normalized = normalizeEndpointName(name);
+  const custom = endpoints?.custom ?? [];
+  const exact = custom.find((entry) => normalizeEndpointName(entry.name) === normalized);
+  if (exact || !allowCaseInsensitive) return exact;
+  const matches = custom.filter((entry) => entry.name?.toLowerCase() === normalized.toLowerCase());
+  if (matches.length > 1) {
+    const names = matches.map((entry) => entry.name ?? '').join(', ');
+    throw new Error(
+      `Provider ${name} is ambiguous: multiple custom endpoints match case-insensitively (${names}). Rename one or use the exact-case provider value.`,
+    );
+  }
+  return matches[0];
+}
+
 export const getCustomEndpointConfig = ({
   endpoint,
   appConfig,
@@ -74,10 +94,7 @@ export const getCustomEndpointConfig = ({
     throw new Error(`Config not found for the ${endpoint} custom endpoint.`);
   }
 
-  const customEndpoints = appConfig.endpoints?.[EModelEndpoint.custom] ?? [];
-  const endpointConfig = customEndpoints.find(
-    (config) => normalizeEndpointName(config.name) === normalizeEndpointName(endpoint),
-  );
+  const endpointConfig = findCustomEndpointConfig(appConfig.endpoints, endpoint);
   return endpointConfig && resolveCustomEndpointSecrets(endpointConfig);
 };
 

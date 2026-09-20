@@ -300,7 +300,6 @@ export type UpdateAgentPermVars = UpdatePermVars<p.TAgentPermissions>;
 export type UpdatePeoplePickerPermVars = UpdatePermVars<p.TPeoplePickerPermissions>;
 export type UpdateMCPServersPermVars = UpdatePermVars<p.TMcpServersPermissions>;
 export type UpdateSkillPermVars = UpdatePermVars<p.TSkillPermissions>;
-export type UpdateMediaPermVars = UpdatePermVars<p.TMediaPermissions>;
 
 export type UpdatePermResponse = r.TRole;
 

@@ -1,3 +1,4 @@
+import { MemoryStore } from 'express-rate-limit';
 import { ViolationTypes } from 'librechat-data-provider';
 import type { Request, Response, RequestHandler } from 'express';
 import type { Store, RateLimitInfo } from 'express-rate-limit';
@@ -13,7 +14,10 @@ export interface MessageRateLimitError extends RateLimitReset {
   windowInMinutes: number;
 }
 export interface RateLimitResponseLocals {
-  rateLimitError?: (error: MessageRateLimitError) => void;
+  rateLimitError?: (error: MessageRateLimitError | FileUploadRateLimitError) => void;
+}
+export interface FileUploadRateLimitError extends Omit<MessageRateLimitError, 'type'> {
+  type: typeof ViolationTypes.FILE_UPLOAD_LIMIT;
 }
 type LimitRequest = Request & {
   user?: Express.User & { id?: string };
@@ -44,6 +48,10 @@ export function createMessageLimiters({
   messageIpLimiter: RequestHandler;
   messageUserLimiter: RequestHandler;
   agentEventUserLimiter: RequestHandler;
+  consumeMessageLimit(
+    req: Request,
+    kind: 'ip' | 'user',
+  ): Promise<MessageRateLimitError | undefined>;
 } {
   const create = (kind: 'ip' | 'user') => {
     const max = Number(environment[kind === 'ip' ? 'MESSAGE_IP_MAX' : 'MESSAGE_USER_MAX'] ?? 40);
@@ -51,7 +59,12 @@ export function createMessageLimiters({
       environment[kind === 'ip' ? 'MESSAGE_IP_WINDOW' : 'MESSAGE_USER_WINDOW'] ?? 1,
     );
     const windowMs = windowInMinutes * 60_000;
-    return factory({
+    const store = createStore(`message_${kind}_limiter`) ?? new MemoryStore();
+    const keyFor =
+      kind === 'ip'
+        ? (req: Request) => removePorts(req) ?? ''
+        : (req: Request) => String((req as LimitRequest).user?.id);
+    const middleware = factory({
       windowMs,
       max,
       handler: async (req, res: Response<unknown, RateLimitResponseLocals>) => {
@@ -73,12 +86,23 @@ export function createMessageLimiters({
         if (res.locals?.rateLimitError) return res.locals.rateLimitError(error);
         await denyRequest(req, res, error);
       },
-      keyGenerator:
-        kind === 'ip'
-          ? (req) => removePorts(req) ?? ''
-          : (req) => String((req as LimitRequest).user?.id),
-      store: createStore(`message_${kind}_limiter`),
+      keyGenerator: keyFor,
+      store,
     });
+    return {
+      middleware,
+      async consume(req: Request): Promise<MessageRateLimitError | undefined> {
+        const { totalHits, resetTime } = await store.increment(keyFor(req));
+        if (totalHits <= max) return;
+        return {
+          type: ViolationTypes.MESSAGE_LIMIT,
+          max,
+          limiter: kind,
+          windowInMinutes,
+          ...getRateLimitReset({ resetTime }, windowMs),
+        };
+      },
+    };
   };
   const createEventLimiter = () => {
     const windowMs = Number(environment.AGENT_EVENT_USER_WINDOW ?? 1) * 60_000;
@@ -114,9 +138,12 @@ export function createMessageLimiters({
     eventLimiter ??= createEventLimiter();
     return eventLimiter(req, res, next);
   };
+  const ip = create('ip');
+  const user = create('user');
   return {
-    messageIpLimiter: create('ip'),
-    messageUserLimiter: create('user'),
+    messageIpLimiter: ip.middleware,
+    messageUserLimiter: user.middleware,
     agentEventUserLimiter,
+    consumeMessageLimit: (req, kind) => (kind === 'ip' ? ip : user).consume(req),
   };
 }

@@ -1,5 +1,12 @@
 jest.mock('uuid', () => ({ v4: jest.fn(() => 'mock-uuid') }));
 
+// The storage adapters have their own package tests; keep this CJS suite on the real delete guard.
+jest.mock('../../../../packages/api/src/media/objects', () => ({
+  createLocalMediaObjectStore: jest.fn(() => ({ source: 'local' })),
+  createMediaStrategyObjectStores: jest.fn(() => []),
+  removeMediaObjectLocations: jest.fn(),
+}));
+
 jest.mock('@librechat/data-schemas', () => ({
   isMediaFileId: jest.requireActual('@librechat/data-schemas').isMediaFileId,
   logger: { warn: jest.fn(), debug: jest.fn(), error: jest.fn(), info: jest.fn() },
@@ -210,6 +217,9 @@ jest.mock('~/models', () => ({
   addAgentResourceFile: jest.fn().mockResolvedValue({}),
   removeAgentResourceFiles: jest.fn(),
   removeAgentResourceFilesFromAllAgents: jest.fn(),
+  isMediaFile: jest.fn(),
+  claimMediaAssetDeletion: jest.fn(),
+  completeMediaAssetDeletion: jest.fn(),
 }));
 
 jest.mock('~/server/utils/getFileStrategy', () => ({
@@ -2611,6 +2621,111 @@ describe('processDeleteRequest', () => {
     expect(vectorDelete).toHaveBeenCalledWith(req, file);
     expect(db.deleteFiles).not.toHaveBeenCalled();
     expect(result).toEqual({ deletedFileIds: [], failedFileIds: ['embedded-file'] });
+  });
+
+  it('keeps a failed agent file attached so the delete can be retried', async () => {
+    const deleteFile = jest.fn().mockRejectedValue(new Error('rag unavailable'));
+    getStrategyFunctions.mockReturnValue({ deleteFile });
+    const req = {
+      body: { agent_id: 'agent_1', tool_resource: 'file_search' },
+      config: {},
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+    };
+
+    const result = await processDeleteRequest({
+      req,
+      files: [
+        {
+          file_id: 'knowledge-file',
+          filepath: '/uploads/knowledge.txt',
+          source: FileSources.local,
+        },
+      ],
+    });
+
+    expect(result).toEqual({ deletedFileIds: [], failedFileIds: ['knowledge-file'] });
+    expect(db.deleteFiles).not.toHaveBeenCalled();
+    expect(db.removeAgentResourceFiles).not.toHaveBeenCalled();
+    expect(db.removeAgentResourceFilesFromAllAgents).not.toHaveBeenCalled();
+  });
+
+  it('keeps a retained media original attached and never deletes its storage or metadata', async () => {
+    const deleteFile = jest.fn();
+    getStrategyFunctions.mockReturnValue({ deleteFile });
+    db.isMediaFile.mockResolvedValue(true);
+    db.claimMediaAssetDeletion.mockResolvedValue(null);
+    const fileId = 'f17ecafe-0000-4000-8000-000000000001';
+    const result = await processDeleteRequest({
+      req: {
+        body: { agent_id: 'agent_1', tool_resource: 'file_search' },
+        config: { paths: { imageOutput: '/images', uploads: '/uploads' } },
+        user: { id: 'user-123', tenantId: 'tenant-a' },
+      },
+      files: [{ file_id: fileId, filepath: '/images/original.png', source: FileSources.local }],
+    });
+
+    expect(result).toEqual({ deletedFileIds: [], failedFileIds: [fileId] });
+    expect(deleteFile).not.toHaveBeenCalled();
+    expect(db.deleteFiles).not.toHaveBeenCalled();
+    expect(db.removeAgentResourceFiles).not.toHaveBeenCalled();
+    expect(db.removeAgentResourceFilesFromAllAgents).not.toHaveBeenCalled();
+  });
+
+  it('strips agent references only for the files it deleted', async () => {
+    getStrategyFunctions.mockReturnValue({
+      deleteFile: jest
+        .fn()
+        .mockImplementation((_req, file) =>
+          file.file_id === 'kept-file'
+            ? Promise.reject(new Error('rag unavailable'))
+            : Promise.resolve(undefined),
+        ),
+    });
+    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+    const req = {
+      body: { agent_id: 'agent_1', tool_resource: 'file_search' },
+      config: {},
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+    };
+
+    const result = await processDeleteRequest({
+      req,
+      files: [
+        { file_id: 'gone-file', filepath: '/uploads/gone.txt', source: FileSources.local },
+        { file_id: 'kept-file', filepath: '/uploads/kept.txt', source: FileSources.local },
+      ],
+    });
+
+    expect(result).toEqual({ deletedFileIds: ['gone-file'], failedFileIds: ['kept-file'] });
+    expect(db.removeAgentResourceFilesFromAllAgents).toHaveBeenCalledWith({
+      file_ids: ['gone-file'],
+    });
+  });
+
+  it('keeps agent references when the metadata delete fails', async () => {
+    getStrategyFunctions.mockReturnValue({ deleteFile: jest.fn().mockResolvedValue(undefined) });
+    db.deleteFiles.mockRejectedValue(new Error('mongo unavailable'));
+    const req = {
+      body: { agent_id: 'agent_1', tool_resource: 'file_search' },
+      config: {},
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+    };
+
+    await expect(
+      processDeleteRequest({
+        req,
+        files: [
+          {
+            file_id: 'knowledge-file',
+            filepath: '/uploads/knowledge.txt',
+            source: FileSources.local,
+          },
+        ],
+      }),
+    ).rejects.toThrow('mongo unavailable');
+
+    expect(db.removeAgentResourceFiles).not.toHaveBeenCalled();
+    expect(db.removeAgentResourceFilesFromAllAgents).not.toHaveBeenCalled();
   });
 
   it('does not delete vector storage when primary embedded file deletion fails', async () => {

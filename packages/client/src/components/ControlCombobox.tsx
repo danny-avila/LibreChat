@@ -53,7 +53,9 @@ interface ControlComboboxProps {
    *  differently while it is up — e.g. a focus-trapped panel whose own Escape
    *  handler must not fire while an open popover owns the key. */
   onOpenChange?: (open: boolean) => void;
-  /** Independent actions stay outside listbox options, including disabled options. */
+  /** Independent actions stay outside listbox options, including disabled options.
+   * Reach actions with Tab from the search input. Key-required rows should set
+   * activateOnSelect so Enter on the option also opens setup. */
   optionAction?: (value: string) =>
     | {
         label: string;
@@ -311,7 +313,7 @@ const ControlCombobox: ForwardRefExoticComponent<
                     'text-text-primary hover:bg-surface-tertiary',
                     'data-[active-item]:bg-surface-tertiary',
                     'aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
-                    optionAction && 'pr-12',
+                    value && optionAction?.(value) && 'pr-12',
                   )}
                   render={<Ariakit.SelectItem value={value} disabled={itemDisabled} />}
                 >
@@ -340,10 +342,15 @@ const ControlCombobox: ForwardRefExoticComponent<
           )}
           {optionAction && (
             <div className="absolute right-1 top-0">
-              {matches.map((item) => {
+              {matches.map((item, index) => {
                 const action = item.value ? optionAction(item.value) : undefined;
+                if (!action) return null;
                 return (
-                  <div key={item.id} className="flex items-center" style={{ height: ROW_HEIGHT }}>
+                  <div
+                    key={item.id}
+                    className="absolute right-0 flex items-center"
+                    style={{ height: ROW_HEIGHT, top: index * ROW_HEIGHT }}
+                  >
                     {action && (
                       <Button
                         variant="ghost"

@@ -3,8 +3,8 @@ import {
   prepareMediaAccountDeletion,
   completeMediaAccountDeletion,
   cancelMediaAccountDeletion,
-  sendMediaAccountDeletionError,
 } from './account';
+import { sendAccountDeletionError } from '~/user/deletion';
 import { MediaServiceError } from './errors';
 
 describe('media account deletion preflight', () => {
@@ -13,7 +13,7 @@ describe('media account deletion preflight', () => {
 
   it('returns actionable media errors and preserves the generic response for other failures', () => {
     const response = { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() };
-    sendMediaAccountDeletionError(
+    sendAccountDeletionError(
       response,
       new MediaServiceError(
         'not_ready',
@@ -26,7 +26,7 @@ describe('media account deletion preflight', () => {
       code: 'not_ready',
       message: 'Media work or accounting must finish before account deletion.',
     });
-    sendMediaAccountDeletionError(response, new Error('Private database details'));
+    sendAccountDeletionError(response, new Error('Private database details'));
     expect(response.status).toHaveBeenLastCalledWith(500);
     expect(response.json).toHaveBeenLastCalledWith({ message: 'Something went wrong.' });
   });

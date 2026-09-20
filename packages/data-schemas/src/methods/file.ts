@@ -1,5 +1,10 @@
 import { createHash } from 'crypto';
-import { EToolResources, FileContext, FileSources } from 'librechat-data-provider';
+import {
+  EToolResources,
+  FileContext,
+  FileSources,
+  resolveMediaConfig,
+} from 'librechat-data-provider';
 import type { CodeEnvRef, TFile } from 'librechat-data-provider';
 import type { FilterQuery, SortOrder, Model } from 'mongoose';
 import type {
@@ -11,7 +16,9 @@ import type {
   RunArtifactRunScope,
   PublishRunArtifactInput,
 } from '~/types/file';
+import type { MediaConsumerConfig } from '~/types/mediaConsumers';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { isMediaFileId } from '~/types/media';
 import logger from '../config/winston';
 
 export type FileOwnerScope = {
@@ -123,7 +130,12 @@ function serializeRunArtifact(
 }
 
 /** Factory function that takes mongoose instance and returns the file methods */
-export function createFileMethods(mongoose: typeof import('mongoose')): {
+export function createFileMethods(
+  mongoose: typeof import('mongoose'),
+  deps: {
+    getMediaConsumerConfig?: () => Promise<MediaConsumerConfig>;
+  } = {},
+): {
   getRunFileCandidates: (fileIds: readonly string[], tenantId?: string | null) => Promise<TFile[]>;
   claimRunArtifactFile: (scope: RunArtifactScope) => Promise<RunArtifactClaim>;
   publishRunArtifactFile: (input: PublishRunArtifactInput) => Promise<RunArtifactFile>;
@@ -425,10 +437,20 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   ): Promise<IMongoFile[]> {
     const File = mongoose.models.File as Model<IMongoFile>;
     return await File.find({
-      // Media originals use a retain/retire CAS before any storage deletion.
-      mediaOutputKey: { $exists: false },
+      // Media deletion still goes through the retain/retire CAS in processDeleteRequest.
+      // Completed tombstones are receipts, not remaining objects to sweep.
+      mediaLifecycle: { $ne: 'retired' },
       expiredAt: { $ne: null, $lte: now },
-      $or: [{ deletionRetryAt: null }, { deletionRetryAt: { $lte: now } }],
+      $and: [
+        { $or: [{ deletionRetryAt: null }, { deletionRetryAt: { $lte: now } }] },
+        {
+          $or: [
+            { mediaUseUntil: null },
+            { mediaUseUntil: { $lte: now } },
+            { mediaHardExpiresAt: { $lte: now } },
+          ],
+        },
+      ],
     })
       .sort({ expiredAt: 1 })
       .limit(limit)
@@ -981,14 +1003,27 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   }): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
     const { file_id, inc = 1, user, tenantId } = data;
+    const media = isMediaFileId(file_id);
+    if (media && !user) return null;
+    const config = media
+      ? ((await deps.getMediaConsumerConfig?.()) ?? resolveMediaConfig().limits)
+      : undefined;
     const updateOperation = {
       $inc: { usage: inc },
       $unset: { expiresAt: '', temp_file_id: '' },
+      ...(config ? { $set: { mediaUseUntil: new Date(Date.now() + config.consumerClaimMs) } } : {}),
     };
     // Owner scoping is fail-closed: mismatches leave usage and TTL metadata unchanged.
     const query: FilterQuery<IMongoFile> = user
-      ? withOwnerScope({ file_id }, { userId: user, tenantId })
+      ? withOwnerScope(
+          { file_id },
+          { userId: user, tenantId: media ? (tenantId ?? null) : tenantId },
+        )
       : { file_id };
+    if (media) {
+      query.mediaLifecycle = 'live';
+      query.$or = [{ mediaHardExpiresAt: null }, { mediaHardExpiresAt: { $gt: new Date() } }];
+    }
     return File.findOneAndUpdate(query, updateOperation, {
       new: true,
     }).lean<IMongoFile>();
@@ -1001,10 +1036,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    */
   async function deleteFile(file_id: string): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    return File.findOneAndDelete({
-      file_id,
-      mediaOutputKey: { $exists: false },
-    }).lean<IMongoFile>();
+    return File.findOneAndDelete({ file_id }).lean<IMongoFile>();
   }
 
   /**
@@ -1014,9 +1046,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    */
   async function deleteFileByFilter(filter: FilterQuery<IMongoFile>): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    return File.findOneAndDelete({
-      $and: [filter, { mediaOutputKey: { $exists: false } }],
-    }).lean<IMongoFile>();
+    return File.findOneAndDelete(filter).lean<IMongoFile>();
   }
 
   /**
@@ -1034,7 +1064,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     if (user) {
       deleteQuery = { user: user };
     }
-    return File.deleteMany({ $and: [deleteQuery, { mediaOutputKey: { $exists: false } }] });
+    return File.deleteMany(deleteQuery);
   }
 
   /**

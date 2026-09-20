@@ -372,7 +372,7 @@ describe('formatAgentMessages assistant replay folding', () => {
       },
     ]);
     expect(message).toBeInstanceOf(AIMessage);
-    expect(message.content).toBe('Here is the chart.\nLet me verify.');
+    expect(message.content).toBe('Here is the chart.\n\nLet me verify.');
     expect(message.tool_calls).toMatchObject([{ id: 'call-1', name: 'verify', args: {} }]);
     expect(tool).toBeInstanceOf(ToolMessage);
   });

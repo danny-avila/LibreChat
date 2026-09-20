@@ -74,7 +74,7 @@ export function createMediaPermitModel(mongoose: typeof import('mongoose')): Mod
 }
 export function createMediaActivationModel(
   mongoose: typeof import('mongoose'),
-): Model<{ key: string; activatedAt: string }> {
+): Model<{ key: string; activatedAt: Date }> {
   return (
     mongoose.models.MediaActivation || mongoose.model('MediaActivation', mediaActivationSchema)
   );

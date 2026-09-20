@@ -1,9 +1,9 @@
 import { useId, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Film, Image, Images, Play, Search } from 'lucide-react';
-import { Button, Chip, EmptyState, Input, Radio, Skeleton } from '@librechat/client';
+import { Button, Checkbox, Chip, EmptyState, Input, Radio, Skeleton } from '@librechat/client';
 import type { MediaCatalog, MediaThreadListRequest } from 'librechat-data-provider';
-import type { MediaTile, useMediaThreads } from '~/data-provider/Media';
+import type { MediaTile, useMediaThreads } from '~/data-provider';
 import type { MediaLibrary } from './state';
 import { mediaThreadFilterLabels } from './labels';
 import { getMessageTimestamp } from '~/utils';
@@ -32,6 +32,9 @@ export function MediaGallery({
   onCreate,
   onColumns,
   onOpen,
+  selected,
+  onSelect,
+  onDelete,
 }: {
   tiles: MediaTile[];
   catalog?: MediaCatalog;
@@ -44,6 +47,9 @@ export function MediaGallery({
   onCreate: () => void;
   onColumns: (value: MediaLibrary['columns']) => void;
   onOpen: (threadId: string) => void;
+  selected?: Set<string>;
+  onSelect?: (threadId: string) => void;
+  onDelete?: () => void;
 }) {
   const localize = useLocalize();
   const { i18n } = useTranslation();
@@ -65,11 +71,7 @@ export function MediaGallery({
       offerings.get(JSON.stringify([latest.selection.connectionId, latest.selection.modelId]));
     const model = offering?.modelName ?? latest?.selection.modelId;
     const connection = offering?.connectionName ?? latest?.selection.connectionId;
-    if (
-      needle &&
-      ![tile.title, model, connection].some((value) => value?.toLocaleLowerCase().includes(needle))
-    )
-      return [];
+    if (needle && !tile.title.toLocaleLowerCase().includes(needle)) return [];
     return [{ tile, latest, model: model ?? connection }];
   });
   return (
@@ -124,19 +126,30 @@ export function MediaGallery({
             aria-label={localize('com_media_search')}
             placeholder={localize('com_media_search')}
             value={search}
+            maxLength={catalog?.limits.maxTitleChars}
             onChange={(event) => onSearch(event.target.value)}
             className="pl-9"
           />
         </div>
       </div>
+      {!!selected?.size && onDelete && (
+        <div className="flex items-center justify-between gap-2">
+          <p role="status" className="text-sm text-text-secondary">
+            {localize('com_media_selected_count', { count: selected.size })}
+          </p>
+          <Button variant="destructive" size="sm" onClick={onDelete}>
+            {localize('com_media_delete_selected')}
+          </Button>
+        </div>
+      )}
       {query.isLoading && (
         <div role="status" className={grid}>
           <span className="sr-only">{localize('com_media_loading')}</span>
           {Array.from({ length: columns * 2 }, (_, item) => (
             <div key={item} className="space-y-2">
-              <Skeleton className="aspect-square rounded-xl motion-reduce:animate-none" />
-              <Skeleton className="h-4 w-3/4 motion-reduce:animate-none" />
-              <Skeleton className="h-3 w-1/2 motion-reduce:animate-none" />
+              <Skeleton className="aspect-square rounded-xl" />
+              <Skeleton className="h-4 w-3/4" />
+              <Skeleton className="h-3 w-1/2" />
             </div>
           ))}
         </div>
@@ -177,7 +190,7 @@ export function MediaGallery({
           className="min-h-72"
         />
       )}
-      <ul className={grid} data-media-gallery data-columns={columns}>
+      <ul className={grid} data-testid="media-gallery" data-columns={columns}>
         {visible.map(({ tile, latest, model }) => {
           const cover = tile.thread?.cover;
           const pending = (tile.thread?.pendingJobCount ?? 0) > 0;
@@ -197,6 +210,19 @@ export function MediaGallery({
           else if (pending) emptyLabel = localize('com_media_phase_running');
           return (
             <li key={tile.threadId} className="min-w-0">
+              {onSelect && tile.thread && (
+                <div className="mb-2 flex items-center gap-2">
+                  <Checkbox
+                    aria-label={localize('com_media_select_named', { title: tile.title })}
+                    checked={selected?.has(tile.threadId) ?? false}
+                    disabled={
+                      !selected?.has(tile.threadId) &&
+                      (selected?.size ?? 0) >= (catalog?.limits.maxPageSize ?? 0)
+                    }
+                    onCheckedChange={() => onSelect(tile.threadId)}
+                  />
+                </div>
+              )}
               <button
                 type="button"
                 className="group flex w-full flex-col gap-2 rounded-xl text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 focus-visible:ring-offset-presentation"

@@ -11,41 +11,38 @@ import {
   OGDialogTitle,
   OGDialogDescription,
   TooltipAnchor,
-  labelVariants,
 } from '@librechat/client';
 import type { ReactNode } from 'react';
-import type { MediaReceipt } from '~/data-provider/Media';
-import type { MediaFormParts } from './Form';
-import {
-  mergeMediaTiles,
-  useMediaCatalog,
-  useMediaThread,
-  useMediaThreads,
-} from '~/data-provider/Media';
+import type { MediaReceipt } from '~/data-provider';
+import { mergeMediaTiles, useMediaCatalog, useMediaThread, useMediaThreads } from '~/data-provider';
+import { MediaForm, MediaFormComposer, MediaFormSettings } from './Form';
+import { MediaHostProvider, mediaFeatures, useMediaHost } from './host';
 import { mediaDraftFamily, mediaLibraryFamily } from './state';
-import { mediaFeatures, useMediaHost } from './host';
+import { MediaBalanceExplanation } from './Balance';
+import useDebounce from '~/hooks/Input/useDebounce';
 import { mediaThreadContext } from './context';
 import { cn, setDocumentTitle } from '~/utils';
+import { seedMediaEditDraft } from './seeding';
 import { useMediaCommands } from './commands';
+import { MediaDeleteDialog } from './Delete';
 import { mediaErrorLabels } from './labels';
 import { MediaThreadView } from './Thread';
 import { MediaGallery } from './Gallery';
 import { useLocalize } from '~/hooks';
-import { MediaForm } from './Form';
 
 export default function MediaWorkspace({
   threadId,
   navigation,
-  settingsHost,
+  settingsToggle,
 }: {
   threadId?: string;
   navigation?: ReactNode;
-  settingsHost?: { render: (settings: ReactNode) => ReactNode; toggle: ReactNode };
+  settingsToggle?: ReactNode;
 }) {
   const host = useMediaHost();
   const features = mediaFeatures(host);
   const localize = useLocalize();
-  const workspace = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const transcript = useRef<HTMLDivElement>(null);
   const galleryScroll = useRef<HTMLDivElement>(null);
@@ -54,19 +51,26 @@ export default function MediaWorkspace({
   const focusRequested = useRef<{ threadId: string | undefined }>();
   const settingsTrigger = useRef<HTMLButtonElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [selectedThreads, setSelectedThreads] = useState(new Set<string>());
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [library, setLibrary] = useAtom(mediaLibraryFamily(host.scope));
   const [newDraft, setNewDraft] = useAtom(mediaDraftFamily(`${host.scope}:new`));
   const gallery = library.view === 'gallery' && library.threadId === threadId;
   const setView = (view: 'thread' | 'gallery') =>
     setLibrary((previous) => ({ ...previous, view, threadId }));
   const catalog = useMediaCatalog(host);
-  const threads = useMediaThreads(host, library.filter);
+  const search = useDebounce(library.search.trim(), 250);
+  const threads = useMediaThreads(host, library.filter, search);
   const detail = useMediaThread(host, threadId);
   const visible = threads.data?.pages.flatMap((page) => page.items) ?? [];
   const commands = useMediaCommands([
     ...visible.map((thread) => thread.threadId),
     ...(detail.data ? [detail.data.thread.threadId] : []),
   ]);
+  const { refreshBalance } = host;
+  useEffect(() => {
+    if (commands.error === 'quota_exceeded') refreshBalance?.();
+  }, [commands.error, refreshBalance]);
   const recoverable = commands.pending.flatMap((command, index) => {
     const receipt = commands.receipts[index]?.data;
     if (!receipt) return [];
@@ -84,9 +88,7 @@ export default function MediaWorkspace({
     localize(receipt?.phase === 'preparing' ? 'com_media_preparing' : 'com_media_restoring');
   const focusPrompt = useCallback(() => {
     if (!focusRequested.current || focusRequested.current.threadId !== threadId) return;
-    const prompt = workspace.current?.querySelector<HTMLTextAreaElement>(
-      '[data-media-composer] textarea',
-    );
+    const prompt = composerRef.current;
     if (!prompt || prompt.closest('[hidden]')) return;
     prompt.focus();
     if (document.activeElement === prompt) focusRequested.current = undefined;
@@ -208,8 +210,8 @@ export default function MediaWorkspace({
   const loading = (
     <div role="status" className="space-y-4">
       <span className="sr-only">{localize('com_media_loading')}</span>
-      <Skeleton className="h-10 motion-reduce:animate-none" />
-      <Skeleton className="h-24 motion-reduce:animate-none" />
+      <Skeleton className="h-10" />
+      <Skeleton className="h-24" />
     </div>
   );
   const catalogStatus = catalog.isError ? (
@@ -228,46 +230,37 @@ export default function MediaWorkspace({
     loading
   );
   const conversation = threadId && detail.data && (
-    <MediaThreadView
-      key={threadId}
-      detail={detail.data}
-      catalog={catalog.data}
-      send={commands.send}
-      onCompose={focusComposer}
-      onDeleted={create}
-      onLoadOlder={() => {
-        followLatest.current = false;
+    <MediaHostProvider
+      value={{
+        ...host,
+        canUseInChat:
+          (detail.data.thread.temporary ?? !!detail.data.thread.expiresAt)
+            ? false
+            : host.canUseInChat,
+        createFromAsset: (asset) => {
+          setNewDraft((previous) => seedMediaEditDraft(previous, [asset]));
+          create();
+        },
       }}
-    />
+    >
+      <MediaThreadView
+        key={threadId}
+        detail={detail.data}
+        catalog={catalog.data}
+        send={commands.send}
+        onCompose={focusComposer}
+        onDeleted={create}
+        onLoadOlder={() => {
+          followLatest.current = false;
+        }}
+      />
+    </MediaHostProvider>
   );
-  const renderWorkspace = ({ settings, composer }: MediaFormParts) => (
+  const renderWorkspace = (status?: ReactNode) => (
     <div
-      ref={workspace}
-      data-media-workspace
+      data-testid="media-workspace"
       className="flex h-full min-h-0 w-full flex-col bg-presentation text-text-primary"
     >
-      {settingsHost?.render(
-        <div className="space-y-4 px-3 pb-6 pt-3">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className={cn(labelVariants({ variant: 'section' }), 'min-w-0 truncate')}>
-              {localize('com_media_settings')}
-            </h2>
-            <Button
-              variant="ghost"
-              className="-mr-2 h-7 shrink-0 gap-1.5 px-2 text-xs font-medium text-text-secondary hover:text-text-primary"
-              onClick={() => (gallery ? create() : setView('gallery'))}
-            >
-              {gallery ? (
-                <Plus className="size-3.5" aria-hidden="true" />
-              ) : (
-                <History className="size-3.5" aria-hidden="true" />
-              )}
-              {localize(gallery ? 'com_media_new_thread' : 'com_media_open_gallery')}
-            </Button>
-          </div>
-          {settings}
-        </div>,
-      )}
       <header className="flex min-h-14 shrink-0 items-center justify-between gap-2 border-b border-border-light px-3 py-2 sm:px-5">
         <div className="flex min-w-0 items-center gap-2">
           {navigation}
@@ -336,8 +329,8 @@ export default function MediaWorkspace({
               </Button>
             }
           />
-          {settingsHost ? (
-            settingsHost.toggle
+          {settingsToggle ? (
+            settingsToggle
           ) : (
             <TooltipAnchor
               description={localize('com_media_settings')}
@@ -368,7 +361,7 @@ export default function MediaWorkspace({
       >
         <div
           ref={scroll}
-          data-media-transcript
+          data-testid="media-transcript"
           className={
             'scrollbar-gutter-stable min-h-0 overflow-y-auto overscroll-contain ' +
             (threadId ? 'flex-1' : '')
@@ -421,10 +414,11 @@ export default function MediaWorkspace({
         </div>
         <div className="shrink-0 bg-presentation px-4 pb-4 pt-2 sm:px-6">
           <div className="mx-auto w-full max-w-3xl space-y-3 xl:max-w-4xl">
-            {composer}
+            {status ?? <MediaFormComposer />}
             {commands.error && (
               <div role="alert" className="space-y-2 text-sm">
                 <p>{localize(mediaErrorLabels[commands.error])}</p>
+                {commands.error === 'quota_exceeded' && <MediaBalanceExplanation />}
                 {commands.error === 'stale_catalog' && (
                   <Button variant="outline" onClick={() => void catalog.refetch()}>
                     {localize('com_media_refresh_models')}
@@ -452,6 +446,16 @@ export default function MediaWorkspace({
               filter={library.filter}
               search={library.search}
               columns={library.columns}
+              selected={selectedThreads}
+              onSelect={(id) =>
+                setSelectedThreads((previous) => {
+                  const next = new Set(previous);
+                  if (next.has(id)) next.delete(id);
+                  else next.add(id);
+                  return next;
+                })
+              }
+              onDelete={() => setDeleteOpen(true)}
               onFilter={(filter) => setLibrary((previous) => ({ ...previous, filter }))}
               onSearch={(search) => setLibrary((previous) => ({ ...previous, search }))}
               onColumns={(columns) => setLibrary((previous) => ({ ...previous, columns }))}
@@ -464,12 +468,19 @@ export default function MediaWorkspace({
           </div>
         </div>
       )}
-      {!settingsHost && (
+      <MediaDeleteDialog
+        host={host}
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        request={{ mode: 'selected', threadIds: [...selectedThreads] }}
+        onDeleted={(ids) => setSelectedThreads(new Set(ids))}
+      />
+      {!settingsToggle && (
         <OGDialog open={settingsOpen} onOpenChange={setSettingsOpen} triggerRef={settingsTrigger}>
           <OGDialogContent className="max-h-[85dvh] max-w-lg overflow-y-auto">
             <OGDialogTitle>{localize('com_media_settings')}</OGDialogTitle>
             <OGDialogDescription>{localize('com_media_settings_description')}</OGDialogDescription>
-            {settings}
+            {status ?? <MediaFormSettings />}
           </OGDialogContent>
         </OGDialog>
       )}
@@ -482,20 +493,21 @@ export default function MediaWorkspace({
       ) : (
         catalogStatus
       );
-    return renderWorkspace({ settings: status, composer: status });
+    return renderWorkspace(status);
   }
   return (
     <MediaForm
       key={threadId ?? 'new'}
       catalog={catalog.data}
+      composerRef={composerRef}
       threadId={threadId}
       initialSelection={latestTurn?.selection}
       imageContext={imageContext}
       send={commands.send}
       busy={commands.sending.size > 0}
-      portal={!!settingsHost}
+      portal={!!settingsToggle}
     >
-      {renderWorkspace}
+      {renderWorkspace()}
     </MediaForm>
   );
 }

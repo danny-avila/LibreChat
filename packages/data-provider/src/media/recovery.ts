@@ -54,11 +54,24 @@ export const mediaRecoveryJobSchema = z
   })
   .strict();
 export type MediaRecoveryJob = z.infer<typeof mediaRecoveryJobSchema>;
+export const mediaWorkerHealthSchema = z
+  .object({
+    state: z.enum(['starting', 'armed', 'draining', 'unavailable']),
+    consecutiveScanFailures: z.number().int().nonnegative(),
+    lastScanAt: z.string().datetime().optional(),
+  })
+  .strict();
+export type MediaWorkerHealth = z.infer<typeof mediaWorkerHealthSchema>;
 export const mediaRecoveryPageSchema = z
   .object({
     items: z.array(mediaRecoveryJobSchema),
     nextCursor: mediaIdSchema.optional(),
     maxEvidenceChars: z.number().int().positive(),
+    worker: mediaWorkerHealthSchema.optional(),
   })
   .strict();
 export type MediaRecoveryPage = z.infer<typeof mediaRecoveryPageSchema>;
+export const mediaRecoveryCapabilitiesSchema = z
+  .object({ canRead: z.boolean(), canManage: z.boolean() })
+  .strict();
+export type MediaRecoveryCapabilities = z.infer<typeof mediaRecoveryCapabilitiesSchema>;

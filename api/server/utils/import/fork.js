@@ -12,8 +12,8 @@ const {
   ForkOptions,
   stripSharedFileIds,
 } = require('librechat-data-provider');
-const { getConvo, getMessages, getSharedMessages } = require('~/models');
 const nativeRepository = require('~/models');
+const { getConvo, getMessages, getSharedMessages } = nativeRepository;
 const { createImportBatchBuilder } = require('./importBatchBuilder');
 const { getAppConfig } = require('~/server/services/Config');
 const { resolveImportDefaultEndpoint } = require('./defaults');

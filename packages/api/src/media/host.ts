@@ -8,22 +8,27 @@ import type {
   MediaTitleMethods,
   MediaRecoveryMethods,
   FileMethods,
+  KeyMethods,
+  TxMethods,
 } from '@librechat/data-schemas';
 import type { AxiosInstance } from 'axios';
 import type { BalanceCreditReservationDeps } from '~/middleware/checkBalance';
 import type { MediaRuntime, MediaRuntimeDependencies } from './runtime';
 import type { MediaAdmissionDependencies } from './admission';
+import type { MediaCatalogCache } from './catalogCache';
 import type { MediaStrategyResolver } from './objects';
 import type { RecordUsageDeps } from '~/agents/usage';
 import type { MediaEnvironment } from './credentials';
 import type { MediaMetricEvent } from './telemetry';
+import type { loadServiceKey } from '~/utils/key';
 import type { EndpointDbMethods } from '~/types';
 import type { MediaUploadFactory } from './http';
-import { createGoogleMediaAuthClient, createVertexMediaCredentialProvider } from './vertexAuth';
+import type { MediaLogger } from './logging';
+import { createGoogleMediaAuthClient, createVertexMediaCredentialProvider } from './vertex';
 import { createFFmpegMediaProcessor, createMediaDerivativeProcessor } from './derivatives';
 import { getFileRetentionMaxAttempts, getExpiredFileRetryDelay } from '~/files/sweep';
 import { getBalanceConfig, getTransactionsConfig } from '~/app/config';
-import { createModerationCheck } from '../middleware/moderation';
+import { createModerationCheck } from '~/middleware/moderation';
 import { createMediaStrategyObjectStores } from './objects';
 import { createMediaLifecycleObserver } from './telemetry';
 import { createMediaAdmissionPolicy } from './admission';
@@ -32,7 +37,8 @@ import { createMediaAccounting } from './accounting';
 import { createMediaModelTracer } from './tracing';
 import { createMediaTransport } from './transport';
 import { createMediaRuntime } from './runtime';
-import { isEnabled } from '../utils/common';
+import { createMediaLogger } from './logging';
+import { isEnabled } from '~/utils/common';
 
 /** Resolve the host's legacy/YAML policy before jobs freeze their accounting mode. */
 export function resolveMediaHostConfig(
@@ -49,6 +55,7 @@ export function resolveMediaHostConfig(
 /** The slice of the host's model layer that Media Studio reads and writes. */
 export interface MediaHostDatabase
   extends MediaMethods,
+    Pick<KeyMethods, 'getUserKeySnapshot'>,
     MediaNativeMethods,
     MediaPresetMethods,
     MediaAccountingMethods,
@@ -58,7 +65,11 @@ export interface MediaHostDatabase
   getUserById: MediaRuntimeDependencies['getUserById'];
   spendTokens: RecordUsageDeps['spendTokens'];
   spendStructuredTokens: RecordUsageDeps['spendStructuredTokens'];
-  getMultiplier: NonNullable<RecordUsageDeps['pricing']>['getMultiplier'];
+  getMultiplier: TxMethods['getMultiplier'];
+  getValueKey: TxMethods['getValueKey'];
+  tokenValues: TxMethods['tokenValues'];
+  imageTokenValues: TxMethods['imageTokenValues'];
+  premiumTokenValues: TxMethods['premiumTokenValues'];
   getCacheMultiplier: NonNullable<RecordUsageDeps['pricing']>['getCacheMultiplier'];
   bulkInsertTransactions: NonNullable<RecordUsageDeps['bulkWriteOps']>['insertMany'];
   updateBalance: NonNullable<RecordUsageDeps['bulkWriteOps']>['updateBalance'];
@@ -70,6 +81,10 @@ export interface MediaHostDatabase
 }
 
 export interface MediaHostDependencies {
+  eventTransport?: MediaRuntimeDependencies['eventTransport'];
+  saveNativeImage?: MediaRuntimeDependencies['saveNativeImage'];
+  catalogCache?: MediaCatalogCache;
+  isLeader?: () => Promise<boolean>;
   mediaMetrics?: (event: MediaMetricEvent) => void;
   appConfig: AppConfig;
   db: MediaHostDatabase;
@@ -82,13 +97,18 @@ export interface MediaHostDependencies {
   upload: MediaUploadFactory;
   admission?: MediaAdmissionDependencies;
   getStorageStrategy?: MediaStrategyResolver;
-  readFile(path: string, encoding: 'utf8'): Promise<string>;
+  loadServiceKey: typeof loadServiceKey;
+  defaultServiceKeyFile?: string;
   decrypt(value: string): Promise<string>;
-  log(error: Error): void;
+  logger: MediaLogger;
 }
 
 /** Assembles the runtime from host primitives so every entry point wires it the same way. */
 export function createMediaRuntimeFromApp({
+  eventTransport,
+  saveNativeImage,
+  catalogCache,
+  isLeader,
   mediaMetrics,
   appConfig,
   db,
@@ -101,11 +121,18 @@ export function createMediaRuntimeFromApp({
   upload,
   admission,
   getStorageStrategy,
-  readFile,
+  loadServiceKey,
+  defaultServiceKeyFile,
   decrypt,
-  log,
+  logger: hostLogger,
 }: MediaHostDependencies): MediaRuntime {
+  const logger = createMediaLogger(hostLogger);
   return createMediaRuntime({
+    eventTransport,
+    saveNativeImage,
+    getNativeFileStrategy: getStorageStrategy,
+    catalogCache,
+    isLeader,
     observer: createMediaLifecycleObserver({
       tracer: trace.getTracer('librechat.telemetry'),
       metrics: mediaMetrics,
@@ -125,7 +152,8 @@ export function createMediaRuntimeFromApp({
     asSystem,
     environment,
     vertexCredentials: createVertexMediaCredentialProvider({
-      readFile,
+      loadServiceKey,
+      defaultServiceKeyFile,
       createAuth: createGoogleMediaAuthClient,
       now: Date.now,
       maxCacheEntries: appConfig.media?.catalog.maxCacheEntries,
@@ -142,9 +170,9 @@ export function createMediaRuntimeFromApp({
     derivatives: createMediaDerivativeProcessor({
       imageOutputType: appConfig.imageOutputType,
       video: createFFmpegMediaProcessor(),
-      log,
+      log: logger.warn.bind(logger),
     }),
-    accounting: createMediaAccounting({ repository: db, now: Date.now }),
+    accounting: createMediaAccounting({ repository: db, now: Date.now, pricing: db }),
     async deferAssetDeletion(scope, fileId) {
       const owner = { userId: scope.ownerId, tenantId: scope.tenantId };
       const startedAt = Date.now();
@@ -180,6 +208,8 @@ export function createMediaRuntimeFromApp({
         bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
       },
     },
-    log,
+    log: logger.error.bind(logger),
+    warn: logger.warn.bind(logger),
+    info: logger.info.bind(logger),
   });
 }

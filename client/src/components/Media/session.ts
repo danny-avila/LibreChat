@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef } from 'react';
+import type { TUser } from 'librechat-data-provider';
 import { registerSessionCleanup } from '~/store/session';
+export const mediaSessionScope = (user: Pick<TUser, 'id' | 'tenantId'>) =>
+  JSON.stringify([user.tenantId ?? '', user.id]);
 
 /** Async feature work can commit only to the authenticated host session that started it. */
 export function useMediaSessionGuard(scope: string | undefined, authenticated: boolean) {

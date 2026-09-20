@@ -15,6 +15,22 @@ export interface SaveBufferParams {
   useInlinePath?: boolean;
 }
 
+export interface SaveStreamParams extends Omit<SaveBufferParams, 'buffer'> {
+  path: string;
+  contentType?: string;
+}
+
+export interface StorageFileLocation {
+  filepath: string;
+  storageKey: string;
+  storageRegion?: string;
+}
+
+export interface FileStreamStorage {
+  planFile(params: GetURLParams): Promise<StorageFileLocation>;
+  saveStream(params: SaveStreamParams): Promise<UploadResult>;
+}
+
 export interface GetURLParams {
   userId: string;
   fileName: string;

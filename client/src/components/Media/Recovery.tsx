@@ -1,6 +1,7 @@
 import { useId, useRef, useState } from 'react';
 import { v4 } from 'uuid';
 import { useAtom } from 'jotai';
+import { useTranslation } from 'react-i18next';
 import { mediaRecoveryRequestSchema } from 'librechat-data-provider';
 import {
   Alert,
@@ -20,11 +21,13 @@ import type {
   MediaErrorCode,
   MediaRecoveryJob,
   MediaRecoveryRequest,
+  MediaWorkerHealth,
 } from 'librechat-data-provider';
-import type { MediaRecoveryScope } from '~/data-provider/Media/recovery';
-import { useMediaRecoveryJobs, useMediaRecoveryMutation } from '~/data-provider/Media';
+import type { MediaRecoveryScope } from '~/data-provider';
+import { useMediaRecoveryJobs, useMediaRecoveryMutation } from '~/data-provider';
 import { mediaErrorLabels, mediaJobPhaseLabels } from './labels';
 import { mediaRecoveryFamily } from './state';
+import { getMessageTimestamp } from '~/utils';
 import { mediaErrorCode } from './commands';
 import { useLocalize } from '~/hooks';
 
@@ -41,8 +44,22 @@ const actionHints = {
 const sameJob = (left: MediaRecoveryJob, right: MediaRecoveryJob) =>
   left.ownerId === right.ownerId && left.jobId === right.jobId;
 
-export default function MediaRecovery({ host }: { host: MediaRecoveryScope }) {
+const workerLabels = {
+  starting: 'com_media_worker_starting',
+  armed: 'com_media_worker_armed',
+  draining: 'com_media_worker_draining',
+  unavailable: 'com_media_worker_unavailable',
+} as const satisfies Record<MediaWorkerHealth['state'], string>;
+
+export default function MediaRecovery({
+  host,
+  canManage = false,
+}: {
+  host: MediaRecoveryScope;
+  canManage?: boolean;
+}) {
   const localize = useLocalize();
+  const { i18n } = useTranslation();
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const inFlight = useRef(false);
@@ -59,6 +76,8 @@ export default function MediaRecovery({ host }: { host: MediaRecoveryScope }) {
   const jobs = useMediaRecoveryJobs(host, open);
   const mutation = useMediaRecoveryMutation(host);
   const maxEvidenceChars = jobs.data?.pages[0]?.maxEvidenceChars;
+  const worker = jobs.data?.pages[0]?.worker;
+  const lastScan = getMessageTimestamp(worker?.lastScanAt, i18n.language);
   const forbidden =
     error === 'forbidden' || (jobs.isError && mediaErrorCode(jobs.error) === 'forbidden');
   const saved = selected && pending.find((item) => sameJob(item.job, selected));
@@ -100,7 +119,15 @@ export default function MediaRecovery({ host }: { host: MediaRecoveryScope }) {
       choices.includes(action) &&
       (action !== 'settle' || (validCost && confirmed)));
   const recover = async () => {
-    if (!selected || !valid || forbidden || inFlight.current || !host.isCurrentSession()) return;
+    if (
+      !canManage ||
+      !selected ||
+      !valid ||
+      forbidden ||
+      inFlight.current ||
+      !host.isCurrentSession()
+    )
+      return;
     let command = saved;
     if (!command) {
       const parsed = mediaRecoveryRequestSchema.safeParse({
@@ -164,6 +191,25 @@ export default function MediaRecovery({ host }: { host: MediaRecoveryScope }) {
         <OGDialogContent className="max-h-[85dvh] max-w-3xl overflow-y-auto">
           <OGDialogTitle>{localize('com_media_recovery_admin')}</OGDialogTitle>
           <OGDialogDescription>{localize('com_media_recovery_description')}</OGDialogDescription>
+          {!forbidden && worker && (
+            <div className="space-y-1 text-sm" role="status">
+              <p>
+                {localize('com_media_worker_status')}: {localize(workerLabels[worker.state])}
+              </p>
+              <p className="text-text-secondary">{localize('com_media_worker_scope')}</p>
+              {lastScan && (
+                <p>
+                  {localize('com_media_worker_last_scan')}:{' '}
+                  <time dateTime={lastScan.iso}>{lastScan.absolute}</time>
+                </p>
+              )}
+              {worker.consecutiveScanFailures > 0 && (
+                <p>
+                  {localize('com_media_worker_failures', { count: worker.consecutiveScanFailures })}
+                </p>
+              )}
+            </div>
+          )}
           {(error || jobs.isError) && (
             <Alert variant="error">
               <p>{localize(mediaErrorLabels[error ?? mediaErrorCode(jobs.error)])}</p>
@@ -199,7 +245,7 @@ export default function MediaRecovery({ host }: { host: MediaRecoveryScope }) {
                 <dd>{selected.ownerId}</dd>
                 <dt>{localize('com_media_recovery_job')}</dt>
                 <dd>{selected.jobId}</dd>
-                <dt>{localize('com_media_model')}</dt>
+                <dt>{localize('com_ui_model')}</dt>
                 <dd>{selected.selection.modelId}</dd>
                 <dt>{localize('com_media_connection')}</dt>
                 <dd>{selected.selection.connectionId}</dd>
@@ -225,7 +271,15 @@ export default function MediaRecovery({ host }: { host: MediaRecoveryScope }) {
                 )}
               </dl>
               {saved && <Alert variant="warning">{localize('com_media_recovery_uncertain')}</Alert>}
-              <fieldset className="space-y-3" disabled={mutation.isLoading || !!saved}>
+              {!canManage && (
+                <p className="text-sm text-text-secondary">
+                  {localize('com_media_recovery_read_only')}
+                </p>
+              )}
+              <fieldset
+                className="space-y-3"
+                disabled={!canManage || mutation.isLoading || !!saved}
+              >
                 <legend className="mb-2 text-sm font-medium">
                   {localize('com_media_recovery_action')}
                 </legend>
@@ -312,7 +366,7 @@ export default function MediaRecovery({ host }: { host: MediaRecoveryScope }) {
                 >
                   {localize('com_ui_back')}
                 </Button>
-                <Button type="submit" disabled={!valid || mutation.isLoading}>
+                <Button type="submit" disabled={!canManage || !valid || mutation.isLoading}>
                   {mutation.isLoading && <Spinner className="size-4" />}
                   {localize(saved ? 'com_media_recovery_retry_same' : 'com_media_recovery_apply')}
                 </Button>

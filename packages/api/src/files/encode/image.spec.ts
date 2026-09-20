@@ -41,9 +41,14 @@ describe('encodeAndFormatImages', () => {
 
   afterEach(() => jest.restoreAllMocks());
 
-  it.each([FileSources.s3, FileSources.cloudfront, FileSources.azure_blob, FileSources.firebase])(
-    'reads %s by canonical key without entering the legacy payload path',
-    async (source) => {
+  it.each([
+    [FileSources.s3, file.storageKey],
+    [FileSources.cloudfront, file.storageKey],
+    [FileSources.azure_blob, file.filepath],
+    [FileSources.firebase, file.filepath],
+  ] as const)(
+    'reads %s with its storage strategy location without entering the legacy payload path',
+    async (source, downloadPath) => {
       const result = await encodeAndFormatImages(makeReq(), [{ ...file, source }], {}, deps);
 
       expect(result.image_urls).toEqual([
@@ -53,7 +58,7 @@ describe('encodeAndFormatImages', () => {
         expect.objectContaining({ file_id: file.file_id, height: 10, width: 10, embedded: false }),
       ]);
       expect(result.files[0]).not.toHaveProperty('storageKey');
-      expect(getDownloadStream).toHaveBeenCalledWith(expect.anything(), file.storageKey);
+      expect(getDownloadStream).toHaveBeenCalledWith(expect.anything(), downloadPath);
       expect(memoryGuard.runGuardedEncode).toHaveBeenCalledWith(file.bytes, expect.any(Function));
       expect(prepareImagePayload).not.toHaveBeenCalled();
       expect(httpClient.get).not.toHaveBeenCalled();

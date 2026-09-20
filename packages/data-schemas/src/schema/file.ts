@@ -72,8 +72,15 @@ const file: Schema<IMongoFile> = new Schema(
     mediaLifecycle: { type: String, enum: ['live', 'retiring', 'retired'] },
     mediaEpoch: Number,
     mediaRetainers: { type: [String], default: undefined },
+    mediaConsumerClaims: {
+      type: [{ token: String, conversationId: String, expiresAt: Date, _id: false }],
+      default: undefined,
+    },
+    mediaConsumerRevision: Number,
+    mediaConsumerReconcileAt: Date,
+    mediaUseUntil: Date,
     mediaDeletionToken: String,
-    mediaUnlinkedAt: String,
+    mediaUnlinkedBy: String,
     mediaHardExpiresAt: { type: Date, immutable: true },
     durationSeconds: Number,
     object: {
@@ -258,6 +265,7 @@ file.index(
   },
 );
 file.index({ mediaLifecycle: 1, expiredAt: 1, deletionRetryAt: 1 });
+file.index({ mediaLifecycle: 1, mediaConsumerReconcileAt: 1, user: 1, tenantId: 1, file_id: 1 });
 file.index({ createdAt: 1, updatedAt: 1 });
 file.index(
   { filename: 1, conversationId: 1, context: 1, tenantId: 1 },
@@ -366,6 +374,21 @@ file.pre('save', function () {
 });
 for (const hook of ['deleteOne', 'deleteMany', 'findOneAndDelete'] as const) {
   file.pre(hook, function () {
+    if (this.getOptions().mediaRetirement === true) {
+      const filter = this.getFilter();
+      const exactOwner =
+        (typeof filter.user === 'string' && filter.user.length > 0) ||
+        filter.user instanceof mongoose.Types.ObjectId;
+      const exactTenant =
+        filter.tenantId === null ||
+        (typeof filter.tenantId === 'string' && filter.tenantId.length > 0);
+      if (filter.mediaLifecycle !== 'retired' || !exactOwner || !exactTenant) {
+        throw new Error(
+          'Media retirement deletion requires a retired, owner-and-tenant-scoped filter',
+        );
+      }
+      return;
+    }
     this.where({ mediaOutputKey: { $exists: false } });
   });
 }

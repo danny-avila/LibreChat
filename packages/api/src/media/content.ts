@@ -1,9 +1,8 @@
 import sharp from 'sharp';
-import { SVG_SANITIZE_CONFIG, restrictSvgReferences } from 'librechat-data-provider';
+import { SVG_SANITIZE_CONFIG } from 'librechat-data-provider';
 import type { MediaConfig, MediaSubmissionRequest } from 'librechat-data-provider';
-import type { DOMPurify } from 'dompurify';
-import type { JSDOM } from 'jsdom';
 import { MediaServiceError } from './errors';
+import { getSvgRuntime } from '~/utils/svg';
 
 const extensions: Record<string, string> = {
   'image/png': 'png',
@@ -88,24 +87,6 @@ function invalidContent(kind: string): never {
   throw new MediaServiceError('unsupported', 422, `Unsupported ${kind} content.`);
 }
 
-let svgParser: { parse: (value: string) => Document; purifier: DOMPurify } | undefined;
-
-/** Load the XML parser only when an SVG arrives, keeping normal server startup cheap. */
-function getSvgParser(): NonNullable<typeof svgParser> {
-  if (svgParser) return svgParser;
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const jsdom = require('jsdom') as { JSDOM: typeof JSDOM };
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const loaded = require('dompurify') as DOMPurify | { default: DOMPurify };
-  const window = new jsdom.JSDOM('').window;
-  const create = typeof loaded === 'function' ? loaded : loaded.default;
-  const purifier = create(window);
-  purifier.addHook('afterSanitizeAttributes', restrictSvgReferences);
-  const parser = new window.DOMParser();
-  svgParser = { parse: (value) => parser.parseFromString(value, 'image/svg+xml'), purifier };
-  return svgParser;
-}
-
 /** Exclude inert provider provenance from the validation DOM, never from the stored original. */
 function preserveSvgProvenance(root: Element): void {
   const namespace = 'http://c2pa.org/manifest';
@@ -144,7 +125,7 @@ export function validateMediaSvg(data: Buffer): void {
   }
   const encoding = value.match(/^\s*<\?xml\s[^?]*\bencoding\s*=\s*(['"])([^'"]+)\1/);
   if (encoding && !/^utf-?8$/i.test(encoding[2])) return invalidContent('SVG');
-  const { parse, purifier } = getSvgParser();
+  const { parse, purifier } = getSvgRuntime();
   const document = parse(value);
   const root = document.documentElement;
   if (

@@ -1,11 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { AIMessage } from '@langchain/core/messages';
-import {
-  createLangfuseHandler,
-  disposeLangfuseHandler,
-  withLangfuseAttributes,
-  initializeLangfuseTracing,
-} from '@librechat/agents';
+import { traceModelInvocation } from '@librechat/agents';
+import type { Callbacks } from '@langchain/core/callbacks/manager';
+import type { ModelInvocationTrace } from '@librechat/agents';
 import type { ChatGeneration } from '@langchain/core/outputs';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { MediaContext } from './context';
@@ -22,110 +19,71 @@ export type MediaModelTraceInput = {
 export interface MediaModelTracer {
   run<T>(
     input: MediaModelTraceInput,
-    work: () => Promise<T>,
+    work: (callbacks?: Callbacks) => Promise<T>,
     usage: (result: T) => UsageMetadata | undefined,
   ): Promise<T>;
 }
-type MediaTraceHandler = Pick<
-  NonNullable<ReturnType<typeof createLangfuseHandler>>,
-  'handleLLMStart' | 'handleLLMEnd' | 'handleLLMError'
->;
-
-/** Reuses the SDK's destination isolation and sampling; media bytes and prompts never enter callbacks. */
+/** Titles use model callbacks; external provider calls supply a redacted SDK result projection. */
 export function createMediaModelTracer(
   deps: {
-    handler?: (input: Parameters<typeof createLangfuseHandler>[0]) => MediaTraceHandler | undefined;
+    trace?: typeof traceModelInvocation;
     config?: typeof buildLangfuseConfig;
-    dispose?: typeof disposeLangfuseHandler;
-    attributes?: typeof withLangfuseAttributes;
-    initialize?: typeof initializeLangfuseTracing;
   } = {},
 ): MediaModelTracer {
   return {
     async run(input, work, usage) {
-      const runId = randomUUID();
-      const traceIdSeed = JSON.stringify([
-        'media',
-        input.context.scope.tenantId,
-        input.context.scope.ownerId,
-        input.jobId,
-        input.kind,
-      ]);
-      let params: Parameters<typeof createLangfuseHandler>[0];
-      let handler: MediaTraceHandler | undefined;
+      const traceIdSeed = input.kind === 'title' ? `title-${input.jobId}` : input.jobId;
+      let params: ModelInvocationTrace;
       try {
-        const langfuse = (deps.config ?? buildLangfuseConfig)({
-          appConfig: input.context.appConfig,
-          user: input.context.user,
-          tenantId: input.context.scope.tenantId ?? undefined,
-          runId: traceIdSeed,
-        });
-        (deps.initialize ?? initializeLangfuseTracing)(langfuse);
         params = {
-          langfuse,
-          runId,
+          langfuse: (deps.config ?? buildLangfuseConfig)({
+            appConfig: input.context.appConfig,
+            user: input.context.user,
+            tenantId: input.context.scope.tenantId ?? undefined,
+            runId: traceIdSeed,
+            traceContext: {
+              conversationId: input.threadId,
+              provider: input.provider,
+              model: input.model,
+            },
+          }),
+          runId: randomUUID(),
           traceIdSeed,
           sessionId: input.threadId,
+          userId: input.context.scope.ownerId,
+          provider: input.provider,
+          model: input.model,
+          tags: ['librechat', 'media', input.kind],
           traceName: `media.${input.kind}`,
           traceMetadata: { 'librechat.media.job.id': input.jobId },
         };
-        handler = (deps.handler ?? createLangfuseHandler)(params);
       } catch {
         return work();
       }
-      const trace = handler;
-      if (!trace) return work();
-      const safely = async (action: () => void | Promise<void>) => {
-        try {
-          await action();
-        } catch {
-          /* Never expose provider errors or fail inference. */
-        }
-      };
-      await safely(() =>
-        (deps.attributes ?? withLangfuseAttributes)(params, () =>
-          trace.handleLLMStart(
-            { lc: 1, type: 'constructor', id: ['media', input.provider], kwargs: {} },
-            ['[Media request content omitted]'],
-            runId,
-            undefined,
-            { invocation_params: { model_name: input.model } },
-            [],
-            { model: input.model },
-          ),
-        ),
-      );
-      try {
-        const result = await work();
-        await safely(() => {
-          const measured = usage(result);
-          const inputTokens = measured?.input_tokens ?? 0;
-          const outputTokens = measured?.output_tokens ?? 0;
-          const generation: ChatGeneration = {
-            text: '[Media output content omitted]',
-            message: new AIMessage({
-              content: '[Media output content omitted]',
-              ...(measured
-                ? {
-                    usage_metadata: {
-                      ...measured,
-                      input_tokens: inputTokens,
-                      output_tokens: outputTokens,
-                      total_tokens: measured.total_tokens ?? inputTokens + outputTokens,
-                    },
-                  }
-                : {}),
-            }),
-          };
-          return trace.handleLLMEnd({ generations: [[generation]] }, runId);
-        });
-        return result;
-      } catch (error) {
-        await safely(() => trace.handleLLMError(new Error('Media model call failed.'), runId));
-        throw error;
-      } finally {
-        void safely(() => (deps.dispose ?? disposeLangfuseHandler)(trace));
-      }
+      const trace = deps.trace ?? traceModelInvocation;
+      if (input.kind === 'title') return trace(params, work);
+      return trace(params, work, (result) => {
+        const measured = usage(result);
+        const inputTokens = measured?.input_tokens ?? 0;
+        const outputTokens = measured?.output_tokens ?? 0;
+        const generation: ChatGeneration = {
+          text: '[Media output content omitted]',
+          message: new AIMessage({
+            content: '[Media output content omitted]',
+            ...(measured
+              ? {
+                  usage_metadata: {
+                    ...measured,
+                    input_tokens: inputTokens,
+                    output_tokens: outputTokens,
+                    total_tokens: measured.total_tokens ?? inputTokens + outputTokens,
+                  },
+                }
+              : {}),
+          }),
+        };
+        return { generations: [[generation]] };
+      });
     },
   };
 }

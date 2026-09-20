@@ -1,5 +1,4 @@
 import React from 'react';
-import { Provider, createStore } from 'jotai';
 import { dataService } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -11,9 +10,10 @@ import type {
 } from 'librechat-data-provider';
 import type { MediaHost } from '../host';
 import { clearMediaSessionStorage, emptyDraft, mediaDraftFamily } from '../state';
-import { MediaHostProvider } from '../host';
+import { MediaForm, MediaFormComposer, MediaFormSettings } from '../Form';
+import { makeCatalog, createMediaTestEnvironment } from 'test/media';
+import { useMediaDraftForm } from '../useMediaDraftForm';
 import { MediaThreadView } from '../Thread';
-import { MediaForm } from '../Form';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: Record<string, string | number>) =>
@@ -23,14 +23,22 @@ jest.mock('~/components/Input/SetKeyDialog/SetKeyDialog', () => ({
   __esModule: true,
   default: ({
     keyConfiguration,
+    label,
+    endpoint,
+    userProvideURL,
     onOpenChange,
   }: {
-    keyConfiguration: { keyName: string; label: string; userProvideURL: boolean };
+    keyConfiguration?: { keyName: string; label: string; userProvideURL: boolean };
+    label?: string;
+    endpoint: string;
+    userProvideURL?: boolean;
     onOpenChange: (open: boolean) => void;
   }) => (
-    <div role="dialog" aria-label={keyConfiguration.label}>
-      <span>{keyConfiguration.keyName}</span>
-      <span>{keyConfiguration.userProvideURL ? 'URL required' : 'Key only'}</span>
+    <div role="dialog" aria-label={label ?? keyConfiguration?.label}>
+      <span>{keyConfiguration?.keyName ?? endpoint}</span>
+      <span>
+        {(keyConfiguration?.userProvideURL ?? userProvideURL) ? 'URL required' : 'Key only'}
+      </span>
       <button onClick={() => onOpenChange(false)}>{'Close provider settings'}</button>
     </div>
   ),
@@ -43,26 +51,7 @@ jest.mock('librechat-data-provider', () => {
     dataService: { ...actual.dataService, uploadMedia: jest.fn(), uploadMediaURL: jest.fn() },
   };
 });
-const catalog: MediaCatalog = {
-  schemaVersion: 1,
-  version: 'catalog',
-  clientPollIntervalMs: 5000,
-  clientCatchUpIntervalMs: 60000,
-  limits: {
-    maxPromptChars: 1000,
-    maxTitleChars: 200,
-    maxInputs: 4,
-    maxOutputs: 2,
-    pageSize: 24,
-    maxPageSize: 100,
-    maxAssetRetainers: 100,
-    maxNativeParts: 100,
-    maxNativePartBytes: 1000000,
-    maxNativeRecordingBytes: 10000000,
-    maxProviderOptionBytes: 32768,
-    maxProviderOptionDepth: 8,
-    maxPresets: 50,
-  },
+const catalog = makeCatalog({
   offerings: [
     {
       connectionId: 'connection',
@@ -87,32 +76,10 @@ const catalog: MediaCatalog = {
       ],
     },
   ],
-};
+});
 function setup(canCreate = true, features?: MediaHost['features']) {
-  const store = createStore();
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const send = jest.fn().mockResolvedValue(undefined);
-  const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <Provider store={store}>
-      <QueryClientProvider client={client}>
-        <MediaHostProvider
-          value={{
-            scope: 'owner',
-            canCreate,
-            pollIntervalMs: 5000,
-            catchUpIntervalMs: 60000,
-            enterToSend: false,
-            isCurrentSession: () => true,
-            openThread: () => {},
-            features,
-          }}
-        >
-          {children}
-        </MediaHostProvider>
-      </QueryClientProvider>
-    </Provider>
-  );
-  return { store, send, wrapper };
+  const env = createMediaTestEnvironment({ canCreate, features });
+  return { ...env, send: jest.fn().mockResolvedValue(undefined) };
 }
 test.each(['row', 'gear'] as const)(
   'configures a personal-key provider from its %s without replacing the active draft',
@@ -197,12 +164,8 @@ test('offers provider settings even when the catalog has no available models', a
       send={env.send}
       busy={false}
     >
-      {({ settings, composer }) => (
-        <>
-          {settings}
-          {composer}
-        </>
-      )}
+      <MediaFormSettings />
+      <MediaFormComposer />
     </MediaForm>,
     { wrapper: env.wrapper },
   );
@@ -218,6 +181,105 @@ beforeEach(() => {
   jest.mocked(dataService.uploadMedia).mockReset();
   jest.mocked(dataService.uploadMediaURL).mockReset();
 });
+
+test('the sidebar observes draft normalization without racing the composer initial selection', () => {
+  const env = setup();
+  const choices = makeCatalog({
+    offerings: [
+      catalog.offerings[0],
+      { ...catalog.offerings[0], modelId: 'restored', modelName: 'Restored' },
+    ],
+  });
+  function Sidebar() {
+    useMediaDraftForm({ catalog: choices, normalizeDraft: false });
+    return null;
+  }
+  render(
+    <>
+      <Sidebar />
+      <MediaForm
+        catalog={choices}
+        initialSelection={{
+          connectionId: 'connection',
+          modelId: 'restored',
+          catalogVersion: 'catalog',
+        }}
+        send={env.send}
+        busy={false}
+      />
+    </>,
+    { wrapper: env.wrapper },
+  );
+  expect(env.store.get(mediaDraftFamily('owner:new'))).toMatchObject({
+    offering: JSON.stringify(['connection', 'restored']),
+    revision: 1,
+  });
+});
+
+test.each(['paste', 'drop'] as const)(
+  'uploads multiple files sequentially from %s and stops at the capability limit',
+  async (source) => {
+    const env = setup();
+    const choices = makeCatalog({
+      offerings: [
+        {
+          ...catalog.offerings[0],
+          capabilities: [
+            {
+              operation: 'image.edit',
+              inputs: { min: 1, max: 2, roles: ['reference'] },
+              execution: { kind: 'direct', previews: false },
+              controls: { count: { min: 1, max: 1, default: 1 } },
+            },
+          ],
+        },
+      ],
+    });
+    let complete!: (response: MediaUploadResponse) => void;
+    const upload = jest
+      .mocked(dataService.uploadMedia)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            complete = resolve;
+          }),
+      )
+      .mockResolvedValue({
+        file: {
+          file_id: 'second',
+          filename: 'second.png',
+          filepath: '/images/second.png',
+          type: 'image/png',
+          bytes: 10,
+        },
+      });
+    render(<MediaForm catalog={choices} send={env.send} busy={false} />, { wrapper: env.wrapper });
+    const prompt = screen.getByRole('textbox', { name: 'com_media_prompt' });
+    const files = ['first', 'second', 'third'].map(
+      (name) => new File(['image'], `${name}.png`, { type: 'image/png' }),
+    );
+    if (source === 'paste') fireEvent.paste(prompt, { clipboardData: { files } });
+    else fireEvent.drop(prompt, { dataTransfer: { files, types: ['Files'] } });
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      complete({
+        file: {
+          file_id: 'first',
+          filename: 'first.png',
+          filepath: '/images/first.png',
+          type: 'image/png',
+          bytes: 10,
+        },
+      });
+    });
+    await waitFor(() =>
+      expect(
+        env.store.get(mediaDraftFamily('owner:new')).inputs.map((input) => input.file_id),
+      ).toEqual(['first', 'second']),
+    );
+    expect(upload).toHaveBeenCalledTimes(2);
+  },
+);
 
 test('uses catalog controls and submits a typed immutable prompt snapshot', async () => {
   const env = setup();
@@ -391,12 +453,12 @@ test('keeps an excluded provider draft visible and switches to an available prov
   };
   render(
     <MediaForm catalog={choices} threadId="restored" send={env.send} busy={false}>
-      {({ settings, composer }) => (
-        <>
-          <aside>{settings}</aside>
-          <main>{composer}</main>
-        </>
-      )}
+      <aside>
+        <MediaFormSettings />
+      </aside>
+      <main>
+        <MediaFormComposer />
+      </main>
     </MediaForm>,
     { wrapper: env.wrapper },
   );
@@ -730,6 +792,7 @@ test('a model without editing support cannot silently send a follow-up without i
 
 test.each([
   ['credentials_required', 'com_media_error_credentials_required'],
+  ['gemini_key_required', 'com_media_error_gemini_key_required'],
   ['not_ready', 'com_media_provider_configuration_required'],
 ] as const)(
   'keeps provider and model names clean with a separate %s description',
@@ -770,7 +833,7 @@ test.each([
       '["connection","image-model"]',
     );
     fireEvent.keyDown(provider, { key: 'Escape' });
-    fireEvent.click(screen.getByRole('combobox', { name: 'com_media_model' }));
+    fireEvent.click(screen.getByRole('combobox', { name: 'com_ui_model' }));
     const model = await screen.findByRole('option', { name: 'Unavailable image' });
     expect(model).toHaveAttribute('aria-disabled', 'true');
     expect(model).toHaveAccessibleDescription('com_media_error_unsupported');
@@ -997,7 +1060,7 @@ test('submits image edit controls and clears provider-specific JSON when changin
     guidance: 3.5,
     providerOptions: { watermark: false },
   });
-  fireEvent.click(screen.getByRole('combobox', { name: 'com_media_model' }));
+  fireEvent.click(screen.getByRole('combobox', { name: 'com_ui_model' }));
   fireEvent.click(await screen.findByRole('option', { name: 'Another model' }));
   expect(env.store.get(mediaDraftFamily('owner:new')).providerOptionsText).toBeUndefined();
   expect(env.store.get(mediaDraftFamily('owner:new')).parameters).toEqual({ count: 1 });
@@ -1831,13 +1894,13 @@ test('conditional defaults adapt to references without overwriting an explicit i
     revision: 2,
   });
   render(<MediaForm catalog={choices} send={env.send} busy={false} />, { wrapper: env.wrapper });
-  expect(screen.getByRole('combobox', { name: 'com_media_durationSeconds' })).toHaveTextContent(
+  expect(screen.getByRole('combobox', { name: 'com_media_duration_seconds' })).toHaveTextContent(
     '8',
   );
   fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
   await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
   expect(env.send.mock.calls[0][0].request.parameters.durationSeconds).toBe(8);
-  fireEvent.click(screen.getByRole('combobox', { name: 'com_media_durationSeconds' }));
+  fireEvent.click(screen.getByRole('combobox', { name: 'com_media_duration_seconds' }));
   fireEvent.click(await screen.findByRole('option', { name: '4' }));
   expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
   expect(screen.getByText('com_media_unsupported_settings')).toBeVisible();
@@ -1867,3 +1930,60 @@ test('failed preset mutations retain the preset and show a localized retryable e
   expect(within(dialog).getByText('Quick draft')).toBeVisible();
   expect(within(dialog).getByRole('button', { name: 'com_ui_delete' })).toBeEnabled();
 });
+
+test.each(['paste', 'drop'] as const)(
+  'uploads an image from %s and selects image editing',
+  async (source) => {
+    const env = setup();
+    const editing: MediaCatalog = {
+      ...catalog,
+      offerings: [
+        {
+          ...catalog.offerings[0],
+          capabilities: [
+            ...catalog.offerings[0].capabilities,
+            {
+              operation: 'image.edit',
+              inputs: { min: 1, max: 1, roles: ['reference'] },
+              execution: { kind: 'direct', previews: false },
+              controls: { count: { min: 1, max: 1, default: 1 } },
+            },
+          ],
+        },
+      ],
+    };
+    const asset = {
+      file_id: 'pasted',
+      filename: 'input.png',
+      filepath: '/images/input.png',
+      type: 'image/png',
+      bytes: 10,
+    };
+    jest.mocked(dataService.uploadMedia).mockResolvedValue({ file: asset });
+    render(<MediaForm catalog={editing} send={env.send} busy={false} />, { wrapper: env.wrapper });
+    const prompt = screen.getByRole('textbox', { name: 'com_media_prompt' });
+    const file = new File(['image'], 'input.png', { type: 'image/png' });
+    if (source === 'paste') fireEvent.paste(prompt, { clipboardData: { files: [file] } });
+    else fireEvent.drop(prompt, { dataTransfer: { files: [file], types: ['Files'] } });
+    await waitFor(() =>
+      expect(env.store.get(mediaDraftFamily('owner:new'))).toMatchObject({
+        operation: 'image.edit',
+        inputs: [{ file_id: 'pasted', role: 'reference' }],
+      }),
+    );
+    fireEvent.paste(prompt, { clipboardData: { files: [file] } });
+    expect(dataService.uploadMedia).toHaveBeenCalledTimes(1);
+    fireEvent.change(prompt, { target: { value: 'Paint the background blue' } });
+    fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+    await waitFor(() =>
+      expect(env.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          request: expect.objectContaining({
+            operation: 'image.edit',
+            inputs: [{ file_id: 'pasted', role: 'reference' }],
+          }),
+        }),
+      ),
+    );
+  },
+);

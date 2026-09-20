@@ -158,6 +158,7 @@ const ChatForm = memo(function ChatForm({
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
   useFocusChatEffect(textAreaRef);
   const localize = useLocalize();
+  const [mediaOpen, setMediaOpen] = useState(false);
 
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [, setIsScrollable] = useState(false);
@@ -845,6 +846,9 @@ const ChatForm = memo(function ChatForm({
               >
                 <div className="shrink-0">
                   <AttachFileChat
+                    onCreateMedia={
+                      index === 0 && !isTemporary ? () => setMediaOpen(true) : undefined
+                    }
                     conversation={conversation}
                     disableInputs={disableInputs}
                     files={files}
@@ -854,6 +858,8 @@ const ChatForm = memo(function ChatForm({
                 </div>
                 {index === 0 && (
                   <ChatMedia
+                    open={mediaOpen}
+                    onOpenChange={setMediaOpen}
                     conversation={conversation}
                     files={files}
                     setFiles={setFiles}

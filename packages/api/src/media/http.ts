@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import path from 'node:path';
 import { Router } from 'express';
 import { unlink } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
@@ -12,22 +11,26 @@ import {
   mediaThreadUpdateSchema,
   mediaPageRequestSchema,
   mediaThreadListRequestSchema,
+  mediaThreadsDeleteRequestSchema,
   mediaPresetWriteSchema,
   mediaPresetUpdateSchema,
   mergeFileConfig,
 } from 'librechat-data-provider';
+import type { MediaMethods, MediaOwnerScope } from '@librechat/data-schemas';
 import type { Request, Response, RequestHandler } from 'express';
 import type { MediaErrorCode } from 'librechat-data-provider';
-import type { MediaMethods } from '@librechat/data-schemas';
-import type { RateLimitResponseLocals } from '../middleware/limiters';
+import type { RateLimitResponseLocals } from '~/middleware/limiters';
 import type { MediaStaging, MediaUploadStorage } from './staging';
 import type { MediaServices, MediaContext } from './service';
 import type { MediaAdmissionPolicy } from './admission';
+import type { MediaActivityStream } from './events';
 import type { MediaStorage } from './storage';
 import { mediaContentExtension, normalizeMediaContentType } from './content';
-import { admitRequestMiddleware } from '../middleware/admission';
-import { assertUploadContentAllowed } from '../files/preflight';
+import { getContentFilterError } from '~/middleware/contentFilter';
+import { admitRequestMiddleware } from '~/middleware/admission';
+import { assertUploadContentAllowed } from '~/files/preflight';
 import { parseHostedMediaReference } from './hosted';
+import { sanitizeFilename } from '~/utils/files';
 import { assertMediaStorage } from './storage';
 import { assertMediaAccess } from './service';
 import { MediaServiceError } from './errors';
@@ -67,6 +70,12 @@ export function classifyMediaError(
   error: Error,
 ): { status: number; code: MediaErrorCode } | undefined {
   if (error instanceof MediaServiceError) return { status: error.status, code: error.code };
+  const policyError = getContentFilterError(error);
+  if (policyError) {
+    return policyError.statusCode === 413
+      ? { status: 413, code: 'invalid_request' }
+      : { status: 403, code: 'forbidden' };
+  }
   if (error instanceof z.ZodError) return { status: 422, code: 'invalid_request' };
   if (error instanceof MediaPersistenceError) {
     return { status: persistenceStatus(error.code), code: persistenceCodes[error.code] };
@@ -93,10 +102,12 @@ function uploadError(error: unknown): Error {
 }
 
 export function createMediaRouter({
+  activity,
   services,
   repository,
   storage,
   resolveContext,
+  resolveScope,
   upload,
   staging,
   id,
@@ -104,27 +115,45 @@ export function createMediaRouter({
   log,
   admission,
 }: {
+  activity?: MediaActivityStream;
   services: MediaServices;
   repository: MediaMethods;
   storage: MediaStorage;
   resolveContext(request: Request): Promise<MediaContext>;
+  resolveScope(request: Request): MediaOwnerScope;
   upload: MediaUploadFactory;
   staging: MediaStaging;
   id: () => string;
   now: () => number;
-  log(error: Error): void;
+  log(message: string, error?: Error): void;
   admission?: MediaAdmissionPolicy;
 }): Router {
   const router = Router();
   if (admission) router.use(admission.checkBan);
+  router.get('/events', async (req, res) => {
+    try {
+      const context = await resolveContext(req);
+      assertMediaAccess(context);
+      if (!activity || !context.config.events.enabled)
+        throw new MediaServiceError('not_found', 404, 'Media activity is unavailable.');
+      await activity.open(context.scope, req, res);
+    } catch (caught) {
+      const error = caught instanceof Error ? caught : new Error('Media activity failed');
+      if (!res.headersSent) sendMediaError(res, error);
+      else {
+        log('Media activity disconnected.', error);
+        res.end();
+      }
+    }
+  });
   const handle =
     <T>(
       action: (req: Request, context: MediaContext) => Promise<T>,
       status = 200,
+      admissionKind?: 'submission' | 'import',
     ): RequestHandler =>
     async (req, res) => {
       try {
-        const context = await resolveContext(req);
         const admit = async (middleware: readonly RequestHandler[]) => {
           const response = res as Response<unknown, RateLimitResponseLocals>;
           response.locals.rateLimitError = (error) => {
@@ -137,17 +166,51 @@ export function createMediaRouter({
             throw new MediaServiceError('quota_exceeded', 429, 'Request admission was denied.');
           }
         };
+        let submissionReplay: MediaContext['submissionReplay'];
+        let importReplay: MediaContext['importReplay'];
+        if (admission && admissionKind) {
+          const { clientRequestId } = z.object({ clientRequestId: mediaIdSchema }).parse(req.body);
+          const scope = resolveScope(req);
+          if (admissionKind === 'submission') {
+            submissionReplay = {
+              clientRequestId,
+              receipt: await repository.getMediaSubmission(scope, clientRequestId),
+            };
+            if (!submissionReplay.receipt) await admit(admission.generationLimiters);
+          } else {
+            importReplay = {
+              clientRequestId,
+              receipt: await repository.getMediaImport(scope, clientRequestId),
+            };
+            if (!importReplay.receipt) await admit(admission.uploadLimiters);
+          }
+        }
+        const context = await resolveContext(req);
+        context.submissionReplay = submissionReplay;
+        context.importReplay = importReplay;
         if (admission) {
-          context.admitGeneration = () => admit(admission.generationLimiters);
-          context.admitImport = () => admit(admission.uploadLimiters);
+          if (!submissionReplay)
+            context.admitGeneration = () => admit(admission.generationLimiters);
+          if (!importReplay) context.admitImport = () => admit(admission.uploadLimiters);
         }
         assertMediaAccess(context);
         res.status(status).json(await action(req, context));
       } catch (caught) {
         if (res.headersSent || res.destroyed) return;
         const error = caught instanceof Error ? caught : new Error('Media request failed');
+        if (error instanceof MediaPersistenceError && error.code === 'capacity') {
+          try {
+            await admission?.recordCapacityViolation?.(req, res);
+          } catch (violationError) {
+            log(
+              '[media] Capacity violation recording failed.',
+              violationError instanceof Error ? violationError : undefined,
+            );
+          }
+          if (res.headersSent || res.destroyed) return;
+        }
         if (!classifyMediaError(error)) {
-          log(new Error(`Media request failed: ${req.method} ${req.path}`, { cause: caught }));
+          log(`[media] Request failed: ${req.method} ${req.path}`, error);
         }
         sendMediaError(res, error);
       }
@@ -230,6 +293,7 @@ export function createMediaRouter({
       (req, context) =>
         services.commands.submit(mediaSubmissionRequestSchema.parse(req.body), context),
       202,
+      'submission',
     ),
   );
   router.get(
@@ -243,6 +307,7 @@ export function createMediaRouter({
     handle(
       (req, context) => services.commands.import(mediaImportRequestSchema.parse(req.body), context),
       202,
+      'import',
     ),
   );
   router.get(
@@ -265,6 +330,7 @@ export function createMediaRouter({
           context,
         ),
       202,
+      'submission',
     ),
   );
   router.patch(
@@ -275,6 +341,14 @@ export function createMediaRouter({
         mediaThreadUpdateSchema.parse(req.body),
         context,
       ),
+    ),
+  );
+  router.delete(
+    '/threads',
+    handle(
+      (req, context) =>
+        services.commands.retireMany(mediaThreadsDeleteRequestSchema.parse(req.body), context),
+      202,
     ),
   );
   router.delete(
@@ -367,7 +441,7 @@ export function createMediaRouter({
           outputKey: `upload:${id()}`,
           stream: createReadStream(file.path),
           type,
-          filename: path.basename(file.originalname),
+          filename: sanitizeFilename(file.originalname),
           config: context.config,
           expiredAt: new Date(now() + context.config.assets.orphanRetentionMs).toISOString(),
         });

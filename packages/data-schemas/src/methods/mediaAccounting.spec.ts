@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { createHash } from 'node:crypto';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { mediaSubmissionRequestSchema } from 'librechat-data-provider';
 import type { MediaAccountingStep, MediaAccountingMethods } from '~/types/mediaAccounting';
@@ -26,7 +27,7 @@ describe('media accounting on standalone MongoDB', () => {
   beforeAll(async () => {
     mongo = await MongoMemoryServer.create();
     await mongoose.connect(mongo.getUri());
-    media = createMediaMethods(mongoose);
+    media = createMediaMethods(mongoose, { ownerExists: async () => true });
     createBalanceModel(mongoose);
     createTransactionModel(mongoose);
     createMediaSettlementModel(mongoose);
@@ -100,6 +101,81 @@ describe('media accounting on standalone MongoDB', () => {
         '+reservedCredits +mediaHolds +mediaDebtCredits +mediaPendingSettlement +mediaSettlementSequence',
       )
       .lean<IBalance>();
+
+  it('upgrades receipt and hold timestamps without changing held credits or settlement identity', async () => {
+    const jobId = await job('date-upgrade');
+    const acquired = await accounting.acquireMediaHold(hold(jobId));
+    await mongoose.models.MediaSettlement.collection.updateOne(
+      { settlementId: acquired.settlementId },
+      {
+        $set: { createdAt: now, reviewAt },
+      },
+    );
+    await mongoose.models.Balance.collection.updateOne(
+      { user: new mongoose.Types.ObjectId(scope.ownerId) },
+      {
+        $set: { 'mediaHolds.0.reviewAt': reviewAt },
+      },
+    );
+    await accounting.ensureMediaAccountingIndexes();
+    expect(
+      await mongoose.models.MediaSettlement.collection.findOne({
+        settlementId: acquired.settlementId,
+      }),
+    ).toMatchObject({ createdAt: new Date(now), reviewAt: new Date(reviewAt), jobId });
+    expect(await balance()).toMatchObject({
+      tokenCredits: 1000,
+      reservedCredits: 400,
+      mediaHolds: [
+        { settlementId: acquired.settlementId, jobId, amount: 400, reviewAt: new Date(reviewAt) },
+      ],
+    });
+  });
+
+  it('absorbs a frozen shortfall without consuming another job hold or creating debt', async () => {
+    const charged = await job('charged');
+    const protectedJob = await job('protected');
+    await accounting.acquireMediaHold(hold(charged, 400));
+    await accounting.acquireMediaHold(hold(protectedJob, 600));
+    const input = {
+      ...settle(charged, 800),
+      effect: {
+        ...settle(charged, 800).effect,
+        shortfall: 'absorb' as const,
+        costSource: 'tokens' as const,
+      },
+    };
+    await expect(accounting.settleMediaJob(input)).resolves.toEqual(
+      expect.objectContaining({
+        status: 'settled',
+        result: {
+          debitedCredits: 400,
+          debtCredits: 0,
+          releasedCredits: 400,
+          remainingCredits: 600,
+        },
+      }),
+    );
+    await accounting.settleMediaJob({ ...input, policy: { ...policy, shortfall: 'debt' } });
+    expect(await balance()).toEqual(
+      expect.objectContaining({
+        tokenCredits: 600,
+        reservedCredits: 600,
+        mediaDebtCredits: 0,
+        mediaHolds: [expect.objectContaining({ jobId: protectedJob, amount: 600 })],
+      }),
+    );
+    const receipts = await mongoose.models.Transaction.find({ mediaJobId: charged }).lean();
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0]).toEqual(
+      expect.objectContaining({
+        rawAmount: -800,
+        tokenValue: -400,
+        debtCredits: 0,
+        costSource: 'tokens',
+      }),
+    );
+  });
 
   function pause() {
     let arrive: () => void = () => undefined;
@@ -442,9 +518,8 @@ describe('media accounting on standalone MongoDB', () => {
       rawAmount: -250,
       tokenValue: -250,
       inputTokens: 20,
-      mediaOutputTokens: 30,
-      mediaCostUSD: 0.25,
-      mediaAccountingMode: 'balance',
+      outputTokens: 30,
+      costUSD: 0.25,
     });
   });
 
@@ -653,6 +728,139 @@ describe('media accounting on standalone MongoDB', () => {
     expect(await balance()).toMatchObject({ tokenCredits: 10, mediaDebtCredits: 0 });
   });
 
+  it.each(['media-first', 'chat-first'] as const)(
+    'attributes another writer consuming a held reservation without changing the chat debit contract (%s)',
+    async (order) => {
+      const jobId = await job();
+      const chat = { user: scope.ownerId, reservationId: 'chat-overrun', amount: 600 };
+      await ordinary.reserveBalance({ ...chat, expiresAt: new Date(Date.now() + 60_000) });
+      await accounting.acquireMediaHold(hold(jobId));
+      const chargeChat = async () => {
+        await ordinary.updateBalance({ user: scope.ownerId, incrementValue: -900 });
+        await ordinary.releaseBalanceReservation(chat);
+      };
+      if (order === 'chat-first') await chargeChat();
+      await accounting.settleMediaJob(settle(jobId, 400));
+      if (order === 'media-first') await chargeChat();
+      const receipt = await mongoose.models.Transaction.findOne({ mediaJobId: jobId }).lean<{
+        overrunDebtCredits?: number;
+        holdShortfallCredits?: number;
+      }>();
+      expect(receipt).toMatchObject({
+        debtCredits: order === 'chat-first' ? 300 : 0,
+        tokenValue: order === 'chat-first' ? -100 : -400,
+      });
+      expect(receipt?.overrunDebtCredits ?? 0).toBe(0);
+      expect(receipt?.holdShortfallCredits ?? 0).toBe(order === 'chat-first' ? 300 : 0);
+      expect((await balance())?.tokenCredits).toBe(0);
+    },
+  );
+
+  it('prunes expired chat reservations during settlement and separates media overrun from consumed hold', async () => {
+    const jobId = await job();
+    await accounting.acquireMediaHold(hold(jobId));
+    await mongoose.models.Balance.updateOne(
+      { user: scope.ownerId },
+      {
+        $push: { reservations: { id: 'crashed-chat', amount: 600, expiresAt: new Date(0) } },
+        $inc: { reservedCredits: 600 },
+      },
+    );
+    await ordinary.updateBalance({ user: scope.ownerId, incrementValue: -900 });
+    await accounting.settleMediaJob(settle(jobId, 600));
+    expect(await balance()).toMatchObject({
+      tokenCredits: 0,
+      reservedCredits: 0,
+      mediaDebtCredits: 500,
+    });
+    expect(await mongoose.models.Transaction.findOne({ mediaJobId: jobId }).lean()).toMatchObject({
+      debtCredits: 500,
+      overrunDebtCredits: 200,
+      holdShortfallCredits: 300,
+    });
+  });
+
+  it('collects owed credits after a crashed chat reservation expires without another admission', async () => {
+    await mongoose.models.Balance.updateOne(
+      { user: scope.ownerId },
+      {
+        $set: {
+          mediaDebtCredits: 400,
+          reservedCredits: 1000,
+          reservations: [{ id: 'expired', amount: 1000, expiresAt: new Date(0) }],
+        },
+      },
+    );
+    await job();
+    await accounting.reconcileMediaAccounting({ scope, limit: 10, policy });
+    expect(await balance()).toMatchObject({
+      tokenCredits: 600,
+      reservedCredits: 0,
+      mediaDebtCredits: 0,
+    });
+  });
+
+  it('surfaces overdue holds for recovery while preserving terminal provider evidence and live leases', async () => {
+    const completed = await job('completed');
+    const running = await job('running');
+    await accounting.acquireMediaHold(hold(completed, 300));
+    await accounting.acquireMediaHold(hold(running, 300));
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: completed },
+      {
+        $set: {
+          phase: 'succeeded',
+          provider: {
+            certainty: 'terminal',
+            operationId: 'paid',
+            recovery: { terminalStatus: 'completed', parts: [] },
+          },
+        },
+      },
+    );
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: running },
+      {
+        $set: {
+          phase: 'running',
+          leaseUntil: new Date(Date.now() + 60_000).toISOString(),
+          leaseToken: 'live',
+        },
+      },
+    );
+    await accounting.reconcileMediaAccounting({ scope, limit: 10, policy });
+    expect(await media.getMediaJob(scope, completed)).toMatchObject({
+      phase: 'requires_attention',
+      accountingReview: { previousPhase: 'succeeded', reviewAt },
+      provider: {
+        certainty: 'terminal',
+        operationId: 'paid',
+        recovery: { terminalStatus: 'completed' },
+      },
+    });
+    expect(await media.getMediaJob(scope, running)).toMatchObject({
+      phase: 'running',
+      leaseToken: 'live',
+    });
+    await accounting.settleMediaJob(settle(completed, 200));
+    expect(await media.getMediaJob(scope, completed)).toMatchObject({
+      phase: 'succeeded',
+      accounting: { phase: 'settled' },
+    });
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: running },
+      { $set: { leaseUntil: new Date(0).toISOString() } },
+    );
+    await accounting.reconcileMediaAccounting({ scope, limit: 10, policy });
+    expect((await media.getMediaJob(scope, running))?.phase).toBe('requires_attention');
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: running },
+      { $set: { phase: 'running' }, $inc: { version: 1 } },
+    );
+    await accounting.reconcileMediaAccounting({ scope, limit: 10, policy });
+    expect((await media.getMediaJob(scope, running))?.phase).toBe('running');
+  });
+
   it.each<MediaAccountingStep>(['allocated', 'applied', 'ledger', 'cleared'])(
     'preserves concurrent chat funds and debt when media recovery resumes after %s',
     async (step) => {
@@ -693,8 +901,8 @@ describe('media accounting on standalone MongoDB', () => {
     });
     expect(await accounting.settleMediaJob(input)).toMatchObject({ status: 'settled' });
     expect(await mongoose.models.Transaction.findOne({ mediaJobId: jobId }).lean()).toMatchObject({
-      mediaCostSource: 'provider',
-      mediaCostUSD: 0.25,
+      costSource: 'provider',
+      costUSD: 0.25,
     });
     expect(await mongoose.models.Transaction.countDocuments({ context: 'media' })).toBe(1);
   });
@@ -704,6 +912,17 @@ describe('media accounting on standalone MongoDB', () => {
     await accounting.acquireMediaHold(hold(jobId));
     await accounting.settleMediaJob(settle(jobId, 1_050));
     expect(await balance()).toMatchObject({ tokenCredits: 0, mediaDebtCredits: 50 });
+    const receipt = await mongoose.models.Transaction.findOne({ mediaJobId: jobId }).lean();
+    expect(receipt).toMatchObject({
+      costUSD: 0.25,
+      rawAmount: -1_050,
+      tokenValue: -1_000,
+      debtCredits: 50,
+    });
+    // Provider cost, requested credits and wallet debit differ during a shortfall.
+    expect(receipt).not.toHaveProperty('mediaCostUSD');
+    expect(receipt).not.toHaveProperty('mediaAccountingMode');
+    expect(receipt).not.toHaveProperty('mediaFingerprint');
     await ordinary.updateBalance({ user: scope.ownerId, incrementValue: 60 });
     expect(
       await ordinary.reserveBalance({
@@ -870,13 +1089,64 @@ describe('media accounting on standalone MongoDB', () => {
     expect(await mongoose.models.Transaction.countDocuments()).toBe(1);
     const transaction = await mongoose.models.Transaction.findOne({ mediaJobId: jobId }).lean<{
       tokenValue?: number;
-      mediaCostUSD?: number;
+      costUSD?: number;
     }>();
     expect(transaction?.tokenValue).toBeUndefined();
-    expect(transaction?.mediaCostUSD).toBeUndefined();
+    expect(transaction?.costUSD).toBeUndefined();
     await expect(accounting.recordMediaUsage({ scope, jobId, costUSD: 1 })).rejects.toMatchObject({
       code: 'conflict',
     });
+  });
+
+  it('replays an existing transaction-only receipt after shared-writer and column-name changes', async () => {
+    const jobId = await job();
+    const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+    const settlementId = hash(JSON.stringify([scope.tenantId, scope.ownerId, jobId]));
+    const descriptor = {
+      user: scope.ownerId,
+      tenantId: scope.tenantId,
+      tokenType: 'credits',
+      context: 'media',
+      model: 'model-a',
+      rawAmount: -250,
+      tokenValue: -250,
+      rate: 1,
+      inputTokens: 20,
+      mediaOutputTokens: 30,
+      mediaSettlementId: settlementId,
+      mediaJobId: jobId,
+      mediaCostUSD: 0.25,
+      mediaAccountingMode: 'transactions',
+    };
+    const fingerprint = hash(JSON.stringify(descriptor));
+    const _id = new mongoose.Types.ObjectId(hash(`media:${settlementId}`).slice(0, 24));
+    await mongoose.models.Transaction.collection.insertOne({
+      ...descriptor,
+      _id,
+      user: new mongoose.Types.ObjectId(scope.ownerId),
+      mediaFingerprint: fingerprint,
+      mediaCostSource: 'provider',
+    });
+    await accounting.recordMediaUsage({
+      scope,
+      jobId,
+      credits: 250,
+      costUSD: 0.25,
+      model: 'model-a',
+      inputTokens: 20,
+      outputTokens: 30,
+      costSource: 'provider',
+    });
+    expect(await mongoose.models.Transaction.countDocuments({ mediaJobId: jobId })).toBe(1);
+    expect(await mongoose.models.Transaction.findById(_id).lean()).toEqual(
+      expect.objectContaining({ tokenValue: -250, mediaFingerprint: fingerprint }),
+    );
+    expect(await media.getMediaJob(scope, jobId)).toEqual(
+      expect.objectContaining({
+        accounting: expect.objectContaining({ phase: 'settled', credits: 250 }),
+      }),
+    );
+    expect((await balance())?.tokenCredits).toBe(1000);
   });
 
   it('rejects a scope that differs from the active tenant context', async () => {

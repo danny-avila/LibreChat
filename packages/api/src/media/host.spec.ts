@@ -1,7 +1,12 @@
+import Transport from 'winston-transport';
 import { FileSources } from 'librechat-data-provider';
+import { logger, baseLogFormat } from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
+import type { TransformableInfo } from 'logform';
+import { startMediaWorker, createMediaWorkerStop } from './lifecycle';
 import { resolveMediaHostConfig } from './host';
 import { mediaAccountingMode } from './service';
+import { MediaProviderError } from './errors';
 
 const base: AppConfig = { config: {}, fileStrategy: FileSources.local, imageOutputType: 'png' };
 
@@ -25,4 +30,57 @@ test('explicit YAML policy takes precedence over legacy balance environment sett
 
 test('an unconfigured deployment keeps ordinary transaction recording without balance enforcement', () => {
   expect(mediaAccountingMode(resolveMediaHostConfig(base, {}))).toBe('transactions');
+});
+
+test('host startup failures retain a readable message and safe provider diagnostics in Winston', async () => {
+  const records: TransformableInfo[] = [];
+  class Capture extends Transport {
+    log(info: TransformableInfo, callback: () => void) {
+      records.push(info);
+      callback();
+    }
+  }
+  const capture = new Capture({ level: 'error', format: baseLogFormat });
+  logger.add(capture);
+  try {
+    await startMediaWorker(
+      {
+        start: async () => {
+          throw new MediaProviderError('uncertain', 503, 'upstream_unavailable');
+        },
+      },
+      logger,
+    );
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      level: 'error',
+      message: expect.stringContaining('[media] Worker is PERMANENTLY unavailable'),
+      status: 503,
+      reason: 'upstream_unavailable',
+      certainty: 'uncertain',
+      cause: expect.objectContaining({
+        message: 'The media provider request could not be completed.',
+      }),
+      stack: expect.stringContaining('The media provider request could not be completed.'),
+    });
+  } finally {
+    logger.remove(capture);
+    capture.end();
+  }
+});
+
+test('worker shutdown respects the earlier cluster deadline, including an exhausted budget', async () => {
+  const stop = jest.fn(async () => undefined);
+  let clock = 1_000;
+  const shutdown = createMediaWorkerStop(
+    { stop },
+    () => 10_000,
+    () => 1_500,
+    () => clock,
+  );
+  await shutdown();
+  expect(stop).toHaveBeenLastCalledWith({ budgetMs: 500 });
+  clock = 2_000;
+  await shutdown();
+  expect(stop).toHaveBeenLastCalledWith({ budgetMs: 0 });
 });
