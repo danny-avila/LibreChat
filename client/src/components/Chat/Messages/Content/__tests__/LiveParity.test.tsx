@@ -261,6 +261,17 @@ describe('live fold parity with the cards it hides', () => {
     expect(button).not.toHaveTextContent('两个引用');
   });
 
+  it('keeps a CJK sentence that ends exactly at the tail instead of reverting to the call', () => {
+    const think = {
+      type: ContentTypes.THINK,
+      think: '两个引用共享一个提交。接下来检查顺序约定。',
+    } as unknown as TMessageContentParts;
+    mount([toPart({ name: 'lookup', output: 'rows' }), think], undefined, true);
+    const button = within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0];
+
+    expect(button).toHaveTextContent('接下来检查顺序约定。');
+  });
+
   it('keeps an earlier failure on the row while a newer call is the line', () => {
     mount(
       [

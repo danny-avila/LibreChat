@@ -130,7 +130,12 @@ function lastReasoningSentence(reasoning: string): { text: string; offset: numbe
   /** CJK sentences end in full-width marks with no space after them. */
   const boundary = /[.!?]\s+|[。！？]\s*/g;
   for (let match = boundary.exec(tail); match != null; match = boundary.exec(tail)) {
-    start = match.index + match[0].length;
+    const end = match.index + match[0].length;
+    /** A mark that closes the tail ends the CURRENT sentence; it does not
+     *  start an empty one. The finished sentence stays until the next begins. */
+    if (end < tail.length) {
+      start = end;
+    }
   }
   const text = boundIntentLabel(tail.slice(start));
   return text == null ? undefined : { text, offset: body.length - tail.length + start };

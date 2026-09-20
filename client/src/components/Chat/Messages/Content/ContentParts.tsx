@@ -923,7 +923,17 @@ const ContentPartsBody = memo(function ContentPartsBody({
              *  can raise one long after its parent's label filled. The span
              *  renders exactly as it would without the feature until it
              *  clears, then folds. */
-            const awaitsReader = live ? segment.content.some(blocksLiveFold) : hasPendingApproval;
+            /** "Open thinking dropdowns by default" is the reader asking to
+             *  see reasoning as it streams. A collapsed live row would unmount
+             *  it, so a reasoning-bearing span stays unfolded for them — the
+             *  same exception `ToolCallGroup` makes to its auto-collapse. */
+            const keepsThinkingOpen =
+              live &&
+              showThinking &&
+              segment.content.some((part) => part?.type === ContentTypes.THINK);
+            const awaitsReader = live
+              ? keepsThinkingOpen || segment.content.some(blocksLiveFold)
+              : hasPendingApproval;
             if (synthesized && awaitsReader) {
               return renderSegment(
                 segment.content,

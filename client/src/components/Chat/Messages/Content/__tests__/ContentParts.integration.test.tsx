@@ -88,6 +88,7 @@ jest.mock('../Parts', () => ({
   AgentUpdate: () => <div data-testid="agent-update" />,
   EmptyText: () => <div data-testid="empty-text" />,
   Reasoning: () => <div data-testid="reasoning" />,
+  ReasoningCompact: () => <div data-testid="compact-reasoning" />,
   Summary: () => <div data-testid="summary" />,
   Text: ({ text }: { text?: string }) => <div data-testid="text">{text}</div>,
   MemoryCall: ({ attachments }: { attachments?: TAttachment[] }) => (
@@ -1269,6 +1270,23 @@ describe('ContentParts — live activity fold', () => {
      *  the tick itself; the row's current line is the new sentence alone. */
     expect(within(liveHeader()).getByTitle('That leaves the ordering')).toBeInTheDocument();
     expect(screen.getAllByRole('button')).toHaveLength(1);
+  });
+
+  it('leaves a reasoning-bearing span unfolded when thinking opens by default', () => {
+    renderContentParts({
+      ...liveProps,
+      showThinking: true,
+      content: [
+        intentCall('t1', 'Reading the lens file', 'ok'),
+        {
+          type: ContentTypes.THINK,
+          think: 'Weighing the refs.',
+        } as unknown as TMessageContentParts,
+      ],
+    });
+
+    expect(screen.queryByTestId('activity-phase-card')).toBeNull();
+    expect(screen.getByTestId('compact-reasoning')).toBeInTheDocument();
   });
 
   it('leaves reasoning that has not reached a tool call on its own row', () => {

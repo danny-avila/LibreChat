@@ -210,26 +210,37 @@ export function summarizeSpan(
   parts: ReadonlyArray<TMessageContentParts | undefined>,
   attachmentsByToolCallId?: Record<string, TAttachment[] | undefined>,
 ): SpanSummary {
-  const stepsById = new Map<string, Set<string>>();
-  for (const part of parts) {
-    if (part?.type !== ContentTypes.TOOL_CALL) {
-      continue;
+  /** Step ownership only matters when there are attachments to route, which
+   *  most runs never have — so the extra walk is paid on first need, once. */
+  let stepsById: Map<string, Set<string>> | undefined;
+  const ownedSteps = (id: string): Set<string> | undefined => {
+    if (attachmentsByToolCallId?.[id] == null) {
+      return undefined;
     }
-    const { id, stepId } = toolCallIdentity(part);
-    if (id === '' || stepId == null) {
-      continue;
+    if (stepsById == null) {
+      stepsById = new Map();
+      for (const part of parts) {
+        if (part?.type !== ContentTypes.TOOL_CALL) {
+          continue;
+        }
+        const owner = toolCallIdentity(part);
+        if (owner.id === '' || owner.stepId == null) {
+          continue;
+        }
+        const steps = stepsById.get(owner.id) ?? new Set<string>();
+        steps.add(owner.stepId);
+        stepsById.set(owner.id, steps);
+      }
     }
-    const steps = stepsById.get(id) ?? new Set<string>();
-    steps.add(stepId);
-    stepsById.set(id, steps);
-  }
+    return stepsById.get(id);
+  };
   const metaOf = (part: TMessageContentParts): ToolMeta | null => {
     if (part.type !== ContentTypes.TOOL_CALL) {
       return null;
     }
     const { id } = toolCallIdentity(part);
     const attachments = attachmentsByToolCallId?.[id];
-    const siblingSteps = stepsById.get(id);
+    const siblingSteps = ownedSteps(id);
     const siblings = siblingSteps == null ? '' : Array.from(siblingSteps).join('|');
     const cached = metaCache.get(part);
     if (cached != null && cached.attachments === attachments && cached.siblings === siblings) {
