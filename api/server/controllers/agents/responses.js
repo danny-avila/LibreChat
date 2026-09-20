@@ -732,6 +732,8 @@ const executeResponse = async (envelope, { req, res }) => {
       const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
       const ordinaryToolCancellationEnabled =
         agentsEConfig?.backgroundTasks?.ordinaryToolCancellation === true;
+      const backgroundCompletionResultMaxChars =
+        agentsEConfig?.backgroundTasks?.completionResultMaxChars;
       const previousMessages = request.previous_response_id
         ? await loadPreviousMessages(request.previous_response_id, principal.userId)
         : [];
@@ -1194,6 +1196,7 @@ const executeResponse = async (envelope, { req, res }) => {
           runSignal: execution.signal,
           foregroundRunId: responseId,
           ordinaryToolCancellation: ordinaryToolCancellationEnabled,
+          backgroundCompletionResultMaxChars,
           provisionFiles: createProvisionFilesCallback({
             req,
             agentToolContexts,
@@ -1424,6 +1427,7 @@ const executeResponse = async (envelope, { req, res }) => {
           runSignal: execution.signal,
           foregroundRunId: responseId,
           ordinaryToolCancellation: ordinaryToolCancellationEnabled,
+          backgroundCompletionResultMaxChars,
           provisionFiles: createProvisionFilesCallback({
             req,
             agentToolContexts,

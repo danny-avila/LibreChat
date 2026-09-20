@@ -3,6 +3,7 @@ import { Types } from 'mongoose';
 import { GraphEvents, Constants, ToolEndHandler } from '@librechat/agents';
 import { logger, normalizeSkillFrontmatterKeys } from '@librechat/data-schemas';
 import {
+  AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_DEFAULT,
   hasActivePiiFields,
   hasActivePiiPatterns,
   hasToolCallErrorPrefix,
@@ -271,6 +272,8 @@ export interface ToolExecuteOptions {
   runFiles?: Pick<RunFileSession, 'isActive' | 'prepareTools' | 'withCodeExecution'>;
   /** Trusted deployment gate for cooperative ordinary-tool cancellation. */
   ordinaryToolCancellation?: boolean;
+  /** Deployment-configured cap for terminal output copied into durable receipts. */
+  backgroundCompletionResultMaxChars?: number;
   /** Callback to process tool artifacts (code output files, file citations, etc.) */
   toolEndCallback?: ToolEndCallback;
   /** Durable internal-completion adapter, present only for an Event Actor invocation. */
@@ -5317,6 +5320,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
     subagentTasks,
     runFiles,
     ordinaryToolCancellation = false,
+    backgroundCompletionResultMaxChars = AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_DEFAULT,
     provisionFiles,
   } = options;
 
@@ -5774,6 +5778,9 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       ...(params.status === 'cancelled' ? { cancelled: true } : {}),
                       settledAt: new Date(current?.updatedAt ?? Date.now()),
                       ...(completionPreregistered ? { completionWakeup: true } : {}),
+                      ...(completionAdmission?.persistResult != null
+                        ? { completionReceipt: true }
+                        : {}),
                       ...(current?.resultClaim != null
                         ? {
                             resultClaim: {
@@ -5794,10 +5801,40 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     task.id,
                   );
                   const backgroundTask = resolveBackgroundTask();
+                  let durableReceiptReady = false;
+                  let durableReceiptAmbiguous = false;
+                  const persistDurableReceipt = async (receipt: {
+                    status: 'completed' | 'error' | 'cancelled';
+                    output?: string;
+                  }): Promise<boolean> => {
+                    if (completionAdmission?.persistResult == null) {
+                      return false;
+                    }
+                    try {
+                      return await completionAdmission.persistResult({
+                        status: receipt.status,
+                        output: truncateMiddle(
+                          receipt.output ?? '',
+                          backgroundCompletionResultMaxChars,
+                        ),
+                        settledAt: backgroundTask.settledAt,
+                      });
+                    } catch (receiptError) {
+                      durableReceiptAmbiguous = true;
+                      logger.warn(
+                        `[background] Failed to persist independent result receipt for task ${task.id}:`,
+                        receiptError,
+                      );
+                      return false;
+                    }
+                  };
                   const retireFailedPersistence = async (
                     reason: string,
                     certainty: 'definite' | 'ambiguous',
                   ): Promise<void> => {
+                    if (durableReceiptAmbiguous) {
+                      return;
+                    }
                     if (completionAdmission == null) {
                       backgroundTaskRegistry.markCompletionPersistenceFailed(
                         backgroundUserId,
@@ -5852,6 +5889,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     }
                   };
                   if (!harvestEnabled || !persistBackgroundCodeResult) {
+                    durableReceiptReady = await persistDurableReceipt({
+                      status: params.status,
+                      output: params.output ?? localTask?.result,
+                    });
                     if (
                       backgroundToolCompletion == null ||
                       detachedReservation?.status === 'reserved'
@@ -5870,17 +5911,19 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         backgroundTask,
                         resolveBackgroundTask,
                       });
-                      if (!deliveryReady) {
+                      if (!deliveryReady && !durableReceiptReady) {
                         await retireFailedPersistence(
                           'background tool result was not persisted',
                           'definite',
                         );
                       }
                     } catch (persistError) {
-                      await retireFailedPersistence(
-                        'background tool result persistence failed',
-                        isContentFilterError(persistError) ? 'definite' : 'ambiguous',
-                      );
+                      if (!durableReceiptReady) {
+                        await retireFailedPersistence(
+                          'background tool result persistence failed',
+                          isContentFilterError(persistError) ? 'definite' : 'ambiguous',
+                        );
+                      }
                       logger.warn(
                         `[background] Failed to persist result for task ${task.id}:`,
                         persistError,
@@ -5922,13 +5965,19 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         task.id,
                         params.artifact,
                       );
-                      if (completionPreregistered) {
+                      if (completionPreregistered && !durableReceiptReady) {
                         await retireFailedPersistence(
                           'background code result had no durable message anchor',
                           'definite',
                         );
                       }
                       return;
+                    }
+                    if (persisted.deliveryReady !== false) {
+                      durableReceiptReady = await persistDurableReceipt({
+                        status: params.status,
+                        output: params.output ?? localTask?.result,
+                      });
                     }
                     if (persisted.deliveryReady === false) {
                       await retireFailedPersistence(
@@ -5943,25 +5992,37 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       persisted.attachments,
                     );
                   } catch (persistError) {
-                    if (completionPreregistered) {
-                      await retireFailedPersistence(
-                        'background code result persistence failed',
-                        isContentFilterError(persistError) ? 'definite' : 'ambiguous',
-                      );
-                    }
                     if (isContentFilterError(persistError)) {
+                      const blockedMessage =
+                        persistError instanceof ContentFilterError
+                          ? modelBoundContentFilterErrorMessage(persistError.body)
+                          : persistError.body.message;
                       backgroundTaskRegistry.blockArtifact(
                         backgroundUserId,
                         backgroundConversationId,
                         task.id,
-                        persistError instanceof ContentFilterError
-                          ? modelBoundContentFilterErrorMessage(persistError.body)
-                          : persistError.body.message,
+                        blockedMessage,
                       );
+                      durableReceiptReady = await persistDurableReceipt({
+                        status: 'error',
+                        output: blockedMessage,
+                      });
+                      if (completionPreregistered && !durableReceiptReady) {
+                        await retireFailedPersistence(
+                          'background code result was blocked by content policy',
+                          'definite',
+                        );
+                      }
                       logger.warn(
                         `[background] Generated code output for task ${task.id} was blocked by content policy.`,
                       );
                       return;
+                    }
+                    if (completionPreregistered && !durableReceiptReady) {
+                      await retireFailedPersistence(
+                        'background code result persistence failed',
+                        'ambiguous',
+                      );
                     }
                     logger.warn(
                       `[background] Failed to persist code result for task ${task.id}:`,

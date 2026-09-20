@@ -577,6 +577,7 @@ describe('agent background task config', () => {
     }
     expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({
       completionWakeups: true,
+      completionResultMaxChars: 24 * 1024,
       ordinaryToolCancellation: false,
     });
   });
@@ -593,6 +594,7 @@ describe('agent background task config', () => {
     }
     expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({
       completionWakeups: false,
+      completionResultMaxChars: 24 * 1024,
       ordinaryToolCancellation: false,
     });
   });
@@ -609,8 +611,30 @@ describe('agent background task config', () => {
     }
     expect(result.data.endpoints?.agents?.backgroundTasks).toEqual({
       completionWakeups: true,
+      completionResultMaxChars: 24 * 1024,
       ordinaryToolCancellation: true,
     });
+  });
+
+  it('accepts a bounded durable completion result limit', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: { agents: { backgroundTasks: { completionResultMaxChars: 4096 } } },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.endpoints?.agents?.backgroundTasks?.completionResultMaxChars).toBe(4096);
+    }
+  });
+
+  it.each([0, 64 * 1024 + 1])('rejects an unsafe completion result limit: %s', (limit) => {
+    expect(
+      configSchema.safeParse({
+        version: '1.0',
+        endpoints: { agents: { backgroundTasks: { completionResultMaxChars: limit } } },
+      }).success,
+    ).toBe(false);
   });
 });
 

@@ -1,4 +1,5 @@
 import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
   AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
@@ -112,6 +113,9 @@ export interface AgentTriggerDeliveryPersistence {
   completeAgentTriggerDelivery: AgentTriggerDeliveryStore['complete'];
   retireAgentTriggerDelivery: AgentTriggerDeliveryMethods['retireAgentTriggerDelivery'];
   renewAgentTriggerDeliveryProducerLease: AgentTriggerDeliveryMethods['renewAgentTriggerDeliveryProducerLease'];
+  persistAgentBackgroundToolResult?: AgentTriggerDeliveryMethods['persistAgentBackgroundToolResult'];
+  getAgentBackgroundToolResultClaim?: AgentTriggerDeliveryMethods['getAgentBackgroundToolResultClaim'];
+  releaseAgentBackgroundToolResultClaims?: AgentTriggerDeliveryMethods['releaseAgentBackgroundToolResultClaims'];
   retryAgentTriggerDelivery: AgentTriggerDeliveryStore['retry'];
   deadLetterAgentTriggerDelivery: AgentTriggerDeliveryStore['dead'];
   getAgentTriggerDelivery: (deliveryKey: string) => Promise<AgentTriggerStoredRecord | null>;
@@ -168,6 +172,19 @@ export interface AgentTriggerService {
     options?: { onlyIfUnclaimed?: boolean; onlyIfDead?: boolean },
   ) => Promise<boolean>;
   renewProducerLease: (deliveryKey: string, sourceId: string, leaseUntil: Date) => Promise<boolean>;
+  persistBackgroundToolResult: (input: {
+    deliveryKey: string;
+    sourceId: string;
+    result: {
+      status: 'completed' | 'error' | 'cancelled';
+      output: string;
+      settledAt: Date;
+    };
+  }) => Promise<boolean>;
+  getBackgroundToolResultClaim: (
+    input: Parameters<AgentTriggerDeliveryMethods['getAgentBackgroundToolResultClaim']>[0],
+  ) => ReturnType<AgentTriggerDeliveryMethods['getAgentBackgroundToolResultClaim']>;
+  releaseBackgroundToolResultClaims: AgentTriggerDeliveryMethods['releaseAgentBackgroundToolResultClaims'];
   drainUser: (userId: string) => Promise<void>;
   prepareUserPurge: (userId: string, fenceStartedAt: Date, tenantId?: string) => Promise<void>;
   cancelUserPurge: (userId: string, fenceStartedAt: Date) => Promise<boolean>;
@@ -183,6 +200,7 @@ function createDeliveryStore(
       methods.claimNextAgentTriggerDelivery({
         ...input,
         workerCapabilities: [
+          AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
           AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
           AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
           ...(supportsDetachedActionCompletion()
@@ -600,6 +618,21 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
           leaseUntil,
         }),
       ),
+    persistBackgroundToolResult: (input) =>
+      runAsSystem(async () => {
+        const persist = requireMethods().persistAgentBackgroundToolResult;
+        return persist == null ? false : persist(input);
+      }),
+    getBackgroundToolResultClaim: (input) =>
+      runAsSystem(async () => {
+        const getClaim = requireMethods().getAgentBackgroundToolResultClaim;
+        return getClaim == null ? null : getClaim(input);
+      }),
+    releaseBackgroundToolResultClaims: (input) =>
+      runAsSystem(async () => {
+        const release = requireMethods().releaseAgentBackgroundToolResultClaims;
+        return release == null ? false : release(input);
+      }),
     drainUser,
     prepareUserPurge: (userId, fenceStartedAt, tenantId) =>
       runAsSystem(async () =>
