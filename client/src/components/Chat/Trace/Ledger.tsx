@@ -130,6 +130,7 @@ function Ledger({
   toolTitleFor,
   agentOf,
   unrecordedCalls,
+  stepOffsets,
   mcpIconMap,
   onSelect,
   onToggle,
@@ -148,6 +149,8 @@ function Ledger({
   agentOf: (agentId: string) => Agent | undefined;
   /** Tool calls the trace names no record for, by response, as the chat's messages count them. */
   unrecordedCalls: ReadonlyMap<string, number>;
+  /** Steps of a response that ran before its first loaded one, by response. */
+  stepOffsets: ReadonlyMap<string, number>;
   mcpIconMap: Map<string, string>;
   onSelect: (id: string) => void;
   onToggle: (key: string) => void;
@@ -419,7 +422,9 @@ function Ledger({
         label:
           step.origin === 'title'
             ? localize('com_ui_trace_title_step')
-            : localize('com_ui_trace_step', { 0: String(step.index) }),
+            : localize('com_ui_trace_step', {
+                0: String(step.index + (stepOffsets.get(step.messageId) ?? 0)),
+              }),
         description: stepDescription(step),
         errorCount: step.errorCount,
         recordCount: step.recordCount,

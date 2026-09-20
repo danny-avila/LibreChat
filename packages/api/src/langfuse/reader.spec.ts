@@ -1089,6 +1089,176 @@ describe('createLangfuseTraceReader', () => {
       ]);
     });
 
+    describe('tool round names', () => {
+      const round = (id: string, startTime: string) =>
+        observation({
+          id,
+          parentObservationId: 'obs-root',
+          type: 'CHAIN',
+          name: 'tool-dispatch',
+          startTime,
+        });
+      const listed = () =>
+        jsonResponse({
+          data: [
+            observation(),
+            round('round-1', '2026-09-12T11:30:01.000Z'),
+            round('round-2', '2026-09-12T11:30:03.000Z'),
+          ],
+        });
+      const naming = () =>
+        createQuery({ settings: resolveTraceViewerConfig({ enabled: true, showToolNames: true }) });
+      const toolsOf = (records: Array<{ id: string; tools?: string[] }>) =>
+        Object.fromEntries(records.map((record) => [record.id, record.tools]));
+
+      it("names each listed round from the round's own input, in one read scoped to those rounds", async () => {
+        const { reader, fetchMock } = setup({
+          responses: [
+            listed(),
+            jsonResponse({
+              data: [
+                { id: 'round-1', input: '[{"name":"web_search","args":{"query":"secret"}}]' },
+                { id: 'round-2', input: [{ name: 'bash_tool' }, { name: 'read_file' }] },
+                { id: 'round-elsewhere', input: '[{"name":"not_listed"}]' },
+                { id: 'obs-root', input: '[{"name":"not_a_round"}]' },
+                { input: 'malformed' },
+              ],
+            }),
+          ],
+        });
+
+        const { records } = await reader.listRecords(naming());
+
+        expect(toolsOf(records)).toEqual({
+          'obs-root': undefined,
+          'round-1': ['web_search'],
+          'round-2': ['bash_tool', 'read_file'],
+        });
+        expect(JSON.stringify(records)).not.toContain('secret');
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(requestedUrl(fetchMock, 1).searchParams.get('fields')).toBe('core,io');
+        expect(requestedTraceIds(fetchMock, 1)).toEqual(requestedTraceIds(fetchMock, 0));
+        expect(requestedFilter(fetchMock, 1)).toEqual(
+          expect.arrayContaining([
+            { type: 'string', column: 'sessionId', operator: '=', value: 'convo-1' },
+            expect.objectContaining({ column: 'userId' }),
+            { type: 'string', column: 'name', operator: '=', value: 'tool-dispatch' },
+            {
+              type: 'datetime',
+              column: 'startTime',
+              operator: '>=',
+              value: '2026-09-12T11:30:01.000Z',
+            },
+            {
+              type: 'datetime',
+              column: 'startTime',
+              operator: '<=',
+              value: '2026-09-12T11:30:03.000Z',
+            },
+          ]),
+        );
+      });
+
+      it('leaves the rounds unnamed, and the page intact, when the names cannot be read', async () => {
+        const { reader } = setup({ responses: [listed(), new Error('socket hang up')] });
+
+        const { records } = await reader.listRecords(naming());
+
+        expect(records.map((record) => record.id)).toEqual(['obs-root', 'round-1', 'round-2']);
+        expect(toolsOf(records)).toEqual({});
+      });
+
+      it('leaves a round unnamed when its input is not the list of calls it ran', async () => {
+        const { reader } = setup({
+          responses: [
+            listed(),
+            jsonResponse({
+              data: [{ id: 'round-1', input: '{"messages":[{"role":"system","content":"x"}]}' }],
+            }),
+          ],
+        });
+
+        const { records } = await reader.listRecords(naming());
+
+        expect(toolsOf(records)).toEqual({});
+      });
+
+      it('reads no names unless the deployment asked for them, or when no round is listed', async () => {
+        const unset = setup({ responses: [listed()] });
+        await unset.reader.listRecords(createQuery());
+        expect(unset.fetchMock).toHaveBeenCalledTimes(1);
+
+        const none = setup({ responses: [jsonResponse({ data: [observation()] })] });
+        await none.reader.listRecords(naming());
+        expect(none.fetchMock).toHaveBeenCalledTimes(1);
+      });
+
+      it('reads the rounds a few at a time, following the cursor until every listed round is seen', async () => {
+        const { reader, fetchMock } = setup({
+          responses: [
+            listed(),
+            jsonResponse({
+              data: [{ id: 'round-2', input: '[{"name":"bash_tool"}]' }],
+              meta: { cursor: 'more-rounds' },
+            }),
+            jsonResponse({ data: [{ id: 'round-1', input: '[{"name":"web_search"}]' }] }),
+          ],
+        });
+
+        const { records } = await reader.listRecords(naming());
+
+        expect(toolsOf(records)).toMatchObject({
+          'round-1': ['web_search'],
+          'round-2': ['bash_tool'],
+        });
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+        expect(requestedUrl(fetchMock, 1).searchParams.get('limit')).toBe('50');
+        expect(requestedUrl(fetchMock, 2).searchParams.get('cursor')).toBe('more-rounds');
+      });
+
+      it('stops once every listed round is seen, whatever the cursor offers', async () => {
+        const { reader, fetchMock } = setup({
+          responses: [
+            listed(),
+            jsonResponse({
+              data: [
+                { id: 'round-1', input: '[{"name":"web_search"}]' },
+                { id: 'round-2', input: '{"messages":[]}' },
+              ],
+              meta: { cursor: 'more-rounds' },
+            }),
+          ],
+        });
+
+        await reader.listRecords(naming());
+
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+      });
+
+      it('stops at its byte budget, keeping the names it has and the page it was adding to', async () => {
+        const huge = 'x'.repeat(9 * 1024 * 1024);
+        const { reader, fetchMock } = setup({
+          responses: [
+            listed(),
+            jsonResponse({
+              data: [{ id: 'round-2', input: '[{"name":"bash_tool"}]' }],
+              meta: { cursor: 'more-rounds' },
+            }),
+            jsonResponse({
+              data: [{ id: 'round-1', input: '[{"name":"web_search"}]', output: huge }],
+            }),
+            jsonResponse({ data: [] }),
+          ],
+        });
+
+        const { records } = await reader.listRecords(naming());
+
+        expect(records.map((record) => record.id)).toEqual(['obs-root', 'round-1', 'round-2']);
+        expect(toolsOf(records)).toEqual({ 'round-2': ['bash_tool'] });
+        expect(fetchMock).toHaveBeenCalledTimes(3);
+      });
+    });
+
     it('follows Langfuse cursors up to maxRecords and returns the next cursor', async () => {
       const { reader, fetchMock } = setup({
         responses: [

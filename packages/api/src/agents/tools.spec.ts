@@ -67,6 +67,8 @@ CONSTRAINTS:
     enableToolOutputReferences === true ? 'bash {{tool<idx>turn<turn>}}' : 'bash',
 }));
 
+import fs from 'fs';
+import path from 'path';
 import { CODE_EXECUTION_TOOLS } from '@librechat/agents';
 import type { LCTool, LCToolRegistry } from '@librechat/agents';
 import { CODE_WORKSPACE_OPERATIONS, Constants } from 'librechat-data-provider';
@@ -642,6 +644,41 @@ describe('installed @librechat/agents skill tool canary', () => {
       '- Skill names come from the catalog only. Do not guess names.',
     );
     expect(SkillToolDefinition.parameters.properties?.skillName).toBeDefined();
+  });
+});
+
+describe('e2e skill assertion harness agreement', () => {
+  /**
+   * `e2e/setup/fake-model.js` tells an authoring run apart from a skills-off run
+   * by grepping the advertised `skill` description for one sentence. Both runs
+   * can reach the model with nothing in the catalog, and only that sentence
+   * separates them, so the harness reports `authoring-only` for one and `none`
+   * for the other. Reword the description without this test and the harness
+   * silently calls every authoring run skills-off, which reads as an
+   * `agent-skills.spec.ts` failure with no mention of the rewording.
+   *
+   * The literal is read from the harness rather than repeated here: a copy
+   * would keep passing after the harness changed.
+   */
+  const guidance = (() => {
+    const harness = fs.readFileSync(
+      path.resolve(__dirname, '../../../../e2e/setup/fake-model.js'),
+      'utf8',
+    );
+    const match = /const AUTHORED_SKILL_GUIDANCE = '([^']+)';/.exec(harness);
+    if (!match) {
+      throw new Error('AUTHORED_SKILL_GUIDANCE was not found in e2e/setup/fake-model.js');
+    }
+    return match[1];
+  })();
+
+  it('ships the sentence the harness greps for, only on the authoring variant', () => {
+    const { SkillToolDefinition } = jest.requireActual('@librechat/agents') as {
+      SkillToolDefinition: { description: string };
+    };
+
+    expect(buildAuthoringSkillToolDescription(SkillToolDefinition.description)).toContain(guidance);
+    expect(SkillToolDefinition.description).not.toContain(guidance);
   });
 });
 

@@ -313,6 +313,142 @@ describe('MCPConnectionFactory OAuth against real SDK Streamable HTTP server', (
     expect(server.tokenRequests.filter((r) => r.grantType === 'refresh_token')).toHaveLength(1);
   });
 
+  it.each([
+    {
+      status: 503,
+      error: 'temporarily_unavailable',
+      scope: 'read',
+      discovery: false,
+      coordinate: false,
+    },
+    { status: 503, error: 'invalid_client', scope: 'read', discovery: false, coordinate: false },
+    { status: 429, error: 'invalid_grant', scope: '', discovery: false, coordinate: false },
+    { status: 429, error: 'invalid_scope', scope: 'read', discovery: true, coordinate: true },
+    { status: 503, error: 'invalid_client', scope: 'read', discovery: true, coordinate: true },
+    { status: 408, error: 'invalid_grant', scope: '', discovery: false, coordinate: true },
+  ])(
+    'preserves authorization through HTTP $status ($error, discovery=$discovery), then retries without consent',
+    async ({ status, error, scope, discovery, coordinate }) => {
+      let unavailable = true;
+      server = await createOAuthMCPServer({
+        issueRefreshTokens: true,
+        rotateRefreshTokens: true,
+        requireResourceParameter: true,
+        refreshFailure: () =>
+          unavailable ? { status, body: JSON.stringify({ error }) } : undefined,
+      });
+      const initial = await issueTokens(server, scope);
+      await storeTokens(tokenStore, server, { ...initial, expires_at: Date.now() - 1000 }, scope);
+      const flowManager = createFlowManager();
+      const oauthStart = jest.fn();
+      const tokenMethods = {
+        findToken: tokenStore.findToken,
+        createToken: tokenStore.createToken,
+        updateToken: tokenStore.updateToken,
+        deleteTokens: tokenStore.deleteTokens,
+      };
+      const snapshot = () =>
+        Promise.all([
+          tokenStore.findToken({
+            userId: USER_ID,
+            type: 'mcp_oauth_refresh',
+            identifier: `mcp:${SERVER_NAME}:refresh`,
+          }),
+          tokenStore.findToken({
+            userId: USER_ID,
+            type: 'mcp_oauth_client',
+            identifier: `mcp:${SERVER_NAME}:client`,
+          }),
+        ]);
+      const before = await snapshot();
+      const basic = {
+        serverName: SERVER_NAME,
+        serverConfig: {
+          type: 'streamable-http' as const,
+          url: server.url,
+          initTimeout: 15000,
+          requiresOAuth: true,
+          oauthRefreshCoordination: coordinate,
+        },
+      };
+      const options = {
+        useOAuth: true as const,
+        user: { id: USER_ID } as IUser,
+        flowManager,
+        tokenMethods,
+        oauthStart,
+        returnOnOAuth: true,
+      };
+      const attempt = () =>
+        discovery
+          ? MCPConnectionFactory.discoverTools(basic, options)
+          : MCPConnectionFactory.create(basic, options);
+      await expect(attempt()).rejects.toMatchObject({ name: 'MCPTokenRefreshUnavailableError' });
+      expect(oauthStart).not.toHaveBeenCalled();
+      expect(await snapshot()).toEqual(before);
+      expect(server.issuedRefreshTokens.has(initial.refresh_token!)).toBe(true);
+      expect(server.tokenRequests.filter((r) => r.grantType === 'refresh_token')).toHaveLength(1);
+
+      unavailable = false;
+      const recovered = await attempt();
+      connection = 'connection' in recovered ? recovered.connection : recovered;
+      expect(connection).not.toBeNull();
+      expect(await connection!.isConnected()).toBe(true);
+      expect((await connection!.fetchTools()).some((tool) => tool.name === 'echo')).toBe(true);
+      expect(oauthStart).not.toHaveBeenCalled();
+      expect(server.tokenRequests.filter((r) => r.grantType === 'authorization_code')).toHaveLength(
+        1,
+      );
+      expect(server.tokenRequests.filter((r) => r.grantType === 'refresh_token')).toHaveLength(2);
+      const [rotated] = await snapshot();
+      expect(rotated?.token).not.toBe(before[0]?.token);
+      expect(server.issuedRefreshTokens.has(rotated!.token.replace(/^enc:/, ''))).toBe(true);
+    },
+  );
+
+  it.each(['invalid_client', 'invalid_grant'])(
+    'still requests consent for a permanent HTTP 400 %s',
+    async (error) => {
+      server = await createOAuthMCPServer({
+        issueRefreshTokens: true,
+        refreshFailure: () => ({ status: 400, body: JSON.stringify({ error }) }),
+      });
+      const initial = await issueTokens(server);
+      await storeTokens(tokenStore, server, { ...initial, expires_at: Date.now() - 1000 });
+      const oauthStart = jest.fn();
+      const flowManager = createFlowManager();
+      try {
+        await expect(
+          MCPConnectionFactory.create(
+            {
+              serverName: SERVER_NAME,
+              serverConfig: { type: 'streamable-http', url: server.url, requiresOAuth: true },
+            },
+            {
+              useOAuth: true,
+              user: { id: USER_ID } as IUser,
+              flowManager,
+              returnOnOAuth: true,
+              oauthStart,
+              tokenMethods: {
+                findToken: tokenStore.findToken,
+                createToken: tokenStore.createToken,
+                updateToken: tokenStore.updateToken,
+                deleteTokens: tokenStore.deleteTokens,
+              },
+            },
+          ),
+        ).rejects.toThrow('OAuth flow initiated');
+        expect(oauthStart).toHaveBeenCalledTimes(1);
+      } finally {
+        await flowManager.deleteFlow(
+          MCPOAuthHandler.generateFlowId(USER_ID, SERVER_NAME),
+          'mcp_oauth',
+        );
+      }
+    },
+  );
+
   it('silently refreshes a server-rejected token and reconnects with the MCP resource parameter', async () => {
     server = await createOAuthMCPServer({
       issueRefreshTokens: true,

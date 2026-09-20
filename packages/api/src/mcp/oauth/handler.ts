@@ -33,10 +33,10 @@ import {
   inferClientAuthMethod,
 } from './methods';
 import { isSSRFTarget, resolveHostnameSSRF, isOAuthUrlAllowed } from '~/auth';
+import { MCPTokenStorage, MCPTokenRefreshUnavailableError } from './tokens';
 import { probeResourceMetadataHint } from './resourceHint';
 import { createHardenedOAuthFetch } from './hardenedFetch';
 import { sanitizeUrlForLogging } from '~/mcp/utils';
-import { MCPTokenStorage } from './tokens';
 import { getOAuthUrlPort } from './url';
 
 /** Type for the OAuth metadata from the SDK */
@@ -1720,6 +1720,23 @@ export class MCPOAuthHandler {
     } as MCPOAuthTokens;
   }
 
+  /** HTTP outage/rate-limit status is authoritative, even if a proxy body names a bad grant. */
+  private static async assertRefreshEndpointAvailable(
+    response: Response,
+    serverName: string,
+  ): Promise<void> {
+    if (!(response.status === 408 || response.status === 429 || response.status >= 500)) {
+      return;
+    }
+    // Do not feed an outage body into the legacy invalid_client/invalid_grant message classifiers,
+    // or log provider-controlled text that may contain credentials. No automatic redemption retry.
+    await response.body?.cancel().catch(() => undefined);
+    throw new MCPTokenRefreshUnavailableError(
+      serverName,
+      new Error(`Token refresh temporarily unavailable (HTTP ${response.status})`),
+    );
+  }
+
   /**
    * Posts a `refresh_token` grant, transparently retrying without the `scope`
    * parameter when — and only when — the authorization server rejects the request
@@ -1747,6 +1764,7 @@ export class MCPOAuthHandler {
       serverName,
     );
     const response = await oauthFetch(tokenUrl, { method: 'POST', headers, body, signal });
+    await this.assertRefreshEndpointAvailable(response, serverName);
     if (response.ok || !body.has('scope')) {
       return response;
     }
@@ -1763,7 +1781,9 @@ export class MCPOAuthHandler {
       `[MCPOAuth] ${serverName} rejected the scope parameter on token refresh (HTTP ${response.status}); retrying without scope per RFC 6749 §6`,
     );
     body.delete('scope');
-    return oauthFetch(tokenUrl, { method: 'POST', headers, body, signal });
+    const retried = await oauthFetch(tokenUrl, { method: 'POST', headers, body, signal });
+    await this.assertRefreshEndpointAvailable(retried, serverName);
+    return retried;
   }
 
   /**
@@ -2185,6 +2205,7 @@ export class MCPOAuthHandler {
         },
       );
 
+      await this.assertRefreshEndpointAvailable(response, metadata.serverName);
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(

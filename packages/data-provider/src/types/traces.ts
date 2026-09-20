@@ -47,6 +47,8 @@ export type TTraceRecord = {
   role?: TTraceRecordRole;
   /** The saved agent a `role: 'agent'` record ran; absent for an agent that was never saved. */
   agentId?: string;
+  /** The tools a `role: 'tools'` round called, in order, as the backend recorded the round. */
+  tools?: string[];
   name: string;
   model?: string;
   /** ISO-8601 timestamps. */
