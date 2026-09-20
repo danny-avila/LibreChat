@@ -415,3 +415,63 @@ export function isMCPApiKeyReentryRequiredError(
 ): error is MCPApiKeyReentryRequiredError {
   return error instanceof MCPApiKeyReentryRequiredError;
 }
+
+export type MCPErrorResponse = {
+  statusCode: number;
+  body: {
+    error: MCPErrorCode;
+    message: string;
+  };
+};
+
+/** Maps MCP errors to their public HTTP response without exposing attached causes or secrets. */
+export function getMCPErrorResponse(error: unknown): MCPErrorResponse | null {
+  if (
+    isMCPDomainNotAllowedError(error) ||
+    isMCPInspectionFailedError(error) ||
+    isMCPOAuthSecretReentryRequiredError(error) ||
+    isMCPApiKeyReentryRequiredError(error)
+  ) {
+    return {
+      statusCode: error.statusCode,
+      body: { error: error.code, message: error.message },
+    };
+  }
+
+  const message =
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string'
+      ? error.message
+      : undefined;
+  if (!message) {
+    return null;
+  }
+
+  if (message.startsWith(MCPErrorCodes.DOMAIN_NOT_ALLOWED)) {
+    return {
+      statusCode: 403,
+      body: {
+        error: MCPErrorCodes.DOMAIN_NOT_ALLOWED,
+        message: message.replace(/^MCP_DOMAIN_NOT_ALLOWED\s*:\s*/i, ''),
+      },
+    };
+  }
+
+  if (message.startsWith(MCPErrorCodes.INSPECTION_FAILED)) {
+    return {
+      statusCode: 400,
+      body: { error: MCPErrorCodes.INSPECTION_FAILED, message },
+    };
+  }
+
+  if (message.startsWith(MCPErrorCodes.OAUTH_SECRET_REENTRY_REQUIRED)) {
+    return {
+      statusCode: 400,
+      body: { error: MCPErrorCodes.OAUTH_SECRET_REENTRY_REQUIRED, message },
+    };
+  }
+
+  return null;
+}
