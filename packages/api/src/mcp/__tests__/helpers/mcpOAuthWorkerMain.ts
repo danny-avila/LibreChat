@@ -198,9 +198,34 @@ const commands: Record<string, (payload: Record<string, unknown>) => Promise<unk
 
   /** The production read path: refresh when expired, coordinating across replicas. */
   async getTokens() {
+    /**
+     * Confirm the credential this replica is about to read is actually expired, then tell the
+     * parent. A concurrency assertion that only counts provider hits can pass vacuously when one
+     * replica arrives after the winner already persisted: it would simply load a fresh token and
+     * never contend. The parent waits for this signal from BOTH replicas before releasing the
+     * provider, so the overlap is established rather than assumed from a fixed delay.
+     */
+    const accessBefore = await tokenMethods.findToken({ userId, type: 'mcp_oauth', identifier });
+    const expiredAtEntry =
+      accessBefore?.expiresAt != null && new Date() >= new Date(accessBefore.expiresAt);
+    process.send?.({ progress: 'entered-refresh-path', expiredAtEntry });
+
+    /**
+     * `getTokens` invokes exactly one of these per call, so they report which side of the
+     * coordination this replica took: the redeemer, or a peer adopting what the redeemer
+     * published. Asserting the pair is what makes the test non-vacuous regardless of timing.
+     */
+    let role: 'refreshed' | 'adopted' | null = null;
+
     const tokens = await MCPTokenStorage.getTokens({
       userId,
       serverName,
+      onRefreshSuccess: async () => {
+        role = 'refreshed';
+      },
+      onTokensAdopted: async () => {
+        role = 'adopted';
+      },
       findToken: tokenMethods.findToken,
       createToken: tokenMethods.createToken,
       updateToken: tokenMethods.updateToken,
@@ -228,10 +253,18 @@ const commands: Record<string, (payload: Record<string, unknown>) => Promise<unk
         ),
     });
     if (!tokens) {
-      return { obtained: false, resourceStatus: null, refreshDigest: await storedRefreshDigest() };
+      return {
+        obtained: false,
+        role,
+        expiredAtEntry,
+        resourceStatus: null,
+        refreshDigest: await storedRefreshDigest(),
+      };
     }
     return {
       obtained: true,
+      role,
+      expiredAtEntry,
       accessDigest: digest(tokens.access_token),
       credentialSetId: tokens.credential_set_id ?? null,
       /** Proves the credential is accepted by the protected resource, not merely non-null. */
@@ -261,6 +294,7 @@ const commands: Record<string, (payload: Record<string, unknown>) => Promise<unk
       refreshDigest: refresh ? digest(await decryptV2(refresh.token)) : null,
       credentialSetId: readCredentialSetId(access) ?? readCredentialSetId(client),
       hasClient: client != null,
+      role: null,
       resourceStatus: null,
     };
   },

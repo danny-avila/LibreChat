@@ -39,6 +39,9 @@ interface WorkerReply {
 
 interface TokenOutcome {
   obtained: boolean;
+  /** Which side of the coordination this replica took, from `getTokens`' own hooks. */
+  role: 'refreshed' | 'adopted' | null;
+  expiredAtEntry?: boolean;
   resourceStatus: number | null;
   refreshDigest: string | null;
   credentialSetId?: string | null;
@@ -53,6 +56,8 @@ class ReplicaProcess {
 
   private nextId = 1;
   private exited = false;
+  /** Unsolicited worker notifications, used to establish overlap instead of assuming it. */
+  public readonly progress: string[] = [];
 
   private constructor(
     public readonly name: string,
@@ -60,6 +65,11 @@ class ReplicaProcess {
     private readonly stderr: string[],
   ) {
     child.on('message', (message) => {
+      const notification = message as { progress?: string };
+      if (notification.progress) {
+        this.progress.push(notification.progress);
+        return;
+      }
       const reply = message as WorkerReply;
       const waiter = this.pending.get(reply.id);
       if (!waiter) {
@@ -120,31 +130,45 @@ class ReplicaProcess {
     child.stdout?.resume();
 
     const replica = new ReplicaProcess(options.name, child, stderr);
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        reject(
-          new Error(
-            `[${options.name}] not ready in ${BOOT_TIMEOUT_MS}ms. stderr: ${stderr.join('').slice(-2000)}`,
-          ),
-        );
-      }, BOOT_TIMEOUT_MS);
-      child.once('message', (message) => {
-        clearTimeout(timer);
-        if ((message as { ready?: boolean }).ready) {
-          resolve();
-        } else {
-          reject(new Error(`[${options.name}] sent an unexpected first message`));
-        }
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          reject(
+            new Error(
+              `[${options.name}] not ready in ${BOOT_TIMEOUT_MS}ms. stderr: ${stderr.join('').slice(-2000)}`,
+            ),
+          );
+        }, BOOT_TIMEOUT_MS);
+        child.once('message', (message) => {
+          clearTimeout(timer);
+          if ((message as { ready?: boolean }).ready) {
+            resolve();
+          } else {
+            reject(
+              new Error(
+                `[${options.name}] failed to initialize: ${(message as { error?: { message?: string } }).error?.message ?? 'no ready signal'}`,
+              ),
+            );
+          }
+        });
+        child.once('exit', () => {
+          clearTimeout(timer);
+          reject(
+            new Error(
+              `[${options.name}] exited during boot. stderr: ${stderr.join('').slice(-2000)}`,
+            ),
+          );
+        });
       });
-      child.once('exit', () => {
-        clearTimeout(timer);
-        reject(
-          new Error(
-            `[${options.name}] exited during boot. stderr: ${stderr.join('').slice(-2000)}`,
-          ),
-        );
-      });
-    });
+    } catch (error) {
+      /**
+       * A worker that never reported ready is still running, holding Mongo and Redis connections
+       * that would outlive this suite and interfere with the rest of the integration lane. Reap it
+       * before surfacing the boot failure.
+       */
+      await replica.kill();
+      throw error;
+    }
     return replica;
   }
 
@@ -286,7 +310,21 @@ describeWithRedis('MCP OAuth credential lifecycle across separate replica proces
       const readA = replicaA.send<TokenOutcome>('getTokens');
       const readB = replicaB.send<TokenOutcome>('getTokens');
 
+      /**
+       * Establish the overlap before releasing anything. Waiting only for a provider hit would let
+       * a slow peer arrive after the winner had already persisted, read a fresh credential, and
+       * never contend: the redemption count would still be 1 and the assertion would pass while
+       * proving nothing. Both replicas must have entered the refresh path on an expired credential.
+       */
       await waitFor(() => refreshGrants() >= 1, 'the first replica to reach the provider');
+      await waitFor(
+        () => replicaA.progress.includes('entered-refresh-path'),
+        'replica A to enter the refresh path',
+      );
+      await waitFor(
+        () => replicaB.progress.includes('entered-refresh-path'),
+        'replica B to enter the refresh path',
+      );
       /** The peer must wait for the winner, not start a second redemption of the same token. */
       await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
       expect(refreshGrants()).toBe(1);
@@ -296,6 +334,15 @@ describeWithRedis('MCP OAuth credential lifecycle across separate replica proces
 
       expect(outcomeA.obtained).toBe(true);
       expect(outcomeB.obtained).toBe(true);
+      /** Both saw an expired credential, so neither read was a cache hit on a fresh token. */
+      expect(outcomeA.expiredAtEntry).toBe(true);
+      expect(outcomeB.expiredAtEntry).toBe(true);
+      /**
+       * `getTokens` reports which side each replica took. Exactly one redeemed and the other
+       * adopted what it published: that pair is the coordination itself, and it cannot be produced
+       * by a replica that merely arrived late and loaded an already-valid credential.
+       */
+      expect([outcomeA.role, outcomeB.role].sort()).toEqual(['adopted', 'refreshed']);
       /** Both replicas hold a credential the resource server accepts. */
       expect(outcomeA.resourceStatus).toBe(200);
       expect(outcomeB.resourceStatus).toBe(200);
@@ -340,6 +387,14 @@ describeWithRedis('MCP OAuth credential lifecycle across separate replica proces
        * while the first response is still open. If this ever stops happening, the coordinated
        * assertion is no longer evidence of coordination.
        */
+      await waitFor(
+        () => replicaA.progress.includes('entered-refresh-path'),
+        'replica A to enter the refresh path',
+      );
+      await waitFor(
+        () => replicaB.progress.includes('entered-refresh-path'),
+        'replica B to enter the refresh path',
+      );
       await waitFor(
         () => refreshGrants() >= 2,
         'both uncoordinated replicas to reach the provider',
