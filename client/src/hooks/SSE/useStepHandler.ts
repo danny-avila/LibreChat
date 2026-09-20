@@ -79,6 +79,7 @@ type MessageDeltaUpdate = {
   text: string;
   tool_call_ids?: string[];
   phase?: 'commentary' | 'final_answer';
+  native_media?: { continuationRef: string };
 };
 
 type ReasoningDeltaUpdate = { type: ContentTypes.THINK; think: string };
@@ -573,10 +574,14 @@ export default function useStepHandler({
       const currentContent = updatedContent[index] as MessageDeltaUpdate;
       const incomingContent = contentPart as MessageDeltaUpdate;
       const phase = incomingContent.phase ?? currentContent.phase;
+      const continuationRef =
+        incomingContent.native_media?.continuationRef ??
+        currentContent.native_media?.continuationRef;
       const update: MessageDeltaUpdate = {
         type: ContentTypes.TEXT,
         text: (currentContent.text || '') + incomingContent.text,
         ...(phase != null && { phase }),
+        ...(continuationRef != null && { native_media: { continuationRef } }),
       };
 
       if ('tool_call_ids' in contentPart && contentPart.tool_call_ids != null) {
@@ -607,6 +612,18 @@ export default function useStepHandler({
       };
 
       updatedContent[index] = update;
+    } else if (
+      contentType === ContentTypes.IMAGE_FILE &&
+      'image_file' in contentPart &&
+      contentPart.image_file != null
+    ) {
+      updatedContent[index] = {
+        type: ContentTypes.IMAGE_FILE,
+        image_file: contentPart.image_file,
+        ...(typeof contentPart.native_media?.continuationRef === 'string' && {
+          native_media: { continuationRef: contentPart.native_media.continuationRef },
+        }),
+      };
     } else if (contentType === ContentTypes.IMAGE_URL && 'image_url' in contentPart) {
       const currentContent = updatedContent[index] as {
         type: ContentTypes.IMAGE_URL;
