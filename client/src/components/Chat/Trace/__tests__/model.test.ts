@@ -246,6 +246,103 @@ describe('buildTraceModel', () => {
     expect(model.turns[0].errorCount).toBe(1);
   });
 
+  it('totals cost per step and per response under the same rule as the whole trace', () => {
+    const model = buildTraceModel([
+      record({ id: 'llm-1', kind: 'generation', cost: 0.01, startTime: at(0) }),
+      record({ id: 'tool', kind: 'tool', cost: 0.002, startTime: at(100) }),
+      record({ id: 'llm-2', kind: 'generation', startTime: at(1000) }),
+      record({
+        id: 'other',
+        messageId: 'response-2',
+        kind: 'generation',
+        cost: 0.5,
+        startTime: at(5000),
+      }),
+      record({
+        id: 'other-title',
+        messageId: 'response-2',
+        traceId: 'title',
+        origin: 'title',
+        kind: 'generation',
+        cost: 0.001,
+        startTime: at(5100),
+      }),
+    ]);
+    const [first, second] = model.turns;
+    const stepCosts = (turn: typeof first) =>
+      turn.stepKeys.map((key) => model.steps.get(key)?.cost);
+
+    expect(stepCosts(first)).toEqual([expect.closeTo(0.012), undefined]);
+    /** One unpriced model call leaves its step, its response and the trace without a total. */
+    expect(first.cost).toBeUndefined();
+    expect(model.summary.cost).toBeUndefined();
+    /** A response's total counts its title run, which its own steps do not. */
+    expect(stepCosts(second)).toEqual([expect.closeTo(0.5), expect.closeTo(0.001)]);
+    expect(second.cost).toBeCloseTo(0.501);
+  });
+
+  it('gives no cost to a response the record limit cut, whose loaded records are not all it spent', () => {
+    const model = buildTraceModel([
+      record({ id: 'llm', parentId: 'not-loaded', kind: 'generation', cost: 0.2 }),
+      record({ id: 'whole', messageId: 'response-2', kind: 'generation', cost: 0.5 }),
+    ]);
+    const [cut, whole] = model.turns;
+
+    expect(cut.split).toBe(true);
+    expect(cut.cost).toBeUndefined();
+    expect(model.steps.get(cut.stepKeys[0])?.cost).toBeCloseTo(0.2);
+    expect(whole.cost).toBeCloseTo(0.5);
+  });
+
+  it('gives the oldest loaded response no cost while older records remain, parents intact or not', () => {
+    /** A page that ended between a response's traces: its title run loaded, its own run not. */
+    const records = [
+      record({
+        id: 'title',
+        traceId: 'title-trace',
+        origin: 'title',
+        kind: 'generation',
+        cost: 0.001,
+      }),
+      record({
+        id: 'newer',
+        messageId: 'response-2',
+        kind: 'generation',
+        cost: 0.5,
+        startTime: at(9000),
+      }),
+    ];
+    const paging = buildTraceModel(records, 'simple', true);
+    const settled = buildTraceModel(records, 'simple', false);
+
+    expect(paging.turns[0].split).toBe(false);
+    expect(paging.turns.map((turn) => turn.cost)).toEqual([undefined, expect.closeTo(0.5)]);
+    expect(settled.turns.map((turn) => turn.cost)).toEqual([
+      expect.closeTo(0.001),
+      expect.closeTo(0.5),
+    ]);
+  });
+
+  it('counts what a step spent in records the simple mode rolls out of sight', () => {
+    const records = [
+      record({ id: 'tool', kind: 'tool', cost: 0.01, startTime: at(0) }),
+      record({ id: 'hidden-span', parentId: 'tool', cost: 0.04, startTime: at(10) }),
+      record({
+        id: 'nested-llm',
+        parentId: 'hidden-span',
+        kind: 'generation',
+        cost: 0.1,
+        startTime: at(20),
+      }),
+    ];
+    for (const mode of ['simple', 'full'] as const) {
+      const model = buildTraceModel(records, mode);
+      expect(model.nodes.get('hidden-span')?.shown).toBe(mode === 'full');
+      expect(model.steps.get(model.turns[0].stepKeys[0])?.cost).toBeCloseTo(0.15);
+      expect(model.turns[0].cost).toBeCloseTo(0.15);
+    }
+  });
+
   it('withholds the cost total when any model call has no price, with or without usage', () => {
     const priced = record({ id: 'priced', kind: 'generation', usage: { total: 100 }, cost: 0.02 });
     const withUsage = buildTraceModel([

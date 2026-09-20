@@ -8,6 +8,26 @@ export type TraceScale = 'sequence' | 'time';
 
 export type TraceSpan = { start: number; end: number };
 
+/**
+ * Spend over a set of records. A total that silently skips a model call without a price, with or
+ * without usage, would under-report, so `costOf` gives one only when every model call has a price.
+ */
+type Spend = { cost: number; priced: number; unpriced: number };
+
+const noSpend = (): Spend => ({ cost: 0, priced: 0, unpriced: 0 });
+
+function spendOn(spend: Spend, record: TTraceRecord): void {
+  if (record.cost != null) {
+    spend.priced++;
+    spend.cost += record.cost;
+  } else if (record.kind === 'generation') {
+    spend.unpriced++;
+  }
+}
+
+const costOf = (spend: Spend): number | undefined =>
+  spend.priced > 0 && spend.unpriced === 0 ? spend.cost : undefined;
+
 export type TraceWindow = TraceSpan;
 
 export type TraceNode = {
@@ -55,6 +75,8 @@ export type TraceStep = {
   toolCalls: number;
   /** Tool call counts by tool name, in first-call order. */
   toolNames: Map<string, number>;
+  /** What the step's records cost, when every model call among them has a price. */
+  cost?: number;
   sequence: TraceSpan;
 };
 
@@ -81,6 +103,9 @@ export type TraceTurn = {
   split: boolean;
   /** Saved agents that ran in the response, each with the record that stands for it. */
   agents: Array<{ agentId: string; recordId: string }>;
+  /** What the response's records cost, title and label calls included, when every model call has a
+   *  price and the whole response is loaded. */
+  cost?: number;
   sequence: TraceSpan;
 };
 
@@ -522,6 +547,7 @@ function groupSteps(
         toolNames: new Map(),
         sequence: EMPTY_SPAN,
       };
+      const spend = noSpend();
       const stack = [...rootIds].reverse();
       while (stack.length > 0) {
         const node = nodes.get(stack.pop() ?? '');
@@ -550,6 +576,21 @@ function groupSteps(
           stack.push(node.viewChildIds[i]);
         }
       }
+      /** Spend is the whole subtree's, not the listed projection's: the simple mode rolls spans
+       *  and events up out of sight, and any record may carry a cost. */
+      const below = [...rootIds];
+      const counted = new Set<string>();
+      while (below.length > 0) {
+        const id = below.pop() ?? '';
+        const node = nodes.get(id);
+        if (!node || counted.has(id)) {
+          continue;
+        }
+        counted.add(id);
+        spendOn(spend, node.record);
+        below.push(...node.childIds);
+      }
+      step.cost = costOf(spend);
       steps.set(key, step);
       turn.stepKeys.push(key);
     });
@@ -630,6 +671,8 @@ function numberSubtree(nodes: Map<string, TraceNode>, rootIds: string[], next: n
 export function buildTraceModel(
   records: readonly TTraceRecord[],
   mode: TraceMode = 'simple',
+  /** Older records are still to load, so the oldest loaded response may not be all there. */
+  hasOlder = false,
 ): TraceModel {
   const nodes = new Map<string, TraceNode>();
   const steps = new Map<string, TraceStep>();
@@ -654,9 +697,8 @@ export function buildTraceModel(
   const summary: TraceSummary = { ...EMPTY_SUMMARY };
   let start = Number.POSITIVE_INFINITY;
   let end = Number.NEGATIVE_INFINITY;
-  let cost = 0;
-  let pricedRecords = 0;
-  let unpricedRecords = 0;
+  const spend = noSpend();
+  const spendByTurn = new Map<string, Spend>();
 
   for (const [id, node] of nodes) {
     const { record } = node;
@@ -723,14 +765,14 @@ export function buildTraceModel(
       summary.inputTokens += input;
       summary.outputTokens += output;
       summary.totalTokens += total;
-      if (record.cost == null) {
-        unpricedRecords++;
-      }
     }
-    if (record.cost != null) {
-      pricedRecords++;
-      cost += record.cost;
+    spendOn(spend, record);
+    let turnSpend = spendByTurn.get(record.messageId);
+    if (turnSpend == null) {
+      turnSpend = noSpend();
+      spendByTurn.set(record.messageId, turnSpend);
     }
+    spendOn(turnSpend, record);
   }
 
   const compare = byStart(nodes);
@@ -804,10 +846,20 @@ export function buildTraceModel(
 
   summary.turns = turns.length;
   summary.duration = end - start;
-  /** A total that silently skips a model call without a price, with or without usage, would under-report spend, so there is none. */
-  if (pricedRecords > 0 && unpricedRecords === 0) {
-    summary.cost = cost;
+  const total = costOf(spend);
+  if (total != null) {
+    summary.cost = total;
   }
+  /**
+   * A response that is not all loaded holds only its newest records, and their sum is not its
+   * cost. A missing parent proves a cut (`split`), but a page can also end between a response's
+   * traces, its title run loaded and its own run not, with every parent in place. So while older
+   * records remain, the oldest loaded response is not known to be whole.
+   */
+  turns.forEach((turn, index) => {
+    const partial = turn.split || (hasOlder && index === 0);
+    turn.cost = partial ? undefined : costOf(spendByTurn.get(turn.messageId) ?? noSpend());
+  });
   return { mode, nodes, steps, turns, start, end, count: sequence, summary };
 }
 
