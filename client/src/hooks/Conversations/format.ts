@@ -3,6 +3,7 @@ import { ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
 import { getActivityLabelPart, getActivityLabelText } from '~/utils/activityLabels';
+import { splitThinkPartContent } from '~/utils/splitThinkTaggedContent';
 
 export type ExportFormat = 'text' | 'md';
 export type MessageContentExport = [] | [sender: string, text: string];
@@ -64,12 +65,6 @@ const exportLabelKeys = {
   agentUpdate: 'com_ui_export_agent_update',
   activityLabel: 'com_ui_export_activity_label',
 } satisfies Record<string, Parameters<LocalizeFunction>[0]>;
-
-const stripThinkTags = (reasoning: string): string =>
-  reasoning
-    .replace(/^<think>\s*/, '')
-    .replace(/\s*<\/think>$/, '')
-    .trim();
 
 const formatReasoning = ({
   reasoning,
@@ -136,11 +131,18 @@ export function formatMessageContent({
   }
 
   if (content.type === ContentTypes.THINK) {
-    const reasoning = stripThinkTags(getTextValue(content.think));
-    if (reasoning.trim().length === 0) {
+    const { thinking, text } = splitThinkPartContent(getTextValue(content.think));
+    const sections: string[] = [];
+    if (thinking.trim().length > 0) {
+      sections.push(formatReasoning({ reasoning: thinking, format, localize }));
+    }
+    if (text.trim().length > 0) {
+      sections.push(text);
+    }
+    if (sections.length === 0) {
       return [];
     }
-    return [sender, formatReasoning({ reasoning, format, localize })];
+    return [sender, sections.join('\n\n')];
   }
 
   if (content.type === ContentTypes.TEXT_DELTA) {

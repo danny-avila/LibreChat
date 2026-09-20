@@ -19,13 +19,8 @@ import { showThinkingAtom } from '~/store/showThinking';
 import { fontSizeAtom } from '~/store/fontSize';
 import { useMessageContext } from '~/Providers';
 import { ROW_GLYPH_SLOT } from '../rows';
+import { stripThinkTags } from '~/utils/splitThinkTaggedContent';
 import { cn } from '~/utils';
-
-const stripThinkTags = (reasoning: string): string =>
-  reasoning
-    .replace(/^<think>\s*/, '')
-    .replace(/\s*<\/think>$/, '')
-    .trim();
 
 const PEEK_SENTENCES = 4;
 

@@ -156,8 +156,10 @@ jest.mock('../Parts', () => ({
   AttachmentGroup: ({ attachments }: { attachments?: TAttachment[] }) => (
     <div data-testid="attachment-group" data-count={attachments?.length ?? 0} />
   ),
-  ReasoningCompact: ({ isAfterTool }: { isAfterTool?: boolean }) => (
-    <div data-testid="compact-reasoning" data-after-tool={String(isAfterTool)} />
+  ReasoningCompact: ({ isAfterTool, reasoning }: { isAfterTool?: boolean; reasoning?: string }) => (
+    <div data-testid="compact-reasoning" data-after-tool={String(isAfterTool)}>
+      {reasoning}
+    </div>
   ),
 }));
 
@@ -489,6 +491,27 @@ describe('ToolCallGroup image hoisting', () => {
     fireEvent.click(screen.getByRole('button', { name: /^Ran 2 actions/ }));
 
     expect(screen.getByTestId('inner-0')).toBeInTheDocument();
+    expect(screen.getByTestId('inner-1')).toBeInTheDocument();
+  });
+
+  it('renders trailing </think> text outside the compact Thoughts row', () => {
+    const reasoningPart = {
+      type: ContentTypes.THINK,
+      [ContentTypes.THINK]: '<think>hidden plan</think>\n\nVisible answer',
+    } as TMessageContentParts;
+
+    renderGroup({
+      ...baseProps,
+      parts: [
+        { part: makePart('t1'), idx: 0 },
+        { part: reasoningPart, idx: 1 },
+      ],
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Fetch_image/ }));
+
+    expect(screen.getByTestId('compact-reasoning')).toHaveTextContent('hidden plan');
+    expect(screen.getByTestId('compact-reasoning')).not.toHaveTextContent('Visible answer');
     expect(screen.getByTestId('inner-1')).toBeInTheDocument();
   });
 
