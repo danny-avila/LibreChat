@@ -726,21 +726,18 @@ export class MCPTokenStorage {
 
       let accessTokenExpiry: Date;
       let expiresInSeconds: number;
-      /**
-       * Whether the response itself stated this credential's lifetime. A stated lifetime is
-       * persisted as it stands, including when it has already elapsed, because substituting
-       * `defaultTTL` would record a dead credential as valid for a year and leave `getTokens`
-       * unable to refresh it until the resource server rejects a request. Unlike a JWT `exp`,
-       * which the provider's clock produces, these values are measured against our own clock,
-       * so an elapsed lifetime here is not clock skew.
-       */
-      let lifetimeIsStated = true;
-      if ('expires_at' in tokens && tokens.expires_at) {
+      // Zero is a stated lifetime, not an omitted one. Only unknown/invalid lifetimes
+      // use the default; never turn an elapsed known lifetime into a year of validity.
+      if (
+        'expires_at' in tokens &&
+        typeof tokens.expires_at === 'number' &&
+        Number.isFinite(tokens.expires_at)
+      ) {
         /** MCPOAuthTokens format - already has calculated expiry */
         logger.debug(`${logPrefix} Using expires_at: ${tokens.expires_at}`);
         accessTokenExpiry = new Date(tokens.expires_at);
         expiresInSeconds = Math.floor((accessTokenExpiry.getTime() - Date.now()) / 1000);
-      } else if (tokens.expires_in) {
+      } else if (typeof tokens.expires_in === 'number' && Number.isFinite(tokens.expires_in)) {
         /** Standard OAuthTokens format - use expires_in directly to avoid lossy Date round-trip */
         logger.debug(`${logPrefix} Using expires_in: ${tokens.expires_in}`);
         expiresInSeconds = tokens.expires_in;
@@ -760,22 +757,20 @@ export class MCPTokenStorage {
           expiresInSeconds = Math.floor((jwtExpiryMs - Date.now()) / 1000);
         } else {
           logger.debug(`${logPrefix} No expiry provided, using default`);
-          lifetimeIsStated = false;
           expiresInSeconds = defaultTTL;
           accessTokenExpiry = new Date(Date.now() + defaultTTL * 1000);
         }
       }
 
-      logger.debug(`${logPrefix} Calculated expiry date: ${accessTokenExpiry.toISOString()}`);
-
       if (isNaN(accessTokenExpiry.getTime())) {
         logger.error(`${logPrefix} Invalid expiry date calculated, using default`);
-        lifetimeIsStated = false;
         accessTokenExpiry = new Date(Date.now() + defaultTTL * 1000);
         expiresInSeconds = defaultTTL;
       }
 
-      if (lifetimeIsStated && expiresInSeconds <= 0) {
+      logger.debug(`${logPrefix} Calculated expiry date: ${accessTokenExpiry.toISOString()}`);
+
+      if (expiresInSeconds <= 0) {
         logger.info(
           `${logPrefix} Stored access token is already expired (expires_at: ${accessTokenExpiry.toISOString()}); the next read refreshes it`,
         );
@@ -786,7 +781,7 @@ export class MCPTokenStorage {
         type: 'mcp_oauth',
         identifier,
         token: encryptedAccessToken,
-        expiresIn: lifetimeIsStated ? expiresInSeconds : defaultTTL,
+        expiresIn: expiresInSeconds,
         metadata: tokenMetadata,
       };
 

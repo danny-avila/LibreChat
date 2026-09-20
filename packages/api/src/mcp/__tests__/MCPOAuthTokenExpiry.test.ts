@@ -81,8 +81,21 @@ describe('Persisted access-token expiry', () => {
   const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60;
 
   /** Stores one provider response and reports the lifetime the access record actually carries. */
-  async function persistedLifetimeSeconds(tokens: Record<string, unknown>): Promise<number> {
+  async function persistedLifetimeSeconds(
+    tokens: Record<string, unknown>,
+    updateExisting = false,
+  ): Promise<number> {
     const tokenStore = new InMemoryTokenStore();
+    if (updateExisting) {
+      await tokenStore.createToken({
+        userId: 'u1',
+        type: 'mcp_oauth',
+        identifier: 'mcp:test-srv',
+        token: 'enc:previous-token',
+        expiresIn: 3600,
+        metadata: tokenMetadata,
+      });
+    }
     await MCPTokenStorage.storeTokens({
       userId: 'u1',
       serverName: 'test-srv',
@@ -100,6 +113,46 @@ describe('Persisted access-token expiry', () => {
     });
     return Math.round((stored!.expiresAt.getTime() - Date.now()) / 1000);
   }
+
+  it.each([{ expires_in: 0 }, { expires_at: 0 }])(
+    'preserves an explicitly zero lifetime: %j',
+    async (expiry) => {
+      await expect(
+        persistedLifetimeSeconds({
+          access_token: 'opaque-zero-lifetime',
+          token_type: 'Bearer',
+          ...expiry,
+        }),
+      ).resolves.toBeLessThanOrEqual(0);
+    },
+  );
+
+  it('updates an existing access record to expire immediately for expires_in zero', async () => {
+    await expect(
+      persistedLifetimeSeconds(
+        {
+          access_token: 'replacement',
+          token_type: 'Bearer',
+          expires_in: 0,
+        },
+        true,
+      ),
+    ).resolves.toBeLessThanOrEqual(0);
+  });
+
+  it.each([NaN, Infinity])(
+    'ignores non-finite expires_at %s in favor of a finite lifetime',
+    async (expires_at) => {
+      await expect(
+        persistedLifetimeSeconds({
+          access_token: 'opaque',
+          token_type: 'Bearer',
+          expires_at,
+          expires_in: 3600,
+        }),
+      ).resolves.toBe(3600);
+    },
+  );
 
   it('keeps a disclosed lifetime', async () => {
     await expect(

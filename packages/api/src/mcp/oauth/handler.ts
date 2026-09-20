@@ -1353,7 +1353,10 @@ export class MCPOAuthHandler {
         ...tokens,
         credential_set_id: randomBytes(16).toString('hex'),
         obtained_at: Date.now(),
-        expires_at: tokens.expires_in ? Date.now() + tokens.expires_in * 1000 : undefined,
+        expires_at:
+          typeof tokens.expires_in === 'number' && Number.isFinite(tokens.expires_in)
+            ? Date.now() + tokens.expires_in * 1000
+            : undefined,
       };
 
       /**
@@ -1711,7 +1714,9 @@ export class MCPOAuthHandler {
       ...tokens,
       obtained_at: Date.now(),
       expires_at:
-        typeof tokens.expires_in === 'number' ? Date.now() + tokens.expires_in * 1000 : undefined,
+        typeof tokens.expires_in === 'number' && Number.isFinite(tokens.expires_in)
+          ? Date.now() + tokens.expires_in * 1000
+          : undefined,
     } as MCPOAuthTokens;
   }
 
