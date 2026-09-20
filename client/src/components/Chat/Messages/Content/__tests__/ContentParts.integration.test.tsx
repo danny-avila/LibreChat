@@ -1289,9 +1289,33 @@ describe('ContentParts — live activity fold', () => {
     expect(screen.getByTestId('compact-reasoning')).toBeInTheDocument();
   });
 
-  it('leaves reasoning that has not reached a tool call on its own row', () => {
+  it('holds the block at one row from a thought through the calls that follow it', () => {
+    /** A reasoning model thinks, then calls. Rendering the thought as its own
+     *  row gave it a multi-line peek that the first call then snapped shut — a
+     *  jump up and back down on every step. The row count must not move. */
+    const thought = {
+      type: ContentTypes.THINK,
+      think: 'Planning the lookup.',
+    } as unknown as TMessageContentParts;
+    const { rerender } = renderContentParts({ ...liveProps, content: [thought] });
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(liveHeader()).toHaveTextContent('Planning the lookup.');
+    expect(screen.queryByTestId('reasoning')).toBeNull();
+    expect(screen.getByTestId('live-phase-thinking')).toBeInTheDocument();
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts {...liveProps} content={[thought, intentCall('t1', 'Reading the file')]} />
+      </RecoilRoot>,
+    );
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(screen.queryByTestId('reasoning')).toBeNull();
+  });
+
+  it('keeps a thought on its own open row for a reader who opens thinking by default', () => {
     renderContentParts({
       ...liveProps,
+      showThinking: true,
       content: [
         { type: ContentTypes.THINK, think: 'Planning.' } as unknown as TMessageContentParts,
       ],

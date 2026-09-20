@@ -1,7 +1,7 @@
 import { memo, useId, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
-import { Check, ChevronDown, TriangleAlert } from 'lucide-react';
+import { Check, Lightbulb, ChevronDown, TriangleAlert } from 'lucide-react';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import type { CSSProperties, ReactNode } from 'react';
 import {
@@ -313,16 +313,28 @@ function LivePhaseHeader({
 
   return (
     <>
-      <span className={ROW_GLYPH_SLOT} aria-hidden="true">
-        <StackedToolIcons
-          toolNames={iconNames}
-          mcpIconMap={mcpIconMap}
-          maxIcons={SPAN_ICONS}
-          sourceDomains={sourceDomains}
-          status={getOutcomeStatus(activity.outcome)}
-          isAnimating
-        />
-      </span>
+      {iconNames.length === 0 ? (
+        /** A span that is only reasoning so far has no tool to show; it takes
+         *  the glyph the reasoning row itself uses. */
+        <span
+          className={cn(ROW_GLYPH_SLOT, 'animate-pulse text-text-primary')}
+          aria-hidden="true"
+          data-testid="live-phase-thinking"
+        >
+          <Lightbulb size={14} />
+        </span>
+      ) : (
+        <span className={ROW_GLYPH_SLOT} aria-hidden="true">
+          <StackedToolIcons
+            toolNames={iconNames}
+            mcpIconMap={mcpIconMap}
+            maxIcons={SPAN_ICONS}
+            sourceDomains={sourceDomains}
+            status={getOutcomeStatus(activity.outcome)}
+            isAnimating
+          />
+        </span>
+      )}
       <PhaseLabel
         text={painted.text}
         source={painted.source}
