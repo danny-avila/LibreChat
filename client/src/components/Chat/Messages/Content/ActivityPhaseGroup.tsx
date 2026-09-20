@@ -11,13 +11,15 @@ import {
   scheduleMessageContentLayoutReconcile,
   EXPAND_TRANSITION,
 } from '~/hooks';
+import { getLiveActivity, getSpanIconNames, LIVE_ACTIVITY_THROTTLE_MS } from './live';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
-import { getLiveActivity, LIVE_ACTIVITY_THROTTLE_MS } from './live';
 import useThrottledValue from '~/hooks/Messages/useThrottledValue';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { getActivityLabelText } from '~/utils/activityLabels';
 import { ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from './rows';
 import { StackedToolIcons } from './ToolOutput';
+import { useSearchContext } from '~/Providers';
+import { getSourceDomains } from './sources';
 import { mapAttachments } from '~/utils/map';
 import SearchVerticals from './verticals';
 import { AttachmentGroup } from './Parts';
@@ -189,6 +191,48 @@ const PhaseLabel = memo(function PhaseLabel({
   );
 });
 
+/** Glyphs a span header shows: up to this many, of which at most `SPAN_SITES`
+ *  are the sites a web search read. */
+const SPAN_ICONS = 4;
+const SPAN_SITES = 3;
+
+/**
+ * The settled header's glyph: what the span USED, not a bare check. A header
+ * stands for the rows it hides, so it carries the most specific glyphs they
+ * show — tool and MCP server icons, and the sites a web search read — and the
+ * row keeps the icons it had while live instead of trading them for a tick.
+ * Its own component so only a card that was handed its parts pays for the MCP
+ * lookup. A failed phase keeps the warning glyph: status outranks identity.
+ */
+function SpanGlyph({
+  parts,
+  attachments,
+}: {
+  parts: ReadonlyArray<TMessageContentParts | undefined>;
+  attachments?: TAttachment[];
+}) {
+  const mcpIconMap = useMCPIconMap();
+  const iconNames = useMemo(() => getSpanIconNames(parts), [parts]);
+  const { searchResults } = useSearchContext();
+  const sourceDomains = useMemo(
+    () => getSourceDomains(attachments, SPAN_SITES, searchResults),
+    [attachments, searchResults],
+  );
+  if (iconNames.length === 0) {
+    return <PhaseGlyph failed={false} />;
+  }
+  return (
+    <span className={cn(ROW_GLYPH_SLOT, 'text-text-secondary')} aria-hidden="true">
+      <StackedToolIcons
+        toolNames={iconNames}
+        mcpIconMap={mcpIconMap}
+        maxIcons={SPAN_ICONS}
+        sourceDomains={sourceDomains}
+      />
+    </span>
+  );
+}
+
 /**
  * The header of a span the run is still writing: the span's tool icons,
  * pulsing, in the slot the settled check takes over, beside the newest line.
@@ -226,6 +270,11 @@ function LivePhaseHeader({
   const painted = useThrottledValue(line, LIVE_ACTIVITY_THROTTLE_MS);
   const iconKey = activity.iconNames.join('|');
   const iconNames = useMemo(() => (iconKey ? iconKey.split('|') : []), [iconKey]);
+  const { searchResults } = useSearchContext();
+  const sourceDomains = useMemo(
+    () => getSourceDomains(attachments, SPAN_SITES, searchResults),
+    [attachments, searchResults],
+  );
 
   /** The span's verdict, separate from its newest line: an earlier call can
    *  fail while a later one runs, and the line alone would never say so. The
@@ -268,7 +317,13 @@ function LivePhaseHeader({
   return (
     <>
       <span className={ROW_GLYPH_SLOT} aria-hidden="true">
-        <StackedToolIcons toolNames={iconNames} mcpIconMap={mcpIconMap} maxIcons={4} isAnimating />
+        <StackedToolIcons
+          toolNames={iconNames}
+          mcpIconMap={mcpIconMap}
+          maxIcons={SPAN_ICONS}
+          sourceDomains={sourceDomains}
+          isAnimating
+        />
       </span>
       <PhaseLabel
         text={painted.text}
@@ -300,6 +355,7 @@ export default function ActivityPhaseGroup({
   animateEntrance = false,
   hasPendingApproval = false,
   liveParts,
+  spanParts,
 }: {
   labelPart: ActivityPhasePart;
   children: ReactNode;
@@ -318,6 +374,8 @@ export default function ActivityPhaseGroup({
    *  reads the newest activity out of them — throttled — instead of a
    *  generated label, and renders as a live row rather than a settled one. */
   liveParts?: ReadonlyArray<TMessageContentParts | undefined>;
+  /** The span's parts once settled, for the header's icon stack. */
+  spanParts?: ReadonlyArray<TMessageContentParts | undefined>;
 }) {
   const isLive = liveParts != null;
   const label = getActivityLabelText(labelPart);
@@ -533,7 +591,11 @@ export default function ActivityPhaseGroup({
               />
             ) : (
               <>
-                <PhaseGlyph failed={hasFailure} />
+                {spanParts != null && !hasFailure ? (
+                  <SpanGlyph parts={spanParts} attachments={attachments} />
+                ) : (
+                  <PhaseGlyph failed={hasFailure} />
+                )}
                 <PhaseLabel text={label} failed={hasFailure} animate={smoothStreaming} />
               </>
             )}

@@ -200,6 +200,28 @@ const MAX_LIVE_ICONS = 4;
  *  tools of the recent stretch, which is also what the line beside it names. */
 const LIVE_ICON_WINDOW = 24;
 
+/**
+ * Tool names for a span's icon stack, oldest first, read from a fixed window
+ * behind the tail so the cost does not grow with the run.
+ */
+export function getSpanIconNames(parts: ReadonlyArray<TMessageContentParts | undefined>): string[] {
+  const icons = new Set<string>();
+  const floor = Math.max(0, parts.length - LIVE_ICON_WINDOW);
+  for (let position = parts.length - 1; position >= floor; position -= 1) {
+    if (icons.size === MAX_LIVE_ICONS) {
+      break;
+    }
+    const part = parts[position];
+    const toolCall = part == null ? undefined : getStandardToolCall(part);
+    if (toolCall == null) {
+      continue;
+    }
+    const name = toolCall.name ?? '';
+    icons.add(isBashProgrammaticToolCall(name, toolCall.args) ? Tools.bash_tool : name);
+  }
+  return Array.from(icons).reverse();
+}
+
 function newestLine(
   parts: ReadonlyArray<TMessageContentParts | undefined>,
   localize: Localize,
@@ -273,23 +295,9 @@ export function getLiveActivity(
   attachmentsById?: Record<string, TAttachment[] | undefined>,
 ): LiveActivity {
   const span = summarizeSpan(parts, attachmentsById);
-  const icons = new Set<string>();
-  const floor = Math.max(0, parts.length - LIVE_ICON_WINDOW);
-  for (let position = parts.length - 1; position >= floor; position -= 1) {
-    if (icons.size === MAX_LIVE_ICONS) {
-      break;
-    }
-    const part = parts[position];
-    const toolCall = part == null ? undefined : getStandardToolCall(part);
-    if (toolCall == null) {
-      continue;
-    }
-    const name = toolCall.name ?? '';
-    icons.add(isBashProgrammaticToolCall(name, toolCall.args) ? Tools.bash_tool : name);
-  }
   return {
     ...newestLine(parts, localize, serverNames, span),
     outcome: { failed: span.failed, cancelled: span.cancelled },
-    iconNames: Array.from(icons).reverse(),
+    iconNames: getSpanIconNames(parts),
   };
 }

@@ -329,6 +329,75 @@ describe('live fold parity with the cards it hides', () => {
     expect(screen.getByTestId('activity-phase-announcer')).toBeEmptyDOMElement();
   });
 
+  describe('glyphs the collapsed header surfaces', () => {
+    const searchAttachment = {
+      type: Tools.web_search,
+      toolCallId: 't1',
+      messageId: 'm1',
+      [Tools.web_search]: {
+        turn: 0,
+        organic: [
+          { link: 'https://www.youtube.com/watch?v=1', title: 'a' },
+          { link: 'https://www.cnbc.com/story', title: 'b' },
+          { link: 'https://www.cnbc.com/other', title: 'c' },
+        ],
+      },
+    } as unknown as TAttachment;
+    const search = toPart({ name: Tools.web_search, output: 'results' });
+    const sites = (root: HTMLElement) =>
+      Array.from(root.querySelectorAll('img')).map((image) => image.getAttribute('alt'));
+
+    it('shows the sites a search read on the live row, one per domain, with no card mounted', () => {
+      mount([search], [searchAttachment], true);
+      const button = within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0];
+
+      expect(sites(button)).toEqual(['youtube.com', 'cnbc.com']);
+      expect(screen.queryByTestId('tool-call')).toBeNull();
+    });
+
+    it('keeps them on the settled summary instead of trading them for a check', () => {
+      const summary = {
+        type: ContentTypes.ACTIVITY_LABEL,
+        [ContentTypes.ACTIVITY_LABEL]: 'Checked the announcement',
+        activity_label_type: 'phase',
+        activity_start_index: 0,
+        activity_end_index: 1,
+        activity_count: 1,
+        pending: false,
+      } as unknown as TMessageContentParts;
+      mount([search, summary], [searchAttachment], true);
+      const button = screen.getByRole('button', { name: 'Checked the announcement' });
+
+      expect(sites(button)).toEqual(['youtube.com', 'cnbc.com']);
+    });
+
+    it('shows them on an unfolded group header too', () => {
+      const second = toPart({ name: Tools.web_search, output: 'results' }, 't2');
+      const view = mount([search, second], [searchAttachment], false);
+      const header = within(view.container).getAllByRole('button')[0];
+
+      expect(sites(header)).toEqual(['youtube.com', 'cnbc.com']);
+    });
+
+    it('keeps the warning glyph on a failed summary: status outranks identity', () => {
+      const failed = {
+        type: ContentTypes.ACTIVITY_LABEL,
+        [ContentTypes.ACTIVITY_LABEL]: 'Could not reach the site',
+        activity_label_type: 'phase',
+        activity_start_index: 0,
+        activity_end_index: 1,
+        activity_count: 1,
+        status: 'failed',
+        pending: false,
+      } as unknown as TMessageContentParts;
+      mount([search, failed], [searchAttachment], true);
+      const button = screen.getByRole('button', { name: 'Could not reach the site' });
+
+      expect(sites(button)).toEqual([]);
+      expect(button.querySelector('.lucide-triangle-alert')).not.toBeNull();
+    });
+  });
+
   it('keeps an earlier failure on the row while a newer call is the line', () => {
     mount(
       [

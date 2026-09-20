@@ -20,7 +20,9 @@ import { ToolAuthWarning, ToolAuthWarningContext } from './auth';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { AttachmentGroup, ReasoningCompact } from './Parts';
 import { StackedToolIcons } from './ToolOutput';
+import { useSearchContext } from '~/Providers';
 import { mapAttachments } from '~/utils/map';
+import { getSourceDomains } from './sources';
 import SearchVerticals from './verticals';
 import { getToolMeta } from './outcome';
 import { ROW_GLYPH_SLOT } from './rows';
@@ -39,6 +41,9 @@ interface ToolCallGroupProps {
   ) => React.ReactNode;
   lastContentIdx: number;
   groupAttachments?: TAttachment[];
+  /** The group's attachments for the header's glyphs only. Present even when
+   *  a parent phase hoists the files and `groupAttachments` is withheld. */
+  sourceAttachments?: TAttachment[];
   initialExpansionState?: ToolCallGroupExpansionState;
   onExpansionChange?: (state: ToolCallGroupExpansionState) => void;
   /** Activity-label part terminating this block; when it carries generated
@@ -67,6 +72,7 @@ export default function ToolCallGroup({
   renderPart,
   lastContentIdx,
   groupAttachments,
+  sourceAttachments,
   initialExpansionState,
   onExpansionChange,
   labelPart,
@@ -116,6 +122,11 @@ export default function ToolCallGroup({
   const allCompleted = useMemo(
     () => labelSettled || toolMetadata.every((m) => m.hasOutput === true),
     [toolMetadata, labelSettled],
+  );
+  const { searchResults } = useSearchContext();
+  const sourceDomains = useMemo(
+    () => getSourceDomains(sourceAttachments ?? groupAttachments, 3, searchResults),
+    [sourceAttachments, groupAttachments, searchResults],
   );
   const iconToolNames = useMemo(() => toolMetadata.map((m) => m.iconName), [toolMetadata]);
 
@@ -480,6 +491,7 @@ export default function ToolCallGroup({
               toolNames={iconToolNames}
               mcpIconMap={mcpIconMap}
               maxIcons={4}
+              sourceDomains={sourceDomains}
               isAnimating={isGroupLive}
             />
           </div>

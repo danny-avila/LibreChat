@@ -682,16 +682,21 @@ const ContentPartsBody = memo(function ContentPartsBody({
       const occurrence =
         resolvedToolGroupOccurrences.get(getToolGroupAnchorIndex(group.parts)) ?? 1;
       const groupId = occurrence === 1 ? baseGroupId : `${baseGroupId}:occurrence:${occurrence}`;
+      /** Collected even when a parent phase hoists the files: the header still
+       *  reads them for the sites a web search visited. */
       const seenAttachments = new Set<TAttachment>();
-      if (!hideAttachments) {
-        for (const { part } of group.parts) {
-          for (const attachment of attachmentsForPart(part) ?? []) {
-            seenAttachments.add(attachment);
-          }
+      for (const { part } of group.parts) {
+        for (const attachment of attachmentsForPart(part) ?? []) {
+          seenAttachments.add(attachment);
         }
       }
       const groupAttachments = hideAttachments ? undefined : Array.from(seenAttachments);
-      return { ...group, groupId, groupAttachments };
+      return {
+        ...group,
+        groupId,
+        groupAttachments,
+        sourceAttachments: Array.from(seenAttachments),
+      };
     });
   }, [
     sequentialParts,
@@ -950,6 +955,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
                 attachments={phaseAttachments}
                 hasPendingApproval={hasPendingApproval}
                 liveParts={live ? segment.content : undefined}
+                spanParts={segment.hasContent ? segment.content : undefined}
                 animateEntrance={
                   /** Never for a synthesized card. The entrance mounts a card
                    *  OPEN and folds it shut, and this component remounts
@@ -1096,6 +1102,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
               renderPart={renderGroupedPart}
               lastContentIdx={lastContentIdx}
               groupAttachments={group.groupAttachments}
+              sourceAttachments={group.sourceAttachments}
               initialExpansionState={expansionState.get(groupId)}
               showThinking={showThinking}
               onExpansionChange={(state) => handleGroupExpansionChange(groupId, state)}
