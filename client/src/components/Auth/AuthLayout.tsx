@@ -39,7 +39,11 @@ function AuthLayout({
    *  which the startup payload does not carry. The sentence is about
    *  continuing, which is what both screens do, and it names the same policies
    *  the footer bar linked, so a screen states them once. */
-  const statesConsent = (isRegister || isLogin) && hasPublishedPolicies(startupConfig);
+  const statesConsent =
+    (isRegister || isLogin) &&
+    !hasStartupConfigError &&
+    !isFetching &&
+    hasPublishedPolicies(startupConfig);
   /** Registration states it under its own submit button, where it is read
    *  before the account is created rather than below however many provider
    *  buttons a deployment configured. On the login screen those buttons are

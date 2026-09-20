@@ -29,6 +29,8 @@ const policies = {
 
 type Options = {
   pathname?: string;
+  isFetching?: boolean;
+  startupConfigError?: unknown;
   socialLoginEnabled?: boolean;
   /** What `socialLogins` lists, and whether the listed provider's own flag is
    *  set: a button needs both, not just the global switch. */
@@ -41,6 +43,8 @@ type Options = {
 
 function setup({
   pathname = 'register',
+  isFetching = false,
+  startupConfigError = null,
   socialLoginEnabled = false,
   providers,
   googleLoginEnabled,
@@ -68,9 +72,9 @@ function setup({
     <I18nextProvider i18n={i18n}>
       <AuthLayout
         startupConfig={startupConfig}
-        isFetching={false}
+        isFetching={isFetching}
         error={null}
-        startupConfigError={null}
+        startupConfigError={startupConfigError}
         header={'Create your account'}
         pathname={pathname}
       >
@@ -129,6 +133,27 @@ describe('AuthLayout legal placement', () => {
     expect(consent()).not.toBeInTheDocument();
     expect(footerBar()).not.toBeNull();
     expect(document.querySelector('[role="contentinfo"] a')).toBeNull();
+  });
+
+  /** The registration form, and with it the consent, renders only once the
+   *  config has loaded without error. The footer bar is what carries the
+   *  policies until then, so the screen is never left with neither. */
+  test('a screen still loading its config keeps the footer bar', () => {
+    setup({ pathname: 'register', isFetching: true, interfaceConfig: policies });
+
+    expect(consent()).not.toBeInTheDocument();
+    expect(footerBar()).not.toBeNull();
+  });
+
+  test('a screen whose config failed keeps the footer bar', () => {
+    setup({
+      pathname: 'register',
+      startupConfigError: new Error('config unavailable'),
+      interfaceConfig: policies,
+    });
+
+    expect(consent()).not.toBeInTheDocument();
+    expect(footerBar()).not.toBeNull();
   });
 
   test('a deployment with no policies keeps the footer bar it always had', () => {
