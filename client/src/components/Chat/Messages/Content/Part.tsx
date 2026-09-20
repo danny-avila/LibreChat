@@ -508,6 +508,9 @@ const Part = memo(function Part({
     }
   } else if (part.type === ContentTypes.IMAGE_FILE) {
     const imageFile = part[ContentTypes.IMAGE_FILE];
+    if (!imageFile) {
+      return null;
+    }
     if (imageFile.unavailable === 'not_transferred') {
       return (
         <p className="text-sm text-text-secondary" role="note">

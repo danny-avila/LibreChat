@@ -64,7 +64,15 @@ jest.mock('../ToolCall', () => ({
 
 jest.mock('../Image', () => ({
   __esModule: true,
-  default: () => <div data-testid="image" />,
+  default: ({
+    imagePath,
+    altText,
+    file,
+  }: {
+    imagePath: string;
+    altText: string;
+    file?: { file_id?: string };
+  }) => <img data-testid="image" src={imagePath} alt={altText} data-file-id={file?.file_id} />,
 }));
 
 jest.mock('~/utils', () => ({
@@ -87,6 +95,42 @@ const toolCallPart = (name: string, args = '{"code":"echo hi"}'): TMessageConten
   }) as unknown as TMessageContentParts;
 
 describe('Part tool renderer selection', () => {
+  it.each([undefined, null])(
+    'renders a streamed image after its pending payload %s arrives',
+    (payload) => {
+      const props = { isSubmitting: true, showCursor: true, isCreatedByUser: false };
+      const pending = { type: ContentTypes.IMAGE_FILE } as TMessageContentParts;
+      Object.assign(pending, { image_file: payload });
+      const { rerender } = render(<Part {...props} part={pending} />);
+      expect(screen.queryByTestId('image')).not.toBeInTheDocument();
+      expect(screen.queryByRole('note')).not.toBeInTheDocument();
+
+      const ready: TMessageContentParts = {
+        type: ContentTypes.IMAGE_FILE,
+        image_file: {
+          file_id: 'native-image',
+          filepath: '/images/owner/native.png',
+          filename: 'native.png',
+          width: 320,
+          height: 240,
+          bytes: 1024,
+          user: 'owner',
+          embedded: false,
+          object: 'file',
+          usage: 0,
+          type: 'image/png',
+        },
+      };
+      rerender(<Part {...props} part={ready} />);
+      expect(screen.getByRole('img', { name: 'native.png' })).toHaveAttribute(
+        'src',
+        '/images/owner/native.png',
+      );
+      expect(screen.getByTestId('image')).toHaveAttribute('data-file-id', 'native-image');
+      expect(screen.queryByRole('note')).not.toBeInTheDocument();
+    },
+  );
+
   it('explains unavailable imported images without fetching or offering the original file', () => {
     renderPart({
       type: ContentTypes.IMAGE_FILE,
