@@ -40,6 +40,8 @@ import {
   mediaSubmissionRequestSchema,
   mediaSubmissionReceiptSchema,
   mediaURLUploadResponseSchema,
+  mediaJobSchema,
+  mediaJobDiagnosticsResponseSchema,
 } from 'librechat-data-provider';
 import type {
   AppConfig,
@@ -468,7 +470,9 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       getUserById: async () => ({ role: 'USER' }),
       getRoleByName: async (role) => {
         roleReads++;
-        return { permissions: { MEDIA: { USE: true, CREATE: role !== 'READ_ONLY' } } };
+        return {
+          permissions: { MEDIA: { USE: role !== 'NO_MEDIA', CREATE: role !== 'READ_ONLY' } },
+        };
       },
       getAppConfig: async () => config,
       tenantContext: tenantStorage,
@@ -1415,6 +1419,78 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     expect(replay.body.jobId).toBe(retried.body.jobId);
     await request(app).post(`/api/media/jobs/${retried.body.jobId}/cancel`).expect(200);
     expect(posts).toBe(1);
+  });
+
+  it('loads bounded provider diagnostics only through the owner-scoped diagnostics endpoint', async () => {
+    const response = await submit('private-diagnostics');
+    const diagnostic = {
+      status: 400,
+      code: 'INVALID_ARGUMENT',
+      message: 'The reference video must use a supported resolution.',
+      requestId: 'provider-request-1',
+    };
+    await mongoose.models.MediaJob.updateOne(
+      { ...scope, jobId: response.body.jobId },
+      {
+        $set: {
+          phase: 'failed',
+          error: { code: 'provider_rejected' },
+          'provider.certainty': 'terminal',
+          'provider.recovery.diagnostic': diagnostic,
+        },
+      },
+    );
+    const read = jest.spyOn(repository, 'getMediaJobDiagnostics');
+    const publicJob = await request(app).get(`/api/media/jobs/${response.body.jobId}`).expect(200);
+    expect(mediaJobSchema.safeParse(publicJob.body).success).toBe(true);
+    expect(publicJob.body.error).toEqual({ code: 'provider_rejected' });
+    expect(JSON.stringify(publicJob.body)).not.toContain(diagnostic.message);
+    const thread = await request(app)
+      .get(`/api/media/threads/${response.body.threadId}`)
+      .expect(200);
+    expect(mediaThreadDetailSchema.safeParse(thread.body).success).toBe(true);
+    expect(JSON.stringify(thread.body)).not.toContain(diagnostic.message);
+    expect(read).not.toHaveBeenCalled();
+    const details = await request(app)
+      .get(`/api/media/jobs/${response.body.jobId}/diagnostics`)
+      .expect(200);
+    expect(mediaJobDiagnosticsResponseSchema.parse(details.body)).toEqual({ diagnostic });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenLastCalledWith(scope, response.body.jobId);
+    expect(posts).toBe(0);
+
+    const actors = [
+      { actor: undefined, status: 403 },
+      { actor: { id: scope.ownerId, role: 'NO_MEDIA' }, status: 403 },
+      { actor: { id: new mongoose.Types.ObjectId().toString(), role: 'USER' }, status: 404 },
+      { actor: { id: scope.ownerId, role: 'USER', tenantId: 'foreign-tenant' }, status: 404 },
+    ];
+    for (const { actor, status } of actors) {
+      const other = express();
+      other.use((req, _res, next) => {
+        if (actor) req.user = actor as Express.User;
+        next();
+      });
+      other.use('/api/media', runtime.router);
+      await request(other).get(`/api/media/jobs/${response.body.jobId}/diagnostics`).expect(status);
+    }
+    banned = true;
+    await request(app).get(`/api/media/jobs/${response.body.jobId}/diagnostics`).expect(403);
+    banned = false;
+    await repository.retireMediaThread(scope, response.body.threadId);
+    await request(app).get(`/api/media/jobs/${response.body.jobId}/diagnostics`).expect(404);
+  });
+
+  it('returns no provider diagnostics for legacy jobs or invalid stored details', async () => {
+    const response = await submit('legacy-diagnostics');
+    const endpoint = `/api/media/jobs/${response.body.jobId}/diagnostics`;
+    expect((await request(app).get(endpoint).expect(200)).body).toEqual({});
+    await mongoose.models.MediaJob.updateOne(
+      { ...scope, jobId: response.body.jobId },
+      { $set: { 'provider.recovery.diagnostic': { message: 'x'.repeat(8_193) } } },
+    );
+    expect((await request(app).get(endpoint).expect(200)).body).toEqual({});
+    await request(app).get('/api/media/jobs/missing/diagnostics').expect(404);
   });
 
   it('polls an existing video after repository recreation and media config removal without resubmission', async () => {

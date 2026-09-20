@@ -4,7 +4,12 @@ import type { MediaJobObservation, MediaStoredJob } from '@librechat/data-schema
 import type { MediaProviderContext, MediaProviderPart, MediaProviderResult } from './provider';
 import type { MediaServices, MediaServiceDependencies, MediaContext } from './service';
 import type { MediaLifecycleEvent } from './telemetry';
-import { getMediaTerminalRecovery, resolveMediaJobIntegration } from './recovery';
+import {
+  getMediaTerminalRecovery,
+  resolveMediaJobIntegration,
+  hasRejectedMediaSubmission,
+} from './recovery';
+import { mediaDiagnosticSecrets, sanitizeMediaProviderDiagnostic } from './diagnostics';
 import { restoreMediaOutputResult, publishMediaOutputs } from './worker/outputs';
 import { observeMedia, mediaJobEvent, withMediaAttempt } from './telemetry';
 import { createMediaDispatchGate, waitForMediaDrain } from './worker/drain';
@@ -90,6 +95,7 @@ export function createMediaWorker(
     const controller = new AbortController();
     controllers.add(controller);
     let context: MediaContext | undefined;
+    let providerSecrets: string[] = [];
     const recordSettlement = async (work: () => Promise<void>) => {
       const start = deps.now();
       try {
@@ -204,6 +210,12 @@ export function createMediaWorker(
     try {
       context = await deps.loadContext(fence().scope);
       controller.signal.throwIfAborted();
+      if (hasRejectedMediaSubmission(job)) {
+        const currentContext = context;
+        await recordSettlement(() => deps.accounting.release(job, currentContext));
+        await observe({ phase: 'failed', error: { code: 'provider_rejected' } });
+        return;
+      }
       const terminalRecovery = getMediaTerminalRecovery(job);
       if (terminalRecovery) {
         await observe({
@@ -222,6 +234,7 @@ export function createMediaWorker(
         await observe({
           phase: terminalRecovery.status,
           provider: { ...job.provider, certainty: 'terminal' },
+          ...(terminalRecovery.status === 'failed' ? { error: { code: 'provider_rejected' } } : {}),
         });
         return;
       }
@@ -256,11 +269,16 @@ export function createMediaWorker(
             'The original provider credential binding changed.',
           );
         }
+        providerSecrets = mediaDiagnosticSecrets(connection.headers);
         const providerContext: MediaProviderContext = {
           jobId: job.jobId,
           connection,
           config: currentContext.config,
-          transport: scopeMediaTransport(deps.transport, connection.allowedAddresses),
+          transport: scopeMediaTransport(
+            deps.transport,
+            connection.allowedAddresses,
+            currentContext.config.recovery,
+          ),
           signal: controller.signal,
         };
         return { integration, adapter, providerContext };
@@ -414,6 +432,9 @@ export function createMediaWorker(
         result = {
           status: job.provider.recovery.terminalStatus,
           usage: job.provider.recovery.usage,
+          ...(job.provider.recovery.terminalStatus === 'failed'
+            ? { diagnostic: job.provider.recovery.diagnostic }
+            : {}),
         };
       } else if (job.provider.certainty === 'terminal' && job.provider.recovery?.parts) {
         result = await restoreMediaOutputResult({ job, context, deps });
@@ -489,7 +510,21 @@ export function createMediaWorker(
           provider: {
             ...job.provider,
             certainty: 'terminal',
-            recovery: { usage: result.usage, terminalStatus: result.status },
+            recovery: {
+              ...job.provider.recovery,
+              usage: result.usage,
+              terminalStatus: result.status,
+              ...(result.status === 'failed'
+                ? {
+                    diagnostic:
+                      sanitizeMediaProviderDiagnostic(
+                        result.diagnostic,
+                        context.config.recovery.maxDiagnosticMessageChars,
+                        providerSecrets,
+                      ) ?? job.provider.recovery?.diagnostic,
+                  }
+                : {}),
+            },
           },
         });
         await settle(result.usage, context);
@@ -527,7 +562,7 @@ export function createMediaWorker(
       if (error instanceof MediaProviderError) {
         deps.log(
           `[media] Job ${job.jobId} provider request ${error.certainty} (${error.reason ?? 'unclassified'}).`,
-          error,
+          new MediaProviderError(error.certainty, error.status, error.reason),
         );
       } else if (!(error instanceof MediaServiceError)) {
         deps.log(
@@ -535,12 +570,37 @@ export function createMediaWorker(
           error instanceof Error ? error : undefined,
         );
       }
-      const safeRejection =
-        job.provider.certainty === 'unsubmitted' ||
-        (error instanceof MediaProviderError &&
-          error.certainty === 'rejected' &&
-          job.phase === 'submitting');
+      const rejectedSubmission =
+        error instanceof MediaProviderError &&
+        error.certainty === 'rejected' &&
+        job.phase === 'submitting';
+      const safeRejection = job.provider.certainty === 'unsubmitted' || rejectedSubmission;
       try {
+        const diagnostic =
+          error instanceof MediaProviderError
+            ? sanitizeMediaProviderDiagnostic(
+                error.diagnostic,
+                (context?.config ?? baseConfig).recovery.maxDiagnosticMessageChars,
+                providerSecrets,
+              )
+            : undefined;
+        if (diagnostic || rejectedSubmission) {
+          await observe({
+            phase: job.phase === 'submitting' ? 'reconciling' : job.phase,
+            provider: {
+              ...job.provider,
+              ...(rejectedSubmission ? { certainty: 'terminal' } : {}),
+              recovery: {
+                ...job.provider.recovery,
+                ...(diagnostic ? { diagnostic } : {}),
+                ...(rejectedSubmission
+                  ? { terminalStatus: 'failed', rejectedSubmission: true }
+                  : {}),
+              },
+            },
+            ...(rejectedSubmission ? { error: { code: 'provider_rejected' } } : {}),
+          });
+        }
         if (
           context &&
           job.phase === 'ingesting' &&

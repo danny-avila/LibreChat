@@ -239,6 +239,96 @@ describe('administrative media recovery through the API and worker', () => {
     await runtime.worker.runJob(claimed!);
   }
 
+  async function rejectedSubmission(): Promise<MediaStoredJob> {
+    const job = await attention();
+    await mongoose.models.MediaJob.updateOne(
+      { ...scope(), jobId: job.jobId },
+      {
+        $set: {
+          error: { code: 'provider_rejected' },
+          provider: {
+            certainty: 'terminal',
+            recovery: {
+              terminalStatus: 'failed',
+              rejectedSubmission: true,
+              diagnostic: { status: 400, message: 'Private provider rejection details.' },
+            },
+          },
+        },
+      },
+    );
+    return (await repository.getMediaJob(scope(), job.jobId))!;
+  }
+
+  it.each([false, true])(
+    'resumes a rejected submission without credentials or charging after retirement=%s',
+    async (retired) => {
+      let job = await rejectedSubmission();
+      config.media!.integrations = [];
+      if (retired) {
+        await repository.retireMediaThread(scope(), job.threadId);
+        job = (await repository.getMediaJob(scope(), job.jobId))!;
+      }
+      const page = (await request(app).get('/api/admin/media/jobs').expect(200)).body;
+      expect(mediaRecoveryPageSchema.parse(page).items[0].allowedActions.resume).toBe(true);
+      expect(JSON.stringify(page)).not.toMatch(/rejectedSubmission|diagnostic|Private provider/);
+      await post(job, {
+        clientRequestId: 'resume-rejected-submission',
+        expectedVersion: job.version,
+        action: 'resume',
+        evidence: 'The provider rejected submission; finish releasing the held credits.',
+      }).expect(200);
+      await run(job);
+      expect(await repository.getMediaJob(scope(), job.jobId)).toMatchObject({
+        phase: 'failed',
+        error: { code: 'provider_rejected' },
+        provider: { recovery: { rejectedSubmission: true } },
+      });
+      expect(await balance()).toMatchObject({ tokenCredits: 1000, reservedCredits: 0 });
+      expect(
+        await mongoose.models.Transaction.countDocuments({
+          mediaJobId: job.jobId,
+          tokenValue: { $ne: 0 },
+        }),
+      ).toBe(0);
+      expect(network).not.toHaveBeenCalled();
+      expect(logs).toEqual([]);
+    },
+  );
+
+  it.each([false, true])(
+    'honors an explicit cost override for a rejected submission across a later resume=%s',
+    async (resume) => {
+      const job = await rejectedSubmission();
+      config.media!.integrations = [];
+      await post(job, body(job, 0.25)).expect(200);
+      if (resume) {
+        jest
+          .spyOn(repository, 'settleMediaJob')
+          .mockResolvedValueOnce({ status: 'pending', settlementId: 'pending-fixture' });
+        await run(job);
+        expect(logs.splice(0)).toHaveLength(0);
+        const pending = (await repository.getMediaJob(scope(), job.jobId))!;
+        expect(pending.phase).toBe('requires_attention');
+        await post(pending, {
+          clientRequestId: 'resume-overridden-rejection',
+          expectedVersion: pending.version,
+          action: 'resume',
+          evidence: 'The final cost is already recorded; complete its interrupted settlement.',
+        }).expect(200);
+      }
+      await run(job);
+      expect(await repository.getMediaJob(scope(), job.jobId)).toMatchObject({
+        phase: 'failed',
+        accounting: { phase: 'settled', credits: 250 },
+      });
+      expect(await balance()).toMatchObject({ tokenCredits: 750, reservedCredits: 0 });
+      expect(await mongoose.models.Transaction.countDocuments({ mediaJobId: job.jobId })).toBe(1);
+      expect(network).not.toHaveBeenCalled();
+      expect(logs).toEqual([]);
+    },
+  );
+
   it.each([0, 0.25])(
     'settles a confirmed cost of %s exactly once without provider credentials and keeps a verifiable audit chain',
     async (costUSD) => {

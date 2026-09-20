@@ -10,6 +10,7 @@ import {
   mediaTurnPageSchema,
   mediaJobPageSchema,
   mediaOutputPageSchema,
+  mediaJobDiagnosticsResponseSchema,
 } from 'librechat-data-provider';
 import type {
   MediaThreadDetail,
@@ -297,6 +298,32 @@ export function useMediaJobOutputs(host: MediaQueryScope, job: MediaJob, expande
       refetchInterval: activeJob(job) ? host.pollIntervalMs : host.catchUpIntervalMs,
       refetchIntervalInBackground: false,
     },
+  );
+}
+
+export function useMediaJobDiagnostics(
+  host: MediaQueryScope,
+  jobId: string,
+  version: number,
+  enabled: boolean,
+) {
+  return useQuery(
+    [QueryKeys.mediaJobDiagnostics, host.scope, jobId, version],
+    async ({ signal }) => {
+      try {
+        return current(
+          host,
+          mediaJobDiagnosticsResponseSchema.parse(
+            await dataService.getMediaJobDiagnostics(jobId, signal),
+          ),
+        );
+      } catch (error) {
+        if (isAxiosError(error) && error.response?.status === 404)
+          return current(host, mediaJobDiagnosticsResponseSchema.parse({}));
+        throw error;
+      }
+    },
+    { enabled, retry: false, staleTime: Infinity },
   );
 }
 

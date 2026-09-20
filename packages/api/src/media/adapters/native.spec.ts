@@ -110,6 +110,39 @@ function operationId(result: MediaProviderResult): string {
 
 describe('native media catalogs and transport boundaries', () => {
   it.each([
+    {
+      api: 'runway.videos' as const,
+      modelId: 'runway/gen-4.5',
+      response: {
+        id: 'job-1',
+        status: 'FAILED',
+        failureCode: 'INVALID_DURATION',
+        failure: 'Unsupported duration. fixture-key',
+      },
+    },
+    {
+      api: 'xai.videos' as const,
+      modelId: 'x-ai/grok-imagine-video',
+      response: {
+        status: 'failed',
+        error: { code: 'INVALID_DURATION', message: 'Unsupported duration. fixture-key' },
+      },
+    },
+  ])(
+    'preserves sanitized terminal $api provider error fields',
+    async ({ api, modelId, response }) => {
+      const { adapter, context, calls } = fixture(api, [response]);
+      const token = encodeOperation({ id: 'job-1', modelId }, context);
+      expect(await adapter.poll!(token, context)).toMatchObject({
+        status: 'failed',
+        diagnostic: { code: 'INVALID_DURATION', message: 'Unsupported duration. [redacted]' },
+      });
+      expect(calls).toHaveLength(1);
+      expect(calls[0].method).toBe('GET');
+    },
+  );
+
+  it.each([
     ['bfl.videos', 'black-forest-labs/flux-3-video'],
     ['xai.videos', 'x-ai/grok-imagine-video-1.5'],
     ['runway.videos', 'runway/gen-4.5'],

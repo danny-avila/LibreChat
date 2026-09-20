@@ -80,6 +80,7 @@ describe('media worker admission with standalone MongoDB', () => {
         deletes: number;
         afterDelete?: string;
         deleteError?: boolean;
+        diagnostic?: { code: string; message: string };
       }
     | undefined;
 
@@ -107,7 +108,17 @@ describe('media worker admission with standalone MongoDB', () => {
         if (remote.status === 'unavailable') throw new MediaProviderError('uncertain', 503);
         return schema.parse(
           runway
-            ? { id: 'remote-job', status: remote.status }
+            ? {
+                id: 'remote-job',
+                status: remote.status,
+                ...(remote.diagnostic
+                  ? {
+                      failureCode: remote.diagnostic.code,
+                      failure: remote.diagnostic.message,
+                      cost: { credits: 0 },
+                    }
+                  : {}),
+              }
             : {
                 job_id: 'remote-job',
                 status: remote.status,
@@ -288,12 +299,12 @@ describe('media worker admission with standalone MongoDB', () => {
     return mediaSubmissionReceiptSchema.parse(response.body);
   }
 
-  async function run(ownerId: string, jobId: string) {
+  async function run(ownerId: string, jobId: string, claimAt = Date.now() + 60_000) {
     const scope = { ownerId, tenantId: null };
     const job = await repository.claimMediaJob({
       scope,
       workerId: 'test-worker',
-      now: new Date(Date.now() + 60_000).toISOString(),
+      now: new Date(claimAt).toISOString(),
       leaseMs: 120_000,
     });
     expect(job?.jobId).toBe(jobId);
@@ -336,6 +347,163 @@ describe('media worker admission with standalone MongoDB', () => {
       .select('+reservedCredits')
       .lean();
   }
+
+  it('persists an HTTP rejection privately and logs only its redacted classification', async () => {
+    const receipt = await submitAs(currentOwner, 'diagnostic-rejection');
+    const json = jest.spyOn(transport, 'json').mockRejectedValueOnce(
+      new MediaProviderError('rejected', 400, 'http_400', {
+        status: 400,
+        code: 'FAILED_PRECONDITION',
+        message: 'The task field is not supported. fixture-secret',
+        requestId: 'request-123',
+      }),
+    );
+    try {
+      expect(await run(currentOwner, receipt.jobId)).toMatchObject({
+        phase: 'failed',
+        error: { code: 'provider_rejected' },
+        provider: {
+          recovery: {
+            diagnostic: {
+              status: 400,
+              code: 'FAILED_PRECONDITION',
+              message: 'The task field is not supported. [redacted]',
+              requestId: 'request-123',
+            },
+          },
+        },
+      });
+      const failures = logged.splice(0);
+      expect(failures).toHaveLength(1);
+      expect(failures[0].message).toContain('http_400');
+      expect(failures[0].cause).toMatchObject({ diagnostic: undefined });
+      const publicJob = (await request(app).get(`/api/media/jobs/${receipt.jobId}`).expect(200))
+        .body;
+      expect(publicJob.error).toEqual({ code: 'provider_rejected' });
+      expect(JSON.stringify(publicJob)).not.toMatch(
+        /diagnostic|task field|fixture-secret|request-123/,
+      );
+    } finally {
+      json.mockRestore();
+    }
+  });
+
+  it.each(['before', 'after'] as const)(
+    'recovers a definite submission rejection after a crash %s releasing its hold',
+    async (crash) => {
+      config.balance = { enabled: true };
+      config.media!.integrations[0].billing = {
+        estimatedCostUSD: 0.01,
+        maxCostUSD: 0.02,
+        creditsPerUSD: 1000,
+      };
+      await accounting.ensureReady();
+      await mongoose.models.Balance.create({ user: currentOwner, tokenCredits: 1000 });
+      const receipt = await submitAs(currentOwner, `rejection-release-${crash}`);
+      const diagnostic = {
+        status: 400,
+        code: 'INVALID_ARGUMENT',
+        message: 'Unsupported duration.',
+      };
+      const json = jest
+        .spyOn(transport, 'json')
+        .mockRejectedValueOnce(new MediaProviderError('rejected', 400, 'http_400', diagnostic));
+      const release = accounting.release;
+      const settle = jest.spyOn(accounting, 'settle');
+      const interrupted = jest
+        .spyOn(accounting, 'release')
+        .mockImplementationOnce(async (...args) => {
+          if (crash === 'after') await release(...args);
+          throw new Error('Interrupted submission rejection release');
+        });
+      try {
+        expect(await run(currentOwner, receipt.jobId)).toMatchObject({
+          phase: 'reconciling',
+          error: { code: 'provider_rejected' },
+          provider: {
+            certainty: 'terminal',
+            recovery: { terminalStatus: 'failed', rejectedSubmission: true, diagnostic },
+          },
+        });
+        expect(logged.splice(0)).toHaveLength(2);
+        expect(await balance()).toMatchObject({
+          tokenCredits: 1000,
+          reservedCredits: crash === 'before' ? 20 : 0,
+        });
+        config.endpoints!.custom = [];
+        config.media!.integrations = [];
+        restartRuntime();
+        expect(await run(currentOwner, receipt.jobId, Date.now() + 300_000)).toMatchObject({
+          phase: 'failed',
+          error: { code: 'provider_rejected' },
+          provider: { recovery: { rejectedSubmission: true, diagnostic } },
+        });
+        expect(await balance()).toMatchObject({ tokenCredits: 1000, reservedCredits: 0 });
+        expect(json).toHaveBeenCalledTimes(1);
+        expect(settle).not.toHaveBeenCalled();
+        expect(
+          await mongoose.models.Transaction.countDocuments({ mediaJobId: receipt.jobId }),
+        ).toBe(1);
+        expect(
+          await mongoose.models.Transaction.countDocuments({
+            mediaJobId: receipt.jobId,
+            tokenValue: { $lt: 0 },
+          }),
+        ).toBe(0);
+      } finally {
+        json.mockRestore();
+        interrupted.mockRestore();
+        settle.mockRestore();
+      }
+    },
+  );
+
+  it.each(['before', 'after'] as const)(
+    'preserves terminal diagnostics across a crash %s settlement without polling again',
+    async (crash) => {
+      const receipt = await remoteJob('runway.videos', `diagnostic-recovery-${crash}`);
+      remote!.status = 'FAILED';
+      remote!.diagnostic = {
+        code: 'INVALID_INPUT',
+        message: 'Unsupported video duration. fixture-secret',
+      };
+      const diagnostic = {
+        code: 'INVALID_INPUT',
+        message: 'Unsupported video duration. [redacted]',
+      };
+      const settle = accounting.settle;
+      const json = jest.spyOn(transport, 'json');
+      const interrupted = jest
+        .spyOn(accounting, 'settle')
+        .mockImplementationOnce(async (...args) => {
+          if (crash === 'after') await settle(...args);
+          throw new Error('Interrupted provider failure settlement');
+        });
+      try {
+        expect(await run(currentOwner, receipt.jobId)).toMatchObject({
+          phase: 'ingesting',
+          provider: { certainty: 'terminal', recovery: { terminalStatus: 'failed', diagnostic } },
+        });
+        expect(logged.splice(0)).toHaveLength(1);
+        const requests = json.mock.calls.length;
+        config.endpoints!.custom = [];
+        config.media!.integrations = [];
+        restartRuntime();
+        expect(await run(currentOwner, receipt.jobId)).toMatchObject({
+          phase: 'failed',
+          error: { code: 'provider_rejected' },
+          provider: { certainty: 'terminal', recovery: { terminalStatus: 'failed', diagnostic } },
+        });
+        expect(await balance()).toMatchObject({ tokenCredits: 1000, reservedCredits: 0 });
+        expect(json).toHaveBeenCalledTimes(requests);
+        expect(remote!.submissions).toBe(1);
+        expect(await mongoose.models.MediaPermit.countDocuments({ jobId: receipt.jobId })).toBe(0);
+      } finally {
+        interrupted.mockRestore();
+        json.mockRestore();
+      }
+    },
+  );
 
   it('persists Krea cancellation across restarts and retains the hold until terminal confirmation', async () => {
     const receipt = await remoteJob('krea.images', 'cancel-krea');

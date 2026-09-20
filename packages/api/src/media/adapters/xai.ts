@@ -10,6 +10,7 @@ import {
   nativeRequest,
   providerOptions,
 } from './native';
+import { mediaDiagnosticSecrets, sanitizeMediaProviderDiagnostic } from '../diagnostics';
 import { MediaProviderError } from '../errors';
 
 const imageModels = new Map([
@@ -321,7 +322,14 @@ export function createXAIMediaAdapters(): MediaProviderAdapter[] {
           response.error ||
           response.video?.respect_moderation === false
         )
-          return { status: 'failed' };
+          return {
+            status: 'failed',
+            diagnostic: sanitizeMediaProviderDiagnostic(
+              response.error ?? undefined,
+              context.config.recovery.maxDiagnosticMessageChars,
+              mediaDiagnosticSecrets(context.connection.headers),
+            ),
+          };
         if (response.status !== 'done' || !response.video?.url)
           throw new MediaProviderError('uncertain');
         return {

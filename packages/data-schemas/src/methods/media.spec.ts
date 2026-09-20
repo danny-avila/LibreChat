@@ -82,6 +82,34 @@ describe('media persistence on standalone MongoDB', () => {
     );
   }
 
+  it('scopes provider diagnostics to the owner, tenant and active published thread', async () => {
+    const job = await accepted('diagnostics');
+    expect(await methods.getMediaJobDiagnostics(scope, job.jobId)).toEqual({});
+    const diagnostic = { status: 400, code: 'INVALID_ARGUMENT', message: 'Unsupported input.' };
+    await mongoose.models.MediaJob.updateOne(
+      { ...scope, jobId: job.jobId },
+      { $set: { 'provider.recovery.diagnostic': diagnostic } },
+    );
+    expect(await methods.getMediaJobDiagnostics(scope, job.jobId)).toEqual({ diagnostic });
+    const view = await methods.getMediaJobView(scope, job.jobId);
+    expect(mediaJobSchema.safeParse(view).success).toBe(true);
+    expect(view).not.toHaveProperty('provider');
+    expect(view).not.toHaveProperty('diagnostic');
+    expect(
+      await methods.getMediaJobDiagnostics(
+        { ...scope, ownerId: new mongoose.Types.ObjectId().toString() },
+        job.jobId,
+      ),
+    ).toBeNull();
+    expect(
+      await methods.getMediaJobDiagnostics({ ...scope, tenantId: 'foreign' }, job.jobId),
+    ).toBeNull();
+    const unpublished = await methods.stageMediaSubmission(submission('unpublished-diagnostics'));
+    expect(await methods.getMediaJobDiagnostics(scope, unpublished.jobId)).toBeNull();
+    await methods.retireMediaThread(scope, job.threadId);
+    expect(await methods.getMediaJobDiagnostics(scope, job.jobId)).toBeNull();
+  });
+
   it('stores BSON lifecycle dates and omits the platform tenant while preserving ISO views', async () => {
     const job = await accepted('stored-dates');
     const now = new Date(Date.now() + 1000);
@@ -2166,6 +2194,8 @@ describe('media persistence on standalone MongoDB', () => {
           provider: {
             certainty: 'terminal',
             recovery: {
+              diagnostic: { status: 400, message: 'Private provider diagnostic.' },
+              rejectedSubmission: true,
               parts: [
                 {
                   kind: 'text',
@@ -2181,7 +2211,11 @@ describe('media persistence on standalone MongoDB', () => {
         },
       },
     );
+    expect(await methods.getMediaJobDiagnostics(scope, job.jobId)).toEqual({
+      diagnostic: { status: 400, message: 'Private provider diagnostic.' },
+    });
     await methods.retireMediaThread(scope, job.threadId);
+    expect(await methods.getMediaJobDiagnostics(scope, job.jobId)).toBeNull();
     await methods.reconcileMediaRetirements({ scope, limit: 10 });
     expect((await methods.getMediaJob(scope, job.jobId))?.request.prompt).toBe(
       input.request.prompt,

@@ -154,8 +154,21 @@ app.get('/v1/videos/:id/content', (req, res) => {
   if (!videos.has(req.params.id)) return res.sendStatus(404);
   res.type('video/mp4').send(readFileSync(path.join(__dirname, '../fixtures/media-video.mp4')));
 });
-app.post('/v1/images/generations', async (_req, res) => {
+app.post('/v1/images/generations', async (req, res) => {
   submissions++;
+  if (req.body.prompt?.includes('E2E_MEDIA_PROVIDER_REJECTION:')) {
+    return res
+      .status(400)
+      .set('x-request-id', 'e2e-media-provider-rejection')
+      .json({
+        error: {
+          code: 400,
+          status: 'FAILED_PRECONDITION',
+          message:
+            'Async process failed with the following error: The task field is not supported.',
+        },
+      });
+  }
   const bytes = await sharp({
     create: {
       width: 320,

@@ -23,6 +23,9 @@ import {
   mediaPresetWriteSchema,
   mediaPresetUpdateSchema,
   createMediaPresetSchema,
+  mediaErrorSchema,
+  mediaProviderDiagnosticSchema,
+  mediaJobDiagnosticsResponseSchema,
 } from './index';
 import { PermissionTypes, Permissions, permissionsSchema } from '../permissions';
 import { configSchema, BASE_ONLY_CONFIG_SECTIONS } from '../config';
@@ -39,6 +42,47 @@ const integration = {
   catalog: { kind: 'configured' as const, models: ['publisher/model'] },
   operations: ['image.generate' as const, 'image.edit' as const],
 };
+
+test('bounds provider diagnostics independently of the existing public error contract', () => {
+  const diagnostic = {
+    status: 400,
+    code: 'INVALID_ARGUMENT',
+    message: 'The reference video must use a supported resolution.',
+    requestId: 'provider-request-1',
+  };
+  expect(mediaJobDiagnosticsResponseSchema.parse({ diagnostic })).toEqual({ diagnostic });
+  expect(mediaJobDiagnosticsResponseSchema.parse({})).toEqual({});
+  expect(mediaProviderDiagnosticSchema.safeParse({ status: 600 }).success).toBe(false);
+  expect(mediaProviderDiagnosticSchema.safeParse({ code: 'x'.repeat(257) }).success).toBe(false);
+  expect(mediaProviderDiagnosticSchema.safeParse({ requestId: 'x'.repeat(257) }).success).toBe(
+    false,
+  );
+  expect(mediaProviderDiagnosticSchema.safeParse({ message: 'x'.repeat(8_193) }).success).toBe(
+    false,
+  );
+  expect(mediaProviderDiagnosticSchema.safeParse({ ...diagnostic, headers: {} }).success).toBe(
+    false,
+  );
+  expect(mediaErrorSchema.safeParse({ code: 'provider_rejected', diagnostic }).success).toBe(false);
+  expect(endpoints.mediaJobDiagnostics('job/one')).toBe('/api/media/jobs/job%2Fone/diagnostics');
+});
+
+test('configures bounded provider diagnostic retention and response parsing', () => {
+  expect(resolveMediaConfig({}).recovery).toMatchObject({
+    maxDiagnosticMessageChars: 2_000,
+    maxDiagnosticResponseBytes: 16_384,
+  });
+  const recovery = { maxDiagnosticMessageChars: 600, maxDiagnosticResponseBytes: 8_192 };
+  expect(resolveMediaConfig({ recovery }).recovery).toMatchObject(recovery);
+  for (const invalid of [
+    { maxDiagnosticMessageChars: 0 },
+    { maxDiagnosticMessageChars: 8_193 },
+    { maxDiagnosticResponseBytes: 0 },
+    { maxDiagnosticResponseBytes: 1_048_577 },
+  ]) {
+    expect(mediaConfigSchema.safeParse({ recovery: invalid }).success).toBe(false);
+  }
+});
 test('validates provider options and rejects reserved APIs during config loading', () => {
   const direct = {
     ...integration,

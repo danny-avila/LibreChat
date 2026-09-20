@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { isAxiosError } from 'axios';
 import type { AxiosInstance, AxiosRequestConfig, AxiosRequestHeaders } from 'axios';
 import type { Readable } from 'node:stream';
+import type { MediaDiagnosticLimits } from './diagnostics';
+import { mediaDiagnosticSecrets, parseMediaProviderDiagnostic } from './diagnostics';
 import { isSSRFTarget, validateEndpointURL } from '~/auth/domain';
 import { applySSRFSafeAgentIfDirect } from '~/auth/agent';
 import { applyAxiosProxyConfig } from '~/utils/proxy';
@@ -21,6 +23,7 @@ export interface MediaTransportRequest {
   /** Direct hosted-reference fetch with connect-time SSRF protection; bypasses PROXY and HTTP(S)_PROXY. */
   publicOnly?: boolean;
   allowedAddresses?: string[];
+  diagnosticLimits?: MediaDiagnosticLimits;
 }
 
 export interface MediaTransport {
@@ -32,10 +35,24 @@ export interface MediaTransport {
 export function scopeMediaTransport(
   transport: MediaTransport,
   allowedAddresses: string[] = [],
+  diagnosticLimits?: MediaDiagnosticLimits,
 ): MediaTransport {
   return {
-    json: (request, schema) => transport.json({ ...request, allowedAddresses }, schema),
-    stream: (request) => transport.stream({ ...request, allowedAddresses }),
+    json: (request, schema) =>
+      transport.json(
+        {
+          ...request,
+          allowedAddresses,
+          diagnosticLimits: diagnosticLimits ?? request.diagnosticLimits,
+        },
+        schema,
+      ),
+    stream: (request) =>
+      transport.stream({
+        ...request,
+        allowedAddresses,
+        diagnosticLimits: diagnosticLimits ?? request.diagnosticLimits,
+      }),
   };
 }
 
@@ -132,12 +149,30 @@ export function createMediaTransport({
     return applySSRFSafeAgentIfDirect(config, request.url, policy);
   };
 
-  const assertStatus = (status: number) => {
+  const assertStatus = (
+    status: number,
+    request: MediaTransportRequest,
+    body = '',
+    requestId?: string,
+    secrets: string[] = [],
+  ) => {
     if (status >= 200 && status < 300) {
       return;
     }
     const rejected = status >= 400 && status < 500 && status !== 408;
-    throw new MediaProviderError(rejected ? 'rejected' : 'uncertain', status, `http_${status}`);
+    throw new MediaProviderError(
+      rejected ? 'rejected' : 'uncertain',
+      status,
+      `http_${status}`,
+      request.publicOnly
+        ? undefined
+        : parseMediaProviderDiagnostic(body, {
+            status,
+            requestId,
+            limits: request.diagnosticLimits,
+            secrets: [...mediaDiagnosticSecrets(request.headers), ...secrets],
+          }),
+    );
   };
 
   return {
@@ -148,7 +183,24 @@ export function createMediaTransport({
           responseType: 'text',
           transformResponse: [(text: string) => text],
         });
-        assertStatus(response.status);
+        const requestId =
+          response.headers['x-request-id'] ??
+          response.headers['request-id'] ??
+          response.headers['x-goog-request-id'] ??
+          response.headers['x-ms-request-id'];
+        assertStatus(
+          response.status,
+          request,
+          response.data,
+          typeof requestId === 'string' ? requestId : undefined,
+          mediaDiagnosticSecrets(
+            Object.fromEntries(
+              Object.entries(response.config.headers.toJSON()).flatMap(([name, value]) =>
+                typeof value === 'string' ? [[name, value]] : [],
+              ),
+            ),
+          ).concat(response.config.auth?.password ?? []),
+        );
         if (request.successStatus !== undefined && response.status !== request.successStatus) {
           throw new MediaProviderError('uncertain', response.status, 'unexpected_success_status');
         }
@@ -202,7 +254,7 @@ export function createMediaTransport({
         }
         if (response.status < 200 || response.status >= 300) {
           response.data.destroy();
-          assertStatus(response.status);
+          assertStatus(response.status, request);
         }
         const size = Number(response.headers['content-length']);
         if (Number.isFinite(size) && size > request.maxBytes) {

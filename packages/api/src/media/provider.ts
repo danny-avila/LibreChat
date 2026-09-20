@@ -5,6 +5,7 @@ import type {
   MediaCapability,
   MediaErrorCode,
   MediaProviderOptions,
+  MediaProviderDiagnostic,
 } from 'librechat-data-provider';
 import type { Readable } from 'node:stream';
 import type { MediaRoutingPolicy } from './routing';
@@ -54,7 +55,7 @@ export interface MediaProviderUsage {
 export type MediaProviderResult =
   | { status: 'running'; operationId: string; progress?: number }
   | { status: 'completed'; parts: MediaProviderPart[]; usage?: MediaProviderUsage }
-  | { status: 'failed'; usage?: MediaProviderUsage }
+  | { status: 'failed'; usage?: MediaProviderUsage; diagnostic?: MediaProviderDiagnostic }
   | { status: 'cancelled'; usage?: MediaProviderUsage };
 
 export type MediaProviderCancellationResult =

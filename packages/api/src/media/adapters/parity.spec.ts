@@ -64,6 +64,54 @@ const imageResponse = { data: [{ b64_json: Buffer.from('complete-image').toStrin
 describe('native OpenAI model mappings', () => {
   const [images, videos] = createOpenAIMediaAdapters();
 
+  it('preserves bounded Responses failure and incomplete reasons', async () => {
+    const { context } = fixture('openai.images', [
+      {
+        status: 'failed',
+        output: [],
+        error: { code: 'invalid_parameter', message: 'Unsupported quality. fixture' },
+      },
+      {
+        status: 'incomplete',
+        output: [],
+        error: null,
+        incomplete_details: { reason: 'max_output_tokens' },
+      },
+      { status: 'incomplete', output: [], incomplete_details: {} },
+    ]);
+    expect(await images.submit(request('openai/gpt-5-image'), [], context)).toMatchObject({
+      status: 'failed',
+      diagnostic: { code: 'invalid_parameter', message: 'Unsupported quality. [redacted]' },
+    });
+    expect(await images.submit(request('openai/gpt-5-image'), [], context)).toMatchObject({
+      status: 'failed',
+      diagnostic: { code: 'max_output_tokens' },
+    });
+    expect(await images.submit(request('openai/gpt-5-image'), [], context)).toEqual({
+      status: 'failed',
+      diagnostic: undefined,
+    });
+  });
+
+  it('preserves terminal video error details without creating another generation', async () => {
+    const { context, calls } = fixture('openai.videos', [
+      {
+        id: 'video-job',
+        status: 'failed',
+        error: { code: 'moderation_blocked', message: 'The input video was rejected. fixture' },
+      },
+    ]);
+    expect(await videos.poll!('video-job', context)).toMatchObject({
+      status: 'failed',
+      diagnostic: {
+        code: 'moderation_blocked',
+        message: 'The input video was rejected. [redacted]',
+      },
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].method).toBe('GET');
+  });
+
   it.each(['dall-e-3', 'FLUX.1-Kontext-pro'])(
     'uses a reduced Images profile for a configured compatible deployment %s',
     async (model) => {

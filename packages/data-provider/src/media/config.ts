@@ -5,6 +5,7 @@ import {
   mediaIdSchema,
   mediaOperationSchema,
 } from './requests';
+import { MEDIA_PROVIDER_DIAGNOSTIC_MESSAGE_MAX_CHARS } from './responses';
 import { mediaLimitsSchema } from './capabilities';
 import { TOKEN_CREDITS_PER_USD } from '../balance';
 import { fileStorageSchema } from '../storage';
@@ -307,6 +308,15 @@ export const mediaConfigSchema = z
         maxAttempts: z.number().int().positive().max(10_000).default(24),
         maxRetryMs: milliseconds.default(1_800_000),
         maxEvidenceChars: z.number().int().positive().max(65_536).default(2_000),
+        /** Bounds the provider message retained for owner-scoped failure diagnostics. */
+        maxDiagnosticMessageChars: z
+          .number()
+          .int()
+          .positive()
+          .max(MEDIA_PROVIDER_DIAGNOSTIC_MESSAGE_MAX_CHARS)
+          .default(2_000),
+        /** Bounds HTTP error bodies inspected for diagnostics, independently of media output size. */
+        maxDiagnosticResponseBytes: z.number().int().positive().max(1_048_576).default(16_384),
         maxDecisionsPerJob: z.number().int().positive().max(1_000).default(32),
       })
       .strict()

@@ -8,6 +8,7 @@ export enum QueryKeys {
   mediaJob = 'mediaJob',
   mediaTurnJobs = 'mediaTurnJobs',
   mediaJobOutputs = 'mediaJobOutputs',
+  mediaJobDiagnostics = 'mediaJobDiagnostics',
   mediaSubmission = 'mediaSubmission',
   mediaImport = 'mediaImport',
   mediaPresets = 'mediaPresets',

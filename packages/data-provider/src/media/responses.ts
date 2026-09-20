@@ -44,6 +44,18 @@ export const mediaErrorSchema = z
     field: z.string().optional(),
   })
   .strict();
+export const MEDIA_PROVIDER_DIAGNOSTIC_MESSAGE_MAX_CHARS = 8_192;
+export const mediaProviderDiagnosticSchema = z
+  .object({
+    status: z.number().int().min(100).max(599).optional(),
+    code: mediaIdSchema.optional(),
+    message: z.string().trim().min(1).max(MEDIA_PROVIDER_DIAGNOSTIC_MESSAGE_MAX_CHARS).optional(),
+    requestId: mediaIdSchema.optional(),
+  })
+  .strict();
+export const mediaJobDiagnosticsResponseSchema = z
+  .object({ diagnostic: mediaProviderDiagnosticSchema.optional() })
+  .strict();
 export const mediaRenditionKindSchema = z.enum(['thumbnail', 'poster', 'playback']);
 export const mediaRenditionSchema = z
   .object({
@@ -291,6 +303,8 @@ export const mediaStartupConfigSchema = z
 
 export type MediaErrorCode = z.infer<typeof mediaErrorCodeSchema>;
 export type MediaError = z.infer<typeof mediaErrorSchema>;
+export type MediaProviderDiagnostic = z.infer<typeof mediaProviderDiagnosticSchema>;
+export type MediaJobDiagnosticsResponse = z.infer<typeof mediaJobDiagnosticsResponseSchema>;
 export type MediaAsset = z.infer<typeof mediaAssetSchema>;
 export type MediaRenditionKind = z.infer<typeof mediaRenditionKindSchema>;
 export type MediaRendition = z.infer<typeof mediaRenditionSchema>;

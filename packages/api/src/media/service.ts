@@ -10,6 +10,7 @@ import {
   createMediaImportSchema,
   createMediaPresetSchema,
   createMediaPresetUpdateSchema,
+  mediaProviderDiagnosticSchema,
   RetentionMode,
 } from 'librechat-data-provider';
 import type {
@@ -37,6 +38,7 @@ import type {
   MediaUserKey,
   MediaThreadDetail,
   MediaActivity,
+  MediaJobDiagnosticsResponse,
 } from 'librechat-data-provider';
 import type {
   AppConfig,
@@ -247,6 +249,7 @@ export interface MediaServices {
     ): Promise<MediaThreadsDeletionReceipt>;
   };
   queries: {
+    jobDiagnostics(jobId: string, context: MediaContext): Promise<MediaJobDiagnosticsResponse>;
     catalog(context: MediaContext): Promise<MediaCatalog>;
     threads(query: MediaThreadListRequest, context: MediaContext): Promise<MediaPage<MediaThread>>;
     thread(
@@ -744,6 +747,18 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
       },
     },
     queries: {
+      async jobDiagnostics(
+        jobId: string,
+        context: MediaContext,
+      ): Promise<MediaJobDiagnosticsResponse> {
+        assertMediaAccess(context);
+        const result = await deps.repository.getMediaJobDiagnostics(context.scope, jobId);
+        if (!result) {
+          throw new MediaServiceError('not_found', 404, 'The job is unavailable.');
+        }
+        const diagnostic = mediaProviderDiagnosticSchema.safeParse(result.diagnostic);
+        return diagnostic.success ? { diagnostic: diagnostic.data } : {};
+      },
       async catalog(context: MediaContext): Promise<MediaCatalog> {
         assertMediaAccess(context);
         if (!context.config.enabled) {

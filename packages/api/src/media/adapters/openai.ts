@@ -9,6 +9,7 @@ import type {
   MediaProviderUsage,
 } from '../provider';
 import { dataURI, imageBytes, nativeDownload, nativeRequest, providerOptions } from './native';
+import { mediaDiagnosticSecrets, sanitizeMediaProviderDiagnostic } from '../diagnostics';
 import { MediaProviderError } from '../errors';
 import { maximumInputs } from './constraints';
 import { mediaAPIURL } from '../provider';
@@ -216,6 +217,8 @@ async function submitImages(
       nativeRequest(context, 'responses', body),
       z.object({
         status: z.string(),
+        error: z.object({ code: z.string(), message: z.string() }).nullish(),
+        incomplete_details: z.object({ reason: z.string().optional() }).nullish(),
         output: z
           .array(
             z.object({
@@ -229,7 +232,14 @@ async function submitImages(
       }),
     );
     if (response.status === 'failed' || response.status === 'incomplete')
-      return { status: 'failed' };
+      return {
+        status: 'failed',
+        diagnostic: sanitizeMediaProviderDiagnostic(
+          response.error ?? { code: response.incomplete_details?.reason },
+          context.config.recovery.maxDiagnosticMessageChars,
+          mediaDiagnosticSecrets(context.connection.headers),
+        ),
+      };
     if (response.status !== 'completed') throw new MediaProviderError('uncertain');
     const output = response.output.filter(
       (part) => part.type === 'image_generation_call' && part.result,
@@ -299,13 +309,22 @@ const videoSchema = z.object({
   id: z.string().min(1),
   status: z.string(),
   progress: z.number().optional(),
+  error: z.object({ code: z.string(), message: z.string() }).nullish(),
 });
 
 function videoResult(
   response: z.infer<typeof videoSchema>,
   context: MediaProviderContext,
 ): MediaProviderResult {
-  if (response.status === 'failed' || response.status === 'expired') return { status: 'failed' };
+  if (response.status === 'failed' || response.status === 'expired')
+    return {
+      status: 'failed',
+      diagnostic: sanitizeMediaProviderDiagnostic(
+        response.error ?? undefined,
+        context.config.recovery.maxDiagnosticMessageChars,
+        mediaDiagnosticSecrets(context.connection.headers),
+      ),
+    };
   if (response.status === 'cancelled') return { status: 'cancelled' };
   if (response.status !== 'completed')
     return { status: 'running', operationId: response.id, progress: response.progress };

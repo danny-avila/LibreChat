@@ -11,6 +11,8 @@ import type {
   MediaImageContext,
   MediaAssetContext,
   MediaJob,
+  MediaJobDiagnosticsResponse,
+  MediaProviderDiagnostic,
   MediaOutput,
   MediaSubmissionReceipt,
   MediaSubmissionRequest,
@@ -92,6 +94,9 @@ export type MediaProviderState = {
   cancellationAcknowledged?: boolean;
   /** Private bounded recovery descriptor. Never included in the public view. */
   recovery?: {
+    diagnostic?: MediaProviderDiagnostic;
+    /** The submission was definitively rejected; release its hold instead of charging on replay. */
+    rejectedSubmission?: boolean;
     parts?: Array<
       | { kind: 'text'; ordinal: number; text: string; thoughtSignature?: string }
       | {
@@ -350,6 +355,10 @@ export interface MediaMethods {
   ): Promise<MediaStoredJob | null>;
   getMediaJob(scope: MediaOwnerScope, jobId: string): Promise<MediaStoredJob | null>;
   getMediaJobView(scope: MediaOwnerScope, jobId: string): Promise<MediaJob | null>;
+  getMediaJobDiagnostics(
+    scope: MediaOwnerScope,
+    jobId: string,
+  ): Promise<MediaJobDiagnosticsResponse | null>;
   updateMediaThread(input: {
     scope: MediaOwnerScope;
     threadId: string;

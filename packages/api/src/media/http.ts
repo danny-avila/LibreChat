@@ -275,6 +275,10 @@ export function createMediaRouter({
     ),
   );
   router.get(
+    '/jobs/:jobId/diagnostics',
+    handle((req, context) => services.queries.jobDiagnostics(param(req, 'jobId'), context)),
+  );
+  router.get(
     '/jobs/:jobId/outputs',
     handle(async (req, context) => {
       const job = found(await repository.getMediaJobView(context.scope, param(req, 'jobId')));

@@ -17,6 +17,7 @@ import {
   nativeParameters,
   providerOptions,
 } from './native';
+import { mediaDiagnosticSecrets, sanitizeMediaProviderDiagnostic } from '../diagnostics';
 import { MediaProviderError } from '../errors';
 import { maximumInputs } from './constraints';
 
@@ -126,6 +127,8 @@ async function poll(
     z.object({
       id: z.string(),
       status: z.string(),
+      failure: z.string().nullish(),
+      failureCode: z.string().nullish(),
       progress: z.number().optional(),
       output: z.array(z.string().url()).max(context.config.limits.maxOutputs).optional(),
       cost: z.object({ credits: z.number().finite().nonnegative() }).optional(),
@@ -136,7 +139,16 @@ async function poll(
     return { status: 'running', operationId, progress: response.progress };
   /** Runway's published currency is $0.01 per credit: https://docs.dev.runwayml.com/guides/pricing */
   const usage = response.cost ? { costUSD: response.cost.credits / 100 } : undefined;
-  if (response.status === 'FAILED') return { status: 'failed', usage };
+  if (response.status === 'FAILED')
+    return {
+      status: 'failed',
+      usage,
+      diagnostic: sanitizeMediaProviderDiagnostic(
+        { code: response.failureCode ?? undefined, message: response.failure ?? undefined },
+        context.config.recovery.maxDiagnosticMessageChars,
+        mediaDiagnosticSecrets(context.connection.headers),
+      ),
+    };
   if (response.status === 'CANCELLED') return { status: 'cancelled', usage };
   if (response.status !== 'SUCCEEDED' || !response.output?.length)
     throw new MediaProviderError('uncertain');

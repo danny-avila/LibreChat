@@ -89,6 +89,12 @@ export function listMediaJobOutputs(
 export function getMediaJob(jobId: string, signal?: AbortSignal): Promise<media.MediaJob> {
   return request.get(endpoints.mediaJob(jobId), signal ? { signal } : undefined);
 }
+export function getMediaJobDiagnostics(
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<media.MediaJobDiagnosticsResponse> {
+  return request.get(endpoints.mediaJobDiagnostics(jobId), signal ? { signal } : undefined);
+}
 export function submitMedia(
   payload: media.MediaSubmissionInput,
 ): Promise<media.MediaSubmissionReceipt> {

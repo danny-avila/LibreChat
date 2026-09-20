@@ -1,3 +1,4 @@
+import type { MediaJobDiagnosticsResponse } from 'librechat-data-provider';
 import type { FilterQuery, PipelineStage } from 'mongoose';
 import type { MediaMethods, MediaOwnerScope, MediaStoredJob } from '~/types/media';
 import {
@@ -586,6 +587,34 @@ export function createMediaMethods(
         (await Thread.exists({ ...scopeFilter(scope), threadId: job.threadId, status: 'active' }))
         ? jobView(job)
         : null;
+    },
+    getMediaJobDiagnostics: async (scope, jobId) => {
+      const [result] = await Job.aggregate<MediaJobDiagnosticsResponse>([
+        { $match: { ...scopeFilter(scope), jobId, 'receipt.phase': 'accepted' } },
+        {
+          $lookup: {
+            // eslint-disable-next-line no-restricted-syntax -- Collection metadata only; both sides of the lookup use the explicit owner and tenant scope.
+            from: Thread.collection.name,
+            let: { threadId: '$threadId' },
+            pipeline: [
+              {
+                $match: {
+                  ...scopeFilter(scope),
+                  status: 'active',
+                  $expr: { $eq: ['$threadId', '$$threadId'] },
+                },
+              },
+              { $limit: 1 },
+              { $project: { _id: 1 } },
+            ],
+            as: 'thread',
+          },
+        },
+        { $match: { 'thread.0': { $exists: true } } },
+        { $project: { _id: 0, diagnostic: '$provider.recovery.diagnostic' } },
+        { $limit: 1 },
+      ]);
+      return result ?? null;
     },
     updateMediaThread,
     replaceMediaThreadTitle,

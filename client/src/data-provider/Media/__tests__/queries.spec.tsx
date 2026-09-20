@@ -4,7 +4,13 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { dataService, QueryKeys, mediaCatalogSchema } from 'librechat-data-provider';
 import type { MediaThreadDetail } from 'librechat-data-provider';
-import { useMediaThreads, useMediaCatalog, useMediaThread, useMediaActivity } from '../queries';
+import {
+  useMediaThreads,
+  useMediaCatalog,
+  useMediaThread,
+  useMediaActivity,
+  useMediaJobDiagnostics,
+} from '../queries';
 
 jest.mock('librechat-data-provider', () => {
   const actual =
@@ -190,5 +196,27 @@ test('keeps the newer thread snapshot when a refetch returns an older version', 
   expect(load).toHaveBeenCalledTimes(2);
   expect(hook.result.current.data?.thread).toMatchObject({ version: 2, title: 'Renamed' });
   load.mockRestore();
+  env.client.clear();
+});
+
+test('does not cache a late provider diagnostic after its session ends', async () => {
+  const env = setup();
+  let resolve!: (response: { diagnostic: { message: string } }) => void;
+  const read = jest.spyOn(dataService, 'getMediaJobDiagnostics').mockReturnValue(
+    new Promise((finish) => {
+      resolve = finish;
+    }),
+  );
+  const hook = renderHook(() => useMediaJobDiagnostics(env.host, 'job', 1, true), {
+    wrapper: env.wrapper,
+  });
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+  env.host.isCurrentSession = () => false;
+  await act(async () => resolve({ diagnostic: { message: 'Previous session response' } }));
+  await waitFor(() => expect(hook.result.current.isError).toBe(true));
+  expect(
+    env.client.getQueryData([QueryKeys.mediaJobDiagnostics, env.host.scope, 'job', 1]),
+  ).toBeUndefined();
+  hook.unmount();
   env.client.clear();
 });

@@ -4,8 +4,96 @@ import { gzipSync } from 'node:zlib';
 import { Readable } from 'node:stream';
 import { createServer } from 'node:http';
 import axios, { AxiosError } from 'axios';
+import { resolveMediaConfig } from 'librechat-data-provider';
 import type { CreateAxiosDefaults, InternalAxiosRequestConfig } from 'axios';
 import { createMediaTransport, scopeMediaTransport, isMediaTransferLimitError } from './transport';
+import { MediaProviderError } from './errors';
+
+describe('provider HTTP diagnostics', () => {
+  it.each([400, 408, 503])(
+    'preserves HTTP %s certainty while retaining only sanitized diagnostics',
+    async (status) => {
+      const transport = createMediaTransport({
+        http: axios.create({
+          headers: { 'X-Inherited-Secret': 'inherited-secret' },
+          adapter: async (config) => ({
+            config,
+            status,
+            statusText: 'Failure',
+            headers: { 'x-request-id': 'request-123', 'set-cookie': ['private-cookie'] },
+            data: JSON.stringify({
+              error: {
+                code: status,
+                status: 'FAILED_PRECONDITION',
+                message:
+                  'The task field is not supported. fixture-secret inherited-secret https://provider.example/private?signature=signed-secret',
+              },
+              raw: 'unrecognized-secret',
+            }),
+          }),
+        }),
+      });
+      const scoped = scopeMediaTransport(transport, [], {
+        ...resolveMediaConfig().recovery,
+        maxDiagnosticMessageChars: 80,
+      });
+      try {
+        await scoped.json(
+          {
+            url: 'https://provider.example/generate',
+            headers: { Authorization: 'Bearer fixture-secret' },
+            timeoutMs: 1000,
+            maxBytes: 4096,
+          },
+          z.object({}),
+        );
+        throw new Error('Expected HTTP failure');
+      } catch (error) {
+        expect(error).toBeInstanceOf(MediaProviderError);
+        if (!(error instanceof MediaProviderError)) throw error;
+        expect(error.certainty).toBe(status === 400 ? 'rejected' : 'uncertain');
+        expect(error.reason).toBe(`http_${status}`);
+        expect(error.diagnostic).toMatchObject({
+          status,
+          code: 'FAILED_PRECONDITION',
+          requestId: 'request-123',
+        });
+        expect(error.diagnostic?.message).toContain('The task field is not supported.');
+        expect(error.diagnostic?.message?.length).toBeLessThanOrEqual(80);
+        expect(JSON.stringify(error.diagnostic)).not.toMatch(
+          /fixture-secret|inherited-secret|signed-secret|private-cookie|unrecognized-secret/,
+        );
+        expect(JSON.stringify(error)).not.toMatch(/diagnostic|task field|request-123/);
+        expect(error.cause).toBeUndefined();
+      }
+    },
+  );
+
+  it('never interprets a hosted reference response as a provider diagnostic', async () => {
+    const transport = createMediaTransport({
+      http: axios.create({
+        adapter: async (config) => ({
+          config,
+          status: 400,
+          statusText: 'Failure',
+          headers: {},
+          data: JSON.stringify({ error: { message: 'Private reference response' } }),
+        }),
+      }),
+    });
+    await expect(
+      transport.json(
+        {
+          url: 'https://reference.example/image',
+          publicOnly: true,
+          timeoutMs: 1000,
+          maxBytes: 4096,
+        },
+        z.object({}),
+      ),
+    ).rejects.toMatchObject({ diagnostic: undefined });
+  });
+});
 
 describe('effective media network policy', () => {
   it('enforces each principal exemption list at the actual HTTP boundary', async () => {

@@ -1,4 +1,4 @@
-import type { MediaErrorCode } from 'librechat-data-provider';
+import type { MediaErrorCode, MediaProviderDiagnostic } from 'librechat-data-provider';
 
 export class MediaServiceError extends Error {
   constructor(
@@ -13,15 +13,17 @@ export class MediaServiceError extends Error {
 
 export class MediaProviderError extends Error {
   /**
-   * Redacted diagnostic: HTTP status, transport error code and a failure class, never a
-   * response body or header value. Surfaces in logs only; the message stays generic.
+   * The reason is safe for logs. The diagnostic is separately sanitized for the owning user;
+   * neither the Error message nor its cause contains the raw provider response.
    */
   constructor(
     public readonly certainty: 'rejected' | 'uncertain',
     public readonly status?: number,
     public readonly reason?: string,
+    public readonly diagnostic?: MediaProviderDiagnostic | undefined,
   ) {
     super('The media provider request could not be completed.');
     this.name = 'MediaProviderError';
+    Object.defineProperty(this, 'diagnostic', { value: diagnostic, enumerable: false });
   }
 }

@@ -115,8 +115,12 @@ describe('Vertex Veo adapter', () => {
           video: { mimeType: 'video/mp4', bytesBase64Encoded: data.toString('base64') },
         },
       ]);
-      expect(body.parameters).toMatchObject({ sampleCount: 1, task: 'extend' });
-      expect(body.parameters).not.toHaveProperty('durationSeconds');
+      expect(body.parameters).toEqual({
+        sampleCount: 1,
+        aspectRatio: '16:9',
+        resolution: '720p',
+        generateAudio: false,
+      });
       expect(calls).toHaveLength(1);
     },
   );
@@ -213,12 +217,44 @@ describe('Vertex Veo adapter', () => {
   });
 
   it.each([
-    { error: { code: 8, message: 'Quota exceeded' } },
-    { response: { raiMediaFilteredCount: 1, videos: [] } },
-  ])('records confirmed terminal provider failures without re-submitting', async (result) => {
-    const { context, calls } = fixture([{ name: operation, done: true, ...result }]);
-    expect(await adapter.poll!(operation, context)).toEqual({ status: 'failed' });
-    expect(calls).toHaveLength(1);
+    {
+      result: { error: { code: 8, message: 'Quota exceeded' } },
+      diagnostic: { code: '8', message: 'Quota exceeded' },
+    },
+    {
+      result: {
+        response: {
+          raiMediaFilteredCount: 1,
+          raiMediaFilteredReasons: ['Safety filter'],
+          videos: [],
+        },
+      },
+      diagnostic: { code: 'CONTENT_FILTERED', message: 'Safety filter' },
+    },
+  ])(
+    'records confirmed terminal provider failures without re-submitting',
+    async ({ result, diagnostic }) => {
+      const { context, calls } = fixture([{ name: operation, done: true, ...result }]);
+      expect(await adapter.poll!(operation, context)).toEqual({ status: 'failed', diagnostic });
+      expect(calls).toHaveLength(1);
+    },
+  );
+
+  it('redacts provider credentials and bounds a terminal failure message', async () => {
+    const { context } = fixture([
+      {
+        name: operation,
+        done: true,
+        error: { code: 3, message: 'Bad input for Bearer access-token. ' + 'x'.repeat(100) },
+      },
+    ]);
+    context.config.recovery.maxDiagnosticMessageChars = 48;
+    const result = await adapter.poll!(operation, context);
+    expect(result.status).toBe('failed');
+    if (result.status !== 'failed') throw new Error('Expected a terminal failure');
+    expect(result.diagnostic?.message).toContain('[redacted]');
+    expect(result.diagnostic?.message).not.toContain('access-token');
+    expect(result.diagnostic?.message?.length).toBeLessThanOrEqual(48);
   });
 
   it.each(['not base64', 'YWJj'])(

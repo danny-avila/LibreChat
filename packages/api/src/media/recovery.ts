@@ -38,6 +38,16 @@ export function resolveMediaJobIntegration(
   );
 }
 
+/** An explicit settlement decision overrides the original no-charge submission rejection. */
+export function hasRejectedMediaSubmission(job: MediaStoredJob): boolean {
+  return (
+    job.executionOwner === 'media' &&
+    job.provider.certainty === 'terminal' &&
+    job.provider.recovery?.rejectedSubmission === true &&
+    !job.recoveryDecisions?.some((decision) => decision.request.action === 'settle')
+  );
+}
+
 /** A confirmed final cost can settle without reacquiring a provider credential or invoking its API. */
 export function getMediaTerminalRecovery(
   job: MediaStoredJob,
@@ -185,6 +195,7 @@ export function createMediaRecoveryServices(
         }
         if (
           input.request.action === 'resume' &&
+          !hasRejectedMediaSubmission(job) &&
           !getMediaTerminalRecovery(job) &&
           !hasPublishedCompletion(job)
         ) {

@@ -3,6 +3,7 @@ import sharp from 'sharp';
 import { Readable } from 'node:stream';
 import type { MediaCapability, MediaConfig } from 'librechat-data-provider';
 import type { MediaProviderAdapter, MediaProviderContext, MediaProviderResult } from '../provider';
+import { mediaDiagnosticSecrets, sanitizeMediaProviderDiagnostic } from '../diagnostics';
 import { MediaProviderError } from '../errors';
 import { nativeParameters } from './native';
 import { mediaAPIURL } from '../provider';
@@ -218,7 +219,6 @@ export function createVertexVideoAdapter(): MediaProviderAdapter {
           sampleCount: parameters.count,
           // Veo extension always adds seven seconds; omitting duration uses that native contract.
           durationSeconds: video ? undefined : duration,
-          task: video ? 'extend' : undefined,
           aspectRatio: parameters.aspectRatio ?? '16:9',
           resolution,
           generateAudio: parameters.audio ?? false,
@@ -259,6 +259,7 @@ export function createVertexVideoAdapter(): MediaProviderAdapter {
           response: z
             .object({
               raiMediaFilteredCount: z.number().int().nonnegative().optional(),
+              raiMediaFilteredReasons: z.array(z.string()).optional(),
               videos: z
                 .array(
                   z.object({
@@ -274,11 +275,20 @@ export function createVertexVideoAdapter(): MediaProviderAdapter {
       );
       if (response.name !== operationId) throw new MediaProviderError('uncertain');
       if (!response.done) return { status: 'running', operationId };
-      if (response.error) return { status: 'failed' };
+      const failure = (code: string, message?: string): MediaProviderResult => ({
+        status: 'failed',
+        diagnostic: sanitizeMediaProviderDiagnostic(
+          { code, message },
+          context.config.recovery.maxDiagnosticMessageChars,
+          mediaDiagnosticSecrets(context.connection.headers),
+        ),
+      });
+      if (response.error) return failure(String(response.error.code), response.error.message);
       if (!response.response) throw new MediaProviderError('uncertain');
       const videos = response.response.videos ?? [];
       if (!videos.length) {
-        if (response.response.raiMediaFilteredCount) return { status: 'failed' };
+        if (response.response.raiMediaFilteredCount)
+          return failure('CONTENT_FILTERED', response.response.raiMediaFilteredReasons?.join(' '));
         throw new MediaProviderError('uncertain');
       }
       return {

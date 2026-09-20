@@ -42,6 +42,7 @@ import { getMessageTimestamp } from '~/utils';
 import { mediaErrorCode } from './commands';
 import { compareTurns } from './context';
 import { MediaAssetView } from './Asset';
+import { MediaJobError } from './Error';
 import { MediaStatus } from './Status';
 import { useLocalize } from '~/hooks';
 import { useMediaHost } from './host';
@@ -178,11 +179,7 @@ function Job({
       {job.retryOfJobId && (
         <p className="text-sm text-text-secondary">{localize('com_media_retry_attempt')}</p>
       )}
-      {job.error && (
-        <Alert variant="error">
-          <p>{localize(mediaErrorLabels[job.error.code])}</p>
-        </Alert>
-      )}
+      {job.error && <MediaJobError job={job} />}
       {active && imageJob && (
         <MediaImagePending
           createdAt={job.createdAt}

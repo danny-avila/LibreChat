@@ -48,6 +48,7 @@ export const mediaTurns = (threadId: string, params: MediaPageRequest = {}) =>
 export const mediaTurnJobs = (threadId: string, turnId: string, params: MediaPageRequest = {}) =>
   `${mediaThread(threadId)}/turns/${encodeURIComponent(turnId)}/jobs${mediaQuery(params)}`;
 export const mediaJob = (jobId: string) => `${mediaRoot()}/jobs/${encodeURIComponent(jobId)}`;
+export const mediaJobDiagnostics = (jobId: string) => `${mediaJob(jobId)}/diagnostics`;
 export const mediaJobOutputs = (jobId: string, params: MediaPageRequest = {}) =>
   `${mediaJob(jobId)}/outputs${mediaQuery(params)}`;
 export const mediaJobCancel = (jobId: string) => `${mediaJob(jobId)}/cancel`;
