@@ -975,6 +975,94 @@ describe('useDrawerSwipe — kickDrawerAnimation (button toggles)', () => {
   });
 });
 
+/**
+ * A closed drawer is not painted at all (see UnifiedSidebar), so every path
+ * that moves it has to claim painting for the travel and hand it back once the
+ * slide is over: claimed too late the opening frames are invisible, released
+ * too late — or never — and the settled drawer keeps the off-screen layer whose
+ * stale tiles this is all here to avoid.
+ */
+describe('useDrawerSwipe — painting through the travel', () => {
+  it('paints the drawer for a drag that opens it out of a closed state', () => {
+    jest.useFakeTimers();
+    const harness = setup(false);
+    harness.swipe(
+      harness.pane,
+      [
+        { x: 20, y: 100, t: 0 },
+        { x: 120, y: 104, t: 50 },
+      ],
+      false,
+    );
+
+    expect(harness.drawer.style.visibility).toBe('visible');
+
+    harness.pane.dispatchEvent(touchEvent('touchend', [], 120));
+    jest.runAllTimers();
+
+    expect(harness.onOpenChange).toHaveBeenCalledWith(true);
+    expect(harness.drawer.style.visibility).toBe('');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  /** The drawer never commits open here, so nothing else would ever take the
+   *  inline override back off it. */
+  it('hands painting back when a drag snaps the drawer closed again', () => {
+    jest.useFakeTimers();
+    const harness = setup(false);
+    harness.swipe(harness.pane, [
+      { x: 20, y: 100, t: 0 },
+      { x: 60, y: 100, t: 200 },
+      { x: 80, y: 100, t: 400 },
+    ]);
+    jest.runAllTimers();
+
+    expect(harness.onOpenChange).not.toHaveBeenCalled();
+    expect(harness.drawer.style.visibility).toBe('');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  it.each([
+    ['open', false, true],
+    ['close', true, false],
+  ])('paints a kicked %s slide before its state flip commits', (_name, open, next) => {
+    jest.useFakeTimers();
+    const harness = setup(open);
+    const visibilityAtApply: string[] = [];
+    kickDrawerAnimation(next, () => {
+      visibilityAtApply.push(harness.drawer.style.visibility);
+    });
+
+    expect(visibilityAtApply).toEqual(['visible']);
+
+    jest.advanceTimersByTime(400);
+
+    expect(harness.drawer.style.visibility).toBe('');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+
+  /** Reduced motion has no travel to paint: the state flip is the whole
+   *  transition, and an override left behind would keep the closed drawer's
+   *  layer alive for the rest of the session. */
+  it('leaves no painting override behind under reduced motion', () => {
+    jest.useFakeTimers();
+    const harness = setup(false, true);
+    harness.swipe(harness.pane, [
+      { x: 20, y: 100, t: 0 },
+      { x: 240, y: 100, t: 50 },
+    ]);
+    kickDrawerAnimation(false, jest.fn());
+    jest.runAllTimers();
+
+    expect(harness.drawer.style.visibility).toBe('');
+    jest.useRealTimers();
+    harness.unmount();
+  });
+});
+
 describe('findHorizontalScrollBlocker', () => {
   const scroller = (scrollLeft: number) => {
     const el = document.createElement('div');

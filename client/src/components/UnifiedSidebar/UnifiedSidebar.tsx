@@ -45,7 +45,7 @@ function SidebarChatProvider({ children }: { children: ReactNode }) {
   );
 }
 
-function UnifiedSidebar() {
+function UnifiedSidebar({ isSliding = false }: { isSliding?: boolean }) {
   const localize = useLocalize();
   const location = useLocation();
   const navigate = useNavigate();
@@ -201,6 +201,21 @@ function UnifiedSidebar() {
            *  too or that one change still animates. */
           transition: prefersReducedMotion ? undefined : MOBILE_DRAWER_TRANSITION,
           zIndex: DRAWER_Z_INDEX,
+          /** A closed drawer is translated off-screen, which hides it without
+           *  taking it out of the paint: iOS Safari gives the scroller inside it
+           *  a composited layer of its own, and that layer can stay behind at
+           *  the position it held while open — the Projects and Pinned rows
+           *  painting over the conversation with the drawer's own header and
+           *  bottom bar correctly gone. Not painting a closed drawer removes
+           *  what the artifact is made of, and skips the conversation list's
+           *  paint for as long as the drawer is shut.
+           *
+           *  `visibility` and not `display`: the virtualized chats list
+           *  measures this subtree, and an undisplayed one reports no viewport
+           *  to virtualize against. The travel stays painted — `isSliding`
+           *  covers the frames Recoil's deferred flip leaves uncovered at both
+           *  ends, and a drag claims painting inline (see useDrawerSwipe). */
+          visibility: expanded || isSliding ? undefined : 'hidden',
         }}
         inert={!expanded ? '' : undefined}
       >
