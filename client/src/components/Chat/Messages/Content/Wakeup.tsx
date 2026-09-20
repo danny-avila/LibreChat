@@ -1,10 +1,14 @@
 import { memo, useCallback, useMemo, useState } from 'react';
+import { Users } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
-import { ChevronDown, Users } from 'lucide-react';
 import type { ActiveSubagentPanel } from '~/components/Chat/Subagents/state';
 import type { WakeupDisplay, WakeupTask } from './Parts/wakeup';
 import type { TranslationKeys } from '~/hooks';
+import SystemEventHeader, {
+  SystemEventIcon,
+  systemEventHeaderClasses,
+} from '~/components/Chat/Messages/ui/SystemEvent';
 import { subagentStatusIcon, subagentStatusLabelKey } from '~/components/Chat/Subagents/status';
 import { useParentSubagents } from '~/components/Chat/Subagents/ParentSubagentsProvider';
 import { durableSubagentSelection } from '~/components/Chat/Subagents/eventSelection';
@@ -187,46 +191,30 @@ const Wakeup = memo(function Wakeup({
   );
 
   return (
-    <div className="mb-2 mt-1 w-full">
+    <div className={cn('max-w-full', isExpanded && 'w-[36rem]')}>
       <Button
         variant="ghost"
         type="button"
-        className="inline-flex h-auto w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-text-secondary hover:bg-transparent hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy focus-visible:ring-offset-0"
+        className={systemEventHeaderClasses}
         onClick={handleToggle}
         aria-expanded={isExpanded}
         aria-label={headerLabel}
       >
-        {display.kind === 'subagent' ? (
-          <div
-            className="flex h-5 w-5 shrink-0 items-center justify-center text-text-secondary"
-            aria-hidden="true"
-          >
-            <Users size={14} />
-          </div>
-        ) : (
-          <StackedToolIcons toolNames={toolIconNames} mcpIconMap={mcpIconMap} maxIcons={4} />
-        )}
-        <span
-          className={cn(
-            'tool-status-text min-w-0 truncate font-medium',
-            anyFailed && 'text-text-warning',
-          )}
-          role="status"
-          title={headerLabel}
-        >
-          {headerLabel}
-        </span>
-        {nameSummary !== '' && (
-          <span className="min-w-0 max-w-[40%] truncate text-xs font-normal text-text-secondary">
-            · {nameSummary}
-          </span>
-        )}
-        <ChevronDown
-          className={cn(
-            'size-4 shrink-0 text-text-secondary transition-transform duration-200 ease-out',
-            isExpanded && 'rotate-180',
-          )}
-          aria-hidden="true"
+        <SystemEventHeader
+          live
+          icon={
+            display.kind === 'subagent' ? (
+              <SystemEventIcon>
+                <Users size={14} />
+              </SystemEventIcon>
+            ) : (
+              <StackedToolIcons toolNames={toolIconNames} mcpIconMap={mcpIconMap} maxIcons={4} />
+            )
+          }
+          label={headerLabel}
+          detail={nameSummary}
+          expanded={isExpanded}
+          warning={anyFailed}
         />
       </Button>
       <div
@@ -237,7 +225,7 @@ const Wakeup = memo(function Wakeup({
       >
         {shouldRenderBody && (
           <div className="overflow-hidden" ref={expandRef}>
-            <div className="py-0.5 pl-4">
+            <div className="pb-1">
               <div className="mt-1 text-xs text-text-secondary">
                 {localize('com_ui_wakeup_explainer')}
               </div>
