@@ -7,6 +7,7 @@ import {
   getProps,
   getTemplate,
   getArtifactFilename,
+  getSvgFiles,
   languageForFilename,
   wrapAsFencedCodeBlock,
   TOOL_ARTIFACT_TYPES,
@@ -65,6 +66,10 @@ export default function useArtifactProps({ artifact }: { artifact: Artifact }) {
         'index.html',
         { 'index.html': highContrast ? withOfficeContrast(content, isDarkMode) : content },
       ];
+    }
+
+    if (type === 'image/svg+xml' || type === 'image/svg') {
+      return [getArtifactFilename(type), getSvgFiles(artifact.content ?? '')];
     }
 
     const fileKey = getArtifactFilename(artifact.type ?? '', artifact.language);

@@ -4,6 +4,10 @@ import {
   artifactRowKind,
   buildSandpackOptions,
   getArtifactDownloadFilename,
+  getArtifactFilename,
+  getDependencies,
+  getSvgFiles,
+  getTemplate,
   detectArtifactTypeFromFile,
   fileToArtifact,
   isCodeOnlyArtifact,
@@ -13,6 +17,37 @@ import {
 } from '../artifacts';
 
 const TAILWIND_CDN = 'https://cdn.tailwindcss.com/3.4.17#tailwind.js';
+
+describe('SVG artifact template mapping (#16087)', () => {
+  /* Bare `<svg>` handed to the static template as `index.html` renders
+   * blank. These types must map to a dedicated SVG file (and empty
+   * Sandpack deps) instead of riding `artifactFilename.default`. */
+  it.each(['image/svg+xml', 'image/svg'])(
+    'maps %s to index.svg on the static template, not default index.html',
+    (type) => {
+      expect(getArtifactFilename(type)).toBe('index.svg');
+      expect(getTemplate(type)).toBe('static');
+      expect(getDependencies(type)).toEqual({});
+    },
+  );
+
+  it('wraps a bare SVG in an HTML document for the static preview entry', () => {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600"><rect width="800" height="600" fill="#0f172a"/></svg>';
+    const files = getSvgFiles(svg);
+    expect(files['index.svg']).toBe(svg);
+    expect(files['index.html']).toMatch(/<!DOCTYPE html>/i);
+    expect(files['index.html']).toContain('<body');
+    expect(files['index.html']).toContain(svg);
+  });
+
+  it('strips an XML declaration so the HTML shell stays a valid HTML document', () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>';
+    const files = getSvgFiles(`<?xml version="1.0" encoding="UTF-8"?>\n${svg}`);
+    expect(files['index.html']).not.toMatch(/<\?xml/i);
+    expect(files['index.html']).toContain(svg);
+  });
+});
 
 describe('buildSandpackOptions', () => {
   it('includes externalResources with .js fragment hint for static template', () => {

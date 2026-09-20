@@ -31,6 +31,11 @@ const artifactFilename = {
   'application/vnd.librechat.docx-preview': 'index.html',
   'application/vnd.librechat.spreadsheet-preview': 'index.html',
   'application/vnd.librechat.presentation-preview': 'index.html',
+  /* SVG artifacts are a bare `<svg>` document. The Sandpack `static`
+   * template always loads `index.html`, so `getSvgFiles` ships a
+   * companion HTML shell; the editor/download file stays `index.svg`. */
+  'image/svg+xml': 'index.svg',
+  'image/svg': 'index.svg',
   // mermaid and markdown types are handled separately in useArtifactProps.ts
   default: 'index.html',
   // 'css': 'css',
@@ -68,6 +73,8 @@ const artifactTemplate: Record<
   'application/vnd.librechat.docx-preview': 'static',
   'application/vnd.librechat.spreadsheet-preview': 'static',
   'application/vnd.librechat.presentation-preview': 'static',
+  'image/svg+xml': 'static',
+  'image/svg': 'static',
   default: 'static',
   // 'css': 'css',
   // 'javascript': 'js',
@@ -189,6 +196,34 @@ export function getTemplate(type: string, language?: string): SandpackPredefined
   return artifactTemplate[key] ?? (artifactTemplate.default as SandpackPredefinedTemplate);
 }
 
+/**
+ * Files for an `image/svg+xml` (or `image/svg`) artifact. The Sandpack
+ * `static` template always loads `index.html`; a bare SVG in that slot
+ * renders blank. Keep the source on `index.svg` for the code tab and wrap
+ * a copy in a full-viewport HTML shell for the preview. viewBox-only
+ * sources fill the panel via `svg { width/height: 100% }`.
+ */
+export function getSvgFiles(content: string): Record<string, string> {
+  const svg = content.replace(/^\uFEFF?\s*<\?xml\b[^?]*\?>\s*/i, '');
+  return {
+    'index.svg': content,
+    'index.html': `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<style>
+html,body{margin:0;height:100%;overflow:hidden}
+svg{display:block;width:100%;height:100%}
+</style>
+</head>
+<body>
+${svg}
+</body>
+</html>`,
+  };
+}
+
 const standardDependencies = {
   three: '^0.167.1',
   'lucide-react': '^0.394.0',
@@ -265,6 +300,9 @@ const dependenciesMap: Record<
   'application/vnd.librechat.docx-preview': {},
   'application/vnd.librechat.spreadsheet-preview': {},
   'application/vnd.librechat.presentation-preview': {},
+  /* SVG preview is a static HTML shell + the source file; no npm deps. */
+  'image/svg+xml': {},
+  'image/svg': {},
   default: standardDependencies,
 };
 
