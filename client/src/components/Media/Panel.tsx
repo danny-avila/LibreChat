@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useAtom } from 'jotai';
+import { History, Plus } from 'lucide-react';
 import { useNavigate, useMatch } from 'react-router-dom';
 import { Alert, Button, Skeleton } from '@librechat/client';
 import type { MediaCatalog, MediaThreadDetail } from 'librechat-data-provider';
@@ -87,9 +88,14 @@ export function MediaSettingsContent({ host, threadId }: { host: MediaHost; thre
     content = <Alert variant="error">{localize('com_media_thread_unavailable')}</Alert>;
   return (
     <div className="space-y-4 px-3 pb-6 pt-3">
-      <div className="flex items-center justify-between gap-2">
+      <div className="space-y-3">
         <h2 className="text-sm font-semibold">{localize('com_media_settings')}</h2>
-        <Button variant="ghost" size="sm" onClick={switchView}>
+        <Button variant="subtle" size="sm" className="w-full" onClick={switchView}>
+          {gallery ? (
+            <Plus className="size-4" strokeWidth={1.75} aria-hidden="true" />
+          ) : (
+            <History className="size-4" strokeWidth={1.75} aria-hidden="true" />
+          )}
           {localize(gallery ? 'com_media_new_thread' : 'com_media_open_gallery')}
         </Button>
       </div>

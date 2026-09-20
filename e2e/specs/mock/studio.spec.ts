@@ -82,8 +82,8 @@ test('sidebar studio queues, restores, refines and hands an original to chat', a
   await expect(page.getByRole('status').filter({ hasText: 'Completed' })).toBeVisible();
   await header.getByRole('button', { name: 'Generation history', exact: true }).click();
   const library = page.getByRole('region', { name: 'Your library', exact: true });
-  await library.getByRole('button', { name: 'With results', exact: true }).click();
-  await expect(library.getByRole('button', { name: 'With results', exact: true })).toHaveAttribute(
+  await library.getByRole('button', { name: 'Completed', exact: true }).click();
+  await expect(library.getByRole('button', { name: 'Completed', exact: true })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
@@ -184,7 +184,10 @@ test('sidebar studio queues, restores, refines and hands an original to chat', a
   await expect(prompt).toBeFocused();
   await header.getByRole('button', { name: 'Generation history', exact: true }).click();
   await expect(prompt).not.toBeVisible();
-  await header.getByRole('button', { name: 'Back to creation', exact: true }).click();
+  await expect(header.getByRole('button', { name: 'Back to creation', exact: true })).toHaveCount(
+    0,
+  );
+  await header.getByRole('button', { name: 'New creation', exact: true }).click();
   await expect(prompt).toBeFocused();
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(threadURL);
@@ -245,10 +248,14 @@ test('library title search, independent result drafts and deletion controls rema
   expect((await searched).status()).toBe(200);
   await expect(page.getByRole('button', { name: `Open ${original}`, exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: `Open ${derived}`, exact: true })).toHaveCount(0);
-  await page.getByRole('checkbox', { name: `Select ${original}`, exact: true }).check();
-  await page.getByRole('button', { name: 'Delete selected creations', exact: true }).click();
-  const selectedDialog = page.getByRole('dialog', { name: 'Delete selected creations' });
+  const deleteCreation = page.getByRole('button', { name: `Delete ${original}`, exact: true });
+  await deleteCreation.click();
+  const selectedDialog = page.getByRole('dialog', { name: 'Delete this creation?' });
   await expectAccessible(page);
+  await selectedDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(selectedDialog).toHaveCount(0);
+  await expect(deleteCreation).toBeFocused();
+  await deleteCreation.click();
   await selectedDialog.getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(selectedDialog).toHaveCount(0);
   await expect(page.getByRole('button', { name: `Open ${original}`, exact: true })).toHaveCount(0);

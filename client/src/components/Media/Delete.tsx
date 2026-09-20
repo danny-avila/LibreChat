@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Button,
   OGDialog,
@@ -29,7 +29,16 @@ export function MediaDeleteDialog({
 }) {
   const localize = useLocalize();
   const remove = useDeleteMediaThreads(host);
+  const trigger = useRef<HTMLElement | null>(null);
   const [error, setError] = useState<string>();
+  let title = localize('com_media_delete_selected');
+  if (request.mode === 'all') title = localize('com_media_clear_all_title');
+  else if (request.threadIds.length === 1) title = localize('com_media_delete_title');
+  const changeOpen = (value: boolean) => {
+    if (remove.isLoading) return;
+    setError(undefined);
+    onOpenChange(value);
+  };
   const submit = async () => {
     setError(undefined);
     try {
@@ -44,20 +53,19 @@ export function MediaDeleteDialog({
     }
   };
   return (
-    <OGDialog
-      open={open}
-      onOpenChange={(value) => {
-        if (remove.isLoading) return;
-        setError(undefined);
-        onOpenChange(value);
-      }}
-    >
-      <OGDialogContent>
-        <OGDialogTitle>
-          {localize(
-            request.mode === 'all' ? 'com_media_clear_all_title' : 'com_media_delete_selected',
-          )}
-        </OGDialogTitle>
+    <OGDialog open={open} onOpenChange={changeOpen}>
+      <OGDialogContent
+        onOpenAutoFocus={() => {
+          const activeElement = document.activeElement;
+          trigger.current = activeElement instanceof HTMLElement ? activeElement : null;
+        }}
+        onCloseAutoFocus={(event) => {
+          if (!trigger.current?.isConnected) return;
+          event.preventDefault();
+          trigger.current.focus();
+        }}
+      >
+        <OGDialogTitle>{title}</OGDialogTitle>
         <OGDialogDescription>{localize('com_media_delete_description')}</OGDialogDescription>
         {error && (
           <p role="alert" className="text-sm text-text-secondary">
@@ -65,7 +73,7 @@ export function MediaDeleteDialog({
           </p>
         )}
         <div className="flex justify-end gap-2">
-          <Button variant="outline" disabled={remove.isLoading} onClick={() => onOpenChange(false)}>
+          <Button variant="outline" disabled={remove.isLoading} onClick={() => changeOpen(false)}>
             {localize('com_ui_cancel')}
           </Button>
           <Button variant="destructive" disabled={remove.isLoading} onClick={() => void submit()}>

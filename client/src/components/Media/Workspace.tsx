@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useAtom } from 'jotai';
-import { ArrowLeft, HatGlasses, History, Images, Plus, SlidersHorizontal } from 'lucide-react';
+import { HatGlasses, History, Images, Plus, SlidersHorizontal } from 'lucide-react';
 import {
   Button,
   EmptyState,
@@ -51,7 +51,7 @@ export default function MediaWorkspace({
   const focusRequested = useRef<{ threadId: string | undefined }>();
   const settingsTrigger = useRef<HTMLButtonElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [selectedThreads, setSelectedThreads] = useState(new Set<string>());
+  const [deleteThreadId, setDeleteThreadId] = useState<string>();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [library, setLibrary] = useAtom(mediaLibraryFamily(host.scope));
   const [newDraft, setNewDraft] = useAtom(mediaDraftFamily(`${host.scope}:new`));
@@ -294,27 +294,22 @@ export default function MediaWorkspace({
               }
             />
           )}
-          <TooltipAnchor
-            description={localize(gallery ? 'com_media_back_creation' : 'com_media_open_gallery')}
-            render={
-              <Button
-                size="icon"
-                variant="header-action"
-                className={cn('size-9', gallery && 'bg-surface-active-alt')}
-                aria-pressed={gallery}
-                aria-label={localize(
-                  gallery ? 'com_media_back_creation' : 'com_media_open_gallery',
-                )}
-                onClick={() => (gallery ? focusComposer() : setView('gallery'))}
-              >
-                {gallery ? (
-                  <ArrowLeft className="icon-md" aria-hidden="true" />
-                ) : (
+          {!gallery && (
+            <TooltipAnchor
+              description={localize('com_media_open_gallery')}
+              render={
+                <Button
+                  size="icon"
+                  variant="header-action"
+                  className="size-9"
+                  aria-label={localize('com_media_open_gallery')}
+                  onClick={() => setView('gallery')}
+                >
                   <History className="icon-md" aria-hidden="true" />
-                )}
-              </Button>
-            }
-          />
+                </Button>
+              }
+            />
+          )}
           <TooltipAnchor
             description={localize('com_media_new_thread')}
             render={
@@ -446,16 +441,10 @@ export default function MediaWorkspace({
               filter={library.filter}
               search={library.search}
               columns={library.columns}
-              selected={selectedThreads}
-              onSelect={(id) =>
-                setSelectedThreads((previous) => {
-                  const next = new Set(previous);
-                  if (next.has(id)) next.delete(id);
-                  else next.add(id);
-                  return next;
-                })
-              }
-              onDelete={() => setDeleteOpen(true)}
+              onDelete={(id) => {
+                setDeleteThreadId(id);
+                setDeleteOpen(true);
+              }}
               onFilter={(filter) => setLibrary((previous) => ({ ...previous, filter }))}
               onSearch={(search) => setLibrary((previous) => ({ ...previous, search }))}
               onColumns={(columns) => setLibrary((previous) => ({ ...previous, columns }))}
@@ -472,8 +461,7 @@ export default function MediaWorkspace({
         host={host}
         open={deleteOpen}
         onOpenChange={setDeleteOpen}
-        request={{ mode: 'selected', threadIds: [...selectedThreads] }}
-        onDeleted={(ids) => setSelectedThreads(new Set(ids))}
+        request={{ mode: 'selected', threadIds: deleteThreadId ? [deleteThreadId] : [] }}
       />
       {!settingsToggle && (
         <OGDialog open={settingsOpen} onOpenChange={setSettingsOpen} triggerRef={settingsTrigger}>

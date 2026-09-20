@@ -233,6 +233,10 @@ test('keeps parameters in the sidebar and restores the prompt and gallery densit
   fireEvent.change(prompt, { target: { value: 'A paper boat on a lake' } });
   fireEvent.click(header().getByRole('button', { name: 'com_media_open_gallery' }));
   await screen.findByRole('heading', { name: 'com_media_gallery' });
+  expect(
+    header().queryByRole('button', { name: 'com_media_open_gallery' }),
+  ).not.toBeInTheDocument();
+  expect(header().getAllByRole('button', { name: 'com_media_new_thread' })).toHaveLength(1);
   expect(prompt).not.toBeVisible();
   const density = within(screen.getByRole('radiogroup', { name: 'com_media_columns' }));
   for (const columns of [2, 3, 4]) {
@@ -244,7 +248,7 @@ test('keeps parameters in the sidebar and restores the prompt and gallery densit
       String(columns),
     );
   }
-  fireEvent.click(header().getByRole('button', { name: 'com_media_back_creation' }));
+  fireEvent.click(header().getByRole('button', { name: 'com_media_new_thread' }));
   expect(prompt).toBeVisible();
   expect(prompt).toHaveValue('A paper boat on a lake');
   fireEvent.click(header().getByRole('button', { name: 'com_media_open_gallery' }));
@@ -259,7 +263,7 @@ test('keeps parameters in the sidebar and restores the prompt and gallery densit
       within(screen.getByTestId('media-composer')).getByRole('textbox', { hidden: true }),
     ).toHaveValue('A paper boat on a lake'),
   );
-  fireEvent.click(header().getByRole('button', { name: 'com_media_back_creation' }));
+  fireEvent.click(header().getByRole('button', { name: 'com_media_new_thread' }));
   expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue(
     'A paper boat on a lake',
   );
@@ -389,6 +393,48 @@ test('shows a saved thread chronologically and returns to that thread when its g
   expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue(
     'Make the boat blue',
   );
+});
+
+test('gallery deletion confirms one creation and clears cancelled errors before another attempt', async () => {
+  const other = { ...detail.thread, threadId: 'other', title: 'Other creation' };
+  jest.mocked(dataService.listMediaThreads).mockResolvedValue({ items: [detail.thread, other] });
+  const remove = jest
+    .spyOn(dataService, 'deleteMediaThreads')
+    .mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValueOnce({ retired: 1, failures: [] });
+  mount();
+  await screen.findByRole('textbox', { name: 'com_media_prompt' });
+  fireEvent.click(header().getByRole('button', { name: 'com_media_open_gallery' }));
+  const gallery = within(screen.getByTestId('media-gallery'));
+  const [first, second] = await gallery.findAllByRole('listitem');
+  const deleteSecond = within(second).getByRole('button', { name: 'com_media_delete_named' });
+  deleteSecond.focus();
+  fireEvent.click(deleteSecond);
+  const dialog = await screen.findByRole('dialog', { name: 'com_media_delete_title' });
+  expect(remove).not.toHaveBeenCalled();
+  expect(screen.getByText('com_media_gallery')).toBeVisible();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'com_ui_delete' }));
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+    'com_media_error_internal_error',
+  );
+  expect(remove).toHaveBeenLastCalledWith({ mode: 'selected', threadIds: ['other'] });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'com_ui_cancel' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(deleteSecond).toHaveFocus();
+  fireEvent.click(within(first).getByRole('button', { name: 'com_media_delete_named' }));
+  const nextDialog = await screen.findByRole('dialog', { name: 'com_media_delete_title' });
+  expect(within(nextDialog).queryByRole('alert')).not.toBeInTheDocument();
+  expect(remove).toHaveBeenCalledTimes(1);
+  fireEvent.click(within(nextDialog).getByRole('button', { name: 'com_ui_cancel' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  fireEvent.click(within(second).getByRole('button', { name: 'com_media_delete_named' }));
+  jest.mocked(dataService.listMediaThreads).mockResolvedValue({ items: [detail.thread] });
+  fireEvent.click(screen.getByRole('button', { name: 'com_ui_delete' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(remove).toHaveBeenCalledTimes(2);
+  expect(remove).toHaveBeenLastCalledWith({ mode: 'selected', threadIds: ['other'] });
+  await waitFor(() => expect(gallery.getAllByRole('listitem')).toHaveLength(1));
+  expect(gallery.getByText(detail.thread.title)).toBeVisible();
 });
 
 test('keeps the composer usable around the embedded settings dialog', async () => {

@@ -83,15 +83,16 @@ function mount(tiles: MediaTile[], overrides: Partial<Parameters<typeof MediaGal
 
 test('cards show the cover, model, and a relative time without a status for finished work', () => {
   const props = mount([tile(thread({}))]);
-  const card = screen.getByRole('button', { name: 'com_media_open_named:Harbor at dusk' });
+  const open = screen.getByRole('button', { name: 'com_media_open_named:Harbor at dusk' });
+  const card = screen.getByRole('listitem');
   expect(within(card).getByRole('img')).toHaveAttribute('src', '/images/cover.png');
   expect(within(card).getByRole('img')).toHaveClass('object-cover');
-  expect(card).toHaveAccessibleDescription(/Painterly XL/);
+  expect(open).toHaveAccessibleDescription(/Painterly XL/);
   const time = within(card).getByText(/ago|hour/);
   expect(time.tagName).toBe('TIME');
   expect(time).toHaveAttribute('datetime', recent);
   expect(within(card).queryByText('com_media_phase_succeeded')).not.toBeInTheDocument();
-  fireEvent.click(card);
+  fireEvent.click(open);
   expect(props.onOpen).toHaveBeenCalledWith('thread');
   expect(document.querySelector('[data-testid="media-gallery"]')).toHaveAttribute(
     'data-columns',
@@ -131,12 +132,10 @@ test('unfinished work carries its status in the caption and video covers show a 
       }),
     ),
   ]);
-  const running = screen.getByRole('button', { name: 'com_media_open_named:Running' });
+  const [running, failed, video] = screen.getAllByRole('listitem');
   expect(within(running).getByText('com_media_phase_running')).toBeInTheDocument();
-  const failed = screen.getByRole('button', { name: 'com_media_open_named:Failed' });
   expect(within(failed).getByText('com_media_no_output')).toBeInTheDocument();
   expect(within(failed).getByText('com_media_phase_failed')).toBeInTheDocument();
-  const video = screen.getByRole('button', { name: 'com_media_open_named:Video' });
   expect(within(video).getByLabelText('com_media_video_preview')).toBeInTheDocument();
   expect(video.querySelector('.lucide-play')).toBeInTheDocument();
 });
@@ -156,7 +155,7 @@ test('a receipt without a projection reads as preparing', () => {
       },
     },
   ]);
-  const card = screen.getByRole('button', { name: 'com_media_open_named:Pending prompt' });
+  const card = screen.getByRole('listitem');
   expect(within(card).getByText('com_media_preparing')).toBeInTheDocument();
 });
 
@@ -169,22 +168,19 @@ test('the density control is a single radiogroup and search matches the title', 
   expect(props.onColumns).toHaveBeenCalledWith(4);
 });
 
-test('selection is independent of opening a creation and respects the server batch limit', () => {
-  const onSelect = jest.fn();
+test('each saved creation can be deleted without opening it or selecting other cards', () => {
   const onDelete = jest.fn();
-  mount([tile(thread({})), tile(thread({ threadId: 'other', title: 'Other' }))], {
-    selected: new Set(['thread']),
-    onSelect,
+  const props = mount([tile(thread({})), tile(thread({ threadId: 'other', title: 'Other' }))], {
     onDelete,
-    catalog: { ...catalog, limits: { ...catalog.limits, maxPageSize: 1 } },
   });
-  expect(
-    screen.getByRole('checkbox', { name: 'com_media_select_named:Harbor at dusk' }),
-  ).toBeChecked();
-  expect(screen.getByRole('checkbox', { name: 'com_media_select_named:Other' })).toBeDisabled();
-  fireEvent.click(screen.getByRole('button', { name: 'com_media_delete_selected' }));
+  expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_delete_named:Harbor at dusk' }));
   expect(onDelete).toHaveBeenCalledTimes(1);
-  expect(onSelect).not.toHaveBeenCalled();
+  expect(onDelete).toHaveBeenLastCalledWith('thread');
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_delete_named:Other' }));
+  expect(onDelete).toHaveBeenCalledTimes(2);
+  expect(onDelete).toHaveBeenLastCalledWith('other');
+  expect(props.onOpen).not.toHaveBeenCalled();
 });
 
 test('filtered views that match nothing offer a way back to everything', () => {

@@ -1,7 +1,7 @@
 import { useId, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Film, Image, Images, Play, Search } from 'lucide-react';
-import { Button, Checkbox, Chip, EmptyState, Input, Radio, Skeleton } from '@librechat/client';
+import { Film, Image, Images, Play, Search, Trash2 } from 'lucide-react';
+import { Button, Chip, EmptyState, Input, Radio, Skeleton, TooltipAnchor } from '@librechat/client';
 import type { MediaCatalog, MediaThreadListRequest } from 'librechat-data-provider';
 import type { MediaTile, useMediaThreads } from '~/data-provider';
 import type { MediaLibrary } from './state';
@@ -32,8 +32,6 @@ export function MediaGallery({
   onCreate,
   onColumns,
   onOpen,
-  selected,
-  onSelect,
   onDelete,
 }: {
   tiles: MediaTile[];
@@ -47,9 +45,7 @@ export function MediaGallery({
   onCreate: () => void;
   onColumns: (value: MediaLibrary['columns']) => void;
   onOpen: (threadId: string) => void;
-  selected?: Set<string>;
-  onSelect?: (threadId: string) => void;
-  onDelete?: () => void;
+  onDelete?: (threadId: string) => void;
 }) {
   const localize = useLocalize();
   const { i18n } = useTranslation();
@@ -132,16 +128,6 @@ export function MediaGallery({
           />
         </div>
       </div>
-      {!!selected?.size && onDelete && (
-        <div className="flex items-center justify-between gap-2">
-          <p role="status" className="text-sm text-text-secondary">
-            {localize('com_media_selected_count', { count: selected.size })}
-          </p>
-          <Button variant="destructive" size="sm" onClick={onDelete}>
-            {localize('com_media_delete_selected')}
-          </Button>
-        </div>
-      )}
       {query.isLoading && (
         <div role="status" className={grid}>
           <span className="sr-only">{localize('com_media_loading')}</span>
@@ -209,23 +195,10 @@ export function MediaGallery({
             emptyLabel = localize('com_media_phase_requires_attention');
           else if (pending) emptyLabel = localize('com_media_phase_running');
           return (
-            <li key={tile.threadId} className="min-w-0">
-              {onSelect && tile.thread && (
-                <div className="mb-2 flex items-center gap-2">
-                  <Checkbox
-                    aria-label={localize('com_media_select_named', { title: tile.title })}
-                    checked={selected?.has(tile.threadId) ?? false}
-                    disabled={
-                      !selected?.has(tile.threadId) &&
-                      (selected?.size ?? 0) >= (catalog?.limits.maxPageSize ?? 0)
-                    }
-                    onCheckedChange={() => onSelect(tile.threadId)}
-                  />
-                </div>
-              )}
+            <li key={tile.threadId} className="relative min-w-0">
               <button
                 type="button"
-                className="group flex w-full flex-col gap-2 rounded-xl text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 focus-visible:ring-offset-presentation"
+                className="group block w-full rounded-xl text-start after:absolute after:inset-0 after:rounded-xl focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-text-primary focus-visible:after:ring-offset-2 focus-visible:after:ring-offset-presentation"
                 onClick={() => onOpen(tile.threadId)}
                 aria-label={localize('com_media_open_named', { title: tile.title })}
                 aria-describedby={`${id}-${tile.threadId}`}
@@ -247,7 +220,9 @@ export function MediaGallery({
                     </span>
                   )}
                 </span>
-                <span id={`${id}-${tile.threadId}`} className="flex min-w-0 flex-col gap-1 px-0.5">
+              </button>
+              <div className="mt-2 flex items-start gap-2 px-0.5">
+                <span id={`${id}-${tile.threadId}`} className="flex min-w-0 flex-1 flex-col gap-1">
                   <span className="line-clamp-2 text-sm font-medium leading-5 text-text-primary">
                     {tile.title}
                   </span>
@@ -266,7 +241,23 @@ export function MediaGallery({
                     )}
                   </span>
                 </span>
-              </button>
+                {onDelete && tile.thread && (
+                  <TooltipAnchor
+                    description={localize('com_ui_delete')}
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        className="relative z-10 shrink-0"
+                        aria-label={localize('com_media_delete_named', { title: tile.title })}
+                        onClick={() => onDelete(tile.threadId)}
+                      >
+                        <Trash2 className="size-4" aria-hidden="true" />
+                      </Button>
+                    }
+                  />
+                )}
+              </div>
             </li>
           );
         })}
