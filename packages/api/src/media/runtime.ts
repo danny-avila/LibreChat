@@ -22,13 +22,17 @@ import type { NativeMessageMethods } from '@librechat/data-schemas';
 import type { MediaConfig } from 'librechat-data-provider';
 import type { Request, Router } from 'express';
 import type {
+  GeneratedImageFile,
+  GeneratedImageRequest,
+  SaveGeneratedImageOptions,
+} from '~/files/generated';
+import type {
   MediaAccounting,
   MediaContext,
   MediaServices,
   MediaServiceDependencies,
 } from './service';
 import type { MediaChatSource, NativeMediaFactory, NativeMediaUsageSink } from './native';
-import type { GeneratedImageFile, SaveGeneratedImageOptions } from '~/files/generated';
 import type { BalanceCreditReservationDeps } from '~/middleware/checkBalance';
 import type { IEventTransport } from '~/stream/interfaces/IJobStore';
 import type { ModerationCheck } from '~/middleware/moderation';
@@ -425,6 +429,10 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
               : { mimeType: part.file.type, thoughtSignature: part.thoughtSignature };
         });
       }
+      const nativeRequest: GeneratedImageRequest = Object.assign(Object.create(request), {
+        config: effectiveConfig,
+        user,
+      });
       return createNativeMediaFactory({
         deps,
         repository,
@@ -436,14 +444,20 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
             ? {
                 save: (part) =>
                   input.saveNativeImage!(`data:${part.mimeType};base64,${part.data}`, {
-                    req: Object.assign(Object.create(request), { config: effectiveConfig }),
+                    req: nativeRequest,
                     filename: 'native-image',
                     endpoint: 'google',
                     context: FileContext.image_generation,
                     preserveOriginal: true,
                   }),
                 read: (scope, file, maxBytes) =>
-                  readNativeMessageImage(input.getNativeFileStrategy!, scope, file, maxBytes),
+                  readNativeMessageImage(
+                    input.getNativeFileStrategy!,
+                    nativeRequest,
+                    scope,
+                    file,
+                    maxBytes,
+                  ),
               }
             : undefined,
         onUsage,

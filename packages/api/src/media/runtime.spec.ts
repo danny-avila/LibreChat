@@ -103,6 +103,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
   let behavior: 'image' | 'uncertain' | 'rejected' | 'video' | 'unsafe-svg' | 'mislabeled' =
     'image';
   let accounting: ReturnType<typeof createMediaAccounting>;
+  let nativeDownload: jest.MockedFunction<MediaFileStrategy['getDownloadStream']>;
   let repository: Pick<KeyMethods, 'getUserKeySnapshot'> &
     MediaMethods &
     MediaNativeMethods &
@@ -426,6 +427,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       now: Date.now,
       pricing: createMethods(mongoose),
     });
+    nativeDownload = jest.fn(async (_request, filepath) => createReadStream(filepath));
     runtime = createMediaRuntime({
       saveNativeImage: (url, options) =>
         saveGeneratedImage(url, options, {
@@ -446,7 +448,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
         }),
       getNativeFileStrategy: () => ({
         ...cloudStrategy,
-        getDownloadStream: async (_request, filepath) => createReadStream(filepath),
+        getDownloadStream: nativeDownload,
       }),
       observer: (event) => {
         lifecycleEvents.push(event);
@@ -2194,10 +2196,11 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     expect(
       await mongoose.models.File.findOne({ file_id: image.image_file.file_id }).lean(),
     ).not.toHaveProperty('mediaLifecycle');
-    const makeReplay = async (ownerId: string, tenantId?: string) => {
+    const makeReplay = async (ownerId: string, tenantId?: string, requestConfig?: AppConfig) => {
       const loaded = await runtime.nativeFactory(
         Object.assign(Object.create(express.request), {
           user: { id: ownerId, role: 'USER', tenantId },
+          config: requestConfig,
         }),
         { conversationId: 'chat-one', messageId: 'next', prompt: 'Continue', temporary: false },
       );
@@ -2217,6 +2220,15 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       data: original.toString('base64'),
       thoughtSignature: 'private-image-signature',
     });
+    expect(nativeDownload).toHaveBeenLastCalledWith(
+      expect.objectContaining({ config, user: expect.objectContaining({ id: scope.ownerId }) }),
+      image.image_file.filepath,
+    );
+    const requestConfig = { ...config, config: { ...config.config, version: 'request-config' } };
+    await expect(
+      (await makeReplay(scope.ownerId, undefined, requestConfig))?.restore(reference),
+    ).resolves.toMatchObject({ data: original.toString('base64') });
+    expect(nativeDownload.mock.lastCall?.[0]).toHaveProperty('config', requestConfig);
     await expect(
       (await makeReplay(new mongoose.Types.ObjectId().toString()))?.restore(reference),
     ).rejects.toMatchObject({ code: 'not_found' });
