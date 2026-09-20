@@ -1454,6 +1454,77 @@ describe('ContentParts — live activity fold', () => {
     expect(status()).toHaveTextContent('Reading the lens file');
   });
 
+  /** One fixture per channel a call can report its outcome through. The live
+   *  line reads the same resolver as the group header, so each must surface. */
+  const handleOutput = JSON.stringify({
+    background_task_id: 'bg1',
+    tool: 'lookup',
+    status: 'running',
+    message: 'Dispatched. Poll with check_background_task.',
+  });
+  const statusAttachment = (status: string) =>
+    ({
+      type: 'background_task_status',
+      status,
+      toolCallId: 't1',
+      messageId: 'msg1',
+    }) as unknown as TAttachment;
+  it.each([
+    [
+      'a cancelled status attachment',
+      { name: 'lookup', output: handleOutput, runStepStatus: 'completed' },
+      [statusAttachment('cancelled')],
+      'com_ui_cancelled',
+    ],
+    [
+      'a memory tool failing in prose',
+      { name: 'set_memory', output: 'Invalid key "x". Must be one of: a' },
+      [],
+      'com_ui_failed',
+    ],
+  ])('surfaces %s in the collapsed row', (_name, call, attachments, expected) => {
+    const part = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: { id: 't1', args: '{}', ...call },
+    } as unknown as TMessageContentParts;
+    renderContentParts({ ...liveProps, content: [part], attachments });
+
+    expect(liveHeader()).toHaveTextContent(expected);
+  });
+
+  it('ends the live span at a legacy call mixed into an agents run', () => {
+    const codeInterpreter = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: {
+        id: 'ci1',
+        type: 'code_interpreter',
+        code_interpreter: { input: 'print(1)', outputs: [] },
+      },
+    } as unknown as TMessageContentParts;
+    renderContentParts({ ...liveProps, content: [makeMcpToolCall('t1'), codeInterpreter] });
+
+    expect(screen.queryByTestId('activity-phase-card')).toBeNull();
+  });
+
+  it('names the live disclosure by its current line alone, not the announced one', () => {
+    jest.useFakeTimers();
+    const frame = (content: TMessageContentParts[]) => (
+      <RecoilRoot>
+        <ContentParts {...liveProps} content={content} />
+      </RecoilRoot>
+    );
+    const { rerender } = render(frame([intentCall('t1', 'Reading the lens file')]));
+    rerender(
+      frame([intentCall('t1', 'Reading the lens file', 'ok'), intentCall('t2', 'Querying')]),
+    );
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+
+    expect(within(liveHeader()).getByRole('status')).toHaveTextContent('Reading the lens file');
+    expect(liveHeader()).toHaveAccessibleName('Querying');
+  });
+
   it('leaves a span of legacy Assistants calls, which the header cannot name, unfolded', () => {
     const codeInterpreter = {
       type: ContentTypes.TOOL_CALL,

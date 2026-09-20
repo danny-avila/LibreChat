@@ -234,8 +234,17 @@ function claimsActivity(part: TMessageContentParts | undefined): boolean {
   return typeof name !== 'string' || !name.startsWith(Constants.LC_TRANSFER_TO_);
 }
 
-function isTransferCall(part: TMessageContentParts | undefined): boolean {
-  return part?.type === ContentTypes.TOOL_CALL && !claimsActivity(part);
+/**
+ * A call a live row cannot stand for: a handoff, whose card names the
+ * destination agent and can never join a group, or a legacy Assistants variant
+ * (no top-level `args`), which the live header has no line for.
+ */
+function endsLiveSpan(part: TMessageContentParts | undefined): boolean {
+  if (part?.type !== ContentTypes.TOOL_CALL) {
+    return false;
+  }
+  const toolCall = part[ContentTypes.TOOL_CALL];
+  return !claimsActivity(part) || toolCall == null || !('args' in toolCall);
 }
 
 type FoldRun = {
@@ -442,11 +451,10 @@ function synthesizeActivityFolds(
   for (let position = 0; position < segment.content.length; position += 1) {
     const part = segment.content[position];
     const index = segment.contentIndices[position];
-    /** A handoff card names the destination agent and its instructions, and
-     *  can never join a group. Folding it into a live row would hide it for
-     *  the rest of the run, so while streaming it ends the span the way prose
-     *  does, and the next agent's calls start a live span of their own. */
-    if (isFoldBoundaryPart(part) || (liveTail && isTransferCall(part))) {
+    /** Folding a call the header cannot stand for would hide its card for the
+     *  rest of the run, so while streaming it ends the span the way prose
+     *  does, and the calls after it start a live span of their own. */
+    if (isFoldBoundaryPart(part) || (liveTail && endsLiveSpan(part))) {
       flushRun();
       pending.content.push(part);
       pending.contentIndices.push(index);

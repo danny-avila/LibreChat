@@ -105,6 +105,7 @@ const PhaseLabel = memo(function PhaseLabel({
   failed,
   source,
   live = false,
+  lineId,
 }: {
   text: string;
   animate: boolean;
@@ -114,6 +115,8 @@ const PhaseLabel = memo(function PhaseLabel({
    *  in would read as flicker — so an unchanged source extends in place. */
   source?: string;
   live?: boolean;
+  /** Id for the current line, so a live disclosure can be named by it alone. */
+  lineId?: string;
 }) {
   const [lines, setLines] = useState<{
     current: string;
@@ -185,6 +188,7 @@ const PhaseLabel = memo(function PhaseLabel({
         /** Keyed by source while live, so a growing sentence updates one
          *  element instead of remounting — and replaying its slide — per paint. */
         key={`current-${source ?? lines.current}`}
+        id={lineId}
         className={cn(
           'block truncate',
           lines.entered && `animate-in fade-in-0 slide-in-from-bottom-5 ${FOLD_EASING}`,
@@ -209,10 +213,12 @@ const PhaseLabel = memo(function PhaseLabel({
 function LivePhaseHeader({
   parts,
   animate,
+  lineId,
   attachments,
 }: {
   parts: ReadonlyArray<TMessageContentParts | undefined>;
   animate: boolean;
+  lineId: string;
   attachments?: TAttachment[];
 }) {
   const localize = useLocalize();
@@ -238,6 +244,7 @@ function LivePhaseHeader({
         failed={false}
         animate={animate}
         live
+        lineId={lineId}
       />
     </>
   );
@@ -297,6 +304,7 @@ export default function ActivityPhaseGroup({
   const [isSettled, setIsSettled] = useState(!foldsIn);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const panelId = useId();
+  const lineId = useId();
   const cancelEntranceRef = useRef<(() => void) | null>(null);
   const cancelLayoutReconcileRef = useRef<(() => void) | null>(null);
   const previousIsExpandedRef = useRef(isExpanded);
@@ -449,13 +457,18 @@ export default function ActivityPhaseGroup({
             aria-expanded={isExpanded}
             aria-controls={panelId}
             /** A live header is named by its own content: the line it shows
-             *  is resolved inside `LivePhaseHeader`, below this component. */
+             *  is resolved inside `LivePhaseHeader`, below this component. It
+             *  is named by that line ALONE: the polite region beside it holds
+             *  the previous line, and `sr-only` text still counts toward a
+             *  button's computed name. */
             aria-label={isLive ? undefined : label}
+            aria-labelledby={isLive ? lineId : undefined}
           >
             {isLive ? (
               <LivePhaseHeader
                 parts={liveParts}
                 animate={smoothStreaming}
+                lineId={lineId}
                 attachments={attachments}
               />
             ) : (

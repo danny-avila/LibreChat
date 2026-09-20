@@ -9,13 +9,11 @@ import type { TOptions } from 'i18next';
 import type { TranslationKeys } from '~/hooks';
 import { getBatchActivityLabelPart, getActivityLabelText } from '~/utils/activityLabels';
 import { hasPendingApprovalInPart, hasPendingAuthInPart } from '~/utils/groupToolCalls';
-import { parseBackgroundHandle, splitBackgroundAttachments } from './Parts/handle';
 import { ASK_USER_QUESTION, getSubmittedAskAnswer } from '~/utils/approval';
 import { boundIntentLabel, getToolCallIntent } from './Parts/intent';
-import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import { getToolDisplayLabel } from '~/utils/toolLabels';
 import { isBashProgrammaticToolCall } from './routing';
-import { isError } from './ToolOutput';
+import { getToolMeta } from './outcome';
 
 /** How often a live fold's header may repaint. A streamed intent moves the
  *  newest line on nearly every delta; the header is a glanceable status, not a
@@ -77,6 +75,7 @@ export function needsReader(part: TMessageContentParts | undefined): boolean {
 }
 
 function toolCallLine(
+  part: TMessageContentParts,
   toolCall: LiveToolCall,
   localize: Localize,
   serverNames: readonly string[],
@@ -84,29 +83,15 @@ function toolCallLine(
 ): string {
   const intent = getToolCallIntent(toolCall.args);
   const label = getToolDisplayLabel(toolCall.name ?? '', localize, serverNames);
-  const output = toolCall.output ?? '';
-  const progress = output.length > 0 || toolCall.progress === 1 ? 1 : (toolCall.progress ?? 0.1);
-  /** A detached task reports failure through a status attachment while its
-   *  call keeps a benign handle and a completed dispatch step. */
-  const backgroundFailed =
-    parseBackgroundHandle(output) != null &&
-    splitBackgroundAttachments(attachments, toolCall.id).backgroundStatus === 'error';
-  /** The same resolver the card uses, so a collapsed row never reads as a
-   *  success while the card it hides shows a failure or a stop. */
-  const phase = resolveToolCallPhase({
-    /** A backgrounded task's stop is recorded on the call, not on the dispatch
-     *  step, which usually closes as `completed`. */
-    runStepStatus:
-      toolCall.backgroundTask?.cancelled === true ? 'cancelled' : toolCall.runStepStatus,
-    displayProgress: progress,
-    reportedProgress: progress,
-    isSubmitting: true,
-    hasError: isError(output) || backgroundFailed,
-  });
-  if (phase === 'cancelled') {
+  /** The verdict comes from the resolver the group header uses, so a collapsed
+   *  row can never read as a success while the card it hides shows a failure
+   *  or a stop — whichever channel reported it. */
+  const meta = getToolMeta(part, { [toolCall.id ?? '']: attachments });
+  if (meta?.cancelled === true) {
     return localize('com_ui_cancelled');
   }
-  if (phase === 'failed') {
+  if (meta?.failed === true) {
+    /** Reads exactly as the hidden card does (`ToolCall`'s finished text). */
     const subject = intent ?? label;
     return subject ? `${localize('com_ui_failed')}: ${subject}` : localize('com_ui_failed');
   }
@@ -117,7 +102,7 @@ function toolCallLine(
     return localize('com_assistants_running_action');
   }
   return localize(
-    phase === 'completed' ? 'com_assistants_completed_function' : 'com_assistants_running_var',
+    meta?.hasOutput === true ? 'com_assistants_completed_function' : 'com_assistants_running_var',
     { 0: label },
   );
 }
@@ -200,7 +185,7 @@ function newestLine(
     const toolCall = getStandardToolCall(part);
     if (toolCall != null) {
       return {
-        text: toolCallLine(toolCall, localize, serverNames, attachments),
+        text: toolCallLine(part, toolCall, localize, serverNames, attachments),
         source: `tool:${toolCall.id ?? position}`,
       };
     }
