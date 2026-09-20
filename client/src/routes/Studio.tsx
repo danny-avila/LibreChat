@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useSetAtom } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { SlidersHorizontal } from 'lucide-react';
@@ -33,6 +33,7 @@ export default function Studio() {
   const localize = useLocalize();
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const [asset, setAsset] = useState<MediaAsset>();
+  const chatTrigger = useRef<HTMLButtonElement | null>(null);
   const setHandoff = useSetAtom(mediaChatHandoff);
   const { expanded } = useSidebarState();
   const { toggleSidebar } = useSidebarToggle();
@@ -40,7 +41,11 @@ export default function Studio() {
     () => ({
       openThread: (id: string) =>
         navigate(id ? `/studio/threads/${encodeURIComponent(id)}` : '/studio'),
-      useInChat: async (value: MediaAsset) => setAsset(value),
+      useInChat: async (value: MediaAsset) => {
+        if (document.activeElement instanceof HTMLButtonElement)
+          chatTrigger.current = document.activeElement;
+        setAsset(value);
+      },
     }),
     [navigate],
   );
@@ -110,14 +115,15 @@ export default function Studio() {
       </MediaHostProvider>
       <OGDialog
         open={!!asset}
+        triggerRef={chatTrigger}
         onOpenChange={(open) => {
           if (!open) setAsset(undefined);
         }}
       >
-        <OGDialogContent>
+        <OGDialogContent className="w-11/12 max-w-md">
           <OGDialogTitle>{localize('com_media_use_chat')}</OGDialogTitle>
           <OGDialogDescription>{localize('com_media_chat_destination')}</OGDialogDescription>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {conversation?.conversationId && conversation.conversationId !== 'new' && (
               <Button variant="outline" onClick={() => handoff(conversation.conversationId!)}>
                 {localize('com_media_current_chat')}

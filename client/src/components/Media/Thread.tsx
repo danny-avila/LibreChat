@@ -26,8 +26,8 @@ import type {
   MediaThreadDetail,
   MediaTurn,
 } from 'librechat-data-provider';
+import type { MediaDraft, MediaSend } from './state';
 import type { MenuItemProps } from '~/common';
-import type { MediaSend } from './state';
 import {
   useMediaJobMutations,
   useMediaThreadMutations,
@@ -36,13 +36,14 @@ import {
   useMediaJobOutputs,
 } from '~/data-provider';
 import { mediaErrorLabels, mediaJobPhaseLabels, mediaOutputStateLabels } from './labels';
+import { compareTurns, mediaContextParameters, mediaParameterContext } from './context';
 import { mediaDraftFamily, mediaPendingFamily } from './state';
 import { MediaImagePending } from './ImagePending';
 import { getMessageTimestamp } from '~/utils';
 import { mediaErrorCode } from './commands';
-import { compareTurns } from './context';
 import { MediaAssetView } from './Asset';
 import { MediaJobError } from './Error';
+import { offeringId } from './options';
 import { MediaStatus } from './Status';
 import { useLocalize } from '~/hooks';
 import { useMediaHost } from './host';
@@ -328,6 +329,15 @@ function groupTurns(turns: MediaTurn[]): MediaTurn[][] {
   }
   return blocks;
 }
+function withParameterContexts(draft: MediaDraft): MediaDraft {
+  const context = mediaParameterContext(draft);
+  return {
+    ...draft,
+    parameterContexts: Object.fromEntries(
+      Object.keys(draft.parameters).map((key) => [key, context]),
+    ),
+  };
+}
 function Turn({
   turn,
   send,
@@ -356,46 +366,80 @@ function Turn({
   );
   const refine = (asset: MediaAsset) => {
     const mediaRole = asset.type.startsWith('audio/') ? 'audio' : 'video';
-    setDraft((previous) => ({
-      ...previous,
-      revision: previous.revision + 1,
-      autoEdit: false,
-      parentTurnId: turn.turnId,
-      offering: turn.selection
-        ? JSON.stringify([turn.selection.connectionId, turn.selection.modelId])
-        : previous.offering,
-      providerTag: turn.selection?.providerTag,
-      providerOptionsText: undefined,
-      parameters: turn.selection ? { count: 1 } : previous.parameters,
-      operation: asset.type.startsWith('image/') ? 'image.edit' : 'video.generate',
-      inputs: [
-        {
-          file_id: asset.file_id,
-          role: asset.type.startsWith('image/') ? 'reference' : mediaRole,
-          sourceURL: turn.inputs.find((input) => input.file_id === asset.file_id)?.sourceURL,
-        },
-      ],
-      assets: [asset],
-    }));
+    setDraft((previous) => {
+      const nextOffering = turn.selection ? offeringId(turn.selection) : previous.offering;
+      const target = catalog?.offerings.find((item) => offeringId(item) === nextOffering);
+      const providerTag =
+        (turn.selection ? turn.selection.providerTag : previous.providerTag) ??
+        target?.defaultProviderTag;
+      const sameSelection =
+        previous.offering === nextOffering &&
+        (previous.providerTag ?? target?.defaultProviderTag) === providerTag;
+      const operation = asset.type.startsWith('image/') ? 'image.edit' : 'video.generate';
+      const source: MediaDraft = sameSelection
+        ? previous
+        : {
+            ...previous,
+            operation: turn.operation ?? operation,
+            inputs: turn.inputs,
+            parameters: turn.parameters ?? { count: 1 },
+            parameterContexts: undefined,
+          };
+      const next: MediaDraft = {
+        ...previous,
+        revision: previous.revision + 1,
+        autoEdit: false,
+        parentTurnId: turn.turnId,
+        offering: nextOffering,
+        providerTag,
+        providerOptionsText: sameSelection ? previous.providerOptionsText : undefined,
+        parameters: source.parameters,
+        operation,
+        inputs: [
+          {
+            file_id: asset.file_id,
+            role: asset.type.startsWith('image/') ? 'reference' : mediaRole,
+            sourceURL: turn.inputs.find((input) => input.file_id === asset.file_id)?.sourceURL,
+          },
+        ],
+        assets: [asset],
+      };
+      const capabilities = providerTag
+        ? target?.routes?.find((route) => route.providerTag === providerTag)?.capabilities
+        : target?.capabilities;
+      const capability = capabilities?.find((item) => item.operation === operation);
+      if (capability && catalog)
+        next.parameters = mediaContextParameters(
+          source,
+          next,
+          capability,
+          capabilities ?? [],
+          catalog.limits,
+          true,
+        );
+      return withParameterContexts(next);
+    });
     onCompose?.();
   };
   const edit = () => {
-    setDraft((previous) => ({
-      ...previous,
-      revision: previous.revision + 1,
-      autoEdit: false,
-      prompt: turn.prompt,
-      parentTurnId: turn.parentTurnId,
-      offering: turn.selection
-        ? JSON.stringify([turn.selection.connectionId, turn.selection.modelId])
-        : previous.offering,
-      providerTag: turn.selection?.providerTag,
-      providerOptionsText: undefined,
-      operation: turn.operation ?? previous.operation,
-      parameters: turn.parameters ?? { count: 1 },
-      inputs: turn.inputs,
-      assets: turn.assets,
-    }));
+    setDraft((previous) =>
+      withParameterContexts({
+        ...previous,
+        revision: previous.revision + 1,
+        autoEdit: false,
+        prompt: turn.prompt,
+        parentTurnId: turn.parentTurnId,
+        offering: turn.selection
+          ? JSON.stringify([turn.selection.connectionId, turn.selection.modelId])
+          : previous.offering,
+        providerTag: turn.selection?.providerTag,
+        providerOptionsText: undefined,
+        operation: turn.operation ?? previous.operation,
+        parameters: turn.parameters ?? { count: 1 },
+        inputs: turn.inputs,
+        assets: turn.assets,
+      }),
+    );
     onCompose?.();
   };
   const offering = catalog?.offerings.find(

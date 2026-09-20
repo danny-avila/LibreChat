@@ -854,6 +854,275 @@ test('video follow-ups use the latest result, preserve a typed prompt and allow 
   expect(env.send.mock.calls[2][0].request.parentTurnId).toBeUndefined();
 });
 
+const contextualVideoCatalog = makeCatalog({
+  offerings: [
+    {
+      ...catalog.offerings[0],
+      modelId: 'contextual-video',
+      modelName: 'Contextual video',
+      api: 'google.vertex.videos',
+      capabilities: [
+        {
+          operation: 'video.generate',
+          inputs: { roles: ['video'], min: 0, max: 1 },
+          execution: { kind: 'remote-job', cancellation: 'unsupported' },
+          controls: {
+            count: { min: 1, max: 1 },
+            durationSeconds: { min: 4, max: 7, values: [4, 7], default: 4 },
+            resolution: { values: ['720p', '1080p'], default: '720p' },
+            seed: { min: 0, max: 1000 },
+            audio: true,
+          },
+          constraints: [
+            {
+              when: [{ kind: 'input', role: 'video', present: true }],
+              anyOf: [{ kind: 'parameter', name: 'durationSeconds', values: [7] }],
+            },
+            {
+              when: [{ kind: 'input', role: 'video', present: true }],
+              anyOf: [{ kind: 'parameter', name: 'resolution', values: ['720p'] }],
+            },
+            {
+              when: [{ kind: 'input', role: 'video', present: false }],
+              anyOf: [{ kind: 'parameter', name: 'durationSeconds', values: [4] }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+const contextualVideo = {
+  turnId: 'previous-turn',
+  asset: {
+    file_id: 'previous-video',
+    filename: 'previous.mp4',
+    filepath: '/api/media/assets/previous-video/content',
+    type: 'video/mp4',
+    bytes: 10,
+  },
+};
+
+test('automatic video references adapt only incompatible inherited controls and restore fresh preferences when removed', async () => {
+  const env = setup();
+  const atom = mediaDraftFamily('owner:thread');
+  const original = { count: 1, durationSeconds: 4, resolution: '1080p', seed: 17, audio: true };
+  env.store.set(atom, {
+    ...emptyDraft(),
+    offering: '["connection","contextual-video"]',
+    operation: 'video.generate',
+    parameters: original,
+    prompt: 'Continue the fox crossing the bridge',
+    revision: 3,
+  });
+  const props = {
+    catalog: contextualVideoCatalog,
+    threadId: 'thread',
+    send: env.send,
+    busy: false,
+  };
+  const view = render(<MediaForm {...props} />, { wrapper: env.wrapper });
+  expect(screen.getByRole('combobox', { name: 'com_media_duration_seconds' })).toHaveTextContent(
+    '4',
+  );
+  view.rerender(<MediaForm {...props} videoContext={contextualVideo} />);
+  expect(screen.getByRole('combobox', { name: 'com_media_duration_seconds' })).toHaveTextContent(
+    '7',
+  );
+  expect(screen.getByRole('combobox', { name: 'com_media_resolution' })).toHaveTextContent('720p');
+  expect(env.store.get(atom).parameters).toEqual(original);
+  expect(env.store.get(atom).revision).toBe(3);
+  expect(env.store.get(atom).inputs).toEqual([]);
+  expect(env.store.get(atom).parentTurnId).toBeUndefined();
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_advanced' }));
+  fireEvent.change(screen.getByRole('spinbutton', { name: 'com_media_seed' }), {
+    target: { value: '99' },
+  });
+  expect(screen.getByRole('combobox', { name: 'com_media_duration_seconds' })).toHaveTextContent(
+    '7',
+  );
+  expect(screen.getByRole('combobox', { name: 'com_media_resolution' })).toHaveTextContent('720p');
+  const next = { turnId: 'next-turn', asset: { ...contextualVideo.asset, file_id: 'next-video' } };
+  view.rerender(<MediaForm {...props} videoContext={next} />);
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
+  expect(env.send.mock.calls[0][0].request).toMatchObject({
+    inputs: [{ role: 'video', file_id: 'next-video' }],
+    parentTurnId: 'next-turn',
+    parameters: { ...original, durationSeconds: 7, resolution: '720p', seed: 99 },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_remove_reference' }));
+  expect(screen.getByRole('combobox', { name: 'com_media_duration_seconds' })).toHaveTextContent(
+    '4',
+  );
+  expect(screen.getByRole('combobox', { name: 'com_media_resolution' })).toHaveTextContent('1080p');
+  expect(env.store.get(atom).parameters).toEqual({ ...original, seed: 99 });
+});
+
+test('invalid controls deliberately chosen with an automatic video stay invalid after reload and newer results', async () => {
+  const env = setup();
+  const atom = mediaDraftFamily('owner:thread');
+  env.store.set(atom, {
+    ...emptyDraft(),
+    offering: '["connection","contextual-video"]',
+    operation: 'video.generate',
+    parameters: { count: 1, durationSeconds: 4, resolution: '1080p' },
+    prompt: 'Keep my settings',
+    revision: 3,
+  });
+  const props = {
+    catalog: contextualVideoCatalog,
+    threadId: 'thread',
+    videoContext: contextualVideo,
+    busy: false,
+  };
+  const view = render(<MediaForm {...props} send={env.send} />, { wrapper: env.wrapper });
+  fireEvent.click(screen.getByRole('combobox', { name: 'com_media_duration_seconds' }));
+  fireEvent.click(await screen.findByRole('option', { name: '4' }));
+  fireEvent.click(screen.getByRole('combobox', { name: 'com_media_resolution' }));
+  fireEvent.click(await screen.findByRole('option', { name: '1080p' }));
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
+  expect(screen.getByRole('combobox', { name: 'com_media_duration_seconds' })).toHaveAttribute(
+    'aria-invalid',
+    'true',
+  );
+  expect(screen.getByRole('combobox', { name: 'com_media_resolution' })).toHaveAttribute(
+    'aria-invalid',
+    'true',
+  );
+  view.unmount();
+  mediaDraftFamily.remove('owner:thread');
+  const restored = setup();
+  render(
+    <MediaForm
+      {...props}
+      videoContext={{
+        turnId: 'newer-turn',
+        asset: { ...contextualVideo.asset, file_id: 'newer-video' },
+      }}
+      send={restored.send}
+    />,
+    { wrapper: restored.wrapper },
+  );
+  expect(screen.getByRole('combobox', { name: 'com_media_duration_seconds' })).toHaveTextContent(
+    '4',
+  );
+  expect(screen.getByRole('combobox', { name: 'com_media_resolution' })).toHaveTextContent('1080p');
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
+  expect(screen.getByText('com_media_unsupported_settings')).toBeVisible();
+  expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue('Keep my settings');
+  expect(restored.send).not.toHaveBeenCalled();
+});
+
+test('an explicitly pinned video keeps incompatible controls visible for correction', () => {
+  const env = setup();
+  env.store.set(mediaDraftFamily('owner:thread'), {
+    ...emptyDraft(),
+    offering: '["connection","contextual-video"]',
+    operation: 'video.generate',
+    inputs: [{ role: 'video', file_id: contextualVideo.asset.file_id }],
+    assets: [contextualVideo.asset],
+    parameters: { count: 1, durationSeconds: 4, resolution: '1080p' },
+    parameterContexts: { durationSeconds: { operation: 'video.generate', roles: [] } },
+    prompt: 'Keep this explicit reference',
+    revision: 3,
+  });
+  render(
+    <MediaForm
+      catalog={contextualVideoCatalog}
+      threadId="thread"
+      videoContext={contextualVideo}
+      send={env.send}
+      busy={false}
+    />,
+    { wrapper: env.wrapper },
+  );
+  expect(screen.getByRole('combobox', { name: 'com_media_duration_seconds' })).toHaveTextContent(
+    '4',
+  );
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
+});
+
+test('automatic references do not repair controls that were already invalid before the context changed', () => {
+  const env = setup();
+  env.store.set(mediaDraftFamily('owner:thread'), {
+    ...emptyDraft(),
+    offering: '["connection","contextual-video"]',
+    operation: 'video.generate',
+    parameters: { count: 1, durationSeconds: 5 },
+    prompt: 'Keep the invalid duration visible',
+    revision: 3,
+  });
+  render(
+    <MediaForm
+      catalog={contextualVideoCatalog}
+      threadId="thread"
+      videoContext={contextualVideo}
+      send={env.send}
+      busy={false}
+    />,
+    { wrapper: env.wrapper },
+  );
+  expect(screen.getByRole('combobox', { name: 'com_media_duration_seconds' })).toHaveAttribute(
+    'aria-invalid',
+    'true',
+  );
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
+  expect(env.store.get(mediaDraftFamily('owner:thread')).parameters.durationSeconds).toBe(5);
+});
+
+test('automatic image edits retain valid controls and adapt an inherited resolution unavailable for editing', async () => {
+  const env = setup();
+  const choices = makeCatalog({
+    offerings: [
+      {
+        ...catalog.offerings[0],
+        capabilities: [
+          catalog.offerings[0].capabilities[0],
+          {
+            ...catalog.offerings[0].capabilities[0],
+            operation: 'image.edit',
+            inputs: { roles: ['reference'], min: 1, max: 1 },
+            controls: {
+              ...catalog.offerings[0].capabilities[0].controls,
+              resolution: { values: ['2K'], default: '2K' },
+            },
+          },
+        ],
+      },
+    ],
+  });
+  env.store.set(mediaDraftFamily('owner:thread'), {
+    ...emptyDraft(),
+    offering: '["connection","image-model"]',
+    parameters: { count: 1, resolution: '1K', quality: 'low', format: 'jpeg' },
+    prompt: 'Make it red',
+    revision: 3,
+  });
+  render(
+    <MediaForm
+      catalog={choices}
+      threadId="thread"
+      imageContext={{
+        turnId: 'image-turn',
+        asset: { ...contextualVideo.asset, file_id: 'image', type: 'image/png' },
+      }}
+      send={env.send}
+      busy={false}
+    />,
+    { wrapper: env.wrapper },
+  );
+  expect(screen.getByRole('combobox', { name: 'com_media_resolution' })).toHaveTextContent('2K');
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
+  expect(env.send.mock.calls[0][0].request.parameters).toMatchObject({
+    resolution: '2K',
+    quality: 'low',
+    format: 'jpeg',
+  });
+  expect(env.store.get(mediaDraftFamily('owner:thread')).parameters.resolution).toBe('1K');
+});
+
 test.each(['live', 'unavailable'] as const)(
   'preserves a fresh video choice with %s context after changing modes and restoring the session',
   async (context) => {

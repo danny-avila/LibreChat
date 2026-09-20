@@ -5,7 +5,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { dataService, QueryKeys, mediaCatalogSchema } from 'librechat-data-provider';
 import type { MediaCatalog, MediaThreadDetail, MediaJob } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import { clearMediaSessionStorage, mediaDraftFamily } from '../state';
+import { clearMediaSessionStorage, emptyDraft, mediaDraftFamily } from '../state';
 import { MediaHostProvider } from '../host';
 import { MediaThreadView } from '../Thread';
 
@@ -172,6 +172,278 @@ test('explains why an excluded provider cannot retry while preserving Edit reque
     assets: [asset],
   });
   expect(env.compose).toHaveBeenCalledTimes(1);
+});
+
+test('refining with the same model and provider keeps current settings and unfinished provider options', () => {
+  const turn = detail.turns.items[0];
+  const env = setup(undefined, {
+    ...detail,
+    turns: { items: [{ ...turn, selection: { ...selection, providerTag: 'route-a' } }] },
+  });
+  const saved = {
+    ...emptyDraft(),
+    revision: 7,
+    prompt: 'Keep my next instruction',
+    offering: JSON.stringify([selection.connectionId, selection.modelId]),
+    providerTag: 'route-a',
+    providerOptionsText: '{ unfinished',
+    parameters: { count: 2, quality: 'low', resolution: '1K', seed: 99 },
+  };
+  env.store.set(mediaDraftFamily('owner:thread'), saved);
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_refine' }));
+  expect(env.store.get(mediaDraftFamily('owner:thread'))).toMatchObject({
+    ...saved,
+    revision: 8,
+    operation: 'image.edit',
+    parentTurnId: turn.turnId,
+    autoEdit: false,
+    inputs: [{ file_id: asset.file_id, role: 'reference' }],
+    assets: [asset],
+    parameterContexts: {
+      resolution: { operation: 'image.edit', roles: ['reference'] },
+      seed: { operation: 'image.edit', roles: ['reference'] },
+    },
+  });
+  expect(env.compose).toHaveBeenCalledTimes(1);
+});
+
+test.each([
+  { modelId: 'other-model', providerTag: 'route-a' },
+  { modelId: selection.modelId, providerTag: 'route-b' },
+])('refining from $modelId/$providerTag restores the selected result settings', (previous) => {
+  const turn = detail.turns.items[0];
+  const env = setup(undefined, {
+    ...detail,
+    turns: { items: [{ ...turn, selection: { ...selection, providerTag: 'route-a' } }] },
+  });
+  env.store.set(mediaDraftFamily('owner:thread'), {
+    ...emptyDraft(),
+    prompt: 'My next edit',
+    offering: JSON.stringify([selection.connectionId, previous.modelId]),
+    providerTag: previous.providerTag,
+    providerOptionsText: '{"style":"other-model"}',
+    parameters: { count: 1, durationSeconds: 4 },
+    parameterContexts: { durationSeconds: { operation: 'video.generate', roles: [] } },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_refine' }));
+  const draft = env.store.get(mediaDraftFamily('owner:thread'));
+  expect(draft).toMatchObject({
+    prompt: 'My next edit',
+    offering: JSON.stringify([selection.connectionId, selection.modelId]),
+    providerTag: 'route-a',
+    parameters: turn.parameters,
+    parameterContexts: { quality: { operation: 'image.edit', roles: ['reference'] } },
+  });
+  expect(draft.providerOptionsText).toBeUndefined();
+  expect(draft.parameterContexts?.durationSeconds).toBeUndefined();
+});
+
+test('refining an imported result retains the current model and provider settings', () => {
+  const env = setup(undefined, {
+    ...detail,
+    turns: {
+      items: [{ ...detail.turns.items[0], kind: 'import', selection: undefined, jobs: [] }],
+    },
+  });
+  const saved = {
+    ...emptyDraft(),
+    offering: 'current-model',
+    providerTag: 'current-route',
+    providerOptionsText: '{"style":"current"}',
+    parameters: { count: 2, quality: 'low' },
+  };
+  env.store.set(mediaDraftFamily('owner:thread'), saved);
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_refine' }));
+  expect(env.store.get(mediaDraftFamily('owner:thread'))).toMatchObject({
+    ...saved,
+    revision: 1,
+    operation: 'image.edit',
+    inputs: [{ file_id: asset.file_id, role: 'reference' }],
+    assets: [asset],
+  });
+});
+
+const videoCatalog = mediaCatalogSchema.parse({
+  ...catalog([]),
+  offerings: [
+    {
+      connectionId: selection.connectionId,
+      connectionName: 'Provider',
+      modelId: 'video-model',
+      modelName: 'Video model',
+      api: 'google.vertex.videos',
+      available: true,
+      capabilities: [
+        {
+          operation: 'video.generate',
+          inputs: { roles: ['video'], min: 0, max: 1 },
+          execution: { kind: 'remote-job', cancellation: 'unsupported' },
+          controls: {
+            count: { min: 1, max: 1 },
+            durationSeconds: { min: 4, max: 7, values: [4, 7], default: 4 },
+            resolution: { values: ['720p', '1080p'], default: '720p' },
+            seed: { min: 0, max: 1000 },
+            audio: true,
+          },
+          constraints: [
+            {
+              when: [{ kind: 'input', role: 'video', present: true }],
+              anyOf: [{ kind: 'parameter', name: 'durationSeconds', values: [7] }],
+            },
+            {
+              when: [{ kind: 'input', role: 'video', present: true }],
+              anyOf: [{ kind: 'parameter', name: 'resolution', values: ['720p'] }],
+            },
+            {
+              when: [{ kind: 'input', role: 'video', present: false }],
+              anyOf: [{ kind: 'parameter', name: 'durationSeconds', values: [4] }],
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+const videoSelection = { ...selection, modelId: 'video-model' };
+const videoAsset = { ...asset, file_id: 'video-result', type: 'video/mp4' };
+const videoDetail: MediaThreadDetail = {
+  ...detail,
+  turns: {
+    items: [
+      {
+        ...detail.turns.items[0],
+        selection: videoSelection,
+        operation: 'video.generate',
+        inputs: [],
+        assets: [videoAsset],
+        parameters: { count: 1, durationSeconds: 4, resolution: '1080p', seed: 42, audio: true },
+        jobs: [],
+      },
+    ],
+  },
+};
+
+test('refining a video adapts incompatible fresh settings and records their new context', () => {
+  const env = setup(videoCatalog, videoDetail);
+  env.store.set(mediaDraftFamily('owner:thread'), {
+    ...emptyDraft(),
+    offering: JSON.stringify([videoSelection.connectionId, videoSelection.modelId]),
+    operation: 'video.generate',
+    parameters: { count: 1, durationSeconds: 4, resolution: '1080p', seed: 17, audio: true },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_refine' }));
+  expect(env.store.get(mediaDraftFamily('owner:thread'))).toMatchObject({
+    parentTurnId: 'turn',
+    inputs: [{ file_id: videoAsset.file_id, role: 'video' }],
+    parameters: { count: 1, durationSeconds: 7, resolution: '720p', seed: 17, audio: true },
+    parameterContexts: {
+      durationSeconds: { operation: 'video.generate', roles: ['video'] },
+      resolution: { operation: 'video.generate', roles: ['video'] },
+    },
+  });
+});
+
+test('refining a video preserves explicit invalid choices made in the same input context', () => {
+  const env = setup(videoCatalog, videoDetail);
+  env.store.set(mediaDraftFamily('owner:thread'), {
+    ...emptyDraft(),
+    offering: JSON.stringify([videoSelection.connectionId, videoSelection.modelId]),
+    operation: 'video.generate',
+    parameters: { count: 1, durationSeconds: 4, resolution: '1080p' },
+    parameterContexts: {
+      durationSeconds: { operation: 'video.generate', roles: ['video'] },
+      resolution: { operation: 'video.generate', roles: ['video'] },
+    },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_refine' }));
+  expect(env.store.get(mediaDraftFamily('owner:thread')).parameters).toEqual({
+    count: 1,
+    durationSeconds: 4,
+    resolution: '1080p',
+    audio: false,
+  });
+});
+
+test('refining on the default provider route preserves the current settings', () => {
+  const offering = videoCatalog.offerings[0];
+  const routeCatalog: MediaCatalog = {
+    ...videoCatalog,
+    offerings: [
+      {
+        ...offering,
+        defaultProviderTag: 'default-route',
+        routes: [
+          {
+            providerTag: 'default-route',
+            providerName: 'Default route',
+            capabilities: offering.capabilities,
+          },
+        ],
+      },
+    ],
+  };
+  const env = setup(routeCatalog, {
+    ...videoDetail,
+    turns: {
+      items: [
+        {
+          ...videoDetail.turns.items[0],
+          selection: { ...videoSelection, providerTag: 'default-route' },
+        },
+      ],
+    },
+  });
+  env.store.set(mediaDraftFamily('owner:thread'), {
+    ...emptyDraft(),
+    offering: JSON.stringify([videoSelection.connectionId, videoSelection.modelId]),
+    operation: 'video.generate',
+    parameters: { count: 1, durationSeconds: 4, seed: 17 },
+    providerOptionsText: '{ unfinished',
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_refine' }));
+  expect(env.store.get(mediaDraftFamily('owner:thread'))).toMatchObject({
+    providerTag: 'default-route',
+    parameters: { durationSeconds: 7, seed: 17 },
+    providerOptionsText: '{ unfinished',
+  });
+});
+
+test('refining another video model restores its settings before adapting to the reference', () => {
+  const env = setup(videoCatalog, videoDetail);
+  env.store.set(mediaDraftFamily('owner:thread'), {
+    ...emptyDraft(),
+    offering: 'different-model',
+    operation: 'video.generate',
+    parameters: { count: 1, durationSeconds: 6, seed: 999 },
+    parameterContexts: { durationSeconds: { operation: 'video.generate', roles: ['video'] } },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_refine' }));
+  expect(env.store.get(mediaDraftFamily('owner:thread')).parameters).toEqual({
+    count: 1,
+    durationSeconds: 7,
+    resolution: '720p',
+    seed: 42,
+    audio: true,
+  });
+});
+
+test('Edit request replaces unrelated parameter provenance with the restored request context', () => {
+  const env = setup();
+  env.store.set(mediaDraftFamily('owner:thread'), {
+    ...emptyDraft(),
+    parameterContexts: {
+      resolution: { operation: 'video.generate', roles: [] },
+      durationSeconds: { operation: 'video.generate', roles: [] },
+    },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_edit_request' }));
+  const draft = env.store.get(mediaDraftFamily('owner:thread'));
+  expect(draft.parameters).toEqual(detail.turns.items[0].parameters);
+  expect(draft.parameterContexts?.resolution).toEqual({
+    operation: 'image.edit',
+    roles: ['reference'],
+  });
+  expect(draft.parameterContexts?.durationSeconds).toBeUndefined();
 });
 
 test('updates retry availability when a configured connection is excluded and re-enabled', async () => {

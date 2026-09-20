@@ -3,6 +3,8 @@ import { atomFamily } from 'jotai/utils';
 import {
   mediaAssetSchema,
   mediaInputSchema,
+  mediaInputRoleSchema,
+  mediaParameterNameSchema,
   mediaOperationSchema,
   mediaImportRequestSchema,
   mediaImageParametersSchema,
@@ -18,6 +20,11 @@ import { registerSessionCleanup } from '~/store/session';
 import { createSessionAtom } from '~/store/jotai-utils';
 
 const prefix = 'librechat:media:';
+const parameterContextSchema = z.object({
+  operation: mediaOperationSchema,
+  roles: z.array(mediaInputRoleSchema),
+});
+export type MediaParameterContext = z.infer<typeof parameterContextSchema>;
 const draftSchema = z.object({
   prompt: z.string(),
   operation: mediaOperationSchema,
@@ -34,6 +41,7 @@ const draftSchema = z.object({
   inputs: z.array(mediaInputSchema),
   assets: z.array(mediaAssetSchema),
   parameters: mediaImageParametersSchema.merge(mediaVideoParametersSchema),
+  parameterContexts: z.record(mediaParameterNameSchema, parameterContextSchema).optional(),
   revision: z.number(),
 });
 export type MediaDraft = z.infer<typeof draftSchema>;

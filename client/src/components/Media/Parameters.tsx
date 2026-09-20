@@ -43,7 +43,7 @@ export function MediaParameters({
   const numeric = (key: NumericKey, control?: MediaNumberControl) => {
     if (!control) return null;
     const label = localize(mediaControlLabels[key]);
-    const value = draft.parameters[key] ?? parameters[key] ?? '';
+    const value = parameters[key] ?? draft.parameters[key] ?? '';
     const invalid =
       invalidSettings.includes(key) ||
       (value !== '' &&
@@ -97,8 +97,10 @@ export function MediaParameters({
   const enumeration = (key: EnumKey, control?: MediaEnumControl) => {
     if (!control) return null;
     const label = localize(mediaControlLabels[key]);
-    const value = draft.parameters[key] ?? parameters[key] ?? '';
-    const invalid = value ? !control.values.includes(value) : !!control.required;
+    const value = parameters[key] ?? draft.parameters[key] ?? '';
+    const invalid =
+      invalidSettings.includes(key) ||
+      (value ? !control.values.includes(value) : !!control.required);
     return (
       <div key={key} className="space-y-1">
         <Label variant="section" htmlFor={`${id}-${key}`}>
@@ -175,7 +177,7 @@ export function MediaParameters({
                 <Checkbox
                   id={`${id}-audio`}
                   aria-label={localize(mediaControlLabels.audio)}
-                  checked={draft.parameters.audio ?? false}
+                  checked={parameters.audio ?? false}
                   onCheckedChange={(checked) => param('audio', checked === true)}
                 />
                 <Label variant="section" htmlFor={`${id}-audio`}>

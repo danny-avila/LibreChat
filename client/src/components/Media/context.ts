@@ -1,10 +1,13 @@
+import { resolveMediaParameters, validateMediaCapability } from 'librechat-data-provider';
 import type {
   MediaAsset,
   MediaAssetContext,
+  MediaCapability,
+  MediaLimits,
   MediaOperation,
   MediaTurn,
 } from 'librechat-data-provider';
-import type { MediaDraft } from './state';
+import type { MediaDraft, MediaParameterContext } from './state';
 
 export type MediaEditTarget = MediaAssetContext;
 
@@ -76,4 +79,54 @@ export function withMediaContext(
     ],
     assets: [target.asset],
   };
+}
+
+export function mediaParameterContext(
+  draft: Pick<MediaDraft, 'operation' | 'inputs'>,
+): MediaParameterContext {
+  return { operation: draft.operation, roles: draft.inputs.map((input) => input.role).sort() };
+}
+
+/** Automatic references can change valid settings without changing the user's fresh-work defaults. */
+export function mediaContextParameters(
+  saved: MediaDraft,
+  draft: MediaDraft,
+  capability: MediaCapability,
+  capabilities: MediaCapability[],
+  limits: MediaLimits,
+  automaticReference: boolean,
+): MediaDraft['parameters'] {
+  if (!automaticReference && (saved.inputs.length > 0 || saved.parentTurnId))
+    return resolveMediaParameters(draft, capability, { optionalChoices: true });
+  const currentContext = JSON.stringify(mediaParameterContext(draft));
+  const originalContext = mediaParameterContext(saved);
+  const parameters = { ...draft.parameters };
+  const invalid = validateMediaCapability(
+    { operation: capability.operation, inputs: draft.inputs, parameters },
+    capability,
+    limits,
+  );
+  for (const { field } of invalid) {
+    if (field === 'inputs' || field === 'prompt' || field === 'providerOptions') continue;
+    const source = saved.parameterContexts?.[field] ?? originalContext;
+    if (JSON.stringify(source) === currentContext) continue;
+    const sourceCapability = capabilities.find((item) => item.operation === source.operation);
+    if (!sourceCapability) continue;
+    const sourceIssues = validateMediaCapability(
+      {
+        operation: source.operation,
+        inputs: source.roles.map((role, index) => ({ role, file_id: `context-${index}` })),
+        parameters: draft.parameters,
+      },
+      sourceCapability,
+      limits,
+    );
+    if (sourceIssues.some((issue) => issue.field === field)) continue;
+    Object.assign(parameters, { [field]: undefined });
+  }
+  return resolveMediaParameters(
+    { operation: capability.operation, inputs: draft.inputs, parameters },
+    capability,
+    { optionalChoices: true },
+  );
 }

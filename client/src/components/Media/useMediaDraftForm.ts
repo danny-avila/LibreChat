@@ -1,18 +1,14 @@
 import { useEffect, useRef } from 'react';
 import { useAtom } from 'jotai';
-import {
-  mediaURLUploadRequestSchema,
-  resolveMediaParameters,
-  validateMediaCapability,
-} from 'librechat-data-provider';
+import { mediaURLUploadRequestSchema, validateMediaCapability } from 'librechat-data-provider';
 import type { MediaCatalog, MediaPreset, MediaSelection } from 'librechat-data-provider';
 import type { MediaEditTarget } from './context';
 import type { FormControls } from './options';
 import type { MediaDraft } from './state';
+import { withMediaContext, mediaParameterContext, mediaContextParameters } from './context';
 import { offeringId, readProviderOptions, mediaInputsWithMetadata } from './options';
 import { mediaFeatures, useMediaHost } from './host';
 import { useMediaPresets } from '~/data-provider';
-import { withMediaContext } from './context';
 import { mediaDraftFamily } from './state';
 import { useLocalize } from '~/hooks';
 export type MediaDraftFormProps = {
@@ -136,7 +132,24 @@ export function useMediaDraftForm({
     normalizeDraft,
   ]);
   const change = (update: Partial<MediaDraft>) =>
-    setDraft((previous) => ({ ...previous, ...update, revision: previous.revision + 1 }));
+    setDraft((previous) => ({
+      ...previous,
+      ...update,
+      ...(update.parameters && !update.parameterContexts
+        ? {
+            parameterContexts: Object.fromEntries(
+              Object.keys(update.parameters).map((key) => [
+                key,
+                mediaParameterContext({
+                  operation: update.operation ?? draft.operation,
+                  inputs: update.inputs ?? draft.inputs,
+                }),
+              ]),
+            ),
+          }
+        : {}),
+      revision: previous.revision + 1,
+    }));
   const applyPreset = ({ settings, assets }: MediaPreset, onlyIfUntouched = false) => {
     const next = offerings.find(
       (item) => item.connectionId === settings.connectionId && item.modelId === settings.modelId,
@@ -219,11 +232,24 @@ export function useMediaDraftForm({
       delete parameters.resolution;
       delete parameters.aspectRatio;
     } else if (key === 'resolution' || key === 'aspectRatio') delete parameters.size;
-    change({ parameters });
+    change({
+      parameters,
+      parameterContexts: {
+        ...savedDraft.parameterContexts,
+        [key]: mediaParameterContext(draft),
+      },
+    });
   };
   const controls: FormControls = capability?.controls ?? {};
   const parameters = capability
-    ? resolveMediaParameters(draft, capability, { optionalChoices: true })
+    ? mediaContextParameters(
+        savedDraft,
+        draft,
+        capability,
+        capabilities ?? [],
+        catalog.limits,
+        automaticReference,
+      )
     : { ...draft.parameters };
   const providerOptionsText =
     draft.providerOptionsText ??

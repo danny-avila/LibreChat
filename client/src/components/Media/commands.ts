@@ -13,7 +13,8 @@ import type { UseQueryOptions } from '@tanstack/react-query';
 import type { MediaReceipt } from '~/data-provider';
 import type { PendingMedia } from './state';
 import { invalidateMedia, mayClearMediaDraft, useMediaCommandMutations } from '~/data-provider';
-import { emptyDraft, mediaDraftFamily, mediaPendingFamily } from './state';
+import { clearSubmittedMediaDraft, submittedMediaThreadDraft } from './draft';
+import { mediaDraftFamily, mediaPendingFamily } from './state';
 import { useMediaHost } from './host';
 
 export function mediaErrorCode(error: unknown): MediaErrorCode {
@@ -66,6 +67,40 @@ export function useMediaCommands(visibleThreadIds: string[]) {
   const observed = useRef(new Map<string, MediaReceipt['phase']>());
   const inFlight = useRef(new Set<string>());
   const attempted = useRef(new Set<string>());
+  const seedThreadDraft = useCallback(
+    (command: PendingMedia, receipt: MediaReceipt) => {
+      if (
+        command.kind !== 'submission' ||
+        command.after ||
+        command.request.threadId ||
+        receipt.phase === 'rejected'
+      )
+        return;
+      const target = mediaDraftFamily(`${host.scope}:${receipt.threadId}`);
+      const current = store.get(target);
+      const implicitDefault =
+        current.revision === 1 &&
+        Object.keys(current.parameters).every((key) => key === 'count') &&
+        !current.providerOptionsText &&
+        !current.parameterContexts &&
+        !current.compare &&
+        current.autoEdit === undefined;
+      if (
+        (current.revision !== 0 && !implicitDefault) ||
+        current.prompt ||
+        current.inputs.length ||
+        current.assets.length ||
+        current.parentTurnId ||
+        current.referenceURL
+      )
+        return;
+      store.set(
+        target,
+        submittedMediaThreadDraft(store.get(mediaDraftFamily(command.draftKey)), command),
+      );
+    },
+    [host.scope, store],
+  );
   const queries: UseQueryOptions<MediaReceipt, unknown, MediaReceipt, string[]>[] = pending.map(
     (command) => ({
       queryKey: receiptKey(host.scope, command),
@@ -163,15 +198,7 @@ export function useMediaCommands(visibleThreadIds: string[]) {
           receipt = await retryAsync({ jobId: command.jobId, request: command.request });
         else receipt = await importAsync(command.request);
         if (!host.isCurrentSession()) return undefined;
-        const carried =
-          command.kind === 'submission' && !command.request.threadId && receipt.phase !== 'rejected'
-            ? store.get(mediaDraftFamily(command.draftKey)).compare
-            : undefined;
-        if (carried) {
-          const target = mediaDraftFamily(`${host.scope}:${receipt.threadId}`);
-          const current = store.get(target);
-          store.set(target, { ...current, compare: carried, revision: current.revision + 1 });
-        }
+        seedThreadDraft(command, receipt);
         client.setQueryData(receiptKey(host.scope, command), receipt);
         if (receipt.phase === 'rejected') setError(receipt.error.code);
         else if (command.kind !== 'retry' && !command.request.threadId)
@@ -201,13 +228,14 @@ export function useMediaCommands(visibleThreadIds: string[]) {
           });
       }
     },
-    [host, client, setPending, store, submitAsync, retryAsync, importAsync],
+    [host, client, setPending, store, submitAsync, retryAsync, importAsync, seedThreadDraft],
   );
   useEffect(() => {
     if (!host.isCurrentSession()) return;
     const published = new Set<string>();
     pending.forEach((command, index) => {
       const receipt = receipts[index]?.data;
+      if (receipt) seedThreadDraft(command, receipt);
       if (receipt && observed.current.get(command.request.clientRequestId) !== receipt.phase) {
         observed.current.set(command.request.clientRequestId, receipt.phase);
         void invalidateMedia(client, host.scope);
@@ -229,11 +257,7 @@ export function useMediaCommands(visibleThreadIds: string[]) {
       const draftAtom = mediaDraftFamily(command.draftKey);
       const draft = store.get(draftAtom);
       if (mayClearMediaDraft(draft.revision, command.draftRevision, receipt.phase)) {
-        store.set(draftAtom, {
-          ...emptyDraft(),
-          compare: draft.compare,
-          revision: draft.revision + 1,
-        });
+        store.set(draftAtom, clearSubmittedMediaDraft(draft));
       }
       if (visibleThreadIds.includes(receipt.threadId))
         published.add(command.request.clientRequestId);
@@ -242,7 +266,7 @@ export function useMediaCommands(visibleThreadIds: string[]) {
       setPending((previous) =>
         previous.filter((command) => !published.has(command.request.clientRequestId)),
       );
-  }, [pending, receipts, visibleThreadIds, host, setPending, store, client, send]);
+  }, [pending, receipts, visibleThreadIds, host, setPending, store, client, send, seedThreadDraft]);
   return {
     pending,
     receipts,
