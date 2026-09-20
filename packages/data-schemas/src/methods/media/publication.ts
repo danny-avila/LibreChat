@@ -46,13 +46,7 @@ export function createMediaPublicationMethods({
   | 'releaseOwnerWork'
 >): Pick<
   MediaPersistenceContext,
-  | 'currentThread'
   | 'stage'
-  | 'admitQueue'
-  | 'ensureThread'
-  | 'assignSequence'
-  | 'pinInputs'
-  | 'publishTurn'
   | 'refreshThread'
   | 'publishMediaSubmission'
   | 'stageMediaImport'
@@ -668,13 +662,7 @@ export function createMediaPublicationMethods({
     return jobs.length + imports.length;
   };
   return {
-    currentThread,
     stage,
-    admitQueue,
-    ensureThread,
-    assignSequence,
-    pinInputs,
-    publishTurn,
     refreshThread,
     publishMediaSubmission,
     stageMediaImport,

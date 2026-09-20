@@ -25,6 +25,19 @@ describe('provider catalog and adapter combination parity', () => {
     parameters?: Partial<MediaVideoParameters & MediaImageParameters>;
   };
   const cases: Scenario[] = [
+    ...(
+      [
+        ['minimax.videos', 'minimax/hailuo-3'],
+        ['minimax.videos', 'minimax/hailuo-3-max'],
+        ['seed.videos', 'bytedance/seedance-2.5'],
+        ['seed.videos', 'bytedance/seedance-2.0'],
+        ['seed.videos', 'bytedance/seedance-2.0-fast'],
+        ['seed.videos', 'bytedance/seedance-2.0-mini'],
+        ['bfl.videos', 'black-forest-labs/flux-3-video'],
+        ['xai.videos', 'x-ai/grok-imagine-video-1.5'],
+        ['runway.videos', 'runway/gen-4.5'],
+      ] as const
+    ).map(([api, model]) => ({ api, model, parameters: { durationSeconds: 5.5 } })),
     { api: 'runway.videos', model: 'runway/gen-4.5', parameters: { aspectRatio: '1:1' } },
     {
       api: 'minimax.videos',
@@ -204,6 +217,7 @@ describe('provider catalog and adapter combination parity', () => {
     const { adapter, inputs, request, offering } = scenario(item);
     expect(() => validateMediaOffering(request, offering, config.limits)).toThrow();
     const json = jest.fn();
+    const stream = jest.fn();
     await expect(
       adapter.submit(request, inputs, {
         config,
@@ -216,10 +230,11 @@ describe('provider catalog and adapter combination parity', () => {
           baseURL: 'https://provider.example/v1',
           headers: {},
         },
-        transport: { json, stream: jest.fn() },
+        transport: { json, stream },
       }),
     ).rejects.toMatchObject({ certainty: 'rejected' });
     expect(json).not.toHaveBeenCalled();
+    expect(stream).not.toHaveBeenCalled();
   });
   it.each<Scenario>([
     { api: 'minimax.videos', model: 'minimax/hailuo-3', roles: ['end_frame'] },

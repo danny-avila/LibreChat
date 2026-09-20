@@ -3,7 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { AgentCapabilities, PermissionTypes, Permissions } from 'librechat-data-provider';
 import type { SettingsContextValue } from './types';
 import useProviderKeys, {
-  useMediaProviderKeyScope,
+  useMediaProviderKeyConfig,
 } from '../SettingsTabs/ProviderKeys/useProviderKeys';
 import { useHasAccess, useAuthContext, useGetAgentsConfig, useMediaAccess } from '~/hooks';
 import { useMediaRecoveryAccess } from '~/hooks/Media/useMediaRecoveryAccess';
@@ -42,10 +42,10 @@ export function useSettingsContext(): SettingsContextValue {
   const hasPromptsBool = hasPrompts === true;
   const engineTTS = useRecoilValue<string>(store.engineTTS);
   const chatProviderKeys = useProviderKeys();
-  const mediaProviderKeyScope = useMediaProviderKeyScope();
+  const mediaProviderKeyConfig = useMediaProviderKeyConfig();
   const { studio: hasMediaStudio } = useMediaAccess();
   const { canRead: canReadMediaRecovery } = useMediaRecoveryAccess();
-  const hasUserProvidedEndpoints = chatProviderKeys.length > 0 || !!mediaProviderKeyScope;
+  const hasUserProvidedEndpoints = chatProviderKeys.length > 0 || !!mediaProviderKeyConfig;
   const hasStatefulCodeSessions =
     agentsConfig?.capabilities.includes(AgentCapabilities.stateful_code_sessions) ?? false;
 

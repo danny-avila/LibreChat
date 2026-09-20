@@ -1,6 +1,6 @@
 import userEvent from '@testing-library/user-event';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { dataService, QueryKeys, mediaCatalogSchema } from 'librechat-data-provider';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { MediaCatalog, MediaThreadDetail, MediaJob } from 'librechat-data-provider';
 import { clearMediaSessionStorage, emptyDraft, mediaDraftFamily } from '../state';
 import { createMediaTestEnvironment } from 'test/media';
@@ -655,9 +655,12 @@ test('the creation menu holds rename and delete, and rename saves against the th
 });
 
 test('deleting from the creation menu confirms first and reports back to the host', async () => {
+  let complete!: () => void;
   const remove = jest
-    .spyOn(dataService, 'deleteMediaThread')
-    .mockResolvedValue({ threadId: 'thread', phase: 'retiring' });
+    .spyOn(dataService, 'deleteMediaThreads')
+    .mockImplementation(
+      () => new Promise((resolve) => (complete = () => resolve({ retired: 1, failures: [] }))),
+    );
   const onDeleted = jest.fn();
   const { wrapper } = createMediaTestEnvironment();
   render(<MediaThreadView detail={detail} send={jest.fn()} onDeleted={onDeleted} />, { wrapper });
@@ -666,10 +669,57 @@ test('deleting from the creation menu confirms first and reports back to the hos
   const dialog = await screen.findByRole('dialog', { name: 'com_media_delete_title' });
   expect(remove).not.toHaveBeenCalled();
   fireEvent.click(within(dialog).getByRole('button', { name: 'com_ui_delete' }));
-  await waitFor(() => expect(remove).toHaveBeenCalledWith('thread'));
+  await waitFor(() =>
+    expect(remove).toHaveBeenCalledWith({ mode: 'selected', threadIds: ['thread'] }),
+  );
+  expect(within(dialog).getByRole('button', { name: 'com_ui_cancel' })).toBeDisabled();
+  fireEvent.keyDown(dialog, { key: 'Escape' });
+  expect(dialog).toBeVisible();
+  expect(onDeleted).not.toHaveBeenCalled();
+  await act(async () => complete());
   await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   remove.mockRestore();
 });
+
+test.each(['request', 'selection'] as const)(
+  'a deletion %s failure stays retryable and returns focus to the creation menu on cancellation',
+  async (failure) => {
+    const remove = jest.spyOn(dataService, 'deleteMediaThreads');
+    if (failure === 'request') remove.mockRejectedValueOnce(new Error('offline'));
+    else
+      remove.mockResolvedValueOnce({
+        retired: 0,
+        failures: [{ threadId: 'thread', error: { code: 'internal_error' } }],
+      });
+    remove.mockResolvedValueOnce({ retired: 1, failures: [] });
+    const onDeleted = jest.fn();
+    const { wrapper } = createMediaTestEnvironment();
+    render(<MediaThreadView detail={detail} send={jest.fn()} onDeleted={onDeleted} />, { wrapper });
+    const trigger = screen.getByRole('button', { name: 'com_media_thread_options' });
+    await userEvent.click(trigger);
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'com_ui_delete' }));
+    const dialog = await screen.findByRole('dialog', { name: 'com_media_delete_title' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'com_ui_delete' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      failure === 'request' ? 'com_media_error_internal_error' : 'com_media_delete_partial',
+    );
+    expect(onDeleted).not.toHaveBeenCalled();
+    expect(within(dialog).getByRole('button', { name: 'com_ui_delete' })).toBeEnabled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'com_ui_cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(trigger).toHaveFocus();
+
+    await userEvent.click(trigger);
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'com_ui_delete' }));
+    const retried = await screen.findByRole('dialog', { name: 'com_media_delete_title' });
+    expect(within(retried).queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(within(retried).getByRole('button', { name: 'com_ui_delete' }));
+    await waitFor(() => expect(onDeleted).toHaveBeenCalledTimes(1));
+    expect(remove).toHaveBeenLastCalledWith({ mode: 'selected', threadIds: ['thread'] });
+    remove.mockRestore();
+  },
+);
 
 test('result actions sit in one row: labeled refine, then icon download, expand, and cover', async () => {
   const update = jest

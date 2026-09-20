@@ -329,10 +329,3 @@ export function createMediaImportSchema(limits: MediaRequestLimits) {
     }
   });
 }
-
-export function createMediaThreadUpdateSchema(limits: MediaRequestLimits) {
-  return mediaThreadUpdateSchema.refine(
-    (value) => value.title === undefined || value.title.length <= limits.maxTitleChars,
-    { path: ['title'], message: 'Title exceeds the configured limit' },
-  );
-}

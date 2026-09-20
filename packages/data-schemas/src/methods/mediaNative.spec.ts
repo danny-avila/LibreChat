@@ -8,6 +8,7 @@ import type {
   MediaNativeLimits,
   MediaNativePart,
   MediaNativePartRecord,
+  MediaNativeReference,
 } from '~/types/mediaNative';
 import type { MediaMethods, MediaOwnerScope, MediaStoredJob } from '~/types/media';
 import { createMediaNativeMethods } from './mediaNative';
@@ -27,6 +28,23 @@ describe('legacy native recording readers and cleanup', () => {
     bindingRevision: 'account-one',
   };
   const limits: MediaNativeLimits = { maxParts: 20, maxPartBytes: 1024, maxRecordingBytes: 4096 };
+
+  async function readContinuation({
+    continuationRef,
+    fileId,
+    ...input
+  }: Omit<
+    Parameters<MediaNativeMethods['getMediaNativeContinuations']>[0],
+    'references' | 'limit'
+  > &
+    MediaNativeReference) {
+    const [part] = await native.getMediaNativeContinuations({
+      ...input,
+      references: [{ continuationRef, fileId }],
+      limit: 1,
+    });
+    return part;
+  }
 
   beforeAll(async () => {
     mongo = await MongoMemoryServer.create();
@@ -299,7 +317,7 @@ describe('legacy native recording readers and cleanup', () => {
       createMediaMethods(mongoose, { ownerExists: async () => true }),
     );
     expect(
-      await native.getMediaNativeContinuation({
+      await readContinuation({
         scope,
         continuationRef: text.continuationRef,
         execution,
@@ -307,9 +325,7 @@ describe('legacy native recording readers and cleanup', () => {
     ).toMatchObject({
       part: { kind: 'text', text: 'Before', thoughtSignature: 'private-text-signature' },
     });
-    expect(
-      await native.getMediaNativeContinuation({ scope, fileId: image.file_id, execution }),
-    ).toMatchObject({
+    expect(await readContinuation({ scope, fileId: image.file_id, execution })).toMatchObject({
       continuationRef: imagePart.continuationRef,
       part: { thoughtSignature: 'private-image-signature' },
     });
@@ -373,32 +389,32 @@ describe('legacy native recording readers and cleanup', () => {
     });
     const base = { scope, execution, continuationRef: receipt.continuationRef };
     expect(
-      await native.getMediaNativeContinuation({
+      await readContinuation({
         ...base,
         execution: { ...execution, modelId: 'other' },
       }),
     ).toBeNull();
     expect(
-      await native.getMediaNativeContinuation({
+      await readContinuation({
         ...base,
         execution: { ...execution, bindingRevision: 'other' },
       }),
     ).toBeNull();
     expect(
-      await native.getMediaNativeContinuation({
+      await readContinuation({
         ...base,
         scope: { ...scope, ownerId: new mongoose.Types.ObjectId().toString() },
       }),
     ).toBeNull();
-    expect(await native.getMediaNativeContinuation({ ...base, fileId: 'another-file' })).toBeNull();
+    expect(await readContinuation({ ...base, fileId: 'another-file' })).toBeNull();
     await media.retireMediaThread(scope, job.threadId);
-    expect(await native.getMediaNativeContinuation(base)).not.toBeNull();
+    expect(await readContinuation(base)).not.toBeNull();
     await native.releaseMediaNativeConversation({
       scope,
       maxRetainers: 4,
       conversationId: 'conversation',
     });
-    expect(await native.getMediaNativeContinuation(base)).toBeNull();
+    expect(await readContinuation(base)).toBeNull();
   });
 
   it('retains source and fork continuations independently of the Studio projection until the final consumer leaves', async () => {
@@ -430,7 +446,7 @@ describe('legacy native recording readers and cleanup', () => {
     await media.retireMediaThread(scope, job.threadId);
     await media.reconcileMediaRetirements({ scope, limit: 10 });
     const replay = (conversationId: string) =>
-      native.getMediaNativeContinuation({ scope, ...reference, execution, conversationId });
+      readContinuation({ scope, ...reference, execution, conversationId });
     expect(await replay('conversation')).not.toBeNull();
     expect(await replay('fork')).not.toBeNull();
     expect(await replay('unregistered')).toBeNull();
@@ -499,7 +515,7 @@ describe('legacy native recording readers and cleanup', () => {
     await native.reconcileMediaNativeRecordings({ scope, now, staleBefore: now, limit: 10 });
     await media.reconcileMediaRetirements({ scope, limit: 10 });
     await native.reconcileMediaNativeRecordings({ scope, now, staleBefore: now, limit: 10 });
-    expect(await native.getMediaNativeContinuation({ scope, execution, ...reference })).toBeNull();
+    expect(await readContinuation({ scope, execution, ...reference })).toBeNull();
     expect(await mongoose.models.MediaNativePart.countDocuments({ jobId: job.jobId })).toBe(0);
     expect((await media.getMediaJob(scope, job.jobId))?.nativeCleanupPending).toBeUndefined();
   });
@@ -563,7 +579,7 @@ describe('legacy native recording readers and cleanup', () => {
       maxRetainers: 4,
     });
     const input = { scope, execution, continuationRef: receipt.continuationRef };
-    expect(await native.getMediaNativeContinuation(input)).toMatchObject({ expiresAt });
+    expect(await readContinuation(input)).toMatchObject({ expiresAt });
     const stored = await mongoose.models.MediaNativePart.findOne({
       continuationRef: receipt.continuationRef,
     }).lean<{ expiresAt?: Date }>();
@@ -576,7 +592,7 @@ describe('legacy native recording readers and cleanup', () => {
       { continuationRef: receipt.continuationRef },
       { $set: { expiresAt: new Date(0) } },
     );
-    expect(await native.getMediaNativeContinuation(input)).toBeNull();
+    expect(await readContinuation(input)).toBeNull();
   });
 
   it('legacy maintenance after message deletion releases only absent consumers, preserving a saved fork and other messages', async () => {
@@ -609,7 +625,7 @@ describe('legacy native recording readers and cleanup', () => {
     ).toBe(1);
     await native.reconcileMediaNativeConsumers({ scope, limit: 10, maxRetainers: 4 });
     expect(
-      await native.getMediaNativeContinuation({
+      await readContinuation({
         scope,
         execution,
         ...reference,
@@ -617,7 +633,7 @@ describe('legacy native recording readers and cleanup', () => {
       }),
     ).toBeNull();
     expect(
-      await native.getMediaNativeContinuation({
+      await readContinuation({
         scope,
         execution,
         ...reference,
@@ -630,7 +646,7 @@ describe('legacy native recording readers and cleanup', () => {
     ).toMatchObject({ status: 'retired' });
     await messages.deleteMessages({ user: scope.ownerId, messageId: 'fork-one' });
     expect(
-      await native.getMediaNativeContinuation({
+      await readContinuation({
         scope,
         execution,
         ...reference,
@@ -640,7 +656,7 @@ describe('legacy native recording readers and cleanup', () => {
     await messages.deleteMessages({ user: scope.ownerId, messageId: 'fork-two' });
     await native.reconcileMediaNativeConsumers({ scope, limit: 10, maxRetainers: 4 });
     expect(
-      await native.getMediaNativeContinuation({
+      await readContinuation({
         scope,
         execution,
         ...reference,
@@ -676,7 +692,7 @@ describe('legacy native recording readers and cleanup', () => {
     });
     await native.reconcileMediaNativeConsumers({ scope, limit: 10, maxRetainers: 1 });
     expect(
-      await native.getMediaNativeContinuation({
+      await readContinuation({
         scope,
         execution,
         ...reference,
@@ -689,7 +705,7 @@ describe('legacy native recording readers and cleanup', () => {
     );
     await native.reconcileMediaNativeConsumers({ scope, limit: 10, maxRetainers: 1 });
     expect(
-      await native.getMediaNativeContinuation({
+      await readContinuation({
         scope,
         execution,
         ...reference,
@@ -697,7 +713,7 @@ describe('legacy native recording readers and cleanup', () => {
       }),
     ).toBeNull();
     expect(
-      await native.getMediaNativeContinuation({
+      await readContinuation({
         scope,
         execution,
         ...reference,
@@ -802,7 +818,7 @@ describe('legacy native recording readers and cleanup', () => {
       content: [{ type: 'text', text: 'legacy caption', native_media: reference }],
     });
     expect(
-      await native.getMediaNativeContinuation({
+      await readContinuation({
         scope,
         execution,
         ...reference,
@@ -859,7 +875,7 @@ describe('legacy native recording readers and cleanup', () => {
       provider: { recovery: { terminalStatus: 'failed' } },
     });
     expect(
-      await native.getMediaNativeContinuation({
+      await readContinuation({
         scope,
         continuationRef: receipt.continuationRef,
         execution,

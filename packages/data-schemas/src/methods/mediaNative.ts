@@ -311,17 +311,6 @@ export function createMediaNativeMethods(
     }
   }
 
-  const getMediaNativeContinuation: MediaNativeMethods['getMediaNativeContinuation'] = async (
-    input,
-  ) =>
-    (
-      await getMediaNativeContinuations({
-        ...input,
-        references: [{ continuationRef: input.continuationRef, fileId: input.fileId }],
-        limit: 1,
-      })
-    )[0];
-
   const getMediaNativeContinuations: MediaNativeMethods['getMediaNativeContinuations'] = async (
     input,
   ) => {
@@ -712,7 +701,6 @@ export function createMediaNativeMethods(
   return {
     ensureMediaNativeIndexes,
     failMediaNativeRecording,
-    getMediaNativeContinuation,
     getMediaNativeContinuations,
     retainMediaNativeConversation,
     confirmMediaNativeConversation,

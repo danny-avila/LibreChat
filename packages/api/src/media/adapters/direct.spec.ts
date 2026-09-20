@@ -110,36 +110,6 @@ describe('direct media provider contracts', () => {
     });
   });
 
-  it.each([
-    ['minimax.videos', 'minimax/hailuo-3'],
-    ['minimax.videos', 'minimax/hailuo-3-max'],
-    ['seed.videos', 'bytedance/seedance-2.5'],
-    ['seed.videos', 'bytedance/seedance-2.0'],
-    ['seed.videos', 'bytedance/seedance-2.0-fast'],
-    ['seed.videos', 'bytedance/seedance-2.0-mini'],
-  ] as const)(
-    'rejects fractional native %s %s durations before queueing or dispatch',
-    async (api, modelId) => {
-      const { adapter, context, calls } = fixture(api);
-      const submission = request(modelId, { durationSeconds: 5.5 });
-      const profile = adapter.catalog?.(context.config).find((entry) => entry.modelId === modelId);
-      if (!profile) throw new Error('Missing native profile');
-      expect(() =>
-        validateMediaOffering(submission, {
-          connectionId: 'native',
-          connectionName: 'Native',
-          api,
-          available: true,
-          ...profile,
-        }),
-      ).toThrow();
-      await expect(adapter.submit(submission, [], context)).rejects.toMatchObject({
-        certainty: 'rejected',
-      });
-      expect(calls).toHaveLength(0);
-    },
-  );
-
   it('edits Qwen images through JSON generations using the exact native model and all reference originals', async () => {
     const { adapter, context, calls } = fixture('alibaba.images', [
       '{"data":[{"url":"https://results.example/qwen.png"}]}',

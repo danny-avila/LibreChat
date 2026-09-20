@@ -2319,7 +2319,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     });
     expect(await mongoose.models.MediaJob.countDocuments()).toBe(0);
     const batch = jest.spyOn(repository, 'getNativeMessageParts');
-    const single = jest.spyOn(repository, 'getMediaNativeContinuation');
+    const legacy = jest.spyOn(repository, 'getMediaNativeContinuations');
     const reloadFactory = await runtime.nativeFactory(
       Object.assign(Object.create(express.request), { user: { id: scope.ownerId, role: 'USER' } }),
       {
@@ -2345,7 +2345,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
       })),
     );
     expect(batch).toHaveBeenCalledTimes(1);
-    expect(single).not.toHaveBeenCalled();
+    expect(legacy).not.toHaveBeenCalled();
     const resumedSignatures: NativeSignatures = {};
     await runtime.nativeFactory(
       Object.assign(Object.create(express.request), { user: { id: scope.ownerId, role: 'USER' } }),

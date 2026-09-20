@@ -8,6 +8,7 @@ import type { MediaHost } from './host';
 import { useMediaCatalog, useMediaThread } from '~/data-provider';
 import { useMediaDraftForm } from './useMediaDraftForm';
 import { useMediaShellHost } from '~/hooks/Media/host';
+import { getMediaSelection } from './selection';
 import { mediaThreadContext } from './context';
 import { mediaLibraryFamily } from './state';
 import { MediaHostProvider } from './host';
@@ -35,7 +36,7 @@ function Settings({
     portal: true,
     normalizeDraft: false,
   });
-  return <MediaSettings form={form} />;
+  return <MediaSettings form={form} selection={getMediaSelection(form)} />;
 }
 
 export default function MediaSettingsPanel() {

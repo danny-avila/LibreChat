@@ -46,13 +46,11 @@ export function createMediaAccountMethods({
   | 'Permit'
 >): Pick<
   MediaPersistenceContext,
-  | 'ensureOwner'
   | 'assertOwnerActive'
   | 'admitOwnerWork'
   | 'releaseOwnerWork'
   | 'prepareMediaAccountDeletion'
   | 'cancelMediaAccountDeletion'
-  | 'purgeDeletedAccountAccounting'
   | 'completeMediaAccountDeletion'
   | 'reconcileMediaAccountDeletion'
 > {
@@ -454,13 +452,11 @@ export function createMediaAccountMethods({
     return jobs.length + turns.length + threads.length;
   };
   return {
-    ensureOwner,
     assertOwnerActive,
     admitOwnerWork,
     releaseOwnerWork,
     prepareMediaAccountDeletion,
     cancelMediaAccountDeletion,
-    purgeDeletedAccountAccounting,
     completeMediaAccountDeletion,
     reconcileMediaAccountDeletion,
   };

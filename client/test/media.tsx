@@ -1,8 +1,7 @@
 import { Provider, createStore } from 'jotai';
-import { render } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { mediaLimitsSchema } from 'librechat-data-provider';
-import type { MediaCatalog, MediaOffering } from 'librechat-data-provider';
+import type { MediaCatalog } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type { MediaHost } from '~/components/Media/host';
 import { MediaHostProvider } from '~/components/Media/host';
@@ -28,23 +27,6 @@ export function makeCatalog(overrides: Partial<MediaCatalog> = {}): MediaCatalog
       maxPresets: 50,
     },
     offerings: [],
-    ...overrides,
-  };
-}
-
-export function makeOffering(
-  api: MediaOffering['api'],
-  capabilities: MediaOffering['capabilities'],
-  overrides: Partial<MediaOffering> = {},
-): MediaOffering {
-  return {
-    connectionId: 'connection',
-    connectionName: 'Connection',
-    modelId: 'image-model',
-    modelName: 'Image model',
-    api,
-    available: true,
-    capabilities,
     ...overrides,
   };
 }
@@ -77,12 +59,4 @@ export function createMediaTestEnvironment(
     </Provider>
   );
   return { store, client, host: value, wrapper };
-}
-
-export function renderMedia(
-  ui: ReactNode,
-  options: Parameters<typeof createMediaTestEnvironment>[0] = {},
-) {
-  const env = createMediaTestEnvironment(options);
-  return { ...env, ...render(ui, { wrapper: env.wrapper }) };
 }

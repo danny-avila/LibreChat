@@ -298,13 +298,14 @@ describe('operator media recovery on standalone MongoDB', () => {
       outputs: [{ kind: 'text', text: 'Known partial output' }],
     });
     expect(
-      await native.getMediaNativeContinuation({
+      await native.getMediaNativeContinuations({
         scope,
-        continuationRef: part.continuationRef,
+        references: [part],
+        limit: 1,
         execution,
         conversationId: 'saved-chat',
       }),
-    ).toMatchObject({ part: { thoughtSignature: 'private-signature' } });
+    ).toMatchObject([{ part: { thoughtSignature: 'private-signature' } }]);
     expect(await mongoose.models.MediaPermit.countDocuments()).toBe(0);
     await expect(
       native.failMediaNativeRecording({
@@ -320,33 +321,36 @@ describe('operator media recovery on standalone MongoDB', () => {
     const { part } = await legacy('Signed output', 'signature');
     const input = {
       scope,
-      continuationRef: part.continuationRef,
+      references: [part],
+      limit: 1,
       execution,
       conversationId: 'saved-chat',
     };
-    expect(await native.getMediaNativeContinuation(input)).toMatchObject({
-      part: { thoughtSignature: 'signature' },
-    });
+    expect(await native.getMediaNativeContinuations(input)).toMatchObject([
+      {
+        part: { thoughtSignature: 'signature' },
+      },
+    ]);
     expect(
-      await native.getMediaNativeContinuation({
+      await native.getMediaNativeContinuations({
         ...input,
         execution: { ...execution, bindingRevision: 'different-binding' },
       }),
-    ).toBeNull();
+    ).toEqual([null]);
     expect(
-      await native.getMediaNativeContinuation({
+      await native.getMediaNativeContinuations({
         ...input,
         execution: { ...input.execution, modelId: 'other-model' },
       }),
-    ).toBeNull();
+    ).toEqual([null]);
     expect(
-      await native.getMediaNativeContinuation({
+      await native.getMediaNativeContinuations({
         ...input,
         scope: { ...scope, ownerId: 'other-owner' },
       }),
-    ).toBeNull();
+    ).toEqual([null]);
     expect(
-      await native.getMediaNativeContinuation({ ...input, conversationId: 'unregistered-chat' }),
-    ).toBeNull();
+      await native.getMediaNativeContinuations({ ...input, conversationId: 'unregistered-chat' }),
+    ).toEqual([null]);
   });
 });

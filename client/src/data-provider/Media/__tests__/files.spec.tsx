@@ -34,11 +34,12 @@ test('media ingress initializes Files cache and preserves richer existing attach
       metadata: { fileIdentifier: 'existing' },
     })),
   );
-  cacheMediaAssets(client, 'owner', [{ ...asset, filename: 'updated.png' }, asset]);
+  cacheMediaAssets(client, 'owner', [{ ...asset, filename: 'updated.png', width: 640 }, asset]);
   expect(client.getQueryData<TFile[]>([QueryKeys.files])).toHaveLength(1);
   expect(client.getQueryData<TFile[]>([QueryKeys.files])![0]).toMatchObject({
     embedded: true,
     usage: 5,
+    width: 640,
     metadata: { fileIdentifier: 'existing' },
   });
   client.clear();

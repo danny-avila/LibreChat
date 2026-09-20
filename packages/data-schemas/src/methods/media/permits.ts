@@ -18,11 +18,7 @@ export function createMediaPermitsMethods({
   releaseOwnerWork,
 }: Pick<MediaPersistenceContext, 'getJob' | 'Permit' | 'Job' | 'releaseOwnerWork'>): Pick<
   MediaPersistenceContext,
-  | 'acquirePermit'
-  | 'acquireMediaPermit'
-  | 'acquireMediaPermits'
-  | 'releaseMediaPermits'
-  | 'reconcileMediaPermits'
+  'acquireMediaPermit' | 'acquireMediaPermits' | 'releaseMediaPermits' | 'reconcileMediaPermits'
 > {
   /** `permitId` is set only when this call inserted the permit, so a rollback never touches an earlier grant. */
   async function acquirePermit(
@@ -200,7 +196,6 @@ export function createMediaPermitsMethods({
     };
   };
   return {
-    acquirePermit,
     acquireMediaPermit,
     acquireMediaPermits,
     releaseMediaPermits,

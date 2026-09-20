@@ -5,13 +5,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { MediaStartupConfig, MediaUserKey, TEndpointsConfig } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import type { MediaQueryScope } from '~/data-provider/Media/queries';
 import { initializeI18n } from '~/locales/i18n';
 import ProviderKeys from '../ProviderKeys';
 
 let mockEndpoints: string[] = [];
 let mockEndpointsConfig: TEndpointsConfig = {};
-let mockMediaHost: (MediaQueryScope & Pick<MediaStartupConfig, 'integrations'>) | undefined;
+let mockMediaConfig: Pick<MediaStartupConfig, 'integrations'> | undefined;
 
 jest.mock('~/data-provider', () => ({
   ...jest.requireActual('~/data-provider'),
@@ -21,7 +20,7 @@ jest.mock('~/data-provider', () => ({
 jest.mock('../useProviderKeys', () => ({
   __esModule: true,
   default: () => mockEndpoints,
-  useMediaProviderKeyScope: () => mockMediaHost,
+  useMediaProviderKeyConfig: () => mockMediaConfig,
 }));
 
 jest.mock('librechat-data-provider', () => {
@@ -65,7 +64,7 @@ describe('ProviderKeys', () => {
   beforeEach(() => {
     mockEndpoints = [];
     mockEndpointsConfig = {};
-    mockMediaHost = undefined;
+    mockMediaConfig = undefined;
     queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
       logger: { log: console.log, warn: console.warn, error: () => {} },
@@ -76,13 +75,7 @@ describe('ProviderKeys', () => {
   afterEach(() => queryClient.clear());
 
   const enableMedia = (integrations: MediaStartupConfig['integrations'] = []) => {
-    mockMediaHost = {
-      scope: 'settings-user',
-      integrations,
-      pollIntervalMs: 5000,
-      catchUpIntervalMs: 60000,
-      isCurrentSession: () => true,
-    };
+    mockMediaConfig = { integrations };
   };
 
   it('keeps help hidden until its trigger receives focus', async () => {
@@ -163,7 +156,9 @@ describe('ProviderKeys', () => {
   it('merges a shared chat row into the required-URL credential editor', async () => {
     enableMedia([integration('openAI', { userProvideURL: true })]);
     mockEndpoints = ['openAI'];
-    mockEndpointsConfig = { openAI: { order: 0, userProvide: true, userProvideURL: true } };
+    mockEndpointsConfig = {
+      openAI: { order: 0, userProvide: true, userProvideURL: true, keyEncoding: 'apiKey' },
+    };
     setup();
     await userEvent.click(screen.getByRole('button', { name: 'Provider API keys' }));
     expect(await screen.findByText('No key set')).toBeVisible();

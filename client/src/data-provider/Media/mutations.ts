@@ -38,12 +38,7 @@ export function useMediaThreadMutations(host: MutationScope) {
       dataService.updateMediaThread(input.threadId, input.update),
     { onSuccess: settle },
   );
-  const remove = useMutation(
-    [MutationKeys.deleteMediaThread],
-    (threadId: string) => dataService.deleteMediaThread(threadId),
-    { onSuccess: settle },
-  );
-  return { update, remove };
+  return { update };
 }
 
 export function useDeleteMediaThreads(host: MutationScope) {

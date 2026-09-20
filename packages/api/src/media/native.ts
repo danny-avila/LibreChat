@@ -145,7 +145,7 @@ export function createNativeMediaFactory({
         accountingMode: 'none' as const,
       };
     };
-    const runs = new Map<string, { images: number; bytes: number; parts: number }>();
+    const runs = new Map<string, { images: number }>();
     const assertOutput = async () => {
       const context = await getContext();
       assertMediaAccess(context, true);
@@ -192,7 +192,7 @@ export function createNativeMediaFactory({
             'Too many native recordings are active.',
           );
         }
-        runs.set(modelRunId, { images: 0, bytes: 0, parts: 0 });
+        runs.set(modelRunId, { images: 0 });
         return { responseModalities: modalities };
       },
       async part({ modelRunId, chunkIndex, partIndex, part }) {
@@ -284,8 +284,6 @@ export function createNativeMediaFactory({
         contentByPosition.set(position, content);
         fingerprints.set(position, fingerprint);
         metadataBytes += bytes;
-        run.parts++;
-        run.bytes += bytes;
         return content;
       },
       async complete({ modelRunId }) {

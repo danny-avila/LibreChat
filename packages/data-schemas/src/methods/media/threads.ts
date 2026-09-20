@@ -27,7 +27,6 @@ export function createMediaThreadsMethods({
   MediaPersistenceContext,
   | 'getMediaThread'
   | 'listMediaThreads'
-  | 'pageTurnJobs'
   | 'listMediaTurnJobs'
   | 'listMediaTurns'
   | 'getMediaLatestImageContext'
@@ -584,7 +583,6 @@ export function createMediaThreadsMethods({
   return {
     getMediaThread,
     listMediaThreads,
-    pageTurnJobs,
     listMediaTurnJobs,
     listMediaTurns,
     getMediaLatestImageContext,

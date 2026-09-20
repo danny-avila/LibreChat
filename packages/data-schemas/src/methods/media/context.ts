@@ -1,12 +1,9 @@
 import type { MediaSubmissionReceipt } from 'librechat-data-provider';
-import type { FilterQuery, PipelineStage } from 'mongoose';
+import type { PipelineStage } from 'mongoose';
 import type {
-  MediaJobFence,
   MediaMethods,
   MediaOwnerScope,
   MediaStoredJob,
-  MediaStoredThread,
-  MediaStoredTurn,
   StageMediaSubmissionInput,
 } from '~/types/media';
 import {
@@ -21,7 +18,6 @@ import {
 } from '~/models/media';
 import { createMediaAccountingMethods } from '../mediaAccounting';
 import { createFileModel } from '~/models/file';
-type PermitRequest = Parameters<MediaMethods['acquireMediaPermit']>[0];
 
 /** Explicit dependencies between persistence aggregates; all methods share one connection. */
 export type MediaPersistenceContext = {
@@ -39,43 +35,23 @@ export type MediaPersistenceContext = {
   ownerExists: (scope: MediaOwnerScope) => Promise<boolean>;
   getJob: MediaMethods['getMediaJob'];
   ensureMediaIndexes: () => Promise<void>;
-  ensureOwner: (scope: MediaOwnerScope) => Promise<void>;
   assertOwnerActive: (scope: MediaOwnerScope) => Promise<void>;
   admitOwnerWork: (scope: MediaOwnerScope, workId: string) => Promise<boolean>;
   releaseOwnerWork: (scope: MediaOwnerScope, workId: string) => Promise<void>;
-  currentThread: (scope: MediaOwnerScope, threadId?: string) => Promise<MediaStoredThread | null>;
   stage: (
     input: StageMediaSubmissionInput,
     retry?: MediaStoredJob,
   ) => Promise<MediaSubmissionReceipt>;
-  admitQueue: (job: MediaStoredJob) => Promise<MediaSubmissionReceipt>;
-  ensureThread: (
-    turn: MediaStoredTurn,
-    title: string,
-    expiresAt?: Date,
-    temporary?: boolean,
-  ) => Promise<MediaStoredThread>;
-  assignSequence: (scope: MediaOwnerScope, turnId: string) => Promise<void>;
-  pinInputs: (turn: MediaStoredTurn, maxRetainers: number) => Promise<void>;
-  publishTurn: (
-    turn: MediaStoredTurn,
-    maxRetainers: number,
-    maxTitleChars: number,
-    expiresAt?: Date,
-    temporary?: boolean,
-  ) => Promise<void>;
   refreshThread: (scope: MediaOwnerScope, threadId: string) => Promise<void>;
   publishMediaSubmission: MediaMethods['publishMediaSubmission'];
   stageMediaImport: MediaMethods['stageMediaImport'];
   publishMediaImport: MediaMethods['publishMediaImport'];
   getMediaThread: MediaMethods['getMediaThread'];
   listMediaThreads: MediaMethods['listMediaThreads'];
-  pageTurnJobs: MediaMethods['listMediaTurnJobs'];
   listMediaTurnJobs: MediaMethods['listMediaTurnJobs'];
   getMediaAsset: MediaMethods['getMediaAsset'];
   getAvailableMediaFileIds: MediaMethods['getAvailableMediaFileIds'];
   listMediaTurns: MediaMethods['listMediaTurns'];
-  fenceQuery: (input: MediaJobFence, now: Date | string) => FilterQuery<MediaStoredJob>;
   getMediaLatestImageContext: MediaMethods['getMediaLatestImageContext'];
   getMediaLatestVideoContext: MediaMethods['getMediaLatestVideoContext'];
   claimMediaJob: MediaMethods['claimMediaJob'];
@@ -85,7 +61,6 @@ export type MediaPersistenceContext = {
   recordMediaJobObservation: MediaMethods['recordMediaJobObservation'];
   cancelMediaJob: MediaMethods['cancelMediaJob'];
   retryMediaJob: MediaMethods['retryMediaJob'];
-  cancelRetiringThreadJobs: (scope: MediaOwnerScope, threadId: string) => Promise<void>;
   retireMediaThread: MediaMethods['retireMediaThread'];
   retireAllMediaThreads: MediaMethods['retireAllMediaThreads'];
   retireExpiredMediaThreads: MediaMethods['retireExpiredMediaThreads'];
@@ -113,7 +88,6 @@ export type MediaPersistenceContext = {
   completeMediaAssetDeletion: MediaMethods['completeMediaAssetDeletion'];
   activateMedia: MediaMethods['activateMedia'];
   hasMediaActivation: MediaMethods['hasMediaActivation'];
-  acquirePermit: (input: PermitRequest) => Promise<{ acquired: boolean; permitId?: string }>;
   acquireMediaPermit: MediaMethods['acquireMediaPermit'];
   acquireMediaPermits: MediaMethods['acquireMediaPermits'];
   releaseMediaPermits: MediaMethods['releaseMediaPermits'];
@@ -126,7 +100,6 @@ export type MediaPersistenceContext = {
   purgeMediaThreadPayloads: MediaMethods['purgeMediaThreadPayloads'];
   prepareMediaAccountDeletion: MediaMethods['prepareMediaAccountDeletion'];
   cancelMediaAccountDeletion: MediaMethods['cancelMediaAccountDeletion'];
-  purgeDeletedAccountAccounting: (scope: MediaOwnerScope) => Promise<void>;
   completeMediaAccountDeletion: MediaMethods['completeMediaAccountDeletion'];
   reconcileMediaAccountDeletion: MediaMethods['reconcileMediaAccountDeletion'];
   listMediaRetiringAssets: MediaMethods['listMediaRetiringAssets'];

@@ -20,7 +20,6 @@ export function createMediaRetirementMethods({
   'Job' | 'Thread' | 'File' | 'mongoose' | 'releaseMediaAsset' | 'Turn'
 >): Pick<
   MediaPersistenceContext,
-  | 'cancelRetiringThreadJobs'
   | 'retireMediaThread'
   | 'retireAllMediaThreads'
   | 'retireExpiredMediaThreads'
@@ -329,7 +328,6 @@ export function createMediaRetirementMethods({
     }));
   };
   return {
-    cancelRetiringThreadJobs,
     retireMediaThread,
     retireAllMediaThreads,
     retireExpiredMediaThreads,

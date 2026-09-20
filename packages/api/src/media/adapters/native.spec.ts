@@ -21,7 +21,6 @@ import { createSourcefulMediaAdapters } from './sourceful';
 import { createRecraftMediaAdapters } from './recraft';
 import { createRunwayMediaAdapters } from './runway';
 import { createMediaTransport } from '../transport';
-import { validateMediaOffering } from '../catalog';
 import { createKreaMediaAdapters } from './krea';
 import { createBFLMediaAdapters } from './bfl';
 import { createXAIMediaAdapters } from './xai';
@@ -139,33 +138,6 @@ describe('native media catalogs and transport boundaries', () => {
       });
       expect(calls).toHaveLength(1);
       expect(calls[0].method).toBe('GET');
-    },
-  );
-
-  it.each([
-    ['bfl.videos', 'black-forest-labs/flux-3-video'],
-    ['xai.videos', 'x-ai/grok-imagine-video-1.5'],
-    ['runway.videos', 'runway/gen-4.5'],
-  ] as const)(
-    'rejects fractional %s durations before queueing or native dispatch',
-    async (api, modelId) => {
-      const { adapter, context, calls } = fixture(api);
-      const submission = request(modelId, 'video.generate', { durationSeconds: 5.5 });
-      const profile = adapter.catalog?.(context.config).find((entry) => entry.modelId === modelId);
-      if (!profile) throw new Error('Missing native profile');
-      expect(() =>
-        validateMediaOffering(submission, {
-          connectionId: 'native',
-          connectionName: 'Native',
-          api,
-          available: true,
-          ...profile,
-        }),
-      ).toThrow();
-      await expect(adapter.submit(submission, [], context)).rejects.toMatchObject({
-        certainty: 'rejected',
-      });
-      expect(calls).toHaveLength(0);
     },
   );
 

@@ -11,7 +11,7 @@ import {
 } from '@librechat/client';
 import type { TEndpointsConfig } from 'librechat-data-provider';
 import type { ProviderKeyEntry } from './utils';
-import useProviderKeys, { useMediaProviderKeyScope } from './useProviderKeys';
+import useProviderKeys, { useMediaProviderKeyConfig } from './useProviderKeys';
 import { useGetEndpointsQuery } from '~/data-provider';
 import { getProviderKeyEntries } from './utils';
 import ProviderKeyRow from './ProviderKeyRow';
@@ -20,13 +20,9 @@ import { useLocalize } from '~/hooks';
 function ProviderKeyRows({
   entries,
   endpointsConfig,
-  loading = false,
-  showEmpty = true,
 }: {
   entries: ProviderKeyEntry[];
   endpointsConfig?: TEndpointsConfig;
-  loading?: boolean;
-  showEmpty?: boolean;
 }) {
   const localize = useLocalize();
   return (
@@ -39,10 +35,9 @@ function ProviderKeyRows({
           label={entry.label}
           keyConfiguration={entry.keyConfiguration}
           conflict={entry.conflict}
-          disabled={loading}
         />
       ))}
-      {showEmpty && !loading && entries.length === 0 && (
+      {entries.length === 0 && (
         <p className="py-4 text-sm text-text-secondary">
           {localize('com_ui_provider_api_keys_empty')}
         </p>
@@ -57,7 +52,7 @@ export default function ProviderKeys() {
   const contentRef = useRef<HTMLDivElement>(null);
   const { data: endpointsConfig } = useGetEndpointsQuery();
   const endpoints = useProviderKeys();
-  const mediaHost = useMediaProviderKeyScope();
+  const mediaConfig = useMediaProviderKeyConfig();
 
   const handleOpenAutoFocus = (event: Event) => {
     event.preventDefault();
@@ -93,7 +88,7 @@ export default function ProviderKeys() {
               entries={getProviderKeyEntries({
                 chatEndpoints: endpoints,
                 endpointsConfig,
-                mediaIntegrations: mediaHost?.integrations,
+                mediaIntegrations: mediaConfig?.integrations,
               })}
               endpointsConfig={endpointsConfig}
             />

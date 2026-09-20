@@ -40,13 +40,6 @@ export interface MediaNativeMethods {
     staleBefore: string;
     limit: number;
   }): Promise<number>;
-  getMediaNativeContinuation(input: {
-    scope: MediaOwnerScope;
-    continuationRef?: string;
-    fileId?: string;
-    execution: MediaNativeExecution;
-    conversationId?: string;
-  }): Promise<MediaNativePartRecord | null>;
   getMediaNativeContinuations(input: {
     scope: MediaOwnerScope;
     references: readonly MediaNativeReference[];

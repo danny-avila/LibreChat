@@ -3,13 +3,19 @@ import { Film, ImagePlus, Pencil, Plus, X } from 'lucide-react';
 import { Button, ControlCombobox, Label, Radio, TooltipAnchor } from '@librechat/client';
 import type { MediaCatalog, MediaOffering } from 'librechat-data-provider';
 import type { MediaDraftForm } from './useMediaDraftForm';
-import { getMediaSelection } from './selection';
+import type { MediaFormSelection } from './selection';
 import { MediaParameters } from './Parameters';
 import { useMediaCredentials } from './Keys';
 import { mediaErrorLabels } from './labels';
 import { MediaPresets } from './Presets';
 import { offeringId } from './options';
-export function MediaSettings({ form }: { form: MediaDraftForm }) {
+export function MediaSettings({
+  form,
+  selection,
+}: {
+  form: MediaDraftForm;
+  selection: MediaFormSelection | undefined;
+}) {
   const {
     id,
     catalog,
@@ -25,7 +31,6 @@ export function MediaSettings({ form }: { form: MediaDraftForm }) {
     change,
     applyPreset,
   } = form;
-  const selection = getMediaSelection(form);
   const unavailableProvider = (reason: MediaOffering['unavailableReason']) =>
     reason === 'not_ready'
       ? localize('com_media_provider_configuration_required')

@@ -30,7 +30,6 @@ export function createMediaJobsMethods({
 >): Pick<
   MediaPersistenceContext,
   | 'getJob'
-  | 'fenceQuery'
   | 'claimMediaJob'
   | 'renewMediaJob'
   | 'beginMediaSubmission'
@@ -375,7 +374,6 @@ export function createMediaJobsMethods({
   };
   return {
     getJob,
-    fenceQuery,
     claimMediaJob,
     renewMediaJob,
     beginMediaSubmission,

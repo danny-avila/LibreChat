@@ -8,6 +8,7 @@ import {
   Spinner,
 } from '@librechat/client';
 import type { MediaThreadsDeleteRequest } from 'librechat-data-provider';
+import type { RefObject } from 'react';
 import type { MediaQueryScope } from '~/data-provider';
 import { useDeleteMediaThreads } from '~/data-provider';
 import { mediaErrorCode } from './commands';
@@ -20,12 +21,14 @@ export function MediaDeleteDialog({
   open,
   onOpenChange,
   onDeleted,
+  triggerRef,
 }: {
   host: Pick<MediaQueryScope, 'scope' | 'isCurrentSession'>;
   request: MediaThreadsDeleteRequest;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onDeleted?: (failedIds: string[]) => void;
+  triggerRef?: RefObject<HTMLElement | null>;
 }) {
   const localize = useLocalize();
   const remove = useDeleteMediaThreads(host);
@@ -61,9 +64,10 @@ export function MediaDeleteDialog({
           trigger.current = activeElement instanceof HTMLElement ? activeElement : null;
         }}
         onCloseAutoFocus={(event) => {
-          if (!trigger.current?.isConnected) return;
+          const target = triggerRef?.current ?? trigger.current;
+          if (!target?.isConnected) return;
           event.preventDefault();
-          trigger.current.focus();
+          target.focus();
         }}
       >
         <OGDialogTitle>{title}</OGDialogTitle>

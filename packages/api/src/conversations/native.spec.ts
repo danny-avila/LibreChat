@@ -129,13 +129,14 @@ describe('native conversation clone publication', () => {
       save: async () => {
         await native.reconcileMediaNativeConsumers({ scope, limit: 10, maxRetainers: 4 });
         expect(
-          await native.getMediaNativeContinuation({
+          await native.getMediaNativeContinuations({
             scope,
             execution,
-            ...reference,
+            references: [reference],
+            limit: 1,
             conversationId: 'fork',
           }),
-        ).toBeNull();
+        ).toEqual([null]);
         await mongoose.models.Message.create({
           user: scope.ownerId,
           conversationId: 'fork',
@@ -151,13 +152,14 @@ describe('native conversation clone publication', () => {
       maxRetainers: 4,
     });
     expect(
-      await native.getMediaNativeContinuation({
+      await native.getMediaNativeContinuations({
         scope,
         execution,
-        ...reference,
+        references: [reference],
+        limit: 1,
         conversationId: 'fork',
       }),
-    ).not.toBeNull();
+    ).toMatchObject([reference]);
   });
 
   it('compensates failed publication without releasing the source consumer', async () => {
@@ -194,21 +196,23 @@ describe('native conversation clone publication', () => {
       }),
     ).rejects.toThrow('partial write');
     expect(
-      await native.getMediaNativeContinuation({
+      await native.getMediaNativeContinuations({
         scope,
         execution,
-        ...reference,
+        references: [reference],
+        limit: 1,
         conversationId: 'failed-fork',
       }),
-    ).toBeNull();
+    ).toEqual([null]);
     expect(
-      await native.getMediaNativeContinuation({
+      await native.getMediaNativeContinuations({
         scope,
         execution,
-        ...reference,
+        references: [reference],
+        limit: 1,
         conversationId: 'source',
       }),
-    ).not.toBeNull();
+    ).toMatchObject([reference]);
   });
 
   it('keeps a committed clone successful when claim confirmation temporarily fails', async () => {
@@ -240,13 +244,14 @@ describe('native conversation clone publication', () => {
     confirm.mockRestore();
     await native.reconcileMediaNativeConsumers({ scope, limit: 10, maxRetainers: 4 });
     expect(
-      await native.getMediaNativeContinuation({
+      await native.getMediaNativeContinuations({
         scope,
         execution,
-        ...reference,
+        references: [reference],
+        limit: 1,
         conversationId: 'committed',
       }),
-    ).not.toBeNull();
+    ).toMatchObject([reference]);
   });
 
   it('keeps a visible clone and detaches only unavailable native identity after retention expires', async () => {

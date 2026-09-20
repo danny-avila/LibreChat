@@ -4,19 +4,21 @@ import { Alert, Button, Composer, Spinner } from '@librechat/client';
 import type { Ref } from 'react';
 import type { MediaFormActions } from './useMediaFormActions';
 import type { MediaDraftForm } from './useMediaDraftForm';
+import type { MediaFormSelection } from './selection';
 import type { MediaSend } from './state';
 import { mediaControlLabels, mediaInputRoleLabels } from './labels';
 import { MediaReferenceUpload } from './Reference';
-import { getMediaSelection } from './selection';
 import { MediaReferences } from './References';
 export function MediaComposer({
   form,
+  selection,
   send,
   busy,
   composerRef,
   actions,
 }: {
   form: MediaDraftForm;
+  selection: MediaFormSelection | undefined;
   send: MediaSend;
   busy: boolean;
   composerRef?: Ref<HTMLTextAreaElement>;
@@ -45,7 +47,6 @@ export function MediaComposer({
     maxPromptChars,
     promptInvalid,
   } = form;
-  const selection = getMediaSelection(form);
   const { error, uploads, uploading, submit, uploadFile, uploadFiles, uploadURL } = actions;
   if (!selection) {
     const message = localize(

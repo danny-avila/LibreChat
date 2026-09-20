@@ -2,6 +2,7 @@ import { createContext, useContext } from 'react';
 import type { ReactNode, Ref } from 'react';
 import type { MediaDraftFormProps, MediaDraftForm } from './useMediaDraftForm';
 import type { MediaFormActions } from './useMediaFormActions';
+import type { MediaFormSelection } from './selection';
 import type { MediaSend } from './state';
 import { useMediaFormActions } from './useMediaFormActions';
 import { useMediaDraftForm } from './useMediaDraftForm';
@@ -18,6 +19,7 @@ type FormProps = MediaDraftFormProps & {
 };
 const Context = createContext<{
   form: MediaDraftForm;
+  selection: MediaFormSelection | undefined;
   actions: MediaFormActions;
   send: MediaSend;
   busy: boolean;
@@ -26,7 +28,7 @@ const Context = createContext<{
 
 export function MediaFormSettings() {
   const context = useContext(Context);
-  return context ? <MediaSettings form={context.form} /> : null;
+  return context ? <MediaSettings form={context.form} selection={context.selection} /> : null;
 }
 
 export function MediaFormComposer() {
@@ -40,7 +42,7 @@ export function MediaForm({ send, busy, children, composerRef, ...props }: FormP
   const selection = getMediaSelection(form);
   const actions = useMediaFormActions(form, selection, send, busy);
   return (
-    <Context.Provider value={{ form, actions, send, busy, composerRef }}>
+    <Context.Provider value={{ form, selection, actions, send, busy, composerRef }}>
       <FileDropArea
         className={children ? 'h-full min-h-0' : undefined}
         disabled={

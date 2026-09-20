@@ -24,12 +24,19 @@ describe('collapseAssistantReplayContent', () => {
   });
 
   it('returns the same array, in order, when any part carries native media', () => {
-    const parts: MessageContentComplex[] = [
-      { type: 'text', text: 'Drawing.' },
-      image({ native_media: { continuationRef: 'native:job-1:0' } }),
-      { type: 'text', text: 'Done.' },
+    const variations: MessageContentComplex[][] = [
+      [
+        { type: 'text', text: 'Drawing.' },
+        image({ native_media: { continuationRef: 'native:job-1:0' } }),
+        { type: 'text', text: 'Done.' },
+      ],
+      [
+        { type: 'text', text: 'before', native_media: { continuationRef: 'opaque' } },
+        { type: 'image_file', image_file: { file_id: 'immutable' } },
+        { type: 'text', text: 'after' },
+      ],
     ];
-    expect(collapseAssistantReplayContent(parts)).toBe(parts);
+    for (const parts of variations) expect(collapseAssistantReplayContent(parts)).toBe(parts);
   });
 
   it('preserves the existing double newline before a tool anchor and its standalone whitespace', () => {

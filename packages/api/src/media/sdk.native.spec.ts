@@ -6,7 +6,6 @@ import type { NativeMediaPort } from '@librechat/agents';
 import type { ClientOptions } from '@librechat/agents';
 import type { NativeMediaSelection } from './native';
 import { createRun as createHostRun } from '~/agents/run';
-import { collapseAssistantReplayContent } from './replay';
 import { createDeferredNativeMediaPort } from './sdk';
 
 type RunAgent = Parameters<typeof createHostRun>[0]['agents'][number];
@@ -129,20 +128,5 @@ describe('native media host integration', () => {
       'not permitted',
     );
     expect(rejected.client.generateContent).not.toHaveBeenCalled();
-  });
-
-  it('preserves media and opaque signed text through host reasoning, tool and steering flushes', () => {
-    const parts = [
-      { type: 'text' as const, text: 'before', native_media: { continuationRef: 'opaque' } },
-      { type: 'image_file' as const, image_file: { file_id: 'immutable' } },
-      { type: 'text' as const, text: 'after' },
-    ];
-    expect(collapseAssistantReplayContent(parts)).toBe(parts);
-    expect(
-      collapseAssistantReplayContent([
-        { type: 'text', text: 'one' },
-        { type: 'text', text: 'two' },
-      ]),
-    ).toBe('one\ntwo');
   });
 });

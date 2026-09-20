@@ -40,6 +40,7 @@ import { compareTurns, mediaContextParameters, mediaParameterContext } from './c
 import { mediaDraftFamily, mediaPendingFamily } from './state';
 import { MediaImagePending } from './ImagePending';
 import { getMessageTimestamp } from '~/utils';
+import { MediaDeleteDialog } from './Delete';
 import { mediaErrorCode } from './commands';
 import { MediaAssetView } from './Asset';
 import { MediaJobError } from './Error';
@@ -517,7 +518,7 @@ export function MediaThreadView({
   const host = useMediaHost();
   const localize = useLocalize();
   const { i18n } = useTranslation();
-  const { update: updateThread, remove: removeThread } = useMediaThreadMutations(host);
+  const { update: updateThread } = useMediaThreadMutations(host);
   const [expanded, setExpanded] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -526,7 +527,7 @@ export function MediaThreadView({
   const titleId = useId();
   const menuTrigger = useRef<HTMLButtonElement>(null);
   const [error, setError] = useState<string>();
-  const busy = updateThread.isLoading || removeThread.isLoading;
+  const busy = updateThread.isLoading;
   const [title, setTitle] = useState(detail.thread.title);
   const threadId = detail.thread.threadId;
   const more = useMediaTurns(host, detail, expanded);
@@ -700,39 +701,16 @@ export function MediaThreadView({
           </div>
         </OGDialogContent>
       </OGDialog>
-      <OGDialog open={deleteOpen} onOpenChange={setDeleteOpen} triggerRef={menuTrigger}>
-        <OGDialogContent
-          className="w-11/12 max-w-md"
-          onCloseAutoFocus={(event) => {
-            event.preventDefault();
-            menuTrigger.current?.focus();
-          }}
-        >
-          <OGDialogTitle>{localize('com_media_delete_title')}</OGDialogTitle>
-          <OGDialogDescription>{localize('com_media_delete_description')}</OGDialogDescription>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
-              {localize('com_ui_cancel')}
-            </Button>
-            <Button
-              disabled={busy}
-              onClick={async () => {
-                try {
-                  await removeThread.mutateAsync(threadId);
-                  if (host.isCurrentSession()) onDeleted();
-                } catch (failure) {
-                  if (host.isCurrentSession())
-                    setError(localize(mediaErrorLabels[mediaErrorCode(failure)]));
-                } finally {
-                  if (host.isCurrentSession()) setDeleteOpen(false);
-                }
-              }}
-            >
-              {localize('com_ui_delete')}
-            </Button>
-          </div>
-        </OGDialogContent>
-      </OGDialog>
+      <MediaDeleteDialog
+        host={host}
+        request={{ mode: 'selected', threadIds: [threadId] }}
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        triggerRef={menuTrigger}
+        onDeleted={(failedIds) => {
+          if (!failedIds.includes(threadId)) onDeleted();
+        }}
+      />
     </section>
   );
 }

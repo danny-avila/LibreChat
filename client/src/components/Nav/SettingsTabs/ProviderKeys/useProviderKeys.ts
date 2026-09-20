@@ -1,32 +1,15 @@
-import { useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import type { MediaStartupConfig } from 'librechat-data-provider';
-import type { MediaQueryScope } from '~/data-provider';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import { useMediaAccess } from '~/hooks/Media/useMediaAccess';
 import { getUserKeyEndpoints } from './utils';
 import { useHasAccess } from '~/hooks';
 
 /** Determines visibility without fetching provider models or credentials. */
-export function useMediaProviderKeyScope():
-  | (MediaQueryScope & Pick<MediaStartupConfig, 'integrations'>)
-  | undefined {
+export function useMediaProviderKeyConfig(): Pick<MediaStartupConfig, 'integrations'> | undefined {
   const { media, scope, enabled } = useMediaAccess();
-  const current = useRef({ scope, enabled });
-  current.current = { scope, enabled };
-  return useMemo(
-    () =>
-      enabled && scope && media
-        ? {
-            scope,
-            integrations: media.integrations,
-            pollIntervalMs: media.clientPollIntervalMs,
-            catchUpIntervalMs: media.clientCatchUpIntervalMs,
-            isCurrentSession: () => current.current.enabled && current.current.scope === scope,
-          }
-        : undefined,
-    [enabled, scope, media],
-  );
+  return enabled && scope && media ? { integrations: media.integrations } : undefined;
 }
 
 /**

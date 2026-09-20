@@ -14,7 +14,6 @@ interface ProviderKeyRowProps {
   keyConfiguration?: MediaUserKey & { label: string };
   label?: string;
   conflict?: boolean;
-  disabled?: boolean;
 }
 
 export default function ProviderKeyRow({
@@ -23,7 +22,6 @@ export default function ProviderKeyRow({
   keyConfiguration,
   label: configuredLabel,
   conflict = false,
-  disabled = false,
 }: ProviderKeyRowProps) {
   const localize = useLocalize();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -76,7 +74,7 @@ export default function ProviderKeyRow({
         </div>
         <Button
           variant="outline"
-          disabled={conflict || disabled || isLoading}
+          disabled={conflict || isLoading}
           onClick={() => (isError ? void refetch() : setDialogOpen(true))}
           aria-label={localize('com_ui_provider_key_action', { action: buttonLabel, name: label })}
         >

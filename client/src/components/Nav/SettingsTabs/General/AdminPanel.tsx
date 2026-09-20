@@ -12,16 +12,14 @@ export default function AdminPanel() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <Label id="admin-panel-label">{localize('com_ui_admin_panel')}</Label>
-        <Button asChild variant="outline" aria-labelledby="admin-panel-label">
-          <a href={adminPanelURL} target="_blank" rel="noopener noreferrer">
-            {localize('com_ui_open_var', { 0: localize('com_ui_admin_panel') })}
-            <ExternalLink className="size-4" aria-hidden="true" />
-          </a>
-        </Button>
-      </div>
+    <div className="flex items-center justify-between">
+      <Label id="admin-panel-label">{localize('com_ui_admin_panel')}</Label>
+      <Button asChild variant="outline" aria-labelledby="admin-panel-label">
+        <a href={adminPanelURL} target="_blank" rel="noopener noreferrer">
+          {localize('com_ui_open_var', { 0: localize('com_ui_admin_panel') })}
+          <ExternalLink className="size-4" aria-hidden="true" />
+        </a>
+      </Button>
     </div>
   );
 }

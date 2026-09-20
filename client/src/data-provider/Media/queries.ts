@@ -175,11 +175,14 @@ export function useMediaThread(host: MediaQueryScope, threadId?: string) {
       );
       const previous = client.getQueryData<MediaThreadDetail>(key);
       if (previous && previous.thread.version > next.thread.version) return previous;
-      cacheMediaTurns(client, host.userId, next.turns.items);
-      if (next.latestImageContext)
-        cacheMediaAssets(client, host.userId, [next.latestImageContext.asset]);
-      if (next.latestVideoContext)
-        cacheMediaAssets(client, host.userId, [next.latestVideoContext.asset]);
+      cacheMediaTurns(
+        client,
+        host.userId,
+        next.turns.items,
+        [next.latestImageContext, next.latestVideoContext].flatMap((context) =>
+          context ? [context.asset] : [],
+        ),
+      );
       const turns = new Map(previous?.turns.items.map((turn) => [turn.turnId, turn]));
       return {
         ...next,

@@ -3,7 +3,7 @@ import { AxiosError, AxiosHeaders } from 'axios';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { dataService, QueryKeys, mediaCatalogSchema } from 'librechat-data-provider';
-import type { MediaThreadDetail } from 'librechat-data-provider';
+import type { MediaThreadDetail, TFile } from 'librechat-data-provider';
 import {
   useMediaThreads,
   useMediaCatalog,
@@ -167,37 +167,110 @@ test('preserves authorization failures instead of retrying a different gallery r
   env.client.clear();
 });
 
-test('keeps the newer thread snapshot when a refetch returns an older version', async () => {
-  const env = setup();
-  const createdAt = '2026-09-17T12:00:00.000Z';
-  const newer: MediaThreadDetail = {
-    thread: {
-      schemaVersion: 1,
-      threadId: 'thread',
-      title: 'Renamed',
-      version: 2,
-      createdAt,
-      updatedAt: createdAt,
-      pendingJobCount: 0,
-      turnCount: 0,
-    },
-    turns: { items: [] },
-  };
-  const older = { ...newer, thread: { ...newer.thread, title: 'Original', version: 1 } };
-  const load = jest
-    .spyOn(dataService, 'getMediaThread')
-    .mockResolvedValueOnce(newer)
-    .mockResolvedValueOnce(older);
-  const hook = renderHook(() => useMediaThread(env.host, 'thread'), { wrapper: env.wrapper });
-  await waitFor(() => expect(hook.result.current.data?.thread.version).toBe(2));
-  await act(async () => {
-    await hook.result.current.refetch();
-  });
-  expect(load).toHaveBeenCalledTimes(2);
-  expect(hook.result.current.data?.thread).toMatchObject({ version: 2, title: 'Renamed' });
-  load.mockRestore();
-  env.client.clear();
-});
+test.each([true, false])(
+  'caches thread assets together (seeded: %s) and ignores older snapshots',
+  async (seeded) => {
+    const env = setup();
+    const createdAt = '2026-09-17T12:00:00.000Z';
+    const asset = {
+      file_id: 'image',
+      filename: 'image.png',
+      filepath: '/image.png',
+      type: 'image/png',
+      bytes: 100,
+    };
+    env.client.setQueryData<TFile[]>(
+      [QueryKeys.files],
+      seeded
+        ? [
+            {
+              ...asset,
+              object: 'file',
+              user: 'owner',
+              embedded: true,
+              usage: 5,
+              width: 128,
+              metadata: { fileIdentifier: 'original' },
+            },
+          ]
+        : [],
+    );
+    const cacheWrite = jest.spyOn(env.client, 'setQueryData');
+    const newer: MediaThreadDetail = {
+      thread: {
+        schemaVersion: 1,
+        threadId: 'thread',
+        title: 'Renamed',
+        version: 2,
+        createdAt,
+        updatedAt: createdAt,
+        pendingJobCount: 0,
+        turnCount: 1,
+      },
+      turns: {
+        items: [
+          {
+            schemaVersion: 1,
+            threadId: 'thread',
+            turnId: 'turn',
+            version: 1,
+            kind: 'import',
+            createdAt,
+            prompt: '',
+            inputs: [],
+            jobs: [],
+            assets: [
+              { ...asset, width: 640 },
+              { ...asset, file_id: 'turn-image' },
+            ],
+          },
+        ],
+      },
+      latestImageContext: { turnId: 'turn', asset: { ...asset, filename: 'latest.png' } },
+      latestVideoContext: {
+        turnId: 'older-turn',
+        asset: {
+          ...asset,
+          file_id: 'video',
+          filename: 'video.mp4',
+          filepath: '/video.mp4',
+          type: 'video/mp4',
+        },
+      },
+    };
+    const older = { ...newer, thread: { ...newer.thread, title: 'Original', version: 1 } };
+    const load = jest
+      .spyOn(dataService, 'getMediaThread')
+      .mockResolvedValueOnce(newer)
+      .mockResolvedValueOnce(older);
+    const hook = renderHook(() => useMediaThread({ ...env.host, userId: 'owner' }, 'thread'), {
+      wrapper: env.wrapper,
+    });
+    await waitFor(() => expect(hook.result.current.data?.thread.version).toBe(2));
+    expect(env.client.getQueryData<TFile[]>([QueryKeys.files])).toEqual([
+      expect.objectContaining({ file_id: 'video', user: 'owner' }),
+      ...(seeded ? [expect.objectContaining({ file_id: 'turn-image' })] : []),
+      expect.objectContaining({
+        file_id: 'image',
+        filename: 'latest.png',
+        width: 640,
+        embedded: seeded,
+        usage: seeded ? 5 : 0,
+        ...(seeded ? { metadata: { fileIdentifier: 'original' } } : {}),
+      }),
+      ...(seeded ? [] : [expect.objectContaining({ file_id: 'turn-image' })]),
+    ]);
+    await act(async () => {
+      await hook.result.current.refetch();
+    });
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(hook.result.current.data?.thread).toMatchObject({ version: 2, title: 'Renamed' });
+    expect(cacheWrite.mock.calls.filter(([key]) => key[0] === QueryKeys.files)).toHaveLength(1);
+    cacheWrite.mockRestore();
+    load.mockRestore();
+    env.client.clear();
+  },
+);
 
 test('does not cache a late provider diagnostic after its session ends', async () => {
   const env = setup();

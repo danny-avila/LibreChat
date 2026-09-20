@@ -189,7 +189,7 @@ export const registry: SettingEntry[] = [
     tab: GENERAL,
     section: 'admin',
     labelKey: 'com_ui_admin_panel',
-    keywords: ['admin', 'panel', 'dashboard', 'media', 'recovery'],
+    keywords: ['admin', 'panel', 'dashboard'],
     Component: AdminPanel,
     show: (ctx) => ctx.adminPanelURL !== '',
   },
