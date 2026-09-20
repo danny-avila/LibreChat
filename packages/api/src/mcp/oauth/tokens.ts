@@ -1658,6 +1658,9 @@ export class MCPTokenStorage {
       try {
         newTokens = await refreshTokens(decryptedRefreshToken, metadata, signal);
       } catch (error) {
+        if (error instanceof MCPTokenRefreshUnavailableError) {
+          throw error;
+        }
         // These endpoint responses reject the refresh request permanently; a new grant can recover.
         // Classify only provider failures here, never a similarly worded persistence failure.
         const message = error instanceof Error ? error.message : String(error);
@@ -1743,7 +1746,10 @@ export class MCPTokenStorage {
       return storedTokens;
     } catch (refreshError) {
       logger.error(`${logPrefix} Failed to refresh tokens`, refreshError);
-      if (refreshError instanceof ReauthenticationRequiredError) {
+      if (
+        refreshError instanceof ReauthenticationRequiredError ||
+        refreshError instanceof MCPTokenRefreshUnavailableError
+      ) {
         throw refreshError;
       }
       if (
