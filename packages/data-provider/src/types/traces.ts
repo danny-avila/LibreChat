@@ -38,6 +38,8 @@ export type TTraceRecord = {
   usage?: TTraceUsage;
   /** Total cost in USD, when the backend priced the record. */
   cost?: number;
+  /** Set on records of the turn's title generation; absent on the response run itself. */
+  origin?: 'title';
 };
 
 export type TTraceErrorCode =

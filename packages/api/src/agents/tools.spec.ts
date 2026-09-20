@@ -494,13 +494,17 @@ describe('registerCodeExecutionTools', () => {
       });
 
       const readFile = result.toolDefinitions.find((d) => d.name === 'read_file');
-      expect(readFile?.description).toContain('code-execution sandbox');
+      expect(readFile?.description).toContain('code-sandbox');
       expect(readFile?.description).toContain('/mnt/data/');
       expect(readFile?.description).toContain('Do not run ls/find');
-      expect(readFile?.description).toContain('/tmp is per-call scratch');
-      expect(readFile?.description).toContain('truncate around 256KB');
-      expect(readFile?.description).toContain('images (png, jpeg, gif, webp)');
-      expect(readFile?.description).toContain('true filesystem discovery');
+      expect(readFile?.description).toContain('only retained files under /mnt/data');
+      expect(readFile?.description).toContain('$HOME');
+      expect(readFile?.description).toContain('/tmp');
+      expect(readFile?.description).toContain('global installs');
+      expect(readFile?.description).toContain('background processes are call-local');
+      expect(readFile?.description).toContain('truncates around 256KB');
+      expect(readFile?.description).toContain('png, jpeg, gif, and webp images');
+      expect(readFile?.description).toContain('filesystem discovery');
       expect(readFile?.description).not.toContain('{skillName}');
       expect(readFile?.description).not.toContain('SKILL.md');
       expect(JSON.stringify(readFile?.parameters)).not.toContain('{skillName}');
@@ -526,6 +530,10 @@ describe('registerCodeExecutionTools', () => {
       );
       expect(readFile?.description).toContain('workspace/');
       expect(readFile?.description).toContain('attached');
+      expect(readFile?.description).toContain(
+        'Only the registered workspace persists for attached commands',
+      );
+      expect(readFile?.description).toContain('operator-managed');
       expect(readFile?.parameters).toMatchObject({
         properties: {
           start_line: { type: 'integer' },
@@ -701,11 +709,21 @@ describe('registerCodeExecutionTools', () => {
         includeSkillFileInstructions: false,
         enableToolOutputReferences: false,
       });
+      const attachedWithoutRefs = registerCodeExecutionTools({
+        toolRegistry: makeRegistry(),
+        toolDefinitions: [],
+        includeBash: true,
+        includeSkillFileInstructions: false,
+        enableToolOutputReferences: false,
+        workspaceTools: true,
+        workspaceOperations: new Set(CODE_WORKSPACE_OPERATIONS),
+      });
 
       expect(
         maxToolDescriptionLength([
           ...skillAwareWithRefs.toolDefinitions,
           ...codeOnlyWithoutRefs.toolDefinitions,
+          ...attachedWithoutRefs.toolDefinitions,
         ]),
       ).toBeLessThanOrEqual(TOOL_DESCRIPTION_ADVISORY_MAX_LENGTH);
     });

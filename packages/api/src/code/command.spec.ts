@@ -3,12 +3,41 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { CodeBridgeFetch } from './bridge';
 import {
+  ATTACHED_WORKSPACE_BASH_DESCRIPTION,
   ATTACHED_WORKSPACE_BASH_SCHEMA,
   buildAttachedWorkspaceBashSchema,
   createAttachedWorkspaceBashTool,
   createGitIdentityProgrammaticBashTool,
   resolveAttachedWorkspaceCommandTimeoutMax,
+  resolveAttachedWorkspaceProgrammaticTimeout,
+  resolveAttachedWorkspaceQueueWaitMs,
 } from './command';
+import { BACKGROUND_TOOL_INVOCATION_CONFIG_KEY } from '~/agents/invocation';
+
+describe('attached workspace Bash contract', () => {
+  test('distinguishes durable workspace files from per-call and operator-managed state', () => {
+    expect(ATTACHED_WORKSPACE_BASH_DESCRIPTION).toContain(
+      'Only registered-workspace files persist',
+    );
+    expect(ATTACHED_WORKSPACE_BASH_DESCRIPTION).toContain('Install project dependencies there');
+    expect(ATTACHED_WORKSPACE_BASH_DESCRIPTION).toContain('$HOME');
+    expect(ATTACHED_WORKSPACE_BASH_DESCRIPTION).toContain('/tmp, $TMPDIR');
+    expect(ATTACHED_WORKSPACE_BASH_DESCRIPTION).toContain('global/system packages');
+    expect(ATTACHED_WORKSPACE_BASH_DESCRIPTION).toContain('background processes do not survive');
+  });
+
+  test('keeps the command parameter persistence warning next to generated commands', () => {
+    expect(ATTACHED_WORKSPACE_BASH_SCHEMA).toMatchObject({
+      properties: {
+        command: {
+          description: expect.stringContaining(
+            'Only files written inside the workspace persist between calls',
+          ),
+        },
+      },
+    });
+  });
+});
 
 describe('programmatic Bash Git identity', () => {
   test('applies authorship before the SDK sends a programmatic script', async () => {
@@ -45,6 +74,63 @@ describe('programmatic Bash Git identity', () => {
       server.close();
       await once(server, 'close');
     }
+  });
+
+  test('pins a selected project on the real SDK no-tools route', async () => {
+    const received: { url?: string; workspace?: string | string[]; code: string }[] = [];
+    const server = createServer(async (req, res) => {
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      received.push({
+        url: req.url,
+        workspace: req.headers['x-librechat-code-workspace-id'],
+        code: JSON.parse(body).code,
+      });
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ status: 'completed', stdout: 'done', stderr: '', files: [] }));
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const { port } = server.address() as AddressInfo;
+    try {
+      const bashTool = createGitIdentityProgrammaticBashTool(
+        {
+          baseUrl: `http://127.0.0.1:${port}/v1`,
+          workspaceId: 'project-a',
+          authHeaders: () => ({}),
+        },
+        { name: 'Lia', email: 'lia@example.com' },
+      );
+      const invocationConfig = { tags: [], toolCall: { toolDefs: [] } };
+      await bashTool.func(
+        { code: 'printf done', tool_manifest: [], workspaceId: 'forged-project' },
+        undefined,
+        invocationConfig,
+      );
+      expect(received).toHaveLength(1);
+      expect(received[0]).toMatchObject({ url: '/v1/exec/programmatic', workspace: 'project-a' });
+      expect(received[0].code).toContain("GIT_AUTHOR_NAME='Lia'");
+      expect(bashTool.description).toContain('selected persistent workspace');
+    } finally {
+      server.close();
+      await once(server, 'close');
+    }
+  });
+
+  test('preserves the foreground timeout while bounding an explicit admin override', () => {
+    expect(resolveAttachedWorkspaceProgrammaticTimeout(undefined, 90_000)).toBe(30_000);
+    expect(
+      resolveAttachedWorkspaceProgrammaticTimeout(
+        { limits: { maxCommandTimeoutMs: 120_000 } },
+        90_000,
+      ),
+    ).toBe(90_000);
+    expect(
+      resolveAttachedWorkspaceProgrammaticTimeout(
+        { limits: { maxCommandTimeoutMs: 60_000 } },
+        90_000,
+      ),
+    ).toBe(60_000);
   });
 });
 
@@ -222,6 +308,52 @@ describe('createAttachedWorkspaceBashTool', () => {
       properties: { timeoutMs: { type: 'integer', minimum: 1, maximum: 120_000 } },
     });
     expect(resolveAttachedWorkspaceCommandTimeoutMax()).toBe(30_000);
+    expect(resolveAttachedWorkspaceCommandTimeoutMax(undefined, 90_000)).toBe(90_000);
+    expect(
+      resolveAttachedWorkspaceCommandTimeoutMax(
+        { limits: { maxCommandTimeoutMs: 120_000 } },
+        90_000,
+      ),
+    ).toBe(90_000);
+    expect(
+      resolveAttachedWorkspaceCommandTimeoutMax(
+        { limits: { maxCommandTimeoutMs: 60_000 } },
+        90_000,
+      ),
+    ).toBe(60_000);
+  });
+
+  test('uses the negotiated ceiling only for omitted detached background timeouts', async () => {
+    const fetchImpl: CodeBridgeFetch = jest.fn(async () => commandResponse());
+    const bashTool = createAttachedWorkspaceBashTool({
+      baseUrl: 'https://code.example.com/v1',
+      authHeaders: () => ({}),
+      workspaceId: 'project-a',
+      maxTimeoutMs: 90_000,
+      fetchImpl,
+    });
+
+    await bashTool.invoke(
+      { command: 'npm test' },
+      { configurable: { [BACKGROUND_TOOL_INVOCATION_CONFIG_KEY]: true } },
+    );
+    await bashTool.invoke({ command: 'npm test' });
+
+    const backgroundRequest = JSON.parse(String((fetchImpl as jest.Mock).mock.calls[0][1]?.body));
+    const foregroundRequest = JSON.parse(String((fetchImpl as jest.Mock).mock.calls[1][1]?.body));
+    expect(backgroundRequest).toMatchObject({ timeoutMs: 90_000 });
+    expect(foregroundRequest).toMatchObject({ timeoutMs: 30_000 });
+  });
+
+  test('resolves the administrator-configured admission budget', () => {
+    expect(resolveAttachedWorkspaceQueueWaitMs()).toBe(5 * 60_000);
+    expect(resolveAttachedWorkspaceQueueWaitMs({ limits: { maxQueueWaitMs: 30_000 } })).toBe(
+      30_000,
+    );
+    expect(resolveAttachedWorkspaceQueueWaitMs({ limits: { maxQueueWaitMs: 0 } })).toBe(0);
+    expect(resolveAttachedWorkspaceQueueWaitMs({ limits: { maxQueueWaitMs: 10 * 60_000 } })).toBe(
+      5 * 60_000,
+    );
   });
 
   test('lowers the omitted timeout when the deployment ceiling is below 30 seconds', async () => {

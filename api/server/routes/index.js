@@ -26,6 +26,7 @@ const balance = require('./balance');
 const actions = require('./actions');
 const apiKeys = require('./apiKeys');
 const banner = require('./banner');
+const openapi = require('./openapi');
 const search = require('./search');
 const models = require('./models');
 const convos = require('./convos');
@@ -70,6 +71,7 @@ module.exports = {
   files,
   share,
   banner,
+  openapi,
   agents,
   convos,
   traces,

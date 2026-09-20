@@ -5,6 +5,42 @@ import {
 } from './bridge';
 
 describe('getCodeBridgeWorkerStatus', () => {
+  test.each([
+    [['bash'], ['bash']],
+    [['bash', 'python'], ['bash']],
+    [['python'], undefined],
+    [['bash', 123], undefined],
+  ])(
+    'preserves recognized programmatic capability from %j',
+    async (programmaticLanguages, expected) => {
+      const status = await getCodeBridgeWorkerStatus({
+        baseURL: 'https://code.example.com/v1',
+        token: 'token',
+        workerId: 'personal-vm',
+        fetchImpl: jest.fn().mockResolvedValue(
+          Response.json({
+            protocolVersion: 1,
+            workerId: 'personal-vm',
+            online: true,
+            ready: true,
+            leaseExpiresInMs: 45_000,
+            capabilities: {
+              statefulWorkspace: false,
+              runtimes: [],
+              sandboxProfile: 'native-srt',
+              workspaceTools: {
+                protocolVersion: 1,
+                operations: ['execute_command'],
+                workspaces: [{ id: 'project-a' }],
+                programmaticLanguages,
+              },
+            },
+          }),
+        ),
+      });
+      expect(status.programmaticLanguages).toEqual(expected);
+    },
+  );
   test('accepts the maximum declared environment metadata population', async () => {
     const workspaces = Array.from({ length: 32 }, (_, index) => ({
       id: `root-${index}`,
@@ -48,6 +84,7 @@ describe('getCodeBridgeWorkerStatus', () => {
           online: true,
           ready: true,
           leaseExpiresInMs: 45_000,
+          maxCommandTimeoutMs: 120_000,
           capabilities: {
             statefulWorkspace: true,
             sandboxProfile: 'native-srt',
@@ -78,6 +115,7 @@ describe('getCodeBridgeWorkerStatus', () => {
       status: 'ready',
       statefulWorkspace: true,
       leaseExpiresInMs: 45_000,
+      maxCommandTimeoutMs: 120_000,
       sandboxProfile: 'native-srt',
       runtimes: ['bash'],
       operations: ['read_file', 'execute_command'],
@@ -136,6 +174,8 @@ describe('getCodeBridgeWorkerStatus', () => {
     { online: true, ready: false },
     { online: false, ready: false, leaseExpiresInMs: 5_000 },
     { online: true, ready: true, leaseExpiresInMs: 60_001 },
+    { online: true, ready: true, maxCommandTimeoutMs: 0 },
+    { online: true, ready: true, maxCommandTimeoutMs: 300_001 },
     {
       online: true,
       ready: true,

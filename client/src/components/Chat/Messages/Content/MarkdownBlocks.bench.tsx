@@ -5,13 +5,15 @@ import { render } from '@testing-library/react';
 import { getRemarkPlugins, getRehypePlugins, getMarkdownComponents } from './markdownConfig';
 import { ArtifactProvider, CodeBlockProvider, MessageContext } from '~/Providers';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
+import MarkdownBlocks from './MarkdownBlocks';
 import Markdown from './Markdown';
 
 /**
- * Streaming render benchmark comparing the previous whole-message renderer
- * (one ReactMarkdown re-parsing everything per token) against the per-block
- * memoized renderer. This file lives outside `__tests__/` and is named
- * `.bench.tsx` so the default jest run skips it; execute it explicitly with:
+ * Render benchmark comparing the previous whole-message renderer (one
+ * ReactMarkdown re-parsing everything per token) against the per-block memoized
+ * renderer, both while a message streams and when a finished message mounts.
+ * This file lives outside `__tests__/` and is named `.bench.tsx` so the default
+ * jest run skips it; execute it explicitly with:
  *
  *   node node_modules/jest/bin/jest.js --runInBand --coverage=false \
  *     --testMatch '**\/MarkdownBlocks.bench.tsx'
@@ -83,8 +85,20 @@ const OldMarkdown = ({ content }: { content: string }) => (
   </ArtifactProvider>
 );
 
+/** The per-block renderer a streaming message uses, without the fade. */
 const NewMarkdown = ({ content }: { content: string }) => (
-  <Markdown content={content} isLatestMessage={true} />
+  <MarkdownBlocks
+    content={content}
+    streaming={true}
+    remarkPlugins={getRemarkPlugins()}
+    rehypePlugins={getRehypePlugins()}
+    components={getMarkdownComponents()}
+  />
+);
+
+/** A finished message as a conversation opens with it. */
+const SettledMarkdown = ({ content }: { content: string }) => (
+  <Markdown content={content} isLatestMessage={false} />
 );
 
 const streamingContext = {
@@ -185,5 +199,54 @@ describe('Markdown streaming benchmark (OLD whole-message vs NEW per-block)', ()
     expect(newRenders).toBeLessThanOrEqual(oldRenders);
     // Memoization should cut total code-block renders by a wide margin.
     expect(newRenders).toBeLessThan(oldRenders * 0.5);
+  });
+
+  it('reports mount cost for a message that was already finished', () => {
+    const iterations = 5;
+    const rows = [12, 40].map((sections) => {
+      const prefixes = [buildMessage(sections)];
+      measure(OldMarkdown, prefixes);
+      measure(NewMarkdown, prefixes);
+      measure(SettledMarkdown, prefixes);
+
+      const old: Array<{ totalMs: number; codeBlockRenders: number }> = [];
+      const perBlock: Array<{ totalMs: number; codeBlockRenders: number }> = [];
+      const settled: Array<{ totalMs: number; codeBlockRenders: number }> = [];
+      for (let i = 0; i < iterations; i += 1) {
+        old.push(measure(OldMarkdown, prefixes));
+        perBlock.push(measure(NewMarkdown, prefixes));
+        settled.push(measure(SettledMarkdown, prefixes));
+      }
+      const minMs = (rs: Array<{ totalMs: number }>) => Math.min(...rs.map((r) => r.totalMs));
+      return {
+        chars: prefixes[0].length,
+        oldMs: minMs(old),
+        perBlockMs: minMs(perBlock),
+        settledMs: minMs(settled),
+        oldRenders: old[0].codeBlockRenders,
+        settledRenders: settled[0].codeBlockRenders,
+      };
+    });
+
+    console.log(
+      [
+        '',
+        '================ Markdown finished-message mount benchmark ================',
+        `min of ${iterations} mounts, summed Profiler actualDuration; jsdom`,
+        ...rows.map(
+          (r) =>
+            `  ${r.chars} chars: OLD ${r.oldMs.toFixed(1)} ms | PER-BLOCK ${r.perBlockMs.toFixed(1)} ms | ` +
+            `SETTLED ${r.settledMs.toFixed(1)} ms (${(r.perBlockMs / r.settledMs).toFixed(2)}x faster than per-block)`,
+        ),
+        '==========================================================================',
+        '',
+      ].join('\n'),
+    );
+
+    // A finished message mounts through the whole-message pipeline: every code
+    // block renders exactly once, as it did before per-block rendering existed.
+    for (const r of rows) {
+      expect(r.settledRenders).toBe(r.oldRenders);
+    }
   });
 });

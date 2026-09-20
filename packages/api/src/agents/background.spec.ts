@@ -26,6 +26,7 @@ import {
   CHECK_BACKGROUND_TASK_NAME,
   RUN_IN_BACKGROUND_ARG,
 } from './background';
+import { parseBackgroundHandle } from '../../../../client/src/components/Chat/Messages/Content/Parts/handle';
 import { SUBAGENT_COMPLETION_DELIVERY, SUBAGENT_WAKEUP_GUIDANCE } from './subagentDelivery';
 import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { TOOL_SELECTION_WILDCARD } from './selection';
@@ -130,6 +131,23 @@ describe('isBackgroundRequested / stripRunInBackgroundArg', () => {
 });
 
 describe('injectRunInBackgroundParam', () => {
+  it('preserves required command fields across injection and inherited-definition cleanup', () => {
+    const definition = {
+      name: 'bash_tool',
+      description: 'Starts a command',
+      parameters: {
+        type: 'object',
+        properties: { command: { type: 'string' } },
+        required: ['command'],
+      },
+    } as LCTool;
+    const injected = injectRunInBackgroundParam(definition);
+    expect(injected.parameters?.required).toEqual(['command']);
+    expect(injected.name).toBe('bash_tool');
+    const [restored] = stripBackgroundFromToolDefinitions([injected], ['bash_tool']);
+    expect(restored.parameters?.required).toEqual(['command']);
+    expect(restored.parameters?.properties).toEqual(definition.parameters?.properties);
+  });
   it('adds a run_in_background boolean without mutating a frozen def', () => {
     const def = Object.freeze(mcpDef('search_mcp_docs'));
     const injected = injectRunInBackgroundParam(def);
@@ -3197,6 +3215,16 @@ describe('stripBackgroundFromToolRegistry', () => {
 });
 
 describe('buildBackgroundHandleContent', () => {
+  it.each([{}, { completionWakeup: true }, { liveArtifactPollRequired: true }])(
+    'keeps the server handle compatible with the client parser: %j',
+    (options) => {
+      const content = buildBackgroundHandleContent(
+        { id: '2a6b05c3-327d-43f4-8196-73a6c8d88706', toolName: 'bash_tool', status: 'running' },
+        options,
+      );
+      expect(parseBackgroundHandle(content)).toEqual(JSON.parse(content));
+    },
+  );
   it('produces a running handle carrying the id and poll instruction', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({
@@ -3212,6 +3240,11 @@ describe('buildBackgroundHandleContent', () => {
     expect(parsed.background_task_id).toBe(created.task.id);
     expect(parsed.status).toBe('running');
     expect(parsed.message).toContain(CHECK_BACKGROUND_TASK_NAME);
+    expect(Object.keys(parsed).sort()).toEqual(['background_task_id', 'message', 'status', 'tool']);
+    expect(JSON.parse(parsed.message.split('Status request: ')[1])).toEqual({
+      name: CHECK_BACKGROUND_TASK_NAME,
+      arguments: { background_task_id: created.task.id },
+    });
   });
 
   it('requires polling when the tool can return a process-local live artifact', () => {

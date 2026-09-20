@@ -6747,10 +6747,13 @@ class GenerationJobManagerClass {
      * One decision drives both durable-log and publish batching: the append and
      * the sequence allocation for an event must stay tightly coupled in time, or
      * the resume frontier (chunk-log snapshot → sequence-counter sync) misreads
-     * a window's tail as already-delivered or as duplicates.
+     * a window's tail as already-delivered or as duplicates. Before first-subscriber
+     * admission, each append is awaited for snapshot safety; batching that path
+     * would add a full window of producer latency to every delta.
      */
     const coalescableDelta =
       this._deltaCoalescingEnabled &&
+      (runtime.hasSubscriber || runtime.everHadSubscriber) &&
       !runtime.startupTelemetry &&
       options?.durable !== true &&
       options?.deliveredSteer == null &&

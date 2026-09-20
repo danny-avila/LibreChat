@@ -106,6 +106,7 @@ const ADMIN_CONFIGURABLE_FIELDS = [
   'stderr',
   'url',
   'headers',
+  'requestHeaders',
   'proxy',
   'requiresOAuth',
   'apiKey',
@@ -121,6 +122,9 @@ const ADMIN_CONFIGURABLE_FIELDS = [
   'customUserVars',
   'timeout',
   'sseReadTimeout',
+  'oauthRefreshWaitTimeout',
+  'oauthRefreshCoordination',
+  'oauthPersistenceWaitTimeout',
   'initTimeout',
 ] as const;
 

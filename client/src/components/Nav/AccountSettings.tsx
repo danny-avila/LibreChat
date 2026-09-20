@@ -17,6 +17,7 @@ import { ArchivedChatsModal } from '~/components/Nav/SettingsTabs/General/Archiv
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { getBalanceAmounts } from '~/utils/balance';
+import { openInNewTab } from '~/utils';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import store from '~/store';
@@ -57,7 +58,7 @@ function HelpSubmenu({
       >
         {hasHelpFaq && (
           <Menu.MenuItem
-            onClick={() => window.open(helpAndFaqURL, '_blank', 'noopener,noreferrer')}
+            onClick={() => openInNewTab(helpAndFaqURL)}
             className="select-item text-sm"
           >
             <LifeBuoy className="icon-md" aria-hidden="true" />
@@ -71,7 +72,7 @@ function HelpSubmenu({
         {showLegalDivider && (hasTos || hasPrivacy) && <DropdownMenuSeparator />}
         {hasTos && (
           <Menu.MenuItem
-            onClick={() => window.open(termsOfServiceURL, '_blank', 'noopener,noreferrer')}
+            onClick={() => openInNewTab(termsOfServiceURL)}
             className="select-item text-sm"
           >
             <Scale className="icon-md" aria-hidden="true" />
@@ -80,7 +81,7 @@ function HelpSubmenu({
         )}
         {hasPrivacy && (
           <Menu.MenuItem
-            onClick={() => window.open(privacyPolicyURL, '_blank', 'noopener,noreferrer')}
+            onClick={() => openInNewTab(privacyPolicyURL)}
             className="select-item text-sm"
           >
             <ShieldCheck className="icon-md" aria-hidden="true" />

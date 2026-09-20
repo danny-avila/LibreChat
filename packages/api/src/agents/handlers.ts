@@ -22,8 +22,12 @@ import type {
   StreamEventData,
   ToolEndCallback as SdkToolEndCallback,
 } from '@librechat/agents';
+import type {
+  BackgroundToolResultClaim,
+  DeleteSkillResult,
+  ValidationIssue,
+} from '@librechat/data-schemas';
 import type { CodeEnvRef, CodeWorkspaceOperation, PtcToolCallEvent } from 'librechat-data-provider';
-import type { BackgroundToolResultClaim, ValidationIssue } from '@librechat/data-schemas';
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { CodeEnvFile, CodeSessionContext } from '@librechat/agents';
 import type {
@@ -116,9 +120,13 @@ import {
 } from './intent';
 import { buildSkillPrimeMessage, isSkillFilePath, SKILL_FILE_PREFIX } from './skills';
 import { resolveCallerCapabilityProjectionSnapshot } from './callerCapabilities';
+import { resolveAttachedWorkspaceQueueWaitMs } from '~/code/command';
+import { BACKGROUND_TOOL_INVOCATION_CONFIG_KEY } from './invocation';
 import { mergeCodeFilesIntoContext } from './codeFilesSession';
+import { toolValidationFeedback } from './validationFeedback';
 import { createSkillContentDigest } from './compatibility';
 import { isMissingSandboxPathError } from '~/files/code';
+import { deleteSkillWithRetry } from '~/skills/cleanup';
 import { resolveDownloadPath } from '~/storage/path';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
@@ -452,7 +460,7 @@ export interface ToolExecuteOptions {
     skillId: Types.ObjectId | string;
   }) => Promise<void>;
   /** Deletes a freshly-created skill if owner-permission setup fails. */
-  deleteSkill?: (id: string) => Promise<{ deleted: boolean }>;
+  deleteSkill?: (id: string) => Promise<DeleteSkillResult>;
   /** Saves or replaces a bundled skill file in configured storage and metadata. */
   saveSkillFileContent?: (params: {
     req: ServerRequest;
@@ -539,6 +547,7 @@ export interface ToolExecuteOptions {
     bridgeWorkerId?: string;
     req?: ServerRequest;
     signal?: AbortSignal;
+    maxQueueWaitMs?: number;
   }) => Promise<WorkspaceReadResult>;
   /** Searches literal text within an attached worker's logical workspace. */
   searchWorkspace?: (params: {
@@ -551,6 +560,7 @@ export interface ToolExecuteOptions {
     bridgeWorkerId?: string;
     req?: ServerRequest;
     signal?: AbortSignal;
+    maxQueueWaitMs?: number;
   }) => Promise<WorkspaceSearchResult>;
   /** Lists relative file paths within an attached worker's logical workspace. */
   listWorkspaceFiles?: (params: {
@@ -563,6 +573,7 @@ export interface ToolExecuteOptions {
     bridgeWorkerId?: string;
     req?: ServerRequest;
     signal?: AbortSignal;
+    maxQueueWaitMs?: number;
   }) => Promise<WorkspaceListResult>;
   /** Writes a UTF-8 file within an attached worker's logical workspace. */
   writeWorkspaceFile?: (params: {
@@ -575,6 +586,7 @@ export interface ToolExecuteOptions {
     bridgeWorkerId?: string;
     req?: ServerRequest;
     signal?: AbortSignal;
+    maxQueueWaitMs?: number;
   }) => Promise<WorkspaceWriteResult>;
   /** Previews exact replacements without mutating an attached worker workspace. */
   previewWorkspaceEdit?: (params: {
@@ -586,6 +598,7 @@ export interface ToolExecuteOptions {
     bridgeWorkerId?: string;
     req?: ServerRequest;
     signal?: AbortSignal;
+    maxQueueWaitMs?: number;
   }) => Promise<WorkspacePreviewEditResult>;
   /** Applies exact replacements atomically within an attached worker workspace. */
   editWorkspaceFile?: (params: {
@@ -598,6 +611,7 @@ export interface ToolExecuteOptions {
     bridgeWorkerId?: string;
     req?: ServerRequest;
     signal?: AbortSignal;
+    maxQueueWaitMs?: number;
   }) => Promise<WorkspaceEditResult>;
   /**
    * Reads a code-execution sandbox file by shelling `cat` through the
@@ -817,18 +831,21 @@ function getThrownValueMessage(error: unknown): string {
   return stringifyThrownValue(error);
 }
 
-function getSafeToolError(error: unknown): {
+function getSafeToolError(
+  error: unknown,
+  feedback?: string,
+): {
   message: string;
   logContext: Record<string, unknown>;
 } {
-  const rawMessage = getThrownValueMessage(error);
+  const rawMessage = feedback ?? getThrownValueMessage(error);
   const message = truncateMiddle(rawMessage, MAX_TOOL_ERROR_MESSAGE_CHARS);
-  const stack = error instanceof Error && error.stack ? error.stack : undefined;
+  const stack = !feedback && error instanceof Error && error.stack ? error.stack : undefined;
 
   return {
     message,
     logContext: {
-      name: error instanceof Error ? error.name : typeof error,
+      errorName: error instanceof Error ? error.name : typeof error,
       ...(error instanceof WorkspaceToolHttpError
         ? {
             upstreamStatus: error.upstreamStatus,
@@ -836,7 +853,7 @@ function getSafeToolError(error: unknown): {
             upstreamBodyTruncated: error.upstreamBodyTruncated,
           }
         : {}),
-      message,
+      errorMessage: message,
       messageLength: rawMessage.length,
       messageTruncated: message.length !== rawMessage.length,
       stack: stack ? truncateMiddle(stack, MAX_TOOL_ERROR_STACK_CHARS) : undefined,
@@ -2417,6 +2434,9 @@ async function handleWorkspaceFileRead(
       start_line: startLine,
       max_lines: maxLines,
       codeApiBaseUrl: codeExecutionContext.baseUrl,
+      maxQueueWaitMs: resolveAttachedWorkspaceQueueWaitMs(
+        codeExecutionContext.codeEnvironmentConfigSchema,
+      ),
       executionProfile: codeExecutionContext.executionProfile,
       ...(codeExecutionContext.bridgeWorkerId
         ? { bridgeWorkerId: codeExecutionContext.bridgeWorkerId }
@@ -2519,6 +2539,9 @@ async function handleWorkspaceSearchCall(
       ...(typeof args.path === 'string' && args.path.length > 0 ? { path: args.path } : {}),
       max_results: Number(maxResults),
       codeApiBaseUrl: codeExecutionContext.baseUrl,
+      maxQueueWaitMs: resolveAttachedWorkspaceQueueWaitMs(
+        codeExecutionContext.codeEnvironmentConfigSchema,
+      ),
       executionProfile: codeExecutionContext.executionProfile,
       ...(codeExecutionContext.bridgeWorkerId
         ? { bridgeWorkerId: codeExecutionContext.bridgeWorkerId }
@@ -2606,6 +2629,9 @@ async function handleWorkspaceListCall(
         : {}),
       max_results: Number(maxResults),
       codeApiBaseUrl: codeExecutionContext.baseUrl,
+      maxQueueWaitMs: resolveAttachedWorkspaceQueueWaitMs(
+        codeExecutionContext.codeEnvironmentConfigSchema,
+      ),
       executionProfile: codeExecutionContext.executionProfile,
       ...(codeExecutionContext.bridgeWorkerId
         ? { bridgeWorkerId: codeExecutionContext.bridgeWorkerId }
@@ -3567,11 +3593,20 @@ async function writeSkillMd({
       await options.grantSkillOwner({ req, skillId: result.skill._id });
     } catch (error) {
       if (options.deleteSkill) {
-        await options.deleteSkill(result.skill._id.toString()).catch((rollbackError: unknown) => {
-          logger.error('[create_file] Failed to roll back skill after permission error', {
-            rollbackError,
+        await deleteSkillWithRetry(options.deleteSkill, result.skill._id.toString())
+          .then((deletion) => {
+            if (!deletion.cleanupComplete) {
+              logger.error('[create_file] Skill rollback left dependent cleanup incomplete', {
+                skillId: result.skill._id.toString(),
+                failedCleanupSteps: deletion.failedCleanupSteps,
+              });
+            }
+          })
+          .catch((rollbackError: unknown) => {
+            logger.error('[create_file] Failed to roll back skill after permission error', {
+              rollbackError,
+            });
           });
-        });
       }
       throw error;
     }
@@ -3760,10 +3795,14 @@ function attachedWorkspaceMutationParams(
   bridgeWorkerId?: string;
   req?: ServerRequest;
   signal?: AbortSignal;
+  maxQueueWaitMs: number;
 } {
   return {
     workspace_id: workspaceId,
     codeApiBaseUrl: codeExecutionContext.baseUrl,
+    maxQueueWaitMs: resolveAttachedWorkspaceQueueWaitMs(
+      codeExecutionContext.codeEnvironmentConfigSchema,
+    ),
     executionProfile: codeExecutionContext.executionProfile,
     ...(codeExecutionContext.bridgeWorkerId
       ? { bridgeWorkerId: codeExecutionContext.bridgeWorkerId }
@@ -3880,6 +3919,13 @@ async function handleAttachedWorkspaceEditFileCall({
       oldText: edit.old_text,
       newText: edit.new_text,
     }));
+    const workspaceParams = attachedWorkspaceMutationParams(
+      codeExecutionContext,
+      workspaceId,
+      req,
+      signal,
+    );
+    const queueDeadlineAt = Date.now() + workspaceParams.maxQueueWaitMs;
     let expectedBaseSha256: string | undefined;
     if (hasActiveFileFieldPolicy(req?.config?.filters, ['content', 'extracted_text'])) {
       if (!options.previewWorkspaceEdit) {
@@ -3896,7 +3942,7 @@ async function handleAttachedWorkspaceEditFileCall({
         preview = await options.previewWorkspaceEdit({
           file_path: path.filePath,
           edits: workspaceEdits,
-          ...attachedWorkspaceMutationParams(codeExecutionContext, workspaceId, req, signal),
+          ...workspaceParams,
         });
       } catch (error) {
         if (signal?.aborted === true && isAbortError(error)) throw error;
@@ -3909,12 +3955,24 @@ async function handleAttachedWorkspaceEditFileCall({
       const filteredContent = filteredFileResult(tc, req, path.filePath, preview.content);
       if (filteredContent != null) return filteredContent;
       expectedBaseSha256 = preview.baseSha256;
+      /** Zero disables retries, not the two operations required for a protected
+       * edit. Positive horizons must not restart after a successful preview. */
+      if (workspaceParams.maxQueueWaitMs > 0) {
+        const remainingMs = queueDeadlineAt - Date.now();
+        if (remainingMs <= 0) {
+          return errorResult(
+            tc,
+            'The workspace retry budget expired after preview. The file was not modified.',
+          );
+        }
+        workspaceParams.maxQueueWaitMs = remainingMs;
+      }
     }
     const result = await options.editWorkspaceFile({
       file_path: path.filePath,
       edits: workspaceEdits,
       ...(expectedBaseSha256 ? { expected_base_sha256: expectedBaseSha256 } : {}),
-      ...attachedWorkspaceMutationParams(codeExecutionContext, workspaceId, req, signal),
+      ...workspaceParams,
     });
     return successResult(
       tc,
@@ -5953,6 +6011,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       signal: backgroundAbortController.signal,
                       configurable: {
                         ...mergedConfigurable,
+                        [BACKGROUND_TOOL_INVOCATION_CONFIG_KEY]: true,
                         ...(detachedReservation?.status === 'reserved'
                           ? {
                               eventActorDetachedAction: {
@@ -6192,7 +6251,16 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       toolError instanceof ContentFilterError
                         ? modelBoundContentFilterErrorMessage(toolError.body)
                         : null;
-                    const { message } = getSafeToolError(toolError);
+                    const { message, logContext } = getSafeToolError(
+                      toolError,
+                      toolValidationFeedback(
+                        toolError,
+                        tc.name,
+                        tool.schema,
+                        normalizedArgs,
+                        backgroundControlEnabled,
+                      ),
+                    );
                     const errorOutput = policyError ?? message;
                     const filteredError =
                       policyError == null
@@ -6205,6 +6273,14 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           })
                         : null;
                     const neutralizedError = filteredError?.errorMessage ?? errorOutput;
+                    if (policyError == null && filteredError == null) {
+                      logger.debug('[background] Tool failed', {
+                        ...logContext,
+                        toolName: tc.name,
+                        toolCallId: tc.id,
+                        backgroundTaskId: task.id,
+                      });
+                    }
                     const deliveredError = toBackgroundToolFailure(tc.name, neutralizedError);
                     const registryError = isCodeCall ? deliveredError : neutralizedError;
                     /** Only an owner-authorized request is cancellation evidence.
@@ -6650,13 +6726,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       });
                       if (filteredError != null) {
                         logger.error(`[ON_TOOL_EXECUTE] Tool ${tc.name} error`, {
-                          name: logContext.name,
+                          errorName: logContext.errorName,
                           contentFiltered: true,
                         });
                         return filteredError;
                       }
                       const context = {
                         ...logContext,
+                        toolName: tc.name,
+                        toolCallId: tc.id,
                         toolCallArgsShape: getValueShape(tc.args),
                       };
                       if (runSignal?.aborted === true && isAbortError(toolError)) {
@@ -6794,6 +6872,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     return missingToolResult;
                   }
 
+                  let normalizedArgs: unknown = tc.args;
                   try {
                     const toolCallConfig = buildToolCallConfig(tc, mergedConfigurable);
 
@@ -6914,7 +6993,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       (hasRunInBackgroundArg(tc.args) && !toolDeclaresRunInBackgroundParam(tool))
                         ? stripRunInBackgroundArg(tc.args)
                         : tc.args;
-                    const normalizedArgs = normalizeToolInvokeArgs(
+                    normalizedArgs = normalizeToolInvokeArgs(
                       stripIntentForInvoke(foregroundArgs, tool),
                       tool,
                     );
@@ -7034,7 +7113,16 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       });
                       return errorResult(tc, modelBoundContentFilterErrorMessage(toolError.body));
                     }
-                    const { message, logContext } = getSafeToolError(toolError);
+                    const { message, logContext } = getSafeToolError(
+                      toolError,
+                      toolValidationFeedback(
+                        toolError,
+                        tc.name,
+                        tool.schema,
+                        normalizedArgs,
+                        backgroundControlEnabled,
+                      ),
+                    );
                     /** A user Stop rejects every in-flight call at once. That is
                      *  the abort working, not a fault, so it is logged at debug.
                      *  An aborted run says the turn is over, not that THIS
@@ -7062,13 +7150,15 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     });
                     if (filteredError != null) {
                       logToolFailure({
-                        name: logContext.name,
+                        errorName: logContext.errorName,
                         contentFiltered: true,
                       });
                       return filteredError;
                     }
                     logToolFailure({
                       ...logContext,
+                      toolName: tc.name,
+                      toolCallId: tc.id,
                       toolCallArgsShape: getValueShape(tc.args),
                       toolInputSchemaKind: getToolInputSchemaKind(tool),
                     });

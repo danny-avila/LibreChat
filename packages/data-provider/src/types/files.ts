@@ -64,6 +64,8 @@ export type FileConfig = {
     [key: string]: EndpointFileConfig;
   };
   skills?: {
+    /** Maximum concurrent blob deletions during failed archive import cleanup. */
+    importCleanupConcurrency?: number;
     fileSizeLimit?: number;
   };
   fileTokenLimit?: number;
@@ -104,6 +106,8 @@ export type FileConfigInput = {
     [key: string]: EndpointFileConfig;
   };
   skills?: {
+    /** Maximum concurrent blob deletions during failed archive import cleanup. */
+    importCleanupConcurrency?: number;
     fileSizeLimit?: number;
   };
   serverFileSizeLimit?: number;

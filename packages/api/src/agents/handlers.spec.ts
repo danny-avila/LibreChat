@@ -8,6 +8,7 @@ import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
+import { tool } from '@librechat/agents/langchain/tools';
 import type {
   ToolExecuteBatchRequest,
   ToolExecuteResult,
@@ -1777,6 +1778,41 @@ describe('createToolExecuteHandler', () => {
       );
     });
 
+    it('returns actionable schema feedback and distinct log identity for a misrouted poll', async () => {
+      const execute = jest.fn(async () => 'executed');
+      const bash = tool(execute, {
+        name: 'bash_tool',
+        description: 'Starts a command',
+        schema: {
+          type: 'object',
+          properties: { command: { type: 'string' } },
+          required: ['command'],
+        },
+      });
+      const errorSpy = jest.spyOn(logger, 'error').mockReturnValue(logger);
+      const [result] = await invokeHandler(
+        createToolExecuteHandler({
+          loadTools: async () => ({ loadedTools: [bash] }),
+        }),
+        [{ id: 'misrouted-poll', name: 'bash_tool', args: { background_task_id: 'private-task' } }],
+      );
+      expect(execute).not.toHaveBeenCalled();
+      expect(result.errorMessage).toContain('Missing required fields: command');
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[ON_TOOL_EXECUTE] Tool bash_tool error',
+        expect.objectContaining({
+          toolName: 'bash_tool',
+          toolCallId: 'misrouted-poll',
+          errorName: 'Error',
+          errorMessage: result.errorMessage,
+        }),
+      );
+      const logged = JSON.stringify(errorSpy.mock.calls);
+      expect(logged).not.toContain('"message":');
+      expect(logged).not.toContain('"name":');
+      expect(logged).not.toContain('private-task');
+    });
+
     it('truncates oversized tool errors in the result and log context', async () => {
       const oversizedMessage = `tool failed: ${'x'.repeat(15_000)}`;
       const thrown = new Error(oversizedMessage);
@@ -1851,7 +1887,7 @@ describe('createToolExecuteHandler', () => {
         expect(errorSpy).toHaveBeenCalledWith(
           '[ON_TOOL_EXECUTE] Tool bad_to_string_tool error',
           expect.objectContaining({
-            name: 'object',
+            errorName: 'object',
             messageTruncated: false,
           }),
         );
@@ -1888,7 +1924,7 @@ describe('createToolExecuteHandler', () => {
         expect(errorSpy).toHaveBeenCalledWith(
           '[ON_TOOL_EXECUTE] Tool plain_object_tool error',
           expect.objectContaining({
-            message: 'plain object timeout',
+            errorMessage: 'plain object timeout',
             messageTruncated: false,
           }),
         );
@@ -2875,6 +2911,49 @@ describe('createToolExecuteHandler', () => {
         }),
       );
       expect(grantSkillOwner).toHaveBeenCalledWith({ req, skillId: SKILL_ID });
+    });
+
+    it('retries dependent cleanup when create_file cannot grant ownership', async () => {
+      const createSkill = jest.fn(async () => ({
+        skill: { _id: SKILL_ID, name: 'permission-failure', body: '# Test', version: 1 },
+      }));
+      const deleteSkill = jest
+        .fn()
+        .mockResolvedValueOnce({
+          deleted: true,
+          skillAbsent: true,
+          cleanupComplete: false,
+          failedCleanupSteps: ['permissions'],
+        })
+        .mockResolvedValueOnce({
+          deleted: false,
+          skillAbsent: true,
+          cleanupComplete: true,
+          failedCleanupSteps: [],
+        });
+      const handler = makeAuthoringHandler({
+        getSkillByName: jest.fn(async () => null),
+        createSkill: createSkill as unknown as ToolExecuteOptions['createSkill'],
+        grantSkillOwner: jest.fn(async () => {
+          throw new Error('permission unavailable');
+        }),
+        deleteSkill,
+      });
+
+      const [result] = await invokeHandler(handler, [
+        {
+          id: 'call_permission_failure',
+          name: 'create_file',
+          args: {
+            path: 'skills/permission-failure/SKILL.md',
+            content:
+              '---\nname: permission-failure\ndescription: Permission rollback test\n---\n# Test\n',
+          },
+        },
+      ]);
+
+      expect(result.status).toBe('error');
+      expect(deleteSkill).toHaveBeenCalledTimes(2);
     });
 
     it('rejects case-colliding recognized frontmatter keys in create_file', async () => {
@@ -4503,6 +4582,7 @@ describe('createToolExecuteHandler', () => {
             executionProfile: 'stateful',
             statefulSessions: true,
             environmentType: 'attached',
+            codeEnvironmentConfigSchema: { limits: { maxQueueWaitMs: 0 } },
             bridgeWorkerId: 'user-worker',
           },
         },
@@ -4532,6 +4612,7 @@ describe('createToolExecuteHandler', () => {
         content: 'export const ok = 1;',
         overwrite: false,
         workspace_id: 'project-a',
+        maxQueueWaitMs: 0,
         codeApiBaseUrl: 'https://code.example.com',
         executionProfile: 'stateful',
         bridgeWorkerId: 'user-worker',
@@ -4618,6 +4699,7 @@ describe('createToolExecuteHandler', () => {
             executionProfile: 'stateful',
             statefulSessions: true,
             environmentType: 'attached',
+            codeEnvironmentConfigSchema: { limits: { maxQueueWaitMs: 0 } },
             bridgeWorkerId: 'user-worker',
           },
         },
@@ -4652,6 +4734,7 @@ describe('createToolExecuteHandler', () => {
           { oldText: 'false', newText: 'true' },
         ],
         workspace_id: 'project-a',
+        maxQueueWaitMs: 0,
         codeApiBaseUrl: 'https://code.example.com',
         executionProfile: 'stateful',
         bridgeWorkerId: 'user-worker',
@@ -4724,78 +4807,105 @@ describe('createToolExecuteHandler', () => {
       expect(editWorkspaceFile).not.toHaveBeenCalled();
     });
 
-    it('commits inspected attached edits with the preview revision fence', async () => {
-      const previewWorkspaceEdit = jest.fn(async () => ({
-        protocolVersion: 1 as const,
-        operation: 'preview_edit' as const,
-        workspaceId: 'primary',
-        path: 'src/app.ts',
-        content: 'const state = "ready";',
-        hasUtf8Bom: false,
-        baseSha256: 'b'.repeat(64),
-        replacements: 1,
-        bytesWritten: 22,
-      }));
-      const editWorkspaceFile = jest.fn(async () => ({
-        protocolVersion: 1 as const,
-        operation: 'edit_file' as const,
-        workspaceId: 'primary',
-        path: 'src/app.ts',
-        replacements: 1,
-        bytesWritten: 22,
-      }));
-      const protectedReq = {
-        user: { id: 'user-1' },
-        config: {
-          filters: {
-            files: {
-              pii: {
-                fields: ['content'],
-                starterPatterns: [],
-                customPatterns: [
-                  {
-                    id: 'blocked-placeholder',
-                    label: 'blocked placeholder',
-                    regex: 'NEVER-MATCH-THIS',
-                  },
-                ],
+    it.each([
+      { budget: 1200, elapsed: 0, remaining: 1200 },
+      { budget: 1200, elapsed: 400, remaining: 800 },
+      { budget: 1200, elapsed: 1200, remaining: null },
+      { budget: 1200, elapsed: 1500, remaining: null },
+      { budget: 0, elapsed: 400, remaining: 0 },
+    ])(
+      'shares a protected edit retry horizon ($budget ms, preview $elapsed ms)',
+      async ({ budget, elapsed, remaining }) => {
+        let nowMs = Date.now();
+        jest.spyOn(Date, 'now').mockImplementation(() => nowMs);
+        const previewWorkspaceEdit = jest.fn(async () => {
+          nowMs += elapsed;
+          return {
+            protocolVersion: 1 as const,
+            operation: 'preview_edit' as const,
+            workspaceId: 'primary',
+            path: 'src/app.ts',
+            content: 'const state = "ready";',
+            hasUtf8Bom: false,
+            baseSha256: 'b'.repeat(64),
+            replacements: 1,
+            bytesWritten: 22,
+          };
+        });
+        const editWorkspaceFile = jest.fn(async () => ({
+          protocolVersion: 1 as const,
+          operation: 'edit_file' as const,
+          workspaceId: 'primary',
+          path: 'src/app.ts',
+          replacements: 1,
+          bytesWritten: 22,
+        }));
+        const protectedReq = {
+          user: { id: 'user-1' },
+          config: {
+            filters: {
+              files: {
+                pii: {
+                  fields: ['content'],
+                  starterPatterns: [],
+                  customPatterns: [
+                    {
+                      id: 'blocked-placeholder',
+                      label: 'blocked placeholder',
+                      regex: 'NEVER-MATCH-THIS',
+                    },
+                  ],
+                },
               },
             },
           },
-        },
-      } as never;
-      const handler = makeSandboxAuthoringHandler(
-        { previewWorkspaceEdit, editWorkspaceFile },
-        {
-          req: protectedReq,
-          codeExecutionContext: {
-            baseUrl: 'https://code.example.com',
-            codeSessionKey: 'attached-session',
-            executionProfile: 'stateful',
-            statefulSessions: true,
-            environmentType: 'attached',
-            bridgeWorkerId: 'user-worker',
+        } as never;
+        const handler = makeSandboxAuthoringHandler(
+          { previewWorkspaceEdit, editWorkspaceFile },
+          {
+            req: protectedReq,
+            codeExecutionContext: {
+              baseUrl: 'https://code.example.com',
+              codeSessionKey: 'attached-session',
+              executionProfile: 'stateful',
+              statefulSessions: true,
+              environmentType: 'attached',
+              codeEnvironmentConfigSchema: { limits: { maxQueueWaitMs: budget } },
+              bridgeWorkerId: 'user-worker',
+            },
           },
-        },
-      );
+        );
 
-      const [result] = await invokeHandler(handler, [
-        {
-          id: 'call_edit_workspace_inspected',
-          name: 'edit_file',
-          args: {
-            path: 'workspace/src/app.ts',
-            old_text: 'draft',
-            new_text: 'ready',
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_edit_workspace_inspected',
+            name: 'edit_file',
+            args: {
+              path: 'workspace/src/app.ts',
+              old_text: 'draft',
+              new_text: 'ready',
+            },
           },
-        },
-      ]);
+        ]);
 
-      expect(result.status).toBe('success');
-      expect(editWorkspaceFile).toHaveBeenCalledWith(
-        expect.objectContaining({ expected_base_sha256: 'b'.repeat(64) }),
-      );
-    });
+        expect(previewWorkspaceEdit).toHaveBeenCalledWith(
+          expect.objectContaining({ maxQueueWaitMs: budget }),
+        );
+        if (remaining == null) {
+          expect(result.status).toBe('error');
+          expect(result.errorMessage).toContain('The file was not modified');
+          expect(editWorkspaceFile).not.toHaveBeenCalled();
+          return;
+        }
+        expect(result.status).toBe('success');
+        expect(editWorkspaceFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            expected_base_sha256: 'b'.repeat(64),
+            maxQueueWaitMs: remaining,
+          }),
+        );
+      },
+    );
 
     it('contains a file-artifact policy rejection to its call without rejecting the batch', async () => {
       const detectorLabel = 'generated-file bearer token';
@@ -5480,6 +5590,7 @@ describe('createToolExecuteHandler', () => {
           codeSessionKey: 'execute_code:stateful:attached',
           executionProfile: 'stateful',
           environmentType: 'attached',
+          codeEnvironmentConfigSchema: { limits: { maxQueueWaitMs: 0 } },
           bridgeWorkerId: 'personal-worker-1',
           statefulSessions: true,
         },
@@ -5498,6 +5609,7 @@ describe('createToolExecuteHandler', () => {
       expect(readWorkspaceFile).toHaveBeenCalledWith({
         file_path: 'src/app.ts',
         workspace_id: 'project-a',
+        maxQueueWaitMs: 0,
         start_line: 1,
         max_lines: 200,
         codeApiBaseUrl: 'https://code.example.com/v1',
@@ -5804,6 +5916,7 @@ describe('createToolExecuteHandler', () => {
       expect(searchWorkspace).toHaveBeenCalledWith({
         query: 'needle',
         workspace_id: 'project-a',
+        maxQueueWaitMs: 300000,
         path: 'src',
         max_results: 20,
         codeApiBaseUrl: 'https://code.example.com/v1',
@@ -5908,7 +6021,7 @@ describe('createToolExecuteHandler', () => {
         expect(errorSpy).toHaveBeenCalledWith(
           '[ON_TOOL_EXECUTE] Tool list_workspace_files error',
           expect.objectContaining({
-            name: 'WorkspaceToolHttpError',
+            errorName: 'WorkspaceToolHttpError',
             upstreamStatus: status,
             upstreamBody: body,
             upstreamBodyTruncated: false,
@@ -5956,6 +6069,7 @@ describe('createToolExecuteHandler', () => {
 
       expect(listWorkspaceFiles).toHaveBeenCalledWith({
         workspace_id: 'project-a',
+        maxQueueWaitMs: 300000,
         path: 'src',
         after_path: 'src/app.ts',
         max_results: 20,

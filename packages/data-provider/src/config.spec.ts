@@ -6,6 +6,7 @@ import {
   DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
   bedrockModels,
   configSchema,
+  codeEnvironmentUserConfigSchema,
   excludedKeys,
   resolveEndpointType,
   webSearchSchema,
@@ -23,6 +24,24 @@ const endpointsConfig: TEndpointsConfig = {
   'Some Endpoint': { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
   Gemini: { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
 };
+
+describe('repository instruction configuration', () => {
+  it('defaults optional reads to two seconds and bounds operator overrides', () => {
+    expect(agentsEndpointSchema.parse({}).repositoryInstructions).toBeUndefined();
+    expect(
+      agentsEndpointSchema.parse({ repositoryInstructions: {} }).repositoryInstructions,
+    ).toEqual({ timeoutMs: 2000 });
+    expect(
+      agentsEndpointSchema.parse({ repositoryInstructions: { timeoutMs: 5000 } })
+        .repositoryInstructions,
+    ).toEqual({ timeoutMs: 5000 });
+    for (const timeoutMs of [0, 99, 30_001, 1.5]) {
+      expect(
+        agentsEndpointSchema.safeParse({ repositoryInstructions: { timeoutMs } }).success,
+      ).toBe(false);
+    }
+  });
+});
 
 describe('ask user retained answers', () => {
   it('leaves the block unconfigured by default and accepts an operator budget', () => {
@@ -380,6 +399,28 @@ describe('Agent Management authentication config', () => {
 });
 
 describe('attached code environment user config schema', () => {
+  it.each([0, 1200, 300000])(
+    'preserves an admission budget of %i milliseconds',
+    (maxQueueWaitMs) => {
+      expect(codeEnvironmentUserConfigSchema.parse({ limits: { maxQueueWaitMs } })).toEqual({
+        limits: { maxQueueWaitMs },
+      });
+    },
+  );
+
+  it.each([-1, 0.5, 300001, NaN, Infinity])(
+    'rejects an invalid admission budget of %s',
+    (maxQueueWaitMs) => {
+      expect(
+        codeEnvironmentUserConfigSchema.safeParse({ limits: { maxQueueWaitMs } }).success,
+      ).toBe(false);
+    },
+  );
+
+  it('keeps an omitted admission budget backward compatible', () => {
+    expect(codeEnvironmentUserConfigSchema.parse({ limits: {} })).toEqual({ limits: {} });
+  });
+
   it('accepts typed permission controls exposed by the administrator', () => {
     const result = configSchema.safeParse({
       version: '1.0',
