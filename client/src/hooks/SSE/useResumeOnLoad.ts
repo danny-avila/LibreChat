@@ -21,6 +21,7 @@ import {
   carriedSteerContext,
   getBranchSiblingIndexesForTarget,
   hydrateFileDeliveryMetadata,
+  isCompactionAnchorProjection,
 } from '~/utils';
 import {
   useStreamStatus,
@@ -164,10 +165,12 @@ function buildSubmissionFromResumeState(
    * it rewrites that answer into a phantom root and folds the thread.
    */
   const existingSlotMessage = messages.find((m) => m.messageId === userMessageData?.messageId);
-  /** The response hangs off a row the user did not write: only a compaction does
-   *  that, and it is regenerate-shaped for every consumer of the run — no user
-   *  turn of its own, the response parented onto an existing message. */
-  const isAnchoredRun = existingSlotMessage != null && existingSlotMessage.isCreatedByUser !== true;
+  /** An anchored run — a compaction — created no user turn: the slot names a row
+   *  the transcript already holds. Judged from the projection's shape, never from
+   *  the anchor's author, which is a user message as often as an answer. Either
+   *  way the run is regenerate-shaped for every consumer: no user turn of its
+   *  own, the response parented onto an existing message. */
+  const isAnchoredRun = isCompactionAnchorProjection(userMessageData);
 
   // A trailing underscore distinguishes an in-flight regeneration from the persisted
   // response it replaces. Only the exact response id proves generation ownership.

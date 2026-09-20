@@ -3916,6 +3916,98 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  it('keeps a user-leaf compaction anchor intact when the submission carries no flag', async () => {
+    /** A compaction anchored on a user turn, re-attached by a submission that
+     *  never learned it was one. The projection is identity-only either way, so
+     *  merging it as a row blanks the prompt still on screen. The anchor is
+     *  recognized from that SHAPE, not from a flag the submission may not carry. */
+    const rootUser = {
+      messageId: 'root-user',
+      conversationId: CONV_ID,
+      text: 'Original prompt',
+      isCreatedByUser: true,
+      sender: 'User',
+      parentMessageId: String(Constants.NO_PARENT),
+    };
+    const userLeaf = {
+      messageId: 'user-leaf',
+      conversationId: CONV_ID,
+      text: 'Compact this before I continue',
+      isCreatedByUser: true,
+      sender: 'User',
+      parentMessageId: 'root-user',
+    };
+    const summaryPlaceholder = {
+      messageId: 'user-leaf_',
+      conversationId: CONV_ID,
+      text: '',
+      isCreatedByUser: false,
+      sender: 'Assistant',
+      parentMessageId: 'user-leaf',
+      content: [],
+    };
+    const submission = {
+      ...buildSubmission({
+        conversation: { conversationId: CONV_ID },
+        userMessage: userLeaf,
+        initialResponse: summaryPlaceholder,
+        isRegenerate: true,
+        messages: [rootUser, userLeaf] as TMessage[],
+      }),
+      resumeStreamId: CONV_ID,
+    } as TSubmission & { resumeStreamId: string };
+    const chatHelpers = buildChatHelpers();
+    chatHelpers.getMessages.mockReturnValue([rootUser, userLeaf, summaryPlaceholder] as TMessage[]);
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const sse = getLastSSE();
+    await act(async () => {
+      sse._emit('message', {
+        data: JSON.stringify({
+          sync: true,
+          resumeState: {
+            runSteps: [],
+            replayEvents: [],
+            aggregatedContent: [
+              {
+                type: ContentTypes.SUMMARY,
+                summary: { content: [{ type: 'text', text: 'Earlier turns, compacted.' }] },
+              },
+            ],
+            responseMessageId: 'user-leaf_',
+            conversationId: CONV_ID,
+            isRegenerate: true,
+            userMessage: { messageId: 'user-leaf', conversationId: CONV_ID, text: '' },
+          },
+        }),
+      });
+    });
+
+    const lastMessages = chatHelpers.setMessages.mock.calls.at(-1)?.[0] as TMessage[];
+    /** One row per id: the anchor is never appended a second time. */
+    expect(lastMessages.map((message) => message.messageId)).toEqual([
+      'root-user',
+      'user-leaf',
+      'user-leaf_',
+    ]);
+    /** The prompt survives the resume. */
+    expect(lastMessages[1]).toEqual(
+      expect.objectContaining({
+        messageId: 'user-leaf',
+        parentMessageId: 'root-user',
+        text: 'Compact this before I continue',
+        isCreatedByUser: true,
+      }),
+    );
+
+    unmount();
+  });
+
   it('uses the resumed submission for final events after sync', async () => {
     const originalUser = {
       messageId: 'original-user',

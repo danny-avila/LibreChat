@@ -68,6 +68,7 @@ import {
   findPendingActionMessageIndex,
   insertQueuedOrigin,
   hydrateFileDeliveryMetadata,
+  isCompactionAnchorProjection,
 } from '~/utils';
 import {
   useGetUserBalance,
@@ -617,8 +618,13 @@ const buildResumeEventSubmission = (
    * as a user row would rewrite the leaf into an empty, parentless message, so
    * an anchored run keeps the identity it resumed with.
    */
+  /** Read from the projection as well as the flag: a re-attach whose submission
+   *  never learned it was a compaction still has to recognize the anchor. */
+  const anchoredUserMessage =
+    currentSubmission.compact === true || isCompactionAnchorProjection(resumeState.userMessage);
+
   const userMessage = (
-    currentSubmission.compact === true
+    anchoredUserMessage
       ? { ...currentUserMessage, conversationId }
       : {
           ...currentUserMessage,
@@ -655,6 +661,9 @@ const buildResumeEventSubmission = (
     },
     userMessage,
     initialResponse,
+    /** Carried so every consumer of the resumed submission — the merges below,
+     *  the abort-error write — reads the same answer this resolved. */
+    ...(anchoredUserMessage && { compact: true }),
   } as EventSubmission;
 };
 

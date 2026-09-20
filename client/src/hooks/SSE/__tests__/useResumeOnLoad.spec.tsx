@@ -2202,6 +2202,82 @@ describe('useResumeOnLoad', () => {
     expect(observedSiblingIndexes[observedSiblingIndexes.length - 1]).toBe(1);
   });
 
+  /**
+   * Compact runs on whatever leaf the branch ends with and `canCompact` does not
+   * restrict that leaf's author, so the anchor is a USER message whenever the
+   * branch ends in one (the `compaction-on-user-turn` scenarios cover the
+   * rendered form). Recognizing the anchor by "not user-created" saw only the
+   * assistant-leaf kind: this one was rebuilt as an ordinary turn, and the sync
+   * path then merged the identity-only projection over the stored row, blanking
+   * the prompt the user is still looking at.
+   */
+  it('resumes a compaction anchored on a user leaf', async () => {
+    const rootUser = buildUserMessage(CONVERSATION_ID, 'root-user');
+    const answer = {
+      messageId: 'answer',
+      parentMessageId: rootUser.messageId,
+      conversationId: CONVERSATION_ID,
+      text: 'The long answer',
+      isCreatedByUser: false,
+    } as TMessage;
+    const userLeaf = buildUserMessage(CONVERSATION_ID, 'user-leaf');
+    userLeaf.parentMessageId = answer.messageId;
+    userLeaf.text = 'Compact this before I continue';
+    const observedSubmissions: Array<TSubmission | null> = [];
+
+    mockUseStreamStatus.mockReturnValue({
+      isSuccess: true,
+      isFetching: false,
+      data: {
+        active: true,
+        status: 'running',
+        streamId: CONVERSATION_ID,
+        resumeState: {
+          runSteps: [],
+          aggregatedContent: [],
+          replayEvents: [],
+          responseMessageId: `${userLeaf.messageId}_`,
+          conversationId: CONVERSATION_ID,
+          isRegenerate: true,
+          /** `projectCompactionAnchor`: identity only, whoever wrote the leaf. */
+          userMessage: {
+            messageId: userLeaf.messageId,
+            conversationId: CONVERSATION_ID,
+            text: '',
+          },
+        },
+      },
+    });
+
+    renderUseResumeOnLoad({
+      messages: [rootUser, answer, userLeaf],
+      onSubmission: (currentSubmission) => observedSubmissions.push(currentSubmission),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const submission = observedSubmissions[observedSubmissions.length - 1];
+    /** Marked, so no handler writes the anchor as a row... */
+    expect(submission?.compact).toBe(true);
+    /** ...and the leaf keeps the prompt the user actually sent. */
+    expect(submission?.userMessage).toEqual(
+      expect.objectContaining({
+        messageId: userLeaf.messageId,
+        parentMessageId: answer.messageId,
+        text: 'Compact this before I continue',
+        isCreatedByUser: true,
+      }),
+    );
+    expect(submission?.initialResponse?.parentMessageId).toBe(userLeaf.messageId);
+    expect((submission?.messages ?? []).map((message) => message.messageId)).toEqual([
+      rootUser.messageId,
+      answer.messageId,
+      userLeaf.messageId,
+    ]);
+  });
+
   it('restores a compacting branch from the anchor when no response id is published yet', async () => {
     const rootUser = buildUserMessage(CONVERSATION_ID, 'root-user');
     const anchor = {
