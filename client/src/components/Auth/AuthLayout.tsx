@@ -1,9 +1,9 @@
 import { ThemeSelector } from '@librechat/client';
 import { TStartupConfig } from 'librechat-data-provider';
-import SocialLoginRender, { hasSocialProviders } from './SocialLoginRender';
 import LegalConsent, { hasPublishedPolicies } from './LegalConsent';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import { TranslationKeys, useLocalize } from '~/hooks';
+import SocialLoginRender from './SocialLoginRender';
 import { BlinkAnimation } from './BlinkAnimation';
 import { Banner } from '../Banners';
 import Footer from './Footer';
@@ -31,17 +31,14 @@ function AuthLayout({
   const isRegister = pathname.includes('register');
   const isLogin = !pathname.includes('2fa') && pathname.includes('login');
   const showsSocialLogin = isLogin || isRegister;
-  /** Where an account can be created: the registration form, a first sign-in
-   *  through a provider button, and a first LDAP sign-in, which the ordinary
-   *  login form carries. An OpenID deployment on auto-redirect leaves for its
-   *  provider before this screen renders, so it is not a surface to state it
-   *  on. */
-  const createsAccounts =
-    isRegister ||
-    (isLogin && (hasSocialProviders(startupConfig) || startupConfig?.ldap?.enabled === true));
-  /** The consent names the same policies the footer bar links, so a screen
-   *  states them once, as the sentence it is agreeing to. */
-  const statesConsent = createsAccounts && hasPublishedPolicies(startupConfig);
+  /** Both ways in state it, rather than the layout guessing which of them can
+   *  create an account. That guess is not available here: account creation
+   *  also happens on a first provider sign-in, on a first LDAP sign-in through
+   *  the ordinary form, and is gated server-side by ALLOW_SOCIAL_REGISTRATION,
+   *  which the startup payload does not carry. The sentence is about
+   *  continuing, which is what both screens do, and it names the same policies
+   *  the footer bar linked, so a screen states them once. */
+  const statesConsent = (isRegister || isLogin) && hasPublishedPolicies(startupConfig);
   /** Registration states it under its own submit button, where it is read
    *  before the account is created rather than below however many provider
    *  buttons a deployment configured. On the login screen those buttons are

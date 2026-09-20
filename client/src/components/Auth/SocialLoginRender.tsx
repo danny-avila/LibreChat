@@ -11,24 +11,6 @@ import {
 import SocialButton from './SocialButton';
 import { useLocalize } from '~/hooks';
 
-/**
- * Whether any provider button will actually render. `socialLoginEnabled` is
- * only the global switch: a button also needs its provider listed in
- * `socialLogins` and that provider's own flag, so a deployment can have the
- * switch on and no button at all. Callers that need to know an account can be
- * created here read this rather than the switch.
- */
-export function hasSocialProviders(startupConfig: TStartupConfig | null | undefined): boolean {
-  if (startupConfig?.socialLoginEnabled !== true) {
-    return false;
-  }
-  return (
-    startupConfig.socialLogins?.some(
-      (provider) => startupConfig[`${provider}LoginEnabled` as keyof TStartupConfig] === true,
-    ) === true
-  );
-}
-
 function SocialLoginRender({
   startupConfig,
 }: {
@@ -132,10 +114,8 @@ function SocialLoginRender({
     ),
   };
 
-  /** Read through the same answer the auth layout reads, so an enabled switch
-   *  with no configured provider does not leave a divider above nothing. */
   return (
-    hasSocialProviders(startupConfig) && (
+    startupConfig.socialLoginEnabled && (
       <>
         {startupConfig.emailLoginEnabled && (
           <>

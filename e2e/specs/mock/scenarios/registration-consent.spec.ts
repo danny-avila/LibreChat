@@ -3,13 +3,14 @@ import type { TStartupConfig } from 'librechat-data-provider';
 import type { Browser, Page } from '@playwright/test';
 
 /**
- * An account is created under a deployment's policies, so the screen that
- * creates it states the consent, with a direct link to each policy it
- * published. The registration form is one such screen; so is a login screen
- * carrying provider buttons, because a first sign-in through one creates the
- * account. The sentence is worded for what is configured: a deployment that
- * published only one of them must not claim the reader agreed to the other, and
- * one that published neither says nothing at all.
+ * A deployment's policies are agreed to on the way in, so both ways in state
+ * the consent, with a direct link to each policy it published: the registration
+ * form under its own submit button, the login screen below the provider
+ * buttons. Which of them creates the account is not knowable in the client, and
+ * the sentence is about continuing, which both screens do. It is worded for
+ * what is configured: a deployment that published only one policy must not
+ * claim the reader agreed to the other, and one that published neither says
+ * nothing at all.
  *
  * These run unauthenticated, because an authenticated session redirects away
  * from the auth screens before anything renders.
@@ -147,18 +148,15 @@ test.describe('registration consent', () => {
     }
   });
 
-  test('an LDAP login screen states the consent without any provider button @scenario:an-ldap-login-screen-states-the-consent', async ({
+  test('the login screen states the consent without any provider button @scenario:the-login-screen-states-the-consent', async ({
     browser,
     baseURL,
   }) => {
     test.setTimeout(60000);
-    /** LDAP creates the account on a first sign-in through the ordinary login
-     *  form (api/strategies/ldapStrategy.js), so that form is account creation
-     *  even with no provider button beside it. */
-    const { context, page } = await openAuthScreen(browser, baseURL, '/login', {
-      ...bothPolicies,
-      ldap: { enabled: true },
-    });
+    /** No provider button is needed for this screen to be a way in: a first
+     *  LDAP sign-in creates the account through this very form
+     *  (api/strategies/ldapStrategy.js). */
+    const { context, page } = await openAuthScreen(browser, baseURL, '/login', bothPolicies);
 
     try {
       await expect(page.getByRole('link', { name: /Continue with/i })).toHaveCount(0);
