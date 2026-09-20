@@ -251,12 +251,13 @@ describe('Trace Viewer', () => {
     expect(screen.queryByRole('treeitem', { name: recordName('later-a') })).not.toBeInTheDocument();
   });
 
-  it('withholds previews for a response split across pages until its earlier steps load', async () => {
+  it('previews a response split across pages from its end, then its earlier steps as they load', async () => {
     const generation = (id: string, offset: number) =>
       record({
         id,
         messageId: 'response-2',
         traceId: 'trace-2',
+        parentId: 'wrapper-the-limit-cut',
         name: id,
         kind: 'generation',
         startTime: at(offset),
@@ -286,10 +287,8 @@ describe('Trace Viewer', () => {
         ],
       ),
     );
-    await recordRow('later-2,');
-    expect(
-      screen.queryByRole('treeitem', { name: /later-2: First round/ }),
-    ).not.toBeInTheDocument();
+    expect(await recordRow('later-2: Second round\\.')).toBeInTheDocument();
+    expect(screen.getByRole('treeitem', { name: /^com_ui_trace_step 2,/ })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'com_ui_trace_load_older' }));
 
@@ -942,10 +941,10 @@ describe('Trace Viewer', () => {
       },
     ] as unknown as TMessage[];
 
-    function renderSdkRun() {
+    function renderSdkRun(listed: TTraceRecord[] = sdkRecords) {
       jest
         .spyOn(dataService, 'getConversationTraceRecords')
-        .mockResolvedValue({ records: sdkRecords, sourceId: 'tenant-project' });
+        .mockResolvedValue({ records: listed, sourceId: 'tenant-project' });
       const client = new QueryClient({
         defaultOptions: { queries: { retry: false } },
         logger: { log: () => undefined, warn: () => undefined, error: () => undefined },
@@ -988,6 +987,7 @@ describe('Trace Viewer', () => {
       const inspector = screen.getByTestId('trace-inspector');
       expect(within(inspector).getByText(/"query": "weather"/)).toBeInTheDocument();
       expect(within(inspector).getByText('Sunny.')).toBeInTheDocument();
+      expect(within(inspector).getByText('com_ui_trace_from_conversation')).toBeInTheDocument();
       expect(within(inspector).getByText('tool-dispatch')).toBeInTheDocument();
       expect(dataService.getConversationTraceRecord).not.toHaveBeenCalled();
     });
@@ -1042,6 +1042,21 @@ describe('Trace Viewer', () => {
 
       expect(within(inspector).getByText(/"messages":\[/)).toBeInTheDocument();
       expect(within(inspector).queryByText('com_ui_trace_reply')).not.toBeInTheDocument();
+    });
+
+    it('says a round came from the conversation only when it did', async () => {
+      const namedRound = sdkRecords.map((entry) =>
+        entry.id === 'round-1' ? { ...entry, tools: ['bash_tool'] } : entry,
+      );
+      renderSdkRun(namedRound);
+
+      /** The chat's round called web_search, so the trace's bash_tool round stays unmatched. */
+      await userEvent.click(await recordRow('com_ui_tool_name_code'));
+
+      const inspector = screen.getByTestId('trace-inspector');
+      expect(within(inspector).getAllByText('com_ui_tool_name_code').length).toBeGreaterThan(0);
+      expect(within(inspector).queryByText('com_ui_trace_from_conversation')).toBeNull();
+      expect(within(inspector).queryByText('Sunny.')).toBeNull();
     });
 
     it('shows the agent by name with its id to copy and a chat one click away', async () => {
