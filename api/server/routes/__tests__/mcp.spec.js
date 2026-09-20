@@ -3,7 +3,12 @@ const express = require('express');
 const request = require('supertest');
 const mongoose = require('mongoose');
 const cookieParser = require('cookie-parser');
-const { getBasePath, PENDING_STALE_MS, MCPApiKeyReentryRequiredError } = require('@librechat/api');
+const {
+  getBasePath,
+  PENDING_STALE_MS,
+  MCPApiKeyReentryRequiredError,
+  MCPOAuthSecretReentryRequiredError,
+} = require('@librechat/api');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
 function generateTestCsrfToken(flowId) {
@@ -4436,15 +4441,7 @@ describe('MCP Routes', () => {
     });
 
     it('should require secret re-entry when OAuth credential bindings change', async () => {
-      const error = Object.assign(
-        new Error(
-          'Re-enter oauth.client_secret when changing OAuth credential binding fields: oauth.token_url',
-        ),
-        {
-          code: 'MCP_OAUTH_SECRET_REENTRY_REQUIRED',
-          statusCode: 400,
-        },
-      );
+      const error = new MCPOAuthSecretReentryRequiredError(['oauth.token_url']);
       mockRegistryInstance.inspectServerUpdate.mockRejectedValue(error);
 
       const response = await request(app)
