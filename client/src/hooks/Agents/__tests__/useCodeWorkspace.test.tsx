@@ -708,26 +708,23 @@ describe('useCodeWorkspace', () => {
         config: { codeEnvironmentDecisionVersion: 1, codeEnvironmentMoveVersion: 1 },
         status: { isLoading: false, isError: true },
       },
-    ])(
-      'still reports a chat running without a workspace when $name',
-      ({ config, status }) => {
-        mockStartupConfig.mockReturnValue(config);
-        if (status != null) mockStatus.mockReturnValue([status]);
+    ])('still reports a chat running without a workspace when $name', ({ config, status }) => {
+      mockStartupConfig.mockReturnValue(config);
+      if (status != null) mockStatus.mockReturnValue([status]);
 
-        const { result } = renderHook(() =>
-          useCodeWorkspace({
-            ...conversation(),
-            conversationId: 'existing',
-            codeEnvironmentMode: 'without_attached',
-          } as TConversation),
-        );
+      const { result } = renderHook(() =>
+        useCodeWorkspace({
+          ...conversation(),
+          conversationId: 'existing',
+          codeEnvironmentMode: 'without_attached',
+        } as TConversation),
+      );
 
-        expect(result.current.state).toBe('without_attached');
-        expect(result.current.canSubmit).toBe(true);
-        expect(result.current.visible).toBe(true);
-        expect(result.current.transition).toBeUndefined();
-      },
-    );
+      expect(result.current.state).toBe('without_attached');
+      expect(result.current.canSubmit).toBe(true);
+      expect(result.current.visible).toBe(true);
+      expect(result.current.transition).toBeUndefined();
+    });
 
     it('attaches a sole workspace to a saved chat that never recorded a decision', () => {
       const { result } = renderHook(() =>
