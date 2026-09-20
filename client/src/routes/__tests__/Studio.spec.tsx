@@ -45,7 +45,7 @@ afterEach(() => {
 test('shows the loading skeleton until the session is ready', () => {
   mount(makeAuthContext({ isAuthReady: false }), makeStartupConfig());
   const status = screen.getByRole('status');
-  expect(status).toHaveTextContent('Media Studio');
+  expect(screen.getByRole('heading', { name: 'Media Studio' })).toBeVisible();
   expect(status).toHaveTextContent('Loading media…');
 });
 
