@@ -130,6 +130,7 @@ export default function Breakdown({
     percent = Math.min(Math.max(view.percent, 0), 100);
   }
   const { snapshot, snapshotActive, branchUsage, hasUsage } = view;
+  const hasBranchCost = hasUsage && branchUsage.costKnown;
   /** Show the all-branches total only when it (a) exceeds the active branch —
    *  epsilon guards against float summation order surfacing a spurious row in an
    *  unbranched conversation — and (b) has COMPLETE cost coverage, so a sibling
@@ -623,21 +624,33 @@ export default function Breakdown({
               </>
             )}
 
-            {showCost && hasUsage && branchUsage.costKnown && (
+            {showCost && (hasBranchCost || view.lastResponseCost != null) && (
               <>
                 <div className="border-t border-border-light" role="separator" />
                 <div className="space-y-1.5" data-testid="token-usage-cost">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-text-secondary">
-                      {showTotal
-                        ? localize('com_ui_context_cost_branch')
-                        : localize('com_ui_context_cost')}
-                    </span>
-                    <span className="font-medium text-text-primary">
-                      {formatCost(view.branchCost, currency)}
-                    </span>
-                  </div>
-                  {showTotal && (
+                  {view.lastResponseCost != null && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-text-secondary">
+                        {localize('com_ui_context_cost_response')}
+                      </span>
+                      <span className="font-medium text-text-primary">
+                        {formatCost(view.lastResponseCost, currency)}
+                      </span>
+                    </div>
+                  )}
+                  {hasBranchCost && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-text-secondary">
+                        {showTotal
+                          ? localize('com_ui_context_cost_branch')
+                          : localize('com_ui_context_cost')}
+                      </span>
+                      <span className="font-medium text-text-primary">
+                        {formatCost(view.branchCost, currency)}
+                      </span>
+                    </div>
+                  )}
+                  {hasBranchCost && showTotal && (
                     <div className="flex items-center justify-between text-xs">
                       <span className="text-text-secondary">
                         {localize('com_ui_context_cost_total')}
