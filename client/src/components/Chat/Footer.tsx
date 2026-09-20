@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import { Constants, hasConfiguredFooter } from 'librechat-data-provider';
 import type { TStartupConfig } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
+import { policyUrls } from '~/utils/policies';
 import { useLocalize } from '~/hooks';
 
 type FooterProps = {
@@ -59,17 +60,18 @@ function Footer({ className, startupConfig, configuredOnly = false }: FooterProp
   const config = shouldFetchConfig ? fetchedConfig : startupConfig;
   const localize = useLocalize();
 
-  const privacyPolicy = configuredOnly ? undefined : config?.interface?.privacyPolicy;
-  const termsOfService = configuredOnly ? undefined : config?.interface?.termsOfService;
+  /** The same reading the consent and the auth footer use: a blank url is not
+   *  a published policy. */
+  const { privacyPolicyUrl, termsOfServiceUrl } = policyUrls(configuredOnly ? undefined : config);
 
-  const privacyPolicyRender = privacyPolicy?.externalUrl != null && (
-    <a className="text-text-muted underline" href={privacyPolicy.externalUrl} rel="noreferrer">
+  const privacyPolicyRender = privacyPolicyUrl != null && (
+    <a className="text-text-muted underline" href={privacyPolicyUrl} rel="noreferrer">
       {localize('com_ui_privacy_policy')}
     </a>
   );
 
-  const termsOfServiceRender = termsOfService?.externalUrl != null && (
-    <a className="text-text-muted underline" href={termsOfService.externalUrl} rel="noreferrer">
+  const termsOfServiceRender = termsOfServiceUrl != null && (
+    <a className="text-text-muted underline" href={termsOfServiceUrl} rel="noreferrer">
       {localize('com_ui_terms_of_service')}
     </a>
   );

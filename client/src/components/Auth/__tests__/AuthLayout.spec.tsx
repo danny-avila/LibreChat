@@ -121,6 +121,16 @@ describe('AuthLayout legal placement', () => {
     expect(footerBar()).not.toBeNull();
   });
 
+  /** The consent and the footer bar read policy urls the same way, so a blank
+   *  one is not a policy on one screen and a link to nowhere on the other. */
+  test('a blank policy url leaves neither a consent nor a link in the footer bar', () => {
+    setup({ pathname: 'login', interfaceConfig: { privacyPolicy: { externalUrl: '  ' } } });
+
+    expect(consent()).not.toBeInTheDocument();
+    expect(footerBar()).not.toBeNull();
+    expect(document.querySelector('[role="contentinfo"] a')).toBeNull();
+  });
+
   test('a deployment with no policies keeps the footer bar it always had', () => {
     setup({ pathname: 'register', interfaceConfig: undefined });
 

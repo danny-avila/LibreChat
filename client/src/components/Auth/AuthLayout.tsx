@@ -1,10 +1,11 @@
 import { ThemeSelector } from '@librechat/client';
 import { TStartupConfig } from 'librechat-data-provider';
-import LegalConsent, { hasPublishedPolicies } from './LegalConsent';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
+import { hasPublishedPolicies } from '~/utils/policies';
 import { TranslationKeys, useLocalize } from '~/hooks';
 import SocialLoginRender from './SocialLoginRender';
 import { BlinkAnimation } from './BlinkAnimation';
+import LegalConsent from './LegalConsent';
 import { Banner } from '../Banners';
 import Footer from './Footer';
 
