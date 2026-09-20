@@ -3031,7 +3031,7 @@ describe('createToolExecuteHandler', () => {
         id: 'own-1',
         resource_id: 'user_alice',
         name: 'data.parquet',
-        kind: 'user',
+        kind: 'user' as const,
       };
       const [skillResult, codeResult] = await invokeHandler(handler, [
         { id: 'call_skill', name: Constants.SKILL_TOOL, args: { skillName: 'brand-kit' } },
