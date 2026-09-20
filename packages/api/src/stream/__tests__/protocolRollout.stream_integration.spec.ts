@@ -1,10 +1,5 @@
 import type { SteerQueueItem } from '../interfaces/IJobStore';
-import {
-  clearRedisTestPrefix,
-  createRedisTestClient,
-  flushScriptCache,
-  type RedisTestClient,
-} from './helpers/redis';
+import { clearRedisTestPrefix, createRedisTestClient, type RedisTestClient } from './helpers/redis';
 import { InMemoryEventTransport } from '../implementations/InMemoryEventTransport';
 import { RedisEventTransport } from '../implementations/RedisEventTransport';
 import { GenerationJobManagerClass } from '../GenerationJobManager';
@@ -382,7 +377,6 @@ describe('Redis generation protocol rollout bridge', () => {
         racedPredecessor = await owner.createJob(streamId, userId, streamId, {
           initialMetadata: { generationProtocolVersion: 2 },
         });
-        await flushScriptCache(redis);
         injectLostCreateReply = true;
       }
       return observed;
@@ -536,7 +530,6 @@ describe('Redis generation protocol rollout bridge', () => {
         initialMetadata: { generationProtocolVersion: 2 },
       });
       expect(await ownerStore.getJob(streamId)).toMatchObject({ providerAbortReady: true });
-      await flushScriptCache(redis);
       injectLostCreateReply = true;
 
       await expect(

@@ -153,11 +153,11 @@ describe('redisTelemetry', () => {
     );
   });
 
-  it('counts a confirmed EVALSHA permission failure as a Redis error', async () => {
+  it('counts a key permission failure as a Redis error', async () => {
     const span = createSpan();
     const telemetry = createRedisRequestTelemetry(span as unknown as Span);
     const permissionError = new Error(
-      'NOPERM this user has no permissions to run the EVALSHA command',
+      'NOPERM this user has no permissions to access one of the keys used as arguments',
     );
     const evalsha = jest.fn().mockResolvedValueOnce(1).mockRejectedValueOnce(permissionError);
     const redis = instrumentIORedisClient(

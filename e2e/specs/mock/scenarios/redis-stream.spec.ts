@@ -17,7 +17,7 @@ function orderedPieces(): string[] {
 }
 
 test.describe('Redis-backed stream delivery', () => {
-  test('renders a complete ordered reply after Redis script cache warm-up @scenario:redis-stream-renders-ordered-reply', async ({
+  test('renders a complete ordered reply across a reload @scenario:redis-stream-renders-ordered-reply', async ({
     page,
   }) => {
     test.setTimeout(60000);

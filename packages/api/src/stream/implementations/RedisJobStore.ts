@@ -2069,8 +2069,7 @@ export class RedisJobStore implements IJobStoreV2 {
      * cleanup or natural job expiry cannot make both keys disappear together. */
     const createParkedTtl =
       recoveredSteerId != null ? this.runningStorageTtlSeconds() + parkedTtl : parkedTtl;
-    const previousOwner = await evalScript(
-      this.redis,
+    const previousOwner = await this.redis.eval(
       JOB_CREATE_LUA,
       10,
       key,
@@ -2283,8 +2282,7 @@ export class RedisJobStore implements IJobStoreV2 {
     if (creationAttemptId.length === 0 || replacedCreatedAts.length === 0) {
       return false;
     }
-    const acknowledged = await evalScript(
-      this.redis,
+    const acknowledged = await this.redis.eval(
       REPLACEMENT_RECEIPT_ACK_LUA,
       1,
       KEYS.job(streamId),
@@ -2337,8 +2335,7 @@ export class RedisJobStore implements IJobStoreV2 {
         ? Math.max(this.ttl.completed, TERMINAL_PERSISTENCE_RETENTION_TTL_S)
         : this.ttl.completed;
     const fields = Object.entries(serialized).flat();
-    const updated = await evalScript(
-      this.redis,
+    const updated = await this.redis.eval(
       JOB_UPDATE_LUA,
       4,
       key,
@@ -2377,8 +2374,7 @@ export class RedisJobStore implements IJobStoreV2 {
       'recoveryMethod' | 'recoveryOutcome' | 'recoveryCompletedAt' | 'recoveryFailureReason'
     >,
   ): Promise<boolean> {
-    const settled = await evalScript(
-      this.redis,
+    const settled = await this.redis.eval(
       SETTLE_EARLY_BUFFER_RECOVERY_LUA,
       1,
       KEYS.job(streamId),
@@ -2395,8 +2391,7 @@ export class RedisJobStore implements IJobStoreV2 {
     overflowId: string,
     finalizedOverflow: EarlyBufferOverflowState,
   ): Promise<boolean> {
-    const finalized = await evalScript(
-      this.redis,
+    const finalized = await this.redis.eval(
       FINALIZE_EARLY_BUFFER_OVERFLOW_LUA,
       1,
       KEYS.job(streamId),
@@ -2410,8 +2405,7 @@ export class RedisJobStore implements IJobStoreV2 {
   async hasSubscriberAttached(streamId: string, expectedCreatedAt: number): Promise<boolean> {
     return (
       Number(
-        await evalScript(
-          this.redis,
+        await this.redis.eval(
           HAS_SUBSCRIBER_ATTACHED_LUA,
           1,
           KEYS.job(streamId),
@@ -2430,8 +2424,7 @@ export class RedisJobStore implements IJobStoreV2 {
   ): Promise<boolean> {
     return (
       Number(
-        await evalScript(
-          this.redis,
+        await this.redis.eval(
           CLAIM_FIRST_SUBSCRIBER_LUA,
           2,
           KEYS.job(streamId),
@@ -2450,8 +2443,7 @@ export class RedisJobStore implements IJobStoreV2 {
     expectedCreatedAt: number,
     subscriberId: string,
   ): Promise<void> {
-    await evalScript(
-      this.redis,
+    await this.redis.eval(
       DETACH_SUBSCRIBER_LUA,
       2,
       KEYS.job(streamId),
@@ -2468,8 +2460,7 @@ export class RedisJobStore implements IJobStoreV2 {
   ): Promise<boolean> {
     return (
       Number(
-        await evalScript(
-          this.redis,
+        await this.redis.eval(
           HAS_ACTIVE_SUBSCRIBER_LUA,
           2,
           KEYS.job(streamId),
@@ -2488,8 +2479,7 @@ export class RedisJobStore implements IJobStoreV2 {
   ): Promise<boolean> {
     return (
       Number(
-        await evalScript(
-          this.redis,
+        await this.redis.eval(
           PROVIDER_DRAIN_LUA,
           1,
           KEYS.job(streamId),
@@ -2507,8 +2497,7 @@ export class RedisJobStore implements IJobStoreV2 {
   ): Promise<boolean> {
     return (
       Number(
-        await evalScript(
-          this.redis,
+        await this.redis.eval(
           PROVIDER_BEGIN_LUA,
           1,
           KEYS.job(streamId),
@@ -2526,8 +2515,7 @@ export class RedisJobStore implements IJobStoreV2 {
   ): Promise<boolean> {
     return (
       Number(
-        await evalScript(
-          this.redis,
+        await this.redis.eval(
           TERMINAL_PERSISTENCE_FINALIZE_LUA,
           1,
           KEYS.job(streamId),
@@ -2575,8 +2563,7 @@ export class RedisJobStore implements IJobStoreV2 {
   }
 
   private async retainCleanupOwner(job: SerializableJobData): Promise<void> {
-    await evalScript(
-      this.redis,
+    await this.redis.eval(
       OWNER_MEMBERSHIP_RECONCILE_LUA,
       1,
       KEYS.userJobs(job.userId, job.tenantId),
@@ -2666,8 +2653,7 @@ export class RedisJobStore implements IJobStoreV2 {
       }
       if (activeUserKey) {
         operations.push(
-          evalScript(
-            this.redis,
+          this.redis.eval(
             OWNER_MEMBERSHIP_RECONCILE_LUA,
             1,
             activeUserKey,
@@ -2928,8 +2914,7 @@ export class RedisJobStore implements IJobStoreV2 {
     // 1) Single-winner decision: an atomic CAS on the single-slot job hash.
     //    Works identically on cluster and single-node, so two concurrent
     //    resolves can never both win (and drive the run twice).
-    const result = await evalScript(
-      this.redis,
+    const result = await this.redis.eval(
       JOB_CAS_LUA,
       10,
       key,
@@ -2998,6 +2983,8 @@ export class RedisJobStore implements IJobStoreV2 {
     value: IdempotencyClaimValue,
     ttlSeconds: number,
   ): Promise<IdempotencyClaimResult> {
+    // Contenders need one atomic winner, not dispatch-order fairness. Callers await
+    // this claim before dependent writes, so a cache miss may safely delay it.
     const result = await evalScript(
       this.redis,
       IDEMPOTENCY_CLAIM_LUA,
@@ -3043,8 +3030,7 @@ export class RedisJobStore implements IJobStoreV2 {
     value: IdempotencyClaimValue,
     ttlSeconds: number,
   ): Promise<boolean> {
-    const taken = await evalScript(
-      this.redis,
+    const taken = await this.redis.eval(
       IDEMPOTENCY_TAKEOVER_LUA,
       1,
       KEYS.idempotency(key),
@@ -3061,8 +3047,7 @@ export class RedisJobStore implements IJobStoreV2 {
     startedAt: number,
     ttlSeconds: number,
   ): Promise<boolean> {
-    const marked = await evalScript(
-      this.redis,
+    const marked = await this.redis.eval(
       IDEMPOTENCY_MARK_STARTED_LUA,
       1,
       KEYS.idempotency(key),
@@ -3084,8 +3069,7 @@ export class RedisJobStore implements IJobStoreV2 {
     ttlSeconds: number,
     allowMissingClientRequestId = false,
   ): Promise<boolean> {
-    const adopted = await evalScript(
-      this.redis,
+    const adopted = await this.redis.eval(
       IDEMPOTENCY_ADOPT_LIVE_JOB_LUA,
       2,
       KEYS.idempotency(key),
@@ -3102,8 +3086,7 @@ export class RedisJobStore implements IJobStoreV2 {
   }
 
   async releaseIdempotencyKey(key: string, expected?: IdempotencyClaimValue): Promise<void> {
-    await evalScript(
-      this.redis,
+    await this.redis.eval(
       IDEMPOTENCY_RELEASE_LUA,
       1,
       KEYS.idempotency(key),
@@ -3115,8 +3098,7 @@ export class RedisJobStore implements IJobStoreV2 {
     const observedJob = await this.getJob(streamId);
     const targetCreatedAt = expectedCreatedAt ?? observedJob?.createdAt;
     const expectMissing = expectedCreatedAt == null && observedJob == null;
-    const deleted = await evalScript(
-      this.redis,
+    const deleted = await this.redis.eval(
       JOB_DELETE_LUA,
       5,
       KEYS.job(streamId),
@@ -3145,8 +3127,7 @@ export class RedisJobStore implements IJobStoreV2 {
     observedJob: SerializableJobData,
     now: number,
   ): Promise<boolean> {
-    const deleted = await evalScript(
-      this.redis,
+    const deleted = await this.redis.eval(
       STALE_JOB_DELETE_LUA,
       9,
       KEYS.job(streamId),
@@ -3275,8 +3256,7 @@ export class RedisJobStore implements IJobStoreV2 {
         ) {
           const recovered =
             Number(
-              await evalScript(
-                this.redis,
+              await this.redis.eval(
                 RECOVER_TERMINAL_PROVIDER_DRAIN_LUA,
                 1,
                 KEYS.job(job.streamId),
@@ -3355,8 +3335,7 @@ export class RedisJobStore implements IJobStoreV2 {
     // replacement at the same streamId is never cleared through its predecessor. The HDEL
     // and configured evidence-TTL reset happen atomically. The global retry
     // member includes this generation, so removing it cannot affect a successor.
-    const cleared = (await evalScript(
-      this.redis,
+    const cleared = (await this.redis.eval(
       'if redis.call("HGET", KEYS[1], "createdAt") ~= ARGV[1] then return 0 end ' +
         'local detachedStatus = redis.call("HGET", KEYS[1], "detachedAgentEventTerminalStatus") ' +
         'if detachedStatus then redis.call("HSET", KEYS[1], "status", detachedStatus) end ' +
@@ -4385,8 +4364,7 @@ export class RedisJobStore implements IJobStoreV2 {
     if (expectedCreatedAt == null) {
       return this.redis.get(KEYS.runSteps(streamId));
     }
-    const data = await evalScript(
-      this.redis,
+    const data = await this.redis.eval(
       RUNSTEPS_READ_LUA,
       2,
       KEYS.job(streamId),
@@ -4417,8 +4395,7 @@ export class RedisJobStore implements IJobStoreV2 {
     streamId: string,
     expectedCreatedAt?: number,
   ): Promise<void> {
-    await evalScript(
-      this.redis,
+    await this.redis.eval(
       CONTENT_CLEAR_LUA,
       3,
       KEYS.chunks(streamId),
@@ -4435,8 +4412,7 @@ export class RedisJobStore implements IJobStoreV2 {
     item: SteerQueueItem,
     expectedCreatedAt?: number,
   ): Promise<number> {
-    const result = await evalScript(
-      this.redis,
+    const result = await this.redis.eval(
       STEER_ENQUEUE_LUA,
       2,
       KEYS.job(streamId),
@@ -4458,8 +4434,7 @@ export class RedisJobStore implements IJobStoreV2 {
     wantsPreempt: boolean,
     expectedCreatedAt?: number,
   ): Promise<SteerEnqueueVersionedResult> {
-    const result = await evalScript(
-      this.redis,
+    const result = await this.redis.eval(
       STEER_ENQUEUE_VERSIONED_LUA,
       2,
       KEYS.job(streamId),
@@ -4485,8 +4460,7 @@ export class RedisJobStore implements IJobStoreV2 {
   }
 
   async getSteerReceipt(streamId: string, clientSteerId: string): Promise<SteerReceipt | null> {
-    const raw = await evalScript(
-      this.redis,
+    const raw = await this.redis.eval(
       STEER_RECEIPT_GET_LUA,
       3,
       KEYS.steerReceipts(streamId),
@@ -4513,8 +4487,7 @@ export class RedisJobStore implements IJobStoreV2 {
     wantsPreempt: boolean,
     expectedCreatedAt?: number,
   ): Promise<SteerEnqueueReceiptResult> {
-    const result = await evalScript(
-      this.redis,
+    const result = await this.redis.eval(
       STEER_ENQUEUE_RECEIPT_LUA,
       4,
       KEYS.job(streamId),
@@ -4546,8 +4519,7 @@ export class RedisJobStore implements IJobStoreV2 {
   }
 
   async drainSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]> {
-    const raw = await evalScript(
-      this.redis,
+    const raw = await this.redis.eval(
       STEER_DRAIN_LUA,
       5,
       KEYS.job(streamId),
@@ -4566,8 +4538,7 @@ export class RedisJobStore implements IJobStoreV2 {
     policy: TerminalSteerAdmissionPolicy,
     expectedCreatedAt?: number,
   ): Promise<TerminalSteerAdmissionResult> {
-    const raw = await evalScript(
-      this.redis,
+    const raw = await this.redis.eval(
       STEER_TERMINAL_ADMISSION_LUA,
       5,
       KEYS.job(streamId),
@@ -4599,8 +4570,7 @@ export class RedisJobStore implements IJobStoreV2 {
     if (items.length === 0) {
       return true;
     }
-    const restored = await evalScript(
-      this.redis,
+    const restored = await this.redis.eval(
       STEER_RESTORE_CLAIMED_LUA,
       4,
       KEYS.job(streamId),
@@ -4618,8 +4588,7 @@ export class RedisJobStore implements IJobStoreV2 {
     streamId: string,
     expectedCreatedAt?: number,
   ): Promise<SteerQueueItem[]> {
-    const raw = await evalScript(
-      this.redis,
+    const raw = await this.redis.eval(
       STEER_CLOSE_DRAIN_LUA,
       6,
       KEYS.job(streamId),
@@ -4641,8 +4610,7 @@ export class RedisJobStore implements IJobStoreV2 {
     const raw =
       expectedCreatedAt == null
         ? await this.redis.lrange(KEYS.steers(streamId), 0, -1)
-        : await evalScript(
-            this.redis,
+        : await this.redis.eval(
             STEER_PEEK_LUA,
             2,
             KEYS.job(streamId),
@@ -4653,8 +4621,7 @@ export class RedisJobStore implements IJobStoreV2 {
   }
 
   async peekClaimedSteers(streamId: string, expectedCreatedAt?: number): Promise<SteerQueueItem[]> {
-    const raw = await evalScript(
-      this.redis,
+    const raw = await this.redis.eval(
       STEER_PEEK_CLAIMED_LUA,
       2,
       KEYS.job(streamId),
@@ -4673,8 +4640,7 @@ export class RedisJobStore implements IJobStoreV2 {
     steerId: string,
     expectedCreatedAt?: number,
   ): Promise<boolean> {
-    const removed = (await evalScript(
-      this.redis,
+    const removed = (await this.redis.eval(
       STEER_REMOVE_LUA,
       3,
       KEYS.job(streamId),
@@ -4699,8 +4665,7 @@ export class RedisJobStore implements IJobStoreV2 {
     steerId: string,
     expectedCreatedAt?: number,
   ): Promise<SteerArmResult> {
-    const result = await evalScript(
-      this.redis,
+    const result = await this.redis.eval(
       STEER_ARM_LUA,
       3,
       KEYS.job(streamId),
@@ -4724,8 +4689,7 @@ export class RedisJobStore implements IJobStoreV2 {
     streamId: string,
     expectedCreatedAt?: number,
   ): Promise<SteerQueueItem[] | null> {
-    const changed = await evalScript(
-      this.redis,
+    const changed = await this.redis.eval(
       STEER_DOWNGRADE_PREEMPTS_LUA,
       3,
       KEYS.job(streamId),
@@ -4741,8 +4705,7 @@ export class RedisJobStore implements IJobStoreV2 {
 
   async parkSteers(streamId: string, payload: string, expectedCreatedAt?: number): Promise<void> {
     const ttl = this.ttl.completed > 0 ? this.ttl.completed : PARKED_RECOVERY_TTL_S;
-    await evalScript(
-      this.redis,
+    await this.redis.eval(
       PARK_STEERS_LUA,
       2,
       KEYS.job(streamId),
@@ -4767,8 +4730,7 @@ export class RedisJobStore implements IJobStoreV2 {
     ownerTenantId?: string,
     requestedProtocolVersion: 1 | 2 = 1,
   ): Promise<ParkedSteerClaim | undefined> {
-    const claimed = await evalScript(
-      this.redis,
+    const claimed = await this.redis.eval(
       CLAIM_PARKED_LUA,
       2,
       KEYS.parkedSteers(streamId),
@@ -4798,8 +4760,7 @@ export class RedisJobStore implements IJobStoreV2 {
     ownerTenantId: string | undefined,
     expectedCreatedAt: number,
   ): Promise<boolean> {
-    const consumed = await evalScript(
-      this.redis,
+    const consumed = await this.redis.eval(
       CONSUME_PARKED_STEER_LUA,
       3,
       KEYS.job(streamId),
@@ -4821,8 +4782,7 @@ export class RedisJobStore implements IJobStoreV2 {
     ownerTenantId?: string,
     expectedGenerationCreatedAt?: number,
   ): Promise<boolean> {
-    const discarded = await evalScript(
-      this.redis,
+    const discarded = await this.redis.eval(
       DISCARD_STEER_LEFTOVER_LUA,
       3,
       KEYS.steerReceipts(streamId),
@@ -4873,8 +4833,7 @@ export class RedisJobStore implements IJobStoreV2 {
     }
     /** The chunk log is replayed in XADD order, so a per-event append (durable
      * control events, steer receipts) is a barrier: pending coalesced deltas
-     * must be issued first. The per-stream RedisScriptClient queue preserves that
-     * order even when a previously confirmed SHA needs an EVAL fallback. */
+     * must be issued first. Same connection, so issue order is land order. */
     if (this.pendingAppends.has(streamId)) {
       void this.flushCoalescedAppends(streamId);
     }
@@ -4889,8 +4848,7 @@ export class RedisJobStore implements IJobStoreV2 {
     // even when the pause's own EXPIRE no-op'd because this key didn't exist yet, while a
     // normally-running run still settles on the short running TTL. Both keys share the
     // {streamId} hash tag, so the multi-key eval stays on one slot under Redis Cluster.
-    const appended = await evalScript(
-      this.redis,
+    const appended = await this.redis.eval(
       CHUNK_APPEND_LUA,
       8,
       key,
@@ -4970,37 +4928,38 @@ export class RedisJobStore implements IJobStoreV2 {
     }
 
     const { expectedCreatedAt, events, settlers } = pending;
-    return evalScript(
-      this.redis,
-      CHUNK_APPEND_BATCH_LUA,
-      8,
-      KEYS.chunks(streamId),
-      KEYS.job(streamId),
-      KEYS.steerReceipts(streamId),
-      KEYS.steerReceiptOrder(streamId),
-      KEYS.claimedSteers(streamId),
-      KEYS.steers(streamId),
-      KEYS.parkedSteers(streamId),
-      KEYS.generationEpoch(streamId),
-      String(this.runningStorageTtlSeconds()),
-      expectedCreatedAt != null ? String(expectedCreatedAt) : '',
-      String(Date.now()),
-      String(this.parkedRecoveryTtlSeconds()),
-      String(GENERATION_EPOCH_GRACE_TTL_S),
-      ...events,
-    ).then(
-      (appended) => {
-        const committed = appended === 1;
-        for (const settler of settlers) {
-          settler.resolve(committed);
-        }
-      },
-      (err) => {
-        for (const settler of settlers) {
-          settler.reject(err);
-        }
-      },
-    );
+    return this.redis
+      .eval(
+        CHUNK_APPEND_BATCH_LUA,
+        8,
+        KEYS.chunks(streamId),
+        KEYS.job(streamId),
+        KEYS.steerReceipts(streamId),
+        KEYS.steerReceiptOrder(streamId),
+        KEYS.claimedSteers(streamId),
+        KEYS.steers(streamId),
+        KEYS.parkedSteers(streamId),
+        KEYS.generationEpoch(streamId),
+        String(this.runningStorageTtlSeconds()),
+        expectedCreatedAt != null ? String(expectedCreatedAt) : '',
+        String(Date.now()),
+        String(this.parkedRecoveryTtlSeconds()),
+        String(GENERATION_EPOCH_GRACE_TTL_S),
+        ...events,
+      )
+      .then(
+        (appended) => {
+          const committed = appended === 1;
+          for (const settler of settlers) {
+            settler.resolve(committed);
+          }
+        },
+        (err) => {
+          for (const settler of settlers) {
+            settler.reject(err);
+          }
+        },
+      );
   }
 
   /** Persist a stream's pending coalesced appends now (pre-transition barrier). */
@@ -5028,8 +4987,7 @@ export class RedisJobStore implements IJobStoreV2 {
     let rawEntries: unknown;
     let rawDurableEventCount: unknown;
     if (includeDurableEventCount) {
-      const rawSnapshot = await evalScript(
-        this.redis,
+      const rawSnapshot = await this.redis.eval(
         CHUNKS_RECOVERY_READ_LUA,
         2,
         KEYS.job(streamId),
@@ -5041,8 +4999,7 @@ export class RedisJobStore implements IJobStoreV2 {
       rawEntries =
         expectedCreatedAt == null
           ? await this.redis.xrange(KEYS.chunks(streamId), '-', '+')
-          : await evalScript(
-              this.redis,
+          : await this.redis.eval(
               CHUNKS_READ_LUA,
               2,
               KEYS.job(streamId),
@@ -5088,8 +5045,7 @@ export class RedisJobStore implements IJobStoreV2 {
     runSteps: Agents.RunStep[],
     expectedCreatedAt?: number,
   ): Promise<void> {
-    await evalScript(
-      this.redis,
+    await this.redis.eval(
       RUNSTEPS_SAVE_LUA,
       2,
       KEYS.runSteps(streamId),

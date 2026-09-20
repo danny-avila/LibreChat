@@ -18,7 +18,7 @@ describeRedis('Redis script cache recovery', () => {
   let redis: Redis | Cluster;
   let originalWindow: string | undefined;
 
-  /** Invalidate only server state: resetting the helper would hide stale confirmations. */
+  /** Invalidate only server state: the caller must recover without any test-only state reset. */
   async function invalidateServerScripts(): Promise<void> {
     const nodes = (redis as Cluster).isCluster
       ? (redis as Cluster).nodes('master')
@@ -87,7 +87,7 @@ describeRedis('Redis script cache recovery', () => {
     },
   );
 
-  test('recovers a confirmed SHA in one fallback without recording an error', async () => {
+  test('recovers a previously successful SHA in one fallback without recording an error', async () => {
     const client = instrumentIORedisClient(redis, RedisUseCases.GENERATION_STREAM);
     const script = 'return ARGV[1]';
     const key = '{recovery-metrics}:key';
@@ -112,7 +112,7 @@ describeRedis('Redis script cache recovery', () => {
     expect(evalCommand).toHaveBeenCalledTimes(1);
   });
 
-  test('records a failed EVAL recovery and allows its queued successor to run', async () => {
+  test('records a failed EVAL recovery and does not fail an independent concurrent call', async () => {
     const client = instrumentIORedisClient(redis, RedisUseCases.GENERATION_STREAM);
     const script =
       'if ARGV[1] == "fail" then return redis.error_reply("ERR recovery failed") end return ARGV[1]';
@@ -131,5 +131,66 @@ describeRedis('Redis script cache recovery', () => {
     finishRedisRequestTelemetry(telemetry);
     span.end();
     expect(telemetry.errors).toBe(1);
+  });
+
+  test.each([false, true])(
+    'atomic claim races retain exactly one winner (cache flushed: %s)',
+    async (flush) => {
+      const store = new RedisJobStore(redis);
+      const claim = (index: number) => ({
+        streamId: `claim-${index}`,
+        conversationId: 'conversation',
+        claimedAt: 100,
+        claimToken: `token-${index}`,
+      });
+      try {
+        await store.claimIdempotencyKey('{claim-race}:warm', claim(0), 60);
+        if (flush) {
+          await invalidateServerScripts();
+        }
+        const key = `{claim-race}:contended-${flush}`;
+        const results = await Promise.all(
+          Array.from({ length: 32 }, (_, index) =>
+            store.claimIdempotencyKey(key, claim(index), 60),
+          ),
+        );
+        const winners = results.filter((result) => result.claimed);
+        expect(winners).toHaveLength(1);
+        expect(winners[0].existing).toEqual(
+          expect.objectContaining({ claimToken: expect.any(String) }),
+        );
+        expect(
+          results.every(
+            (result) => result.existing?.claimToken === winners[0].existing?.claimToken,
+          ),
+        ).toBe(true);
+        expect(await store.getIdempotencyClaim(key)).toEqual(winners[0].existing);
+        await store.releaseIdempotencyKey(key, winners[0].existing);
+        expect(await store.hasIdempotencyKey(key)).toBe(false);
+      } finally {
+        await store.destroy();
+      }
+    },
+  );
+
+  test('dispatches a same-stream burst without a response-dependent queue', async () => {
+    const store = new RedisJobStore(redis);
+    const streamId = 'pipelined-burst';
+    try {
+      await redis.hset(`stream:{${streamId}}:job`, 'createdAt', '100', 'status', 'running');
+      const evalCommand = jest.spyOn(redis, 'eval');
+      const evalsha = jest.spyOn(redis, 'evalsha');
+      const events = Array.from({ length: 32 }, (_, index) => ({ event: 'delta', data: index }));
+      const pending = events.map((event) => store.appendChunk(streamId, event, 100));
+      expect(evalCommand).toHaveBeenCalledTimes(32);
+      expect(evalsha).not.toHaveBeenCalled();
+      expect(await Promise.all(pending)).toEqual(events.map(() => true));
+      const entries = await redis.xrange(`stream:{${streamId}}:chunks`, '-', '+');
+      expect(entries.map(([, fields]) => fields[1])).toEqual(
+        events.map((event) => JSON.stringify(event)),
+      );
+    } finally {
+      await store.destroy();
+    }
   });
 });
