@@ -1,5 +1,10 @@
 import { Tools, ContentTypes } from 'librechat-data-provider';
-import type { Agents, PartMetadata, TMessageContentParts } from 'librechat-data-provider';
+import type {
+  Agents,
+  TAttachment,
+  PartMetadata,
+  TMessageContentParts,
+} from 'librechat-data-provider';
 import type { TOptions } from 'i18next';
 import type { TranslationKeys } from '~/hooks';
 import { getBatchActivityLabelPart, getActivityLabelText } from '~/utils/activityLabels';
@@ -7,6 +12,7 @@ import { hasPendingApprovalInPart, hasPendingAuthInPart } from '~/utils/groupToo
 import { ASK_USER_QUESTION, getSubmittedAskAnswer } from '~/utils/approval';
 import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import { getToolDisplayLabel } from '~/utils/toolLabels';
+import { parseBackgroundHandle, splitBackgroundAttachments } from './Parts/handle';
 import { isBashProgrammaticToolCall } from './routing';
 import { boundIntentLabel, getToolCallIntent } from './Parts/intent';
 import { isError } from './ToolOutput';
@@ -74,11 +80,17 @@ function toolCallLine(
   toolCall: LiveToolCall,
   localize: Localize,
   serverNames: readonly string[],
+  attachments?: TAttachment[],
 ): string {
   const intent = getToolCallIntent(toolCall.args);
   const label = getToolDisplayLabel(toolCall.name ?? '', localize, serverNames);
   const output = toolCall.output ?? '';
   const progress = output.length > 0 || toolCall.progress === 1 ? 1 : (toolCall.progress ?? 0.1);
+  /** A detached task reports failure through a status attachment while its
+   *  call keeps a benign handle and a completed dispatch step. */
+  const backgroundFailed =
+    parseBackgroundHandle(output) != null &&
+    splitBackgroundAttachments(attachments, toolCall.id).backgroundStatus === 'error';
   /** The same resolver the card uses, so a collapsed row never reads as a
    *  success while the card it hides shows a failure or a stop. */
   const phase = resolveToolCallPhase({
@@ -89,7 +101,7 @@ function toolCallLine(
     displayProgress: progress,
     reportedProgress: progress,
     isSubmitting: true,
-    hasError: isError(output),
+    hasError: isError(output) || backgroundFailed,
   });
   if (phase === 'cancelled') {
     return localize('com_ui_cancelled');
@@ -135,13 +147,19 @@ function lastReasoningSentence(reasoning: string): { text: string; offset: numbe
   return text == null ? undefined : { text, offset: body.length - tail.length + start };
 }
 
-/** Icons the header stack can show; collecting more is wasted work. */
+/** Icons the header stack can show. */
 const MAX_LIVE_ICONS = 4;
+
+/** How far back from the tail the icon scan looks. This runs on every streamed
+ *  delta, so its cost must not grow with the run; the stack then shows the
+ *  tools of the recent stretch, which is also what the line beside it names. */
+const LIVE_ICON_WINDOW = 24;
 
 function newestLine(
   parts: ReadonlyArray<TMessageContentParts | undefined>,
   localize: Localize,
   serverNames: readonly string[],
+  attachments?: TAttachment[],
 ): Pick<LiveActivity, 'text' | 'source'> {
   for (let position = parts.length - 1; position >= 0; position -= 1) {
     const part = parts[position];
@@ -182,7 +200,7 @@ function newestLine(
     const toolCall = getStandardToolCall(part);
     if (toolCall != null) {
       return {
-        text: toolCallLine(toolCall, localize, serverNames),
+        text: toolCallLine(toolCall, localize, serverNames, attachments),
         source: `tool:${toolCall.id ?? position}`,
       };
     }
@@ -197,16 +215,21 @@ function newestLine(
  * header always reads as the bottom line of the list it stands for.
  *
  * Runs on every streamed delta, so neither scan covers the span: the line
- * stops at the first nameable part from the tail, and the icons stop once the
- * stack is full.
+ * stops at the first nameable part from the tail, and the icons look at a
+ * fixed window behind it.
  */
 export function getLiveActivity(
   parts: ReadonlyArray<TMessageContentParts | undefined>,
   localize: Localize,
   serverNames: readonly string[],
+  attachments?: TAttachment[],
 ): LiveActivity {
   const icons = new Set<string>();
-  for (let position = 0; position < parts.length && icons.size < MAX_LIVE_ICONS; position += 1) {
+  const floor = Math.max(0, parts.length - LIVE_ICON_WINDOW);
+  for (let position = parts.length - 1; position >= floor; position -= 1) {
+    if (icons.size === MAX_LIVE_ICONS) {
+      break;
+    }
     const part = parts[position];
     const toolCall = part == null ? undefined : getStandardToolCall(part);
     if (toolCall == null) {
@@ -215,5 +238,8 @@ export function getLiveActivity(
     const name = toolCall.name ?? '';
     icons.add(isBashProgrammaticToolCall(name, toolCall.args) ? Tools.bash_tool : name);
   }
-  return { ...newestLine(parts, localize, serverNames), iconNames: Array.from(icons) };
+  return {
+    ...newestLine(parts, localize, serverNames, attachments),
+    iconNames: Array.from(icons).reverse(),
+  };
 }

@@ -108,16 +108,20 @@ const PhaseLabel = memo(function PhaseLabel({
     retired: string | null;
     entered: boolean;
     source?: string;
-  }>({ current: text, retired: null, entered: false, source });
+    announced: string;
+  }>({ current: text, retired: null, entered: false, source, announced: '' });
 
   /** Adjusted during render rather than in an effect. A passive effect runs
    *  after paint, so a swap with no animation would leave the previous summary
    *  on screen for a frame while the button's `aria-label` already carried the
    *  new one. React re-renders this component immediately instead. */
   if (lines.current !== text) {
-    const swaps =
-      animate && lines.current.length > 0 && (source == null || source !== lines.source);
+    const moved = source == null || source !== lines.source;
+    const swaps = animate && lines.current.length > 0 && moved;
     setLines({
+      /** A live line is announced when it is LEFT, not while it grows: by then
+       *  it is complete, and it is spoken once instead of twice a second. */
+      announced: live && moved ? lines.current : lines.announced,
       current: text,
       retired: swaps ? lines.current : null,
       entered: swaps || (lines.entered && source != null && source === lines.source),
@@ -137,11 +141,17 @@ const PhaseLabel = memo(function PhaseLabel({
   return (
     <span
       className="tool-status-text relative block min-w-0 flex-1 overflow-hidden text-left"
-      /** A live line moves twice a second; a polite region would re-announce
-       *  it each time. The settled summary is what gets announced. */
+      /** A live line moves twice a second; a polite region over it would
+       *  re-announce it each time. The folded cards no longer supply their own
+       *  status rows, so a separate region below speaks each finished line. */
       role={live ? undefined : 'status'}
       title={text}
     >
+      {live && (
+        <span className="sr-only" role="status">
+          {lines.announced}
+        </span>
+      )}
       {lines.retired != null && (
         <span
           key={`retired-${lines.retired}`}
@@ -187,16 +197,18 @@ const PhaseLabel = memo(function PhaseLabel({
 function LivePhaseHeader({
   parts,
   animate,
+  attachments,
 }: {
   parts: ReadonlyArray<TMessageContentParts | undefined>;
   animate: boolean;
+  attachments?: TAttachment[];
 }) {
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
   const mcpServerNames = useMCPServerNames();
   const activity = useMemo(
-    () => getLiveActivity(parts, localize, mcpServerNames),
-    [parts, localize, mcpServerNames],
+    () => getLiveActivity(parts, localize, mcpServerNames, attachments),
+    [parts, localize, mcpServerNames, attachments],
   );
   const { text, source } = activity;
   const line = useMemo(() => ({ text, source }), [text, source]);
@@ -429,7 +441,11 @@ export default function ActivityPhaseGroup({
             aria-label={isLive ? undefined : label}
           >
             {isLive ? (
-              <LivePhaseHeader parts={liveParts} animate={smoothStreaming} />
+              <LivePhaseHeader
+                parts={liveParts}
+                animate={smoothStreaming}
+                attachments={attachments}
+              />
             ) : (
               <>
                 <PhaseGlyph failed={hasFailure} />

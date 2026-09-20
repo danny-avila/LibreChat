@@ -909,3 +909,19 @@ describe('groupActivityPhases — live tail', () => {
     expect(groupActivityPhases([transfer], undefined, true)).toBeUndefined();
   });
 });
+
+describe('groupActivityPhases — live tail and handoffs', () => {
+  const tool = (id: string, name = 'lookup'): TMessageContentParts =>
+    ({
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: { id, name, args: '{}', output: '' },
+    }) as unknown as TMessageContentParts;
+
+  it('ends the span at a handoff and starts a new live span for the next agent', () => {
+    const transfer = tool('h1', `${Constants.LC_TRANSFER_TO_}agent_b`);
+    const segments = groupActivityPhases([tool('t1'), transfer, tool('t2')], undefined, true);
+    expect(segments?.map((segment) => segment.type)).toEqual(['content', 'phase']);
+    expect(segments?.[0].contentIndices).toEqual([0, 1]);
+    expect(segments?.[1]).toMatchObject({ live: true, contentIndices: [2] });
+  });
+});

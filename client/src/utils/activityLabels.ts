@@ -234,6 +234,10 @@ function claimsActivity(part: TMessageContentParts | undefined): boolean {
   return typeof name !== 'string' || !name.startsWith(Constants.LC_TRANSFER_TO_);
 }
 
+function isTransferCall(part: TMessageContentParts | undefined): boolean {
+  return part?.type === ContentTypes.TOOL_CALL && !claimsActivity(part);
+}
+
 type FoldRun = {
   content: Array<TMessageContentParts | undefined>;
   contentIndices: number[];
@@ -438,7 +442,11 @@ function synthesizeActivityFolds(
   for (let position = 0; position < segment.content.length; position += 1) {
     const part = segment.content[position];
     const index = segment.contentIndices[position];
-    if (isFoldBoundaryPart(part)) {
+    /** A handoff card names the destination agent and its instructions, and
+     *  can never join a group. Folding it into a live row would hide it for
+     *  the rest of the run, so while streaming it ends the span the way prose
+     *  does, and the next agent's calls start a live span of their own. */
+    if (isFoldBoundaryPart(part) || (liveTail && isTransferCall(part))) {
       flushRun();
       pending.content.push(part);
       pending.contentIndices.push(index);

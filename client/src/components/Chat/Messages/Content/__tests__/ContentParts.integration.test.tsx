@@ -1387,6 +1387,73 @@ describe('ContentParts — live activity fold', () => {
     expect(screen.queryByTestId('activity-phase-card')).toBeNull();
   });
 
+  it('reports a detached task that failed through its status attachment', () => {
+    const handle = JSON.stringify({
+      background_task_id: 'bg1',
+      tool: 'lookup',
+      status: 'running',
+      message: 'Dispatched. Poll with check_background_task.',
+    });
+    const dispatched = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: {
+        id: 't1',
+        name: 'lookup',
+        args: '{}',
+        output: handle,
+        runStepStatus: 'completed',
+      },
+    } as unknown as TMessageContentParts;
+    const failed = {
+      type: 'background_task_status',
+      status: 'error',
+      toolCallId: 't1',
+      messageId: 'msg1',
+    } as unknown as TAttachment;
+    renderContentParts({ ...liveProps, content: [dispatched], attachments: [failed] });
+
+    expect(liveHeader()).toHaveTextContent('com_ui_failed: lookup');
+  });
+
+  it('keeps a handoff card out of the live row and folds the next agent’s calls after it', () => {
+    const transfer = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: {
+        id: 'h1',
+        name: 'lc_transfer_to_agent_b',
+        args: '{}',
+        output: '',
+      },
+    } as unknown as TMessageContentParts;
+    renderContentParts({
+      ...liveProps,
+      content: [makeMcpToolCall('t1'), transfer, intentCall('t2', 'Picking up the task')],
+    });
+
+    expect(screen.getByTestId('agent-handoff')).toBeInTheDocument();
+    expect(liveHeader()).toHaveTextContent('Picking up the task');
+  });
+
+  it('announces each finished line once through a polite region', () => {
+    jest.useFakeTimers();
+    const frame = (content: TMessageContentParts[]) => (
+      <RecoilRoot>
+        <ContentParts {...liveProps} content={content} />
+      </RecoilRoot>
+    );
+    const { rerender } = render(frame([intentCall('t1', 'Reading the lens file')]));
+    const status = () => within(liveHeader()).getByRole('status');
+    expect(status()).toBeEmptyDOMElement();
+
+    rerender(
+      frame([intentCall('t1', 'Reading the lens file', 'ok'), intentCall('t2', 'Querying')]),
+    );
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(status()).toHaveTextContent('Reading the lens file');
+  });
+
   it('leaves a span of legacy Assistants calls, which the header cannot name, unfolded', () => {
     const codeInterpreter = {
       type: ContentTypes.TOOL_CALL,
