@@ -29,17 +29,27 @@ const policies = {
 type Options = {
   pathname?: string;
   socialLoginEnabled?: boolean;
+  /** What `socialLogins` lists, and whether the listed provider's own flag is
+   *  set: a button needs both, not just the global switch. */
+  providers?: string[];
+  googleLoginEnabled?: boolean;
   /** Partial on purpose: a fixture sets the policies under test, and the field
    *  names are still checked against the real interface config. */
   interfaceConfig?: Partial<NonNullable<TStartupConfig['interface']>>;
 };
 
-function setup({ pathname = 'register', socialLoginEnabled = false, interfaceConfig }: Options) {
+function setup({
+  pathname = 'register',
+  socialLoginEnabled = false,
+  providers,
+  googleLoginEnabled,
+  interfaceConfig,
+}: Options) {
   const startupConfig = {
     appTitle: 'LibreChat',
     socialLoginEnabled,
-    socialLogins: socialLoginEnabled ? ['google'] : [],
-    googleLoginEnabled: socialLoginEnabled,
+    socialLogins: providers ?? (socialLoginEnabled ? ['google'] : []),
+    googleLoginEnabled: googleLoginEnabled ?? socialLoginEnabled,
     serverDomain: 'mock-server',
     interface: interfaceConfig,
   } as unknown as TStartupConfig;
@@ -94,6 +104,34 @@ describe('AuthLayout legal placement', () => {
 
   test('a login screen that creates no accounts keeps the footer bar', () => {
     setup({ pathname: 'login', socialLoginEnabled: false, interfaceConfig: policies });
+
+    expect(consent()).not.toBeInTheDocument();
+    expect(footerBar()).not.toBeNull();
+  });
+
+  /** `socialLoginEnabled` is only the global switch: a button also needs its
+   *  provider listed and that provider's own flag, so the switch alone is not
+   *  an account this screen can create. */
+  test('the global social switch alone does not make a login screen account-creating', () => {
+    setup({
+      pathname: 'login',
+      socialLoginEnabled: true,
+      providers: [],
+      interfaceConfig: policies,
+    });
+
+    expect(consent()).not.toBeInTheDocument();
+    expect(footerBar()).not.toBeNull();
+  });
+
+  test('a provider listed but not enabled is not a button either', () => {
+    setup({
+      pathname: 'login',
+      socialLoginEnabled: true,
+      providers: ['google'],
+      googleLoginEnabled: false,
+      interfaceConfig: policies,
+    });
 
     expect(consent()).not.toBeInTheDocument();
     expect(footerBar()).not.toBeNull();

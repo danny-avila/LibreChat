@@ -1,9 +1,9 @@
 import { ThemeSelector } from '@librechat/client';
 import { TStartupConfig } from 'librechat-data-provider';
+import SocialLoginRender, { hasSocialProviders } from './SocialLoginRender';
 import LegalConsent, { hasPublishedPolicies } from './LegalConsent';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import { TranslationKeys, useLocalize } from '~/hooks';
-import SocialLoginRender from './SocialLoginRender';
 import { BlinkAnimation } from './BlinkAnimation';
 import { Banner } from '../Banners';
 import Footer from './Footer';
@@ -32,8 +32,7 @@ function AuthLayout({
   const showsSocialLogin = !pathname.includes('2fa') && (isRegister || pathname.includes('login'));
   /** Where an account can be created: the registration form, and a first
    *  sign-in through a provider button, which the login screen carries too. */
-  const createsAccounts =
-    isRegister || (showsSocialLogin && startupConfig?.socialLoginEnabled === true);
+  const createsAccounts = isRegister || (showsSocialLogin && hasSocialProviders(startupConfig));
   /** The consent names the same policies the footer bar links, so a screen
    *  states them once, as the sentence it is agreeing to. */
   const statesConsent = createsAccounts && hasPublishedPolicies(startupConfig);
