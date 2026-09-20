@@ -1347,6 +1347,50 @@ describe('ContentParts — live activity fold', () => {
     expect(liveHeader()).toHaveTextContent('com_ui_cancelled');
   });
 
+  it('reports a cancelled background task even though its dispatch step completed', () => {
+    const dispatched = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: {
+        id: 't1',
+        name: 'lookup',
+        args: '{}',
+        output: 'dispatched',
+        runStepStatus: 'completed',
+        backgroundTask: { cancelled: true },
+      },
+    } as unknown as TMessageContentParts;
+    renderContentParts({ ...liveProps, content: [dispatched] });
+
+    expect(liveHeader()).toHaveTextContent('com_ui_cancelled');
+  });
+
+  it('renders unfolded while a subagent’s own call waits on a sign-in', () => {
+    const subagent = {
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: {
+        id: 's1',
+        name: 'lookup',
+        args: '{}',
+        output: '',
+        subagent_content: [
+          {
+            type: ContentTypes.TOOL_CALL,
+            [ContentTypes.TOOL_CALL]: {
+              id: 'n1',
+              name: `getTinyImage${MCP_DELIMITER}Everything`,
+              args: '{}',
+              output: '',
+              auth: 'https://example.com/oauth',
+            },
+          },
+        ],
+      },
+    } as unknown as TMessageContentParts;
+    renderContentParts({ ...liveProps, content: [subagent] });
+
+    expect(screen.queryByTestId('activity-phase-card')).toBeNull();
+  });
+
   it('leaves a span of legacy Assistants calls, which the header cannot name, unfolded', () => {
     const codeInterpreter = {
       type: ContentTypes.TOOL_CALL,

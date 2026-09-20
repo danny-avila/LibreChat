@@ -28,7 +28,10 @@ export type LiveActivity = {
 
 type Localize = (phraseKey: TranslationKeys, options?: TOptions) => string;
 
-type LiveToolCall = Agents.ToolCall & Pick<PartMetadata, 'runStepStatus'> & { progress?: number };
+type LiveToolCall = Agents.ToolCall & { subagent_content?: TMessageContentParts[] } & Pick<
+    PartMetadata,
+    'runStepStatus'
+  > & { progress?: number };
 
 /**
  * The agents-shaped call — the only variant a live header can name. The
@@ -56,10 +59,15 @@ export function needsReader(part: TMessageContentParts | undefined): boolean {
     return true;
   }
   const toolCall = getStandardToolCall(part);
-  if (toolCall?.name !== ASK_USER_QUESTION) {
+  if (toolCall == null) {
     return false;
   }
-  return (toolCall.output?.length ?? 0) === 0 && getSubmittedAskAnswer(toolCall.id) === undefined;
+  if (toolCall.name === ASK_USER_QUESTION) {
+    return (toolCall.output?.length ?? 0) === 0 && getSubmittedAskAnswer(toolCall.id) === undefined;
+  }
+  /** A subagent's own calls can wait on the reader too, and the collapsed row
+   *  unmounts the card that leads to them. */
+  return Array.isArray(toolCall.subagent_content) && toolCall.subagent_content.some(needsReader);
 }
 
 function toolCallLine(
@@ -74,7 +82,10 @@ function toolCallLine(
   /** The same resolver the card uses, so a collapsed row never reads as a
    *  success while the card it hides shows a failure or a stop. */
   const phase = resolveToolCallPhase({
-    runStepStatus: toolCall.runStepStatus,
+    /** A backgrounded task's stop is recorded on the call, not on the dispatch
+     *  step, which usually closes as `completed`. */
+    runStepStatus:
+      toolCall.backgroundTask?.cancelled === true ? 'cancelled' : toolCall.runStepStatus,
     displayProgress: progress,
     reportedProgress: progress,
     isSubmitting: true,
