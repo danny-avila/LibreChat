@@ -664,7 +664,7 @@ describe('ServerConfigsDB', () => {
       expect(retrieved?.apiKey?.key).toBe('new-api-key');
     });
 
-    it('should preserve apiKey.key when authorization_type changes (bearer to custom)', async () => {
+    it('should require apiKey.key when authorization_type changes', async () => {
       const config: ParsedServerConfig = {
         type: 'sse',
         url: 'https://example.com/mcp',
@@ -686,16 +686,19 @@ describe('ServerConfigsDB', () => {
           source: 'admin',
           authorization_type: 'custom',
           custom_header: 'X-My-Api-Key',
-          // key not provided - should be preserved
         },
       };
-      await serverConfigsDB.update(created.serverName, updatedConfig, userId);
+      await expect(
+        serverConfigsDB.update(created.serverName, updatedConfig, userId),
+      ).rejects.toMatchObject({
+        code: 'MCP_API_KEY_REENTRY_REQUIRED',
+        changedFields: ['apiKey.authorization_type', 'apiKey.custom_header'],
+      });
 
-      // Verify the key is preserved and authorization_type/custom_header updated
       const retrieved = await serverConfigsDB.get(created.serverName, userId);
       expect(retrieved?.apiKey?.key).toBe('my-api-key');
-      expect(retrieved?.apiKey?.authorization_type).toBe('custom');
-      expect(retrieved?.apiKey?.custom_header).toBe('X-My-Api-Key');
+      expect(retrieved?.apiKey?.authorization_type).toBe('bearer');
+      expect(retrieved?.apiKey?.custom_header).toBeUndefined();
     });
 
     it('should NOT preserve apiKey.key when switching from admin to user source', async () => {
