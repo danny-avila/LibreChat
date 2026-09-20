@@ -73,6 +73,7 @@ export type MediaPersistenceContext = {
   pageTurnJobs: MediaMethods['listMediaTurnJobs'];
   listMediaTurnJobs: MediaMethods['listMediaTurnJobs'];
   getMediaAsset: MediaMethods['getMediaAsset'];
+  getAvailableMediaFileIds: MediaMethods['getAvailableMediaFileIds'];
   listMediaTurns: MediaMethods['listMediaTurns'];
   fenceQuery: (input: MediaJobFence, now: Date | string) => FilterQuery<MediaStoredJob>;
   getMediaLatestImageContext: MediaMethods['getMediaLatestImageContext'];

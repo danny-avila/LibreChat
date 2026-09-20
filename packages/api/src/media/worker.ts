@@ -126,6 +126,14 @@ export function createMediaWorker(
       leaseToken: initial.leaseToken ?? '',
       expectedVersion: job.version,
     });
+    const assertPublicationActive = () => {
+      if (job.publicationExpiresAt && job.publicationExpiresAt.getTime() <= deps.now())
+        throw new MediaServiceError(
+          'queue_expired',
+          410,
+          'The originating retention window expired before dispatch.',
+        );
+    };
     const refresh = async () => {
       const current = await deps.repository.getMediaJob(fence().scope, job.jobId);
       if (
@@ -265,6 +273,7 @@ export function createMediaWorker(
       };
       let result: MediaProviderResult;
       if (job.phase === 'queued') {
+        assertPublicationActive();
         assertMediaAccess(context, true);
         if (job.execution.accountingMode !== mediaAccountingMode(context.appConfig)) {
           throw new MediaServiceError(
@@ -346,6 +355,7 @@ export function createMediaWorker(
         }
         await leased(async () => {
           await refresh();
+          assertPublicationActive();
           const submitting = await deps.repository.beginMediaSubmission({
             ...fence(),
             now: new Date(deps.now()).toISOString(),

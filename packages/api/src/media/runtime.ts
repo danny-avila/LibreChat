@@ -65,6 +65,7 @@ import { MediaActivityStream } from './events';
 import { createMediaStaging } from './staging';
 import { createMediaWorker } from './worker';
 import { MediaServiceError } from './errors';
+import { mediaToolContext } from './context';
 import { createMediaRouter } from './http';
 
 type MediaActor = NonNullable<MediaContext['user']>;
@@ -372,7 +373,7 @@ export function createMediaRuntime(input: MediaRuntimeDependencies): MediaRuntim
       createMediaTools({
         services,
         repository,
-        resolveContext: () => resolveContext(request),
+        resolveContext: async () => mediaToolContext(request, await resolveContext(request), now()),
         admitGeneration: async () => {
           if (!input.admission?.admitToolGeneration) {
             throw new MediaServiceError('not_ready', 503, 'Media tool admission is unavailable.');

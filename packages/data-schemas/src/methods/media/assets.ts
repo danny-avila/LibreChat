@@ -37,6 +37,7 @@ export function createMediaAssetsMethods({
 >): Pick<
   MediaPersistenceContext,
   | 'getMediaAsset'
+  | 'getAvailableMediaFileIds'
   | 'reserveMediaAssetWrite'
   | 'commitMediaAssetWrite'
   | 'recoverMediaAssetWrites'
@@ -65,6 +66,25 @@ export function createMediaAssetsMethods({
       $or: [{ mediaHardExpiresAt: null }, { mediaHardExpiresAt: { $gt: new Date() } }],
     }).lean();
     return file ? toMediaAsset(file) : null;
+  };
+
+  const getAvailableMediaFileIds: MediaMethods['getAvailableMediaFileIds'] = async ({
+    scope,
+    fileIds,
+  }) => {
+    scopeFilter(scope);
+    if (!fileIds.length) return [];
+    const rows = await File.find({
+      user: scope.ownerId,
+      tenantId: scope.tenantId,
+      file_id: { $in: [...new Set(fileIds)] },
+      mediaOutputKey: { $exists: true },
+      mediaLifecycle: 'live',
+      $or: [{ mediaHardExpiresAt: null }, { mediaHardExpiresAt: { $gt: new Date() } }],
+    })
+      .select({ _id: 0, file_id: 1 })
+      .lean();
+    return rows.map((file) => file.file_id);
   };
 
   const reserveMediaAssetWrite: MediaMethods['reserveMediaAssetWrite'] = async (input) => {
@@ -704,6 +724,7 @@ export function createMediaAssetsMethods({
   };
   return {
     getMediaAsset,
+    getAvailableMediaFileIds,
     reserveMediaAssetWrite,
     commitMediaAssetWrite,
     recoverMediaAssetWrites,

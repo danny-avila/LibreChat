@@ -158,6 +158,7 @@ export function mediaTemporaryRetentionMs(interfaceConfig: AppConfig['interfaceC
 }
 /** Freeze the same saved/temporary retention deadline as chat before publication can be interrupted. */
 export function mediaPublicationExpiresAt(context: MediaContext, temporary = false): string | null {
+  if (context.publicationExpiresAt) return context.publicationExpiresAt;
   const policy = context.appConfig.interfaceConfig;
   return temporary || policy?.retentionMode === RetentionMode.ALL
     ? createChatExpirationDate(policy, temporary).toISOString()
@@ -548,7 +549,11 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
           execution,
           maxActiveJobs: context.config.queue.maxPendingPerUser,
           maxPendingTotal: context.config.queue.maxPendingTotal,
-          publicationExpiresAt: mediaPublicationExpiresAt(context, request.temporary),
+          temporary: context.temporary ?? request.temporary,
+          publicationExpiresAt: mediaPublicationExpiresAt(
+            context,
+            context.temporary ?? request.temporary,
+          ),
         });
         const receipt =
           (await deps.repository.publishMediaSubmission(

@@ -225,6 +225,38 @@ describe('media file conversation consumers', () => {
     expect((await file(fileId))?.mediaRetainers).toEqual(['conversation:saved']);
   });
 
+  it('preflights clone file availability in one owner-and-tenant-scoped lookup', async () => {
+    const available = await asset();
+    const foreignOwner = await asset();
+    const foreignTenant = await asset();
+    const expired = await asset({ hardExpiresAt: new Date(0) });
+    const retiring = await asset();
+    await mongoose.models.File.collection.updateOne(
+      { file_id: foreignOwner },
+      { $set: { user: new mongoose.Types.ObjectId() } },
+    );
+    await mongoose.models.File.collection.updateOne(
+      { file_id: foreignTenant },
+      { $set: { tenantId: 'another-tenant' } },
+    );
+    await mongoose.models.File.updateOne({ file_id: retiring }, { mediaLifecycle: 'retiring' });
+    const find = jest.spyOn(mongoose.models.File, 'find');
+    const fileIds = [available, available, foreignOwner, foreignTenant, expired, retiring];
+    expect(await db.getAvailableMediaFileIds({ scope, fileIds })).toEqual([available]);
+    expect(find).toHaveBeenCalledTimes(1);
+    expect(find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user: scope.ownerId,
+        tenantId: null,
+        file_id: { $in: [...new Set(fileIds)] },
+        mediaLifecycle: 'live',
+      }),
+    );
+    find.mockClear();
+    expect(await db.getAvailableMediaFileIds({ scope, fileIds: [] })).toEqual([]);
+    expect(find).not.toHaveBeenCalled();
+  });
+
   it('rejects foreign owner, tenant, retiring and hard-expired originals without changing usage', async () => {
     const fileId = await asset();
     for (const wrong of [
@@ -258,6 +290,16 @@ describe('media file conversation consumers', () => {
     });
     expect((await file(fileId))?.mediaHardExpiresAt).toEqual(deadline);
     expect((await file(fileId))?.expiredAt).toEqual(deadline);
+    await db.releaseMediaAsset({ scope, fileId, retainer: 'thread:studio:1' });
+    expect(await file(fileId)).toMatchObject({
+      mediaRetainers: ['conversation:all'],
+      mediaHardExpiresAt: deadline,
+      expiredAt: deadline,
+    });
+    expect(await db.claimMediaAssetDeletion({ scope, fileId, token: 'retained' })).toBeNull();
+    await db.deleteMessages({ user: scope.ownerId, conversationId: 'all', messageId: 'all' });
+    expect((await file(fileId))?.mediaHardExpiresAt).toEqual(deadline);
+    expect(await db.claimMediaAssetDeletion({ scope, fileId, token: 'released' })).not.toBeNull();
   });
 
   it('bounds consumers explicitly and does not leave claims after a refused attach', async () => {
@@ -324,9 +366,19 @@ describe('media file conversation consumers', () => {
     expect((await file(fileId))?.mediaConsumerClaims).toEqual([]);
   });
 
-  it('imports unavailable or capacity-limited parts as placeholders while retaining available originals', async () => {
+  it('imports unavailable, foreign or capacity-limited parts as placeholders while retaining owned originals', async () => {
     const fileId = await asset();
     const full = await asset();
+    const foreignOwner = await asset();
+    const foreignTenant = await asset();
+    await mongoose.models.File.collection.updateOne(
+      { file_id: foreignOwner },
+      { $set: { user: new mongoose.Types.ObjectId() } },
+    );
+    await mongoose.models.File.collection.updateOne(
+      { file_id: foreignTenant },
+      { $set: { tenantId: 'another-tenant' } },
+    );
     await mongoose.models.File.updateOne(
       { file_id: full },
       {
@@ -348,6 +400,14 @@ describe('media file conversation consumers', () => {
           { type: ContentTypes.IMAGE_FILE, image_file: { file_id: fileId, filepath: '/one' } },
           { type: ContentTypes.IMAGE_FILE, image_file: { file_id: missing, filepath: '/missing' } },
           { type: ContentTypes.IMAGE_FILE, image_file: { file_id: full, filepath: '/full' } },
+          {
+            type: ContentTypes.IMAGE_FILE,
+            image_file: { file_id: foreignOwner, filepath: '/foreign-owner' },
+          },
+          {
+            type: ContentTypes.IMAGE_FILE,
+            image_file: { file_id: foreignTenant, filepath: '/foreign-tenant' },
+          },
         ],
       },
     ];
@@ -355,7 +415,11 @@ describe('media file conversation consumers', () => {
     expect(messages[0].content[0].image_file.file_id).toBe(fileId);
     expect(messages[0].content[1].image_file.file_id).toBe('');
     expect(messages[0].content[2].image_file.file_id).toBe('');
+    expect(messages[0].content[3].image_file.file_id).toBe('');
+    expect(messages[0].content[4].image_file.file_id).toBe('');
     expect((await file(fileId))?.mediaRetainers).toContain('conversation:import');
+    expect((await file(foreignOwner))?.mediaRetainers).toEqual(['thread:studio:1']);
+    expect((await file(foreignTenant))?.mediaRetainers).toEqual(['thread:studio:1']);
   });
 
   it('retains an original appended to a completed tool result and releases it after raw message removal', async () => {

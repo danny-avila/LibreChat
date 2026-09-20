@@ -205,6 +205,8 @@ export type StageMediaSubmissionInput = {
   maxActiveJobs: number;
   maxPendingTotal: number;
   executionOwner?: 'media' | 'chat';
+  /** Host-derived chat retention overrides the public request when provided. */
+  temporary?: boolean;
   /** Resolved at admission; null explicitly preserves a permanent presentation across recovery. */
   publicationExpiresAt?: string | null;
 };
@@ -461,6 +463,10 @@ export interface MediaMethods {
     token: string;
   }): Promise<boolean>;
   getMediaAsset(scope: MediaOwnerScope, fileId: string): Promise<MediaAsset | null>;
+  getAvailableMediaFileIds(input: {
+    scope: MediaOwnerScope;
+    fileIds: readonly string[];
+  }): Promise<string[]>;
   getPublishedMediaAsset(input: {
     scope: MediaOwnerScope;
     outputKey: string;

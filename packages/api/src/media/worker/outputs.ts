@@ -137,6 +137,7 @@ export async function publishMediaOutputs({
         filename: `${getJob().jobId}-${part.ordinal}.${mediaContentExtension(part.type)}`,
         config: context.config,
         expiredAt: new Date(deps.now() + context.config.assets.orphanRetentionMs).toISOString(),
+        hardExpiresAt: getJob().publicationExpiresAt?.toISOString(),
       });
       const retained = await deps.repository.retainMediaThreadAsset({
         scope: context.scope,

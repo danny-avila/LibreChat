@@ -84,6 +84,9 @@ export function createMediaPublicationMethods({
     await activateMedia();
     const scope = scopeFilter(input.scope);
     const request = structuredClone(input.request);
+    if (retry) request.temporary = retry.request.temporary;
+    else if (input.temporary !== undefined) request.temporary = input.temporary;
+    const publicationExpiresAt = retry ? retry.publicationExpiresAt : input.publicationExpiresAt;
     const fingerprint = digest({ request, retryOfJobId: retry?.jobId });
     const replay = await Job.findOne({ ...scope, clientRequestId: request.clientRequestId }).lean();
     if (replay) {
@@ -145,10 +148,10 @@ export function createMediaPublicationMethods({
       createdAt: now,
       updatedAt: now,
       dueAt: now,
-      ...(input.publicationExpiresAt !== undefined
+      ...(publicationExpiresAt !== undefined
         ? {
             publicationExpiresAt:
-              input.publicationExpiresAt === null ? null : mediaDate(input.publicationExpiresAt),
+              publicationExpiresAt === null ? null : mediaDate(publicationExpiresAt),
           }
         : {}),
       ...(retry ? { retryOfJobId: retry.jobId } : {}),

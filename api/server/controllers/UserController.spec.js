@@ -104,9 +104,9 @@ jest.mock('@librechat/api', () => ({
   getNewS3URL: jest.fn(),
   getWebSearchInstallEntries: (...args) => mockGetWebSearchInstallEntries(...args),
   revokeUserCodeEnvironmentWorkers: (...args) => mockRevokeUserCodeEnvironmentWorkers(...args),
-  prepareMediaAccountDeletion: (...args) => mockPrepareMediaAccountDeletion(...args),
-  completeMediaAccountDeletion: (...args) => mockCompleteMediaAccountDeletion(...args),
-  cancelMediaAccountDeletion: (...args) => mockCancelMediaAccountDeletion(...args),
+  prepareAccountDeletion: (...args) => mockPrepareMediaAccountDeletion(...args),
+  completeAccountDeletion: (...args) => mockCompleteMediaAccountDeletion(...args),
+  cancelAccountDeletion: (...args) => mockCancelMediaAccountDeletion(...args),
   GenerationJobManager: {
     getAccountCleanupJobIdsForUser: (...args) => mockGetActiveJobIdsForUser(...args),
     getCleanupJob: (...args) => mockGetAgentJob(...args),

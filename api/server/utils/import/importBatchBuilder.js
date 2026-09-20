@@ -5,6 +5,7 @@ const {
   assertConversationImportContentAllowed,
   reportLocatorTraversalFailure,
   executeConversationImportWrites,
+  prepareMediaConversationImport,
 } = require('@librechat/api');
 const {
   getTenantId,
@@ -25,6 +26,7 @@ const {
   deleteImportedConversations,
   deleteImportedMessages,
   getFiles,
+  getAvailableMediaFileIds,
 } = require('~/models');
 const { FALLBACK_MODEL_BY_ENDPOINT } = require('./defaults');
 
@@ -196,6 +198,11 @@ class ImportBatchBuilder {
       ...(tenantId == null ? {} : { tenantId }),
     });
 
+    await prepareMediaConversationImport({
+      scope: { ownerId: this.requestUserId, tenantId: tenantId ?? null },
+      messages: this.messages,
+      getAvailableMediaFileIds,
+    });
     await assertConversationContentAllowed(
       this.filters,
       {
@@ -203,7 +210,7 @@ class ImportBatchBuilder {
         messages: this.messages,
       },
       {
-        user: { id: this.requestUserId },
+        user: { id: this.requestUserId, tenantId: tenantId ?? null },
         getFiles,
         ...(this.legacyPii == null ? {} : { legacyPii: this.legacyPii }),
       },

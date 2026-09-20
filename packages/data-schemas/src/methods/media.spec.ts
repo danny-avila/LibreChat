@@ -2052,6 +2052,46 @@ describe('media persistence on standalone MongoDB', () => {
     expect((await methods.getMediaThread(scope, bounded.threadId))?.expiresAt).toBe(deadline);
   });
 
+  it.each(['bounded', 'permanent'] as const)(
+    'preserves temporary tool privacy and its frozen %s deadline through an explicit retry',
+    async (retention) => {
+      const publicationExpiresAt =
+        retention === 'bounded' ? new Date(Date.now() + 60_000).toISOString() : null;
+      const input = { ...submission('temporary-tool'), publicationExpiresAt };
+      // Existing public receipts keep the same fingerprint when the host supplies retention.
+      const receipt = await methods.stageMediaSubmission({
+        ...input,
+        request: { ...input.request, temporary: true },
+      });
+      expect(await methods.stageMediaSubmission({ ...input, temporary: true })).toEqual(receipt);
+      await methods.publishMediaSubmission(scope, receipt.jobId, options);
+      expect((await methods.getMediaJob(scope, receipt.jobId))?.request.temporary).toBe(true);
+      await expect(
+        methods.stageMediaSubmission({ ...input, temporary: false }),
+      ).rejects.toMatchObject({ code: 'conflict' });
+      await methods.cancelMediaJob(scope, receipt.jobId);
+      const retried = await methods.retryMediaJob({
+        scope,
+        jobId: receipt.jobId,
+        clientRequestId: 'temporary-tool-retry',
+        maxActiveJobs: 10,
+        maxPendingTotal: 100,
+      });
+      expect(await methods.getMediaJob(scope, retried.jobId)).toMatchObject({
+        request: { temporary: true },
+        publicationExpiresAt: publicationExpiresAt ? new Date(publicationExpiresAt) : null,
+      });
+      await methods.publishMediaSubmission(scope, retried.jobId, {
+        ...options,
+        temporaryRetentionMs: 1,
+      });
+      const thread = await methods.getMediaThread(scope, receipt.threadId);
+      expect(thread?.temporary).toBe(true);
+      expect(thread?.expiresAt).toBe(publicationExpiresAt ?? undefined);
+      expect((await methods.listMediaThreads({ scope, limit: 10 })).items).toEqual([]);
+    },
+  );
+
   it('purges retired payloads only after financial obligations settle and preserves replay receipts', async () => {
     const input = submission('purge-after-settlement');
     const job = await accepted('purge-after-settlement');

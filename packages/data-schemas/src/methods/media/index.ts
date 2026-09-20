@@ -406,6 +406,7 @@ export function createMediaMethods(
   });
   const {
     getMediaAsset,
+    getAvailableMediaFileIds,
     reserveMediaAssetWrite,
     commitMediaAssetWrite,
     recoverMediaAssetWrites,
@@ -606,6 +607,7 @@ export function createMediaMethods(
     claimMediaAssetWriteDeletion,
     completeMediaAssetWriteDeletion,
     getMediaAsset,
+    getAvailableMediaFileIds,
     getMediaAssetContent,
     getMediaSourceFile,
     isMediaFile,
