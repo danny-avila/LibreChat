@@ -18,6 +18,7 @@ import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { getActivityLabelText } from '~/utils/activityLabels';
 import { ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from './rows';
 import { StackedToolIcons } from './ToolOutput';
+import { mapAttachments } from '~/utils/map';
 import SearchVerticals from './verticals';
 import { AttachmentGroup } from './Parts';
 import { cn } from '~/utils';
@@ -123,8 +124,7 @@ const PhaseLabel = memo(function PhaseLabel({
     retired: string | null;
     entered: boolean;
     source?: string;
-    announced: string;
-  }>({ current: text, retired: null, entered: false, source, announced: '' });
+  }>({ current: text, retired: null, entered: false, source });
 
   /** Adjusted during render rather than in an effect. A passive effect runs
    *  after paint, so a swap with no animation would leave the previous summary
@@ -134,9 +134,6 @@ const PhaseLabel = memo(function PhaseLabel({
     const moved = source == null || source !== lines.source;
     const swaps = animate && lines.current.length > 0 && moved;
     setLines({
-      /** A live line is announced when it is LEFT, not while it grows: by then
-       *  it is complete, and it is spoken once instead of twice a second. */
-      announced: live && moved ? lines.current : lines.announced,
       current: text,
       retired: swaps ? lines.current : null,
       entered: swaps || (lines.entered && source != null && source === lines.source),
@@ -157,16 +154,10 @@ const PhaseLabel = memo(function PhaseLabel({
     <span
       className="tool-status-text relative block min-w-0 flex-1 overflow-hidden text-left"
       /** A live line moves twice a second; a polite region over it would
-       *  re-announce it each time. The folded cards no longer supply their own
-       *  status rows, so a separate region below speaks each finished line. */
+       *  re-announce it each time. The card's own announcer speaks instead. */
       role={live ? undefined : 'status'}
       title={text}
     >
-      {live && (
-        <span className="sr-only" role="status">
-          {lines.announced}
-        </span>
-      )}
       {lines.retired != null && (
         <span
           key={`retired-${lines.retired}`}
@@ -214,25 +205,69 @@ function LivePhaseHeader({
   parts,
   animate,
   lineId,
+  detailId,
   attachments,
+  onAnnounce,
 }: {
   parts: ReadonlyArray<TMessageContentParts | undefined>;
   animate: boolean;
   lineId: string;
+  detailId: string;
   attachments?: TAttachment[];
+  onAnnounce: (text: string) => void;
 }) {
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
   const mcpServerNames = useMCPServerNames();
+  const attachmentsById = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const activity = useMemo(
-    () => getLiveActivity(parts, localize, mcpServerNames, attachments),
-    [parts, localize, mcpServerNames, attachments],
+    () => getLiveActivity(parts, localize, mcpServerNames, attachmentsById),
+    [parts, localize, mcpServerNames, attachmentsById],
   );
   const { text, source } = activity;
   const line = useMemo(() => ({ text, source }), [text, source]);
   const painted = useThrottledValue(line, LIVE_ACTIVITY_THROTTLE_MS);
   const iconKey = activity.iconNames.join('|');
   const iconNames = useMemo(() => (iconKey ? iconKey.split('|') : []), [iconKey]);
+
+  /** The span's verdict, separate from its newest line: an earlier call can
+   *  fail while a later one runs, and the line alone would never say so. The
+   *  hidden group header carries the same counts in the same words. */
+  const { failed, cancelled } = activity.outcome;
+  const detail = useMemo(() => {
+    const notes: string[] = [];
+    if (failed > 0) {
+      notes.push(
+        localize(failed === 1 ? 'com_ui_one_action_failed' : 'com_ui_n_actions_failed', {
+          0: String(failed),
+        }),
+      );
+    }
+    if (cancelled > 0) {
+      notes.push(
+        localize(cancelled === 1 ? 'com_ui_one_action_cancelled' : 'com_ui_n_actions_cancelled', {
+          0: String(cancelled),
+        }),
+      );
+    }
+    return notes.join(' · ');
+  }, [failed, cancelled, localize]);
+
+  /** Announcements have their own identity, apart from the ticker's. A line
+   *  is spoken once, when it is left and therefore complete; an outcome is
+   *  spoken the moment it changes, because `running → failed` on one call
+   *  keeps its source and would otherwise wait for the next call to be heard. */
+  const spokenRef = useRef({ source: painted.source, text: painted.text, detail: '' });
+  useEffect(() => {
+    const spoken = spokenRef.current;
+    if (detail !== spoken.detail && detail) {
+      onAnnounce(detail);
+    } else if (painted.source !== spoken.source && spoken.text) {
+      onAnnounce(spoken.text);
+    }
+    spokenRef.current = { source: painted.source, text: painted.text, detail };
+  }, [painted, detail, onAnnounce]);
+
   return (
     <>
       <span className={ROW_GLYPH_SLOT} aria-hidden="true">
@@ -246,6 +281,15 @@ function LivePhaseHeader({
         live
         lineId={lineId}
       />
+      {detail && (
+        <span
+          id={detailId}
+          className="shrink-0 text-xs font-normal text-text-warning"
+          data-testid="live-phase-outcome"
+        >
+          · {detail}
+        </span>
+      )}
     </>
   );
 }
@@ -305,6 +349,23 @@ export default function ActivityPhaseGroup({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const panelId = useId();
   const lineId = useId();
+  const detailId = useId();
+  /** One polite region for the card's whole life. It sits outside the button,
+   *  so it never joins the disclosure's name, and it outlives the live header:
+   *  a region that mounts already holding text is not announced, so the
+   *  generated summary is spoken through the region that was there before. */
+  const [announcement, setAnnouncement] = useState('');
+  const wasLiveRef = useRef(false);
+  useEffect(() => {
+    if (isLive) {
+      wasLiveRef.current = true;
+      return;
+    }
+    if (wasLiveRef.current && label) {
+      wasLiveRef.current = false;
+      setAnnouncement(label);
+    }
+  }, [isLive, label]);
   const cancelEntranceRef = useRef<(() => void) | null>(null);
   const cancelLayoutReconcileRef = useRef<(() => void) | null>(null);
   const previousIsExpandedRef = useRef(isExpanded);
@@ -441,6 +502,9 @@ export default function ActivityPhaseGroup({
      *  gap, no inset. Boxing it was what put its text on a third left edge and
      *  forced every folded row 13px sideways as the box materialized. */
     <div className="mb-2 mt-1 w-full" ref={rootRef} data-testid="activity-phase-card">
+      <span className="sr-only" role="status" data-testid="activity-phase-announcer">
+        {announcement}
+      </span>
       <div style={headerStyle}>
         <div className="overflow-hidden">
           <Button
@@ -462,14 +526,16 @@ export default function ActivityPhaseGroup({
              *  the previous line, and `sr-only` text still counts toward a
              *  button's computed name. */
             aria-label={isLive ? undefined : label}
-            aria-labelledby={isLive ? lineId : undefined}
+            aria-labelledby={isLive ? `${lineId} ${detailId}` : undefined}
           >
             {isLive ? (
               <LivePhaseHeader
                 parts={liveParts}
                 animate={smoothStreaming}
                 lineId={lineId}
+                detailId={detailId}
                 attachments={attachments}
+                onAnnounce={setAnnouncement}
               />
             ) : (
               <>

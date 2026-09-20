@@ -1336,7 +1336,7 @@ describe('ContentParts — live activity fold', () => {
         },
       }) as unknown as TMessageContentParts;
     const { unmount } = renderContentParts({ ...liveProps, content: [closed('failed')] });
-    expect(liveHeader()).toHaveTextContent('com_ui_failed: lookup');
+    expect(liveHeader()).toHaveTextContent('com_ui_failed_subject');
     unmount();
 
     renderContentParts({ ...liveProps, content: [closed('cancelled')] });
@@ -1412,7 +1412,7 @@ describe('ContentParts — live activity fold', () => {
     } as unknown as TAttachment;
     renderContentParts({ ...liveProps, content: [dispatched], attachments: [failed] });
 
-    expect(liveHeader()).toHaveTextContent('com_ui_failed: lookup');
+    expect(liveHeader()).toHaveTextContent('com_ui_failed_subject');
   });
 
   it('keeps a handoff card out of the live row and folds the next agent’s calls after it', () => {
@@ -1442,7 +1442,7 @@ describe('ContentParts — live activity fold', () => {
       </RecoilRoot>
     );
     const { rerender } = render(frame([intentCall('t1', 'Reading the lens file')]));
-    const status = () => within(liveHeader()).getByRole('status');
+    const status = () => screen.getByTestId('activity-phase-announcer');
     expect(status()).toBeEmptyDOMElement();
 
     rerender(
@@ -1521,7 +1521,9 @@ describe('ContentParts — live activity fold', () => {
       jest.advanceTimersByTime(500);
     });
 
-    expect(within(liveHeader()).getByRole('status')).toHaveTextContent('Reading the lens file');
+    expect(screen.getByTestId('activity-phase-announcer')).toHaveTextContent(
+      'Reading the lens file',
+    );
     expect(liveHeader()).toHaveAccessibleName('Querying');
   });
 

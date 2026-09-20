@@ -6,6 +6,7 @@ import type {
   TMessageContentParts,
 } from 'librechat-data-provider';
 import type { TOptions } from 'i18next';
+import type { SpanOutcome, SpanSummary } from './outcome';
 import type { TranslationKeys } from '~/hooks';
 import { getBatchActivityLabelPart, getActivityLabelText } from '~/utils/activityLabels';
 import { hasPendingApprovalInPart, hasPendingAuthInPart } from '~/utils/groupToolCalls';
@@ -13,7 +14,7 @@ import { ASK_USER_QUESTION, getSubmittedAskAnswer } from '~/utils/approval';
 import { boundIntentLabel, getToolCallIntent } from './Parts/intent';
 import { getToolDisplayLabel } from '~/utils/toolLabels';
 import { isBashProgrammaticToolCall } from './routing';
-import { getToolMeta } from './outcome';
+import { summarizeSpan } from './outcome';
 
 /** How often a live fold's header may repaint. A streamed intent moves the
  *  newest line on nearly every delta; the header is a glanceable status, not a
@@ -28,6 +29,8 @@ export type LiveActivity = {
    *  transition for a genuinely different line. */
   source: string;
   iconNames: string[];
+  /** Failed and stopped calls anywhere in the span, not just the newest line. */
+  outcome: SpanOutcome;
 };
 
 type Localize = (phraseKey: TranslationKeys, options?: TOptions) => string;
@@ -79,21 +82,21 @@ function toolCallLine(
   toolCall: LiveToolCall,
   localize: Localize,
   serverNames: readonly string[],
-  attachments?: TAttachment[],
+  span: SpanSummary,
 ): string {
   const intent = getToolCallIntent(toolCall.args);
   const label = getToolDisplayLabel(toolCall.name ?? '', localize, serverNames);
   /** The verdict comes from the resolver the group header uses, so a collapsed
    *  row can never read as a success while the card it hides shows a failure
    *  or a stop — whichever channel reported it. */
-  const meta = getToolMeta(part, { [toolCall.id ?? '']: attachments });
+  const meta = span.metaOf(part);
   if (meta?.cancelled === true) {
     return localize('com_ui_cancelled');
   }
   if (meta?.failed === true) {
-    /** Reads exactly as the hidden card does (`ToolCall`'s finished text). */
+    /** Reads as the hidden card does: `ToolCall` uses the same template. */
     const subject = intent ?? label;
-    return subject ? `${localize('com_ui_failed')}: ${subject}` : localize('com_ui_failed');
+    return subject ? localize('com_ui_failed_subject', { 0: subject }) : localize('com_ui_failed');
   }
   if (intent != null) {
     return intent;
@@ -144,7 +147,7 @@ function newestLine(
   parts: ReadonlyArray<TMessageContentParts | undefined>,
   localize: Localize,
   serverNames: readonly string[],
-  attachments?: TAttachment[],
+  span: SpanSummary,
 ): Pick<LiveActivity, 'text' | 'source'> {
   for (let position = parts.length - 1; position >= 0; position -= 1) {
     const part = parts[position];
@@ -185,7 +188,7 @@ function newestLine(
     const toolCall = getStandardToolCall(part);
     if (toolCall != null) {
       return {
-        text: toolCallLine(part, toolCall, localize, serverNames, attachments),
+        text: toolCallLine(part, toolCall, localize, serverNames, span),
         source: `tool:${toolCall.id ?? position}`,
       };
     }
@@ -207,8 +210,9 @@ export function getLiveActivity(
   parts: ReadonlyArray<TMessageContentParts | undefined>,
   localize: Localize,
   serverNames: readonly string[],
-  attachments?: TAttachment[],
+  attachmentsById?: Record<string, TAttachment[] | undefined>,
 ): LiveActivity {
+  const span = summarizeSpan(parts, attachmentsById);
   const icons = new Set<string>();
   const floor = Math.max(0, parts.length - LIVE_ICON_WINDOW);
   for (let position = parts.length - 1; position >= floor; position -= 1) {
@@ -224,7 +228,8 @@ export function getLiveActivity(
     icons.add(isBashProgrammaticToolCall(name, toolCall.args) ? Tools.bash_tool : name);
   }
   return {
-    ...newestLine(parts, localize, serverNames, attachments),
+    ...newestLine(parts, localize, serverNames, span),
+    outcome: { failed: span.failed, cancelled: span.cancelled },
     iconNames: Array.from(icons).reverse(),
   };
 }

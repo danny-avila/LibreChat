@@ -72,6 +72,9 @@ function resolveOutcome(
 export function getToolMeta(
   part: TMessageContentParts,
   attachmentsByToolCallId?: Record<string, TAttachment[] | undefined>,
+  /** Step ids other parts with this provider id already own. A call that has
+   *  no step yet must not inherit what an earlier occurrence produced. */
+  siblingStepIds?: ReadonlySet<string>,
 ): ToolMeta | null {
   if (part.type !== ContentTypes.TOOL_CALL) {
     return null;
@@ -102,9 +105,18 @@ export function getToolMeta(
      *  `isError` parsing does not recognize, so `MemoryCall` classifies it with
      *  its own predicate. Reuse that here or a persisted call with no terminal
      *  status shows a failed card inside a group claiming success. */
+    const ownAttachments = filterAttachmentsForPart(
+      attachmentsByToolCallId?.[tc.id ?? ''],
+      tc.agentId,
+      toolCall.stepId,
+      toolCall.stepId == null ? siblingStepIds : undefined,
+    );
+    /** `MemoryCall` also fails on a memory-error ARTIFACT, which arrives as an
+     *  attachment beside output that can read as a success. */
     const failedOutput =
       name === 'set_memory' || name === 'delete_memory'
-        ? isMemoryFailureOutput(name, tc.output ?? '')
+        ? isMemoryFailureOutput(name, tc.output ?? '') ||
+          (ownAttachments ?? []).some((attachment) => attachment[Tools.memory]?.type === 'error')
         : hasFailedOutput(tc.output);
     /** A backgrounded bash/code task reports its verdict through a
      *  `background_task_status` attachment, not its output: the dispatch step
@@ -114,10 +126,7 @@ export function getToolMeta(
      *  same way the child is, since provider tool-call ids repeat across agents
      *  and execution steps in handoff responses. */
     const backgroundHandle = parseBackgroundHandle(tc.output);
-    const backgroundStatus = splitBackgroundAttachments(
-      filterAttachmentsForPart(attachmentsByToolCallId?.[tc.id ?? ''], tc.agentId, toolCall.stepId),
-      tc.id,
-    ).backgroundStatus;
+    const backgroundStatus = splitBackgroundAttachments(ownAttachments, tc.id).backgroundStatus;
     const backgroundFailed = backgroundHandle != null && backgroundStatus === 'error';
     const backgroundCancelled =
       tc.backgroundTask?.cancelled === true ||
@@ -161,4 +170,85 @@ export function getToolMeta(
   }
 
   return null;
+}
+
+export type SpanOutcome = { failed: number; cancelled: number };
+
+export type SpanSummary = SpanOutcome & {
+  /** The verdict for one part of the span, scoped the way the count was. */
+  metaOf: (part: TMessageContentParts) => ToolMeta | null;
+};
+
+type CachedMeta = {
+  attachments: TAttachment[] | undefined;
+  siblings: string;
+  meta: ToolMeta | null;
+};
+
+/** Content parts are immutable and a streamed delta replaces only the part it
+ *  touched, so a verdict is good for as long as the part object, its
+ *  attachment list and its sibling steps are the same ones. */
+const metaCache = new WeakMap<TMessageContentParts, CachedMeta>();
+
+const toolCallIdentity = (part: TMessageContentParts): { id: string; stepId?: string } => {
+  const toolCall = part[ContentTypes.TOOL_CALL] as { id?: string; stepId?: string } | undefined;
+  return { id: toolCall?.id ?? '', stepId: toolCall?.stepId };
+};
+
+/**
+ * Outcome of a span for a summary that shows only its newest line: how many
+ * calls failed or were stopped — an earlier call can fail while a later one is
+ * still running, and the line alone would never say so — plus the verdict for
+ * any single part.
+ *
+ * Attachment ownership follows `ContentParts`: provider ids repeat across
+ * steps, so a call with no step yet excludes what an earlier occurrence of its
+ * id already owns. Runs per streamed delta; unchanged parts answer from the
+ * cache.
+ */
+export function summarizeSpan(
+  parts: ReadonlyArray<TMessageContentParts | undefined>,
+  attachmentsByToolCallId?: Record<string, TAttachment[] | undefined>,
+): SpanSummary {
+  const stepsById = new Map<string, Set<string>>();
+  for (const part of parts) {
+    if (part?.type !== ContentTypes.TOOL_CALL) {
+      continue;
+    }
+    const { id, stepId } = toolCallIdentity(part);
+    if (id === '' || stepId == null) {
+      continue;
+    }
+    const steps = stepsById.get(id) ?? new Set<string>();
+    steps.add(stepId);
+    stepsById.set(id, steps);
+  }
+  const metaOf = (part: TMessageContentParts): ToolMeta | null => {
+    if (part.type !== ContentTypes.TOOL_CALL) {
+      return null;
+    }
+    const { id } = toolCallIdentity(part);
+    const attachments = attachmentsByToolCallId?.[id];
+    const siblingSteps = stepsById.get(id);
+    const siblings = siblingSteps == null ? '' : Array.from(siblingSteps).join('|');
+    const cached = metaCache.get(part);
+    if (cached != null && cached.attachments === attachments && cached.siblings === siblings) {
+      return cached.meta;
+    }
+    const meta = getToolMeta(part, attachmentsByToolCallId, siblingSteps);
+    metaCache.set(part, { attachments, siblings, meta });
+    return meta;
+  };
+  let failed = 0;
+  let cancelled = 0;
+  for (const part of parts) {
+    const meta = part == null ? null : metaOf(part);
+    if (meta?.failed === true) {
+      failed += 1;
+    }
+    if (meta?.cancelled === true) {
+      cancelled += 1;
+    }
+  }
+  return { failed, cancelled, metaOf };
 }
