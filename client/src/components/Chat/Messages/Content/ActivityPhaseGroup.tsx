@@ -87,6 +87,18 @@ function PhaseGlyph({ failed }: { failed: boolean }) {
  * row while the new summary comes up from below, so the work visibly moves
  * into the line that now stands for it.
  */
+/**
+ * The shimmering text of a live line, on its own element. `.shimmer` declares
+ * `animation`, `position` and `display`, so sharing an element with the ticker
+ * would replace the slide with the sweep — the retired line would never leave,
+ * and would sit inline beside its successor. `align-top` keeps the inline box
+ * from adding descender space, which made a live row 2px taller than the
+ * settled row it becomes.
+ */
+function LiveLine({ text }: { text: string }) {
+  return <span className="shimmer max-w-full truncate align-top">{text}</span>;
+}
+
 const PhaseLabel = memo(function PhaseLabel({
   text,
   animate,
@@ -160,12 +172,13 @@ const PhaseLabel = memo(function PhaseLabel({
             'animate-out fade-out-0 slide-out-to-top-5 fill-mode-forwards',
             FOLD_EASING,
             failed && 'text-text-warning',
-            live && 'shimmer',
           )}
-          onAnimationEnd={clearRetired}
+          /** The sweep on the inner span loops forever and its `animationend`
+           *  never comes; only this element's own slide may clear the line. */
+          onAnimationEnd={(event) => event.target === event.currentTarget && clearRetired()}
           aria-hidden="true"
         >
-          {lines.retired}
+          {live ? <LiveLine text={lines.retired} /> : lines.retired}
         </span>
       )}
       <span
@@ -176,10 +189,9 @@ const PhaseLabel = memo(function PhaseLabel({
           'block truncate',
           lines.entered && `animate-in fade-in-0 slide-in-from-bottom-5 ${FOLD_EASING}`,
           failed && 'text-text-warning',
-          live && 'shimmer max-w-full',
         )}
       >
-        {lines.current}
+        {live ? <LiveLine text={lines.current} /> : lines.current}
       </span>
     </span>
   );
@@ -432,7 +444,7 @@ export default function ActivityPhaseGroup({
              *  keyboard users with no focus indicator. The ghost variant
              *  supplies it today; stating it here keeps the requirement with
              *  the element that depends on it. */
-            className="inline-flex h-auto min-h-7 w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-left font-medium text-text-secondary hover:bg-transparent hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-heavy focus-visible:ring-offset-0"
+            className="flex h-auto min-h-7 w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-left font-medium text-text-secondary hover:bg-transparent hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-heavy focus-visible:ring-offset-0"
             onClick={handleToggle}
             aria-expanded={isExpanded}
             aria-controls={panelId}
