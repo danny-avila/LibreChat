@@ -93,7 +93,9 @@ function AuthLayout({
             )}
         </div>
       </main>
-      <Footer startupConfig={startupConfig} />
+      {/* Registration states the same policies as the consent it is given
+          under, so the page does not carry both. */}
+      {!pathname.includes('register') && <Footer startupConfig={startupConfig} />}
     </div>
   );
 }

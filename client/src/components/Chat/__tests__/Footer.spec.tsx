@@ -53,4 +53,39 @@ describe('Footer', () => {
     expect(screen.getByRole('link', { name: 'Privacy policy' })).not.toHaveAttribute('target');
     expect(screen.getByRole('link', { name: 'Terms of service' })).not.toHaveAttribute('target');
   });
+
+  test('leaves the policy links behind once a conversation starts', () => {
+    render(
+      <Footer
+        configuredOnly
+        startupConfig={{
+          customFooter: 'Operator policy',
+          interface: {
+            privacyPolicy: { externalUrl: 'https://example.com/privacy' },
+            termsOfService: { externalUrl: 'https://example.com/terms' },
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Operator policy')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Privacy policy' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Terms of service' })).not.toBeInTheDocument();
+  });
+
+  test('places no bar in a conversation whose deployment configured only policies', () => {
+    const { container } = render(
+      <Footer
+        configuredOnly
+        startupConfig={{
+          interface: {
+            privacyPolicy: { externalUrl: 'https://example.com/privacy' },
+            termsOfService: { externalUrl: 'https://example.com/terms' },
+          },
+        }}
+      />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
 });

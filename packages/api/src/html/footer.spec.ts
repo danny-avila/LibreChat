@@ -11,35 +11,16 @@ const flagOf = (html: string): boolean | undefined => {
 };
 
 describe('injectConfiguredFooterBootstrap', () => {
-  it('answers yes for each kind of configured footer content', () => {
+  it('answers yes for the footer the deployment configured', () => {
     expect(flagOf(injectConfiguredFooterBootstrap(SHELL, { customFooter: 'Operator' }))).toBe(true);
-    expect(
-      flagOf(
-        injectConfiguredFooterBootstrap(SHELL, {
-          interfaceConfig: { privacyPolicy: { externalUrl: 'https://example.com/privacy' } },
-        }),
-      ),
-    ).toBe(true);
-    expect(
-      flagOf(
-        injectConfiguredFooterBootstrap(SHELL, {
-          interfaceConfig: { termsOfService: { externalUrl: 'https://example.com/terms' } },
-        }),
-      ),
-    ).toBe(true);
+    expect(flagOf(injectConfiguredFooterBootstrap(SHELL, { customFooter: '' }))).toBe(true);
   });
 
   it('answers no for a deployment that configured nothing', () => {
     expect(flagOf(injectConfiguredFooterBootstrap(SHELL, {}))).toBe(false);
     expect(flagOf(injectConfiguredFooterBootstrap(SHELL))).toBe(false);
-    expect(
-      flagOf(
-        injectConfiguredFooterBootstrap(SHELL, {
-          customFooter: undefined,
-          interfaceConfig: { privacyPolicy: {}, termsOfService: {} },
-        }),
-      ),
-    ).toBe(false);
+    expect(flagOf(injectConfiguredFooterBootstrap(SHELL, { customFooter: undefined }))).toBe(false);
+    expect(flagOf(injectConfiguredFooterBootstrap(SHELL, { customFooter: null }))).toBe(false);
   });
 
   it('places the answer ahead of the app that reads it', () => {
