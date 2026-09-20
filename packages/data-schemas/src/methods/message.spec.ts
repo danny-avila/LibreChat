@@ -1681,6 +1681,21 @@ describe('Message Operations', () => {
         status: 'claimed',
         claim: { kind: 'wakeup', claimId: 'delivery-1' },
       });
+      /** V1 producers have no completionReceipt marker, but the V1 resolver
+       * acquires resultClaim before delivery. A later batch must exclude it. */
+      await expect(
+        claimBackgroundToolResults({
+          userId: 'user123',
+          conversationId: mockMessageData.conversationId as string,
+          messageId: 'msg123',
+          taskId: 'task-3',
+          kind: 'wakeup',
+          claimId: 'delivery-2',
+        }),
+      ).resolves.toMatchObject({
+        status: 'acquired',
+        results: [{ taskId: 'task-3', output: 'three' }],
+      });
     });
 
     it.each([true, false])(
