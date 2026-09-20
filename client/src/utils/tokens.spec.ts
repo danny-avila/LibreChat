@@ -72,6 +72,76 @@ describe('token index', () => {
     clearIndex(Constants.NEW_CONVO);
   });
 
+  describe('last response cost', () => {
+    it('keeps the selected response separate from branch and conversation totals', () => {
+      buildIndex(CONVO, [
+        msg('u1', Constants.NO_PARENT, true, 10),
+        responseMsg('a1', 'u1', 50, USAGE_A),
+        msg('u2', 'a1', true, 20),
+        responseMsg('a2', 'u2', 80, USAGE_B),
+        responseMsg('a2-alt', 'u2', 50, USAGE_A),
+      ]);
+
+      expect(sumBranch(CONVO, 'a2').lastResponseCost).toBe(0.02);
+      expect(sumBranch(CONVO, 'a2').usage.cost).toBeCloseTo(0.03);
+      expect(sumBranch(CONVO, 'a2-alt').lastResponseCost).toBe(0.01);
+      expect(sumTotalUsage(CONVO).cost).toBeCloseTo(0.04);
+    });
+
+    it('does not fall back to an older price for an unpriced or user tail', () => {
+      buildIndex(CONVO, [
+        msg('u1', Constants.NO_PARENT, true, 10),
+        responseMsg('a1', 'u1', 50, USAGE_A),
+        msg('u2', 'a1', true, 20),
+        msg('a2', 'u2', false, 80),
+      ]);
+
+      expect(sumBranch(CONVO, 'a2').lastResponseCost).toBeUndefined();
+      expect(sumBranch(CONVO, 'u2').lastResponseCost).toBeUndefined();
+      expect(sumBranch(CONVO, 'missing').lastResponseCost).toBeUndefined();
+      expect(sumBranch(CONVO, null).lastResponseCost).toBeUndefined();
+    });
+
+    it.each([undefined, -1, NaN, Infinity])('withholds an unknown/invalid price: %s', (cost) => {
+      buildIndex(CONVO, [responseMsg('a1', Constants.NO_PARENT, 50, { ...USAGE_A, cost })]);
+
+      expect(sumBranch(CONVO, 'a1').lastResponseCost).toBeUndefined();
+    });
+
+    it('preserves a known zero cost', () => {
+      buildIndex(CONVO, [responseMsg('a1', Constants.NO_PARENT, 50, { ...USAGE_A, cost: 0 })]);
+
+      expect(sumBranch(CONVO, 'a1').lastResponseCost).toBe(0);
+    });
+
+    it('shows a priced tail even when an older response has no price', () => {
+      buildIndex(CONVO, [
+        responseMsg('a1', Constants.NO_PARENT, 50, { ...USAGE_A, cost: undefined }),
+        msg('u2', 'a1', true, 20),
+        responseMsg('a2', 'u2', 80, USAGE_B),
+      ]);
+
+      const totals = sumBranch(CONVO, 'a2');
+      expect(totals.usage.costKnown).toBe(false);
+      expect(totals.lastResponseCost).toBe(0.02);
+    });
+
+    it('reads flushed usage and restores the same price after a reload', () => {
+      const response = msg('a1', Constants.NO_PARENT, false, 50);
+      buildIndex(CONVO, [response]);
+      setEntryUsage(CONVO, 'a1', { ...USAGE_A, cost: 0.01, costKnown: true });
+      expect(sumBranch(CONVO, 'a1').lastResponseCost).toBe(0.01);
+
+      buildIndex(CONVO, [response]);
+      expect(sumBranch(CONVO, 'a1').lastResponseCost).toBe(0.01);
+
+      clearIndex(CONVO);
+      buildIndex(CONVO, [responseMsg('a1', Constants.NO_PARENT, 50, USAGE_A)]);
+      expect(sumBranch(CONVO, 'a1').lastResponseCost).toBe(0.01);
+      expect(sumTotalUsage(CONVO).cost).toBe(0.01);
+    });
+  });
+
   it('sums only the active branch via the parent chain', () => {
     buildIndex(CONVO, [
       msg('u1', Constants.NO_PARENT, true, 10),
