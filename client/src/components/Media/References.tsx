@@ -5,7 +5,7 @@ import type { MediaDraftForm } from './useMediaDraftForm';
 import { mediaInputRoleLabels } from './labels';
 import { MediaPreview } from './Asset';
 export function MediaReferences({ form }: { form: MediaDraftForm }) {
-  const { portal, localize, draft, automaticImage, capability, change } = form;
+  const { portal, localize, draft, automaticReference, capability, change } = form;
   return (
     draft.inputs.length > 0 && (
       <ul
@@ -28,9 +28,13 @@ export function MediaReferences({ form }: { form: MediaDraftForm }) {
                 </span>
               )}
               <div className="min-w-0 flex-1">
-                {automaticImage ? (
+                {automaticReference ? (
                   <p role="status" className="text-sm text-text-secondary">
-                    {localize('com_media_editing_latest')}
+                    {localize(
+                      draft.operation === 'video.generate'
+                        ? 'com_media_using_latest_video'
+                        : 'com_media_editing_latest',
+                    )}
                   </p>
                 ) : (
                   <ControlCombobox

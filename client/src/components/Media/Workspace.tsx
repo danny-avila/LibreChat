@@ -102,11 +102,12 @@ export default function MediaWorkspace({
     host.openThread('');
     focusComposer({ threadId: undefined });
   };
-  const { latestTurn, image } = useMemo(
+  const { latestTurn, image, video } = useMemo(
     () => mediaThreadContext(detail.data?.turns.items ?? []),
     [detail.data?.turns.items],
   );
   const imageContext = detail.data?.latestImageContext ?? image;
+  const videoContext = detail.data?.latestVideoContext ?? video;
   const hasDetail = !!detail.data;
   const hasCatalog = !!catalog.data;
   const studioTitle = localize('com_media_studio');
@@ -491,6 +492,7 @@ export default function MediaWorkspace({
       threadId={threadId}
       initialSelection={latestTurn?.selection}
       imageContext={imageContext}
+      videoContext={videoContext}
       send={commands.send}
       busy={commands.sending.size > 0}
       portal={!!settingsToggle}

@@ -1206,6 +1206,61 @@ describe('media persistence on standalone MongoDB', () => {
     expect(stored).not.toHaveProperty('cover');
   });
 
+  it.each(['image', 'video'] as const)(
+    'updates the default %s cover to the latest result while preserving explicit covers',
+    async (kind) => {
+      const type = kind === 'image' ? 'image/png' : 'video/mp4';
+      const first = await accepted('first-cover', { operation: `${kind}.generate` });
+      const initial = (await original('initial-cover', type)).asset;
+      const latest = (await original('latest-cover', type)).asset;
+      const complete = (job: MediaStoredJob, asset: typeof initial) =>
+        mongoose.models.MediaJob.updateOne(
+          { jobId: job.jobId },
+          {
+            $set: {
+              phase: 'succeeded',
+              outputs: [{ kind, outputId: job.jobId, ordinal: 0, state: 'ready', asset }],
+            },
+          },
+        );
+      await complete(first, initial);
+      expect((await methods.getMediaThread(scope, first.threadId))?.cover).toEqual(initial);
+      const second = await accepted('second-cover', {
+        operation: `${kind}.generate`,
+        threadId: first.threadId,
+      });
+      const gallery = async () =>
+        (await methods.listMediaThreads({ scope, limit: 10, include: 'activity' })).items[0];
+      // Keep the last usable result while a follow-up is running.
+      expect((await gallery()).cover).toEqual(initial);
+      await complete(second, latest);
+      // A stored default from an older server must not hide the latest result in history.
+      expect((await gallery()).cover).toEqual(latest);
+      const restored = (await methods.getMediaThread(scope, first.threadId))!;
+      expect(restored.cover).toEqual(latest);
+      expect(await methods.getMediaThread(scope, first.threadId)).toEqual(restored);
+      // An older job completing later must not replace the newer generation's cover.
+      await complete(first, initial);
+      expect((await gallery()).cover).toEqual(latest);
+      expect((await methods.getMediaThread(scope, first.threadId))?.cover).toEqual(latest);
+      await methods.retainMediaThreadAsset({
+        scope,
+        threadId: first.threadId,
+        fileId: initial.file_id,
+        maxRetainers: options.maxRetainers,
+      });
+      const current = (await methods.getMediaThread(scope, first.threadId))!;
+      await methods.updateMediaThread({
+        scope,
+        threadId: first.threadId,
+        expectedVersion: current.version,
+        coverFileId: initial.file_id,
+      });
+      expect((await gallery()).cover).toEqual(initial);
+      expect((await methods.getMediaThread(scope, first.threadId))?.cover).toEqual(initial);
+    },
+  );
+
   it('filters and paginates gallery results by saved output instead of treating failures as completed', async () => {
     const { asset } = await original();
     const ready = await accepted('ready-gallery');
@@ -2165,87 +2220,101 @@ describe('media persistence on standalone MongoDB', () => {
     expect(await mongoose.models.File.exists({ file_id: asset.file_id })).not.toBeNull();
   });
 
-  it('finds the latest live image beyond a page of failed turns and includes imported originals', async () => {
-    const job = await accepted('image-context', { parameters: { count: 2 } });
-    const { asset } = await original('context-image');
-    await mongoose.models.MediaJob.updateOne(
-      { jobId: job.jobId },
-      {
-        $set: {
-          phase: 'succeeded',
-          provider: { certainty: 'terminal' },
-          outputs: [{ kind: 'image', ordinal: 0, outputId: 'image', state: 'ready', asset }],
-        },
-        $unset: { activeSlot: 1 },
-      },
-    );
-    for (let index = 0; index < 25; index++) {
-      const failed = await accepted(`failed-image-${index}`, { threadId: job.threadId });
+  it.each(['image', 'video'] as const)(
+    'finds the latest live %s beyond a page of failed turns and includes imported originals',
+    async (kind) => {
+      const type = kind === 'image' ? 'image/png' : 'video/mp4';
+      const latestContext =
+        kind === 'image' ? methods.getMediaLatestImageContext : methods.getMediaLatestVideoContext;
+      const job = await accepted('image-context', {
+        operation: `${kind}.generate`,
+        parameters: { count: 2 },
+      });
+      const { asset } = await original('context-asset', type);
       await mongoose.models.MediaJob.updateOne(
-        { jobId: failed.jobId },
+        { jobId: job.jobId },
         {
-          $set: { phase: 'failed', provider: { certainty: 'terminal' } },
+          $set: {
+            phase: 'succeeded',
+            provider: { certainty: 'terminal' },
+            outputs: [{ kind, ordinal: 0, outputId: 'image', state: 'ready', asset }],
+          },
           $unset: { activeSlot: 1 },
         },
       );
-    }
-    const firstPage = await methods.listMediaTurns({
-      scope,
-      threadId: job.threadId,
-      limit: 24,
-      jobsPerTurn: 4,
-    });
-    expect(firstPage.items.map((turn) => turn.sequence)).toEqual(
-      Array.from({ length: 24 }, (_, index) => 26 - index),
-    );
-    expect(firstPage.items.some((turn) => turn.turnId === job.turnId)).toBe(false);
-    expect(await methods.getMediaLatestImageContext({ scope, threadId: job.threadId })).toEqual({
-      turnId: job.turnId,
-      asset,
-    });
-    const appended = await accepted('appended-during-pagination', { threadId: job.threadId });
-    const secondPage = await methods.listMediaTurns({
-      scope,
-      threadId: job.threadId,
-      limit: 24,
-      jobsPerTurn: 4,
-      cursor: firstPage.nextCursor,
-    });
-    expect(secondPage.items.map((turn) => turn.sequence)).toEqual([2, 1]);
-    expect(secondPage.items[1]).toMatchObject({ parameters: { count: 2 } });
-    expect(secondPage.items.some((turn) => turn.turnId === appended.turnId)).toBe(false);
-    const imported = await original('context-import');
-    const receipt = await methods.stageMediaImport({
-      scope,
-      request: {
-        clientRequestId: 'context-import',
-        schemaVersion: 1,
+      for (let index = 0; index < 25; index++) {
+        const failed = await accepted(`failed-image-${index}`, { threadId: job.threadId });
+        await mongoose.models.MediaJob.updateOne(
+          { jobId: failed.jobId },
+          {
+            $set: { phase: 'failed', provider: { certainty: 'terminal' } },
+            $unset: { activeSlot: 1 },
+          },
+        );
+      }
+      const firstPage = await methods.listMediaTurns({
+        scope,
         threadId: job.threadId,
-        inputs: [{ role: 'reference', file_id: imported.asset.file_id }],
-      },
-    });
-    await methods.publishMediaImport(scope, receipt.turnId, options);
-    expect(await methods.getMediaLatestImageContext({ scope, threadId: job.threadId })).toEqual({
-      turnId: receipt.turnId,
-      asset: imported.asset,
-    });
-    await mongoose.models.File.collection.updateOne(
-      { file_id: imported.asset.file_id },
-      { $set: { mediaHardExpiresAt: new Date(0) } },
-    );
-    expect(await methods.getMediaLatestImageContext({ scope, threadId: job.threadId })).toEqual({
-      turnId: job.turnId,
-      asset,
-    });
-    expect(
-      await methods.getMediaLatestImageContext({
-        scope: { ...scope, ownerId: new mongoose.Types.ObjectId().toString() },
+        limit: 24,
+        jobsPerTurn: 4,
+      });
+      expect(firstPage.items.map((turn) => turn.sequence)).toEqual(
+        Array.from({ length: 24 }, (_, index) => 26 - index),
+      );
+      expect(firstPage.items.some((turn) => turn.turnId === job.turnId)).toBe(false);
+      expect(await latestContext({ scope, threadId: job.threadId })).toEqual({
+        turnId: job.turnId,
+        asset,
+      });
+      const appended = await accepted('appended-during-pagination', { threadId: job.threadId });
+      const secondPage = await methods.listMediaTurns({
+        scope,
         threadId: job.threadId,
-      }),
-    ).toBeNull();
-    await methods.retireMediaThread(scope, job.threadId);
-    expect(await methods.getMediaLatestImageContext({ scope, threadId: job.threadId })).toBeNull();
-  });
+        limit: 24,
+        jobsPerTurn: 4,
+        cursor: firstPage.nextCursor,
+      });
+      expect(secondPage.items.map((turn) => turn.sequence)).toEqual([2, 1]);
+      expect(secondPage.items[1]).toMatchObject({
+        operation: `${kind}.generate`,
+        parameters: { count: 2 },
+      });
+      expect(secondPage.items.some((turn) => turn.turnId === appended.turnId)).toBe(false);
+      const imported = await original('context-import', type);
+      const receipt = await methods.stageMediaImport({
+        scope,
+        request: {
+          clientRequestId: 'context-import',
+          schemaVersion: 1,
+          threadId: job.threadId,
+          inputs: [
+            { role: kind === 'image' ? 'reference' : 'video', file_id: imported.asset.file_id },
+          ],
+        },
+      });
+      await methods.publishMediaImport(scope, receipt.turnId, options);
+      expect(await latestContext({ scope, threadId: job.threadId })).toEqual({
+        turnId: receipt.turnId,
+        asset: imported.asset,
+      });
+      await mongoose.models.File.collection.updateOne(
+        { file_id: imported.asset.file_id },
+        { $set: { mediaHardExpiresAt: new Date(0) } },
+      );
+      expect(await latestContext({ scope, threadId: job.threadId })).toEqual({
+        turnId: job.turnId,
+        asset,
+      });
+      expect(
+        await latestContext({
+          scope: { ...scope, ownerId: new mongoose.Types.ObjectId().toString() },
+          threadId: job.threadId,
+        }),
+      ).toBeNull();
+      await methods.retireMediaThread(scope, job.threadId);
+      expect(await latestContext({ scope, threadId: job.threadId })).toBeNull();
+    },
+  );
 
   it('shares expiry selection while separately repairing interrupted unexpired deletions', async () => {
     const expired = (await original('expired-shared')).asset;

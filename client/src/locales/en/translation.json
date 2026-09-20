@@ -3199,6 +3199,8 @@
   "com_media_open_gallery": "Generation history",
   "com_media_columns": "Cards per row",
   "com_media_editing_latest": "Editing the latest image",
+  "com_media_using_latest_video": "Using the latest video as a reference",
+  "com_media_video_model_required": "Choose a model that supports video references, or remove the reference to start a new video.",
   "com_media_edit_model_required": "Choose a model that supports image editing, or remove the reference to start a new image.",
   "com_media_output_compression": "Output compression",
   "com_media_strength": "Strength",

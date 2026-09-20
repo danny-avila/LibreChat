@@ -11,6 +11,7 @@ import {
   mediaThreadUpdateSchema,
   mediaPageRequestSchema,
   mediaThreadListRequestSchema,
+  mediaThreadDetailRequestSchema,
   mediaThreadsDeleteRequestSchema,
   mediaPresetWriteSchema,
   mediaPresetUpdateSchema,
@@ -235,7 +236,13 @@ export function createMediaRouter({
   );
   router.get(
     '/threads/:threadId',
-    handle((req, context) => services.queries.thread(param(req, 'threadId'), context)),
+    handle((req, context) =>
+      services.queries.thread(
+        param(req, 'threadId'),
+        context,
+        mediaThreadDetailRequestSchema.parse(req.query),
+      ),
+    ),
   );
   router.get(
     '/threads/:threadId/turns',

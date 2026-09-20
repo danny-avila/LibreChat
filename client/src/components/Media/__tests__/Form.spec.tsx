@@ -759,6 +759,127 @@ test('a completed image becomes the edit target without erasing a prompt typed w
   });
 });
 
+test('video follow-ups use the latest result, preserve a typed prompt and allow starting fresh', async () => {
+  const env = setup();
+  const choices = makeCatalog({
+    offerings: [
+      {
+        ...catalog.offerings[0],
+        api: 'google.vertex.videos',
+        capabilities: [
+          {
+            operation: 'video.generate',
+            inputs: { roles: ['video'], min: 0, max: 1 },
+            execution: { kind: 'remote-job', cancellation: 'unsupported' },
+            controls: {
+              count: { min: 1, max: 1 },
+              durationSeconds: { min: 4, max: 7, values: [4, 7], default: 4 },
+            },
+            constraints: [
+              {
+                when: [{ kind: 'input', role: 'video', present: true }],
+                anyOf: [{ kind: 'parameter', name: 'durationSeconds', values: [7] }],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+  const props = { catalog: choices, threadId: 'thread', send: env.send, busy: false };
+  const view = render(<MediaForm {...props} />, { wrapper: env.wrapper });
+  const prompt = screen.getByRole('textbox', { name: 'com_media_prompt' });
+  fireEvent.change(prompt, { target: { value: 'Follow the boat past the lighthouse' } });
+  const asset = {
+    file_id: 'latest-video',
+    filename: 'video.mp4',
+    filepath: '/api/media/assets/latest-video/content',
+    type: 'video/mp4',
+    bytes: 10,
+  };
+  view.rerender(<MediaForm {...props} videoContext={{ turnId: 'latest-turn', asset }} />);
+  expect(prompt).toHaveValue('Follow the boat past the lighthouse');
+  expect(screen.getByText('com_media_using_latest_video')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
+  expect(env.send.mock.calls[0][0].request).toMatchObject({
+    operation: 'video.generate',
+    threadId: 'thread',
+    parentTurnId: 'latest-turn',
+    prompt: 'Follow the boat past the lighthouse',
+    inputs: [{ role: 'video', file_id: asset.file_id }],
+    parameters: { durationSeconds: 7 },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_remove_reference' }));
+  view.rerender(
+    <MediaForm
+      {...props}
+      videoContext={{ turnId: 'next-turn', asset: { ...asset, file_id: 'next-video' } }}
+    />,
+  );
+  expect(screen.queryByText('com_media_using_latest_video')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  await waitFor(() => expect(env.send).toHaveBeenCalledTimes(2));
+  expect(env.send.mock.calls[1][0].request).toMatchObject({
+    inputs: [],
+    parameters: { durationSeconds: 4 },
+  });
+  expect(env.send.mock.calls[1][0].request.parentTurnId).toBeUndefined();
+});
+
+test.each(['unsupported', 'hosted'] as const)(
+  'a %s video model cannot silently omit the previous result',
+  (mode) => {
+    const env = setup();
+    const choices = makeCatalog({
+      offerings: [
+        {
+          ...catalog.offerings[0],
+          capabilities: [
+            {
+              operation: 'video.generate',
+              inputs:
+                mode === 'hosted'
+                  ? { roles: ['video'], hostedRoles: ['video'], min: 0, max: 1 }
+                  : { roles: [], min: 0, max: 0 },
+              execution: { kind: 'remote-job', cancellation: 'unsupported' },
+              controls: { count: { min: 1, max: 1 } },
+            },
+          ],
+        },
+      ],
+    });
+    render(
+      <MediaForm
+        {...{ catalog: choices, threadId: 'thread', send: env.send, busy: false }}
+        videoContext={{
+          turnId: 'parent',
+          asset: {
+            file_id: 'video',
+            filename: 'video.mp4',
+            filepath: '/video.mp4',
+            type: 'video/mp4',
+            bytes: 10,
+          },
+        }}
+      />,
+      { wrapper: env.wrapper },
+    );
+    fireEvent.change(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
+      target: { value: 'Continue the scene' },
+    });
+    expect(
+      screen.getByText(
+        mode === 'hosted' ? 'com_media_reference_needs_url' : 'com_media_video_model_required',
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
+    expect(env.send).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'com_media_remove_reference' }));
+    expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeEnabled();
+  },
+);
+
 test('a model without editing support cannot silently send a follow-up without its image', () => {
   const env = setup();
   render(

@@ -28,6 +28,7 @@ import type {
   MediaSubmissionReceipt,
   MediaImportReceipt,
   MediaThreadListRequest,
+  MediaThreadDetailRequest,
   MediaThreadUpdate,
   MediaThreadsDeleteRequest,
   MediaThreadsDeletionReceipt,
@@ -248,7 +249,11 @@ export interface MediaServices {
   queries: {
     catalog(context: MediaContext): Promise<MediaCatalog>;
     threads(query: MediaThreadListRequest, context: MediaContext): Promise<MediaPage<MediaThread>>;
-    thread(threadId: string, context: MediaContext): Promise<MediaThreadDetail>;
+    thread(
+      threadId: string,
+      context: MediaContext,
+      query?: MediaThreadDetailRequest,
+    ): Promise<MediaThreadDetail>;
     turns(
       threadId: string,
       cursor: string | undefined,
@@ -769,9 +774,9 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
           search: query.search,
         });
       },
-      async thread(threadId: string, context: MediaContext) {
+      async thread(threadId: string, context: MediaContext, query: MediaThreadDetailRequest = {}) {
         assertMediaAccess(context);
-        const [thread, turns, latestImageContext] = await Promise.all([
+        const [thread, turns, latestImageContext, latestVideoContext] = await Promise.all([
           deps.repository.getMediaThread(context.scope, threadId),
           deps.repository.listMediaTurns({
             scope: context.scope,
@@ -780,11 +785,19 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
             jobsPerTurn: pageLimit(context),
           }),
           deps.repository.getMediaLatestImageContext({ scope: context.scope, threadId }),
+          query.include === 'videoContext'
+            ? deps.repository.getMediaLatestVideoContext({ scope: context.scope, threadId })
+            : undefined,
         ]);
         if (!thread) {
           throw new MediaServiceError('not_found', 404, 'The thread is unavailable.');
         }
-        return { thread, turns, latestImageContext: latestImageContext ?? undefined };
+        return {
+          thread,
+          turns,
+          latestImageContext: latestImageContext ?? undefined,
+          latestVideoContext: latestVideoContext ?? undefined,
+        };
       },
       async turns(
         threadId: string,

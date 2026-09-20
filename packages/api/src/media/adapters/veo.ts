@@ -39,9 +39,28 @@ export function vertexVideoCapabilities(modelId: string, config: MediaConfig): M
           anyOf: [{ kind: 'parameter', name: 'durationSeconds', values: [8] }],
         },
         {
-          when: [{ kind: 'parameter', name: 'resolution', values: ['4k'] }],
+          when: [
+            { kind: 'parameter', name: 'resolution', values: ['4k'] },
+            { kind: 'input', role: 'video', present: false },
+          ],
           anyOf: [{ kind: 'parameter', name: 'durationSeconds', values: [8] }],
         },
+        {
+          when: [{ kind: 'input', role: 'video', present: true }],
+          anyOf: [{ kind: 'parameter', name: 'durationSeconds', values: [7] }],
+        },
+        {
+          when: [{ kind: 'input', role: 'video', present: false }],
+          anyOf: [{ kind: 'parameter', name: 'durationSeconds', values: [4, 6, 8] }],
+        },
+        {
+          when: [{ kind: 'input', role: 'video', present: true }],
+          anyOf: [{ kind: 'input', role: 'video', present: true, max: 1 }],
+        },
+        ...(['start_frame', 'end_frame', 'reference'] as const).map((role) => ({
+          when: [{ kind: 'input' as const, role: 'video' as const, present: true }],
+          anyOf: [{ kind: 'input' as const, role, present: false }],
+        })),
         {
           when: [{ kind: 'input', role: 'end_frame', present: true }],
           anyOf: [{ kind: 'input', role: 'start_frame', present: true }],
@@ -57,20 +76,22 @@ export function vertexVideoCapabilities(modelId: string, config: MediaConfig): M
       ],
       inputs: {
         roles: nativeModel(modelId).includes('lite')
-          ? ['start_frame', 'end_frame']
-          : ['start_frame', 'end_frame', 'reference'],
+          ? ['start_frame', 'end_frame', 'video']
+          : ['start_frame', 'end_frame', 'reference', 'video'],
         min: 0,
+        mediaTypes: { video: ['video/mp4'] },
         maxBytes: {
           reference: 20 * 1024 * 1024,
           start_frame: 20 * 1024 * 1024,
           end_frame: 20 * 1024 * 1024,
+          video: config.transfers.maxVideoBytes,
         },
         max: Math.min(nativeModel(modelId).includes('lite') ? 2 : 3, config.limits.maxInputs),
       },
       execution: { kind: 'remote-job', cancellation: 'unsupported' },
       controls: {
         count: { min: 1, max: Math.min(4, config.limits.maxOutputs) },
-        durationSeconds: { min: 4, max: 8, values: [4, 6, 8], default: 4 },
+        durationSeconds: { min: 4, max: 8, values: [4, 6, 7, 8], default: 4 },
         resolution: {
           values:
             nativeModel(modelId) === 'veo-3.1-generate-001'
@@ -133,6 +154,7 @@ export function createVertexVideoAdapter(): MediaProviderAdapter {
       const references = inputs.filter((input) => input.role === 'reference');
       const first = inputs.filter((input) => input.role === 'start_frame');
       const last = inputs.filter((input) => input.role === 'end_frame');
+      const video = inputs.find((input) => input.role === 'video');
       const parameters = nativeParameters(
         request,
         inputs,
@@ -143,16 +165,18 @@ export function createVertexVideoAdapter(): MediaProviderAdapter {
       const resolution = parameters.resolution ?? '720p';
       if (
         inputs.length > Math.min(3, context.config.limits.maxInputs) ||
-        inputs.some(
-          (input) =>
-            !['reference', 'start_frame', 'end_frame'].includes(input.role) ||
-            !['image/png', 'image/jpeg', 'image/webp'].includes(input.type) ||
-            input.data.length > 20 * 1024 * 1024,
+        inputs.some((input) =>
+          input.role === 'video'
+            ? input.type !== 'video/mp4' ||
+              input.data.length > context.config.transfers.maxVideoBytes
+            : !['reference', 'start_frame', 'end_frame'].includes(input.role) ||
+              !['image/png', 'image/jpeg', 'image/webp'].includes(input.type) ||
+              input.data.length > 20 * 1024 * 1024,
         ) ||
         first.length > 1 ||
         last.length > 1 ||
         (references.length && model.includes('lite')) ||
-        ![4, 6, 8].includes(duration) ||
+        !(video ? [7] : [4, 6, 8]).includes(duration) ||
         !['720p', '1080p', ...(model === 'veo-3.1-generate-001' ? ['4k'] : [])].includes(
           resolution,
         ) ||
@@ -185,11 +209,16 @@ export function createVertexVideoAdapter(): MediaProviderAdapter {
             image: firstImage,
             lastFrame: lastImage,
             referenceImages: references.length ? referenceImages : undefined,
+            video: video
+              ? { bytesBase64Encoded: video.data.toString('base64'), mimeType: video.type }
+              : undefined,
           },
         ],
         parameters: {
           sampleCount: parameters.count,
-          durationSeconds: duration,
+          // Veo extension always adds seven seconds; omitting duration uses that native contract.
+          durationSeconds: video ? undefined : duration,
+          task: video ? 'extend' : undefined,
           aspectRatio: parameters.aspectRatio ?? '16:9',
           resolution,
           generateAudio: parameters.audio ?? false,

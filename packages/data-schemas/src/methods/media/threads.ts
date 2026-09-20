@@ -31,6 +31,7 @@ export function createMediaThreadsMethods({
   | 'listMediaTurnJobs'
   | 'listMediaTurns'
   | 'getMediaLatestImageContext'
+  | 'getMediaLatestVideoContext'
   | 'replaceMediaThreadTitle'
   | 'updateMediaThread'
 > {
@@ -42,16 +43,20 @@ export function createMediaThreadsMethods({
       Job.countDocuments({ ...acceptedJobs, phase: { $nin: terminal } }),
       Turn.countDocuments({ ...owner, threadId, publicationPhase: 'accepted' }),
       Job.findOne({ ...acceptedJobs, outputs: { $elemMatch: readyAssetOutput } })
-        .sort({ createdAt: 1, jobId: 1 })
+        .sort({ createdAt: -1, jobId: -1 })
         .select({ outputs: 1 })
         .lean<Pick<MediaStoredJob, 'outputs'> | null>(),
     ]);
     if (!thread) {
       return null;
     }
-    const cover =
-      !thread.cover && !thread.coverExplicit ? firstReadyAsset(coverJob?.outputs) : undefined;
-    if (pendingJobCount === thread.pendingJobCount && turnCount === thread.turnCount && !cover) {
+    const cover = !thread.coverExplicit ? firstReadyAsset(coverJob?.outputs) : undefined;
+    const coverChanged = cover && cover.file_id !== thread.cover?.file_id;
+    if (
+      pendingJobCount === thread.pendingJobCount &&
+      turnCount === thread.turnCount &&
+      !coverChanged
+    ) {
       return threadView(thread);
     }
     // Job completion and its advisory projection are separate writes on standalone Mongo.
@@ -164,7 +169,7 @@ export function createMediaThreadsMethods({
             let: { threadId: '$threadId' },
             pipeline: [
               { $match: { ...correlated, outputs: { $elemMatch: readyAssetOutput } } },
-              { $sort: { createdAt: 1, jobId: 1 } },
+              { $sort: { createdAt: -1, jobId: -1 } },
               { $limit: 1 },
               { $project: { _id: 0, outputs: 1 } },
             ],
@@ -187,9 +192,9 @@ export function createMediaThreadsMethods({
       return {
         items: rows.slice(0, limit).map((thread) => {
           const [projected] = thread.jobs;
-          const cover =
-            thread.cover ??
-            (!thread.coverExplicit ? firstReadyAsset(thread.covers[0]?.outputs) : undefined);
+          const cover = thread.coverExplicit
+            ? thread.cover
+            : (firstReadyAsset(thread.covers[0]?.outputs) ?? thread.cover);
           return {
             ...threadView({ ...thread, cover }),
             pendingJobCount: projected?.pending ?? 0,
@@ -392,16 +397,16 @@ export function createMediaThreadsMethods({
     };
   };
 
-  const getMediaLatestImageContext: MediaMethods['getMediaLatestImageContext'] = async ({
-    scope: inputScope,
-    threadId,
-  }) => {
+  const getLatestAssetContext = async (
+    { scope: inputScope, threadId }: Parameters<MediaMethods['getMediaLatestImageContext']>[0],
+    kind: 'image' | 'video',
+  ) => {
     const scope = scopeFilter(inputScope);
     const liveFile = {
       user: new mongoose.Types.ObjectId(scope.ownerId),
       tenantId: scope.tenantId,
       mediaLifecycle: 'live',
-      type: /^image\//,
+      type: kind === 'image' ? /^image\// : /^video\//,
       $or: [{ mediaHardExpiresAt: null }, { mediaHardExpiresAt: { $gt: new Date() } }],
     };
     const [context] = await Thread.aggregate<{ turnId: string; file: MediaAssetContent }>([
@@ -437,7 +442,7 @@ export function createMediaThreadsMethods({
                   { $unwind: '$outputs' },
                   {
                     $match: {
-                      'outputs.kind': 'image',
+                      'outputs.kind': kind,
                       'outputs.state': 'ready',
                       'outputs.asset.file_id': { $exists: true },
                     },
@@ -459,7 +464,7 @@ export function createMediaThreadsMethods({
                   { $limit: 1 },
                   { $project: { _id: 0, file: 1 } },
                 ],
-                as: 'images',
+                as: 'results',
               },
             },
             {
@@ -487,7 +492,7 @@ export function createMediaThreadsMethods({
               $addFields: {
                 file: {
                   $ifNull: [
-                    { $arrayElemAt: ['$images.file', 0] },
+                    { $arrayElemAt: ['$results.file', 0] },
                     { $arrayElemAt: ['$imports', 0] },
                   ],
                 },
@@ -505,6 +510,10 @@ export function createMediaThreadsMethods({
     ]);
     return context ? { turnId: context.turnId, asset: toMediaAsset(context.file) } : null;
   };
+  const getMediaLatestImageContext: MediaMethods['getMediaLatestImageContext'] = (input) =>
+    getLatestAssetContext(input, 'image');
+  const getMediaLatestVideoContext: MediaMethods['getMediaLatestVideoContext'] = (input) =>
+    getLatestAssetContext(input, 'video');
 
   const replaceMediaThreadTitle: MediaMethods['replaceMediaThreadTitle'] = async (input) => {
     const result = await Thread.updateOne(
@@ -579,6 +588,7 @@ export function createMediaThreadsMethods({
     listMediaTurnJobs,
     listMediaTurns,
     getMediaLatestImageContext,
+    getMediaLatestVideoContext,
     replaceMediaThreadTitle,
     updateMediaThread,
   };

@@ -23,12 +23,13 @@ function Settings({
   threadId?: string;
   detail?: MediaThreadDetail;
 }) {
-  const { latestTurn, image } = mediaThreadContext(detail?.turns.items ?? []);
+  const { latestTurn, image, video } = mediaThreadContext(detail?.turns.items ?? []);
   const form = useMediaDraftForm({
     catalog,
     threadId,
     initialSelection: latestTurn?.selection,
     imageContext: detail?.latestImageContext ?? image,
+    videoContext: detail?.latestVideoContext ?? video,
     portal: true,
     normalizeDraft: false,
   });

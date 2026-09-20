@@ -172,9 +172,18 @@ test('sidebar studio queues, restores, refines and hands an original to chat', a
     timeout: 20_000,
   });
   expect(page.url()).toBe(threadURL);
+  const latestPath = await page
+    .getByRole('link', { name: 'Download original' })
+    .last()
+    .getAttribute('href');
+  expect(latestPath).not.toBe(originalPath);
   await page.screenshot({ path: testInfo.outputPath('studio.png'), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await header.getByRole('button', { name: 'Generation history', exact: true }).click();
+  await expect(tile.getByRole('img', { name: 'Image preview' })).toHaveAttribute(
+    'src',
+    `${latestPath}?rendition=thumbnail`,
+  );
   await expect(prompt).not.toBeVisible();
   await page.getByTestId('studio-open-sidebar-button').click();
   await expect(page.getByTestId('close-sidebar-button')).toBeFocused();
@@ -251,13 +260,21 @@ test('library title search, independent result drafts and deletion controls rema
   const deleteCreation = page.getByRole('button', { name: `Delete ${original}`, exact: true });
   await deleteCreation.click();
   const selectedDialog = page.getByRole('dialog', { name: 'Delete this creation?' });
+  await expect(selectedDialog).toBeVisible();
+  expect((await selectedDialog.boundingBox())!.width).toBeLessThanOrEqual(448);
   await expectAccessible(page);
   await selectedDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(selectedDialog).toHaveCount(0);
   await expect(deleteCreation).toBeFocused();
+  await page.setViewportSize({ width: 390, height: 844 });
   await deleteCreation.click();
+  const mobileDialog = (await selectedDialog.boundingBox())!;
+  expect(mobileDialog.width).toBeLessThan(390);
+  expect(mobileDialog.x).toBeGreaterThan(0);
+  expect(mobileDialog.x + mobileDialog.width).toBeLessThan(390);
   await selectedDialog.getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(selectedDialog).toHaveCount(0);
+  await page.setViewportSize({ width: 1280, height: 720 });
   await expect(page.getByRole('button', { name: `Open ${original}`, exact: true })).toHaveCount(0);
   await search.fill('');
   await expect(page.getByRole('button', { name: `Open ${derived}`, exact: true })).toBeVisible();

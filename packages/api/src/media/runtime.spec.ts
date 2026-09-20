@@ -97,6 +97,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
   const referenceURL = 'https://media-fixture.example/reference';
   let vertexToken = 'access-1';
   let vertexAuthorizations: Array<string | undefined> = [];
+  let vertexBodies: unknown[] = [];
   const vertexApi = 'https://us-central1-aiplatform.googleapis.com/v1';
   const vertexModel = 'veo-3.1-fast-generate-001';
   const vertexOperation = `projects/test-project/locations/us-central1/publishers/google/models/${vertexModel}/operations/vertex-job-1`;
@@ -274,12 +275,19 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
         vertexAuthorizations.push(req.headers.authorization);
         if (req.params.action === `${vertexModel}:predictLongRunning`) {
           posts++;
-          res.json({ name: vertexOperation });
+          vertexBodies.push(req.body);
+          res.json({
+            name: vertexOperation.replace('vertex-job-1', `vertex-job-${vertexBodies.length}`),
+          });
           return;
         }
         if (
           req.params.action !== `${vertexModel}:fetchPredictOperation` ||
-          req.body.operationName !== vertexOperation
+          !vertexBodies.some(
+            (_, index) =>
+              req.body.operationName ===
+              vertexOperation.replace('vertex-job-1', `vertex-job-${index + 1}`),
+          )
         ) {
           res.status(400).json({ error: 'Unexpected Vertex operation' });
           return;
@@ -289,7 +297,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
         bytes.write('ftyp', 4);
         bytes.write('mp42', 8);
         res.json({
-          name: vertexOperation,
+          name: req.body.operationName,
           done: true,
           response: {
             videos: [{ mimeType: 'video/mp4', bytesBase64Encoded: bytes.toString('base64') }],
@@ -354,6 +362,7 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     holdReference = undefined;
     vertexToken = 'access-1';
     vertexAuthorizations = [];
+    vertexBodies = [];
     behavior = 'image';
     userRole = 'USER';
     banned = false;
@@ -1771,6 +1780,62 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
         (await request(app).get(`/api/media/jobs/${response.body.jobId}`).expect(200)).body,
       ),
     ).not.toMatch(/Bearer|fixture-auth|original-service-account/);
+  });
+
+  it('restores a video reference for an opted-in client and sends its original bytes in a follow-up', async () => {
+    const catalog = mediaCatalogSchema.parse((await request(app).get('/api/media/catalog')).body);
+    const selection = {
+      connectionId: 'vertex',
+      modelId: vertexModel,
+      catalogVersion: catalog.version,
+    };
+    const first = await submit('initial-video', { operation: 'video.generate', selection });
+    expect(first.status).toBe(202);
+    await run(first.body.jobId);
+    const completed = await run(first.body.jobId);
+    expect(completed?.phase).toBe('succeeded');
+    const output = completed!.outputs[0];
+    if (output.kind !== 'video' || output.state !== 'ready') throw new Error('Missing video');
+    const legacy = await request(app).get(`/api/media/threads/${first.body.threadId}`).expect(200);
+    expect(
+      mediaThreadDetailSchema.omit({ latestVideoContext: true }).safeParse(legacy.body).success,
+    ).toBe(true);
+    expect(legacy.body).not.toHaveProperty('latestVideoContext');
+    const restored = await request(app)
+      .get(`/api/media/threads/${first.body.threadId}`)
+      .query({ include: 'videoContext' })
+      .expect(200);
+    const context = mediaThreadDetailSchema.parse(restored.body).latestVideoContext!;
+    expect(context).toEqual({ turnId: first.body.turnId, asset: output.asset });
+    const followUp = await submit('follow-up-video', {
+      operation: 'video.generate',
+      selection,
+      threadId: first.body.threadId,
+      parentTurnId: context.turnId,
+      prompt: 'Continue following the boat',
+      inputs: [{ role: 'video', file_id: context.asset.file_id }],
+    });
+    expect(followUp.status).toBe(202);
+    const runningFollowUp = await run(followUp.body.jobId);
+    expect({
+      phase: runningFollowUp?.phase,
+      errors: logged.map((error) =>
+        error.cause instanceof Error ? error.cause.message : error.message,
+      ),
+    }).toEqual({ phase: 'running', errors: [] });
+    const bytes = Buffer.alloc(32);
+    bytes.write('ftyp', 4);
+    bytes.write('mp42', 8);
+    expect(vertexBodies[1]).toMatchObject({
+      instances: [
+        {
+          prompt: 'Continue following the boat',
+          video: { mimeType: 'video/mp4', bytesBase64Encoded: bytes.toString('base64') },
+        },
+      ],
+      parameters: { task: 'extend' },
+    });
+    expect(posts).toBe(2);
   });
 
   it('recovers a direct original committed before its acknowledgment without a second inference', async () => {

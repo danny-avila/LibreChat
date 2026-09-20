@@ -55,6 +55,7 @@ export function MediaDeleteDialog({
   return (
     <OGDialog open={open} onOpenChange={changeOpen}>
       <OGDialogContent
+        className="w-11/12 max-w-md"
         onOpenAutoFocus={() => {
           const activeElement = document.activeElement;
           trigger.current = activeElement instanceof HTMLElement ? activeElement : null;

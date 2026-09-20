@@ -9,6 +9,7 @@ import type {
   MediaImportRequest,
   MediaIntegration,
   MediaImageContext,
+  MediaAssetContext,
   MediaJob,
   MediaOutput,
   MediaSubmissionReceipt,
@@ -335,6 +336,10 @@ export interface MediaMethods {
     scope: MediaOwnerScope;
     threadId: string;
   }): Promise<MediaImageContext | null>;
+  getMediaLatestVideoContext(input: {
+    scope: MediaOwnerScope;
+    threadId: string;
+  }): Promise<MediaAssetContext | null>;
   listMediaTurnJobs(
     input: MediaPageInput & { turnId: string; threadId?: string },
   ): Promise<MediaPage<MediaJob>>;

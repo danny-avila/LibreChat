@@ -383,6 +383,7 @@ export function createMediaMethods(
     listMediaTurnJobs,
     listMediaTurns,
     getMediaLatestImageContext,
+    getMediaLatestVideoContext,
     replaceMediaThreadTitle,
     updateMediaThread,
   } = createMediaThreadsMethods({ Thread, Job, Turn, File, mongoose });
@@ -562,6 +563,7 @@ export function createMediaMethods(
     listMediaThreads,
     listMediaTurns,
     getMediaLatestImageContext,
+    getMediaLatestVideoContext,
     listMediaTurnJobs,
     getMediaJob: getJob,
     getMediaParentContext: async (scope, threadId, parentTurnId) => {

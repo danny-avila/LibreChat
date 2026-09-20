@@ -235,15 +235,18 @@ export const mediaOutputPageSchema = z
     nextCursor: mediaIdSchema.optional(),
   })
   .strict();
-export const mediaImageContextSchema = z
+export const mediaAssetContextSchema = z
   .object({ turnId: mediaIdSchema, asset: mediaAssetSchema })
   .strict();
+export type MediaAssetContext = z.infer<typeof mediaAssetContextSchema>;
+export const mediaImageContextSchema = mediaAssetContextSchema;
 export type MediaImageContext = z.infer<typeof mediaImageContextSchema>;
 export const mediaThreadDetailSchema = z
   .object({
     thread: mediaThreadSchema,
     turns: mediaTurnPageSchema,
     latestImageContext: mediaImageContextSchema.optional(),
+    latestVideoContext: mediaAssetContextSchema.optional(),
   })
   .strict();
 export const mediaDeletionReceiptSchema = z

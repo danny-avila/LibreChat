@@ -12,7 +12,7 @@ import type { MediaDraft } from './state';
 import { offeringId, readProviderOptions, mediaInputsWithMetadata } from './options';
 import { mediaFeatures, useMediaHost } from './host';
 import { useMediaPresets } from '~/data-provider';
-import { withImageContext } from './context';
+import { withMediaContext } from './context';
 import { mediaDraftFamily } from './state';
 import { useLocalize } from '~/hooks';
 export type MediaDraftFormProps = {
@@ -20,6 +20,7 @@ export type MediaDraftFormProps = {
   threadId?: string;
   initialSelection?: MediaSelection;
   imageContext?: MediaEditTarget;
+  videoContext?: MediaEditTarget;
   portal?: boolean;
   normalizeDraft?: boolean;
 };
@@ -28,6 +29,7 @@ export function useMediaDraftForm({
   threadId,
   initialSelection,
   imageContext,
+  videoContext,
   portal = false,
   normalizeDraft = true,
 }: MediaDraftFormProps) {
@@ -65,8 +67,12 @@ export function useMediaDraftForm({
   const capabilities = selectedRoute?.capabilities ?? offering?.capabilities;
   const selectedCapability =
     capabilities?.find((item) => item.operation === savedDraft.operation) ?? capabilities?.[0];
-  const draft = withImageContext(savedDraft, imageContext, selectedCapability?.operation);
-  const automaticImage = draft !== savedDraft;
+  const draft = withMediaContext(
+    savedDraft,
+    { image: imageContext, video: videoContext },
+    selectedCapability?.operation,
+  );
+  const automaticReference = draft !== savedDraft;
   const capability =
     capabilities?.find((item) => item.operation === draft.operation) ?? selectedCapability;
   const referenceOwner = JSON.stringify([
@@ -89,7 +95,10 @@ export function useMediaDraftForm({
     role: referenceURLRole,
   });
   const unsupportedContext =
-    draft.operation === 'image.edit' && capability?.operation !== 'image.edit';
+    (draft.operation === 'image.edit' && capability?.operation !== 'image.edit') ||
+    (automaticReference &&
+      draft.operation === 'video.generate' &&
+      !capability?.inputs.roles.includes('video'));
   const presetsPending = features.presets && presets.isLoading && presets.fetchStatus !== 'idle';
   useEffect(() => {
     if (!normalizeDraft || !offering || !capability || presetsPending) return;
@@ -262,7 +271,7 @@ export function useMediaDraftForm({
     staleRoute,
     capabilities,
     draft,
-    automaticImage,
+    automaticReference,
     capability,
     referenceOwner,
     hostedRoles,

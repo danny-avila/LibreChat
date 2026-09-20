@@ -54,7 +54,9 @@ export function getMediaThread(
   threadId: string,
   signal?: AbortSignal,
 ): Promise<media.MediaThreadDetail> {
-  return request.get(endpoints.mediaThread(threadId), signal ? { signal } : undefined);
+  // Older clients validate strict response schemas; opt in to the additional context.
+  const params: media.MediaThreadDetailRequest = { include: 'videoContext' };
+  return request.get(endpoints.mediaThread(threadId), { signal, params });
 }
 export function listMediaTurns(
   threadId: string,

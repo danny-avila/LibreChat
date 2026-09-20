@@ -32,7 +32,7 @@ export function MediaComposer({
     offerings,
     staleRoute,
     draft,
-    automaticImage,
+    automaticReference,
     referenceOwner,
     hostedRoles,
     referenceURLRole,
@@ -145,7 +145,7 @@ export function MediaComposer({
       aria-label={localize('com_media_create')}
       data-testid="media-composer"
     >
-      {draft.parentTurnId && !automaticImage && (
+      {draft.parentTurnId && !automaticReference && (
         <div className="flex items-start gap-2 rounded-xl bg-surface-secondary p-3">
           <p className="text-xs leading-5 text-text-secondary">
             {localize('com_media_pinned_parent')}
@@ -217,7 +217,11 @@ export function MediaComposer({
       )}
       {unsupportedContext && (
         <p role="status" className="text-sm text-text-secondary">
-          {localize('com_media_edit_model_required')}
+          {localize(
+            draft.operation === 'video.generate'
+              ? 'com_media_video_model_required'
+              : 'com_media_edit_model_required',
+          )}
         </p>
       )}
       {!threadId && draft.temporary && (

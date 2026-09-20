@@ -88,6 +88,78 @@ describe('Vertex Veo adapter', () => {
     });
   });
 
+  it.each(['veo-3.1-fast-generate-001', 'veo-3.1-generate-001', 'veo-3.1-lite-generate-001'])(
+    'extends a previous video through the native video field for %s',
+    async (modelId) => {
+      const operationId = operation.replace(model, modelId);
+      const { context, calls } = fixture([{ name: operationId }]);
+      const data = Buffer.from('previous-generation');
+      expect(
+        await adapter.submit(
+          {
+            ...request,
+            threadId: 'thread',
+            parentTurnId: 'previous-turn',
+            selection: { ...request.selection, modelId },
+            inputs: [{ role: 'video', file_id: 'previous-video' }],
+            parameters: { count: 1 },
+          },
+          [{ role: 'video', file_id: 'previous-video', type: 'video/mp4', data }],
+          context,
+        ),
+      ).toEqual({ status: 'running', operationId });
+      const body = JSON.parse(calls[0].body as string);
+      expect(body.instances).toEqual([
+        {
+          prompt: request.prompt,
+          video: { mimeType: 'video/mp4', bytesBase64Encoded: data.toString('base64') },
+        },
+      ]);
+      expect(body.parameters).toMatchObject({ sampleCount: 1, task: 'extend' });
+      expect(body.parameters).not.toHaveProperty('durationSeconds');
+      expect(calls).toHaveLength(1);
+    },
+  );
+
+  it('rejects incompatible video references before sending a provider request', async () => {
+    const { context, calls } = fixture();
+    const video = {
+      role: 'video' as const,
+      file_id: 'previous',
+      type: 'video/mp4',
+      data: Buffer.from('video'),
+    };
+    const extension = { ...request, parameters: { count: 1, durationSeconds: 7 } };
+    for (const inputs of [
+      [video, { ...video, file_id: 'second' }],
+      [
+        video,
+        {
+          role: 'start_frame' as const,
+          file_id: 'image',
+          type: 'image/png',
+          data: Buffer.from('image'),
+        },
+      ],
+      [{ ...video, type: 'video/webm' }],
+    ]) {
+      await expect(adapter.submit(extension, inputs, context)).rejects.toMatchObject({
+        certainty: 'rejected',
+      });
+    }
+    await expect(adapter.submit(request, [video], context)).rejects.toMatchObject({
+      certainty: 'rejected',
+    });
+    await expect(adapter.submit(extension, [], context)).rejects.toMatchObject({
+      certainty: 'rejected',
+    });
+    context.config.transfers.maxVideoBytes = 1;
+    await expect(adapter.submit(extension, [video], context)).rejects.toMatchObject({
+      certainty: 'rejected',
+    });
+    expect(calls).toHaveLength(0);
+  });
+
   it('polls the original operation and decodes all complete video bytes', async () => {
     const bytes = Buffer.from('complete-video-fixture');
     const { context, calls } = fixture([

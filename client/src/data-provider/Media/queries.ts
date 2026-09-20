@@ -177,6 +177,8 @@ export function useMediaThread(host: MediaQueryScope, threadId?: string) {
       cacheMediaTurns(client, host.userId, next.turns.items);
       if (next.latestImageContext)
         cacheMediaAssets(client, host.userId, [next.latestImageContext.asset]);
+      if (next.latestVideoContext)
+        cacheMediaAssets(client, host.userId, [next.latestVideoContext.asset]);
       const turns = new Map(previous?.turns.items.map((turn) => [turn.turnId, turn]));
       return {
         ...next,

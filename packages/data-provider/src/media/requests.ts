@@ -263,6 +263,9 @@ export const mediaThreadListRequestSchema = mediaPageRequestSchema.extend({
   include: z.literal('activity').optional(),
   search: z.string().trim().optional(),
 });
+export const mediaThreadDetailRequestSchema = z.object({
+  include: z.literal('videoContext').optional(),
+});
 export const mediaThreadsDeleteRequestSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('selected'), threadIds: z.array(mediaIdSchema).min(1) }).strict(),
   z.object({ mode: z.literal('all') }).strict(),
@@ -283,6 +286,7 @@ export type MediaRetryRequest = z.infer<typeof mediaRetryRequestSchema>;
 export type MediaThreadUpdate = z.infer<typeof mediaThreadUpdateSchema>;
 export type MediaPageRequest = z.infer<typeof mediaPageRequestSchema>;
 export type MediaThreadListRequest = z.infer<typeof mediaThreadListRequestSchema>;
+export type MediaThreadDetailRequest = z.infer<typeof mediaThreadDetailRequestSchema>;
 export type MediaThreadsDeleteRequest = z.infer<typeof mediaThreadsDeleteRequestSchema>;
 
 export type MediaRequestLimits = {
