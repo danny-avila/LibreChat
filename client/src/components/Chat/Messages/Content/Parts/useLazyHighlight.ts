@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface HastText {
   type: 'text';
@@ -59,32 +59,48 @@ function highlightCode(mod: LowlightModule, code: string, lang: string): React.R
   }
 }
 
+/** The tokens held, with the input they were produced from. Nothing to show is the empty key,
+ *  so a hook mounted without code still recognizes the first code it receives as new. */
+type HighlightState = { key: string; nodes: React.ReactNode[] | null };
+
+const NOTHING_HIGHLIGHTED: HighlightState = { key: '', nodes: null };
+
+const highlightKey = (code: string | undefined, lang: string): string =>
+  code ? `${lang}\0${code}` : '';
+
+/**
+ * Tokens for a block of code, once the grammars have loaded.
+ *
+ * Highlighting runs when the input changes, and once per input: the tokens carry the key they
+ * were produced from, so a mount that could highlight immediately is not repeated by the effect
+ * that follows it. Grammars load on first use, so a caller renders its own raw text until this
+ * returns; passing `undefined` while a pane is closed keeps a collapsed card from tokenizing
+ * output nobody is reading.
+ */
 export default function useLazyHighlight(
   code: string | undefined,
   lang: string,
 ): React.ReactNode[] | null {
-  const [highlighted, setHighlighted] = useState<React.ReactNode[] | null>(() => {
-    if (!code || !lowlightModule) {
-      return null;
-    }
-    return highlightCode(lowlightModule, code, lang);
-  });
-  const prevKey = useRef('');
+  const [state, setState] = useState<HighlightState>(() =>
+    code && lowlightModule
+      ? { key: highlightKey(code, lang), nodes: highlightCode(lowlightModule, code, lang) }
+      : NOTHING_HIGHLIGHTED,
+  );
+  const key = highlightKey(code, lang);
+  const currentKey = state.key;
 
   useEffect(() => {
-    const key = `${lang}\0${code ?? ''}`;
-    if (key === prevKey.current) {
+    if (key === currentKey) {
       return;
     }
-    prevKey.current = key;
 
     if (!code) {
-      setHighlighted(null);
+      setState(NOTHING_HIGHLIGHTED);
       return;
     }
 
     if (lowlightModule) {
-      setHighlighted(highlightCode(lowlightModule, code, lang));
+      setState({ key, nodes: highlightCode(lowlightModule, code, lang) });
       return;
     }
 
@@ -92,18 +108,18 @@ export default function useLazyHighlight(
     loadLowlight()
       .then((mod) => {
         if (!cancelled) {
-          setHighlighted(highlightCode(mod, code, lang));
+          setState({ key, nodes: highlightCode(mod, code, lang) });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setHighlighted([code]);
+          setState({ key, nodes: [code] });
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [code, lang]);
+  }, [key, currentKey, code, lang]);
 
-  return highlighted;
+  return state.nodes;
 }

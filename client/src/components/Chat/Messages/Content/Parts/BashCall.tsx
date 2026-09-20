@@ -90,7 +90,7 @@ export default function BashCall({
     extraCancelled: cancelledInBackground,
   });
 
-  const highlighted = useLazyHighlight(command || undefined, 'bash');
+  const highlighted = useLazyHighlight(showCode ? command || undefined : undefined, 'bash');
   const { ref: commandPaneRef, onScroll: onCommandPaneScroll } = useFollowScroll<HTMLDivElement>(
     highlighted ?? command,
     phase === 'running',
