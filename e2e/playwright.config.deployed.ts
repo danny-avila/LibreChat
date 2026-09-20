@@ -28,7 +28,8 @@ export default defineConfig({
   outputDir: 'specs/.test-results/deployed',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  /** Refresh tokens may rotate during a run, invalidating the original storage state. */
+  retries: 0,
   workers: 1,
   reporter: [['list'], ['html', { outputFolder: 'playwright-report/deployed', open: 'never' }]],
   use: {

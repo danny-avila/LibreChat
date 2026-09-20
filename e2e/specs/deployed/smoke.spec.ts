@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import type { Page, Response } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 const baseURL = new URL(process.env.E2E_BASE_URL as string);
 baseURL.pathname = baseURL.pathname.replace(/\/?$/, '/');
@@ -8,19 +8,15 @@ const newChatURL = new URL('c/new', baseURL);
 const configuredModel = process.env.E2E_DEPLOYED_MODEL?.trim();
 const prompt = process.env.E2E_DEPLOYED_PROMPT?.trim() || 'Reply with exactly DEPLOYED_E2E_OK.';
 
-type GenerationStart = {
-  conversationId?: string;
+type PersistedMessage = {
+  messageId?: string;
+  parentMessageId?: string;
+  isCreatedByUser?: boolean;
+  unfinished?: boolean;
+  error?: boolean;
+  text?: string;
+  content?: Array<{ type?: string }>;
 };
-
-function isGenerationStart(response: Response) {
-  const { pathname } = new URL(response.url());
-  return (
-    response.request().method() === 'POST' &&
-    (pathname.endsWith('/api/agents/chat') || pathname.includes('/api/agents/chat/')) &&
-    !pathname.endsWith('/abort') &&
-    response.status() === 200
-  );
-}
 
 async function selectConfiguredModel(page: Page) {
   const modelSelector = page.getByTestId('model-selector-button');
@@ -39,7 +35,7 @@ async function selectConfiguredModel(page: Page) {
   }
 
   if (configuredModel) {
-    if ((await modelSelector.textContent())?.includes(configuredModel)) {
+    if ((await modelSelector.textContent())?.trim() === configuredModel) {
       return;
     }
     await modelSelector.click();
@@ -47,6 +43,14 @@ async function selectConfiguredModel(page: Page) {
     await page.getByRole('option', { name: configuredModel, exact: true }).first().click();
     await expect(modelSelector).toContainText(configuredModel);
   }
+}
+
+function conversationIdFromURL(url: string) {
+  const match = new URL(url).pathname.match(/\/c\/([^/]+)\/?$/);
+  const conversationId = match?.[1];
+  return conversationId && conversationId !== 'new'
+    ? decodeURIComponent(conversationId)
+    : undefined;
 }
 
 async function loadAuthenticatedApp(page: Page) {
@@ -78,6 +82,42 @@ async function loadAuthenticatedApp(page: Page) {
   expect(new URL(page.url()).origin).toBe(baseURL.origin);
   await expect(page).toHaveURL(/\/c\/new\/?$/);
   return input;
+}
+
+async function getAccessToken(page: Page) {
+  const result = await page.evaluate(async (appBaseURL) => {
+    const response = await fetch(new URL('api/auth/refresh', appBaseURL), {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const body = (await response.json().catch(() => null)) as { token?: string } | null;
+    return { ok: response.ok, status: response.status, token: body?.token };
+  }, baseURL.toString());
+
+  if (!result.ok || !result.token) {
+    throw new Error(
+      `[e2e:deployed] Token refresh failed before the persistence check (${result.status}).`,
+    );
+  }
+  return result.token;
+}
+
+async function getPersistedMessages(page: Page, conversationId: string, token: string) {
+  return page.evaluate(
+    async ({ appBaseURL, id, accessToken }) => {
+      const response = await fetch(new URL(`api/messages/${encodeURIComponent(id)}`, appBaseURL), {
+        credentials: 'include',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!response.ok) {
+        throw new Error(`Message read failed with status ${response.status}.`);
+      }
+      return (await response.json()) as PersistedMessage[];
+    },
+    { appBaseURL: baseURL.toString(), id: conversationId, accessToken: token },
+  );
 }
 
 async function deleteConversation(page: Page, conversationId: string) {
@@ -130,66 +170,101 @@ async function deleteConversation(page: Page, conversationId: string) {
   }
 }
 
+let createdConversationId: string | undefined;
+
 test.describe('deployed LibreChat smoke', () => {
+  test.beforeEach(() => {
+    createdConversationId = undefined;
+  });
+
+  /** Hooks receive a separate timeout budget after a timed-out test, so cleanup still runs. */
+  test.afterEach(async ({ page }) => {
+    if (createdConversationId) {
+      await deleteConversation(page, createdConversationId);
+    }
+  });
+
   test('loads the authenticated shell and persists a real conversation', async ({ page }) => {
     test.setTimeout(240_000);
-    let conversationId: string | undefined;
+    const input = await loadAuthenticatedApp(page);
 
-    try {
-      const input = await loadAuthenticatedApp(page);
+    await selectConfiguredModel(page);
 
-      await selectConfiguredModel(page);
+    const messageBodies = page.getByTestId('message-body');
+    const initialMessageCount = await messageBodies.count();
+    await input.fill(prompt);
 
-      const messageBodies = page.getByTestId('message-body');
-      const initialMessageCount = await messageBodies.count();
-      await input.fill(prompt);
-
-      const sendButton = page.getByTestId('send-button');
-      const canSubmit = await expect(sendButton)
-        .toBeEnabled({ timeout: 5_000 })
-        .then(() => true)
-        .catch(() => false);
-      if (!canSubmit) {
-        throw new Error(
-          '[e2e:deployed] The prompt cannot be submitted. Set E2E_DEPLOYED_MODEL when the account has no default model.',
-        );
-      }
-
-      const [generationResponse] = await Promise.all([
-        page.waitForResponse(isGenerationStart, { timeout: 30_000 }),
-        sendButton.click(),
-      ]);
-      const generation = (await generationResponse.json()) as GenerationStart;
-      conversationId = generation.conversationId;
-      expect(conversationId).toBeTruthy();
-      expect(conversationId).not.toBe('new');
-
-      await expect(page).toHaveURL(new RegExp(`/c/${conversationId}/?$`));
-      await expect(
-        page.getByTestId('messages-view').getByText(prompt, { exact: true }),
-      ).toBeVisible();
-      await expect
-        .poll(() => messageBodies.count(), { timeout: 90_000 })
-        .toBeGreaterThan(initialMessageCount + 1);
-      await expect(page.getByTestId('stop-generation-button')).toBeHidden({
-        timeout: 90_000,
-      });
-      await expect(messageBodies.last()).not.toBeEmpty();
-      await expect(messageBodies.getByRole('alert')).toHaveCount(0);
-
-      await page.reload({ waitUntil: 'domcontentloaded' });
-      await expect(
-        page.getByTestId('messages-view').getByText(prompt, { exact: true }),
-      ).toBeVisible({
-        timeout: 30_000,
-      });
-      await expect
-        .poll(() => messageBodies.count(), { timeout: 30_000 })
-        .toBeGreaterThan(initialMessageCount + 1);
-    } finally {
-      if (conversationId) {
-        await deleteConversation(page, conversationId);
-      }
+    const sendButton = page.getByTestId('send-button');
+    const canSubmit = await expect(sendButton)
+      .toBeEnabled({ timeout: 5_000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!canSubmit) {
+      throw new Error(
+        '[e2e:deployed] The prompt cannot be submitted. Set E2E_DEPLOYED_MODEL when the account has no default model.',
+      );
     }
+
+    await Promise.all([
+      page.waitForURL((url) => conversationIdFromURL(url.toString()) != null, {
+        timeout: 30_000,
+      }),
+      sendButton.click(),
+    ]);
+    createdConversationId = conversationIdFromURL(page.url());
+    expect(createdConversationId).toBeTruthy();
+
+    await expect(messageBodies.getByText(prompt, { exact: true })).toBeVisible();
+    const accessToken = await getAccessToken(page);
+    await expect
+      .poll(
+        async () => {
+          const messages = await getPersistedMessages(
+            page,
+            createdConversationId as string,
+            accessToken,
+          );
+          const userMessageIds = new Set(
+            messages
+              .filter((message) => message.isCreatedByUser === true)
+              .map((message) => message.messageId),
+          );
+          const assistantMessages = messages.filter(
+            (message) =>
+              message.isCreatedByUser === false &&
+              message.parentMessageId != null &&
+              userMessageIds.has(message.parentMessageId),
+          );
+          return (
+            userMessageIds.size > 0 &&
+            assistantMessages.length > 0 &&
+            assistantMessages.every(
+              (message) =>
+                message.unfinished === false &&
+                message.error !== true &&
+                message.content?.some((part) => part.type === 'error') !== true,
+            )
+          );
+        },
+        {
+          timeout: 90_000,
+          intervals: [500, 1_000, 2_000],
+          message: 'assistant response should be durably finalized and error-free',
+        },
+      )
+      .toBe(true);
+    await expect
+      .poll(() => messageBodies.count(), { timeout: 10_000 })
+      .toBeGreaterThan(initialMessageCount + 1);
+    await expect(messageBodies.last()).not.toBeEmpty();
+    await expect(messageBodies.getByRole('alert')).toHaveCount(0);
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(messageBodies.getByText(prompt, { exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect
+      .poll(() => messageBodies.count(), { timeout: 30_000 })
+      .toBeGreaterThan(initialMessageCount + 1);
   });
 });
