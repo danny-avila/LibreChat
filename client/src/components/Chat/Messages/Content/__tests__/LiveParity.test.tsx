@@ -1,9 +1,11 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
-import { ContentTypes, Tools } from 'librechat-data-provider';
-import { act, render, screen, within } from '@testing-library/react';
+import { RecoilRoot, useSetRecoilState } from 'recoil';
+import { ContentTypes, Tools, Constants } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import type { TAttachment, TMessage, TMessageContentParts } from 'librechat-data-provider';
+import { resolveAskUserQuestionPart } from '~/utils/approval';
+import { sandboxStartingByToolCallId } from '~/store';
 import ContentParts from '../ContentParts';
 
 /**
@@ -211,14 +213,14 @@ describe('live fold parity with the cards it hides', () => {
     expect(button).not.toHaveTextContent(/^Failed/);
   });
 
-  it('leaves a running foreground subagent unfolded, then folds once it settles', () => {
+  it('keeps a subagent card available even after its dispatch settles', () => {
     /** Its card follows the subagent progress atom, which the row cannot. */
     const running = mount([toPart({ name: 'subagent', output: '' })], undefined, true);
     expect(screen.queryByTestId('activity-phase-card')).toBeNull();
     running.unmount();
 
     mount([toPart({ name: 'subagent', output: 'done' })], undefined, true);
-    expect(screen.getByTestId('activity-phase-card')).toBeInTheDocument();
+    expect(screen.queryByTestId('activity-phase-card')).toBeNull();
   });
 
   it('treats a second call that reuses a provider id as a new line', () => {
@@ -413,5 +415,237 @@ describe('live fold parity with the cards it hides', () => {
     const after = screen.getByTestId('activity-phase-announcer');
     expect(after).toBe(before);
     expect(after).toHaveTextContent('Fetched the rows');
+  });
+});
+
+describe('live activity hardening transitions', () => {
+  afterEach(() => jest.useRealTimers());
+
+  const frame = (content: TMessageContentParts[], extra?: React.ReactNode) => (
+    <QueryClientProvider client={new QueryClient()}>
+      <RecoilRoot>
+        {extra}
+        <ContentParts
+          content={content}
+          messageId="m1"
+          conversationId="c1"
+          isCreatedByUser={false}
+          isLast
+          isLatestMessage
+          isSubmitting
+          showThinking={false}
+        />
+      </RecoilRoot>
+    </QueryClientProvider>
+  );
+
+  function SandboxEvent() {
+    const setStarting = useSetRecoilState(sandboxStartingByToolCallId('sandbox-call'));
+    return <button onClick={() => setStarting(true)}>{'Start sandbox'}</button>;
+  }
+
+  it.each([
+    [Tools.bash_tool, { command: 'echo ready' }],
+    [Tools.execute_code, { lang: 'py', code: 'print(1)' }],
+    [Constants.PROGRAMMATIC_TOOL_CALLING, { lang: 'python', code: 'print(1)' }],
+    [Constants.BASH_PROGRAMMATIC_TOOL_CALLING, { code: 'echo ready' }],
+  ])('keeps %s subscribed through sandbox startup, then folds its result', (name, args) => {
+    jest.useFakeTimers();
+    const call = { name, args, output: '' };
+    const view = render(frame([toPart(call, 'sandbox-call')], <SandboxEvent />));
+    expect(screen.queryByTestId('activity-phase-card')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Start sandbox' }));
+    expect(view.container).toHaveTextContent('Starting sandbox');
+    view.rerender(
+      frame([toPart({ ...call, output: 'ok', runStepStatus: 'completed' }, 'sandbox-call')]),
+    );
+    expect(screen.getByTestId('activity-phase-card')).toBeInTheDocument();
+  });
+
+  it('folds an early code delta and keeps folding once its intent arrives', () => {
+    jest.useFakeTimers();
+    const view = render(frame([toPart({ name: Tools.execute_code, args: '', output: '' })]));
+    const card = screen.getByTestId('activity-phase-card');
+    view.rerender(
+      frame([
+        toPart({ name: Tools.execute_code, args: '{"intent":"Checking the data', output: '' }),
+      ]),
+    );
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(screen.getByTestId('activity-phase-card')).toBe(card);
+    expect(screen.getByRole('button')).toHaveAccessibleName('Checking the data');
+  });
+
+  it('keeps the optimistic question record visible through stale SSE copies and folds subsequent work', () => {
+    const question = { question: 'Which region?' };
+    const call = toPart({ name: 'ask_user_question', args: question, output: '' }, 'answered-ask');
+    const message = {
+      messageId: 'm1',
+      content: [
+        call,
+        {
+          type: 'ask_user_question',
+          ask_user_question: { actionId: 'answer-action', tool_call_id: 'answered-ask', question },
+        },
+      ],
+    } as TMessage;
+    resolveAskUserQuestionPart(message, 'answer-action', 'Europe');
+    const view = render(frame([call]));
+    expect(screen.queryByTestId('activity-phase-card')).toBeNull();
+    expect(screen.getByTestId('ask-user-question-call')).toHaveTextContent('Asked');
+    view.rerender(
+      frame([call, toPart({ name: 'lookup', args: { intent: 'Checking Europe' } }, 'next')]),
+    );
+    expect(screen.getByTestId('ask-user-question-call')).toHaveTextContent('Asked');
+    expect(screen.getByTestId('activity-phase-card')).toHaveTextContent('Checking Europe');
+  });
+
+  it('keeps a detached subagent outside the next live span', () => {
+    const output = JSON.stringify({
+      background_task_id: 'bg-child',
+      subagent_thread_id: 'thread',
+      tool: 'subagent',
+      subagent_type: 'self',
+      status: 'running',
+      message: 'Poll background_task_id',
+    });
+    render(
+      frame([
+        toPart({
+          name: 'subagent',
+          args: { run_in_background: true },
+          output,
+          runStepStatus: 'completed',
+        }),
+        toPart({ name: 'lookup', args: { intent: 'Continuing the parent' } }, 'next'),
+      ]),
+    );
+    const fold = screen.getByTestId('activity-phase-card');
+    expect(fold).toHaveTextContent('Continuing the parent');
+    expect(screen.getByText('Ran agent').closest('[data-testid="activity-phase-card"]')).toBeNull();
+  });
+
+  it.each(['x'.repeat(1199), 'Earlier sentence. ' + 'x'.repeat(1199)])(
+    'does not repeatedly announce one thought as its bounded preview window moves',
+    (initial) => {
+      jest.useFakeTimers();
+      const content = (think: string) => [
+        toPart({ name: 'lookup', output: 'rows' }),
+        { type: ContentTypes.THINK, think } as TMessageContentParts,
+      ];
+      const view = render(frame(content(initial)));
+      for (const suffix of [' ', ' more', ' more text', ' more text. Next sentence']) {
+        view.rerender(frame(content(initial + suffix)));
+        act(() => {
+          jest.advanceTimersByTime(500);
+        });
+      }
+      expect(screen.getByTestId('activity-phase-announcer')).toBeEmptyDOMElement();
+      expect(screen.getByRole('button')).toHaveAccessibleName('Next sentence');
+    },
+  );
+
+  it('does not replay a source change when two consecutive calls begin with identical text', () => {
+    jest.useFakeTimers();
+    const first = toPart({ name: 'lookup', args: { intent: 'Checking' }, output: 'ok' }, 'first');
+    const second = (intent: string) => toPart({ name: 'lookup', args: { intent } }, 'second');
+    const view = render(frame([first]));
+    view.rerender(frame([first, second('Checking')]));
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    view.rerender(frame([first, second('Checking the next file')]));
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    const header = screen.getByRole('button');
+    expect(header).toHaveAccessibleName('Checking the next file');
+    expect(header.querySelector('.absolute[aria-hidden="true"]')).toBeNull();
+  });
+
+  it.each(['error', 'cancelled', 'completed'] as const)(
+    'updates a cached detached outcome on a late %s attachment',
+    (status) => {
+      jest.useFakeTimers();
+      const part = toPart({ name: Tools.execute_code, output: HANDLE, runStepStatus: 'completed' });
+      const client = new QueryClient();
+      const tree = (attachments?: TAttachment[]) => (
+        <QueryClientProvider client={client}>
+          <RecoilRoot>
+            <ContentParts
+              content={[part]}
+              attachments={attachments}
+              messageId="m1"
+              conversationId="c1"
+              isCreatedByUser={false}
+              isLast
+              isLatestMessage
+              isSubmitting
+              showThinking={false}
+            />
+          </RecoilRoot>
+        </QueryClientProvider>
+      );
+      const view = render(tree());
+      expect(screen.getByRole('button')).toHaveAccessibleName('Running in background');
+      view.rerender(tree([statusAttachment(status)]));
+      act(() => {
+        jest.advanceTimersByTime(500);
+      });
+      const expected = {
+        error: /Failed.*1 failed/,
+        cancelled: /Cancelled.*1 cancelled/,
+        completed: 'Finished in background',
+      }[status];
+      expect(screen.getByRole('button')).toHaveAccessibleName(expected);
+    },
+  );
+
+  it('does not lose a late failure at the start of a long unlabelled span', () => {
+    jest.useFakeTimers();
+    const calls = Array.from({ length: 1024 }, (_, index) =>
+      toPart(
+        {
+          name: 'lookup',
+          args: { intent: `Looking up item ${index}` },
+          output: 'ok',
+        },
+        `call-${index}`,
+      ),
+    );
+    const view = render(frame(calls));
+    expect(screen.queryByTestId('live-phase-outcome')).toBeNull();
+    view.rerender(
+      frame([
+        toPart({ name: 'lookup', output: 'ok', runStepStatus: 'failed' }, 'call-0'),
+        ...calls.slice(1),
+      ]),
+    );
+    expect(screen.getByRole('button')).toHaveAccessibleName(/Looking up item 1023.*1 failed/);
+    expect(screen.getByTestId('activity-phase-announcer')).toHaveTextContent('1 failed');
+  });
+
+  it('owns exactly one polite region across live-to-settled replacement', () => {
+    const calls = [toPart({ name: 'lookup', output: 'ok' })];
+    const view = render(frame(calls));
+    const announcer = screen.getByTestId('activity-phase-announcer');
+    view.rerender(
+      frame([
+        ...calls,
+        {
+          type: ContentTypes.ACTIVITY_LABEL,
+          activity_label: 'Completed lookup',
+          activity_label_type: 'phase',
+          activity_start_index: 0,
+          activity_end_index: 1,
+          activity_count: 1,
+          pending: false,
+        } as TMessageContentParts,
+      ]),
+    );
+    expect(screen.getAllByRole('status')).toEqual([announcer]);
+    expect(announcer).toHaveTextContent('Completed lookup');
   });
 });

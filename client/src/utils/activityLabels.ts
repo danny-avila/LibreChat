@@ -237,14 +237,22 @@ function claimsActivity(part: TMessageContentParts | undefined): boolean {
 /**
  * A call a live row cannot stand for: a handoff, whose card names the
  * destination agent and can never join a group, or a legacy Assistants variant
- * (no top-level `args`), which the live header has no line for.
+ * (no top-level `args`), which the live header has no line for. Questions
+ * and subagents also retain their own cards: optimistic answers, child
+ * progress and detached-thread navigation are not carried by the outer part.
  */
 function endsLiveSpan(part: TMessageContentParts | undefined): boolean {
   if (part?.type !== ContentTypes.TOOL_CALL) {
     return false;
   }
   const toolCall = part[ContentTypes.TOOL_CALL];
-  return !claimsActivity(part) || toolCall == null || !('args' in toolCall);
+  return (
+    !claimsActivity(part) ||
+    toolCall == null ||
+    !('args' in toolCall) ||
+    toolCall.name === 'ask_user_question' ||
+    toolCall.name === Constants.SUBAGENT
+  );
 }
 
 type FoldRun = {

@@ -130,7 +130,7 @@ const PhaseLabel = memo(function PhaseLabel({
    *  after paint, so a swap with no animation would leave the previous summary
    *  on screen for a frame while the button's `aria-label` already carried the
    *  new one. React re-renders this component immediately instead. */
-  if (lines.current !== text) {
+  if (lines.current !== text || lines.source !== source) {
     const moved = source == null || source !== lines.source;
     const swaps = animate && lines.current.length > 0 && moved;
     setLines({
@@ -153,9 +153,6 @@ const PhaseLabel = memo(function PhaseLabel({
   return (
     <span
       className="tool-status-text relative block min-w-0 flex-1 overflow-hidden text-left"
-      /** A live line moves twice a second; a polite region over it would
-       *  re-announce it each time. The card's own announcer speaks instead. */
-      role={live ? undefined : 'status'}
       title={text}
     >
       {lines.retired != null && (
@@ -355,14 +352,11 @@ export default function ActivityPhaseGroup({
    *  a region that mounts already holding text is not announced, so the
    *  generated summary is spoken through the region that was there before. */
   const [announcement, setAnnouncement] = useState('');
-  const wasLiveRef = useRef(false);
+  const previousHeader = useRef({ isLive, label });
   useEffect(() => {
-    if (isLive) {
-      wasLiveRef.current = true;
-      return;
-    }
-    if (wasLiveRef.current && label) {
-      wasLiveRef.current = false;
+    const previous = previousHeader.current;
+    previousHeader.current = { isLive, label };
+    if (!isLive && label && (previous.isLive || previous.label !== label)) {
       setAnnouncement(label);
     }
   }, [isLive, label]);

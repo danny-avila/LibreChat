@@ -12,6 +12,7 @@ import { getBatchActivityLabelPart, getActivityLabelText } from '~/utils/activit
 import { hasPendingApprovalInPart, hasPendingAuthInPart } from '~/utils/groupToolCalls';
 import { ASK_USER_QUESTION, getSubmittedAskAnswer } from '~/utils/approval';
 import { boundIntentLabel, getToolCallIntent } from './Parts/intent';
+import { areToolCallArgsComplete } from './Parts/parseJsonField';
 import { getToolDisplayLabel } from '~/utils/toolLabels';
 import { isBashProgrammaticToolCall } from './routing';
 import { summarizeSpan } from './outcome';
@@ -121,19 +122,16 @@ function toolCallLine(
 const REASONING_TAIL_CHARS = 1200;
 
 /**
- * The sentence a streaming thought is currently writing, with its offset in
- * the full text. The offset is the line's identity: it holds still while the
- * sentence grows, so the header extends it in place, and moves when the next
- * sentence starts, so the header ticks over — a line-by-line preview in a
- * single row.
+ * A bounded preview of the sentence the thought is currently writing.
+ * Preview offsets are not activity identities: a sliding window, whitespace
+ * or a resumed snapshot can move them without starting a new thought.
  */
-function lastReasoningSentence(reasoning: string): { text: string; offset: number } | undefined {
-  const body = reasoning.replace(/^\s*<think>\s*/, '').replace(/\s*<\/think>\s*$/, '');
-  /** The offset is measured on the UNTRIMMED window: a delta that only adds
-   *  whitespace must not move the line's identity, or the same sentence would
-   *  be announced again each time the stream pauses after a space. */
-  const window = body.slice(-REASONING_TAIL_CHARS);
-  const tail = window.trimEnd();
+function lastReasoningSentence(reasoning: string): string | undefined {
+  const tail = reasoning
+    .slice(-REASONING_TAIL_CHARS)
+    .replace(/^\s*<think>\s*/, '')
+    .replace(/\s*<\/think>\s*$/, '')
+    .trimEnd();
   if (!tail) {
     return undefined;
   }
@@ -148,8 +146,7 @@ function lastReasoningSentence(reasoning: string): { text: string; offset: numbe
       start = end;
     }
   }
-  const text = boundIntentLabel(tail.slice(start));
-  return text == null ? undefined : { text, offset: body.length - window.length + start };
+  return boundIntentLabel(tail.slice(start));
 }
 
 /**
@@ -170,7 +167,29 @@ function isLiveSubagent(part: TMessageContentParts): boolean {
 
 /** True when a live fold cannot stand for this part right now. */
 export function blocksLiveFold(part: TMessageContentParts | undefined): boolean {
-  return part != null && (needsReader(part) || isLiveSubagent(part));
+  if (part == null) {
+    return false;
+  }
+  if (needsReader(part) || isLiveSubagent(part)) {
+    return true;
+  }
+  const toolCall = getStandardToolCall(part);
+  /** Dispatch cannot start until arguments are complete. With no intent at
+   *  that point, code cards own startup labels driven by sandbox events
+   *  outside the content array. Keep those subscribers mounted until the
+   *  part itself can represent their result. */
+  return (
+    toolCall != null &&
+    (toolCall.name === Tools.bash_tool ||
+      toolCall.name === Tools.execute_code ||
+      toolCall.name === Constants.PROGRAMMATIC_TOOL_CALLING ||
+      toolCall.name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING) &&
+    toolCall.runStepStatus == null &&
+    toolCall.progress !== 1 &&
+    (toolCall.output?.length ?? 0) === 0 &&
+    getToolCallIntent(toolCall.args) == null &&
+    areToolCallArgsComplete(toolCall.args)
+  );
 }
 
 /** Icons the header stack can show. */
@@ -199,7 +218,7 @@ function newestLine(
       const reasoning = typeof part.think === 'string' ? part.think : (part.think?.value ?? '');
       const sentence = lastReasoningSentence(reasoning);
       if (sentence != null) {
-        return { text: sentence.text, source: `think:${position}:${sentence.offset}` };
+        return { text: sentence, source: `think:${position}` };
       }
       const label = part.reasoning_label?.trim();
       if (label || reasoning.trim()) {
@@ -243,9 +262,9 @@ function newestLine(
  * label once one lands after it, or the thought streaming after both. Later parts win, so the
  * header always reads as the bottom line of the list it stands for.
  *
- * Runs on every streamed delta, so neither scan covers the span: the line
- * stops at the first nameable part from the tail, and the icons look at a
- * fixed window behind it.
+ * Runs on every streamed delta. Outcome aggregation visits the full span so
+ * late failures cannot disappear; the line stops at the newest nameable part
+ * and icons only inspect a fixed tail window.
  */
 export function getLiveActivity(
   parts: ReadonlyArray<TMessageContentParts | undefined>,
