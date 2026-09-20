@@ -39,16 +39,20 @@ function AuthLayout({
    *  which the startup payload does not carry. The sentence is about
    *  continuing, which is what both screens do, and it names the same policies
    *  the footer bar linked, so a screen states them once. */
-  const statesConsent =
-    (isRegister || isLogin) &&
-    !hasStartupConfigError &&
-    !isFetching &&
-    hasPublishedPolicies(startupConfig);
+  const hasPolicies = hasPublishedPolicies(startupConfig);
   /** Registration states it under its own submit button, where it is read
    *  before the account is created rather than below however many provider
-   *  buttons a deployment configured. On the login screen those buttons are
-   *  the account creation, so there the sentence closes the card. */
-  const statesConsentBelowProviders = statesConsent && !isRegister;
+   *  buttons a deployment configured, and it renders that form only once the
+   *  config has loaded without error. The login screen has no submit button of
+   *  its own to sit under, so there the layout states it below the providers,
+   *  for as long as it knows the policies: a background refetch must not swap
+   *  the sentence for the bar and back. */
+  const registrationStatesConsent =
+    isRegister && hasPolicies && !hasStartupConfigError && !isFetching;
+  const statesConsentBelowProviders = isLogin && hasPolicies;
+  /** The bar is dropped exactly when the sentence is on the screen, so a
+   *  reader never meets both and never meets neither. */
+  const statesConsent = registrationStatesConsent || statesConsentBelowProviders;
   const DisplayError = () => {
     if (hasStartupConfigError) {
       return (

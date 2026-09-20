@@ -135,17 +135,17 @@ describe('AuthLayout legal placement', () => {
     expect(document.querySelector('[role="contentinfo"] a')).toBeNull();
   });
 
-  /** The registration form, and with it the consent, renders only once the
-   *  config has loaded without error. The footer bar is what carries the
-   *  policies until then, so the screen is never left with neither. */
-  test('a screen still loading its config keeps the footer bar', () => {
+  /** Registration renders its form, and with it the consent, only once the
+   *  config has loaded without error. The footer bar carries the policies
+   *  until then, so the screen is never left with neither. */
+  test('registration refetching its config keeps the footer bar', () => {
     setup({ pathname: 'register', isFetching: true, interfaceConfig: policies });
 
     expect(consent()).not.toBeInTheDocument();
     expect(footerBar()).not.toBeNull();
   });
 
-  test('a screen whose config failed keeps the footer bar', () => {
+  test('registration whose config failed keeps the footer bar', () => {
     setup({
       pathname: 'register',
       startupConfigError: new Error('config unavailable'),
@@ -154,6 +154,15 @@ describe('AuthLayout legal placement', () => {
 
     expect(consent()).not.toBeInTheDocument();
     expect(footerBar()).not.toBeNull();
+  });
+
+  /** The login screen states it itself, so a background refetch of an already
+   *  known config must not swap the sentence for the bar and back. */
+  test('the login screen keeps the consent across a background refetch', () => {
+    setup({ pathname: 'login', isFetching: true, interfaceConfig: policies });
+
+    expect(consent()).toBeInTheDocument();
+    expect(footerBar()).toBeNull();
   });
 
   test('a deployment with no policies keeps the footer bar it always had', () => {
