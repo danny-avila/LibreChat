@@ -239,6 +239,8 @@ const Registration: React.FC = () => {
               </Button>
             </div>
 
+            {/* Under the button it is agreed to, and read before the account is
+                created; the auth layout drops its footer bar in exchange. */}
             <LegalConsent startupConfig={startupConfig} />
           </form>
 

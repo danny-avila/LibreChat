@@ -239,7 +239,7 @@ test('shows error message when registration fails', async () => {
   });
 });
 
-const withInterface = (interfaceConfig: Record<string, unknown>) => ({
+const withInterface = (interfaceConfig: Partial<NonNullable<TStartupConfig['interface']>>) => ({
   ...mockStartupConfig,
   data: { ...mockStartupConfig.data, interface: interfaceConfig },
 });
@@ -275,8 +275,47 @@ test('claims agreement only to the policy the deployment published', () => {
   expect(queryByRole('link', { name: 'Terms of Service' })).not.toBeInTheDocument();
 });
 
+test('claims agreement to terms a deployment published without a privacy policy', () => {
+  const { getByRole, getByText, queryByRole } = setup({
+    useGetStartupConfigReturnValue: withInterface({
+      termsOfService: { externalUrl: 'https://example.com/terms' },
+    }),
+  });
+
+  expect(getByText(/By continuing, you agree to the/i)).toBeInTheDocument();
+  expect(getByRole('link', { name: 'Terms of Service' })).toBeInTheDocument();
+  expect(queryByRole('link', { name: 'Privacy Policy' })).not.toBeInTheDocument();
+});
+
+/** `externalUrl` is an optional string, so an operator can set it to nothing.
+ *  A blank one would link back to this page and name a policy that does not
+ *  exist, which is worse than saying nothing. */
+test('treats a blank policy url as a policy the deployment never published', () => {
+  const { getByText, queryByRole } = setup({
+    useGetStartupConfigReturnValue: withInterface({
+      privacyPolicy: { externalUrl: '  ' },
+      termsOfService: { externalUrl: 'https://example.com/terms' },
+    }),
+  });
+
+  expect(getByText(/By continuing, you agree to the/i)).toBeInTheDocument();
+  expect(queryByRole('link', { name: 'Privacy Policy' })).not.toBeInTheDocument();
+  expect(document.querySelector('a[href=""]')).toBeNull();
+});
+
 test('says nothing about policies a deployment never configured', () => {
   const { queryByText } = setup();
+
+  expect(queryByText(/By continuing/i)).not.toBeInTheDocument();
+});
+
+test('says nothing when every configured policy url is blank', () => {
+  const { queryByText } = setup({
+    useGetStartupConfigReturnValue: withInterface({
+      privacyPolicy: { externalUrl: '' },
+      termsOfService: { externalUrl: '' },
+    }),
+  });
 
   expect(queryByText(/By continuing/i)).not.toBeInTheDocument();
 });

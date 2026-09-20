@@ -8,6 +8,27 @@ import { useLocalize } from '~/hooks';
 const linkClassName =
   'font-medium text-accent-primary underline underline-offset-2 transition-colors hover:text-accent-primary-hover focus-visible:text-accent-primary-hover';
 
+/** `externalUrl` is an optional string, so a deployment can set it to nothing.
+ *  A blank URL is not a published policy: it would render a link back to the
+ *  page the reader is on and name a document that does not exist. */
+const publishedUrl = (externalUrl?: string) => {
+  const url = externalUrl?.trim();
+  return url != null && url !== '' ? url : undefined;
+};
+
+const policyUrls = (startupConfig: TStartupConfig | null | undefined) => ({
+  privacyPolicyUrl: publishedUrl(startupConfig?.interface?.privacyPolicy?.externalUrl),
+  termsOfServiceUrl: publishedUrl(startupConfig?.interface?.termsOfService?.externalUrl),
+});
+
+/** Whether the deployment published anything to consent to. The auth layout
+ *  reads this to choose between the consent and its footer bar, so the two
+ *  cannot disagree about whether the sentence is on the screen. */
+export function hasPublishedPolicies(startupConfig: TStartupConfig | null | undefined): boolean {
+  const { privacyPolicyUrl, termsOfServiceUrl } = policyUrls(startupConfig);
+  return privacyPolicyUrl != null || termsOfServiceUrl != null;
+}
+
 /** Worded for whichever policies the deployment published, so one it never
  *  wrote is never claimed to have been agreed to. */
 const consentKey = (privacyPolicyUrl?: string, termsOfServiceUrl?: string) => {
@@ -21,14 +42,15 @@ const consentKey = (privacyPolicyUrl?: string, termsOfServiceUrl?: string) => {
 };
 
 /**
- * The consent registration is given under, stated where the account is created
- * rather than left to a link beneath the composer. Absent entirely on a
- * deployment that configured neither policy.
+ * The consent an account is created under, stated where it is created rather
+ * than left to a link beneath the composer. It closes the auth card, so it
+ * covers the registration form and the provider buttons alike: a first sign-in
+ * through a provider creates an account too. Absent entirely on a deployment
+ * that published neither policy.
  */
 function LegalConsent({ startupConfig }: { startupConfig: TStartupConfig | null | undefined }) {
   const localize = useLocalize();
-  const privacyPolicyUrl = startupConfig?.interface?.privacyPolicy?.externalUrl;
-  const termsOfServiceUrl = startupConfig?.interface?.termsOfService?.externalUrl;
+  const { privacyPolicyUrl, termsOfServiceUrl } = policyUrls(startupConfig);
 
   if (privacyPolicyUrl == null && termsOfServiceUrl == null) {
     return null;

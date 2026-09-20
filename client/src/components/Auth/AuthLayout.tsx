@@ -1,5 +1,6 @@
 import { ThemeSelector } from '@librechat/client';
 import { TStartupConfig } from 'librechat-data-provider';
+import LegalConsent, { hasPublishedPolicies } from './LegalConsent';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import { TranslationKeys, useLocalize } from '~/hooks';
 import SocialLoginRender from './SocialLoginRender';
@@ -27,6 +28,20 @@ function AuthLayout({
   const localize = useLocalize();
 
   const hasStartupConfigError = startupConfigError !== null && startupConfigError !== undefined;
+  const isRegister = pathname.includes('register');
+  const showsSocialLogin = !pathname.includes('2fa') && (isRegister || pathname.includes('login'));
+  /** Where an account can be created: the registration form, and a first
+   *  sign-in through a provider button, which the login screen carries too. */
+  const createsAccounts =
+    isRegister || (showsSocialLogin && startupConfig?.socialLoginEnabled === true);
+  /** The consent names the same policies the footer bar links, so a screen
+   *  states them once, as the sentence it is agreeing to. */
+  const statesConsent = createsAccounts && hasPublishedPolicies(startupConfig);
+  /** Registration states it under its own submit button, where it is read
+   *  before the account is created rather than below however many provider
+   *  buttons a deployment configured. On the login screen those buttons are
+   *  the account creation, so there the sentence closes the card. */
+  const statesConsentBelowProviders = statesConsent && !isRegister;
   const DisplayError = () => {
     if (hasStartupConfigError) {
       return (
@@ -87,15 +102,11 @@ function AuthLayout({
             </h1>
           )}
           {children}
-          {!pathname.includes('2fa') &&
-            (pathname.includes('login') || pathname.includes('register')) && (
-              <SocialLoginRender startupConfig={startupConfig} />
-            )}
+          {showsSocialLogin && <SocialLoginRender startupConfig={startupConfig} />}
+          {statesConsentBelowProviders && <LegalConsent startupConfig={startupConfig} />}
         </div>
       </main>
-      {/* Registration states the same policies as the consent it is given
-          under, so the page does not carry both. */}
-      {!pathname.includes('register') && <Footer startupConfig={startupConfig} />}
+      {!statesConsent && <Footer startupConfig={startupConfig} />}
     </div>
   );
 }
