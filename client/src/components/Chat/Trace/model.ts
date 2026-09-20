@@ -8,6 +8,26 @@ export type TraceScale = 'sequence' | 'time';
 
 export type TraceSpan = { start: number; end: number };
 
+/**
+ * Spend over a set of records. A total that silently skips a model call without a price, with or
+ * without usage, would under-report, so `costOf` gives one only when every model call has a price.
+ */
+type Spend = { cost: number; priced: number; unpriced: number };
+
+const noSpend = (): Spend => ({ cost: 0, priced: 0, unpriced: 0 });
+
+function spendOn(spend: Spend, record: TTraceRecord): void {
+  if (record.cost != null) {
+    spend.priced++;
+    spend.cost += record.cost;
+  } else if (record.kind === 'generation') {
+    spend.unpriced++;
+  }
+}
+
+const costOf = (spend: Spend): number | undefined =>
+  spend.priced > 0 && spend.unpriced === 0 ? spend.cost : undefined;
+
 export type TraceWindow = TraceSpan;
 
 export type TraceNode = {
@@ -55,6 +75,8 @@ export type TraceStep = {
   toolCalls: number;
   /** Tool call counts by tool name, in first-call order. */
   toolNames: Map<string, number>;
+  /** What the step's records cost, when every model call among them has a price. */
+  cost?: number;
   sequence: TraceSpan;
 };
 
@@ -81,6 +103,8 @@ export type TraceTurn = {
   split: boolean;
   /** Saved agents that ran in the response, each with the record that stands for it. */
   agents: Array<{ agentId: string; recordId: string }>;
+  /** What the response's records cost, title and label calls included, when every model call has a price. */
+  cost?: number;
   sequence: TraceSpan;
 };
 
@@ -522,6 +546,7 @@ function groupSteps(
         toolNames: new Map(),
         sequence: EMPTY_SPAN,
       };
+      const spend = noSpend();
       const stack = [...rootIds].reverse();
       while (stack.length > 0) {
         const node = nodes.get(stack.pop() ?? '');
@@ -529,6 +554,7 @@ function groupSteps(
           continue;
         }
         node.stepKey = key;
+        spendOn(spend, node.record);
         step.recordCount++;
         step.start = Math.min(step.start, node.start);
         step.end = Math.max(step.end, node.end ?? node.start);
@@ -550,6 +576,7 @@ function groupSteps(
           stack.push(node.viewChildIds[i]);
         }
       }
+      step.cost = costOf(spend);
       steps.set(key, step);
       turn.stepKeys.push(key);
     });
@@ -654,9 +681,8 @@ export function buildTraceModel(
   const summary: TraceSummary = { ...EMPTY_SUMMARY };
   let start = Number.POSITIVE_INFINITY;
   let end = Number.NEGATIVE_INFINITY;
-  let cost = 0;
-  let pricedRecords = 0;
-  let unpricedRecords = 0;
+  const spend = noSpend();
+  const spendByTurn = new Map<string, Spend>();
 
   for (const [id, node] of nodes) {
     const { record } = node;
@@ -723,14 +749,14 @@ export function buildTraceModel(
       summary.inputTokens += input;
       summary.outputTokens += output;
       summary.totalTokens += total;
-      if (record.cost == null) {
-        unpricedRecords++;
-      }
     }
-    if (record.cost != null) {
-      pricedRecords++;
-      cost += record.cost;
+    spendOn(spend, record);
+    let turnSpend = spendByTurn.get(record.messageId);
+    if (turnSpend == null) {
+      turnSpend = noSpend();
+      spendByTurn.set(record.messageId, turnSpend);
     }
+    spendOn(turnSpend, record);
   }
 
   const compare = byStart(nodes);
@@ -804,9 +830,12 @@ export function buildTraceModel(
 
   summary.turns = turns.length;
   summary.duration = end - start;
-  /** A total that silently skips a model call without a price, with or without usage, would under-report spend, so there is none. */
-  if (pricedRecords > 0 && unpricedRecords === 0) {
-    summary.cost = cost;
+  const total = costOf(spend);
+  if (total != null) {
+    summary.cost = total;
+  }
+  for (const turn of turns) {
+    turn.cost = costOf(spendByTurn.get(turn.messageId) ?? noSpend());
   }
   return { mode, nodes, steps, turns, start, end, count: sequence, summary };
 }

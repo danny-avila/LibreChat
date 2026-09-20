@@ -333,8 +333,27 @@ describe('Trace Viewer', () => {
     mockStartupConfig = { interface: { traceViewer: { enabled: true }, contextCost: true } };
     renderViewer();
 
+    const modelCall = await recordRow('llm');
+    const summary = screen.getByLabelText('com_ui_trace_summary');
+    expect(within(summary).getByText('com_ui_trace_summary_cost').nextSibling).toHaveTextContent(
+      '$0.02',
+    );
+    /** The ledger carries it too: a column, each priced record, and its step and response. */
+    const ledger = screen.getByTestId('trace-ledger');
+    expect(within(ledger).getByText('com_ui_trace_summary_cost')).toBeInTheDocument();
+    expect(within(modelCall).getByText('$0.02')).toBeInTheDocument();
+    expect(within(stepRow(1)).getByText('$0.02')).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('treeitem', { name: /^com_ui_trace_turn/ })).getByText('$0.02'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows no cost anywhere while the deployment does not show context cost', async () => {
+    renderViewer();
+
     await recordRow('llm');
-    expect(screen.getByText('com_ui_trace_summary_cost')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_trace_summary_cost')).not.toBeInTheDocument();
+    expect(screen.queryByText('$0.02')).not.toBeInTheDocument();
   });
 
   it('explains a failure by its error code and recovers on retry', async () => {

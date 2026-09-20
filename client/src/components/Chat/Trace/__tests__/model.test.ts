@@ -246,6 +246,41 @@ describe('buildTraceModel', () => {
     expect(model.turns[0].errorCount).toBe(1);
   });
 
+  it('totals cost per step and per response under the same rule as the whole trace', () => {
+    const model = buildTraceModel([
+      record({ id: 'llm-1', kind: 'generation', cost: 0.01, startTime: at(0) }),
+      record({ id: 'tool', kind: 'tool', cost: 0.002, startTime: at(100) }),
+      record({ id: 'llm-2', kind: 'generation', startTime: at(1000) }),
+      record({
+        id: 'other',
+        messageId: 'response-2',
+        kind: 'generation',
+        cost: 0.5,
+        startTime: at(5000),
+      }),
+      record({
+        id: 'other-title',
+        messageId: 'response-2',
+        traceId: 'title',
+        origin: 'title',
+        kind: 'generation',
+        cost: 0.001,
+        startTime: at(5100),
+      }),
+    ]);
+    const [first, second] = model.turns;
+    const stepCosts = (turn: typeof first) =>
+      turn.stepKeys.map((key) => model.steps.get(key)?.cost);
+
+    expect(stepCosts(first)).toEqual([expect.closeTo(0.012), undefined]);
+    /** One unpriced model call leaves its step, its response and the trace without a total. */
+    expect(first.cost).toBeUndefined();
+    expect(model.summary.cost).toBeUndefined();
+    /** A response's total counts its title run, which its own steps do not. */
+    expect(stepCosts(second)).toEqual([expect.closeTo(0.5), expect.closeTo(0.001)]);
+    expect(second.cost).toBeCloseTo(0.501);
+  });
+
   it('withholds the cost total when any model call has no price, with or without usage', () => {
     const priced = record({ id: 'priced', kind: 'generation', usage: { total: 100 }, cost: 0.02 });
     const withUsage = buildTraceModel([

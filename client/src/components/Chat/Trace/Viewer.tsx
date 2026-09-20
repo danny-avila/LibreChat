@@ -536,6 +536,8 @@ export default function Viewer({
                 unrecordedCalls={activity.unrecordedCalls}
                 stepOffsets={activity.stepOffsets}
                 mcpIconMap={mcpIconMap}
+                showCost={showCost}
+                currency={currency}
                 onSelect={setSelectedId}
                 onToggle={toggle}
               />

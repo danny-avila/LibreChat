@@ -16,9 +16,9 @@ import type { RecordPresentation } from './present';
 import StackedToolIcons from '~/components/Chat/Messages/Content/ToolOutput/StackedToolIcons';
 import { spanOf, stepSpan, turnSpan, turnKey, boundsOf, isLabelRecord } from './model';
 import { useTraceFormat, recordDurationText } from './format';
+import { formatCost, formatTokens } from '~/utils/tokens';
 import { appearanceOf, STATUS_LABEL } from './kinds';
 import { cn, renderAgentAvatar } from '~/utils';
-import { formatTokens } from '~/utils/tokens';
 import { useRowWindow } from './virtual';
 import { useLocalize } from '~/hooks';
 
@@ -32,6 +32,9 @@ const ACTIVE_RING =
   'group-focus-visible/tree:ring-2 group-focus-visible/tree:ring-inset group-focus-visible/tree:ring-ring-primary';
 const GRID =
   'grid grid-cols-[minmax(0,1fr)_4.5rem_minmax(5rem,1fr)] md:grid-cols-[minmax(14rem,2fr)_5rem_4.5rem_minmax(10rem,3fr)]';
+/** With a cost column beside the tokens; both are wide-screen columns. */
+const GRID_WITH_COST =
+  'grid grid-cols-[minmax(0,1fr)_4.5rem_minmax(5rem,1fr)] md:grid-cols-[minmax(14rem,2fr)_5rem_4.5rem_5rem_minmax(10rem,3fr)]';
 
 type Domain = { start: number; span: number };
 
@@ -132,6 +135,8 @@ function Ledger({
   unrecordedCalls,
   stepOffsets,
   mcpIconMap,
+  showCost,
+  currency,
   onSelect,
   onToggle,
 }: {
@@ -152,12 +157,22 @@ function Ledger({
   /** Steps of a response that ran before its first loaded one, by response. */
   stepOffsets: ReadonlyMap<string, number>;
   mcpIconMap: Map<string, string>;
+  /** Whether the deployment shows cost, as the context usage gauge does. */
+  showCost: boolean;
+  currency?: { code: string; rate: number };
   onSelect: (id: string) => void;
   onToggle: (key: string) => void;
 }) {
   const localize = useLocalize();
   const format = useTraceFormat();
   const idPrefix = useId();
+  const grid = showCost ? GRID_WITH_COST : GRID;
+  const costCell = (cost?: number) =>
+    showCost && (
+      <span className="hidden truncate text-right text-xs font-normal tabular-nums text-text-secondary md:block">
+        {cost != null ? formatCost(cost, currency) : ''}
+      </span>
+    );
   const scrollRef = treeRef;
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const { first, last } = useRowWindow(scrollRef, rows.length, ROW_HEIGHT, {
@@ -348,7 +363,7 @@ function Ledger({
         style={{ top: HEADER_HEIGHT + index * ROW_HEIGHT, height: ROW_HEIGHT }}
         onClick={() => activate(row)}
         className={cn(
-          GRID,
+          grid,
           'absolute inset-x-0 cursor-pointer items-center gap-2 px-2 text-xs text-text-primary hover:bg-surface-hover',
           row.type === 'turn'
             ? 'border-t border-border-light bg-surface-primary-alt font-semibold'
@@ -395,6 +410,7 @@ function Ledger({
           )}
         </span>
         <span className="hidden md:block" />
+        {costCell(row.type === 'turn' ? row.turn.cost : row.step.cost)}
         <span className="relative h-full overflow-hidden">
           <GroupBar span={span} domain={domainFor(messageId)} />
         </span>
@@ -471,7 +487,7 @@ function Ledger({
         style={{ top: HEADER_HEIGHT + index * ROW_HEIGHT, height: ROW_HEIGHT }}
         onClick={() => activate(row)}
         className={cn(
-          GRID,
+          grid,
           'absolute inset-x-0 cursor-pointer items-center gap-2 px-2 text-sm text-text-primary hover:bg-surface-hover',
           selectedId === row.key && 'bg-surface-active-alt',
           active && ACTIVE_RING,
@@ -553,6 +569,7 @@ function Ledger({
         <span className="hidden text-right text-xs tabular-nums text-text-secondary md:block">
           {recordTokens(node)}
         </span>
+        {costCell(record.cost)}
         <span className="relative h-full overflow-hidden">
           <RecordBar node={node} scale={scale} domain={domainFor(record.messageId)} />
         </span>
@@ -587,13 +604,18 @@ function Ledger({
       <div
         aria-hidden="true"
         className={cn(
-          GRID,
+          grid,
           'sticky top-0 z-10 h-7 items-center gap-2 border-b border-border-light bg-presentation px-2 text-[11px] font-medium uppercase tracking-wide text-text-secondary',
         )}
       >
         <span>{localize('com_ui_trace_column_name')}</span>
         <span className="text-right">{localize('com_ui_trace_column_duration')}</span>
         <span className="hidden text-right md:block">{localize('com_ui_trace_column_tokens')}</span>
+        {showCost && (
+          <span className="hidden text-right md:block">
+            {localize('com_ui_trace_summary_cost')}
+          </span>
+        )}
         {viewDomain ? (
           <span className="flex justify-between normal-case tabular-nums tracking-normal">
             <span>{position(viewDomain.start)}</span>
