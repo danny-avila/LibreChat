@@ -3049,14 +3049,192 @@ describe('createToolExecuteHandler', () => {
       expect(invoked.status).toBe('success');
       expect(invoked.content).toBe('Skill "fresh-skill" loaded. Follow the instructions below.');
       expect(JSON.stringify(invoked.injectedMessages)).toContain('# Fresh skill body');
-      /** Same document: the id resolved is the one creation returned. */
-      expect(getSkillByName).toHaveBeenLastCalledWith(
-        'fresh-skill',
-        [SKILL_ID],
-        expect.objectContaining({ preferModelInvocable: true }),
-      );
+      /** Same document: the lookup is pinned to the id creation returned, so no
+          same-name doc can be resolved in its place. */
+      expect(getSkillByName).toHaveBeenLastCalledWith('fresh-skill', [SKILL_ID], {});
       expect(runConfigurable.accessibleSkillIds).toEqual([SKILL_ID]);
       expect(new Set(loadedConfigurables).size).toBe(3);
+    });
+
+    it('loads the skill it authored when a same-name deployment skill becomes accessible', async () => {
+      /**
+       * `createDeploymentSkillMethods.getSkillByName` consults the deployment
+       * registry before the database, and `registry.getByName` matches on name
+       * plus accessibility alone (it ignores the lookup options). So once a
+       * same-name deployment skill shares the accessible set, an unpinned
+       * lookup returns the deployment instructions while the create hint
+       * claimed the model's own skill was invocable. `getSkillByName` here
+       * reproduces that precedence, so the assertion is about the lookup this
+       * handler issues, not about the fake.
+       *
+       * Creation and invocation are separate batches because that is the only
+       * way the collision is reachable: a deployment skill already inside the
+       * authoring lookup makes the create fail as a duplicate instead, and the
+       * model invokes on a later turn anyway.
+       */
+      const DEPLOYMENT_ID = new Types.ObjectId();
+      const deploymentSkill = {
+        _id: DEPLOYMENT_ID,
+        name: 'shared-name',
+        body: '# Deployment instructions',
+        description: 'Deployment copy',
+        fileCount: 0,
+        version: 7,
+      };
+      const authoredSkill = {
+        _id: SKILL_ID,
+        name: 'shared-name',
+        body: '---\nname: shared-name\ndescription: Authored copy\n---\n# Authored instructions\n',
+        description: 'Authored copy',
+        fileCount: 0,
+        version: 1,
+      };
+      let authoredStored = false;
+      const getSkillByName = jest.fn(
+        async (name: string, accessibleIds: Array<{ toString(): string }>) => {
+          if (name !== 'shared-name') {
+            return null;
+          }
+          const ids = new Set(accessibleIds.map((id) => id.toString()));
+          /* Registry before database, exactly like the deployment methods. */
+          if (ids.has(DEPLOYMENT_ID.toString())) {
+            return deploymentSkill;
+          }
+          if (authoredStored && ids.has(SKILL_ID.toString())) {
+            return authoredSkill;
+          }
+          return null;
+        },
+      );
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [],
+        configurable: {
+          req,
+          skillAuthoringAvailable: true,
+          fileAuthoringToolNames: new Set(['create_file', 'edit_file']),
+        },
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools,
+        canCreateSkill: jest.fn(async () => true),
+        grantSkillOwner: jest.fn(async () => undefined),
+        getSkillByName: getSkillByName as unknown as ToolExecuteOptions['getSkillByName'],
+        createSkill: jest.fn(async () => {
+          authoredStored = true;
+          return { skill: authoredSkill };
+        }) as unknown as ToolExecuteOptions['createSkill'],
+      });
+      const runConfigurable: Record<string, unknown> = { req, accessibleSkillIds: [] };
+
+      const [created] = await invokeHandlerWithConfig(
+        handler,
+        [
+          {
+            id: 'call_create_shared_name',
+            name: 'create_file',
+            args: { path: 'skills/shared-name/SKILL.md', content: authoredSkill.body },
+          },
+        ],
+        runConfigurable,
+      );
+      /* A later batch re-resolves per agent and brings the deployment skill
+         into the accessible set. */
+      (runConfigurable.accessibleSkillIds as (typeof DEPLOYMENT_ID)[]).push(DEPLOYMENT_ID);
+      const [invoked] = await invokeHandlerWithConfig(
+        handler,
+        [
+          {
+            id: 'call_invoke_shared_name',
+            name: Constants.SKILL_TOOL,
+            args: { skillName: 'shared-name' },
+          },
+        ],
+        runConfigurable,
+      );
+
+      expect(created.status).toBe('success');
+      expect(created.content).toContain('Invoke it with the skill tool');
+      expect(invoked.status).toBe('success');
+      /* The hint promised the authored skill, so the authored body is what has
+         to reach the context. */
+      const injected = JSON.stringify(invoked.injectedMessages);
+      expect(injected).toContain('# Authored instructions');
+      expect(injected).not.toContain('# Deployment instructions');
+      /* Pinned to the authored id alone, and without `preferModelInvocable`:
+         one candidate leaves no collision to resolve. */
+      expect(getSkillByName).toHaveBeenLastCalledWith('shared-name', [SKILL_ID], {});
+    });
+
+    it('keeps the authored id reachable after the per-batch configurable copy', async () => {
+      /**
+       * `ON_TOOL_EXECUTE` rebuilds the run configurable every batch
+       * (`{ ...incomingConfigurable, executionContext }`), so a map assigned
+       * onto that copy is discarded with it. The map is seeded on the run's own
+       * configurable for exactly this reason; this pins the surviving channel so
+       * a future change that reassigns it instead of mutating it fails here
+       * rather than silently unpinning cross-batch invocation.
+       */
+      const createdSkill = {
+        _id: SKILL_ID,
+        name: 'cross-batch-skill',
+        body: '---\nname: cross-batch-skill\ndescription: Cross batch\n---\n# Cross batch body\n',
+        description: 'Cross batch',
+        fileCount: 0,
+        version: 1,
+      };
+      let stored = false;
+      const getSkillByName = jest.fn(async () => (stored ? createdSkill : null));
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [],
+        configurable: {
+          req,
+          skillAuthoringAvailable: true,
+          fileAuthoringToolNames: new Set(['create_file', 'edit_file']),
+        },
+      }));
+      const handler = createToolExecuteHandler({
+        loadTools,
+        canCreateSkill: jest.fn(async () => true),
+        grantSkillOwner: jest.fn(async () => undefined),
+        getSkillByName: getSkillByName as unknown as ToolExecuteOptions['getSkillByName'],
+        createSkill: jest.fn(async () => {
+          stored = true;
+          return { skill: createdSkill };
+        }) as unknown as ToolExecuteOptions['createSkill'],
+      });
+      const runConfigurable: Record<string, unknown> = { req, accessibleSkillIds: [] };
+
+      await invokeHandlerWithConfig(
+        handler,
+        [
+          {
+            id: 'call_create_cross_batch',
+            name: 'create_file',
+            args: { path: 'skills/cross-batch-skill/SKILL.md', content: createdSkill.body },
+          },
+        ],
+        runConfigurable,
+      );
+
+      expect(runConfigurable.authoredSkillIdsByName).toEqual({
+        'cross-batch-skill': SKILL_ID.toString(),
+      });
+
+      const [invoked] = await invokeHandlerWithConfig(
+        handler,
+        [
+          {
+            id: 'call_invoke_cross_batch',
+            name: Constants.SKILL_TOOL,
+            args: { skillName: 'cross-batch-skill' },
+          },
+        ],
+        runConfigurable,
+      );
+
+      expect(invoked.status).toBe('success');
+      expect(JSON.stringify(invoked.injectedMessages)).toContain('# Cross batch body');
+      expect(getSkillByName).toHaveBeenLastCalledWith('cross-batch-skill', [SKILL_ID], {});
     });
 
     it('does not advertise invocation for a skill created with disable-model-invocation', async () => {
