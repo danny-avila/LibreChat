@@ -7,7 +7,7 @@ import { MediaProviderError } from '../errors';
 import { nativeParameters } from './native';
 import { mediaAPIURL } from '../provider';
 
-/** Protocol limits for the documented GA Veo 3.1 text-to-video models. */
+/** Protocol limits for documented Veo 3.1 models, including the Lite preview. */
 const models = new Map([
   ['veo-3.1-fast-generate-001', 'Veo 3.1 Fast'],
   ['veo-3.1-lite-generate-001', 'Veo 3.1 Lite'],
@@ -60,6 +60,11 @@ export function vertexVideoCapabilities(modelId: string, config: MediaConfig): M
           ? ['start_frame', 'end_frame']
           : ['start_frame', 'end_frame', 'reference'],
         min: 0,
+        maxBytes: {
+          reference: 20 * 1024 * 1024,
+          start_frame: 20 * 1024 * 1024,
+          end_frame: 20 * 1024 * 1024,
+        },
         max: Math.min(nativeModel(modelId).includes('lite') ? 2 : 3, config.limits.maxInputs),
       },
       execution: { kind: 'remote-job', cancellation: 'unsupported' },

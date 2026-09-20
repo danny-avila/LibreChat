@@ -22,7 +22,13 @@ export function nativeParameters(
   if (!capability) throw new MediaProviderError('rejected');
   const candidate = {
     ...request,
-    inputs: inputs.map(({ role, file_id, sourceURL }) => ({ role, file_id, sourceURL })),
+    inputs: inputs.map(({ role, file_id, sourceURL, type, data }) => ({
+      role,
+      file_id,
+      sourceURL,
+      type,
+      bytes: data.length,
+    })),
   };
   if (validateMediaCapability(candidate, capability, context.config.limits).length) {
     throw new MediaProviderError('rejected');

@@ -8,12 +8,14 @@ import type {
 } from '../provider';
 import {
   nativeRequest,
+  nativeParameters,
   nativeDownload,
   providerOptions,
   encodeOperation,
   decodeOperation,
 } from './native';
 import { MediaProviderError } from '../errors';
+import { maximumInputs } from './constraints';
 
 const models = new Map([
   ['kwaivgi/kling-v3.0-pro', 'Kling v3.0 Pro'],
@@ -67,6 +69,23 @@ const shots = z
   )
   .min(1)
   .max(6);
+const klingOptionSchema = z
+  .object({
+    cfg_scale: z.number().min(0).max(1).optional(),
+    multi_shot: z.boolean().optional(),
+    shot_type: z.enum(['customize', 'intelligence']).optional(),
+    multi_prompt: shots.optional(),
+    elements: z.array(z.record(z.unknown())).optional(),
+    resolution: z.string().trim().min(1).optional(),
+  })
+  .strict();
+const wanOptionSchema = z.object({ prompt_extend: z.boolean().optional() }).strict();
+const wanLegacyOptionSchema = z
+  .object({
+    enable_prompt_expansion: z.boolean().optional(),
+    shot_type: z.enum(['single', 'multi']).optional(),
+  })
+  .strict();
 
 function optionNames(model: string): string[] {
   if (model.startsWith('alibaba/')) return model.endsWith('2.6') ? wanLegacyOptions : wanOptions;
@@ -86,12 +105,52 @@ function profiles(config: MediaConfig): MediaModelProfile[] {
     if (legacy) durationSeconds = { min: 5, max: 15, values: [5, 10, 15], default: 5 };
     if (o1) durationSeconds = { min: 5, max: 10, values: [5, 10], default: 5 };
     const options = optionNames(modelId);
+    let maxPromptChars: number | undefined;
+    if (!wan) maxPromptChars = 2500;
+    else if (!legacy) maxPromptChars = 5000;
     return {
       modelId,
       modelName,
       capabilities: [
         {
           operation: 'video.generate',
+          maxPromptChars,
+          constraints: [
+            maximumInputs('video', 1),
+            maximumInputs('audio', 1),
+            {
+              when: [{ kind: 'input', role: 'end_frame', present: true }],
+              anyOf: [
+                { kind: 'input', role: 'start_frame', present: true },
+                { kind: 'input', role: 'video', present: true },
+              ],
+            },
+            {
+              when: [{ kind: 'input', role: 'start_frame', present: true }],
+              anyOf: [{ kind: 'input', role: 'video', present: false }],
+            },
+            ...(wan && !legacy
+              ? [
+                  {
+                    when: [{ kind: 'input' as const, role: 'audio' as const, present: true }],
+                    anyOf: [{ kind: 'input' as const, role: 'video' as const, present: false }],
+                  },
+                ]
+              : []),
+            ...(!wan
+              ? ['resolution', 'elements'].map((option) => ({
+                  when: [
+                    {
+                      kind: 'parameter' as const,
+                      name: 'providerOptions' as const,
+                      option,
+                      present: true,
+                    },
+                  ],
+                  anyOf: [{ kind: 'input' as const, role: 'start_frame' as const, present: true }],
+                }))
+              : []),
+          ],
           inputs: {
             roles,
             min: 0,
@@ -130,6 +189,13 @@ export function createAtlasMediaAdapters(): MediaProviderAdapter[] {
       operations: ['video.generate'],
       download: nativeDownload,
       async submit(request, inputs, context): Promise<MediaProviderResult> {
+        const parameters = nativeParameters(
+          request,
+          inputs,
+          context,
+          profiles(context.config).find((profile) => profile.modelId === request.selection.modelId)
+            ?.capabilities[0],
+        );
         const model = request.selection.modelId;
         if (!models.has(model) || request.operation !== 'video.generate')
           throw new MediaProviderError('rejected');
@@ -137,6 +203,13 @@ export function createAtlasMediaAdapters(): MediaProviderAdapter[] {
         const legacy = model.endsWith('2.6');
         const o1 = model.endsWith('-o1');
         const options = providerOptions(request, optionNames(model));
+        let validOptions = klingOptionSchema.safeParse(options).success;
+        if (wan)
+          validOptions = (legacy ? wanLegacyOptionSchema : wanOptionSchema).safeParse(
+            options,
+          ).success;
+        else if (o1) validOptions = Object.keys(options).length === 0;
+        if (!validOptions) throw new MediaProviderError('rejected');
         const start = inputs.find((input) => input.role === 'start_frame');
         const end = inputs.find((input) => input.role === 'end_frame');
         const video = inputs.find((input) => input.role === 'video');
@@ -151,8 +224,7 @@ export function createAtlasMediaAdapters(): MediaProviderAdapter[] {
           (!wan && request.prompt.length > 2500) ||
           (wan &&
             !legacy &&
-            (request.prompt.length > 5000 ||
-              (request.parameters.negativePrompt?.length ?? 0) > 500)) ||
+            (request.prompt.length > 5000 || (parameters.negativePrompt?.length ?? 0) > 500)) ||
           (wan && !legacy && audio && video) ||
           (!start && (options.resolution !== undefined || options.elements !== undefined)) ||
           (legacy && options.shot_type === 'multi' && options.enable_prompt_expansion === false)
@@ -167,7 +239,7 @@ export function createAtlasMediaAdapters(): MediaProviderAdapter[] {
               !parsed.success ||
               parsed.data.some((shot) => Number(shot.duration) < 1) ||
               parsed.data.reduce((sum, shot) => sum + Number(shot.duration), 0) !==
-                (request.parameters.durationSeconds ?? 5)
+                (parameters.durationSeconds ?? 5)
             )
               throw new MediaProviderError('rejected');
           }
@@ -193,7 +265,6 @@ export function createAtlasMediaAdapters(): MediaProviderAdapter[] {
           upload(audio),
         ]);
         const imageMode = Boolean(image || videoURL);
-        const parameters = request.parameters;
         const body: Record<string, unknown> = {
           ...options,
           model: `${model}/${imageMode ? 'image-to-video' : 'text-to-video'}`,

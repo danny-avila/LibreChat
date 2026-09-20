@@ -433,9 +433,10 @@ test('turns that share a comparison render one prompt with their results side by
       ],
     },
   });
-  const comparison = screen.getByRole('region', { name: 'com_media_comparison' });
+  const comparison = screen.getByRole('group', { name: 'com_media_comparison' });
   expect(within(comparison).getAllByRole('group', { name: 'com_media_request' })).toHaveLength(1);
-  expect(within(comparison).getAllByRole('region', { name: 'com_media_job' })).toHaveLength(2);
+  expect(within(comparison).getByRole('group', { name: selection.modelId })).toBeVisible();
+  expect(within(comparison).getByRole('group', { name: 'other-model' })).toBeVisible();
   expect(screen.getAllByRole('group', { name: 'com_media_request' })).toHaveLength(2);
 });
 

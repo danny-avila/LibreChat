@@ -49,6 +49,22 @@ function catalog(config: MediaConfig): MediaModelProfile[] {
       styles ? (['image.generate'] as const) : (['image.generate', 'image.edit'] as const)
     ).map((operation) => ({
       operation,
+      constraints:
+        operation === 'image.generate'
+          ? [
+              {
+                when: [{ kind: 'input', role: 'reference', present: true }],
+                anyOf: [
+                  {
+                    kind: 'parameter',
+                    name: 'providerOptions',
+                    option: 'style_id',
+                    present: false,
+                  },
+                ],
+              },
+            ]
+          : undefined,
       inputs: {
         roles: ['reference'],
         min: styles || operation === 'image.edit' ? 1 : 0,

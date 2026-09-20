@@ -18,6 +18,7 @@ import {
   providerOptions,
 } from './native';
 import { MediaProviderError } from '../errors';
+import { maximumInputs } from './constraints';
 
 const models = new Map([
   ['runway/gen-4.5', 'gen4.5'],
@@ -39,10 +40,11 @@ function catalog(config: MediaConfig): MediaModelProfile[] {
     capabilities: [
       {
         operation: 'video.generate',
+        maxPromptChars: 1000,
         workflow: model === 'aleph2' ? 'edit' : 'generate',
         constraints:
           model === 'aleph2'
-            ? []
+            ? [maximumInputs('video', 1)]
             : [
                 {
                   when: [{ kind: 'input', role: 'start_frame', present: false }],
@@ -51,6 +53,7 @@ function catalog(config: MediaConfig): MediaModelProfile[] {
               ],
         inputs: {
           roles: model === 'aleph2' ? ['video', 'reference'] : ['start_frame'],
+          mediaTypes: { video: ['video/mp4'] },
           requiredRoles: model === 'aleph2' ? ['video'] : [],
           min: model === 'aleph2' ? 1 : 0,
           max: Math.min(model === 'aleph2' ? 6 : 1, config.limits.maxInputs),

@@ -102,7 +102,15 @@ export const mediaParameterNameSchema = z.enum([
   'creativity',
 ]);
 export const mediaConditionSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('input'), role: mediaInputRoleSchema, present: z.boolean() }).strict(),
+  z
+    .object({
+      kind: z.literal('input'),
+      role: mediaInputRoleSchema,
+      present: z.boolean(),
+      min: z.number().int().nonnegative().optional(),
+      max: z.number().int().nonnegative().optional(),
+    })
+    .strict(),
   z
     .object({
       kind: z.literal('parameter'),
@@ -125,6 +133,7 @@ export const mediaConstraintSchema = z
   .strict();
 const capabilityFields = {
   constraints: z.array(mediaConstraintSchema).optional(),
+  maxPromptChars: z.number().int().positive().optional(),
   inputs: z
     .object({
       roles: z.array(mediaInputRoleSchema),
@@ -132,6 +141,8 @@ const capabilityFields = {
       max: z.number().int().nonnegative(),
       requiredRoles: z.array(mediaInputRoleSchema).optional(),
       hostedRoles: z.array(mediaHostedInputRoleSchema).optional(),
+      mediaTypes: z.record(mediaInputRoleSchema, z.array(z.string().min(1)).min(1)).optional(),
+      maxBytes: z.record(mediaInputRoleSchema, z.number().int().positive()).optional(),
     })
     .strict()
     .refine((value) => value.min <= value.max, 'Invalid input limits'),

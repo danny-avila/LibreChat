@@ -2988,6 +2988,7 @@
   "com_media_background": "Background",
   "com_media_resolution": "Resolution",
   "com_media_audio": "Generate audio",
+  "com_media_prompt_limit": "This model supports prompts up to {{max}} characters. Shorten the prompt to continue.",
   "com_media_prompt": "Describe what you want to create or change",
   "com_media_queue": "Generate",
   "com_media_upload": "Upload reference",

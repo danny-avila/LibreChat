@@ -9,7 +9,7 @@ import type { MediaCatalog, MediaPreset, MediaSelection } from 'librechat-data-p
 import type { MediaEditTarget } from './context';
 import type { FormControls } from './options';
 import type { MediaDraft } from './state';
-import { offeringId, readProviderOptions } from './options';
+import { offeringId, readProviderOptions, mediaInputsWithMetadata } from './options';
 import { mediaFeatures, useMediaHost } from './host';
 import { useMediaPresets } from '~/data-provider';
 import { withImageContext } from './context';
@@ -137,9 +137,14 @@ export function useMediaDraftForm({
     // The server omits deleted or expired files. Never restore only part of a saved reference set.
     if (inputs.some((input, index) => input.sourceURL || !references[index])) return false;
     if (
-      validateMediaCapability({ ...settings, inputs }, cap, catalog.limits, {
-        checkInputs: inputs.length > 0,
-      }).length
+      validateMediaCapability(
+        { ...settings, inputs: mediaInputsWithMetadata(inputs, assets) },
+        cap,
+        catalog.limits,
+        {
+          checkInputs: inputs.length > 0,
+        },
+      ).length
     )
       return false;
     const update: Partial<MediaDraft> = {
@@ -212,11 +217,18 @@ export function useMediaDraftForm({
   delete parameters.providerOptions;
   if (options.value && Object.keys(options.value).length)
     parameters.providerOptions = options.value;
+  const validationInputs = mediaInputsWithMetadata(draft.inputs, draft.assets);
+  const maxPromptChars = Math.min(
+    catalog.limits.maxPromptChars,
+    capability?.maxPromptChars ?? Infinity,
+  );
+  const promptInvalid = draft.prompt.length > maxPromptChars;
   const validation = capability
     ? validateMediaCapability(
         {
           operation: capability.operation,
-          inputs: draft.inputs,
+          inputs: validationInputs,
+          prompt: draft.prompt,
           parameters,
         },
         capability,
@@ -266,6 +278,9 @@ export function useMediaDraftForm({
     invalidSettings,
     optionsInvalid,
     validation,
+    validationInputs,
+    maxPromptChars,
+    promptInvalid,
   };
 }
 export type MediaDraftForm = ReturnType<typeof useMediaDraftForm>;

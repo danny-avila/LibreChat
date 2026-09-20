@@ -11,6 +11,7 @@ import {
   decodeOperation,
   imageBytes,
 } from './native';
+import { frameInputConstraints, maximumInputs } from './constraints';
 import { MediaProviderError } from '../errors';
 
 const imageModels = new Map([
@@ -54,6 +55,19 @@ function images(config: MediaConfig): MediaModelProfile[] {
       modelName,
       capabilities: (['image.generate', 'image.edit'] as const).map((operation) => ({
         operation,
+        constraints: pro
+          ? [
+              {
+                when: [{ kind: 'parameter', name: 'background', values: ['transparent'] }],
+                anyOf: [{ kind: 'input', role: 'reference', present: true, max: 1 }],
+              },
+            ]
+          : [
+              ...Array.from({ length: Math.min(15, config.limits.maxOutputs) }, (_, index) => ({
+                ...maximumInputs('reference', 14 - index),
+                when: [{ kind: 'parameter' as const, name: 'count' as const, values: [index + 1] }],
+              })),
+            ],
         inputs: {
           roles: ['reference'],
           min: operation === 'image.edit' ? 1 : 0,
@@ -88,9 +102,27 @@ function videos(config: MediaConfig): MediaModelProfile[] {
       capabilities: [
         {
           operation: 'video.generate',
+          constraints: [
+            ...frameInputConstraints(['reference', 'video', 'audio']),
+            maximumInputs('reference', latest ? 30 : 9),
+            maximumInputs('video', latest ? 10 : 3),
+            maximumInputs('audio', latest ? 10 : 3),
+            {
+              when: [
+                {
+                  kind: 'parameter',
+                  name: 'providerOptions',
+                  option: 'omni_reference_task_type',
+                  values: ['edit', 'extend'],
+                },
+              ],
+              anyOf: [{ kind: 'input', role: 'video', present: true }],
+            },
+          ],
           inputs: {
             roles: ['reference', 'start_frame', 'end_frame', 'video', 'audio'],
             hostedRoles: ['video'],
+            mediaTypes: { audio: ['audio/mpeg', 'audio/wav'] },
             min: 0,
             max: Math.min(latest ? 50 : 15, config.limits.maxInputs),
           },

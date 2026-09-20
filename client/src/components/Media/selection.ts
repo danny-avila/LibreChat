@@ -25,6 +25,7 @@ export function getMediaSelection(form: MediaDraftForm) {
     change,
     parameters,
     validation,
+    validationInputs,
   } = form;
   if (!offering || !capability) return;
   const operations = (['image.generate', 'image.edit', 'video.generate'] as const).filter(
@@ -111,7 +112,8 @@ export function getMediaSelection(form: MediaDraftForm) {
     validateMediaCapability(
       {
         operation: compareCapability.operation,
-        inputs: draft.inputs,
+        inputs: validationInputs,
+        prompt: draft.prompt,
         parameters: comparisonParameters(compareCapability, parameters.count, draft.inputs),
       },
       compareCapability,

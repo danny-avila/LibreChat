@@ -2148,3 +2148,86 @@ test.each(['paste', 'drop'] as const)(
     );
   },
 );
+
+test.each([
+  { type: 'video/webm', bytes: 100, allowed: false },
+  { type: 'video/mp4', bytes: 501, allowed: false },
+  { type: 'video/mp4', bytes: 500, allowed: true },
+])(
+  'validates restored input MIME and bytes before submission: $type, $bytes',
+  async ({ type, bytes, allowed }) => {
+    const env = setup();
+    const choices: MediaCatalog = {
+      ...catalog,
+      offerings: [
+        {
+          ...catalog.offerings[0],
+          capabilities: [
+            {
+              operation: 'video.generate',
+              inputs: {
+                min: 1,
+                max: 1,
+                roles: ['video'],
+                mediaTypes: { video: ['video/mp4'] },
+                maxBytes: { video: 500 },
+              },
+              execution: { kind: 'remote-job', cancellation: 'unsupported' },
+              controls: { count: { min: 1, max: 1, default: 1 } },
+            },
+          ],
+        },
+      ],
+    };
+    const input = { file_id: 'clip', role: 'video' as const };
+    env.store.set(mediaDraftFamily('owner:new'), {
+      ...emptyDraft(),
+      offering: '["connection","image-model"]',
+      operation: 'video.generate',
+      prompt: 'Continue the clip',
+      inputs: [input],
+      revision: 2,
+      assets: [{ file_id: 'clip', filename: 'clip', filepath: '/clip', type, bytes }],
+    });
+    render(<MediaForm catalog={choices} send={env.send} busy={false} />, { wrapper: env.wrapper });
+    const submit = screen.getByRole('button', { name: 'com_media_queue' });
+    if (!allowed) {
+      expect(submit).toBeDisabled();
+      fireEvent.click(submit);
+      expect(env.send).not.toHaveBeenCalled();
+      return;
+    }
+    expect(submit).toBeEnabled();
+    fireEvent.click(submit);
+    await waitFor(() => expect(env.send).toHaveBeenCalledTimes(1));
+    expect(env.send.mock.calls[0][0].request.inputs).toEqual([input]);
+  },
+);
+
+test('preserves an over-limit restored prompt and enables submission after shortening it', () => {
+  const env = setup();
+  const choices: MediaCatalog = {
+    ...catalog,
+    offerings: [
+      {
+        ...catalog.offerings[0],
+        capabilities: [{ ...catalog.offerings[0].capabilities[0], maxPromptChars: 5 }],
+      },
+    ],
+  };
+  env.store.set(mediaDraftFamily('owner:new'), {
+    ...emptyDraft(),
+    offering: '["connection","image-model"]',
+    prompt: 'Keep this long draft',
+    revision: 2,
+  });
+  render(<MediaForm catalog={choices} send={env.send} busy={false} />, { wrapper: env.wrapper });
+  const prompt = screen.getByRole('textbox', { name: 'com_media_prompt' });
+  expect(prompt).toHaveValue('Keep this long draft');
+  expect(prompt).toHaveAttribute('maxlength', '5');
+  expect(screen.getByText('com_media_prompt_limit')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeDisabled();
+  fireEvent.change(prompt, { target: { value: 'Lake' } });
+  expect(screen.queryByText('com_media_prompt_limit')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'com_media_queue' })).toBeEnabled();
+});

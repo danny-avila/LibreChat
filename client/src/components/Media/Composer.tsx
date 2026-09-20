@@ -41,6 +41,8 @@ export function MediaComposer({
     change,
     invalidSettings,
     optionsInvalid,
+    maxPromptChars,
+    promptInvalid,
   } = form;
   const selection = getMediaSelection(form);
   const { error, uploads, uploading, submit, uploadFile, uploadFiles, uploadURL } = actions;
@@ -70,7 +72,7 @@ export function MediaComposer({
             ariaLabel={localize('com_media_prompt')}
             minRows={1}
             maxRows={6}
-            maxLength={catalog.limits.maxPromptChars}
+            maxLength={maxPromptChars}
             submitOnEnter={host.enterToSend}
             resolveKeyVerdict={host.resolveKeyVerdict}
           />
@@ -167,6 +169,11 @@ export function MediaComposer({
         </div>
       )}
       <MediaReferences form={form} />
+      {promptInvalid && (
+        <p role="status" className="text-sm text-text-secondary">
+          {localize('com_media_prompt_limit', { max: maxPromptChars })}
+        </p>
+      )}
       {!inputsValid && (
         <p role="status" className="text-xs leading-5 text-text-secondary">
           {localize('com_media_reference_hint', {
@@ -238,6 +245,7 @@ export function MediaComposer({
             !unsupportedContext &&
             !staleRoute &&
             !optionsInvalid &&
+            !promptInvalid &&
             !compareInvalid &&
             inputsValid &&
             invalidSettings.length === 0 &&
@@ -249,7 +257,7 @@ export function MediaComposer({
           placeholder={localize(placeholders[activeOperation])}
           minRows={1}
           maxRows={6}
-          maxLength={catalog.limits.maxPromptChars}
+          maxLength={maxPromptChars}
           submitOnEnter={host.enterToSend}
           resolveKeyVerdict={host.resolveKeyVerdict}
           actions={

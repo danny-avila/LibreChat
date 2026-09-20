@@ -10,6 +10,7 @@ import type {
 } from '../provider';
 import { dataURI, imageBytes, nativeDownload, nativeRequest, providerOptions } from './native';
 import { MediaProviderError } from '../errors';
+import { maximumInputs } from './constraints';
 import { mediaAPIURL } from '../provider';
 
 const images = new Map([
@@ -48,6 +49,7 @@ function compatibleImageCapabilities(model: string, config: MediaConfig): MediaC
   if (dalle3) availableSizes.push('1792x1024', '1024x1792');
   return operations.map((operation) => ({
     operation,
+    constraints: operation === 'image.edit' ? [maximumInputs('reference', 1)] : undefined,
     inputs: {
       roles: operation === 'image.edit' ? ['reference', 'mask'] : [],
       min: operation === 'image.edit' ? 1 : 0,

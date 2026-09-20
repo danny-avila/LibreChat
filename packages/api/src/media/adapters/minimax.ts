@@ -10,6 +10,7 @@ import {
   encodeOperation,
   decodeOperation,
 } from './native';
+import { frameInputConstraints, maximumInputs } from './constraints';
 import { MediaProviderError } from '../errors';
 
 const models = new Map([
@@ -45,6 +46,7 @@ function profiles(config: MediaConfig): MediaModelProfile[] {
       capabilities: [
         {
           operation: 'video.generate',
+          maxPromptChars: legacy ? 2000 : 7000,
           constraints: legacy
             ? [
                 {
@@ -52,13 +54,36 @@ function profiles(config: MediaConfig): MediaModelProfile[] {
                   anyOf: [{ kind: 'parameter', name: 'durationSeconds', values: [6] }],
                 },
               ]
-            : [],
+            : [
+                ...frameInputConstraints(['reference', 'video', 'audio'], {
+                  lastFrameRequiresFirst: false,
+                }),
+                maximumInputs('reference', 9),
+                maximumInputs('video', 3),
+                maximumInputs('audio', 3),
+                {
+                  when: [{ kind: 'parameter', name: 'aspectRatio', values: ['adaptive'] }],
+                  anyOf: (['reference', 'start_frame', 'end_frame', 'video', 'audio'] as const).map(
+                    (role) => ({ kind: 'input' as const, role, present: true }),
+                  ),
+                },
+              ],
           inputs: {
             roles: legacy
               ? ['start_frame']
               : ['reference', 'start_frame', 'end_frame', 'video', 'audio'],
             min: 0,
             max: Math.min(legacy ? 1 : 15, config.limits.maxInputs),
+            mediaTypes: { video: ['video/mp4'], audio: ['audio/mpeg', 'audio/wav'] },
+            maxBytes: legacy
+              ? undefined
+              : {
+                  reference: 30 * 1024 * 1024,
+                  start_frame: 30 * 1024 * 1024,
+                  end_frame: 30 * 1024 * 1024,
+                  video: 50 * 1024 * 1024,
+                  audio: 15 * 1024 * 1024,
+                },
           },
           execution: { kind: 'remote-job', cancellation: 'unsupported' },
           controls: {
@@ -172,11 +197,10 @@ export function createMinimaxMediaAdapters(): MediaProviderAdapter[] {
           inputs.some((input) => input.role === 'mask') ||
           (frames.length > 0 && frames.length !== inputs.length) ||
           new Set(frames.map((input) => input.role)).size !== frames.length ||
-          (inputs.some((input) => input.role === 'end_frame') &&
-            !inputs.some((input) => input.role === 'start_frame')) ||
           inputs.filter((input) => input.role === 'reference').length > 9 ||
           inputs.filter((input) => input.role === 'video').length > 3 ||
           inputs.filter((input) => input.role === 'audio').length > 3 ||
+          inputs.some((input) => input.role === 'video' && input.type !== 'video/mp4') ||
           inputs.some(
             (input) => input.role === 'audio' && !['audio/mpeg', 'audio/wav'].includes(input.type),
           ) ||

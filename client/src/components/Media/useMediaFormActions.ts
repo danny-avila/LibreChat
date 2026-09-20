@@ -37,6 +37,7 @@ export function useMediaFormActions(
     parameters,
     invalidSettings,
     optionsInvalid,
+    validation,
   } = form;
   const [error, setError] = useState<string>();
   const store = useStore();
@@ -57,6 +58,7 @@ export function useMediaFormActions(
       !host.canCreate ||
       busy ||
       uploading ||
+      validation.length ||
       invalidSettings.length ||
       optionsInvalid ||
       staleRoute ||

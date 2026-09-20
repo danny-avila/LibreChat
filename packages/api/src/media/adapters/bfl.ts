@@ -8,6 +8,7 @@ import {
   nativeRequest,
   providerOptions,
 } from './native';
+import { frameInputConstraints } from './constraints';
 import { MediaProviderError } from '../errors';
 
 const imageModels = new Map([
@@ -61,8 +62,26 @@ function videoCatalog(config: MediaConfig): MediaModelProfile[] {
     const capability: MediaCapability = {
       operation: 'video.generate',
       workflow,
+      constraints:
+        workflow === 'generate'
+          ? [
+              ...frameInputConstraints(['video']),
+              {
+                when: [{ kind: 'input', role: 'video', present: true }],
+                anyOf: [
+                  { kind: 'parameter', name: 'durationSeconds', present: false },
+                  {
+                    kind: 'parameter',
+                    name: 'durationSeconds',
+                    values: Array.from({ length: 11 }, (_, index) => index + 5),
+                  },
+                ],
+              },
+            ]
+          : undefined,
       inputs: {
         roles: workflow === 'generate' ? ['start_frame', 'end_frame', 'video'] : ['video'],
+        mediaTypes: { video: ['video/mp4'] },
         requiredRoles: workflow === 'generate' ? [] : ['video'],
         min: workflow === 'generate' ? 0 : 1,
         max: workflow === 'generate' ? Math.min(2, config.limits.maxInputs) : 1,

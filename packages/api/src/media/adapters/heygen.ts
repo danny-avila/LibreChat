@@ -10,6 +10,7 @@ import {
   decodeOperation,
 } from './native';
 import { MediaProviderError } from '../errors';
+import { maximumInputs } from './constraints';
 
 const modelId = 'heygen/avatar-iv';
 const optionNames = [
@@ -66,6 +67,7 @@ function profiles(config: MediaConfig): MediaModelProfile[] {
           operation: 'video.generate',
           workflow: 'avatar',
           constraints: [
+            maximumInputs('reference', 1),
             {
               anyOf: [
                 { kind: 'input', role: 'audio', present: true },
@@ -92,6 +94,8 @@ function profiles(config: MediaConfig): MediaModelProfile[] {
           ],
           inputs: {
             roles: ['reference', 'audio'],
+            mediaTypes: { audio: ['audio/mpeg', 'audio/wav'] },
+            maxBytes: { audio: 32 * 1024 * 1024 },
             min: 1,
             max: Math.min(2, config.limits.maxInputs),
             requiredRoles: ['reference'],

@@ -15,6 +15,7 @@ import {
   encodeOperation,
   decodeOperation,
 } from './native';
+import { frameInputConstraints, maximumInputs } from './constraints';
 import { MediaProviderError } from '../errors';
 
 const images = new Map([
@@ -128,6 +129,39 @@ function imageProfiles(config: MediaConfig): MediaModelProfile[] {
     modelName,
     capabilities: (['image.generate', 'image.edit'] as const).map((operation) => ({
       operation,
+      constraints: [
+        {
+          when: [{ kind: 'input', role: 'reference', present: true }],
+          anyOf: [
+            {
+              kind: 'parameter',
+              name: 'providerOptions',
+              option: 'prompt_extend_mode',
+              present: false,
+            },
+            {
+              kind: 'parameter',
+              name: 'providerOptions',
+              option: 'prompt_extend_mode',
+              values: ['direct'],
+            },
+          ],
+        },
+        {
+          when: [
+            {
+              kind: 'parameter',
+              name: 'providerOptions',
+              option: 'enable_thinking',
+              values: [true],
+            },
+          ],
+          anyOf: [
+            { kind: 'parameter', name: 'providerOptions', option: 'prompt_extend', present: false },
+            { kind: 'parameter', name: 'providerOptions', option: 'prompt_extend', values: [true] },
+          ],
+        },
+      ],
       inputs: {
         roles: ['reference'],
         min: operation === 'image.edit' ? 1 : 0,
@@ -151,12 +185,21 @@ function videoProfiles(config: MediaConfig): MediaModelProfile[] {
     const happy = modelName.startsWith('happyhorse');
     const capability: MediaCapability = {
       operation: 'video.generate',
+      constraints: happy
+        ? undefined
+        : [
+            ...frameInputConstraints(['reference', 'video', 'audio']),
+            maximumInputs('reference', 10),
+            maximumInputs('video', 5),
+            maximumInputs('audio', 5),
+          ],
       inputs: {
         roles: happy
           ? ['start_frame']
           : ['reference', 'start_frame', 'end_frame', 'video', 'audio'],
         min: 0,
         max: Math.min(happy ? 1 : 20, config.limits.maxInputs),
+        maxBytes: { audio: 15 * 1024 * 1024, video: 100 * 1024 * 1024 },
       },
       execution: { kind: 'remote-job', cancellation: 'unsupported' },
       controls: {

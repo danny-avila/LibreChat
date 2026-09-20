@@ -364,6 +364,14 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
       }),
     );
     let continuation: MediaProviderContext['continuation'];
+    validateMediaOffering(
+      {
+        ...request,
+        inputs: inputs.map(({ data, ...input }) => ({ ...input, bytes: data.length })),
+      },
+      selected.offering,
+      context.config.limits,
+    );
     if (connection.api === 'google.generateContent' && request.threadId && request.parentTurnId) {
       const parent = await deps.repository.getMediaParentContext(
         context.scope,

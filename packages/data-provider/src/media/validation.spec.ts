@@ -22,6 +22,75 @@ const request: Pick<MediaSubmissionRequest, 'operation' | 'parameters' | 'inputs
   inputs: [],
 };
 
+test('input count constraints enforce per-role limits and preserve valid mixed inputs', () => {
+  const constrained = mediaCapabilitySchema.parse({
+    ...capability,
+    constraints: [
+      {
+        anyOf: [{ kind: 'input', role: 'reference', present: true, min: 1, max: 1 }],
+      },
+    ],
+  });
+  const inputs = [{ role: 'reference' as const, file_id: 'first' }];
+  expect(validateMediaCapability({ ...request, inputs }, constrained, limits)).toEqual([]);
+  expect(
+    validateMediaCapability(
+      { ...request, inputs: [...inputs, { role: 'audio', file_id: 'audio' }] },
+      constrained,
+      limits,
+    ),
+  ).toEqual([]);
+  expect(
+    validateMediaCapability(
+      { ...request, inputs: [...inputs, { role: 'reference', file_id: 'second' }] },
+      constrained,
+      limits,
+    ),
+  ).toEqual([expect.objectContaining({ field: 'inputs' })]);
+  expect(validateMediaCapability(request, constrained, limits)).toEqual([
+    expect.objectContaining({ field: 'inputs' }),
+  ]);
+  expect(validateMediaCapability(request, constrained, limits, { checkInputs: false })).toEqual([]);
+});
+
+test('trusted media metadata and provider prompt limits are checked with the same capability', () => {
+  const constrained = mediaCapabilitySchema.parse({
+    ...capability,
+    maxPromptChars: 5,
+    inputs: {
+      roles: ['video'],
+      min: 0,
+      max: 1,
+      mediaTypes: { video: ['video/mp4'] },
+      maxBytes: { video: 10 },
+    },
+  });
+  const input = { role: 'video' as const, file_id: 'clip', type: 'video/mp4', bytes: 10 };
+  expect(
+    validateMediaCapability({ ...request, prompt: 'short', inputs: [input] }, constrained, limits),
+  ).toEqual([]);
+  expect(
+    validateMediaCapability(
+      { ...request, inputs: [{ ...input, type: 'video/webm' }] },
+      constrained,
+      limits,
+    ),
+  ).toEqual([expect.objectContaining({ field: 'inputs', code: 'unsupported' })]);
+  expect(
+    validateMediaCapability({ ...request, inputs: [{ ...input, bytes: 11 }] }, constrained, limits),
+  ).toEqual([expect.objectContaining({ field: 'inputs', code: 'invalid_request' })]);
+  expect(validateMediaCapability({ ...request, prompt: 'longer' }, constrained, limits)).toEqual([
+    expect.objectContaining({ field: 'prompt', code: 'invalid_request' }),
+  ]);
+  expect(
+    validateMediaCapability(
+      { ...request, inputs: [{ role: 'video', file_id: 'clip' }] },
+      constrained,
+      limits,
+    ),
+  ).toEqual([]);
+});
+
 test('conditional requirements reject defaults incompatible with reference inputs', () => {
   const constrained = mediaCapabilitySchema.parse({
     ...capability,

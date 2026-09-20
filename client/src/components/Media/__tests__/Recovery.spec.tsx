@@ -190,6 +190,47 @@ test('a lost response and reload retain the exact recovery identity and locked e
   expect(await screen.findByText('com_media_recovery_success')).toBeVisible();
 });
 
+test('interrupted chat recordings require evidence and acknowledge without a financial settlement', async () => {
+  const recording: MediaRecoveryJob = {
+    ...job,
+    executionOwner: 'chat',
+    accounting: { mode: 'none' },
+    allowedActions: { resume: false, settle: false, acknowledge: true },
+  };
+  jest.mocked(dataService.listMediaRecoveryJobs).mockResolvedValue({
+    items: [recording],
+    maxEvidenceChars: 200,
+  });
+  const recover = jest
+    .spyOn(dataService, 'recoverMediaJob')
+    .mockResolvedValue({ ...recording, version: 4, phase: 'failed' });
+  mount();
+  await openJob();
+  expect(screen.getByRole('radio', { name: 'com_media_recovery_acknowledge' })).toBeChecked();
+  expect(
+    screen.queryByRole('radio', { name: 'com_media_recovery_settle' }),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+  const apply = screen.getByRole('button', { name: 'com_media_recovery_apply' });
+  expect(apply).toBeDisabled();
+  fireEvent.change(screen.getByRole('textbox', { name: 'com_media_recovery_evidence' }), {
+    target: { value: 'Chat request ended before the recording completed' },
+  });
+  fireEvent.click(apply);
+  await waitFor(() => expect(recover).toHaveBeenCalledTimes(1));
+  expect(recover.mock.calls[0]).toEqual([
+    'owner',
+    'job',
+    {
+      clientRequestId: expect.any(String),
+      action: 'acknowledge',
+      expectedVersion: 3,
+      evidence: 'Chat request ended before the recording completed',
+    },
+  ]);
+  expect(await screen.findByText('com_media_recovery_success')).toBeVisible();
+});
+
 test('version conflict refreshes the list and requires reviewing the new snapshot', async () => {
   const recover = jest.spyOn(dataService, 'recoverMediaJob').mockRejectedValue({
     response: { status: 409, data: { error: { code: 'version_conflict' } } },

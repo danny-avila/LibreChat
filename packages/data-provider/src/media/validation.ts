@@ -11,6 +11,7 @@ import type {
   MediaOptionValue,
   MediaSubmissionRequest,
   MediaVideoParameters,
+  MediaInput,
 } from './requests';
 
 export type MediaValidationIssue = {
@@ -18,7 +19,10 @@ export type MediaValidationIssue = {
   field: MediaParameterName | 'inputs' | 'prompt';
   message: string;
 };
-type ValidationRequest = Pick<MediaSubmissionRequest, 'operation' | 'parameters' | 'inputs'>;
+type ValidationRequest = Pick<MediaSubmissionRequest, 'operation' | 'parameters'> & {
+  prompt?: string;
+  inputs: Array<MediaInput & { type?: string; bytes?: number }>;
+};
 
 /** Apply advertised defaults and compatible conditional choices without replacing explicit input. */
 export function resolveMediaParameters(
@@ -72,8 +76,14 @@ export function resolveMediaParameters(
 }
 
 export function matchesMediaCondition(request: ValidationRequest, condition: MediaCondition) {
-  if (condition.kind === 'input')
-    return request.inputs.some((input) => input.role === condition.role) === condition.present;
+  if (condition.kind === 'input') {
+    const count = request.inputs.filter((input) => input.role === condition.role).length;
+    return (
+      count > 0 === condition.present &&
+      (condition.min === undefined || count >= condition.min) &&
+      (condition.max === undefined || count <= condition.max)
+    );
+  }
   const parameters = request.parameters as Partial<Record<MediaParameterName, MediaOptionValue>>;
   const value = condition.option
     ? request.parameters.providerOptions?.[condition.option]
@@ -100,7 +110,21 @@ export function validateMediaCapability(
     code: MediaValidationIssue['code'] = 'unsupported',
   ) => issues.push({ field, message, code });
   if (capability.operation !== request.operation) add('inputs', 'This operation is not available.');
+  if (
+    request.prompt &&
+    capability.maxPromptChars &&
+    request.prompt.length > capability.maxPromptChars
+  )
+    add('prompt', 'The prompt exceeds this model’s supported length.', 'invalid_request');
   if (options.checkInputs !== false) {
+    for (const item of request.inputs) {
+      const mediaTypes = capability.inputs.mediaTypes?.[item.role];
+      const maxBytes = capability.inputs.maxBytes?.[item.role];
+      if (item.type && mediaTypes && !mediaTypes.includes(item.type))
+        add('inputs', 'This media format is not supported by the selected model.');
+      if (item.bytes !== undefined && maxBytes !== undefined && item.bytes > maxBytes)
+        add('inputs', 'This input exceeds the selected model’s byte limit.', 'invalid_request');
+    }
     if (
       request.inputs.length < capability.inputs.min ||
       request.inputs.length > capability.inputs.max ||

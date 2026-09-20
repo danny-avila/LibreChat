@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { MediaConfig } from 'librechat-data-provider';
+import type { MediaConfig, MediaCondition } from 'librechat-data-provider';
 import type { MediaModelProfile, MediaProviderAdapter } from '../provider';
 import {
   dataURI,
@@ -81,6 +81,31 @@ function videoCatalog(config: MediaConfig): MediaModelProfile[] {
     capabilities: [
       {
         operation: 'video.generate',
+        constraints: modelId.endsWith('1.5')
+          ? (
+              [
+                { kind: 'input', role: 'end_frame', present: true },
+                { kind: 'input', role: 'reference', present: true },
+                {
+                  kind: 'parameter',
+                  name: 'providerOptions',
+                  option: 'reference_audios',
+                  present: true,
+                },
+              ] satisfies MediaCondition[]
+            ).map((condition) => ({
+              when: [condition],
+              anyOf: [
+                { kind: 'parameter', name: 'resolution', present: false },
+                { kind: 'parameter', name: 'resolution', values: ['480p', '720p'] },
+              ],
+            }))
+          : [
+              {
+                when: [{ kind: 'input', role: 'start_frame', present: true }],
+                anyOf: [{ kind: 'input', role: 'reference', present: false }],
+              },
+            ],
         inputs: {
           roles: modelId.endsWith('1.5')
             ? ['start_frame', 'end_frame', 'reference']

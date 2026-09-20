@@ -1,5 +1,7 @@
 import { mediaProviderOptionsSchema, resolveMediaParameters } from 'librechat-data-provider';
 import type {
+  MediaAsset,
+  MediaInput,
   MediaCatalog,
   MediaEnumControl,
   MediaNumberControl,
@@ -87,4 +89,13 @@ export function supportsMode(offering: MediaOffering, operation: MediaOperation)
     (!offering.capabilities.length &&
       offering.api.endsWith('.videos') === (operation === 'video.generate'))
   );
+}
+
+/** Admission uses owned descriptors while submissions keep only immutable input references. */
+export function mediaInputsWithMetadata(inputs: MediaInput[], assets: MediaAsset[]) {
+  const byId = new Map(assets.map((asset) => [asset.file_id, asset]));
+  return inputs.map((input) => {
+    const asset = byId.get(input.file_id);
+    return { ...input, type: asset?.type, bytes: asset?.bytes };
+  });
 }
