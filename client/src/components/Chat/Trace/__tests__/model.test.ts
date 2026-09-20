@@ -1078,6 +1078,38 @@ describe('a cut inside a model call’s own wrappers', () => {
     ]);
   });
 
+  it('does not guess which of two cut model calls asked for a round', () => {
+    /** Two parallel agents, both cut inside their wrappers, both model calls before either round. */
+    const lane = (name: string, start: number): TTraceRecord[] => [
+      record({
+        id: `call-${name}`,
+        parentId: `node-${name}`,
+        role: 'plumbing',
+        startTime: at(start),
+      }),
+      record({
+        id: `llm-${name}`,
+        parentId: `call-${name}`,
+        kind: 'generation',
+        role: 'model',
+        startTime: at(start + 10),
+      }),
+      record({
+        id: `round-${name}`,
+        parentId: `graph-${name}`,
+        role: 'tools',
+        tools: ['bash_tool'],
+        startTime: at(start + 1000),
+      }),
+    ];
+    const model = buildTraceModel([...lane('a', 0), ...lane('b', 100)], 'simple');
+    const [turn] = model.turns;
+    const steps = turn.stepKeys.map((key) => model.steps.get(key)?.rootIds);
+
+    expect(steps).toEqual([['llm-a'], ['llm-b'], ['round-a'], ['round-b']]);
+    expect(turn.toolCalls).toBe(2);
+  });
+
   it('counts recorded tools once when the round that holds them is also named', () => {
     const model = buildTraceModel(
       [

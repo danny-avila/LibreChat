@@ -454,6 +454,8 @@ function groupSteps(
     roots.sort(compare);
     const groups: Array<{ rootIds: string[]; lane: string }> = [];
     const latestByLane = new Map<string, { rootIds: string[]; lane: string }>();
+    /** Model calls whose lane is a private wrapper, until the round each asked for arrives. */
+    const waiting = new Set<{ rootIds: string[]; lane: string }>();
     let leading: string[] = [];
     for (const id of roots) {
       const record = nodes.get(id)?.record;
@@ -461,14 +463,12 @@ function groupSteps(
       const current = groups[groups.length - 1];
       /** The cut can fall inside a model call's own wrappers. Its lane is then one of those
        *  wrappers, which names no lane at all, so the round it asked for, arriving in a lane no
-       *  model call holds, is its round rather than a step of its own. */
+       *  model call holds, is its round rather than a step of its own. That is only known when
+       *  one such model call is still waiting for its round: with two (parallel agents cut at
+       *  the same place) nothing says which asked, so the round leads a step of its own. */
       const asked =
-        record != null &&
-        isToolWork(record) &&
-        !latestByLane.has(lane) &&
-        current != null &&
-        privateWrappers.has(current.lane)
-          ? current
+        record != null && isToolWork(record) && !latestByLane.has(lane) && waiting.size === 1
+          ? waiting.values().next().value
           : undefined;
       /** A tool whose lane has no model call loaded yet (an older page holds it) leads its own step.
        *  A label's model call describes a step; it never starts one. */
@@ -480,12 +480,16 @@ function groupSteps(
         groups.push(group);
         latestByLane.set(lane, group);
         leading = [];
+        if (isModelCall(record) && privateWrappers.has(lane)) {
+          waiting.add(group);
+        }
       } else if (current == null) {
         leading.push(id);
       } else {
         (latestByLane.get(lane) ?? asked ?? current).rootIds.push(id);
         if (asked != null) {
           latestByLane.set(lane, asked);
+          waiting.delete(asked);
         }
       }
     }
