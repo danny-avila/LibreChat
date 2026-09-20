@@ -61,6 +61,8 @@ export interface TokenUsageView {
   branchCost: number;
   /** Authoritative cost across all branches (shown when it differs from branch) */
   totalCost: number;
+  /** Known cost of the viewed response; withheld while a generation is in flight. */
+  lastResponseCost?: number;
   liveTokens: number;
   /** Estimated tokens for count-less messages (in-flight tail excluded while
    *  streaming); 0 on snapshots. Rendered as its own breakdown row. */
@@ -337,6 +339,7 @@ export default function useTokenUsage({
         hasUsage,
         branchCost: branchUsage.cost,
         totalCost: totalUsage.cost,
+        lastResponseCost: isSubmitting ? undefined : branchTotals.lastResponseCost,
         liveTokens: liveOutput,
         estimatedTokens: 0,
         overheadTokens: 0,
@@ -489,6 +492,7 @@ export default function useTokenUsage({
       hasUsage,
       branchCost: branchUsage.cost,
       totalCost: totalUsage.cost,
+      lastResponseCost: isSubmitting ? undefined : branchTotals.lastResponseCost,
       liveTokens: normalizeTokenCount(liveTokens),
       estimatedTokens,
       overheadTokens,
