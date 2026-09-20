@@ -48,13 +48,20 @@ export interface CodeWorkspaceEnvironmentResult {
 }
 
 /**
- * A saved chat whose attached decision no longer covers every environment its agents use, most
- * often because an agent was pointed at a different machine after the chat was created. The
- * decision stays sealed against implicit changes; only its owner's explicit move replaces it.
+ * A change of a saved chat's sealed decision that its owner may make from the composer. The
+ * decision stays sealed against implicit changes; only this explicit transition replaces it, and
+ * it never touches the chat's messages or copies a file between machines.
+ *
+ * - `move`: the attached decision no longer covers every environment the chat's agents use, most
+ *   often because an agent was pointed at a different machine after the chat was created.
+ * - `attach`: the chat has been running without an attached environment and can now take one, so
+ *   switching a saved chat to a coding agent is a transition rather than a dead end.
  */
-export interface CodeWorkspaceRelocation {
+export interface CodeWorkspaceTransition {
+  kind: 'move' | 'attach';
   conversationId: string;
-  /** The persisted selections a move replaces, exactly as the conversation stores them. */
+  /** The persisted selections this replaces, exactly as the conversation stores them; empty for a
+   *  chat that has been running without an attached environment. */
   from: CodeWorkspaceSelection[];
   /** Environments the decision covered that the agents no longer use. */
   previous: Array<
@@ -62,8 +69,12 @@ export interface CodeWorkspaceRelocation {
   >;
   /** Sealed selections the agents still use; a move carries them over unchanged. */
   retained: CodeWorkspaceSelection[];
-  /** Environments the agents now use that the decision does not cover. */
+  /** Environments the chat may attach a workspace on. */
   targets: CodeWorkspaceEnvironmentResult[];
+  /** Whether the chat may leave attached execution and continue without a workspace. Offered when
+   *  the machine it sealed is no longer usable, so an unreachable worker never silently becomes a
+   *  changed execution mode and never strands the composer either. */
+  detachable: boolean;
 }
 
 export interface CodeWorkspaceResult {
@@ -73,8 +84,11 @@ export interface CodeWorkspaceResult {
   mode?: CodeEnvironmentMode;
   state: CodeWorkspaceState;
   canSubmit: boolean;
+  /** Whether the composer shows the workspace control. A chat running without an attached
+   *  environment keeps it, so the state it is in stays visible and reversible. */
+  visible: boolean;
   environments: CodeWorkspaceEnvironmentResult[];
-  relocation?: CodeWorkspaceRelocation;
+  transition?: CodeWorkspaceTransition;
   selections?: CodeWorkspaceSelection[];
   resolveSelections: (
     selections?: CodeWorkspaceSelection[],
@@ -370,33 +384,6 @@ export default function useCodeWorkspace(
   } else {
     state = aggregateState(required, metadataComplete, environmentResults, selections);
   }
-  let relocation: CodeWorkspaceRelocation | undefined;
-  if (
-    supportsEnvironmentMoves &&
-    locked &&
-    state === 'choose' &&
-    inferredMode === 'attached' &&
-    conversation?.conversationId != null &&
-    storedSelections != null &&
-    storedSelections.length > 0
-  ) {
-    const configuredEnvironments = statefulCodeSessions?.environments;
-    relocation = {
-      conversationId: conversation.conversationId,
-      from: storedSelections,
-      previous: storedSelections
-        .filter(({ environmentId }) => !attachedEnvironmentIds.has(environmentId))
-        .map(({ environmentId }) => ({
-          id: environmentId,
-          name: configuredEnvironments?.find(({ id }) => id === environmentId)?.name,
-        })),
-      retained: environmentResults.flatMap((result) =>
-        result.state === 'ready' && result.selected != null ? [result.selected] : [],
-      ),
-      targets: environmentResults.filter((result) => result.state === 'choose'),
-    };
-    state = 'relocatable';
-  }
   const resolveSubmission = useCallback(
     (
       candidateSelections?: CodeWorkspaceSelection[],
@@ -427,6 +414,51 @@ export default function useCodeWorkspace(
     [inferredMode, required, resolveSelections, supportsEnvironmentDecisions],
   );
   const canSubmit = resolveSubmission(storedSelections, conversation?.codeEnvironmentMode) != null;
+  let transition: CodeWorkspaceTransition | undefined;
+  if (
+    supportsEnvironmentMoves &&
+    locked &&
+    selectionMetadataComplete &&
+    state !== 'loading' &&
+    conversation?.conversationId != null
+  ) {
+    const configuredEnvironments = statefulCodeSessions?.environments;
+    const base = {
+      conversationId: conversation.conversationId,
+      from: storedSelections ?? [],
+      previous: (storedSelections ?? [])
+        .filter(({ environmentId }) => !attachedEnvironmentIds.has(environmentId))
+        .map(({ environmentId }) => ({
+          id: environmentId,
+          name: configuredEnvironments?.find(({ id }) => id === environmentId)?.name,
+        })),
+      retained: environmentResults.flatMap((result) =>
+        result.state === 'ready' && result.selected != null ? [result.selected] : [],
+      ),
+      targets: environmentResults.filter((result) => result.state === 'choose'),
+    };
+    if (
+      state === 'without_attached' &&
+      conversation.codeEnvironmentMode === 'without_attached' &&
+      base.targets.length > 0
+    ) {
+      /** Only a decision this chat actually recorded is sealed, so a chat that merely lacks the
+       *  fields still chooses in the composer and needs no transition. */
+      transition = { ...base, kind: 'attach', detachable: false };
+    } else if (
+      inferredMode === 'attached' &&
+      (storedSelections?.length ?? 0) > 0 &&
+      (state === 'choose' || !canSubmit)
+    ) {
+      transition = { ...base, kind: 'move', detachable: true };
+      if (state === 'choose') state = 'relocatable';
+    }
+  }
+  /** A sealed chat hides the control once its decision needs nothing from its owner, except while
+   *  it runs without a workspace: that state is worth naming, and attaching one starts here. */
+  const visible =
+    required &&
+    (!locked || !canSubmit || transition != null || inferredMode === 'without_attached');
   const rememberSelection = useCallback(
     (selection: CodeWorkspaceSelection) => {
       preferences.remember(selection.environmentId, selection.workspaceId, [
@@ -442,8 +474,9 @@ export default function useCodeWorkspace(
     mode: inferredMode,
     state,
     canSubmit,
+    visible,
     environments: environmentResults,
-    relocation,
+    transition,
     selections,
     resolveSelections,
     resolveSubmission,

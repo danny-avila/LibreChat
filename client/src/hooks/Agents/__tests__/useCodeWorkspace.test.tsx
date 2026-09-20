@@ -468,7 +468,7 @@ describe('useCodeWorkspace', () => {
     expect(result.current.state).toBe('choose');
     expect(result.current.canSubmit).toBe(false);
     expect(result.current.selections).toBeUndefined();
-    expect(result.current.relocation).toBeUndefined();
+    expect(result.current.transition).toBeUndefined();
   });
 
   describe('a saved chat sealed to a machine its agent no longer uses', () => {
@@ -494,7 +494,7 @@ describe('useCodeWorkspace', () => {
 
       expect(result.current.state).toBe('choose');
       expect(result.current.canSubmit).toBe(false);
-      expect(result.current.relocation).toBeUndefined();
+      expect(result.current.transition).toBeUndefined();
     });
 
     it('offers to move the chat instead of an unusable workspace choice', () => {
@@ -510,7 +510,9 @@ describe('useCodeWorkspace', () => {
       expect(result.current.locked).toBe(true);
       expect(result.current.state).toBe('relocatable');
       expect(result.current.canSubmit).toBe(false);
-      expect(result.current.relocation).toEqual({
+      expect(result.current.transition).toEqual({
+        kind: 'move',
+        detachable: true,
         conversationId: 'existing',
         from: [mac],
         previous: [{ id: 'mac', name: 'Danny Mac' }],
@@ -533,7 +535,9 @@ describe('useCodeWorkspace', () => {
 
       expect(result.current.state).toBe('relocatable');
       expect(result.current.canSubmit).toBe(false);
-      expect(result.current.relocation).toEqual({
+      expect(result.current.transition).toEqual({
+        kind: 'move',
+        detachable: true,
         conversationId: 'existing',
         from: [gone, kept],
         previous: [{ id: 'gone-vm', name: undefined }],
@@ -560,7 +564,7 @@ describe('useCodeWorkspace', () => {
       );
 
       expect(result.current.state).toBe('relocatable');
-      expect(result.current.relocation?.previous).toEqual([{ id: 'mac', name: undefined }]);
+      expect(result.current.transition?.previous).toEqual([{ id: 'mac', name: undefined }]);
     });
 
     it.each([
@@ -611,9 +615,9 @@ describe('useCodeWorkspace', () => {
       const { result } = renderHook(() => useCodeWorkspace(sealed([kept])));
 
       expect(result.current.state).toBe('relocatable');
-      expect(result.current.relocation?.previous).toEqual([]);
-      expect(result.current.relocation?.retained).toEqual([kept]);
-      expect(result.current.relocation?.targets.map(({ environment }) => environment.id)).toEqual([
+      expect(result.current.transition?.previous).toEqual([]);
+      expect(result.current.transition?.retained).toEqual([kept]);
+      expect(result.current.transition?.targets.map(({ environment }) => environment.id)).toEqual([
         'team-vm',
       ]);
     });
@@ -624,31 +628,106 @@ describe('useCodeWorkspace', () => {
       const { result } = renderHook(() => useCodeWorkspace(sealed([mac])));
 
       expect(result.current.state).toBe('loading');
-      expect(result.current.relocation).toBeUndefined();
+      expect(result.current.transition).toBeUndefined();
     });
 
-    it('does not offer a move when the sealed machine lost its workspace', () => {
-      const removed = { environmentId: 'personal-vm', workspaceId: 'removed-project' };
+    /* The sealed workspace cannot be swapped for another on the same machine, so the only decision
+     * left is whether to keep waiting for it. */
+    it.each([
+      {
+        name: 'the sealed machine lost its workspace',
+        stored: { environmentId: 'personal-vm', workspaceId: 'removed-project' },
+        state: 'missing',
+        status: undefined,
+      },
+      {
+        name: 'the sealed machine is unreachable',
+        stored: { environmentId: 'personal-vm', workspaceId: 'project-a' },
+        state: 'unavailable',
+        status: { isLoading: false, isError: true },
+      },
+    ])('offers to continue without a workspace when $name', ({ stored, state, status }) => {
+      if (status != null) mockStatus.mockReturnValue([status]);
 
-      const { result } = renderHook(() => useCodeWorkspace(sealed([removed])));
+      const { result } = renderHook(() => useCodeWorkspace(sealed([stored])));
 
-      expect(result.current.state).toBe('missing');
-      expect(result.current.relocation).toBeUndefined();
-    });
-
-    it('does not offer an attached machine to a chat that continues without one', () => {
-      const { result } = renderHook(() =>
-        useCodeWorkspace({
-          ...conversation(),
-          conversationId: 'existing',
-          codeEnvironmentMode: 'without_attached',
-        } as TConversation),
+      expect(result.current.state).toBe(state);
+      expect(result.current.canSubmit).toBe(false);
+      expect(result.current.visible).toBe(true);
+      expect(result.current.transition).toEqual(
+        expect.objectContaining({ kind: 'move', detachable: true, from: [stored], targets: [] }),
       );
+    });
+
+    it('keeps a reachable sealed workspace out of the composer', () => {
+      const kept = { environmentId: 'personal-vm', workspaceId: 'project-a' };
+
+      const { result } = renderHook(() => useCodeWorkspace(sealed([kept])));
+
+      expect(result.current.state).toBe('ready');
+      expect(result.current.canSubmit).toBe(true);
+      expect(result.current.transition).toBeUndefined();
+      expect(result.current.visible).toBe(false);
+    });
+
+    /* A chat that recorded running without a workspace keeps that decision until its owner attaches
+     * one; switching it to a coding agent is a transition, not a dead end. */
+    it('offers to attach a workspace to a chat that continues without one', () => {
+      const withoutAttached = {
+        ...conversation(),
+        conversationId: 'existing',
+        codeEnvironmentMode: 'without_attached',
+      } as TConversation;
+
+      const { result } = renderHook(() => useCodeWorkspace(withoutAttached));
 
       expect(result.current.state).toBe('without_attached');
       expect(result.current.canSubmit).toBe(true);
-      expect(result.current.relocation).toBeUndefined();
+      expect(result.current.visible).toBe(true);
+      expect(result.current.transition).toEqual({
+        kind: 'attach',
+        detachable: false,
+        conversationId: 'existing',
+        from: [],
+        previous: [],
+        retained: [],
+        targets: [
+          expect.objectContaining({
+            environment: expect.objectContaining({ id: 'personal-vm' }),
+            state: 'choose',
+            workspaces: [{ id: 'project-a', name: 'Project A' }],
+          }),
+        ],
+      });
     });
+
+    it.each([
+      { name: 'the API cannot move chats', config: { codeEnvironmentDecisionVersion: 1 } },
+      {
+        name: 'no machine is reachable',
+        config: { codeEnvironmentDecisionVersion: 1, codeEnvironmentMoveVersion: 1 },
+        status: { isLoading: false, isError: true },
+      },
+    ])(
+      'still reports a chat running without a workspace when $name',
+      ({ config, status }) => {
+        mockStartupConfig.mockReturnValue(config);
+        if (status != null) mockStatus.mockReturnValue([status]);
+
+        const { result } = renderHook(() =>
+          useCodeWorkspace({
+            ...conversation(),
+            conversationId: 'existing',
+            codeEnvironmentMode: 'without_attached',
+          } as TConversation),
+        );
+
+        expect(result.current.state).toBe('without_attached');
+        expect(result.current.canSubmit).toBe(true);
+        expect(result.current.visible).toBe(true);
+        expect(result.current.transition).toBeUndefined();
+      },
+    );
 
     it('attaches a sole workspace to a saved chat that never recorded a decision', () => {
       const { result } = renderHook(() =>
@@ -682,7 +761,7 @@ describe('useCodeWorkspace', () => {
 
       expect(result.current.locked).toBe(false);
       expect(result.current.state).toBe('choose');
-      expect(result.current.relocation).toBeUndefined();
+      expect(result.current.transition).toBeUndefined();
       /* `useChatFunctions` submits the conversation's latest selections and mode together, the way
        * the menu writes both when a workspace is picked. */
       expect(result.current.resolveSubmission([chosen], 'attached')).toEqual({

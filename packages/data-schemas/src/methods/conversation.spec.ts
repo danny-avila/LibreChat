@@ -1112,6 +1112,7 @@ describe('Conversation Operations', () => {
         user: userId,
         conversationId,
         expected: decision,
+        codeEnvironmentMode: 'attached',
         codeWorkspaces: [vm],
       });
 
@@ -1136,6 +1137,7 @@ describe('Conversation Operations', () => {
         user: userId,
         conversationId,
         expected: decision,
+        codeEnvironmentMode: 'attached',
         codeWorkspaces: [vm],
       });
       await methods.bulkSaveConvos([imported]);
@@ -1245,6 +1247,7 @@ describe('Conversation Operations', () => {
           codeEnvironmentMode: stored?.codeEnvironmentMode,
           codeWorkspaces: stored?.codeWorkspaces,
         },
+        codeEnvironmentMode: 'attached',
         codeWorkspaces,
       });
     };
@@ -1289,6 +1292,42 @@ describe('Conversation Operations', () => {
       expect(result?.codeWorkspaces).toEqual([vm]);
     });
 
+    it('attaches an environment to a chat stored without one', async () => {
+      const conversationId = await seedDecision({ codeEnvironmentMode: 'without_attached' });
+
+      const result = await methods.replaceConvoCodeEnvironmentDecision({
+        user: 'user123',
+        conversationId,
+        expected: { codeEnvironmentMode: 'without_attached' },
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [vm],
+      });
+
+      expect(result?.codeEnvironmentMode).toBe('attached');
+      expect(result?.codeWorkspaces).toEqual([vm]);
+    });
+
+    it('clears the selections when a chat leaves attached execution', async () => {
+      const conversationId = await seedDecision({
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [mac, team],
+      });
+
+      const result = await methods.replaceConvoCodeEnvironmentDecision({
+        user: 'user123',
+        conversationId,
+        expected: { codeEnvironmentMode: 'attached', codeWorkspaces: [mac, team] },
+        codeEnvironmentMode: 'without_attached',
+      });
+
+      expect(result?.codeEnvironmentMode).toBe('without_attached');
+      /** Keeping them would read as an attached decision again on the next turn. */
+      expect(result?.codeWorkspaces).toBeUndefined();
+      const stored = await getConvo('user123', conversationId);
+      expect(stored?.codeWorkspaces).toBeUndefined();
+      expect(new Date(stored?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+    });
+
     it('leaves a decision that changed after it was read untouched', async () => {
       const conversationId = await seedDecision({
         codeEnvironmentMode: 'attached',
@@ -1307,6 +1346,7 @@ describe('Conversation Operations', () => {
           codeEnvironmentMode: stored?.codeEnvironmentMode,
           codeWorkspaces: stored?.codeWorkspaces,
         },
+        codeEnvironmentMode: 'attached',
         codeWorkspaces: [vm],
       });
 
@@ -1325,6 +1365,7 @@ describe('Conversation Operations', () => {
         user: 'user123',
         conversationId,
         expected: { codeEnvironmentMode: 'attached', codeWorkspaces: [team, mac] },
+        codeEnvironmentMode: 'attached',
         codeWorkspaces: [vm],
       });
 
@@ -1341,6 +1382,7 @@ describe('Conversation Operations', () => {
         user: 'user123',
         conversationId,
         expected: { codeEnvironmentMode: 'attached', codeWorkspaces: [mac] },
+        codeEnvironmentMode: 'attached',
         codeWorkspaces: [vm],
       });
 

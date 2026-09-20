@@ -285,12 +285,19 @@ export interface ConversationMethods {
     conversationId: string,
     pinned: boolean,
   ): Promise<IConversation | null>;
-  replaceConvoCodeEnvironmentDecision(params: {
-    user: string;
-    conversationId: string;
-    expected: Pick<IConversation, 'codeEnvironmentMode' | 'codeWorkspaces'>;
-    codeWorkspaces: NonNullable<IConversation['codeWorkspaces']>;
-  }): Promise<IConversation | null>;
+  replaceConvoCodeEnvironmentDecision(
+    params: {
+      user: string;
+      conversationId: string;
+      expected: Pick<IConversation, 'codeEnvironmentMode' | 'codeWorkspaces'>;
+    } & (
+      | {
+          codeEnvironmentMode: 'attached';
+          codeWorkspaces: NonNullable<IConversation['codeWorkspaces']>;
+        }
+      | { codeEnvironmentMode: 'without_attached'; codeWorkspaces?: undefined }
+    ),
+  ): Promise<IConversation | null>;
   bulkSaveConvos(conversations: Array<Record<string, unknown>>): Promise<unknown>;
   getConvosByCursor(
     user: string,
@@ -2583,22 +2590,30 @@ export function createConversationMethods(
   }
 
   /**
-   * Compare-and-swap for an owner's explicit move of an attached code-environment decision.
+   * Compare-and-swap for an owner's explicit replacement of a code-environment decision, whether
+   * that attaches an environment, moves to another, or leaves attached execution behind.
    * The filter repeats the stored decision being replaced, so a writer that changed it first
    * leaves this update unmatched rather than overwritten. A missing and a null mode both
-   * describe a legacy decision inferred from its selections.
+   * describe a legacy decision inferred from its selections. Leaving attached execution clears
+   * the selections outright: a decision that kept them would read as attached again.
    */
   async function replaceConvoCodeEnvironmentDecision({
     user,
     conversationId,
     expected,
+    codeEnvironmentMode,
     codeWorkspaces,
   }: {
     user: string;
     conversationId: string;
     expected: Pick<IConversation, 'codeEnvironmentMode' | 'codeWorkspaces'>;
-    codeWorkspaces: NonNullable<IConversation['codeWorkspaces']>;
-  }) {
+  } & (
+    | {
+        codeEnvironmentMode: 'attached';
+        codeWorkspaces: NonNullable<IConversation['codeWorkspaces']>;
+      }
+    | { codeEnvironmentMode: 'without_attached'; codeWorkspaces?: undefined }
+  )) {
     try {
       const Conversation = mongoose.models.Conversation as Model<IConversation>;
       return await Conversation.findOneAndUpdate(
@@ -2608,7 +2623,9 @@ export function createConversationMethods(
           codeEnvironmentMode: expected.codeEnvironmentMode ?? { $in: [null] },
           codeWorkspaces: expected.codeWorkspaces ?? { $in: [null] },
         },
-        { $set: { codeEnvironmentMode: 'attached', codeWorkspaces } },
+        codeEnvironmentMode === 'attached'
+          ? { $set: { codeEnvironmentMode, codeWorkspaces } }
+          : { $set: { codeEnvironmentMode }, $unset: { codeWorkspaces: 1 } },
         { new: true, timestamps: false },
       ).lean<IConversation>();
     } catch (error) {

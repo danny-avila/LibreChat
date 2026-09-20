@@ -1570,11 +1570,13 @@ describe('moving a sealed conversation code-environment decision', () => {
       async ({
         conversationId,
         expected,
+        codeEnvironmentMode,
         codeWorkspaces,
       }: {
         conversationId: string;
         expected: Pick<StoredDecision, 'codeEnvironmentMode' | 'codeWorkspaces'>;
-        codeWorkspaces: Selection[];
+        codeEnvironmentMode: StoredDecision['codeEnvironmentMode'];
+        codeWorkspaces?: Selection[];
       }) => {
         const current = conversations.get(conversationId);
         const decisionOf = (decision: Partial<StoredDecision> | undefined) =>
@@ -1582,11 +1584,11 @@ describe('moving a sealed conversation code-environment decision', () => {
         if (current == null || decisionOf(current) !== decisionOf(expected)) {
           return null;
         }
-        const moved: StoredDecision = {
-          ...current,
-          codeEnvironmentMode: 'attached',
-          codeWorkspaces,
-        };
+        /** Mirrors the stored shape: leaving attached execution clears the selections. */
+        const moved: StoredDecision =
+          codeEnvironmentMode === 'attached'
+            ? { ...current, codeEnvironmentMode, codeWorkspaces }
+            : { conversationId: current.conversationId, codeEnvironmentMode };
         conversations.set(conversationId, moved);
         return moved;
       },
@@ -1755,6 +1757,75 @@ describe('moving a sealed conversation code-environment decision', () => {
     expect(res.body).toEqual(expect.objectContaining({ reason: 'missing' }));
     expect(replaceDecision).not.toHaveBeenCalled();
     expect(conversations.get('conversation-1')?.codeWorkspaces).toEqual([gone, vm]);
+  });
+
+  test('attaches a workspace to a chat that recorded running without one', async () => {
+    const { move, conversations, fetchImpl } = setup({
+      stored: { conversationId: 'conversation-1', codeEnvironmentMode: 'without_attached' },
+    });
+
+    const res = await move({ from: [], to: [vm] });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({
+      conversationId: 'conversation-1',
+      codeEnvironmentMode: 'attached',
+      codeWorkspaces: [vm],
+    });
+    expect(conversations.get('conversation-1')).toEqual({
+      conversationId: 'conversation-1',
+      codeEnvironmentMode: 'attached',
+      codeWorkspaces: [vm],
+    });
+    /** The attached workspace is revalidated exactly like a move's target. */
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test('rejects attaching a workspace the machine does not register', async () => {
+    const { move, conversations, replaceDecision } = setup({
+      stored: { conversationId: 'conversation-1', codeEnvironmentMode: 'without_attached' },
+      fetchImpl: jest
+        .fn()
+        .mockImplementation(async () =>
+          workerStatusResponse({ workspaces: [{ id: 'another-project' }] }),
+        ),
+    });
+
+    const res = await move({ from: [], to: [vm] });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual(expect.objectContaining({ reason: 'missing' }));
+    expect(replaceDecision).not.toHaveBeenCalled();
+    expect(conversations.get('conversation-1')).toEqual({
+      conversationId: 'conversation-1',
+      codeEnvironmentMode: 'without_attached',
+    });
+  });
+
+  test('leaves an attached machine without polling it and clears the selections', async () => {
+    const { move, conversations, fetchImpl } = setup();
+
+    const res = await move({ from: [mac], to: [] });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({
+      conversationId: 'conversation-1',
+      codeEnvironmentMode: 'without_attached',
+    });
+    /** The machine a chat is leaving is usually the unreachable one; checking it would refuse the
+     *  one transition that works while it is down. */
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(conversations.get('conversation-1')).toEqual({
+      conversationId: 'conversation-1',
+      codeEnvironmentMode: 'without_attached',
+    });
+  });
+
+  test('refuses to leave while a generation is still running', async () => {
+    const { move, replaceDecision } = setup({ job: { status: 'running' } });
+
+    expect((await move({ from: [mac], to: [] })).statusCode).toBe(409);
+    expect(replaceDecision).not.toHaveBeenCalled();
   });
 
   test('moves once the previous generation has settled and saved', async () => {

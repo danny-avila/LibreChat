@@ -39,6 +39,7 @@ import {
 } from '~/utils';
 import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import useGetConversation from '~/hooks/Conversations/useGetConversation';
+import { withSubmittedCodeDecision } from '~/hooks/Agents/codeDecision';
 import useCodeApprovalMode from '~/hooks/Agents/useCodeApprovalMode';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useCodeWorkspace from '~/hooks/Agents/useCodeWorkspace';
@@ -231,6 +232,7 @@ export default function useChatFunctions({
   const focusRegeneratedResponse = useFocusRegeneratedResponse();
   const jotaiStore = useStore();
   const getConversation = useGetConversation(index);
+  const { setConversation } = store.useSetConversationAtom(index);
   const addedConversation = useRecoilValue(store.conversationByKeySelector(1));
   const { modes: codeApprovalModes, selected: fallbackCodeApprovalMode } = useCodeApprovalMode(
     immutableConversation,
@@ -784,6 +786,13 @@ export default function useChatFunctions({
       setMessages([...submissionMessages, currentMsg, initialResponse]);
     }
 
+    /** The run this send starts establishes the conversation's sealed code-environment decision,
+     *  so the conversation records it here rather than waiting for a server round trip. */
+    setConversation((current) =>
+      current == null || current.conversationId !== conversation?.conversationId
+        ? current
+        : withSubmittedCodeDecision(current, workspaceSubmission),
+    );
     setSubmissionStart(Date.now());
     setSubmission(submission);
     logger.dir('message_stream', submission, { depth: null });

@@ -1,7 +1,7 @@
 import { nanoid } from 'nanoid';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { logger, type AppConfig } from '@librechat/data-schemas';
-import type { CodeWorkspaceSelection } from 'librechat-data-provider';
+import type { CodeEnvironmentMode, CodeWorkspaceSelection } from 'librechat-data-provider';
 import type { Response } from 'express';
 import type {
   CodeEnvironmentLifecycleTarget,
@@ -89,7 +89,9 @@ export interface CodeEnvironmentConversationDeps {
     user: string;
     conversationId: string;
     expected: Pick<StoredConversationDecision, 'codeEnvironmentMode' | 'codeWorkspaces'>;
-    codeWorkspaces: CodeWorkspaceSelection[];
+    codeEnvironmentMode: CodeEnvironmentMode;
+    /** Omitted by a detach, which leaves the conversation without any attached selection. */
+    codeWorkspaces?: CodeWorkspaceSelection[];
   }) => Promise<StoredConversationDecision | null>;
 }
 
@@ -359,11 +361,13 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
   }
 
   /**
-   * Moves a sealed attached decision onto the environments a conversation's agents now use, when
-   * the effective policy enables moves. Runs never rewrite a stored decision, so no run from any
-   * ingress can write its run-start decision back over a move. A move is still refused while a
-   * generation is running, awaiting approval, or saving its response, so that generation does not
-   * keep working in the previous environment after the conversation has left it.
+   * Replaces a conversation's sealed code-environment decision with the one its owner chose: a
+   * move onto the environments its agents now use, an attach for a chat that has been running
+   * without one, or a detach off a machine it can no longer reach. Applies only when the effective
+   * policy enables moves. Runs never rewrite a stored decision, so no run from any ingress can
+   * write its run-start decision back over one of these. Each is still refused while a generation
+   * is running, awaiting approval, or saving its response, so that generation does not keep
+   * working in the previous environment after the conversation has left it.
    */
   async function moveConversationDecision(req: ServerRequest, res: Response): Promise<Response> {
     const principal = actor(req);
@@ -421,7 +425,9 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     }
     try {
       await Promise.all(
-        move.codeWorkspaces.map((selection) => assertWorkspaceRegistered(policy, selection)),
+        (move.codeWorkspaces ?? []).map((selection) =>
+          assertWorkspaceRegistered(policy, selection),
+        ),
       );
     } catch (error) {
       if (error instanceof CodeWorkspaceSelectionError) {
@@ -437,6 +443,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
         codeEnvironmentMode: conversation.codeEnvironmentMode,
         codeWorkspaces: conversation.codeWorkspaces,
       },
+      codeEnvironmentMode: move.mode,
       codeWorkspaces: move.codeWorkspaces,
     });
     if (moved == null) {
@@ -444,8 +451,8 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     }
     return res.status(200).json({
       conversationId,
-      codeEnvironmentMode: 'attached',
-      codeWorkspaces: move.codeWorkspaces,
+      codeEnvironmentMode: move.mode,
+      ...(move.codeWorkspaces != null && { codeWorkspaces: move.codeWorkspaces }),
     });
   }
 

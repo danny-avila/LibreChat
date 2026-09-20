@@ -166,7 +166,7 @@ describe('resolveConversationCodeEnvironmentMove', () => {
         from: [mac],
         to: [vm],
       }),
-    ).toEqual({ codeWorkspaces: [vm] });
+    ).toEqual({ mode: 'attached', codeWorkspaces: [vm] });
   });
 
   it('carries a covered environment over unchanged while adding a new one', () => {
@@ -177,7 +177,7 @@ describe('resolveConversationCodeEnvironmentMove', () => {
         from: [team],
         to: [vm, team],
       }),
-    ).toEqual({ codeWorkspaces: [team, vm] });
+    ).toEqual({ mode: 'attached', codeWorkspaces: [team, vm] });
   });
 
   it('moves a legacy decision inferred from its selections', () => {
@@ -187,7 +187,7 @@ describe('resolveConversationCodeEnvironmentMove', () => {
         from: [mac],
         to: [vm],
       }),
-    ).toEqual({ codeWorkspaces: [vm] });
+    ).toEqual({ mode: 'attached', codeWorkspaces: [vm] });
   });
 
   it('never switches the workspace of an environment the decision already covers', () => {
@@ -215,7 +215,7 @@ describe('resolveConversationCodeEnvironmentMove', () => {
         from: [mac, team],
         to: [team],
       }),
-    ).toEqual({ codeWorkspaces: [team] });
+    ).toEqual({ mode: 'attached', codeWorkspaces: [team] });
   });
 
   it('rejects a move that changes nothing', () => {
@@ -228,12 +228,57 @@ describe('resolveConversationCodeEnvironmentMove', () => {
     ).toThrow(locked);
   });
 
+  it('attaches an environment to a chat that recorded running without one', () => {
+    expect(
+      resolveConversationCodeEnvironmentMove({
+        conversation: {
+          conversationId: 'conversation-1',
+          codeEnvironmentMode: 'without_attached',
+        },
+        from: [],
+        to: [vm, mac],
+      }),
+    ).toEqual({ mode: 'attached', codeWorkspaces: [mac, vm] });
+  });
+
+  /* An attach still replaces a decision the client has seen, and a chat that recorded none is not
+   * sealed at all: its next turn records one, so the composer selects instead of transitioning. */
+  it('rejects attaching against a decision the conversation does not hold', () => {
+    expect(() =>
+      resolveConversationCodeEnvironmentMove({
+        conversation: { conversationId: 'conversation-1' },
+        from: [],
+        to: [vm],
+      }),
+    ).toThrow(locked);
+    expect(() =>
+      resolveConversationCodeEnvironmentMove({
+        conversation: {
+          conversationId: 'conversation-1',
+          codeEnvironmentMode: 'without_attached',
+        },
+        from: [mac],
+        to: [vm],
+      }),
+    ).toThrow(locked);
+  });
+
+  it('leaves every attached environment when the target set is empty', () => {
+    expect(
+      resolveConversationCodeEnvironmentMove({
+        conversation: sealedOn(mac, vm),
+        from: [mac, vm],
+        to: [],
+      }),
+    ).toEqual({ mode: 'without_attached' });
+  });
+
   it.each([
     { conversationId: 'conversation-1', codeEnvironmentMode: 'without_attached' as const },
     { conversationId: 'conversation-1' },
-  ])('never upgrades a conversation that continues without an attached environment', (stored) => {
+  ])('has nothing to detach without an attached decision: %j', (stored) => {
     expect(() =>
-      resolveConversationCodeEnvironmentMove({ conversation: stored, from: [], to: [vm] }),
+      resolveConversationCodeEnvironmentMove({ conversation: stored, from: [], to: [] }),
     ).toThrow(locked);
   });
 
@@ -243,7 +288,7 @@ describe('resolveConversationCodeEnvironmentMove', () => {
     ).toThrow(locked);
   });
 
-  it.each([[], undefined, [vm, { ...vm, workspaceId: 'other' }], [{ environmentId: 'vm' }]])(
+  it.each([undefined, [vm, { ...vm, workspaceId: 'other' }], [{ environmentId: 'vm' }]])(
     'rejects a malformed target: %j',
     (to) => {
       expect(() =>

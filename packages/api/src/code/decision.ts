@@ -120,15 +120,26 @@ export function resolveConversationCodeEnvironmentDecision({
 }
 
 export interface ConversationCodeEnvironmentMove {
-  codeWorkspaces: CodeWorkspaceSelection[];
+  mode: CodeEnvironmentMode;
+  codeWorkspaces?: CodeWorkspaceSelection[];
 }
 
 /**
- * Validates an owner's explicit move of a sealed attached decision onto the environments its
- * agents now use. A move may drop environments the agents stopped using and add ones they now use,
- * but never changes the workspace of an environment the decision already covers and never upgrades
- * a conversation that continues without an attached environment. `from` must repeat the persisted selections, so a client acting
- * on a stale view of the conversation cannot replace a decision it has not seen.
+ * Validates an owner's explicit transition of a sealed decision. Three transitions share these
+ * rules, because each one replaces a whole sealed decision with another and none of them touches
+ * the chat's messages or copies a file:
+ *
+ * - a move onto the environments the agents now use, which may drop environments they stopped
+ *   using and add ones they now use, but never changes the workspace of an environment the
+ *   decision already covers;
+ * - an attach, when a chat that continued without an attached environment needs one, which the
+ *   sealed `without_attached` decision would otherwise refuse for the life of the chat;
+ * - a detach (an empty `to`), when the machine a chat attached to is no longer reachable and its
+ *   owner would rather keep chatting than keep waiting for it.
+ *
+ * `from` must repeat the persisted decision, so a client acting on a stale view of the
+ * conversation cannot replace a decision it has not seen. A chat that recorded no decision is not
+ * sealed at all: its next turn records one, so there is nothing here to replace.
  */
 export function resolveConversationCodeEnvironmentMove({
   conversation,
@@ -139,32 +150,43 @@ export function resolveConversationCodeEnvironmentMove({
   from: unknown;
   to: unknown;
 }): ConversationCodeEnvironmentMove {
+  if (!holdsDecision(conversation)) {
+    throw new CodeWorkspaceSelectionError('locked');
+  }
   const persisted = readPersistedDecision(conversation);
-  if (persisted.mode !== 'attached' || persisted.codeWorkspaces == null) {
+  const sealed = persisted.codeWorkspaces ?? [];
+  if (!isCodeWorkspaceSelections(from) || !sameSelections(from, sealed)) {
     throw new CodeWorkspaceSelectionError('locked');
   }
-  if (!isCodeWorkspaceSelections(from) || !sameSelections(from, persisted.codeWorkspaces)) {
-    throw new CodeWorkspaceSelectionError('locked');
-  }
-  if (!isCodeWorkspaceSelections(to) || to.length === 0) {
+  if (!isCodeWorkspaceSelections(to)) {
     throw new CodeWorkspaceSelectionError('invalid');
   }
-  const sealed = new Map(
-    persisted.codeWorkspaces.map(({ environmentId, workspaceId }) => [environmentId, workspaceId]),
+  if (to.length === 0) {
+    /** Leaving every attached environment is the detach; a chat already without one cannot. */
+    if (persisted.mode !== 'attached') {
+      throw new CodeWorkspaceSelectionError('locked');
+    }
+    return { mode: 'without_attached' };
+  }
+  if (persisted.mode === 'without_attached') {
+    return { mode: 'attached', codeWorkspaces: canonicalSelections(to) };
+  }
+  const sealedWorkspaces = new Map(
+    sealed.map(({ environmentId, workspaceId }) => [environmentId, workspaceId]),
   );
   let adds = false;
   for (const selection of to) {
-    const sealedWorkspaceId = sealed.get(selection.environmentId);
+    const sealedWorkspaceId = sealedWorkspaces.get(selection.environmentId);
     if (sealedWorkspaceId == null) {
       adds = true;
     } else if (sealedWorkspaceId !== selection.workspaceId) {
       throw new CodeWorkspaceSelectionError('locked');
     }
   }
-  if (!adds && to.length === sealed.size) {
+  if (!adds && to.length === sealedWorkspaces.size) {
     throw new CodeWorkspaceSelectionError('locked');
   }
-  return { codeWorkspaces: canonicalSelections(to) };
+  return { mode: 'attached', codeWorkspaces: canonicalSelections(to) };
 }
 
 type PersistableDecisionFields = Pick<

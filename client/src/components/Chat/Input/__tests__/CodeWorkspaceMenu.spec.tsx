@@ -57,6 +57,7 @@ function workspace(overrides: Partial<CodeWorkspaceResult> = {}): CodeWorkspaceR
     mode: 'attached',
     state: 'ready',
     canSubmit: true,
+    visible: true,
     environments: [
       {
         environment,
@@ -234,12 +235,13 @@ describe('CodeWorkspaceMenu', () => {
     renderMenu(
       <CodeWorkspaceMenu
         setConversation={jest.fn()}
-        workspace={workspace({ locked: true })}
+        workspace={workspace({ locked: true, visible: false })}
         disabled={false}
       />,
     );
 
     expect(screen.queryByTestId('code-workspace')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('code-workspace-locked-status')).not.toBeInTheDocument();
   });
 
   test('shows recovery status when a locked workspace is unavailable', () => {
@@ -264,6 +266,166 @@ describe('CodeWorkspaceMenu', () => {
     );
   });
 
+  test('explains a chat that recorded running without a workspace and cannot attach one', () => {
+    renderMenu(
+      <CodeWorkspaceMenu
+        setConversation={jest.fn()}
+        workspace={workspace({
+          locked: true,
+          mode: 'without_attached',
+          state: 'without_attached',
+          selections: undefined,
+        })}
+        disabled={false}
+      />,
+    );
+
+    expect(screen.getByTestId('code-workspace-locked-status')).toHaveAccessibleName(
+      'com_ui_code_workspace_without_attached. com_ui_code_workspace_without_attached_info',
+    );
+  });
+
+  describe('a saved chat that has been running without a workspace', () => {
+    const attached = { environmentId: environment.id, workspaceId: 'project-a' };
+    const sealed = { ...conversation, conversationId: 'existing' } as TConversation;
+    const attachable = (rememberSelection = jest.fn()) =>
+      workspace({
+        locked: true,
+        mode: 'without_attached',
+        state: 'without_attached',
+        selections: undefined,
+        rememberSelection,
+        environments: [
+          {
+            environment,
+            state: 'choose',
+            workspaces: [{ id: 'project-a', name: 'Project A' }],
+            selected: undefined,
+          },
+        ],
+        transition: {
+          kind: 'attach',
+          conversationId: 'existing',
+          from: [],
+          previous: [],
+          retained: [],
+          detachable: false,
+          targets: [
+            {
+              environment,
+              state: 'choose',
+              workspaces: [{ id: 'project-a', name: 'Project A' }],
+              selected: undefined,
+            },
+          ],
+        },
+      });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    test('attaches a workspace while still naming where the chat runs', async () => {
+      const moveSpy = jest.spyOn(dataService, 'moveConversationCodeEnvironment').mockResolvedValue({
+        conversationId: 'existing',
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [attached],
+      });
+      const setConversation = jest.fn();
+      const rememberSelection = jest.fn();
+      renderMenu(
+        <CodeWorkspaceMenu
+          setConversation={setConversation}
+          workspace={attachable(rememberSelection)}
+          disabled={false}
+        />,
+      );
+
+      /** The control keeps reading "no attached workspace"; attaching one is what it offers. */
+      const chip = screen.getByTestId('code-workspace');
+      expect(chip).toHaveTextContent('com_ui_code_workspace_without_attached');
+      await userEvent.click(chip);
+      expect(screen.getByText('com_ui_code_workspace_attach_info')).toBeInTheDocument();
+      expect(
+        screen.queryByRole('menuitem', { name: /com_ui_code_workspace_detach/ }),
+      ).not.toBeInTheDocument();
+      await userEvent.click(
+        await screen.findByRole('menuitem', { name: /com_ui_code_workspace_attach/ }),
+      );
+
+      await waitFor(() => expect(moveSpy).toHaveBeenCalledTimes(1));
+      expect(moveSpy).toHaveBeenCalledWith({
+        conversationId: 'existing',
+        from: [],
+        to: [attached],
+      });
+      expect(rememberSelection).toHaveBeenCalledWith(attached);
+      const update = setConversation.mock.calls[0][0];
+      expect(update(sealed)).toEqual({
+        ...sealed,
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [attached],
+      });
+    });
+  });
+
+  describe('a chat sealed to a machine it can no longer reach', () => {
+    const mac = { environmentId: 'mac', workspaceId: 'primary' };
+    const sealed = { ...conversation, conversationId: 'existing' } as TConversation;
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    test('continues without a workspace instead of waiting for the machine', async () => {
+      const moveSpy = jest.spyOn(dataService, 'moveConversationCodeEnvironment').mockResolvedValue({
+        conversationId: 'existing',
+        codeEnvironmentMode: 'without_attached',
+      });
+      const setConversation = jest.fn();
+      renderMenu(
+        <CodeWorkspaceMenu
+          setConversation={setConversation}
+          workspace={workspace({
+            locked: true,
+            canSubmit: false,
+            state: 'unavailable',
+            selections: undefined,
+            environments: [
+              { environment, state: 'unavailable', workspaces: [], selected: undefined },
+            ],
+            transition: {
+              kind: 'move',
+              conversationId: 'existing',
+              from: [mac],
+              previous: [],
+              retained: [],
+              targets: [],
+              detachable: true,
+            },
+          })}
+          disabled={false}
+        />,
+      );
+
+      await userEvent.click(screen.getByTestId('code-workspace'));
+      /** Nothing to move onto, so the only decision left is to stop waiting for the machine. */
+      expect(
+        screen.queryByRole('menuitem', { name: /com_ui_code_workspace_move/ }),
+      ).not.toBeInTheDocument();
+      await userEvent.click(screen.getByTestId('code-workspace-detach'));
+
+      await waitFor(() => expect(moveSpy).toHaveBeenCalledTimes(1));
+      expect(moveSpy).toHaveBeenCalledWith({ conversationId: 'existing', from: [mac], to: [] });
+      const update = setConversation.mock.calls[0][0];
+      expect(update(sealed)).toEqual({
+        ...sealed,
+        codeEnvironmentMode: 'without_attached',
+        codeWorkspaces: undefined,
+      });
+    });
+  });
+
   describe('a chat sealed to a machine its agent no longer uses', () => {
     const mac = { environmentId: 'mac', workspaceId: 'primary' };
     const moved = { environmentId: environment.id, workspaceId: 'project-a' };
@@ -275,7 +437,7 @@ describe('CodeWorkspaceMenu', () => {
       baseURL: 'https://team.example.com',
     };
 
-    type Target = NonNullable<CodeWorkspaceResult['relocation']>['targets'][number];
+    type Target = NonNullable<CodeWorkspaceResult['transition']>['targets'][number];
     const target = (
       targetEnvironment: Target['environment'],
       workspaces: Target['workspaces'],
@@ -294,12 +456,14 @@ describe('CodeWorkspaceMenu', () => {
         selections: undefined,
         rememberSelection,
         environments: targets,
-        relocation: {
+        transition: {
+          kind: 'move',
           conversationId: 'existing',
           from: [mac],
           previous: [{ id: 'mac', name: 'Danny Mac' }],
           retained: [],
           targets,
+          detachable: true,
         },
       });
 
@@ -412,7 +576,7 @@ describe('CodeWorkspaceMenu', () => {
           setConversation={jest.fn()}
           workspace={{
             ...firstChat,
-            relocation: { ...firstChat.relocation!, conversationId: 'another-chat' },
+            transition: { ...firstChat.transition!, conversationId: 'another-chat' },
           }}
           disabled={false}
         />,
@@ -438,8 +602,8 @@ describe('CodeWorkspaceMenu', () => {
           setConversation={setConversation}
           workspace={{
             ...base,
-            relocation: {
-              ...base.relocation!,
+            transition: {
+              ...base.transition!,
               from: [mac, moved],
               previous: [{ id: 'mac', name: 'Danny Mac' }],
               retained: [moved],
