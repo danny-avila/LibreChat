@@ -628,6 +628,7 @@ export function MediaThreadView({
       )}
       <OGDialog open={renameOpen} onOpenChange={setRenameOpen} triggerRef={menuTrigger}>
         <OGDialogContent
+          className="w-11/12 max-w-md"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             menuTrigger.current?.focus();
@@ -660,6 +661,7 @@ export function MediaThreadView({
       </OGDialog>
       <OGDialog open={deleteOpen} onOpenChange={setDeleteOpen} triggerRef={menuTrigger}>
         <OGDialogContent
+          className="w-11/12 max-w-md"
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             menuTrigger.current?.focus();
