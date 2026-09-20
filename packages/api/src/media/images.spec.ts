@@ -152,7 +152,7 @@ describe('image-and-tools vertical', () => {
     expect(admissions).toBe(1);
     const staged = await db.getMediaJob(scope, receipt.jobId);
     expect(staged).toMatchObject({
-      request: { temporary: true },
+      temporary: true,
       publicationExpiresAt: originalDeadline,
       execution: {
         accountingMode: 'balance',

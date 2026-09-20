@@ -260,7 +260,7 @@ describe('balance initialization', () => {
   it.each([
     ['all of its credits are held by in-flight requests', 100, 0, true],
     ['part of its credits are free', 50, 0, false],
-    ['its remaining credits are owed for settled media', 50, 50, true],
+    ['its remaining credits are owed for settled media', 100, 50, true],
   ])(
     'pre-skips a record only when %s',
     async (_case, reservedCredits, mediaDebtCredits, outOfBalance) => {

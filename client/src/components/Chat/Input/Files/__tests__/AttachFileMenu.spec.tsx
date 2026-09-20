@@ -3,7 +3,9 @@ import { RecoilRoot } from 'recoil';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { EModelEndpoint, EToolResources, Providers } from 'librechat-data-provider';
+import { AuthContext } from '~/hooks/AuthContext';
 import AttachFileMenu from '../AttachFileMenu';
+import { makeAuthContext } from 'test/auth';
 
 jest.mock('~/hooks', () => ({
   useAgentToolPermissions: jest.fn(),
@@ -143,15 +145,17 @@ function renderMenu(props: Record<string, unknown> = {}) {
   return render(
     <QueryClientProvider client={queryClient}>
       <RecoilRoot>
-        <AttachFileMenu
-          conversationId="test-convo"
-          files={new Map()}
-          setFiles={() => {}}
-          setFilesLoading={() => {}}
-          conversation={null}
-          isUnifiedMode={false}
-          {...props}
-        />
+        <AuthContext.Provider value={makeAuthContext()}>
+          <AttachFileMenu
+            conversationId="test-convo"
+            files={new Map()}
+            setFiles={() => {}}
+            setFilesLoading={() => {}}
+            conversation={null}
+            isUnifiedMode={false}
+            {...props}
+          />
+        </AuthContext.Provider>
       </RecoilRoot>
     </QueryClientProvider>,
   );
