@@ -3044,6 +3044,7 @@
   "com_media_recovery_cost": "Actual final cost (USD)",
   "com_media_recovery_outcome": "Confirmed provider outcome",
   "com_media_recovery_financial_confirm": "I verified the provider's final outcome and actual cost of {{amount}}. Apply this charge and release the remaining reservation.",
+  "com_media_recovery_financial_confirm_pending": "Enter the actual final cost above to confirm the provider's final outcome and charge.",
   "com_media_recovery_uncertain": "The previous response was interrupted. These saved values are locked while you retry the same recovery request to confirm its result.",
   "com_media_recovery_retry_same": "Retry same recovery request",
   "com_media_recovery_apply": "Apply recovery action",

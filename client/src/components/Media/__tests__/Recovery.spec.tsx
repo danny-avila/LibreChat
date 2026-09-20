@@ -7,7 +7,18 @@ import type { MediaRecoveryJob } from 'librechat-data-provider';
 import { clearMediaSessionStorage, mediaRecoveryFamily } from '../state';
 import MediaRecovery from '../Recovery';
 
-jest.mock('~/hooks', () => ({ useLocalize: () => (key: string) => key }));
+jest.mock('~/hooks', () => ({
+  useLocalize: () => (key: string, options?: { amount?: string }) => {
+    if (
+      key === 'com_media_recovery_financial_confirm' ||
+      key === 'com_media_recovery_financial_confirm_pending'
+    ) {
+      const messages = jest.requireActual<Record<string, string>>('~/locales/en/translation.json');
+      return messages[key].replace('{{amount}}', options?.amount ?? '');
+    }
+    return key;
+  },
+}));
 jest.mock('librechat-data-provider', () => {
   const actual =
     jest.requireActual<typeof import('librechat-data-provider')>('librechat-data-provider');
@@ -136,15 +147,29 @@ test('financial settlement requires evidence, an explicit actual cost, and confi
   await openJob();
   fireEvent.click(screen.getByRole('radio', { name: 'com_media_recovery_settle' }));
   const apply = screen.getByRole('button', { name: 'com_media_recovery_apply' });
+  const confirmation = screen.getByRole('checkbox');
+  expect(confirmation).toHaveAccessibleName(
+    "Enter the actual final cost above to confirm the provider's final outcome and charge.",
+  );
   expect(apply).toBeDisabled();
   fireEvent.change(screen.getByRole('textbox', { name: 'com_media_recovery_evidence' }), {
     target: { value: 'Provider invoice INV-42' },
   });
-  fireEvent.change(screen.getByRole('spinbutton', { name: 'com_media_recovery_cost' }), {
+  const actualCost = screen.getByRole('spinbutton', { name: 'com_media_recovery_cost' });
+  fireEvent.change(actualCost, { target: { value: '-1' } });
+  expect(confirmation).toHaveAccessibleName(/^Enter the actual final cost above/);
+  expect(apply).toBeDisabled();
+  fireEvent.change(actualCost, { target: { value: '1.25' } });
+  expect(confirmation).toHaveAccessibleName(/actual cost of \$1\.25\./);
+  fireEvent.click(confirmation);
+  expect(apply).toBeEnabled();
+  fireEvent.change(actualCost, {
     target: { value: '0' },
   });
+  expect(confirmation).toHaveAccessibleName(/actual cost of \$0\.00\./);
+  expect(confirmation).not.toBeChecked();
   expect(apply).toBeDisabled();
-  fireEvent.click(screen.getByRole('checkbox'));
+  fireEvent.click(confirmation);
   fireEvent.click(apply);
   await waitFor(() => expect(settle).toHaveBeenCalledTimes(1));
   expect(settle.mock.calls[0]).toEqual([

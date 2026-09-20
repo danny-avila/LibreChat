@@ -342,16 +342,20 @@ export default function MediaRecovery({
                         checked={confirmed}
                         onCheckedChange={(value) => setConfirmed(value === true)}
                       />
-                      <Label id={`${id}-confirm-label`} htmlFor={`${id}-confirm`}>
-                        {localize('com_media_recovery_financial_confirm', {
-                          amount: validCost
-                            ? Number(cost).toLocaleString(undefined, {
+                      <Label
+                        id={`${id}-confirm-label`}
+                        htmlFor={`${id}-confirm`}
+                        className="min-w-0 flex-1 break-normal leading-snug"
+                      >
+                        {validCost
+                          ? localize('com_media_recovery_financial_confirm', {
+                              amount: Number(cost).toLocaleString(undefined, {
                                 style: 'currency',
                                 currency: 'USD',
                                 maximumFractionDigits: 8,
-                              })
-                            : localize('com_media_recovery_cost'),
-                        })}
+                              }),
+                            })
+                          : localize('com_media_recovery_financial_confirm_pending')}
                       </Label>
                     </div>
                   </>
