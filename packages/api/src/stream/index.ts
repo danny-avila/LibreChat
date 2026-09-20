@@ -68,6 +68,7 @@ export {
   projectTerminalEvent,
   TRANSIENT_MESSAGE_FIELDS,
   TRANSIENT_FILE_FIELDS,
+  TRANSIENT_ATTACHMENT_FIELDS,
 } from './terminalProjection';
 export type {
   ProjectedFinalEvent,

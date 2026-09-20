@@ -1,4 +1,10 @@
-import type { FinalEvent, FinalMessageFields, ServerSentEvent } from '~/types/events';
+import type {
+  CreatedEvent,
+  FinalEvent,
+  FinalMessageFields,
+  ServerSentEvent,
+  StreamEvent,
+} from '~/types/events';
 
 /**
  * Transient prompt-building fields that must never reach a terminal cache,
@@ -16,25 +22,57 @@ import type { FinalEvent, FinalMessageFields, ServerSentEvent } from '~/types/ev
  */
 export const TRANSIENT_MESSAGE_FIELDS = ['fileContext', 'image_urls'] as const;
 
+/** Storage bookkeeping present on both nested collections. Never display data. */
+const STORAGE_FILE_FIELDS = ['_id', '__v'] as const;
+
 /**
- * Transient fields on a message's nested file/attachment entries. `text` is the
- * embedded extracted body; `_id` and `__v` are storage bookkeeping. Every other
- * property is display and download metadata the client needs to keep rendering
- * the attachment after FINAL, so entries are projected field-by-field rather
- * than dropped.
+ * Transient fields on a message's `files` entries. `files` carries the user's
+ * uploads, whose `text` is the body extracted for the prompt, so it is excluded
+ * along with storage bookkeeping. Every other property is display and download
+ * metadata the client needs to keep rendering the attachment after FINAL, so
+ * entries are projected field-by-field rather than dropped.
  */
-export const TRANSIENT_FILE_FIELDS = ['text', '_id', '__v'] as const;
+export const TRANSIENT_FILE_FIELDS = ['text', ...STORAGE_FILE_FIELDS] as const;
+
+/**
+ * Transient fields on a message's `attachments` entries.
+ *
+ * `text` is deliberately absent here. `attachments` holds resolved
+ * `artifactPromises` — `BaseClient` assigns them onto `responseMessage` — so its
+ * `text` is model-generated output that `TextAttachment` renders inline from
+ * `file.text ?? ''`. That is authoritative final content, not a prompt input.
+ *
+ * Excluding it would also be unrecoverable rather than merely lossy:
+ * `useAttachmentPreviewSync` polls `GET /api/files/:file_id/preview` only while
+ * `status === 'pending'`, and an absent status reads as `'ready'`, so a late or
+ * cross-replica subscriber whose only source is the stored FINAL would render a
+ * blank preview with no path back to the text.
+ */
+export const TRANSIENT_ATTACHMENT_FIELDS = STORAGE_FILE_FIELDS;
 
 /** Message-valued slots of a terminal event that can carry transient inputs. */
 const MESSAGE_SLOTS = ['requestMessage', 'responseMessage'] as const;
 
-/** Nested collections of file-like entries on a message. */
-const FILE_COLLECTIONS = ['files', 'attachments'] as const;
+/** Nested collections of file-like entries, each with its own exclusion set. */
+const FILE_COLLECTIONS = [
+  ['files', TRANSIENT_FILE_FIELDS],
+  ['attachments', TRANSIENT_ATTACHMENT_FIELDS],
+] as const;
 
 export type TransientMessageField = (typeof TRANSIENT_MESSAGE_FIELDS)[number];
 
-/** A message whose transient prompt-building fields have been excluded. */
-export type ProjectedMessageFields = Omit<FinalMessageFields, TransientMessageField>;
+/**
+ * A message whose transient prompt-building fields have been excluded.
+ *
+ * `FinalMessageFields` carries an index signature, so `Omit` alone cannot remove
+ * anything from it — `keyof` is `string | number` and the literals are subsumed.
+ * The `?: never` mapping is what makes the exclusion real: reading a transient
+ * field off a projected message yields `undefined`, and assigning one is an
+ * error, so a future field cannot silently pass through the boundary.
+ */
+export type ProjectedMessageFields = Omit<FinalMessageFields, TransientMessageField> & {
+  [K in TransientMessageField]?: never;
+};
 
 /** A terminal event safe to cache, persist, publish and replay. */
 export type ProjectedFinalEvent = Omit<
@@ -51,15 +89,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Project one file/attachment entry. Returns the same reference when it carries
- * no transient field, so a clean event allocates nothing.
+ * Project one file/attachment entry against that collection's exclusion set.
+ * Returns the same reference when it carries no excluded field, so a clean event
+ * allocates nothing.
  */
-function projectFileEntry(entry: unknown): unknown {
+function projectFileEntry(entry: unknown, excluded: readonly string[]): unknown {
   if (!isRecord(entry)) {
     return entry;
   }
   let projected: Record<string, unknown> | undefined;
-  for (const field of TRANSIENT_FILE_FIELDS) {
+  for (const field of excluded) {
     if (field in entry) {
       projected ??= { ...entry };
       delete projected[field];
@@ -68,13 +107,13 @@ function projectFileEntry(entry: unknown): unknown {
   return projected ?? entry;
 }
 
-function projectFileCollection(value: unknown): unknown {
+function projectFileCollection(value: unknown, excluded: readonly string[]): unknown {
   if (!Array.isArray(value)) {
     return value;
   }
   let changed = false;
   const projected = value.map((entry) => {
-    const next = projectFileEntry(entry);
+    const next = projectFileEntry(entry, excluded);
     if (next !== entry) {
       changed = true;
     }
@@ -101,9 +140,9 @@ function projectMessage<T>(message: T): T {
     }
   }
 
-  for (const collection of FILE_COLLECTIONS) {
+  for (const [collection, excluded] of FILE_COLLECTIONS) {
     const current = (projected ?? message)[collection];
-    const next = projectFileCollection(current);
+    const next = projectFileCollection(current, excluded);
     if (next !== current) {
       projected ??= { ...message };
       projected[collection] = next;
@@ -147,7 +186,17 @@ function isFinalEvent(event: ServerSentEvent): event is FinalEvent {
  *
  * Non-terminal events (chunks, `created`) carry no message payload and are
  * returned unchanged.
+ *
+ * The overloads keep the declared return type honest about what the body does.
+ * A known `FinalEvent` in yields the `ProjectedFinalEvent` contract out, so an
+ * excluded field reads as `undefined` rather than as live data and cannot be
+ * reintroduced; a known non-terminal event keeps its exact type; a
+ * `ServerSentEvent` union — what every call site in the manager passes — stays a
+ * `ServerSentEvent`.
  */
+export function projectTerminalEvent(event: FinalEvent): ProjectedFinalEvent;
+export function projectTerminalEvent<T extends StreamEvent | CreatedEvent>(event: T): T;
+export function projectTerminalEvent(event: ServerSentEvent): ServerSentEvent;
 export function projectTerminalEvent<T extends ServerSentEvent>(event: T): T {
   if (!isFinalEvent(event)) {
     return event;

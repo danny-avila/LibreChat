@@ -4965,13 +4965,21 @@ class GenerationJobManagerClass {
       }
       deliverChunk(event);
     };
-    const queueDone = (event: t.ServerSentEvent, generationId?: number): void => {
+    const queueDone = (rawEvent: t.ServerSentEvent, generationId?: number): void => {
       if (generationId != null && generationId !== runtime.createdAt) {
         return;
       }
       if (!subscriptionActive || terminalEventDelivered || terminalEventQueued) {
         return;
       }
+      /** The only choke point every terminal delivery to this subscriber passes
+       * through, so it is where a frame published by a replica that predates
+       * projection gets excluded. Store-read paths are already projected; a live
+       * Pub/Sub FINAL from an old generation owner during a rolling deploy is
+       * not, and without this it would be cached on the runtime and forwarded to
+       * the browser with its prompt inputs intact. Idempotent, and returns the
+       * identical reference for an already-projected frame. */
+      const event = projectTerminalEvent(rawEvent);
       if (!deliveryActivated) {
         terminalEventQueued = true;
         runtime.finalEvent = event;

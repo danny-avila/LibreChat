@@ -1,4 +1,5 @@
-import type { FinalEvent, ServerSentEvent } from '~/types/events';
+import type { FinalEvent, ServerSentEvent, StreamEvent } from '~/types/events';
+import type { ProjectedFinalEvent } from '../terminalProjection';
 import { projectTerminalEvent } from '../terminalProjection';
 
 const byteLength = (value: unknown): number => Buffer.byteLength(JSON.stringify(value), 'utf8');
@@ -14,6 +15,9 @@ const attachmentsOf = (message: unknown): Array<Record<string, unknown>> =>
 
 /** A terminal event shaped like the one `request.js` builds, with the transient
  * prompt-building inputs still attached. */
+/** Model-generated attachment body: authoritative output, must survive. */
+const GENERATED_OUTPUT = 'row,value\n1,42\n';
+
 function buildAttachmentHeavyFinal(bodyChars: number): FinalEvent {
   const body = 'D'.repeat(bodyChars);
   const base64 = 'A'.repeat(bodyChars);
@@ -51,7 +55,15 @@ function buildAttachmentHeavyFinal(bodyChars: number): FinalEvent {
       isCreatedByUser: false,
       content: [{ type: 'text', text: 'The report concludes that latency improved.' }],
       attachments: [
-        { file_id: 'a-1', filename: 'chart.png', filepath: '/out/chart.png', text: body },
+        {
+          file_id: 'a-1',
+          filename: 'result.txt',
+          filepath: '/out/result.txt',
+          // Generated output that `TextAttachment` renders inline.
+          text: GENERATED_OUTPUT,
+          _id: 'mongo-id',
+          __v: 0,
+        },
       ],
     },
   };
@@ -65,15 +77,18 @@ describe('projectTerminalEvent', () => {
       expect(projected.requestMessage).not.toHaveProperty('fileContext');
       expect(projected.requestMessage).not.toHaveProperty('image_urls');
       expect(filesOf(projected.requestMessage)[0]).not.toHaveProperty('text');
-      expect(attachmentsOf(projected.responseMessage)[0]).not.toHaveProperty('text');
     });
 
-    it('excludes storage bookkeeping from nested file entries', () => {
+    it('excludes storage bookkeeping from files and attachments alike', () => {
       const projected = projectTerminalEvent(buildAttachmentHeavyFinal(64));
-      const file = filesOf(projected.requestMessage)[0];
 
-      expect(file).not.toHaveProperty('_id');
-      expect(file).not.toHaveProperty('__v');
+      for (const entry of [
+        filesOf(projected.requestMessage)[0],
+        attachmentsOf(projected.responseMessage)[0],
+      ]) {
+        expect(entry).not.toHaveProperty('_id');
+        expect(entry).not.toHaveProperty('__v');
+      }
     });
 
     it('excludes transient fields from every runMessages entry', () => {
@@ -121,8 +136,9 @@ describe('projectTerminalEvent', () => {
       });
       expect(attachmentsOf(projected.responseMessage)[0]).toEqual({
         file_id: 'a-1',
-        filename: 'chart.png',
-        filepath: '/out/chart.png',
+        filename: 'result.txt',
+        filepath: '/out/result.txt',
+        text: GENERATED_OUTPUT,
       });
     });
 
@@ -179,6 +195,59 @@ describe('projectTerminalEvent', () => {
     });
   });
 
+  /** Regression for the review finding that the `text` denylist was applied to
+   * `attachments` as well as `files`. `attachments` are resolved
+   * `artifactPromises` whose `text` the client renders, and
+   * `useAttachmentPreviewSync` only re-fetches while `status === 'pending'`, so
+   * excluding it blanks the preview irrecoverably. */
+  describe('output attachment text is authoritative, not transient', () => {
+    it('preserves generated attachment text while excluding prompt file bodies', () => {
+      const promptBody = 'D'.repeat(256);
+      const event: FinalEvent = {
+        final: true,
+        requestMessage: {
+          messageId: 'um-1',
+          files: [{ file_id: 'f-1', filename: 'report.pdf', text: promptBody }],
+        },
+        responseMessage: {
+          messageId: 'rm-1',
+          attachments: [
+            { file_id: 'a-1', filename: 'out.csv', text: GENERATED_OUTPUT, status: 'ready' },
+          ],
+        },
+      };
+
+      const projected = projectTerminalEvent(event);
+
+      expect(filesOf(projected.requestMessage)[0]).not.toHaveProperty('text');
+      expect(attachmentsOf(projected.responseMessage)[0]).toMatchObject({
+        text: GENERATED_OUTPUT,
+        status: 'ready',
+      });
+      expect(JSON.stringify(projected)).not.toContain(promptBody);
+    });
+
+    it('preserves attachment text on a runMessages entry too', () => {
+      const event: FinalEvent = {
+        final: true,
+        runMessages: [
+          {
+            messageId: 'r-1',
+            fileContext: 'X'.repeat(128),
+            attachments: [{ file_id: 'a-2', filename: 'a.txt', text: GENERATED_OUTPUT }],
+          },
+        ],
+      };
+
+      const projected = projectTerminalEvent(event);
+
+      expect(projected.runMessages?.[0]).not.toHaveProperty('fileContext');
+      expect(attachmentsOf(projected.runMessages?.[0])[0]).toMatchObject({
+        text: GENERATED_OUTPUT,
+      });
+    });
+  });
+
   describe('optional and null semantics', () => {
     it('preserves an explicit null message slot', () => {
       const event: FinalEvent = {
@@ -200,6 +269,48 @@ describe('projectTerminalEvent', () => {
       expect('requestMessage' in projected).toBe(false);
       expect('responseMessage' in projected).toBe(false);
       expect('runMessages' in projected).toBe(false);
+    });
+  });
+
+  /** Regression for the review finding that the declared return type was the
+   * input type `T`, so the exported projected contract was never enforced: a
+   * caller could still dereference an excluded field after projection. The
+   * `@ts-expect-error` lines below are the assertion — if the projected type
+   * stops excluding these, `tsc --noEmit` fails on the unused directive. */
+  describe('the projected contract is enforced by the type system', () => {
+    it('types an excluded field as statically absent, not as unknown data', () => {
+      const projected = projectTerminalEvent(buildAttachmentHeavyFinal(32));
+
+      /** `undefined`, not `unknown`: a caller cannot treat either field as
+       * present data after projection. Annotating the exact type is the
+       * assertion — widening it to `unknown` would still compile, so the narrow
+       * annotation is what pins the contract. */
+      const fileContext: undefined = projected.requestMessage?.fileContext;
+      const imageUrls: undefined = projected.requestMessage?.image_urls;
+
+      expect(fileContext).toBeUndefined();
+      expect(imageUrls).toBeUndefined();
+    });
+
+    it('refuses to construct a projected event that carries an excluded field', () => {
+      const projected: ProjectedFinalEvent = {
+        final: true,
+        requestMessage: {
+          messageId: 'um-1',
+          // @ts-expect-error a transient field cannot pass through the boundary
+          fileContext: 'must not compile',
+        },
+      };
+
+      expect(projected.final).toBe(true);
+    });
+
+    it('keeps a non-terminal event at its exact input type', () => {
+      const chunk: StreamEvent = { event: 'on_message_delta', data: { delta: 'hi' } };
+      const projected: StreamEvent = projectTerminalEvent(chunk);
+
+      expect(projected).toBe(chunk);
+      expect(projected.event).toBe('on_message_delta');
     });
   });
 

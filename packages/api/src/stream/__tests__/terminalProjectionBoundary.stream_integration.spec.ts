@@ -15,6 +15,8 @@ jest.spyOn(console, 'log').mockImplementation();
 
 const TRANSIENT_BODY = 'D'.repeat(64 * 1024);
 const ANSWER = 'The report concludes that latency improved.';
+/** Generated attachment body: authoritative output, must survive projection. */
+const GENERATED_OUTPUT = 'row,value\n1,42\n';
 
 /**
  * A terminal event as a controller would hand it over WITHOUT caller-level
@@ -51,7 +53,9 @@ function buildUnsanitizedFinal(): FinalEvent {
       parentMessageId: 'um-1',
       conversationId: 'conv-1',
       content: [{ type: 'text', text: ANSWER }],
-      attachments: [{ file_id: 'a-1', filename: 'chart.png', text: TRANSIENT_BODY }],
+      attachments: [
+        { file_id: 'a-1', filename: 'out.csv', text: GENERATED_OUTPUT, status: 'ready' },
+      ],
     },
   };
 }
@@ -65,13 +69,21 @@ const filesOf = (message: unknown): Array<Record<string, unknown>> =>
 const attachmentsOf = (message: unknown): Array<Record<string, unknown>> =>
   entries((message as { attachments?: unknown } | null | undefined)?.attachments);
 
+async function waitFor(predicate: () => boolean, label: string, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  throw new Error(`Timed out waiting for ${label}`);
+}
+
 /** Every assertion a safe terminal representation must satisfy. */
 function expectSafeTerminalEvent(event: unknown): void {
   const final = event as FinalEvent;
   expect(final.requestMessage).not.toHaveProperty('fileContext');
   expect(final.requestMessage).not.toHaveProperty('image_urls');
   expect(filesOf(final.requestMessage)[0]).not.toHaveProperty('text');
-  expect(attachmentsOf(final.responseMessage)[0]).not.toHaveProperty('text');
 
   // authoritative final state and attachment references survive
   expect(final.requestMessage?.text).toBe('Summarize the attachment');
@@ -80,9 +92,13 @@ function expectSafeTerminalEvent(event: unknown): void {
     filename: 'report.pdf',
     filepath: '/uploads/report.pdf',
   });
+  /** Generated output survives: excluding it would blank the inline preview with
+   * no recovery path, since preview polling only runs while status is pending. */
   expect(attachmentsOf(final.responseMessage)[0]).toMatchObject({
     file_id: 'a-1',
-    filename: 'chart.png',
+    filename: 'out.csv',
+    text: GENERATED_OUTPUT,
+    status: 'ready',
   });
   expect((final.responseMessage?.content as Array<{ text: string }>)[0]?.text).toBe(ANSWER);
 
@@ -245,6 +261,48 @@ describe('terminal projection boundary', () => {
       }
 
       expect(sizes[1]).toBe(sizes[0]);
+    });
+
+    /**
+     * Mixed deployment, live path: an old generation owner publishes an
+     * unprojected FINAL over Pub/Sub while a NEW replica is already subscribed.
+     * Nothing is read from the job store here, so only the subscriber's own
+     * delivery choke point can exclude the prompt inputs before they are cached
+     * on its runtime and forwarded to the browser.
+     */
+    it('projects a live terminal frame published by an older replica', async () => {
+      const streamId = `redis-live-legacy-${Date.now()}`;
+      const job = await manager.createJob(streamId, 'user-1');
+
+      const delivered: ServerSentEvent[] = [];
+      const subscription = await manager.subscribe(
+        streamId,
+        () => undefined,
+        (event: ServerSentEvent) => {
+          delivered.push(event);
+        },
+      );
+      expect(subscription).not.toBeNull();
+
+      /** An old replica's transport emit: straight to Pub/Sub, unprojected, with
+       * no durable finalEvent written for the subscriber to read instead. */
+      const legacyTransport = new RedisEventTransport(ioredisClient!, subscriber);
+      await legacyTransport.emitDone(streamId, buildUnsanitizedFinal(), job.createdAt);
+
+      await waitFor(() => delivered.length > 0, 'live terminal delivery');
+
+      expect(delivered).toHaveLength(1);
+      expectSafeTerminalEvent(delivered[0]);
+
+      /** It must not be cached unprojected either: a later late-subscriber read
+       * of this runtime would otherwise re-deliver the oversized frame. */
+      const runtime = (
+        manager as unknown as { runtimeState: Map<string, { finalEvent?: unknown }> }
+      ).runtimeState.get(streamId);
+      expect(runtime?.finalEvent).toBeDefined();
+      expectSafeTerminalEvent(runtime!.finalEvent);
+
+      subscription!.unsubscribe();
     });
 
     /**
