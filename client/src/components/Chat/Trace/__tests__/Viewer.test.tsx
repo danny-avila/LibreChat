@@ -941,10 +941,10 @@ describe('Trace Viewer', () => {
       },
     ] as unknown as TMessage[];
 
-    function renderSdkRun() {
+    function renderSdkRun(listed: TTraceRecord[] = sdkRecords) {
       jest
         .spyOn(dataService, 'getConversationTraceRecords')
-        .mockResolvedValue({ records: sdkRecords, sourceId: 'tenant-project' });
+        .mockResolvedValue({ records: listed, sourceId: 'tenant-project' });
       const client = new QueryClient({
         defaultOptions: { queries: { retry: false } },
         logger: { log: () => undefined, warn: () => undefined, error: () => undefined },
@@ -1041,6 +1041,21 @@ describe('Trace Viewer', () => {
 
       expect(within(inspector).getByText(/"messages":\[/)).toBeInTheDocument();
       expect(within(inspector).queryByText('com_ui_trace_reply')).not.toBeInTheDocument();
+    });
+
+    it('says a round came from the conversation only when it did', async () => {
+      const namedRound = sdkRecords.map((entry) =>
+        entry.id === 'round-1' ? { ...entry, tools: ['bash_tool'] } : entry,
+      );
+      renderSdkRun(namedRound);
+
+      /** The chat's round called web_search, so the trace's bash_tool round stays unmatched. */
+      await userEvent.click(await recordRow('com_ui_tool_name_code'));
+
+      const inspector = screen.getByTestId('trace-inspector');
+      expect(within(inspector).getAllByText('com_ui_tool_name_code').length).toBeGreaterThan(0);
+      expect(within(inspector).queryByText('com_ui_trace_from_conversation')).toBeNull();
+      expect(within(inspector).queryByText('Sunny.')).toBeNull();
     });
 
     it('shows the agent by name with its id to copy and a chat one click away', async () => {

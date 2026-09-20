@@ -229,6 +229,8 @@ function ToolCalls({
   mcpIconMap: Map<string, string>;
 }) {
   const localize = useLocalize();
+  /** What a call sent and got back is only ever the chat's; a name alone may be the trace's own. */
+  const fromConversation = calls.some((call) => call.input != null || call.output != null);
   return (
     <section className="flex flex-col gap-3">
       {calls.map((call, index) => (
@@ -246,7 +248,9 @@ function ToolCalls({
           <ContentBlock label="com_ui_trace_tool_returned" content={toContent(call.output)} />
         </div>
       ))}
-      <p className="text-xs text-text-secondary">{localize('com_ui_trace_from_conversation')}</p>
+      {fromConversation && (
+        <p className="text-xs text-text-secondary">{localize('com_ui_trace_from_conversation')}</p>
+      )}
     </section>
   );
 }
