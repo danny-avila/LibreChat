@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
-import AxeBuilder from '@axe-core/playwright';
 import type { MediaPreset } from 'librechat-data-provider';
 import { mediaFixtureURL } from '../../setup/media';
 import { uniqueName } from './helpers';
+import { expectAccessible } from './accessibility';
 
 test('a saved preset restores an uploaded reference after reload', async ({ page }) => {
   let presetId: string | undefined;
@@ -40,14 +40,18 @@ test('a saved preset restores an uploaded reference after reload', async ({ page
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Remove reference', exact: true }).click();
     await page.reload();
-    await page.getByRole('combobox', { name: 'Presets', exact: true }).click();
-    await page.getByRole('option', { name: title, exact: true }).click();
+    const picker = page.getByRole('combobox', { name: 'Presets', exact: true });
+    const option = page.getByRole('option', { name: title, exact: true, includeHidden: true });
+    await picker.click();
+    await option.click();
+    await expect(option).toBeHidden();
+    await expect(picker).toHaveAttribute('aria-expanded', 'false');
+    await expect(picker).toBeFocused();
     await expect(prompt).toHaveValue('Keep this draft prompt');
     await expect(page.getByRole('button', { name: 'Remove reference', exact: true })).toBeVisible();
     const restored = page.getByRole('img', { name: 'Image preview', exact: true });
     await expect(restored).toHaveAttribute('src', new RegExp(preset.assets[0].file_id));
-    const scan = await new AxeBuilder({ page }).analyze();
-    expect(scan.violations).toEqual([]);
+    await expectAccessible(page);
   } finally {
     if (presetId) await page.request.delete(`/api/media/presets/${encodeURIComponent(presetId)}`);
   }
@@ -68,8 +72,7 @@ test('a comparison creates two durable outputs in one restored thread', async ({
   expect(after.submissions).toBe(before.submissions + 2);
   await page.reload();
   await expect(page.getByRole('link', { name: 'Download original', exact: true })).toHaveCount(2);
-  const scan = await new AxeBuilder({ page }).analyze();
-  expect(scan.violations).toEqual([]);
+  await expectAccessible(page);
 });
 
 test('a temporary creation restores its status and prevents chat reuse', async ({ page }) => {
@@ -84,6 +87,5 @@ test('a temporary creation restores its status and prevents chat reuse', async (
   await expect(page.getByRole('button', { name: 'Use in chat', exact: true })).toBeDisabled();
   await page.reload();
   await expect(page.getByRole('button', { name: 'Use in chat', exact: true })).toBeDisabled();
-  const scan = await new AxeBuilder({ page }).analyze();
-  expect(scan.violations).toEqual([]);
+  await expectAccessible(page);
 });
