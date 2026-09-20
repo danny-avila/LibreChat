@@ -223,14 +223,15 @@ function AgentCard({ agent, agentId }: { agent: RecordPresentation['agent']; age
 /** A tool round's calls as the chat's own tool cards hold them: no trace read, no content gate. */
 function ToolCalls({
   calls,
+  fromConversation,
   mcpIconMap,
 }: {
   calls: ToolCallView[];
+  /** The chat's own message supplied the calls; otherwise they are only the names the trace recorded. */
+  fromConversation: boolean;
   mcpIconMap: Map<string, string>;
 }) {
   const localize = useLocalize();
-  /** What a call sent and got back is only ever the chat's; a name alone may be the trace's own. */
-  const fromConversation = calls.some((call) => call.input != null || call.output != null);
   return (
     <section className="flex flex-col gap-3">
       {calls.map((call, index) => (
@@ -418,7 +419,11 @@ function Inspector({
         {!leadsWithContent && preview}
         {leadsWithContent && content}
         {presentation.calls != null && (
-          <ToolCalls calls={presentation.calls} mcpIconMap={mcpIconMap} />
+          <ToolCalls
+            calls={presentation.calls}
+            fromConversation={presentation.callsFrom === 'conversation'}
+            mcpIconMap={mcpIconMap}
+          />
         )}
         <Section title="com_ui_trace_timing" fields={timing} />
         <Section

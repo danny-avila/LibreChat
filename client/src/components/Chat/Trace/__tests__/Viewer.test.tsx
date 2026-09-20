@@ -987,6 +987,7 @@ describe('Trace Viewer', () => {
       const inspector = screen.getByTestId('trace-inspector');
       expect(within(inspector).getByText(/"query": "weather"/)).toBeInTheDocument();
       expect(within(inspector).getByText('Sunny.')).toBeInTheDocument();
+      expect(within(inspector).getByText('com_ui_trace_from_conversation')).toBeInTheDocument();
       expect(within(inspector).getByText('tool-dispatch')).toBeInTheDocument();
       expect(dataService.getConversationTraceRecord).not.toHaveBeenCalled();
     });

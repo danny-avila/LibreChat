@@ -236,6 +236,7 @@ describe('rounds the trace names itself', () => {
       technicalName: 'tool-dispatch',
       toolNames: ['bash_tool'],
       calls: [{ name: 'bash_tool', args: '', title: 'com_ui_tool_name_code' }],
+      callsFrom: 'trace',
     });
   });
 
@@ -244,6 +245,27 @@ describe('rounds the trace names itself', () => {
 
     expect(buildActivityIndex(twice, buildPreviews([response])).calls.size).toBe(0);
     expect(twice.turns[0].toolCalls).toBe(2);
+  });
+
+  it('knows a call came from the conversation even when the chat holds nothing it sent or returned', () => {
+    const pending = {
+      ...response,
+      content: [
+        { type: ContentTypes.TEXT, text: 'Looking.' },
+        { type: ContentTypes.TOOL_CALL, tool_call: { name: 'ask_user_question', args: '' } },
+      ],
+    } as unknown as TMessage;
+    const model = buildTraceModel([
+      generation('llm-1', 'model', 'llm', 100),
+      round('round-1', 1500),
+    ]);
+    const node = model.nodes.get('round-1');
+    const presentation = node && presentRecord(node, sourcesFor(model, [pending]));
+
+    expect(presentation?.calls).toEqual([
+      expect.objectContaining({ name: 'ask_user_question', input: undefined, output: undefined }),
+    ]);
+    expect(presentation?.callsFrom).toBe('conversation');
   });
 
   it('names a round with no chat message at all', () => {
