@@ -732,6 +732,142 @@ describe('MCPServersRegistry', () => {
     });
   });
 
+  describe('admin API key update binding', () => {
+    const bearerConfig: t.MCPOptions = {
+      type: 'streamable-http',
+      url: 'https://mcp.example.com/mcp',
+      proxy: 'http://proxy.example.com/',
+      apiKey: {
+        source: 'admin',
+        authorization_type: 'bearer',
+        key: 'owner-secret',
+      },
+    };
+    const customHeaderConfig: t.MCPOptions = {
+      ...bearerConfig,
+      apiKey: {
+        source: 'admin',
+        authorization_type: 'custom',
+        custom_header: 'X-Owner-Key',
+        key: 'owner-secret',
+      },
+    };
+    const rebindingCases: Array<[string, t.MCPOptions, t.MCPOptions, string[]]> = [
+      [
+        'URL',
+        bearerConfig,
+        {
+          ...bearerConfig,
+          url: 'https://attacker.example.com/mcp',
+          apiKey: { source: 'admin', authorization_type: 'bearer' },
+        },
+        ['url'],
+      ],
+      [
+        'transport',
+        bearerConfig,
+        {
+          ...bearerConfig,
+          type: 'sse',
+          apiKey: { source: 'admin', authorization_type: 'bearer' },
+        },
+        ['type'],
+      ],
+      [
+        'proxy',
+        bearerConfig,
+        {
+          ...bearerConfig,
+          proxy: 'http://attacker.example.com/',
+          apiKey: { source: 'admin', authorization_type: 'bearer' },
+        },
+        ['proxy'],
+      ],
+      [
+        'authorization type',
+        bearerConfig,
+        {
+          ...bearerConfig,
+          apiKey: { source: 'admin', authorization_type: 'basic' },
+        },
+        ['apiKey.authorization_type'],
+      ],
+      [
+        'custom-header binding',
+        customHeaderConfig,
+        {
+          ...customHeaderConfig,
+          apiKey: {
+            source: 'admin',
+            authorization_type: 'custom',
+            custom_header: 'X-Attacker-Key',
+          },
+        },
+        ['apiKey.custom_header'],
+      ],
+    ];
+
+    it.each(rebindingCases)(
+      'rejects an omitted-key %s rebinding before outbound inspection',
+      async (_label, existingConfig, update, changedFields) => {
+        jest.spyOn(registry['dbConfigsRepo'], 'get').mockResolvedValue(existingConfig);
+        const inspectSpy = jest.mocked(MCPServerInspector.inspect);
+        inspectSpy.mockClear();
+
+        await expect(
+          registry.inspectServerUpdate('shared-server', update, 'DB', 'editor-user'),
+        ).rejects.toMatchObject({
+          code: 'MCP_API_KEY_REENTRY_REQUIRED',
+          changedFields,
+        });
+
+        expect(inspectSpy).not.toHaveBeenCalled();
+      },
+    );
+
+    it('preserves the omitted key for an equivalent request boundary', async () => {
+      const existingConfig: t.MCPOptions = {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        proxy: 'http://proxy.example.com/',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'custom',
+          custom_header: 'X-Api-Key',
+          key: 'owner-secret',
+        },
+      };
+      const equivalentUpdate: t.MCPOptions = {
+        ...existingConfig,
+        type: 'http',
+        url: 'https://MCP.EXAMPLE.COM:443/mcp',
+        proxy: 'http://PROXY.EXAMPLE.COM:80/',
+        description: 'Updated description',
+        apiKey: {
+          source: 'admin',
+          authorization_type: 'custom',
+          custom_header: 'x-api-key',
+        },
+      };
+      jest.spyOn(registry['dbConfigsRepo'], 'get').mockResolvedValue(existingConfig);
+      const inspectSpy = jest.mocked(MCPServerInspector.inspect);
+      inspectSpy.mockClear();
+
+      await registry.inspectServerUpdate('shared-server', equivalentUpdate, 'DB', 'editor-user');
+
+      expect(inspectSpy).toHaveBeenCalledTimes(1);
+      expect(inspectSpy).toHaveBeenCalledWith(
+        'shared-server',
+        expect.objectContaining({
+          apiKey: expect.objectContaining({ key: 'owner-secret' }),
+        }),
+        undefined,
+        undefined,
+        undefined,
+      );
+    });
+  });
+
   describe('reinspectServer', () => {
     const stubOptions: t.MCPOptions = {
       type: 'streamable-http',

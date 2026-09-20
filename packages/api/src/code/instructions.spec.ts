@@ -103,6 +103,38 @@ describe('repository instruction loading', () => {
     expect(await load({ ...input, mode: 'defer' })).toContain('unless they conflict');
   });
 
+  it('reads and caches instructions within the resolved conversation worktree', async () => {
+    const load = createRepositoryInstructionLoader();
+    let requestBody: string | undefined;
+    const fetchImpl = jest.fn(
+      async (_input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        requestBody = init?.body as string | undefined;
+        return response();
+      },
+    );
+    const workspaceInstanceId = 'f'.repeat(64);
+    const scopedContext = {
+      ...context,
+      codeWorkspace: { ...context.codeWorkspace!, workspaceInstanceId },
+    };
+    const input = {
+      enabled: true,
+      context: scopedContext,
+      principalId: 'alice',
+      fetchImpl,
+      authHeaders: async () => ({}),
+      assertContent: jest.fn(),
+    };
+
+    await load(input);
+    await load(input);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(requestBody!)).toMatchObject({
+      workspaceInstanceId,
+    });
+  });
+
   it('omits changed, missing and unauthorized instruction snapshots', async () => {
     const load = createRepositoryInstructionLoader();
     const input = {

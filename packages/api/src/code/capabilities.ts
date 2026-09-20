@@ -178,6 +178,10 @@ export async function resolveCodeExecutionWorkspaceContext({
     codeWorkspace: {
       ...selection,
       operations: [...(workspace.operations ?? status.operations)],
+      ...(context.conversationWorkspaceInstanceId &&
+      workspace.workspaceInstances?.includes('git_worktree')
+        ? { workspaceInstanceId: context.conversationWorkspaceInstanceId }
+        : {}),
       ...(status.maxCommandTimeoutMs == null
         ? {}
         : { maxCommandTimeoutMs: status.maxCommandTimeoutMs }),

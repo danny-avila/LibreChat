@@ -389,14 +389,64 @@ describe('buildPreviewIndex', () => {
     ]);
   });
 
-  it('withholds previews for the turn a page boundary splits', () => {
+  it('matches the turn a record limit splits from its end, where its loaded records are', () => {
     const one = buildTraceModel([
       record({ id: 'llm', kind: 'generation', startTime: at(0), endTime: at(100) }),
     ]);
     const answer = buildPreviews([message({ text: 'Answer.' })]);
-
     expect(buildPreviewIndex(one, answer).get('llm')).toBe('Answer.');
-    expect(buildPreviewIndex(one, answer, 'response-1').get('llm')).toBeUndefined();
+    expect(buildPreviewIndex(one, answer, 'response-1').get('llm')).toBe('Answer.');
+
+    /** Only the last round's records are loaded: the model call that wrote the final text,
+     *  hanging from a wrapper the limit cut off. */
+    const tail = buildTraceModel([
+      record({
+        id: 'llm-2',
+        parentId: 'not-loaded',
+        kind: 'generation',
+        startTime: at(3000),
+        endTime: at(4000),
+      }),
+    ]);
+    expect(buildPreviewIndex(tail, previews).get('llm-2')).toBeUndefined();
+    expect(buildPreviewIndex(tail, previews, 'response-1').get('llm-2')).toBe(
+      'Paris is sunny, Lyon is not.',
+    );
+
+    /** The oldest loaded response is often whole, the next page holding an older response. One
+     *  that then disagrees with its message is unmatched, not read as a tail of it. */
+    const whole = buildTraceModel([
+      record({ id: 'llm-2', kind: 'generation', startTime: at(3000), endTime: at(4000) }),
+    ]);
+    expect(buildPreviewIndex(whole, previews, 'response-1').get('llm-2')).toBeUndefined();
+
+    /** More steps than the message has rounds cannot be a tail of it. */
+    expect(
+      buildPreviewIndex(model, buildPreviews([message({ content: [] })]), 'response-1').size,
+    ).toBe(0);
+  });
+
+  it('gives no tool a preview in the first loaded step of a split response, whose round may be cut', () => {
+    const cut = (id: string, kind: TTraceRecord['kind'], name: string, start: number) =>
+      record({
+        id,
+        parentId: 'not-loaded',
+        kind,
+        name,
+        startTime: at(start),
+        endTime: at(start + 50),
+      });
+    /** The limit fell inside the first round: its model call and its first search are not loaded. */
+    const split = buildTraceModel([
+      cut('search-lyon', 'tool', 'web_search', 1600),
+      cut('read', 'tool', 'read_file', 2100),
+      cut('llm-2', 'generation', 'llm', 3000),
+    ]);
+    const index = buildPreviewIndex(split, previews, 'response-1');
+
+    expect(index.get('search-lyon')).toBeUndefined();
+    expect(index.get('read')).toBeUndefined();
+    expect(index.get('llm-2')).toBe('Paris is sunny, Lyon is not.');
   });
 
   it('keeps text and tool previews for a single attributed lane', () => {

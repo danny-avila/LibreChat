@@ -53,6 +53,7 @@ const ASK_USER_QUESTION_MARKER = 'E2E_ASK_USER_QUESTION:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
+const STREAMING_MARKDOWN_REPLY_MARKER = 'E2E_STREAMING_MARKDOWN_REPLY';
 const HIGHLIGHT_CODE_MARKER = 'E2E_HIGHLIGHT_CODE:';
 const STATEFUL_CODE_MARKER = 'E2E_STATEFUL_CODE:';
 /** Two prose paragraphs, so a spec can select the message's *closing* block. */
@@ -84,6 +85,8 @@ const HANDOFF_TOOL_PREFIX = 'lc_transfer_to_';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
 const SKILL_ASSERTION_FINAL_TEXT = 'E2E skill assertion passed';
+/** Summary for a run with no invocable skill yet, but the tool to invoke one it authors. */
+const SKILL_ASSERTION_AUTHORING_ONLY_SUMMARY = 'authoring-only';
 const MANUAL_SKILL_ASSERTION_FINAL_TEXT = 'E2E manual skill assertion passed';
 const SKILL_TOOL_ASSERTION_FINAL_TEXT = 'E2E skill tool assertion passed';
 const PROVIDER_FILE_ASSERTION_FINAL_TEXT = 'E2E provider file assertion passed';
@@ -238,22 +241,31 @@ function getMarkerValue(text, marker) {
   );
 }
 
-function collectToolNames(agents) {
-  const names = new Set();
-  const add = (name) => {
-    if (typeof name === 'string' && name) {
-      names.add(name);
+/**
+ * Every tool name the run advertises, mapped to the definition the model sees
+ * for it. `toolDefinitions` is the array handed to the provider, so it wins
+ * over a same-named entry in `tools`; registry-only names keep whatever the
+ * earlier sources carried, which may be nothing. Names alone drive most
+ * assertions, but the `skill` tool ships two descriptions for one name, so the
+ * definition has to survive collection.
+ */
+function collectToolDefinitions(agents) {
+  const definitions = new Map();
+  const add = (name, definition) => {
+    if (typeof name !== 'string' || !name) {
+      return;
     }
+    definitions.set(name, definition ?? definitions.get(name));
   };
   for (const agent of agents ?? []) {
     if (!agent) {
       continue;
     }
     for (const tool of agent.tools ?? []) {
-      add(tool?.name);
+      add(tool?.name, tool);
     }
     for (const def of agent.toolDefinitions ?? []) {
-      add(def?.name);
+      add(def?.name, def);
     }
     if (agent.toolRegistry && typeof agent.toolRegistry.keys === 'function') {
       for (const name of agent.toolRegistry.keys()) {
@@ -261,7 +273,11 @@ function collectToolNames(agents) {
       }
     }
   }
-  return names;
+  return definitions;
+}
+
+function collectToolNames(agents) {
+  return new Set(collectToolDefinitions(agents).keys());
 }
 
 async function getStreamAgentView({ graph, messages, options, runManager }) {
@@ -283,10 +299,12 @@ async function getStreamAgentView({ graph, messages, options, runManager }) {
     systemRunnable && typeof systemRunnable.invoke === 'function'
       ? await systemRunnable.invoke(messages)
       : messages;
+  const toolDefinitions = collectToolDefinitions(agentContext ? [agentContext] : []);
   return {
     agentId,
     messages: promptMessages,
-    toolNames: collectToolNames(agentContext ? [agentContext] : []),
+    toolDefinitions,
+    toolNames: new Set(toolDefinitions.keys()),
   };
 }
 
@@ -513,6 +531,28 @@ function replyResponses(text) {
           '```',
         ].join('\n'),
       ],
+    };
+  }
+  if (text.includes(STREAMING_MARKDOWN_REPLY_MARKER)) {
+    return {
+      responses: [
+        [
+          '## E2E streaming markdown heading',
+          '',
+          'E2E streaming opening paragraph with 日本語 content.',
+          '',
+          '```javascript',
+          'const e2eIncrementalMarkdown = "complete";',
+          '```',
+          '',
+          '| E2E column | E2E value |',
+          '| --- | --- |',
+          '| completed block | visible |',
+          '',
+          'E2E streaming markdown final paragraph.',
+        ].join('\n'),
+      ],
+      sleep: SLOW_CHUNK_DELAY_MS,
     };
   }
 
@@ -939,7 +979,22 @@ function expectedSkillBodyMarker(skillName) {
   return `# ${skillName}`;
 }
 
-function skillAssertionResponses({ messages, assertion, toolNames }) {
+/**
+ * The `skill` tool's authoring-only wording, from `AUTHORED_SKILL_CONSTRAINTS`
+ * in `packages/api/src/agents/tools.ts`. A run that may write
+ * `skills/{skillName}/SKILL.md` gets that variant instead of the SDK's
+ * catalog-only text, which is what makes the two cases below separable from
+ * the prompt alone.
+ */
+const AUTHORED_SKILL_GUIDANCE = 'a skill you created in this conversation';
+
+function isAuthoringSkillTool(definition) {
+  return typeof definition?.description === 'string'
+    ? definition.description.includes(AUTHORED_SKILL_GUIDANCE)
+    : false;
+}
+
+function skillAssertionResponses({ messages, assertion, toolNames, toolDefinitions }) {
   const failures = [];
   if (assertion.error) {
     failures.push(assertion.error);
@@ -947,10 +1002,23 @@ function skillAssertionResponses({ messages, assertion, toolNames }) {
   const promptText = collectPromptText(messages).join('\n');
   const skillPrimeMessages = collectSkillPrimeMessages(messages);
 
-  if (assertion.required.length > 0 && !toolNames.has(SKILL_TOOL_NAME)) {
+  const skillToolAdvertised = toolNames.has(SKILL_TOOL_NAME);
+  /**
+   * An empty catalog no longer implies an absent `skill` tool: a run that can
+   * author skills keeps the tool bound so the model can invoke one it writes
+   * mid-run, and it gets the authoring variant's description to say so. Both
+   * states still have to be told apart, so the pass text names which one
+   * happened — `none` for no tool at all, `authoring-only` for a tool with
+   * nothing yet to invoke — and neither string contains the other, so a spec
+   * asserting one cannot pass on the other.
+   */
+  const authoringSkillTool =
+    skillToolAdvertised && isAuthoringSkillTool(toolDefinitions?.get(SKILL_TOOL_NAME));
+
+  if (assertion.required.length > 0 && !skillToolAdvertised) {
     failures.push(`${SKILL_TOOL_NAME} tool was not advertised`);
   }
-  if (assertion.required.length === 0 && toolNames.has(SKILL_TOOL_NAME)) {
+  if (assertion.required.length === 0 && skillToolAdvertised && !authoringSkillTool) {
     failures.push(`${SKILL_TOOL_NAME} tool was unexpectedly advertised`);
   }
   for (const name of assertion.required) {
@@ -986,11 +1054,16 @@ function skillAssertionResponses({ messages, assertion, toolNames }) {
   }
   return {
     responses: [
-      `${SKILL_ASSERTION_FINAL_TEXT}: ${
-        assertion.required.length > 0 ? assertion.required.join(', ') : 'none'
-      }`,
+      `${SKILL_ASSERTION_FINAL_TEXT}: ${resolveSkillAssertionSummary(assertion, authoringSkillTool)}`,
     ],
   };
+}
+
+function resolveSkillAssertionSummary(assertion, authoringSkillTool) {
+  if (assertion.required.length > 0) {
+    return assertion.required.join(', ');
+  }
+  return authoringSkillTool ? SKILL_ASSERTION_AUTHORING_ONLY_SUMMARY : 'none';
 }
 
 function manualSkillAssertionResponses({ messages, skillName }) {
@@ -2938,6 +3011,7 @@ function resolveResponses({ graph, messages, text, toolNames }) {
           messages: agentView.messages,
           assertion: parseSkillAssertion(text, agentView.agentId),
           toolNames: agentView.toolNames,
+          toolDefinitions: agentView.toolDefinitions,
         });
       },
     };

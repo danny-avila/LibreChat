@@ -14,6 +14,7 @@ export const CODE_WORKSPACE_OPERATIONS = [
   'edit_file',
   'execute_command',
 ] as const;
+export const CODE_WORKSPACE_INSTANCE_TYPES = ['git_worktree'] as const;
 export const CODE_WORKSPACE_SELECTION_ERROR_REASONS = [
   'required',
   'invalid',
@@ -25,6 +26,7 @@ export const CODE_WORKSPACE_SELECTION_ERROR_REASONS = [
 export const CODE_ENVIRONMENT_MODES = ['attached', 'without_attached'] as const;
 
 export type CodeWorkspaceOperation = (typeof CODE_WORKSPACE_OPERATIONS)[number];
+export type CodeWorkspaceInstanceType = (typeof CODE_WORKSPACE_INSTANCE_TYPES)[number];
 export type CodeWorkspaceSelectionErrorReason =
   (typeof CODE_WORKSPACE_SELECTION_ERROR_REASONS)[number];
 export type CodeEnvironmentMode = (typeof CODE_ENVIRONMENT_MODES)[number];
@@ -36,6 +38,8 @@ export interface CodeWorkspaceDescriptor {
   instructions?: RepositoryInstructionDescriptor[];
   /** Omitted when every worker-level operation applies to this workspace. */
   operations?: CodeWorkspaceOperation[];
+  /** Optional worker-managed isolation modes available beneath this root. */
+  workspaceInstances?: CodeWorkspaceInstanceType[];
   environment?: {
     fingerprint: string;
     repo?: string;

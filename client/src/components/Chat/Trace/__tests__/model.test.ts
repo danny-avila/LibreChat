@@ -246,6 +246,103 @@ describe('buildTraceModel', () => {
     expect(model.turns[0].errorCount).toBe(1);
   });
 
+  it('totals cost per step and per response under the same rule as the whole trace', () => {
+    const model = buildTraceModel([
+      record({ id: 'llm-1', kind: 'generation', cost: 0.01, startTime: at(0) }),
+      record({ id: 'tool', kind: 'tool', cost: 0.002, startTime: at(100) }),
+      record({ id: 'llm-2', kind: 'generation', startTime: at(1000) }),
+      record({
+        id: 'other',
+        messageId: 'response-2',
+        kind: 'generation',
+        cost: 0.5,
+        startTime: at(5000),
+      }),
+      record({
+        id: 'other-title',
+        messageId: 'response-2',
+        traceId: 'title',
+        origin: 'title',
+        kind: 'generation',
+        cost: 0.001,
+        startTime: at(5100),
+      }),
+    ]);
+    const [first, second] = model.turns;
+    const stepCosts = (turn: typeof first) =>
+      turn.stepKeys.map((key) => model.steps.get(key)?.cost);
+
+    expect(stepCosts(first)).toEqual([expect.closeTo(0.012), undefined]);
+    /** One unpriced model call leaves its step, its response and the trace without a total. */
+    expect(first.cost).toBeUndefined();
+    expect(model.summary.cost).toBeUndefined();
+    /** A response's total counts its title run, which its own steps do not. */
+    expect(stepCosts(second)).toEqual([expect.closeTo(0.5), expect.closeTo(0.001)]);
+    expect(second.cost).toBeCloseTo(0.501);
+  });
+
+  it('gives no cost to a response the record limit cut, whose loaded records are not all it spent', () => {
+    const model = buildTraceModel([
+      record({ id: 'llm', parentId: 'not-loaded', kind: 'generation', cost: 0.2 }),
+      record({ id: 'whole', messageId: 'response-2', kind: 'generation', cost: 0.5 }),
+    ]);
+    const [cut, whole] = model.turns;
+
+    expect(cut.split).toBe(true);
+    expect(cut.cost).toBeUndefined();
+    expect(model.steps.get(cut.stepKeys[0])?.cost).toBeCloseTo(0.2);
+    expect(whole.cost).toBeCloseTo(0.5);
+  });
+
+  it('gives the oldest loaded response no cost while older records remain, parents intact or not', () => {
+    /** A page that ended between a response's traces: its title run loaded, its own run not. */
+    const records = [
+      record({
+        id: 'title',
+        traceId: 'title-trace',
+        origin: 'title',
+        kind: 'generation',
+        cost: 0.001,
+      }),
+      record({
+        id: 'newer',
+        messageId: 'response-2',
+        kind: 'generation',
+        cost: 0.5,
+        startTime: at(9000),
+      }),
+    ];
+    const paging = buildTraceModel(records, 'simple', true);
+    const settled = buildTraceModel(records, 'simple', false);
+
+    expect(paging.turns[0].split).toBe(false);
+    expect(paging.turns.map((turn) => turn.cost)).toEqual([undefined, expect.closeTo(0.5)]);
+    expect(settled.turns.map((turn) => turn.cost)).toEqual([
+      expect.closeTo(0.001),
+      expect.closeTo(0.5),
+    ]);
+  });
+
+  it('counts what a step spent in records the simple mode rolls out of sight', () => {
+    const records = [
+      record({ id: 'tool', kind: 'tool', cost: 0.01, startTime: at(0) }),
+      record({ id: 'hidden-span', parentId: 'tool', cost: 0.04, startTime: at(10) }),
+      record({
+        id: 'nested-llm',
+        parentId: 'hidden-span',
+        kind: 'generation',
+        cost: 0.1,
+        startTime: at(20),
+      }),
+    ];
+    for (const mode of ['simple', 'full'] as const) {
+      const model = buildTraceModel(records, mode);
+      expect(model.nodes.get('hidden-span')?.shown).toBe(mode === 'full');
+      expect(model.steps.get(model.turns[0].stepKeys[0])?.cost).toBeCloseTo(0.15);
+      expect(model.turns[0].cost).toBeCloseTo(0.15);
+    }
+  });
+
   it('withholds the cost total when any model call has no price, with or without usage', () => {
     const priced = record({ id: 'priced', kind: 'generation', usage: { total: 100 }, cost: 0.02 });
     const withUsage = buildTraceModel([
@@ -966,4 +1063,266 @@ describe('roles', () => {
     expect(model.steps.get(turn.stepKeys[1])?.agentId).toBe('agent_scout');
     expect(turn.agents).toEqual([{ agentId: 'agent_scout', recordId: 'scout' }]);
   });
+});
+
+describe('a response cut by the record limit', () => {
+  /** The newest records of a long run: its root, agent and graph started first, so they are the ones not loaded. */
+  const round = (index: number): TTraceRecord[] => [
+    record({
+      id: `node-${index}`,
+      parentId: 'unloaded-graph',
+      kind: 'agent',
+      role: 'plumbing',
+      name: 'agent',
+      startTime: at(index * 1000),
+    }),
+    record({
+      id: `call-${index}`,
+      parentId: `node-${index}`,
+      role: 'plumbing',
+      name: 'AgentModelCall',
+      startTime: at(index * 1000 + 10),
+    }),
+    record({
+      id: `llm-${index}`,
+      parentId: `call-${index}`,
+      kind: 'generation',
+      role: 'model',
+      name: 'llm',
+      startTime: at(index * 1000 + 20),
+    }),
+    record({
+      id: `round-${index}`,
+      parentId: 'unloaded-graph',
+      role: 'tools',
+      name: 'tool-dispatch',
+      startTime: at(index * 1000 + 500),
+    }),
+  ];
+
+  it('keeps each tool round in the step of the model call that asked for it', () => {
+    const model = buildTraceModel([...round(0), ...round(1), ...round(2)], 'simple');
+    const [turn] = model.turns;
+
+    expect(turn.steps).toBe(3);
+    expect(turn.stepKeys.map((key) => model.steps.get(key)?.rootIds)).toEqual([
+      ['llm-0', 'round-0'],
+      ['llm-1', 'round-1'],
+      ['llm-2', 'round-2'],
+    ]);
+  });
+});
+
+describe('a cut inside a model call’s own wrappers', () => {
+  const wrapped = (index: number, withNode: boolean): TTraceRecord[] => [
+    ...(withNode
+      ? [
+          record({
+            id: `node-${index}`,
+            parentId: 'unloaded-graph',
+            kind: 'agent',
+            role: 'plumbing',
+            name: 'agent',
+            startTime: at(index * 1000),
+          }),
+        ]
+      : []),
+    record({
+      id: `call-${index}`,
+      parentId: `node-${index}`,
+      role: 'plumbing',
+      name: 'AgentModelCall',
+      startTime: at(index * 1000 + 10),
+    }),
+    record({
+      id: `llm-${index}`,
+      parentId: `call-${index}`,
+      kind: 'generation',
+      role: 'model',
+      name: 'llm',
+      startTime: at(index * 1000 + 20),
+    }),
+    record({
+      id: `round-${index}`,
+      parentId: 'unloaded-graph',
+      role: 'tools',
+      name: 'tool-dispatch',
+      tools: ['bash_tool', 'read_file'],
+      startTime: at(index * 1000 + 500),
+    }),
+  ];
+
+  it('gives the round to the model call whose wrapper the cut removed', () => {
+    const model = buildTraceModel([...wrapped(0, false), ...wrapped(1, true)], 'simple');
+    const [turn] = model.turns;
+
+    expect(turn.split).toBe(true);
+    expect(turn.stepKeys.map((key) => model.steps.get(key)?.rootIds)).toEqual([
+      ['llm-0', 'round-0'],
+      ['llm-1', 'round-1'],
+    ]);
+  });
+
+  it('counts a round’s tools from the names the trace recorded for it', () => {
+    const model = buildTraceModel(wrapped(1, true), 'simple');
+    const [turn] = model.turns;
+
+    expect(turn.toolCalls).toBe(2);
+    expect(model.summary.toolCalls).toBe(2);
+    expect([...(model.steps.get(turn.stepKeys[0])?.toolNames ?? [])]).toEqual([
+      ['bash_tool', 1],
+      ['read_file', 1],
+    ]);
+  });
+
+  it('does not guess which of two cut model calls asked for a round', () => {
+    /** Two parallel agents, both cut inside their wrappers, both model calls before either round. */
+    const lane = (name: string, start: number): TTraceRecord[] => [
+      record({
+        id: `call-${name}`,
+        parentId: `node-${name}`,
+        role: 'plumbing',
+        startTime: at(start),
+      }),
+      record({
+        id: `llm-${name}`,
+        parentId: `call-${name}`,
+        kind: 'generation',
+        role: 'model',
+        startTime: at(start + 10),
+      }),
+      record({
+        id: `round-${name}`,
+        parentId: `graph-${name}`,
+        role: 'tools',
+        tools: ['bash_tool'],
+        startTime: at(start + 1000),
+      }),
+    ];
+    const model = buildTraceModel([...lane('a', 0), ...lane('b', 100)], 'simple');
+    const [turn] = model.turns;
+    const steps = turn.stepKeys.map((key) => model.steps.get(key)?.rootIds);
+
+    expect(steps).toEqual([['llm-a'], ['llm-b'], ['round-a'], ['round-b']]);
+    expect(turn.toolCalls).toBe(2);
+  });
+
+  it('counts recorded tools once when the round that holds them is also named', () => {
+    const model = buildTraceModel(
+      [
+        ...wrapped(1, true),
+        record({
+          id: 'bash',
+          parentId: 'round-1',
+          kind: 'tool',
+          name: 'bash_tool',
+          startTime: at(1600),
+        }),
+        record({
+          id: 'read',
+          parentId: 'round-1',
+          kind: 'tool',
+          name: 'read_file',
+          startTime: at(1700),
+        }),
+      ],
+      'simple',
+    );
+
+    expect(model.turns[0].toolCalls).toBe(2);
+    expect(model.summary.toolCalls).toBe(2);
+  });
+
+  it('does not call a whole response split', () => {
+    expect(buildTraceModel(sdkRun, 'simple').turns[0].split).toBe(false);
+  });
+});
+
+describe('every place a record limit can cut an SDK run', () => {
+  /** The order the SDK's spans really start in: each wrapper before what it frames, the round last. */
+  const rounds = 6;
+  const run: TTraceRecord[] = [
+    record({ id: 'root', kind: 'agent', role: 'run', name: 'AgentGraph', startTime: at(0) }),
+    record({ id: 'saved', parentId: 'root', role: 'agent', agentId: 'agent_a', startTime: at(1) }),
+    record({ id: 'graph', parentId: 'saved', kind: 'agent', role: 'run', startTime: at(2) }),
+  ];
+  for (let index = 0; index < rounds; index++) {
+    const start = 100 + index * 100;
+    run.push(
+      record({
+        id: `node-${index}`,
+        parentId: 'graph',
+        kind: 'agent',
+        role: 'plumbing',
+        startTime: at(start),
+      }),
+      record({
+        id: `call-${index}`,
+        parentId: `node-${index}`,
+        role: 'plumbing',
+        startTime: at(start + 1),
+      }),
+      record({
+        id: `prompt-${index}`,
+        parentId: `call-${index}`,
+        role: 'plumbing',
+        startTime: at(start + 2),
+      }),
+      record({
+        id: `llm-${index}`,
+        parentId: `call-${index}`,
+        kind: 'generation',
+        role: 'model',
+        startTime: at(start + 3),
+      }),
+    );
+    if (index < rounds - 1) {
+      run.push(
+        record({
+          id: `label-${index}`,
+          parentId: 'root',
+          kind: 'generation',
+          role: 'stepLabel',
+          startTime: at(start + 40),
+        }),
+        record({
+          id: `round-${index}`,
+          parentId: 'graph',
+          role: 'tools',
+          startTime: at(start + 50),
+        }),
+      );
+    }
+  }
+  const newestFirst = [...run].sort((a, b) => b.startTime.localeCompare(a.startTime));
+
+  it.each(newestFirst.map((_, index) => index + 1))(
+    'keeps one step per model call with its own round when the newest %i records load',
+    (keep) => {
+      const loaded = newestFirst.slice(0, keep);
+      const model = buildTraceModel(loaded, 'simple');
+      const [turn] = model.turns;
+      const steps = turn.stepKeys.map((key) => model.steps.get(key)?.rootIds ?? []);
+      const roleOf = (id: string) => model.nodes.get(id)?.record.role;
+
+      const stepOf = new Map(steps.flatMap((rootIds, index) => rootIds.map((id) => [id, index])));
+      const loadedModelCalls = loaded.filter((entry) => entry.role === 'model').length;
+      let orphans = 0;
+      for (const entry of loaded) {
+        if (roleOf(entry.id) !== 'tools') {
+          continue;
+        }
+        const asker = `llm-${entry.id.split('-')[1]}`;
+        if (model.nodes.has(asker)) {
+          expect(stepOf.get(entry.id)).toBe(stepOf.get(asker));
+        } else {
+          orphans++;
+        }
+      }
+      /** Only the oldest loaded round can have lost its model call to the cut, and it alone adds a step. */
+      expect(orphans).toBeLessThanOrEqual(1);
+      expect(turn.steps).toBe(loadedModelCalls + orphans);
+      expect(turn.split).toBe(keep < run.length);
+    },
+  );
 });
