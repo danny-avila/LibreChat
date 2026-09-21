@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
+import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilCallback, useRecoilValue } from 'recoil';
-import { Spinner, useToastContext } from '@librechat/client';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
@@ -40,6 +40,7 @@ import {
 } from '~/hooks';
 import { ToolCallsMapProvider, useAgentsMapContext } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
+import Loading from '~/components/Chat/Loading';
 import { NotificationSeverity } from '~/common';
 import useAuthRedirect from './useAuthRedirect';
 import temporaryStore from '~/store/temporary';
@@ -327,29 +328,12 @@ export default function ChatRoute() {
     conversation?.conversationId,
   ]);
 
-  if (endpointsQuery.isLoading || modelsQuery.isLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center" aria-live="polite" role="status">
-        <Spinner className="text-text-primary" />
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !conversationId || conversation?.conversationId === Constants.SEARCH) {
     return null;
   }
 
-  // if not a conversation
-  if (conversation?.conversationId === Constants.SEARCH) {
-    return null;
-  }
-  // if conversationId not match
-  if (conversation?.conversationId !== conversationId && !conversation) {
-    return null;
-  }
-  // if conversationId is null
-  if (!conversationId) {
-    return null;
+  if (endpointsQuery.isLoading || modelsQuery.isLoading || !conversation) {
+    return <Loading />;
   }
 
   return (
