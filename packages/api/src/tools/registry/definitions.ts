@@ -1,7 +1,6 @@
 import { WebSearchToolDefinition, CalculatorToolDefinition } from '@librechat/agents';
 import type { ExtendedJsonSchema } from './schema';
 import { AskUserQuestionToolDefinition } from '~/agents/hitl/askUserQuestionTool';
-import { OPEN_WEATHER_TOOL_DESCRIPTION } from '~/tools/weather';
 import { geminiToolkit } from '~/tools/toolkits/gemini';
 import { oaiToolkit } from '~/tools/toolkits/oai';
 
@@ -146,6 +145,13 @@ export const fluxApiSchema: ExtendedJsonSchema = {
 };
 
 /** OpenWeather tool JSON schema */
+export const OPEN_WEATHER_TOOL_DESCRIPTION: string =
+  'Provides weather data from OpenWeather One Call API 4.0. ' +
+  'Actions: help, current_forecast, timestamp, daily_aggregation, overview. ' +
+  'If lat/lon not provided, specify "city" for geocoding. ' +
+  'Units: "Celsius", "Kelvin", or "Fahrenheit" (default: Celsius). ' +
+  'For timestamp action, use "date" in YYYY-MM-DD format.';
+
 export const openWeatherSchema: ExtendedJsonSchema = {
   type: 'object',
   properties: {
@@ -168,7 +174,8 @@ export const openWeatherSchema: ExtendedJsonSchema = {
     },
     exclude: {
       type: 'string',
-      description: 'Parts to exclude from the response',
+      description:
+        'Comma-separated current_forecast parts to omit: current, hourly, daily, minutely, alerts. On One Call 4.0, minute precipitation is omitted unless exclude includes +minutely (extra billed call). alerts skips alert resolution.',
     },
     units: {
       type: 'string',
@@ -185,7 +192,8 @@ export const openWeatherSchema: ExtendedJsonSchema = {
     },
     tz: {
       type: 'string',
-      description: 'Timezone',
+      description:
+        'Timezone for date-based actions (IANA name such as America/New_York, or ±HH:MM). Used as the local day boundary.',
     },
   },
   required: ['action'],

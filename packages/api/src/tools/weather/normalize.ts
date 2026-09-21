@@ -7,7 +7,9 @@ import type {
   OverviewResult,
 } from './types';
 
-import { unitSuffix } from './units';
+import { roundDegree, unitSuffix } from './units';
+
+const OFFSET_PATTERN = /^([+-])(\d{2}):(\d{2})$/;
 
 export function isDailyTemperature(value: OneCallRecord['temp']): value is DailyTemperature {
   return value != null && typeof value === 'object';
@@ -21,6 +23,100 @@ export function utcDateString(unixSeconds: number): string {
   return `${year}-${month}-${day}`;
 }
 
+function parseUtcOffsetSeconds(timeZone: string): number | undefined {
+  if (timeZone === 'UTC' || timeZone === 'utc' || timeZone === 'Z') {
+    return 0;
+  }
+  const match = OFFSET_PATTERN.exec(timeZone);
+  if (!match) {
+    return undefined;
+  }
+  const sign = match[1] === '-' ? -1 : 1;
+  const hours = Number(match[2]);
+  const minutes = Number(match[3]);
+  if (hours > 14 || minutes > 59) {
+    return undefined;
+  }
+  return sign * (hours * 3600 + minutes * 60);
+}
+
+function localWallTimeAsUtcMs(instantMs: number, timeZone: string): number | undefined {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }).formatToParts(new Date(instantMs));
+    const read = (type: Intl.DateTimeFormatPartTypes): number => {
+      const value = parts.find((part) => part.type === type)?.value;
+      return value != null ? Number(value) : NaN;
+    };
+    let hour = read('hour');
+    if (hour === 24) {
+      hour = 0;
+    }
+    const utcMs = Date.UTC(
+      read('year'),
+      read('month') - 1,
+      read('day'),
+      hour,
+      read('minute'),
+      read('second'),
+    );
+    return Number.isFinite(utcMs) ? utcMs : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function dateStringInTimeZone(unixSeconds: number, timeZone?: string): string {
+  if (!timeZone) {
+    return utcDateString(unixSeconds);
+  }
+  const offsetSeconds = parseUtcOffsetSeconds(timeZone);
+  if (offsetSeconds != null) {
+    return utcDateString(unixSeconds + offsetSeconds);
+  }
+  const partsMs = localWallTimeAsUtcMs(unixSeconds * 1000, timeZone);
+  if (partsMs == null) {
+    return utcDateString(unixSeconds);
+  }
+  return utcDateString(Math.floor(partsMs / 1000));
+}
+
+export function unixAtLocalMidnight(
+  year: number,
+  month: number,
+  day: number,
+  timeZone?: string,
+): number {
+  const utcMidnightMs = Date.UTC(year, month - 1, day, 0, 0, 0);
+  if (!timeZone) {
+    return Math.floor(utcMidnightMs / 1000);
+  }
+
+  const offsetSeconds = parseUtcOffsetSeconds(timeZone);
+  if (offsetSeconds != null) {
+    return Math.floor(utcMidnightMs / 1000) - offsetSeconds;
+  }
+
+  const asUtc = localWallTimeAsUtcMs(utcMidnightMs, timeZone);
+  if (asUtc == null) {
+    return Math.floor(utcMidnightMs / 1000);
+  }
+  let resultMs = utcMidnightMs - (asUtc - utcMidnightMs);
+  const asUtcAgain = localWallTimeAsUtcMs(resultMs, timeZone);
+  if (asUtcAgain != null) {
+    resultMs = utcMidnightMs - (asUtcAgain - resultMs);
+  }
+  return Math.floor(resultMs / 1000);
+}
+
 export function stripPagination(response: OneCallResponse): OneCallResponse {
   return {
     lat: response.lat,
@@ -29,6 +125,29 @@ export function stripPagination(response: OneCallResponse): OneCallResponse {
     timezone_offset: response.timezone_offset,
     data: response.data,
   };
+}
+
+export function collectAlertIds(records: Array<OneCallRecord | undefined>): string[] {
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const record of records) {
+    for (const id of record?.alerts ?? []) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        ids.push(id);
+      }
+    }
+  }
+  return ids;
+}
+
+export function omitRecordAlerts(record: OneCallRecord): OneCallRecord {
+  if (record.alerts == null) {
+    return record;
+  }
+  const rest = { ...record };
+  delete rest.alerts;
+  return rest;
 }
 
 export function normalizeCurrentForecast(parts: {
@@ -64,9 +183,11 @@ export function normalizeCurrentForecast(parts: {
 export function selectDailyRecord(
   records: OneCallRecord[],
   requestedDate: string,
+  timeZone?: string,
 ): OneCallRecord | undefined {
   const matched = records.find(
-    (record) => typeof record.dt === 'number' && utcDateString(record.dt) === requestedDate,
+    (record) =>
+      typeof record.dt === 'number' && dateStringInTimeZone(record.dt, timeZone) === requestedDate,
   );
   return matched ?? records[0];
 }
@@ -90,43 +211,39 @@ function precipitationTotal(record?: OneCallRecord): number | undefined {
   return undefined;
 }
 
+function definedFields<T extends object>(value: T): T | undefined {
+  const entries = Object.entries(value).filter(([, field]) => field !== undefined);
+  if (entries.length === 0) {
+    return undefined;
+  }
+  return Object.fromEntries(entries) as T;
+}
+
 export function normalizeDailyAggregation(
   response: OneCallResponse,
   requestedDate: string,
   units: string,
+  timeZone?: string,
 ): DailyAggregationResult {
-  const record = selectDailyRecord(response.data ?? [], requestedDate);
+  const zone = timeZone ?? response.timezone;
+  const record = selectDailyRecord(response.data ?? [], requestedDate, zone);
   const temp = isDailyTemperature(record?.temp) ? record.temp : undefined;
 
   return {
     lat: response.lat,
     lon: response.lon,
-    tz: response.timezone,
+    tz: zone,
     date: requestedDate,
     units,
-    cloud_cover: { afternoon: record?.clouds },
-    humidity: {
-      morning: record?.humidity,
-      afternoon: record?.humidity,
-      evening: record?.humidity,
-      night: record?.humidity,
-    },
-    precipitation: { total: precipitationTotal(record) },
-    temperature: {
+    precipitation: definedFields({ total: precipitationTotal(record) }),
+    temperature: definedFields({
       min: temp?.min,
       max: temp?.max,
       morning: temp?.morn,
       afternoon: temp?.day,
       evening: temp?.eve,
       night: temp?.night,
-    },
-    pressure: { afternoon: record?.pressure },
-    wind: {
-      max: {
-        speed: record?.wind_speed,
-        direction: record?.wind_deg,
-      },
-    },
+    }),
   };
 }
 
@@ -137,11 +254,11 @@ function formatOverviewFromCurrent(record: OneCallRecord, units: string): string
   const suffix = unitSuffix(units);
   const feels =
     typeof record.feels_like === 'number'
-      ? ` with a real feel of ${record.feels_like}${suffix}`
+      ? ` with a real feel of ${roundDegree(record.feels_like)}${suffix}`
       : '';
   const description = record.weather?.[0]?.description;
   const sky = description ? ` The sky is ${description}.` : '';
-  return `Currently, the temperature is ${record.temp}${suffix}${feels}.${sky}`.trim();
+  return `Currently, the temperature is ${roundDegree(record.temp)}${suffix}${feels}.${sky}`.trim();
 }
 
 function formatOverviewFromDaily(record: OneCallRecord, units: string): string | undefined {
@@ -154,10 +271,10 @@ function formatOverviewFromDaily(record: OneCallRecord, units: string): string |
   const description = record.weather?.[0]?.description;
   const sky = description ? ` ${description.charAt(0).toUpperCase()}${description.slice(1)}.` : '';
   if (typeof min === 'number' && typeof max === 'number') {
-    return `Temperatures range from ${min}${suffix} to ${max}${suffix}.${sky}`.trim();
+    return `Temperatures range from ${roundDegree(min)}${suffix} to ${roundDegree(max)}${suffix}.${sky}`.trim();
   }
   if (typeof record.temp.day === 'number') {
-    return `The daytime temperature is ${record.temp.day}${suffix}.${sky}`.trim();
+    return `The daytime temperature is ${roundDegree(record.temp.day)}${suffix}.${sky}`.trim();
   }
   return undefined;
 }

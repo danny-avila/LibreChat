@@ -102,6 +102,8 @@ describe('OpenWeather Tool', () => {
     expect(parsed.daily[0].temp.night).toBe(283);
     expect(fetch.mock.calls.every(([url]) => !url.includes('/data/3.0/'))).toBe(true);
     expect(fetch.mock.calls.some(([url]) => url.includes('/data/4.0/onecall/current'))).toBe(true);
+    expect(fetch.mock.calls.some(([url]) => url.includes('/timeline/1h'))).toBe(true);
+    expect(fetch.mock.calls.every(([url]) => !url.includes('/timeline/1min'))).toBe(true);
     expect(fetch.mock.calls.some(([url]) => url.includes('units=standard'))).toBe(true);
   });
 
@@ -206,6 +208,42 @@ describe('OpenWeather Tool', () => {
     });
     expect(JSON.parse(result).current.temp).toBe(68);
     expect(fetch.mock.calls.some(([url]) => url.includes('units=imperial'))).toBe(true);
+  });
+
+  test('OPENWEATHER_ONECALL_VERSION=3.0 uses the legacy One Call 3.0 path', async () => {
+    const previous = process.env.OPENWEATHER_ONECALL_VERSION;
+    process.env.OPENWEATHER_ONECALL_VERSION = '3.0';
+    fetch.mockImplementation((url) => {
+      if (url.includes('geo/1.0/direct')) {
+        return jsonResponse([GEO]);
+      }
+      if (url.includes('/data/3.0/onecall')) {
+        return jsonResponse({
+          lat: GEO.lat,
+          lon: GEO.lon,
+          current: { temp: 20.4, feels_like: 18.6 },
+        });
+      }
+      return Promise.reject(new Error(`Unexpected fetch call: ${url}`));
+    });
+
+    try {
+      const result = await tool.call({
+        action: 'current_forecast',
+        city: 'Knoxville, Tennessee',
+        units: 'Celsius',
+      });
+      const parsed = JSON.parse(result);
+      expect(parsed.current.temp).toBe(20);
+      expect(fetch.mock.calls.some(([url]) => url.includes('/data/3.0/onecall'))).toBe(true);
+      expect(fetch.mock.calls.every(([url]) => !url.includes('/data/4.0/'))).toBe(true);
+    } finally {
+      if (previous == null) {
+        delete process.env.OPENWEATHER_ONECALL_VERSION;
+      } else {
+        process.env.OPENWEATHER_ONECALL_VERSION = previous;
+      }
+    }
   });
 
   test('timestamp action without a date returns an error message', async () => {

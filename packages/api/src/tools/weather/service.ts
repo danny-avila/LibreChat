@@ -5,36 +5,39 @@ import type {
   OneCallResponse,
   OpenWeatherArgs,
   OpenWeatherDeps,
+  OpenWeatherOneCallVersion,
   OverviewResult,
+  WeatherAlert,
 } from './types';
 import {
+  collectAlertIds,
+  dateStringInTimeZone,
   normalizeCurrentForecast,
   normalizeDailyAggregation,
+  omitRecordAlerts,
   selectDailyRecord,
-  stripPagination,
   synthesizeOverview,
-  utcDateString,
+  unixAtLocalMidnight,
 } from './normalize';
 import { mapUnitsToOpenWeather, roundTemperatures } from './units';
 
 export const OPENWEATHER_API_ORIGIN: string = 'https://api.openweathermap.org';
-export const OPEN_WEATHER_TOOL_DESCRIPTION: string =
-  'Provides weather data from OpenWeather One Call API 4.0. ' +
-  'Actions: help, current_forecast, timestamp, daily_aggregation, overview. ' +
-  'If lat/lon not provided, specify "city" for geocoding. ' +
-  'Units: "Celsius", "Kelvin", or "Fahrenheit" (default: Celsius). ' +
-  'For timestamp action, use "date" in YYYY-MM-DD format.';
+export const DEFAULT_OPENWEATHER_ONECALL_VERSION: OpenWeatherOneCallVersion = '4.0';
 
 const GEOCODE_PATH = '/geo/1.0/direct';
 const CURRENT_PATH = '/data/4.0/onecall/current';
 const MINUTELY_PATH = '/data/4.0/onecall/timeline/1min';
 const HOURLY_PATH = '/data/4.0/onecall/timeline/1h';
 const DAILY_PATH = '/data/4.0/onecall/timeline/1day';
-const HOURLY_PAGE_LIMIT = 3;
-const HOURLY_RECORD_LIMIT = 48;
-const HOURLY_PAGE_SIZE = 20;
+const ALERT_PATH_PREFIX = '/data/4.0/onecall/alert/';
+const ONE_CALL_3_PATH = '/data/3.0/onecall';
+const HOURLY_PAGE_LIMIT = 1;
+const HOURLY_RECORD_LIMIT = 24;
+const HOURLY_PAGE_SIZE = 24;
 const DAILY_PAGE_SIZE = 10;
+const MINUTELY_COUNT = 60;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const ALERT_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
 const EXCLUDE_PARTS = new Set(['current', 'minutely', 'hourly', 'daily', 'alerts']);
 const COORDINATE_ACTIONS = new Set([
   'current_forecast',
@@ -53,19 +56,119 @@ class OpenWeatherApiError extends Error {
   }
 }
 
-export function getOpenWeatherHelp(): string {
+export function resolveOpenWeatherOneCallVersion(value?: string | null): OpenWeatherOneCallVersion {
+  return value?.trim() === '3.0' ? '3.0' : DEFAULT_OPENWEATHER_ONECALL_VERSION;
+}
+
+function resolvedOneCallVersion(deps: OpenWeatherDeps): OpenWeatherOneCallVersion {
+  return deps.oneCallVersion === '3.0' ? '3.0' : DEFAULT_OPENWEATHER_ONECALL_VERSION;
+}
+
+export function getOpenWeatherHelp(version: OpenWeatherOneCallVersion = '4.0'): string {
+  if (version === '3.0') {
+    return JSON.stringify(
+      {
+        title: 'OpenWeather One Call API 3.0 Help',
+        description: 'Guidance on using the OpenWeather One Call API 3.0.',
+        endpoints: {
+          current_and_forecast: {
+            endpoint: 'data/3.0/onecall',
+            data_provided: [
+              'Current weather',
+              'Minute forecast (1h)',
+              'Hourly forecast (48h)',
+              'Daily forecast (8 days)',
+              'Government weather alerts',
+            ],
+            required_params: [['lat', 'lon'], ['city']],
+            optional_params: ['exclude', 'units (Celsius/Kelvin/Fahrenheit)', 'lang'],
+            usage_example: {
+              city: 'Knoxville, Tennessee',
+              units: 'Fahrenheit',
+              lang: 'en',
+            },
+          },
+          weather_for_timestamp: {
+            endpoint: 'data/3.0/onecall/timemachine',
+            data_provided: [
+              'Historical weather (since 1979-01-01)',
+              'Future forecast up to 4 days ahead',
+            ],
+            required_params: [
+              ['lat', 'lon', 'date (YYYY-MM-DD)'],
+              ['city', 'date (YYYY-MM-DD)'],
+            ],
+            optional_params: ['units (Celsius/Kelvin/Fahrenheit)', 'lang', 'tz'],
+            usage_example: {
+              city: 'Knoxville, Tennessee',
+              date: '2020-03-04',
+              units: 'Fahrenheit',
+              lang: 'en',
+            },
+          },
+          daily_aggregation: {
+            endpoint: 'data/3.0/onecall/day_summary',
+            data_provided: [
+              'Aggregated weather data for a specific date (1979-01-02 to 1.5 years ahead)',
+            ],
+            required_params: [
+              ['lat', 'lon', 'date (YYYY-MM-DD)'],
+              ['city', 'date (YYYY-MM-DD)'],
+            ],
+            optional_params: ['units (Celsius/Kelvin/Fahrenheit)', 'lang', 'tz'],
+            usage_example: {
+              city: 'Knoxville, Tennessee',
+              date: '2020-03-04',
+              units: 'Celsius',
+              lang: 'en',
+            },
+          },
+          weather_overview: {
+            endpoint: 'data/3.0/onecall/overview',
+            data_provided: ['Human-readable weather summary (today/tomorrow)'],
+            required_params: [['lat', 'lon'], ['city']],
+            optional_params: ['date (YYYY-MM-DD)', 'units (Celsius/Kelvin/Fahrenheit)'],
+            usage_example: {
+              city: 'Knoxville, Tennessee',
+              date: '2024-05-13',
+              units: 'Celsius',
+            },
+          },
+        },
+        notes: [
+          'This deployment is using One Call 3.0 via OPENWEATHER_ONECALL_VERSION=3.0.',
+          'New OpenWeather keys should use the 4.0 default (unset or OPENWEATHER_ONECALL_VERSION=4.0).',
+          'If lat/lon not provided, you can specify a city name and it will be geocoded.',
+          'For the timestamp action, provide a date in YYYY-MM-DD format instead of a Unix timestamp.',
+          'By default, temperatures are returned in Celsius.',
+          'You can specify units as Celsius, Kelvin, or Fahrenheit.',
+          'All temperatures are rounded to the nearest degree.',
+        ],
+        errors: [
+          '400: Bad Request (missing/invalid params)',
+          '401: Unauthorized (check API key)',
+          '404: Not Found (no data or city)',
+          '429: Too many requests',
+          '5xx: Internal error',
+        ],
+      },
+      null,
+      2,
+    );
+  }
+
   return JSON.stringify(
     {
       title: 'OpenWeather One Call API 4.0 Help',
       description: 'Guidance on using the OpenWeather One Call API 4.0.',
       endpoints: {
         current_and_forecast: {
-          endpoint: 'data/4.0/onecall/current + timeline/1h + timeline/1day + timeline/1min',
+          endpoint: 'data/4.0/onecall/current + timeline/1h + timeline/1day',
           data_provided: [
             'Current weather',
-            'Minute forecast (1h)',
-            'Hourly forecast (up to 48h, paginated)',
+            'Hourly forecast (24h, one page)',
             'Daily forecast (up to 10 days)',
+            'Resolved weather alerts when IDs are present',
           ],
           required_params: [['lat', 'lon'], ['city']],
           optional_params: ['exclude', 'units (Celsius/Kelvin/Fahrenheit)', 'lang'],
@@ -84,7 +187,7 @@ export function getOpenWeatherHelp(): string {
             ['lat', 'lon', 'date (YYYY-MM-DD)'],
             ['city', 'date (YYYY-MM-DD)'],
           ],
-          optional_params: ['units (Celsius/Kelvin/Fahrenheit)', 'lang'],
+          optional_params: ['units (Celsius/Kelvin/Fahrenheit)', 'lang', 'tz'],
           usage_example: {
             city: 'Knoxville, Tennessee',
             date: '2020-03-04',
@@ -101,7 +204,7 @@ export function getOpenWeatherHelp(): string {
             ['lat', 'lon', 'date (YYYY-MM-DD)'],
             ['city', 'date (YYYY-MM-DD)'],
           ],
-          optional_params: ['units (Celsius/Kelvin/Fahrenheit)', 'lang'],
+          optional_params: ['units (Celsius/Kelvin/Fahrenheit)', 'lang', 'tz'],
           usage_example: {
             city: 'Knoxville, Tennessee',
             date: '2020-03-04',
@@ -115,7 +218,7 @@ export function getOpenWeatherHelp(): string {
             'Human-readable weather summary. One Call 4.0 has no overview endpoint, so this is composed from current or daily data.',
           ],
           required_params: [['lat', 'lon'], ['city']],
-          optional_params: ['date (YYYY-MM-DD)', 'units (Celsius/Kelvin/Fahrenheit)'],
+          optional_params: ['date (YYYY-MM-DD)', 'units (Celsius/Kelvin/Fahrenheit)', 'tz'],
           usage_example: {
             city: 'Knoxville, Tennessee',
             date: '2024-05-13',
@@ -129,8 +232,12 @@ export function getOpenWeatherHelp(): string {
         'By default, temperatures are returned in Celsius.',
         'You can specify units as Celsius, Kelvin, or Fahrenheit.',
         'All temperatures are rounded to the nearest degree.',
-        'current_forecast maps 4.0 split endpoints onto the previous current/hourly/daily/minutely contract.',
-        'daily_aggregation maps 4.0 daily temp.morn/day/eve/night onto morning/afternoon/evening/night.',
+        'One Call 4.0 bills per HTTP call. current_forecast uses current + 24h hourly (one page) + daily. Minute precipitation is omitted by default; include +minutely in exclude to fetch it (extra billed call).',
+        'Existing One Call 3.0 subscriptions still work. Set OPENWEATHER_ONECALL_VERSION=3.0 to keep using /data/3.0. Default is 4.0 for new keys.',
+        'current_forecast maps 4.0 split endpoints onto the previous current/hourly/daily contract. Failed endpoints are noted in errors instead of failing the whole action.',
+        'daily_aggregation maps 4.0 daily temp.morn/day/eve/night onto morning/afternoon/evening/night. Period humidity/cloud/pressure/wind are omitted when 4.0 does not provide them.',
+        'Date-based actions honour tz (IANA name or ±HH:MM) as the local day boundary.',
+        'Weather alert IDs are resolved through /onecall/alert/{id} only when alerts are present. exclude=alerts skips that.',
       ],
       errors: [
         '400: Bad Request (missing/invalid params)',
@@ -145,7 +252,7 @@ export function getOpenWeatherHelp(): string {
   );
 }
 
-export function convertDateToUnix(dateStr: string): number {
+export function convertDateToUnix(dateStr: string, timeZone?: string): number {
   if (!DATE_PATTERN.test(dateStr)) {
     throw new Error('Invalid date format. Expected YYYY-MM-DD.');
   }
@@ -157,12 +264,12 @@ export function convertDateToUnix(dateStr: string): number {
     throw new Error('Invalid date format. Expected YYYY-MM-DD with valid numbers.');
   }
 
-  const dateObj = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-  if (isNaN(dateObj.getTime())) {
+  const utcMidnight = Date.UTC(year, month - 1, day, 0, 0, 0);
+  if (isNaN(utcMidnight)) {
     throw new Error('Invalid date provided. Cannot parse into a valid date.');
   }
 
-  return Math.floor(dateObj.getTime() / 1000);
+  return unixAtLocalMidnight(year, month, day, timeZone);
 }
 
 export function isOpenWeatherPaginationUrl(url: string): boolean {
@@ -188,6 +295,21 @@ function asNumber(value: unknown): number | undefined {
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
+}
+
+function asIdArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  return value.flatMap((item) => {
+    if (typeof item === 'string' && item.length > 0) {
+      return [item];
+    }
+    if (typeof item === 'number' && Number.isFinite(item)) {
+      return [String(item)];
+    }
+    return [];
+  });
 }
 
 function asStringArray(value: unknown): string[] | undefined {
@@ -272,7 +394,7 @@ function parseOneCallRecord(value: unknown): OneCallRecord | undefined {
     rain: parsePrecipitation(value.rain),
     snow: parsePrecipitation(value.snow),
     weather: parseWeatherCondition(value.weather),
-    alerts: asStringArray(value.alerts),
+    alerts: asIdArray(value.alerts),
   };
 }
 
@@ -294,6 +416,22 @@ function parseOneCallResponse(body: unknown): OneCallResponse {
     data,
     next: asString(body.next),
     prev: asString(body.prev),
+  };
+}
+
+function parseWeatherAlert(body: unknown, id: string): WeatherAlert | undefined {
+  const source = isObject(body) && isObject(body.data) ? body.data : body;
+  if (!isObject(source)) {
+    return undefined;
+  }
+  return {
+    id,
+    sender_name: asString(source.sender_name),
+    event: asString(source.event),
+    start: asNumber(source.start),
+    end: asNumber(source.end),
+    description: asString(source.description),
+    tags: asStringArray(source.tags),
   };
 }
 
@@ -320,6 +458,13 @@ function parseExclude(exclude?: string): Set<string> {
   );
 }
 
+function requestsMinutely(exclude?: string): boolean {
+  if (!exclude) {
+    return false;
+  }
+  return exclude.split(',').some((part) => part.trim().toLowerCase() === '+minutely');
+}
+
 function buildUrl(path: string, params: URLSearchParams): string {
   return `${OPENWEATHER_API_ORIGIN}${path}?${params.toString()}`;
 }
@@ -343,10 +488,10 @@ function locationParams(args: {
   return params;
 }
 
-async function fetchOpenWeatherJson(
+async function fetchOpenWeatherBody(
   url: string,
   fetchImpl: OpenWeatherDeps['fetch'],
-): Promise<OneCallResponse> {
+): Promise<unknown> {
   const response = await fetchImpl(url);
   const body: unknown = await response.json();
   if (!response.ok) {
@@ -355,7 +500,14 @@ async function fetchOpenWeatherJson(
       `OpenWeather API request failed with status ${response.status}: ${readErrorMessage(body)}`,
     );
   }
-  return parseOneCallResponse(body);
+  return body;
+}
+
+async function fetchOpenWeatherJson(
+  url: string,
+  fetchImpl: OpenWeatherDeps['fetch'],
+): Promise<OneCallResponse> {
+  return parseOneCallResponse(await fetchOpenWeatherBody(url, fetchImpl));
 }
 
 async function fetchTimeline(
@@ -426,6 +578,60 @@ function stringifyResult(
   return JSON.stringify(roundTemperatures(value));
 }
 
+function stripAlertsFromForecast(result: CurrentForecastResult): CurrentForecastResult {
+  return {
+    ...result,
+    current: result.current != null ? omitRecordAlerts(result.current) : result.current,
+    minutely: result.minutely?.map(omitRecordAlerts),
+    hourly: result.hourly?.map(omitRecordAlerts),
+    daily: result.daily?.map(omitRecordAlerts),
+  };
+}
+
+async function resolveAlerts(
+  records: Array<OneCallRecord | undefined>,
+  deps: OpenWeatherDeps,
+): Promise<{ alerts: WeatherAlert[]; errors: string[] }> {
+  const ids = collectAlertIds(records);
+  if (ids.length === 0) {
+    return { alerts: [], errors: [] };
+  }
+
+  const settled = await Promise.allSettled(
+    ids.map(async (id) => {
+      if (!ALERT_ID_PATTERN.test(id)) {
+        throw new Error(`Skipping unsafe alert id`);
+      }
+      const params = new URLSearchParams({ appid: deps.apiKey });
+      const body = await fetchOpenWeatherBody(
+        buildUrl(`${ALERT_PATH_PREFIX}${encodeURIComponent(id)}`, params),
+        deps.fetch,
+      );
+      const alert = parseWeatherAlert(body, id);
+      if (alert == null) {
+        throw new Error(`Could not parse alert ${id}`);
+      }
+      return alert;
+    }),
+  );
+
+  const alerts: WeatherAlert[] = [];
+  const errors: string[] = [];
+  for (let i = 0; i < settled.length; i++) {
+    const result = settled[i];
+    const id = ids[i];
+    if (result.status === 'fulfilled') {
+      alerts.push(result.value);
+    } else {
+      const message = result.reason instanceof Error ? result.reason.message : 'Unknown error';
+      errors.push(`alert ${id}: ${message}`);
+    }
+  }
+  return { alerts, errors };
+}
+
+type ForecastPartName = 'current' | 'hourly' | 'daily' | 'minutely';
+
 async function currentForecast(
   args: OpenWeatherArgs,
   coords: { lat: number; lon: number },
@@ -436,7 +642,8 @@ async function currentForecast(
   const includeCurrent = !excluded.has('current');
   const includeHourly = !excluded.has('hourly');
   const includeDaily = !excluded.has('daily');
-  const includeMinutely = !excluded.has('minutely');
+  const includeMinutely = !excluded.has('minutely') && requestsMinutely(args.exclude);
+  const includeAlerts = !excluded.has('alerts');
   const params = () =>
     locationParams({
       apiKey: deps.apiKey,
@@ -446,34 +653,99 @@ async function currentForecast(
       lang: args.lang,
     });
 
-  const currentPromise = includeCurrent
-    ? fetchOpenWeatherJson(buildUrl(CURRENT_PATH, params()), deps.fetch)
-    : Promise.resolve(undefined);
-  const hourlyParams = params();
-  hourlyParams.set('cnt', String(HOURLY_PAGE_SIZE));
-  const hourlyPromise = includeHourly
-    ? fetchTimeline(HOURLY_PATH, hourlyParams, deps.fetch, {
+  const requests: Array<{ name: ForecastPartName; promise: Promise<OneCallResponse> }> = [];
+  if (includeCurrent) {
+    requests.push({
+      name: 'current',
+      promise: fetchOpenWeatherJson(buildUrl(CURRENT_PATH, params()), deps.fetch),
+    });
+  }
+  if (includeHourly) {
+    const hourlyParams = params();
+    hourlyParams.set('cnt', String(HOURLY_PAGE_SIZE));
+    requests.push({
+      name: 'hourly',
+      promise: fetchTimeline(HOURLY_PATH, hourlyParams, deps.fetch, {
         pages: HOURLY_PAGE_LIMIT,
         maxRecords: HOURLY_RECORD_LIMIT,
-      })
-    : Promise.resolve(undefined);
-  const dailyParams = params();
-  dailyParams.set('cnt', String(DAILY_PAGE_SIZE));
-  const dailyPromise = includeDaily
-    ? fetchTimeline(DAILY_PATH, dailyParams, deps.fetch)
-    : Promise.resolve(undefined);
-  const minutelyPromise = includeMinutely
-    ? fetchOpenWeatherJson(buildUrl(MINUTELY_PATH, params()), deps.fetch)
-    : Promise.resolve(undefined);
+      }),
+    });
+  }
+  if (includeDaily) {
+    const dailyParams = params();
+    dailyParams.set('cnt', String(DAILY_PAGE_SIZE));
+    requests.push({
+      name: 'daily',
+      promise: fetchTimeline(DAILY_PATH, dailyParams, deps.fetch),
+    });
+  }
+  if (includeMinutely) {
+    const minutelyParams = params();
+    minutelyParams.set('cnt', String(MINUTELY_COUNT));
+    requests.push({
+      name: 'minutely',
+      promise: fetchOpenWeatherJson(buildUrl(MINUTELY_PATH, minutelyParams), deps.fetch),
+    });
+  }
 
-  const [current, hourly, daily, minutely] = await Promise.all([
-    currentPromise,
-    hourlyPromise,
-    dailyPromise,
-    minutelyPromise,
-  ]);
+  const settled = await Promise.allSettled(requests.map((request) => request.promise));
+  const parts: {
+    current?: OneCallResponse;
+    hourly?: OneCallResponse;
+    daily?: OneCallResponse;
+    minutely?: OneCallResponse;
+  } = {};
+  const errors: string[] = [];
 
-  return stringifyResult(normalizeCurrentForecast({ current, hourly, daily, minutely }));
+  for (let i = 0; i < settled.length; i++) {
+    const name = requests[i].name;
+    const result = settled[i];
+    if (result.status === 'fulfilled') {
+      parts[name] = result.value;
+    } else {
+      const message = result.reason instanceof Error ? result.reason.message : 'Unknown error';
+      errors.push(`${name}: ${message}`);
+    }
+  }
+
+  if (
+    parts.current == null &&
+    parts.hourly == null &&
+    parts.daily == null &&
+    parts.minutely == null
+  ) {
+    return `Error: ${errors[0] ?? 'OpenWeather API request failed'}`;
+  }
+
+  const result = normalizeCurrentForecast(parts);
+
+  if (includeAlerts) {
+    const resolved = await resolveAlerts(
+      [
+        result.current,
+        ...(result.hourly ?? []),
+        ...(result.daily ?? []),
+        ...(result.minutely ?? []),
+      ],
+      deps,
+    );
+    if (resolved.alerts.length > 0) {
+      result.alerts = resolved.alerts;
+    }
+    errors.push(...resolved.errors);
+  } else {
+    const stripped = stripAlertsFromForecast(result);
+    result.current = stripped.current;
+    result.minutely = stripped.minutely;
+    result.hourly = stripped.hourly;
+    result.daily = stripped.daily;
+  }
+
+  if (errors.length > 0) {
+    result.errors = errors;
+  }
+
+  return stringifyResult(result);
 }
 
 async function timestampForecast(
@@ -485,7 +757,7 @@ async function timestampForecast(
   if (!args.date) {
     return "Error: For timestamp action, a 'date' in YYYY-MM-DD format is required.";
   }
-  const start = convertDateToUnix(args.date);
+  const start = convertDateToUnix(args.date, args.tz);
   const params = locationParams({
     apiKey: deps.apiKey,
     lat: coords.lat,
@@ -496,7 +768,7 @@ async function timestampForecast(
   params.set('start', String(start));
   params.set('cnt', String(HOURLY_PAGE_SIZE));
   const response = await fetchTimeline(HOURLY_PATH, params, deps.fetch);
-  return stringifyResult(stripPagination(response));
+  return stringifyResult(response);
 }
 
 async function dailyAggregation(
@@ -508,7 +780,7 @@ async function dailyAggregation(
   if (!args.date) {
     return 'Error: date (YYYY-MM-DD) is required for daily_aggregation action.';
   }
-  const start = convertDateToUnix(args.date);
+  const start = convertDateToUnix(args.date, args.tz);
   const params = locationParams({
     apiKey: deps.apiKey,
     lat: coords.lat,
@@ -519,7 +791,7 @@ async function dailyAggregation(
   params.set('start', String(start));
   params.set('cnt', String(DAILY_PAGE_SIZE));
   const response = await fetchTimeline(DAILY_PATH, params, deps.fetch);
-  return stringifyResult(normalizeDailyAggregation(response, args.date, units));
+  return stringifyResult(normalizeDailyAggregation(response, args.date, units, args.tz));
 }
 
 async function overviewForecast(
@@ -537,11 +809,12 @@ async function overviewForecast(
   });
 
   if (args.date) {
-    const start = convertDateToUnix(args.date);
+    const start = convertDateToUnix(args.date, args.tz);
     params.set('start', String(start));
     params.set('cnt', String(DAILY_PAGE_SIZE));
     const daily = await fetchTimeline(DAILY_PATH, params, deps.fetch);
-    const record = selectDailyRecord(daily.data ?? [], args.date);
+    const zone = args.tz ?? daily.timezone;
+    const record = selectDailyRecord(daily.data ?? [], args.date, zone);
     return stringifyResult(
       synthesizeOverview({
         daily: record,
@@ -549,15 +822,18 @@ async function overviewForecast(
         units,
         lat: daily.lat ?? coords.lat,
         lon: daily.lon ?? coords.lon,
-        timezone: daily.timezone,
+        timezone: zone,
       }),
     );
   }
 
   const current = await fetchOpenWeatherJson(buildUrl(CURRENT_PATH, params), deps.fetch);
   const record: OneCallRecord | undefined = current.data?.[0];
+  const zone = args.tz ?? current.timezone;
   const date =
-    record?.dt != null ? utcDateString(record.dt) : utcDateString(Math.floor(Date.now() / 1000));
+    record?.dt != null
+      ? dateStringInTimeZone(record.dt, zone)
+      : dateStringInTimeZone(Math.floor(Date.now() / 1000), zone);
   return stringifyResult(
     synthesizeOverview({
       current: record,
@@ -565,9 +841,64 @@ async function overviewForecast(
       units,
       lat: current.lat ?? coords.lat,
       lon: current.lon ?? coords.lon,
-      timezone: current.timezone,
+      timezone: zone,
     }),
   );
+}
+
+async function executeOneCall3(
+  args: OpenWeatherArgs,
+  coords: { lat: number; lon: number },
+  units: string,
+  deps: OpenWeatherDeps,
+): Promise<string> {
+  const params = new URLSearchParams({
+    appid: deps.apiKey,
+    units,
+    lat: String(coords.lat),
+    lon: String(coords.lon),
+  });
+  if (args.lang) {
+    params.append('lang', args.lang);
+  }
+
+  let path: string;
+  switch (args.action) {
+    case 'current_forecast':
+      path = ONE_CALL_3_PATH;
+      if (args.exclude) {
+        params.append('exclude', args.exclude);
+      }
+      break;
+    case 'timestamp':
+      if (!args.date) {
+        return "Error: For timestamp action, a 'date' in YYYY-MM-DD format is required.";
+      }
+      path = `${ONE_CALL_3_PATH}/timemachine`;
+      params.append('dt', String(convertDateToUnix(args.date, args.tz)));
+      break;
+    case 'daily_aggregation':
+      if (!args.date) {
+        return 'Error: date (YYYY-MM-DD) is required for daily_aggregation action.';
+      }
+      path = `${ONE_CALL_3_PATH}/day_summary`;
+      params.append('date', args.date);
+      if (args.tz) {
+        params.append('tz', args.tz);
+      }
+      break;
+    case 'overview':
+      path = `${ONE_CALL_3_PATH}/overview`;
+      if (args.date) {
+        params.append('date', args.date);
+      }
+      break;
+    default:
+      return `Error: Unknown action: ${args.action}`;
+  }
+
+  const body = await fetchOpenWeatherBody(buildUrl(path, params), deps.fetch);
+  return JSON.stringify(roundTemperatures(body));
 }
 
 export async function executeOpenWeather(
@@ -577,9 +908,10 @@ export async function executeOpenWeather(
   try {
     const { action, city, lat, lon, units } = args;
     const owmUnits = mapUnitsToOpenWeather(units);
+    const version = resolvedOneCallVersion(deps);
 
     if (action === 'help') {
-      return getOpenWeatherHelp();
+      return getOpenWeatherHelp(version);
     }
 
     if (!COORDINATE_ACTIONS.has(action)) {
@@ -599,6 +931,10 @@ export async function executeOpenWeather(
     }
 
     const coords = { lat: finalLat, lon: finalLon };
+
+    if (version === '3.0') {
+      return await executeOneCall3(args, coords, owmUnits, deps);
+    }
 
     switch (action) {
       case 'current_forecast':

@@ -4,9 +4,12 @@ export type OpenWeatherFetcher = (url: string) => Promise<{
   json: () => Promise<unknown>;
 }>;
 
+export type OpenWeatherOneCallVersion = '3.0' | '4.0';
+
 export type OpenWeatherDeps = {
   apiKey: string;
   fetch: OpenWeatherFetcher;
+  oneCallVersion?: OpenWeatherOneCallVersion;
 };
 
 export type OpenWeatherArgs = {
@@ -39,6 +42,16 @@ export type DailyTemperature = {
 
 export type PrecipitationAmount = {
   '1h'?: number;
+};
+
+export type WeatherAlert = {
+  id?: string;
+  sender_name?: string;
+  event?: string;
+  start?: number;
+  end?: number;
+  description?: string;
+  tags?: string[];
 };
 
 export type OneCallRecord = {
@@ -86,6 +99,8 @@ export type CurrentForecastResult = {
   minutely?: OneCallRecord[];
   hourly?: OneCallRecord[];
   daily?: OneCallRecord[];
+  alerts?: WeatherAlert[];
+  errors?: string[];
 };
 
 export type DailyAggregationResult = {

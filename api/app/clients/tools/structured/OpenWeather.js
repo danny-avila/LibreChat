@@ -5,6 +5,7 @@ const {
   executeOpenWeather,
   openWeatherSchema,
   OPEN_WEATHER_TOOL_DESCRIPTION,
+  resolveOpenWeatherOneCallVersion,
 } = require('@librechat/api');
 
 class OpenWeather extends Tool {
@@ -33,7 +34,13 @@ class OpenWeather extends Tool {
 
   async _call(args) {
     try {
-      return await executeOpenWeather(args, { apiKey: this.apiKey, fetch });
+      return await executeOpenWeather(args, {
+        apiKey: this.apiKey,
+        fetch,
+        oneCallVersion: resolveOpenWeatherOneCallVersion(
+          getEnvironmentVariable('OPENWEATHER_ONECALL_VERSION'),
+        ),
+      });
     } catch (err) {
       return `Error: ${err.message}`;
     }

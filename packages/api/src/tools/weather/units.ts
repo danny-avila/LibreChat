@@ -43,6 +43,10 @@ export function unitSuffix(units: string): string {
   return '°C';
 }
 
+export function roundDegree(value: number): number {
+  return Math.round(value);
+}
+
 /**
  * Recursively round temperature fields in the API response.
  */

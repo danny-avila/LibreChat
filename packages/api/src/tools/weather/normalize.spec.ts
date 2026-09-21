@@ -1,10 +1,14 @@
 import type { OneCallRecord, OneCallResponse } from './types';
 import {
+  collectAlertIds,
+  dateStringInTimeZone,
   normalizeCurrentForecast,
   normalizeDailyAggregation,
+  omitRecordAlerts,
   selectDailyRecord,
   stripPagination,
   synthesizeOverview,
+  unixAtLocalMidnight,
   utcDateString,
 } from './normalize';
 
@@ -47,6 +51,21 @@ describe('OpenWeather 4.0 normalizers', () => {
     expect(utcDateString(1583280000)).toBe('2020-03-04');
   });
 
+  it('formats a unix timestamp in an offset or IANA timezone', () => {
+    expect(dateStringInTimeZone(1583280000, '-05:00')).toBe('2020-03-03');
+    expect(dateStringInTimeZone(1583298000, '-05:00')).toBe('2020-03-04');
+    expect(dateStringInTimeZone(1583298000, 'America/New_York')).toBe('2020-03-04');
+  });
+
+  it('converts a calendar date to local midnight unix seconds', () => {
+    expect(unixAtLocalMidnight(2020, 3, 4)).toBe(1583280000);
+    expect(unixAtLocalMidnight(2020, 3, 4, '-05:00')).toBe(1583298000);
+    expect(unixAtLocalMidnight(2020, 3, 4, 'America/New_York')).toBe(1583298000);
+    expect(unixAtLocalMidnight(2020, 7, 4, 'America/New_York')).toBe(
+      Math.floor(Date.UTC(2020, 6, 4, 4) / 1000),
+    );
+  });
+
   it('lifts 4.0 data arrays into the current/hourly/daily/minutely contract', () => {
     const result = normalizeCurrentForecast({
       current: currentResponse,
@@ -64,7 +83,7 @@ describe('OpenWeather 4.0 normalizers', () => {
     expect(result.minutely?.[0].precipitation).toBe(0);
   });
 
-  it('maps a 4.0 daily record onto the day-summary temperature fields', () => {
+  it('maps a 4.0 daily record onto the day-summary temperature fields only', () => {
     const result = normalizeDailyAggregation(dailyResponse, '2020-03-04', 'metric');
 
     expect(result.date).toBe('2020-03-04');
@@ -78,8 +97,10 @@ describe('OpenWeather 4.0 normalizers', () => {
       evening: 15.6,
       night: 8.1,
     });
-    expect(result.humidity?.afternoon).toBe(70);
-    expect(result.cloud_cover?.afternoon).toBe(12);
+    expect(result.humidity).toBeUndefined();
+    expect(result.cloud_cover).toBeUndefined();
+    expect(result.pressure).toBeUndefined();
+    expect(result.wind).toBeUndefined();
   });
 
   it('selects the daily record whose UTC date matches the request', () => {
@@ -90,6 +111,25 @@ describe('OpenWeather 4.0 normalizers', () => {
     expect(selectDailyRecord(records, '2020-03-04')?.temp).toEqual({ day: 2 });
   });
 
+  it('selects the daily record whose local date matches when tz is set', () => {
+    const records: OneCallRecord[] = [
+      { dt: 1583280000, temp: { day: 1 } },
+      { dt: 1583298000, temp: { day: 2 } },
+    ];
+    expect(selectDailyRecord(records, '2020-03-04', 'America/New_York')?.temp).toEqual({ day: 2 });
+  });
+
+  it('stringifies numeric alert ids and drops duplicates', () => {
+    expect(collectAlertIds([{ alerts: ['abc', 'abc'] }, { alerts: ['def'] }])).toEqual([
+      'abc',
+      'def',
+    ]);
+  });
+
+  it('omits alert ids from a record', () => {
+    expect(omitRecordAlerts({ temp: 20, alerts: ['abc'] })).toEqual({ temp: 20 });
+  });
+
   it('drops next/prev so pagination URLs never leave the client', () => {
     const stripped = stripPagination(dailyResponse);
     expect(stripped.next).toBeUndefined();
@@ -97,7 +137,7 @@ describe('OpenWeather 4.0 normalizers', () => {
     expect(stripped.data).toEqual(dailyResponse.data);
   });
 
-  it('synthesizes an overview from current conditions', () => {
+  it('synthesizes an overview from current conditions with rounded temperatures', () => {
     const result = synthesizeOverview({
       current: currentResponse.data?.[0],
       date: '2020-03-04',
@@ -108,7 +148,7 @@ describe('OpenWeather 4.0 normalizers', () => {
     });
 
     expect(result.weather_overview).toBe(
-      'Currently, the temperature is 20.4°C with a real feel of 18.6°C. The sky is clear sky.',
+      'Currently, the temperature is 20°C with a real feel of 19°C. The sky is clear sky.',
     );
     expect(result.units).toBe('metric');
     expect(result.date).toBe('2020-03-04');
@@ -121,6 +161,6 @@ describe('OpenWeather 4.0 normalizers', () => {
       units: 'imperial',
     });
 
-    expect(result.weather_overview).toBe('Temperatures range from 7.4°F to 21.9°F. Few clouds.');
+    expect(result.weather_overview).toBe('Temperatures range from 7°F to 22°F. Few clouds.');
   });
 });

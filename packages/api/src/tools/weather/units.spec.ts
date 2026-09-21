@@ -1,4 +1,4 @@
-import { mapUnitsToOpenWeather, roundTemperatures, unitSuffix } from './units';
+import { mapUnitsToOpenWeather, roundDegree, roundTemperatures, unitSuffix } from './units';
 
 describe('OpenWeather units', () => {
   it('maps display units onto OpenWeather units and defaults to metric', () => {
@@ -13,6 +13,13 @@ describe('OpenWeather units', () => {
     expect(unitSuffix('metric')).toBe('°C');
     expect(unitSuffix('imperial')).toBe('°F');
     expect(unitSuffix('standard')).toBe(' K');
+  });
+
+  it('rounds a temperature to the nearest degree', () => {
+    expect(roundDegree(20.4)).toBe(20);
+    expect(roundDegree(18.6)).toBe(19);
+    expect(roundDegree(7.4)).toBe(7);
+    expect(roundDegree(21.9)).toBe(22);
   });
 
   it('rounds nested temperature fields and leaves non-temp numbers intact', () => {
