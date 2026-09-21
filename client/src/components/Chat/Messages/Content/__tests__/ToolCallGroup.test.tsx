@@ -121,6 +121,7 @@ jest.mock('~/utils/approval', () => ({
 }));
 
 jest.mock('~/utils', () => ({
+  getPartKeyIndex: jest.requireActual('~/utils').getPartKeyIndex,
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
   getToolDisplayLabel: (name: string, _localize: unknown, knownServerNames?: readonly string[]) => {
     const configuredServer = knownServerNames?.find((server) => name.endsWith(`_mcp_${server}`));
