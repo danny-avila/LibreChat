@@ -46,6 +46,7 @@ export function AgentPanelProvider({
    * drawer, or the insights route collapsing it), so only a visible form
    * releases the MCP catalogs ahead of the background warmup schedule */
   const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
+  const promptsEditorMode = useRecoilValue(store.promptsEditorMode);
   const panelVisible = sidebarExpanded && !location.pathname.startsWith('/insights');
   useEffect(() => {
     if (panelVisible) {
@@ -199,6 +200,7 @@ export function AgentPanelProvider({
     regularTools,
     agentsConfig,
     startupConfig,
+    promptsEditorMode,
     mcpServersMap,
     mcpToolsLoading,
     setActivePanel,

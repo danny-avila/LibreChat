@@ -11,9 +11,10 @@ unrelated edits; the builder disables prompt controls until it is enabled again.
 
 ## LibreChat prompts
 
-Choose **LibreChat prompt**, then select a prompt you can view. **Latest** resolves the newest
-stored revision at the start of every run; selecting a numbered version pins that revision by its
-stable record ID.
+Choose **LibreChat prompt**, then select a prompt you can view. **Deployed version** resolves the
+prompt group's deployed revision at the start of every run. When the advanced prompts editor is
+enabled, selecting a numbered version pins that revision by its stable record ID; otherwise Agent
+Builder uses the deployed version.
 LibreChat checks the requesting user's current prompt permission each time. A deleted prompt,
 missing version, empty prompt, or revoked permission stops the run with an explicit error rather
 than silently using stale inline text.

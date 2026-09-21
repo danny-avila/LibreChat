@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
-import { AgentCapabilities } from 'librechat-data-provider';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Controller, useFormContext, useWatch } from 'react-hook-form';
+import { AgentCapabilities, Permissions, PermissionTypes } from 'librechat-data-provider';
 import {
   Input,
   Select,
@@ -17,28 +17,45 @@ import {
   useGetAllPromptGroups,
   useGetPrompts,
 } from '~/data-provider';
-import { useDebounce, useGetAgentsConfig, useLocalize } from '~/hooks';
+import { useDebounce, useGetAgentsConfig, useHasAccess, useLocalize } from '~/hooks';
+import CreatePromptDialog from '~/components/Prompts/dialogs/CreatePromptDialog';
 import { VariableEditor } from '~/components/Variables';
 
 type InstructionSource = 'inline' | AgentInstructionPrompt['source'];
+const CREATE_PROMPT_VALUE = 'create-prompt';
+const DEPLOYED_VERSION_VALUE = 'deployed';
 
 function promptTime(prompt: TPrompt): number {
   const value = new Date(prompt.createdAt).getTime();
   return Number.isFinite(value) ? value : 0;
 }
 
-export default function Instructions() {
+export default function Instructions({
+  advancedPromptsEnabled,
+}: {
+  advancedPromptsEnabled: boolean;
+}) {
   const localize = useLocalize();
   const { agentsConfig } = useGetAgentsConfig();
   const promptReferencesEnabled =
     agentsConfig?.capabilities?.includes(AgentCapabilities.instruction_prompts) ?? false;
+  const canCreatePrompts = useHasAccess({
+    permissionType: PermissionTypes.PROMPTS,
+    permission: Permissions.CREATE,
+  });
   const { control, getValues, getFieldState, setValue } = useFormContext<AgentForm>();
   const agentId = useWatch({ control, name: 'id' });
   const reference = useWatch({ control, name: 'instruction_prompt' });
   const [source, setSource] = useState<InstructionSource>(reference?.source ?? 'inline');
+  const [createPromptOpen, setCreatePromptOpen] = useState(false);
+  const referenceDrafts = useRef<
+    Partial<Record<AgentInstructionPrompt['source'], AgentInstructionPrompt>>
+  >(reference ? { [reference.source]: reference } : {});
 
   useEffect(() => {
-    setSource(getValues('instruction_prompt')?.source ?? 'inline');
+    const nextReference = getValues('instruction_prompt');
+    referenceDrafts.current = nextReference ? { [nextReference.source]: nextReference } : {};
+    setSource(nextReference?.source ?? 'inline');
   }, [agentId, getValues]);
 
   const groupsQuery = useGetAllPromptGroups(undefined, {
@@ -58,10 +75,17 @@ export default function Instructions() {
       }),
     [promptsQuery.data],
   );
+  const selectedGroup = groups.find((group) => group._id === groupId);
   const selectedPrompt =
     reference?.source === 'librechat' && reference.version != null
       ? prompts.find((prompt) => prompt._id === reference.versionId)
-      : prompts.at(-1);
+      : prompts.find((prompt) => prompt._id === selectedGroup?.productionId);
+  let selectedPromptVersion: number | undefined;
+  if (reference?.source === 'librechat' && reference.version != null) {
+    selectedPromptVersion = reference.version;
+  } else if (selectedPrompt != null) {
+    selectedPromptVersion = prompts.indexOf(selectedPrompt) + 1;
+  }
   const langfuseName = reference?.source === 'langfuse' ? reference.name : '';
   const debouncedLangfuseName = useDebounce(langfuseName, 300);
   const langfuseVersion = reference?.source === 'langfuse' ? reference.version : undefined;
@@ -77,17 +101,26 @@ export default function Instructions() {
     langfuseDestinationId,
   );
 
-  const updateReference = (next: AgentInstructionPrompt | undefined) =>
+  const updateReference = (next: AgentInstructionPrompt | undefined) => {
+    if (next) {
+      referenceDrafts.current[next.source] = next;
+    }
     setValue('instruction_prompt', next, { shouldDirty: true, shouldValidate: true });
+  };
 
   const changeSource = (next: InstructionSource) => {
-    setSource(next);
-    if (next === 'inline' || reference?.source !== next) {
-      updateReference(undefined);
+    if (reference) {
+      referenceDrafts.current[reference.source] = reference;
     }
+    setSource(next);
+    updateReference(next === 'inline' ? undefined : referenceDrafts.current[next]);
   };
 
   const selectGroup = (nextGroupId: string) => {
+    if (nextGroupId === CREATE_PROMPT_VALUE && canCreatePrompts) {
+      setCreatePromptOpen(true);
+      return;
+    }
     const group = groups.find((candidate) => candidate._id === nextGroupId);
     updateReference(
       group?._id ? { source: 'librechat', promptId: group._id, name: group.name } : undefined,
@@ -98,7 +131,7 @@ export default function Instructions() {
     if (reference?.source !== 'librechat') {
       return;
     }
-    if (value === 'latest') {
+    if (value === DEPLOYED_VERSION_VALUE) {
       updateReference({ ...reference, version: undefined, versionId: undefined });
       return;
     }
@@ -127,9 +160,9 @@ export default function Instructions() {
   if (!promptReferencesEnabled && source !== 'inline') {
     status = <span role="status">{localize('com_ui_disabled')}</span>;
   } else if (source === 'librechat') {
-    if (groupsQuery.isLoading || promptsQuery.isLoading) {
+    if (groupsQuery.isLoading || (groupId.length > 0 && promptsQuery.isLoading)) {
       status = <span role="status">{localize('com_ui_loading')}</span>;
-    } else if (groupsQuery.isError || promptsQuery.isError) {
+    } else if (groupsQuery.isError || (groupId.length > 0 && promptsQuery.isError)) {
       status = (
         <span role="alert">
           {localize('com_agents_prompt_load_error')}{' '}
@@ -150,16 +183,17 @@ export default function Instructions() {
       status = <span role="alert">{localize('com_agents_prompt_versions_empty')}</span>;
     } else if (
       reference?.source === 'librechat' &&
-      reference.version != null &&
+      groupId.length > 0 &&
+      prompts.length > 0 &&
       selectedPrompt == null
     ) {
       status = <span role="alert">{localize('com_agents_prompt_missing')}</span>;
     } else if (selectedPrompt?.type != null && selectedPrompt.type !== 'text') {
       status = <span role="alert">{localize('com_agents_prompt_unsupported')}</span>;
-    } else if (reference?.source === 'librechat' && prompts.length > 0) {
+    } else if (reference?.source === 'librechat' && selectedPromptVersion != null) {
       status = (
         <span role="status">
-          {localize('com_agents_prompt_resolved', { version: reference.version ?? prompts.length })}
+          {localize('com_agents_prompt_resolved', { version: selectedPromptVersion })}
         </span>
       );
     }
@@ -269,9 +303,20 @@ export default function Instructions() {
                 disabled={!promptReferencesEnabled}
               >
                 <SelectTrigger aria-label={localize('com_agents_prompt_select')}>
-                  <SelectValue placeholder={localize('com_agents_prompt_select')} />
+                  <SelectValue
+                    placeholder={
+                      groupsQuery.isSuccess && groups.length === 0
+                        ? localize('com_agents_prompt_empty')
+                        : localize('com_agents_prompt_select')
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
+                  {groupsQuery.isSuccess && groups.length === 0 && canCreatePrompts && (
+                    <SelectItem value={CREATE_PROMPT_VALUE}>
+                      {localize('com_agents_prompt_create')}
+                    </SelectItem>
+                  )}
                   {groups
                     .filter((group) => group._id != null)
                     .map((group) => (
@@ -282,9 +327,16 @@ export default function Instructions() {
                 </SelectContent>
               </Select>
               <Select
-                disabled={!promptReferencesEnabled || !groupId || prompts.length === 0}
+                disabled={
+                  !advancedPromptsEnabled ||
+                  !promptReferencesEnabled ||
+                  !groupId ||
+                  prompts.length === 0
+                }
                 value={
-                  reference?.source === 'librechat' ? (reference.versionId ?? 'latest') : 'latest'
+                  advancedPromptsEnabled && reference?.source === 'librechat'
+                    ? (reference.versionId ?? DEPLOYED_VERSION_VALUE)
+                    : DEPLOYED_VERSION_VALUE
                 }
                 onValueChange={selectLibreChatVersion}
               >
@@ -292,23 +344,26 @@ export default function Instructions() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="latest">{localize('com_agents_prompt_latest')}</SelectItem>
-                  {prompts.map((prompt, index) => {
-                    if (prompt._id == null) {
-                      return null;
-                    }
-                    const version =
-                      reference?.source === 'librechat' &&
-                      prompt._id === reference.versionId &&
-                      reference.version != null
-                        ? reference.version
-                        : index + 1;
-                    return (
-                      <SelectItem key={prompt._id} value={prompt._id}>
-                        {localize('com_agents_prompt_version_number', { version })}
-                      </SelectItem>
-                    );
-                  })}
+                  <SelectItem value={DEPLOYED_VERSION_VALUE}>
+                    {localize('com_agents_prompt_deployed')}
+                  </SelectItem>
+                  {advancedPromptsEnabled &&
+                    prompts.map((prompt, index) => {
+                      if (prompt._id == null) {
+                        return null;
+                      }
+                      const version =
+                        reference?.source === 'librechat' &&
+                        prompt._id === reference.versionId &&
+                        reference.version != null
+                          ? reference.version
+                          : index + 1;
+                      return (
+                        <SelectItem key={prompt._id} value={prompt._id}>
+                          {localize('com_agents_prompt_version_number', { version })}
+                        </SelectItem>
+                      );
+                    })}
                 </SelectContent>
               </Select>
             </div>
@@ -352,6 +407,7 @@ export default function Instructions() {
             </div>
           )}
           <div className="text-xs text-text-secondary">{status}</div>
+          <CreatePromptDialog open={createPromptOpen} onOpenChange={setCreatePromptOpen} />
           {error && (
             <span
               className="mt-1 text-xs text-text-destructive transition duration-300 ease-in-out"

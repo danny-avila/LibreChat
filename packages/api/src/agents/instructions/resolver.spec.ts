@@ -12,7 +12,9 @@ function createResolver(overrides: Record<string, unknown> = {}) {
   return createAgentInstructionPromptResolver({
     canUseLibreChatPrompts: jest.fn().mockResolvedValue(true),
     getLibreChatPromptPermissions: jest.fn().mockResolvedValue(PermissionBits.VIEW),
-    getLibreChatPromptGroup: jest.fn().mockResolvedValue({ name: 'Support policy' }),
+    getLibreChatPromptGroup: jest
+      .fn()
+      .mockResolvedValue({ name: 'Support policy', productionId: 'a' }),
     getLibreChatPrompts: jest.fn().mockResolvedValue([
       { _id: 'b', prompt: 'version two', createdAt: '2025-01-02T00:00:00.000Z' },
       { _id: 'a', prompt: 'version one', createdAt: '2025-01-01T00:00:00.000Z' },
@@ -23,7 +25,7 @@ function createResolver(overrides: Record<string, unknown> = {}) {
 }
 
 describe('agent instruction prompt resolver', () => {
-  it('resolves the newest accessible LibreChat prompt when no version is pinned', async () => {
+  it('resolves the deployed LibreChat prompt when no version is pinned', async () => {
     const resolver = createResolver();
 
     await expect(
@@ -32,10 +34,28 @@ describe('agent instruction prompt resolver', () => {
         { userId: 'user-1' },
       ),
     ).resolves.toEqual({
-      prompt: 'version two',
+      prompt: 'version one',
       source: 'librechat',
       name: 'Support policy',
-      version: 2,
+      version: 1,
+    });
+  });
+
+  it('does not fall forward when the deployed LibreChat prompt is unavailable', async () => {
+    const resolver = createResolver({
+      getLibreChatPromptGroup: jest
+        .fn()
+        .mockResolvedValue({ name: 'Support policy', productionId: 'missing' }),
+    });
+
+    await expect(
+      resolver.resolve(
+        { source: 'librechat', promptId: 'group-1', name: 'Saved name' },
+        { userId: 'user-1' },
+      ),
+    ).rejects.toMatchObject({
+      code: 'not_found',
+      message: 'The deployed LibreChat prompt version no longer exists',
     });
   });
 
@@ -258,7 +278,7 @@ describe('agent instruction prompt resolver', () => {
     });
 
     expect(agent).toEqual({
-      instructions: 'version two',
+      instructions: 'version one',
       instruction_prompt: existingInstructionPrompt,
     });
   });

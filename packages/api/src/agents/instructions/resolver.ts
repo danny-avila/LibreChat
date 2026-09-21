@@ -62,6 +62,7 @@ export function assertAgentInstructionPromptsEnabled(appConfig?: AppConfig): voi
 
 type LibreChatPromptGroup = {
   name?: string | null;
+  productionId?: string | { toString(): string } | null;
 };
 
 type LibreChatPrompt = {
@@ -158,15 +159,17 @@ export function createAgentInstructionPromptResolver(
         );
       }
       const prompts = sortPrompts(records);
-      const version = reference.version ?? prompts.length;
-      const selected =
-        reference.versionId == null
-          ? prompts[version - 1]
-          : prompts.find((prompt) => String(prompt._id) === reference.versionId);
+      const selectedId =
+        reference.versionId ?? (group.productionId == null ? '' : String(group.productionId));
+      const selectedIndex = prompts.findIndex((prompt) => String(prompt._id) === selectedId);
+      const selected = prompts[selectedIndex];
+      const version = reference.version ?? selectedIndex + 1;
       if (!selected) {
         throw new AgentInstructionPromptError(
           'not_found',
-          `LibreChat prompt version ${version} no longer exists`,
+          reference.version == null
+            ? 'The deployed LibreChat prompt version no longer exists'
+            : `LibreChat prompt version ${version} no longer exists`,
           404,
         );
       }

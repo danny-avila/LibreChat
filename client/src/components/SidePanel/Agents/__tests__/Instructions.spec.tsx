@@ -7,12 +7,25 @@ import Instructions from '../Instructions';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: Record<string, string | number>) =>
-    key === 'com_agents_prompt_version_number' ? `${key}:${values?.version}` : key,
+    ['com_agents_prompt_version_number', 'com_agents_prompt_resolved'].includes(key)
+      ? `${key}:${values?.version}`
+      : key,
   useDebounce: (value: string) => value,
   useGetAgentsConfig: () => ({ agentsConfig: { capabilities: mockAgentCapabilities } }),
+  useHasAccess: () => true,
 }));
 
 const mockRefetch = jest.fn();
+jest.mock(
+  '~/components/Prompts/dialogs/CreatePromptDialog',
+  () =>
+    ({ open }: { open: boolean }) =>
+      open ? <div role="dialog" /> : null,
+);
+
+let mockGroupsLoading = false;
+let mockPromptsLoading = false;
+
 const mockPreview = jest.fn((..._args: unknown[]) => ({
   data: undefined,
   isLoading: false,
@@ -27,16 +40,16 @@ const mockPrompts: Array<Record<string, unknown>> = [];
 jest.mock('~/data-provider', () => ({
   useGetAllPromptGroups: () => ({
     data: mockPromptGroups,
-    isLoading: false,
+    isLoading: mockGroupsLoading,
     isError: false,
-    isSuccess: true,
+    isSuccess: !mockGroupsLoading,
     refetch: mockRefetch,
   }),
   useGetPrompts: () => ({
     data: mockPrompts,
-    isLoading: false,
+    isLoading: mockPromptsLoading,
     isError: false,
-    isSuccess: true,
+    isSuccess: !mockPromptsLoading,
     refetch: mockRefetch,
   }),
   useAgentInstructionPromptPreview: (...args: unknown[]) => mockPreview(...args),
@@ -45,16 +58,18 @@ jest.mock('~/data-provider', () => ({
 function InstructionsHarness({
   defaultValues = { instructions: '' },
   onSubmit = () => undefined,
+  advancedPromptsEnabled = true,
 }: {
   defaultValues?: Partial<AgentForm>;
   onSubmit?: (values: AgentForm) => void;
+  advancedPromptsEnabled?: boolean;
 }) {
   const methods = useForm<AgentForm>({ defaultValues });
   return (
     <ToastProvider>
       <FormProvider {...methods}>
         <form onSubmit={methods.handleSubmit(onSubmit)}>
-          <Instructions />
+          <Instructions advancedPromptsEnabled={advancedPromptsEnabled} />
           <button type="submit" aria-label="com_ui_save" />
         </form>
       </FormProvider>
@@ -109,6 +124,8 @@ describe('Agent Instructions', () => {
 
   beforeEach(() => {
     mockPreview.mockClear();
+    mockGroupsLoading = false;
+    mockPromptsLoading = false;
     mockPromptGroups.length = 0;
     mockPrompts.length = 0;
     mockAgentCapabilities.length = 0;
@@ -153,8 +170,9 @@ describe('Agent Instructions', () => {
     expect(screen.queryByRole('option', { name: 'com_agents_prompt_source_librechat' })).toBeNull();
     expect(screen.queryByRole('option', { name: 'com_agents_prompt_source_langfuse' })).toBeNull();
   });
-  it('shows the empty state after selecting the LibreChat prompt source', async () => {
+  it('shows the empty selector and opens prompt creation without a false loading state', async () => {
     HTMLElement.prototype.scrollIntoView = jest.fn();
+    mockPromptsLoading = true;
     render(<InstructionsHarness />);
 
     fireEvent.click(screen.getByRole('combobox', { name: 'com_agents_prompt_source' }));
@@ -162,8 +180,79 @@ describe('Agent Instructions', () => {
       await screen.findByRole('option', { name: 'com_agents_prompt_source_librechat' }),
     );
 
-    expect(screen.getByText('com_agents_prompt_empty')).toBeVisible();
-    expect(screen.getByLabelText('com_agents_prompt_select')).toBeVisible();
+    const promptSelect = screen.getByLabelText('com_agents_prompt_select');
+    expect(promptSelect).toHaveTextContent('com_agents_prompt_empty');
+    expect(screen.queryByText('com_ui_loading')).toBeNull();
+
+    fireEvent.click(promptSelect);
+    fireEvent.click(await screen.findByRole('option', { name: 'com_agents_prompt_create' }));
+    expect(screen.getByRole('dialog')).toBeVisible();
+  });
+  it('restores an unsaved prompt selection after switching to inline instructions', async () => {
+    HTMLElement.prototype.scrollIntoView = jest.fn();
+    mockPromptGroups.push({ _id: 'group-1', name: 'Support', productionId: 'prompt-1' });
+    mockPrompts.push({
+      _id: 'prompt-1',
+      groupId: 'group-1',
+      prompt: 'instructions',
+      type: 'text',
+      createdAt: '2026-09-18T00:00:00.000Z',
+    });
+    render(<InstructionsHarness />);
+
+    const sourceSelect = screen.getByRole('combobox', { name: 'com_agents_prompt_source' });
+    fireEvent.click(sourceSelect);
+    fireEvent.click(
+      await screen.findByRole('option', { name: 'com_agents_prompt_source_librechat' }),
+    );
+    fireEvent.click(screen.getByRole('combobox', { name: 'com_agents_prompt_select' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Support' }));
+
+    fireEvent.click(sourceSelect);
+    fireEvent.click(await screen.findByRole('option', { name: 'com_agents_prompt_source_inline' }));
+    fireEvent.click(sourceSelect);
+    fireEvent.click(
+      await screen.findByRole('option', { name: 'com_agents_prompt_source_librechat' }),
+    );
+
+    expect(screen.getByRole('combobox', { name: 'com_agents_prompt_select' })).toHaveTextContent(
+      'Support',
+    );
+  });
+  it('uses the deployed version when advanced prompts are disabled', () => {
+    mockPromptGroups.push({ _id: 'group-1', name: 'Support', productionId: 'prompt-1' });
+    mockPrompts.push({
+      _id: 'prompt-2',
+      groupId: 'group-1',
+      prompt: 'newest',
+      type: 'text',
+      createdAt: '2026-09-19T00:00:00.000Z',
+    });
+    mockPrompts.push({
+      _id: 'prompt-1',
+      groupId: 'group-1',
+      prompt: 'deployed',
+      type: 'text',
+      createdAt: '2026-09-18T00:00:00.000Z',
+    });
+    render(
+      <InstructionsHarness
+        advancedPromptsEnabled={false}
+        defaultValues={{
+          instructions: '',
+          instruction_prompt: {
+            source: 'librechat',
+            promptId: 'group-1',
+            name: 'Support',
+          },
+        }}
+      />,
+    );
+
+    const versionSelect = screen.getByRole('combobox', { name: 'com_agents_prompt_version' });
+    expect(versionSelect).toBeDisabled();
+    expect(versionSelect).toHaveTextContent('com_agents_prompt_deployed');
+    expect(screen.getByText('com_agents_prompt_resolved:1')).toBeVisible();
   });
 
   it('restores a saved Langfuse reference into the builder', () => {
@@ -235,7 +324,7 @@ describe('Agent Instructions', () => {
   it('blocks unsupported LibreChat prompt types before submitting', async () => {
     const user = userEvent.setup();
     const onSubmit = jest.fn();
-    mockPromptGroups.push({ _id: 'group-1', name: 'Support' });
+    mockPromptGroups.push({ _id: 'group-1', name: 'Support', productionId: 'prompt-1' });
     mockPrompts.push({
       _id: 'prompt-1',
       groupId: 'group-1',
