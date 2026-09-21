@@ -156,7 +156,10 @@ export default function Root() {
                     } as React.CSSProperties
                   }
                 >
-                  <UnifiedSidebar />
+                  {/* The drawer stops being painted once it is closed and
+                      settled, so it needs the same travel window the scrim and
+                      the pane's `inert` read. */}
+                  <UnifiedSidebar isSliding={isSliding} />
                   <div
                     ref={paneRef}
                     /** Focus target of last resort when the drawer closes on a
