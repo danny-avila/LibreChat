@@ -506,7 +506,6 @@ interface StreamState {
   reasoningContentStarted: boolean;
   activeToolCalls: Set<string>;
   completedToolCalls: Set<string>;
-  toolCallsWithArgs: Set<string>;
   /** Calls to a caller-executed tool — the subset the run has to terminate itself. */
   clientToolCalls: Set<string>;
 }
@@ -609,7 +608,6 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
     reasoningContentStarted: false,
     activeToolCalls: new Set(),
     completedToolCalls: new Set(),
-    toolCallsWithArgs: new Set(),
     clientToolCalls: new Set(),
   };
 
@@ -831,7 +829,6 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
               continue;
             }
 
-            state.toolCallsWithArgs.add(callId);
             emitFunctionCallArgumentsDelta(config, callId, args);
           }
         }
@@ -877,10 +874,12 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
         }
 
         for (const { id, args } of completedToolCallArguments(data)) {
-          if (!state.activeToolCalls.has(id) || state.toolCallsWithArgs.has(id)) {
+          if (!state.activeToolCalls.has(id)) {
             continue;
           }
-          state.toolCallsWithArgs.add(id);
+          if ((config.tracker.accumulatedArguments.get(id) ?? '') !== '') {
+            continue;
+          }
           emitFunctionCallArgumentsDelta(config, id, args);
         }
       },

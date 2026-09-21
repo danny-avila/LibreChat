@@ -212,6 +212,111 @@ describe('streaming lifecycle of a caller-executed tool call', () => {
   });
 
   /**
+   * The first tool call of a message is announced before its arguments arrive,
+   * but a second one is announced after them: the SDK opens a single
+   * `tool_calls` run step per message, so any later call gets its own step only
+   * at model end.
+   *
+   * An argument fragment that arrives before its call is announced has no item
+   * to write to, so it is dropped. `on_chat_model_end` is what puts those
+   * arguments back, and the only way it can tell they were dropped is by
+   * checking what the tracker actually holds.
+   */
+  it('recovers the arguments of a call announced after its own fragments', () => {
+    const { res, events } = recorder();
+    const { handlers, finalizeStream } = createResponsesEventHandlers({
+      res,
+      context,
+      tracker: createResponseTracker(),
+      clientToolNames: new Set([CLIENT_TOOL]),
+    });
+    const FIRST = 'toolu_first';
+    const SECOND = 'toolu_second';
+
+    handlers.on_run_step.handle('on_run_step', {
+      id: 'step_1',
+      stepDetails: { type: 'tool_calls', tool_calls: [{ id: FIRST, name: CLIENT_TOOL }] },
+    });
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_1',
+      delta: { type: 'tool_calls', tool_calls: [{ id: FIRST, index: 1, args: '{"sql":"A"}' }] },
+    });
+    /* The second block opens with the id, and its fragments follow, all before
+       the run step that announces it. */
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_1',
+      delta: {
+        type: 'tool_calls',
+        tool_calls: [{ id: SECOND, name: CLIENT_TOOL, index: 2, args: '' }],
+      },
+    });
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_1',
+      delta: { type: 'tool_calls', tool_calls: [{ index: 2, args: '{"sql":"B"}' }] },
+    });
+    handlers.on_run_step.handle('on_run_step', {
+      id: 'step_2',
+      stepDetails: { type: 'tool_calls', tool_calls: [{ id: SECOND, name: CLIENT_TOOL }] },
+    });
+    handlers.on_chat_model_end.handle('on_chat_model_end', {
+      output: {
+        tool_calls: [
+          { id: FIRST, args: { sql: 'A' } },
+          { id: SECOND, args: { sql: 'B' } },
+        ],
+      },
+    });
+    finalizeStream();
+
+    const completed = events.find((event) => event.type === 'response.completed') as {
+      response: { output: Array<{ call_id?: string; arguments?: string }> };
+    };
+
+    expect(completed.response.output).toEqual([
+      expect.objectContaining({ call_id: FIRST, arguments: '{"sql":"A"}' }),
+      expect.objectContaining({ call_id: SECOND, arguments: '{"sql":"B"}' }),
+    ]);
+  });
+
+  /** The first call's fragments are already streamed, so the backfill must not
+   *  append the model-end copy on top of them. */
+  it('does not duplicate arguments a call already streamed', () => {
+    const { res, events } = recorder();
+    const { handlers, finalizeStream } = createResponsesEventHandlers({
+      res,
+      context,
+      tracker: createResponseTracker(),
+      clientToolNames: new Set([CLIENT_TOOL]),
+    });
+
+    handlers.on_run_step.handle('on_run_step', {
+      id: 'step_1',
+      stepDetails: { type: 'tool_calls', tool_calls: [{ id: CALL_ID, name: CLIENT_TOOL }] },
+    });
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_1',
+      delta: { type: 'tool_calls', tool_calls: [{ id: CALL_ID, index: 0, args: '{"sql":' }] },
+    });
+    handlers.on_run_step_delta.handle('on_run_step_delta', {
+      id: 'step_1',
+      delta: { type: 'tool_calls', tool_calls: [{ index: 0, args: '"SELECT 1"}' }] },
+    });
+    handlers.on_chat_model_end.handle('on_chat_model_end', {
+      output: { tool_calls: [{ id: CALL_ID, args: { sql: 'SELECT 1' } }] },
+    });
+    finalizeStream();
+
+    const argumentsDone = events.find(
+      (event) => event.type === 'response.function_call_arguments.done',
+    );
+
+    expect(argumentsDone).toMatchObject({
+      call_id: CALL_ID,
+      arguments: '{"sql":"SELECT 1"}',
+    });
+  });
+
+  /**
    * A mixed batch answers the client call server-side, which can terminate it
    * through `on_tool_end` after all. Finalization must not emit a second pair
    * for a call that already closed.
