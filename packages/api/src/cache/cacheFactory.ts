@@ -36,6 +36,13 @@ import { violationFile } from './keyvFiles';
 const inMemoryCacheMap = new Map<string, Keyv>();
 
 /**
+ * Memoized Redis Keyv instances keyed by namespace.
+ * Prevents allocating redundant Keyv+KeyvRedis pairs and leaking EventEmitter listeners
+ * on the shared keyvRedisClient when standardCache is repeatedly invoked for the same namespace.
+ */
+const redisCacheMap = new Map<string, Keyv>();
+
+/**
  * Deletes every key under a namespace through the raw client, which is the one
  * write path that bypasses the Keyv error funnel; READONLY rejections are routed
  * to failover recovery before propagating.
@@ -66,9 +73,9 @@ async function clearRedisNamespace(namespace: string): Promise<void> {
 /**
  * Creates a cache instance using Redis or a fallback store. Suitable for general caching needs.
  *
- * **In-memory mode** (no Redis, no custom fallbackStore): instances are memoized by
- * namespace so that every call-site shares the same underlying `Map`. The first
- * caller's TTL wins for a given namespace.
+ * Instances are memoized by namespace (for both Redis and in-memory modes) so that every call-site
+ * shares the same underlying instance and prevents EventEmitter listener leaks on shared Redis clients.
+ * The first caller's TTL wins for a given namespace.
  *
  * @param namespace - The cache namespace.
  * @param ttl - Time to live for cache entries.
@@ -77,6 +84,10 @@ async function clearRedisNamespace(namespace: string): Promise<void> {
  */
 export const standardCache = (namespace: string, ttl?: number, fallbackStore?: object): Keyv => {
   if (keyvRedisClient && !cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(namespace)) {
+    const existing = redisCacheMap.get(namespace);
+    if (existing) {
+      return existing;
+    }
     try {
       const keyvRedis = new KeyvRedis(keyvRedisClient);
       const cache = new Keyv(keyvRedis, { namespace, ttl });
@@ -93,7 +104,9 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
       // Workaround for issue #10487 https://github.com/danny-avila/LibreChat/issues/10487
       cache.clear = () => clearRedisNamespace(namespace);
 
-      return instrumentRedisCache(cache, namespace);
+      const instrumentedCache = instrumentRedisCache(cache, namespace);
+      redisCacheMap.set(namespace, instrumentedCache);
+      return instrumentedCache;
     } catch (err) {
       logger.error(`Failed to create Redis cache for namespace ${namespace}:`, err);
       throw err;
