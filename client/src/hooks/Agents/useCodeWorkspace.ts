@@ -22,8 +22,12 @@ import type {
   TConversation,
   TPublicCodeEnvironment,
 } from 'librechat-data-provider';
+import {
+  useCodeEnvironmentStatusQueries,
+  useGetStartupConfig,
+  useIsReplacingConversationCodeEnvironment,
+} from '~/data-provider';
 import { collectReachableAgents, findExecutionEnvironment } from './useCodeApprovalMode';
-import { useCodeEnvironmentStatusQueries, useGetStartupConfig } from '~/data-provider';
 import { useWorkspacePreferences } from './workspacePreferences';
 import useAgentToolPermissions from './useAgentToolPermissions';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
@@ -156,6 +160,7 @@ export default function useCodeWorkspace(
    *  `locked` or an empty target set it calls `invalid`. */
   const supportsEnvironmentTransitions =
     startupConfig?.codeEnvironmentTransitionVersion === CODE_ENVIRONMENT_TRANSITION_VERSION;
+  const replacingDecision = useIsReplacingConversationCodeEnvironment();
   const preferences = useWorkspacePreferences(conversation?.agent_id);
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
   const canRunCode = useHasAccess({
@@ -399,6 +404,14 @@ export default function useCodeWorkspace(
       | { codeEnvironmentMode?: CodeEnvironmentMode; codeWorkspaces?: CodeWorkspaceSelection[] }
       | undefined => {
       if (!required) return {};
+      /**
+       * A replacement in flight has no decided answer yet. The server checks for active work
+       * before it polls the target workspace, so a turn submitted during that poll starts under
+       * the decision being replaced, runs without the workspace its owner just chose, and the
+       * replacement still lands afterwards because the stored decision it swaps is unchanged.
+       * Nothing reports that to the reader, so the send waits instead.
+       */
+      if (replacingDecision) return undefined;
       const requestedMode =
         candidateMode ??
         inferredMode ??
@@ -418,7 +431,7 @@ export default function useCodeWorkspace(
         ? undefined
         : { codeEnvironmentMode: 'attached', codeWorkspaces };
     },
-    [inferredMode, required, resolveSelections, supportsEnvironmentDecisions],
+    [inferredMode, replacingDecision, required, resolveSelections, supportsEnvironmentDecisions],
   );
   const canSubmit = resolveSubmission(storedSelections, conversation?.codeEnvironmentMode) != null;
   let transition: CodeWorkspaceTransition | undefined;

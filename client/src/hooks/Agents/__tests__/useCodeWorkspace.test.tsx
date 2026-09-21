@@ -6,6 +6,7 @@ import useCodeWorkspace from '../useCodeWorkspace';
 const mockAgentPermissions = jest.fn();
 const mockAgentsConfig = jest.fn();
 const mockStatus = jest.fn();
+const mockReplacingDecision = jest.fn();
 const mockStartupConfig = jest.fn();
 const mockAgentsMap = jest.fn();
 const mockAccess = jest.fn();
@@ -27,6 +28,7 @@ jest.mock('~/Providers', () => ({ useAgentsMapContext: () => mockAgentsMap() }))
 jest.mock('~/data-provider', () => ({
   useCodeEnvironmentStatusQueries: (...args: unknown[]) => mockStatus(...args),
   useGetStartupConfig: () => ({ data: mockStartupConfig() }),
+  useIsReplacingConversationCodeEnvironment: () => mockReplacingDecision(),
 }));
 
 const conversation = (codeWorkspaces?: TConversation['codeWorkspaces']): TConversation =>
@@ -42,6 +44,7 @@ describe('useCodeWorkspace', () => {
     mockPreference.mockReset();
     mockRememberPreference.mockReset();
     mockAccess.mockReturnValue(true);
+    mockReplacingDecision.mockReturnValue(false);
     mockStartupConfig.mockReturnValue({ codeEnvironmentDecisionVersion: 1 });
     mockAgentPermissions.mockReturnValue({
       tools: [Tools.execute_code],
@@ -98,6 +101,21 @@ describe('useCodeWorkspace', () => {
       expect(mockStatus).toHaveBeenLastCalledWith(['personal-vm'], false);
     },
   );
+
+  /* The server checks for active work before it polls the target workspace, so a turn submitted
+   * during that poll runs under the decision being replaced while the replacement still lands. */
+  it('withholds submission while a decision replacement is in flight', () => {
+    mockReplacingDecision.mockReturnValue(true);
+
+    const { result } = renderHook(() =>
+      useCodeWorkspace({ ...conversation(), conversationId: 'existing' } as TConversation),
+    );
+
+    expect(result.current.canSubmit).toBe(false);
+    expect(result.current.resolveSubmission()).toBeUndefined();
+    /** The control stays reachable, so the reader sees where the chat runs while it settles. */
+    expect(result.current.visible).toBe(true);
+  });
 
   it('selects one unambiguous initial workspace', () => {
     const { result } = renderHook(() => useCodeWorkspace(conversation()));

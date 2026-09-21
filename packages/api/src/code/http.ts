@@ -408,10 +408,12 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     if (conversation == null) {
       return res.status(404).json({ error: 'Conversation was not found' });
     }
-    if (isGenerationActive(job) || conversationRunIds.length > 0) {
-      return res
+    const busyResponse = () =>
+      res
         .status(409)
         .json({ error: 'Wait for the current response to finish before moving this conversation' });
+    if (isGenerationActive(job) || conversationRunIds.length > 0) {
+      return busyResponse();
     }
 
     let move: ConversationCodeEnvironmentMove;
@@ -434,6 +436,22 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
         return selectionErrorResponse(error, res);
       }
       throw error;
+    }
+
+    /**
+     * Revalidating the workspaces above is a network round trip to each worker, so the checks that
+     * preceded it are stale by the time it returns: a turn submitted in that window starts under
+     * the decision this is about to replace, and the swap still succeeds because the stored
+     * decision it expects has not changed. That turn would run in the previous environment while
+     * the conversation reports the new one. Re-reading immediately before the swap leaves only the
+     * instant the compare-and-swap itself covers.
+     */
+    const [pendingJob, pendingRunIds] = await Promise.all([
+      generations.getJob(conversationId),
+      generations.getCleanupBlockingJobIdsForConversations(userId, [conversationId], tenantId),
+    ]);
+    if (isGenerationActive(pendingJob) || pendingRunIds.length > 0) {
+      return busyResponse();
     }
 
     const moved = await conversations.replaceDecision({

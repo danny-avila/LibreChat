@@ -1828,6 +1828,41 @@ describe('moving a sealed conversation code-environment decision', () => {
     expect(replaceDecision).not.toHaveBeenCalled();
   });
 
+  /* Revalidating the target is a round trip to the worker, so the earlier checks are stale when it
+   * returns. A turn that starts in that window would run in the previous environment while the
+   * conversation reports the new one, and the swap would still succeed: the stored decision it
+   * expects is unchanged, because a run never rewrites one the conversation already holds. */
+  test('refuses when a generation starts while the target worker is being checked', async () => {
+    const job: CodeEnvironmentGenerationJob = {
+      status: 'complete',
+      metadata: { terminalPersistencePending: false },
+    };
+    const fetchImpl = jest.fn().mockImplementation(async () => {
+      job.status = 'running';
+      return workerStatusResponse();
+    });
+    const { move, conversations, replaceDecision } = setup({ job, fetchImpl });
+
+    const res = await move({ from: [mac], to: [vm] });
+
+    expect(res.statusCode).toBe(409);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(replaceDecision).not.toHaveBeenCalled();
+    expect(conversations.get('conversation-1')?.codeWorkspaces).toEqual([mac]);
+  });
+
+  test('refuses when a remote run claims the conversation during that check', async () => {
+    const runIds: string[] = [];
+    const fetchImpl = jest.fn().mockImplementation(async () => {
+      runIds.push('resp_remote-run');
+      return workerStatusResponse();
+    });
+    const { move, replaceDecision } = setup({ conversationRunIds: runIds, fetchImpl });
+
+    expect((await move({ from: [mac], to: [vm] })).statusCode).toBe(409);
+    expect(replaceDecision).not.toHaveBeenCalled();
+  });
+
   test('moves once the previous generation has settled and saved', async () => {
     const { move } = setup({
       job: { status: 'complete', metadata: { terminalPersistencePending: false } },

@@ -1,5 +1,11 @@
-import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { DynamicQueryKeys, MutationKeys, QueryKeys, dataService } from 'librechat-data-provider';
+import {
+  useIsMutating,
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import type {
   TConversation,
   CodeEnvironmentUserSettings,
@@ -87,6 +93,16 @@ export function useUpdateCodeEnvironmentSettingsMutation() {
       queryClient.invalidateQueries([QueryKeys.endpoints]);
     },
   });
+}
+
+/**
+ * Whether a conversation's sealed decision is being replaced right now. The server checks for
+ * active work before it polls the target workspace, so a turn submitted during that poll starts
+ * under the decision being replaced and silently runs without the workspace its owner just chose.
+ * Callers use this to withhold submission until the replacement settles.
+ */
+export function useIsReplacingConversationCodeEnvironment(): boolean {
+  return useIsMutating([MutationKeys.moveConversationCodeEnvironment]) > 0;
 }
 
 /** Keeps every cached copy of the conversation on the decision the server just persisted. */
