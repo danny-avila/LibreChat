@@ -19,12 +19,12 @@ import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { getActivityLabelText } from '~/utils/activityLabels';
 import { getOutcomeStatus, summarizeSpan } from './outcome';
 import { ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from './rows';
+import { sandboxStartingByToolCallId } from '~/store';
 import { StackedToolIcons } from './ToolOutput';
 import { getSourceDomains } from './sources';
 import { mapAttachments } from '~/utils/map';
 import SearchVerticals from './verticals';
 import { AttachmentGroup } from './Parts';
-import { sandboxStartingByToolCallId } from '~/store';
 import { cn } from '~/utils';
 
 /** Matches `EXPAND_TRANSITION` so the panel and the label ticker resolve on
