@@ -437,10 +437,21 @@ export default function useCodeWorkspace(
       ),
       targets: environmentResults.filter((result) => result.state === 'choose'),
     };
+    /**
+     * A transition replaces the decision whole, so one that named only some of the environments
+     * the agents use would seal a decision the next turn refuses: `resolveSelections` resolves
+     * every environment or none. An environment that is unreachable, missing its workspace or on
+     * an outdated worker is neither carried over nor selectable, so no set of picks covers it, and
+     * offering the transition anyway would trade one dead end for a sealed one that needs a second
+     * transition to escape. Leaving attached execution stays available, since that is the escape.
+     */
+    const coversEveryEnvironment =
+      base.retained.length + base.targets.length === environmentResults.length;
     if (
       state === 'without_attached' &&
       conversation.codeEnvironmentMode === 'without_attached' &&
-      base.targets.length > 0
+      base.targets.length > 0 &&
+      coversEveryEnvironment
     ) {
       /** Only a decision this chat actually recorded is sealed, so a chat that merely lacks the
        *  fields still chooses in the composer and needs no transition. */
@@ -450,7 +461,9 @@ export default function useCodeWorkspace(
       (storedSelections?.length ?? 0) > 0 &&
       (state === 'choose' || !canSubmit)
     ) {
-      transition = { ...base, kind: 'move', detachable: true };
+      transition = coversEveryEnvironment
+        ? { ...base, kind: 'move', detachable: true }
+        : { ...base, kind: 'move', detachable: true, retained: [], targets: [] };
       if (state === 'choose') state = 'relocatable';
     }
   }

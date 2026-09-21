@@ -31,7 +31,9 @@ describe('resolveCodeEnvironmentMoveVersion', () => {
     }) as unknown as AppConfig;
 
   it('advertises moves only where the effective policy enables them', () => {
-    expect(resolveCodeEnvironmentMoveVersion(withMoves({ enabled: true }))).toBe(1);
+    /* Version 2 is the protocol that adds attaching and detaching to the existing move; a client
+     * must see it before offering either, so this pins the advertised number. */
+    expect(resolveCodeEnvironmentMoveVersion(withMoves({ enabled: true }))).toBe(2);
   });
 
   it.each([undefined, {}, { enabled: false }])(

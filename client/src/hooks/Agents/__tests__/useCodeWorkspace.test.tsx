@@ -483,7 +483,7 @@ describe('useCodeWorkspace', () => {
     beforeEach(() => {
       mockStartupConfig.mockReturnValue({
         codeEnvironmentDecisionVersion: 1,
-        codeEnvironmentMoveVersion: 1,
+        codeEnvironmentMoveVersion: 2,
       });
     });
 
@@ -568,8 +568,8 @@ describe('useCodeWorkspace', () => {
     });
 
     it.each([
-      { codeEnvironmentDecisionVersion: 1, codeEnvironmentMoveVersion: 1 },
-      { codeEnvironmentMoveVersion: 1 },
+      { codeEnvironmentDecisionVersion: 1, codeEnvironmentMoveVersion: 2 },
+      { codeEnvironmentMoveVersion: 2 },
     ])('carries over a sealed workspace the agents still use: %j', (startupConfig) => {
       mockStartupConfig.mockReturnValue(startupConfig);
       const primary = {
@@ -620,6 +620,98 @@ describe('useCodeWorkspace', () => {
       expect(result.current.transition?.targets.map(({ environment }) => environment.id)).toEqual([
         'team-vm',
       ]);
+    });
+
+    /** A second machine the agents use that no set of picks can cover: unreachable, so it is
+     *  neither carried over nor selectable. */
+    const withUnreachableSecondEnvironment = () => {
+      const primary = {
+        id: 'agent_primary',
+        stateful_code_sessions: true,
+        code_environment_id: 'personal-vm',
+        tools: [Tools.execute_code],
+        subagents: { enabled: true, agent_ids: ['child'] },
+      };
+      mockAgentPermissions.mockImplementation((id?: string) => ({
+        agent: id === 'agent_primary' ? primary : undefined,
+        tools: id === 'agent_primary' ? primary.tools : undefined,
+      }));
+      mockAgentsMap.mockReturnValue({
+        child: {
+          id: 'child',
+          stateful_code_sessions: true,
+          code_environment_id: 'team-vm',
+          tools: [Tools.execute_code],
+        },
+      });
+      mockAgentsConfig().agentsConfig.statefulCodeSessions.environments.push({
+        id: 'team-vm',
+        name: 'Team VM',
+        type: 'attached',
+        baseURL: 'https://two.example.com',
+      });
+      mockStatus.mockReturnValue([mockStatus()[0], { isLoading: false, isError: true }]);
+    };
+
+    /* A transition replaces the decision whole, so one that named only the reachable machines
+     * would seal a decision the next turn refuses, trading one dead end for a sealed one. */
+    it('refuses to attach while another machine the agents use is unreachable', () => {
+      withUnreachableSecondEnvironment();
+
+      const { result } = renderHook(() =>
+        useCodeWorkspace({
+          ...conversation(),
+          conversationId: 'existing',
+          codeEnvironmentMode: 'without_attached',
+        } as TConversation),
+      );
+
+      /** The chat keeps running without a workspace, which an unreachable machine does not change. */
+      expect(result.current.state).toBe('without_attached');
+      expect(result.current.canSubmit).toBe(true);
+      /** Already running without a workspace, so there is nothing to escape to. */
+      expect(result.current.transition).toBeUndefined();
+      expect(result.current.visible).toBe(true);
+    });
+
+    it('offers only to continue without a workspace when a machine cannot be covered', () => {
+      withUnreachableSecondEnvironment();
+      const kept = { environmentId: 'personal-vm', workspaceId: 'project-a' };
+
+      const { result } = renderHook(() => useCodeWorkspace(sealed([kept])));
+
+      expect(result.current.state).toBe('unavailable');
+      expect(result.current.canSubmit).toBe(false);
+      /** No partial decision on offer: an empty target set is the detach, and that is the escape. */
+      expect(result.current.transition).toEqual(
+        expect.objectContaining({
+          kind: 'move',
+          detachable: true,
+          from: [kept],
+          retained: [],
+          targets: [],
+        }),
+      );
+    });
+
+    /* A deployment advertising the move-only protocol refuses an attach as `locked` and an empty
+     * target set as `invalid`, so a client must not offer either to it. */
+    it('offers no transition to a deployment that only supports moves', () => {
+      mockStartupConfig.mockReturnValue({
+        codeEnvironmentDecisionVersion: 1,
+        codeEnvironmentMoveVersion: 1,
+      });
+      mockAgentsConfig().agentsConfig.statefulCodeSessions.environments.push({
+        id: 'mac',
+        name: 'Danny Mac',
+        type: 'attached',
+        baseURL: 'https://code.example.com',
+      });
+
+      const { result } = renderHook(() => useCodeWorkspace(sealed([mac])));
+
+      expect(result.current.state).toBe('choose');
+      expect(result.current.transition).toBeUndefined();
     });
 
     it('waits for the new machine before offering a move', () => {
@@ -705,7 +797,7 @@ describe('useCodeWorkspace', () => {
       { name: 'the API cannot move chats', config: { codeEnvironmentDecisionVersion: 1 } },
       {
         name: 'no machine is reachable',
-        config: { codeEnvironmentDecisionVersion: 1, codeEnvironmentMoveVersion: 1 },
+        config: { codeEnvironmentDecisionVersion: 1, codeEnvironmentMoveVersion: 2 },
         status: { isLoading: false, isError: true },
       },
     ])('still reports a chat running without a workspace when $name', ({ config, status }) => {
@@ -746,7 +838,7 @@ describe('useCodeWorkspace', () => {
      * decision its owner never made: nothing to select, and Send disabled. */
     it.each([
       { support: { codeEnvironmentDecisionVersion: 1 } },
-      { support: { codeEnvironmentDecisionVersion: 1, codeEnvironmentMoveVersion: 1 } },
+      { support: { codeEnvironmentDecisionVersion: 1, codeEnvironmentMoveVersion: 2 } },
     ])('lets a saved chat with several workspaces choose one', ({ support }) => {
       mockStartupConfig.mockReturnValue(support);
       mockStatus()[0].data.workspaces.push({ id: 'project-b', name: 'Project B' });
