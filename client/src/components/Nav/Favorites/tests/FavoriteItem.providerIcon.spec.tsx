@@ -14,10 +14,10 @@ jest.mock('~/hooks', () => ({
   }),
 }));
 
-const endpointsConfig = {
-  AnthropicClaude: { iconURL: 'anthropic' },
-  MetaLlama: { iconURL: '/assets/meta-llama.png' },
-} as unknown as TEndpointsConfig;
+const endpointsConfig: TEndpointsConfig = {
+  AnthropicClaude: { iconURL: 'anthropic', order: 0 },
+  MetaLlama: { iconURL: '/assets/meta-llama.png', order: 1 },
+};
 
 const claudeModel: FavoriteModel = {
   model: 'claude-sonnet-4-5',
