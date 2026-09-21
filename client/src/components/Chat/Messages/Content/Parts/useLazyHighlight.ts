@@ -121,6 +121,11 @@ export default function useLazyHighlight(
     }
     scheduledKey.current = key;
     prevThrottleMs.current = throttleMs;
+    /** A new cadence only reschedules a waiting timer. Work already started
+     *  for this same input may finish, and completed tokens need no new pass. */
+    if (!keyChanged && timer.current === null) {
+      return;
+    }
     generation.current += 1;
     if (keyChanged) {
       setHighlighted(null);
