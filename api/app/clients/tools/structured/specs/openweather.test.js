@@ -43,7 +43,9 @@ function mockOpenWeather({
     if (url.includes('/timeline/1day')) {
       return jsonResponse(
         daily ?? {
-          data: [{ dt: 1583280000, temp: { day: 293.15, night: 283.15, morn: 283.15, eve: 288.15 } }],
+          data: [
+            { dt: 1583280000, temp: { day: 293.15, night: 283.15, morn: 283.15, eve: 288.15 } },
+          ],
         },
       );
     }

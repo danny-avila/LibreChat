@@ -121,8 +121,6 @@ describe('OpenWeather 4.0 normalizers', () => {
       units: 'imperial',
     });
 
-    expect(result.weather_overview).toBe(
-      'Temperatures range from 7.4°F to 21.9°F. Few clouds.',
-    );
+    expect(result.weather_overview).toBe('Temperatures range from 7.4°F to 21.9°F. Few clouds.');
   });
 });

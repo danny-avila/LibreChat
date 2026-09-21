@@ -136,7 +136,9 @@ function formatOverviewFromCurrent(record: OneCallRecord, units: string): string
   }
   const suffix = unitSuffix(units);
   const feels =
-    typeof record.feels_like === 'number' ? ` with a real feel of ${record.feels_like}${suffix}` : '';
+    typeof record.feels_like === 'number'
+      ? ` with a real feel of ${record.feels_like}${suffix}`
+      : '';
   const description = record.weather?.[0]?.description;
   const sky = description ? ` The sky is ${description}.` : '';
   return `Currently, the temperature is ${record.temp}${suffix}${feels}.${sky}`.trim();
@@ -170,7 +172,9 @@ export function synthesizeOverview(params: {
   timezone?: string;
 }): OverviewResult {
   const weather_overview =
-    (params.current != null ? formatOverviewFromCurrent(params.current, params.units) : undefined) ??
+    (params.current != null
+      ? formatOverviewFromCurrent(params.current, params.units)
+      : undefined) ??
     (params.daily != null ? formatOverviewFromDaily(params.daily, params.units) : undefined) ??
     'Weather overview is unavailable for this location.';
 

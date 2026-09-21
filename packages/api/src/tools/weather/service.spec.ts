@@ -305,9 +305,9 @@ describe('executeOpenWeather', () => {
       throw new Error('fetch should not run');
     };
 
-    expect(await executeOpenWeather({ action: 'timestamp', lat: 1, lon: 2 }, { apiKey, fetch })).toBe(
-      "Error: For timestamp action, a 'date' in YYYY-MM-DD format is required.",
-    );
+    expect(
+      await executeOpenWeather({ action: 'timestamp', lat: 1, lon: 2 }, { apiKey, fetch }),
+    ).toBe("Error: For timestamp action, a 'date' in YYYY-MM-DD format is required.");
     expect(
       await executeOpenWeather({ action: 'daily_aggregation', lat: 1, lon: 2 }, { apiKey, fetch }),
     ).toBe('Error: date (YYYY-MM-DD) is required for daily_aggregation action.');
@@ -337,7 +337,11 @@ describe('executeOpenWeather', () => {
     });
 
     const result = await executeOpenWeather(
-      { action: 'current_forecast', city: 'Knoxville, Tennessee', exclude: 'hourly,daily,minutely' },
+      {
+        action: 'current_forecast',
+        city: 'Knoxville, Tennessee',
+        exclude: 'hourly,daily,minutely',
+      },
       { apiKey, fetch },
     );
     expect(result).toBe('Error: OpenWeather API request failed with status 404: Not found');
