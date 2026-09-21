@@ -1470,6 +1470,98 @@ describe('Conversation Operations', () => {
     });
   });
 
+  describe('appendConvoMessageReference', () => {
+    const ctx = { userId: 'append-ref-user' };
+    const conversationId = 'append-ref-conversation';
+
+    const appendConvoMessageReference = (
+      ...args: Parameters<ConversationMethods['appendConvoMessageReference']>
+    ) => methods.appendConvoMessageReference(...args);
+
+    beforeEach(async () => {
+      await Conversation.deleteMany({});
+      getMessages.mockClear();
+    });
+
+    it('appends the id without reading or rewriting the message array', async () => {
+      const existing = new mongoose.Types.ObjectId();
+      await saveConvo(ctx, { conversationId, title: 'seeded' }, { appendMessageIds: [existing] });
+      getMessages.mockClear();
+
+      const recovered = new mongoose.Types.ObjectId();
+      const row = await appendConvoMessageReference(ctx.userId, conversationId, String(recovered));
+
+      expect(row?.messages?.map(String)).toEqual([existing, recovered].map(String));
+      expect(getMessages).not.toHaveBeenCalled();
+    });
+
+    it('does not duplicate an id the conversation already references', async () => {
+      const id = new mongoose.Types.ObjectId();
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [id] });
+
+      await appendConvoMessageReference(ctx.userId, conversationId, String(id));
+      await appendConvoMessageReference(ctx.userId, conversationId, String(id));
+
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual([String(id)]);
+    });
+
+    /** Repairing a reference is not activity: the sidebar orders by `updatedAt`, and
+     *  hoisting an untouched chat to Today would be a visible lie. */
+    it('leaves updatedAt alone', async () => {
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [] });
+      const before = await Conversation.findOne({ conversationId }).lean();
+
+      await appendConvoMessageReference(
+        ctx.userId,
+        conversationId,
+        String(new mongoose.Types.ObjectId()),
+      );
+
+      const after = await Conversation.findOne({ conversationId }).lean();
+      expect(after?.updatedAt?.getTime()).toBe(before?.updatedAt?.getTime());
+    });
+
+    it('never inserts a conversation that does not exist', async () => {
+      const row = await appendConvoMessageReference(
+        ctx.userId,
+        'no-such-conversation',
+        String(new mongoose.Types.ObjectId()),
+      );
+
+      expect(row).toBeNull();
+      expect(
+        await Conversation.findOne({ conversationId: 'no-such-conversation' }).lean(),
+      ).toBeNull();
+    });
+
+    /** The repair runs on a turn's own behalf, so it must never reach another owner's row. */
+    it("cannot touch another owner's conversation", async () => {
+      const owner = new mongoose.Types.ObjectId();
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [owner] });
+
+      const row = await appendConvoMessageReference(
+        'someone-else',
+        conversationId,
+        String(new mongoose.Types.ObjectId()),
+      );
+
+      expect(row).toBeNull();
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual([String(owner)]);
+    });
+
+    it('ignores an id the store could never hold', async () => {
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [] });
+
+      const row = await appendConvoMessageReference(ctx.userId, conversationId, 'not-an-id');
+
+      expect(row).toBeNull();
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages ?? []).toEqual([]);
+    });
+  });
+
   describe('isTemporary conversation handling', () => {
     it('should save a conversation with expiredAt when isTemporary is true', async () => {
       mockCtx.interfaceConfig = { temporaryChatRetention: 24 };

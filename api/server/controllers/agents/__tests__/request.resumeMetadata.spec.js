@@ -70,6 +70,7 @@ const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
 const mockSaveMessage = jest.fn();
 const mockSaveConvo = jest.fn();
+const mockAppendConvoMessageReference = jest.fn();
 const mockIsAgentTriggerPrincipalActive = jest.fn();
 const mockIsSubagentOwnerAdmissible = jest.fn();
 const mockAcquireEventChildGenerationLease = jest.fn();
@@ -376,6 +377,7 @@ jest.mock('~/cache', () => ({
 jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
   saveConvo: (...args) => mockSaveConvo(...args),
+  appendConvoMessageReference: (...args) => mockAppendConvoMessageReference(...args),
   getMessages: (...args) => mockGetMessages(...args),
   getConvo: (...args) => mockGetConvo(...args),
   getAgentEventActorSnapshot: (...args) => mockGetAgentEventActorSnapshot(...args),
@@ -523,6 +525,7 @@ describe('ResumableAgentController resume metadata', () => {
     mockGenerationJobManager.steering.consumeRecovered.mockResolvedValue(true);
     mockSaveMessage.mockResolvedValue({});
     mockSaveConvo.mockResolvedValue({});
+    mockAppendConvoMessageReference.mockResolvedValue({});
     mockDeleteAgentCheckpoint.mockResolvedValue(undefined);
     mockSettleAgentQueuedTurnExecutionAdmission.mockResolvedValue(true);
     mockVerifyAgentQueuedTurnExecutionAdmission.mockResolvedValue(true);
@@ -6051,9 +6054,9 @@ describe('ResumableAgentController resume metadata', () => {
       });
 
       const appendedIdsFor = (conversationId) =>
-        mockSaveConvo.mock.calls
-          .filter((call) => call[1]?.conversationId === conversationId && call[2]?.appendMessageIds)
-          .map((call) => call[2].appendMessageIds);
+        mockAppendConvoMessageReference.mock.calls
+          .filter((call) => call[1] === conversationId)
+          .map((call) => call[2]);
 
       it('appends the recovered reference when no write reported the conversation', async () => {
         const turn = await startHeldFirstTurn({
@@ -6063,11 +6066,11 @@ describe('ResumableAgentController resume metadata', () => {
 
         await turn.finish();
 
-        expect(appendedIdsFor(turn.conversationId())).toEqual([['user-row-id']]);
-        expect(mockSaveConvo).toHaveBeenCalledWith(
-          expect.anything(),
-          expect.objectContaining({ conversationId: turn.conversationId() }),
-          expect.objectContaining({ noUpsert: true, appendMessageIds: ['user-row-id'] }),
+        expect(appendedIdsFor(turn.conversationId())).toEqual(['user-row-id']);
+        expect(mockAppendConvoMessageReference).toHaveBeenCalledWith(
+          'user-123',
+          turn.conversationId(),
+          'user-row-id',
         );
       });
 
@@ -6096,7 +6099,7 @@ describe('ResumableAgentController resume metadata', () => {
 
         await turn.finish();
 
-        expect(appendedIdsFor(turn.conversationId())).toEqual([['user-row-id']]);
+        expect(appendedIdsFor(turn.conversationId())).toEqual(['user-row-id']);
       });
 
       /** The response row has the same exposure: its write can report the conversation
@@ -6116,7 +6119,89 @@ describe('ResumableAgentController resume metadata', () => {
 
         await turn.finish();
 
-        expect(appendedIdsFor(turn.conversationId())).toEqual([['response-row-id']]);
+        expect(appendedIdsFor(turn.conversationId())).toEqual(['response-row-id']);
+      });
+
+      /** A first turn that pauses for approval never reaches the terminal, so its rows
+       *  cannot wait for one. The paused response is saved bare, and the title write that
+       *  used to rebuild the array in passing no longer does. */
+      describe('a first turn paused for approval', () => {
+        const runPausedFirstTurn = async ({ clientOverrides } = {}) => {
+          mockGenerationJobManager.approvals.ownsPausePersistence.mockResolvedValue(true);
+          const client = {
+            options: {},
+            savedMessageIds: new Set(),
+            skipSaveUserMessage: false,
+            pendingApproval: { actionId: 'action-paused-reference' },
+            ...clientOverrides,
+            sendMessage: jest.fn(async (_text, options) => {
+              options.onStart(
+                {
+                  messageId: 'user-msg',
+                  parentMessageId: Constants.NO_PARENT,
+                  conversationId: options.conversationId,
+                  text: 'First message',
+                },
+                'response-msg',
+              );
+              options.getReqData({
+                userMessagePromise: Promise.resolve({
+                  message: { _id: 'user-row-id' },
+                  conversation: { conversationId: options.conversationId },
+                }),
+              });
+              return { messageId: 'response-msg', conversationId: options.conversationId };
+            }),
+          };
+
+          await AgentController(
+            {
+              user: { id: 'user-123' },
+              body: {
+                text: 'First message',
+                messageId: 'user-msg',
+                parentMessageId: Constants.NO_PARENT,
+                conversationId: 'new',
+                endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+              },
+              config: {},
+            },
+            createResumableResponse(),
+            jest.fn(),
+            jest.fn().mockResolvedValue({ client }),
+            jest.fn(async () => {}),
+          );
+          await nextTick();
+          await nextTick();
+        };
+
+        it('appends the paused response reference', async () => {
+          await runPausedFirstTurn();
+
+          expect(mockAppendConvoMessageReference).toHaveBeenCalledTimes(1);
+          expect(mockAppendConvoMessageReference).toHaveBeenCalledWith(
+            'user-123',
+            expect.any(String),
+            'response-row-id',
+          );
+        });
+
+        /** The BaseClient re-save reports its own conversation write, which the signal
+         *  never saw through `getReqData`, so it must not be appended twice. */
+        it('does not append the user reference its re-save already recorded', async () => {
+          await runPausedFirstTurn({
+            clientOverrides: {
+              getSaveOptions: () => ({}),
+              saveMessageToDatabase: jest.fn().mockResolvedValue({
+                message: { _id: 'user-row-id' },
+                conversation: { conversationId: 'convo-paused' },
+              }),
+            },
+          });
+
+          const appended = mockAppendConvoMessageReference.mock.calls.map((call) => call[2]);
+          expect(appended).toEqual(['response-row-id']);
+        });
       });
 
       it('leaves the conversation alone for a turn that does not save one', async () => {

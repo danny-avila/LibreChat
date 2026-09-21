@@ -12,7 +12,7 @@ import {
   recoverTurnMessageReference,
 } from './save';
 
-type Store = Pick<ConversationMethods, 'getConvo' | 'saveConvo'> &
+type Store = Pick<ConversationMethods, 'getConvo' | 'saveConvo' | 'appendConvoMessageReference'> &
   Pick<MessageMethods, 'saveMessage'>;
 
 let mongoServer: MongoMemoryServer;
@@ -48,6 +48,7 @@ beforeAll(async () => {
   store = {
     getConvo: methods.getConvo,
     saveConvo: methods.saveConvo,
+    appendConvoMessageReference: methods.appendConvoMessageReference,
     saveMessage: methods.saveMessage,
   };
 });
@@ -221,9 +222,9 @@ describe('recoverTurnMessageReference', () => {
     expect(before?.messages?.map(String)).toEqual([String(turn.responseRow?._id)]);
 
     const wrote = await recoverTurnMessageReference(store, {
-      ctx: turn.ctx,
+      userId: turn.userId,
       conversationId: turn.conversationId,
-      savedMessageId: turn.recoveredUserRow?._id,
+      messageId: String(turn.recoveredUserRow?._id),
       alreadyRecorded: false,
       managesConversation: true,
       context: 'save.spec recovery',
@@ -239,9 +240,9 @@ describe('recoverTurnMessageReference', () => {
   it('is idempotent, so a repeated recovery cannot duplicate the reference', async () => {
     const turn = await runFailedUserWriteTurn();
     const recovery = {
-      ctx: turn.ctx,
+      userId: turn.userId,
       conversationId: turn.conversationId,
-      savedMessageId: turn.recoveredUserRow?._id,
+      messageId: String(turn.recoveredUserRow?._id),
       alreadyRecorded: false,
       managesConversation: true,
       context: 'save.spec recovery',
@@ -256,51 +257,71 @@ describe('recoverTurnMessageReference', () => {
     );
   });
 
+  /** A repair is bookkeeping beside an already-durable row, so it reorders nothing. */
+  it('does not count as activity, leaving the sidebar order alone', async () => {
+    const turn = await runFailedUserWriteTurn();
+    const before = await store.getConvo(turn.userId, turn.conversationId);
+
+    await recoverTurnMessageReference(store, {
+      userId: turn.userId,
+      conversationId: turn.conversationId,
+      messageId: String(turn.recoveredUserRow?._id),
+      alreadyRecorded: false,
+      managesConversation: true,
+      context: 'save.spec recovery',
+    });
+
+    const after = await store.getConvo(turn.userId, turn.conversationId);
+    expect(after?.updatedAt?.getTime()).toBe(before?.updatedAt?.getTime());
+  });
+
   it.each([
     ['the reference is already recorded', { alreadyRecorded: true, managesConversation: true }],
     ['the turn does not own the row', { alreadyRecorded: false, managesConversation: false }],
   ])('writes nothing when %s', async (_label, overrides) => {
     const turn = await runFailedUserWriteTurn();
-    const saveConvo = jest.spyOn(store, 'saveConvo');
+    const append = jest.spyOn(store, 'appendConvoMessageReference');
 
     const wrote = await recoverTurnMessageReference(store, {
-      ctx: turn.ctx,
+      userId: turn.userId,
       conversationId: turn.conversationId,
-      savedMessageId: turn.recoveredUserRow?._id,
+      messageId: String(turn.recoveredUserRow?._id),
       context: 'save.spec recovery',
       ...overrides,
     });
 
     expect(wrote).toBe(false);
-    expect(saveConvo).not.toHaveBeenCalled();
+    expect(append).not.toHaveBeenCalled();
   });
 
-  it('writes nothing when there is no recovered row to reference', async () => {
+  it.each([
+    ['there is no recovered row to reference', undefined],
+    ['the recovered id is empty', ''],
+  ])('writes nothing when %s', async (_label, messageId) => {
     const turn = await runFailedUserWriteTurn();
-    const saveConvo = jest.spyOn(store, 'saveConvo');
+    const append = jest.spyOn(store, 'appendConvoMessageReference');
 
     const wrote = await recoverTurnMessageReference(store, {
-      ctx: turn.ctx,
+      userId: turn.userId,
       conversationId: turn.conversationId,
-      savedMessageId: undefined,
+      messageId,
       alreadyRecorded: false,
       managesConversation: true,
       context: 'save.spec recovery',
     });
 
     expect(wrote).toBe(false);
-    expect(saveConvo).not.toHaveBeenCalled();
+    expect(append).not.toHaveBeenCalled();
   });
 
   it('never creates a row of its own', async () => {
     const userId = new mongoose.Types.ObjectId().toString();
     const conversationId = randomUUID();
-    const req = createRequest(userId);
 
     const wrote = await recoverTurnMessageReference(store, {
-      ctx: getConversationWriteContext(req),
+      userId,
       conversationId,
-      savedMessageId: new mongoose.Types.ObjectId(),
+      messageId: new mongoose.Types.ObjectId().toString(),
       alreadyRecorded: false,
       managesConversation: true,
       context: 'save.spec recovery',
@@ -308,6 +329,26 @@ describe('recoverTurnMessageReference', () => {
 
     expect(wrote).toBe(true);
     expect(await store.getConvo(userId, conversationId)).toBeNull();
+  });
+
+  /** The repair must never take a turn down with it: the message it points at is already
+   *  durable, and the reference is the only thing at stake. */
+  it('reports failure instead of throwing when the append fails', async () => {
+    const turn = await runFailedUserWriteTurn();
+    jest
+      .spyOn(store, 'appendConvoMessageReference')
+      .mockRejectedValue(new Error('Error appending the message reference'));
+
+    await expect(
+      recoverTurnMessageReference(store, {
+        userId: turn.userId,
+        conversationId: turn.conversationId,
+        messageId: String(turn.recoveredUserRow?._id),
+        alreadyRecorded: false,
+        managesConversation: true,
+        context: 'save.spec recovery',
+      }),
+    ).resolves.toBe(false);
   });
 });
 

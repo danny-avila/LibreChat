@@ -83,6 +83,7 @@ const {
   settleAgentEventActorSuspension,
   isAgentTriggerPrincipalActive,
   isSubagentOwnerAdmissible,
+  appendConvoMessageReference,
 } = require('~/models');
 const {
   acquireEventChildGenerationLease,
@@ -2199,6 +2200,20 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       let acceptsTitleEvents = true;
       const convoReady = convoSignal.ready;
       const resolveConvoReady = () => convoSignal.open();
+      /** A row this turn restored with a bare `saveMessage`, which writes the message and
+       *  never tells the conversation about it. Every such retry hands its result here. */
+      const recoverMessageReference = (savedMessage, context) =>
+        recoverTurnMessageReference(
+          { appendConvoMessageReference },
+          {
+            userId,
+            conversationId,
+            messageId: savedMessage?._id == null ? undefined : String(savedMessage._id),
+            alreadyRecorded: convoSignal.recordedMessageReference(savedMessage?._id),
+            managesConversation: !client?.skipSaveConvo,
+            context,
+          },
+        );
       /** Dedicated controller so a user Stop (or a replaced stream) cancels the
        *  in-flight title — kept separate from `job.abortController`, which
        *  `completeJob` also aborts on *successful* completion and would otherwise
@@ -2709,6 +2724,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                   if (!client.skipSaveConvo && !savedUserTurn.conversation) {
                     throw new Error('Conversation could not be persisted before HITL pause');
                   }
+                  /** This re-save reports its own conversation write, which the signal has
+                   * not seen: it does not run through `getReqData`. */
+                  convoSignal.observeMessageWrite(Promise.resolve(savedUserTurn));
                 } else {
                   // Custom clients used by integrations/tests may not inherit BaseClient.
                   const savedUserMessage = await saveMessage(
@@ -2732,6 +2750,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                   if (!savedUserMessage) {
                     throw new Error('User message could not be persisted before HITL pause');
                   }
+                  /** A custom client's bare save leaves the same gap as the retries below. */
+                  await recoverMessageReference(
+                    savedUserMessage,
+                    'api/server/controllers/agents/request.js - recovered paused user reference',
+                  );
                 }
               }
               if (!response?.messageId) {
@@ -2763,6 +2786,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               if (!savedResponseMessage) {
                 throw new Error('Paused response could not be persisted as unfinished');
               }
+              /** A paused turn may never be resumed, so this row's reference cannot wait for
+               * a terminal that might not come. The save above is bare, and the title write
+               * that used to rebuild the array in passing no longer does. */
+              await recoverMessageReference(
+                savedResponseMessage,
+                'api/server/controllers/agents/request.js - recovered paused response reference',
+              );
               await commitRecoveredSteer();
             } catch (pausePersistenceError) {
               pausePersistenceFailed = true;
@@ -2960,17 +2990,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           }
           /** The retry above restored only the Message row, so the conversation may
            * still not reference this turn. */
-          await recoverTurnMessageReference(
-            { saveConvo },
-            {
-              ctx: reqCtx,
-              conversationId,
-              savedMessageId: savedUserMessage._id,
-              alreadyRecorded: convoSignal.recordedMessageReference(savedUserMessage._id),
-              managesConversation: !client.skipSaveConvo,
-              context:
-                'api/server/controllers/agents/request.js - recovered user message reference',
-            },
+          await recoverMessageReference(
+            savedUserMessage,
+            'api/server/controllers/agents/request.js - recovered user message reference',
           );
         }
         // Only consume the parked recovery source after the explicit user-row
@@ -3015,17 +3037,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         }
         /** As for the user message above: a bare `saveMessage` restores the row
          * without telling the conversation about it. */
-        await recoverTurnMessageReference(
-          { saveConvo },
-          {
-            ctx: reqCtx,
-            conversationId,
-            savedMessageId: savedResponseMessage._id,
-            alreadyRecorded: convoSignal.recordedMessageReference(savedResponseMessage._id),
-            managesConversation: !client.skipSaveConvo,
-            context:
-              'api/server/controllers/agents/request.js - recovered response message reference',
-          },
+        await recoverMessageReference(
+          savedResponseMessage,
+          'api/server/controllers/agents/request.js - recovered response message reference',
         );
         logAgentMemorySnapshot('after_terminal_save', terminalMemoryContext);
         if (appliedEventActor != null) {
