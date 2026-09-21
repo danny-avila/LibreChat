@@ -33,7 +33,7 @@ const dailyResponse: OneCallResponse = {
   timezone: 'America/New_York',
   data: [
     {
-      dt: 1583280000,
+      dt: 1583298000,
       temp: { morn: 10.2, day: 20.4, eve: 15.6, night: 8.1, min: 7.4, max: 21.9 },
       humidity: 70,
       clouds: 12,
