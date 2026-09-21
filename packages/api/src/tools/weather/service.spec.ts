@@ -49,7 +49,7 @@ describe('executeOpenWeather', () => {
     };
     expect(help.title).toBe('OpenWeather One Call API 4.0 Help');
     expect(help.notes.some((note) => note.includes('OPENWEATHER_ONECALL_VERSION=3.0'))).toBe(true);
-    expect(help.notes.some((note) => note.includes('24h hourly'))).toBe(true);
+    expect(help.notes.some((note) => note.includes('up to 20h'))).toBe(true);
   });
 
   it('describes One Call API 3.0 when that product is selected', () => {
@@ -132,7 +132,7 @@ describe('executeOpenWeather', () => {
     expect(urls.some((url) => url.includes('/data/3.0/'))).toBe(false);
 
     const hourlyUrl = urls.find((url) => url.includes('/timeline/1h'));
-    expect(hourlyUrl).toContain('cnt=24');
+    expect(hourlyUrl).toContain('cnt=20');
 
     const currentUrl = urls.find((url) => url.includes('/onecall/current'));
     expect(currentUrl).toContain('units=standard');
@@ -216,6 +216,7 @@ describe('executeOpenWeather', () => {
 
     expect(urls[0]).toContain('/data/4.0/onecall/timeline/1h');
     expect(urls[0]).toContain(`start=${1583280000}`);
+    expect(urls[0]).toContain('cnt=20');
     expect(parsed.data[0].temp).toBe(283);
     expect(parsed.data[0].feels_like).toBe(280);
     expect(parsed.next).toBeUndefined();
@@ -223,14 +224,14 @@ describe('executeOpenWeather', () => {
     expect(raw).not.toContain('appid=');
   });
 
-  it('does not follow hourly next links by default so 24h is one billed page', async () => {
+  it('does not follow hourly next links by default so one billed page is at most 20h', async () => {
     const { fetch, urls } = createFetch((url) => {
       if (!url.pathname.endsWith('/timeline/1h')) {
         return jsonResponse({ data: [] });
       }
       return jsonResponse({
-        data: Array.from({ length: 24 }, (_, i) => ({ dt: i, temp: 10 })),
-        next: 'https://api.openweathermap.org/data/4.0/onecall/timeline/1h?start=24&appid=SECRET',
+        data: Array.from({ length: 20 }, (_, i) => ({ dt: i, temp: 10 })),
+        next: 'https://api.openweathermap.org/data/4.0/onecall/timeline/1h?start=20&appid=SECRET',
       });
     });
 
@@ -241,9 +242,9 @@ describe('executeOpenWeather', () => {
       ),
     ) as { hourly: Array<{ dt: number }> };
 
-    expect(parsed.hourly).toHaveLength(24);
+    expect(parsed.hourly).toHaveLength(20);
     expect(parsed.hourly[0].dt).toBe(0);
-    expect(parsed.hourly[23].dt).toBe(23);
+    expect(parsed.hourly[19].dt).toBe(19);
     expect(urls.filter((url) => url.includes('/timeline/1h'))).toHaveLength(1);
     expect(JSON.stringify(parsed)).not.toContain('SECRET');
   });
@@ -349,6 +350,104 @@ describe('executeOpenWeather', () => {
     expect(urls.some((url) => url.includes('/onecall/alert/abc-1'))).toBe(true);
   });
 
+  it('resolves the documented 4.0 opaque alert id and multilingual descriptions', async () => {
+    const officialAlertId =
+      '2.49.0.0.250.0.FR.20260827100603.644023:FR615:a512b287066f8f19b5b02accccec835d';
+    const officialAlert = {
+      id: officialAlertId,
+      sender_name: 'METEO-FRANCE',
+      event: '',
+      start: 1787817940,
+      end: 1787868000,
+      description: [
+        {
+          language: 'fr-FR',
+          description:
+            "Des phénomènes habituels dans la région mais occasionnellement et localement dangereux sont prévus (exemple : mistral, orage d'été, montée des eaux, fortes vagues submergeant le littoral).",
+        },
+        {
+          language: 'en-GB',
+          description:
+            'Moderate damages may occur, especially in vulnerable or in exposed areas and to people who carry out weather-related activities.',
+        },
+      ],
+      tags: ['Thunderstorm'],
+    };
+
+    const { fetch, urls } = createFetch((url) => {
+      if (url.pathname === '/data/4.0/onecall/current') {
+        return jsonResponse({
+          data: [{ temp: 20, alerts: [officialAlertId] }],
+        });
+      }
+      if (url.pathname.startsWith('/data/4.0/onecall/alert/')) {
+        const requestedId = decodeURIComponent(
+          url.pathname.slice('/data/4.0/onecall/alert/'.length),
+        );
+        if (requestedId === officialAlertId) {
+          return jsonResponse(officialAlert);
+        }
+      }
+      throw new Error(`unexpected url ${url.toString()}`);
+    });
+
+    const parsed = JSON.parse(
+      await executeOpenWeather(
+        { action: 'current_forecast', lat: 1, lon: 2, exclude: 'hourly,daily' },
+        { apiKey, fetch },
+      ),
+    ) as {
+      current: { alerts: string[] };
+      alerts: Array<{
+        id: string;
+        sender_name?: string;
+        event?: string;
+        description?: string;
+        tags?: string[];
+      }>;
+    };
+
+    expect(parsed.current.alerts).toEqual([officialAlertId]);
+    expect(parsed.alerts).toHaveLength(1);
+    expect(parsed.alerts[0].id).toBe(officialAlertId);
+    expect(parsed.alerts[0].sender_name).toBe('METEO-FRANCE');
+    expect(parsed.alerts[0].event).toBe('');
+    expect(parsed.alerts[0].tags).toEqual(['Thunderstorm']);
+    expect(parsed.alerts[0].description).toContain(
+      'Moderate damages may occur, especially in vulnerable or in exposed areas and to people who carry out weather-related activities.',
+    );
+    expect(parsed.alerts[0].description).toContain(
+      "Des phénomènes habituels dans la région mais occasionnellement et localement dangereux sont prévus (exemple : mistral, orage d'été, montée des eaux, fortes vagues submergeant le littoral).",
+    );
+    expect(urls.some((url) => url.includes(encodeURIComponent(officialAlertId)))).toBe(true);
+  });
+
+  it('skips path-navigating alert ids without requesting the detail endpoint', async () => {
+    const { fetch, urls } = createFetch((url) => {
+      if (url.pathname === '/data/4.0/onecall/current') {
+        return jsonResponse({
+          data: [{ temp: 20, alerts: ['../secret', 'foo/bar', 'abc-1'] }],
+        });
+      }
+      if (url.pathname === '/data/4.0/onecall/alert/abc-1') {
+        return jsonResponse({ event: 'Wind Advisory', sender_name: 'NWS' });
+      }
+      throw new Error(`unexpected url ${url.toString()}`);
+    });
+
+    const parsed = JSON.parse(
+      await executeOpenWeather(
+        { action: 'current_forecast', lat: 1, lon: 2, exclude: 'hourly,daily' },
+        { apiKey, fetch },
+      ),
+    ) as { alerts?: Array<{ id: string }>; errors?: string[] };
+
+    expect(parsed.alerts).toEqual([{ id: 'abc-1', event: 'Wind Advisory', sender_name: 'NWS' }]);
+    expect(parsed.errors?.some((error) => error.includes('../secret'))).toBe(true);
+    expect(parsed.errors?.some((error) => error.includes('foo/bar'))).toBe(true);
+    expect(urls.some((url) => url.includes('../') || url.includes('foo/bar'))).toBe(false);
+  });
+
   it('does not resolve alerts when they are excluded', async () => {
     const { fetch, urls } = createFetch((url) => {
       if (url.pathname === '/data/4.0/onecall/current') {
@@ -409,6 +508,39 @@ describe('executeOpenWeather', () => {
     expect(parsed.tz).toBe('America/New_York');
   });
 
+  it('returns no daily_aggregation temperature when the requested date is absent', async () => {
+    const { fetch } = createFetch((url) => {
+      if (url.pathname === '/data/4.0/onecall/timeline/1day') {
+        return jsonResponse({
+          timezone: 'UTC',
+          data: [
+            {
+              dt: Math.floor(Date.UTC(2026, 8, 22) / 1000),
+              temp: { morn: 10, day: 22, eve: 16, night: 8, min: 7, max: 23 },
+            },
+          ],
+        });
+      }
+      throw new Error(`unexpected url ${url.toString()}`);
+    });
+
+    const parsed = JSON.parse(
+      await executeOpenWeather(
+        {
+          action: 'daily_aggregation',
+          lat: 1,
+          lon: 2,
+          date: '2026-09-21',
+          units: 'Celsius',
+        },
+        { apiKey, fetch },
+      ),
+    ) as { date: string; temperature?: { afternoon?: number } };
+
+    expect(parsed.date).toBe('2026-09-21');
+    expect(parsed.temperature).toBeUndefined();
+  });
+
   it('synthesizes overview from current weather when 4.0 has no overview endpoint', async () => {
     const { fetch, urls } = createFetch((url) => {
       if (url.pathname === '/data/4.0/onecall/current') {
@@ -442,6 +574,44 @@ describe('executeOpenWeather', () => {
     expect(parsed.weather_overview).toContain('2°C');
     expect(parsed.weather_overview).toContain('-2°C');
     expect(parsed.weather_overview.length).toBeGreaterThan(0);
+  });
+
+  it('does not synthesize a dated overview from a different day', async () => {
+    const { fetch } = createFetch((url) => {
+      if (url.pathname === '/data/4.0/onecall/timeline/1day') {
+        return jsonResponse({
+          lat: 1,
+          lon: 2,
+          timezone: 'UTC',
+          data: [
+            {
+              dt: Math.floor(Date.UTC(2026, 8, 22) / 1000),
+              temp: { min: 7.4, max: 21.9, day: 22 },
+              weather: [{ description: 'few clouds' }],
+            },
+          ],
+        });
+      }
+      throw new Error(`unexpected url ${url.toString()}`);
+    });
+
+    const parsed = JSON.parse(
+      await executeOpenWeather(
+        {
+          action: 'overview',
+          lat: 1,
+          lon: 2,
+          date: '2026-09-21',
+          units: 'Celsius',
+        },
+        { apiKey, fetch },
+      ),
+    ) as { date: string; weather_overview: string };
+
+    expect(parsed.date).toBe('2026-09-21');
+    expect(parsed.weather_overview).toBe('Weather overview is unavailable for this location.');
+    expect(parsed.weather_overview).not.toContain('22');
+    expect(parsed.weather_overview).not.toContain('7');
   });
 
   it('uses One Call 3.0 endpoints when that product is selected', async () => {

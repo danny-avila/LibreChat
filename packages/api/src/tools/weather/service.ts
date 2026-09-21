@@ -32,12 +32,12 @@ const DAILY_PATH = '/data/4.0/onecall/timeline/1day';
 const ALERT_PATH_PREFIX = '/data/4.0/onecall/alert/';
 const ONE_CALL_3_PATH = '/data/3.0/onecall';
 const HOURLY_PAGE_LIMIT = 1;
-const HOURLY_RECORD_LIMIT = 24;
-const HOURLY_PAGE_SIZE = 24;
+const HOURLY_RECORD_LIMIT = 20;
+const HOURLY_PAGE_SIZE = 20;
 const DAILY_PAGE_SIZE = 10;
 const MINUTELY_COUNT = 60;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const ALERT_ID_PATTERN = /^[A-Za-z0-9._-]+$/;
+const ALERT_PATH_HAZARD = /[/\\]|\.\.|%(?:2e|2f|5c)/i;
 const EXCLUDE_PARTS = new Set(['current', 'minutely', 'hourly', 'daily', 'alerts']);
 const COORDINATE_ACTIONS = new Set([
   'current_forecast',
@@ -166,7 +166,7 @@ export function getOpenWeatherHelp(version: OpenWeatherOneCallVersion = '4.0'): 
           endpoint: 'data/4.0/onecall/current + timeline/1h + timeline/1day',
           data_provided: [
             'Current weather',
-            'Hourly forecast (24h, one page)',
+            'Hourly forecast (up to 20h, one page)',
             'Daily forecast (up to 10 days)',
             'Resolved weather alerts when IDs are present',
           ],
@@ -181,7 +181,7 @@ export function getOpenWeatherHelp(version: OpenWeatherOneCallVersion = '4.0'): 
         weather_for_timestamp: {
           endpoint: 'data/4.0/onecall/timeline/1h',
           data_provided: [
-            'Hourly weather around a date (history since 1979, forecast up to 48h ahead)',
+            'Hourly weather around a date (up to 20h per page; history since 1979, forecast up to 48h ahead)',
           ],
           required_params: [
             ['lat', 'lon', 'date (YYYY-MM-DD)'],
@@ -232,7 +232,7 @@ export function getOpenWeatherHelp(version: OpenWeatherOneCallVersion = '4.0'): 
         'By default, temperatures are returned in Celsius.',
         'You can specify units as Celsius, Kelvin, or Fahrenheit.',
         'All temperatures are rounded to the nearest degree.',
-        'One Call 4.0 bills per HTTP call. current_forecast uses current + 24h hourly (one page) + daily. Minute precipitation is omitted by default; include +minutely in exclude to fetch it (extra billed call).',
+        'One Call 4.0 bills per HTTP call. current_forecast uses current + hourly (one page, up to 20h) + daily. The 1-hour timeline returns at most 20 records per response. Minute precipitation is omitted by default; include +minutely in exclude to fetch it (extra billed call).',
         'Existing One Call 3.0 subscriptions still work. Set OPENWEATHER_ONECALL_VERSION=3.0 to keep using /data/3.0. Default is 4.0 for new keys.',
         'current_forecast maps 4.0 split endpoints onto the previous current/hourly/daily contract. Failed endpoints are noted in errors instead of failing the whole action.',
         'daily_aggregation maps 4.0 daily temp.morn/day/eve/night onto morning/afternoon/evening/night. Period humidity/cloud/pressure/wind are omitted when 4.0 does not provide them.',
@@ -419,6 +419,44 @@ function parseOneCallResponse(body: unknown): OneCallResponse {
   };
 }
 
+function isEnglishAlertLanguage(language?: string): boolean {
+  return language != null && /^en(?:-|$)/i.test(language);
+}
+
+function parseAlertDescription(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return value.length > 0 ? value : undefined;
+  }
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const entries = value.flatMap((item) => {
+    if (!isObject(item)) {
+      return [];
+    }
+    const description = asString(item.description);
+    if (description == null || description.length === 0) {
+      return [];
+    }
+    return [{ language: asString(item.language), description }];
+  });
+  if (entries.length === 0) {
+    return undefined;
+  }
+  if (entries.length === 1) {
+    return entries[0].description;
+  }
+
+  const preferred = entries.find((entry) => isEnglishAlertLanguage(entry.language)) ?? entries[0];
+  const rest = entries.filter((entry) => entry !== preferred);
+  return [preferred, ...rest]
+    .map((entry) =>
+      entry.language != null ? `[${entry.language}] ${entry.description}` : entry.description,
+    )
+    .join('\n');
+}
+
 function parseWeatherAlert(body: unknown, id: string): WeatherAlert | undefined {
   const source = isObject(body) && isObject(body.data) ? body.data : body;
   if (!isObject(source)) {
@@ -430,9 +468,16 @@ function parseWeatherAlert(body: unknown, id: string): WeatherAlert | undefined 
     event: asString(source.event),
     start: asNumber(source.start),
     end: asNumber(source.end),
-    description: asString(source.description),
+    description: parseAlertDescription(source.description),
     tags: asStringArray(source.tags),
   };
+}
+
+function isSafeAlertId(id: string): boolean {
+  if (id.length === 0 || id.includes('\0')) {
+    return false;
+  }
+  return !ALERT_PATH_HAZARD.test(id);
 }
 
 function readErrorMessage(body: unknown): string {
@@ -599,7 +644,7 @@ async function resolveAlerts(
 
   const settled = await Promise.allSettled(
     ids.map(async (id) => {
-      if (!ALERT_ID_PATTERN.test(id)) {
+      if (!isSafeAlertId(id)) {
         throw new Error(`Skipping unsafe alert id`);
       }
       const params = new URLSearchParams({ appid: deps.apiKey });

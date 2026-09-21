@@ -119,6 +119,32 @@ describe('OpenWeather 4.0 normalizers', () => {
     expect(selectDailyRecord(records, '2020-03-04', 'America/New_York')?.temp).toEqual({ day: 2 });
   });
 
+  it('returns undefined when no daily record matches the requested date', () => {
+    const records: OneCallRecord[] = [
+      { dt: Math.floor(Date.UTC(2026, 8, 22) / 1000), temp: { day: 22 } },
+    ];
+    expect(selectDailyRecord(records, '2026-09-21')).toBeUndefined();
+    expect(selectDailyRecord(records, '2026-09-21', 'UTC')).toBeUndefined();
+  });
+
+  it('does not label a different day as the requested daily_aggregation date', () => {
+    const response: OneCallResponse = {
+      lat: 1,
+      lon: 2,
+      timezone: 'UTC',
+      data: [
+        {
+          dt: Math.floor(Date.UTC(2026, 8, 22) / 1000),
+          temp: { morn: 10, day: 22, eve: 16, night: 8, min: 7, max: 23 },
+        },
+      ],
+    };
+    const result = normalizeDailyAggregation(response, '2026-09-21', 'metric', 'UTC');
+    expect(result.date).toBe('2026-09-21');
+    expect(result.temperature).toBeUndefined();
+    expect(result.precipitation).toBeUndefined();
+  });
+
   it('stringifies numeric alert ids and drops duplicates', () => {
     expect(collectAlertIds([{ alerts: ['abc', 'abc'] }, { alerts: ['def'] }])).toEqual([
       'abc',

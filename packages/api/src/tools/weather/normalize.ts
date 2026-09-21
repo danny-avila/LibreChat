@@ -185,11 +185,10 @@ export function selectDailyRecord(
   requestedDate: string,
   timeZone?: string,
 ): OneCallRecord | undefined {
-  const matched = records.find(
+  return records.find(
     (record) =>
       typeof record.dt === 'number' && dateStringInTimeZone(record.dt, timeZone) === requestedDate,
   );
-  return matched ?? records[0];
 }
 
 function precipitationTotal(record?: OneCallRecord): number | undefined {
