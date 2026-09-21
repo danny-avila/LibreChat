@@ -2966,6 +2966,7 @@ export async function createRun({
       centralTraceExportEnabled,
       user,
       traceContext: resolveRunTraceContext({ agents, conversationId, requestBody, traceContext }),
+      prompt: agents[0]?.resolved_instruction_prompt,
     }),
     ...(enableToolOutputReferences && {
       toolOutputReferences: { enabled: true },

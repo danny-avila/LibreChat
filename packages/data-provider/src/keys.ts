@@ -30,6 +30,7 @@ export enum QueryKeys {
   assistants = 'assistants',
   assistant = 'assistant',
   agents = 'agents',
+  agentInstructionPrompt = 'agentInstructionPrompt',
   agent = 'agent',
   files = 'files',
   fileConfig = 'fileConfig',

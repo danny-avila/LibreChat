@@ -103,6 +103,7 @@ const { resolveConfigServers } = require('~/server/services/MCP');
 const { getMCPManager } = require('~/config');
 const { logViolation } = require('~/cache');
 const db = require('~/models');
+const instructionPromptResolver = require('~/server/services/Agents/instructionPrompts');
 
 const filterFilesByRemoteAgentAccess = (params) =>
   filterFilesByAgentAccess({ ...params, resourceType: ResourceType.REMOTE_AGENT });
@@ -521,6 +522,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         listSkillsByAccess: skillDbMethods.listSkillsByAccess,
         listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
         getSkillByName: skillDbMethods.getSkillByName,
+        instructionPromptResolver,
         getRoleByName: db.getRoleByName,
       };
 

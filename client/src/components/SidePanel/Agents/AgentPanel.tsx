@@ -5,6 +5,8 @@ import { Button, useToastContext } from '@librechat/client';
 import { useWatch, useForm, FormProvider } from 'react-hook-form';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
+  AgentCapabilities,
+  ErrorTypes,
   MemoryScope,
   SystemRoles,
   ResourceType,
@@ -63,6 +65,13 @@ function getUpdateToastMessage(
   return localize('com_assistants_update_success_name', { name: name ?? localize('com_ui_agent') });
 }
 
+export function isAgentInstructionPromptMutationError(error: unknown): boolean {
+  const payload = (
+    error as { response?: { data?: { error?: { type?: unknown } } } } | null | undefined
+  )?.response?.data?.error;
+  return payload != null && payload.type === ErrorTypes.AGENT_INSTRUCTION_PROMPT;
+}
+
 /**
  * Normalizes the payload sent to the agent update/create endpoints.
  * Handles avatar reset requests for persistent agents independently of avatar uploads.
@@ -74,12 +83,15 @@ export function composeAgentUpdatePayload(
   data: AgentForm,
   agent_id?: string | null,
   parameterConfig?: AgentParameterConfig,
+  instructionPromptsEnabled = true,
+  instructionPromptChanged = true,
 ) {
   const {
     name,
     artifacts,
     description,
     instructions,
+    instruction_prompt,
     model: _model,
     model_parameters: currentModelParameters,
     provider: _provider,
@@ -151,7 +163,14 @@ export function composeAgentUpdatePayload(
       name,
       artifacts,
       description,
-      instructions,
+      ...(agent_id &&
+      instruction_prompt &&
+      (!instructionPromptsEnabled || !instructionPromptChanged)
+        ? {}
+        : {
+            instructions: instruction_prompt ? '' : instructions,
+            instruction_prompt: instruction_prompt ?? null,
+          }),
       model,
       provider,
       model_parameters,
@@ -566,12 +585,12 @@ export default function AgentPanel() {
     },
     onError: (err) => {
       const error = err as Error;
-      showToast({
-        message: `${localize('com_agents_update_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
-        status: 'error',
-      });
+      const message = isAgentInstructionPromptMutationError(err)
+        ? localize('com_agents_prompt_load_error')
+        : `${localize('com_agents_update_error')}${
+            error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
+          }`;
+      showToast({ message, status: 'error' });
     },
   });
 
@@ -596,12 +615,12 @@ export default function AgentPanel() {
     },
     onError: (err) => {
       const error = err as Error;
-      showToast({
-        message: `${localize('com_agents_create_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
-        status: 'error',
-      });
+      const message = isAgentInstructionPromptMutationError(err)
+        ? localize('com_agents_prompt_load_error')
+        : `${localize('com_agents_create_error')}${
+            error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
+          }`;
+      showToast({ message, status: 'error' });
     },
   });
 
@@ -613,10 +632,13 @@ export default function AgentPanel() {
         payload: basePayload,
         provider,
         model,
-      } = composeAgentUpdatePayload(data, agent_id, {
-        endpointsConfig,
-        startupConfig,
-      });
+      } = composeAgentUpdatePayload(
+        data,
+        agent_id,
+        { endpointsConfig, startupConfig },
+        agentsConfig?.capabilities?.includes(AgentCapabilities.instruction_prompts) ?? false,
+        Boolean(dirtyFields.instruction_prompt),
+      );
 
       if (agent_id) {
         if (data.avatar_action === 'upload' && isAvatarUploadOnlyDirty(dirtyFields)) {
@@ -680,6 +702,7 @@ export default function AgentPanel() {
       create,
       dirtyFields,
       endpointsConfig,
+      agentsConfig?.capabilities,
       handleAvatarUpload,
       models,
       modelsError,

@@ -959,6 +959,68 @@ export type AgentGitIdentity = {
   email: string;
 };
 
+type LibreChatInstructionPrompt =
+  | {
+      source: 'librechat';
+      promptId: string;
+      name: string;
+      version?: never;
+      versionId?: never;
+    }
+  | {
+      source: 'librechat';
+      promptId: string;
+      name: string;
+      version: number;
+      versionId: string;
+    };
+
+type LangfuseInstructionPrompt = {
+  source: 'langfuse';
+  name: string;
+  destinationId?: string;
+  version?: number;
+};
+
+export type AgentInstructionPrompt = LibreChatInstructionPrompt | LangfuseInstructionPrompt;
+
+const libreChatInstructionPromptBase = {
+  source: z.literal('librechat'),
+  promptId: z.string().min(1),
+  name: z.string().trim().min(1).max(255),
+};
+
+export const agentInstructionPromptSchema: z.ZodType<AgentInstructionPrompt> = z.union([
+  z
+    .object({
+      ...libreChatInstructionPromptBase,
+    })
+    .strict(),
+  z
+    .object({
+      ...libreChatInstructionPromptBase,
+      version: z.number().int().positive(),
+      /** Stable record identity for a pinned version, so deletion cannot retarget it. */
+      versionId: z.string().min(1),
+    })
+    .strict(),
+  z.object({
+    source: z.literal('langfuse'),
+    name: z.string().trim().min(1).max(255),
+    /** Opaque identity of the Langfuse destination selected when the reference was saved. */
+    destinationId: z.string().length(64).optional(),
+    /** Missing resolves Langfuse's automatically maintained `latest` label. */
+    version: z.number().int().positive().optional(),
+  }),
+]);
+
+export type ResolvedAgentInstructionPrompt = {
+  source: AgentInstructionPrompt['source'];
+  name: string;
+  version: number;
+  cached?: boolean;
+};
+
 export const agentGitIdentitySchema: z.ZodType<AgentGitIdentity | undefined> = z
   .object({
     name: z
@@ -988,6 +1050,9 @@ export type Agent = {
   created_at: number;
   avatar: AgentAvatar | null;
   instructions?: string | null;
+  instruction_prompt?: AgentInstructionPrompt | null;
+  /** Request-scoped metadata; never persisted with the agent. */
+  resolved_instruction_prompt?: ResolvedAgentInstructionPrompt;
   additional_instructions?: string | null;
   tools?: string[];
   tool_kwargs?: Record<string, unknown>;
@@ -1061,6 +1126,7 @@ export type AgentCreateParams = {
   avatar?: AgentAvatar | null;
   file_ids?: string[];
   instructions?: string | null;
+  instruction_prompt?: AgentInstructionPrompt | null;
   tools?: Array<FunctionTool | string>;
   provider: AgentProvider;
   model: string | null;
@@ -1095,6 +1161,7 @@ export type AgentUpdateParams = {
   avatar?: AgentAvatar | null;
   file_ids?: string[];
   instructions?: string | null;
+  instruction_prompt?: AgentInstructionPrompt | null;
   tools?: Array<FunctionTool | string>;
   tool_resources?: ToolResources;
   provider?: AgentProvider;

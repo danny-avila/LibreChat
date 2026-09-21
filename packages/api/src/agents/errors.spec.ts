@@ -5,12 +5,15 @@ import {
   getLangChainErrorCode,
   getProviderErrorMessage,
   resolveLangChainError,
+  resolveAgentInstructionPromptError,
+  getInstructionPromptErrorResponse,
   getUserFacingProviderError,
   isFatalAgentInitializationError,
   AGENT_ATTACHMENT_LIMIT_EXCEEDED,
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
   isStepLimitError,
 } from './errors';
+import { AgentInstructionPromptError } from './instructions';
 
 describe('isFatalAgentInitializationError', () => {
   it('propagates cancellation even when optional MCP fallback is allowed', () => {
@@ -35,6 +38,11 @@ describe('isFatalAgentInitializationError', () => {
     ].filter((code): code is string => typeof code === 'string'),
   )('classifies %s as fatal', (code) => {
     expect(isFatalAgentInitializationError({ code })).toBe(true);
+  });
+  it('classifies instruction prompt resolution failures as fatal', () => {
+    const error = new AgentInstructionPromptError('not_found', 'Prompt missing', 404);
+
+    expect(isFatalAgentInitializationError(error)).toBe(true);
   });
 
   it('allows skill-added MCP tools to fall back while keeping resource recovery fatal', () => {
@@ -101,6 +109,17 @@ describe('LangChain provider error text', () => {
     it('leaves codes without localized copy to the provider message', () => {
       const error = Object.assign(new Error('failed'), { lc_error_code: 'OUTPUT_PARSING_FAILURE' });
       expect(resolveLangChainError(error)).toBeUndefined();
+    });
+  });
+
+  describe('resolveAgentInstructionPromptError', () => {
+    it('returns a typed payload without exposing the backend message', () => {
+      const error = new AgentInstructionPromptError('not_found', 'Prompt missing', 404);
+
+      expect(resolveAgentInstructionPromptError(error)).toBe(
+        JSON.stringify({ type: ErrorTypes.AGENT_INSTRUCTION_PROMPT, reason: 'not_found' }),
+      );
+      expect(resolveAgentInstructionPromptError(new Error('ordinary failure'))).toBeUndefined();
     });
   });
 
@@ -253,4 +272,27 @@ describe('isStepLimitError', () => {
   ])('leaves case %# on the ordinary error path', (error) => {
     expect(isStepLimitError(error)).toBe(false);
   });
+});
+
+describe('instruction prompt management error responses', () => {
+  it('preserves the typed prompt failure envelope', () => {
+    expect(
+      getInstructionPromptErrorResponse(
+        new AgentInstructionPromptError('retrieval_failed', 'Prompt unavailable', 502, true),
+      ),
+    ).toEqual({
+      error: {
+        type: ErrorTypes.AGENT_INSTRUCTION_PROMPT,
+        code: 'retrieval_failed',
+        message: 'Prompt unavailable',
+        retryable: true,
+      },
+    });
+  });
+  it.each([undefined, null, new Error('Other failure')])(
+    'leaves unrelated failures to the caller',
+    (error) => {
+      expect(getInstructionPromptErrorResponse(error)).toBeUndefined();
+    },
+  );
 });

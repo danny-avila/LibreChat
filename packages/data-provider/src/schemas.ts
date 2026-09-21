@@ -374,6 +374,7 @@ export const defaultAgentFormValues = {
   name: '',
   description: '',
   instructions: '',
+  instruction_prompt: undefined,
   model: '',
   model_parameters: {},
   tools: [],

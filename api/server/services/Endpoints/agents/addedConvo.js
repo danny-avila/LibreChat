@@ -66,6 +66,8 @@ const loadAddedAgent = (params) =>
  *   `codeEnvAvailable`. @see InitializeAgentParams.fileSearchAvailable.
  * @param {boolean} [params.statefulSessionsAvailable] - `stateful_code_sessions`
  *   capability flag; forwarded verbatim alongside `codeEnvAvailable`.
+ * @param {import('@librechat/api').AgentInstructionPromptProvider}
+ *   params.instructionPromptResolver - Resolves versioned agent instructions.
  * @param {AbortSignal} [params.signal] - Owning run cancellation signal.
  * @returns {Promise<{userMCPAuthMap: Object|undefined}>} The updated userMCPAuthMap
  */
@@ -98,6 +100,7 @@ const processAddedConvo = async ({
   toolIntentsAvailable,
   statefulSessionsAvailable,
   memoryAvailable,
+  instructionPromptResolver,
   signal,
 }) => {
   const addedConvo = endpointOption.addedConvo;
@@ -219,6 +222,7 @@ const processAddedConvo = async ({
         listSkillsByAccess: skillDbMethods.listSkillsByAccess,
         listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,
         getSkillByName: skillDbMethods.getSkillByName,
+        instructionPromptResolver,
         getRoleByName: db.getRoleByName,
       },
     );

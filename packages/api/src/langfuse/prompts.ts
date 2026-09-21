@@ -1,0 +1,289 @@
+import { z } from 'zod';
+import {
+  LANGFUSE_PROMPT_CACHE_TTL_DEFAULT_MS,
+  LANGFUSE_PROMPT_REQUEST_TIMEOUT_DEFAULT_MS,
+} from 'librechat-data-provider';
+import type { AgentInstructionPrompt } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
+import type {
+  AgentInstructionPromptContext,
+  AgentInstructionPromptProvider,
+  AgentInstructionPromptResult,
+} from '~/agents/instructions';
+import type { LangfuseScoreDestination, LangfusePromptDestinationOptions } from './destinations';
+import { AgentInstructionPromptError } from '~/agents/instructions';
+import { getLangfuseCredentialIdentity } from './destinations';
+import { detachOnAbort } from '~/utils/promises';
+import { mergeHeaders } from '~/utils/headers';
+import { redirectPolicyFor } from './utils';
+
+const destinationPreference: Record<LangfuseScoreDestination['name'], number> = {
+  connection: 0,
+  tenant: 1,
+  central: 2,
+};
+
+const langfusePromptSchema = z.object({
+  name: z.string().min(1),
+  version: z.number().int().positive(),
+  type: z.string(),
+  prompt: z.unknown(),
+});
+
+type CacheEntry = {
+  requestId: number;
+  expiresAt: number;
+  fetchedAt: number;
+  value: AgentInstructionPromptResult;
+};
+
+export interface LangfusePromptProviderDeps {
+  resolveDestinations: (
+    appConfig?: AppConfig,
+    options?: LangfusePromptDestinationOptions,
+  ) => Promise<LangfuseScoreDestination[]>;
+  fetch: (url: string, init: RequestInit) => Promise<Response>;
+  cacheTtlMs?: number;
+  timeoutMs?: number;
+  now?: () => number;
+}
+
+function isLangfuseReference(
+  reference: AgentInstructionPrompt,
+): reference is Extract<AgentInstructionPrompt, { source: 'langfuse' }> {
+  return reference.source === 'langfuse';
+}
+
+function destinationId(destination: LangfuseScoreDestination): string {
+  return destination.id ?? getLangfuseCredentialIdentity(destination);
+}
+
+function cacheKey(destination: LangfuseScoreDestination, name: string, version?: number): string {
+  return `${getLangfuseCredentialIdentity(destination)}:${name}:${version ?? 'latest'}`;
+}
+
+function pruneExpiredEntries(
+  cache: Map<string, CacheEntry>,
+  currentKey: string,
+  currentTime: number,
+  activeRequests: Map<string, { count: number }>,
+) {
+  for (const [key, entry] of cache) {
+    if (key !== currentKey && entry.expiresAt <= currentTime && !activeRequests.has(key)) {
+      cache.delete(key);
+    }
+  }
+}
+
+function promptUrl(destination: LangfuseScoreDestination, name: string, version?: number): string {
+  const params = new URLSearchParams(
+    version == null ? { label: 'latest' } : { version: String(version) },
+  );
+  return `${destination.baseUrl.replace(/\/+$/, '')}/api/public/v2/prompts/${encodeURIComponent(name)}?${params.toString()}`;
+}
+
+function transientError(status: number): AgentInstructionPromptError {
+  if (status === 429) {
+    return new AgentInstructionPromptError(
+      'retrieval_failed',
+      'Langfuse is rate limiting prompt retrieval',
+      503,
+      true,
+    );
+  }
+  return new AgentInstructionPromptError(
+    'retrieval_failed',
+    'Langfuse could not retrieve the selected prompt',
+    502,
+    true,
+  );
+}
+
+function statusError(status: number): AgentInstructionPromptError {
+  if (status === 401 || status === 403) {
+    return new AgentInstructionPromptError(
+      'access_denied',
+      'Langfuse denied access to the selected prompt',
+      403,
+    );
+  }
+  if (status === 404) {
+    return new AgentInstructionPromptError(
+      'not_found',
+      'The selected Langfuse prompt or version no longer exists',
+      404,
+    );
+  }
+  if (status === 429 || status >= 500) {
+    return transientError(status);
+  }
+  return new AgentInstructionPromptError(
+    'retrieval_failed',
+    `Langfuse rejected prompt retrieval with status ${status}`,
+    502,
+  );
+}
+
+function parsePrompt(value: unknown): AgentInstructionPromptResult {
+  const parsed = langfusePromptSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new AgentInstructionPromptError(
+      'invalid_response',
+      'Langfuse returned an invalid prompt response',
+      502,
+    );
+  }
+  if (parsed.data.type !== 'text' || typeof parsed.data.prompt !== 'string') {
+    throw new AgentInstructionPromptError(
+      'unsupported_type',
+      'Agent instructions require a Langfuse text prompt',
+      422,
+    );
+  }
+  if (parsed.data.prompt.trim() === '') {
+    throw new AgentInstructionPromptError(
+      'invalid_response',
+      'The selected Langfuse prompt is empty',
+      422,
+    );
+  }
+  return {
+    prompt: parsed.data.prompt,
+    source: 'langfuse',
+    name: parsed.data.name,
+    version: parsed.data.version,
+  };
+}
+
+export function createLangfusePromptProvider({
+  resolveDestinations,
+  fetch,
+  cacheTtlMs = LANGFUSE_PROMPT_CACHE_TTL_DEFAULT_MS,
+  timeoutMs = LANGFUSE_PROMPT_REQUEST_TIMEOUT_DEFAULT_MS,
+  now = Date.now,
+}: LangfusePromptProviderDeps): AgentInstructionPromptProvider {
+  const cache = new Map<string, CacheEntry>();
+  let nextRequestId = 0;
+  const activeRequests = new Map<string, { count: number }>();
+
+  return {
+    async resolve(reference, context: AgentInstructionPromptContext) {
+      if (!isLangfuseReference(reference)) {
+        throw new AgentInstructionPromptError(
+          'unsupported_type',
+          'The Langfuse provider cannot resolve a LibreChat prompt',
+          422,
+        );
+      }
+      const promptConfig = context.appConfig?.langfuse?.prompts;
+      const timeoutSignal = AbortSignal.timeout(promptConfig?.requestTimeoutMs ?? timeoutMs);
+      const signal = context.signal
+        ? AbortSignal.any([context.signal, timeoutSignal])
+        : timeoutSignal;
+      let key: string | undefined;
+      let cached: CacheEntry | undefined;
+      let activity: { count: number } | undefined;
+      try {
+        signal.throwIfAborted();
+        const destinations = [
+          ...(await detachOnAbort(
+            resolveDestinations(context.appConfig, { destinationId: reference.destinationId }),
+            signal,
+          )),
+        ].sort(
+          (left, right) => destinationPreference[left.name] - destinationPreference[right.name],
+        );
+        signal.throwIfAborted();
+        const destination =
+          reference.destinationId == null
+            ? destinations[0]
+            : destinations.find(
+                (candidate) =>
+                  destinationId(candidate) === reference.destinationId ||
+                  getLangfuseCredentialIdentity(candidate) === reference.destinationId,
+              );
+        if (!destination) {
+          throw new AgentInstructionPromptError(
+            'not_configured',
+            reference.destinationId == null
+              ? 'No Langfuse prompt connection is configured'
+              : 'The saved Langfuse prompt connection is not available',
+            503,
+          );
+        }
+
+        if (destination.name === 'central' && !destination.id) {
+          throw new AgentInstructionPromptError(
+            'not_configured',
+            'Langfuse project identity is unavailable; retry discovery or configure LANGFUSE_PROJECT_ID',
+            503,
+          );
+        }
+
+        key = cacheKey(destination, reference.name, reference.version);
+        const currentTime = now();
+        const effectiveCacheTtlMs = promptConfig?.cacheTtlMs ?? cacheTtlMs;
+        pruneExpiredEntries(cache, key, currentTime, activeRequests);
+        cached = cache.get(key);
+        if (cached && currentTime - cached.fetchedAt < effectiveCacheTtlMs) {
+          return { ...cached.value, cached: true };
+        }
+        const requestId = ++nextRequestId;
+        activity = activeRequests.get(key) ?? { count: 0 };
+        activity.count++;
+        activeRequests.set(key, activity);
+        const response = await detachOnAbort(
+          fetch(promptUrl(destination, reference.name, reference.version), {
+            headers: mergeHeaders(destination.headers, {
+              Authorization: destination.authorization,
+            }),
+            signal,
+            ...redirectPolicyFor(destination.headers),
+          }),
+          signal,
+        );
+        if (!response.ok) {
+          throw statusError(response.status);
+        }
+        const body = await detachOnAbort(response.json(), signal);
+        signal.throwIfAborted();
+        const result = {
+          ...parsePrompt(body),
+          destinationId: destinationId(destination),
+        };
+        const fetchedAt = now();
+        if ((cache.get(key)?.requestId ?? 0) < requestId) {
+          cache.set(key, {
+            requestId,
+            value: result,
+            fetchedAt,
+            expiresAt: fetchedAt + effectiveCacheTtlMs,
+          });
+        }
+        return result;
+      } catch (error) {
+        if (context.signal?.aborted) {
+          throw context.signal.reason ?? error;
+        }
+        const normalized =
+          error instanceof AgentInstructionPromptError
+            ? error
+            : new AgentInstructionPromptError(
+                'retrieval_failed',
+                'Langfuse prompt retrieval failed',
+                502,
+                true,
+              );
+        const fallback = (key == null ? undefined : cache.get(key)) ?? cached;
+        if (normalized.retryable && fallback) {
+          return { ...fallback.value, cached: true };
+        }
+        throw normalized;
+      } finally {
+        if (activity && key != null && --activity.count === 0) {
+          activeRequests.delete(key);
+        }
+      }
+    },
+  };
+}

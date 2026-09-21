@@ -1,4 +1,4 @@
-import type { GraphEdge } from 'librechat-data-provider';
+import type { AgentInstructionPrompt, GraphEdge } from 'librechat-data-provider';
 
 export type VersionRecord = Record<string, any>;
 
@@ -7,6 +7,7 @@ export type AgentState = {
   description: string | null;
   instructions: string | null;
   artifacts?: string | null;
+  instruction_prompt?: AgentInstructionPrompt | null;
   capabilities?: string[];
   tools?: string[];
   edges?: GraphEdge[];
@@ -33,6 +34,7 @@ export interface AgentWithVersions {
   instructions: string | null;
   artifacts?: string | null;
   capabilities?: string[];
+  instruction_prompt?: AgentInstructionPrompt | null;
   tools?: string[];
   edges?: GraphEdge[];
   versions?: Array<VersionRecord>;

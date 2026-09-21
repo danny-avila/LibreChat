@@ -21,6 +21,13 @@ const {
   collectToolResourceFileIds,
   convertOcrToContextInPlace,
   normalizeToolResourceFiles,
+  normalizeAgentUpdateData,
+  getRequestRoleCache,
+  persistAgentInstructionPromptFallback,
+  getInstructionPromptErrorResponse,
+  prepareAgentInstructionPromptRestore,
+  redactAgentInstructionPromptFallback,
+  redactAgentInstructionPromptFallbacks,
   stripFileIdsFromToolResources,
   inspectContent,
   inspectContentWithTraversal,
@@ -85,9 +92,37 @@ const {
   userCanUseMCPServers,
 } = require('~/server/services/MCP');
 const { attachOwnerContacts } = require('~/server/services/Agents/ownerContact');
+const instructionPromptResolver = require('~/server/services/Agents/instructionPrompts');
 const { getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
+const persistInstructionPromptSnapshot = async (req, agent, existingAgent) => {
+  const roleCache = getRequestRoleCache(req) ?? undefined;
+  await persistAgentInstructionPromptFallback({
+    agent,
+    resolver: instructionPromptResolver,
+    existingInstructionPrompt: existingAgent?.instruction_prompt,
+    context: {
+      userId: req.user.id,
+      role: req.user.role,
+      appConfig: req.config,
+      ...(roleCache ? { roleCache } : {}),
+    },
+  });
+};
+const prepareInstructionPromptRestore = (req, version) => {
+  const roleCache = getRequestRoleCache(req) ?? undefined;
+  return prepareAgentInstructionPromptRestore({
+    version,
+    resolver: instructionPromptResolver,
+    context: {
+      userId: req.user.id,
+      role: req.user.role,
+      appConfig: req.config,
+      ...(roleCache ? { roleCache } : {}),
+    },
+  });
+};
 
 const systemTools = {
   [Tools.execute_code]: true,
@@ -828,6 +863,7 @@ const createAgentHandler = async (req, res) => {
       });
     }
 
+    await persistInstructionPromptSnapshot(req, agentData);
     if (await blockFilteredAgentContent(req, res, agentData)) {
       return;
     }
@@ -933,15 +969,19 @@ const createAgentHandler = async (req, res) => {
       );
     }
 
-    res.status(201).json(agent);
+    res.status(201).json(redactAgentInstructionPromptFallback(agent));
   } catch (error) {
     if (error instanceof z.ZodError) {
       logger.error('[/Agents] Validation error', error.errors);
       return res.status(400).json({ error: 'Invalid request data', details: error.errors });
     }
     logger.error('[/Agents] Error creating agent', error);
-    if (error?.statusCode === 409) {
-      return res.status(409).json({ error: error.message });
+    const promptError = getInstructionPromptErrorResponse(error);
+    if (promptError) {
+      return res.status(error.statusCode).json(promptError);
+    }
+    if (Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 600) {
+      return res.status(error.statusCode).json({ error: error.message });
     }
     res.status(500).json({ error: error.message });
   }
@@ -1030,7 +1070,7 @@ const getAgentHandler = async (req, res, expandProperties = false) => {
     }
 
     // EDIT permission: Full agent details including sensitive configuration
-    return res.status(200).json(agent);
+    return res.status(200).json(redactAgentInstructionPromptFallback(agent));
   } catch (error) {
     logger.error('[/Agents/:id] Error retrieving agent', error);
     res.status(500).json({ error: error.message });
@@ -1056,7 +1096,7 @@ const getAgentVersionsHandler = async (req, res) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    return res.status(200).json(versions);
+    return res.status(200).json(redactAgentInstructionPromptFallbacks(versions));
   } catch (error) {
     logger.error('[/Agents/:id/versions] Error retrieving agent versions', error);
     res.status(500).json({ error: error.message });
@@ -1078,21 +1118,7 @@ const updateAgentHandler = async (req, res) => {
     /** See the create path: retain hydrated file IDs through validation. */
     normalizeToolResourceFiles(req.body?.tool_resources);
     const validatedData = agentUpdateSchema.parse(req.body);
-    // Preserve explicit null for avatar to allow resetting the avatar
-    const {
-      avatar: avatarField,
-      code_environment_id: codeEnvironmentIdField,
-      git_identity: gitIdentityField,
-      _id,
-      ...rest
-    } = validatedData;
-    let updateData = removeNullishValues(rest);
-    if (codeEnvironmentIdField !== undefined) {
-      updateData.code_environment_id = codeEnvironmentIdField;
-    }
-    if (gitIdentityField !== undefined) {
-      updateData.git_identity = gitIdentityField;
-    }
+    let updateData = normalizeAgentUpdateData(validatedData);
     let existingAgent;
 
     const includesStatefulConfiguration =
@@ -1191,9 +1217,6 @@ const updateAgentHandler = async (req, res) => {
         true,
       );
     }
-    if (avatarField === null) {
-      updateData.avatar = avatarField;
-    }
 
     if (updateData.edges !== undefined) {
       updateData.edges = replaceEdgeSourceId(updateData.edges, '', id);
@@ -1261,6 +1284,7 @@ const updateAgentHandler = async (req, res) => {
       });
     }
 
+    await persistInstructionPromptSnapshot(req, updateData, existingAgent);
     if (await blockFilteredAgentContent(req, res, updateData)) {
       return;
     }
@@ -1384,7 +1408,7 @@ const updateAgentHandler = async (req, res) => {
       delete updatedAgent.author;
     }
 
-    return res.json(updatedAgent);
+    return res.json(redactAgentInstructionPromptFallback(updatedAgent));
   } catch (error) {
     if (error instanceof z.ZodError) {
       logger.error('[/Agents/:id] Validation error', error.errors);
@@ -1393,8 +1417,12 @@ const updateAgentHandler = async (req, res) => {
 
     logger.error('[/Agents/:id] Error updating Agent', error);
 
-    if (error.statusCode === 409) {
-      return res.status(409).json({
+    const promptError = getInstructionPromptErrorResponse(error);
+    if (promptError) {
+      return res.status(error.statusCode).json(promptError);
+    }
+    if (Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 600) {
+      return res.status(error.statusCode).json({
         error: error.message,
         details: error.details,
       });
@@ -1586,6 +1614,7 @@ const duplicateAgentHandler = async (req, res) => {
       newAgentData.tool_options = removeCodeExecutionCaller(newAgentData.tool_options);
     }
 
+    await persistInstructionPromptSnapshot(req, newAgentData);
     if (
       (await blockFilteredAgentContent(req, res, newAgentData)) ||
       blockFilteredActionContent(req, res, sanitizedActions)
@@ -1670,13 +1699,13 @@ const duplicateAgentHandler = async (req, res) => {
     }
 
     return res.status(201).json({
-      agent: newAgent,
+      agent: redactAgentInstructionPromptFallback(newAgent),
       actions: newActionsList,
     });
   } catch (error) {
     logger.error('[/Agents/:id/duplicate] Error duplicating Agent:', error);
-    if (error?.statusCode === 409) {
-      return res.status(409).json({ error: error.message });
+    if (Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 600) {
+      return res.status(error.statusCode).json({ error: error.message });
     }
     res.status(500).json({ error: error.message });
   }
@@ -2021,7 +2050,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
       logger.error('[/:agent_id/avatar] Error invalidating avatar refresh cache', cacheErr);
     }
 
-    res.status(201).json(updatedAgent);
+    res.status(201).json(redactAgentInstructionPromptFallback(updatedAgent));
   } catch (error) {
     const message = 'An error occurred while updating the Agent Avatar';
     logger.error(
@@ -2132,15 +2161,17 @@ const revertAgentVersionHandler = async (req, res) => {
       actionIds.length > 0
         ? ((await db.getActions({ agentId: id, actionId: actionIds }, true)) ?? [])
         : [];
+    const { version: resolvedRevertVersion, restoreOverrides: promptRestore } =
+      await prepareInstructionPromptRestore(req, revertVersion);
 
     if (
-      (await blockFilteredAgentContent(req, res, revertVersion)) ||
+      (await blockFilteredAgentContent(req, res, resolvedRevertVersion)) ||
       blockFilteredActionContent(req, res, actions)
     ) {
       return;
     }
 
-    let updatedAgent = await db.revertAgentVersion({ id }, version_index);
+    let updatedAgent = await db.revertAgentVersion({ id }, version_index, promptRestore);
     const revertUpdates = {};
     if (
       revertVersion &&
@@ -2212,11 +2243,11 @@ const revertAgentVersionHandler = async (req, res) => {
       delete updatedAgent.author;
     }
 
-    return res.json(updatedAgent);
+    return res.json(redactAgentInstructionPromptFallback(updatedAgent));
   } catch (error) {
     logger.error('[/agents/:id/revert] Error reverting Agent version', error);
-    if (error?.statusCode === 409) {
-      return res.status(409).json({ error: error.message });
+    if (Number.isInteger(error?.statusCode) && error.statusCode >= 400 && error.statusCode < 600) {
+      return res.status(error.statusCode).json({ error: error.message });
     }
     res.status(500).json({ error: error.message });
   }
