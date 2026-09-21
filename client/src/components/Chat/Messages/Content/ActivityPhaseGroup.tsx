@@ -1,5 +1,5 @@
 import { memo, useId, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import { Button } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
 import { Check, Lightbulb, ChevronDown, TriangleAlert } from 'lucide-react';
@@ -271,7 +271,7 @@ function LivePhaseHeader({
   /** A code card names its sandbox startup from events outside the content
    *  array. The row reads the same signal for its newest call, so the span
    *  never has to unfold for the card to say it. */
-  const sandboxStarting = useRecoilValue(
+  const sandboxStarting = useAtomValue(
     sandboxStartingByToolCallId(activity.pendingToolCallId ?? ''),
   );
   const text =

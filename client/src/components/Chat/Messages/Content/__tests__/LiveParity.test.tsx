@@ -1,5 +1,6 @@
 import React from 'react';
-import { RecoilRoot, useSetRecoilState } from 'recoil';
+import { RecoilRoot } from 'recoil';
+import { Provider, useSetAtom } from 'jotai';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { ContentTypes, Tools, Constants, ToolCallTypes } from 'librechat-data-provider';
@@ -623,23 +624,25 @@ describe('live activity hardening transitions', () => {
   const frame = (content: TMessageContentParts[], extra?: React.ReactNode) => (
     <QueryClientProvider client={new QueryClient()}>
       <RecoilRoot>
-        {extra}
-        <ContentParts
-          content={content}
-          messageId="m1"
-          conversationId="c1"
-          isCreatedByUser={false}
-          isLast
-          isLatestMessage
-          isSubmitting
-          showThinking={false}
-        />
+        <Provider>
+          {extra}
+          <ContentParts
+            content={content}
+            messageId="m1"
+            conversationId="c1"
+            isCreatedByUser={false}
+            isLast
+            isLatestMessage
+            isSubmitting
+            showThinking={false}
+          />
+        </Provider>
       </RecoilRoot>
     </QueryClientProvider>
   );
 
   function SandboxEvent() {
-    const setStarting = useSetRecoilState(sandboxStartingByToolCallId('sandbox-call'));
+    const setStarting = useSetAtom(sandboxStartingByToolCallId('sandbox-call'));
     return <button onClick={() => setStarting(true)}>{'Start sandbox'}</button>;
   }
 
