@@ -30,7 +30,8 @@ import {
   MAX_SUBAGENTS_CEILING,
   DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
 } from './limits';
-import { CODE_ENVIRONMENT_DECISION_VERSION, CODE_ENVIRONMENT_MOVE_VERSION } from './code/workspace';
+import { CODE_ENVIRONMENT_DECISION_VERSION } from './code/workspace';
+import type { CodeEnvironmentMoveVersion } from './code/workspace';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
@@ -2302,9 +2303,11 @@ export type TStartupConfig = {
   /** Conversation-owned code-environment decision protocol supported by the API.
    * Clients must not emit selection-less decisions unless this is advertised. */
   codeEnvironmentDecisionVersion?: typeof CODE_ENVIRONMENT_DECISION_VERSION;
-  /** Owner moves of a sealed code-environment decision supported by the API. Clients must not
-   * offer to move a conversation unless this is advertised. */
-  codeEnvironmentMoveVersion?: typeof CODE_ENVIRONMENT_MOVE_VERSION;
+  /** Highest owner-authorized replacement of a sealed code-environment decision the API supports.
+   * Clients must not offer a transition this does not cover: `1` is a move between attached
+   * environments, `2` also attaches one to a chat running without one and leaves attached
+   * execution behind. */
+  codeEnvironmentMoveVersion?: CodeEnvironmentMoveVersion;
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;

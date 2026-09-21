@@ -205,6 +205,7 @@ export default function useChatFunctions({
   isSubmitting,
   latestMessage,
   setSubmission,
+  setConversation,
   conversation: immutableConversation,
 }: {
   index?: number;
@@ -217,6 +218,9 @@ export default function useChatFunctions({
   files?: Map<string, ExtendedFile>;
   setFiles?: SetterOrUpdater<Map<string, ExtendedFile>>;
   setSubmission: SetterOrUpdater<TSubmission | null>;
+  /** Supplied by the host that owns the conversation atom, so a send records the decision it
+   *  established without this hook becoming a second writer of that state. */
+  setConversation: SetterOrUpdater<TConversation | null>;
 }) {
   const navigate = useNavigate();
   const getSender = useGetSender();
@@ -232,7 +236,6 @@ export default function useChatFunctions({
   const focusRegeneratedResponse = useFocusRegeneratedResponse();
   const jotaiStore = useStore();
   const getConversation = useGetConversation(index);
-  const { setConversation } = store.useSetConversationAtom(index);
   const addedConversation = useRecoilValue(store.conversationByKeySelector(1));
   const { modes: codeApprovalModes, selected: fallbackCodeApprovalMode } = useCodeApprovalMode(
     immutableConversation,

@@ -694,24 +694,58 @@ describe('useCodeWorkspace', () => {
       );
     });
 
-    /* A deployment advertising the move-only protocol refuses an attach as `locked` and an empty
-     * target set as `invalid`, so a client must not offer either to it. */
-    it('offers no transition to a deployment that only supports moves', () => {
-      mockStartupConfig.mockReturnValue({
-        codeEnvironmentDecisionVersion: 1,
-        codeEnvironmentMoveVersion: 1,
-      });
-      mockAgentsConfig().agentsConfig.statefulCodeSessions.environments.push({
-        id: 'mac',
-        name: 'Danny Mac',
-        type: 'attached',
-        baseURL: 'https://code.example.com',
+    /* A replica advertising the move-only protocol refuses an attach as `locked` and an empty
+     * target set as `invalid`, so those wait for v2 while the move it already serves keeps working
+     * — a mixed-version deployment must not lose the recovery path it had. */
+    describe('against a deployment that only supports moves', () => {
+      beforeEach(() => {
+        mockStartupConfig.mockReturnValue({
+          codeEnvironmentDecisionVersion: 1,
+          codeEnvironmentMoveVersion: 1,
+        });
       });
 
-      const { result } = renderHook(() => useCodeWorkspace(sealed([mac])));
+      it('keeps the move but withholds leaving attached execution', () => {
+        mockAgentsConfig().agentsConfig.statefulCodeSessions.environments.push({
+          id: 'mac',
+          name: 'Danny Mac',
+          type: 'attached',
+          baseURL: 'https://code.example.com',
+        });
 
-      expect(result.current.state).toBe('choose');
-      expect(result.current.transition).toBeUndefined();
+        const { result } = renderHook(() => useCodeWorkspace(sealed([mac])));
+
+        expect(result.current.state).toBe('relocatable');
+        expect(result.current.transition).toEqual(
+          expect.objectContaining({ kind: 'move', detachable: false }),
+        );
+      });
+
+      it('offers no attach to a chat that continues without a workspace', () => {
+        const { result } = renderHook(() =>
+          useCodeWorkspace({
+            ...conversation(),
+            conversationId: 'existing',
+            codeEnvironmentMode: 'without_attached',
+          } as TConversation),
+        );
+
+        expect(result.current.state).toBe('without_attached');
+        expect(result.current.transition).toBeUndefined();
+      });
+
+      /** Nothing to move onto and no detach to offer, so the composer reports the state instead. */
+      it('offers nothing when a machine the agents use cannot be covered', () => {
+        withUnreachableSecondEnvironment();
+        const kept = { environmentId: 'personal-vm', workspaceId: 'project-a' };
+
+        const { result } = renderHook(() => useCodeWorkspace(sealed([kept])));
+
+        expect(result.current.state).toBe('unavailable');
+        expect(result.current.canSubmit).toBe(false);
+        expect(result.current.transition).toBeUndefined();
+        expect(result.current.visible).toBe(true);
+      });
     });
 
     it('waits for the new machine before offering a move', () => {

@@ -9,6 +9,7 @@ import {
   AgentCapabilities,
   CODE_ENVIRONMENT_DECISION_VERSION,
   CODE_ENVIRONMENT_MOVE_VERSION,
+  CODE_ENVIRONMENT_TRANSITION_VERSION,
   PermissionTypes,
   Permissions,
 } from 'librechat-data-provider';
@@ -147,8 +148,15 @@ export default function useCodeWorkspace(
   const { data: startupConfig } = useGetStartupConfig();
   const supportsEnvironmentDecisions =
     startupConfig?.codeEnvironmentDecisionVersion === CODE_ENVIRONMENT_DECISION_VERSION;
+  const advertisedMoveVersion = startupConfig?.codeEnvironmentMoveVersion;
+  /** The API advertises the highest replacement protocol it implements, so a replica still serving
+   *  v1 keeps the move it always supported; only attaching and detaching wait for v2, which a v1
+   *  replica refuses as `locked` and `invalid`. */
   const supportsEnvironmentMoves =
-    startupConfig?.codeEnvironmentMoveVersion === CODE_ENVIRONMENT_MOVE_VERSION;
+    advertisedMoveVersion === CODE_ENVIRONMENT_MOVE_VERSION ||
+    advertisedMoveVersion === CODE_ENVIRONMENT_TRANSITION_VERSION;
+  const supportsEnvironmentTransitions =
+    advertisedMoveVersion === CODE_ENVIRONMENT_TRANSITION_VERSION;
   const preferences = useWorkspacePreferences(conversation?.agent_id);
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
   const canRunCode = useHasAccess({
@@ -448,6 +456,7 @@ export default function useCodeWorkspace(
     const coversEveryEnvironment =
       base.retained.length + base.targets.length === environmentResults.length;
     if (
+      supportsEnvironmentTransitions &&
       state === 'without_attached' &&
       conversation.codeEnvironmentMode === 'without_attached' &&
       base.targets.length > 0 &&
@@ -461,10 +470,18 @@ export default function useCodeWorkspace(
       (storedSelections?.length ?? 0) > 0 &&
       (state === 'choose' || !canSubmit)
     ) {
-      transition = coversEveryEnvironment
-        ? { ...base, kind: 'move', detachable: true }
-        : { ...base, kind: 'move', detachable: true, retained: [], targets: [] };
-      if (state === 'choose') state = 'relocatable';
+      const move: CodeWorkspaceTransition = {
+        ...base,
+        kind: 'move',
+        detachable: supportsEnvironmentTransitions,
+        ...(coversEveryEnvironment ? {} : { retained: [], targets: [] }),
+      };
+      /** An uncoverable environment leaves nothing to move onto, so the transition is worth
+       *  offering only where leaving attached execution is also served. */
+      if (move.targets.length > 0 || move.retained.length > 0 || move.detachable) {
+        transition = move;
+        if (state === 'choose') state = 'relocatable';
+      }
     }
   }
   /** A sealed chat hides the control once its decision needs nothing from its owner, except while

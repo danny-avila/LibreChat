@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import {
   CODE_ENVIRONMENT_DECISION_VERSION,
-  CODE_ENVIRONMENT_MOVE_VERSION,
+  CODE_ENVIRONMENT_TRANSITION_VERSION,
   EModelEndpoint,
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
@@ -34,13 +34,16 @@ export function resolveCodeEnvironmentDecisionVersion(
     : undefined;
 }
 
-/** Advertises owner moves of a sealed decision only where the effective policy enables them. */
+/**
+ * Advertises owner replacements of a sealed decision only where the effective policy enables them,
+ * as the highest protocol this server implements: it serves the move, the attach and the detach.
+ */
 export function resolveCodeEnvironmentMoveVersion(
   appConfig?: Pick<AppConfig, 'endpoints'> | null,
-): typeof CODE_ENVIRONMENT_MOVE_VERSION | undefined {
+): typeof CODE_ENVIRONMENT_TRANSITION_VERSION | undefined {
   return appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.conversationMoves
     ?.enabled === true
-    ? CODE_ENVIRONMENT_MOVE_VERSION
+    ? CODE_ENVIRONMENT_TRANSITION_VERSION
     : undefined;
 }
 

@@ -81,7 +81,6 @@ jest.mock('~/store', () => ({
     pendingQuotesByConvoId: () => 'pendingQuotes',
     messagesSiblingIdxFamily: () => 'messagesSiblingIdx',
     conversationByKeySelector: () => 'conversation',
-    useSetConversationAtom: () => ({ setConversation: mockSetConversation }),
   },
   useGetEphemeralAgent: () => mockGetEphemeralAgent,
 }));
@@ -145,6 +144,7 @@ function renderAsk(
       getMessages,
       setMessages,
       setSubmission,
+      setConversation: mockSetConversation,
     }),
   );
 
@@ -434,6 +434,7 @@ describe('useChatFunctions regenerate', () => {
         getMessages: () => messages,
         setMessages,
         setSubmission,
+        setConversation: mockSetConversation,
       }),
     );
 
@@ -528,6 +529,7 @@ describe('useChatFunctions ask attachments', () => {
         getMessages: () => [],
         setMessages,
         setSubmission,
+        setConversation: mockSetConversation,
         files,
         setFiles,
       }),
@@ -566,6 +568,7 @@ describe('useChatFunctions ask attachments', () => {
         getMessages: () => [],
         setMessages,
         setSubmission,
+        setConversation: mockSetConversation,
         files: new Map(),
         setFiles,
       }),
@@ -666,6 +669,7 @@ describe('useChatFunctions ask compaction and the composer', () => {
         getMessages: () => messages,
         setMessages,
         setSubmission,
+        setConversation: mockSetConversation,
         files,
         setFiles,
       }),
