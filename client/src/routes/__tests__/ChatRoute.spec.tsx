@@ -11,6 +11,7 @@ const mockHasSetConversation = { current: true };
 let mockConversation: Partial<TConversation> = { conversationId: 'chat-a' };
 const mockConfig = {};
 const mockRoles = { USER: {} };
+let mockAssistantListMap = {};
 const mockNewConversation = jest.fn(({ template }: { template?: Partial<TConversation> }) => {
   mockConversation = { conversationId: 'new', ...template };
   mockSetConversation();
@@ -52,7 +53,7 @@ jest.mock('~/data-provider', () => ({
   },
 }));
 jest.mock('~/hooks', () => ({
-  useAssistantListMap: () => mockConfig,
+  useAssistantListMap: () => mockAssistantListMap,
   useIdChangeEffect: () => {},
   useAppStartup: () => {},
   useNewConvo: () => ({ newConversation: mockNewConversation }),
@@ -105,6 +106,7 @@ function setup(initialEntries = ['/c/chat-a'], initialIndex = initialEntries.len
 beforeEach(() => {
   mockConversation = { conversationId: 'chat-a' };
   mockHasSetConversation.current = true;
+  mockAssistantListMap = {};
   mockFetchConversation.mockImplementation(async (id: string) => ({ conversationId: id }));
 });
 
@@ -210,4 +212,16 @@ it('allows retry after a failed history load without replacing the departing dra
   await waitFor(() => expect(screen.getByTestId('composer')).toBeVisible());
   expect(mockConversation.conversationId).toBe('chat-b');
   expect(consoleError).toHaveBeenCalledWith(new Error('offline'));
+});
+
+it('waits for the conversation record even when assistant catalogs are already loaded', async () => {
+  mockAssistantListMap = { assistants: {}, azureAssistants: {} };
+  mockFetchConversation.mockReturnValue(new Promise(() => {}));
+  const { router } = setup(['/c/chat-b', '/c/chat-a']);
+  await act(async () => {
+    await router.navigate(-1);
+  });
+  expect(mockNewConversation).not.toHaveBeenCalled();
+  expect(mockConversation.conversationId).toBe('chat-a');
+  expect(screen.getByTestId('composer')).not.toBeVisible();
 });

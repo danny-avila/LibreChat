@@ -306,6 +306,7 @@ export default function ChatRoute() {
       });
       hasSetConversation.current = true;
     } else if (
+      initialConvoQuery.data &&
       assistantListMap[EModelEndpoint.assistants] &&
       assistantListMap[EModelEndpoint.azureAssistants]
     ) {
