@@ -1312,6 +1312,28 @@ describe('ContentParts — live activity fold', () => {
     expect(screen.queryByTestId('reasoning')).toBeNull();
   });
 
+  it('keeps a row the reader opened on a thought open when the first tool call arrives', () => {
+    /** Reasoning-only, the card has no provider id to key on; gaining one must
+     *  not remount it. */
+    const thought = {
+      type: ContentTypes.THINK,
+      think: 'Planning the lookup.',
+    } as unknown as TMessageContentParts;
+    const { rerender } = renderContentParts({ ...liveProps, content: [thought] });
+    const card = screen.getByTestId('activity-phase-card');
+    fireEvent.click(liveHeader());
+    expect(liveHeader()).toHaveAttribute('aria-expanded', 'true');
+
+    rerender(
+      <RecoilRoot>
+        <ContentParts {...liveProps} content={[thought, intentCall('t1', 'Reading the file')]} />
+      </RecoilRoot>,
+    );
+
+    expect(screen.getByTestId('activity-phase-card')).toBe(card);
+    expect(liveHeader()).toHaveAttribute('aria-expanded', 'true');
+  });
+
   it('keeps a thought on its own open row for a reader who opens thinking by default', () => {
     renderContentParts({
       ...liveProps,

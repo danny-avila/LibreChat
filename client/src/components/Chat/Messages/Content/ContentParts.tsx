@@ -342,10 +342,14 @@ const ContentPartsBody = memo(function ContentPartsBody({
   const localToolGroupExpansionRef = useRef(new Map<string, ToolCallGroupExpansionState>());
   const expansionState = toolGroupExpansionState ?? localToolGroupExpansionRef.current;
   const fallbackScopeRef = useRef({ messageId, scope: 0 });
+  /** Keys a phase card has already rendered under, by its computed key and by
+   *  where its span starts. See `stableCardKey`. */
+  const cardKeyAliasesRef = useRef(new Map<string, string>());
   if (fallbackScopeRef.current.messageId !== messageId) {
     if (!effectiveIsSubmitting) {
       fallbackScopeRef.current.scope += 1;
       expansionState.clear();
+      cardKeyAliasesRef.current.clear();
     }
     fallbackScopeRef.current.messageId = messageId;
   }
@@ -798,6 +802,23 @@ const ContentPartsBody = memo(function ContentPartsBody({
         : getPartKeyIndex(segment.labelPart, segment.labelIndex);
       return `fallback:${fallbackScope}:${position}`;
     };
+    /** A live card can exist before its first tool call — a span that is only
+     *  a thought so far has no provider id, so `phaseCardKey` gives it the
+     *  positional fallback, and would hand it a different, tool-anchored key
+     *  the moment a call is appended. That is a remount mid-thought: the row
+     *  blinks and a reader who opened it is shut out. The first key a span
+     *  renders under is therefore kept, and remembered both by where the span
+     *  starts and by the key it would otherwise move to, so the summary that
+     *  later claims the same calls from a different start still lands on it. */
+    const stableCardKey = (segment: Extract<ActivityPhaseSegment, { type: 'phase' }>): string => {
+      const computed = phaseCardKey(segment);
+      const start = absoluteIndexAt(segment.contentIndices[0] ?? segment.startIndex);
+      const aliases = cardKeyAliasesRef.current;
+      const key = aliases.get(`key:${computed}`) ?? aliases.get(`start:${start}`) ?? computed;
+      aliases.set(`key:${computed}`, key);
+      aliases.set(`start:${start}`, key);
+      return key;
+    };
     /** Exactly one thing may hold the streaming cursor. A card carries it
      *  below its own header whenever the tail of the run sits inside its
      *  span, which puts every sibling segment out of the running. */
@@ -893,7 +914,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
              *  siblings whose cards start at the same index. Pairing them also
              *  keeps repeated provider ids in one message apart, the way
              *  `getToolGroupId` uses an occurrence counter. */
-            const cardKey = phaseCardKey(segment);
+            const cardKey = stableCardKey(segment);
             const labelText = getActivityLabelText(segment.labelPart);
             const segmentIndices = segment.contentIndices.map(absoluteIndexAt);
             /** While a run streams, the cursor sits INSIDE a synthesized span.
