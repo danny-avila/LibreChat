@@ -1,8 +1,8 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilCallback, useRecoilValue } from 'recoil';
-import { Spinner, useToastContext } from '@librechat/client';
 import { useParams, useSearchParams } from 'react-router-dom';
+import { Button, Spinner, useToastContext } from '@librechat/client';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
 import {
   Constants,
@@ -68,6 +68,15 @@ export default function ChatRoute() {
   const chatProjectId = isValidChatProjectId(projectIdParam) ? projectIdParam : null;
   useIdChangeEffect(conversationId);
   const { hasSetConversation, conversation } = store.useCreateConversationAtom(index);
+  const [routeState, setRouteState] = useState({ conversationId, pending: false });
+  /** History navigation changes the route without running the sidebar's conversation setter.
+   * Only a route change may request reconciliation: a newly submitted conversation can acquire
+   * its server id before the URL catches up, and must not be reset to a new chat. */
+  if (routeState.conversationId !== conversationId) {
+    setRouteState({ conversationId, pending: conversation?.conversationId !== conversationId });
+  } else if (routeState.pending && conversation?.conversationId === conversationId) {
+    setRouteState({ conversationId, pending: false });
+  }
   const mcpWarmupAllowed =
     conversation != null &&
     !(isAgentsEndpoint(conversation.endpoint) && isEphemeralAgentId(conversation.agent_id ?? ''));
@@ -131,7 +140,9 @@ export default function ChatRoute() {
   });
   const initialConvoQuery = useGetConvoIdQuery(conversationId, {
     enabled:
-      isAuthenticated && conversationId !== Constants.NEW_CONVO && !hasSetConversation.current,
+      isAuthenticated &&
+      conversationId !== Constants.NEW_CONVO &&
+      (!hasSetConversation.current || routeState.pending),
   });
   const endpointsQuery = useGetEndpointsQuery({ enabled: isAuthenticated });
   const assistantListMap = useAssistantListMap();
@@ -174,7 +185,7 @@ export default function ChatRoute() {
     const shouldSetConvo =
       (startupConfig &&
         rolesLoaded &&
-        (!hasSetConversation.current || newConvoNeedsInit) &&
+        (!hasSetConversation.current || newConvoNeedsInit || routeState.pending) &&
         !modelsQuery.data?.initial) ??
       false;
     /* Early exit if startupConfig is not loaded and conversation is already set and only initial models have loaded */
@@ -309,6 +320,8 @@ export default function ChatRoute() {
     /* Creates infinite render if all dependencies included due to newConversation invocations exceeding call stack before hasSetConversation.current becomes truthy */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    conversationId,
+    routeState.pending,
     roles,
     agentsMap,
     agentsQuery.isError,
@@ -354,7 +367,23 @@ export default function ChatRoute() {
 
   return (
     <ToolCallsMapProvider conversationId={conversation.conversationId ?? ''}>
-      <ChatView index={index} project={verifiedChatProjectId ? projectQuery.data : undefined} />
+      {routeState.pending && (
+        <div className="flex h-screen items-center justify-center" aria-live="polite" role="status">
+          {initialConvoQuery.isError && !initialConvoQuery.isFetching ? (
+            <div className="flex flex-col items-center gap-3" role="alert">
+              <p>{localize('com_ui_conversation_load_error')}</p>
+              <Button onClick={() => initialConvoQuery.refetch()}>
+                {localize('com_ui_retry')}
+              </Button>
+            </div>
+          ) : (
+            <Spinner className="text-text-primary" />
+          )}
+        </div>
+      )}
+      <div hidden={routeState.pending} className={routeState.pending ? 'hidden' : 'contents'}>
+        <ChatView index={index} project={verifiedChatProjectId ? projectQuery.data : undefined} />
+      </div>
     </ToolCallsMapProvider>
   );
 }
