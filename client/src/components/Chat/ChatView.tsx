@@ -44,7 +44,15 @@ function LoadingSpinner() {
   );
 }
 
-function ChatView({ index = 0, project }: { index?: number; project?: TChatProject }) {
+function ChatView({
+  index = 0,
+  project,
+  messagesReady,
+}: {
+  index?: number;
+  project?: TChatProject;
+  messagesReady: boolean;
+}) {
   const { conversationId } = useParams();
   const localize = useLocalize();
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
@@ -77,11 +85,10 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
   } = useGetMessagesByConvoId(
     conversationId ?? '',
     {
-      enabled: !!conversationId && conversationId !== Constants.SEARCH,
-      /** Refetch stale caches on mount: navigation invalidates (not removes)
-       * messages now, so a warm conversation renders instantly from cache and
-       * reconciles in the background instead of unmounting into a spinner. */
-      refetchOnMount: true,
+      // ChatRoute owns fetching from the authenticated route ID before metadata settles.
+      // This observer keeps streaming/cache updates local without another mount refetch.
+      enabled: false,
+      refetchOnMount: false,
     },
     { isStreaming: isSubmitting },
   );
@@ -103,9 +110,14 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
 
   // Auto-resume if navigating back to conversation with active job.
   // Wait for messages to load AND the warm-cache background revalidation to
-  // settle: a stale invalidated cache mounts with isLoading false while the
-  // refetch is in flight, and resume must not build from (or race) it.
-  useResumeOnLoad(conversationId, chatHelpers.getMessages, index, !isLoading && !isFetching);
+  // settle. The owner also supplies its optimistic fetching state: this disabled
+  // cache observer cannot see the refetch before the parent's subscription starts it.
+  useResumeOnLoad(
+    conversationId,
+    chatHelpers.getMessages,
+    index,
+    messagesReady && !isLoading && !isFetching,
+  );
 
   // Show a server-owned queued follow-up as the next user turn as soon as its
   // predecessor completes, ahead of the receipt and active-job polls.

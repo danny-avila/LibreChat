@@ -110,7 +110,7 @@ describe('ChatView child-thread execution identity', () => {
       },
     };
 
-    render(<ChatView />);
+    render(<ChatView messagesReady />);
 
     expect(screen.queryByTestId('chat-form')).not.toBeInTheDocument();
     expect(screen.getByRole('note')).toHaveTextContent('com_ui_subagent_thread_read_only');
@@ -126,7 +126,7 @@ describe('ChatView child-thread execution identity', () => {
       },
     };
 
-    render(<ChatView />);
+    render(<ChatView messagesReady />);
 
     expect(screen.queryByTestId('chat-form')).not.toBeInTheDocument();
     expect(screen.getByRole('note')).toHaveTextContent('com_ui_subagent_thread_read_only');
