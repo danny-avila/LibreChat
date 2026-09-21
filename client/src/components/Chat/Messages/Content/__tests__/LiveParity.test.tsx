@@ -648,17 +648,48 @@ describe('live activity hardening transitions', () => {
     [Tools.execute_code, { lang: 'py', code: 'print(1)' }],
     [Constants.PROGRAMMATIC_TOOL_CALLING, { lang: 'python', code: 'print(1)' }],
     [Constants.BASH_PROGRAMMATIC_TOOL_CALLING, { code: 'echo ready' }],
-  ])('keeps %s subscribed through sandbox startup, then folds its result', (name, args) => {
+  ])('names %s sandbox startup on the row without unfolding the span', (name, args) => {
+    /** Unfolding here to let the card say "Starting sandbox" opened the WHOLE
+     *  span for as long as the call ran and shut it when output landed — on
+     *  every call of a run whose model did not put `intent` first. The row
+     *  reads the same sandbox signal instead, and stays one card throughout. */
     jest.useFakeTimers();
     const call = { name, args, output: '' };
     const view = render(frame([toPart(call, 'sandbox-call')], <SandboxEvent />));
-    expect(screen.queryByTestId('activity-phase-card')).toBeNull();
+    const card = screen.getByTestId('activity-phase-card');
+    expect(screen.queryByTestId('tool-call')).toBeNull();
+
     fireEvent.click(screen.getByRole('button', { name: 'Start sandbox' }));
-    expect(view.container).toHaveTextContent('Starting sandbox');
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(card).toHaveTextContent('Starting sandbox');
+
     view.rerender(
       frame([toPart({ ...call, output: 'ok', runStepStatus: 'completed' }, 'sandbox-call')]),
     );
-    expect(screen.getByTestId('activity-phase-card')).toBeInTheDocument();
+    expect(screen.getByTestId('activity-phase-card')).toBe(card);
+  });
+
+  it('holds one card across a run of code calls whose intent is not the first key', () => {
+    /** The shape of the run that flashed: `{"command":…,"intent":…}`, which the
+     *  anchored intent reader rejects, so each call was "a code call with no
+     *  intent" from the moment its args completed until its output landed. */
+    const args = '{"command":"gh run view 1","intent":"Viewing the failing run"}';
+    const writing = toPart({ name: Tools.bash_tool, args: '{"command":"gh run', output: '' }, 'b1');
+    const dispatched = toPart({ name: Tools.bash_tool, args, output: '' }, 'b1');
+    const finished = toPart({ name: Tools.bash_tool, args, output: 'ok' }, 'b1');
+    const view = render(frame([writing]));
+    const card = screen.getByTestId('activity-phase-card');
+    for (const content of [
+      [dispatched],
+      [finished],
+      [finished, toPart({ name: Tools.bash_tool, args, output: '' }, 'b2')],
+    ]) {
+      view.rerender(frame(content));
+      expect(screen.getByTestId('activity-phase-card')).toBe(card);
+      expect(screen.queryByTestId('tool-call')).toBeNull();
+    }
   });
 
   it('folds an early code delta and keeps folding once its intent arrives', () => {

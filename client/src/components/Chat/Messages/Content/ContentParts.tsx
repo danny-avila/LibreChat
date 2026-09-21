@@ -349,7 +349,17 @@ const ContentPartsBody = memo(function ContentPartsBody({
     if (!effectiveIsSubmitting) {
       fallbackScopeRef.current.scope += 1;
       expansionState.clear();
-      cardKeyAliasesRef.current.clear();
+      /** Finalization lands here too — the message takes its server id as the
+       *  run ends, which this branch cannot tell from a sibling switch. Only the
+       *  position aliases are dropped: two siblings can start a span at the same
+       *  index, but a provider tool id belongs to one response, so the alias
+       *  from a span's tool-anchored key survives and the card a reader opened
+       *  mid-thought stays the same card when the response settles. */
+      for (const alias of cardKeyAliasesRef.current.keys()) {
+        if (alias.startsWith('start:')) {
+          cardKeyAliasesRef.current.delete(alias);
+        }
+      }
     }
     fallbackScopeRef.current.messageId = messageId;
   }

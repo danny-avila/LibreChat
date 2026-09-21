@@ -1,4 +1,5 @@
 import { memo, useId, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
 import { Check, Lightbulb, ChevronDown, TriangleAlert } from 'lucide-react';
@@ -23,6 +24,7 @@ import { getSourceDomains } from './sources';
 import { mapAttachments } from '~/utils/map';
 import SearchVerticals from './verticals';
 import { AttachmentGroup } from './Parts';
+import { sandboxStartingByToolCallId } from '~/store';
 import { cn } from '~/utils';
 
 /** Matches `EXPAND_TRANSITION` so the panel and the label ticker resolve on
@@ -266,7 +268,17 @@ function LivePhaseHeader({
     () => getLiveActivity(parts, localize, mcpServerNames, attachmentsById),
     [parts, localize, mcpServerNames, attachmentsById],
   );
-  const { text, source } = activity;
+  /** A code card names its sandbox startup from events outside the content
+   *  array. The row reads the same signal for its newest call, so the span
+   *  never has to unfold for the card to say it. */
+  const sandboxStarting = useRecoilValue(
+    sandboxStartingByToolCallId(activity.pendingToolCallId ?? ''),
+  );
+  const text =
+    sandboxStarting && activity.pendingToolCallId != null
+      ? localize('com_ui_sandbox_starting')
+      : activity.text;
+  const { source } = activity;
   const line = useMemo(() => ({ text, source }), [text, source]);
   const painted = useThrottledValue(line, LIVE_ACTIVITY_THROTTLE_MS);
   const iconKey = activity.iconNames.join('|');

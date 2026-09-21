@@ -1334,6 +1334,39 @@ describe('ContentParts — live activity fold', () => {
     expect(liveHeader()).toHaveAttribute('aria-expanded', 'true');
   });
 
+  it('keeps a reasoning-led card open through the summary and the response finalizing', () => {
+    const thought = {
+      type: ContentTypes.THINK,
+      think: 'Planning the lookup.',
+    } as unknown as TMessageContentParts;
+    const calls = [makeMcpToolCall('t1'), makeMcpToolCall('t2')];
+    const frame = (props: {
+      content: TMessageContentParts[];
+      messageId?: string;
+      isSubmitting?: boolean;
+    }) => (
+      <RecoilRoot>
+        <ContentParts {...liveProps} {...props} />
+      </RecoilRoot>
+    );
+    const { rerender } = render(frame({ content: [thought] }));
+    rerender(frame({ content: [thought, ...calls] }));
+    fireEvent.click(liveHeader());
+    const card = screen.getByTestId('activity-phase-card');
+
+    const settled = [thought, ...calls, makePhasePart(0, 3, 'Fetched two images')];
+    rerender(frame({ content: settled }));
+    expect(screen.getByTestId('activity-phase-card')).toBe(card);
+
+    /** The message takes its server id in the same commit the run ends. */
+    rerender(frame({ content: settled, messageId: 'server-id', isSubmitting: false }));
+    expect(screen.getByTestId('activity-phase-card')).toBe(card);
+    expect(screen.getByRole('button', { name: 'Fetched two images' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+  });
+
   it('keeps a thought on its own open row for a reader who opens thinking by default', () => {
     renderContentParts({
       ...liveProps,
