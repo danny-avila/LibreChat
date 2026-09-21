@@ -206,7 +206,10 @@ export function isSvgArtifactType(type: string): boolean {
  * `static` template always loads `index.html`; a bare SVG in that slot
  * renders blank. Keep the source on `index.svg` for the code tab and wrap
  * a copy in a full-viewport HTML shell for the preview. viewBox-only
- * sources fill the panel via `svg { width/height: 100% }`.
+ * sources fill the panel via `body > svg { width/height: 100% }`, scoped to
+ * the root because CSS beats presentation attributes: an unscoped `svg` rule
+ * would stretch a nested `<svg>` viewport, such as a sprite or inset diagram,
+ * over its own `width`/`height` and corrupt the artifact's internal layout.
  *
  * The shell holds a *copy* of the source, so an edit cannot be applied by
  * replacing `index.svg` alone — both entries have to be rebuilt from the
@@ -224,7 +227,7 @@ export function getSvgFiles(content: string): Record<string, string> {
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <style>
 html,body{margin:0;height:100%;overflow:hidden}
-svg{display:block;width:100%;height:100%}
+body>svg{display:block;width:100%;height:100%}
 </style>
 </head>
 <body>

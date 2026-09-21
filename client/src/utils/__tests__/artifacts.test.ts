@@ -49,6 +49,38 @@ describe('SVG artifact template mapping (#16087)', () => {
     expect(files['index.html']).toContain(svg);
   });
 
+  it('sizes only the root SVG so a nested viewport keeps its own geometry', () => {
+    const originalHead = document.head.innerHTML;
+    const originalBody = document.body.innerHTML;
+    try {
+      const html = getSvgFiles(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
+          '<svg id="sprite" width="20" height="20" x="5" y="5"><rect width="20" height="20"/></svg>' +
+          '</svg>',
+      )['index.html'];
+      /* Mount the shell's own generated style and body. CSS overrides SVG
+       * presentation attributes, so an unscoped `svg` rule would stretch the
+       * nested viewport to the panel and corrupt the drawing's layout. */
+      const css = html.match(/<style>([\s\S]*?)<\/style>/i)?.[1] ?? '';
+      const markup = html.match(/<body>([\s\S]*?)<\/body>/i)?.[1] ?? '';
+      document.head.innerHTML = `<style>${css}</style>`;
+      document.body.innerHTML = markup;
+
+      const root = document.body.querySelector('svg');
+      const nested = document.getElementById('sprite');
+      if (root == null || nested == null) {
+        throw new Error('expected the mounted shell to hold both SVG viewports');
+      }
+      expect(getComputedStyle(root).width).toBe('100%');
+      expect(getComputedStyle(root).height).toBe('100%');
+      expect(getComputedStyle(nested).width).not.toBe('100%');
+      expect(getComputedStyle(nested).height).not.toBe('100%');
+    } finally {
+      document.head.innerHTML = originalHead;
+      document.body.innerHTML = originalBody;
+    }
+  });
+
   it('recognizes both SVG artifact types and nothing else', () => {
     expect(isSvgArtifactType('image/svg+xml')).toBe(true);
     expect(isSvgArtifactType('image/svg')).toBe(true);
