@@ -1,4 +1,5 @@
-import { memo, useRef, useMemo, useEffect, useCallback, Fragment } from 'react';
+import { memo, useRef, useMemo, useEffect, useCallback, useContext, Fragment } from 'react';
+import { useStore } from 'jotai';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
@@ -9,6 +10,7 @@ import type {
 import type { ReactNode, ReactElement } from 'react';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import type { ActivityPhaseSegment } from '~/utils/activityLabels';
+import type { ReasoningDisclosures } from './disclosure';
 import {
   mapAttachments,
   getPartKeyIndex,
@@ -24,6 +26,7 @@ import {
 } from '~/utils/activityLabels';
 import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceChanges';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
+import { ReasoningDisclosureContext, reasoningDisclosure } from './disclosure';
 import { MediaContext, MessageContext, SearchContext } from '~/Providers';
 import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
 import { hasParallelLanes, parallelLaneGroups } from '~/utils/lanes';
@@ -338,14 +341,28 @@ const ContentPartsBody = memo(function ContentPartsBody({
       ),
     [attachmentMap, resolvedToolCallStepOwners],
   );
+  const disclosureStore = useStore();
+  const reasoningDisclosures = useContext(ReasoningDisclosureContext);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
   const localToolGroupExpansionRef = useRef(new Map<string, ToolCallGroupExpansionState>());
   const expansionState = toolGroupExpansionState ?? localToolGroupExpansionRef.current;
   const fallbackScopeRef = useRef({ messageId, scope: 0 });
+  /** Keys a phase card has already rendered under, by its computed key and by
+   *  where its span starts. See `stableCardKey`. */
+  const cardKeyAliasesRef = useRef(new Map<string, string>());
+  const cardScopeRef = useRef(0);
   if (fallbackScopeRef.current.messageId !== messageId) {
     if (!effectiveIsSubmitting) {
       fallbackScopeRef.current.scope += 1;
       expansionState.clear();
+    }
+    cardScopeRef.current += 1;
+    /** Positions belong to one response, even when the next sibling is live.
+     * Tool-backed aliases still bridge placeholder hydration and finalization. */
+    for (const alias of cardKeyAliasesRef.current.keys()) {
+      if (alias.startsWith('start:') || alias.startsWith('key:fallback:')) {
+        cardKeyAliasesRef.current.delete(alias);
+      }
     }
     fallbackScopeRef.current.messageId = messageId;
   }
@@ -796,7 +813,24 @@ const ContentPartsBody = memo(function ContentPartsBody({
       const position = segment.hasContent
         ? segmentKeyIndex(segment)
         : getPartKeyIndex(segment.labelPart, segment.labelIndex);
-      return `fallback:${fallbackScope}:${position}`;
+      return `fallback:${cardScopeRef.current}:${position}`;
+    };
+    /** A live card can exist before its first tool call — a span that is only
+     *  a thought so far has no provider id, so `phaseCardKey` gives it the
+     *  positional fallback, and would hand it a different, tool-anchored key
+     *  the moment a call is appended. That is a remount mid-thought: the row
+     *  blinks and a reader who opened it is shut out. The first key a span
+     *  renders under is therefore kept, and remembered both by where the span
+     *  starts and by the key it would otherwise move to, so the summary that
+     *  later claims the same calls from a different start still lands on it. */
+    const stableCardKey = (segment: Extract<ActivityPhaseSegment, { type: 'phase' }>): string => {
+      const computed = phaseCardKey(segment);
+      const start = absoluteIndexAt(segment.contentIndices[0] ?? segment.startIndex);
+      const aliases = cardKeyAliasesRef.current;
+      const key = aliases.get(`key:${computed}`) ?? aliases.get(`start:${start}`) ?? computed;
+      aliases.set(`key:${computed}`, key);
+      aliases.set(`start:${start}`, key);
+      return key;
     };
     /** Exactly one thing may hold the streaming cursor. A card carries it
      *  below its own header whenever the tail of the run sits inside its
@@ -893,7 +927,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
              *  siblings whose cards start at the same index. Pairing them also
              *  keeps repeated provider ids in one message apart, the way
              *  `getToolGroupId` uses an occurrence counter. */
-            const cardKey = phaseCardKey(segment);
+            const cardKey = stableCardKey(segment);
             const labelText = getActivityLabelText(segment.labelPart);
             const segmentIndices = segment.contentIndices.map(absoluteIndexAt);
             /** While a run streams, the cursor sits INSIDE a synthesized span.
@@ -954,6 +988,24 @@ const ContentPartsBody = memo(function ContentPartsBody({
                 hasContent={segment.hasContent}
                 attachments={phaseAttachments}
                 hasPendingApproval={hasPendingApproval}
+                onExpansionChange={
+                  live &&
+                  reasoningDisclosures != null &&
+                  !segment.content.some((part) => part?.type === ContentTypes.TOOL_CALL)
+                    ? (expanded) => {
+                        segment.content.forEach((part, position) => {
+                          if (part?.type !== ContentTypes.THINK) {
+                            return;
+                          }
+                          const index = getPartKeyIndex(part, segmentIndices[position]);
+                          disclosureStore.set(
+                            reasoningDisclosure(reasoningDisclosures, index),
+                            expanded,
+                          );
+                        });
+                      }
+                    : undefined
+                }
                 liveParts={live ? segment.content : undefined}
                 spanParts={segment.hasContent ? segment.content : undefined}
                 animateEntrance={
@@ -1122,7 +1174,14 @@ const ContentPartsBody = memo(function ContentPartsBody({
 });
 
 const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
-  const { attachments } = props;
+  const { attachments, messageId } = props;
+  const reasoningState = useRef<{ messageId: string; disclosures: ReasoningDisclosures } | null>(
+    null,
+  );
+  if (reasoningState.current?.messageId !== messageId) {
+    reasoningState.current = { messageId, disclosures: new Map() };
+  }
+  const reasoningDisclosures = reasoningState.current.disclosures;
   /** Published once for the whole message so every markdown block below —
    *  including the ones nested inside phase cards — resolves a bare
    *  `![DTI](5_dti.png)` against the files this turn actually produced.
@@ -1140,7 +1199,9 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
   const media = useMemo(() => ({ attachmentsByName }), [attachmentsByName]);
   return (
     <MediaContext.Provider value={media}>
-      <ContentPartsBody {...props} />
+      <ReasoningDisclosureContext.Provider value={reasoningDisclosures}>
+        <ContentPartsBody {...props} />
+      </ReasoningDisclosureContext.Provider>
     </MediaContext.Provider>
   );
 });

@@ -886,8 +886,18 @@ describe('groupActivityPhases — live tail', () => {
     expect(groupActivityPhases([think, tool('t1')])).toBeUndefined();
   });
 
-  it('does not fold reasoning that has not reached a tool call yet', () => {
-    expect(groupActivityPhases([think], undefined, true)).toBeUndefined();
+  it('folds a streaming thought before any tool call, so its peek never opens and snaps shut', () => {
+    const segments = groupActivityPhases([think], undefined, true);
+    expect(segments?.[0]).toMatchObject({ type: 'phase', live: true, contentIndices: [0] });
+  });
+
+  it('does not fold a thought that has no text yet', () => {
+    const empty = { type: ContentTypes.THINK, think: '  ' } as unknown as TMessageContentParts;
+    expect(groupActivityPhases([empty], undefined, true)).toBeUndefined();
+  });
+
+  it('leaves a settled thought on its own row', () => {
+    expect(groupActivityPhases([think])).toBeUndefined();
   });
 
   it('does not fold a span the stream has already moved past', () => {
