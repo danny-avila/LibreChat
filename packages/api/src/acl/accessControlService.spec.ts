@@ -302,6 +302,99 @@ describe('AccessControlService', () => {
       ]);
     });
 
+    /**
+     * The preserve-Insights path must not emit a `$bit` update combining `or`
+     * and `and` on the same field: MongoDB-compatible databases such as Amazon
+     * DocumentDB and Azure Cosmos DB for MongoDB reject it with `The $bit
+     * modifier only supports 'and', 'or', and 'xor'`.
+     */
+    test('preserves Insights via $set instead of a combined $bit update', async () => {
+      const viewerRole = await dbMethods.findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER);
+      await AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        permBits: PermissionBits.VIEW | PermissionBits.VIEW_INSIGHTS,
+        roleId: viewerRole?._id,
+        grantedBy: grantedById,
+        grantedAt: new Date(),
+      });
+
+      const bulkWriteSpy = jest.spyOn(service['_dbMethods'], 'bulkWriteAclEntries');
+
+      await service.bulkUpdateResourcePermissions({
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        updatedPrincipals: [
+          {
+            type: PrincipalType.USER,
+            id: userId.toString(),
+            accessRoleId: AccessRoleIds.AGENT_EDITOR,
+          },
+        ],
+        grantedBy: grantedById,
+      });
+
+      const writes = bulkWriteSpy.mock.calls[0][0] as Array<{
+        updateMany: { update: Record<string, unknown> };
+      }>;
+      expect(writes).toHaveLength(1);
+      const update = writes[0].updateMany.update;
+      expect(update).not.toHaveProperty('$bit');
+      expect(update.$set).toEqual(
+        expect.objectContaining({
+          permBits: RoleBits.EDITOR | PermissionBits.VIEW_INSIGHTS,
+        }),
+      );
+      bulkWriteSpy.mockRestore();
+
+      const entry = await AclEntry.findOne({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.AGENT,
+        resourceId,
+      });
+      expect(entry!.permBits).toBe(RoleBits.EDITOR | PermissionBits.VIEW_INSIGHTS);
+    });
+
+    test('clears OWNER-range bits absent from the new role while preserving Insights', async () => {
+      const ownerRole = await dbMethods.findRoleByIdentifier(AccessRoleIds.AGENT_OWNER);
+      await AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        permBits: RoleBits.OWNER | PermissionBits.VIEW_INSIGHTS,
+        roleId: ownerRole?._id,
+        grantedBy: grantedById,
+        grantedAt: new Date(),
+      });
+
+      await service.bulkUpdateResourcePermissions({
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        updatedPrincipals: [
+          {
+            type: PrincipalType.USER,
+            id: userId.toString(),
+            accessRoleId: AccessRoleIds.AGENT_VIEWER,
+          },
+        ],
+        grantedBy: grantedById,
+      });
+
+      const entry = await AclEntry.findOne({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.AGENT,
+        resourceId,
+      });
+      expect(entry!.permBits).toBe(RoleBits.VIEWER | PermissionBits.VIEW_INSIGHTS);
+    });
+
     test('does not treat a non-agent permission bit as an Insights revocation', async () => {
       await AclEntry.create({
         principalType: PrincipalType.USER,

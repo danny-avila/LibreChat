@@ -565,21 +565,26 @@ export class AccessControlService {
             [PrincipalType.GROUP]: PrincipalModel.GROUP,
             [PrincipalType.ROLE]: PrincipalModel.ROLE,
           };
+          /**
+           * When preserving Insights, apply the role's OWNER-range bits while
+           * leaving every other bit (notably `VIEW_INSIGHTS`) untouched. This
+           * is computed from the already-fetched `existingEntry` rather than
+           * with `$bit`, because combining `or` + `and` on the same field in a
+           * single `$bit` is rejected by MongoDB-compatible databases such as
+           * Amazon DocumentDB and Azure Cosmos DB for MongoDB, which surface
+           * `The $bit modifier only supports 'and', 'or', and 'xor'`.
+           */
+          const preservedPermBits = preserveInsights
+            ? ((existingEntry?.permBits ?? 0) | (role.permBits & RoleBits.OWNER)) &
+              ~(RoleBits.OWNER & ~role.permBits)
+            : permBits;
           const update = {
             $set: {
-              ...(!preserveInsights && { permBits }),
+              permBits: preservedPermBits,
               roleId: role._id,
               grantedBy,
               grantedAt,
             },
-            ...(preserveInsights && {
-              $bit: {
-                permBits: {
-                  or: role.permBits & RoleBits.OWNER,
-                  and: ~(RoleBits.OWNER & ~role.permBits),
-                },
-              },
-            }),
             $setOnInsert: {
               principalType: principal.type,
               resourceType,
