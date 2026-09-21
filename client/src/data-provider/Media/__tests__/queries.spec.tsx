@@ -56,6 +56,8 @@ test('shell activity includes unfinished work awaiting attention and wakes on in
   const env = setup();
   const load = jest.mocked(dataService.listMediaThreads).mockResolvedValue({ items: [] });
   const hook = renderHook(() => useMediaActivity(env.host, true), { wrapper: env.wrapper });
+  expect(hook.result.current.isFetched).toBe(false);
+  await waitFor(() => expect(hook.result.current.isFetched).toBe(true));
   await waitFor(() => expect(load).toHaveBeenCalledTimes(1));
   jest.useFakeTimers();
   await act(async () => {
@@ -97,6 +99,31 @@ test('shell activity includes unfinished work awaiting attention and wakes on in
   hook.unmount();
   env.client.clear();
   jest.useRealTimers();
+});
+
+test('a failed initial activity snapshot releases events without waiting for a successful retry', async () => {
+  const env = setup();
+  const load = jest.mocked(dataService.listMediaThreads).mockRejectedValue(rejected(503));
+  const hook = renderHook(() => useMediaActivity(env.host, true), { wrapper: env.wrapper });
+  expect(hook.result.current.isFetched).toBe(false);
+  await waitFor(() => expect(hook.result.current.isFetched).toBe(true));
+  expect(hook.result.current.count).toBe(0);
+  expect(load).toHaveBeenCalledTimes(1);
+  hook.unmount();
+  env.client.clear();
+});
+
+test('a cached activity snapshot releases events while its background refresh is pending', () => {
+  const env = setup();
+  env.client.setQueryData([QueryKeys.mediaThreads, env.host.scope, 'pending', 'activity', ''], {
+    pages: [{ items: [] }],
+    pageParams: [undefined],
+  });
+  jest.mocked(dataService.listMediaThreads).mockReturnValue(new Promise(() => {}));
+  const hook = renderHook(() => useMediaActivity(env.host, true), { wrapper: env.wrapper });
+  expect(hook.result.current.isFetched).toBe(true);
+  hook.unmount();
+  env.client.clear();
 });
 
 test('refreshes at a known saved-key expiry without fetching individual keys on startup', async () => {

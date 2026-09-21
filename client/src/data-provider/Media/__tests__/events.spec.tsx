@@ -7,7 +7,7 @@ import { useMediaEvents } from '../events';
 
 jest.mock('sse.js', () => ({ SSE: jest.fn() }));
 
-test('valid nudges invalidate only the current owner and denial closes without retries', async () => {
+test('connecting catches up the current owner and denial closes without retries', async () => {
   const handlers = new Map<string, (event: unknown) => void>();
   const close = jest.fn();
   jest.mocked(SSE).mockImplementation(
@@ -31,7 +31,26 @@ test('valid nudges invalidate only the current owner and denial closes without r
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
   jest.useFakeTimers();
-  const hook = renderHook(() => useMediaEvents(host, 'test-token', true), { wrapper });
+  const hook = renderHook(({ enabled }) => useMediaEvents(host, 'test-token', enabled), {
+    wrapper,
+    initialProps: { enabled: false },
+  });
+  expect(SSE).not.toHaveBeenCalled();
+  hook.rerender({ enabled: true });
+  await act(async () => handlers.get('message')?.({ data: JSON.stringify({ ready: true }) }));
+  for (const key of [
+    QueryKeys.mediaThreads,
+    QueryKeys.mediaThread,
+    QueryKeys.mediaTurns,
+    QueryKeys.mediaTurnJobs,
+    QueryKeys.mediaJobOutputs,
+  ]) {
+    expect(invalidate).toHaveBeenCalledWith(
+      { queryKey: [key, host.scope] },
+      { cancelRefetch: false },
+    );
+  }
+  invalidate.mockClear();
   await act(async () =>
     handlers.get('message')?.({
       data: JSON.stringify({ event: 'media_update', data: { threadId: 'thread', version: 2 } }),

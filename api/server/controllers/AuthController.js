@@ -5,6 +5,7 @@ const { logger, runAsSystem, tenantStorage } = require('@librechat/data-schemas'
 const {
   math,
   isEnabled,
+  sanitizeUserForAuthResponse,
   createAuthIdentityContext,
   createOpenIDRefreshOwnershipError,
   isOpenIDRefreshOwnershipError,
@@ -76,19 +77,6 @@ const registrationController = async (req, res) => {
     logger.error('[registrationController]', err);
     return res.status(500).json({ message: err.message });
   }
-};
-
-const sanitizeUserForAuthResponse = (user) => {
-  const source = (typeof user?.toObject === 'function' ? user.toObject() : user) || {};
-  const {
-    password: _pw,
-    __v: _v,
-    totpSecret: _ts,
-    backupCodes: _bc,
-    federatedTokens: _ft,
-    ...safeUser
-  } = source;
-  return safeUser;
 };
 
 const runInUserTenant = (user, fn) =>

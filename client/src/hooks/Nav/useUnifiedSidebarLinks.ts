@@ -54,7 +54,12 @@ export default function useUnifiedSidebarLinks() {
     isCurrentSession,
   };
   const mediaActivity = useMediaActivity(mediaActivityHost, mediaVisible);
-  useMediaEvents(mediaActivityHost, token, mediaVisible && startupConfig?.media?.events === true);
+  // Settle the initial snapshot before opening a persistent connection; SSE ready catches up gaps.
+  useMediaEvents(
+    mediaActivityHost,
+    token,
+    mediaVisible && mediaActivity.isFetched && startupConfig?.media?.events === true,
+  );
   const mediaActivityCount = `${mediaActivity.count}${mediaActivity.hasMore ? '+' : ''}`;
   const mediaActivityLabel =
     mediaActivity.count > 0

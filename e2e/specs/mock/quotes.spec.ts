@@ -144,40 +144,51 @@ async function tripleClickText(page: Page, needle: string) {
  * block-overhang cases around it.
  */
 async function selectAcrossMessages(page: Page, fromNeedle: string, toNeedle: string) {
-  await page.evaluate(
+  const selectedText = await page.evaluate(
     ({ from, to }) => {
-      const findText = (text: string) => {
+      const findBoundary = (text: string, edge: 'start' | 'end') => {
         const renders = Array.from(document.querySelectorAll('.message-render'));
         const host = [...renders].reverse().find((el) => (el.textContent ?? '').includes(text));
         if (!host) {
           throw new Error(`No message contains: ${text}`);
         }
+        // Streaming word fades can split a phrase across several text nodes.
+        let offset = (host.textContent ?? '').indexOf(text) + (edge === 'end' ? text.length : 0);
         const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT);
         let node = walker.nextNode();
-        while (node && !(node.nodeValue ?? '').includes(text)) {
+        while (node) {
+          const length = (node.nodeValue ?? '').length;
+          if (offset < length || (edge === 'end' && offset === length)) {
+            return { host, node, offset };
+          }
+          offset -= length;
           node = walker.nextNode();
         }
-        if (!node) {
-          throw new Error(`No text node contains: ${text}`);
-        }
-        return { node, index: (node.nodeValue ?? '').indexOf(text) };
+        throw new Error(`No ${edge} boundary found for: ${text}`);
       };
 
-      const start = findText(from);
-      const end = findText(to);
+      const start = findBoundary(from, 'start');
+      const end = findBoundary(to, 'end');
+      if (start.host === end.host) {
+        throw new Error('Cross-message selection must span distinct messages');
+      }
       const range = document.createRange();
-      range.setStart(start.node, start.index);
-      range.setEnd(end.node, end.index + to.length);
+      range.setStart(start.node, start.offset);
+      range.setEnd(end.node, end.offset);
       const selection = window.getSelection();
       if (!selection) {
         throw new Error('Selection API unavailable');
       }
       selection.removeAllRanges();
       selection.addRange(range);
+      const text = selection.toString();
       document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      return text;
     },
     { from: fromNeedle, to: toNeedle },
   );
+  expect(selectedText.startsWith(fromNeedle)).toBe(true);
+  expect(selectedText.endsWith(toNeedle)).toBe(true);
 }
 
 /** Viewport-relative bottom edge of the live selection. */

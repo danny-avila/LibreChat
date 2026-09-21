@@ -161,6 +161,7 @@ export function useMediaActivity(host: MediaQueryScope, enabled: boolean) {
         ) ?? 0)
       : 0,
     hasMore: query.hasNextPage === true,
+    isFetched: query.isFetched,
   };
 }
 export function useMediaThread(host: MediaQueryScope, threadId?: string) {

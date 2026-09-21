@@ -6,9 +6,11 @@ import type { NavLink } from '~/common';
 import UnifiedSidebar from '../UnifiedSidebar';
 
 let mockMediaVisible = false;
+let mockMediaActivityFetched = false;
 let mockSmallScreen = false;
 let mockExpanded = true;
 const mockMediaAccessContext = React.createContext(false);
+const mockMediaActivityContext = React.createContext(false);
 const mockHistory = jest.fn();
 const mockMediaSettings = jest.fn();
 const mockMediaActivity = jest.fn();
@@ -74,7 +76,11 @@ jest.mock('~/data-provider', () => ({
   useInsightsAccessQuery: () => ({}),
   useMediaActivity: (...args: unknown[]) => {
     mockMediaActivity(...args);
-    return { count: 0, hasMore: false };
+    return {
+      count: 0,
+      hasMore: false,
+      isFetched: jest.requireActual('react').useContext(mockMediaActivityContext),
+    };
   },
   useMediaEvents: (...args: unknown[]) => mockMediaEvents(...args),
 }));
@@ -131,7 +137,9 @@ function Harness({ path }: { path: string }) {
     <MemoryRouter initialEntries={[path]}>
       <RecoilRoot>
         <mockMediaAccessContext.Provider value={mockMediaVisible}>
-          <UnifiedSidebar />
+          <mockMediaActivityContext.Provider value={mockMediaActivityFetched}>
+            <UnifiedSidebar />
+          </mockMediaActivityContext.Provider>
         </mockMediaAccessContext.Provider>
       </RecoilRoot>
     </MemoryRouter>
@@ -141,8 +149,31 @@ function Harness({ path }: { path: string }) {
 beforeEach(() => {
   localStorage.clear();
   mockMediaVisible = false;
+  mockMediaActivityFetched = false;
   mockSmallScreen = false;
   mockExpanded = true;
+});
+
+it('keeps activity enabled but waits for its first snapshot before connecting events', () => {
+  mockMediaVisible = true;
+  const view = render(<Harness path="/c/new" />);
+  expect(mockMediaActivity).toHaveBeenLastCalledWith(expect.any(Object), true);
+  expect(mockMediaEvents).toHaveBeenLastCalledWith(expect.any(Object), 'token', false);
+
+  mockMediaActivityFetched = true;
+  view.rerender(<Harness path="/c/new" />);
+  expect(mockMediaEvents).toHaveBeenLastCalledWith(expect.any(Object), 'token', true);
+
+  mockMediaVisible = false;
+  view.rerender(<Harness path="/c/new" />);
+  expect(mockMediaEvents).toHaveBeenLastCalledWith(expect.any(Object), 'token', false);
+});
+
+it('connects events immediately when an allowed session has a cached activity snapshot', () => {
+  mockMediaVisible = true;
+  mockMediaActivityFetched = true;
+  render(<Harness path="/c/new" />);
+  expect(mockMediaEvents).toHaveBeenLastCalledWith(expect.any(Object), 'token', true);
 });
 
 describe.each([false, true])('Studio sidebar routing (mobile=%s)', (smallScreen) => {
