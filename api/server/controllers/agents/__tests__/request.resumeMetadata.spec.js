@@ -274,6 +274,7 @@ jest.mock('@librechat/api', () => ({
   buildMessageFiles: jest.fn(() => []),
   resolveTitleTiming: jest.fn(() => 'immediate'),
   createConvoPersistenceSignal: jest.requireActual('@librechat/api').createConvoPersistenceSignal,
+  recoverTurnMessageReference: jest.requireActual('@librechat/api').recoverTurnMessageReference,
   resolveConversationAnchor: jest.requireActual('@librechat/api').resolveConversationAnchor,
   resolveRunCodeWorkspaces: jest.requireActual('@librechat/api').resolveRunCodeWorkspaces,
   AttachmentStorageError: jest.requireActual('@librechat/api').AttachmentStorageError,
@@ -5922,7 +5923,7 @@ describe('ResumableAgentController resume metadata', () => {
      * through `getReqData`, exactly as BaseClient does once it has started the
      * user-message write.
      */
-    const startHeldFirstTurn = async ({ userMessageWrite, clientOverrides }) => {
+    const startHeldFirstTurn = async ({ userMessageWrite, clientOverrides, responseWrite }) => {
       let signalFinished;
       const finished = new Promise((resolve) => {
         signalFinished = resolve;
@@ -5963,9 +5964,14 @@ describe('ResumableAgentController resume metadata', () => {
             parentMessageId: 'user-msg',
             conversationId: options.conversationId,
             content: [{ type: 'text', text: 'Answer' }],
-            databasePromise: Promise.resolve({
-              conversation: { conversationId: options.conversationId, title: null },
-            }),
+            databasePromise: Promise.resolve(
+              responseWrite
+                ? responseWrite(options.conversationId)
+                : {
+                    message: { _id: 'response-row-id' },
+                    conversation: { conversationId: options.conversationId, title: null },
+                  },
+            ),
           };
         }),
       };
@@ -6037,13 +6043,19 @@ describe('ResumableAgentController resume metadata', () => {
      *  rebuilding the whole `messages` array. The title now writes metadata only, so
      *  the recovered user row has to carry its own reference. */
     describe('recovered user message reference', () => {
+      /** Distinct rows, so one reference says nothing about the other. */
+      beforeEach(() => {
+        mockSaveMessage.mockImplementation(async (_ctx, message) => ({
+          _id: message.messageId === 'response-msg' ? 'response-row-id' : 'user-row-id',
+        }));
+      });
+
       const appendedIdsFor = (conversationId) =>
         mockSaveConvo.mock.calls
           .filter((call) => call[1]?.conversationId === conversationId && call[2]?.appendMessageIds)
           .map((call) => call[2].appendMessageIds);
 
       it('appends the recovered reference when no write reported the conversation', async () => {
-        mockSaveMessage.mockResolvedValue({ _id: 'user-row-id' });
         const turn = await startHeldFirstTurn({
           /** BaseClient swallows a failed user-message save and resolves with `{}`. */
           userMessageWrite: () => Promise.resolve({}),
@@ -6059,11 +6071,13 @@ describe('ResumableAgentController resume metadata', () => {
         );
       });
 
-      it('does not append again when the write already reported the conversation', async () => {
-        mockSaveMessage.mockResolvedValue({ _id: 'user-row-id' });
+      it('does not append again when the write already recorded the reference', async () => {
         const turn = await startHeldFirstTurn({
           userMessageWrite: (conversationId) =>
-            Promise.resolve({ message: {}, conversation: { conversationId } }),
+            Promise.resolve({
+              message: { _id: 'user-row-id' },
+              conversation: { conversationId },
+            }),
         });
 
         await turn.finish();
@@ -6071,8 +6085,41 @@ describe('ResumableAgentController resume metadata', () => {
         expect(appendedIdsFor(turn.conversationId())).toEqual([]);
       });
 
+      /** `saveMessage` can resolve falsy without throwing, and the conversation is still
+       *  written and reported with nothing appended. The row existing is not evidence
+       *  that this turn is referenced by it. */
+      it('appends when the write reported the row but appended no message', async () => {
+        const turn = await startHeldFirstTurn({
+          userMessageWrite: (conversationId) =>
+            Promise.resolve({ message: undefined, conversation: { conversationId } }),
+        });
+
+        await turn.finish();
+
+        expect(appendedIdsFor(turn.conversationId())).toEqual([['user-row-id']]);
+      });
+
+      /** The response row has the same exposure: its write can report the conversation
+       *  while appending nothing, and its terminal retry is also a bare `saveMessage`. */
+      it('appends the recovered response reference when its write appended nothing', async () => {
+        const turn = await startHeldFirstTurn({
+          userMessageWrite: (conversationId) =>
+            Promise.resolve({
+              message: { _id: 'user-row-id' },
+              conversation: { conversationId },
+            }),
+          /** The response write reports the row without appending its id. */
+          responseWrite: (conversationId) => ({
+            conversation: { conversationId, title: null },
+          }),
+        });
+
+        await turn.finish();
+
+        expect(appendedIdsFor(turn.conversationId())).toEqual([['response-row-id']]);
+      });
+
       it('leaves the conversation alone for a turn that does not save one', async () => {
-        mockSaveMessage.mockResolvedValue({ _id: 'user-row-id' });
         const turn = await startHeldFirstTurn({
           userMessageWrite: () => Promise.resolve({ message: {} }),
           clientOverrides: { skipSaveConvo: true },

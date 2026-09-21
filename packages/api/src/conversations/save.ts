@@ -177,6 +177,53 @@ export async function saveTurnConversation(
   return writeConversation(deps, write, existing, appendMessageIds);
 }
 
+/** What a turn knows about a message row whose conversation reference may be missing. */
+export interface TurnMessageReferenceRecovery {
+  ctx: ConversationWriteContext;
+  conversationId: string;
+  /** The row a retry restored. Absent means there is nothing to reference. */
+  savedMessageId?: SavedMessageId;
+  /** Whether the write that should have appended this reference did. */
+  alreadyRecorded: boolean;
+  /** False for a turn whose conversation row another run owns, which holds no messages. */
+  managesConversation: boolean;
+  /** Logged by `saveConvo` to name the write. */
+  context: string;
+}
+
+/**
+ * Appends a recovered message's reference when nothing else recorded it.
+ *
+ * A first user-message write that fails is swallowed by BaseClient, and the retry that restores
+ * the row writes only the message — `saveMessage` never touches the conversation. The response's
+ * own write has meanwhile created the row referencing just itself, so the user's turn would stay
+ * absent from `messages` for good. Nothing else repairs it: every other write appends only its
+ * own id.
+ *
+ * Skipped whenever the reference is already recorded, which is every ordinary turn, so the happy
+ * path costs no write. Returns whether it wrote.
+ */
+export async function recoverTurnMessageReference(
+  deps: Pick<ConversationMethods, 'saveConvo'>,
+  recovery: TurnMessageReferenceRecovery,
+): Promise<boolean> {
+  const { ctx, conversationId, savedMessageId, alreadyRecorded, managesConversation } = recovery;
+  if (alreadyRecorded || !managesConversation || savedMessageId == null) {
+    return false;
+  }
+  await deps.saveConvo(
+    ctx,
+    { conversationId },
+    {
+      context: recovery.context,
+      /** The row exists by now; this write must never create one. */
+      noUpsert: true,
+      appendMessageIds: [savedMessageId],
+    },
+  );
+  return true;
+}
+
 /**
  * Creates a new conversation's row ahead of a deferred first message, without the message, so
  * the conversation lists return a running chat. An existing row is left to the message save.

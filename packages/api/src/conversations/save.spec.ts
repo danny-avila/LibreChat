@@ -9,6 +9,7 @@ import {
   saveTurnConversation,
   seedTurnConversation,
   getConversationWriteContext,
+  recoverTurnMessageReference,
 } from './save';
 
 type Store = Pick<ConversationMethods, 'getConvo' | 'saveConvo'> &
@@ -177,6 +178,136 @@ describe('seedTurnConversation', () => {
     await seedTurnConversation(store, seedFields({ body: {} }, randomUUID()));
 
     expect(saveConvo).not.toHaveBeenCalled();
+  });
+});
+
+describe('recoverTurnMessageReference', () => {
+  /** The whole failure path, in order: the user-message write fails and is swallowed, the
+   *  response's write creates the row referencing only itself, the terminal retries the user
+   *  row with a bare `saveMessage` that never touches the conversation, and the recovery
+   *  carries the reference the turn would otherwise have lost for good. */
+  const runFailedUserWriteTurn = async () => {
+    const userId = new mongoose.Types.ObjectId().toString();
+    const conversationId = randomUUID();
+    const req = createRequest(userId);
+    const ctx = getConversationWriteContext(req);
+
+    const responseRow = await store.saveMessage(ctx, {
+      messageId: randomUUID(),
+      conversationId,
+      text: 'Answer',
+      isCreatedByUser: false,
+    });
+    await saveTurnConversation(store, {
+      ...seedFields(req, conversationId),
+      ctx,
+      savedMessageId: responseRow?._id,
+    });
+
+    /** The retry: the row is restored, the conversation is not told. */
+    const recoveredUserRow = await store.saveMessage(ctx, {
+      messageId: randomUUID(),
+      conversationId,
+      text: 'First message',
+      isCreatedByUser: true,
+    });
+
+    return { userId, conversationId, ctx, responseRow, recoveredUserRow };
+  };
+
+  it('appends a recovered reference the conversation never received', async () => {
+    const turn = await runFailedUserWriteTurn();
+    const before = await store.getConvo(turn.userId, turn.conversationId);
+    expect(before?.messages?.map(String)).toEqual([String(turn.responseRow?._id)]);
+
+    const wrote = await recoverTurnMessageReference(store, {
+      ctx: turn.ctx,
+      conversationId: turn.conversationId,
+      savedMessageId: turn.recoveredUserRow?._id,
+      alreadyRecorded: false,
+      managesConversation: true,
+      context: 'save.spec recovery',
+    });
+
+    expect(wrote).toBe(true);
+    const row = await store.getConvo(turn.userId, turn.conversationId);
+    expect(row?.messages?.map(String)).toEqual(
+      [turn.responseRow?._id, turn.recoveredUserRow?._id].map(String),
+    );
+  });
+
+  it('is idempotent, so a repeated recovery cannot duplicate the reference', async () => {
+    const turn = await runFailedUserWriteTurn();
+    const recovery = {
+      ctx: turn.ctx,
+      conversationId: turn.conversationId,
+      savedMessageId: turn.recoveredUserRow?._id,
+      alreadyRecorded: false,
+      managesConversation: true,
+      context: 'save.spec recovery',
+    };
+
+    await recoverTurnMessageReference(store, recovery);
+    await recoverTurnMessageReference(store, recovery);
+
+    const row = await store.getConvo(turn.userId, turn.conversationId);
+    expect(row?.messages?.map(String)).toEqual(
+      [turn.responseRow?._id, turn.recoveredUserRow?._id].map(String),
+    );
+  });
+
+  it.each([
+    ['the reference is already recorded', { alreadyRecorded: true, managesConversation: true }],
+    ['the turn does not own the row', { alreadyRecorded: false, managesConversation: false }],
+  ])('writes nothing when %s', async (_label, overrides) => {
+    const turn = await runFailedUserWriteTurn();
+    const saveConvo = jest.spyOn(store, 'saveConvo');
+
+    const wrote = await recoverTurnMessageReference(store, {
+      ctx: turn.ctx,
+      conversationId: turn.conversationId,
+      savedMessageId: turn.recoveredUserRow?._id,
+      context: 'save.spec recovery',
+      ...overrides,
+    });
+
+    expect(wrote).toBe(false);
+    expect(saveConvo).not.toHaveBeenCalled();
+  });
+
+  it('writes nothing when there is no recovered row to reference', async () => {
+    const turn = await runFailedUserWriteTurn();
+    const saveConvo = jest.spyOn(store, 'saveConvo');
+
+    const wrote = await recoverTurnMessageReference(store, {
+      ctx: turn.ctx,
+      conversationId: turn.conversationId,
+      savedMessageId: undefined,
+      alreadyRecorded: false,
+      managesConversation: true,
+      context: 'save.spec recovery',
+    });
+
+    expect(wrote).toBe(false);
+    expect(saveConvo).not.toHaveBeenCalled();
+  });
+
+  it('never creates a row of its own', async () => {
+    const userId = new mongoose.Types.ObjectId().toString();
+    const conversationId = randomUUID();
+    const req = createRequest(userId);
+
+    const wrote = await recoverTurnMessageReference(store, {
+      ctx: getConversationWriteContext(req),
+      conversationId,
+      savedMessageId: new mongoose.Types.ObjectId(),
+      alreadyRecorded: false,
+      managesConversation: true,
+      context: 'save.spec recovery',
+    });
+
+    expect(wrote).toBe(true);
+    expect(await store.getConvo(userId, conversationId)).toBeNull();
   });
 });
 

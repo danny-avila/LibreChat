@@ -15,6 +15,7 @@ const {
   resolveTitleTiming,
   GenerationJobManager,
   createConvoPersistenceSignal,
+  recoverTurnMessageReference,
   filterPersistableAbortContent,
   decrementPendingRequest,
   sanitizeMessageForTransmit,
@@ -2865,6 +2866,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         const databasePromise = response.databasePromise;
         delete response.databasePromise;
 
+        /** Records which row this write appended, for the same reason the user
+         *  message's write is observed: the retry below cannot tell on its own
+         *  whether the conversation already references what it just re-saved. */
+        convoSignal.observeMessageWrite(databasePromise);
         const { conversation: convoData = {} } = await databasePromise;
         const conversation = { ...convoData };
         conversation.title =
@@ -2953,24 +2958,20 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           if (!savedUserMessage) {
             throw new Error('User message could not be persisted before terminal publication');
           }
-          /** BaseClient swallows a failed first user-message write, and the retry
-           * above restores only the Message row — `saveMessage` never touches the
-           * conversation. The response's own write then created the row referencing
-           * just itself, so carry the recovered reference when no write reported the
-           * row this turn. Skipped on the happy path, where the original write
-           * appended it. */
-          if (!client.skipSaveConvo && !convoSignal.reportedConversation()) {
-            await saveConvo(
-              reqCtx,
-              { conversationId },
-              {
-                context:
-                  'api/server/controllers/agents/request.js - recovered user message reference',
-                noUpsert: true,
-                appendMessageIds: [savedUserMessage._id],
-              },
-            );
-          }
+          /** The retry above restored only the Message row, so the conversation may
+           * still not reference this turn. */
+          await recoverTurnMessageReference(
+            { saveConvo },
+            {
+              ctx: reqCtx,
+              conversationId,
+              savedMessageId: savedUserMessage._id,
+              alreadyRecorded: convoSignal.recordedMessageReference(savedUserMessage._id),
+              managesConversation: !client.skipSaveConvo,
+              context:
+                'api/server/controllers/agents/request.js - recovered user message reference',
+            },
+          );
         }
         // Only consume the parked recovery source after the explicit user-row
         // write above succeeds. `response.databasePromise` alone is insufficient:
@@ -3012,6 +3013,20 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
               : 'Response message could not be persisted before terminal publication',
           );
         }
+        /** As for the user message above: a bare `saveMessage` restores the row
+         * without telling the conversation about it. */
+        await recoverTurnMessageReference(
+          { saveConvo },
+          {
+            ctx: reqCtx,
+            conversationId,
+            savedMessageId: savedResponseMessage._id,
+            alreadyRecorded: convoSignal.recordedMessageReference(savedResponseMessage._id),
+            managesConversation: !client.skipSaveConvo,
+            context:
+              'api/server/controllers/agents/request.js - recovered response message reference',
+          },
+        );
         logAgentMemorySnapshot('after_terminal_save', terminalMemoryContext);
         if (appliedEventActor != null) {
           const recorded = await recordAgentEventActorReconciliation({
