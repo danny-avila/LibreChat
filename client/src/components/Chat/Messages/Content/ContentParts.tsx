@@ -1,4 +1,5 @@
-import { memo, useRef, useMemo, useEffect, useCallback, Fragment } from 'react';
+import { memo, useRef, useMemo, useEffect, useCallback, useContext, Fragment } from 'react';
+import { useStore } from 'jotai';
 import { ContentTypes } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
@@ -9,6 +10,7 @@ import type {
 import type { ReactNode, ReactElement } from 'react';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import type { ActivityPhaseSegment } from '~/utils/activityLabels';
+import type { ReasoningDisclosures } from './disclosure';
 import {
   mapAttachments,
   getPartKeyIndex,
@@ -24,6 +26,7 @@ import {
 } from '~/utils/activityLabels';
 import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceChanges';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
+import { ReasoningDisclosureContext, reasoningDisclosure } from './disclosure';
 import { MediaContext, MessageContext, SearchContext } from '~/Providers';
 import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
 import { hasParallelLanes, parallelLaneGroups } from '~/utils/lanes';
@@ -338,6 +341,8 @@ const ContentPartsBody = memo(function ContentPartsBody({
       ),
     [attachmentMap, resolvedToolCallStepOwners],
   );
+  const disclosureStore = useStore();
+  const reasoningDisclosures = useContext(ReasoningDisclosureContext);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
   const localToolGroupExpansionRef = useRef(new Map<string, ToolCallGroupExpansionState>());
   const expansionState = toolGroupExpansionState ?? localToolGroupExpansionRef.current;
@@ -345,20 +350,18 @@ const ContentPartsBody = memo(function ContentPartsBody({
   /** Keys a phase card has already rendered under, by its computed key and by
    *  where its span starts. See `stableCardKey`. */
   const cardKeyAliasesRef = useRef(new Map<string, string>());
+  const cardScopeRef = useRef(0);
   if (fallbackScopeRef.current.messageId !== messageId) {
     if (!effectiveIsSubmitting) {
       fallbackScopeRef.current.scope += 1;
       expansionState.clear();
-      /** Finalization lands here too — the message takes its server id as the
-       *  run ends, which this branch cannot tell from a sibling switch. Only the
-       *  position aliases are dropped: two siblings can start a span at the same
-       *  index, but a provider tool id belongs to one response, so the alias
-       *  from a span's tool-anchored key survives and the card a reader opened
-       *  mid-thought stays the same card when the response settles. */
-      for (const alias of cardKeyAliasesRef.current.keys()) {
-        if (alias.startsWith('start:')) {
-          cardKeyAliasesRef.current.delete(alias);
-        }
+    }
+    cardScopeRef.current += 1;
+    /** Positions belong to one response, even when the next sibling is live.
+     * Tool-backed aliases still bridge placeholder hydration and finalization. */
+    for (const alias of cardKeyAliasesRef.current.keys()) {
+      if (alias.startsWith('start:') || alias.startsWith('key:fallback:')) {
+        cardKeyAliasesRef.current.delete(alias);
       }
     }
     fallbackScopeRef.current.messageId = messageId;
@@ -810,7 +813,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
       const position = segment.hasContent
         ? segmentKeyIndex(segment)
         : getPartKeyIndex(segment.labelPart, segment.labelIndex);
-      return `fallback:${fallbackScope}:${position}`;
+      return `fallback:${cardScopeRef.current}:${position}`;
     };
     /** A live card can exist before its first tool call — a span that is only
      *  a thought so far has no provider id, so `phaseCardKey` gives it the
@@ -985,6 +988,24 @@ const ContentPartsBody = memo(function ContentPartsBody({
                 hasContent={segment.hasContent}
                 attachments={phaseAttachments}
                 hasPendingApproval={hasPendingApproval}
+                onExpansionChange={
+                  live &&
+                  reasoningDisclosures != null &&
+                  !segment.content.some((part) => part?.type === ContentTypes.TOOL_CALL)
+                    ? (expanded) => {
+                        segment.content.forEach((part, position) => {
+                          if (part?.type !== ContentTypes.THINK) {
+                            return;
+                          }
+                          const index = getPartKeyIndex(part, segmentIndices[position]);
+                          disclosureStore.set(
+                            reasoningDisclosure(reasoningDisclosures, index),
+                            expanded,
+                          );
+                        });
+                      }
+                    : undefined
+                }
                 liveParts={live ? segment.content : undefined}
                 spanParts={segment.hasContent ? segment.content : undefined}
                 animateEntrance={
@@ -1153,7 +1174,14 @@ const ContentPartsBody = memo(function ContentPartsBody({
 });
 
 const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
-  const { attachments } = props;
+  const { attachments, messageId } = props;
+  const reasoningState = useRef<{ messageId: string; disclosures: ReasoningDisclosures } | null>(
+    null,
+  );
+  if (reasoningState.current?.messageId !== messageId) {
+    reasoningState.current = { messageId, disclosures: new Map() };
+  }
+  const reasoningDisclosures = reasoningState.current.disclosures;
   /** Published once for the whole message so every markdown block below —
    *  including the ones nested inside phase cards — resolves a bare
    *  `![DTI](5_dti.png)` against the files this turn actually produced.
@@ -1171,7 +1199,9 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
   const media = useMemo(() => ({ attachmentsByName }), [attachmentsByName]);
   return (
     <MediaContext.Provider value={media}>
-      <ContentPartsBody {...props} />
+      <ReasoningDisclosureContext.Provider value={reasoningDisclosures}>
+        <ContentPartsBody {...props} />
+      </ReasoningDisclosureContext.Provider>
     </MediaContext.Provider>
   );
 });

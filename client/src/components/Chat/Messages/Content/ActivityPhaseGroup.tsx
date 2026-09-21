@@ -378,6 +378,7 @@ export default function ActivityPhaseGroup({
   hasPendingApproval = false,
   liveParts,
   spanParts,
+  onExpansionChange,
 }: {
   labelPart: ActivityPhasePart;
   children: ReactNode;
@@ -398,6 +399,7 @@ export default function ActivityPhaseGroup({
   liveParts?: ReadonlyArray<TMessageContentParts | undefined>;
   /** The span's parts once settled, for the header's icon stack. */
   spanParts?: ReadonlyArray<TMessageContentParts | undefined>;
+  onExpansionChange?: (expanded: boolean) => void;
 }) {
   const isLive = liveParts != null;
   const label = getActivityLabelText(labelPart);
@@ -494,8 +496,9 @@ export default function ActivityPhaseGroup({
     cancelEntranceRef.current = null;
     mountBody();
     setIsSettled(true);
-    setIsExpanded((expanded) => !expanded);
-  }, [mountBody]);
+    onExpansionChange?.(!isExpanded);
+    setIsExpanded(!isExpanded);
+  }, [mountBody, isExpanded, onExpansionChange]);
 
   /** Only the folding entrance drives the header off its natural height.
    *  History and reduced-motion render the plain, unstyled row. */

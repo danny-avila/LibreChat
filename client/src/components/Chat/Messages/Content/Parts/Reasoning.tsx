@@ -1,6 +1,6 @@
 import { memo, useMemo, useState, useEffect, useCallback, useRef, useId } from 'react';
 import copy from 'copy-to-clipboard';
-import { useAtomValue } from 'jotai';
+import { useAtom, useAtomValue } from 'jotai';
 import { Lightbulb, ChevronDown } from 'lucide-react';
 import { ContentTypes } from 'librechat-data-provider';
 import { Button, disclosureChevronVariants } from '@librechat/client';
@@ -16,6 +16,7 @@ import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { showThinkingAtom } from '~/store/showThinking';
+import { useReasoningDisclosure } from '../disclosure';
 import { fontSizeAtom } from '~/store/fontSize';
 import { useMessageContext } from '~/Providers';
 import { ROW_GLYPH_SLOT } from '../rows';
@@ -108,6 +109,7 @@ const StreamingThoughtPeek = memo(({ text }: { text: string }) => {
 StreamingThoughtPeek.displayName = 'StreamingThoughtPeek';
 
 type ReasoningProps = {
+  partKeyIndex?: number;
   reasoning: string;
   isLast: boolean;
   reasoningLabel?: string;
@@ -147,12 +149,14 @@ export const ReasoningMarker = memo(({ label }: { label?: string }) => {
 ReasoningMarker.displayName = 'ReasoningMarker';
 
 const Reasoning = memo((props: ReasoningProps) => {
-  const { reasoning, isLast, reasoningLabel } = props;
+  const { reasoning, isLast, reasoningLabel, partKeyIndex = 0 } = props;
   const contentId = useId();
   const localize = useLocalize();
   const showThinking = useAtomValue(showThinkingAtom);
   const smoothStreaming = useSmoothStreaming();
-  const [isExpanded, setIsExpanded] = useState(showThinking);
+  const [expansionOverride, setIsExpanded] = useAtom(useReasoningDisclosure(partKeyIndex));
+  const [defaultExpanded] = useState(showThinking);
+  const isExpanded = expansionOverride ?? defaultExpanded;
   const [isBarVisible, setIsBarVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const { ref: headerRef, inViewport: headerInViewport } = useInViewport();
@@ -167,9 +171,9 @@ const Reasoning = memo((props: ReasoningProps) => {
     (e: MouseEvent<HTMLButtonElement>) => {
       e.preventDefault();
       mountBody();
-      setIsExpanded((prev) => !prev);
+      setIsExpanded(!isExpanded);
     },
-    [mountBody],
+    [mountBody, isExpanded, setIsExpanded],
   );
 
   const handleFocus = useCallback(() => {
@@ -272,6 +276,7 @@ const Reasoning = memo((props: ReasoningProps) => {
 Reasoning.displayName = 'Reasoning';
 
 type ReasoningCompactProps = {
+  partKeyIndex?: number;
   reasoning: string;
   label: string;
   /** The host's thoughts-visible preference, supplied by the group rather
@@ -298,11 +303,14 @@ export const ReasoningCompact = memo(
     showThinking,
     isAfterTool = false,
     isStreaming = false,
+    partKeyIndex = 0,
   }: ReasoningCompactProps) => {
     const contentId = useId();
     const localize = useLocalize();
     const fontSize = useAtomValue(fontSizeAtom);
-    const [isExpanded, setIsExpanded] = useState(showThinking);
+    const [expansionOverride, setIsExpanded] = useAtom(useReasoningDisclosure(partKeyIndex));
+    const [defaultExpanded] = useState(showThinking);
+    const isExpanded = expansionOverride ?? defaultExpanded;
     const [isBarVisible, setIsBarVisible] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -320,9 +328,9 @@ export const ReasoningCompact = memo(
       (e: MouseEvent<HTMLButtonElement>) => {
         e.preventDefault();
         mountBody();
-        setIsExpanded((prev) => !prev);
+        setIsExpanded(!isExpanded);
       },
-      [mountBody],
+      [mountBody, isExpanded, setIsExpanded],
     );
 
     const handleCopy = useCallback(() => {
