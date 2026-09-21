@@ -68,7 +68,10 @@ export default function ChatRoute() {
   const chatProjectId = isValidChatProjectId(projectIdParam) ? projectIdParam : null;
   useIdChangeEffect(conversationId);
   const { hasSetConversation, conversation } = store.useCreateConversationAtom(index);
-  const [routeState, setRouteState] = useState({ conversationId, pending: false });
+  const [routeState, setRouteState] = useState({
+    conversationId,
+    pending: conversation != null && conversation.conversationId !== conversationId,
+  });
   /** History navigation changes the route without running the sidebar's conversation setter.
    * Only a route change may request reconciliation: a newly submitted conversation can acquire
    * its server id before the URL catches up, and must not be reset to a new chat. */

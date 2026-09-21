@@ -225,3 +225,9 @@ it('waits for the conversation record even when assistant catalogs are already l
   expect(mockConversation.conversationId).toBe('chat-a');
   expect(screen.getByTestId('composer')).not.toBeVisible();
 });
+
+it('reconciles a remounted chat route with conversation state retained by the shell', async () => {
+  setup(['/c/chat-b']);
+  await waitFor(() => expect(screen.getByTestId('composer')).toHaveTextContent('chat-b'));
+  expect(mockFetchConversation).toHaveBeenCalledWith('chat-b');
+});
