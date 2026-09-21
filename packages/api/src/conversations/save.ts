@@ -178,6 +178,63 @@ export async function saveTurnConversation(
 }
 
 /**
+ * Adds one message's id to its conversation. Declared structurally, and by plain id, so this
+ * operation's callers never name the storage engine's own id type.
+ */
+export interface MessageReferenceAppender {
+  appendConvoMessageReference(
+    user: string,
+    conversationId: string,
+    messageId: string,
+  ): Promise<unknown>;
+}
+
+/** What a turn knows about a message row whose conversation reference may be missing. */
+export interface TurnMessageReferenceRecovery {
+  userId: string;
+  conversationId: string;
+  /** The row a retry restored. Absent means there is nothing to reference. */
+  messageId?: string;
+  /** Whether the write that should have appended this reference already did. */
+  alreadyRecorded: boolean;
+  /** False for a turn whose conversation row another run owns, which holds no messages. */
+  managesConversation: boolean;
+  /** Names the caller in the repair log. */
+  context: string;
+}
+
+/**
+ * Appends a recovered message's reference when nothing else recorded it.
+ *
+ * A message write can fail and be swallowed, or resolve falsy on a duplicate key it cannot
+ * re-read; either way its conversation is written with nothing appended. The turn then retries
+ * the row with a bare `saveMessage`, which never touches the conversation, so that row would
+ * stay absent from `messages` for good — every other write appends only its own id.
+ *
+ * Skipped whenever the reference is already recorded, which is every ordinary turn, so the happy
+ * path costs no write. Returns whether it wrote.
+ */
+export async function recoverTurnMessageReference(
+  deps: MessageReferenceAppender,
+  recovery: TurnMessageReferenceRecovery,
+): Promise<boolean> {
+  const { userId, conversationId, messageId, alreadyRecorded, managesConversation } = recovery;
+  if (alreadyRecorded || !managesConversation || messageId == null || messageId === '') {
+    return false;
+  }
+  try {
+    await deps.appendConvoMessageReference(userId, conversationId, messageId);
+    return true;
+  } catch (error) {
+    /** Bookkeeping beside the row it points at: the message itself is already durable, and
+     *  failing a turn over its reference would trade a wrong field for a lost response. The
+     *  next write that appends to this conversation carries it. */
+    logger.error(`[recoverTurnMessageReference] ${recovery.context}`, error);
+    return false;
+  }
+}
+
+/**
  * Creates a new conversation's row ahead of a deferred first message, without the message, so
  * the conversation lists return a running chat. An existing row is left to the message save.
  * Settles once the write has finished and never rejects.
