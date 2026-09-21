@@ -66,11 +66,15 @@ test.describe('streamed code highlighting', () => {
     await sendMessage(page, 'E2E_HIGHLIGHT_CODE:stream');
 
     await expect(stopButton(page)).toBeVisible({ timeout: 30000 });
-    const code = await expectHighlightedCode(page);
-    await expect(code).toContainText('line-119-☃');
+    const streaming = await expectHighlightedCode(page);
+    await expect(streaming).toContainText('line-119-☃');
+
     await expect(stopButton(page)).toBeHidden({ timeout: 120000 });
-    await expect(code).toContainText('line-119-☃');
-    await expect.poll(() => code.locator('span').count()).toBeGreaterThan(0);
+    /** Persisting the streamed message rebuilds the card, and a rebuilt card
+     *  starts closed, so the settled value is asserted through the same
+     *  open-then-wait path instead of against the streaming card's tokens. */
+    const settled = await expectHighlightedCode(page);
+    await expect(settled).toContainText('line-119-☃');
   });
 
   test('interrupted-code-highlights-after-cancel @scenario:interrupted-code-highlights-after-cancel', async ({
@@ -81,11 +85,13 @@ test.describe('streamed code highlighting', () => {
     await sendMessage(page, 'E2E_HIGHLIGHT_CODE:cancel');
 
     await expect(stopButton(page)).toBeVisible({ timeout: 30000 });
-    const code = await expectHighlightedCode(page);
+    await expectHighlightedCode(page);
     await stopButton(page).click();
     await expect(stopButton(page)).toBeHidden({ timeout: 30000 });
-    await expect(code).toContainText(/line-\d+-☃/);
-    await expect.poll(() => code.locator('span').count()).toBeGreaterThan(0);
+    /** Cancellation persists the partial message, which rebuilds the card the
+     *  same way a completed run does. */
+    const cancelled = await expectHighlightedCode(page);
+    await expect(cancelled).toContainText(/line-\d+-☃/);
   });
 
   test('regenerated-code-highlights-latest-branch @scenario:regenerated-code-highlights-latest-branch', async ({
