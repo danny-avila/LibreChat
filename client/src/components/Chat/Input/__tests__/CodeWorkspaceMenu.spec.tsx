@@ -1,4 +1,5 @@
 import { AxiosError } from 'axios';
+import { Provider, createStore } from 'jotai';
 import userEvent from '@testing-library/user-event';
 import { dataService } from 'librechat-data-provider';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -6,6 +7,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TConversation } from 'librechat-data-provider';
 import type { AxiosResponse } from 'axios';
 import type { CodeWorkspaceResult } from '~/hooks';
+import { codeEnvironmentReconciliationsAtom } from '~/store/codeEnvironmentReconciliation';
+import { useConversationCodeEnvironmentRecovery } from '~/data-provider';
 import CodeWorkspaceMenu from '../CodeWorkspaceMenu';
 
 const mockShowToast = jest.fn();
@@ -89,6 +92,62 @@ function renderMenu(ui: React.ReactElement) {
 }
 
 describe('CodeWorkspaceMenu', () => {
+  test('explains a failed reconciliation and retries without permitting workspace changes', async () => {
+    const store = createStore();
+    const request = {
+      conversationId: 'existing',
+      attempted: {
+        codeEnvironmentMode: 'attached' as const,
+        codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }],
+      },
+    };
+    store.set(
+      codeEnvironmentReconciliationsAtom,
+      new Map([['existing', { request, status: 'error', token: Symbol() }]]),
+    );
+    let resolveRead!: (value: TConversation) => void;
+    const read = jest.spyOn(dataService, 'getConversationById').mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRead = resolve;
+        }),
+    );
+    const setter = jest.fn();
+    function RecoveryMenu() {
+      const recovery = useConversationCodeEnvironmentRecovery('existing');
+      return (
+        <CodeWorkspaceMenu
+          setConversation={setter}
+          workspace={workspace({ visible: recovery != null, recovery })}
+          disabled={false}
+        />
+      );
+    }
+    renderMenu(
+      <Provider store={store}>
+        <RecoveryMenu />
+      </Provider>,
+    );
+    expect(screen.getByRole('status')).toHaveTextContent('com_ui_code_workspace_reconcile_failed');
+    expect(screen.queryByTestId('code-workspace')).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'com_ui_code_workspace_reconcile_retry' }),
+    );
+    await waitFor(() => expect(read).toHaveBeenCalledWith('existing'));
+    expect(
+      screen.getByRole('button', { name: 'com_ui_code_workspace_reconcile_retry' }),
+    ).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('com_ui_code_workspace_reconciling');
+    resolveRead({
+      ...conversation,
+      conversationId: 'existing',
+      codeEnvironmentMode: 'without_attached',
+    });
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    expect(setter).toHaveBeenCalledTimes(1);
+    read.mockRestore();
+  });
+
   test('shows the instruction file and truncation reported by the worker', async () => {
     const state = workspace();
     state.environments[0].workspaces[0].instructions = [

@@ -1,3 +1,4 @@
+import type { AppConfig } from '@librechat/data-schemas';
 import {
   resolveConversationCodeEnvironmentDecision,
   resolveAdmittedCodeEnvironmentDecision,
@@ -411,6 +412,46 @@ describe('resolvePersistableCodeEnvironmentDecision', () => {
 });
 
 describe('resolveAdmittedCodeEnvironmentDecision', () => {
+  const withMoves = (conversationMoves?: { enabled?: boolean; allowAttachDetach?: boolean }) =>
+    ({
+      endpoints: { agents: { statefulCodeSessions: { conversationMoves } } },
+    }) as AppConfig;
+
+  it.each([undefined, {}, { enabled: false }, { enabled: false, allowAttachDetach: true }])(
+    'reuses the loaded decision without a database fence when moves are disabled: %j',
+    async (conversationMoves) => {
+      const readDecision = jest.fn();
+      const conversation = {
+        conversationId: 'saved',
+        codeEnvironmentMode: 'attached' as const,
+        codeWorkspaces: [selection],
+      };
+      expect(
+        await resolveAdmittedCodeEnvironmentDecision({
+          appConfig: withMoves(conversationMoves),
+          conversationId: 'saved',
+          conversation,
+          readDecision,
+        }),
+      ).toEqual({ mode: 'attached', codeWorkspaces: [selection] });
+      expect(readDecision).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not read or write again without configuration or a persisted conversation', async () => {
+    const readDecision = jest.fn();
+    expect(
+      await resolveAdmittedCodeEnvironmentDecision({
+        appConfig: undefined,
+        conversationId: 'new-id',
+        conversation: null,
+        requestedMode: 'without_attached',
+        readDecision,
+      }),
+    ).toEqual({ mode: 'without_attached' });
+    expect(readDecision).not.toHaveBeenCalled();
+  });
+
   it('uses the authoritative admitted read', async () => {
     const readDecision = jest.fn().mockResolvedValue({
       conversationId: 'saved',
@@ -418,7 +459,12 @@ describe('resolveAdmittedCodeEnvironmentDecision', () => {
       codeWorkspaces: [selection],
     });
     expect(
-      await resolveAdmittedCodeEnvironmentDecision({ conversationId: 'saved', readDecision }),
+      await resolveAdmittedCodeEnvironmentDecision({
+        appConfig: withMoves({ enabled: true }),
+        conversationId: 'saved',
+        conversation: { conversationId: 'saved', codeEnvironmentMode: 'without_attached' },
+        readDecision,
+      }),
     ).toEqual({ mode: 'attached', codeWorkspaces: [selection] });
     expect(readDecision).toHaveBeenCalledWith('saved');
   });
@@ -430,6 +476,7 @@ describe('resolveAdmittedCodeEnvironmentDecision', () => {
     });
     await expect(
       resolveAdmittedCodeEnvironmentDecision({
+        appConfig: withMoves({ enabled: true, allowAttachDetach: true }),
         conversationId: 'saved',
         requestedMode: 'without_attached',
         readDecision,

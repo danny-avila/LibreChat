@@ -603,6 +603,8 @@ const initializeClientWithProvider = async ({
   /** Preserve the owner-scoped fallback for loaders that share this request. */
   req.resolvedConversation = requestConversation;
   const codeEnvironmentDecision = await resolveAdmittedCodeEnvironmentDecision({
+    appConfig,
+    conversation: requestConversation,
     conversationId,
     requestedMode: runtimeRequestBody?.codeEnvironmentMode,
     requestedSelections: runtimeRequestBody?.codeWorkspaces,

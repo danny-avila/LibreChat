@@ -22,10 +22,12 @@ import type {
   TConversation,
   TPublicCodeEnvironment,
 } from 'librechat-data-provider';
+import type { CodeEnvironmentReconciliation } from '~/store/codeEnvironmentReconciliation';
 import {
   useCodeEnvironmentStatusQueries,
   useGetStartupConfig,
   useIsReplacingConversationCodeEnvironment,
+  useConversationCodeEnvironmentRecovery,
 } from '~/data-provider';
 import { collectReachableAgents, findExecutionEnvironment } from './useCodeApprovalMode';
 import { useWorkspacePreferences } from './workspacePreferences';
@@ -83,6 +85,7 @@ export interface CodeWorkspaceTransition {
 }
 
 export interface CodeWorkspaceResult {
+  recovery?: CodeEnvironmentReconciliation;
   required: boolean;
   supportsEnvironmentDecisions: boolean;
   locked: boolean;
@@ -161,6 +164,7 @@ export default function useCodeWorkspace(
   const supportsEnvironmentTransitions =
     supportsEnvironmentDecisions &&
     startupConfig?.codeEnvironmentTransitionVersion === CODE_ENVIRONMENT_TRANSITION_VERSION;
+  const recovery = useConversationCodeEnvironmentRecovery(conversation?.conversationId);
   const replacingDecision = useIsReplacingConversationCodeEnvironment(conversation?.conversationId);
   const preferences = useWorkspacePreferences(conversation?.agent_id);
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
@@ -408,6 +412,7 @@ export default function useCodeWorkspace(
     ):
       | { codeEnvironmentMode?: CodeEnvironmentMode; codeWorkspaces?: CodeWorkspaceSelection[] }
       | undefined => {
+      if (recovery != null) return undefined;
       if (!required) return {};
       /**
        * A replacement in flight has no decided answer yet. The server checks for active work
@@ -436,7 +441,14 @@ export default function useCodeWorkspace(
         ? undefined
         : { codeEnvironmentMode: 'attached', codeWorkspaces };
     },
-    [inferredMode, replacingDecision, required, resolveSelections, supportsEnvironmentDecisions],
+    [
+      inferredMode,
+      recovery,
+      replacingDecision,
+      required,
+      resolveSelections,
+      supportsEnvironmentDecisions,
+    ],
   );
   const canSubmit = resolveSubmission(storedSelections, conversation?.codeEnvironmentMode) != null;
   let transition: CodeWorkspaceTransition | undefined;
@@ -504,8 +516,9 @@ export default function useCodeWorkspace(
   /** A sealed chat hides the control once its decision needs nothing from its owner, except while
    *  it runs without a workspace: that state is worth naming, and attaching one starts here. */
   const visible =
-    required &&
-    (!locked || !canSubmit || transition != null || inferredMode === 'without_attached');
+    recovery != null ||
+    (required &&
+      (!locked || !canSubmit || transition != null || inferredMode === 'without_attached'));
   const rememberSelection = useCallback(
     (selection: CodeWorkspaceSelection) => {
       preferences.remember(selection.environmentId, selection.workspaceId, [
@@ -515,6 +528,7 @@ export default function useCodeWorkspace(
     [preferences, workspaceMetadata.preferenceAgentIds],
   );
   return {
+    recovery,
     required,
     supportsEnvironmentDecisions,
     locked,

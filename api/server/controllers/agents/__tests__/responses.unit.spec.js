@@ -597,11 +597,19 @@ describe('createResponse controller', () => {
     };
   });
 
-  it.each([false, true])(
-    'passes explicit or owner-loaded workspace selections to runtime: continuation=%s',
-    async (continuation) => {
+  it.each([
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ])(
+    'passes explicit or owner-loaded workspace selections to runtime: continuation=%s moves=%s',
+    async (continuation, movesEnabled) => {
       const api = require('@librechat/api');
       const selections = [{ environmentId: 'machine', workspaceId: 'project' }];
+      req.config.endpoints.agents.statefulCodeSessions = {
+        conversationMoves: { enabled: movesEnabled },
+      };
       const request = {
         model: 'agent-123',
         input: 'Hello',
@@ -614,12 +622,15 @@ describe('createResponse controller', () => {
           conversationId: 'previous',
           codeWorkspaces: selections,
         });
-      if (continuation)
+      if (continuation && movesEnabled)
         require('~/models').readAdmittedConvoCodeEnvironmentDecision.mockResolvedValueOnce({
           conversationId: 'previous',
           codeWorkspaces: selections,
         });
       await createResponse(req, res);
+      const fencedRead = require('~/models').readAdmittedConvoCodeEnvironmentDecision;
+      if (movesEnabled) expect(fencedRead).toHaveBeenCalledTimes(1);
+      else expect(fencedRead).not.toHaveBeenCalled();
       expect(api.initializeAgent).toHaveBeenCalledWith(
         expect.objectContaining({
           requestBody: expect.objectContaining({ codeWorkspaces: selections }),

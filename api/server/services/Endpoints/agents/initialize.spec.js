@@ -1611,17 +1611,18 @@ describe('initializeClient — subagent loading', () => {
   });
 
   it.each([
-    [true, 'request'],
-    [false, 'request'],
-    [true, 'fallback'],
-    [true, 'override'],
-    [true, 'override-resolved'],
-    [true, 'resolved'],
-    [true, 'resolved-null'],
-    [false, 'other-owner'],
+    [true, 'request', false],
+    [false, 'request', false],
+    [true, 'fallback', false],
+    [true, 'override', false],
+    [true, 'override-resolved', false],
+    [true, 'resolved', false],
+    [false, 'resolved-null', false],
+    [true, 'resolved-null', true],
+    [false, 'other-owner', false],
   ])(
-    'validates the lazy subagent workspace before exposure: registered=%s source=%s',
-    async (registered, source) => {
+    'validates the lazy subagent workspace before exposure: registered=%s source=%s moves=%s',
+    async (registered, source, movesEnabled) => {
       const subAgent = await createAgent({
         id: SUBAGENT_ID,
         name: 'Attached Stateful Subagent',
@@ -1643,6 +1644,7 @@ describe('initializeClient — subagent loading', () => {
       req.config.endpoints.agents.capabilities.push('execute_code', 'stateful_code_sessions');
       req.config.endpoints.agents.statefulCodeSessions = {
         allowedEnvironments: ['agent-user'],
+        conversationMoves: { enabled: movesEnabled },
         environments: [
           {
             id: 'attached-vm',
@@ -1708,6 +1710,7 @@ describe('initializeClient — subagent loading', () => {
           }),
         ),
       );
+      const readSpy = jest.spyOn(db, 'readAdmittedConvoCodeEnvironmentDecision');
       try {
         const initialization = initializeClient({
           req,
@@ -1716,7 +1719,8 @@ describe('initializeClient — subagent loading', () => {
           signal: new AbortController().signal,
           endpointOption: makeEndpointOption(),
         });
-        const defaultsWithoutAttached = source === 'other-owner';
+        const defaultsWithoutAttached =
+          source === 'other-owner' || (source === 'resolved-null' && !movesEnabled);
         if (!registered && !defaultsWithoutAttached) {
           await expect(initialization).rejects.toMatchObject({
             code: ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,
@@ -1725,6 +1729,12 @@ describe('initializeClient — subagent loading', () => {
           return;
         }
         await initialization;
+        if (movesEnabled)
+          expect(readSpy).toHaveBeenCalledWith(
+            req.user.id,
+            requestBody?.conversationId ?? req.body.conversationId,
+          );
+        else expect(readSpy).not.toHaveBeenCalled();
         if (defaultsWithoutAttached) {
           expect(fetchSpy).not.toHaveBeenCalled();
           expect(agentClientArgs.mcpRequestBody).toEqual(
@@ -1755,6 +1765,7 @@ describe('initializeClient — subagent loading', () => {
         }
       } finally {
         fetchSpy.mockRestore();
+        readSpy.mockRestore();
         delete process.env.TEST_LAZY_WORKSPACE_TOKEN;
       }
 

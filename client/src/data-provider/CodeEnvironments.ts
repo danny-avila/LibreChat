@@ -1,3 +1,4 @@
+import { useAtomValue, useStore } from 'jotai';
 import { DynamicQueryKeys, MutationKeys, QueryKeys, dataService } from 'librechat-data-provider';
 import {
   useIsMutating,
@@ -16,6 +17,8 @@ import type {
   TCodeEnvironmentsResponse,
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
+import type { CodeEnvironmentReconciliationRequest } from '~/store/codeEnvironmentReconciliation';
+import { codeEnvironmentReconciliationsAtom } from '~/store/codeEnvironmentReconciliation';
 import { CONVERSATION_LIST_KEYS, updateConvoInAllQueries } from '~/utils';
 import { hasSameCodeDecision } from '~/hooks/Agents/codeDecision';
 
@@ -97,14 +100,16 @@ export function useUpdateCodeEnvironmentSettingsMutation() {
   });
 }
 
-/**
- * Whether a conversation's sealed decision is being replaced right now. The server checks for
- * active work before it polls the target workspace, so a turn submitted during that poll starts
- * under the decision being replaced and silently runs without the workspace its owner just chose.
- * Callers use this to withhold submission until the replacement settles.
- */
+/** Pending and failed authoritative reads both leave the local decision unconfirmed. */
+export function useConversationCodeEnvironmentRecovery(conversationId?: string | null) {
+  const reconciliations = useAtomValue(codeEnvironmentReconciliationsAtom);
+  return conversationId == null ? undefined : reconciliations.get(conversationId);
+}
+
+/** Block pending transitions and unresolved decision reads for this conversation only. */
 export function useIsReplacingConversationCodeEnvironment(conversationId?: string | null): boolean {
-  return (
+  const recovery = useConversationCodeEnvironmentRecovery(conversationId);
+  const pending =
     useIsMutating({
       predicate: (mutation) =>
         [
@@ -114,8 +119,8 @@ export function useIsReplacingConversationCodeEnvironment(conversationId?: strin
         conversationId != null &&
         (mutation.state.variables as TCodeEnvironmentMoveRequest | undefined)?.conversationId ===
           conversationId,
-    }) > 0
-  );
+    }) > 0;
+  return recovery != null || pending;
 }
 
 /** Keeps every cached copy of the conversation on the decision the server just persisted. */
@@ -153,26 +158,39 @@ export function useReconcileConversationCodeEnvironmentMutation(
   setConversation?: SetterOrUpdater<TConversation | null>,
 ) {
   const queryClient = useQueryClient();
+  const store = useStore();
   return useMutation({
     mutationKey: ['reconcileConversationCodeEnvironment'],
-    mutationFn: async ({
-      conversationId,
-    }: {
-      conversationId: string;
-      attempted: Pick<TConversation, 'codeEnvironmentMode' | 'codeWorkspaces'>;
-    }) => {
+    onMutate: (request: CodeEnvironmentReconciliationRequest) => {
+      const token = Symbol();
+      store.set(codeEnvironmentReconciliationsAtom, (current) =>
+        new Map(current).set(request.conversationId, { request, token, status: 'pending' }),
+      );
+      return { token };
+    },
+    mutationFn: async ({ conversationId }: CodeEnvironmentReconciliationRequest) => {
       const queryKey = [QueryKeys.conversation, conversationId];
       await queryClient.cancelQueries({ queryKey });
       return queryClient.fetchQuery(
         queryKey,
-        () => dataService.getConversationById(conversationId),
-        {
-          staleTime: 0,
+        async () => {
+          const persisted = await dataService.getConversationById(conversationId);
+          if (persisted?.conversationId !== conversationId) {
+            throw new Error(
+              'Conversation decision reconciliation returned a different conversation',
+            );
+          }
+          return persisted;
         },
+        { staleTime: 0 },
       );
     },
-    onSuccess: (persisted, { conversationId, attempted }) => {
-      if (persisted.conversationId !== conversationId) return;
+    onSuccess: (persisted, { conversationId, attempted }, context) => {
+      if (
+        store.get(codeEnvironmentReconciliationsAtom).get(conversationId)?.token !== context?.token
+      ) {
+        return;
+      }
       const apply = (current: TConversation): TConversation =>
         current.conversationId === conversationId && hasSameCodeDecision(current, attempted)
           ? {
@@ -183,6 +201,18 @@ export function useReconcileConversationCodeEnvironmentMutation(
           : current;
       updateConvoInAllQueries(queryClient, conversationId, apply);
       setConversation?.((current) => (current == null ? current : apply(current)));
+      store.set(codeEnvironmentReconciliationsAtom, (current) => {
+        const next = new Map(current);
+        next.delete(conversationId);
+        return next;
+      });
+    },
+    onError: (_error, { conversationId }, context) => {
+      store.set(codeEnvironmentReconciliationsAtom, (current) => {
+        const recovery = current.get(conversationId);
+        if (recovery == null || recovery.token !== context?.token) return current;
+        return new Map(current).set(conversationId, { ...recovery, status: 'error' });
+      });
     },
   });
 }

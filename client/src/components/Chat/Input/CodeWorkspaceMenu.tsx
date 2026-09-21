@@ -11,12 +11,15 @@ import type {
   TranslationKeys,
 } from '~/hooks';
 import {
+  useMoveConversationCodeEnvironmentMutation,
+  useReconcileConversationCodeEnvironmentMutation,
+} from '~/data-provider';
+import {
   cn,
   codeWorkspaceErrorKeys,
   getCodeWorkspaceErrorReason,
   getResponseStatus,
 } from '~/utils';
-import { useMoveConversationCodeEnvironmentMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
 const stateLabels: Partial<Record<CodeWorkspaceResult['state'], TranslationKeys>> = {
@@ -180,12 +183,37 @@ export default function CodeWorkspaceMenu({
   const menuStore = Ariakit.useMenuStore({ focusLoop: true, placement: 'top-start' });
   const isOpen = menuStore.useState('open');
   const moveMutation = useMoveConversationCodeEnvironmentMutation();
+  const reconcileMutation = useReconcileConversationCodeEnvironmentMutation(setConversation);
   const [moveDraft, setMoveDraft] = useState<{
     conversationId: string;
     workspaces: Record<string, string>;
   } | null>(null);
 
   if (!workspace.visible) return null;
+
+  if (workspace.recovery != null) {
+    const { request, status } = workspace.recovery;
+    const pending = status === 'pending';
+    return (
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
+        <span role="status" className="text-xs text-text-secondary">
+          {localize(
+            pending
+              ? 'com_ui_code_workspace_reconciling'
+              : 'com_ui_code_workspace_reconcile_failed',
+          )}
+        </span>
+        <button
+          type="button"
+          className={composerControlClasses()}
+          disabled={disabled || pending || reconcileMutation.isLoading}
+          onClick={() => reconcileMutation.mutate(request)}
+        >
+          {localize('com_ui_code_workspace_reconcile_retry')}
+        </button>
+      </div>
+    );
+  }
 
   const { transition } = workspace;
   const environmentIds = new Set(workspace.environments.map(({ environment }) => environment.id));

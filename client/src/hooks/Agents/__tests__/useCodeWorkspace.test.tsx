@@ -8,6 +8,7 @@ const mockAgentPermissions = jest.fn();
 const mockAgentsConfig = jest.fn();
 const mockStatus = jest.fn();
 const mockReplacingDecision = jest.fn();
+const mockRecovery = jest.fn();
 const mockStartupConfig = jest.fn();
 const mockAgentsMap = jest.fn();
 const mockAccess = jest.fn();
@@ -30,6 +31,7 @@ jest.mock('~/data-provider', () => ({
   useCodeEnvironmentStatusQueries: (...args: unknown[]) => mockStatus(...args),
   useGetStartupConfig: () => ({ data: mockStartupConfig() }),
   useIsReplacingConversationCodeEnvironment: () => mockReplacingDecision(),
+  useConversationCodeEnvironmentRecovery: () => mockRecovery(),
 }));
 
 const conversation = (codeWorkspaces?: TConversation['codeWorkspaces']): TConversation =>
@@ -46,6 +48,7 @@ describe('useCodeWorkspace', () => {
     mockRememberPreference.mockReset();
     mockAccess.mockReturnValue(true);
     mockReplacingDecision.mockReturnValue(false);
+    mockRecovery.mockReturnValue(undefined);
     mockStartupConfig.mockReturnValue({ codeEnvironmentDecisionVersion: 1 });
     mockAgentPermissions.mockReturnValue({
       tools: [Tools.execute_code],
@@ -147,6 +150,29 @@ describe('useCodeWorkspace', () => {
       codeWorkspaces: attached.codeWorkspaces,
     });
   });
+
+  it.each(['pending', 'error'] as const)(
+    'blocks every send while reconciliation is %s, even after switching to a non-coding agent',
+    (status) => {
+      mockRecovery.mockReturnValue({
+        request: { conversationId: 'existing', attempted: {} },
+        status,
+        token: Symbol(),
+      });
+      mockAgentPermissions.mockReturnValue({
+        tools: [],
+        agent: { id: 'agent_primary', tools: [] },
+      });
+      const { result } = renderHook(() =>
+        useCodeWorkspace({ ...conversation(), conversationId: 'existing' } as TConversation),
+      );
+      expect(result.current.required).toBe(false);
+      expect(result.current.canSubmit).toBe(false);
+      expect(result.current.resolveSubmission()).toBeUndefined();
+      expect(result.current.visible).toBe(true);
+      expect(result.current.recovery?.status).toBe(status);
+    },
+  );
 
   it('selects one unambiguous initial workspace', () => {
     const { result } = renderHook(() => useCodeWorkspace(conversation()));

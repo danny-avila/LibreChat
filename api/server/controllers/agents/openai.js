@@ -463,6 +463,8 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       }
 
       const codeEnvironmentDecision = await resolveAdmittedCodeEnvironmentDecision({
+        appConfig,
+        conversation: req.resolvedConversation,
         conversationId,
         requestedMode: request.code_environment_mode,
         requestedSelections: request.code_workspaces,

@@ -1242,11 +1242,19 @@ describe('OpenAIChatCompletionController', () => {
   });
 
   describe('conversation ownership validation', () => {
-    it.each([false, true])(
-      'propagates explicit or owned persisted workspaces: continuation=%s',
-      async (continuation) => {
+    it.each([
+      [false, false],
+      [true, false],
+      [false, true],
+      [true, true],
+    ])(
+      'propagates explicit or owned persisted workspaces: continuation=%s moves=%s',
+      async (continuation, movesEnabled) => {
         const api = require('@librechat/api');
         const selections = [{ environmentId: 'machine', workspaceId: 'project' }];
+        req.config.endpoints.agents.statefulCodeSessions = {
+          conversationMoves: { enabled: movesEnabled },
+        };
         api.validateRequest.mockReturnValueOnce({
           request: {
             model: 'agent-123',
@@ -1260,12 +1268,15 @@ describe('OpenAIChatCompletionController', () => {
             conversationId: 'convo-abc',
             codeWorkspaces: selections,
           });
-        if (continuation)
+        if (continuation && movesEnabled)
           require('~/models').readAdmittedConvoCodeEnvironmentDecision.mockResolvedValueOnce({
             conversationId: 'convo-abc',
             codeWorkspaces: selections,
           });
         await OpenAIChatCompletionController(req, res);
+        const fencedRead = require('~/models').readAdmittedConvoCodeEnvironmentDecision;
+        if (movesEnabled) expect(fencedRead).toHaveBeenCalledTimes(1);
+        else expect(fencedRead).not.toHaveBeenCalled();
         expect(api.initializeAgent).toHaveBeenCalledWith(
           expect.objectContaining({
             requestBody: expect.objectContaining({ codeWorkspaces: selections }),

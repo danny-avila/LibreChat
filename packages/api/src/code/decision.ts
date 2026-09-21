@@ -4,7 +4,9 @@ import type {
   CodeWorkspaceSelection,
   TConversation,
 } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
 import { CodeWorkspaceSelectionError } from './capabilities';
+import { resolveCodeEnvironmentMoveVersion } from './config';
 
 export interface ConversationCodeEnvironmentDecision {
   mode: CodeEnvironmentMode;
@@ -238,15 +240,20 @@ export function resolvePersistableCodeEnvironmentDecision({
   return { codeEnvironmentMode: candidate.codeEnvironmentMode };
 }
 
-/** Every ingress must publish its active job before calling this and keep it active through the
- * read. Never validate a cached pre-admission decision: the reader advances the revision a
- * transition compares before loading the authoritative decision. */
+/** When moves are enabled, every ingress must publish its active job before calling this and
+ * keep it active through the fenced read. Otherwise no transition can race the decision, so reuse
+ * the owner-scoped conversation the ingress already loaded instead of writing an unused revision. */
 export async function resolveAdmittedCodeEnvironmentDecision({
+  appConfig,
   readDecision,
   ...request
-}: Omit<Parameters<typeof resolveConversationCodeEnvironmentDecision>[0], 'conversation'> & {
+}: Parameters<typeof resolveConversationCodeEnvironmentDecision>[0] & {
+  appConfig: Pick<AppConfig, 'endpoints'> | undefined;
   readDecision: (conversationId: string) => Promise<StoredConversationDecision | null | undefined>;
 }): Promise<ConversationCodeEnvironmentDecision> {
-  const conversation = await readDecision(request.conversationId);
+  const conversation =
+    resolveCodeEnvironmentMoveVersion(appConfig) != null
+      ? await readDecision(request.conversationId)
+      : request.conversation;
   return resolveConversationCodeEnvironmentDecision({ ...request, conversation });
 }
