@@ -14,7 +14,7 @@ const {
   getReferencedQuotes,
   resolveTitleTiming,
   GenerationJobManager,
-  createTitlePersistenceGate,
+  createConvoPersistenceSignal,
   filterPersistableAbortContent,
   decrementPendingRequest,
   sanitizeMessageForTransmit,
@@ -2089,10 +2089,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     let userMessage;
     let liveResponseMessageId = preallocatedResponseMessageId;
 
-    /** What an immediate-mode title waits on before its `noUpsert` save. Declared
-     *  out here because the fact that opens it arrives through `getReqData`, which
-     *  the client calls from inside `sendMessage`. */
-    const convoGate = createTitlePersistenceGate();
+    /** What this turn's message writes reported about the conversation row: the
+     *  gate an immediate-mode title waits on, and whether the user-message write
+     *  ever recorded the row. Declared out here because that fact arrives through
+     *  `getReqData`, which the client calls from inside `sendMessage`. */
+    const convoSignal = createConvoPersistenceSignal();
 
     const getReqData = (data = {}) => {
       if (data.userMessage) {
@@ -2105,7 +2106,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
        *  earliest proof the title's row exists. Waiting for the turn to end
        *  instead leaves the database on "New Chat" for the whole run, and every
        *  reader without the live stream reads that. */
-      convoGate.openWhenConversationPersisted(data.userMessagePromise);
+      convoSignal.observeMessageWrite(data.userMessagePromise);
       // conversationId is pre-generated, no need to update from callback
     };
 
@@ -2195,8 +2196,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
        *  which also gate `disposeClient` on the title. */
       let titleEventPromise = null;
       let acceptsTitleEvents = true;
-      const convoReady = convoGate.ready;
-      const resolveConvoReady = () => convoGate.open();
+      const convoReady = convoSignal.ready;
+      const resolveConvoReady = () => convoSignal.open();
       /** Dedicated controller so a user Stop (or a replaced stream) cancels the
        *  in-flight title — kept separate from `job.abortController`, which
        *  `completeJob` also aborts on *successful* completion and would otherwise
@@ -2951,6 +2952,24 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           });
           if (!savedUserMessage) {
             throw new Error('User message could not be persisted before terminal publication');
+          }
+          /** BaseClient swallows a failed first user-message write, and the retry
+           * above restores only the Message row — `saveMessage` never touches the
+           * conversation. The response's own write then created the row referencing
+           * just itself, so carry the recovered reference when no write reported the
+           * row this turn. Skipped on the happy path, where the original write
+           * appended it. */
+          if (!client.skipSaveConvo && !convoSignal.reportedConversation()) {
+            await saveConvo(
+              reqCtx,
+              { conversationId },
+              {
+                context:
+                  'api/server/controllers/agents/request.js - recovered user message reference',
+                noUpsert: true,
+                appendMessageIds: [savedUserMessage._id],
+              },
+            );
           }
         }
         // Only consume the parked recovery source after the explicit user-row

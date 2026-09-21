@@ -273,7 +273,7 @@ jest.mock('@librechat/api', () => ({
   getViolationInfo: (...args) => mockGetViolationInfo(...args),
   buildMessageFiles: jest.fn(() => []),
   resolveTitleTiming: jest.fn(() => 'immediate'),
-  createTitlePersistenceGate: jest.requireActual('@librechat/api').createTitlePersistenceGate,
+  createConvoPersistenceSignal: jest.requireActual('@librechat/api').createConvoPersistenceSignal,
   resolveConversationAnchor: jest.requireActual('@librechat/api').resolveConversationAnchor,
   resolveRunCodeWorkspaces: jest.requireActual('@librechat/api').resolveRunCodeWorkspaces,
   AttachmentStorageError: jest.requireActual('@librechat/api').AttachmentStorageError,
@@ -5922,7 +5922,7 @@ describe('ResumableAgentController resume metadata', () => {
      * through `getReqData`, exactly as BaseClient does once it has started the
      * user-message write.
      */
-    const startHeldFirstTurn = async ({ userMessageWrite }) => {
+    const startHeldFirstTurn = async ({ userMessageWrite, clientOverrides }) => {
       let signalFinished;
       const finished = new Promise((resolve) => {
         signalFinished = resolve;
@@ -5941,11 +5941,14 @@ describe('ResumableAgentController resume metadata', () => {
         });
       });
 
+      let turnConversationId;
       const client = {
         options: {},
         savedMessageIds: new Set(),
         skipSaveUserMessage: false,
+        ...clientOverrides,
         sendMessage: jest.fn(async (_text, options) => {
+          turnConversationId = options.conversationId;
           const userMessage = {
             messageId: 'user-msg',
             parentMessageId: Constants.NO_PARENT,
@@ -5989,6 +5992,7 @@ describe('ResumableAgentController resume metadata', () => {
 
       return {
         addTitle,
+        conversationId: () => turnConversationId,
         isConvoReadyResolved: () => convoReadyResolved,
         finish: async () => {
           release();
@@ -6027,6 +6031,57 @@ describe('ResumableAgentController resume metadata', () => {
       await turn.finish();
 
       expect(turn.isConvoReadyResolved()).toBe(true);
+    });
+
+    /** The reference repair the title's save used to perform as a side effect of
+     *  rebuilding the whole `messages` array. The title now writes metadata only, so
+     *  the recovered user row has to carry its own reference. */
+    describe('recovered user message reference', () => {
+      const appendedIdsFor = (conversationId) =>
+        mockSaveConvo.mock.calls
+          .filter((call) => call[1]?.conversationId === conversationId && call[2]?.appendMessageIds)
+          .map((call) => call[2].appendMessageIds);
+
+      it('appends the recovered reference when no write reported the conversation', async () => {
+        mockSaveMessage.mockResolvedValue({ _id: 'user-row-id' });
+        const turn = await startHeldFirstTurn({
+          /** BaseClient swallows a failed user-message save and resolves with `{}`. */
+          userMessageWrite: () => Promise.resolve({}),
+        });
+
+        await turn.finish();
+
+        expect(appendedIdsFor(turn.conversationId())).toEqual([['user-row-id']]);
+        expect(mockSaveConvo).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ conversationId: turn.conversationId() }),
+          expect.objectContaining({ noUpsert: true, appendMessageIds: ['user-row-id'] }),
+        );
+      });
+
+      it('does not append again when the write already reported the conversation', async () => {
+        mockSaveMessage.mockResolvedValue({ _id: 'user-row-id' });
+        const turn = await startHeldFirstTurn({
+          userMessageWrite: (conversationId) =>
+            Promise.resolve({ message: {}, conversation: { conversationId } }),
+        });
+
+        await turn.finish();
+
+        expect(appendedIdsFor(turn.conversationId())).toEqual([]);
+      });
+
+      it('leaves the conversation alone for a turn that does not save one', async () => {
+        mockSaveMessage.mockResolvedValue({ _id: 'user-row-id' });
+        const turn = await startHeldFirstTurn({
+          userMessageWrite: () => Promise.resolve({ message: {} }),
+          clientOverrides: { skipSaveConvo: true },
+        });
+
+        await turn.finish();
+
+        expect(appendedIdsFor(turn.conversationId())).toEqual([]);
+      });
     });
   });
 
