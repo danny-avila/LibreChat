@@ -147,8 +147,10 @@ restyled component, layout, spacing, copy, icons, empty/loading/error states,
 theming, or motion. The diff shows what the code says; only a screenshot shows
 what the screen looks like.
 
-Capture from the app running this branch, never a mockup. Post before and after
-as a pair, taken at the same size on the same screen, and label which is which.
+Capture from the running app, never a mockup, and take the "before" from the
+base revision and the "after" from this branch, so the pair shows the change
+rather than the new state twice. Post them at the same size on the same screen,
+and label which is which.
 A brand new surface has no "before", so say that instead of leaving a cell
 blank. Include light and dark mode whenever the change touches color or theming.
 Use a recording rather than a still whenever the behavior is motion or
