@@ -36,6 +36,22 @@ import { violationFile } from './keyvFiles';
 const inMemoryCacheMap = new Map<string, Keyv>();
 
 /**
+ * Memoized Redis-backed Keyv instances keyed by namespace.
+ *
+ * `KeyvRedis`'s constructor registers listeners on the (shared) client it is
+ * given and offers no way to remove them, so constructing a fresh store per
+ * `standardCache()` call leaked event listeners on every lookup and eventually
+ * tripped Node's MaxListenersExceededWarning (issue #16148). Memoizing both
+ * the KeyvRedis store and the Keyv instance per namespace guarantees one
+ * instance of each for the process lifetime, mirroring the in-memory
+ * memoization above.
+ *
+ * The first caller's TTL wins for a given namespace, same as in-memory mode.
+ */
+const redisKeyvStoresMap = new Map<string, InstanceType<typeof KeyvRedis>>();
+const redisCacheMap = new Map<string, Keyv>();
+
+/**
  * Deletes every key under a namespace through the raw client, which is the one
  * write path that bypasses the Keyv error funnel; READONLY rejections are routed
  * to failover recovery before propagating.
@@ -66,6 +82,10 @@ async function clearRedisNamespace(namespace: string): Promise<void> {
 /**
  * Creates a cache instance using Redis or a fallback store. Suitable for general caching needs.
  *
+ * **Redis mode**: the Keyv instance and its KeyvRedis store are memoized by
+ * namespace (one instance of each per process; the first caller's TTL wins),
+ * so repeated lookups no longer register fresh listeners on the shared client.
+ *
  * **In-memory mode** (no Redis, no custom fallbackStore): instances are memoized by
  * namespace so that every call-site shares the same underlying `Map`. The first
  * caller's TTL wins for a given namespace.
@@ -78,8 +98,20 @@ async function clearRedisNamespace(namespace: string): Promise<void> {
 export const standardCache = (namespace: string, ttl?: number, fallbackStore?: object): Keyv => {
   if (keyvRedisClient && !cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(namespace)) {
     try {
-      const keyvRedis = new KeyvRedis(keyvRedisClient);
+      const existing = redisCacheMap.get(namespace);
+      if (existing) {
+        return existing;
+      }
+
+      let keyvRedis = redisKeyvStoresMap.get(namespace);
+      if (!keyvRedis) {
+        keyvRedis = new KeyvRedis(keyvRedisClient);
+        redisKeyvStoresMap.set(namespace, keyvRedis);
+      }
+
       const cache = new Keyv(keyvRedis, { namespace, ttl });
+      // Set after Keyv construction: Keyv's constructor normalizes the store
+      // and would otherwise consume/reset these properties (original order).
       keyvRedis.namespace = cacheConfig.REDIS_KEY_PREFIX;
       keyvRedis.keyPrefixSeparator = cacheConfig.GLOBAL_PREFIX_SEPARATOR;
 
@@ -93,6 +125,7 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
       // Workaround for issue #10487 https://github.com/danny-avila/LibreChat/issues/10487
       cache.clear = () => clearRedisNamespace(namespace);
 
+      redisCacheMap.set(namespace, cache);
       return instrumentRedisCache(cache, namespace);
     } catch (err) {
       logger.error(`Failed to create Redis cache for namespace ${namespace}:`, err);
