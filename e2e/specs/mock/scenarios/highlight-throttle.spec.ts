@@ -16,13 +16,41 @@ const stopButton = (page: Parameters<typeof sendMessage>[0]) =>
 const highlightedCode = (page: Parameters<typeof sendMessage>[0]) =>
   messagesView(page).locator('code.hljs.language-bash').last();
 
+/** The card's disclosure, which `ProgressText` owns. It carries an
+ *  `aria-expanded` state only once the card has input to show, so waiting on
+ *  this locator also waits for the first streamed argument chunk. */
+const codeDisclosure = (page: Parameters<typeof sendMessage>[0]) =>
+  messagesView(page).locator('.progress-text-wrapper button[aria-expanded]').last();
+
 async function openHighlightChat(page: Parameters<typeof sendMessage>[0]) {
   await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
   await selectMockEndpoint(page, MOCK_ENDPOINTS[1]);
   await enableCodeInterpreter(page);
 }
 
+/** Idempotent, because `autoExpandTools` opens the pane for an operator who
+ *  turned it on; the default is off, so these runs do the opening themselves. */
+async function openCodePane(page: Parameters<typeof sendMessage>[0]) {
+  const disclosure = codeDisclosure(page);
+  await expect(disclosure).toBeVisible({ timeout: 30000 });
+  if ((await disclosure.getAttribute('aria-expanded')) === 'false') {
+    await disclosure.click();
+  }
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+}
+
+/**
+ * Opens the card, then waits for tokens.
+ *
+ * A closed pane is passed no code at all, so it tokenizes nothing and renders
+ * its raw text: opening the card is part of asserting anything about
+ * highlighting, and a scenario that skipped it would wait out its timeout
+ * against unhighlighted output no matter how the throttle behaved. Opening it
+ * while arguments are still streaming is also what puts the throttle under
+ * test, because that is the only time the input keeps changing.
+ */
 async function expectHighlightedCode(page: Parameters<typeof sendMessage>[0]) {
+  await openCodePane(page);
   const code = highlightedCode(page);
   await expect(code).toBeVisible({ timeout: 30000 });
   await expect.poll(() => code.locator('span').count(), { timeout: 30000 }).toBeGreaterThan(0);
