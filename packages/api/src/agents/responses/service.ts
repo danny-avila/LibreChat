@@ -45,7 +45,7 @@ import {
   emitReasoningItemDone,
   type StreamHandlerConfig,
 } from './handlers';
-import { validateClientTools } from './clientTools';
+import { declaredClientToolNames, validateClientTools } from './clientTools';
 import { aggregateCollectedUsage } from '../usage';
 
 interface ResponseUsageAccumulator {
@@ -149,7 +149,10 @@ export function validateResponseRequest(body: unknown): RequestValidationResult 
   }
 
   if (Array.isArray(request.input)) {
-    const toolExchangeError = validateInputToolExchanges(request.input as InputItem[]);
+    const toolExchangeError = validateInputToolExchanges(
+      request.input as InputItem[],
+      declaredClientToolNames(request.tools),
+    );
     if (toolExchangeError !== undefined) {
       return { valid: false, error: toolExchangeError };
     }
@@ -167,16 +170,26 @@ function isNonEmptyString(value: unknown): value is string {
  *
  * A turn is persisted as text, so `previous_response_id` does not carry a tool
  * exchange: replaying the `function_call` together with its
- * `function_call_output` is the only supported continuation. Both halves are
- * therefore required, and an unpaired half is the caller's error rather than
- * something to drop silently or to hand to the provider — an unanswered tool
- * call reaches the model as a malformed conversation and comes back as an
- * opaque upstream failure.
+ * `function_call_output` is the only supported continuation. For a tool the
+ * caller executes, both halves are therefore required, and an unpaired half is
+ * the caller's error rather than something to hand to the provider — an
+ * unanswered tool call reaches the model as a malformed conversation and comes
+ * back as an opaque upstream failure.
+ *
+ * A call to a tool the *server* owns is not held to that rule. The server emits
+ * a `function_call` for its own tools but no `function_call_output`, so the
+ * usual continuation — appending the previous response's `output` to the next
+ * request's `input` — carries calls the caller cannot answer and never could.
+ * Those are dropped in {@link convertInputToMessages} instead of refused here.
  *
  * @returns An error message, or `undefined` when every exchange is well formed.
  */
-export function validateInputToolExchanges(input: InputItem[]): string | undefined {
+export function validateInputToolExchanges(
+  input: InputItem[],
+  clientToolNames: ReadonlySet<string> = new Set<string>(),
+): string | undefined {
   const callIds = new Set<string>();
+  const clientCallIds = new Set<string>();
   const outputCallIds = new Set<string>();
 
   for (const item of input) {
@@ -199,6 +212,9 @@ export function validateInputToolExchanges(input: InputItem[]): string | undefin
         return `duplicate function_call call_id: ${call.call_id}`;
       }
       callIds.add(call.call_id);
+      if (clientToolNames.has(call.name)) {
+        clientCallIds.add(call.call_id);
+      }
       continue;
     }
 
@@ -217,7 +233,7 @@ export function validateInputToolExchanges(input: InputItem[]): string | undefin
     }
   }
 
-  for (const callId of callIds) {
+  for (const callId of clientCallIds) {
     if (!outputCallIds.has(callId)) {
       return `function_call ${callId} has no function_call_output in input; replay both items to continue a tool exchange`;
     }
@@ -375,17 +391,26 @@ export function convertInputToMessages(input: string | InputItem[]): InternalMes
      *
      * `function_call_output` items are consumed here through `outputsByCallId`,
      * not emitted on their own; ingress validation has already established
-     * that every call has exactly one output and vice versa.
+     * that a caller-executed call has exactly one output and vice versa.
+     *
+     * A call with no output is one of the server's own, replayed from a
+     * previous response that never carried a result for it. It is dropped:
+     * replaying it with an empty result would put an unanswered tool call in
+     * front of the provider, which is what the pairing rule exists to prevent.
      */
     if (item.type === 'function_call') {
       const fcItem = item as FunctionCallItemParam;
+      const output = outputsByCallId.get(fcItem.call_id);
+      if (output === undefined) {
+        continue;
+      }
       const part: InternalToolCallPart = {
         type: ContentTypes.TOOL_CALL,
         tool_call: {
           id: fcItem.call_id,
           name: fcItem.name,
           args: fcItem.arguments,
-          output: outputsByCallId.get(fcItem.call_id) ?? '',
+          output,
         },
       };
 
@@ -600,6 +625,7 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
   handlers: Record<string, { handle: (event: string, data: unknown) => void }>;
   state: StreamState;
   finalizeStream: (usage?: Usage) => void;
+  emitClientToolDeferral: (callId: string, output: string) => void;
 } {
   const state: StreamState = {
     messageStarted: false,
@@ -680,6 +706,24 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
    * backfills a delta for any call whose arguments the provider sent whole
    * rather than streamed.
    */
+  /**
+   * Closes a caller-executed call that the server answered itself, and emits
+   * the answer as a `function_call_output` item.
+   *
+   * Without the output item the call is indistinguishable from one handed back
+   * for the caller to run, so a caller would execute a tool the model was told
+   * to re-issue — and a side-effecting tool would run twice.
+   */
+  const emitClientToolDeferral = (callId: string, output: string): void => {
+    if (!state.activeToolCalls.has(callId) || state.completedToolCalls.has(callId)) {
+      return;
+    }
+    state.completedToolCalls.add(callId);
+    emitFunctionCallArgumentsDone(config, callId);
+    emitFunctionCallItemDone(config, callId);
+    emitFunctionCallOutputItem(config, callId, output);
+  };
+
   const closeOpenClientToolCalls = (): void => {
     for (const callId of state.clientToolCalls) {
       if (state.completedToolCalls.has(callId)) {
@@ -895,7 +939,7 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
     writeDone(config.res);
   };
 
-  return { handlers, state, finalizeStream };
+  return { handlers, state, finalizeStream, emitClientToolDeferral };
 }
 
 /* =============================================================================

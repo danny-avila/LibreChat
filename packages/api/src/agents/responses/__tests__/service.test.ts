@@ -1,4 +1,5 @@
 import { formatAgentMessages, Providers } from '@librechat/agents';
+import type { ToolExecuteBatchRequest } from '@librechat/agents';
 import type { Response as ServerResponse } from 'express';
 import type { InputItem, ResponseContext } from '../types';
 import {
@@ -11,6 +12,7 @@ import {
   createResponseContext,
   buildResponsesUsage,
 } from '../service';
+import { clientToolDeferralContent, createClientToolExecuteHandler } from '../clientTools';
 import { extractMessageContent } from '~/protection/adapters/messages';
 import { buildResponse, createResponseTracker } from '../handlers';
 import { buildRunToolSet } from '~/agents/tools';
@@ -313,6 +315,47 @@ describe('streaming lifecycle of a caller-executed tool call', () => {
     expect(argumentsDone).toMatchObject({
       call_id: CALL_ID,
       arguments: '{"sql":"SELECT 1"}',
+    });
+  });
+
+  /**
+   * A call the server answered itself must not look like one handed back for
+   * the caller to run: the model was told to re-issue it, so a caller that
+   * executed it too would run a side-effecting tool twice.
+   */
+  it('reports a deferred call as answered, not as handed back', () => {
+    const { res, events } = recorder();
+    const { handlers, finalizeStream, emitClientToolDeferral } = createResponsesEventHandlers({
+      res,
+      context,
+      tracker: createResponseTracker(),
+      clientToolNames: new Set([CLIENT_TOOL]),
+    });
+    const execute = createClientToolExecuteHandler({
+      delegate: { handle: () => {} },
+      clientToolNames: new Set([CLIENT_TOOL]),
+      responseId: 'resp_test',
+      onDeferred: emitClientToolDeferral,
+    });
+
+    handlers.on_run_step.handle('on_run_step', {
+      id: 'step_1',
+      stepDetails: { type: 'tool_calls', tool_calls: [{ id: CALL_ID, name: CLIENT_TOOL }] },
+    });
+    execute.handle('on_tool_execute', {
+      toolCalls: [{ id: CALL_ID, name: CLIENT_TOOL, args: {} }],
+      resolve: () => {},
+    } as unknown as ToolExecuteBatchRequest);
+    finalizeStream();
+
+    const completed = events.find((event) => event.type === 'response.completed') as {
+      response: { output: Array<{ type: string; call_id?: string; output?: string }> };
+    };
+    const answer = completed.response.output.find((item) => item.type === 'function_call_output');
+
+    expect(answer).toMatchObject({
+      call_id: CALL_ID,
+      output: clientToolDeferralContent(CLIENT_TOOL),
     });
   });
 
@@ -1066,16 +1109,41 @@ describe('client tool continuation replay', () => {
     );
   });
 
-  it('rejects a function_call whose output was not replayed', () => {
+  /** Only the caller can answer a call to its own tool, so only there is the
+   *  missing half the caller's mistake. */
+  it('rejects a function_call to a declared tool whose output was not replayed', () => {
     const result = validateResponseRequest({
       model: 'agent_test',
       input: replayInput.slice(0, 2),
+      tools: [{ type: 'function', name: TOOL_NAME, parameters: { type: 'object' } }],
     });
 
     expect(result.valid).toBe(false);
     expect((result as { error: string }).error).toContain(
       `function_call ${CALL_ID} has no function_call_output`,
     );
+  });
+
+  /**
+   * The server emits a `function_call` for its own tools but never a
+   * `function_call_output`, so appending a previous response's `output` to the
+   * next request's `input` — the usual continuation — carries calls the caller
+   * cannot answer. Refusing those would reject a transcript the server itself
+   * produced.
+   */
+  it('accepts an unanswered call to a tool the caller did not declare', () => {
+    const result = validateResponseRequest({
+      model: 'agent_test',
+      input: replayInput.slice(0, 2),
+    });
+
+    expect(result.valid).toBe(true);
+  });
+
+  it('drops an unanswered server call rather than replaying it with no result', () => {
+    const messages = convertInputToMessages(replayInput.slice(0, 2));
+
+    expect(messages).toEqual([{ role: 'user', content: 'Run the query' }]);
   });
 
   it.each([

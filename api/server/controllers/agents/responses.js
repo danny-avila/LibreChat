@@ -894,17 +894,6 @@ const executeResponse = async (envelope, { req, res }) => {
         dbMethods,
       );
 
-      /** The caller's function tools: declared to the model with no server-side
-       *  executor, handed back when the model calls one, and reported on the
-       *  response as the subset that was actually applied. */
-      const clientTools = createClientToolHandoff({
-        tools: request.tools,
-        agentDefinitions: primaryConfig.toolDefinitions,
-        responseId,
-      });
-      primaryConfig.toolDefinitions = clientTools.toolDefinitions;
-      context.tools = clientTools.appliedTools;
-
       /**
        * Per-agent tool-execution context map, keyed by agentId. Ensures the
        * ON_TOOL_EXECUTE callback routes each sub-agent's tool calls to the
@@ -1101,6 +1090,25 @@ const executeResponse = async (envelope, { req, res }) => {
       // Merge previous messages with new input
       const allMessages = [...previousMessages, ...inputMessages];
 
+      /** The caller's function tools: declared to the model with no server-side
+       *  executor, handed back when the model calls one, and reported on the
+       *  response as the subset that was actually applied.
+       *
+       *  Built once every agent of the run is known, because the interception
+       *  matches on tool name across the whole graph: a name a subagent owns
+       *  collides exactly as a primary one does. */
+      const clientTools = createClientToolHandoff({
+        tools: request.tools,
+        agentDefinitions: primaryConfig.toolDefinitions,
+        serverDefinitions: modelBoundAgents.flatMap((runAgent) => runAgent.toolDefinitions ?? []),
+        responseId,
+      });
+      if (clientTools.error != null) {
+        return sendResponsesErrorResponse(res, 400, clientTools.error, 'invalid_request');
+      }
+      primaryConfig.toolDefinitions = clientTools.toolDefinitions;
+      context.tools = clientTools.appliedTools;
+
       const toolSet = buildRunToolSet(
         primaryConfig,
         handoffAgentConfigs.values(),
@@ -1189,8 +1197,11 @@ const executeResponse = async (envelope, { req, res }) => {
         emitResponseInProgress(handlerConfig);
 
         // Create event handlers
-        const { handlers: responsesHandlers, finalizeStream } =
-          createResponsesEventHandlers(handlerConfig);
+        const {
+          handlers: responsesHandlers,
+          finalizeStream,
+          emitClientToolDeferral,
+        } = createResponsesEventHandlers(handlerConfig);
 
         // Collect usage for balance tracking
         const collectedUsage = [];
@@ -1276,8 +1287,11 @@ const executeResponse = async (envelope, { req, res }) => {
           on_chain_end: { handle: () => {} },
           on_agent_update: { handle: () => {} },
           on_custom_event: { handle: () => {} },
+          /** The deferral answer is emitted as the call's `function_call_output`,
+           *  so a caller can tell an answered call from one handed back to it. */
           on_tool_execute: clientTools.wrapToolExecute(
             createToolExecuteHandler(toolExecuteOptions),
+            emitClientToolDeferral,
           ),
           on_agent_log: agentLogHandlerObj,
           ...(summarizationConfig?.enabled !== false
@@ -1509,6 +1523,7 @@ const executeResponse = async (envelope, { req, res }) => {
           on_custom_event: { handle: () => {} },
           on_tool_execute: clientTools.wrapToolExecute(
             createToolExecuteHandler(toolExecuteOptions),
+            (callId, output) => aggregator.toolOutputs.set(callId, output),
           ),
           on_agent_log: agentLogHandlerObj,
           ...(summarizationConfig?.enabled !== false

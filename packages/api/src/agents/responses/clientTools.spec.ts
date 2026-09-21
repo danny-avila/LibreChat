@@ -49,6 +49,11 @@ describe('validateClientTools', () => {
       [{ type: 'function', name: 'bad', description: 7 }],
       'description must be a string',
     ],
+    [
+      'a non-boolean strict',
+      [{ type: 'function', name: 'bad', strict: 'yes' }],
+      'strict must be a boolean',
+    ],
     ['a string entry', ['open_service_page'], 'tools[0] must be an object'],
     ['a null entry', [null], 'tools[0] must be an object'],
     ['an array entry', [[]], 'tools[0] must be an object'],
@@ -79,25 +84,26 @@ describe('buildClientToolDefinitions', () => {
     ).toEqual([
       {
         name: 'open_service_page',
-        description: expect.stringMatching(/^Open a service page /),
+        description: 'Open a service page',
         parameters,
         allowed_callers: ['direct'],
       },
     ]);
   });
 
-  it('asks the model to call the tool alone, keeping the caller’s description', () => {
+  /** The single-call instruction is added by the merge, which is the only
+   *  place that knows whether a server tool exists to be batched with. */
+  it('carries the caller’s description verbatim', () => {
     const [definition] = buildClientToolDefinitions([
       fnTool('open_service_page', { description: 'Open a service page' }),
     ]);
 
-    expect(definition.description).toContain('Open a service page');
-    expect(definition.description).toContain('only tool call of its turn');
+    expect(definition.description).toBe('Open a service page');
   });
 
-  it('carries the notice alone when the caller declared no description', () => {
+  it('leaves the description absent when the caller declared none', () => {
     const [definition] = buildClientToolDefinitions([fnTool('refresh')]);
-    expect(definition.description).toContain('only tool call of its turn');
+    expect(definition.description).toBeUndefined();
   });
 
   it('defaults a parameterless tool to an empty JSON Schema object', () => {
@@ -111,7 +117,7 @@ describe('buildClientToolDefinitions', () => {
     ]);
 
     expect(definition.parameters).toEqual({ type: 'object', properties: {} });
-    expect(definition.description).toContain('only tool call of its turn');
+    expect(definition.description).toBeUndefined();
   });
 
   it('ignores hosted tools, which the server owns', () => {
@@ -151,6 +157,49 @@ describe('mergeClientToolDefinitions', () => {
     /** Not treated as a client tool, so the run will still execute the real one. */
     expect(merged.names.size).toBe(0);
     expect(merged.shadowed).toEqual(['run_query']);
+  });
+
+  it('asks the model to call the tool alone when the run has a server tool', () => {
+    const merged = mergeClientToolDefinitions(
+      [serverTool],
+      buildClientToolDefinitions([fnTool('open_service_page', { description: 'Open a page' })]),
+    );
+    const [, client] = merged.toolDefinitions;
+
+    expect(client.description).toContain('Open a page');
+    expect(client.description).toContain('only tool call of its turn');
+  });
+
+  it('carries the notice alone when the caller declared no description', () => {
+    const merged = mergeClientToolDefinitions(
+      [serverTool],
+      buildClientToolDefinitions([fnTool('refresh')]),
+    );
+
+    expect(merged.toolDefinitions[1].description).toContain('only tool call of its turn');
+  });
+
+  /** With no server tool every batch is client-only and hands off as issued,
+   *  so there is nothing to warn the model about. */
+  it('leaves the description verbatim when the run owns no server tool', () => {
+    const merged = mergeClientToolDefinitions(
+      [],
+      buildClientToolDefinitions([fnTool('open_service_page', { description: 'Open a page' })]),
+    );
+
+    expect(merged.toolDefinitions[0].description).toBe('Open a page');
+  });
+
+  it('detects a collision against an agent other than the primary', () => {
+    const subagentTool: LCTool = { name: 'search', parameters: { type: 'object' } };
+    const merged = mergeClientToolDefinitions(
+      [serverTool],
+      buildClientToolDefinitions([fnTool('search')]),
+      [serverTool, subagentTool],
+    );
+
+    expect(merged.shadowed).toEqual(['search']);
+    expect(merged.names.size).toBe(0);
   });
 
   it('leaves the definitions untouched when nothing was declared', () => {
@@ -201,18 +250,49 @@ describe('createClientToolHandoff', () => {
     expect(handoff.appliedTools.map((t) => t.name)).toEqual(['open_service_page']);
   });
 
-  it('omits a tool the agent already owns, since that one was dropped', () => {
+  /**
+   * The server tool wins the name, so the caller would wait for a handoff that
+   * can never arrive. Refused at ingress instead of dropped with a log line.
+   */
+  it('refuses a request that declares a name the agent already owns', () => {
     const handoff = createClientToolHandoff({
       tools: [fnTool('run_query'), fnTool('open_service_page')],
       agentDefinitions: [serverTool],
       responseId: 'resp_1',
     });
 
-    expect(handoff.toolDefinitions).toEqual([
-      serverTool,
-      expect.objectContaining({ name: 'open_service_page' }),
+    expect(handoff.error).toContain('run_query');
+    expect(handoff.toolDefinitions).toEqual([serverTool]);
+    expect(handoff.appliedTools).toEqual([]);
+    expect([...handoff.clientToolNames]).toEqual([]);
+  });
+
+  /**
+   * The interception matches on tool name and marks calls in a graph-wide set,
+   * so a subagent's own tool would be intercepted just as the primary's is.
+   */
+  it('refuses a name owned by a subagent rather than the primary agent', () => {
+    const handoff = createClientToolHandoff({
+      tools: [fnTool('search')],
+      agentDefinitions: [serverTool],
+      serverDefinitions: [serverTool, { name: 'search' }],
+      responseId: 'resp_1',
+    });
+
+    expect(handoff.error).toContain('search');
+    expect([...handoff.clientToolNames]).toEqual([]);
+  });
+
+  it('drops strict from the echo, which the run cannot enforce', () => {
+    const handoff = createClientToolHandoff({
+      tools: [fnTool('open_service_page', { description: 'Open a page', strict: true })],
+      agentDefinitions: [serverTool],
+      responseId: 'resp_1',
+    });
+
+    expect(handoff.appliedTools).toEqual([
+      { type: 'function', name: 'open_service_page', description: 'Open a page' },
     ]);
-    expect(handoff.appliedTools.map((t) => t.name)).toEqual(['open_service_page']);
   });
 
   it('wraps both handlers once a client tool is in play', () => {
@@ -231,20 +311,19 @@ describe('createClientToolHandoff', () => {
    * which it can only do for names it can recognize. A name the agent already
    * owns is served by the server tool, so it is not one of them.
    */
-  it('names the caller-executed tools, excluding one the agent owns', () => {
+  it('names the caller-executed tools', () => {
     const handoff = createClientToolHandoff({
-      tools: [fnTool('run_query'), fnTool('open_service_page')],
+      tools: [fnTool('open_service_page'), fnTool('refresh')],
       agentDefinitions: [serverTool],
       responseId: 'resp_1',
     });
 
-    expect([...handoff.clientToolNames]).toEqual(['open_service_page']);
+    expect([...handoff.clientToolNames]).toEqual(['open_service_page', 'refresh']);
   });
 
   it.each([
     ['no tools at all', undefined],
     ['hosted tools only', [{ type: 'librechat:web_search' } as Tool]],
-    ['a tool the agent already owns', [fnTool('run_query')]],
   ])('stays inert with %s', (_label, tools) => {
     const agentDefinitions = [serverTool];
     const handoff = createClientToolHandoff({ tools, agentDefinitions, responseId: 'resp_1' });

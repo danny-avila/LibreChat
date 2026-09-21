@@ -77,6 +77,25 @@ function isFunctionTool(tool: Tool | undefined | null): tool is FunctionTool {
 }
 
 /**
+ * The names the request declares as caller-executed.
+ *
+ * Read at ingress, before any agent is loaded, so validation can tell a call
+ * the caller owns from one the server does.
+ */
+export function declaredClientToolNames(tools: unknown): Set<string> {
+  const names = new Set<string>();
+  if (!Array.isArray(tools)) {
+    return names;
+  }
+  for (const tool of tools) {
+    if (isToolObject(tool) && isFunctionTool(tool) && typeof tool.name === 'string') {
+      names.add(tool.name);
+    }
+  }
+  return names;
+}
+
+/**
  * A declarable tool entry: an object carrying a non-empty string `type`.
  *
  * Checked so that a malformed entry is rejected at ingress rather than being
@@ -133,6 +152,9 @@ export function validateClientTools(tools: unknown): string | undefined {
     if (parameters != null && (typeof parameters !== 'object' || Array.isArray(parameters))) {
       return `function tool parameters must be a JSON Schema object: ${name}`;
     }
+    if (tool.strict != null && typeof tool.strict !== 'boolean') {
+      return `function tool strict must be a boolean: ${name}`;
+    }
     names.add(name);
   }
 
@@ -143,8 +165,9 @@ export function validateClientTools(tools: unknown): string | undefined {
  * The request's function tools as model-visible definitions, with no
  * server-side executor. Assumes {@link validateClientTools} already passed.
  *
- * The caller's description carries {@link SINGLE_CALL_NOTICE} appended as its
- * own sentence, and a tool that declared no description gets the notice alone.
+ * The caller's description is carried as sent; {@link mergeClientToolDefinitions}
+ * is what adds {@link SINGLE_CALL_NOTICE}, because only there is it known
+ * whether the agent has a server tool to be batched with.
  */
 export function buildClientToolDefinitions(tools: Tool[] | undefined | null): LCTool[] {
   if (tools == null) {
@@ -152,35 +175,53 @@ export function buildClientToolDefinitions(tools: Tool[] | undefined | null): LC
   }
   return tools.filter(isFunctionTool).map(({ name, description, parameters }) => ({
     name,
-    description:
-      typeof description === 'string' && description !== ''
-        ? `${description} ${SINGLE_CALL_NOTICE}`
-        : SINGLE_CALL_NOTICE,
+    ...(typeof description === 'string' && description !== '' ? { description } : {}),
     parameters: (parameters ?? EMPTY_PARAMETERS) as LCTool['parameters'],
     /** Callable by the model itself, and by nothing else. */
     allowed_callers: ['direct' as const],
   }));
 }
 
+/** The caller's description with the single-call instruction as its own sentence. */
+function withSingleCallNotice(definition: LCTool): LCTool {
+  const { description } = definition;
+  return {
+    ...definition,
+    description:
+      typeof description === 'string' && description !== ''
+        ? `${description} ${SINGLE_CALL_NOTICE}`
+        : SINGLE_CALL_NOTICE,
+  };
+}
+
 /**
- * Appends the client tools to an agent's model-visible definitions.
+ * Appends the client tools to the run's model-visible definitions.
  *
  * A caller-declared name never displaces a server tool: on collision the
- * server's definition wins and the client's is dropped, so a request cannot
- * shadow (and thereby suppress) a tool the agent is configured to run. The
- * dropped names are returned so the run does not later mistake the surviving
- * server tool for a client one.
+ * server's definition wins and the client's is dropped, and the dropped names
+ * are reported so the request can be refused rather than left waiting for a
+ * handoff that the surviving server tool will never produce.
+ *
+ * `serverDefinitions` must cover every agent in the run, not just the primary
+ * one: the interception matches on tool name and marks calls in a graph-wide
+ * set, so a name a subagent owns collides just as a primary one does.
+ *
+ * {@link SINGLE_CALL_NOTICE} is added only when the run actually has a server
+ * tool. With none, every batch is client-only and hands off as issued, so the
+ * caller's description reaches the model exactly as written.
  */
 export function mergeClientToolDefinitions(
   agentDefinitions: LCTool[] | undefined,
   clientDefinitions: LCTool[],
+  serverDefinitions: LCTool[] = agentDefinitions ?? [],
 ): { toolDefinitions: LCTool[]; names: Set<string>; shadowed: string[] } {
   const existing = agentDefinitions ?? [];
   if (clientDefinitions.length === 0) {
     return { toolDefinitions: existing, names: new Set<string>(), shadowed: [] };
   }
 
-  const serverNames = new Set(existing.map((definition) => definition.name));
+  const serverNames = new Set(serverDefinitions.map((definition) => definition.name));
+  const annotate = serverNames.size > 0;
   const shadowed: string[] = [];
   const accepted: LCTool[] = [];
   const names = new Set<string>();
@@ -190,7 +231,7 @@ export function mergeClientToolDefinitions(
       shadowed.push(definition.name);
       continue;
     }
-    accepted.push(definition);
+    accepted.push(annotate ? withSingleCallNotice(definition) : definition);
     names.add(definition.name);
   }
 
@@ -301,10 +342,13 @@ export function createClientToolExecuteHandler({
   delegate,
   clientToolNames,
   responseId,
+  onDeferred,
 }: {
   delegate: ToolExecuteHandler;
   clientToolNames: Set<string>;
   responseId: string;
+  /** Reports the answer given to a deferred call, so the run can show it was answered. */
+  onDeferred?: (callId: string, output: string) => void;
 }): ToolExecuteHandler {
   if (clientToolNames.size === 0) {
     return delegate;
@@ -320,12 +364,14 @@ export function createClientToolExecuteHandler({
           executable.push(toolCall);
           continue;
         }
+        const content = clientToolDeferralContent(toolCall.name);
         results.push({
           toolCallId: toolCall.id,
           status: 'success',
-          content: clientToolDeferralContent(toolCall.name),
+          content,
         });
         deferredNames.push(toolCall.name);
+        onDeferred?.(toolCall.id, content);
       }
 
       if (results.length === 0) {
@@ -358,12 +404,14 @@ export interface ClientToolHandoff {
   /** The agent's model-visible definitions with the accepted client tools appended. */
   toolDefinitions: LCTool[];
   /**
-   * The caller's `function` entries that reached the model, as the caller sent
-   * them. Hosted entries the server ignores, and entries it dropped because the
-   * agent already owns the name, are absent -- so echoing this on the response
-   * describes the tools the run actually ran with rather than the request's ask.
+   * The caller's `function` entries that reached the model. Hosted entries the
+   * server ignores are absent, and `strict` is dropped because the run has no
+   * way to enforce it -- so echoing this on the response describes the tools
+   * the run actually ran with rather than the request's ask.
    */
   appliedTools: FunctionTool[];
+  /** Why the request's tools cannot be honored, or undefined when they can. */
+  error?: string;
   /**
    * The names the model sees as caller-executed. The streaming lifecycle needs
    * them to recognize a call the server will never run, and so never close
@@ -371,7 +419,10 @@ export interface ClientToolHandoff {
    */
   clientToolNames: ReadonlySet<string>;
   wrapRunStep: (delegate: RunStepHandler) => RunStepHandler;
-  wrapToolExecute: (delegate: ToolExecuteHandler) => ToolExecuteHandler;
+  wrapToolExecute: (
+    delegate: ToolExecuteHandler,
+    onDeferred?: (callId: string, output: string) => void,
+  ) => ToolExecuteHandler;
 }
 
 const identity = <T>(delegate: T): T => delegate;
@@ -390,10 +441,13 @@ const identity = <T>(delegate: T): T => delegate;
 export function createClientToolHandoff({
   tools,
   agentDefinitions,
+  serverDefinitions,
   responseId,
 }: {
   tools?: Tool[] | null;
   agentDefinitions?: LCTool[];
+  /** Every agent's definitions, primary and subagents alike; defaults to the primary's. */
+  serverDefinitions?: LCTool[];
   responseId: string;
 }): ClientToolHandoff {
   const declared = buildClientToolDefinitions(tools);
@@ -410,23 +464,32 @@ export function createClientToolHandoff({
   const { toolDefinitions, names, shadowed } = mergeClientToolDefinitions(
     agentDefinitions,
     declared,
+    serverDefinitions ?? agentDefinitions ?? [],
   );
 
+  /* Refused rather than dropped with a warning: the server tool wins the name,
+     so the caller would wait for a handoff that can never arrive. */
   if (shadowed.length > 0) {
-    logger.warn(
-      `[Responses API] Request ${responseId} declared tool(s) the agent already provides; ` +
-        `the server-side tool is used: ${shadowed.join(', ')}`,
-    );
+    return {
+      toolDefinitions: agentDefinitions ?? [],
+      appliedTools: [],
+      clientToolNames: new Set<string>(),
+      wrapRunStep: identity,
+      wrapToolExecute: identity,
+      error:
+        `function tool name is already provided by this agent: ${shadowed.join(', ')}; ` +
+        'rename the tool or remove it from the request',
+    };
   }
 
   return {
     toolDefinitions,
-    appliedTools: (tools ?? []).filter(
-      (tool): tool is FunctionTool => isFunctionTool(tool) && names.has(tool.name),
-    ),
+    appliedTools: (tools ?? [])
+      .filter((tool): tool is FunctionTool => isFunctionTool(tool) && names.has(tool.name))
+      .map(({ strict: _strict, ...applied }) => applied),
     clientToolNames: names,
     wrapRunStep: (delegate) => createClientToolRunStepHandler({ delegate, clientToolNames: names }),
-    wrapToolExecute: (delegate) =>
-      createClientToolExecuteHandler({ delegate, clientToolNames: names, responseId }),
+    wrapToolExecute: (delegate, onDeferred) =>
+      createClientToolExecuteHandler({ delegate, clientToolNames: names, responseId, onDeferred }),
   };
 }
