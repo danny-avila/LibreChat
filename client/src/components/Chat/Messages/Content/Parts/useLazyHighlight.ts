@@ -73,40 +73,53 @@ function highlightCode(mod: LowlightModule, code: string, lang: string): React.R
   }
 }
 
-type HighlightedValue = {
-  key: string;
-  nodes: React.ReactNode[];
-};
+/** The tokens held, with the input they were produced from. Nothing to show is the empty key,
+ *  so a hook mounted without code still recognizes the first code it receives as new. */
+type HighlightState = { key: string; nodes: React.ReactNode[] | null };
 
+const highlightKey = (code: string | undefined, lang: string): string =>
+  code ? `${lang}\0${code}` : '';
+
+const now = (): number => (typeof performance === 'undefined' ? Date.now() : performance.now());
+
+/**
+ * Tokens for a block of code, once the grammars have loaded.
+ *
+ * Highlighting runs when the input changes, and once per input: the key the tokens were produced
+ * from is tracked, so a mount that could highlight immediately is not repeated by the effect that
+ * follows it. While the input keeps changing, as it does for a streaming tool call, highlights are
+ * throttled to one per `CodeHighlightThrottleContext` interval and the caller is handed its raw
+ * text in between, so a long code block stays readable without tokenizing every delta. Grammars
+ * load on first use, so a caller renders its own raw text until this returns; passing `undefined`
+ * while a pane is closed keeps a collapsed card from tokenizing output nobody is reading.
+ */
 export default function useLazyHighlight(
   code: string | undefined,
   lang: string,
 ): React.ReactNode[] | null {
   const throttleMs = React.useContext(CodeHighlightThrottleContext);
-  const currentKey = `${lang}\0${code ?? ''}`;
-  const initialKey = code && lowlightModule ? currentKey : '';
+  const currentKey = highlightKey(code, lang);
   const hasInitialHighlight = Boolean(code && lowlightModule);
-  const [highlighted, setHighlighted] = useState<HighlightedValue | null>(() => {
-    if (!hasInitialHighlight) {
-      return null;
-    }
-    return { key: initialKey, nodes: highlightCode(lowlightModule!, code!, lang) };
-  });
-  const prevKey = useRef(initialKey);
+  const [highlighted, setHighlighted] = useState<HighlightState | null>(() =>
+    hasInitialHighlight
+      ? { key: currentKey, nodes: highlightCode(lowlightModule!, code!, lang) }
+      : null,
+  );
+  /** The input the tokens held were produced from, or that a pending run will produce. */
+  const scheduledKey = useRef(hasInitialHighlight ? currentKey : '');
   const prevThrottleMs = useRef<number | null>(hasInitialHighlight ? throttleMs : null);
-  const currentTime = typeof performance === 'undefined' ? Date.now() : performance.now();
-  const lastRunAt = useRef<number | null>(hasInitialHighlight ? currentTime : null);
+  const lastRunAt = useRef<number | null>(hasInitialHighlight ? now() : null);
   const generation = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const key = `${lang}\0${code ?? ''}`;
-    const keyChanged = key !== prevKey.current;
+    const key = highlightKey(code, lang);
+    const keyChanged = key !== scheduledKey.current;
     const throttleChanged = throttleMs !== prevThrottleMs.current;
     if (!keyChanged && !throttleChanged) {
       return;
     }
-    prevKey.current = keyChanged ? key : prevKey.current;
+    scheduledKey.current = key;
     prevThrottleMs.current = throttleMs;
     generation.current += 1;
     if (keyChanged) {
@@ -130,7 +143,7 @@ export default function useLazyHighlight(
 
     const run = () => {
       timer.current = null;
-      lastRunAt.current = typeof performance === 'undefined' ? Date.now() : performance.now();
+      lastRunAt.current = now();
       const gen = ++generation.current;
 
       if (lowlightModule) {
@@ -151,13 +164,8 @@ export default function useLazyHighlight(
         });
     };
 
-    let elapsed = throttleMs;
-    if (lastRunAt.current !== null) {
-      elapsed =
-        typeof performance === 'undefined'
-          ? Date.now() - lastRunAt.current
-          : performance.now() - lastRunAt.current;
-    }
+    /** A clock that jumped backwards would otherwise hold the next highlight for a full window. */
+    const elapsed = lastRunAt.current === null ? throttleMs : now() - lastRunAt.current;
     const wait = throttleMs - elapsed;
     if (wait <= 0) {
       run();
@@ -171,13 +179,14 @@ export default function useLazyHighlight(
       if (timer.current) {
         clearTimeout(timer.current);
       }
-      prevKey.current = '';
+      scheduledKey.current = '';
       prevThrottleMs.current = null;
       generation.current += 1;
     },
     [],
   );
-  if (highlighted?.key === currentKey) {
+
+  if (highlighted && highlighted.key === currentKey) {
     return highlighted.nodes;
   }
   return code ? [code] : null;

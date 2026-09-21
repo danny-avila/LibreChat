@@ -128,7 +128,7 @@ export default function ExecuteCode({
     extraCancelled: cancelledInBackground,
   });
 
-  const highlighted = useLazyHighlight(code, lang);
+  const highlighted = useLazyHighlight(showCode ? code : undefined, lang);
   const { ref: codePaneRef, onScroll: onCodePaneScroll } = useFollowScroll<HTMLPreElement>(
     highlighted ?? code ?? '',
     phase === 'running',
