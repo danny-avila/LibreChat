@@ -223,9 +223,12 @@ function AgentCard({ agent, agentId }: { agent: RecordPresentation['agent']; age
 /** A tool round's calls as the chat's own tool cards hold them: no trace read, no content gate. */
 function ToolCalls({
   calls,
+  fromConversation,
   mcpIconMap,
 }: {
   calls: ToolCallView[];
+  /** The chat's own message supplied the calls; otherwise they are only the names the trace recorded. */
+  fromConversation: boolean;
   mcpIconMap: Map<string, string>;
 }) {
   const localize = useLocalize();
@@ -246,7 +249,9 @@ function ToolCalls({
           <ContentBlock label="com_ui_trace_tool_returned" content={toContent(call.output)} />
         </div>
       ))}
-      <p className="text-xs text-text-secondary">{localize('com_ui_trace_from_conversation')}</p>
+      {fromConversation && (
+        <p className="text-xs text-text-secondary">{localize('com_ui_trace_from_conversation')}</p>
+      )}
     </section>
   );
 }
@@ -414,7 +419,11 @@ function Inspector({
         {!leadsWithContent && preview}
         {leadsWithContent && content}
         {presentation.calls != null && (
-          <ToolCalls calls={presentation.calls} mcpIconMap={mcpIconMap} />
+          <ToolCalls
+            calls={presentation.calls}
+            fromConversation={presentation.callsFrom === 'conversation'}
+            mcpIconMap={mcpIconMap}
+          />
         )}
         <Section title="com_ui_trace_timing" fields={timing} />
         <Section

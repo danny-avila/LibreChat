@@ -285,6 +285,11 @@ export interface ConversationMethods {
     conversationId: string,
     pinned: boolean,
   ): Promise<IConversation | null>;
+  appendConvoMessageReference(
+    user: string,
+    conversationId: string,
+    messageId: string,
+  ): Promise<IConversation | null>;
   replaceConvoCodeEnvironmentDecision(
     params: {
       user: string;
@@ -2590,6 +2595,42 @@ export function createConversationMethods(
   }
 
   /**
+   * Adds one message's id to a conversation's message list, and nothing else.
+   *
+   * A message write that failed, or that resolved falsy on a duplicate key it could not
+   * re-read, leaves its row out of `messages`, and the bare `saveMessage` retries that
+   * restore the row never add it. Going direct keeps the repair to what it is: no
+   * `getMessages` round trip, no rewrite of the whole array, and no `$set` of fields the
+   * caller never meant to touch. `timestamps: false` because repairing a reference is not
+   * activity and must not reorder the sidebar.
+   *
+   * Takes the id as a string so callers stay free of the storage engine's own id type; the
+   * cast to it happens here. Returns null when no conversation matched, so a repair can
+   * never insert one.
+   */
+  async function appendConvoMessageReference(
+    user: string,
+    conversationId: string,
+    messageId: string,
+  ) {
+    if (!isValidObjectIdString(messageId)) {
+      logger.warn('[appendConvoMessageReference] Ignoring an unusable message id');
+      return null;
+    }
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      return await Conversation.findOneAndUpdate(
+        { conversationId, user },
+        { $addToSet: { messages: new mongoose.Types.ObjectId(messageId) } },
+        { new: true, timestamps: false },
+      ).lean<IConversation>();
+    } catch (error) {
+      logger.error('[appendConvoMessageReference] Error appending the message reference', error);
+      throw new Error('Error appending the message reference');
+    }
+  }
+
+  /**
    * Compare-and-swap for an owner's explicit replacement of a code-environment decision, whether
    * that attaches an environment, moves to another, or leaves attached execution behind.
    * The filter repeats the stored decision being replaced, so a writer that changed it first
@@ -3471,6 +3512,7 @@ export function createConversationMethods(
     deleteNullOrEmptyConversations,
     saveConvo,
     setConvoPinned,
+    appendConvoMessageReference,
     replaceConvoCodeEnvironmentDecision,
     bulkSaveConvos,
     getConvosByCursor,

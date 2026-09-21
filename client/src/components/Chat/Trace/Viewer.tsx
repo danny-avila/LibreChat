@@ -42,7 +42,7 @@ import {
   buildTraceModel,
   collapsibleKeys,
 } from './model';
-import { buildPreviews, buildPreviewIndex, buildActivityIndex } from './preview';
+import { alignTurns, buildPreviews, buildPreviewIndex, buildActivityIndex } from './preview';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { traceModeAtom, traceScaleAtom } from './store';
 import { presentTool, presentRecord } from './present';
@@ -159,7 +159,8 @@ export default function Viewer({
     pages.every((page) => page.sourceId === langfuseSession.destinationId)
       ? langfuseSession.url
       : undefined;
-  const model = useMemo(() => buildTraceModel(records, mode), [records, mode]);
+  const hasOlder = recordsQuery.hasNextPage === true;
+  const model = useMemo(() => buildTraceModel(records, mode, hasOlder), [records, mode, hasOlder]);
   const bounds = useMemo(() => boundsOf(model, scale), [model, scale]);
   const minSpan = minimumSpan(bounds, scale);
   const previews = useMemo(() => buildPreviews(messages), [messages]);
@@ -167,17 +168,21 @@ export default function Viewer({
    *  its rounds cannot be numbered against the message until they are. */
   const partialMessageId =
     recordsQuery.hasNextPage === true ? model.turns[0]?.messageId : undefined;
-  const previewIndex = useMemo(
-    () => buildPreviewIndex(model, previews, partialMessageId),
+  const alignments = useMemo(
+    () => alignTurns(model, previews, partialMessageId),
     [model, previews, partialMessageId],
+  );
+  const previewIndex = useMemo(
+    () => buildPreviewIndex(model, previews, partialMessageId, alignments),
+    [model, previews, partialMessageId, alignments],
   );
   const previewOf = useCallback(
     (node: TraceNode) => previewIndex.get(node.record.id),
     [previewIndex],
   );
   const activity = useMemo(
-    () => buildActivityIndex(model, previews, partialMessageId),
-    [model, previews, partialMessageId],
+    () => buildActivityIndex(model, previews, partialMessageId, alignments),
+    [model, previews, partialMessageId, alignments],
   );
   const agentsMap = useAgentsMapContext();
   const mcpIconMap = useMCPIconMap();
@@ -530,7 +535,10 @@ export default function Viewer({
                 toolTitleFor={toolTitleFor}
                 agentOf={agentOf}
                 unrecordedCalls={activity.unrecordedCalls}
+                stepOffsets={activity.stepOffsets}
                 mcpIconMap={mcpIconMap}
+                showCost={showCost}
+                currency={currency}
                 onSelect={setSelectedId}
                 onToggle={toggle}
               />

@@ -1108,7 +1108,7 @@ const updateAgentHandler = async (req, res) => {
       includesToolsConfiguration ||
       includesToolOptionsConfiguration
     ) {
-      existingAgent = await db.getAgent({ id });
+      existingAgent = await db.getAgent({ id }, {});
       if (!existingAgent) {
         return res.status(404).json({ error: 'Agent not found' });
       }
@@ -1237,7 +1237,7 @@ const updateAgentHandler = async (req, res) => {
     // Convert OCR to context in incoming updateData
     convertOcrToContextInPlace(updateData);
 
-    existingAgent ??= await db.getAgent({ id });
+    existingAgent ??= await db.getAgent({ id }, {});
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });
@@ -2066,7 +2066,7 @@ const revertAgentVersionHandler = async (req, res) => {
       return res.status(400).json({ error: 'version_index is required' });
     }
 
-    const existingAgent = await db.getAgent({ id });
+    const existingAgent = await db.getAgent({ id }, {});
 
     if (!existingAgent) {
       return res.status(404).json({ error: 'Agent not found' });

@@ -7,10 +7,10 @@ import {
   PermissionBits,
 } from 'librechat-data-provider';
 import type { AllMethods, MCPServerDocument, IAgent } from '@librechat/data-schemas';
-
 import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import type { ResolvedPrincipal } from '~/types/principal';
+import { requireApiKeyReentryForRebinding } from '~/mcp/registry/binding';
 import { MCPOAuthSecretReentryRequiredError } from '~/mcp/errors';
 import { AccessControlService } from '~/acl/accessControlService';
 
@@ -361,6 +361,10 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     }
 
     const existingServer = await this._dbMethods.findMCPServerByServerName(serverName);
+
+    if (existingServer) {
+      requireApiKeyReentryForRebinding(existingServer.config, config);
+    }
 
     let configToSave: ParsedServerConfig = sanitizeUserManagedOAuthConfig({
       ...config,

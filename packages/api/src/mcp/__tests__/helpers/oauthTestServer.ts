@@ -72,6 +72,13 @@ export interface OAuthTestServerOptions {
   requireResourceParameter?: boolean;
   /** Number of refresh-grant access tokens the MCP resource should reject after issuance. */
   rejectRefreshTokens?: number;
+  /** Injects an endpoint failure before redemption; undefined resumes normal refresh behavior. */
+  refreshFailure?: () => { status: number; body: string } | undefined;
+  /**
+   * Awaited after a refresh grant is recorded but before it is redeemed, so a test can hold
+   * concurrent refreshes open and observe how many redemptions the callers actually attempt.
+   */
+  refreshGate?: () => Promise<void> | undefined;
   /** Optional test hook for controlling echo-tool completion. */
   echoHandler?: (message: string) => string | Promise<string>;
 }
@@ -142,6 +149,8 @@ export async function createOAuthMCPServer(
     requireResourceParameter = false,
     rejectRefreshTokens = 0,
     echoHandler,
+    refreshFailure,
+    refreshGate,
   } = options;
 
   const sessions = new Map<string, StreamableHTTPServerTransport>();
@@ -397,6 +406,14 @@ export async function createOAuthMCPServer(
       }
 
       if (grantType === 'refresh_token' && issueRefreshTokens) {
+        await refreshGate?.();
+        const failure = refreshFailure?.();
+        if (failure) {
+          res.writeHead(failure.status, { 'Content-Type': 'application/json' });
+          res.end(failure.body);
+          return;
+        }
+
         const refreshToken = params.get('refresh_token');
         if (!refreshToken || !issuedRefreshTokens.has(refreshToken)) {
           res.writeHead(400, { 'Content-Type': 'application/json' });

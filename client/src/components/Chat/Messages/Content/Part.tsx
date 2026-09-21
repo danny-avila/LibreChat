@@ -25,10 +25,16 @@ import {
   SubagentCall,
   SteerPart,
 } from './Parts';
-import { getCachedPreview, getActivityLabelPart, getActivityLabelText } from '~/utils';
+import {
+  getCachedPreview,
+  getActivityLabelPart,
+  getActivityLabelText,
+  getPartKeyIndex,
+} from '~/utils';
 import { getAskUserQuestionPart } from '~/utils/approval';
 import AskUserQuestionCall from './AskUserQuestionCall';
 import { isBashProgrammaticToolCall } from './routing';
+import { useMessageContext } from '~/Providers';
 import { ErrorMessage } from './MessageContent';
 import AskUserQuestion from './AskUserQuestion';
 import RetrievalCall from './RetrievalCall';
@@ -61,6 +67,7 @@ const Part = memo(function Part({
   hideAttachments,
   onToolExpand,
 }: PartProps) {
+  const { partIndex } = useMessageContext();
   if (!part) {
     return null;
   }
@@ -153,6 +160,7 @@ const Part = memo(function Part({
     }
     return (
       <Reasoning
+        partKeyIndex={getPartKeyIndex(part, partIndex ?? 0)}
         reasoning={reasoning}
         isLast={isLast ?? false}
         reasoningLabel={part.reasoning_label}

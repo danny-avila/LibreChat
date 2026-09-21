@@ -20,6 +20,8 @@ export type RecordPresentation = {
   /** The tools a row stands for, for their icons: a recorded tool, or an unrecorded round's calls. */
   toolNames?: string[];
   calls?: ToolCallView[];
+  /** Where `calls` came from: the chat's own message, or only the names the trace recorded. */
+  callsFrom?: 'conversation' | 'trace';
 };
 
 /** A call of an unrecorded tool round, named the way its chat tool card names it. */
@@ -58,16 +60,27 @@ export function presentTool(
 
 function presentToolRound(record: TTraceRecord, sources: PresentationSources): RecordPresentation {
   const { localize, activity } = sources;
-  const calls = activity.calls.get(record.id);
+  /** The trace's own names say what ran; the chat's message, when it matches, adds what was sent and returned. */
+  const matched = activity.calls.get(record.id);
+  const calls = matched ?? record.tools?.map((name) => ({ name, args: '' })) ?? [];
+  const callsFrom = matched != null ? ('conversation' as const) : ('trace' as const);
   const technicalName = record.name;
-  if (calls == null || calls.length === 0) {
+  if (calls.length === 0) {
     return { title: localize('com_ui_trace_role_tools'), technicalName };
   }
   const views = calls.map((call) => ({ ...call, ...presentTool(call.name, sources) }));
   const toolNames = calls.map((call) => call.name);
   if (views.length === 1) {
     const [{ title, caption, args }] = views;
-    return { title, caption, preview: args, technicalName, toolNames, calls: views };
+    return {
+      title,
+      caption,
+      preview: args || undefined,
+      technicalName,
+      toolNames,
+      calls: views,
+      callsFrom,
+    };
   }
   const titles = [...new Set(views.map((view) => view.title))];
   return {
@@ -76,6 +89,7 @@ function presentToolRound(record: TTraceRecord, sources: PresentationSources): R
     technicalName,
     toolNames,
     calls: views,
+    callsFrom,
   };
 }
 
