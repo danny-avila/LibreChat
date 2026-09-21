@@ -12,7 +12,6 @@ import { getBatchActivityLabelPart, getActivityLabelText } from '~/utils/activit
 import { hasPendingApprovalInPart, hasPendingAuthInPart } from '~/utils/groupToolCalls';
 import { ASK_USER_QUESTION, getSubmittedAskAnswer } from '~/utils/approval';
 import { boundIntentLabel, getToolCallIntent } from './Parts/intent';
-import { areToolCallArgsComplete } from './Parts/parseJsonField';
 import { getToolDisplayLabel } from '~/utils/toolLabels';
 import { isBashProgrammaticToolCall } from './routing';
 import { getToolMeta, summarizeSpan } from './outcome';
@@ -30,6 +29,11 @@ export type LiveActivity = {
    *  transition for a genuinely different line. */
   source: string;
   iconNames: string[];
+  /** Set while the newest line is a call still running with no intent of its
+   *  own. Code cards name their startup from sandbox events that live outside
+   *  the content array; the header reads the same signal for this call rather
+   *  than unfolding the span to let the card say it. */
+  pendingToolCallId?: string;
   /** Failed and stopped calls anywhere in the span, not just the newest line. */
   outcome: SpanOutcome;
 };
@@ -170,26 +174,7 @@ export function blocksLiveFold(part: TMessageContentParts | undefined): boolean 
   if (part == null) {
     return false;
   }
-  if (needsReader(part) || isLiveSubagent(part)) {
-    return true;
-  }
-  const toolCall = getStandardToolCall(part);
-  /** Dispatch cannot start until arguments are complete. With no intent at
-   *  that point, code cards own startup labels driven by sandbox events
-   *  outside the content array. Keep those subscribers mounted until the
-   *  part itself can represent their result. */
-  return (
-    toolCall != null &&
-    (toolCall.name === Tools.bash_tool ||
-      toolCall.name === Tools.execute_code ||
-      toolCall.name === Constants.PROGRAMMATIC_TOOL_CALLING ||
-      toolCall.name === Constants.BASH_PROGRAMMATIC_TOOL_CALLING) &&
-    toolCall.runStepStatus == null &&
-    toolCall.progress !== 1 &&
-    (toolCall.output?.length ?? 0) === 0 &&
-    getToolCallIntent(toolCall.args) == null &&
-    areToolCallArgsComplete(toolCall.args)
-  );
+  return needsReader(part) || isLiveSubagent(part);
 }
 
 /** Icons the header stack can show. */
@@ -226,12 +211,31 @@ export function getSpanIconNames(parts: ReadonlyArray<TMessageContentParts | und
   return Array.from(icons).reverse();
 }
 
+/** A call still running whose line is only the generic one: no intent, no
+ *  verdict, no background state. */
+function isAwaitingStartup(
+  part: TMessageContentParts,
+  toolCall: LiveToolCall,
+  span: SpanSummary,
+): boolean {
+  const meta = span.metaOf(part);
+  return (
+    toolCall.id != null &&
+    meta != null &&
+    !meta.hasOutput &&
+    !meta.failed &&
+    !meta.cancelled &&
+    meta.background == null &&
+    getToolCallIntent(toolCall.args) == null
+  );
+}
+
 function newestLine(
   parts: ReadonlyArray<TMessageContentParts | undefined>,
   localize: Localize,
   serverNames: readonly string[],
   span: SpanSummary,
-): Pick<LiveActivity, 'text' | 'source'> {
+): Pick<LiveActivity, 'text' | 'source' | 'pendingToolCallId'> {
   for (let position = parts.length - 1; position >= 0; position -= 1) {
     const part = parts[position];
     if (part == null) {
@@ -276,6 +280,7 @@ function newestLine(
          *  identity: a second call reusing an id is a new line, not the first
          *  one still growing. */
         source: `tool:${toolCall.id ?? ''}:${position}`,
+        ...(isAwaitingStartup(part, toolCall, span) && { pendingToolCallId: toolCall.id }),
       };
     }
   }

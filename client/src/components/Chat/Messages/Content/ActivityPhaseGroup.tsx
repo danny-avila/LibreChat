@@ -1,7 +1,8 @@
 import { memo, useId, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useAtomValue } from 'jotai';
 import { Button } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
-import { Check, ChevronDown, TriangleAlert } from 'lucide-react';
+import { Check, Lightbulb, ChevronDown, TriangleAlert } from 'lucide-react';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import type { CSSProperties, ReactNode } from 'react';
 import {
@@ -18,6 +19,7 @@ import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { getActivityLabelText } from '~/utils/activityLabels';
 import { getOutcomeStatus, summarizeSpan } from './outcome';
 import { ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from './rows';
+import { sandboxStartingByToolCallId } from '~/store';
 import { StackedToolIcons } from './ToolOutput';
 import { getSourceDomains } from './sources';
 import { mapAttachments } from '~/utils/map';
@@ -266,7 +268,17 @@ function LivePhaseHeader({
     () => getLiveActivity(parts, localize, mcpServerNames, attachmentsById),
     [parts, localize, mcpServerNames, attachmentsById],
   );
-  const { text, source } = activity;
+  /** A code card names its sandbox startup from events outside the content
+   *  array. The row reads the same signal for its newest call, so the span
+   *  never has to unfold for the card to say it. */
+  const sandboxStarting = useAtomValue(
+    sandboxStartingByToolCallId(activity.pendingToolCallId ?? ''),
+  );
+  const text =
+    sandboxStarting && activity.pendingToolCallId != null
+      ? localize('com_ui_sandbox_starting')
+      : activity.text;
+  const { source } = activity;
   const line = useMemo(() => ({ text, source }), [text, source]);
   const painted = useThrottledValue(line, LIVE_ACTIVITY_THROTTLE_MS);
   const iconKey = activity.iconNames.join('|');
@@ -313,16 +325,28 @@ function LivePhaseHeader({
 
   return (
     <>
-      <span className={ROW_GLYPH_SLOT} aria-hidden="true">
-        <StackedToolIcons
-          toolNames={iconNames}
-          mcpIconMap={mcpIconMap}
-          maxIcons={SPAN_ICONS}
-          sourceDomains={sourceDomains}
-          status={getOutcomeStatus(activity.outcome)}
-          isAnimating
-        />
-      </span>
+      {iconNames.length === 0 ? (
+        /** A span that is only reasoning so far has no tool to show; it takes
+         *  the glyph the reasoning row itself uses. */
+        <span
+          className={cn(ROW_GLYPH_SLOT, 'animate-pulse text-text-primary')}
+          aria-hidden="true"
+          data-testid="live-phase-thinking"
+        >
+          <Lightbulb size={14} />
+        </span>
+      ) : (
+        <span className={ROW_GLYPH_SLOT} aria-hidden="true">
+          <StackedToolIcons
+            toolNames={iconNames}
+            mcpIconMap={mcpIconMap}
+            maxIcons={SPAN_ICONS}
+            sourceDomains={sourceDomains}
+            status={getOutcomeStatus(activity.outcome)}
+            isAnimating
+          />
+        </span>
+      )}
       <PhaseLabel
         text={painted.text}
         source={painted.source}
@@ -354,6 +378,7 @@ export default function ActivityPhaseGroup({
   hasPendingApproval = false,
   liveParts,
   spanParts,
+  onExpansionChange,
 }: {
   labelPart: ActivityPhasePart;
   children: ReactNode;
@@ -374,6 +399,7 @@ export default function ActivityPhaseGroup({
   liveParts?: ReadonlyArray<TMessageContentParts | undefined>;
   /** The span's parts once settled, for the header's icon stack. */
   spanParts?: ReadonlyArray<TMessageContentParts | undefined>;
+  onExpansionChange?: (expanded: boolean) => void;
 }) {
   const isLive = liveParts != null;
   const label = getActivityLabelText(labelPart);
@@ -470,8 +496,9 @@ export default function ActivityPhaseGroup({
     cancelEntranceRef.current = null;
     mountBody();
     setIsSettled(true);
-    setIsExpanded((expanded) => !expanded);
-  }, [mountBody]);
+    onExpansionChange?.(!isExpanded);
+    setIsExpanded(!isExpanded);
+  }, [mountBody, isExpanded, onExpansionChange]);
 
   /** Only the folding entrance drives the header off its natural height.
    *  History and reduced-motion render the plain, unstyled row. */

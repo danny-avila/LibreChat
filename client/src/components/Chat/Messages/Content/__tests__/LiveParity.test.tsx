@@ -1,5 +1,6 @@
 import React from 'react';
-import { RecoilRoot, useSetRecoilState } from 'recoil';
+import { RecoilRoot } from 'recoil';
+import { Provider, useSetAtom } from 'jotai';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { ContentTypes, Tools, Constants, ToolCallTypes } from 'librechat-data-provider';
@@ -623,23 +624,25 @@ describe('live activity hardening transitions', () => {
   const frame = (content: TMessageContentParts[], extra?: React.ReactNode) => (
     <QueryClientProvider client={new QueryClient()}>
       <RecoilRoot>
-        {extra}
-        <ContentParts
-          content={content}
-          messageId="m1"
-          conversationId="c1"
-          isCreatedByUser={false}
-          isLast
-          isLatestMessage
-          isSubmitting
-          showThinking={false}
-        />
+        <Provider>
+          {extra}
+          <ContentParts
+            content={content}
+            messageId="m1"
+            conversationId="c1"
+            isCreatedByUser={false}
+            isLast
+            isLatestMessage
+            isSubmitting
+            showThinking={false}
+          />
+        </Provider>
       </RecoilRoot>
     </QueryClientProvider>
   );
 
   function SandboxEvent() {
-    const setStarting = useSetRecoilState(sandboxStartingByToolCallId('sandbox-call'));
+    const setStarting = useSetAtom(sandboxStartingByToolCallId('sandbox-call'));
     return <button onClick={() => setStarting(true)}>{'Start sandbox'}</button>;
   }
 
@@ -648,17 +651,48 @@ describe('live activity hardening transitions', () => {
     [Tools.execute_code, { lang: 'py', code: 'print(1)' }],
     [Constants.PROGRAMMATIC_TOOL_CALLING, { lang: 'python', code: 'print(1)' }],
     [Constants.BASH_PROGRAMMATIC_TOOL_CALLING, { code: 'echo ready' }],
-  ])('keeps %s subscribed through sandbox startup, then folds its result', (name, args) => {
+  ])('names %s sandbox startup on the row without unfolding the span', (name, args) => {
+    /** Unfolding here to let the card say "Starting sandbox" opened the WHOLE
+     *  span for as long as the call ran and shut it when output landed — on
+     *  every call of a run whose model did not put `intent` first. The row
+     *  reads the same sandbox signal instead, and stays one card throughout. */
     jest.useFakeTimers();
     const call = { name, args, output: '' };
     const view = render(frame([toPart(call, 'sandbox-call')], <SandboxEvent />));
-    expect(screen.queryByTestId('activity-phase-card')).toBeNull();
+    const card = screen.getByTestId('activity-phase-card');
+    expect(screen.queryByTestId('tool-call')).toBeNull();
+
     fireEvent.click(screen.getByRole('button', { name: 'Start sandbox' }));
-    expect(view.container).toHaveTextContent('Starting sandbox');
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(card).toHaveTextContent('Starting sandbox');
+
     view.rerender(
       frame([toPart({ ...call, output: 'ok', runStepStatus: 'completed' }, 'sandbox-call')]),
     );
-    expect(screen.getByTestId('activity-phase-card')).toBeInTheDocument();
+    expect(screen.getByTestId('activity-phase-card')).toBe(card);
+  });
+
+  it('holds one card across a run of code calls whose intent is not the first key', () => {
+    /** The shape of the run that flashed: `{"command":…,"intent":…}`, which the
+     *  anchored intent reader rejects, so each call was "a code call with no
+     *  intent" from the moment its args completed until its output landed. */
+    const args = '{"command":"gh run view 1","intent":"Viewing the failing run"}';
+    const writing = toPart({ name: Tools.bash_tool, args: '{"command":"gh run', output: '' }, 'b1');
+    const dispatched = toPart({ name: Tools.bash_tool, args, output: '' }, 'b1');
+    const finished = toPart({ name: Tools.bash_tool, args, output: 'ok' }, 'b1');
+    const view = render(frame([writing]));
+    const card = screen.getByTestId('activity-phase-card');
+    for (const content of [
+      [dispatched],
+      [finished],
+      [finished, toPart({ name: Tools.bash_tool, args, output: '' }, 'b2')],
+    ]) {
+      view.rerender(frame(content));
+      expect(screen.getByTestId('activity-phase-card')).toBe(card);
+      expect(screen.queryByTestId('tool-call')).toBeNull();
+    }
   });
 
   it('folds an early code delta and keeps folding once its intent arrives', () => {
@@ -846,5 +880,130 @@ describe('live activity hardening transitions', () => {
     );
     expect(screen.getAllByRole('status')).toEqual([announcer]);
     expect(announcer).toHaveTextContent('Completed lookup');
+  });
+});
+
+describe('live disclosure ownership', () => {
+  const thought: TMessageContentParts = { type: ContentTypes.THINK, think: 'Planning the lookup.' };
+  const queryClient = new QueryClient();
+  const frame = (content: TMessageContentParts[], messageId = 'm1', isSubmitting = true) => (
+    <QueryClientProvider client={queryClient}>
+      <RecoilRoot>
+        <ContentParts
+          content={content}
+          messageId={messageId}
+          conversationId="c1"
+          isCreatedByUser={false}
+          isLast
+          isLatestMessage
+          isSubmitting={isSubmitting}
+          showThinking={false}
+          foldLiveActivity
+        />
+      </RecoilRoot>
+    </QueryClientProvider>
+  );
+
+  const originalObserver = global.IntersectionObserver;
+  afterEach(() => {
+    global.IntersectionObserver = originalObserver;
+  });
+  beforeEach(() => {
+    const observer: IntersectionObserver = {
+      root: null,
+      rootMargin: '',
+      thresholds: [],
+      observe: jest.fn(),
+      unobserve: jest.fn(),
+      disconnect: jest.fn(),
+      takeRecords: () => [],
+    };
+    global.IntersectionObserver = jest.fn(() => observer);
+  });
+
+  it.each(['answer', 'stop'] as const)(
+    'keeps opened reasoning visible when the run reaches %s without tools',
+    (transition) => {
+      const view = render(frame([thought]));
+      fireEvent.click(within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0]);
+      expect(
+        view.container.querySelector('.group\\/reasoning button[aria-expanded]'),
+      ).toHaveAttribute('aria-expanded', 'true');
+
+      const content: TMessageContentParts[] =
+        transition === 'answer'
+          ? [thought, { type: ContentTypes.TEXT, text: 'Here is the answer.' }]
+          : [thought];
+      view.rerender(frame(content, 'm1', transition === 'answer'));
+      expect(screen.getByRole('button', { name: /^Thoughts$/i })).toHaveAttribute(
+        'aria-expanded',
+        'true',
+      );
+    },
+  );
+
+  it('preserves an explicitly closed thought when the answer starts', () => {
+    const view = render(frame([thought]));
+    fireEvent.click(within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0]);
+    const reasoningHeader = view.container.querySelector(
+      '.group\\/reasoning button[aria-expanded]',
+    );
+    expect(reasoningHeader).not.toBeNull();
+    fireEvent.click(reasoningHeader!);
+    view.rerender(frame([thought, { type: ContentTypes.TEXT, text: 'Here is the answer.' }]));
+    expect(screen.getByRole('button', { name: /^Thoughts$/i })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+  });
+
+  it.each(['tool', 'thought'] as const)(
+    'isolates a new streaming sibling beginning with a %s',
+    (kind) => {
+      const phase: TMessageContentParts = {
+        type: ContentTypes.ACTIVITY_LABEL,
+        activity_label: 'Looked up results',
+        activity_label_type: 'phase',
+        activity_start_index: 0,
+        activity_end_index: 1,
+      };
+      const view = render(
+        frame(
+          [toPart({ name: 'lookup', output: 'done' }, 'old-tool'), phase],
+          'old-message',
+          false,
+        ),
+      );
+      fireEvent.click(within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0]);
+      view.rerender(
+        frame(
+          [kind === 'tool' ? toPart({ name: 'lookup', output: '' }, 'new-tool') : thought],
+          'new-message',
+        ),
+      );
+      expect(
+        within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0],
+      ).toHaveAttribute('aria-expanded', 'false');
+    },
+  );
+
+  it('isolates two reasoning-only streaming siblings at the same position', () => {
+    const view = render(frame([thought], 'old-message'));
+    fireEvent.click(within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0]);
+    view.rerender(frame([thought], 'new-message'));
+    expect(
+      within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0],
+    ).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('keeps a reasoning-led card open when its tool-backed message hydrates mid-stream', () => {
+    const view = render(frame([thought]));
+    fireEvent.click(within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0]);
+    const content = [thought, toPart({ name: 'lookup', output: '' }, 'tool')];
+    view.rerender(frame(content));
+    const card = screen.getByTestId('activity-phase-card');
+    view.rerender(frame(content, 'server-id'));
+    expect(screen.getByTestId('activity-phase-card')).toBe(card);
+    expect(within(card).getAllByRole('button')[0]).toHaveAttribute('aria-expanded', 'true');
   });
 });
