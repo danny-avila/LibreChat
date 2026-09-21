@@ -1,5 +1,6 @@
 import {
   resolveConversationCodeEnvironmentDecision,
+  resolveAdmittedCodeEnvironmentDecision,
   resolveConversationCodeEnvironmentMove,
   resolvePersistableCodeEnvironmentDecision,
 } from './decision';
@@ -406,5 +407,33 @@ describe('resolvePersistableCodeEnvironmentDecision', () => {
     expect(resolvePersistableCodeEnvironmentDecision({ conversationId: 'conversation-1' })).toEqual(
       {},
     );
+  });
+});
+
+describe('resolveAdmittedCodeEnvironmentDecision', () => {
+  it('uses the authoritative admitted read', async () => {
+    const readDecision = jest.fn().mockResolvedValue({
+      conversationId: 'saved',
+      codeEnvironmentMode: 'attached',
+      codeWorkspaces: [selection],
+    });
+    expect(
+      await resolveAdmittedCodeEnvironmentDecision({ conversationId: 'saved', readDecision }),
+    ).toEqual({ mode: 'attached', codeWorkspaces: [selection] });
+    expect(readDecision).toHaveBeenCalledWith('saved');
+  });
+  it('rejects an old requested mode when the transition won first', async () => {
+    const readDecision = jest.fn().mockResolvedValue({
+      conversationId: 'saved',
+      codeEnvironmentMode: 'attached',
+      codeWorkspaces: [selection],
+    });
+    await expect(
+      resolveAdmittedCodeEnvironmentDecision({
+        conversationId: 'saved',
+        requestedMode: 'without_attached',
+        readDecision,
+      }),
+    ).rejects.toMatchObject({ reason: 'locked' });
   });
 });

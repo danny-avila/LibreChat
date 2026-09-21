@@ -221,17 +221,8 @@ jest.mock('@librechat/api', () => ({
   buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
-  resolveConversationCodeEnvironmentDecision: ({
-    requestedMode,
-    requestedSelections,
-    conversation,
-  }) => {
-    const codeWorkspaces = requestedSelections ?? conversation?.codeWorkspaces;
-    return {
-      mode: requestedMode ?? (codeWorkspaces?.length ? 'attached' : 'without_attached'),
-      ...(codeWorkspaces !== undefined && { codeWorkspaces }),
-    };
-  },
+  resolveAdmittedCodeEnvironmentDecision: (...args) =>
+    jest.requireActual('@librechat/api').resolveAdmittedCodeEnvironmentDecision(...args),
   createMCPRuntimeRequestBody: ({
     messageId,
     conversationId,
@@ -476,6 +467,7 @@ jest.mock('~/models', () => ({
   getConvoFiles: jest.fn().mockResolvedValue([]),
   getFormattedMemories: jest.fn().mockResolvedValue({ withKeys: '', withoutKeys: '' }),
   getConvo: jest.fn().mockResolvedValue(null),
+  readAdmittedConvoCodeEnvironmentDecision: jest.fn().mockResolvedValue(null),
   isSubagentOwnerAdmissible: jest.fn().mockResolvedValue(true),
 }));
 
@@ -1265,6 +1257,11 @@ describe('OpenAIChatCompletionController', () => {
         });
         if (continuation)
           require('~/models').getConvo.mockResolvedValueOnce({
+            conversationId: 'convo-abc',
+            codeWorkspaces: selections,
+          });
+        if (continuation)
+          require('~/models').readAdmittedConvoCodeEnvironmentDecision.mockResolvedValueOnce({
             conversationId: 'convo-abc',
             codeWorkspaces: selections,
           });

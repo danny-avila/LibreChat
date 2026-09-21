@@ -243,17 +243,8 @@ jest.mock('@librechat/api', () => ({
   buildRunToolSet: jest.fn().mockReturnValue(new Set()),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
-  resolveConversationCodeEnvironmentDecision: ({
-    requestedMode,
-    requestedSelections,
-    conversation,
-  }) => {
-    const codeWorkspaces = requestedSelections ?? conversation?.codeWorkspaces;
-    return {
-      mode: requestedMode ?? (codeWorkspaces?.length ? 'attached' : 'without_attached'),
-      ...(codeWorkspaces !== undefined && { codeWorkspaces }),
-    };
-  },
+  resolveAdmittedCodeEnvironmentDecision: (...args) =>
+    jest.requireActual('@librechat/api').resolveAdmittedCodeEnvironmentDecision(...args),
   resolvePersistableCodeEnvironmentDecision: (...args) =>
     jest.requireActual('@librechat/api').resolvePersistableCodeEnvironmentDecision(...args),
   getCodeWorkspaceSelections: jest.fn(),
@@ -559,6 +550,7 @@ jest.mock('~/models', () => ({
   getFormattedMemories: jest.fn().mockResolvedValue({ withKeys: '', withoutKeys: '' }),
   saveConvo: jest.fn().mockResolvedValue({}),
   getConvo: jest.fn().mockResolvedValue(null),
+  readAdmittedConvoCodeEnvironmentDecision: jest.fn().mockResolvedValue(null),
   isSubagentOwnerAdmissible: jest.fn().mockResolvedValue(true),
 }));
 
@@ -619,6 +611,11 @@ describe('createResponse controller', () => {
       api.validateResponseRequest.mockReturnValueOnce({ request });
       if (continuation)
         require('~/models').getConvo.mockResolvedValueOnce({
+          conversationId: 'previous',
+          codeWorkspaces: selections,
+        });
+      if (continuation)
+        require('~/models').readAdmittedConvoCodeEnvironmentDecision.mockResolvedValueOnce({
           conversationId: 'previous',
           codeWorkspaces: selections,
         });

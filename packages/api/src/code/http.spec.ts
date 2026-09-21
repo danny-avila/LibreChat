@@ -1507,6 +1507,7 @@ describe('moving a sealed conversation code-environment decision', () => {
   type Selection = { environmentId: string; workspaceId: string };
   type StoredDecision = {
     conversationId: string;
+    codeEnvironmentRevision?: number;
     codeEnvironmentMode?: 'attached' | 'without_attached';
     codeWorkspaces?: Selection[];
   };
@@ -1545,6 +1546,7 @@ describe('moving a sealed conversation code-environment decision', () => {
 
   function setup({
     movesEnabled = true,
+    allowAttachDetach = true,
     stored = {
       conversationId: 'conversation-1',
       codeEnvironmentMode: 'attached',
@@ -1555,6 +1557,7 @@ describe('moving a sealed conversation code-environment decision', () => {
     fetchImpl = jest.fn().mockImplementation(async () => workerStatusResponse()),
   }: {
     movesEnabled?: boolean;
+    allowAttachDetach?: boolean;
     stored?: StoredDecision;
     job?: CodeEnvironmentGenerationJob;
     conversationRunIds?: string[];
@@ -1574,13 +1577,19 @@ describe('moving a sealed conversation code-environment decision', () => {
         codeWorkspaces,
       }: {
         conversationId: string;
-        expected: Pick<StoredDecision, 'codeEnvironmentMode' | 'codeWorkspaces'>;
+        expected: Pick<StoredDecision, 'codeEnvironmentMode' | 'codeWorkspaces'> & {
+          codeEnvironmentRevision?: number;
+        };
         codeEnvironmentMode: StoredDecision['codeEnvironmentMode'];
         codeWorkspaces?: Selection[];
       }) => {
         const current = conversations.get(conversationId);
         const decisionOf = (decision: Partial<StoredDecision> | undefined) =>
-          JSON.stringify([decision?.codeEnvironmentMode ?? null, decision?.codeWorkspaces ?? null]);
+          JSON.stringify([
+            decision?.codeEnvironmentMode ?? null,
+            decision?.codeWorkspaces ?? null,
+            (decision as { codeEnvironmentRevision?: number })?.codeEnvironmentRevision ?? null,
+          ]);
         if (current == null || decisionOf(current) !== decisionOf(expected)) {
           return null;
         }
@@ -1599,7 +1608,7 @@ describe('moving a sealed conversation code-environment decision', () => {
           [EModelEndpoint.agents]: {
             statefulCodeSessions: {
               environments: [controlPlane],
-              conversationMoves: { enabled: movesEnabled },
+              conversationMoves: { enabled: movesEnabled, allowAttachDetach },
             },
           },
         },
@@ -1861,6 +1870,40 @@ describe('moving a sealed conversation code-environment decision', () => {
 
     expect((await move({ from: [mac], to: [vm] })).statusCode).toBe(409);
     expect(replaceDecision).not.toHaveBeenCalled();
+  });
+
+  test('preserves moves but rejects attach and detach in a move-only deployment', async () => {
+    const context = setup({ allowAttachDetach: false });
+    expect((await context.move({ from: [mac], to: [] })).statusCode).toBe(403);
+    expect(context.replaceDecision).not.toHaveBeenCalled();
+    expect((await context.move({ from: [mac], to: [vm] })).statusCode).toBe(200);
+    const unattached = setup({
+      allowAttachDetach: false,
+      stored: {
+        conversationId: 'conversation-1',
+        codeEnvironmentMode: 'without_attached',
+      },
+    });
+    expect((await unattached.move({ from: [], to: [vm] })).statusCode).toBe(403);
+    expect(unattached.fetchImpl).not.toHaveBeenCalled();
+    expect(unattached.replaceDecision).not.toHaveBeenCalled();
+  });
+
+  test('rejects when an admitted read advances the revision after the final idle check', async () => {
+    const context = setup();
+    const swap = context.replaceDecision.getMockImplementation()!;
+    context.replaceDecision.mockImplementationOnce(async (args) => {
+      // The real readAdmittedConvoCodeEnvironmentDecision advances this in Mongo atomically.
+      context.conversations.set('conversation-1', {
+        ...context.conversations.get('conversation-1')!,
+        codeEnvironmentRevision: 1,
+      } as StoredDecision);
+      return swap(args);
+    });
+    const res = await context.move({ from: [mac], to: [vm] });
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual(expect.objectContaining({ reason: 'locked' }));
+    expect(context.conversations.get('conversation-1')?.codeWorkspaces).toEqual([mac]);
   });
 
   test('moves once the previous generation has settled and saved', async () => {

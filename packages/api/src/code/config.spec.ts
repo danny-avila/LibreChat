@@ -22,7 +22,7 @@ describe('resolveCodeEnvironmentDecisionVersion', () => {
 });
 
 describe('resolveCodeEnvironmentMoveVersion', () => {
-  const withMoves = (conversationMoves?: { enabled?: boolean }) =>
+  const withMoves = (conversationMoves?: { enabled?: boolean; allowAttachDetach?: boolean }) =>
     ({
       endpoints: {
         [EModelEndpoint.agents]: {
@@ -37,8 +37,21 @@ describe('resolveCodeEnvironmentMoveVersion', () => {
 
   /* Attaching and leaving ship under the same policy as the move but on their own number, so a
    * client that predates them keeps reading a move version it understands. */
+  it.each([undefined, false])(
+    'preserves enabled move-only policy with allowAttachDetach=%s',
+    (allowAttachDetach) => {
+      const config = withMoves({ enabled: true, allowAttachDetach });
+      expect(resolveCodeEnvironmentMoveVersion(config)).toBe(1);
+      expect(resolveCodeEnvironmentTransitionVersion(config)).toBeUndefined();
+    },
+  );
+
   it('advertises attach and detach separately from the move', () => {
-    expect(resolveCodeEnvironmentTransitionVersion(withMoves({ enabled: true }))).toBe(2);
+    expect(
+      resolveCodeEnvironmentTransitionVersion(
+        withMoves({ enabled: true, allowAttachDetach: true }),
+      ),
+    ).toBe(2);
   });
 
   it.each([undefined, {}, { enabled: false }])(

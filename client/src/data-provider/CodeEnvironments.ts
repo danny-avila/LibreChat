@@ -15,7 +15,9 @@ import type {
   TCodeEnvironmentStatusResponse,
   TCodeEnvironmentsResponse,
 } from 'librechat-data-provider';
+import type { SetterOrUpdater } from 'recoil';
 import { CONVERSATION_LIST_KEYS, updateConvoInAllQueries } from '~/utils';
+import { hasSameCodeDecision } from '~/hooks/Agents/codeDecision';
 
 export type CodeEnvironmentPairingResponse = TCodeEnvironmentPairingResponse;
 
@@ -101,8 +103,19 @@ export function useUpdateCodeEnvironmentSettingsMutation() {
  * under the decision being replaced and silently runs without the workspace its owner just chose.
  * Callers use this to withhold submission until the replacement settles.
  */
-export function useIsReplacingConversationCodeEnvironment(): boolean {
-  return useIsMutating([MutationKeys.moveConversationCodeEnvironment]) > 0;
+export function useIsReplacingConversationCodeEnvironment(conversationId?: string | null): boolean {
+  return (
+    useIsMutating({
+      predicate: (mutation) =>
+        [
+          MutationKeys.moveConversationCodeEnvironment,
+          'reconcileConversationCodeEnvironment',
+        ].includes(String(mutation.options.mutationKey?.[0])) &&
+        conversationId != null &&
+        (mutation.state.variables as TCodeEnvironmentMoveRequest | undefined)?.conversationId ===
+          conversationId,
+    }) > 0
+  );
 }
 
 /** Keeps every cached copy of the conversation on the decision the server just persisted. */
@@ -132,4 +145,44 @@ export function useMoveConversationCodeEnvironmentMutation() {
       },
     },
   );
+}
+
+/** A terminal error does not say whether the server persisted the attempted decision. Read it,
+ * rather than rolling back a decision a failed turn may already have established. */
+export function useReconcileConversationCodeEnvironmentMutation(
+  setConversation?: SetterOrUpdater<TConversation | null>,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationKey: ['reconcileConversationCodeEnvironment'],
+    mutationFn: async ({
+      conversationId,
+    }: {
+      conversationId: string;
+      attempted: Pick<TConversation, 'codeEnvironmentMode' | 'codeWorkspaces'>;
+    }) => {
+      const queryKey = [QueryKeys.conversation, conversationId];
+      await queryClient.cancelQueries({ queryKey });
+      return queryClient.fetchQuery(
+        queryKey,
+        () => dataService.getConversationById(conversationId),
+        {
+          staleTime: 0,
+        },
+      );
+    },
+    onSuccess: (persisted, { conversationId, attempted }) => {
+      if (persisted.conversationId !== conversationId) return;
+      const apply = (current: TConversation): TConversation =>
+        current.conversationId === conversationId && hasSameCodeDecision(current, attempted)
+          ? {
+              ...current,
+              codeEnvironmentMode: persisted.codeEnvironmentMode,
+              codeWorkspaces: persisted.codeWorkspaces,
+            }
+          : current;
+      updateConvoInAllQueries(queryClient, conversationId, apply);
+      setConversation?.((current) => (current == null ? current : apply(current)));
+    },
+  });
 }

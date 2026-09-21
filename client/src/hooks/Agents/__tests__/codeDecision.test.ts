@@ -49,3 +49,25 @@ describe('withSubmittedCodeDecision', () => {
     ).toBe(current);
   });
 });
+
+it('does not confuse colons in environment and workspace identifiers', () => {
+  const current = conversation({
+    codeEnvironmentMode: 'attached',
+    codeWorkspaces: [{ environmentId: 'vm:repo', workspaceId: 'main' }],
+  });
+  const submitted = {
+    codeEnvironmentMode: 'attached' as const,
+    codeWorkspaces: [{ environmentId: 'vm', workspaceId: 'repo:main' }],
+  };
+  expect(withSubmittedCodeDecision(current, submitted)?.codeWorkspaces).toEqual(
+    submitted.codeWorkspaces,
+  );
+});
+
+it('records a legacy selection-only submission before the first saved-chat event', () => {
+  expect(withSubmittedCodeDecision(conversation(), { codeWorkspaces: [selection] })).toEqual({
+    conversationId: 'existing',
+    codeEnvironmentMode: 'attached',
+    codeWorkspaces: [selection],
+  });
+});

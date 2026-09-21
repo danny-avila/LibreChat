@@ -1,6 +1,7 @@
 import { renderHook } from '@testing-library/react';
 import { EModelEndpoint, Tools } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
+import { withSubmittedCodeDecision } from '../codeDecision';
 import useCodeWorkspace from '../useCodeWorkspace';
 
 const mockAgentPermissions = jest.fn();
@@ -117,6 +118,36 @@ describe('useCodeWorkspace', () => {
     expect(result.current.visible).toBe(true);
   });
 
+  it('keeps a saved chat without workspace access through first send and reload', () => {
+    mockStartupConfig.mockReturnValue({
+      codeEnvironmentDecisionVersion: 1,
+      codeEnvironmentMoveVersion: 1,
+      codeEnvironmentTransitionVersion: 2,
+    });
+    const existing = { ...conversation(), conversationId: 'existing' } as TConversation;
+    const { result, rerender } = renderHook(({ chat }) => useCodeWorkspace(chat), {
+      initialProps: { chat: existing },
+    });
+    expect(result.current.mode).toBe('without_attached');
+    expect(result.current.canSubmit).toBe(true);
+    const submission = result.current.resolveSubmission()!;
+    expect(submission).toEqual({ codeEnvironmentMode: 'without_attached' });
+    const persisted = JSON.parse(JSON.stringify(withSubmittedCodeDecision(existing, submission)));
+    rerender({ chat: persisted });
+    expect(result.current.canSubmit).toBe(true);
+    expect(result.current.transition?.kind).toBe('attach');
+    const attached = {
+      ...persisted,
+      codeEnvironmentMode: 'attached',
+      codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }],
+    };
+    rerender({ chat: attached });
+    expect(result.current.resolveSubmission()).toEqual({
+      codeEnvironmentMode: 'attached',
+      codeWorkspaces: attached.codeWorkspaces,
+    });
+  });
+
   it('selects one unambiguous initial workspace', () => {
     const { result } = renderHook(() => useCodeWorkspace(conversation()));
 
@@ -159,7 +190,8 @@ describe('useCodeWorkspace', () => {
      * the composer still offers the choice. */
     rerender({ id: 'existing' });
     expect(result.current.locked).toBe(false);
-    expect(result.current.mode).toBe('attached');
+    expect(result.current.mode).toBe('without_attached');
+    expect(result.current.resolveSubmission()).toEqual({ codeEnvironmentMode: 'without_attached' });
     expect(result.current.selections?.[0].workspaceId).toBe('project-b');
     expect(result.current.canSubmit).toBe(true);
   });
@@ -879,7 +911,7 @@ describe('useCodeWorkspace', () => {
       expect(result.current.transition).toBeUndefined();
     });
 
-    it('attaches a sole workspace to a saved chat that never recorded a decision', () => {
+    it('offers but does not automatically attach a sole workspace to an undecided saved chat', () => {
       const { result } = renderHook(() =>
         useCodeWorkspace({ ...conversation(), conversationId: 'existing' } as TConversation),
       );
@@ -890,8 +922,7 @@ describe('useCodeWorkspace', () => {
         { environmentId: 'personal-vm', workspaceId: 'project-a' },
       ]);
       expect(result.current.resolveSubmission()).toEqual({
-        codeEnvironmentMode: 'attached',
-        codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }],
+        codeEnvironmentMode: 'without_attached',
       });
     });
 

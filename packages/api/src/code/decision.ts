@@ -14,7 +14,7 @@ export interface ConversationCodeEnvironmentDecision {
 export type StoredConversationDecision = Pick<
   TConversation,
   'conversationId' | 'codeEnvironmentMode' | 'codeWorkspaces'
->;
+> & { codeEnvironmentRevision?: number };
 
 function canonicalSelections(selections: CodeWorkspaceSelection[]): CodeWorkspaceSelection[] {
   return [...selections].sort((left, right) => {
@@ -236,4 +236,17 @@ export function resolvePersistableCodeEnvironmentDecision({
     return {};
   }
   return { codeEnvironmentMode: candidate.codeEnvironmentMode };
+}
+
+/** Every ingress must publish its active job before calling this and keep it active through the
+ * read. Never validate a cached pre-admission decision: the reader advances the revision a
+ * transition compares before loading the authoritative decision. */
+export async function resolveAdmittedCodeEnvironmentDecision({
+  readDecision,
+  ...request
+}: Omit<Parameters<typeof resolveConversationCodeEnvironmentDecision>[0], 'conversation'> & {
+  readDecision: (conversationId: string) => Promise<StoredConversationDecision | null | undefined>;
+}): Promise<ConversationCodeEnvironmentDecision> {
+  const conversation = await readDecision(request.conversationId);
+  return resolveConversationCodeEnvironmentDecision({ ...request, conversation });
 }

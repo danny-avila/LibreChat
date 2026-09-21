@@ -370,7 +370,7 @@ describe('GET /api/config', () => {
           agents: {
             statefulCodeSessions: {
               allowedEnvironments: ['user'],
-              conversationMoves: { enabled: true },
+              conversationMoves: { enabled: true, allowAttachDetach: true },
             },
           },
         },

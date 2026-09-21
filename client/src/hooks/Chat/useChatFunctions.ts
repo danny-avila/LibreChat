@@ -789,8 +789,9 @@ export default function useChatFunctions({
       setMessages([...submissionMessages, currentMsg, initialResponse]);
     }
 
-    /** The run this send starts establishes the conversation's sealed code-environment decision,
-     *  so the conversation records it here rather than waiting for a server round trip. */
+    /** Carry the submitted choice through the first saved-chat event instead of re-deriving it
+     *  from agent defaults. This is optimistic: the SSE error path reconciles an existing chat
+     *  with its authoritative server decision if admission fails. */
     setConversation((current) =>
       current == null || current.conversationId !== conversation?.conversationId
         ? current

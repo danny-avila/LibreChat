@@ -1617,7 +1617,7 @@ describe('initializeClient — subagent loading', () => {
     [true, 'override'],
     [true, 'override-resolved'],
     [true, 'resolved'],
-    [false, 'resolved-null'],
+    [true, 'resolved-null'],
     [false, 'other-owner'],
   ])(
     'validates the lazy subagent workspace before exposure: registered=%s source=%s',
@@ -1716,7 +1716,7 @@ describe('initializeClient — subagent loading', () => {
           signal: new AbortController().signal,
           endpointOption: makeEndpointOption(),
         });
-        const defaultsWithoutAttached = source === 'resolved-null' || source === 'other-owner';
+        const defaultsWithoutAttached = source === 'other-owner';
         if (!registered && !defaultsWithoutAttached) {
           await expect(initialization).rejects.toMatchObject({
             code: ErrorTypes.CODE_WORKSPACE_UNAVAILABLE,

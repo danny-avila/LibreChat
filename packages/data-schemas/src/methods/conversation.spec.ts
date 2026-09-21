@@ -1239,13 +1239,14 @@ describe('Conversation Operations', () => {
       codeWorkspaces: NonNullable<IConversation['codeWorkspaces']>,
       user = 'user123',
     ) => {
-      const stored = await getConvo('user123', conversationId);
+      const stored = await methods.getConvoCodeEnvironmentDecision('user123', conversationId);
       return methods.replaceConvoCodeEnvironmentDecision({
         user,
         conversationId,
         expected: {
           codeEnvironmentMode: stored?.codeEnvironmentMode,
           codeWorkspaces: stored?.codeWorkspaces,
+          codeEnvironmentRevision: stored?.codeEnvironmentRevision,
         },
         codeEnvironmentMode: 'attached',
         codeWorkspaces,
@@ -1290,6 +1291,97 @@ describe('Conversation Operations', () => {
       const result = await moveFromStored(conversationId, [vm]);
 
       expect(result?.codeWorkspaces).toEqual([vm]);
+    });
+
+    it('rejects a transition when an admitted run reads after the idle check', async () => {
+      const conversationId = await seedDecision({
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [mac],
+      });
+      const snapshot = await methods.getConvoCodeEnvironmentDecision('user123', conversationId);
+      const admitted = await methods.readAdmittedConvoCodeEnvironmentDecision(
+        'user123',
+        conversationId,
+      );
+      expect(admitted?.codeWorkspaces).toEqual([mac]);
+      expect(
+        await methods.replaceConvoCodeEnvironmentDecision({
+          user: 'user123',
+          conversationId,
+          expected: snapshot!,
+          codeEnvironmentMode: 'attached',
+          codeWorkspaces: [vm],
+        }),
+      ).toBeNull();
+      expect((await getConvo('user123', conversationId))?.codeWorkspaces).toEqual([mac]);
+    });
+
+    it('gives an admitted run the new decision when the transition wins first', async () => {
+      const conversationId = await seedDecision({
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [mac],
+      });
+      const snapshot = await methods.getConvoCodeEnvironmentDecision('user123', conversationId);
+      expect(
+        await methods.replaceConvoCodeEnvironmentDecision({
+          user: 'user123',
+          conversationId,
+          expected: snapshot!,
+          codeEnvironmentMode: 'attached',
+          codeWorkspaces: [vm],
+        }),
+      ).not.toBeNull();
+      const admitted = await methods.readAdmittedConvoCodeEnvironmentDecision(
+        'user123',
+        conversationId,
+      );
+      expect(admitted?.codeWorkspaces).toEqual([vm]);
+      expect(admitted).not.toHaveProperty('codeEnvironmentRevision');
+      const current = await getConvo('user123', conversationId);
+      expect(current).not.toHaveProperty('codeEnvironmentRevision');
+      expect(new Date(current?.updatedAt ?? 0).toISOString()).toBe(anchor.toISOString());
+    });
+
+    it("does not advance another tenant's decision revision", async () => {
+      const conversationId = await seedDecision({
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [mac],
+        tenantId: 'tenant-a',
+      });
+      const other = await tenantStorage.run({ tenantId: 'tenant-b' }, () =>
+        methods.readAdmittedConvoCodeEnvironmentDecision('user123', conversationId),
+      );
+      expect(other).toBeNull();
+      const own = await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
+        methods.readAdmittedConvoCodeEnvironmentDecision('user123', conversationId),
+      );
+      expect(own?.codeWorkspaces).toEqual([mac]);
+      const raw = await Conversation.collection.findOne({ conversationId });
+      expect(raw?.codeEnvironmentRevision).toBe(1);
+    });
+
+    it('protects the revision from ordinary saves, imports and other users', async () => {
+      const conversationId = await seedDecision({
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [mac],
+      });
+      await methods.readAdmittedConvoCodeEnvironmentDecision('user123', conversationId);
+      const before = await methods.getConvoCodeEnvironmentDecision('user123', conversationId);
+      await saveConvo(
+        { userId: 'user123' },
+        { conversationId, codeEnvironmentRevision: 999 },
+        { unsetFields: { codeEnvironmentRevision: 1 } },
+      );
+      await methods.bulkSaveConvos([
+        { conversationId, user: 'user123', codeEnvironmentRevision: 0 },
+      ]);
+      expect(
+        (await methods.getConvoCodeEnvironmentDecision('user123', conversationId))
+          ?.codeEnvironmentRevision,
+      ).toBe(before?.codeEnvironmentRevision);
+      expect(
+        await methods.readAdmittedConvoCodeEnvironmentDecision('someone-else', conversationId),
+      ).toBeNull();
     });
 
     it('attaches an environment to a chat stored without one', async () => {
@@ -1345,6 +1437,7 @@ describe('Conversation Operations', () => {
         expected: {
           codeEnvironmentMode: stored?.codeEnvironmentMode,
           codeWorkspaces: stored?.codeWorkspaces,
+          codeEnvironmentRevision: stored?.codeEnvironmentRevision,
         },
         codeEnvironmentMode: 'attached',
         codeWorkspaces: [vm],

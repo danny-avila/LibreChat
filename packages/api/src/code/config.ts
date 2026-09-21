@@ -50,14 +50,17 @@ export function resolveCodeEnvironmentMoveVersion(
 }
 
 /**
- * Advertises attaching an environment and leaving attached execution, under the same policy as the
- * move: all three are one owner replacing one sealed decision. Separate from the move version so a
- * client that predates this capability keeps moving while a deployment rolls out.
+ * Advertises attach/detach only after a deployment opts in. Keep the original move capability
+ * separate so older clients and move-only deployments retain their existing recovery path.
  */
 export function resolveCodeEnvironmentTransitionVersion(
   appConfig?: Pick<AppConfig, 'endpoints'> | null,
 ): typeof CODE_ENVIRONMENT_TRANSITION_VERSION | undefined {
-  return conversationMovesEnabled(appConfig) ? CODE_ENVIRONMENT_TRANSITION_VERSION : undefined;
+  return conversationMovesEnabled(appConfig) &&
+    appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.conversationMoves
+      ?.allowAttachDetach === true
+    ? CODE_ENVIRONMENT_TRANSITION_VERSION
+    : undefined;
 }
 
 /** Enables the implicit managed route only after the versioned rollout is complete. */

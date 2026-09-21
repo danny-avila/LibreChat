@@ -159,8 +159,9 @@ export default function useCodeWorkspace(
    *  that predates them, and a client that has them never offers a replica an attach it refuses as
    *  `locked` or an empty target set it calls `invalid`. */
   const supportsEnvironmentTransitions =
+    supportsEnvironmentDecisions &&
     startupConfig?.codeEnvironmentTransitionVersion === CODE_ENVIRONMENT_TRANSITION_VERSION;
-  const replacingDecision = useIsReplacingConversationCodeEnvironment();
+  const replacingDecision = useIsReplacingConversationCodeEnvironment(conversation?.conversationId);
   const preferences = useWorkspacePreferences(conversation?.agent_id);
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
   const canRunCode = useHasAccess({
@@ -380,6 +381,10 @@ export default function useCodeWorkspace(
   let inferredMode: CodeEnvironmentMode | undefined = conversation?.codeEnvironmentMode;
   if (inferredMode == null && storedSelections != null) {
     inferredMode = 'attached';
+  } else if (inferredMode == null && !isNewChat && supportsEnvironmentDecisions) {
+    // Suggestions are not consent. Existing non-coding chats start without workspace access;
+    // only an explicit selection in the composer may attach their first coding turn.
+    inferredMode = 'without_attached';
   } else if (inferredMode == null && selections != null) {
     inferredMode = 'attached';
   } else if (inferredMode == null && required && supportsEnvironmentDecisions) {

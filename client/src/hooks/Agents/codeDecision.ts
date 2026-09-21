@@ -11,7 +11,7 @@ function sameSelections(
   if (left == null || right == null) return left == null && right == null;
   if (left.length !== right.length) return false;
   const key = ({ environmentId, workspaceId }: CodeWorkspaceSelection) =>
-    `${environmentId}:${workspaceId}`;
+    JSON.stringify([environmentId, workspaceId]);
   const held = new Set(left.map(key));
   return right.every((selection) => held.has(key(selection)));
 }
@@ -32,7 +32,11 @@ export function withSubmittedCodeDecision(
     codeWorkspaces?: CodeWorkspaceSelection[];
   },
 ): TConversation | null {
-  const { codeEnvironmentMode, codeWorkspaces } = submitted;
+  const { codeWorkspaces } = submitted;
+  // Older replicas accept selections without a mode. Preserve that submitted selection locally
+  // too, or the first saved-chat event drops an implicit default back to "Choose workspace".
+  const codeEnvironmentMode =
+    submitted.codeEnvironmentMode ?? ((codeWorkspaces?.length ?? 0) > 0 ? 'attached' : undefined);
   if (conversation == null || codeEnvironmentMode == null) return conversation;
   if (
     conversation.codeEnvironmentMode === codeEnvironmentMode &&
@@ -41,4 +45,15 @@ export function withSubmittedCodeDecision(
     return conversation;
   }
   return { ...conversation, codeEnvironmentMode, codeWorkspaces };
+}
+
+/** Compare the pair, including absence: a failed first send may leave no persisted decision. */
+export function hasSameCodeDecision(
+  left: Pick<TConversation, 'codeEnvironmentMode' | 'codeWorkspaces'>,
+  right: Pick<TConversation, 'codeEnvironmentMode' | 'codeWorkspaces'>,
+): boolean {
+  return (
+    left.codeEnvironmentMode === right.codeEnvironmentMode &&
+    sameSelections(left.codeWorkspaces, right.codeWorkspaces)
+  );
 }

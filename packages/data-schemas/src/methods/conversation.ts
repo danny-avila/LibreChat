@@ -290,11 +290,28 @@ export interface ConversationMethods {
     conversationId: string,
     messageId: string,
   ): Promise<IConversation | null>;
+  getConvoCodeEnvironmentDecision(
+    user: string,
+    conversationId: string,
+  ): Promise<Pick<
+    IConversation,
+    'conversationId' | 'codeEnvironmentMode' | 'codeWorkspaces' | 'codeEnvironmentRevision'
+  > | null>;
+  readAdmittedConvoCodeEnvironmentDecision(
+    user: string,
+    conversationId: string,
+  ): Promise<Pick<
+    IConversation,
+    'conversationId' | 'codeEnvironmentMode' | 'codeWorkspaces'
+  > | null>;
   replaceConvoCodeEnvironmentDecision(
     params: {
       user: string;
       conversationId: string;
-      expected: Pick<IConversation, 'codeEnvironmentMode' | 'codeWorkspaces'>;
+      expected: Pick<
+        IConversation,
+        'codeEnvironmentMode' | 'codeWorkspaces' | 'codeEnvironmentRevision'
+      >;
     } & (
       | {
           codeEnvironmentMode: 'attached';
@@ -2208,6 +2225,7 @@ export function createConversationMethods(
         }),
         ...(convo.codeWorkspaces != null && { codeWorkspaces: convo.codeWorkspaces }),
       };
+      delete update.codeEnvironmentRevision;
       delete update.codeEnvironmentMode;
       delete update.codeWorkspaces;
       stripActorCheckpointFields(update);
@@ -2218,6 +2236,7 @@ export function createConversationMethods(
       }
       const unsetFields: Record<string, number> = { ...(metadata?.unsetFields ?? {}) };
       delete unsetFields.initial_agent_id;
+      delete unsetFields.codeEnvironmentRevision;
       delete unsetFields.codeEnvironmentMode;
       delete unsetFields.codeWorkspaces;
       stripActorCheckpointFields(unsetFields);
@@ -2630,6 +2649,37 @@ export function createConversationMethods(
     }
   }
 
+  /** Internal snapshot for a transition. The revision is never exposed in ordinary chat reads. */
+  async function getConvoCodeEnvironmentDecision(user: string, conversationId: string) {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    return Conversation.findOne({ user, conversationId })
+      .select('conversationId codeEnvironmentMode codeWorkspaces +codeEnvironmentRevision')
+      .lean<IConversation>();
+  }
+
+  /**
+   * Call only AFTER publishing the generation's active job, and keep it active through the read.
+   * Advancing the revision fences transitions that already checked for idle work. A transition
+   * taking its snapshot after this increment instead sees the published job and refuses. If the
+   * transition wins before the increment, the following read observes its new decision.
+   * No expiring lock or crashed-owner cleanup is required.
+   */
+  async function readAdmittedConvoCodeEnvironmentDecision(user: string, conversationId: string) {
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    // updateOne preserves tenant middleware without running the content-reindexing
+    // findOneAndUpdate hooks. This private counter is not activity or searchable content.
+    const claimed = await Conversation.updateOne(
+      { user, conversationId },
+      { $inc: { codeEnvironmentRevision: 1 } },
+      { timestamps: false },
+    );
+    if (claimed.matchedCount === 0) return null;
+    return Conversation.findOne({ user, conversationId })
+      .read('primary')
+      .select('conversationId codeEnvironmentMode codeWorkspaces')
+      .lean<IConversation>();
+  }
+
   /**
    * Compare-and-swap for an owner's explicit replacement of a code-environment decision, whether
    * that attaches an environment, moves to another, or leaves attached execution behind.
@@ -2647,7 +2697,10 @@ export function createConversationMethods(
   }: {
     user: string;
     conversationId: string;
-    expected: Pick<IConversation, 'codeEnvironmentMode' | 'codeWorkspaces'>;
+    expected: Pick<
+      IConversation,
+      'codeEnvironmentMode' | 'codeWorkspaces' | 'codeEnvironmentRevision'
+    >;
   } & (
     | {
         codeEnvironmentMode: 'attached';
@@ -2663,10 +2716,15 @@ export function createConversationMethods(
           user,
           codeEnvironmentMode: expected.codeEnvironmentMode ?? { $in: [null] },
           codeWorkspaces: expected.codeWorkspaces ?? { $in: [null] },
+          codeEnvironmentRevision: expected.codeEnvironmentRevision ?? { $in: [null] },
         },
         codeEnvironmentMode === 'attached'
-          ? { $set: { codeEnvironmentMode, codeWorkspaces } }
-          : { $set: { codeEnvironmentMode }, $unset: { codeWorkspaces: 1 } },
+          ? { $set: { codeEnvironmentMode, codeWorkspaces }, $inc: { codeEnvironmentRevision: 1 } }
+          : {
+              $set: { codeEnvironmentMode },
+              $unset: { codeWorkspaces: 1 },
+              $inc: { codeEnvironmentRevision: 1 },
+            },
         { new: true, timestamps: false },
       ).lean<IConversation>();
     } catch (error) {
@@ -2747,6 +2805,7 @@ export function createConversationMethods(
       const bulkOps = conversations.map((convo) => {
         const { codeEnvironmentMode, codeWorkspaces, ...sanitized } = convo;
         delete sanitized.initial_agent_id;
+        delete sanitized.codeEnvironmentRevision;
         stripActorCheckpointFields(sanitized);
         if (typeof sanitized.user === 'string' && typeof sanitized.chatProjectId === 'string') {
           if (ownedProjects.has(`${sanitized.user}:${sanitized.chatProjectId}`)) {
@@ -3513,6 +3572,8 @@ export function createConversationMethods(
     saveConvo,
     setConvoPinned,
     appendConvoMessageReference,
+    getConvoCodeEnvironmentDecision,
+    readAdmittedConvoCodeEnvironmentDecision,
     replaceConvoCodeEnvironmentDecision,
     bulkSaveConvos,
     getConvosByCursor,

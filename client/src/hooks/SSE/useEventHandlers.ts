@@ -47,6 +47,7 @@ import {
   startupConfigKey,
   queueTitleGeneration,
   markTitleGenerationProcessed,
+  useReconcileConversationCodeEnvironmentMutation,
 } from '~/data-provider';
 import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
@@ -488,6 +489,33 @@ export default function useEventHandlers({
    *  would inherit a stale baseline. Navigation teardown deliberately does not
    *  clear it — a reattach to a still-live run keeps its original start. */
   const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(runIndex));
+  const { mutate: reconcileCodeDecision } =
+    useReconcileConversationCodeEnvironmentMutation(setConversation);
+  const reconcileFailedCodeDecision = useCallback(
+    (submission: EventSubmission) => {
+      const conversationId = submission.conversation?.conversationId;
+      const codeEnvironmentMode =
+        submission.codeEnvironmentMode ??
+        ((submission.codeWorkspaces?.length ?? 0) > 0 ? 'attached' : undefined);
+      if (
+        isAddedRequest ||
+        !conversationId ||
+        conversationId === Constants.NEW_CONVO ||
+        conversationId === Constants.PENDING_CONVO ||
+        codeEnvironmentMode == null
+      )
+        return;
+      reconcileCodeDecision({
+        conversationId,
+        attempted: {
+          codeEnvironmentMode,
+          codeWorkspaces: submission.codeWorkspaces,
+        },
+      });
+    },
+    [isAddedRequest, reconcileCodeDecision],
+  );
+
   const recoverConversation = useCallback(
     (conversationId: string, submission: EventSubmission) => {
       if (!newConversation) {
@@ -904,6 +932,7 @@ export default function useEventHandlers({
       try {
         // Handle early abort - aborted before any response message was saved.
         if ((data as Record<string, unknown>).earlyAbort) {
+          reconcileFailedCodeDecision(submission);
           console.log('[finalHandler] Early abort detected - no response message saved');
           setShowStopButton(false);
           setIsSubmitting(false);
@@ -1157,6 +1186,7 @@ export default function useEventHandlers({
       attachmentHandler,
       setSubmissionStart,
       restorePendingQuotes,
+      reconcileFailedCodeDecision,
     ],
   );
 
@@ -1165,6 +1195,7 @@ export default function useEventHandlers({
       setCompleted((prev) => new Set(prev.add(submission.initialResponse.messageId)));
       setSubmissionStart(null);
 
+      reconcileFailedCodeDecision(submission);
       const { conversationId, errorResponse, recover } = resolveErrorTurn({
         data,
         submission,
@@ -1188,6 +1219,7 @@ export default function useEventHandlers({
       getMessages,
       queryClient,
       recoverConversation,
+      reconcileFailedCodeDecision,
     ],
   );
 

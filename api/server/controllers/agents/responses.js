@@ -83,7 +83,7 @@ const {
   executeAgentRun,
   waitForAgentExecutionWrites,
   resolveToolRoleGrants,
-  resolveConversationCodeEnvironmentDecision,
+  resolveAdmittedCodeEnvironmentDecision,
   resolvePersistableCodeEnvironmentDecision,
   createTerminalRunErrorObserver,
 } = require('@librechat/api');
@@ -716,11 +716,11 @@ const executeResponse = async (envelope, { req, res }) => {
         }
       }
 
-      const codeEnvironmentDecision = resolveConversationCodeEnvironmentDecision({
+      const codeEnvironmentDecision = await resolveAdmittedCodeEnvironmentDecision({
         conversationId,
         requestedMode: request.code_environment_mode,
         requestedSelections: request.code_workspaces,
-        conversation: req.resolvedConversation,
+        readDecision: (id) => db.readAdmittedConvoCodeEnvironmentDecision(principal.userId, id),
       });
       const parentMessageId = null;
       const mcpRequestBody = createMCPRuntimeRequestBody({

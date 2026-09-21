@@ -1336,6 +1336,9 @@ export const agentsEndpointSchema = baseEndpointSchema
           conversationMoves: z
             .object({
               enabled: z.boolean().optional(),
+              /** Opt in after every API replica supports attach/detach. Omitted or false keeps
+               * the existing move-only policy, including for already-enabled deployments. */
+              allowAttachDetach: z.boolean().optional(),
             })
             .optional(),
           /** Operator-managed execution environments. Attached entries route to a

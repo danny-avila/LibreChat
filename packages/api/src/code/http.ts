@@ -40,9 +40,12 @@ import {
   CodeEnvironmentSettingsValidationError,
   validateCodeEnvironmentUserSettings,
 } from './settings';
+import {
+  resolveCodeEnvironmentMoveVersion,
+  resolveCodeEnvironmentTransitionVersion,
+} from './config';
 import { resolveConversationCodeEnvironmentMove } from './decision';
 import { resolveCodeWorkerEnrollmentLimit } from './enrollment';
-import { resolveCodeEnvironmentMoveVersion } from './config';
 import { CodeWorkspaceSelectionError } from './capabilities';
 import { getAppConfigOptionsFromUser } from '~/app/service';
 
@@ -88,7 +91,10 @@ export interface CodeEnvironmentConversationDeps {
   replaceDecision: (params: {
     user: string;
     conversationId: string;
-    expected: Pick<StoredConversationDecision, 'codeEnvironmentMode' | 'codeWorkspaces'>;
+    expected: Pick<
+      StoredConversationDecision,
+      'codeEnvironmentMode' | 'codeWorkspaces' | 'codeEnvironmentRevision'
+    >;
     codeEnvironmentMode: CodeEnvironmentMode;
     /** Omitted by a detach, which leaves the conversation without any attached selection. */
     codeWorkspaces?: CodeWorkspaceSelection[];
@@ -419,6 +425,15 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     let move: ConversationCodeEnvironmentMove;
     try {
       move = resolveConversationCodeEnvironmentMove({ conversation, from, to });
+      if (
+        (conversation.codeEnvironmentMode === 'without_attached' ||
+          move.mode === 'without_attached') &&
+        resolveCodeEnvironmentTransitionVersion(policy.effectiveConfig) == null
+      ) {
+        return res
+          .status(403)
+          .json({ error: 'Conversation code environment attach/detach is disabled' });
+      }
     } catch (error) {
       if (error instanceof CodeWorkspaceSelectionError) {
         return selectionErrorResponse(error, res);
@@ -438,14 +453,10 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
       throw error;
     }
 
-    /**
-     * Revalidating the workspaces above is a network round trip to each worker, so the checks that
-     * preceded it are stale by the time it returns: a turn submitted in that window starts under
-     * the decision this is about to replace, and the swap still succeeds because the stored
-     * decision it expects has not changed. That turn would run in the previous environment while
-     * the conversation reports the new one. Re-reading immediately before the swap leaves only the
-     * instant the compare-and-swap itself covers.
-     */
+    /** Worker checks are network round trips. Recheck long-lived work afterwards. Every admitted
+     * run advances the decision revision before reading, while its job remains active. The CAS
+     * below catches a run admitted after this final idle check; a run admitted after the CAS
+     * instead reads the new decision. */
     const [pendingJob, pendingRunIds] = await Promise.all([
       generations.getJob(conversationId),
       generations.getCleanupBlockingJobIdsForConversations(userId, [conversationId], tenantId),
@@ -460,6 +471,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
       expected: {
         codeEnvironmentMode: conversation.codeEnvironmentMode,
         codeWorkspaces: conversation.codeWorkspaces,
+        codeEnvironmentRevision: conversation.codeEnvironmentRevision,
       },
       codeEnvironmentMode: move.mode,
       codeWorkspaces: move.codeWorkspaces,

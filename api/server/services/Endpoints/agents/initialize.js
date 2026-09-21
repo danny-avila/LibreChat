@@ -3,7 +3,7 @@ const { createContentAggregator, GraphNodeKeys } = require('@librechat/agents');
 const {
   resolveSender,
   resolveRunConversation,
-  resolveConversationCodeEnvironmentDecision,
+  resolveAdmittedCodeEnvironmentDecision,
   createConcurrencyLimiter,
   loadSkillStates,
   initializeAgent,
@@ -602,11 +602,11 @@ const initializeClientWithProvider = async ({
   ]);
   /** Preserve the owner-scoped fallback for loaders that share this request. */
   req.resolvedConversation = requestConversation;
-  const codeEnvironmentDecision = resolveConversationCodeEnvironmentDecision({
+  const codeEnvironmentDecision = await resolveAdmittedCodeEnvironmentDecision({
     conversationId,
     requestedMode: runtimeRequestBody?.codeEnvironmentMode,
     requestedSelections: runtimeRequestBody?.codeWorkspaces,
-    conversation: requestConversation,
+    readDecision: (id) => db.readAdmittedConvoCodeEnvironmentDecision(req.user.id, id),
   });
   /** Trusted, normalized pair used by every persistence path, including init failures. */
   req._codeEnvironmentDecision = codeEnvironmentDecision;
