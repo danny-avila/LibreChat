@@ -8,6 +8,7 @@ let mockShowMarketplace = true;
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useShowMarketplace: () => mockShowMarketplace,
+  useHasAccess: () => true,
 }));
 
 jest.mock('~/hooks/useKeyboardShortcuts', () => ({

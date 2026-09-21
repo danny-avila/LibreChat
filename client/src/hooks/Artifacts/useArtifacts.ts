@@ -1,6 +1,9 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
+import { useAtomValue } from 'jotai';
 import { Constants } from 'librechat-data-provider';
-import { useRecoilState, useRecoilValue, useResetRecoilState } from 'recoil';
+import { useRecoilState, useRecoilValue, useResetRecoilState, useSetRecoilState } from 'recoil';
+import { artifactNavigationRequestAtom } from '~/components/ArtifactApps/navigation';
+import { getArtifactSourceKey } from '~/utils/artifactCatalog';
 import { isCodeOnlyArtifact } from '~/utils/artifacts';
 import { useArtifactsContext } from '~/Providers';
 import { logger } from '~/utils';
@@ -143,20 +146,63 @@ export default function useArtifacts() {
   const artifacts = useRecoilValue(store.artifactsState);
   const resetArtifacts = useResetRecoilState(store.artifactsState);
   const resetCurrentArtifactId = useResetRecoilState(store.currentArtifactId);
+  const setArtifactsVisible = useSetRecoilState(store.artifactsVisibility);
   const [currentArtifactId, setCurrentArtifactId] = useRecoilState(store.currentArtifactId);
+  const artifactNavigationRequest = useAtomValue(artifactNavigationRequestAtom);
+  const pendingRequest =
+    artifactNavigationRequest?.conversationId === conversationId ? artifactNavigationRequest : null;
+  const requestedParams = new URLSearchParams(window.location.search);
+  const requestedSourceKey = requestedParams.get('artifact') ?? pendingRequest?.sourceKey ?? null;
+  const requestedOriginalId =
+    requestedParams.get('artifactId') ?? pendingRequest?.originalArtifactId ?? null;
+  const requestedMessageId =
+    requestedParams.get('artifactMessageId') ?? pendingRequest?.messageId ?? null;
 
-  const { orderedArtifactIds, latestAutoOpenArtifactId } = useMemo(() => {
+  const { orderedArtifactIds, latestAutoOpenArtifactId, requestedArtifactId } = useMemo(() => {
     const ids = Object.keys(artifacts ?? {}).sort(
       (a, b) => (artifacts?.[a]?.lastUpdateTime ?? 0) - (artifacts?.[b]?.lastUpdateTime ?? 0),
     );
+    let requestedId: string | undefined;
+    let messageMatch: string | undefined;
+    let sourceMatch: string | undefined;
+    if (requestedSourceKey) {
+      for (let i = ids.length - 1; i >= 0; i--) {
+        const id = ids[i];
+        const artifact = artifacts?.[id];
+        if (requestedOriginalId && artifact?.id === requestedOriginalId) {
+          requestedId = id;
+          break;
+        }
+        if (!messageMatch && requestedMessageId && artifact?.messageId === requestedMessageId) {
+          messageMatch = id;
+        }
+        if (
+          !sourceMatch &&
+          (artifact?.id === requestedSourceKey ||
+            artifact?.messageId === requestedSourceKey ||
+            getArtifactSourceKey(artifact) === requestedSourceKey)
+        ) {
+          sourceMatch = id;
+        }
+      }
+      requestedId = requestedId ?? messageMatch ?? sourceMatch;
+    }
     for (let i = ids.length - 1; i >= 0; i--) {
       const id = ids[i];
       if (!isCodeOnlyArtifact(artifacts?.[id]?.type)) {
-        return { orderedArtifactIds: ids, latestAutoOpenArtifactId: id };
+        return {
+          orderedArtifactIds: ids,
+          latestAutoOpenArtifactId: id,
+          requestedArtifactId: requestedId,
+        };
       }
     }
-    return { orderedArtifactIds: ids, latestAutoOpenArtifactId: null };
-  }, [artifacts]);
+    return {
+      orderedArtifactIds: ids,
+      latestAutoOpenArtifactId: null,
+      requestedArtifactId: requestedId,
+    };
+  }, [artifacts, requestedMessageId, requestedOriginalId, requestedSourceKey]);
 
   const prevIsSubmittingRef = useRef<boolean>(false);
   const lastContentRef = useRef<string | null>(null);
@@ -169,7 +215,6 @@ export default function useArtifacts() {
     const resetState = () => {
       resetArtifacts();
       resetCurrentArtifactId();
-      prevConversationIdRef.current = conversationId;
       lastRunMessageIdRef.current = null;
       lastContentRef.current = null;
       hasEnclosedArtifactRef.current = false;
@@ -181,11 +226,6 @@ export default function useArtifacts() {
       resetState();
     }
     prevConversationIdRef.current = conversationId;
-    /** Resets artifacts when unmounting */
-    return () => {
-      logger.log('artifacts_visibility', 'Unmounting artifacts');
-      resetState();
-    };
   }, [conversationId, resetArtifacts, resetCurrentArtifactId]);
 
   /**
@@ -197,6 +237,16 @@ export default function useArtifacts() {
 
   useEffect(() => {
     if (orderedArtifactIds.length === 0) return;
+    if (requestedSourceKey) {
+      if (!requestedArtifactId) {
+        return;
+      }
+      if (currentArtifactIdRef.current !== requestedArtifactId) {
+        setCurrentArtifactId(requestedArtifactId);
+      }
+      setArtifactsVisible(true);
+      return;
+    }
     const currentId = currentArtifactIdRef.current;
     if (currentId != null && orderedArtifactIds.includes(currentId)) return;
     if (latestAutoOpenArtifactId == null) {
@@ -206,7 +256,15 @@ export default function useArtifacts() {
       return;
     }
     setCurrentArtifactId(latestAutoOpenArtifactId);
-  }, [latestAutoOpenArtifactId, orderedArtifactIds, resetCurrentArtifactId, setCurrentArtifactId]);
+  }, [
+    latestAutoOpenArtifactId,
+    orderedArtifactIds,
+    requestedArtifactId,
+    requestedSourceKey,
+    resetCurrentArtifactId,
+    setArtifactsVisible,
+    setCurrentArtifactId,
+  ]);
 
   /**
    * Manage artifact selection and code tab switching for non-enclosed artifacts

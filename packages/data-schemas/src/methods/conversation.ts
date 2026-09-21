@@ -18,6 +18,7 @@ import type {
   IAgentEventBindingRecord,
   IAgentTriggerDeliveryDocument,
   AppConfig,
+  IArtifactApp,
   IChatProjectDocument,
   IActiveSubagentThreadLease,
   IConversation,
@@ -45,6 +46,7 @@ import {
 import { createChatExpirationDate, createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { isAgentFadingTier, isAgentFadingTierEntries } from '~/utils/fading';
 import { isCompactionSemanticIndexProjection } from '~/types/compaction';
+import { recordArtifactSourceTombstones } from './artifactApp';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
@@ -74,6 +76,22 @@ const MAX_CONVO_PAGE_SIZE = 100;
 const DEFAULT_CONVO_PAGE_SIZE = 25;
 const escapeMeiliFilterValue = (value: string): string =>
   value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+function retainedConversationIds(conversationId: unknown): string[] {
+  if (typeof conversationId === 'string' && conversationId.length > 0) {
+    return [conversationId];
+  }
+  if (
+    conversationId != null &&
+    typeof conversationId === 'object' &&
+    Array.isArray((conversationId as { $in?: unknown }).$in)
+  ) {
+    return (conversationId as { $in: unknown[] }).$in.filter(
+      (id): id is string => typeof id === 'string' && id.length > 0,
+    );
+  }
+  return [];
+}
 
 function validateAgentEventActorSuspension(
   conversationId: string,
@@ -3171,15 +3189,19 @@ export function createConversationMethods(
         conversations = descendants;
         recoveryConversationIds.push(filter.conversationId);
       } else if (!conversations.length) {
-        if (options?.allowEmpty === true) {
+        const retainedIds = retainedConversationIds(filter.conversationId);
+        if (options?.allowEmpty === true && retainedIds.length > 0) {
+          recoveryConversationIds.push(...retainedIds);
+        } else if (options?.allowEmpty === true) {
           return {
             acknowledged: true,
             deletedCount: 0,
             messages: { acknowledged: true, deletedCount: 0 },
             conversationIds: [],
           };
+        } else {
+          throw new Error('Conversation not found or already deleted.');
         }
-        throw new Error('Conversation not found or already deleted.');
       }
 
       /**
@@ -3293,6 +3315,36 @@ export function createConversationMethods(
       }
 
       const deleteConvoResult: DeleteResult = { acknowledged, deletedCount };
+
+      if (conversationIds.length > 0) {
+        /**
+         * Artifact Apps are durable snapshots, so deleting their source conversation must
+         * preserve the app, versions, and ACLs. Stamp an independent tombstone first so a
+         * first registration cannot insert after this deletion commits, then remove only
+         * the navigation link that can no longer resolve. This runs before message cleanup
+         * so a failed write remains recoverable by retrying the deletion while source
+         * messages still identify the partially committed request.
+         */
+        await retryCascadeOperation(() =>
+          recordArtifactSourceTombstones(mongoose, user, conversationIds),
+        );
+        const ArtifactApp = mongoose.models.ArtifactApp as Model<IArtifactApp> | undefined;
+        if (ArtifactApp) {
+          await retryCascadeOperation(() =>
+            ArtifactApp.updateMany(
+              {
+                createdBy: user,
+                'sourceMetadata.conversationId': { $in: conversationIds },
+              },
+              {
+                $rename: {
+                  'sourceMetadata.conversationId': 'sourceMetadata.detachedConversationId',
+                },
+              },
+            ).exec(),
+          );
+        }
+      }
 
       /**
        * Post-delete cleanup is best-effort: the conversations are already gone, so a
