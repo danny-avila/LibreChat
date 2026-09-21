@@ -1427,6 +1427,47 @@ describe('Conversation Operations', () => {
       const stored = await Conversation.findOne({ conversationId }).lean();
       expect(stored?.messages?.map(String)).toEqual(rebuilt.map(String));
     });
+
+    /** An empty append is how a metadata-only write asks for the title (or any other
+     *  field) to land without the array being rebuilt underneath it. */
+    it('leaves the array untouched when the append is empty', async () => {
+      const existing = new mongoose.Types.ObjectId();
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [existing] });
+      getMessages.mockClear();
+
+      await saveConvo(ctx, { conversationId, title: 'metadata only' }, { appendMessageIds: [] });
+
+      expect(getMessages).not.toHaveBeenCalled();
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.title).toBe('metadata only');
+      expect(stored?.messages?.map(String)).toEqual([String(existing)]);
+    });
+
+    /** The concurrency an immediate-mode title introduced: it saves while the turn is
+     *  still running, so its write and the response's own append overlap. A title that
+     *  rebuilt the array from a snapshot taken before the response existed erased the
+     *  response's id permanently — nothing later re-adds it. Asking for no messages at
+     *  all is what makes the interleaving irrelevant. */
+    it('keeps a concurrently appended id when a metadata-only write overlaps it', async () => {
+      const userMessage = new mongoose.Types.ObjectId();
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [userMessage] });
+      /** What a rebuilding write would have read: the turn before the response. The
+       *  outer `beforeEach` restores the default, so this cannot leak. */
+      getMessages.mockResolvedValue([{ _id: userMessage }]);
+      getMessages.mockClear();
+
+      const responseMessage = new mongoose.Types.ObjectId();
+      await Promise.all([
+        saveConvo(ctx, { conversationId, title: 'generated mid-turn' }, { appendMessageIds: [] }),
+        saveConvo(ctx, { conversationId }, { appendMessageIds: [responseMessage] }),
+      ]);
+
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.title).toBe('generated mid-turn');
+      expect(stored?.messages?.map(String)).toEqual([userMessage, responseMessage].map(String));
+      /** No snapshot was taken, so there was no window to lose the append in. */
+      expect(getMessages).not.toHaveBeenCalled();
+    });
   });
 
   describe('isTemporary conversation handling', () => {
