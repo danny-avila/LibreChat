@@ -85,7 +85,10 @@ test.describe('streamed code highlighting', () => {
     await sendMessage(page, 'E2E_HIGHLIGHT_CODE:cancel');
 
     await expect(stopButton(page)).toBeVisible({ timeout: 30000 });
-    await expectHighlightedCode(page);
+    /** Open the card while the arguments are still arriving, but stop the run
+     *  before waiting on any token: waiting for a highlight first can outlast
+     *  the stream and leave nothing to cancel. */
+    await openCodePane(page);
     await stopButton(page).click();
     await expect(stopButton(page)).toBeHidden({ timeout: 30000 });
     /** Cancellation persists the partial message, which rebuilds the card the

@@ -103,6 +103,11 @@ const ACTIVITY_PHASE_FINAL_TEXT = 'E2E activity phase reply done';
 const STEER_TOOL_NAME_PREFIX = 'remember_fact';
 const ASK_USER_QUESTION_TOOL_NAME = 'ask_user_question';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
+/** The highlight cancellation scenario has to open the code card and stop the
+ *  run while its arguments are still arriving. At the ordinary slow cadence
+ *  those ~40 chunks are gone in under two seconds, which is not a window a
+ *  loaded runner can be relied on to hit, so that one variant streams wider. */
+const HIGHLIGHT_CANCEL_CHUNK_DELAY_MS = 200;
 const ORDERED_CHUNK_DELAY_MS = 2;
 const ORDERED_REPLY_PIECES = 64;
 const SLOW_REPLY_CHUNKS = 160;
@@ -2795,7 +2800,7 @@ function provisioningToolResponses({ text, toolNames }) {
           : codeTool.args;
     return {
       responses: ['', `E2E highlighted code complete: ${highlightLabel}`],
-      sleep: SLOW_CHUNK_DELAY_MS,
+      sleep: highlightLabel === 'cancel' ? HIGHLIGHT_CANCEL_CHUNK_DELAY_MS : SLOW_CHUNK_DELAY_MS,
       toolCalls: [
         {
           id: EXECUTE_CODE_TOOL_CALL_ID,
