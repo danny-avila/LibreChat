@@ -174,7 +174,8 @@ already in the body keeps the alt text written there, and a file the body never
 references is appended to the end instead. PNG, JPEG, GIF, WebP, SVG, MP4, MOV
 and WebM are accepted, images and GIFs up to 10 MB.
 
-That upload is the only way to get an asset URL. Do not commit screenshots to
+An asset URL only ever comes back from a real upload, whether that is `--attach`
+or dragging the file into the web editor. Do not commit screenshots to
 the repository or push them to a branch, do not link a path on the machine that
 captured them, do not host them on a gist or an image site, and never write a
 `user-attachments` link by hand: an invented link renders as a broken image and
