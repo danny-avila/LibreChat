@@ -301,58 +301,83 @@ export function createMediaThreadsMethods({
       }
       query.sequence = { $lt: sequence };
     }
+    type LoadedTurn = MediaStoredTurn & { imports: MediaAssetContent[] };
     const [activeThread, rows] = await Promise.all([
       Thread.exists({ ...owner, threadId, status: 'active' }),
-      Turn.find(query)
-        .sort({ sequence: -1 })
-        .limit(limit + 1)
-        .lean<MediaStoredTurn[]>(),
+      Turn.aggregate<LoadedTurn & { job?: MediaStoredJob }>([
+        { $match: query },
+        { $sort: { sequence: -1 } },
+        { $limit: limit + 1 },
+        {
+          $lookup: {
+            // eslint-disable-next-line no-restricted-syntax -- Collection metadata only; the lookup explicitly scopes owner and tenant.
+            from: File.collection.name,
+            let: { fileIds: { $ifNull: ['$inputs.file_id', []] }, kind: '$kind' },
+            pipeline: [
+              {
+                $match: {
+                  user: mongoose.isValidObjectId(owner.ownerId)
+                    ? new mongoose.Types.ObjectId(owner.ownerId)
+                    : owner.ownerId,
+                  tenantId: owner.tenantId,
+                  mediaLifecycle: 'live',
+                  $expr: {
+                    $and: [{ $eq: ['$$kind', 'import'] }, { $in: ['$file_id', '$$fileIds'] }],
+                  },
+                },
+              },
+            ],
+            as: 'imports',
+          },
+        },
+        {
+          $lookup: {
+            // eslint-disable-next-line no-restricted-syntax -- Collection metadata only; the lookup explicitly scopes owner and tenant.
+            from: Job.collection.name,
+            let: { turnId: '$turnId' },
+            pipeline: [
+              {
+                $match: {
+                  ...owner,
+                  'receipt.phase': 'accepted',
+                  $expr: { $eq: ['$turnId', '$$turnId'] },
+                },
+              },
+              { $sort: { createdAt: 1, jobId: 1 } },
+              { $limit: jobsPerTurn + 1 },
+              {
+                $project: {
+                  'provider.recovery.parts': 0,
+                  nativePartKeys: 0,
+                },
+              },
+            ],
+            as: 'job',
+          },
+        },
+        // Unwind directly after lookup so combined valid jobs never form one BSON result document.
+        { $unwind: { path: '$job', preserveNullAndEmptyArrays: true } },
+      ]),
     ]);
     if (!activeThread) {
       return { items: [] };
     }
-    const page = rows.slice(0, limit);
+    const turnsById = new Map<string, LoadedTurn & { jobs: MediaStoredJob[] }>();
+    for (const { job, ...turn } of rows) {
+      const existing = turnsById.get(turn.turnId);
+      if (existing) {
+        if (job) existing.jobs.push(job);
+        continue;
+      }
+      turnsById.set(turn.turnId, { ...turn, jobs: job ? [job] : [] });
+    }
+    const turns = [...turnsById.values()];
+    const page = turns.slice(0, limit);
     if (!page.length) {
       return { items: [] };
     }
-    const importIds = [
-      ...new Set(
-        page
-          .filter((turn) => turn.kind === 'import')
-          .flatMap((turn) => turn.inputs.map((input) => input.file_id)),
-      ),
-    ];
-    const [jobRowsByTurn, importFiles] = await Promise.all([
-      Job.find({
-        ...scopeFilter(scope),
-        turnId: { $in: page.map((turn) => turn.turnId) },
-        'receipt.phase': 'accepted',
-      })
-        .sort({ createdAt: 1, jobId: 1 })
-        .lean<MediaStoredJob[]>()
-        .then((jobs) =>
-          jobs.reduce((groups, job) => {
-            const group = groups.get(job.turnId);
-            if (!group) {
-              groups.set(job.turnId, [job]);
-            } else if (group.length <= jobsPerTurn) {
-              group.push(job);
-            }
-            return groups;
-          }, new Map<string, MediaStoredJob[]>()),
-        ),
-      importIds.length
-        ? File.find({
-            user: scope.ownerId,
-            tenantId: scope.tenantId,
-            file_id: { $in: importIds },
-            mediaLifecycle: 'live',
-          }).lean()
-        : Promise.resolve([]),
-    ]);
-    const assetsById = new Map(importFiles.map((file) => [file.file_id, toMediaAsset(file)]));
     const items = page.map((turn): MediaTurn => {
-      const jobRows = jobRowsByTurn.get(turn.turnId) ?? [];
+      const jobRows = turn.jobs;
       const lastJob = jobRows[jobsPerTurn - 1];
       const jobs = {
         items: jobRows.slice(0, jobsPerTurn).map(jobView),
@@ -361,6 +386,7 @@ export function createMediaThreadsMethods({
             ? cursorOf(lastJob.createdAt, lastJob.jobId)
             : undefined,
       };
+      const assetsById = new Map(turn.imports.map((file) => [file.file_id, toMediaAsset(file)]));
       const assets =
         turn.kind === 'import'
           ? turn.inputs
@@ -387,10 +413,10 @@ export function createMediaThreadsMethods({
         assets,
       };
     });
-    const last = rows[limit - 1];
+    const last = turns[limit - 1];
     return {
       items,
-      ...(rows.length > limit && last
+      ...(turns.length > limit && last
         ? { nextCursor: cursorOf(String(last.sequence), last.turnId) }
         : {}),
     };

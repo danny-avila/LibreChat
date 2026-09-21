@@ -354,7 +354,17 @@ function buildSynthesizedPhaseLabel(run: FoldRun): SynthesizedPhaseHeader | unde
  */
 function buildLivePhaseLabel(run: FoldRun): SynthesizedPhaseHeader | undefined {
   let activities = 0;
+  let reasons = false;
   for (const part of run.content) {
+    /** A thought counts from its first character. Left outside until a tool
+     *  call arrived, it rendered as its own row with a multi-line peek that
+     *  the first call then snapped shut — a grow-and-shrink on every step of a
+     *  reasoning model that talks between calls. */
+    if (part?.type === ContentTypes.THINK) {
+      const thought = typeof part.think === 'string' ? part.think : (part.think?.value ?? '');
+      reasons ||= thought.trim().length > 0;
+      continue;
+    }
     /** Only an agents-shaped call can be named by the live header; the legacy
      *  Assistants variants carry no top-level `args` and keep their own cards. */
     const toolCall = part?.type === ContentTypes.TOOL_CALL ? part[ContentTypes.TOOL_CALL] : null;
@@ -362,7 +372,7 @@ function buildLivePhaseLabel(run: FoldRun): SynthesizedPhaseHeader | undefined {
       activities += 1;
     }
   }
-  if (activities === 0) {
+  if (activities === 0 && !reasons) {
     return undefined;
   }
   const endPosition = run.content.length - 1;

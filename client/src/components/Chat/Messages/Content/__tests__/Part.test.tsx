@@ -76,6 +76,7 @@ jest.mock('../Image', () => ({
 }));
 
 jest.mock('~/utils', () => ({
+  getPartKeyIndex: jest.requireActual('~/utils').getPartKeyIndex,
   getCachedPreview: jest.fn(),
 }));
 

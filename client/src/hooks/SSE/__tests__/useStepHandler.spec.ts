@@ -1,5 +1,5 @@
 import React from 'react';
-import { useStore } from 'jotai';
+import { useStore, useAtomValue } from 'jotai';
 import { RecoilRoot, useRecoilCallback } from 'recoil';
 import { renderHook, act } from '@testing-library/react';
 import {
@@ -27,6 +27,7 @@ import {
 } from '~/components/Chat/Subagents/state';
 import { ptcTraceByToolCallId, ptcTraceKey, PTC_TRACE_MAX_ENTRIES } from '~/store/ptc';
 import { resolveAskUserQuestionPart } from '~/utils/approval';
+import { sandboxStartingByToolCallId } from '~/store/sandbox';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { IsolatedAtomStore } from 'test/harness';
 
@@ -1945,6 +1946,64 @@ describe('useStepHandler', () => {
       );
       expect(toolCallContent?.tool_call?.auth).toEqual('oauth-token-123');
     });
+  });
+
+  describe('sandbox startup state', () => {
+    const wrapper = ({ children }: React.PropsWithChildren) =>
+      React.createElement(RecoilRoot, null, React.createElement(IsolatedAtomStore, null, children));
+
+    it.each(['completed', 'cleanup'] as const)(
+      'clears the Jotai startup signal on %s',
+      (terminal) => {
+        mockGetMessages.mockReturnValue([createResponseMessage()]);
+        const { result } = renderHook(
+          () => ({
+            ...useStepHandler(createHookParams()),
+            starting: useAtomValue(sandboxStartingByToolCallId('tool-call-1')),
+          }),
+          { wrapper },
+        );
+        const submission = createSubmission();
+        expect(result.current.starting).toBe(false);
+        act(() => {
+          result.current.stepHandler(
+            { event: StepEvents.ON_RUN_STEP, data: createToolCallRunStep() },
+            submission,
+          );
+          result.current.stepHandler(
+            { event: StepEvents.ON_SANDBOX_STARTING, data: { tool_call_id: 'tool-call-1' } },
+            submission,
+          );
+        });
+        expect(result.current.starting).toBe(true);
+        act(() => {
+          if (terminal === 'cleanup') {
+            result.current.clearStepMaps();
+            return;
+          }
+          result.current.stepHandler(
+            {
+              event: StepEvents.ON_RUN_STEP_COMPLETED,
+              data: {
+                result: {
+                  id: 'step-tool-1',
+                  index: 0,
+                  tool_call: {
+                    id: 'tool-call-1',
+                    name: 'test_tool',
+                    args: '{}',
+                    output: 'done',
+                    type: ToolCallTypes.TOOL_CALL,
+                  },
+                } as Agents.ToolEndEvent,
+              },
+            },
+            submission,
+          );
+        });
+        expect(result.current.starting).toBe(false);
+      },
+    );
   });
 
   describe('on_run_step_completed event', () => {

@@ -213,7 +213,7 @@ function UnifiedSidebar() {
               id="chat-history-nav"
               className="min-h-0 flex-1 overflow-hidden bg-surface-primary-alt"
             >
-              <SidePanelNav links={links} activeId={routePanelId} />
+              <SidePanelNav links={links} activeId={routeActiveId} />
             </nav>
             <MobileShortcutTargets
               links={links}
@@ -244,7 +244,7 @@ function UnifiedSidebar() {
         >
           <Sidebar
             links={links}
-            activeId={routePanelId}
+            activeId={routeActiveId}
             routeActiveId={routeActiveId}
             expanded={panelExpanded}
             width={resizeNow}

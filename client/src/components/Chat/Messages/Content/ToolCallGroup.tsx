@@ -9,6 +9,7 @@ import type { ToolMeta } from './outcome';
 import {
   cn,
   getToolDisplayLabel,
+  getPartKeyIndex,
   hasPendingAuthInPart,
   hasPendingApprovalInPart,
   getBatchActivityLabelPart,
@@ -565,6 +566,7 @@ export default function ToolCallGroup({
                     return (
                       <ReasoningCompact
                         key={`reasoning-${idx}`}
+                        partKeyIndex={getPartKeyIndex(part, idx)}
                         reasoning={reasoning}
                         label={label}
                         showThinking={showThinking}

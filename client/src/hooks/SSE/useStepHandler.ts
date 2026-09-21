@@ -319,37 +319,32 @@ export default function useStepHandler({
   /** Tool-call ids whose sandbox-starting atom is set, so completion can clear them. */
   const knownSandboxAtomKeys = useRef(new Set<string>());
 
-  const setSandboxStarting = useRecoilCallback(
-    ({ set }) =>
-      (toolCallId: string): void => {
-        knownSandboxAtomKeys.current.add(toolCallId);
-        set(sandboxStartingByToolCallId(toolCallId), true);
-      },
-    [],
+  const sandboxStore = useStore();
+  const setSandboxStarting = useCallback(
+    (toolCallId: string): void => {
+      knownSandboxAtomKeys.current.add(toolCallId);
+      sandboxStore.set(sandboxStartingByToolCallId(toolCallId), true);
+    },
+    [sandboxStore],
   );
 
-  const clearSandboxStarting = useRecoilCallback(
-    ({ reset }) =>
-      (toolCallId?: string | null): void => {
-        if (!toolCallId || !knownSandboxAtomKeys.current.has(toolCallId)) {
-          return;
-        }
-        knownSandboxAtomKeys.current.delete(toolCallId);
-        reset(sandboxStartingByToolCallId(toolCallId));
-      },
-    [],
+  const clearSandboxStarting = useCallback(
+    (toolCallId?: string | null): void => {
+      if (!toolCallId || !knownSandboxAtomKeys.current.has(toolCallId)) {
+        return;
+      }
+      knownSandboxAtomKeys.current.delete(toolCallId);
+      sandboxStore.set(sandboxStartingByToolCallId(toolCallId), false);
+    },
+    [sandboxStore],
   );
 
-  const resetSandboxAtoms = useRecoilCallback(
-    ({ reset }) =>
-      (): void => {
-        for (const toolCallId of knownSandboxAtomKeys.current) {
-          reset(sandboxStartingByToolCallId(toolCallId));
-        }
-        knownSandboxAtomKeys.current.clear();
-      },
-    [],
-  );
+  const resetSandboxAtoms = useCallback((): void => {
+    for (const toolCallId of knownSandboxAtomKeys.current) {
+      sandboxStore.set(sandboxStartingByToolCallId(toolCallId), false);
+    }
+    knownSandboxAtomKeys.current.clear();
+  }, [sandboxStore]);
 
   /** PTC tool call ids with a live trace, so the atoms can be released. */
   const knownPtcAtomKeys = useRef(new Set<string>());

@@ -60,7 +60,7 @@ export default function MediaWorkspace({
     setLibrary((previous) => ({ ...previous, view, threadId }));
   const catalog = useMediaCatalog(host);
   const search = useDebounce(library.search.trim(), 250);
-  const threads = useMediaThreads(host, library.filter, search);
+  const threads = useMediaThreads(host, library.filter, search, { enabled: gallery });
   const detail = useMediaThread(host, threadId);
   const visible = threads.data?.pages.flatMap((page) => page.items) ?? [];
   const commands = useMediaCommands([

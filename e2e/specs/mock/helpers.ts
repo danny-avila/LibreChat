@@ -452,18 +452,28 @@ export function waitForUpload(page: Page) {
   });
 }
 
-/** Attach a file via the unified single button (no tool resource). */
+/** Attach a file through the unified direct button or local-source menu (no tool resource). */
 export async function uploadViaUnifiedButton(page: Page, file: AttachFile) {
-  const uploadResponse = waitForUpload(page);
+  const directUpload = page.locator('#attach-file-button');
+  const sourceMenu = page.locator('#attach-file-menu-button');
+  await expect(directUpload.or(sourceMenu)).toBeVisible();
+  let uploadTrigger = directUpload;
+  if (await sourceMenu.isVisible()) {
+    await sourceMenu.click();
+    uploadTrigger = page.getByRole('menuitem', { name: 'From Local Computer', exact: true });
+  }
   const [fileChooser] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.locator('#attach-file-button').click(),
+    uploadTrigger.click(),
   ]);
-  await fileChooser.setFiles({
-    name: file.name,
-    mimeType: file.mimeType,
-    buffer: Buffer.from(file.content, 'utf8'),
-  });
+  const [uploadResponse] = await Promise.all([
+    waitForUpload(page),
+    fileChooser.setFiles({
+      name: file.name,
+      mimeType: file.mimeType,
+      buffer: Buffer.from(file.content, 'utf8'),
+    }),
+  ]);
   return uploadResponse;
 }
 

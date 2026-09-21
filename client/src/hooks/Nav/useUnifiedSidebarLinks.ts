@@ -23,6 +23,11 @@ import store from '~/store';
 
 const defaultInterface = getConfigDefaults().interface;
 
+/** Reserve the saved panel width while access resolves without mounting feature queries. */
+function MediaSettingsPlaceholder() {
+  return null;
+}
+
 export default function useUnifiedSidebarLinks() {
   const navigate = useNavigate();
   const localize = useLocalize();
@@ -39,6 +44,7 @@ export default function useUnifiedSidebarLinks() {
     [startupConfig],
   );
   const { studio: mediaVisible, scope: mediaScope, isAuthenticated } = useMediaAccess();
+  const isStudioRoute = location.pathname === '/studio' || location.pathname.startsWith('/studio/');
   const isCurrentSession = useMediaSessionGuard(mediaScope, isAuthenticated);
   const mediaActivityHost = {
     scope: mediaScope ?? '',
@@ -99,7 +105,7 @@ export default function useUnifiedSidebarLinks() {
     };
 
     const nextLinks = [...sideNavLinks];
-    if (mediaVisible) {
+    if (mediaVisible || isStudioRoute) {
       const agentIndex = nextLinks.findIndex((link) => link.id === 'agents');
       nextLinks.splice(agentIndex >= 0 ? agentIndex + 1 : nextLinks.length, 0, {
         title: 'com_media_studio',
@@ -109,7 +115,8 @@ export default function useUnifiedSidebarLinks() {
           : undefined,
         icon: Images,
         id: 'media-studio',
-        Component: MediaSettingsPanel,
+        Component: mediaVisible ? MediaSettingsPanel : MediaSettingsPlaceholder,
+        disabled: !mediaVisible,
         route: '/studio',
         onClick: () => {
           if (!location.pathname.startsWith('/studio')) navigate('/studio');
@@ -143,6 +150,7 @@ export default function useUnifiedSidebarLinks() {
     return [conversationLink, ...nextLinks];
   }, [
     mediaVisible,
+    isStudioRoute,
     mediaActivityCount,
     mediaActivityLabel,
     insightsAccess?.access,

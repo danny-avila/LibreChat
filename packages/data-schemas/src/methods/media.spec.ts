@@ -558,10 +558,15 @@ describe('media persistence on standalone MongoDB', () => {
 
   it('has authoritative import receipts without any provider job', async () => {
     const { asset } = await original();
+    const [second, retired, foreignOwner, foreignTenant] = await Promise.all(
+      ['second', 'retired', 'foreign-owner', 'foreign-tenant'].map((key) => original(key)),
+    );
     const request = {
       schemaVersion: 1 as const,
       clientRequestId: 'import-1',
-      inputs: [{ role: 'reference' as const, file_id: asset.file_id }],
+      inputs: [second.asset, retired.asset, asset, foreignOwner.asset, foreignTenant.asset].map(
+        (file) => ({ role: 'reference' as const, file_id: file.file_id }),
+      ),
     };
     const receipts = await Promise.all([
       methods.stageMediaImport({ scope, request }),
@@ -574,6 +579,29 @@ describe('media persistence on standalone MongoDB', () => {
     expect(
       await methods.claimMediaAssetDeletion({ scope, fileId: asset.file_id, token: 'delete' }),
     ).toBeNull();
+    await Promise.all([
+      mongoose.models.File.collection.updateOne(
+        { file_id: retired.asset.file_id },
+        { $set: { mediaLifecycle: 'retiring' } },
+      ),
+      mongoose.models.File.collection.updateOne(
+        { file_id: foreignOwner.asset.file_id },
+        { $set: { user: new mongoose.Types.ObjectId() } },
+      ),
+      mongoose.models.File.collection.updateOne(
+        { file_id: foreignTenant.asset.file_id },
+        { $set: { tenantId: 'foreign' } },
+      ),
+    ]);
+    const turns = await methods.listMediaTurns({
+      scope,
+      threadId: receipts[0].threadId,
+      limit: 10,
+      jobsPerTurn: 2,
+    });
+    expect(turns.items[0].assets).toEqual([second.asset, asset]);
+    expect(turns.items[0].inputs).toEqual(request.inputs);
+    expect(turns.items[0].jobs).toEqual([]);
     // Import and generation request identifiers intentionally have separate namespaces.
     expect((await methods.stageMediaSubmission(submission('import-1'))).phase).toBe('preparing');
   });
@@ -921,6 +949,179 @@ describe('media persistence on standalone MongoDB', () => {
     });
     expect([...one.items, ...two.items].map((turn) => turn.sequence)).toEqual([4, 3, 2, 1]);
     expect(two.nextCursor).toBeUndefined();
+  });
+
+  it('bounds joined jobs per turn before materializing the page and isolates colliding scopes', async () => {
+    const first = await accepted('bounded-first');
+    const newest = await accepted('bounded-newest', {
+      threadId: first.threadId,
+      parameters: { count: 2 },
+    });
+    const retries = Array.from({ length: 8 }, (_, index) => {
+      const jobId = `retry-0${index}`;
+      const job = {
+        ...newest,
+        _id: new mongoose.Types.ObjectId(),
+        jobId,
+        clientRequestId: jobId,
+        retryOfJobId: newest.jobId,
+        phase: 'cancelled',
+        createdAt: new Date(newest.createdAt.getTime() + 1_000),
+        cancelRequestedAt: newest.createdAt,
+        execution: { ...newest.execution, cancellation: 'confirmed' },
+        provider: {
+          certainty: 'terminal',
+          recovery: {
+            terminalStatus: 'cancelled',
+            parts: [{ kind: 'text', ordinal: 0, text: 'Private continuation' }],
+          },
+        },
+        receipt: { ...newest.receipt, jobId },
+      };
+      delete job.activeSlot;
+      return job;
+    });
+    const foreignScopes = [
+      { ...scope, ownerId: new mongoose.Types.ObjectId().toString() },
+      { ...scope, tenantId: 'foreign' },
+    ];
+    await mongoose.models.MediaJob.collection.insertMany([
+      ...retries,
+      ...foreignScopes.map((foreignScope) => ({
+        ...retries[0],
+        ...foreignScope,
+        _id: new mongoose.Types.ObjectId(),
+        createdAt: new Date(0),
+      })),
+      {
+        ...retries[0],
+        _id: new mongoose.Types.ObjectId(),
+        jobId: 'unpublished',
+        clientRequestId: 'unpublished',
+        createdAt: new Date(0),
+        receipt: { ...newest.receipt, phase: 'preparing' },
+      },
+    ]);
+    const storedTurn = await mongoose.models.MediaTurn.findOne({ turnId: newest.turnId }).lean();
+    await mongoose.models.MediaTurn.collection.insertMany([
+      ...foreignScopes.map((foreignScope) => ({
+        ...storedTurn,
+        ...foreignScope,
+        _id: new mongoose.Types.ObjectId(),
+        sequence: 99,
+      })),
+      {
+        ...storedTurn,
+        _id: new mongoose.Types.ObjectId(),
+        turnId: 'unpublished',
+        sequence: 99,
+        publicationPhase: 'preparing',
+      },
+    ]);
+    const aggregate = jest.spyOn(mongoose.models.MediaTurn, 'aggregate');
+    const input = { scope, threadId: first.threadId, limit: 1, jobsPerTurn: 2 };
+    const page = await methods.listMediaTurns(input);
+    const pipeline = aggregate.mock.calls[0][0]!;
+    aggregate.mockRestore();
+    const materialized = await mongoose.models.MediaTurn.aggregate<{
+      turnId: string;
+      job?: MediaStoredJob;
+    }>(pipeline);
+    expect(materialized.map((turn) => [turn.turnId, turn.job?.jobId])).toEqual([
+      [newest.turnId, newest.jobId],
+      [newest.turnId, retries[0].jobId],
+      [newest.turnId, retries[1].jobId],
+      [first.turnId, first.jobId],
+    ]);
+    expect(materialized[1].job).not.toHaveProperty('provider.recovery.parts');
+    expect(page.items[0].parameters).toEqual({ count: 2 });
+    expect(page.items[0].jobs).toEqual(
+      await Promise.all(
+        [newest.jobId, retries[0].jobId].map((id) => methods.getMediaJobView(scope, id)),
+      ),
+    );
+    const nextJobs = await methods.listMediaTurnJobs({
+      scope,
+      turnId: newest.turnId,
+      limit: 10,
+      cursor: page.items[0].jobsNextCursor,
+    });
+    expect(nextJobs.items.map((job) => job.jobId)).toEqual(
+      retries.slice(1).map((job) => job.jobId),
+    );
+    expect(nextJobs.nextCursor).toBeUndefined();
+    const nextTurns = await methods.listMediaTurns({ ...input, cursor: page.nextCursor });
+    expect(nextTurns.items.map((turn) => turn.turnId)).toEqual([first.turnId]);
+    expect(nextTurns.nextCursor).toBeUndefined();
+    await methods.retireMediaThread(scope, first.threadId);
+    expect(await methods.listMediaTurns(input)).toEqual({ items: [] });
+  });
+
+  it('lists individually valid jobs whose combined public outputs exceed one BSON document', async () => {
+    const older = await accepted('large-older');
+    const first = await accepted('large-turn', { threadId: older.threadId });
+    await mongoose.models.MediaJob.updateOne(
+      { jobId: first.jobId },
+      { $set: { phase: 'failed', 'provider.certainty': 'terminal' }, $unset: { activeSlot: 1 } },
+    );
+    const text = 'x'.repeat(900_000);
+    const outputs = Array.from({ length: 4 }, (_, ordinal) => ({
+      kind: 'text',
+      outputId: `text-${ordinal}`,
+      ordinal,
+      text,
+    }));
+    const retries = Array.from({ length: 5 }, (_, index) => {
+      const jobId = `large-retry-${index}`;
+      const job = {
+        ...first,
+        _id: new mongoose.Types.ObjectId(),
+        jobId,
+        clientRequestId: jobId,
+        retryOfJobId: first.jobId,
+        createdAt: new Date(first.createdAt.getTime() + index + 1),
+        phase: 'failed',
+        provider: { certainty: 'terminal' },
+        receipt: { ...first.receipt, jobId },
+        outputs,
+      };
+      delete job.activeSlot;
+      return job;
+    });
+    await mongoose.models.MediaJob.collection.insertMany(retries);
+    const page = await methods.listMediaTurns({
+      scope,
+      threadId: first.threadId,
+      limit: 1,
+      jobsPerTurn: 6,
+    });
+    expect(page.items[0].jobs.map((job) => job.jobId)).toEqual([
+      first.jobId,
+      ...retries.map((job) => job.jobId),
+    ]);
+    for (const job of page.items[0].jobs.slice(1)) expect(job.outputs).toEqual(outputs);
+    expect(
+      page.items[0].jobs.reduce(
+        (bytes, job) =>
+          bytes +
+          job.outputs.reduce(
+            (total, output) => total + (output.kind === 'text' ? output.text.length : 0),
+            0,
+          ),
+        0,
+      ),
+    ).toBe(18_000_000);
+    expect(page.items[0].jobsNextCursor).toBeUndefined();
+    const next = await methods.listMediaTurns({
+      scope,
+      threadId: first.threadId,
+      limit: 1,
+      jobsPerTurn: 6,
+      cursor: page.nextCursor,
+    });
+    expect(next.items.map((turn) => turn.turnId)).toEqual([older.turnId]);
+    expect(next.items[0].jobs.map((job) => job.jobId)).toEqual([older.jobId]);
+    expect(next.nextCursor).toBeUndefined();
   });
 
   it('discovers restart work only through an explicit bounded system scan', async () => {

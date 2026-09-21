@@ -56,6 +56,25 @@ describe('mobile drawer header', () => {
     expect(onClose).toHaveBeenCalledWith();
   });
 
+  it('keeps close usable when the current Studio route is unavailable', () => {
+    const onClose = jest.fn();
+    const studio: NavLink = {
+      id: 'media-studio',
+      title: 'com_media_studio',
+      icon: () => null,
+      route: '/studio',
+      disabled: true,
+    };
+    render(
+      <Header links={[studio]} expanded={true} routeActiveId={studio.id} onClose={onClose} />,
+      { wrapper: MemoryRouter },
+    );
+
+    expect(screen.getByTestId('close-sidebar-button')).toHaveFocus();
+    fireEvent.click(screen.getByTestId('close-sidebar-button'));
+    expect(onClose).toHaveBeenCalledWith();
+  });
+
   it('claims the close identity while the drawer is open', () => {
     render(<Header links={links} expanded={true} onClose={jest.fn()} />, { wrapper: MemoryRouter });
 

@@ -88,6 +88,34 @@ describe('ShortcutTargets', () => {
     expect(localStorage.getItem('side:active-panel')).toBe('prompts');
   });
 
+  it('keeps navigation out of an unavailable Studio route usable', () => {
+    const onLeaveRoute = jest.fn();
+    const onClick = jest.fn();
+    renderTargets({
+      routeActiveId: 'media-studio',
+      onLeaveRoute,
+      targetLinks: [
+        ...links,
+        {
+          id: 'media-studio',
+          title: 'com_media_studio',
+          icon: BarChart3,
+          disabled: true,
+          onClick,
+        },
+      ],
+    });
+
+    const studio = screen.getByTestId('nav-panel-media-studio');
+    expect(studio).toBeDisabled();
+    fireEvent.click(studio);
+    expect(onClick).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('nav-panel-conversations'));
+    expect(onLeaveRoute).toHaveBeenCalledTimes(1);
+    expect(localStorage.getItem('side:active-panel')).toBe('conversations');
+  });
+
   it('offers no target for a panel this endpoint does not have', () => {
     renderTargets();
 

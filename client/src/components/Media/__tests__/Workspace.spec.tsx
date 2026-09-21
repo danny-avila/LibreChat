@@ -531,6 +531,7 @@ test('preserves older saved filters while applying the new gallery defaults', as
 test('shows a saved thread chronologically and returns to that thread when its gallery card is selected', async () => {
   mount({ initialThread: 'thread' });
   await screen.findByText('Result 2');
+  expect(dataService.listMediaThreads).not.toHaveBeenCalled();
   const requests = screen.getAllByRole('group', { name: 'com_media_request' });
   expect(requests.map((request) => within(request).getByText(/^Prompt/).textContent)).toEqual([
     'Prompt 1',
@@ -540,6 +541,7 @@ test('shows a saved thread chronologically and returns to that thread when its g
   fireEvent.change(prompt, { target: { value: 'Make the boat blue' } });
   fireEvent.click(header().getByRole('button', { name: 'com_media_open_gallery' }));
   fireEvent.click(await screen.findByRole('button', { name: 'com_media_open_named' }));
+  expect(dataService.listMediaThreads).toHaveBeenCalled();
   expect(screen.getByText('Result 2')).toBeVisible();
   expect(screen.getByRole('textbox', { name: 'com_media_prompt' })).toHaveValue(
     'Make the boat blue',
@@ -556,7 +558,7 @@ test('gallery deletion confirms one creation and clears cancelled errors before 
   mount();
   await screen.findByRole('textbox', { name: 'com_media_prompt' });
   fireEvent.click(header().getByRole('button', { name: 'com_media_open_gallery' }));
-  const gallery = within(screen.getByTestId('media-gallery'));
+  const gallery = within(await screen.findByTestId('media-gallery'));
   const [first, second] = await gallery.findAllByRole('listitem');
   const deleteSecond = within(second).getByRole('button', { name: 'com_media_delete_named' });
   deleteSecond.focus();
