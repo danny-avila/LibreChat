@@ -108,6 +108,20 @@ export default function Instructions({
     setValue('instruction_prompt', next, { shouldDirty: true, shouldValidate: true });
   };
 
+  useEffect(() => {
+    if (
+      advancedPromptsEnabled ||
+      reference?.source !== 'librechat' ||
+      (reference.version == null && reference.versionId == null)
+    ) {
+      return;
+    }
+
+    const deployedReference = { ...reference, version: undefined, versionId: undefined };
+    referenceDrafts.current.librechat = deployedReference;
+    setValue('instruction_prompt', deployedReference, { shouldDirty: true, shouldValidate: true });
+  }, [advancedPromptsEnabled, reference, setValue]);
+
   const changeSource = (next: InstructionSource) => {
     if (reference) {
       referenceDrafts.current[reference.source] = reference;

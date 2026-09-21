@@ -219,7 +219,8 @@ describe('Agent Instructions', () => {
       'Support',
     );
   });
-  it('uses the deployed version when advanced prompts are disabled', () => {
+  it('normalizes pinned references to the deployed version when advanced prompts are disabled', async () => {
+    const onSubmit = jest.fn();
     mockPromptGroups.push({ _id: 'group-1', name: 'Support', productionId: 'prompt-1' });
     mockPrompts.push({
       _id: 'prompt-2',
@@ -238,12 +239,16 @@ describe('Agent Instructions', () => {
     render(
       <InstructionsHarness
         advancedPromptsEnabled={false}
+        onSubmit={onSubmit}
         defaultValues={{
+          id: 'agent-1',
           instructions: '',
           instruction_prompt: {
             source: 'librechat',
             promptId: 'group-1',
             name: 'Support',
+            version: 2,
+            versionId: 'prompt-2',
           },
         }}
       />,
@@ -253,6 +258,14 @@ describe('Agent Instructions', () => {
     expect(versionSelect).toBeDisabled();
     expect(versionSelect).toHaveTextContent('com_agents_prompt_deployed');
     expect(screen.getByText('com_agents_prompt_resolved:1')).toBeVisible();
+
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_save' }));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0].instruction_prompt).toEqual({
+      source: 'librechat',
+      promptId: 'group-1',
+      name: 'Support',
+    });
   });
 
   it('restores a saved Langfuse reference into the builder', () => {
