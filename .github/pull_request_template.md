@@ -81,7 +81,10 @@ use dashed arrows freely.
 
 ## Type of change
 
-<!-- Select all that apply. -->
+<!--
+Check every type that applies, then delete the lines that do not. The section
+should end up listing only the types this pull request actually is.
+-->
 
 * [ ] Bug fix
 * [ ] Feature
@@ -133,8 +136,46 @@ Write "Not applicable" when appropriate.
 ## Screenshots / recordings
 
 <!--
-For user-facing changes, include before/after screenshots or a short recording.
-Remove this section when not applicable.
+Required whenever the change alters something a user can see: a new, removed or
+restyled component, layout, spacing, copy, icons, empty/loading/error states,
+theming, or motion. The diff shows what the code says; only a screenshot shows
+what the screen looks like.
+
+Capture from the app running this branch, never a mockup. Post before and after
+as a pair, taken at the same size on the same screen, and label which is which.
+A brand new surface has no "before", so say that instead of leaving a cell
+blank. Include light and dark mode whenever the change touches color or theming.
+Use a recording rather than a still whenever the behavior is motion or
+interaction dependent, such as a transition, drag, hover or streaming state,
+where a frozen frame proves nothing.
+
+Upload the files with `gh` (v2.99.0 or newer). Write the body with ordinary
+relative image links, pass the same paths to `--attach`, and each link is
+rewritten to the uploaded asset:
+
+| Before | After |
+| --- | --- |
+| ![Before](./sidebar-before.png) | ![After](./sidebar-after.png) |
+
+    gh pr create --base dev --body-file ./pr-body.md \
+      --attach ./sidebar-before.png --attach ./sidebar-after.png
+
+    gh pr edit 123 --attach './sidebar-after.png#Sidebar after the change'
+
+`--attach` repeats, up to 50 files per command, and works on `gh pr create`,
+`gh pr edit` and `gh pr comment`. Alt text follows the path after `#`; a link
+already in the body keeps the alt text written there, and a file the body never
+references is appended to the end instead. PNG, JPEG, GIF, WebP, SVG, MP4, MOV
+and WebM are accepted, images and GIFs up to 10 MB.
+
+That upload is the only way to get an asset URL. Do not commit screenshots to
+the repository or push them to a branch, do not link a path on the machine that
+captured them, do not host them on a gist or an image site, and never write a
+`user-attachments` link by hand: an invented link renders as a broken image and
+costs a review round.
+
+Write "No user-facing change" rather than removing this section, so reviewers can
+see the question was answered.
 -->
 
 ## Risk / compatibility
