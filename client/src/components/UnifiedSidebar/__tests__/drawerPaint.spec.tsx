@@ -1,7 +1,7 @@
 import { render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { ReactNode } from 'react';
-import { MOBILE_DRAWER_ID } from '../constants';
+import { DRAWER_UNPAINTED, MOBILE_DRAWER_ID } from '../constants';
 import UnifiedSidebar from '../UnifiedSidebar';
 
 /**
@@ -11,6 +11,11 @@ import UnifiedSidebar from '../UnifiedSidebar';
  * Projects and Pinned rows keep painting over the conversation. These pin the
  * one state that cannot happen — a settled, closed drawer still being painted —
  * and the two windows where painting it is exactly the point.
+ *
+ * React owns the resting value here; the slide's release in useDrawerSwipe hands
+ * this same value back rather than clearing the property, because React will not
+ * re-assert a prop whose value it has not changed. Both sides read one constant
+ * so they cannot drift apart.
  */
 
 const mockSidebarState = { isSmallScreen: true, expanded: false, setExpanded: jest.fn() };
@@ -79,7 +84,7 @@ const drawerVisibility = (expanded: boolean, isSliding: boolean): string => {
 
 describe('mobile drawer painting', () => {
   it('is not painted once closed and settled', () => {
-    expect(drawerVisibility(false, false)).toBe('hidden');
+    expect(drawerVisibility(false, false)).toBe(DRAWER_UNPAINTED);
   });
 
   /** Recoil's flip is deferred past the opening frames and the closing

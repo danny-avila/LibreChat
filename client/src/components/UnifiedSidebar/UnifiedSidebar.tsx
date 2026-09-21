@@ -13,6 +13,7 @@ import {
   DRAWER_Z_INDEX,
   MOBILE_DRAWER_ID,
   MOBILE_DRAWER_WIDTH,
+  DRAWER_UNPAINTED,
 } from './constants';
 import { ChatContext, ChatFormProvider, ActivePanelProvider } from '~/Providers';
 import { MobileHeader, MobileBottomBar, MobileShortcutTargets } from './mobile';
@@ -201,21 +202,12 @@ function UnifiedSidebar({ isSliding = false }: { isSliding?: boolean }) {
            *  too or that one change still animates. */
           transition: prefersReducedMotion ? undefined : MOBILE_DRAWER_TRANSITION,
           zIndex: DRAWER_Z_INDEX,
-          /** A closed drawer is translated off-screen, which hides it without
-           *  taking it out of the paint: iOS Safari gives the scroller inside it
-           *  a composited layer of its own, and that layer can stay behind at
-           *  the position it held while open — the Projects and Pinned rows
-           *  painting over the conversation with the drawer's own header and
-           *  bottom bar correctly gone. Not painting a closed drawer removes
-           *  what the artifact is made of, and skips the conversation list's
-           *  paint for as long as the drawer is shut.
-           *
-           *  `visibility` and not `display`: the virtualized chats list
-           *  measures this subtree, and an undisplayed one reports no viewport
-           *  to virtualize against. The travel stays painted — `isSliding`
-           *  covers the frames Recoil's deferred flip leaves uncovered at both
-           *  ends, and a drag claims painting inline (see useDrawerSwipe). */
-          visibility: expanded || isSliding ? undefined : 'hidden',
+          /** Why a closed drawer is not painted at all: see DRAWER_UNPAINTED.
+           *  The travel stays painted — `isSliding` covers the frames Recoil's
+           *  deferred flip leaves uncovered at both ends, and a drag claims
+           *  painting inline (see useDrawerSwipe), which hands this value back
+           *  explicitly because React cannot re-assert it on its own. */
+          visibility: expanded || isSliding ? undefined : DRAWER_UNPAINTED,
         }}
         inert={!expanded ? '' : undefined}
       >

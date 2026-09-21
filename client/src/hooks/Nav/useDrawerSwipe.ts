@@ -7,6 +7,7 @@ import {
   MOBILE_PANE_SHIFT,
   MOBILE_SCRIM_ID,
   SIDEBAR_TRANSITION,
+  DRAWER_UNPAINTED,
 } from '~/components/UnifiedSidebar/constants';
 
 /** Horizontal travel before the gesture claims the touch (also the tap filter). */
@@ -241,10 +242,13 @@ const releaseInlineStyles = (drawer: HTMLElement, pane: HTMLElement, paneOpen: b
   const settled = settledTransitions();
   drawer.style.transform = '';
   drawer.style.willChange = '';
-  /** Painting is the drawer's declarative state again: a closed drawer is not
-   *  painted at all (see UnifiedSidebar), and every travel that reaches here
-   *  claimed it back inline for the slide. */
-  drawer.style.visibility = '';
+  /** Re-asserted rather than cleared, for the same reason as the width below:
+   *  a closed drawer is not painted (see DRAWER_UNPAINTED), React has already
+   *  written that value by the time this runs — the travel window closes at
+   *  TRANSITION_MS and this runs a buffer later — and clearing the property
+   *  would drop it while React believes its unchanged prop is still applied.
+   *  The drawer would be painted again, closed, which is the whole artifact. */
+  drawer.style.visibility = paneOpen ? '' : DRAWER_UNPAINTED;
   /** The close pins a measured width, and clearing would drop the declarative
    * value with it: React will not re-assert a style prop whose value it has
    * not changed. */
