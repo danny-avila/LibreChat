@@ -1,12 +1,5 @@
 import { Types } from 'mongoose';
 import {
-  createMethods,
-  getTransactionSupport,
-  logger,
-  RoleBits,
-  runAfterTransaction,
-} from '@librechat/data-schemas';
-import {
   CacheKeys,
   AccessRoleIds,
   PermissionBits,
@@ -14,6 +7,14 @@ import {
   PrincipalType,
   ResourceType,
 } from 'librechat-data-provider';
+import {
+  createMethods,
+  getTransactionSupport,
+  logger,
+  RoleBits,
+  runAfterTransaction,
+  permissionBitSupersets,
+} from '@librechat/data-schemas';
 import type { AllMethods, IAclEntry } from '@librechat/data-schemas';
 import type { ClientSession, DeleteResult } from 'mongoose';
 import type { TPrincipal } from 'librechat-data-provider';
@@ -33,6 +34,28 @@ export type BulkPermissionUpdateResult = {
   insightsChanges: InsightsPermissionChange[];
   errors: Array<{ principal: BulkPrincipal; error: string }>;
 };
+
+/**
+ * Partition the schema-valid masks by the bits a role-only edit must preserve.
+ * A guarded $set tests those bits at write time, not against the earlier ACL snapshot.
+ * The current enum yields two groups (with/without Insights); new permission bits
+ * automatically participate through the same bounded enumeration as ACL reads.
+ */
+let rolePermissionMasks: Map<number, number[]> | undefined;
+function getRolePermissionMasks(): Map<number, number[]> {
+  if (rolePermissionMasks) {
+    return rolePermissionMasks;
+  }
+  const groups = new Map<number, number[]>();
+  for (const mask of permissionBitSupersets(0)) {
+    const preserved = mask & ~RoleBits.OWNER;
+    const masks = groups.get(preserved) ?? [];
+    masks.push(mask);
+    groups.set(preserved, masks);
+  }
+  rolePermissionMasks = groups;
+  return groups;
+}
 
 export class AccessControlService {
   private _dbMethods: AllMethods;
@@ -572,14 +595,6 @@ export class AccessControlService {
               grantedBy,
               grantedAt,
             },
-            ...(preserveInsights && {
-              $bit: {
-                permBits: {
-                  or: role.permBits & RoleBits.OWNER,
-                  and: ~(RoleBits.OWNER & ~role.permBits),
-                },
-              },
-            }),
             $setOnInsert: {
               principalType: principal.type,
               resourceType,
@@ -591,9 +606,48 @@ export class AccessControlService {
             },
           };
           const bulkWriteIndex = bulkWrites.length;
-          bulkWrites.push({
-            updateMany: { filter: query, update, upsert: true },
-          });
+          if (preserveInsights) {
+            for (const [preserved, masks] of getRolePermissionMasks()) {
+              bulkWrites.push({
+                updateMany: {
+                  filter: {
+                    ...query,
+                    ...(preserved === 0
+                      ? { $or: [{ permBits: { $in: masks } }, { permBits: { $exists: false } }] }
+                      : { permBits: { $in: masks } }),
+                  },
+                  update: {
+                    $set: {
+                      ...update.$set,
+                      permBits: preserved | (role.permBits & RoleBits.OWNER),
+                    },
+                  },
+                },
+              });
+            }
+            /**
+             * Never upsert a mask-filtered write: a nonmatching existing ACL is
+             * not a missing principal. Insert last using identity alone, with no
+             * Insights inherited from a stale (possibly deleted) ACL snapshot.
+             */
+            bulkWrites.push({
+              updateOne: {
+                filter: query,
+                update: {
+                  $setOnInsert: {
+                    ...update.$setOnInsert,
+                    ...update.$set,
+                    permBits: role.permBits & RoleBits.OWNER,
+                  },
+                },
+                upsert: true,
+              },
+            });
+          } else {
+            bulkWrites.push({
+              updateMany: { filter: query, update, upsert: true },
+            });
+          }
           results.granted.push({
             type: principal.type,
             id: principal.id,
