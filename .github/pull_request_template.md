@@ -13,6 +13,12 @@ Briefly explain:
 - What does this PR change?
 - What is the resulting behavior?
 
+Write each paragraph as one unbroken line and let the browser wrap it. A single
+newline inside a paragraph renders as a line break here, so a hand-wrapped
+paragraph arrives as ragged short lines that never reflow to the reader's window.
+That holds for every section below, and for list items and table cells too. The
+only intentional breaks are the blank lines between paragraphs.
+
 Keep this focused on the final state of the code rather than the history of the
 branch or previous review iterations. Naming the merged pull request that
 introduced a regression is the exception: that is history the reader needs.
