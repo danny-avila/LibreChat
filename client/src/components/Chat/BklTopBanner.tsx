@@ -49,7 +49,7 @@ export default function BklTopBanner() {
           <div className="mt-0.5 text-amber-800 dark:text-amber-200">
             <p>
               현재 본 서비스는 베타 서비스 단계이며,{' '}
-              <span className="font-bold underline">2023.06.30 ~ 2026.07.31 3개년 종결 사건</span>
+              <span className="font-bold underline">2022.06.30 ~ 2026.07.31 4개년 종결 사건</span>
               에 한해 검색이 제공됩니다.
             </p>
             <p className="mt-0.5 sm:mt-0">
