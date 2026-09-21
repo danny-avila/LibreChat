@@ -148,15 +148,14 @@ export default function useCodeWorkspace(
   const { data: startupConfig } = useGetStartupConfig();
   const supportsEnvironmentDecisions =
     startupConfig?.codeEnvironmentDecisionVersion === CODE_ENVIRONMENT_DECISION_VERSION;
-  const advertisedMoveVersion = startupConfig?.codeEnvironmentMoveVersion;
-  /** The API advertises the highest replacement protocol it implements, so a replica still serving
-   *  v1 keeps the move it always supported; only attaching and detaching wait for v2, which a v1
-   *  replica refuses as `locked` and `invalid`. */
   const supportsEnvironmentMoves =
-    advertisedMoveVersion === CODE_ENVIRONMENT_MOVE_VERSION ||
-    advertisedMoveVersion === CODE_ENVIRONMENT_TRANSITION_VERSION;
+    startupConfig?.codeEnvironmentMoveVersion === CODE_ENVIRONMENT_MOVE_VERSION;
+  /** Attaching an environment and leaving attached execution are advertised beside the move rather
+   *  than as a higher move version, so a deployment mid-rollout keeps serving the move to a client
+   *  that predates them, and a client that has them never offers a replica an attach it refuses as
+   *  `locked` or an empty target set it calls `invalid`. */
   const supportsEnvironmentTransitions =
-    advertisedMoveVersion === CODE_ENVIRONMENT_TRANSITION_VERSION;
+    startupConfig?.codeEnvironmentTransitionVersion === CODE_ENVIRONMENT_TRANSITION_VERSION;
   const preferences = useWorkspacePreferences(conversation?.agent_id);
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
   const canRunCode = useHasAccess({

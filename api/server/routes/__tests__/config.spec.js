@@ -381,7 +381,9 @@ describe('GET /api/config', () => {
       const response = await request(app).get('/api/config');
 
       expect(response.body.codeEnvironmentDecisionVersion).toBeUndefined();
-      expect(response.body.codeEnvironmentMoveVersion).toBe(2);
+      expect(response.body.codeEnvironmentMoveVersion).toBe(1);
+      /** Attach and detach ride the same policy on their own number. */
+      expect(response.body.codeEnvironmentTransitionVersion).toBe(2);
     });
 
     it('advertises code environment decisions only after deployment-wide activation', async () => {

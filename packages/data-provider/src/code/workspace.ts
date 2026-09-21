@@ -3,20 +3,16 @@ export const CODE_WORKSPACE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 export const CODE_WORKSPACE_MAX_COUNT = 32;
 /** API/client protocol for immutable conversation-owned environment decisions. */
 export const CODE_ENVIRONMENT_DECISION_VERSION = 1 as const;
-/**
- * API/client protocol for an owner's explicit replacement of a sealed environment decision. A
- * server advertises the highest it implements, and a client keeps every lower capability working,
- * so a mixed-version deployment never loses a transition the replica already serves.
- *
- * Version 1 carries a move between attached environments. Version 2 adds attaching an environment
- * to a chat that recorded running without one, and leaving attached execution behind; a v1 replica
- * refuses the first as `locked` and the second as `invalid`, so only v2 may offer them.
- */
+/** API/client protocol for an owner's explicit move of a sealed environment decision. */
 export const CODE_ENVIRONMENT_MOVE_VERSION = 1 as const;
+/**
+ * API/client protocol for the other two replacements of a sealed decision: attaching an
+ * environment to a chat that recorded running without one, and leaving attached execution behind.
+ * Advertised beside the move version rather than replacing it, so a client that predates this
+ * capability keeps the move it already had while a deployment rolls out, and a client that has it
+ * never offers an attach a replica would refuse as `locked` or a detach it would call `invalid`.
+ */
 export const CODE_ENVIRONMENT_TRANSITION_VERSION = 2 as const;
-export type CodeEnvironmentMoveVersion =
-  | typeof CODE_ENVIRONMENT_MOVE_VERSION
-  | typeof CODE_ENVIRONMENT_TRANSITION_VERSION;
 export const CODE_WORKSPACE_OPERATIONS = [
   'read_file',
   'search_text',

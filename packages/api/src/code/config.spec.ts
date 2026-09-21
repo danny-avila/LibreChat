@@ -5,6 +5,7 @@ import {
   mergeAccessibleCodeEnvironments,
   resolveCodeEnvironmentDecisionVersion,
   resolveCodeEnvironmentMoveVersion,
+  resolveCodeEnvironmentTransitionVersion,
 } from './config';
 
 describe('resolveCodeEnvironmentDecisionVersion', () => {
@@ -31,10 +32,21 @@ describe('resolveCodeEnvironmentMoveVersion', () => {
     }) as unknown as AppConfig;
 
   it('advertises moves only where the effective policy enables them', () => {
-    /* Version 2 is the protocol that adds attaching and detaching to the existing move; a client
-     * must see it before offering either, so this pins the advertised number. */
-    expect(resolveCodeEnvironmentMoveVersion(withMoves({ enabled: true }))).toBe(2);
+    expect(resolveCodeEnvironmentMoveVersion(withMoves({ enabled: true }))).toBe(1);
   });
+
+  /* Attaching and leaving ship under the same policy as the move but on their own number, so a
+   * client that predates them keeps reading a move version it understands. */
+  it('advertises attach and detach separately from the move', () => {
+    expect(resolveCodeEnvironmentTransitionVersion(withMoves({ enabled: true }))).toBe(2);
+  });
+
+  it.each([undefined, {}, { enabled: false }])(
+    'keeps attach and detach off wherever moves are off: %j',
+    (conversationMoves) => {
+      expect(resolveCodeEnvironmentTransitionVersion(withMoves(conversationMoves))).toBeUndefined();
+    },
+  );
 
   it.each([undefined, {}, { enabled: false }])(
     'keeps sealed decisions immovable by default: %j',

@@ -483,7 +483,8 @@ describe('useCodeWorkspace', () => {
     beforeEach(() => {
       mockStartupConfig.mockReturnValue({
         codeEnvironmentDecisionVersion: 1,
-        codeEnvironmentMoveVersion: 2,
+        codeEnvironmentMoveVersion: 1,
+        codeEnvironmentTransitionVersion: 2,
       });
     });
 
@@ -568,8 +569,12 @@ describe('useCodeWorkspace', () => {
     });
 
     it.each([
-      { codeEnvironmentDecisionVersion: 1, codeEnvironmentMoveVersion: 2 },
-      { codeEnvironmentMoveVersion: 2 },
+      {
+        codeEnvironmentDecisionVersion: 1,
+        codeEnvironmentMoveVersion: 1,
+        codeEnvironmentTransitionVersion: 2,
+      },
+      { codeEnvironmentMoveVersion: 1, codeEnvironmentTransitionVersion: 2 },
     ])('carries over a sealed workspace the agents still use: %j', (startupConfig) => {
       mockStartupConfig.mockReturnValue(startupConfig);
       const primary = {
@@ -831,7 +836,11 @@ describe('useCodeWorkspace', () => {
       { name: 'the API cannot move chats', config: { codeEnvironmentDecisionVersion: 1 } },
       {
         name: 'no machine is reachable',
-        config: { codeEnvironmentDecisionVersion: 1, codeEnvironmentMoveVersion: 2 },
+        config: {
+          codeEnvironmentDecisionVersion: 1,
+          codeEnvironmentMoveVersion: 1,
+          codeEnvironmentTransitionVersion: 2,
+        },
         status: { isLoading: false, isError: true },
       },
     ])('still reports a chat running without a workspace when $name', ({ config, status }) => {
@@ -872,7 +881,13 @@ describe('useCodeWorkspace', () => {
      * decision its owner never made: nothing to select, and Send disabled. */
     it.each([
       { support: { codeEnvironmentDecisionVersion: 1 } },
-      { support: { codeEnvironmentDecisionVersion: 1, codeEnvironmentMoveVersion: 2 } },
+      {
+        support: {
+          codeEnvironmentDecisionVersion: 1,
+          codeEnvironmentMoveVersion: 1,
+          codeEnvironmentTransitionVersion: 2,
+        },
+      },
     ])('lets a saved chat with several workspaces choose one', ({ support }) => {
       mockStartupConfig.mockReturnValue(support);
       mockStatus()[0].data.workspaces.push({ id: 'project-b', name: 'Project B' });
