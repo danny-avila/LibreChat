@@ -807,7 +807,7 @@ describe('Skill CRUD methods', () => {
     expect(filtered).toEqual([canonical]);
   });
 
-  it('deleteSkill prunes agent allowlists even when skill file cleanup fails', async () => {
+  it('deleteSkill remains retryable after skill file cleanup fails', async () => {
     const { skill } = await methods.createSkill(makeSkillInput({ name: 'flaky-files' }));
     const Agent = mongoose.models.Agent;
     const agent = await Agent.create(makeAgentDoc([skill._id.toString()]));
@@ -816,9 +816,21 @@ describe('Skill CRUD methods', () => {
       .spyOn(SkillFile, 'deleteMany')
       .mockRejectedValueOnce(new Error('transient storage failure'));
     try {
-      await expect(methods.deleteSkill(skill._id.toString())).rejects.toThrow(
-        'transient storage failure',
-      );
+      const first = await methods.deleteSkill(skill._id.toString());
+      expect(first).toEqual({
+        deleted: true,
+        skillAbsent: true,
+        cleanupComplete: false,
+        failedCleanupSteps: ['skill_files'],
+      });
+
+      const retry = await methods.deleteSkill(skill._id.toString());
+      expect(retry).toEqual({
+        deleted: false,
+        skillAbsent: true,
+        cleanupComplete: true,
+        failedCleanupSteps: [],
+      });
     } finally {
       deleteManySpy.mockRestore();
     }

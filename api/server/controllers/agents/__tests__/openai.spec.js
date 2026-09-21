@@ -1355,7 +1355,10 @@ describe('OpenAIChatCompletionController', () => {
       const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
       const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 
-      req.config.endpoints.agents.backgroundTasks = { ordinaryToolCancellation: true };
+      req.config.endpoints.agents.backgroundTasks = {
+        ordinaryToolCancellation: true,
+        completionResultMaxChars: 4096,
+      };
       await OpenAIChatCompletionController(req, res);
 
       const [initializeParams, dbMethods] = initializeAgent.mock.calls.at(-1);
@@ -1384,6 +1387,7 @@ describe('OpenAIChatCompletionController', () => {
 
       const toolExecuteOptions = createToolExecuteHandler.mock.calls.at(-1)[0];
       expect(toolExecuteOptions.ordinaryToolCancellation).toBe(true);
+      expect(toolExecuteOptions.backgroundCompletionResultMaxChars).toBe(4096);
       expect(toolExecuteOptions.runSignal).toBe(mockExecution.signal);
       expect(toolExecuteOptions.foregroundRunId).toBe(initializeParams.requestBody.messageId);
       const effectiveSignal = new AbortController().signal;

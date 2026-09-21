@@ -143,6 +143,8 @@ cache: true
 # Custom interface configuration
 interface:
   customWelcome: 'Welcome to LibreChat! Enjoy your experience.'
+  # Minimum interval between syntax-highlighting passes while streamed code changes (default: 300 ms)
+  # codeHighlightThrottleMs: 300
   # Enable/disable file search as a chatarea selection (default: true)
   # Note: This setting does not disable the Agents File Search Capability.
   # To disable the Agents Capability, see the Agents Endpoint configuration instead.
@@ -259,6 +261,12 @@ interface:
   #   # carries system prompts, agent instructions and tool definitions, which a
   #   # user chatting with a shared agent cannot otherwise see.
   #   showInputOutput: false
+  #   # Name the tools of each tool round from the round's own record. This adds
+  #   # requests to Langfuse per listed page, and Langfuse returns each round's full
+  #   # input and output to serve them, though only the tool names are kept and sent
+  #   # on; arguments and results stay behind showInputOutput. When off, a round is
+  #   # named only where the conversation's messages can be matched to the trace.
+  #   showToolNames: false
   #   # Observations read per request (1-10000); older records load on demand.
   #   maxRecords: 1000
   #   # Characters kept from each input, output and metadata value (1-1000000).
@@ -1111,6 +1119,10 @@ endpoints:
 #     tokens: 2000 # Also preserve up to this many recent tokens
 
 # fileConfig:
+#   skills:
+#     # Bound parallel storage deletes after a failed archive import (default: 8).
+#     # Set to 1 for serial cleanup on storage backends that require it.
+#     importCleanupConcurrency: 8
 #   # Store best-effort text for inferred tool-routed message attachments. On each turn,
 #   # deliver it only if no available tool can read the type. Off by default; also configurable
 #   # under endpoints.default or a provider/custom endpoint name. Explicit destinations stand.

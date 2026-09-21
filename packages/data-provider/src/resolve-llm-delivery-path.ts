@@ -381,25 +381,25 @@ export function hasToolResourceProvisioning(file: TurnDeliveryFile, toolResource
 /**
  * Whether a tool this turn runs can read a file of this type.
  *
- * Passing the record asks the stricter question a delivery decision needs: a tool serves a file
- * only once it holds it. A file tool being enabled is not the same as the file having reached
- * it, and an upload that named no destination is filed under no tool at all, so judging the
- * tool set alone reads an empty vector store as a reader.
+ * Passing the record asks the stricter question a delivery decision needs where a tool serves
+ * only what it already holds. File search reads the vector store, and an upload that named no
+ * destination is filed under no tool at all, so an enabled search tool is a reader only once
+ * the record shows the store holds the file. Run Code needs no copy in advance: its first call
+ * uploads every attachment it can read to the sandbox, so enabling it is enough. Requiring a
+ * copy there would hand the file's text to the prompt on every turn before the first code run,
+ * and a turn that refuses that text never runs code, so the file would never become held.
  */
 export function hasTurnFileConsumer(
   mimeType: string,
   consumers: TurnFileConsumers,
   file?: TurnDeliveryFile,
 ): boolean {
-  const holds = (toolResource: EToolResources): boolean =>
-    file == null || hasToolResourceProvisioning(file, toolResource);
+  const searchHolds = file == null || hasToolResourceProvisioning(file, EToolResources.file_search);
   return (
-    (consumers.executeCode &&
-      canToolResourceConsume(EToolResources.execute_code, mimeType) &&
-      holds(EToolResources.execute_code)) ||
+    (consumers.executeCode && canToolResourceConsume(EToolResources.execute_code, mimeType)) ||
     (consumers.fileSearch &&
       canToolResourceConsume(EToolResources.file_search, mimeType) &&
-      holds(EToolResources.file_search))
+      searchHolds)
   );
 }
 
@@ -454,15 +454,15 @@ export function hasInferredLLMDeliveryPath(file: TurnDeliveryFile): boolean {
  * A record predating routing and a destination the user chose keep what they stored. An
  * inferred route re-resolves against the endpoint handling the turn. A `none` route leaves
  * the file for a tool; where the endpoint enables `textFallbackWithoutTools` and no tool this
- * turn runs both reads the file and already holds it, the text extracted at upload is delivered
- * rather than the file reaching nothing. Consumers left undefined are unknown and not judged, as
- * in {@link resolveUploadDestination}.
+ * turn runs can read the file, the text extracted at upload is delivered rather than the file
+ * reaching nothing. Consumers left undefined are unknown and not judged, as in
+ * {@link resolveUploadDestination}.
  *
- * Holding the file is asked of the record rather than of the tool set, because the two disagree
- * for the upload that needs the fallback most: one that named no destination is filed under no
- * tool, so enabling file search would otherwise withhold the text for a vector store that never
- * received the file, leaving the attachment readable by nothing. Deferred provisioning still
- * fills that store on first use, which delivering the text does not prevent.
+ * For file search, reading is asked of the record rather than of the tool set, because the two
+ * disagree for the upload that needs the fallback most: one that named no destination is filed
+ * under no tool, so enabling file search would otherwise withhold the text for a vector store
+ * that never received the file. Run Code is judged by the tool set: see
+ * {@link hasTurnFileConsumer}.
  */
 export function resolveTurnLLMDeliveryPath(
   routing: Partial<TurnDeliveryRouting> | undefined,

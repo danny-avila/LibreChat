@@ -227,6 +227,99 @@ describe('MCPConnectionFactory', () => {
     (getTenantId as jest.Mock).mockReturnValue(undefined);
   });
 
+  describe('Expired flow result recovery', () => {
+    const expired = (): MCPOAuthTokens => ({
+      access_token: 'expired-callback',
+      token_type: 'Bearer',
+      obtained_at: Date.now(),
+      expires_at: Date.now() - 1000,
+      credential_set_id: 'persisted-generation',
+    });
+    const factory = (signal?: AbortSignal) =>
+      new InspectableMCPConnectionFactory(
+        {
+          serverName: 'test-server',
+          serverConfig: { type: 'sse', url: 'https://api.example.com' },
+        },
+        {
+          useOAuth: true,
+          user: mockUser,
+          flowManager: mockFlowManager,
+          signal,
+          tokenMethods: {
+            findToken: jest.fn(),
+            createToken: jest.fn(),
+            updateToken: jest.fn(),
+            deleteTokens: jest.fn(),
+          },
+        },
+      );
+
+    it.each(['getLeaseGeneration', 'acquireLease'] as const)(
+      'does not turn a %s outage into missing authorization',
+      async (operation) => {
+        mockFlowManager.createFlowWithHandler.mockResolvedValue(expired());
+        mockFlowManager[operation].mockRejectedValue(new Error('Redis unavailable'));
+        await expect(factory().getOAuthTokensForTest()).rejects.toMatchObject({
+          name: 'MCPTokenStorageUnavailableError',
+        });
+        expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledTimes(1);
+        expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+      },
+    );
+
+    it('defers when teardown supersedes the publication fence', async () => {
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(expired());
+      mockFlowManager.acquireLease.mockResolvedValue(null);
+      await expect(factory().getOAuthTokensForTest()).rejects.toMatchObject({
+        name: 'MCPTokenStorageUnavailableError',
+      });
+      expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledTimes(1);
+    });
+
+    it('preserves transient refresh failure instead of prompting again', async () => {
+      const failure = Object.assign(new Error('Provider unavailable'), {
+        name: 'MCPTokenRefreshUnavailableError',
+      });
+      mockFlowManager.createFlowWithHandler
+        .mockResolvedValueOnce(expired())
+        .mockRejectedValueOnce(failure);
+      await expect(factory().getOAuthTokensForTest()).rejects.toBe(failure);
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+    });
+
+    it('does not loop when the refreshed result is also expired', async () => {
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(expired());
+      await expect(factory().getOAuthTokensForTest()).rejects.toMatchObject({
+        name: 'MCPTokenRefreshUnavailableError',
+      });
+      expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledTimes(2);
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+    });
+
+    it('releases the publication fence without redeeming after caller cancellation', async () => {
+      const controller = new AbortController();
+      const cancelled = new Error('Caller stopped');
+      const release = jest.fn(async () => {
+        controller.abort(cancelled);
+      });
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(expired());
+      mockFlowManager.acquireLease.mockResolvedValue({ generation: 0, release });
+      await expect(factory(controller.signal).getOAuthTokensForTest()).rejects.toBe(cancelled);
+      expect(release).toHaveBeenCalledTimes(1);
+      expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledTimes(1);
+      expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+    });
+
+    it('does not add a fence or another read to usable flow results', async () => {
+      const current = { ...expired(), expires_at: Date.now() + 60000 };
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(current);
+      await expect(factory().getOAuthTokensForTest()).resolves.toEqual(current);
+      expect(mockFlowManager.acquireLease).not.toHaveBeenCalled();
+      expect(mockFlowManager.createFlowWithHandler).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('cancels pending retry backoff when the connection deadline expires', async () => {
     jest.useFakeTimers();
     try {
@@ -2154,6 +2247,117 @@ describe('MCPConnectionFactory', () => {
       // returnOnOAuth interactive path must NOT trigger when silent refresh succeeds.
       expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
       expect(oauthOptions.oauthStart).not.toHaveBeenCalled();
+    });
+
+    describe('when the server rejects the tokens a silent refresh issued', () => {
+      const renewedTokens: MCPOAuthTokens = {
+        access_token: 'renewed-access',
+        refresh_token: 'refresh123',
+        token_type: 'Bearer',
+        obtained_at: Date.now(),
+        credential_set_id: 'grant-1',
+      };
+      const challenge = {
+        serverUrl: 'https://api.example.com',
+        rejectedCredentialSetId: 'grant-1',
+      };
+
+      async function captureEstablishmentHandler(oauthStart: jest.Mock) {
+        let oauthRequiredHandler: ((data: Record<string, unknown>) => Promise<void>) | undefined;
+        mockConnectionInstance.on.mockImplementation((event, handler) => {
+          if (event === 'oauthRequired') {
+            oauthRequiredHandler = handler as (data: Record<string, unknown>) => Promise<void>;
+          }
+          return mockConnectionInstance;
+        });
+        mockConnectionInstance.isConnected.mockResolvedValue(false);
+        mockMCPOAuthHandler.generateFlowId.mockReturnValue('flow123');
+        mockMCPTokenStorage.forceRefreshTokens.mockResolvedValue(renewedTokens);
+        mockMCPOAuthHandler.initiateOAuthFlow.mockResolvedValue({
+          authorizationUrl: 'https://auth.example.com',
+          flowId: 'flow123',
+          flowMetadata: {
+            serverName: 'test-server',
+            userId: 'user123',
+            serverUrl: 'https://api.example.com',
+            state: 'random-state',
+          },
+        });
+        mockFlowManager.getFlowState.mockResolvedValue(null);
+        mockFlowManager.createFlow.mockReturnValue(new Promise(() => {}));
+
+        try {
+          await MCPConnectionFactory.create(
+            {
+              serverName: 'test-server',
+              serverConfig: {
+                ...mockServerConfig,
+                url: 'https://api.example.com',
+                type: 'sse' as const,
+              } as t.SSEOptions,
+            },
+            {
+              useOAuth: true,
+              user: mockUser,
+              flowManager: mockFlowManager,
+              returnOnOAuth: true,
+              oauthStart,
+              tokenMethods: {
+                findToken: jest.fn(),
+                createToken: jest.fn(),
+                updateToken: jest.fn(),
+                deleteTokens: jest.fn(),
+              },
+            },
+          );
+        } catch {
+          // Expected: the mocked connection never reports connected
+        }
+        return oauthRequiredHandler!;
+      }
+
+      it('starts interactive OAuth instead of refreshing the rejected renewal again', async () => {
+        const oauthStart = jest.fn();
+        const handler = await captureEstablishmentHandler(oauthStart);
+
+        await handler(challenge);
+        await handler(challenge);
+
+        expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledTimes(1);
+        expect(mockMCPTokenStorage.isCurrentAccessToken).toHaveBeenCalledWith(
+          expect.objectContaining({ accessToken: 'renewed-access', credentialSetId: 'grant-1' }),
+        );
+        expect(mockConnectionInstance.emit).toHaveBeenCalledWith('oauthHandled', 'silent-refresh');
+        expect(oauthStart).toHaveBeenCalledWith('https://auth.example.com');
+        expect(mockConnectionInstance.emit).toHaveBeenCalledWith(
+          'oauthFailed',
+          expect.objectContaining({ message: 'OAuth flow initiated - return early' }),
+        );
+      });
+
+      it('refreshes again when another request replaced the renewal', async () => {
+        const oauthStart = jest.fn();
+        const handler = await captureEstablishmentHandler(oauthStart);
+        mockMCPTokenStorage.isCurrentAccessToken.mockResolvedValue(false);
+
+        await handler(challenge);
+        await handler(challenge);
+
+        expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledTimes(2);
+        expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
+        expect(oauthStart).not.toHaveBeenCalled();
+      });
+
+      it('refreshes a credential set the renewal did not issue', async () => {
+        const oauthStart = jest.fn();
+        const handler = await captureEstablishmentHandler(oauthStart);
+
+        await handler(challenge);
+        await handler({ ...challenge, rejectedCredentialSetId: 'grant-2' });
+
+        expect(mockMCPTokenStorage.forceRefreshTokens).toHaveBeenCalledTimes(2);
+        expect(oauthStart).not.toHaveBeenCalled();
+      });
     });
 
     it('should fall back to interactive OAuth when silent refresh throws unexpectedly', async () => {

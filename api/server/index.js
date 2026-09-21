@@ -498,7 +498,11 @@ const startServer = async () => {
       if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {
         memoryDiagnostics.start();
       }
-      await initializeAgentTriggerService({ address: server.address() });
+      await initializeAgentTriggerService({
+        address: server.address(),
+        completionResultBatchSize:
+          appConfig?.endpoints?.agents?.backgroundTasks?.completionResultBatchSize,
+      });
       const scheduleEngineArmed = (await initializeScheduleEngine()) != null;
       scheduleEngineState = scheduleEngineArmed ? 'armed' : 'unavailable';
       if (!scheduleEngineArmed) {

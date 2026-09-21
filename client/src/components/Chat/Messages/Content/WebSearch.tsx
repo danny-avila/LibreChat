@@ -19,6 +19,7 @@ import type {
 } from 'librechat-data-provider';
 import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
 import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
+import { collectSources, getUniqueDomainSources } from './sources';
 import { StackedFavicons } from '~/components/Web/Sources';
 import { toolPanelSpacingClassName } from './disclosure';
 import parseJsonField from './Parts/parseJsonField';
@@ -36,43 +37,6 @@ type ProgressKeys =
   | 'com_ui_web_search_reading';
 
 const MAX_VISIBLE_FAVICONS = 3;
-
-function collectSources(results: Record<string, SearchResultData>): ValidSource[] {
-  const sourceMap = new Map<string, ValidSource>();
-  for (const result of Object.values(results)) {
-    if (!result) {
-      continue;
-    }
-    result.organic?.forEach((s) => {
-      if (s.link) {
-        sourceMap.set(s.link, s);
-      }
-    });
-    result.topStories?.forEach((s) => {
-      if (s.link) {
-        sourceMap.set(s.link, s);
-      }
-    });
-  }
-  return Array.from(sourceMap.values());
-}
-
-function getUniqueDomainSources(sources: ValidSource[], max: number): ValidSource[] {
-  const seen = new Set<string>();
-  const result: ValidSource[] = [];
-  for (const source of sources) {
-    const domain = getCleanDomain(source.link);
-    if (seen.has(domain)) {
-      continue;
-    }
-    seen.add(domain);
-    result.push(source);
-    if (result.length >= max) {
-      break;
-    }
-  }
-  return result;
-}
 
 function SourceFaviconStack({ sources }: { sources: ValidSource[] }) {
   const visible = getUniqueDomainSources(sources, MAX_VISIBLE_FAVICONS);

@@ -226,7 +226,7 @@ const db = require('~/models');
 
 const loadAgent = (params) =>
   loadAgentFn(params, {
-    getAgent: db.getAgent,
+    getAgent: db.getAgentWithVersionCount,
     getMCPServerTools,
     getAccessibleMCPServers,
   });
@@ -1986,6 +1986,15 @@ class AgentClient extends BaseClient {
         this.options.req?.config?.filters,
         this.options.req?.config?.messageFilter?.pii,
       )
+    );
+  }
+
+  /** Attachments alone defer only the message, so a new conversation still gets its row when
+   * the run starts, as it did before that deferral. A content policy holds back every write. */
+  shouldSeedDeferredConversation() {
+    return !hasModelBoundContentProtection(
+      this.options.req?.config?.filters,
+      this.options.req?.config?.messageFilter?.pii,
     );
   }
 

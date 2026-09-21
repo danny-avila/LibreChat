@@ -6314,6 +6314,26 @@ describe('AgentClient - titleConvo', () => {
       expect(client.shouldDeferUserMessagePersistence()).toBe(true);
     });
 
+    it('still seeds the conversation row when only attachments defer the message', () => {
+      client.modelBoundCurrentFiles = [makeTextFile('pending', 'pending.txt', 'context')];
+
+      expect(client.shouldDeferUserMessagePersistence()).toBe(true);
+      expect(client.shouldSeedDeferredConversation()).toBe(true);
+    });
+
+    it('holds back the conversation row while a content policy defers every write', () => {
+      client.modelBoundCurrentFiles = [makeTextFile('pending', 'pending.txt', 'context')];
+      mockReq.config.messageFilter = {
+        pii: {
+          starterPatterns: [],
+          customPatterns: [{ id: 'secret', label: 'secret', regex: 'SECRET-[A-Z]+' }],
+        },
+      };
+
+      expect(client.shouldDeferUserMessagePersistence()).toBe(true);
+      expect(client.shouldSeedDeferredConversation()).toBe(false);
+    });
+
     it('keeps repeated lazy scoped-text admission cumulative across resolutions', () => {
       mockReq.config.fileConfig = { fileContextCharLimit: 1_000_000 };
       const repeated = makeTextFile('lazy-context', 'lazy.txt', 'x'.repeat(600_000));

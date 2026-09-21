@@ -118,12 +118,21 @@ describe('applyTurnDelivery', () => {
     expect(applyTurnDelivery(files, { agent, config, consumers: runsCode })).toBe(files);
   });
 
-  it('delivers text for a file the tool that would read it has yet to receive', () => {
-    /* An upload that named no destination is filed under no tool, so the enabled tool alone is
-     * not what serves it: withholding the text on that basis left it readable by nothing. */
-    expect(applyTurnDelivery([csv], { agent, config, consumers: runsCode })).toEqual([
+  it('delivers text for a file File Search has yet to receive', () => {
+    /* An upload that named no destination is filed under no tool, so an enabled search tool
+     * alone is not what serves it: withholding the text on that basis left it readable by
+     * nothing. */
+    const searchesFiles: TurnFileConsumers = { executeCode: false, fileSearch: true };
+    expect(applyTurnDelivery([csv], { agent, config, consumers: searchesFiles })).toEqual([
       { ...csv, llmDeliveryPath: 'text' },
     ]);
+  });
+
+  it('leaves a file Run Code can read with Run Code before the sandbox holds it', () => {
+    /* Run Code uploads the file on its first call. Delivering the text instead would count it
+     * toward the turn's limits until that call, and a refused turn never makes it. */
+    const files = [csv];
+    expect(applyTurnDelivery(files, { agent, config, consumers: runsCode })).toBe(files);
   });
 
   it('marks nothing where the endpoint has not enabled the fallback', () => {

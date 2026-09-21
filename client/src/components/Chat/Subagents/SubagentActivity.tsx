@@ -359,6 +359,7 @@ export function SubagentActivityContent({
         isSubmitting={isSubmitting}
         showThinking={showThinking}
         isLatestMessage={isSubmitting}
+        foldLiveActivity={false}
       />
     );
   }

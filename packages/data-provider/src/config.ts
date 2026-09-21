@@ -22,6 +22,9 @@ import {
   MIN_BALANCE_RESERVATION_TTL_MS,
   DEFAULT_BALANCE_RESERVATION_TTL_MS,
 } from './balance';
+
+export const AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_DEFAULT = 24 * 1024;
+export const AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_HARD_MAX = 64 * 1024;
 import {
   MAX_SUBAGENTS,
   MAX_SUBAGENTS_CEILING,
@@ -1160,6 +1163,12 @@ const codeEnvironmentPermissionFieldSchema = z
 export const CODE_ENVIRONMENT_COMMAND_TIMEOUT_DEFAULT_MS = 30_000;
 /** Protocol-level ceiling; deployments may only lower this value. */
 export const CODE_ENVIRONMENT_COMMAND_TIMEOUT_HARD_MAX_MS = 5 * 60_000;
+/**
+ * Client retry horizon across Code API admission windows. Also the hard cap:
+ * deployments may only lower it. `0` disables client retries, not the server's
+ * initial admission wait or an already-admitted operation's execution budget.
+ */
+export const CODE_ENVIRONMENT_QUEUE_WAIT_DEFAULT_MS = 5 * 60_000;
 
 /**
  * Typed user-tunable surface for one attached code environment. Omitted fields
@@ -1184,6 +1193,16 @@ export const codeEnvironmentUserConfigSchema = z
           .int()
           .min(1)
           .max(CODE_ENVIRONMENT_COMMAND_TIMEOUT_HARD_MAX_MS)
+          .optional(),
+        /** Client retry horizon for capacity expirations, shared by preview/edit.
+         * Omission keeps five minutes; `0` makes each required operation try once.
+         * An in-flight request retains Code API's admission/execution budgets and
+         * can finish after this horizon. This is not a server admission timeout. */
+        maxQueueWaitMs: z
+          .number()
+          .int()
+          .min(0)
+          .max(CODE_ENVIRONMENT_QUEUE_WAIT_DEFAULT_MS)
           .optional(),
       })
       .strict()
@@ -1449,6 +1468,18 @@ export const agentsEndpointSchema = baseEndpointSchema
       backgroundTasks: z
         .object({
           completionWakeups: z.boolean().optional().default(true),
+          /** Maximum terminal output copied into the private completion receipt.
+           * Generated files remain governed by their separate attachment policy. */
+          completionResultMaxChars: z
+            .number()
+            .int()
+            .min(1)
+            .max(AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_HARD_MAX)
+            .optional()
+            .default(AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_DEFAULT),
+          /** Maximum message-backed sibling results in one continuation.
+           * Independent receipts retain task-local delivery ownership. */
+          completionResultBatchSize: z.number().int().min(1).max(16).optional().default(8),
           /** Cooperative cancellation for process-local ordinary tools. Off
            * by default so existing deployments opt into the new control. */
           ordinaryToolCancellation: z.boolean().optional().default(false),
@@ -1938,6 +1969,7 @@ export type TMcpServersConfig = z.infer<typeof mcpServersSchema>;
 export const traceViewerDefaults = {
   enabled: false,
   showInputOutput: false,
+  showToolNames: false,
   maxRecords: 1000,
   maxContentLength: 50_000,
   requestsPerMinute: 30,
@@ -1968,6 +2000,12 @@ const traceViewerSchema = z.object({
   enabled: z.boolean().optional(),
   /** Returns observation input, output and metadata in the record inspector. */
   showInputOutput: z.boolean().optional(),
+  /**
+   * Names the tools of each tool round from the tracing backend's own record of the round, at the
+   * cost of further backend reads per listed page, which carry each round's input and output.
+   * Off, a round is named only when the chat's messages can be matched to the trace.
+   */
+  showToolNames: z.boolean().optional(),
   /** Observations read from the tracing backend per request. */
   maxRecords: boundedIntegerSchema('maxRecords'),
   /** Characters kept from each input, output and metadata value before truncation. */
@@ -1982,6 +2020,7 @@ export type TTraceViewerConfig = z.infer<typeof traceViewerSchema>;
 export type TResolvedTraceViewerConfig = {
   enabled: boolean;
   showInputOutput: boolean;
+  showToolNames: boolean;
 } & Record<TraceViewerLimitField, number>;
 
 function boundedInteger(value: unknown, field: TraceViewerLimitField): number {
@@ -2002,6 +2041,7 @@ export function resolveTraceViewerConfig(
   return {
     enabled: config?.enabled === true,
     showInputOutput: config?.showInputOutput === true,
+    showToolNames: config?.showToolNames === true,
     maxRecords: boundedInteger(config?.maxRecords, 'maxRecords'),
     maxContentLength: boundedInteger(config?.maxContentLength, 'maxContentLength'),
     requestsPerMinute: boundedInteger(config?.requestsPerMinute, 'requestsPerMinute'),
@@ -2026,6 +2066,8 @@ export const interfaceSchema = z
     customWelcome: z.string().optional(),
     mcpServers: mcpServersSchema.optional(),
     modelSelect: z.boolean().optional(),
+    /** Milliseconds between syntax highlights while a code block streams. */
+    codeHighlightThrottleMs: z.number().int().min(0).max(60_000).default(300),
     parameters: z.boolean().optional(),
     multiConvo: z.boolean().optional(),
     bookmarks: z.boolean().optional(),
@@ -2147,6 +2189,7 @@ export const interfaceSchema = z
   })
   .default({
     modelSelect: true,
+    codeHighlightThrottleMs: 300,
     parameters: true,
     presets: true,
     multiConvo: true,
@@ -2370,7 +2413,7 @@ export type TStartupConfig = {
 
 export type TSharedLinkStartupInterface = Pick<
   Partial<TInterfaceConfig>,
-  'privacyPolicy' | 'termsOfService'
+  'privacyPolicy' | 'termsOfService' | 'codeHighlightThrottleMs'
 >;
 
 export type TSharedLinkStartupConfig = Pick<TStartupConfig, 'appTitle'> &

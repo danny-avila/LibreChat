@@ -31,6 +31,13 @@ export interface BackgroundToolWakeupRetireOptions {
 export interface BackgroundToolWakeupAdmission {
   /** Renews durable proof that the process-local executor still owns work. */
   renew: () => Promise<boolean>;
+  /** Persists terminal output on the pre-admitted delivery before the parent
+   * message projection exists. */
+  persistResult?: (result: {
+    status: 'completed' | 'error' | 'cancelled';
+    output: string;
+    settledAt: Date;
+  }) => Promise<boolean>;
   /** Retires a delivery whose terminal result can no longer be made durable.
    * Manual polling requires an atomic unclaimed-only transition: once a
    * resolver owns a lease, its prepared continuation cannot be cancelled. */

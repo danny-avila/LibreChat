@@ -2522,10 +2522,12 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
 
     /* Two attempts (initial + retry), both undefined. Registry-backed tools
        fall away, but read/create/edit_file are registered by the initializer
-       so skill authoring still works. */
+       so skill authoring still works — and `skill` comes with them, so a
+       skill authored in this run can still be invoked despite the empty
+       catalog. */
     expect(loadTools).toHaveBeenCalledTimes(2);
     const definedNames = result.toolDefinitions?.map((d) => d.name) ?? [];
-    expect(definedNames).toEqual(['read_file', 'create_file', 'edit_file']);
+    expect(definedNames).toEqual(['read_file', 'create_file', 'edit_file', 'skill']);
   });
 
   it('propagates the error when loadTools fails AND there are no skill-added extras to drop', async () => {
@@ -2614,7 +2616,7 @@ describe('initializeAgent — execute_code capability expansion', () => {
        but never appears in the tool definitions the LLM sees. */
     expect(names).not.toContain('execute_code');
     const readFile = result.toolDefinitions?.find((d) => d.name === 'read_file');
-    expect(readFile?.description).toContain('code-execution sandbox');
+    expect(readFile?.description).toContain('code-sandbox');
     expect(readFile?.description).not.toContain('{skillName}');
     expect(readFile?.description).not.toContain('SKILL.md');
     const createFile = result.toolDefinitions?.find((d) => d.name === 'create_file');

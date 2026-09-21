@@ -408,10 +408,11 @@ describe('initializeClient — processAgent ACL gate', () => {
       endpointOption: makeEndpointOption(),
     });
     expect(capturedToolExecuteOptions.ordinaryToolCancellation).toBe(false);
+    expect(capturedToolExecuteOptions.backgroundCompletionResultMaxChars).toBeUndefined();
 
     const enabledReq = makeReq();
     enabledReq.config.endpoints.agents = {
-      backgroundTasks: { ordinaryToolCancellation: true },
+      backgroundTasks: { ordinaryToolCancellation: true, completionResultMaxChars: 4096 },
     };
     await initializeClient({
       req: enabledReq,
@@ -420,6 +421,7 @@ describe('initializeClient — processAgent ACL gate', () => {
       endpointOption: makeEndpointOption(),
     });
     expect(capturedToolExecuteOptions.ordinaryToolCancellation).toBe(true);
+    expect(capturedToolExecuteOptions.backgroundCompletionResultMaxChars).toBe(4096);
   });
 
   it('propagates an expected-MCP-tools failure from the runtime tool loader', async () => {

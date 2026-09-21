@@ -1993,6 +1993,7 @@ export async function initializeAgent(
     trustedCodeExecutionContext.environmentType === 'attached'
       ? resolveAttachedWorkspaceCommandTimeoutMax(
           trustedCodeExecutionContext.codeEnvironmentConfigSchema,
+          trustedCodeExecutionContext.codeWorkspace?.maxCommandTimeoutMs,
         )
       : undefined;
   if (
@@ -2302,12 +2303,19 @@ export async function initializeAgent(
   let executableSkillIds = params.accessibleSkillIds;
   let activeSkillNames: Set<string> | undefined;
   const { accessibleSkillIds } = params;
-  if (accessibleSkillIds && accessibleSkillIds.length > 0) {
+  /**
+   * Authoring runs go through catalog injection even with nothing accessible:
+   * `injectSkillCatalog` owns the `skill` tool registration, and a model that
+   * can write `skills/{skillName}/SKILL.md` needs the tool bound at init to
+   * invoke what it creates later in the same conversation.
+   */
+  if ((accessibleSkillIds && accessibleSkillIds.length > 0) || skillAuthoringAvailable) {
     const skillResult = await injectSkillCatalog({
       agent,
       toolDefinitions,
       toolRegistry,
-      accessibleSkillIds,
+      accessibleSkillIds: accessibleSkillIds ?? [],
+      skillAuthoringAvailable,
       contextWindowTokens: Number(agentMaxContextTokens) || 200_000,
       listSkillsByAccess: db?.listSkillsByAccess,
       codeEnvAvailable: effectiveCodeEnvAvailable,
