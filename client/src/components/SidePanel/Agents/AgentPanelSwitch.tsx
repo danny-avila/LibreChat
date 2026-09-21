@@ -8,9 +8,11 @@ import store from '~/store';
 
 export default function AgentPanelSwitch() {
   const conversation = useRecoilValue(store.conversationByIndex(0));
+  const promptsEditorMode = useRecoilValue(store.promptsEditorMode);
   const agentId = conversation?.agent_id ?? null;
   return (
     <AgentPanelProvider
+      promptsEditorMode={promptsEditorMode}
       observeToolAuthorization={conversation != null && !isEphemeralAgent(agentId)}
     >
       <AgentPanelSwitchWithContext agentId={agentId} />
