@@ -54,6 +54,7 @@ const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
 const STREAMING_MARKDOWN_REPLY_MARKER = 'E2E_STREAMING_MARKDOWN_REPLY';
+const HIGHLIGHT_CODE_MARKER = 'E2E_HIGHLIGHT_CODE:';
 const STATEFUL_CODE_MARKER = 'E2E_STATEFUL_CODE:';
 /** Two prose paragraphs, so a spec can select the message's *closing* block. */
 const PARAGRAPHS_REPLY_MARKER = 'E2E_PARAGRAPHS_REPLY';
@@ -102,6 +103,11 @@ const ACTIVITY_PHASE_FINAL_TEXT = 'E2E activity phase reply done';
 const STEER_TOOL_NAME_PREFIX = 'remember_fact';
 const ASK_USER_QUESTION_TOOL_NAME = 'ask_user_question';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
+/** The highlight cancellation scenario has to open the code card and stop the
+ *  run while its arguments are still arriving. At the ordinary slow cadence
+ *  those ~40 chunks are gone in under two seconds, which is not a window a
+ *  loaded runner can be relied on to hit, so that one variant streams wider. */
+const HIGHLIGHT_CANCEL_CHUNK_DELAY_MS = 200;
 const ORDERED_CHUNK_DELAY_MS = 2;
 const ORDERED_REPLY_PIECES = 64;
 const SLOW_REPLY_CHUNKS = 160;
@@ -725,15 +731,40 @@ class UsageEmittingFakeChatModel extends FakeChatModel {
 
     if (toolCalls?.length) {
       await new Promise((resolve) => setTimeout(resolve, this.streamSleep));
-      const toolCallChunks = toolCalls.map((toolCall, index) => ({
-        name: toolCall.name,
-        args: JSON.stringify(toolCall.args),
-        id: toolCall.id,
-        index,
-        type: 'tool_call_chunk',
-      }));
-      yield this._createResponseChunk('', toolCallChunks);
-      void runManager?.handleLLMNewToken('');
+      if (!toolCalls.some((toolCall) => toolCall.streamArgs)) {
+        const toolCallChunks = toolCalls.map((toolCall, index) => ({
+          name: toolCall.name,
+          args: JSON.stringify(toolCall.args),
+          id: toolCall.id,
+          index,
+          type: 'tool_call_chunk',
+        }));
+        yield this._createResponseChunk('', toolCallChunks);
+        void runManager?.handleLLMNewToken('');
+        return;
+      }
+
+      for (const [index, toolCall] of toolCalls.entries()) {
+        const serializedArgs = JSON.stringify(toolCall.args);
+        const chunks = toolCall.streamArgs
+          ? (serializedArgs.match(/.{1,64}/gs) ?? [''])
+          : [serializedArgs];
+        for (const [chunkIndex, args] of chunks.entries()) {
+          const toolCallChunk = {
+            name: chunkIndex === 0 ? toolCall.name : undefined,
+            args,
+            id: chunkIndex === 0 ? toolCall.id : undefined,
+            index,
+            type: 'tool_call_chunk',
+          };
+          yield this._createResponseChunk('', [toolCallChunk]);
+          void runManager?.handleLLMNewToken('');
+          if (chunkIndex < chunks.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, this.streamSleep));
+          }
+        }
+      }
+      return;
     }
   }
 
@@ -2750,6 +2781,37 @@ function provisioningToolResponses({ text, toolNames }) {
       toolNames,
     );
   }
+  const highlightLabel = getMarkerValue(text, HIGHLIGHT_CODE_MARKER);
+  if (highlightLabel) {
+    const codeTool = CODE_EXEC_TOOLS.find((tool) => toolNames.has(tool.name));
+    if (!codeTool) {
+      return {
+        responses: [`E2E highlight code unavailable: ${JSON.stringify([...toolNames])}`],
+      };
+    }
+    const command = Array.from({ length: 120 }, (_, index) => `printf 'line-${index}-☃\\n'`).join(
+      '\n',
+    );
+    const args =
+      codeTool.name === 'bash_tool'
+        ? { command }
+        : codeTool.name === 'execute_code'
+          ? { lang: 'bash', code: command }
+          : codeTool.args;
+    return {
+      responses: ['', `E2E highlighted code complete: ${highlightLabel}`],
+      sleep: highlightLabel === 'cancel' ? HIGHLIGHT_CANCEL_CHUNK_DELAY_MS : SLOW_CHUNK_DELAY_MS,
+      toolCalls: [
+        {
+          id: EXECUTE_CODE_TOOL_CALL_ID,
+          name: codeTool.name,
+          args,
+          streamArgs: true,
+          type: 'tool_call',
+        },
+      ],
+    };
+  }
 
   const codeLabel = getMarkerValue(text, EXECUTE_CODE_MARKER);
   if (codeLabel) {
@@ -2775,7 +2837,6 @@ function provisioningToolResponses({ text, toolNames }) {
       ],
     };
   }
-
   const searchLabel = getMarkerValue(text, FILE_SEARCH_MARKER);
   if (searchLabel) {
     if (!toolNames.has(FILE_SEARCH_TOOL_NAME)) {

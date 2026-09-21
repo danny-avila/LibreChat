@@ -13,6 +13,7 @@ import type {
 import { resolveAskUserQuestionPart } from '~/utils/approval';
 import { sandboxStartingByToolCallId } from '~/store';
 import ContentParts from '../ContentParts';
+import store from '~/store';
 
 /**
  * Parity between a live fold and the cards it unmounts.
@@ -1005,5 +1006,133 @@ describe('live disclosure ownership', () => {
     view.rerender(frame(content, 'server-id'));
     expect(screen.getByTestId('activity-phase-card')).toBe(card);
     expect(within(card).getAllByRole('button')[0]).toHaveAttribute('aria-expanded', 'true');
+  });
+});
+
+describe('tool pane identity at finalization', () => {
+  const call = (id = 't1', extra: Record<string, unknown> = {}) =>
+    toPart(
+      {
+        name: 'bash_tool',
+        args: { command: 'printf hello' },
+        output: '',
+        ...extra,
+      },
+      id,
+    );
+
+  function setup(autoExpand = false) {
+    const client = new QueryClient();
+    const frame = (props: Partial<React.ComponentProps<typeof ContentParts>> = {}) => (
+      <QueryClientProvider client={client}>
+        <Provider>
+          <RecoilRoot initializeState={({ set }) => set(store.autoExpandTools, autoExpand)}>
+            <ContentParts
+              messageId="user-message_"
+              conversationId="c1"
+              content={[call()]}
+              isCreatedByUser={false}
+              isLast
+              isLatestMessage
+              isSubmitting
+              showThinking={false}
+              foldLiveActivity={false}
+              {...props}
+            />
+          </RecoilRoot>
+        </Provider>
+      </QueryClientProvider>
+    );
+    return frame;
+  }
+
+  const toggles = (container: HTMLElement) =>
+    Array.from(
+      container.querySelectorAll<HTMLButtonElement>('.progress-text-wrapper button[aria-expanded]'),
+    );
+
+  it.each(['completed', 'cancelled', 'failed'] as const)(
+    'keeps the opened pane after %s and sparse content compaction',
+    async (status) => {
+      const frame = setup();
+      const { container, rerender } = render(frame({ content: [undefined, call()] }));
+      fireEvent.click(toggles(container)[0]);
+      expect(toggles(container)[0]).toHaveAttribute('aria-expanded', 'true');
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(container.querySelector('code.hljs span')).not.toBeNull();
+      rerender(
+        frame({
+          messageId: 'server-response',
+          isSubmitting: false,
+          content: [
+            {
+              ...call('t1', { output: 'hello', runStepStatus: status, stepId: 'final-step' }),
+              streamedIndex: 1,
+            },
+          ],
+        }),
+      );
+      expect(toggles(container)[0]).toHaveAttribute('aria-expanded', 'true');
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(container.querySelector('code.hljs span')).not.toBeNull();
+    },
+  );
+
+  it('keeps an explicitly closed pane closed when auto-expand is enabled', () => {
+    const frame = setup(true);
+    const { container, rerender } = render(frame());
+    expect(toggles(container)[0]).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(toggles(container)[0]);
+    rerender(frame({ messageId: 'server-response', isSubmitting: false }));
+    expect(toggles(container)[0]).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('keeps an untouched pane closed at completion', () => {
+    const frame = setup();
+    const { container, rerender } = render(frame());
+    rerender(frame({ messageId: 'server-response', isSubmitting: false }));
+    expect(toggles(container)[0]).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('keeps the tool choice when a live phase unwraps into settled content', () => {
+    const frame = setup();
+    const { container, rerender } = render(frame({ foldLiveActivity: true }));
+    fireEvent.click(within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0]);
+    fireEvent.click(toggles(container)[0]);
+    expect(toggles(container)[0]).toHaveAttribute('aria-expanded', 'true');
+    rerender(frame({ messageId: 'server-response', isSubmitting: false, foldLiveActivity: true }));
+    expect(toggles(container)[0]).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  it.each([
+    { messageId: 'other-response', isSubmitting: false },
+    { messageId: 'regenerated-response_', isSubmitting: true },
+    { messageId: 'server-response', conversationId: 'c2', isSubmitting: false },
+  ])('does not leak the choice into another response: %j', (next) => {
+    const frame = setup();
+    const { container, rerender } = render(
+      frame({ messageId: 'server-response', isSubmitting: false }),
+    );
+    fireEvent.click(toggles(container)[0]);
+    rerender(frame(next));
+    expect(toggles(container)[0]).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('keeps repeated provider ids independent by content position', () => {
+    const frame = setup();
+    const content = [
+      call(),
+      { type: ContentTypes.TEXT, text: 'Between calls' } as TMessageContentParts,
+      call(),
+    ];
+    const { container, rerender } = render(frame({ content }));
+    fireEvent.click(toggles(container)[0]);
+    rerender(frame({ content, messageId: 'server-response', isSubmitting: false }));
+    expect(toggles(container)[0]).toHaveAttribute('aria-expanded', 'true');
+    expect(toggles(container)[1]).toHaveAttribute('aria-expanded', 'false');
   });
 });
