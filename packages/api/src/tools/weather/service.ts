@@ -695,7 +695,7 @@ async function currentForecast(
     daily?: OneCallResponse;
     minutely?: OneCallResponse;
   } = {};
-  const errors: string[] = [];
+  const partErrors: Array<{ name: ForecastPartName; message: string }> = [];
 
   for (let i = 0; i < settled.length; i++) {
     const name = requests[i].name;
@@ -704,7 +704,7 @@ async function currentForecast(
       parts[name] = result.value;
     } else {
       const message = result.reason instanceof Error ? result.reason.message : 'Unknown error';
-      errors.push(`${name}: ${message}`);
+      partErrors.push({ name, message });
     }
   }
 
@@ -714,10 +714,11 @@ async function currentForecast(
     parts.daily == null &&
     parts.minutely == null
   ) {
-    return `Error: ${errors[0] ?? 'OpenWeather API request failed'}`;
+    return `Error: ${partErrors[0]?.message ?? 'OpenWeather API request failed'}`;
   }
 
   const result = normalizeCurrentForecast(parts);
+  const errors = partErrors.map(({ name, message }) => `${name}: ${message}`);
 
   if (includeAlerts) {
     const resolved = await resolveAlerts(
