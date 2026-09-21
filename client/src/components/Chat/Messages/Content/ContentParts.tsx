@@ -8,9 +8,9 @@ import type {
   Agents,
 } from 'librechat-data-provider';
 import type { ReactNode, ReactElement } from 'react';
+import type { ReasoningDisclosures, ToolDisclosures } from './disclosure';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import type { ActivityPhaseSegment } from '~/utils/activityLabels';
-import type { ReasoningDisclosures } from './disclosure';
 import {
   mapAttachments,
   getPartKeyIndex,
@@ -20,13 +20,18 @@ import {
   groupSequentialToolCalls,
 } from '~/utils';
 import {
+  ReasoningDisclosureContext,
+  reasoningDisclosure,
+  ToolDisclosureContext,
+  ToolDisclosureKeyContext,
+} from './disclosure';
+import {
   groupActivityPhases,
   lastCursorContentIdx,
   getActivityLabelText,
 } from '~/utils/activityLabels';
 import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceChanges';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
-import { ReasoningDisclosureContext, reasoningDisclosure } from './disclosure';
 import { MediaContext, MessageContext, SearchContext } from '~/Providers';
 import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
 import { hasParallelLanes, parallelLaneGroups } from '~/utils/lanes';
@@ -175,20 +180,32 @@ const PartWithContext = memo(function PartWithContext({
    *  own a live part — otherwise a phase from minutes ago keeps its reasoning
    *  shimmering and its peek scrolling while later phases stream. */
   const holdsCursor = isLastPart && isLast;
+  /** Position distinguishes provider-id reuse within a response. Neither the
+   *  final-only stepId nor messageId belongs in the card's disclosure identity. */
+  const toolDisclosureKey =
+    part.type === ContentTypes.TOOL_CALL
+      ? JSON.stringify([
+          getPartAgentId(part) ?? '',
+          getToolCallId(part),
+          getPartKeyIndex(part, idx),
+        ])
+      : undefined;
 
   return (
     <MessageContext.Provider value={contextValue}>
-      <Part
-        part={part}
-        attachments={partAttachments}
-        isSubmitting={isSubmitting}
-        key={`part-${messageId}-${getPartKeyIndex(part, idx)}`}
-        isCreatedByUser={isCreatedByUser}
-        isLast={holdsCursor}
-        showCursor={holdsCursor}
-        hideAttachments={hideAttachments}
-        onToolExpand={onToolExpand}
-      />
+      <ToolDisclosureKeyContext.Provider value={toolDisclosureKey}>
+        <Part
+          part={part}
+          attachments={partAttachments}
+          isSubmitting={isSubmitting}
+          key={`part-${messageId}-${getPartKeyIndex(part, idx)}`}
+          isCreatedByUser={isCreatedByUser}
+          isLast={holdsCursor}
+          showCursor={holdsCursor}
+          hideAttachments={hideAttachments}
+          onToolExpand={onToolExpand}
+        />
+      </ToolDisclosureKeyContext.Provider>
     </MessageContext.Provider>
   );
 });
@@ -1174,7 +1191,30 @@ const ContentPartsBody = memo(function ContentPartsBody({
 });
 
 const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
-  const { attachments, messageId } = props;
+  const { attachments, messageId, conversationId } = props;
+  const toolState = useRef<{
+    messageId: string;
+    conversationId: string | null | undefined;
+    disclosures: ToolDisclosures;
+  } | null>(null);
+  const previous = toolState.current;
+  /** The optimistic assistant id ends in `_`. Finalization replaces it with
+   *  the server id, not a new response. Ordinary sibling/conversation switches
+   *  get a fresh map, even if a provider reuses the same tool-call ids. */
+  const finalizing =
+    previous?.messageId.endsWith('_') === true &&
+    !messageId.endsWith('_') &&
+    props.isLatestMessage === true;
+  if (
+    previous == null ||
+    previous.conversationId !== conversationId ||
+    (previous.messageId !== messageId && !finalizing)
+  ) {
+    toolState.current = { messageId, conversationId, disclosures: new Map() };
+  } else {
+    previous.messageId = messageId;
+  }
+  const toolDisclosures = toolState.current!.disclosures;
   const reasoningState = useRef<{ messageId: string; disclosures: ReasoningDisclosures } | null>(
     null,
   );
@@ -1200,7 +1240,9 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
   return (
     <MediaContext.Provider value={media}>
       <ReasoningDisclosureContext.Provider value={reasoningDisclosures}>
-        <ContentPartsBody {...props} />
+        <ToolDisclosureContext.Provider value={toolDisclosures}>
+          <ContentPartsBody {...props} />
+        </ToolDisclosureContext.Provider>
       </ReasoningDisclosureContext.Provider>
     </MediaContext.Provider>
   );
