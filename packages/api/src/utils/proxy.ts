@@ -52,11 +52,23 @@ export interface DispatcherTimeoutOptions {
   headersTimeout?: number;
 }
 
+/** Discard extra runtime properties too: TypeScript cannot prevent structurally wider callers. */
+function pickDispatcherTimeouts({
+  bodyTimeout,
+  headersTimeout,
+}: DispatcherTimeoutOptions): DispatcherTimeoutOptions {
+  return {
+    ...(bodyTimeout != null ? { bodyTimeout } : {}),
+    ...(headersTimeout != null ? { headersTimeout } : {}),
+  };
+}
+
 function getDispatcherOptionsKey(options: DispatcherTimeoutOptions): string {
   return `${options.bodyTimeout ?? ''}|${options.headersTimeout ?? ''}`;
 }
 
 export function getDirectDispatcher(options: DispatcherTimeoutOptions = {}): Dispatcher {
+  options = pickDispatcherTimeouts(options);
   const key = getDispatcherOptionsKey(options);
   const cached = directDispatchers.get(key);
   if (cached) return cached;
@@ -69,6 +81,7 @@ export function getDirectDispatcher(options: DispatcherTimeoutOptions = {}): Dis
 export function getEnvProxyDispatcher(
   options: DispatcherTimeoutOptions = {},
 ): Dispatcher | undefined {
+  options = pickDispatcherTimeouts(options);
   const proxyConfig = getProxyEnvConfig();
   if (!proxyConfig) return undefined;
 
@@ -85,6 +98,7 @@ function getExplicitProxyDispatcher(
   proxyUrl: string,
   options: DispatcherTimeoutOptions,
 ): Dispatcher {
+  options = pickDispatcherTimeouts(options);
   const key = `${proxyUrl}|${getDispatcherOptionsKey(options)}`;
   const cached = explicitDispatchers.get(key);
   if (cached) return cached;

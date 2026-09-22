@@ -1,5 +1,5 @@
-import { Agent } from 'undici';
 import { Providers } from '@librechat/agents';
+import { Agent, fetch as undiciFetch } from 'undici';
 import { KnownEndpoints, EModelEndpoint, ReasoningParameterFormat } from 'librechat-data-provider';
 import type { Dispatcher } from 'undici';
 import type * as t from '~/types';
@@ -303,12 +303,22 @@ export function getOpenAIConfig(
   }
 
   if (directEndpoint === true && configOptions?.baseURL != null) {
-    configOptions.fetch = createFetch({
-      directEndpoint: directEndpoint,
-      reverseProxyUrl: configOptions?.baseURL,
-      ssrfAgents,
-      redirect: shouldProtectUserBaseURL ? 'error' : undefined,
-    }) as unknown as Fetch;
+    const directURL = configOptions.baseURL;
+    if (transportTimeouts != null) {
+      /** Keep the exact URL, but use the same proxy/SSRF/timeout policy as SDK requests. */
+      configOptions.fetch = ((_url: string | URL | Request, init?: RequestInit) =>
+        undiciFetch(directURL, {
+          ...(init as Parameters<typeof undiciFetch>[1]),
+          ...configOptions.fetchOptions,
+        })) as unknown as Fetch;
+    } else {
+      configOptions.fetch = createFetch({
+        directEndpoint,
+        reverseProxyUrl: directURL,
+        ssrfAgents,
+        redirect: shouldProtectUserBaseURL ? 'error' : undefined,
+      }) as unknown as Fetch;
+    }
   }
 
   const result: t.OpenAIConfigResult = {

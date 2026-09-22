@@ -57,6 +57,29 @@ describe('proxy helpers', () => {
     expect(MockAgent).toHaveBeenCalledWith(options);
   });
 
+  it('keys only supported timeout options and discards unkeyed connection callbacks', () => {
+    const options = { bodyTimeout: 123_456, headersTimeout: 654_321, connect: jest.fn() };
+    const direct = getDirectDispatcher(options);
+    expect(getDirectDispatcher({ headersTimeout: 654_321, bodyTimeout: 123_456 })).toBe(direct);
+    expect(MockAgent).toHaveBeenLastCalledWith({ bodyTimeout: 123_456, headersTimeout: 654_321 });
+
+    getProxyDispatcher('http://sanitized-proxy:8080', options);
+    expect(MockProxyAgent).toHaveBeenLastCalledWith({
+      uri: 'http://sanitized-proxy:8080',
+      bodyTimeout: 123_456,
+      headersTimeout: 654_321,
+    });
+    process.env.PROXY = 'http://sanitized-env-proxy:8080';
+    getEnvProxyDispatcher(options);
+    expect(MockEnvHttpProxyAgent).toHaveBeenLastCalledWith({
+      httpProxy: 'http://sanitized-env-proxy:8080',
+      httpsProxy: 'http://sanitized-env-proxy:8080',
+      noProxy: undefined,
+      bodyTimeout: 123_456,
+      headersTimeout: 654_321,
+    });
+  });
+
   it('returns undefined when no proxy env is configured', () => {
     expect(getProxyEnvConfig()).toBeUndefined();
     expect(getEnvProxyDispatcher()).toBeUndefined();

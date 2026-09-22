@@ -19,7 +19,8 @@ export function resolveModelTransportTimeouts(
     bodyTimeout:
       agentsEConfig?.modelResponseBodyTimeoutMs ?? DEFAULT_AGENT_MODEL_RESPONSE_BODY_TIMEOUT_MS,
     headersTimeout:
-      agentsEConfig?.modelResponseHeadersTimeoutMs ?? DEFAULT_AGENT_MODEL_RESPONSE_HEADERS_TIMEOUT_MS,
+      agentsEConfig?.modelResponseHeadersTimeoutMs ??
+      DEFAULT_AGENT_MODEL_RESPONSE_HEADERS_TIMEOUT_MS,
   };
 }
 
