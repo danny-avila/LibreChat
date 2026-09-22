@@ -10,6 +10,7 @@ import type {
 import type { IAclEntry } from '~/types';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { MAX_PERM_BITS } from '~/common/permissions';
+import { RoleBits } from '~/common/enum';
 
 /**
  * Empty frozen array shared by every rejection path. Returning a single
@@ -23,6 +24,51 @@ const supersetCache = new Map<number, readonly number[]>();
 /** Bounded retries for the two-sided `permBits` compare-and-set; a conflict is
  * another writer finishing first, so a small ceiling is enough and exhaustion
  * must surface rather than silently drop the update. */
+
+/**
+ * Bulk operations that replace an ACL entry's role bits while preserving every
+ * bit administered independently of the role (Insights today).
+ *
+ * `$bit` carries ONE operator per field. MongoDB accepts `{ or, and }` on a
+ * single field, but MongoDB-compatible engines reject the combination (issue
+ * #16163), so the replacement is two single-operator writes. Clearing before
+ * setting keeps the only observable intermediate state at FEWER permissions
+ * than either endpoint; the reverse order would briefly grant more. Neither
+ * write filters on the stored mask, so a concurrent change to a preserved bit
+ * cannot make a row escape the update, and a row whose `permBits` is absent or
+ * out of range still receives the requested role. Cost is constant in the
+ * number of permission bits.
+ */
+export function buildRoleBitsBulkOps({
+  filter,
+  insert,
+  roleBits,
+  metadata,
+}: {
+  filter: Record<string, unknown>;
+  insert: Record<string, unknown>;
+  roleBits: number;
+  metadata: Record<string, unknown>;
+}): AnyBulkWriteOperation[] {
+  const roleOnly = roleBits & RoleBits.OWNER;
+  return [
+    {
+      updateMany: {
+        filter,
+        update: { $bit: { permBits: { and: ~RoleBits.OWNER } }, $set: metadata },
+      },
+    },
+    { updateMany: { filter, update: { $bit: { permBits: { or: roleOnly } } } } },
+    {
+      /** Identity only: never inherit a preserved bit from a stale read. */
+      updateOne: {
+        filter,
+        update: { $setOnInsert: { ...insert, ...metadata, permBits: roleOnly } },
+        upsert: true,
+      },
+    },
+  ];
+}
 
 /**
  * Enumerates every `permBits` value (in the range `[0, MAX_PERM_BITS]`) whose
