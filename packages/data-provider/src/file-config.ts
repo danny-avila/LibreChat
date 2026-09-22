@@ -567,7 +567,20 @@ export const fileConfig = {
   },
 };
 
-const supportedMimeTypesSchema = z.array(z.string()).optional();
+const supportedMimeTypesSchema = z
+  .array(
+    z.string().superRefine((pattern, context) => {
+      try {
+        compileMimeRegex(pattern);
+      } catch {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Invalid MIME type regex: not supported by the configured regex engine',
+        });
+      }
+    }),
+  )
+  .optional();
 
 export const DefaultLLMDeliveryPath = z.enum(['provider', 'text', 'none']);
 export type TDefaultLLMDeliveryPath = z.infer<typeof DefaultLLMDeliveryPath>;
