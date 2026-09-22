@@ -246,3 +246,12 @@ describe('Opus 5.5 token limits', () => {
     expect(getModelMaxOutputTokens(model)).toBe(128000);
   });
 });
+
+describe.each(['gpt-6-sol', 'gpt-6-luna'])('%s token limits', (model) => {
+  it('resolves exact, snapshot, and provider-prefixed IDs', () => {
+    for (const name of [model, `${model}-2026-09-22`, `openai/${model}`]) {
+      expect(getModelMaxTokens(name, EModelEndpoint.openAI)).toBe(1050000);
+      expect(getModelMaxOutputTokens(name, EModelEndpoint.openAI)).toBe(128000);
+    }
+  });
+});

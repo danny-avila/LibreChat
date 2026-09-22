@@ -1335,6 +1335,16 @@ export function applyModelAwareDefaults(
         : setting,
     );
   }
+  if (/^gpt-6-(?:sol|luna)(?:$|-)/i.test(model)) {
+    return settings.map((setting) =>
+      setting.key === 'reasoning_effort'
+        ? {
+            ...setting,
+            options: setting.options?.filter((effort) => effort !== ReasoningEffort.minimal),
+          }
+        : setting,
+    );
+  }
   if (isOpus55Model(model)) {
     return settings.filter(
       (setting) =>

@@ -1,0 +1,73 @@
+import React from 'react';
+import { EModelEndpoint, ReasoningEffort } from 'librechat-data-provider';
+import type { TSetOption } from 'librechat-data-provider';
+import type { TModelSelectProps } from '~/common';
+import {
+  pruneAgentModelParameters,
+  resolveAgentParameterSettings,
+} from '~/components/SidePanel/Agents/parameters';
+import { render, screen, fireEvent, waitFor } from 'test/layout-test-utils';
+import { ChatContext } from '~/Providers';
+import OpenAISettings from '../OpenAI';
+
+const context = { preset: null } as React.ContextType<typeof ChatContext>;
+describe.each([EModelEndpoint.openAI, EModelEndpoint.azureOpenAI])(
+  '%s Sol/Luna settings',
+  (endpoint) => {
+    it.each(['gpt-6-sol', 'gpt-6-luna'])(
+      'preserves stored effort when switching to %s and back',
+      async (model) => {
+        const commit = jest.fn();
+        const setOption: TSetOption = jest.fn(() => commit);
+        const saved = {
+          endpoint,
+          model: 'gpt-5.6',
+          reasoning_effort: ReasoningEffort.minimal,
+          temperature: 0.7,
+        } as TModelSelectProps['conversation'];
+        const view = (model: string) => (
+          <ChatContext.Provider value={context}>
+            <OpenAISettings
+              conversation={{ ...saved, model } as TModelSelectProps['conversation']}
+              setOption={setOption}
+              models={['gpt-5.6', model]}
+            />
+          </ChatContext.Provider>
+        );
+        const { rerender } = render(view('gpt-5.6'));
+        const slider = () => screen.getByRole('slider', { name: 'Reasoning Effort' });
+        expect(slider()).toHaveAttribute('aria-valuemax', '7');
+        rerender(view(model));
+        expect(slider()).toHaveAttribute('aria-valuemax', '6');
+        expect(saved?.reasoning_effort).toBe(ReasoningEffort.minimal);
+        fireEvent.keyDown(slider(), { key: 'End' });
+        await waitFor(() => expect(commit).toHaveBeenLastCalledWith(ReasoningEffort.max));
+        expect(setOption).toHaveBeenCalledWith('reasoning_effort');
+        rerender(view('gpt-5.6'));
+        expect(slider()).toHaveAttribute('aria-valuemax', '7');
+        expect(saved?.temperature).toBe(0.7);
+      },
+    );
+    it('keeps unsupported saved effort through the agent pruning boundary', () => {
+      const settings = resolveAgentParameterSettings({
+        provider: endpoint,
+        model: 'gpt-6-sol',
+        webSearchAllowed: true,
+      });
+      const saved = {
+        temperature: 0.7,
+        maxContextTokens: null,
+        max_context_tokens: null,
+        max_output_tokens: null,
+        top_p: null,
+        frequency_penalty: null,
+        presence_penalty: null,
+        reasoning_effort: ReasoningEffort.minimal,
+      };
+      expect(pruneAgentModelParameters(saved, settings)).toBe(saved);
+      expect(
+        settings.visibleParameters.find(({ key }) => key === 'reasoning_effort')?.options,
+      ).not.toContain(ReasoningEffort.minimal);
+    });
+  },
+);
