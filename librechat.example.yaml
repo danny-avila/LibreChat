@@ -515,6 +515,18 @@ actions:
 #     - 'host.docker.internal:8080'
 #     - '127.0.0.1:8080'
 
+# Classification: small typed judgments (yes/no, pick one, rate) that code can
+# branch on. Off unless enabled. The key is read from the environment variable
+# named by apiKeyEnv, never written here.
+# classification:
+#   enabled: true
+#   provider: http
+#   providers:
+#     http:
+#       baseURL: https://classifier.example.com/v1/classify
+#       apiKeyEnv: CLASSIFIER_API_KEY
+#       timeoutMs: 4000
+
 # Example MCP Servers Object Structure
 # mcpServers:
 #   everything:

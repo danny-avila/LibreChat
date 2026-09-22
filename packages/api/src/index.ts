@@ -97,6 +97,8 @@ export * from './images';
 export * from './storage';
 /* Tools */
 export * from './tools';
+/* Classification */
+export * from './classification';
 /* web search */
 export * from './web';
 /* Langfuse */
