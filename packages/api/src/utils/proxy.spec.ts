@@ -1,7 +1,8 @@
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import { EnvHttpProxyAgent, ProxyAgent } from 'undici';
+import { Agent, EnvHttpProxyAgent, ProxyAgent } from 'undici';
 import {
   applyAxiosProxyConfig,
+  getDirectDispatcher,
   getEnvProxyDispatcher,
   getHttpsProxyAgent,
   getProxyDispatcher,
@@ -15,10 +16,12 @@ jest.mock('https-proxy-agent', () => ({
 }));
 
 jest.mock('undici', () => ({
+  Agent: jest.fn(),
   EnvHttpProxyAgent: jest.fn(),
   ProxyAgent: jest.fn(),
 }));
 
+const MockAgent = Agent as jest.MockedClass<typeof Agent>;
 const MockEnvHttpProxyAgent = EnvHttpProxyAgent as jest.MockedClass<typeof EnvHttpProxyAgent>;
 const MockProxyAgent = ProxyAgent as jest.MockedClass<typeof ProxyAgent>;
 const MockHttpsProxyAgent = HttpsProxyAgent as jest.MockedClass<typeof HttpsProxyAgent>;
@@ -41,6 +44,17 @@ describe('proxy helpers', () => {
 
   afterAll(() => {
     process.env = originalEnv;
+  });
+
+  it('reuses direct dispatchers with the same transport timeout policy', () => {
+    const options = { bodyTimeout: 0, headersTimeout: 300_000 };
+
+    const first = getDirectDispatcher(options);
+    const second = getDirectDispatcher(options);
+
+    expect(second).toBe(first);
+    expect(MockAgent).toHaveBeenCalledTimes(1);
+    expect(MockAgent).toHaveBeenCalledWith(options);
   });
 
   it('returns undefined when no proxy env is configured', () => {
