@@ -58,20 +58,29 @@ type AggregationExpression =
  * (`api/server/services/Agents/ownerContact.js`). Written as a manual `$lt`/`$eq` cascade,
  * not `$sortArray`+`$first`, because DocumentDB (this project's CI gate,
  * `documentdb.spec.ts`) rejects `$sortArray` outright.
+ *
+ * Every timestamp is read through `$ifNull` because an imported or legacy entry can omit
+ * `grantedAt` or `createdAt` entirely. `$sort` reads a missing field as null, while a
+ * missing field path in a comparison expression is `undefined`, which BSON orders below
+ * null — so without this the cascade would rank an entry that omits the field ahead of one
+ * that stores null, and an author page would name a different owner than every other list
+ * order for the same stored ACL data.
  */
+const aclOrderKey = (path: string): AggregationExpression => ({ $ifNull: [path, null] });
+
 function earlierAclEntry(a: string, b: string): AggregationExpression {
   return {
     $or: [
-      { $lt: [`${a}.grantedAt`, `${b}.grantedAt`] },
+      { $lt: [aclOrderKey(`${a}.grantedAt`), aclOrderKey(`${b}.grantedAt`)] },
       {
         $and: [
-          { $eq: [`${a}.grantedAt`, `${b}.grantedAt`] },
+          { $eq: [aclOrderKey(`${a}.grantedAt`), aclOrderKey(`${b}.grantedAt`)] },
           {
             $or: [
-              { $lt: [`${a}.createdAt`, `${b}.createdAt`] },
+              { $lt: [aclOrderKey(`${a}.createdAt`), aclOrderKey(`${b}.createdAt`)] },
               {
                 $and: [
-                  { $eq: [`${a}.createdAt`, `${b}.createdAt`] },
+                  { $eq: [aclOrderKey(`${a}.createdAt`), aclOrderKey(`${b}.createdAt`)] },
                   { $lt: [`${a}._id`, `${b}._id`] },
                 ],
               },

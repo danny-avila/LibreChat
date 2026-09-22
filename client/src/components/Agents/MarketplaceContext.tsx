@@ -1,10 +1,6 @@
 import React from 'react';
-import { Constants } from 'librechat-data-provider';
-import { useQueryClient } from '@tanstack/react-query';
-import { clearMessagesCache } from '~/utils/messages';
 import { ChatContext } from '~/Providers';
 import { useChatHelpers } from '~/hooks';
-import store from '~/store';
 
 /**
  * Minimal marketplace provider that provides only what SidePanel actually needs
@@ -12,6 +8,7 @@ import store from '~/store';
  */
 interface MarketplaceProviderProps {
   children: React.ReactNode;
+  host: MarketplaceHost;
 }
 
 /**
@@ -20,8 +17,10 @@ interface MarketplaceProviderProps {
  * Starting an agent from a card is a new conversation with that agent, not another
  * column beside whatever was already open and not the transcript the last new chat
  * left behind. Both of those live in the app's conversation state, so the host
- * performs the reset and the marketplace only asks for it — otherwise every card
- * would be coupled to the conversation store it merely consumes.
+ * performs the reset and the marketplace only asks for it. The host arrives as a prop
+ * rather than being built here: a context this feature fills from `~/store` itself
+ * would still be the feature reaching for shell state, and would not survive the move
+ * to its own workspace.
  */
 export interface MarketplaceHost {
   resetNewConversation: () => void;
@@ -39,19 +38,8 @@ export function useMarketplaceHost(): MarketplaceHost {
   return host;
 }
 
-export const MarketplaceProvider: React.FC<MarketplaceProviderProps> = ({ children }) => {
+export const MarketplaceProvider: React.FC<MarketplaceProviderProps> = ({ children, host }) => {
   const chatHelpers = useChatHelpers(0, 'new');
-  const queryClient = useQueryClient();
-  const clearAllConversations = store.useClearConvoState();
-  const host = React.useMemo<MarketplaceHost>(
-    () => ({
-      resetNewConversation: () => {
-        clearAllConversations(true);
-        clearMessagesCache(queryClient, Constants.NEW_CONVO);
-      },
-    }),
-    [clearAllConversations, queryClient],
-  );
 
   return (
     <ChatContext.Provider value={chatHelpers}>

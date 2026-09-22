@@ -206,7 +206,12 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
 userSchema.index({ email: 1, tenantId: 1 }, { unique: true });
 userSchema.index({ role: 1, tenantId: 1 });
 userSchema.index({ idOnTheSource: 1, openidIssuer: 1, tenantId: 1 });
-userSchema.index({ 'favorites.agentId': 1, tenantId: 1 });
+/* Tenant first: the popular sort's only predicates are the caller's tenant and
+   `favorites.agentId: { $exists: true }`, and a multikey existence field in the leading
+   position cannot seek into one tenant, so the count would scan favourites across all of
+   them. The rare cleanup that pulls a deleted agent from every user names the tenant too;
+   the one that does not (`$in` over a batch of ids) is a maintenance write, not a page. */
+userSchema.index({ tenantId: 1, 'favorites.agentId': 1 });
 
 const oAuthIdFields = [
   'googleId',

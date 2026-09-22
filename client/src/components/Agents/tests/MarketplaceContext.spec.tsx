@@ -2,25 +2,15 @@ import React from 'react';
 import userEvent from '@testing-library/user-event';
 import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import { Constants, EModelEndpoint } from 'librechat-data-provider';
+import { EModelEndpoint } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MarketplaceProvider, useMarketplaceHost } from '../MarketplaceContext';
 import { useChatContext } from '~/Providers';
 
-const mockClearAllConversations = jest.fn();
-const mockClearMessagesCache = jest.fn();
+const mockResetNewConversation = jest.fn();
 
 jest.mock('~/hooks', () => ({
   useChatHelpers: jest.fn(),
-}));
-
-jest.mock('~/utils/messages', () => ({
-  clearMessagesCache: (...args: unknown[]) => mockClearMessagesCache(...args),
-}));
-
-jest.mock('~/store', () => ({
-  __esModule: true,
-  default: { useClearConvoState: () => mockClearAllConversations },
 }));
 
 const chatHelpers = {
@@ -51,7 +41,9 @@ const renderProvider = (children: React.ReactNode = <Consumer />) => {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MarketplaceProvider>{children}</MarketplaceProvider>
+      <MarketplaceProvider host={{ resetNewConversation: mockResetNewConversation }}>
+        {children}
+      </MarketplaceProvider>
     </QueryClientProvider>,
   );
 };
@@ -70,17 +62,15 @@ describe('MarketplaceProvider', () => {
     expect(screen.getByTestId('conversation-id')).toHaveTextContent('marketplace');
   });
 
-  it('drops the open conversations and the new-chat transcript when the host is asked to reset', async () => {
+  it('passes the host reset straight through to the marketplace that asks for it', async () => {
     const user = userEvent.setup();
     renderProvider();
 
     await user.click(screen.getByRole('button', { name: START_LABEL }));
 
-    /* `true` clears every parallel conversation a multi-conversation session left open,
-       not just the active one, so an agent started from a card is a new conversation
-       rather than another column beside them. */
-    expect(mockClearAllConversations).toHaveBeenCalledWith(true);
-    expect(mockClearMessagesCache).toHaveBeenCalledWith(expect.anything(), Constants.NEW_CONVO);
+    /* What the reset does is the shell's business (see routes/__tests__/Marketplace.spec.tsx);
+       what this provider owes the feature is the operation the host handed it, unchanged. */
+    expect(mockResetNewConversation).toHaveBeenCalledTimes(1);
   });
 
   it('refuses to serve the host action outside the provider', () => {

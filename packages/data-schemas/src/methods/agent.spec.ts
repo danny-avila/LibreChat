@@ -6570,6 +6570,63 @@ describe('getListAgentsByAccess - Sort Modes and Mine Filter', () => {
         expect(result.data.map((row) => row.id)).toEqual([anchor.id, agentTransferred.id]);
       });
 
+      test('breaks a grantedAt tie the way the resolver does when an entry omits it', async () => {
+        // getFirstOwnerIdsByResource sorts { grantedAt: 1, createdAt: 1, _id: 1 }, where a
+        // missing field reads as null. A missing field path in a comparison expression is
+        // undefined instead, which BSON orders below null, so an imported entry that omits
+        // grantedAt would win the first comparison outright and name a different owner here
+        // than every other list order names.
+        const nullGranted = await User.create({
+          _id: new mongoose.Types.ObjectId(),
+          name: 'Aaa Null Granted',
+          email: `null-granted-${uuidv4()}@example.com`,
+          provider: 'local',
+        });
+        const missingGranted = await User.create({
+          _id: new mongoose.Types.ObjectId(),
+          name: 'Zzz Missing Granted',
+          email: `missing-granted-${uuidv4()}@example.com`,
+          provider: 'local',
+        });
+        const agentImported = await createAgent({
+          id: `agent_${uuidv4().slice(0, 12)}`,
+          name: 'Imported Acl Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: nullGranted._id,
+        });
+        // Created first, so it also wins the createdAt and _id tie-breaks the resolver falls
+        // through to once the grantedAt comparison is a genuine tie.
+        await AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalModel: PrincipalModel.USER,
+          principalId: nullGranted._id,
+          resourceType: ResourceType.AGENT,
+          resourceId: agentImported._id,
+          permBits: OWNER_ACL_BITS,
+          grantedBy: nullGranted._id,
+          grantedAt: null,
+        });
+        const imported = await AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalModel: PrincipalModel.USER,
+          principalId: missingGranted._id,
+          resourceType: ResourceType.AGENT,
+          resourceId: agentImported._id,
+          permBits: OWNER_ACL_BITS,
+          grantedBy: missingGranted._id,
+        });
+        await AclEntry.collection.updateOne({ _id: imported._id }, { $unset: { grantedAt: '' } });
+
+        const result = await getListAgentsByAccess({
+          accessibleIds: [agentImported._id] as mongoose.Types.ObjectId[],
+          otherParams: {},
+          sort: 'author',
+        });
+
+        expect(result.data[0]?.owner_contact).toEqual({ name: 'Aaa Null Granted' });
+      });
+
       test('reads an owner whose entry also carries the insights bit', async () => {
         // Granting Agent Insights ORs VIEW_INSIGHTS into the owner's role bits, so an
         // owner entry is not always exactly the owner mask. Missing it would fall back to
