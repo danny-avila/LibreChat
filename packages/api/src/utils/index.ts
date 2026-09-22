@@ -3,6 +3,7 @@ export * from './azure';
 export * from './code';
 export * from './common';
 export * from './content';
+export * from './dispatcher';
 export * from './email';
 export * from './env';
 export * from './errors';

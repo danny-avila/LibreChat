@@ -1,4 +1,3 @@
-import { Agent } from 'undici';
 import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
 import {
@@ -29,8 +28,8 @@ import {
   isAnthropicVertexCredentials,
   getVertexDeploymentName,
 } from './vertex';
+import { createLLMFetchDispatcher } from '~/utils/dispatcher';
 import { createSSRFSafeUndiciConnect } from '~/auth';
-import { getProxyDispatcher } from '~/utils/proxy';
 import { mergeHeaders } from '~/utils/headers';
 
 const WEB_SEARCH_BETA = 'web-search-2025-03-05';
@@ -295,12 +294,6 @@ function getLLMConfig(
 
   const shouldProtectUserBaseURL =
     options.baseURLIsUserProvided === true && !!options.reverseProxyUrl;
-  const proxyDispatcher = getProxyDispatcher(options.proxy);
-  if (proxyDispatcher && !shouldProtectUserBaseURL && requestOptions.clientOptions) {
-    mergeFetchOptions(requestOptions.clientOptions, {
-      dispatcher: proxyDispatcher,
-    });
-  }
 
   if (options.reverseProxyUrl && requestOptions.clientOptions) {
     requestOptions.clientOptions.baseURL = options.reverseProxyUrl;
@@ -421,18 +414,23 @@ function getLLMConfig(
     );
   }
 
+  if (!requestOptions.clientOptions) {
+    requestOptions.clientOptions = {};
+  }
+
   if (shouldProtectUserBaseURL) {
-    if (!requestOptions.clientOptions) {
-      requestOptions.clientOptions = {};
-    }
     mergeFetchOptions(requestOptions.clientOptions, {
-      dispatcher: new Agent({
+      dispatcher: createLLMFetchDispatcher({
         connect: createSSRFSafeUndiciConnect(
           options.allowedAddresses,
           getEffectiveURLPort(options.reverseProxyUrl ?? ''),
         ),
       }),
       redirect: 'error',
+    });
+  } else {
+    mergeFetchOptions(requestOptions.clientOptions, {
+      dispatcher: createLLMFetchDispatcher({ proxyUrl: options.proxy }),
     });
   }
 

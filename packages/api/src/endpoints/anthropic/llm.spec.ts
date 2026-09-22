@@ -1,7 +1,28 @@
 import { AnthropicEffort, ThinkingDisplay } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { FINE_GRAINED_TOOL_STREAMING_BETA } from './helpers';
+import { getLLMFetchTimeoutMs } from '~/utils/dispatcher';
 import { getLLMConfig } from './llm';
+
+function getDispatcherTimeouts(dispatcher: object): {
+  bodyTimeout?: number;
+  headersTimeout?: number;
+} {
+  const optionsSym = Object.getOwnPropertySymbols(dispatcher).find(
+    (s) => s.toString() === 'Symbol(options)',
+  );
+  if (optionsSym == null) {
+    return {};
+  }
+
+  const options = (dispatcher as Record<symbol, { bodyTimeout?: number; headersTimeout?: number }>)[
+    optionsSym
+  ];
+  return {
+    bodyTimeout: options.bodyTimeout,
+    headersTimeout: options.headersTimeout,
+  };
+}
 
 jest.mock('https-proxy-agent', () => ({
   HttpsProxyAgent: jest.fn().mockImplementation((proxy) => ({ proxy })),
@@ -32,6 +53,36 @@ describe('getLLMConfig', () => {
     const dispatcher = result.llmConfig.clientOptions?.fetchOptions?.dispatcher;
     expect(dispatcher).toBeDefined();
     expect(dispatcher?.constructor.name).toBe('ProxyAgent');
+  });
+
+  it('always attaches an undici dispatcher so Agent runs are not capped at 5 minutes', () => {
+    const result = getLLMConfig('test-api-key', { modelOptions: {} });
+    const dispatcher = result.llmConfig.clientOptions?.fetchOptions?.dispatcher;
+    expect(dispatcher).toBeDefined();
+    const timeoutMs = getLLMFetchTimeoutMs();
+    expect(getDispatcherTimeouts(dispatcher as object)).toEqual({
+      bodyTimeout: timeoutMs,
+      headersTimeout: timeoutMs,
+    });
+  });
+
+  it('aligns Agent fetch body and header timeouts to HTTP_REQUEST_TIMEOUT_MS', () => {
+    const originalTimeout = process.env.HTTP_REQUEST_TIMEOUT_MS;
+    process.env.HTTP_REQUEST_TIMEOUT_MS = '900000';
+    try {
+      const result = getLLMConfig('test-api-key', { modelOptions: {} });
+      const dispatcher = result.llmConfig.clientOptions?.fetchOptions?.dispatcher;
+      expect(getDispatcherTimeouts(dispatcher as object)).toEqual({
+        bodyTimeout: 900000,
+        headersTimeout: 900000,
+      });
+    } finally {
+      if (originalTimeout === undefined) {
+        delete process.env.HTTP_REQUEST_TIMEOUT_MS;
+      } else {
+        process.env.HTTP_REQUEST_TIMEOUT_MS = originalTimeout;
+      }
+    }
   });
 
   it('should harden user-provided reverse proxy URLs with a connect-time dispatcher and disabled redirects', () => {
@@ -111,7 +162,13 @@ describe('getLLMConfig', () => {
       dropParams: ['clientOptions'],
     });
 
-    expect(result.llmConfig).not.toHaveProperty('clientOptions');
+    expect(result.llmConfig.clientOptions?.baseURL).toBeUndefined();
+    expect(result.llmConfig.clientOptions?.defaultHeaders).toBeUndefined();
+    expect(result.llmConfig.clientOptions?.fetchOptions).toEqual(
+      expect.objectContaining({
+        dispatcher: expect.any(Object),
+      }),
+    );
     expect(result.llmConfig).toHaveProperty('anthropicApiUrl', 'http://reverse-proxy');
   });
 
@@ -2193,7 +2250,12 @@ describe('getLLMConfig', () => {
         headers: { 'cf-aig-metadata': 'x' },
       });
 
-      expect(result.llmConfig).not.toHaveProperty('clientOptions');
+      expect(result.llmConfig.clientOptions?.defaultHeaders).toBeUndefined();
+      expect(result.llmConfig.clientOptions?.fetchOptions).toEqual(
+        expect.objectContaining({
+          dispatcher: expect.any(Object),
+        }),
+      );
     });
   });
 });

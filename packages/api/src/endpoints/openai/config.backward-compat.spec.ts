@@ -6,6 +6,12 @@ import {
 } from 'librechat-data-provider';
 import { getOpenAIConfig } from './config';
 
+const llmFetchOptions = {
+  fetchOptions: {
+    dispatcher: expect.any(Object),
+  },
+};
+
 describe('getOpenAIConfig - Backward Compatibility', () => {
   describe('OpenAI endpoint', () => {
     it('should handle GPT-5 model with reasoning and web search', () => {
@@ -46,7 +52,9 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
             },
           },
         },
-        configOptions: {},
+        configOptions: {
+          ...llmFetchOptions,
+        },
         tools: [
           {
             type: 'web_search',
@@ -94,6 +102,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
             'x-librechat-thread-id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
             'x-test-key': '{{TESTING_USER_VAR}}',
           },
+          ...llmFetchOptions,
         },
         tools: [],
         provider: 'openrouter',
@@ -132,7 +141,9 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
           azureOpenAIApiDeploymentName: 'gpt-4o',
           azureOpenAIApiVersion: '2024-02-15-preview',
         },
-        configOptions: {},
+        configOptions: {
+          ...llmFetchOptions,
+        },
         tools: [],
       });
     });
@@ -186,6 +197,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
           defaultQuery: {
             'api-version': 'preview',
           },
+          ...llmFetchOptions,
         },
         tools: [],
       });
@@ -227,6 +239,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
           defaultQuery: {
             'api-version': '2024-05-01-preview',
           },
+          ...llmFetchOptions,
         },
         tools: [],
       });
@@ -268,6 +281,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
           defaultQuery: {
             'api-version': '2024-05-01-preview',
           },
+          ...llmFetchOptions,
         },
         tools: [],
       });
@@ -309,6 +323,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
           defaultQuery: {
             'api-version': '2024-05-01-preview',
           },
+          ...llmFetchOptions,
         },
         tools: [],
       });
@@ -351,6 +366,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
           defaultQuery: {
             'api-version': '2024-08-01-preview',
           },
+          ...llmFetchOptions,
         },
         tools: [],
       });
@@ -385,6 +401,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
         configOptions: {
           baseURL: 'https://api.groq.com/openai/v1/',
           defaultHeaders: {},
+          ...llmFetchOptions,
         },
         tools: [],
       });
@@ -433,6 +450,7 @@ describe('getOpenAIConfig - Backward Compatibility', () => {
             'x-librechat-thread-id': '{{LIBRECHAT_BODY_CONVERSATIONID}}',
             'x-test-key': '{{TESTING_USER_VAR}}',
           },
+          ...llmFetchOptions,
         },
         tools: [],
       });

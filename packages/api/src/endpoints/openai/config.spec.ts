@@ -8,8 +8,29 @@ import {
 } from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
 import type { OpenAIParameters, AzureOptions } from '~/types';
+import { getLLMFetchTimeoutMs } from '~/utils/dispatcher';
 import { getOpenAIConfig } from './config';
 import { knownOpenAIParams } from './llm';
+
+function getDispatcherTimeouts(dispatcher: object): {
+  bodyTimeout?: number;
+  headersTimeout?: number;
+} {
+  const optionsSym = Object.getOwnPropertySymbols(dispatcher).find(
+    (s) => s.toString() === 'Symbol(options)',
+  );
+  if (optionsSym == null) {
+    return {};
+  }
+
+  const options = (dispatcher as Record<symbol, { bodyTimeout?: number; headersTimeout?: number }>)[
+    optionsSym
+  ];
+  return {
+    bodyTimeout: options.bodyTimeout,
+    headersTimeout: options.headersTimeout,
+  };
+}
 
 describe('getOpenAIConfig', () => {
   const mockApiKey = 'test-api-key';
@@ -22,7 +43,11 @@ describe('getOpenAIConfig', () => {
       model: '',
       apiKey: mockApiKey,
     });
-    expect(result.configOptions).toEqual({});
+    expect(result.configOptions).toEqual({
+      fetchOptions: expect.objectContaining({
+        dispatcher: expect.any(Object),
+      }),
+    });
     expect(result.tools).toEqual([]);
   });
 
@@ -551,6 +576,63 @@ describe('getOpenAIConfig', () => {
 
     expect(result.configOptions?.fetchOptions).toBeDefined();
     expect((result.configOptions?.fetchOptions as RequestInit).dispatcher).toBeDefined();
+  });
+
+  it('always attaches an undici dispatcher so Agent runs are not capped at 5 minutes', () => {
+    const result = getOpenAIConfig(mockApiKey);
+    const dispatcher = (result.configOptions?.fetchOptions as RequestInit | undefined)?.dispatcher;
+    expect(dispatcher).toBeDefined();
+    const timeoutMs = getLLMFetchTimeoutMs();
+    expect(getDispatcherTimeouts(dispatcher as object)).toEqual({
+      bodyTimeout: timeoutMs,
+      headersTimeout: timeoutMs,
+    });
+  });
+
+  it('aligns Agent fetch body and header timeouts to HTTP_REQUEST_TIMEOUT_MS', () => {
+    const originalTimeout = process.env.HTTP_REQUEST_TIMEOUT_MS;
+    process.env.HTTP_REQUEST_TIMEOUT_MS = '900000';
+    try {
+      const result = getOpenAIConfig(mockApiKey);
+      const dispatcher = (result.configOptions?.fetchOptions as RequestInit | undefined)
+        ?.dispatcher;
+      expect(getDispatcherTimeouts(dispatcher as object)).toEqual({
+        bodyTimeout: 900000,
+        headersTimeout: 900000,
+      });
+    } finally {
+      if (originalTimeout === undefined) {
+        delete process.env.HTTP_REQUEST_TIMEOUT_MS;
+      } else {
+        process.env.HTTP_REQUEST_TIMEOUT_MS = originalTimeout;
+      }
+    }
+  });
+
+  it('applies HTTP_REQUEST_TIMEOUT_MS to user-provided SSRF dispatchers', () => {
+    const originalTimeout = process.env.HTTP_REQUEST_TIMEOUT_MS;
+    process.env.HTTP_REQUEST_TIMEOUT_MS = '900000';
+    try {
+      const result = getOpenAIConfig(mockApiKey, {
+        reverseProxyUrl: 'https://user-provider.example.com/v1',
+        baseURLIsUserProvided: true,
+      });
+      const dispatcher = (result.configOptions?.fetchOptions as RequestInit | undefined)
+        ?.dispatcher;
+      expect(result.configOptions?.fetchOptions).toEqual(
+        expect.objectContaining({ redirect: 'error' }),
+      );
+      expect(getDispatcherTimeouts(dispatcher as object)).toEqual({
+        bodyTimeout: 900000,
+        headersTimeout: 900000,
+      });
+    } finally {
+      if (originalTimeout === undefined) {
+        delete process.env.HTTP_REQUEST_TIMEOUT_MS;
+      } else {
+        process.env.HTTP_REQUEST_TIMEOUT_MS = originalTimeout;
+      }
+    }
   });
 
   it('should harden user-provided base URLs with a connect-time dispatcher and disabled redirects', () => {
@@ -1563,7 +1645,11 @@ describe('getOpenAIConfig', () => {
           streaming: true, // default
           apiKey: mockApiKey,
         });
-        expect(result.configOptions).toEqual({});
+        expect(result.configOptions).toEqual({
+          fetchOptions: expect.objectContaining({
+            dispatcher: expect.any(Object),
+          }),
+        });
         expect(result.tools).toEqual([]);
       });
 

@@ -1,4 +1,3 @@
-import { Agent } from 'undici';
 import { Providers } from '@librechat/agents';
 import { KnownEndpoints, EModelEndpoint, ReasoningParameterFormat } from 'librechat-data-provider';
 import type { Dispatcher } from 'undici';
@@ -7,9 +6,9 @@ import { getGoogleConfig, stripGeminiFlashBlockedParams } from '~/endpoints/goog
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { createSSRFSafeAgents, createSSRFSafeUndiciConnect } from '~/auth';
 import { getOpenAILLMConfig, extractDefaultParams } from './llm';
+import { createLLMFetchDispatcher } from '~/utils/dispatcher';
 import { constructAzureResponsesURL } from '~/utils/azure';
 import { transformToOpenAIConfig } from './transform';
-import { getProxyDispatcher } from '~/utils/proxy';
 import { createFetch } from '~/utils/generators';
 import { mergeHeaders } from '~/utils/headers';
 
@@ -249,7 +248,7 @@ export function getOpenAIConfig(
 
   if (shouldProtectUserBaseURL) {
     mergeFetchOptions(configOptions, {
-      dispatcher: new Agent({
+      dispatcher: createLLMFetchDispatcher({
         connect: createSSRFSafeUndiciConnect(
           options.allowedAddresses,
           getEffectiveURLPort(baseURL),
@@ -257,11 +256,10 @@ export function getOpenAIConfig(
       }),
       redirect: 'error',
     });
-  }
-
-  const proxyDispatcher = getProxyDispatcher(proxy);
-  if (proxyDispatcher && !shouldProtectUserBaseURL) {
-    mergeFetchOptions(configOptions, { dispatcher: proxyDispatcher });
+  } else {
+    mergeFetchOptions(configOptions, {
+      dispatcher: createLLMFetchDispatcher({ proxyUrl: proxy }),
+    });
   }
 
   if (azure && !isAnthropic) {
