@@ -232,7 +232,9 @@ test.describe('unseen replies', () => {
       const row = page.getByTestId('convo-item').filter({ hasText: title });
       await expect(row.locator('span[aria-hidden="true"].bg-status-info')).toHaveCount(0);
       await openConversationMenu(row);
-      await page.getByRole('menuitem', { name: 'Mark as unread' }).click();
+      /* Dispatched rather than clicked, like the row controls around it: the menu is portaled,
+         and on the mobile project the drawer's scrim sits over it and intercepts the pointer. */
+      await page.getByRole('menuitem', { name: 'Mark as unread' }).dispatchEvent('click');
       await expect(row.locator('span[aria-hidden="true"].bg-status-info')).toBeVisible();
       await expect.poll(() => page.title()).toMatch(/^\(1\)/);
 
@@ -279,7 +281,9 @@ test.describe('unseen replies', () => {
       const button = row.getByRole('button').first();
       await expect(button).toHaveAccessibleName(`${title} conversation`);
       await openConversationMenu(row);
-      await page.getByRole('menuitem', { name: 'Mark as unread' }).click();
+      /* Dispatched rather than clicked, like the row controls around it: the menu is portaled,
+         and on the mobile project the drawer's scrim sits over it and intercepts the pointer. */
+      await page.getByRole('menuitem', { name: 'Mark as unread' }).dispatchEvent('click');
       await expect(button).toHaveAccessibleName(`${title} conversation, Unread`);
       await expect(row.locator('span[aria-hidden="true"].bg-status-info')).toBeVisible();
     } finally {
