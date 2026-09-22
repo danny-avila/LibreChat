@@ -309,7 +309,8 @@ export function getOpenAIConfig(
       configOptions.fetch = ((_url: string | URL | Request, init?: RequestInit) =>
         undiciFetch(directURL, {
           ...(init as Parameters<typeof undiciFetch>[1]),
-          ...configOptions.fetchOptions,
+          // These options are constructed above with an Undici dispatcher, not another SDK runtime.
+          ...(configOptions.fetchOptions as Parameters<typeof undiciFetch>[1]),
         })) as unknown as Fetch;
     } else {
       configOptions.fetch = createFetch({

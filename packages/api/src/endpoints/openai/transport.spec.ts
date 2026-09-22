@@ -114,7 +114,7 @@ async function request({
     dispatchers.add(configOptions!.fetchOptions!.dispatcher as Dispatcher);
     const model = initializeModel({
       provider: Providers.OPENAI,
-      clientOptions: { ...llmConfig, configuration: configOptions },
+      clientOptions: { ...llmConfig, verbosity: undefined, configuration: configOptions },
     });
     if (cancel) timer = setTimeout(() => controller.abort(), 100);
     if (streaming) {
