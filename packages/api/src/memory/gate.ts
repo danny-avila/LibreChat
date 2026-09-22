@@ -162,6 +162,7 @@ export function createMemoryGate(params: CreateMemoryGateParams): MemoryGate | n
       const response = await classifier.classify({
         label: 'memory-gate',
         signal,
+        timeoutMs: settings.timeoutMs,
         state: { conversation: transcript },
         questions: buildQuestions(validKeys),
       });

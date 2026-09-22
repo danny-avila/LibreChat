@@ -192,6 +192,7 @@ export async function predictTools(params: PredictToolsParams): Promise<PredictT
         classifier.classify({
           label: `tool-selection[${index + 1}/${batches.length}]`,
           signal,
+          timeoutMs: config.timeoutMs,
           state: { request: text },
           questions:
             index === 0

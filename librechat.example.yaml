@@ -554,6 +554,9 @@ actions:
 #   toolSelection:
 #     enabled: true
 #     shortlist: 5
+#     # Overrides the provider timeout. Ranking a large catalog is a much bigger
+#     # request than a yes/no question.
+#     timeoutMs: 20000
 #     # Below this probability that any tool is needed, only tools the request
 #     # names outright are surfaced.
 #     needsToolThreshold: 0.15

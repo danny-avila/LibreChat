@@ -2944,6 +2944,9 @@ export const classificationSchema = z.object({
   toolSelection: z
     .object({
       enabled: z.boolean().default(false),
+      /** Overrides the provider's timeout. Ranking a large catalog is a much
+       *  bigger request than a yes/no question and can need longer. */
+      timeoutMs: z.number().int().positive().max(60_000).optional(),
       shortlist: z.number().int().positive().max(50).default(5),
       minProbability: z.number().min(0).max(1).default(0.05),
       /** Below this, only tools the request names outright are surfaced. */
@@ -2968,6 +2971,7 @@ export const classificationSchema = z.object({
   memoryGate: z
     .object({
       enabled: z.boolean().default(false),
+      timeoutMs: z.number().int().positive().max(60_000).optional(),
       threshold: z.number().min(0).max(1).default(0.25),
       instructions: z.string().min(1).max(4_000).optional(),
       /**
