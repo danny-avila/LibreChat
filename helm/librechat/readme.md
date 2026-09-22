@@ -15,9 +15,27 @@ startup instead of silently falling back to temporary, pod-local credentials.
 This does not validate the keys inside the Secret: ensure it contains all four
 `CREDS_KEY`, `CREDS_IV`, `JWT_SECRET`, and `JWT_REFRESH_SECRET` values.
 
-If you supply all credentials through `librechat.configEnv` or
-`global.librechat.env` (including `valueFrom.secretKeyRef`), set
-`global.librechat.existingSecretName: ""` to omit the bulk Secret reference.
+If you supply all LibreChat credentials through alternate environment injection,
+set `global.librechat.existingSecretName: ""` to omit the LibreChat container's
+bulk Secret reference:
+
+- `librechat.configEnv` accepts string values only, serialized into ConfigMap
+  `data`. Do not put `valueFrom` or `secretKeyRef` objects there.
+- `global.librechat.env` accepts Kubernetes environment entries, including
+  `valueFrom.secretKeyRef`. Use this mechanism for per-key Secret injection.
+
+Clearing the LibreChat reference does **not** clear the bundled Meilisearch
+reference. With `meilisearch.enabled: true` (the default), also provision the
+Secret named by `meilisearch.auth.existingMasterKeySecret`, which defaults to
+`librechat-credentials-env`. It must contain `MEILI_MASTER_KEY`, and LibreChat's
+`MEILI_MASTER_KEY` must match it. If you rename that Secret, update
+`meilisearch.auth.existingMasterKeySecret` as well. Injecting a key into the
+LibreChat container does not inject it into the Meilisearch container.
+
+For deployments with bundled Meilisearch disabled (`meilisearch.enabled: false`),
+there is no bundled Meilisearch Secret dependency. Configure any external search
+service and its matching credentials separately.
+
 Prefer Kubernetes Secrets over literal config values for production. Keep the
 same existing encryption keys across upgrades and replicas; do not regenerate
 them to resolve a missing Secret. No credential PVC is needed when permanent

@@ -24,7 +24,10 @@ render() {
 }
 render > "${TEST_DIR}/default.yaml"
 render --set replicaCount=2 --set global.librechat.existingSecretName=shared-credentials > "${TEST_DIR}/replicas.yaml"
+# This alternate fixture intentionally excludes bundled Meilisearch's separate Secret.
 cat > "${TEST_DIR}/alternate-values.yaml" <<'YAML'
+meilisearch:
+  enabled: false
 global:
   librechat:
     existingSecretName: ""
@@ -59,14 +62,21 @@ assert.equal(deployment(replicas).spec.replicas, 2);
 assert.deepEqual(container(replicas).envFrom.find((entry) => entry.secretRef), {
   secretRef: { name: 'shared-credentials', optional: false },
 });
+const alternateValues = yaml.load(fs.readFileSync(path.join(process.env.TEST_DIR, 'alternate-values.yaml'), 'utf8'));
+assert.equal(alternateValues.meilisearch.enabled, false);
+const chartValues = yaml.load(fs.readFileSync(path.join(process.env.TEST_DIR, 'chart/values.yaml'), 'utf8'));
+assert.equal(chartValues.meilisearch.enabled, true);
+assert.equal(chartValues.meilisearch.auth.existingMasterKeySecret, 'librechat-credentials-env');
 const alternate = docs('alternate.yaml');
 assert.equal(container(alternate).envFrom.some((entry) => entry.secretRef), false);
 assert.deepEqual(container(alternate).env, [{
   name: 'JWT_SECRET', valueFrom: { secretKeyRef: { name: 'separately-managed', key: 'jwt' } },
 }]);
 const config = alternate.find((doc) => doc.kind === 'ConfigMap' && doc.metadata.name.endsWith('-configenv'));
+assert.ok(Object.values(config.data).every((value) => typeof value === 'string'));
+assert.equal(Object.hasOwn(config.data, 'JWT_SECRET'), false);
 assert.equal(config.data.JWT_REFRESH_SECRET, 'fixture-refresh');
 assert.equal(config.data.CREDS_KEY, 'fixture-key');
 assert.equal(config.data.CREDS_IV, 'fixture-iv');
-console.log('PASS: required default/custom Secrets, shared replica credentials, and alternate environment injection');
+console.log('PASS: required default/custom Secrets, shared replica credentials, and alternate environment injection with bundled Meilisearch disabled');
 NODE
