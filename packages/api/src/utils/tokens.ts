@@ -1,5 +1,5 @@
 import z from 'zod';
-import { EModelEndpoint, supportsContext1m } from 'librechat-data-provider';
+import { EModelEndpoint, isOpus55Model, supportsContext1m } from 'librechat-data-provider';
 import type { EndpointTokenConfig, TokenConfig } from '~/types';
 
 /**
@@ -182,6 +182,8 @@ const anthropicModels = {
   'claude-opus-4-6': 1000000,
   'claude-opus-4-7': 1000000,
   'claude-opus-4-8': 1000000,
+  'claude-opus-5-5': 1000000,
+  'claude-opus-5.5': 1000000,
   'claude-opus-5': 1000000,
   'claude-fable-5': 1000000,
   'claude-mythos-5': 1000000,
@@ -190,6 +192,7 @@ const anthropicModels = {
 };
 
 const ANTHROPIC_CONTEXT_1M = 1000000;
+const ANTHROPIC_OPUS_55_OUTPUT = 128000;
 const ANTHROPIC_SONNET_4_6_PLUS_OUTPUT = 128000;
 const ANTHROPIC_SONNET_4_6_PLUS_PATTERN =
   /(?:claude-sonnet[-.]?4[-.]?(?:[6-9]|\d{2})|claude[-.]?4[-.]?(?:[6-9]|\d{2})[-.]?sonnet)(?=$|[^0-9])/;
@@ -219,6 +222,13 @@ function getAnthropicSonnet46PlusOutput(
     return undefined;
   }
   return ANTHROPIC_SONNET_4_6_PLUS_OUTPUT;
+}
+
+function getAnthropicOpus55Output(modelName: string, endpoint: EModelEndpoint): number | undefined {
+  if (!usesAnthropicContextMap(endpoint) || !isOpus55Model(modelName)) {
+    return undefined;
+  }
+  return ANTHROPIC_OPUS_55_OUTPUT;
 }
 
 const deepseekModels = {
@@ -543,6 +553,8 @@ const anthropicMaxOutputs = {
   'claude-opus-4-6': 128000,
   'claude-opus-4-7': 128000,
   'claude-opus-4-8': 128000,
+  'claude-opus-5-5': 128000,
+  'claude-opus-5.5': 128000,
   'claude-opus-5': 128000,
   'claude-fable-5': 128000,
   'claude-mythos-5': 128000,
@@ -718,6 +730,10 @@ export function getModelMaxOutputTokens(
     if (overrideValue != null) {
       return overrideValue;
     }
+  }
+  const opus55Value = getAnthropicOpus55Output(modelName, endpoint);
+  if (opus55Value != null) {
+    return opus55Value;
   }
   const sonnet46PlusValue = getAnthropicSonnet46PlusOutput(modelName, endpoint);
   if (sonnet46PlusValue != null) {
