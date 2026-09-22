@@ -3,6 +3,13 @@ import type { Locator, Page } from '@playwright/test';
 import { cleanupAgent, uniqueAgentName, waitForPersistedAgent } from '../agents.helpers';
 import { getAccessToken, MOCK_ENDPOINTS, NEW_CHAT_PATH, requestJson } from '../helpers';
 
+/**
+ * `DIALOG_SCRIM_CLASS` in `packages/client/src/components/OriginalDialog.tsx`: the
+ * one class OGDialog's overlay and the morph's own backdrop both carry, which is
+ * what lets the count below tell a shared scrim from a second one.
+ */
+const SCRIM_CLASS = 'bg-surface-overlay/80';
+
 type CreatedAgent = {
   id: string;
   name: string;
@@ -137,9 +144,8 @@ test.describe('agent detail morph', () => {
       await trigger.click();
       await expect(page.getByRole('dialog')).toBeVisible();
 
-      const samples = await page.evaluate(async () => {
-        const frames: Array<{ sharedScrims: number; otherTranslucentBlackViewportLayers: number }> =
-          [];
+      const samples = await page.evaluate(async (scrimClass) => {
+        const frames: Array<{ sharedScrims: number; otherDimViewportLayers: number }> = [];
         const isFullViewport = (element: HTMLElement) => {
           const rect = element.getBoundingClientRect();
           return (
@@ -149,7 +155,12 @@ test.describe('agent detail morph', () => {
             rect.bottom >= window.innerHeight
           );
         };
-        const isTranslucentBlack = (element: HTMLElement) => {
+        /**
+         * A second dim, whatever colour it paints. Keyed on alpha rather than on
+         * black channels because the scrim role resolves to a gray in the light
+         * theme, so a colour test would only ever catch a duplicate in the dark one.
+         */
+        const isDim = (element: HTMLElement) => {
           const background = getComputedStyle(element).backgroundColor;
           const match = background.match(/^rgba?\(([^)]+)\)$/);
           if (!match) {
@@ -157,39 +168,29 @@ test.describe('agent detail morph', () => {
           }
           const channels = match[1].split(',').map((channel) => channel.trim());
           const alpha = channels.length === 4 ? Number.parseFloat(channels[3]) : 1;
-          return (
-            channels[0] === '0' &&
-            channels[1] === '0' &&
-            channels[2] === '0' &&
-            alpha > 0 &&
-            alpha < 1
-          );
+          return alpha >= 0.3 && alpha < 1;
         };
 
         for (let frame = 0; frame < 24; frame++) {
           await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
           const elements = Array.from(document.querySelectorAll<HTMLElement>('*'));
-          const sharedScrims = elements.filter((element) =>
-            element.classList.contains('bg-black/80'),
-          );
-          const otherTranslucentBlackViewportLayers = elements.filter(
+          const sharedScrims = elements.filter((element) => element.classList.contains(scrimClass));
+          const otherDimViewportLayers = elements.filter(
             (element) =>
-              !element.classList.contains('bg-black/80') &&
-              isFullViewport(element) &&
-              isTranslucentBlack(element),
+              !element.classList.contains(scrimClass) && isFullViewport(element) && isDim(element),
           );
           frames.push({
             sharedScrims: sharedScrims.length,
-            otherTranslucentBlackViewportLayers: otherTranslucentBlackViewportLayers.length,
+            otherDimViewportLayers: otherDimViewportLayers.length,
           });
         }
         return frames;
-      });
+      }, SCRIM_CLASS);
 
       expect(samples.length).toBeGreaterThan(0);
       for (const sample of samples) {
         expect(sample.sharedScrims).toBe(1);
-        expect(sample.otherTranslucentBlackViewportLayers).toBe(0);
+        expect(sample.otherDimViewportLayers).toBe(0);
       }
     } finally {
       await cleanupAgent(page, agentId);
