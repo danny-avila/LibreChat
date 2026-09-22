@@ -128,6 +128,30 @@ describe('User personalization', () => {
 });
 
 describe('User Methods - Database Tests', () => {
+  describe('findOwnerContactUsers', () => {
+    test('returns only projected owner contact rows for matching ids', async () => {
+      const owner = await User.create({
+        name: 'Ada Owner',
+        username: 'ada',
+        email: 'ada@example.com',
+        provider: 'local',
+      });
+      await User.create({
+        name: 'Other User',
+        username: 'other',
+        email: 'other@example.com',
+        provider: 'local',
+      });
+
+      const rows = await methods.findOwnerContactUsers([
+        owner._id.toString(),
+        new mongoose.Types.ObjectId().toString(),
+      ]);
+
+      expect(rows).toEqual([{ _id: owner._id, name: 'Ada Owner', username: 'ada' }]);
+      expect(rows[0]).not.toHaveProperty('email');
+    });
+  });
   describe('findUser', () => {
     test('should find user by exact email', async () => {
       await User.create({

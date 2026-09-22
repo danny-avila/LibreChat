@@ -1230,6 +1230,9 @@ export type CodeWorkerEnrollmentPolicy = NonNullable<
   NonNullable<z.infer<typeof agentsEndpointSchema>['statefulCodeSessions']>['principalWorkers']
 >;
 
+/** Agents whose S3 avatar refresh is remembered for one user; see `avatarRefresh`. */
+export const DEFAULT_AVATAR_REFRESH_COVERAGE_LIMIT = 1000;
+
 export const DEFAULT_MAX_PROVIDER_ERROR_CHARS = 2000;
 
 export const agentsEndpointSchema = baseEndpointSchema
@@ -1308,6 +1311,22 @@ export const agentsEndpointSchema = baseEndpointSchema
       codeApiUploadConcurrency: z.number().int().min(1).max(100).optional().default(3),
       /** Maximum wall-clock time spent waiting on Code API rate limits per operation. */
       codeApiMaxRetryWaitMs: z.number().int().min(0).max(300_000).optional().default(20_000),
+      /** S3 avatar re-signing for agent list responses. */
+      avatarRefresh: z
+        .object({
+          /** Per-agent refresh deadlines remembered for one user across pages. Once this
+           *  many are held the oldest are dropped, and a dropped agent is signed and
+           *  persisted again when a later page shows it, so deployments whose readers
+           *  browse past this many S3-backed avatars should raise it. */
+          coverageLimit: z
+            .number()
+            .int()
+            .min(1)
+            .max(1_000_000)
+            .optional()
+            .default(DEFAULT_AVATAR_REFRESH_COVERAGE_LIMIT),
+        })
+        .optional(),
       allowedProviders: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
       capabilities: z
         .array(z.nativeEnum(AgentCapabilities))
@@ -2122,6 +2141,10 @@ export const interfaceSchema = z
     marketplace: z
       .object({
         use: z.boolean().optional(),
+        /** Backoff steps, in milliseconds, before each automatic retry of a failed
+         *  marketplace request; the count is also how many automatic attempts there are.
+         *  An empty array leaves only the manual Retry. Omit for LibreChat's sequence. */
+        retryDelaysMs: z.array(z.number().int().min(0).max(600_000)).max(20).optional(),
       })
       .optional(),
     fileSearch: z.boolean().optional(),
