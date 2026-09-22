@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
+import { useSetRecoilState } from 'recoil';
 import { ArrowUpLeft } from 'lucide-react';
 import {
   Table,
@@ -13,10 +14,13 @@ import {
 } from '@librechat/client';
 import {
   megabyte,
+  Constants,
+  EToolResources,
   mergeFileConfig,
   checkOpenAIStorage,
   isAssistantsEndpoint,
   getEndpointFileConfig,
+  defaultAgentCapabilities,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
 import {
@@ -32,10 +36,11 @@ import {
   type ColumnFiltersState,
 } from '@tanstack/react-table';
 import type { TFile } from 'librechat-data-provider';
+import { useLocalize, useUpdateFiles, useGetAgentsConfig, useAgentCapabilities } from '~/hooks';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useFileMapContext, useChatContext } from '~/Providers';
-import { useLocalize, useUpdateFiles } from '~/hooks';
 import { useGetFileConfig } from '~/data-provider';
+import { ephemeralAgentByConvoId } from '~/store';
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -91,6 +96,11 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
     select: (data) => mergeFileConfig(data),
   });
   const { addFile } = useUpdateFiles(setFiles);
+  const setEphemeralAgent = useSetRecoilState(
+    ephemeralAgentByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
+  );
+  const { agentsConfig } = useGetAgentsConfig();
+  const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
   const handleFileClick = useCallback(
     (file: TFile) => {
@@ -184,6 +194,14 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         }
       }
 
+      /** Mirror `AttachFileMenu`: an embedded file is unreadable unless file search is on. */
+      if (fileData.embedded === true && capabilities.fileSearchEnabled) {
+        setEphemeralAgent((prev) => ({
+          ...prev,
+          [EToolResources.file_search]: true,
+        }));
+      }
+
       addFile({
         progress: 1,
         attached: true,
@@ -200,7 +218,17 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         llmDeliveryPath: fileData.llmDeliveryPath,
       });
     },
-    [addFile, files, fileMap, conversation, localize, showToast, fileConfig],
+    [
+      addFile,
+      files,
+      fileMap,
+      conversation,
+      localize,
+      showToast,
+      fileConfig,
+      setEphemeralAgent,
+      capabilities.fileSearchEnabled,
+    ],
   );
 
   const filenameFilter = table.getColumn('filename')?.getFilterValue() as string;
