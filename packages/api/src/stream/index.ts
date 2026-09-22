@@ -66,6 +66,17 @@ export { filterPersistableAbortContent, hasPersistableAbortContent } from './abo
 export { getGenerationElapsedMs } from './elapsed';
 export { applyRetainedContentEdit, projectRetainedMessageContent } from './retained';
 export { getRetainedContentMetadata } from './metadata';
+export {
+  projectTerminalEvent,
+  TRANSIENT_MESSAGE_FIELDS,
+  TRANSIENT_FILE_FIELDS,
+  TRANSIENT_ATTACHMENT_FIELDS,
+} from './terminalProjection';
+export type {
+  ProjectedFinalEvent,
+  ProjectedMessageFields,
+  TransientMessageField,
+} from './terminalProjection';
 
 // Implementations (for advanced use cases)
 export { InMemoryJobStore } from './implementations/InMemoryJobStore';

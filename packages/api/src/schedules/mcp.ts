@@ -22,11 +22,16 @@ import type {
   AgentGraphAccessContext,
 } from '@librechat/data-schemas';
 import type { TModelsConfig, ScheduleMCPStatus, ScheduleMCPOutcome } from 'librechat-data-provider';
-import type { UpstreamTokenProvider, UpstreamTokenProviderResolver } from '../mcp/oauth/obo';
+import type {
+  UpstreamTokenProvider,
+  UpstreamTokenProviderResolver,
+  UpstreamTokenTarget,
+} from '../mcp/oauth/obo';
 import type { ParsedServerConfig, UserMCPConnectionOptions } from '../mcp/types';
 import type { CheckAccessParams } from '../middleware/access';
 import type { MCPToolsSnapshot } from '../mcp/connection';
 import type { GetAppConfigOptions } from '../app/service';
+import type { ScheduledTokenContext } from './context';
 import type { ScheduleMCPPreflight } from './types';
 import {
   MCPAuthenticationRejectedError,
@@ -41,6 +46,7 @@ import {
 } from '../mcp/utils';
 import { MCPConfigInitializationCanceledError } from '../mcp/registry/MCPServersRegistry';
 import { createMCPRequestContext, cleanupMCPRequestContext } from '../mcp/request';
+import { isScheduleFireRequest, readScheduleFireContext } from './trigger';
 import { getAppConfigOptionsFromUser } from '../app/service';
 import { createConcurrencyLimiter } from '../utils/promise';
 import { OboTokenResolutionError } from '../mcp/oauth/obo';
@@ -50,48 +56,85 @@ import { formatMCPServerTools } from '../mcp/tools';
 import { checkAccess } from '../middleware/access';
 import { detachOnAbort } from '../utils/promises';
 import { getPluginAuthMap } from '../agents/auth';
-import { isScheduleFireRequest } from './trigger';
 
-type HostUpstreamTokenProviderResolver = (
-  user: IUser,
-  options: { signal?: AbortSignal },
+export interface ScheduledTokenIdentity {
+  readonly id: string;
+  readonly tenantId?: string;
+  readonly role?: string;
+  readonly provider?: string;
+  readonly openidId?: string;
+  readonly openidIssuer?: string;
+}
+
+export type HostUpstreamTokenProviderResolver = (
+  user: ScheduledTokenIdentity,
+  options: {
+    signal?: AbortSignal;
+    context?: ScheduledTokenContext;
+    target?: UpstreamTokenTarget;
+  },
 ) => ReturnType<UpstreamTokenProviderResolver>;
 
 /** Bind a credential lookup to the trusted principal and owning run's cancellation. */
 export function bindUpstreamTokenProviderResolver(
-  user: IUser,
+  user: ScheduledTokenIdentity,
   resolve: HostUpstreamTokenProviderResolver | undefined,
   signal?: AbortSignal,
+  context?: ScheduledTokenContext,
 ): UpstreamTokenProviderResolver | undefined {
   if (!resolve) return undefined;
-  let pending: Promise<UpstreamTokenProvider | undefined> | undefined;
-  return () => {
+  const capturedContext = context && Object.freeze({ ...context });
+  const pending = new Map<string, Promise<UpstreamTokenProvider | undefined>>();
+  return (options) => {
     signal?.throwIfAborted();
-    pending ??= Promise.resolve()
+    const target = options?.target && Object.freeze({ ...options.target });
+    const key = JSON.stringify([target?.mcpServer, target?.scopes]);
+    const cached = pending.get(key);
+    if (cached) return cached;
+    const lookup = Promise.resolve()
       .then(() => {
         signal?.throwIfAborted();
-        return resolve(user, { signal });
+        return resolve(user, {
+          signal,
+          ...(capturedContext ? { context: capturedContext } : {}),
+          ...(target ? { target } : {}),
+        });
       })
       .then((provider) => {
-        if (!provider) pending = undefined;
+        if (!provider) pending.delete(key);
         return provider;
       })
       .catch((error) => {
-        pending = undefined;
+        pending.delete(key);
         throw error;
       });
-    return pending;
+    pending.set(key, lookup);
+    return lookup;
   };
 }
 
 export function createScheduleUpstreamTokenProviderResolver(
-  req: Parameters<typeof isScheduleFireRequest>[0] & { user: IUser },
+  req: Parameters<typeof isScheduleFireRequest>[0] & { user: ScheduledTokenIdentity },
   resolve: HostUpstreamTokenProviderResolver | undefined,
   signal?: AbortSignal,
+  restoredContext?: ScheduledTokenContext,
 ): UpstreamTokenProviderResolver | undefined {
-  return isScheduleFireRequest(req)
-    ? bindUpstreamTokenProviderResolver(req.user, resolve, signal)
-    : undefined;
+  if (!isScheduleFireRequest(req)) return undefined;
+  if (restoredContext)
+    return bindUpstreamTokenProviderResolver(req.user, resolve, signal, restoredContext);
+  const fire = readScheduleFireContext(req);
+  const agentId = req.body?.agent_id;
+  const context: ScheduledTokenContext | undefined =
+    fire && typeof agentId === 'string' && agentId.trim().length > 0
+      ? {
+          scheduleId: fire.scheduleId,
+          ownerId: req.user.id,
+          ...(req.user.tenantId ? { tenantId: req.user.tenantId } : {}),
+          agentId,
+          invocationMode: 'delegated',
+        }
+      : undefined;
+  return bindUpstreamTokenProviderResolver(req.user, resolve, signal, context);
 }
 
 // The public schedule schema caps mcpPreflightConcurrency at 10. Keep the same
@@ -145,10 +188,7 @@ interface ScheduleMCPDeps {
     role?: string,
   ) => Promise<Record<string, ParsedServerConfig>>;
   findPluginAuthsByKeys: PluginAuthMethods['findPluginAuthsByKeys'];
-  resolveUpstreamTokenProvider?: (
-    user: IUser,
-    options: { signal?: AbortSignal },
-  ) => UpstreamTokenProvider | undefined | Promise<UpstreamTokenProvider | undefined>;
+  resolveUpstreamTokenProvider?: HostUpstreamTokenProviderResolver;
   connect: (options: UserMCPConnectionOptions) => Promise<{
     fetchToolsSnapshot: (deadlineMs?: number, signal?: AbortSignal) => Promise<MCPToolsSnapshot>;
   }>;
@@ -165,7 +205,7 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
     throwIfAborted();
     const user = await deps.getUser(principal.id);
     throwIfAborted();
-    if (!user) throw new ScheduleMCPError([]);
+    if (!user || user.tenantId !== principal.tenantId) throw new ScheduleMCPError([]);
     user.id = principal.id;
     let appConfig: AppConfig | undefined;
     const loadAppConfig = async (): Promise<AppConfig | undefined> => {
@@ -624,6 +664,15 @@ export function createScheduleMCPPreflight(deps: ScheduleMCPDeps): ScheduleMCPPr
       user,
       deps.resolveUpstreamTokenProvider,
       options.signal,
+      options.scheduleId
+        ? {
+            scheduleId: options.scheduleId,
+            ownerId: principal.id,
+            ...(user.tenantId ? { tenantId: user.tenantId } : {}),
+            agentId,
+            invocationMode: 'delegated',
+          }
+        : undefined,
     );
     throwIfAborted();
     const requestBody = {

@@ -446,6 +446,8 @@ const xAIModels = {
   'grok-4-5': 500000,
   'grok-4.6': 500000,
   'grok-4-6': 500000,
+  'grok-4.7': 500000,
+  'grok-4-7': 500000,
 };
 
 const aggregateModels = {

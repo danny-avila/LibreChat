@@ -1,7 +1,7 @@
 import userEvent from '@testing-library/user-event';
-import { QueryKeys, Constants } from 'librechat-data-provider';
 import { render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryKeys, Constants, LocalStorageKeys } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import CodeApprovalMenu from '../CodeApprovalMenu';
 
@@ -162,4 +162,29 @@ describe('CodeApprovalMenu', () => {
       codeApprovalMode: 'fullAccess',
     });
   });
+});
+
+test("remembers the pick as this browser's default for the next chat", async () => {
+  localStorage.clear();
+  mockUseCodeApprovalMode.mockReturnValue({
+    available: true,
+    modes: ['ask', 'acceptEdits'],
+    selected: 'ask',
+  });
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <CodeApprovalMenu
+        conversation={conversation}
+        setConversation={mockSetConversation}
+        disabled={false}
+      />
+    </QueryClientProvider>,
+  );
+
+  await userEvent.click(screen.getByTestId('code-approval-mode'));
+  await userEvent.click(await screen.findByText('com_ui_code_approval_accept_edits'));
+
+  expect(localStorage.getItem(LocalStorageKeys.LAST_CODE_APPROVAL_MODE)).toBe(
+    JSON.stringify('acceptEdits'),
+  );
 });

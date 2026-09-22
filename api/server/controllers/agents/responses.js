@@ -629,9 +629,14 @@ const executeResponse = async (envelope, { req, res }) => {
   // Generate IDs
   const responseId = generateResponseId();
   const terminalRunError = createTerminalRunErrorObserver({
+    maxProviderErrorChars: appConfig?.endpoints?.agents?.maxProviderErrorChars,
     logger,
     responseMessageId: responseId,
     source: '[Responses API]',
+    protectionEnabled: hasModelBoundContentProtection(
+      appConfig?.filters,
+      appConfig?.messageFilter?.pii,
+    ),
   });
   const context = createResponseContext(request, responseId);
 
@@ -727,6 +732,8 @@ const executeResponse = async (envelope, { req, res }) => {
       const agentsEConfig = appConfig?.endpoints?.[EModelEndpoint.agents];
       const ordinaryToolCancellationEnabled =
         agentsEConfig?.backgroundTasks?.ordinaryToolCancellation === true;
+      const backgroundCompletionResultMaxChars =
+        agentsEConfig?.backgroundTasks?.completionResultMaxChars;
       const previousMessages = request.previous_response_id
         ? await loadPreviousMessages(request.previous_response_id, principal.userId)
         : [];
@@ -1189,6 +1196,7 @@ const executeResponse = async (envelope, { req, res }) => {
           runSignal: execution.signal,
           foregroundRunId: responseId,
           ordinaryToolCancellation: ordinaryToolCancellationEnabled,
+          backgroundCompletionResultMaxChars,
           provisionFiles: createProvisionFilesCallback({
             req,
             agentToolContexts,
@@ -1419,6 +1427,7 @@ const executeResponse = async (envelope, { req, res }) => {
           runSignal: execution.signal,
           foregroundRunId: responseId,
           ordinaryToolCancellation: ordinaryToolCancellationEnabled,
+          backgroundCompletionResultMaxChars,
           provisionFiles: createProvisionFilesCallback({
             req,
             agentToolContexts,

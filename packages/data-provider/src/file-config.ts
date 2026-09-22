@@ -3,6 +3,9 @@ import type { EndpointFileConfig, FileConfig, RegexLike } from './types/files';
 import { EModelEndpoint, isAgentsEndpoint, isDocumentSupportedProvider } from './schemas';
 import { normalizeEndpointName } from './utils';
 
+/** Parallel storage deletions during rollback of a failed skill archive import. */
+export const DEFAULT_SKILL_IMPORT_CLEANUP_CONCURRENCY = 8;
+
 export const supportsFiles = {
   [EModelEndpoint.openAI]: true,
   [EModelEndpoint.google]: true,
@@ -536,6 +539,7 @@ export const fileConfig = {
   },
   skills: {
     fileSizeLimit: defaultSkillImportSizeLimit,
+    importCleanupConcurrency: DEFAULT_SKILL_IMPORT_CLEANUP_CONCURRENCY,
   },
   serverFileSizeLimit: defaultSizeLimit,
   avatarSizeLimit: mbToBytes(2),
@@ -563,7 +567,20 @@ export const fileConfig = {
   },
 };
 
-const supportedMimeTypesSchema = z.array(z.string()).optional();
+const supportedMimeTypesSchema = z
+  .array(
+    z.string().superRefine((pattern, context) => {
+      try {
+        compileMimeRegex(pattern);
+      } catch {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Invalid MIME type regex: not supported by the configured regex engine',
+        });
+      }
+    }),
+  )
+  .optional();
 
 export const DefaultLLMDeliveryPath = z.enum(['provider', 'text', 'none']);
 export type TDefaultLLMDeliveryPath = z.infer<typeof DefaultLLMDeliveryPath>;
@@ -588,6 +605,7 @@ export const endpointFileConfigSchema = z.object({
 
 const skillFileConfigSchema = z.object({
   fileSizeLimit: z.number().min(0).optional(),
+  importCleanupConcurrency: z.number().int().positive().optional(),
 });
 
 export const fileConfigSchema = z.object({
@@ -1212,6 +1230,13 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
 
   if (dynamic.fileContextCharLimit !== undefined) {
     mergedConfig.fileContextCharLimit = dynamic.fileContextCharLimit;
+  }
+
+  if (dynamic.skills?.importCleanupConcurrency !== undefined) {
+    mergedConfig.skills = {
+      ...mergedConfig.skills,
+      importCleanupConcurrency: dynamic.skills.importCleanupConcurrency,
+    };
   }
 
   if (dynamic.skills?.fileSizeLimit !== undefined) {

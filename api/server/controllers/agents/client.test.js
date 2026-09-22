@@ -107,7 +107,7 @@ describe('AgentClient code approval persistence', () => {
       endpoint: EModelEndpoint.agents,
       agent: { id: 'attached-agent' },
       req: {
-        body: {},
+        body: { conversationId: 'convo-1' },
         _codeEnvironmentDecision: {
           mode: 'attached',
           codeWorkspaces: [{ environmentId: 'mac', workspaceId: 'primary' }],
@@ -135,7 +135,7 @@ describe('AgentClient code approval persistence', () => {
       endpoint: EModelEndpoint.agents,
       agent: { id: 'attached-agent' },
       req: {
-        body: {},
+        body: { conversationId: 'convo-1' },
         _codeEnvironmentDecision: { mode: 'attached', codeWorkspaces },
         resolvedConversation: { conversationId: 'convo-1', codeWorkspaces },
         config: { endpoints: { [EModelEndpoint.agents]: {} } },
@@ -6314,6 +6314,26 @@ describe('AgentClient - titleConvo', () => {
       expect(client.shouldDeferUserMessagePersistence()).toBe(true);
     });
 
+    it('still seeds the conversation row when only attachments defer the message', () => {
+      client.modelBoundCurrentFiles = [makeTextFile('pending', 'pending.txt', 'context')];
+
+      expect(client.shouldDeferUserMessagePersistence()).toBe(true);
+      expect(client.shouldSeedDeferredConversation()).toBe(true);
+    });
+
+    it('holds back the conversation row while a content policy defers every write', () => {
+      client.modelBoundCurrentFiles = [makeTextFile('pending', 'pending.txt', 'context')];
+      mockReq.config.messageFilter = {
+        pii: {
+          starterPatterns: [],
+          customPatterns: [{ id: 'secret', label: 'secret', regex: 'SECRET-[A-Z]+' }],
+        },
+      };
+
+      expect(client.shouldDeferUserMessagePersistence()).toBe(true);
+      expect(client.shouldSeedDeferredConversation()).toBe(false);
+    });
+
     it('keeps repeated lazy scoped-text admission cumulative across resolutions', () => {
       mockReq.config.fileConfig = { fileContextCharLimit: 1_000_000 };
       const repeated = makeTextFile('lazy-context', 'lazy.txt', 'x'.repeat(600_000));
@@ -6718,7 +6738,18 @@ describe('AgentClient - titleConvo', () => {
           ...makeUploadedFile('fallback-file', 'sales.csv', 'text/csv'),
           text: 'handoff fallback content',
           llmDeliveryPath: 'none',
-          metadata: { destinationChosen: false },
+          /* The primary agent runs code, and a tool serves a file only once it holds it, so the
+           * sandbox reference is what keeps the text out of the primary prompt while the handoff
+           * agent, which runs no reader at all, still receives it. */
+          metadata: {
+            destinationChosen: false,
+            codeEnvRef: {
+              kind: 'user',
+              id: 'user-1',
+              storage_session_id: 'session-1',
+              file_id: 'sandbox-fallback-file',
+            },
+          },
         };
         const { resolveTurnDeliveryRouting } = jest.requireActual('@librechat/api');
         client.options.req.config.fileConfig = {
@@ -10071,6 +10102,61 @@ describe('AgentClient - resumeCompletion content protection', () => {
     });
     errorSpy.mockRestore();
   });
+
+  /** A gateway or privacy proxy states its rejection in its own message and nowhere else, so an
+   *  unclassified upstream failure carries it exactly as every other failure text does. */
+  it.each([undefined, 24, 3000])(
+    'keeps the provider explanation with limit %s on a terminal resumed model failure',
+    async (maxProviderErrorChars) => {
+      const explanation = '400 Request rejected: this prompt cannot be masked safely';
+      const trackTerminalProviderError = (providerError) => {
+        mockCreateRun.mockImplementation(async (options) => {
+          const tracker = options.modelCallbacks.find(
+            (callback) => callback.name === 'librechat-upstream-model-error-tracker',
+          );
+          return {
+            resume: jest.fn(async () => {
+              tracker.handleLLMError(providerError, 'resumed-model-run');
+              throw providerError;
+            }),
+            getCalibrationRatio: jest.fn(() => 0),
+          };
+        });
+      };
+
+      trackTerminalProviderError(Object.assign(new Error(explanation), { status: 400 }));
+      const context = makeContext(undefined);
+      context.options.req.config.endpoints = { agents: { maxProviderErrorChars } };
+
+      await AgentClient.prototype.resumeCompletion.call(context, { resumeValue: {} });
+
+      expect(context.contentParts).toContainEqual({
+        type: ContentTypes.ERROR,
+        [ContentTypes.ERROR]:
+          'The model provider could not complete this request.\n' +
+          JSON.stringify({
+            type: 'upstream_model_error',
+            status: 400,
+            message: explanation.slice(0, maxProviderErrorChars),
+          }),
+      });
+
+      /** With a policy inspecting the traffic, the body may echo submitted content: status only. */
+      trackTerminalProviderError(Object.assign(new Error(explanation), { status: 400 }));
+      const protectedContext = makeContext({
+        messages: { pii: { fields: ['text'], starterPatterns: ['email'] } },
+      });
+
+      await AgentClient.prototype.resumeCompletion.call(protectedContext, { resumeValue: {} });
+
+      expect(protectedContext.contentParts).toContainEqual({
+        type: ContentTypes.ERROR,
+        [ContentTypes.ERROR]:
+          'The model provider could not complete this request.\n' +
+          JSON.stringify({ type: 'upstream_model_error', status: 400 }),
+      });
+    },
+  );
 
   it('preserves provider error detail when content protection is disabled', async () => {
     const providerMessage = 'Legacy provider detail';

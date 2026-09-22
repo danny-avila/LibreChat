@@ -242,7 +242,22 @@ export default function useCodeWorkspace(
   const isNewChat =
     conversation != null &&
     (conversation.conversationId == null || conversation.conversationId === 'new');
-  const locked = conversation != null && !isNewChat;
+  /** Only a recorded decision is sealed. A saved chat whose turns never involved a code-capable
+   *  agent stores none, so switching one to a coding agent still gets to choose; treating it as
+   *  sealed leaves the composer showing a decision its owner never made, with no workspace to
+   *  select and no way to submit.
+   *
+   *  Until the deployment advertises the decision protocol, a replica that still reads a
+   *  field-less row as a sealed `without_attached` may serve the next turn and reject an attached
+   *  choice as `locked`, so the legacy lock stays for the whole rollout window. Nothing is lost by
+   *  waiting: the composer only reports that unmade decision once the same flag is on. */
+  const holdsDecision =
+    conversation?.codeEnvironmentMode != null || (storedSelections?.length ?? 0) > 0;
+  const locked =
+    conversation != null && !isNewChat && (holdsDecision || !supportsEnvironmentDecisions);
+  /** A new chat and a saved chat that never decided are both still choosing, so agent defaults, a
+   *  remembered selection, and a sole workspace apply to each. */
+  const undecided = conversation != null && !locked;
   const environmentResults = attachedEnvironments.map((environment, index) => {
     const status = statuses[index];
     const workspaces =
@@ -251,7 +266,7 @@ export default function useCodeWorkspace(
         : [];
     let stored = storedSelections?.find(({ environmentId }) => environmentId === environment.id);
     let conflictingDefaults = false;
-    if (stored == null && isNewChat && !hasForeignStoredSelection) {
+    if (stored == null && undecided && !hasForeignStoredSelection) {
       const defaults = workspaceMetadata.defaults.get(environment.id) ?? new Set<string>();
       let preferred: string | undefined;
       if (defaults.size === 1) preferred = [...defaults][0];

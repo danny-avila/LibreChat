@@ -1,6 +1,6 @@
 import type { TDefaultLLMDeliveryPathConfig } from '../file-config';
 import type { CodeEnvRef, CodeEnvRefMap } from '../codeEnvRef';
-import { EToolResources } from './assistants';
+import { EToolResources } from './tools';
 
 export enum FileSources {
   local = 'local',
@@ -62,6 +62,8 @@ export type FileConfig = {
     [key: string]: EndpointFileConfig;
   };
   skills?: {
+    /** Maximum concurrent blob deletions during failed archive import cleanup. */
+    importCleanupConcurrency?: number;
     fileSizeLimit?: number;
   };
   fileTokenLimit?: number;
@@ -101,6 +103,8 @@ export type FileConfigInput = {
     [key: string]: EndpointFileConfig;
   };
   skills?: {
+    /** Maximum concurrent blob deletions during failed archive import cleanup. */
+    importCleanupConcurrency?: number;
     fileSizeLimit?: number;
   };
   serverFileSizeLimit?: number;

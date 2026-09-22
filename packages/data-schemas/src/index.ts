@@ -18,6 +18,7 @@ export {
   defaultRate,
   createTxMethods,
   permissionBitSupersets,
+  PERM_BITS_WRITE_ATTEMPTS,
   partitionIssues,
   validateSkillName,
   validateSkillBody,
@@ -67,6 +68,8 @@ export {
   isCompactionSemanticIndexProjection,
 } from './types/compaction';
 export {
+  AGENT_BACKGROUND_TOOL_RESULT_STORAGE_MAX_CHARS,
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
   AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,

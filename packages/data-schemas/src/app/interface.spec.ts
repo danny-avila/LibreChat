@@ -12,6 +12,30 @@ describe('loadDefaultInterface', () => {
     expect(interfaceConfig?.autoSubmitFromUrl).toBe(true);
   });
 
+  it('uses the schema default for code highlight throttling when not configured', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.codeHighlightThrottleMs).toBe(300);
+  });
+
+  it('preserves a configured code highlight throttle interval', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        codeHighlightThrottleMs: 100,
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.codeHighlightThrottleMs).toBe(100);
+  });
+
   it('preserves disabled URL auto-submit config', async () => {
     const config: Partial<TCustomConfig> = {
       interface: {

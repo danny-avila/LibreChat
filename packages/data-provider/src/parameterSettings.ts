@@ -1319,6 +1319,22 @@ export function applyModelAwareDefaults(
   if (!model) {
     return settings;
   }
+  if (/^grok-4[.-]7(?:$|[-:])/.test(model.split('/').pop() ?? '')) {
+    return settings.map((setting) =>
+      setting.key === 'reasoning_effort'
+        ? {
+            ...setting,
+            options: [
+              ReasoningEffort.unset,
+              ReasoningEffort.low,
+              ReasoningEffort.medium,
+              ReasoningEffort.high,
+              ReasoningEffort.xhigh,
+            ],
+          }
+        : setting,
+    );
+  }
   const modelAwareSettings =
     endpoint === EModelEndpoint.google
       ? settings.map((setting) => {

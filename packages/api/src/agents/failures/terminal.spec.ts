@@ -17,6 +17,7 @@ describe('terminal agent-run error logging', () => {
       logger,
       responseMessageId: '78847296-b174-4127-a342-78efa427d4a5',
       source: '[Agent API]',
+      protectionEnabled: true,
     });
     observer.modelCallback.handleLLMError(providerError);
 
@@ -44,12 +45,111 @@ describe('terminal agent-run error logging', () => {
     expect(JSON.stringify(logger.error.mock.calls)).not.toContain('InternalServerException');
   });
 
+  /** The rejection a gateway or privacy proxy answers with is only stated in its own message. */
+  it('carries the provider explanation for an unclassified upstream failure', () => {
+    const observer = createTerminalRunErrorObserver({
+      logger: { error: jest.fn() },
+      source: '[Agent API]',
+      protectionEnabled: false,
+    });
+    const providerError = Object.assign(
+      new Error('400 Request rejected: this prompt cannot be masked safely'),
+      { status: 400 },
+    );
+    observer.modelCallback.handleLLMError(providerError);
+
+    expect(
+      observer.getUserFacingError(
+        new Error('graph failed', { cause: providerError }),
+        () => 'fallback',
+      ),
+    ).toBe(
+      'The model provider could not complete this request.\n' +
+        JSON.stringify({
+          type: 'upstream_model_error',
+          status: 400,
+          message: '400 Request rejected: this prompt cannot be masked safely',
+        }),
+    );
+  });
+
+  /** A provider error rethrown without its own text: the terminal error carries the wording. */
+  it('falls back to the terminal error wording when the tracked failure has none', () => {
+    const observer = createTerminalRunErrorObserver({
+      logger: { error: jest.fn() },
+      source: '[Agent API]',
+      protectionEnabled: false,
+    });
+    const providerError = Object.assign(new Error(''), { status: 502 });
+    observer.modelCallback.handleLLMError(providerError);
+
+    expect(
+      observer.getUserFacingError(
+        new Error('Bad gateway from proxy', { cause: providerError }),
+        () => 'fallback',
+      ),
+    ).toBe(
+      'The model provider could not complete this request.\n' +
+        JSON.stringify({
+          type: 'upstream_model_error',
+          status: 502,
+          message: 'Bad gateway from proxy',
+        }),
+    );
+  });
+
+  it.each([true, undefined])(
+    'withholds provider text when protection is %s',
+    (protectionEnabled) => {
+      const observer = createTerminalRunErrorObserver({
+        logger: { error: jest.fn() },
+        source: '[Agent API]',
+        protectionEnabled,
+      });
+      const privateValue = 'PRIVATE-SUBMITTED-CONTENT';
+      const providerError = Object.assign(new Error(`400 rejected: ${privateValue}`), {
+        status: 400,
+      });
+      observer.modelCallback.handleLLMError(providerError);
+
+      const userFacingError = observer.getUserFacingError(
+        new Error('graph failed', { cause: providerError }),
+        () => 'fallback',
+      );
+
+      expect(userFacingError).toBe(
+        'The model provider could not complete this request.\n' +
+          JSON.stringify({ type: 'upstream_model_error', status: 400 }),
+      );
+      expect(userFacingError).not.toContain(privateValue);
+    },
+  );
+
+  it.each([0, 32, 3000])('retains at most the configured %i characters', (limit) => {
+    const observer = createTerminalRunErrorObserver({
+      logger: { error: jest.fn() },
+      source: '[Agent API]',
+      protectionEnabled: false,
+      maxProviderErrorChars: limit,
+    });
+    const error = new Error('x'.repeat(4096));
+    observer.modelCallback.handleLLMError(error);
+    expect(observer.getUserFacingError(error, () => 'fallback')).toBe(
+      'The model provider could not complete this request.\n' +
+        JSON.stringify({
+          type: 'upstream_model_error',
+          ...(limit > 0 ? { message: 'x'.repeat(limit) } : {}),
+        }),
+    );
+  });
+
   it('keeps unrelated terminal failures on the generic safe path', () => {
     const logger = { error: jest.fn() };
     const observer = createTerminalRunErrorObserver({
       logger,
       responseMessageId: 'response-123',
       source: '[Agent API]',
+      protectionEnabled: false,
     });
     observer.modelCallback.handleLLMError(new Error('recovered model attempt'));
 
@@ -64,7 +164,11 @@ describe('terminal agent-run error logging', () => {
 
   it('does not log a tracked client cancellation as an upstream failure', () => {
     const logger = { error: jest.fn() };
-    const observer = createTerminalRunErrorObserver({ logger, source: '[Agent API]' });
+    const observer = createTerminalRunErrorObserver({
+      logger,
+      source: '[Agent API]',
+      protectionEnabled: false,
+    });
     const controller = new AbortController();
     const abortError = Object.assign(new Error('request aborted'), { name: 'AbortError' });
     observer.modelCallback.handleLLMError(abortError);
@@ -77,7 +181,11 @@ describe('terminal agent-run error logging', () => {
 
   it('keeps provider AbortErrors observable while the run signal is live', () => {
     const logger = { error: jest.fn() };
-    const observer = createTerminalRunErrorObserver({ logger, source: '[Agent API]' });
+    const observer = createTerminalRunErrorObserver({
+      logger,
+      source: '[Agent API]',
+      protectionEnabled: false,
+    });
     const abortError = Object.assign(new Error('provider aborted'), { name: 'AbortError' });
     observer.modelCallback.handleLLMError(abortError);
 
@@ -91,7 +199,11 @@ describe('terminal agent-run error logging', () => {
 
   it('keeps real provider failures observable when Stop wins the same-tick race', () => {
     const logger = { error: jest.fn() };
-    const observer = createTerminalRunErrorObserver({ logger, source: '[Agent API]' });
+    const observer = createTerminalRunErrorObserver({
+      logger,
+      source: '[Agent API]',
+      protectionEnabled: false,
+    });
     const controller = new AbortController();
     const providerError = new Error('provider failed');
     observer.modelCallback.handleLLMError(providerError);
@@ -109,6 +221,7 @@ describe('terminal agent-run error logging', () => {
     const observer = createTerminalRunErrorObserver({
       logger: { error: jest.fn() },
       source: '[Agent API]',
+      protectionEnabled: false,
     });
     const providerError = new Error('provider failed');
     const terminalError = Object.assign(new Error('rate limited', { cause: providerError }), {
@@ -125,6 +238,7 @@ describe('terminal agent-run error logging', () => {
     const observer = createTerminalRunErrorObserver({
       logger: { error: jest.fn() },
       source: '[Agent API]',
+      protectionEnabled: false,
     });
     const providerError = Object.create(null, {
       lc_error_code: {

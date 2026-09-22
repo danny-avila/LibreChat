@@ -49,7 +49,17 @@ function validateDecision(mode: unknown, selections: unknown): ConversationCodeE
   return { mode, codeWorkspaces: canonicalSelections(selections) };
 }
 
-/** A stored conversation always carries a decision; legacy rows infer it from their selections. */
+/**
+ * Whether the conversation already recorded a decision. A chat whose turns never involved a
+ * code-capable agent stores neither field, so it has nothing to seal: switching one to a coding
+ * agent still gets to decide. Sealing that state instead would report `without_attached` for a
+ * choice its owner never made, and reject the selection they go on to make.
+ */
+function holdsDecision(conversation: StoredConversationDecision): boolean {
+  return conversation.codeEnvironmentMode != null || (conversation.codeWorkspaces?.length ?? 0) > 0;
+}
+
+/** Reads the decision a conversation holds; legacy rows infer it from their selections. */
 function readPersistedDecision(
   conversation: StoredConversationDecision,
 ): ConversationCodeEnvironmentDecision {
@@ -71,7 +81,11 @@ export function resolveConversationCodeEnvironmentDecision({
   requestedSelections?: unknown;
   conversation?: StoredConversationDecision | null;
 }): ConversationCodeEnvironmentDecision {
-  if (conversation != null && conversation.conversationId === conversationId) {
+  if (
+    conversation != null &&
+    conversation.conversationId === conversationId &&
+    holdsDecision(conversation)
+  ) {
     const persisted = readPersistedDecision(conversation);
     if (requestedMode !== undefined && requestedMode !== persisted.mode) {
       throw new CodeWorkspaceSelectionError('locked');
@@ -189,6 +203,11 @@ export function resolvePersistableCodeEnvironmentDecision({
           ...(requested?.codeWorkspaces != null && { codeWorkspaces: requested.codeWorkspaces }),
         };
   if (conversation == null || conversation.conversationId !== conversationId) {
+    return candidate;
+  }
+  /* A saved chat that held no decision records the one this run establishes, selections included:
+   * writing the mode alone would leave `attached` without the selections the next turn validates. */
+  if (!holdsDecision(conversation)) {
     return candidate;
   }
   if (conversation.codeEnvironmentMode != null || candidate.codeEnvironmentMode == null) {

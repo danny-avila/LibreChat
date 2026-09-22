@@ -1,4 +1,4 @@
-import type { TextData, TMessageContentParts } from './types/assistants';
+import type { TextData, TMessageContentParts } from './types/content';
 import type { Agents } from './types/agents';
 import type { TFile } from './types/files';
 import type { TMessage } from './types';

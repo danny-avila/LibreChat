@@ -251,6 +251,8 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'grok-4-5': { prompt: 2.0, completion: 6.0 },
     'grok-4.6': { prompt: 2.0, completion: 6.0 },
     'grok-4-6': { prompt: 2.0, completion: 6.0 },
+    'grok-4.7': { prompt: 2.0, completion: 6.0 },
+    'grok-4-7': { prompt: 2.0, completion: 6.0 },
     'grok-code-fast': { prompt: 0.2, completion: 1.5 },
     codestral: { prompt: 0.3, completion: 0.9 },
     devstral: { prompt: 0.4, completion: 2.0 },
@@ -404,6 +406,8 @@ export const cacheTokenValues: Record<string, { write: number; read: number }> =
   o3: { write: 2, read: 0.5 },
   'o3-mini': { write: 1.1, read: 0.275 },
   'o4-mini': { write: 1.1, read: 0.275 },
+  'grok-4.7': { write: 2, read: 0.5 },
+  'grok-4-7': { write: 2, read: 0.5 },
   deepseek: { write: 0.28, read: 0.028 },
   'deepseek-chat': { write: 0.28, read: 0.028 },
   'deepseek-reasoner': { write: 0.28, read: 0.028 },
@@ -452,6 +456,9 @@ export const premiumTokenValues: Record<
   'grok-4-5': { threshold: 200000, prompt: 4, completion: 12 },
   'grok-4.6': { threshold: 200000, prompt: 4, completion: 12 },
   'grok-4-6': { threshold: 200000, prompt: 4, completion: 12 },
+  /** xAI bills >=200K at the long-context rate; this table uses exclusive thresholds. */
+  'grok-4.7': { threshold: 199999, prompt: 4, completion: 12 },
+  'grok-4-7': { threshold: 199999, prompt: 4, completion: 12 },
 };
 
 /**
@@ -470,6 +477,8 @@ export const premiumCacheTokenValues: Record<
   'gpt-5.6-terra': { threshold: 272000, write: 5, read: 0.4 },
   'gpt-5.6-luna': { threshold: 272000, write: 0.5, read: 0.04 },
   'gpt-6-astra': { threshold: 272000, write: 25, read: 2 },
+  'grok-4.7': { threshold: 199999, write: 4, read: 1 },
+  'grok-4-7': { threshold: 199999, write: 4, read: 1 },
 };
 
 export function createTxMethods(
