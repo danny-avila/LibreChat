@@ -526,6 +526,9 @@ actions:
 #       baseURL: https://classifier.example.com/v1/classify
 #       apiKeyEnv: CLASSIFIER_API_KEY
 #       timeoutMs: 4000
+#     typesafe:
+#       model: jev-latest
+#       apiKeyEnv: TYPESAFE_API_KEY
 
 # Example MCP Servers Object Structure
 # mcpServers:

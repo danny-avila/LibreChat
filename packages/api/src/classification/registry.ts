@@ -1,5 +1,6 @@
 import type { ProviderFetch } from './providers/transport';
 import type { Classifier } from './types';
+import { createTypeSafeClassifier, PROVIDER_ID as TYPESAFE_ID } from './providers/typesafe';
 import { createHttpClassifier, PROVIDER_ID as HTTP_ID } from './providers/http';
 
 export interface ProviderSettings {
@@ -26,6 +27,17 @@ export const PROVIDERS: Record<string, ProviderEntry> = {
       createHttpClassifier({
         apiKey,
         endpoint: settings.baseURL ?? '',
+        model: settings.model,
+        timeoutMs: settings.timeoutMs,
+        maxRetries: settings.maxRetries,
+        fetch,
+      }),
+  },
+  [TYPESAFE_ID]: {
+    create: ({ settings, apiKey, fetch }) =>
+      createTypeSafeClassifier({
+        apiKey,
+        baseURL: settings.baseURL,
         model: settings.model,
         timeoutMs: settings.timeoutMs,
         maxRetries: settings.maxRetries,
