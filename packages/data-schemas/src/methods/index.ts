@@ -350,6 +350,9 @@ export function createMethods(
             sourceId: 'agent-queued-turn',
             reason: 'queued_turn_conversation_deleted',
             settledAt,
+            /** The source lane is fenced and admission has settled. Queued-turn
+             * deliveries need not receive a later terminal handling receipt. */
+            allowSucceeded: true,
           };
           let retired = await agentTriggerDeliveryMethods.retireAgentTriggerDelivery(retirement);
           if (!retired) {
