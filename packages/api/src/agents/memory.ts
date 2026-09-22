@@ -36,6 +36,7 @@ import type { BaseMessage, ToolMessage } from '@librechat/agents/langchain/messa
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { Response as ServerResponse } from 'express';
 import type { ServerRequest, RunLLMConfig } from '~/types';
+import type { MemoryGate } from '~/memory/gate';
 import { resolveConfigHeaders, createSafeUser, getSafeErrorMetadata } from '~/utils';
 import { contentFilterModelBoundBlockResponse } from '~/middleware/contentFilter';
 import { extractMemoryContent } from '~/protection/adapters/submissions';
@@ -1031,6 +1032,7 @@ export async function createMemoryProcessor({
   jobCreatedAt,
   user,
   tenantId,
+  gate,
 }: {
   res: ServerResponse;
   messageId: string;
@@ -1045,6 +1047,8 @@ export async function createMemoryProcessor({
   jobCreatedAt?: number;
   user?: IUser;
   tenantId?: string;
+  /** Injected, so this module needs no knowledge of what does the judging. */
+  gate?: MemoryGate;
 }): Promise<
   [
     string,
@@ -1074,6 +1078,14 @@ export async function createMemoryProcessor({
       messages: BaseMessage[],
       inspectionMessages?: BaseMessage[],
     ): Promise<(TAttachment | null)[] | undefined> {
+      if (gate != null && !(await gate(messages))) {
+        logger.debug('[MemoryAgent] Turn carries nothing durable; skipping', {
+          userId,
+          conversationId,
+          messageId,
+        });
+        return undefined;
+      }
       try {
         return await processMemory({
           res,

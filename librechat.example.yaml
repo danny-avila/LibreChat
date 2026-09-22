@@ -547,6 +547,30 @@ actions:
 #       requestKey: input
 #       responseKey: result
 #       apiKeyEnv: INHOUSE_CLASSIFIER_KEY
+#
+#   # Surfaces the deferred tools a turn is likely to need, so their schemas ship
+#   # with the first model call instead of costing a tool_search round trip.
+#   # Only ever adds: a tool it passes over stays listed by name and one search away.
+#   toolSelection:
+#     enabled: true
+#     shortlist: 5
+#     # Below this probability that any tool is needed, only tools the request
+#     # names outright are surfaced.
+#     needsToolThreshold: 0.15
+#     # An unsure ranking surfaces this many extra rather than fewer.
+#     lowConfidenceExtra: 3
+#     # Replace the wording of either question without touching code.
+#     instructions: Which tool should the assistant call first?
+#     guidance: Prefer the tool whose purpose matches the request.
+#
+#   # Skips the memory model on turns that carry nothing durable.
+#   memoryGate:
+#     enabled: true
+#     threshold: 0.25
+#     # whenTrue/whenFalse rather than true/false: YAML reads those bare keys
+#     # as booleans.
+#     whenTrue: A lasting preference or a fact about the user.
+#     whenFalse: Small talk, or a detail that only matters in this task.
 
 # Example MCP Servers Object Structure
 # mcpServers:

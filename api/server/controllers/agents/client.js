@@ -45,6 +45,9 @@ const {
   computeAgentRequestFingerprint,
   computeLegacyAgentRequestFingerprint,
   getRunDiscoveredTools,
+  predictToolsForTurn,
+  createMemoryGate,
+  classificationCapability,
   captureResumeModelParameters,
   pickResumeContext,
   getApprovalTtlMs,
@@ -1853,6 +1856,19 @@ class AgentClient extends BaseClient {
   }
 
   /** Builds the independently opt-in live reasoning-label controller. */
+  /** @returns {import('@librechat/api').MemoryGate | null} */
+  buildMemoryGate() {
+    const config = this.options.req?.config?.classification;
+    const capability = classificationCapability(config, 'memoryGate');
+    if (capability == null) {
+      return null;
+    }
+    return createMemoryGate({
+      classifier: capability.classifier,
+      settings: capability.settings,
+    });
+  }
+
   buildReasoningLabelWiring(streamId, abortSignal, seedFromContent = false) {
     if (!streamId || typeof Run?.prototype?.generateReasoningLabel !== 'function') {
       return undefined;
@@ -3383,6 +3399,8 @@ class AgentClient extends BaseClient {
       res: this.options.res,
       user: createSafeUser(this.options.req.user),
       tenantId: resolveRequestTenantId(this.options.req),
+      /** Null unless `classification.memoryGate` is on. */
+      gate: this.buildMemoryGate(),
     });
 
     this.processMemory = processMemory;
@@ -4378,6 +4396,16 @@ class AgentClient extends BaseClient {
       );
     }
 
+    /** By the pause these describe what the turn had loaded, so the resumed
+     *  segment must rebuild with them. Run state records real discoveries only. */
+    if (this.predictedToolNames?.length) {
+      const merged = new Set(discoveredTools);
+      for (const name of this.predictedToolNames) {
+        merged.add(name);
+      }
+      discoveredTools = Array.from(merged);
+    }
+
     this.stagedApproval = {
       streamId,
       pendingAction,
@@ -4798,6 +4826,18 @@ class AgentClient extends BaseClient {
         if (this.agentConfigs && this.agentConfigs.size > 0) {
           agents.push(...this.agentConfigs.values());
         }
+
+        /** Ahead of the checkpoint setup below: the prune and `createRun` are
+         *  deliberately overlapped, and an await between them serializes both. */
+        const predictedToolNames = await predictToolsForTurn({
+          config: appConfig?.classification,
+          agents,
+          messages,
+          signal: abortController.signal,
+        });
+        if (predictedToolNames.length > 0) {
+          this.predictedToolNames = predictedToolNames;
+        }
         const modelBoundCallback =
           AgentClient.prototype.createModelBoundChatModelCallback.call(this);
         const initialModelBoundAdmission =
@@ -4916,6 +4956,7 @@ class AgentClient extends BaseClient {
           messages,
           discoveredToolNames:
             this.eventActorContinuation === 'warm' ? this.eventActorDiscoveredToolNames : undefined,
+          predictedToolNames,
           modelCallbacks: [
             modelBoundCallback,
             createAgentMemoryCallback(this.attachmentMemoryContext ?? {}),
