@@ -235,7 +235,7 @@ export function getOpenWeatherHelp(version: OpenWeatherOneCallVersion = '4.0'): 
         'One Call 4.0 bills per HTTP call. current_forecast uses current + hourly (one page, up to 20h) + daily. The 1-hour timeline returns at most 20 records per response. Minute precipitation is omitted by default; include +minutely in exclude to fetch it (extra billed call).',
         'Existing One Call 3.0 subscriptions still work. Set OPENWEATHER_ONECALL_VERSION=3.0 to keep using /data/3.0. Default is 4.0 for new keys.',
         'current_forecast maps 4.0 split endpoints onto the previous current/hourly/daily contract. Failed endpoints are noted in errors instead of failing the whole action.',
-        'daily_aggregation maps 4.0 daily temp.morn/day/eve/night onto morning/afternoon/evening/night. Period humidity/cloud/pressure/wind are omitted when 4.0 does not provide them.',
+        'daily_aggregation maps 4.0 daily temp.morn/day/eve/night onto morning/afternoon/evening/night. Period humidity/cloud/pressure/wind and precipitation.total are omitted when 4.0 does not provide a documented daily accumulation. rain.1h / snow.1h are mm/h rates, not a daily total.',
         'Date-based actions honour tz (IANA name or ±HH:MM) as the local day boundary.',
         'Weather alert IDs are resolved through /onecall/alert/{id} only when alerts are present. exclude=alerts skips that.',
       ],

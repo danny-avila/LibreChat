@@ -101,6 +101,29 @@ describe('OpenWeather 4.0 normalizers', () => {
     expect(result.cloud_cover).toBeUndefined();
     expect(result.pressure).toBeUndefined();
     expect(result.wind).toBeUndefined();
+    expect(result.precipitation).toBeUndefined();
+  });
+
+  it.each([
+    ['rain-only hourly rate', { rain: { '1h': 2 } }],
+    ['snow-only hourly rate', { snow: { '1h': 3 } }],
+    ['mixed hourly rain and snow rates', { rain: { '1h': 2 }, snow: { '1h': 3 } }],
+    ['unavailable daily totals', {}],
+  ] as const)('omits precipitation.total for %s', (_label, extra) => {
+    const response: OneCallResponse = {
+      lat: 35.9606,
+      lon: -83.9207,
+      timezone: 'America/New_York',
+      data: [
+        {
+          dt: 1583298000,
+          temp: { morn: 10.2, day: 20.4, eve: 15.6, night: 8.1, min: 7.4, max: 21.9 },
+          ...extra,
+        },
+      ],
+    };
+    const result = normalizeDailyAggregation(response, '2020-03-04', 'metric');
+    expect(result.precipitation).toBeUndefined();
   });
 
   it('selects the daily record whose UTC date matches the request', () => {

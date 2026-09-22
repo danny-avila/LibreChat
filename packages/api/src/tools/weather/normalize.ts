@@ -191,25 +191,6 @@ export function selectDailyRecord(
   );
 }
 
-function precipitationTotal(record?: OneCallRecord): number | undefined {
-  if (record == null) {
-    return undefined;
-  }
-  if (typeof record.rain === 'number') {
-    return record.rain;
-  }
-  if (record.rain && typeof record.rain['1h'] === 'number') {
-    return record.rain['1h'];
-  }
-  if (typeof record.snow === 'number') {
-    return record.snow;
-  }
-  if (record.snow && typeof record.snow['1h'] === 'number') {
-    return record.snow['1h'];
-  }
-  return undefined;
-}
-
 function definedFields<T extends object>(value: T): T | undefined {
   const entries = Object.entries(value).filter(([, field]) => field !== undefined);
   if (entries.length === 0) {
@@ -234,7 +215,6 @@ export function normalizeDailyAggregation(
     tz: zone,
     date: requestedDate,
     units,
-    precipitation: definedFields({ total: precipitationTotal(record) }),
     temperature: definedFields({
       min: temp?.min,
       max: temp?.max,
