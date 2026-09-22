@@ -1748,40 +1748,42 @@ describe('AclEntry Model Tests', () => {
       }
     });
 
-    test('retries and preserves a concurrent change to bits it was not asked to touch', async () => {
+    test('preserves a concurrent change to bits it was not asked to touch', async () => {
       await seed(PermissionBits.VIEW | PermissionBits.EDIT);
       const model = mongoose.models.AclEntry;
       const real = model.findOneAndUpdate.bind(model);
       const raced = ((...args: Parameters<typeof real>) =>
-        model
-          .updateMany({ principalId: principal }, { $bit: { permBits: { or: INSIGHTS } } })
-          .then(() => real(...args))) as unknown as typeof model.findOneAndUpdate;
+        real(...args).then(async (result: unknown) => {
+          /** An admin grants Insights between the clear and the set. */
+          await model.updateMany(
+            { principalId: principal },
+            { $bit: { permBits: { or: INSIGHTS } } },
+          );
+          return result;
+        })) as unknown as typeof model.findOneAndUpdate;
       const spy = jest.spyOn(model, 'findOneAndUpdate').mockImplementationOnce(raced);
       try {
         const updated = await modify(PermissionBits.SHARE, PermissionBits.EDIT);
         expect(updated?.permBits).toBe(PermissionBits.VIEW | PermissionBits.SHARE | INSIGHTS);
-        expect(spy).toHaveBeenCalledTimes(2);
       } finally {
         spy.mockRestore();
       }
     });
 
-    test('reports a persistent conflict instead of reporting success', async () => {
-      await seed(PermissionBits.VIEW | PermissionBits.EDIT);
-      const model = mongoose.models.AclEntry;
-      const real = model.findOneAndUpdate.bind(model);
-      const alwaysRaced = ((...args: Parameters<typeof real>) =>
-        model
-          .updateMany({ principalId: principal }, { $bit: { permBits: { xor: INSIGHTS } } })
-          .then(() => real(...args))) as unknown as typeof model.findOneAndUpdate;
-      const spy = jest.spyOn(model, 'findOneAndUpdate').mockImplementation(alwaysRaced);
-      try {
-        await expect(modify(PermissionBits.SHARE, PermissionBits.EDIT)).rejects.toThrow(
-          /permBits/i,
-        );
-      } finally {
-        spy.mockRestore();
-      }
+    test('removes a bit named in both masks, matching the prior precedence', async () => {
+      await seed(PermissionBits.VIEW | INSIGHTS);
+      const updated = await modify(PermissionBits.EDIT | PermissionBits.SHARE, PermissionBits.EDIT);
+      expect(updated?.permBits).toBe(PermissionBits.VIEW | PermissionBits.SHARE | INSIGHTS);
+    });
+
+    test('initializes an absent permission field without inheriting anything', async () => {
+      await seed(PermissionBits.VIEW);
+      await mongoose.models.AclEntry.collection.updateMany(
+        { principalId: principal },
+        { $unset: { permBits: '' } },
+      );
+      const updated = await modify(PermissionBits.EDIT, PermissionBits.VIEW);
+      expect(updated?.permBits).toBe(PermissionBits.EDIT);
     });
 
     test('returns null when no entry matches', async () => {

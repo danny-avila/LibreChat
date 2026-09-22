@@ -23,7 +23,6 @@ const supersetCache = new Map<number, readonly number[]>();
 /** Bounded retries for the two-sided `permBits` compare-and-set; a conflict is
  * another writer finishing first, so a small ceiling is enough and exhaustion
  * must surface rather than silently drop the update. */
-const PERM_BITS_CAS_ATTEMPTS = 3;
 
 /**
  * Enumerates every `permBits` value (in the range `[0, MAX_PERM_BITS]`) whose
@@ -481,8 +480,8 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     /**
      * One operator per `$bit` field. Combining `or` and `and` on `permBits` is
      * rejected by MongoDB-compatible engines (issue #16163), so each
-     * single-sided call keeps its atomic one-round-trip `$bit` write and only
-     * the two-sided case takes the compare-and-set path below.
+     * single-sided call keeps its atomic one-round-trip `$bit` write and the
+     * two-sided case becomes two of them.
      */
     if (addMask !== 0 && removeMask === 0) {
       return await AclEntry.findOneAndUpdate(
@@ -503,32 +502,25 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     }
 
     /**
-     * Both sides at once: compare and set on the value actually stored, so the
-     * write stays a single atomic document update that cannot clobber a
-     * concurrent change to bits this call was not asked to touch. The guard
-     * predicate distinguishes a concurrent change from a missing entry, so a
-     * conflict retries instead of reporting success.
+     * Both sides at once: two single-operator writes. Clearing first keeps the
+     * only observable intermediate state at FEWER permissions than either
+     * endpoint, and excluding the removed bits from the add mask reproduces the
+     * original combined `{ or, and }` precedence, in which a bit named in both
+     * masks ends up removed. Neither write reads the stored value, so there is
+     * no snapshot to serve from a lagging secondary and nothing to retry.
      */
-    for (let attempt = 0; attempt < PERM_BITS_CAS_ATTEMPTS; attempt++) {
-      const current = await AclEntry.findOne(query, null, sessionOptions).lean();
-      if (current == null) {
-        return null;
-      }
-      const observed = current.permBits;
-      const updated = await AclEntry.findOneAndUpdate(
-        {
-          ...query,
-          ...(observed == null ? { permBits: { $exists: false } } : { permBits: observed }),
-        },
-        { $set: { permBits: ((observed ?? 0) & ~removeMask) | addMask } },
-        options,
-      );
-      if (updated != null) {
-        return updated;
-      }
+    const cleared = await AclEntry.findOneAndUpdate(
+      query,
+      { $bit: { permBits: { and: ~removeMask } } },
+      options,
+    );
+    if (cleared == null) {
+      return null;
     }
-    throw new Error(
-      '[modifyPermissionBits] permBits changed concurrently on every attempt; no update applied',
+    return await AclEntry.findOneAndUpdate(
+      query,
+      { $bit: { permBits: { or: addMask & ~removeMask } } },
+      options,
     );
   }
 

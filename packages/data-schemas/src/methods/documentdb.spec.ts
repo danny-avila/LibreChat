@@ -579,8 +579,74 @@ function bitOperatorKeys(bag: ts.ObjectLiteralExpression): ts.ObjectLiteralEleme
   return bag.properties.filter((property) => BIT_OPERATORS.has(propertyName(property) ?? ''));
 }
 
+/** The object literal an expression denotes, directly or through a bound name. */
+function resolveObjectLiteral(
+  expression: ts.Expression,
+  aliases: Map<string, ts.ObjectLiteralExpression>,
+): ts.ObjectLiteralExpression | undefined {
+  if (ts.isObjectLiteralExpression(expression)) {
+    return expression;
+  }
+  if (ts.isIdentifier(expression)) {
+    return aliases.get(expression.text);
+  }
+  return undefined;
+}
+
+/** The property name being assigned in `x.k = …` or `x['k'] = …`. */
+function assignedPropertyName(
+  target: ts.PropertyAccessExpression | ts.ElementAccessExpression,
+): string | undefined {
+  if (ts.isPropertyAccessExpression(target)) {
+    return target.name.text;
+  }
+  if (ts.isStringLiteralLike(target.argumentExpression)) {
+    return target.argumentExpression.text;
+  }
+  return undefined;
+}
+
+/** Object literals bound to a name, so a bag reached as `$bit: { f: bag }` is
+ * judged by what that name holds rather than skipped for not being a literal. */
+function collectObjectAliases(sourceFile: ts.SourceFile): Map<string, ts.ObjectLiteralExpression> {
+  const aliases = new Map<string, ts.ObjectLiteralExpression>();
+  const visit = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
+      const initializer = unwrapExpression(node.initializer);
+      if (ts.isObjectLiteralExpression(initializer)) {
+        aliases.set(node.name.text, initializer);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return aliases;
+}
+
+/** Counts `bag.and = …` / `bag['or'] = …`, the accumulate-after-the-literal shape. */
+function operatorsAssignedTo(sourceFile: ts.SourceFile, name: string): number {
+  let assigned = 0;
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      (ts.isPropertyAccessExpression(node.left) || ts.isElementAccessExpression(node.left))
+    ) {
+      const target = unwrapExpression(node.left.expression);
+      const key = assignedPropertyName(node.left);
+      if (ts.isIdentifier(target) && target.text === name && key && BIT_OPERATORS.has(key)) {
+        assigned++;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return assigned;
+}
+
 function findCombinedBitOperators(sourceFile: ts.SourceFile): string[] {
   const offenses: string[] = [];
+  const aliases = collectObjectAliases(sourceFile);
   const visit = (node: ts.Node): void => {
     /** A `$bit` document written as a literal: judge each field's bag. */
     if (ts.isPropertyAssignment(node) && propertyName(node) === '$bit') {
@@ -591,7 +657,11 @@ function findCombinedBitOperators(sourceFile: ts.SourceFile): string[] {
             continue;
           }
           const bag = unwrapExpression(field.initializer);
-          if (ts.isObjectLiteralExpression(bag) && bitOperatorKeys(bag).length > 1) {
+          const literal = resolveObjectLiteral(bag, aliases);
+          const operators =
+            (literal ? bitOperatorKeys(literal).length : 0) +
+            (ts.isIdentifier(bag) ? operatorsAssignedTo(sourceFile, bag.text) : 0);
+          if (operators > 1) {
             offenses.push(offenseAt(sourceFile, field, `$bit.${propertyName(field) ?? '?'}`));
           }
         }
@@ -866,6 +936,14 @@ describe('Amazon DocumentDB compatibility', () => {
       ['three operators', `Model.updateOne(filter, { $bit: { p: { or: 1, and: -2, xor: 4 } } });`],
       ['bag merged by spread', `bag.permBits = { ...bag.permBits, and: ~remove };`],
       [
+        'combined bag reached through a variable',
+        `const ops = { or: 1, and: -2 };\nModel.updateOne(filter, { $bit: { permBits: ops } });`,
+      ],
+      [
+        'operator added to a bag after its literal',
+        `const ops = { or: 1 };\nops.and = -2;\nModel.updateOne(filter, { $bit: { permBits: ops } });`,
+      ],
+      [
         'bag merged behind a cast',
         `bitUpdate.permBits = { ...(bitUpdate.permBits as Record<string, unknown>), and: ~remove };`,
       ],
@@ -881,6 +959,10 @@ describe('Amazon DocumentDB compatibility', () => {
         `Model.updateOne(filter, { $bit: { a: { or: 1 }, b: { and: -2 } } });`,
       ],
       ['spread without an operator key', `const update = { ...base, permBits: 3 };`],
+      [
+        'single-operator bag reached through a variable',
+        `const ops = { or: 1 };\nModel.updateOne(filter, { $bit: { permBits: ops } });`,
+      ],
       ['unrelated and/or naming', `const flags = { and: true, or: false };`],
     ])('accepts a single-operator $bit shape: %s', (_shape, source) => {
       expect(findCombinedBitOperators(parse('fixture.ts', source))).toEqual([]);
