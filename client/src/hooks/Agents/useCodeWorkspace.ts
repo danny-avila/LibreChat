@@ -497,7 +497,9 @@ export default function useCodeWorkspace(
     } else if (
       inferredMode === 'attached' &&
       (storedSelections?.length ?? 0) > 0 &&
-      (state === 'choose' || !canSubmit)
+      // Dropping the last attached agent makes ordinary chat sendable, but does not remove
+      // its persisted seal. Keep the explicit detach action available for that conversation.
+      (state === 'choose' || !canSubmit || attachedEnvironments.length === 0)
     ) {
       const move: CodeWorkspaceTransition = {
         ...base,
@@ -517,6 +519,7 @@ export default function useCodeWorkspace(
    *  it runs without a workspace: that state is worth naming, and attaching one starts here. */
   const visible =
     recovery != null ||
+    transition != null ||
     (required &&
       (!locked || !canSubmit || transition != null || inferredMode === 'without_attached'));
   const rememberSelection = useCallback(

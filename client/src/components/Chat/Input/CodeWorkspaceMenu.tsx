@@ -23,6 +23,7 @@ import {
 import { useLocalize } from '~/hooks';
 
 const stateLabels: Partial<Record<CodeWorkspaceResult['state'], TranslationKeys>> = {
+  not_required: 'com_ui_code_workspace',
   loading: 'com_ui_code_workspace_loading',
   choose: 'com_ui_code_workspace_choose',
   missing: 'com_ui_code_workspace_missing',

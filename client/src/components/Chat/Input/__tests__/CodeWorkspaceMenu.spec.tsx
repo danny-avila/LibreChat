@@ -436,53 +436,60 @@ describe('CodeWorkspaceMenu', () => {
       jest.restoreAllMocks();
     });
 
-    test('continues without a workspace instead of waiting for the machine', async () => {
-      const moveSpy = jest.spyOn(dataService, 'moveConversationCodeEnvironment').mockResolvedValue({
-        conversationId: 'existing',
-        codeEnvironmentMode: 'without_attached',
-      });
-      const setConversation = jest.fn();
-      renderMenu(
-        <CodeWorkspaceMenu
-          setConversation={setConversation}
-          workspace={workspace({
-            locked: true,
-            canSubmit: false,
-            state: 'unavailable',
-            selections: undefined,
-            environments: [
-              { environment, state: 'unavailable', workspaces: [], selected: undefined },
-            ],
-            transition: {
-              kind: 'move',
-              conversationId: 'existing',
-              from: [mac],
-              previous: [],
-              retained: [],
-              targets: [],
-              detachable: true,
-            },
-          })}
-          disabled={false}
-        />,
-      );
+    test.each(['offline', 'no-longer-used'])(
+      'continues without the %s workspace',
+      async (scenario) => {
+        const moveSpy = jest
+          .spyOn(dataService, 'moveConversationCodeEnvironment')
+          .mockResolvedValue({
+            conversationId: 'existing',
+            codeEnvironmentMode: 'without_attached',
+          });
+        const setConversation = jest.fn();
+        renderMenu(
+          <CodeWorkspaceMenu
+            setConversation={setConversation}
+            workspace={workspace({
+              locked: true,
+              required: scenario === 'offline',
+              canSubmit: scenario !== 'offline',
+              state: scenario === 'offline' ? 'unavailable' : 'not_required',
+              selections: undefined,
+              environments:
+                scenario === 'offline'
+                  ? [{ environment, state: 'unavailable', workspaces: [], selected: undefined }]
+                  : [],
+              transition: {
+                kind: 'move',
+                conversationId: 'existing',
+                from: [mac],
+                previous: scenario === 'offline' ? [] : [{ id: 'mac', name: 'Danny Mac' }],
+                retained: [],
+                targets: [],
+                detachable: true,
+              },
+            })}
+            disabled={false}
+          />,
+        );
 
-      await userEvent.click(screen.getByTestId('code-workspace'));
-      /** Nothing to move onto, so the only decision left is to stop waiting for the machine. */
-      expect(
-        screen.queryByRole('menuitem', { name: /com_ui_code_workspace_move/ }),
-      ).not.toBeInTheDocument();
-      await userEvent.click(screen.getByTestId('code-workspace-detach'));
+        await userEvent.click(screen.getByTestId('code-workspace'));
+        /** Nothing to move onto, so the only decision left is to stop waiting for the machine. */
+        expect(
+          screen.queryByRole('menuitem', { name: /com_ui_code_workspace_move/ }),
+        ).not.toBeInTheDocument();
+        await userEvent.click(screen.getByTestId('code-workspace-detach'));
 
-      await waitFor(() => expect(moveSpy).toHaveBeenCalledTimes(1));
-      expect(moveSpy).toHaveBeenCalledWith({ conversationId: 'existing', from: [mac], to: [] });
-      const update = setConversation.mock.calls[0][0];
-      expect(update(sealed)).toEqual({
-        ...sealed,
-        codeEnvironmentMode: 'without_attached',
-        codeWorkspaces: undefined,
-      });
-    });
+        await waitFor(() => expect(moveSpy).toHaveBeenCalledTimes(1));
+        expect(moveSpy).toHaveBeenCalledWith({ conversationId: 'existing', from: [mac], to: [] });
+        const update = setConversation.mock.calls[0][0];
+        expect(update(sealed)).toEqual({
+          ...sealed,
+          codeEnvironmentMode: 'without_attached',
+          codeWorkspaces: undefined,
+        });
+      },
+    );
   });
 
   describe('a chat sealed to a machine its agent no longer uses', () => {

@@ -574,6 +574,64 @@ describe('useCodeWorkspace', () => {
       expect(result.current.transition).toBeUndefined();
     });
 
+    it.each(['non-coding', 'managed-only'])(
+      'offers detach after switching to a %s agent',
+      (kind) => {
+        const previous = { environmentId: 'personal-vm', workspaceId: 'project-a' };
+        const agent = mockAgentPermissions().agent;
+        if (kind === 'non-coding') {
+          agent.tools = [];
+          agent.stateful_code_sessions = false;
+        } else {
+          agent.code_environment_id = 'managed';
+          mockAgentsConfig().agentsConfig.statefulCodeSessions.environments.push({
+            id: 'managed',
+            type: 'managed',
+            name: 'Managed',
+          });
+        }
+        const original = sealed([previous]);
+        const { result, rerender } = renderHook(({ chat }) => useCodeWorkspace(chat), {
+          initialProps: { chat: original },
+        });
+        expect(result.current.required).toBe(false);
+        expect(result.current.state).toBe('not_required');
+        expect(result.current.canSubmit).toBe(true);
+        expect(result.current.visible).toBe(true);
+        expect(result.current.transition).toEqual(
+          expect.objectContaining({
+            kind: 'move',
+            from: [previous],
+            retained: [],
+            targets: [],
+            detachable: true,
+          }),
+        );
+        // Switching agents does not silently detach. Only a successful transition clears the seal.
+        expect(original.codeWorkspaces).toEqual([previous]);
+        rerender({
+          chat: { ...original, codeEnvironmentMode: 'without_attached', codeWorkspaces: undefined },
+        });
+        expect(result.current.transition).toBeUndefined();
+        expect(result.current.canSubmit).toBe(true);
+        expect(result.current.visible).toBe(false);
+      },
+    );
+
+    it('keeps the no-environment detach hidden on a move-only deployment', () => {
+      mockStartupConfig.mockReturnValue({
+        codeEnvironmentDecisionVersion: 1,
+        codeEnvironmentMoveVersion: 1,
+      });
+      mockAgentPermissions().agent.tools = [];
+      mockAgentPermissions().agent.stateful_code_sessions = false;
+      const { result } = renderHook(() => useCodeWorkspace(sealed([mac])));
+      expect(result.current.required).toBe(false);
+      expect(result.current.canSubmit).toBe(true);
+      expect(result.current.transition).toBeUndefined();
+      expect(result.current.visible).toBe(false);
+    });
+
     it('offers to move the chat instead of an unusable workspace choice', () => {
       mockAgentsConfig().agentsConfig.statefulCodeSessions.environments.push({
         id: 'mac',
