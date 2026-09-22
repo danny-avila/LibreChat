@@ -69,6 +69,8 @@ export interface ClassificationRequest {
   questions: Record<string, ClassificationQuestion>;
   signal?: AbortSignal;
   label?: string;
+  /** Overrides the provider's timeout for this request alone. */
+  timeoutMs?: number;
 }
 
 export interface ClassificationResult {

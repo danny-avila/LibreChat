@@ -6,6 +6,8 @@ import type {
   ClassificationRequest,
 } from '../types';
 import type { ProviderFetch } from './transport';
+import type { Dialect } from './dialect';
+import { toWireQuestion, readAnswer } from './dialect';
 import { ClassificationError } from '../types';
 import { createTransport } from './transport';
 
@@ -16,43 +18,23 @@ export interface HttpProviderOptions {
   /** Full URL, not a base path. */
   endpoint: string;
   model?: string;
+  /** Which wire vocabulary the endpoint speaks. */
+  dialect?: Dialect;
+  /** Nests `state` and `questions` under this key, for hosts that wrap them. */
+  requestKey?: string;
+  /** Reads the answer envelope from this key, for hosts that wrap the response. */
+  responseKey?: string;
   timeoutMs?: number;
   maxRetries?: number;
   fetch?: ProviderFetch;
   sleep?: (ms: number) => Promise<void>;
 }
 
-function readAnswer(answer: unknown): ClassificationAnswer | null {
-  if (answer == null || typeof answer !== 'object') {
-    return null;
-  }
-  const record = answer as {
-    type?: unknown;
-    probability?: unknown;
-    choice?: unknown;
-    score?: unknown;
-    confidence?: unknown;
-    probabilities?: unknown;
-  };
-  const probabilities = (record.probabilities ?? {}) as Record<string, number>;
-  const confidence = typeof record.confidence === 'number' ? record.confidence : null;
-
-  if (record.type === 'boolean' && typeof record.probability === 'number') {
-    return { type: 'boolean', probability: record.probability };
-  }
-  if (record.type === 'choice' && typeof record.choice === 'string') {
-    return { type: 'choice', choice: record.choice, confidence, probabilities };
-  }
-  if (record.type === 'score' && typeof record.score === 'number') {
-    return { type: 'score', score: record.score, confidence, probabilities };
-  }
-  return null;
-}
-
 export function parseEnvelope(
   body: string,
   providerId: string,
   readOne: (answer: unknown) => ClassificationAnswer | null,
+  responseKey?: string,
 ): ClassificationResult {
   let parsed: unknown;
   try {
@@ -67,7 +49,11 @@ export function parseEnvelope(
       provider: providerId,
     });
   }
-  const record = parsed as { model?: unknown; answers?: unknown; usage?: unknown };
+  const unwrapped =
+    responseKey != null && responseKey !== ''
+      ? ((parsed as Record<string, unknown>)[responseKey] ?? parsed)
+      : parsed;
+  const record = unwrapped as { model?: unknown; answers?: unknown; usage?: unknown };
   if (record.answers == null || typeof record.answers !== 'object') {
     throw new ClassificationError('malformed_response', 'response carried no answers', {
       provider: providerId,
@@ -98,18 +84,29 @@ export function parseEnvelope(
 export function createHttpClassifier(options: HttpProviderOptions): Classifier {
   const send = createTransport({ providerId: PROVIDER_ID, ...options });
   const model = options.model ?? '';
+  const dialect: Dialect = options.dialect ?? 'port';
+  const { requestKey, responseKey } = options;
 
   return {
     id: PROVIDER_ID,
     model,
     async classify(request: ClassificationRequest): Promise<ClassificationResult> {
+      const questions: Record<string, unknown> = {};
+      for (const [id, question] of Object.entries(request.questions)) {
+        questions[id] = toWireQuestion(question, dialect);
+      }
+      const inner = { state: request.state, questions };
       const payload = JSON.stringify({
         ...(model ? { model } : {}),
-        state: request.state,
-        questions: request.questions,
+        ...(requestKey != null && requestKey !== '' ? { [requestKey]: inner } : inner),
       });
-      const body = await send(payload, request.signal, request.label ?? 'classify');
-      return parseEnvelope(body, PROVIDER_ID, readAnswer);
+      const body = await send(
+        payload,
+        request.signal,
+        request.label ?? 'classify',
+        request.timeoutMs,
+      );
+      return parseEnvelope(body, PROVIDER_ID, (a) => readAnswer(a, dialect), responseKey);
     },
   };
 }

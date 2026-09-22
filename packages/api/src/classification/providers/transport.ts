@@ -36,6 +36,7 @@ export type Transport = (
   payload: string,
   signal: AbortSignal | undefined,
   label: string,
+  timeoutOverrideMs?: number,
 ) => Promise<string>;
 
 function failureForStatus(status: number) {
@@ -94,7 +95,7 @@ export function createTransport(options: TransportOptions): Transport {
     });
   }
 
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const defaultTimeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
   const sleep = options.sleep ?? defaultSleep;
   const candidate = options.fetch ?? (globalThis.fetch as unknown as ProviderFetch | undefined);
@@ -105,7 +106,11 @@ export function createTransport(options: TransportOptions): Transport {
   }
   const fetchImpl: ProviderFetch = candidate;
 
-  async function attempt(payload: string, signal: AbortSignal | undefined): Promise<string> {
+  async function attempt(
+    payload: string,
+    signal: AbortSignal | undefined,
+    timeoutMs: number,
+  ): Promise<string> {
     const timeout = new AbortController();
     const timer = setTimeout(() => timeout.abort(), timeoutMs);
     const combined = signal != null ? AbortSignal.any([signal, timeout.signal]) : timeout.signal;
@@ -156,12 +161,14 @@ export function createTransport(options: TransportOptions): Transport {
     }
   }
 
-  return async function send(payload, signal, label) {
+  return async function send(payload, signal, label, timeoutOverrideMs) {
+    const timeoutMs =
+      timeoutOverrideMs != null && timeoutOverrideMs > 0 ? timeoutOverrideMs : defaultTimeoutMs;
     let lastError: ClassificationError | undefined;
     for (let attemptNo = 0; attemptNo <= maxRetries; attemptNo++) {
       try {
         const started = Date.now();
-        const body = await attempt(payload, signal);
+        const body = await attempt(payload, signal, timeoutMs);
         logger.debug(`[classification] ${label} answered in ${Date.now() - started}ms`);
         return body;
       } catch (error) {

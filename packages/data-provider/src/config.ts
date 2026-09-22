@@ -2908,16 +2908,26 @@ export type TOpenIdDiscoveryConfig = z.infer<typeof openIdDiscoverySchema>;
 /** Maximum CAS attempts per ACL document, including the initial attempt. */
 export const permissionWriteAttemptsSchema = z.number().int().min(1).max(100).default(3);
 
-export const classificationProviderSchema = z.object({
-  baseURL: z.string().url().optional(),
-  model: z.string().optional(),
-  /** Per-request ceiling. A judgment that misses it is abandoned, never awaited. */
-  timeoutMs: z.number().int().positive().max(60_000).optional(),
-  /** Retries for a rate limit or a server error only. */
-  maxRetries: z.number().int().nonnegative().max(5).optional(),
-  /** Environment variable holding this provider's key. Never the key itself. */
-  apiKeyEnv: z.string().optional(),
-});
+export const classificationProviderSchema = z
+  .object({
+    baseURL: z.string().url().optional(),
+    model: z.string().optional(),
+    /** Which wire vocabulary the endpoint speaks. */
+    dialect: z.enum(['port', 'systemone']).optional(),
+    /** Nests `state` and `questions` under this key, for hosts that wrap them. */
+    requestKey: z.string().optional(),
+    /** Reads the answer envelope from this key, for hosts that wrap the response. */
+    responseKey: z.string().optional(),
+    /** Per-request ceiling. A judgment that misses it is abandoned, never awaited. */
+    timeoutMs: z.number().int().positive().max(60_000).optional(),
+    /** Retries for a rate limit or a server error only. */
+    maxRetries: z.number().int().nonnegative().max(5).optional(),
+    /** Environment variable holding this provider's key. Never the key itself. */
+    apiKeyEnv: z.string().optional(),
+  })
+  /** Strict so a misspelled key fails loudly here rather than as a missing
+   *  setting much later. */
+  .strict();
 
 export type TClassificationProviderConfig = z.infer<typeof classificationProviderSchema>;
 
