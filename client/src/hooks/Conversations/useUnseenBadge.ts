@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
-import { useAtomValue } from 'jotai';
-import { unseenTabBadgeAtom } from './replyNotificationSettings';
+import { useReplyAlertPreferences } from './replyNotificationSettings';
 import { getDocumentTitleRevision } from '~/utils';
 
 const FAVICON_SELECTOR = 'link[rel="icon"]';
@@ -72,7 +71,7 @@ const drawBadgedFavicon = (
  * the 16x16 link, and a single-link badge would leave them without one.
  */
 export default function useUnseenBadge(count: number) {
-  const badgeEnabled = useAtomValue(unseenTabBadgeAtom);
+  const { badgeEnabled } = useReplyAlertPreferences();
   const activeCount = badgeEnabled ? count : 0;
 
   useEffect(() => {

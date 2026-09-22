@@ -1,9 +1,8 @@
 import { useRef, useState, useEffect } from 'react';
-import { useAtomValue } from 'jotai';
 import { useNavigate, useLocation } from 'react-router-dom';
 import type { ReplyReadState } from './useUnseenConversations';
-import { replyNotificationsAtom, replyNotificationSoundAtom } from './replyNotificationSettings';
 import { suppressFocusAcknowledgement } from './notificationNavigation';
+import { useReplyAlertPreferences } from './replyNotificationSettings';
 import { startFocusLease, isAnotherTabFocused } from './focusLease';
 import { useLocalize } from '~/hooks';
 
@@ -183,8 +182,7 @@ export const requestReplyNotificationPermission = (): void => {
  * pass only records what is already unseen, so signing in with a backlog does not fire a burst.
  */
 export default function useReplyAlerts(state: ReplyReadState | null) {
-  const notificationsEnabled = useAtomValue(replyNotificationsAtom);
-  const soundEnabled = useAtomValue(replyNotificationSoundAtom);
+  const { notificationsEnabled, soundEnabled } = useReplyAlertPreferences();
   const localize = useLocalize();
   const navigate = useNavigate();
   const { pathname } = useLocation();

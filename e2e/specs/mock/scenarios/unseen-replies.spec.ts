@@ -85,6 +85,24 @@ async function enableUnseenBadge(page: Page) {
   await page.addInitScript(() => localStorage.setItem('unseenTabBadge', 'true'));
 }
 
+/** Serves `interface.replyNotifications` as an operator would have set it in `librechat.yaml`. */
+async function serveReplyNotificationConfig(
+  page: Page,
+  replyNotifications: Record<string, boolean | number>,
+) {
+  await page.route('**/api/config', async (route) => {
+    const response = await route.fetch();
+    const config = await response.json();
+    await route.fulfill({
+      response,
+      json: {
+        ...config,
+        interface: { ...config.interface, replyNotifications },
+      },
+    });
+  });
+}
+
 async function unfocus(page: Page) {
   await page.evaluate(() => {
     Object.defineProperty(document, 'hasFocus', {
@@ -159,6 +177,39 @@ test.describe('unseen replies', () => {
     } finally {
       await cleanup(first);
       await cleanup(second);
+    }
+  });
+
+  /* The three alert capabilities are per device, but whether a device may have them at all is
+     the deployment's call. A preference stored before the operator closed the gate must not keep
+     announcing replies, and the toggle that wrote it has nothing left to offer. */
+  test('an operator who disables the tab badge leaves no count and no toggle @scenario:operator-disabled-tab-badge-shows-no-count-or-toggle', async ({
+    page,
+  }) => {
+    const id = conversationId();
+    const title = `Gated badge ${id.slice(0, 8)}`;
+    const replyAt = new Date(Date.now() - 2_000);
+    const seenAt = new Date(replyAt.getTime() - 1_000);
+    try {
+      await seedConversation(id, title, { lastResponseAt: replyAt, lastSeenAt: seenAt });
+      await seedReplyMessage(id, title);
+      await enableUnseenBadge(page);
+      await serveReplyNotificationConfig(page, { tabBadge: false });
+      await page.goto(NEW_CHAT_PATH);
+      await openSidebar(page);
+      const row = page.getByTestId('convo-item').filter({ hasText: title });
+      await expect(row).toBeVisible();
+      /* The dot belongs to the conversation list, not to the away alerts, so the gate leaves it. */
+      await expect(row.locator('span[aria-hidden="true"].bg-status-info')).toBeVisible();
+      await expect.poll(() => page.title()).not.toMatch(/^\(\d+\)/);
+      await page
+        .getByRole('button', { name: /settings/i })
+        .first()
+        .click();
+      await expect(page.getByRole('dialog')).toBeVisible();
+      await expect(page.getByTestId('unseenTabBadge')).toHaveCount(0);
+    } finally {
+      await cleanup(id);
     }
   });
 

@@ -1,7 +1,7 @@
 const path = require('path');
 const { v4 } = require('uuid');
-const { countTokens, hasPersistableAbortContent } = require('@librechat/api');
-const { logger, escapeRegExp } = require('@librechat/data-schemas');
+const { countTokens, announceReply } = require('@librechat/api');
+const { escapeRegExp } = require('@librechat/data-schemas');
 const {
   Constants,
   ContentTypes,
@@ -410,20 +410,16 @@ async function syncMessages({
      built, and the error handlers add their visible content to the returned object rather
      than to that row: stamping it would raise a dot for a message that renders nothing, and
      acknowledgement requires the stamped reply to be on screen. */
-  const persistedAssistantReply = recordedAssistantReplies.findLast(
-    (message) => message != null && hasPersistableAbortContent(message.content),
+  const persistedAssistantReply = recordedAssistantReplies.findLast((message) => message != null);
+  await announceReply(
+    { stampConvoLastResponse },
+    {
+      userId: openai.req.user.id,
+      conversationId,
+      reply: { ...persistedAssistantReply, isTemporary: ctx.isTemporary },
+      context: 'syncMessages',
+    },
   );
-  if (persistedAssistantReply?.messageId && ctx.isTemporary !== true) {
-    try {
-      await stampConvoLastResponse(
-        openai.req.user.id,
-        conversationId,
-        persistedAssistantReply.messageId,
-      );
-    } catch (error) {
-      logger.warn('[syncMessages] Failed to stamp lastResponseAt', error);
-    }
-  }
 
   return result;
 }

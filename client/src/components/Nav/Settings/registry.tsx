@@ -182,6 +182,7 @@ export const registry: SettingEntry[] = [
     id: 'unseenTabBadge',
     tab: GENERAL,
     section: 'notifications',
+    show: (ctx) => ctx.replyTabBadgeAllowed,
     labelKey: 'com_nav_unseen_tab_badge',
     Component: toggleControl({
       stateAtom: unseenTabBadgeAtom,
@@ -194,6 +195,7 @@ export const registry: SettingEntry[] = [
     id: 'replyNotifications',
     tab: GENERAL,
     section: 'notifications',
+    show: (ctx) => ctx.replyNotificationsAllowed,
     labelKey: 'com_nav_reply_notifications',
     Component: toggleControl({
       stateAtom: replyNotificationsAtom,
@@ -213,6 +215,7 @@ export const registry: SettingEntry[] = [
     id: 'replyNotificationSound',
     tab: GENERAL,
     section: 'notifications',
+    show: (ctx) => ctx.replyNotificationSoundAllowed,
     labelKey: 'com_nav_reply_notification_sound',
     Component: toggleControl({
       stateAtom: replyNotificationSoundAtom,

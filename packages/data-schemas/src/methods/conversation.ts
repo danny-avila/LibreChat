@@ -2584,6 +2584,7 @@ export function createConversationMethods(
 
       /* Advance the version and clear the previous catch-up atomically. The database CAS orders
        * concurrent replies even when their application hosts disagree about wall-clock time. */
+      let replyStampApplied = false;
       if (metadata?.stampReply === true) {
         const responseMessageId = metadata.replyMessageId;
         if (typeof responseMessageId === 'string' && responseMessageId.length > 0) {
@@ -2602,6 +2603,7 @@ export function createConversationMethods(
             if (stamped) {
               /* The caller hands this document to the client as the turn's conversation, and the
                * seen acknowledgement is bound to the stamp it carries. */
+              replyStampApplied = true;
               conversation.lastResponseAt = stamped.stamp;
               conversation.lastResponseMessageId = stamped.conversation.lastResponseMessageId;
               conversation.lastResponseIsManual = stamped.conversation.lastResponseIsManual;
@@ -2624,11 +2626,15 @@ export function createConversationMethods(
       ) {
         /* This backfill runs after the main write, so it needs the same timestamp
            suppression: otherwise the first pin or archive of a legacy chat under
-           `RetentionMode.ALL` bumps `updatedAt` here and lands in Today anyway. */
+           `RetentionMode.ALL` bumps `updatedAt` here and lands in Today anyway.
+           A reply stamp is the same case for a different reason: the CAS above set `updatedAt`
+           to the stamp deliberately, and an away tab that has never cached this conversation
+           reads the two disagreeing as a metadata-only promotion, withholding the reply's
+           chime and desktop notification. */
         await Conversation.updateOne(
           { _id: conversation._id, isTemporary: { $ne: false } },
           { $set: { isTemporary: false } },
-          preserveUpdatedAt ? { timestamps: false } : {},
+          preserveUpdatedAt || replyStampApplied ? { timestamps: false } : {},
         );
         conversation.isTemporary = false;
       }
@@ -2873,17 +2879,13 @@ export function createConversationMethods(
 
       const affectedProjectStats = new Map<string, { user: string; projectId: string }>();
       const bulkOps = conversations.map((convo) => {
-        /* Read state belongs to the reader who lived through the replies, so an import
-           never carries one in: the rows arrive unseen-free and unread-free. */
-        const {
-          codeEnvironmentMode,
-          codeWorkspaces,
-          lastResponseAt,
-          lastResponseMessageId,
-          lastResponseIsManual,
-          lastSeenAt,
-          ...sanitized
-        } = convo;
+        const { codeEnvironmentMode, codeWorkspaces, ...sanitized } = convo;
+        /* Read state belongs to the reader who lived through the replies, so an import never
+           carries one in: the rows arrive unseen-free and unread-free. */
+        delete sanitized.lastResponseAt;
+        delete sanitized.lastResponseMessageId;
+        delete sanitized.lastResponseIsManual;
+        delete sanitized.lastSeenAt;
         delete sanitized.initial_agent_id;
         stripActorCheckpointFields(sanitized);
         if (typeof sanitized.user === 'string' && typeof sanitized.chatProjectId === 'string') {

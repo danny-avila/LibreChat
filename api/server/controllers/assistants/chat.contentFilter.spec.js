@@ -168,7 +168,13 @@ describe.each([
     mockCreateRun.mockReset();
     mockRunAssistant.mockReset();
     mockCreateRunBody.mockReset();
-    mockSaveAssistantMessage.mockReset();
+    /* Every run that reaches FINAL has persisted its assistant row: the controller publishes
+       the conversation snapshot the client acknowledges, so a test that does not care about
+       the write still needs one. Tests asserting on the stamp override this. */
+    mockSaveAssistantMessage.mockReset().mockResolvedValue({
+      message: { messageId: 'assistant-msg' },
+      conversation: { conversationId: 'convo-1' },
+    });
     mockGetOpenAIClient.mockReset().mockResolvedValue({
       openai: {
         beta: {

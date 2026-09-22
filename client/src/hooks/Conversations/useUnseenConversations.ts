@@ -209,6 +209,39 @@ const observeArrivalQuery = (
   snapshots.set(query.queryHash, current);
 };
 
+/**
+ * How many arrivals are remembered before the dead ones are swept.
+ *
+ * Every refresh copies and sorts this map into the state identity, so in a tab left open across
+ * many replies its cost would otherwise grow with the lifetime number of arrivals rather than
+ * with the live cache. The bound is generous enough that an ordinary session never sweeps.
+ */
+const ARRIVAL_EVIDENCE_BOUND = 500;
+
+/**
+ * Drops evidence for conversations no observed snapshot still holds.
+ *
+ * An entry earns its place by baselining a row the alerts may still meet again; once the row
+ * has left every list the cache knows, nothing can consult it, and a deleted or evicted
+ * conversation would otherwise be remembered for the life of the tab.
+ */
+const pruneArrivalEvidence = (snapshots: ArrivalSnapshots, evidence: ArrivalEvidence): void => {
+  const live = new Set<string>();
+  for (const snapshot of snapshots.values()) {
+    if (snapshot === null) {
+      continue;
+    }
+    for (const conversationId of snapshot.keys()) {
+      live.add(conversationId);
+    }
+  }
+  for (const conversationId of evidence.keys()) {
+    if (!live.has(conversationId)) {
+      evidence.delete(conversationId);
+    }
+  }
+};
+
 const readArrivalStamps = (evidence: ArrivalEvidence): ReplyReadState['arrivalStamps'] =>
   [...evidence.entries()].sort(([a], [b]) => a.localeCompare(b));
 
@@ -286,12 +319,16 @@ export default function useUnseenConversations(): ReplyReadState | null {
       convoQueryAuthority(queryClient, query);
       if (event.type === 'removed') {
         arrivalSnapshots.current.delete(query.queryHash);
+        pruneArrivalEvidence(arrivalSnapshots.current, arrivalEvidence.current);
       } else if (root === QueryKeys.allConversations || root === QueryKeys.pinnedConversations) {
         let mode: ArrivalMode = 'none';
         if (event.type === 'updated' && event.action.type === 'success') {
           mode = event.action.manual === true ? 'local' : 'server';
         }
         observeArrivalQuery(query, arrivalSnapshots.current, arrivalEvidence.current, mode);
+        if (arrivalEvidence.current.size > ARRIVAL_EVIDENCE_BOUND) {
+          pruneArrivalEvidence(arrivalSnapshots.current, arrivalEvidence.current);
+        }
       }
       refresh();
     });

@@ -1,4 +1,5 @@
 import React from 'react';
+import { RecoilRoot } from 'recoil';
 import { QueryKeys } from 'librechat-data-provider';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { Provider as JotaiProvider, createStore } from 'jotai';
@@ -115,12 +116,16 @@ function setup(
   settings.set(replyNotificationSoundAtom, sound);
 
   const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <JotaiProvider store={settings}>
-      <MemoryRouter initialEntries={[initialRoute]}>
-        {children}
-        <Probe />
-      </MemoryRouter>
-    </JotaiProvider>
+    <RecoilRoot>
+      <QueryClientProvider client={new QueryClient()}>
+        <JotaiProvider store={settings}>
+          <MemoryRouter initialEntries={[initialRoute]}>
+            {children}
+            <Probe />
+          </MemoryRouter>
+        </JotaiProvider>
+      </QueryClientProvider>
+    </RecoilRoot>
   );
 
   return {
@@ -149,11 +154,13 @@ function setupWithAggregate(toggles: Toggles = {}) {
   });
 
   const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <JotaiProvider store={settings}>
-        <MemoryRouter>{children}</MemoryRouter>
-      </JotaiProvider>
-    </QueryClientProvider>
+    <RecoilRoot>
+      <QueryClientProvider client={queryClient}>
+        <JotaiProvider store={settings}>
+          <MemoryRouter>{children}</MemoryRouter>
+        </JotaiProvider>
+      </QueryClientProvider>
+    </RecoilRoot>
   );
 
   return {

@@ -249,6 +249,17 @@ interface:
   fileCitations: true
   # Show the thumbs up/thumbs down feedback buttons on responses (default: true)
   feedback: true
+  # Unseen-reply alerts: what this deployment lets a reader turn on. Each field gates a
+  # capability; the preference itself stays per device, because notification permission and
+  # audio output belong to the machine the reader is sitting at. Sidebar unread dots and
+  # Mark as unread are not gated here, they are part of the conversation list.
+  # replyNotifications:
+  #   tabBadge: true # Allow the unseen count in the tab title and favicon (default: true)
+  #   desktop: true # Allow readers to turn on desktop notifications for replies (default: true)
+  #   sound: true # Allow readers to turn on the reply chime (default: true)
+  #   # How many conversations one background poll looks at (1-1000, default: 100). Raise it
+  #   # when scheduled runs routinely reply to more chats than this between two polls.
+  #   pollLimit: 100
   # Conversation trace viewer: a waterfall of the model calls and tool spans behind
   # each response, read from the deployment's Langfuse project. The control only
   # appears on the requesting user's own conversations with a sampled trace, and

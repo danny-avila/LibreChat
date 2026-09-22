@@ -1,4 +1,5 @@
 import React from 'react';
+import { RecoilRoot } from 'recoil';
 import { Provider as JotaiProvider, createStore } from 'jotai';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { EModelEndpoint, QueryKeys } from 'librechat-data-provider';
@@ -68,10 +69,14 @@ function setup(toggles: Toggles = {}) {
   settings.set(replyNotificationSoundAtom, sound);
   settings.set(unseenTabBadgeAtom, badge);
 
+  /* The alert capabilities are gated by `interface.replyNotifications`, which the hooks read
+     through the startup-config query, so these specs need the app's providers around them. */
   const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>
-      <JotaiProvider store={settings}>{children}</JotaiProvider>
-    </QueryClientProvider>
+    <RecoilRoot>
+      <QueryClientProvider client={queryClient}>
+        <JotaiProvider store={settings}>{children}</JotaiProvider>
+      </QueryClientProvider>
+    </RecoilRoot>
   );
 
   const view = renderHook(

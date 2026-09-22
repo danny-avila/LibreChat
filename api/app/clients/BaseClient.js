@@ -28,6 +28,7 @@ const {
   runAfterSeed,
   saveTurnConversation,
   seedTurnConversation,
+  announceReply,
   needsRetentionConversation,
   getConversationWriteContext,
 } = require('@librechat/api');
@@ -1372,20 +1373,20 @@ class BaseClient {
          to light the indicator: the primary response's stamp is older whenever this one
          finishes later, and absent altogether when the primary failed. Best effort, because a
          missed indicator must not fail a reply that is already persisted. */
-      /* `user` is the same id the message was just saved under; `reqCtx` only carries it when
-         the request object is present, which the direct-save paths do not guarantee. */
-      const stampUserId = reqCtx.userId ?? user ?? this.user;
-      if (persistedReply && reqCtx.isTemporary !== true && stampUserId) {
-        try {
-          await db.stampConvoLastResponse(
-            stampUserId,
-            message.conversationId,
-            savedMessage.messageId,
-          );
-        } catch (error) {
-          logger.error('[BaseClient] Failed to stamp reply on skipped conversation save', error);
-        }
-      }
+      /* `user` is the same id the message was just saved under; `reqCtx` carries an empty
+         string when no request object is present, which the direct-save paths do not
+         guarantee, so the fallback turns on truthiness rather than on nullishness. */
+      await announceReply(db, {
+        userId: reqCtx.userId || user || this.user,
+        conversationId: message.conversationId,
+        reply: {
+          messageId: persistedReply ? savedMessage.messageId : undefined,
+          content: message.content,
+          text: message.text,
+          isTemporary: reqCtx.isTemporary,
+        },
+        context: 'BaseClient - skipped conversation save',
+      });
       return { message: savedMessage };
     }
 

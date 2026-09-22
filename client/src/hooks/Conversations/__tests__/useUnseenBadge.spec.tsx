@@ -1,6 +1,8 @@
 import React from 'react';
+import { RecoilRoot } from 'recoil';
 import { renderHook, waitFor } from '@testing-library/react';
 import { Provider as JotaiProvider, createStore } from 'jotai';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { unseenTabBadgeAtom } from '../replyNotificationSettings';
 import useUnseenBadge from '../useUnseenBadge';
 import { setDocumentTitle } from '~/utils';
@@ -24,7 +26,11 @@ function mount(count: number, badgeEnabled = true) {
   return renderHook((nextCount: number) => useUnseenBadge(nextCount), {
     initialProps: count,
     wrapper: ({ children }: { children: React.ReactNode }) => (
-      <JotaiProvider store={settings}>{children}</JotaiProvider>
+      <RecoilRoot>
+        <QueryClientProvider client={new QueryClient()}>
+          <JotaiProvider store={settings}>{children}</JotaiProvider>
+        </QueryClientProvider>
+      </RecoilRoot>
     ),
   });
 }

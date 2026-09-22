@@ -5,6 +5,7 @@ const {
   GenerationJobManager,
   TERMINAL_PUBLICATION_RECONNECT_ERROR,
   hasPersistableAbortContent,
+  announceStoppedReply,
   buildAbortedResponseMetadata,
   isPendingActionStale,
   toClientPendingAction,
@@ -850,44 +851,24 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
               logger.debug(`[AgentStream] Saved partial response for: ${jobStreamId}`);
               /* When Stop wins the terminal claim the request controller returns before its
                  own stamp, so this is the only place a stopped turn's reply reaches the
-                 unseen-reply indicator. Written through `saveConvo` rather than a bare stamp
-                 because a very early interrupt can arrive before the conversation row exists:
-                 the same upsert that creates it carries the reply stamp, assigned at write
-                 time. Best-effort: the messages are already durable, and a missed stamp must
-                 not suppress the normal FINAL.
-                 A turn persisted only because `created` was emitted has no readable content:
-                 its row renders nothing, so a dot raised for it could never be cleared by
-                 opening the conversation. */
-              if (
-                messageContext.isTemporary !== true &&
-                persistedResponse.messageId &&
-                hasPersistableAbortContent(content)
-              ) {
-                try {
-                  /* The two rows this barrier just wrote are handed to `saveConvo` directly:
-                     without them it reloads the conversation's entire message list to rebuild
-                     `messages`, and that serial read sits between Stop and the FINAL event. */
-                  const appendMessageIds = [persistedRequestId, persistedResponse._id].filter(
+                 unseen-reply indicator.
+                 The two rows this barrier just wrote are handed over directly: without them
+                 the conversation write reloads the entire message list to rebuild `messages`,
+                 and that serial read sits between Stop and the FINAL event. */
+              await announceStoppedReply(
+                { saveConvo },
+                {
+                  ctx: messageContext,
+                  conversationId: jobData.conversationId,
+                  endpoint: jobData.endpoint,
+                  model: jobData.model,
+                  reply: { messageId: persistedResponse.messageId, content },
+                  appendMessageIds: [persistedRequestId, persistedResponse._id].filter(
                     (id) => id != null,
-                  );
-                  await saveConvo(
-                    messageContext,
-                    {
-                      conversationId: jobData.conversationId,
-                      ...(jobData.endpoint != null && { endpoint: jobData.endpoint }),
-                      ...(jobData.model != null && { model: jobData.model }),
-                    },
-                    {
-                      context: 'api/server/routes/agents/index.js - abort reply stamp',
-                      stampReply: true,
-                      replyMessageId: persistedResponse.messageId,
-                      ...(appendMessageIds.length > 0 ? { appendMessageIds } : {}),
-                    },
-                  );
-                } catch (error) {
-                  logger.warn('[AgentStream] Failed to stamp lastResponseAt', error);
-                }
-              }
+                  ),
+                  context: 'api/server/routes/agents/index.js - abort reply stamp',
+                },
+              );
             } catch (error) {
               persistenceErrors.push(error);
             }

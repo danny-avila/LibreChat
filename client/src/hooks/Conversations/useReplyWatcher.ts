@@ -1,21 +1,16 @@
 import { useRef, useEffect } from 'react';
-import { useAtomValue } from 'jotai';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import { useQueryClient, replaceEqualDeep } from '@tanstack/react-query';
 import type { TConversation, ConversationListParams } from 'librechat-data-provider';
 import type { InfiniteData, QueryClient } from '@tanstack/react-query';
 import type { ConversationCursorData } from '~/utils/convos';
 import {
-  unseenTabBadgeAtom,
-  replyNotificationsAtom,
-  replyNotificationSoundAtom,
-} from './replyNotificationSettings';
-import {
   isNotFoundError,
   findConvoInAllQueries,
   updateConvoInAllQueries,
   isConvoInAggregateCaches,
 } from '~/utils';
+import { REPLY_NOTIFICATION_DEFAULTS, useReplyAlertPreferences } from './replyNotificationSettings';
 import { useActiveJobs } from '~/data-provider';
 
 const AWAY_POLL_MS = 30_000;
@@ -27,17 +22,6 @@ const AWAY_POLL_MS = 30_000;
  * still eventually shows its dot rather than waiting for an unrelated refetch.
  */
 const FOCUSED_REFRESH_MS = 5 * 60_000;
-/**
- * How many conversations one away poll looks at.
- *
- * A reply lifts its conversation, so the newest activity is what the first page holds. The
- * server's default of 25 is the number that has to cover everything replied to between two
- * ticks, which a batch of scheduled runs can exceed; asking for more costs the same single
- * request. It is a ceiling rather than a guarantee: draining the cursor on a poll that repeats
- * every thirty seconds is the wrong trade, and covering it properly wants an unseen query on
- * the server rather than a wider page here.
- */
-const AWAY_POLL_LIMIT = 100;
 
 /**
  * Timestamps are the only thing worth taking from a fresher copy; everything else in the row is
@@ -161,6 +145,11 @@ const reconcileFirstPage = (
 const refreshConversationLists = async (
   queryClient: QueryClient,
   discovered: readonly string[] = [],
+  /* How many rows the canonical discovery fetch reads. It is a ceiling rather than a
+     guarantee: draining the cursor on a poll that repeats every thirty seconds is the wrong
+     trade, and covering a deployment whose replies outpace it properly wants an unseen query
+     on the server rather than a wider page here, which is why operators can raise it. */
+  limit: number = REPLY_NOTIFICATION_DEFAULTS.pollLimit,
 ): Promise<void> => {
   const cache = queryClient.getQueryCache();
   const active = cache
@@ -217,7 +206,7 @@ const refreshConversationLists = async (
     queryClient.fetchInfiniteQuery({
       queryKey: [QueryKeys.allConversations, { isArchived: false, replyDiscovery: true }],
       meta: { replyDiscovery: discovered },
-      queryFn: () => dataService.listConversations({ isArchived: false, limit: AWAY_POLL_LIMIT }),
+      queryFn: () => dataService.listConversations({ isArchived: false, limit }),
       getNextPageParam: () => undefined,
     }),
   ]);
@@ -420,9 +409,8 @@ const mergeTimestamps = async (
  */
 export default function useReplyWatcher() {
   const queryClient = useQueryClient();
-  const notificationsEnabled = useAtomValue(replyNotificationsAtom);
-  const soundEnabled = useAtomValue(replyNotificationSoundAtom);
-  const badgeEnabled = useAtomValue(unseenTabBadgeAtom);
+  const { notificationsEnabled, soundEnabled, badgeEnabled, pollLimit } =
+    useReplyAlertPreferences();
   const { data: activeJobsData } = useActiveJobs();
   const activeJobIds = activeJobsData?.activeJobIds;
   const runningRef = useRef<Set<string> | null>(null);
@@ -478,11 +466,11 @@ export default function useReplyWatcher() {
     /* Sidebar dots are unconditional, even when every optional away alert is disabled. */
     const timer = window.setInterval(() => {
       if (document.hasFocus()) {
-        void refreshConversationLists(queryClient).catch(() => {});
+        void refreshConversationLists(queryClient, [], pollLimit).catch(() => {});
       }
     }, FOCUSED_REFRESH_MS);
     return () => window.clearInterval(timer);
-  }, [queryClient]);
+  }, [queryClient, pollLimit]);
 
   useEffect(() => {
     if (!notificationsEnabled && !soundEnabled && !badgeEnabled) {
@@ -502,7 +490,7 @@ export default function useReplyWatcher() {
         /* The default page is the newest conversations, which is where an unseen reply always
            lands: the list sorts by `updatedAt` descending. */
         const { conversations } = await dataService.listConversations({
-          limit: AWAY_POLL_LIMIT,
+          limit: pollLimit,
         });
         /* Re-checked at arrival, not only at issue: the user can return while the request is
            in flight, and this fetch bypasses React Query, so the seen mutation's cancellation
@@ -565,7 +553,7 @@ export default function useReplyWatcher() {
            Recording them first would let a transient list failure mute those conversations for
            good: every later poll would read them as already attempted and never invalidate
            again, even after the network recovered. */
-        await refreshConversationLists(queryClient, [...unknownStamps.keys()]);
+        await refreshConversationLists(queryClient, [...unknownStamps.keys()], pollLimit);
         if (!isCurrent() || didListRefreshFail(queryClient)) {
           return;
         }
@@ -602,5 +590,5 @@ export default function useReplyWatcher() {
       active = false;
       window.clearInterval(timer);
     };
-  }, [notificationsEnabled, soundEnabled, badgeEnabled, queryClient]);
+  }, [notificationsEnabled, soundEnabled, badgeEnabled, pollLimit, queryClient]);
 }
