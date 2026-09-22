@@ -23,8 +23,9 @@ import { inOneProject, repoRoot, run, staticChecks } from './lint.helpers';
  * path silencing a future file that reuses it; a count edit must be read even
  * when it rides along with a source change; a change to what the rules read must
  * revalidate counts in files it never touches; an inline comment must not be a
- * way to silence a design rule; and a record that no longer says what it claims
- * must be rejected. None of them needs the browser — each runs the configured
+ * way to silence a design rule; a record that no longer says what it claims must
+ * be rejected; and the command that writes the record must build the primitives
+ * it records against. None of them needs the browser: each runs the configured
  * command and reads what it does.
  */
 
@@ -1002,6 +1003,57 @@ fs.utimesSync('packages/client/dist', when, when);
       expect(lying.status, 'a build that produced nothing was trusted').not.toBe(0);
       expect(lying.output).toContain('reported success');
       expect(lying.output).toContain('packages/client/dist');
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  test('recording the backlog builds the primitives first @scenario:recording-the-backlog-builds-the-primitives-first', () => {
+    inOneProject();
+    test.setTimeout(180_000);
+
+    /** The runner rebuilds before it validates, but the record is also written
+     *  by hand, through `npm run lint:design:record`. That script reads the same
+     *  `cva` variants out of `packages/client/dist`, so in a fresh checkout, or
+     *  after a primitive changed, it recorded counts for a library nobody is
+     *  compiling against: lower than the ones CI reports, and committed as the
+     *  budget every later change is measured against.
+     *
+     *  The build is made observable rather than real, as above. The questions
+     *  are whether the record asks for one before it writes, and whether a build
+     *  that fails is still loud now that the wrapper no longer carries its own.
+     */
+    const root = syntheticRoot();
+    const log = join(root, 'built.log');
+    const baseline = join(root, SUPPRESSIONS_FILE);
+    const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+      scripts: Record<string, string>;
+    };
+    const setBuild = (command: string): void => {
+      manifest.scripts['build:client-package'] = command;
+      writeFileSync(join(root, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+    };
+    const npmRun = (script: string) => run('npm', ['run', '--silent', script], { cwd: root });
+
+    try {
+      setBuild(`node -e "require('fs').appendFileSync('built.log','built\\n')"`);
+      writeFileSync(baseline, '{}\n');
+      const recorded = npmRun('lint:design:record');
+      expect(existsSync(log), 'the backlog was recorded without building the primitives').toBe(
+        true,
+      );
+      expect(readFileSync(baseline, 'utf8'), recorded.output).toContain('client/src/Caller.tsx');
+
+      /** The wrapper dropped its own build, because both steps it chains now
+       *  carry one. A build that fails still has to be loud: the record cannot
+       *  write a baseline it never linted for, and the prune that follows does
+       *  not swallow its exit the way the record's is swallowed. */
+      setBuild('node -e "process.exit(1)"');
+      writeFileSync(baseline, '{}\n');
+      rmSync(log, { force: true });
+      const suppressed = npmRun('lint:design:suppress');
+      expect(suppressed.status, 'a failed build passed as a re-record').not.toBe(0);
+      expect(readFileSync(baseline, 'utf8').trim(), suppressed.output).toBe('{}');
     } finally {
       rmSync(root, { force: true, recursive: true });
     }
