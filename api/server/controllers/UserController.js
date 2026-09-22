@@ -8,6 +8,7 @@ const {
   checkEmailConfig,
   createEmailChangeService,
   createEmailChangeDeps,
+  resolveEmailChangeSettings,
   GenerationJobManager,
   getAppConfigOptionsFromUser,
   normalizeHttpError,
@@ -668,6 +669,7 @@ const requestEmailChangeController = async (req, res) => {
       userId,
       tenantId: req.user?.tenantId,
       allowedDomains: req.config?.registration?.allowedDomains,
+      settings: resolveEmailChangeSettings(req.config?.emailChange),
       emailEnabled: checkEmailConfig(),
       ip: req.ip,
     });

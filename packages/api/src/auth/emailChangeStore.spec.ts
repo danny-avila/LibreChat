@@ -104,7 +104,7 @@ describe('createEmailChangeDeps', () => {
 
       const user = await deps.getUserById('user-1');
 
-      expect(user).toEqual({
+      expect(user).toMatchObject({
         _id: _id.toString(),
         id: undefined,
         email: 'current@example.com',
@@ -115,6 +115,29 @@ describe('createEmailChangeDeps', () => {
         role: undefined,
         tenantId: tenantId.toString(),
       });
+    });
+
+    it('keeps the source identity the lookup already resolved', async () => {
+      const store = createStore({
+        getUserById: jest
+          .fn()
+          .mockResolvedValue({ _id: 'user-1', email: 'current@example.com', idOnTheSource: null }),
+      });
+      const deps = createEmailChangeDeps(createRuntime({ store }));
+
+      /** Null is an answer; dropping it would send principal resolution back to the database. */
+      await expect(deps.getUserById('user-1')).resolves.toMatchObject({ idOnTheSource: null });
+    });
+
+    it('leaves the source identity absent when the record has none', async () => {
+      const store = createStore({
+        getUserById: jest.fn().mockResolvedValue({ _id: 'user-1', email: 'current@example.com' }),
+      });
+      const deps = createEmailChangeDeps(createRuntime({ store }));
+
+      const user = await deps.getUserById('user-1');
+
+      expect(user && 'idOnTheSource' in user).toBe(false);
     });
 
     it('treats a document without an address as no user', async () => {
@@ -150,23 +173,30 @@ describe('createEmailChangeDeps', () => {
     it('prefers the yaml section over the environment', async () => {
       const getAppConfig = jest
         .fn()
-        .mockResolvedValue({ config: { emailChange: { enabled: false } } } as AppConfig);
+        .mockResolvedValue({ config: {}, emailChange: { enabled: false } } as AppConfig);
       const deps = createEmailChangeDeps(createRuntime({ getAppConfig }));
 
       await expect(deps.resolveSettings()).resolves.toMatchObject({ enabled: false });
     });
 
-    it('reads the settings of the tenant it is asked about', async () => {
-      const { scopes, withTenant } = createTenantRunner();
+    it('reads the merged field, not the base yaml a scoped override supersedes', async () => {
+      /** Overrides are merged onto the AppConfig root; the section retained under `config`
+       *  is the unmerged base, so reading it would ignore a tenant that disabled changes. */
       const getAppConfig = jest
         .fn()
-        .mockResolvedValue({ config: { emailChange: { tokenTTLSeconds: 300 } } } as AppConfig);
-      const deps = createEmailChangeDeps(createRuntime({ getAppConfig, withTenant }));
+        .mockResolvedValue({ config: { emailChange: { enabled: false } } } as AppConfig);
+      const deps = createEmailChangeDeps(createRuntime({ getAppConfig }));
 
-      await expect(deps.resolveSettings('tenant-a')).resolves.toMatchObject({
-        tokenTTLSeconds: 300,
-      });
-      expect(scopes).toEqual(['tenant-a']);
+      await expect(deps.resolveSettings()).resolves.toMatchObject({ enabled: true });
+    });
+
+    it('resolves fail-closed so a transient failure cannot enable a disabled change', async () => {
+      const getAppConfig = jest.fn().mockResolvedValue({ config: {} } as AppConfig);
+      const deps = createEmailChangeDeps(createRuntime({ getAppConfig }));
+
+      await deps.resolveSettings();
+
+      expect(getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ failClosed: true }));
     });
   });
 

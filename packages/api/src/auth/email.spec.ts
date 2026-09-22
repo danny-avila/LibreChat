@@ -36,17 +36,18 @@ function createDeps(overrides: Partial<EmailChangeDeps> = {}) {
   return { deps, service: createEmailChangeService(deps) };
 }
 
+const DEFAULT_SETTINGS = { enabled: true, tokenTTLSeconds: 900 };
+
 describe('email change service', () => {
   describe('requestEmailChange', () => {
     it('rejects requests when email changes are disabled', async () => {
-      const { deps, service } = createDeps({
-        resolveSettings: jest.fn().mockResolvedValue({ enabled: false, tokenTTLSeconds: 900 }),
-      });
+      const { deps, service } = createDeps({});
 
       const response = await service.requestEmailChange({
         body: { currentPassword: 'correct-password', newEmail: 'new@example.com' },
         userId: '507f1f77bcf86cd799439011',
         tenantId: 'tenant-1',
+        settings: { enabled: false, tokenTTLSeconds: 900 },
         emailEnabled: true,
       });
 
@@ -67,6 +68,7 @@ describe('email change service', () => {
         userId: '507f1f77bcf86cd799439011',
         tenantId: 'tenant-1',
         allowedDomains: ['example.com'],
+        settings: DEFAULT_SETTINGS,
         emailEnabled: true,
         ip: '203.0.113.8',
       });
@@ -109,7 +111,34 @@ describe('email change service', () => {
             verificationLink: expect.stringMatching(
               /^https:\/\/chat\.example\.com\/verify\?type=email-change&userId=507f1f77bcf86cd799439011&email=new%40example\.com&token=/,
             ),
+            linkLifetime: '15 minutes',
           }),
+        }),
+      );
+    });
+
+    it('states the lifetime the link was actually issued with', async () => {
+      const { deps, service } = createDeps();
+
+      await service.requestEmailChange({
+        body: { currentPassword: 'correct-password', newEmail: 'new@example.com' },
+        userId: '507f1f77bcf86cd799439011',
+        tenantId: 'tenant-1',
+        settings: { enabled: true, tokenTTLSeconds: 3600 },
+        emailEnabled: true,
+      });
+
+      expect(deps.replaceTokenIfCurrent).toHaveBeenCalledWith(
+        expect.any(String),
+        null,
+        expect.objectContaining({ expiresIn: 3600 }),
+        expect.anything(),
+      );
+      expect(deps.sendEmail).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          template: 'verifyEmailChange.handlebars',
+          payload: expect.objectContaining({ linkLifetime: '1 hour' }),
         }),
       );
     });
@@ -124,6 +153,7 @@ describe('email change service', () => {
         body: { currentPassword: 'wrong-password', newEmail: 'taken@example.com' },
         userId: '507f1f77bcf86cd799439011',
         tenantId: 'tenant-1',
+        settings: DEFAULT_SETTINGS,
         emailEnabled: true,
         ip: '203.0.113.9',
       });
@@ -147,6 +177,7 @@ describe('email change service', () => {
         body: { currentPassword: 'correct-password', newEmail: 'taken@example.com' },
         userId: '507f1f77bcf86cd799439011',
         tenantId: 'tenant-1',
+        settings: DEFAULT_SETTINGS,
         emailEnabled: true,
       });
 
@@ -166,6 +197,7 @@ describe('email change service', () => {
         body: { currentPassword: 'correct-password', newEmail: 'new@example.com' },
         userId: '507f1f77bcf86cd799439011',
         tenantId: 'tenant-1',
+        settings: DEFAULT_SETTINGS,
         emailEnabled: true,
       });
 
@@ -188,6 +220,7 @@ describe('email change service', () => {
         body: { currentPassword: 'correct-password', newEmail: 'new@example.com' },
         userId: '507f1f77bcf86cd799439011',
         tenantId: 'tenant-1',
+        settings: DEFAULT_SETTINGS,
         emailEnabled: true,
       });
 
@@ -258,6 +291,7 @@ describe('email change service', () => {
         body: { currentPassword: 'correct-password', newEmail: 'first@example.com' },
         userId: '507f1f77bcf86cd799439011',
         tenantId: 'tenant-1',
+        settings: DEFAULT_SETTINGS,
         emailEnabled: true,
       });
       await firstDeliveryStarted;
@@ -266,6 +300,7 @@ describe('email change service', () => {
         body: { currentPassword: 'correct-password', newEmail: 'second@example.com' },
         userId: '507f1f77bcf86cd799439011',
         tenantId: 'tenant-1',
+        settings: DEFAULT_SETTINGS,
         emailEnabled: true,
       });
 
@@ -325,12 +360,14 @@ describe('email change service', () => {
           body: { currentPassword: 'correct-password', newEmail: 'first@example.com' },
           userId: '507f1f77bcf86cd799439011',
           tenantId: 'tenant-1',
+          settings: DEFAULT_SETTINGS,
           emailEnabled: true,
         }),
         service.requestEmailChange({
           body: { currentPassword: 'correct-password', newEmail: 'second@example.com' },
           userId: '507f1f77bcf86cd799439011',
           tenantId: 'tenant-1',
+          settings: DEFAULT_SETTINGS,
           emailEnabled: true,
         }),
       ]);

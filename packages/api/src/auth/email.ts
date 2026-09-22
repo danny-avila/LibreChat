@@ -68,6 +68,8 @@ export interface EmailChangeUser {
   provider?: string;
   role?: string;
   tenantId?: string;
+  /** Null is a resolved answer, absent is unknown; principal resolution distinguishes them. */
+  idOnTheSource?: string | null;
 }
 
 /** `lean()` yields a Map for a Mongoose map field, so reads tolerate either shape. */
@@ -145,8 +147,8 @@ export interface EmailChangeDeps {
    * commit an address that policy stopped permitting while the link was pending. */
   resolveAllowedDomains: (user: EmailChangeUser) => Promise<string[] | null | undefined>;
   sendEmail: (data: EmailData) => Promise<void>;
-  /** The operator's settings for the tenant a call belongs to. */
-  resolveSettings: (tenantId?: string) => Promise<EmailChangeSettings>;
+  /** Confirmation arrives without a request config, so it resolves its own, fail-closed. */
+  resolveSettings: () => Promise<EmailChangeSettings>;
   clientDomain: string;
   appName: string;
 }
@@ -166,6 +168,8 @@ export interface RequestEmailChangeInput {
   tenantId?: string;
   allowedDomains?: string[] | null;
   emailEnabled: boolean;
+  /** Resolved from the effective config the request already loaded. */
+  settings: EmailChangeSettings;
   ip?: string;
 }
 
@@ -208,6 +212,16 @@ function accountMatchesRequest(
 
 function displayName(user: EmailChangeUser): string {
   return user.name || user.username || user.email;
+}
+
+/** The template promises a lifetime, so it has to be the one the token was issued with. */
+function formatLifetime(seconds: number): string {
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+  }
+  const hours = Math.round(minutes / 60);
+  return `${hours} hour${hours === 1 ? '' : 's'}`;
 }
 
 function formatTimestamp(): string {
@@ -364,7 +378,7 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
   confirmEmailChange: (input: ConfirmEmailChangeInput) => Promise<EmailChangeResult>;
 } {
   async function requestEmailChange(input: RequestEmailChangeInput): Promise<EmailChangeResult> {
-    const settings = await deps.resolveSettings(input.tenantId);
+    const { settings } = input;
     if (!settings.enabled) {
       logger.warn(
         `[emailChange] Rejected disabled request [User ID: ${input.userId}] [IP: ${input.ip ?? 'unknown'}]`,
@@ -482,6 +496,7 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
           name: displayName(user),
           newEmail,
           verificationLink: verificationLink(deps, userId, newEmail, rawToken),
+          linkLifetime: formatLifetime(settings.tokenTTLSeconds),
           year: new Date().getFullYear().toString(),
         },
         template: 'verifyEmailChange.handlebars',

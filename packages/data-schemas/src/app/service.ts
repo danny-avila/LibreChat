@@ -163,6 +163,7 @@ export const AppService = async (params?: {
   const mcpSettings = config.mcpSettings || null;
   const actions = config.actions;
   const registration = config.registration ?? configDefaults.registration;
+  const emailChange = config.emailChange;
   const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
   const turnstileConfig = loadTurnstileConfig(config, configDefaults);
   const speech = config.speech;
@@ -183,6 +184,7 @@ export const AppService = async (params?: {
     mcpSettings,
     fileStrategy,
     registration,
+    emailChange,
     transactions,
     filteredTools,
     includedTools,

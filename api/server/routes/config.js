@@ -150,7 +150,7 @@ function buildPostLoginPayload(appConfig) {
     allowAccountDeletion:
       process.env.ALLOW_ACCOUNT_DELETION === undefined ||
       isEnabled(process.env.ALLOW_ACCOUNT_DELETION),
-    allowEmailChange: resolveEmailChangeSettings(appConfig?.config?.emailChange).enabled,
+    allowEmailChange: resolveEmailChangeSettings(appConfig?.emailChange).enabled,
   };
 
   return payload;

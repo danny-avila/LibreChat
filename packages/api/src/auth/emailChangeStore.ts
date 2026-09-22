@@ -116,6 +116,11 @@ function toUser(stored: StoredUser | null): EmailChangeUser | null {
     provider: stored.provider,
     role: stored.role,
     tenantId: identifier(stored.tenantId),
+    /** Carried through so principal resolution does not re-read the user we just loaded;
+     *  an explicit `null` is a resolved answer and must survive, unlike an absent field. */
+    ...(Object.prototype.hasOwnProperty.call(stored, 'idOnTheSource')
+      ? { idOnTheSource: stored.idOnTheSource ?? null }
+      : {}),
   };
 }
 
@@ -164,12 +169,18 @@ export function createEmailChangeDeps(runtime: EmailChangeRuntime): EmailChangeD
    * would decide this policy.
    */
   const resolveAppConfig = (user: EmailChangeUser): Promise<AppConfig | undefined> => {
-    const options = getAppConfigOptionsFromUser({
-      id: user._id ?? user.id,
-      role: user.role,
-      tenantId: user.tenantId,
-    });
-    const read = () => runtime.getAppConfig(options);
+    const options = getAppConfigOptionsFromUser(
+      {
+        id: user._id ?? user.id,
+        role: user.role,
+        tenantId: user.tenantId,
+        idOnTheSource: user.idOnTheSource,
+      },
+      undefined,
+    );
+    /** A transient principal or override failure must not fall back to a base allowlist
+     *  that is broader than the scoped one, which would commit an address policy forbids. */
+    const read = () => runtime.getAppConfig({ ...options, failClosed: true });
     return user.tenantId ? withTenant(user.tenantId, read) : read();
   };
 
@@ -195,10 +206,9 @@ export function createEmailChangeDeps(runtime: EmailChangeRuntime): EmailChangeD
     resolveAllowedDomains: async (user) =>
       (await resolveAppConfig(user))?.registration?.allowedDomains,
     sendEmail: runtime.sendEmail,
-    resolveSettings: async (tenantId): Promise<EmailChangeSettings> => {
-      const read = () => runtime.getAppConfig(getAppConfigOptionsFromUser(null, tenantId));
-      const appConfig = tenantId ? await withTenant(tenantId, read) : await read();
-      return resolveEmailChangeSettings(appConfig?.config?.emailChange);
+    resolveSettings: async (): Promise<EmailChangeSettings> => {
+      const appConfig = await runtime.getAppConfig({ failClosed: true });
+      return resolveEmailChangeSettings(appConfig?.emailChange);
     },
     clientDomain: runtime.clientDomain,
     appName: runtime.appName,
