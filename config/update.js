@@ -97,6 +97,12 @@ async function validateDockerRunning() {
     } catch (_error) {
       console.purple('Failed to remove Docker image librechat:latest. It might not exist.');
     }
+    console.purple('Pulling latest Docker images...');
+    const pullCommand = `${sudo}docker compose ${
+      singleCompose ? '-f ./docs/dev/single-compose.yml ' : ''
+    }pull --ignore-buildable`;
+    console.orange(pullCommand);
+    execSync(pullCommand, { stdio: 'inherit' });
     console.purple('Removing all unused dangling Docker images...');
     execSync(`${sudo}docker image prune -f`, { stdio: 'inherit' });
     console.purple('Building new LibreChat image...');
