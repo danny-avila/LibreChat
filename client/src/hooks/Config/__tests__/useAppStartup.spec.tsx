@@ -82,12 +82,9 @@ describe('useAppStartup: MCP permission gating', () => {
   it('checks the MCP_SERVERS.USE permission via useHasAccess', () => {
     mockUseHasAccess.mockReturnValue(false);
 
-    renderHook(
-      () => useAppStartup({ startupConfig: undefined, user: mockUser }),
-      {
-        wrapper,
-      },
-    );
+    renderHook(() => useAppStartup({ startupConfig: undefined, user: mockUser }), {
+      wrapper,
+    });
 
     expect(mockUseHasAccess).toHaveBeenCalledWith({
       permissionType: PermissionTypes.MCP_SERVERS,
