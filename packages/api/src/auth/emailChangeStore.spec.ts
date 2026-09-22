@@ -200,7 +200,14 @@ describe('createEmailChangeDeps', () => {
     });
   });
 
-  describe('confirmation-time domain policy', () => {
+  describe('confirmation-time policy', () => {
+    const owner = {
+      _id: 'user-1',
+      email: 'current@example.com',
+      role: 'USER',
+      tenantId: 'tenant-a',
+    };
+
     it('resolves the allowlist against the principal scope of that user', async () => {
       const getAppConfig = jest.fn().mockResolvedValue({
         config: {},
@@ -208,17 +215,33 @@ describe('createEmailChangeDeps', () => {
       } as AppConfig);
       const deps = createEmailChangeDeps(createRuntime({ getAppConfig }));
 
-      await expect(
-        deps.resolveAllowedDomains({
-          _id: 'user-1',
-          email: 'current@example.com',
-          role: 'USER',
-          tenantId: 'tenant-a',
-        }),
-      ).resolves.toEqual(['allowed.example.com']);
+      await expect(deps.resolvePolicy(owner)).resolves.toMatchObject({
+        allowedDomains: ['allowed.example.com'],
+      });
       expect(getAppConfig).toHaveBeenCalledWith(
         expect.objectContaining({ userId: 'user-1', role: 'USER', tenantId: 'tenant-a' }),
       );
+    });
+
+    it('answers with the setting that scope resolves, not the deployment default', async () => {
+      /** A link issued while the tenant allowed changes must not confirm after it stopped. */
+      const getAppConfig = jest
+        .fn()
+        .mockResolvedValue({ config: {}, emailChange: { enabled: false } } as AppConfig);
+      const deps = createEmailChangeDeps(createRuntime({ getAppConfig }));
+
+      await expect(deps.resolvePolicy(owner)).resolves.toMatchObject({
+        settings: { enabled: false },
+      });
+    });
+
+    it('reads that scope fail-closed', async () => {
+      const getAppConfig = jest.fn().mockResolvedValue({ config: {} } as AppConfig);
+      const deps = createEmailChangeDeps(createRuntime({ getAppConfig }));
+
+      await deps.resolvePolicy(owner);
+
+      expect(getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ failClosed: true }));
     });
   });
 });

@@ -203,8 +203,13 @@ export function createEmailChangeDeps(runtime: EmailChangeRuntime): EmailChangeD
       withTenant(tenantId, () => store.replaceTokenIfCurrent(scope, expectedToken, data)),
     deleteTokens: (query, tenantId) => withTenant(tenantId, () => store.deleteTokens(query)),
     verifyPassword: runtime.comparePassword,
-    resolveAllowedDomains: async (user) =>
-      (await resolveAppConfig(user))?.registration?.allowedDomains,
+    resolvePolicy: async (user) => {
+      const appConfig = await resolveAppConfig(user);
+      return {
+        settings: resolveEmailChangeSettings(appConfig?.emailChange),
+        allowedDomains: appConfig?.registration?.allowedDomains,
+      };
+    },
     sendEmail: runtime.sendEmail,
     resolveSettings: async (): Promise<EmailChangeSettings> => {
       const appConfig = await runtime.getAppConfig({ failClosed: true });

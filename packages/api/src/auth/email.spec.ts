@@ -26,7 +26,10 @@ function createDeps(overrides: Partial<EmailChangeDeps> = {}) {
     replaceTokenIfCurrent: jest.fn().mockResolvedValue(true),
     deleteTokens: jest.fn().mockResolvedValue({ deletedCount: 1 }),
     verifyPassword: jest.fn().mockResolvedValue(true),
-    resolveAllowedDomains: jest.fn().mockResolvedValue(null),
+    resolvePolicy: jest.fn().mockResolvedValue({
+      settings: { enabled: true, tokenTTLSeconds: 900 },
+      allowedDomains: null,
+    }),
     sendEmail: jest.fn().mockResolvedValue(undefined),
     resolveSettings: jest.fn().mockResolvedValue({ enabled: true, tokenTTLSeconds: 900 }),
     clientDomain: 'https://chat.example.com/',
@@ -397,6 +400,29 @@ describe('email change service', () => {
       };
     }
 
+    it('rejects a pending confirmation the owner scope has since disabled', async () => {
+      /** The deployment still allows changes; the tenant, role, group or user that owns the
+       *  link does not, and that is the scope the link was issued under. */
+      const { deps, service } = createDeps({
+        findToken: jest.fn().mockResolvedValue(await pendingToken()),
+        resolvePolicy: jest.fn().mockResolvedValue({
+          settings: { enabled: false, tokenTTLSeconds: 900 },
+          allowedDomains: null,
+        }),
+      });
+
+      const response = await service.confirmEmailChange({
+        body: {
+          email: 'new@example.com',
+          token: 'raw-token',
+          userId: '507f1f77bcf86cd799439011',
+        },
+      });
+
+      expect(response).toMatchObject({ status: 403, code: 'email_change_disabled' });
+      expect(deps.updateUser).not.toHaveBeenCalled();
+    });
+
     it('rejects pending confirmations when email changes are disabled', async () => {
       const { deps, service } = createDeps({
         resolveSettings: jest.fn().mockResolvedValue({ enabled: false, tokenTTLSeconds: 900 }),
@@ -745,7 +771,10 @@ describe('email change service', () => {
     it('rejects confirmation when the allowlist stopped permitting the pending address', async () => {
       const { deps, service } = createDeps({
         findToken: jest.fn().mockResolvedValue(await pendingToken()),
-        resolveAllowedDomains: jest.fn().mockResolvedValue(['allowed.com']),
+        resolvePolicy: jest.fn().mockResolvedValue({
+          settings: { enabled: true, tokenTTLSeconds: 900 },
+          allowedDomains: ['allowed.com'],
+        }),
       });
 
       const response = await service.confirmEmailChange({

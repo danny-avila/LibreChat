@@ -115,6 +115,12 @@ export interface EmailChangeSettings {
   tokenTTLSeconds: number;
 }
 
+/** The effective policy for one account, read in that account's own principal scope. */
+export interface EmailChangePolicy {
+  settings: EmailChangeSettings;
+  allowedDomains?: string[] | null;
+}
+
 interface EmailData {
   email: string;
   subject: string;
@@ -143,11 +149,12 @@ export interface EmailChangeDeps {
     tenantId?: string,
   ) => Promise<{ deletedCount?: number }>;
   verifyPassword: (user: EmailChangeUser, password: string) => Promise<boolean>;
-  /** Resolves the tenant's current registration allowlist so confirmation cannot
-   * commit an address that policy stopped permitting while the link was pending. */
-  resolveAllowedDomains: (user: EmailChangeUser) => Promise<string[] | null | undefined>;
+  /** The token owner's effective policy, so confirmation honors the scope that issued the
+   * link: neither an address the allowlist stopped permitting, nor a change a tenant, role,
+   * group, or user override has since disabled. */
+  resolvePolicy: (user: EmailChangeUser) => Promise<EmailChangePolicy>;
   sendEmail: (data: EmailData) => Promise<void>;
-  /** Confirmation arrives without a request config, so it resolves its own, fail-closed. */
+  /** The deployment default, for the gate that runs before the link names its owner. */
   resolveSettings: () => Promise<EmailChangeSettings>;
   clientDomain: string;
   appName: string;
@@ -597,7 +604,17 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       return result(400, EMAIL_CHANGE_ERROR_MESSAGE, 'invalid_token');
     }
 
-    if (!isEmailDomainAllowed(email, await deps.resolveAllowedDomains(user))) {
+    /** The gate above answered for the deployment; this one answers for the account the link
+     * names, whose tenant, role, group, or user override may say something different. */
+    const policy = await deps.resolvePolicy(user);
+    if (!policy.settings.enabled) {
+      logger.warn(
+        `[emailChange] Rejected disabled confirmation for its owner [User ID: ${userId}] [IP: ${ip}]`,
+      );
+      return result(403, 'Email changes are disabled', 'email_change_disabled');
+    }
+
+    if (!isEmailDomainAllowed(email, policy.allowedDomains)) {
       logger.warn(
         `[emailChange] Domain no longer allowed [User ID: ${userId}] [New Email: ${email}] [IP: ${ip}]`,
       );

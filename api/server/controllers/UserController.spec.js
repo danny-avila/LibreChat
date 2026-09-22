@@ -311,13 +311,13 @@ describe('emailChangeService dependencies', () => {
     const { getAppConfig } = require('~/server/services/Config');
     getAppConfig.mockResolvedValue({ registration: { allowedDomains: ['allowed.com'] } });
 
-    const allowedDomains = await emailChangeDeps.resolveAllowedDomains({
+    const policy = await emailChangeDeps.resolvePolicy({
       _id: '507f1f77bcf86cd799439011',
       role: 'USER',
       idOnTheSource: 'source-id',
     });
 
-    expect(allowedDomains).toEqual(['allowed.com']);
+    expect(policy.allowedDomains).toEqual(['allowed.com']);
     expect(getAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({ userId: '507f1f77bcf86cd799439011', role: 'USER' }),
     );
@@ -333,7 +333,7 @@ describe('emailChangeService dependencies', () => {
       return { registration: { allowedDomains: ['allowed.com'] } };
     });
 
-    await emailChangeDeps.resolveAllowedDomains({
+    await emailChangeDeps.resolvePolicy({
       _id: '507f1f77bcf86cd799439011',
       role: 'USER',
     });
@@ -351,7 +351,7 @@ describe('emailChangeService dependencies', () => {
       return { registration: { allowedDomains: ['tenant.com'] } };
     });
 
-    await emailChangeDeps.resolveAllowedDomains({
+    await emailChangeDeps.resolvePolicy({
       _id: '507f1f77bcf86cd799439011',
       role: 'USER',
       tenantId: 'tenant-a',
