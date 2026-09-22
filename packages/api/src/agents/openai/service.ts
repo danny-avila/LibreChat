@@ -571,7 +571,8 @@ export function buildNonStreamingResponse(
   usage: CompletionUsage,
 ): ChatCompletionResponse {
   const toolCallsArray = Array.from(toolCalls.values());
-  const finishReason = toolCallsArray.length > 0 && !text ? 'tool_calls' : 'stop';
+  /** Matches the streamed path: tool calls decide the reason even alongside text. */
+  const finishReason = toolCallsArray.length > 0 ? 'tool_calls' : 'stop';
 
   return {
     id: context.requestId,

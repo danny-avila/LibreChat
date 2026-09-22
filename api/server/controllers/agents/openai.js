@@ -59,6 +59,7 @@ const {
   createToolExecuteHandler,
   createOwnedToolEndHandler,
   buildNonStreamingResponse,
+  createOpenAIToolCallStream,
   createOpenAIStreamTracker,
   resolveAgentScopedSkillIds,
   createOpenAIContentAggregator,
@@ -974,6 +975,18 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         }
       };
 
+      /**
+       * Shared by both run-step events, because the outward index a client keys
+       * tool-call fragments by is allocated per call and belongs to neither
+       * event alone.
+       */
+      const toolCallStream = createOpenAIToolCallStream({
+        toolCalls: isStreaming ? tracker.toolCalls : aggregator.toolCalls,
+        ...(isStreaming && {
+          emit: (delta) => writeSSE(res, createChunk(context, delta)),
+        }),
+      });
+
       // Event handlers for OpenAI-compatible streaming
       const handlers = {
         // Text content streaming
@@ -1001,77 +1014,11 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
           }
         }),
 
-        // Tool call initiation - streams id and name (from on_run_step)
-        on_run_step: createHandler((data) => {
-          const stepDetails = data?.stepDetails;
-          if (stepDetails?.type === 'tool_calls' && stepDetails.tool_calls) {
-            for (const tc of stepDetails.tool_calls) {
-              const toolIndex = data.index ?? 0;
-              const toolId = tc.id ?? '';
-              const toolName = tc.name ?? '';
-              const toolCall = {
-                id: toolId,
-                type: 'function',
-                function: { name: toolName, arguments: '' },
-              };
-
-              // Track tool call in tracker or aggregator
-              if (isStreaming) {
-                if (!tracker.toolCalls.has(toolIndex)) {
-                  tracker.toolCalls.set(toolIndex, toolCall);
-                }
-                // Stream initial tool call chunk (like OpenAI does)
-                writeSSE(
-                  res,
-                  createChunk(context, {
-                    tool_calls: [{ index: toolIndex, ...toolCall }],
-                  }),
-                );
-              } else {
-                if (!aggregator.toolCalls.has(toolIndex)) {
-                  aggregator.toolCalls.set(toolIndex, toolCall);
-                }
-              }
-            }
-          }
-        }),
+        // Tool call initiation - declares id and name (from on_run_step)
+        on_run_step: createHandler((data) => toolCallStream.onRunStep(data)),
 
         // Tool call argument streaming (from on_run_step_delta)
-        on_run_step_delta: createHandler((data) => {
-          const delta = data?.delta;
-          if (delta?.type === 'tool_calls' && delta.tool_calls) {
-            for (const tc of delta.tool_calls) {
-              const args = tc.args ?? '';
-              if (!args) {
-                continue;
-              }
-
-              const toolIndex = tc.index ?? 0;
-
-              // Update tool call arguments
-              const targetMap = isStreaming ? tracker.toolCalls : aggregator.toolCalls;
-              const tracked = targetMap.get(toolIndex);
-              if (tracked) {
-                tracked.function.arguments += args;
-              }
-
-              // Stream argument delta (only for streaming)
-              if (isStreaming) {
-                writeSSE(
-                  res,
-                  createChunk(context, {
-                    tool_calls: [
-                      {
-                        index: toolIndex,
-                        function: { arguments: args },
-                      },
-                    ],
-                  }),
-                );
-              }
-            }
-          }
-        }),
+        on_run_step_delta: createHandler((data) => toolCallStream.onRunStepDelta(data)),
 
         // Usage tracking
         on_chat_model_end: {

@@ -190,19 +190,50 @@ export interface MessageDeltaData {
   content?: Array<{ type: string; text?: string }>;
 }
 
+/**
+ * One tool-call fragment of a run step delta, as `@librechat/agents` emits it:
+ * `id` and `name` arrive on the fragment that opens a call, `args` on the ones
+ * that stream its arguments, and `index` is the provider's content-block index
+ * within the current model invocation. `function` is accepted for callers that
+ * hand-build the OpenAI wire shape instead.
+ */
+export interface RunStepToolCallChunk {
+  index?: number;
+  id?: string;
+  name?: string;
+  args?: string;
+  type?: string;
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+}
+
 export interface RunStepDeltaData {
+  /** The run step these fragments belong to. */
   id?: string;
   delta?: {
     type?: string;
-    tool_calls?: Array<{
-      index?: number;
-      id?: string;
-      type?: string;
-      function?: {
-        name?: string;
-        arguments?: string;
-      };
-    }>;
+    tool_calls?: RunStepToolCallChunk[];
+  };
+}
+
+/** A tool call as the run step that opened it declares it. */
+export interface RunStepToolCall {
+  index?: number;
+  id?: string;
+  name?: string;
+  type?: string;
+}
+
+export interface RunStepData {
+  /** The run step's own id, shared with every delta dispatched for it. */
+  id?: string;
+  /** The step's position in the response content, not a tool-call index. */
+  index?: number;
+  stepDetails?: {
+    type?: string;
+    tool_calls?: RunStepToolCall[];
   };
 }
 
@@ -241,6 +272,136 @@ export interface EventHandler {
 }
 
 /**
+ * Projects the graph's tool-call events onto the OpenAI wire format.
+ *
+ * A client accumulates `delta.tool_calls` by `index`: the first chunk at an
+ * index declares the call and must carry `id` and `function.name`, and every
+ * later chunk at that index belongs to that same call. Neither index the graph
+ * reports can serve as that key. A run step's `index` is its position in the
+ * response's content, so a tool call that follows text does not start at zero,
+ * and consecutive steps each carry a single-element `tool_calls` array rather
+ * than one array holding every call. A fragment's `index` is the provider's
+ * content-block index, which restarts at zero on each model invocation of the
+ * run, so two different calls can share it.
+ *
+ * Outward indexes are therefore allocated here, one per tool call id, in the
+ * order the calls are declared, and every emission for a call uses its own.
+ */
+export interface OpenAIToolCallStreamConfig {
+  /** Accumulated tool calls, keyed by their outward index. */
+  toolCalls: Map<number, ToolCall>;
+  /** Emits one outward delta. Omitted for non-streaming responses. */
+  emit?: (delta: ChatCompletionChunkChoice['delta']) => void;
+}
+
+export interface OpenAIToolCallStream {
+  /** Declares the tool calls a run step opened. */
+  onRunStep: (data: RunStepData) => void;
+  /** Accumulates the name and argument fragments streamed for a run step. */
+  onRunStepDelta: (data: RunStepDeltaData) => void;
+}
+
+export function createOpenAIToolCallStream(
+  config: OpenAIToolCallStreamConfig,
+): OpenAIToolCallStream {
+  const { toolCalls, emit } = config;
+  /** Outward index per tool call id; its size is the next index to hand out. */
+  const indexById = new Map<string, number>();
+  /** Outward index per `<step id, provider index>`, bound by an identified fragment. */
+  const indexByFragment = new Map<string, number>();
+  /** Outward indexes opened by each run step, for fragments that carry no id. */
+  const indexesByStep = new Map<string, number[]>();
+  /** Indexes already declared to the client, so `id` and `name` are sent once. */
+  const declared = new Set<number>();
+
+  const fragmentKey = (stepId: string, index: number): string => `${stepId}\u0000${index}`;
+
+  const declare = (stepId: string, id: string, name: string): number => {
+    let index = indexById.get(id);
+    if (index === undefined) {
+      index = indexById.size;
+      indexById.set(id, index);
+    }
+    const stepIndexes = indexesByStep.get(stepId);
+    if (stepIndexes === undefined) {
+      indexesByStep.set(stepId, [index]);
+    } else if (!stepIndexes.includes(index)) {
+      stepIndexes.push(index);
+    }
+    /** A client rejects a first chunk that lacks either field, so a call whose
+     *  name has not arrived yet waits for the fragment carrying it. */
+    if (declared.has(index) || !name) {
+      return index;
+    }
+    declared.add(index);
+    toolCalls.set(index, { id, type: 'function', function: { name, arguments: '' } });
+    emit?.({ tool_calls: [{ index, id, type: 'function', function: { name, arguments: '' } }] });
+    return index;
+  };
+
+  return {
+    onRunStep: (data) => {
+      const stepDetails = data?.stepDetails;
+      if (stepDetails?.type !== StepTypes.TOOL_CALLS || !Array.isArray(stepDetails.tool_calls)) {
+        return;
+      }
+      const stepId = data.id ?? '';
+      for (const toolCall of stepDetails.tool_calls) {
+        const id = toolCall.id ?? '';
+        if (id) {
+          declare(stepId, id, toolCall.name ?? '');
+        }
+      }
+    },
+
+    onRunStepDelta: (data) => {
+      const delta = data?.delta;
+      if (delta?.type !== StepTypes.TOOL_CALLS || !Array.isArray(delta.tool_calls)) {
+        return;
+      }
+      const stepId = data.id ?? '';
+      for (const fragment of delta.tool_calls) {
+        const id = fragment.id ?? '';
+        const name = fragment.name ?? fragment.function?.name ?? '';
+        const args = fragment.args ?? fragment.function?.arguments ?? '';
+        const key = fragment.index === undefined ? '' : fragmentKey(stepId, fragment.index);
+
+        let index: number | undefined;
+        if (id) {
+          index = declare(stepId, id, name);
+          if (key) {
+            indexByFragment.set(key, index);
+          }
+        } else if (key && indexByFragment.has(key)) {
+          index = indexByFragment.get(key);
+        } else {
+          /** A provider that streams arguments without repeating the id: when the
+           *  step opened exactly one call, they can only belong to it. */
+          const stepIndexes = indexesByStep.get(stepId);
+          if (stepIndexes?.length !== 1) {
+            continue;
+          }
+          index = stepIndexes[0];
+          if (key) {
+            indexByFragment.set(key, index);
+          }
+        }
+
+        if (!args || index === undefined) {
+          continue;
+        }
+        const tracked = toolCalls.get(index);
+        if (tracked === undefined) {
+          continue;
+        }
+        tracked.function.arguments += args;
+        emit?.({ tool_calls: [{ index, function: { arguments: args } }] });
+      }
+    },
+  };
+}
+
+/**
  * Handler for message delta events - streams text content
  */
 export class OpenAIMessageDeltaHandler implements EventHandler {
@@ -263,86 +424,25 @@ export class OpenAIMessageDeltaHandler implements EventHandler {
 }
 
 /**
- * Handler for run step delta events - streams tool calls
+ * Handler for run step delta events - accumulates streamed tool call fragments
  */
 export class OpenAIRunStepDeltaHandler implements EventHandler {
-  constructor(private config: OpenAIStreamHandlerConfig) {}
+  constructor(private toolCallStream: OpenAIToolCallStream) {}
 
   handle(_event: string, data: RunStepDeltaData): void {
-    const delta = data?.delta;
-    if (!delta || delta.type !== StepTypes.TOOL_CALLS) {
-      return;
-    }
-
-    const toolCalls = delta.tool_calls;
-    if (!toolCalls || !Array.isArray(toolCalls)) {
-      return;
-    }
-
-    for (const tc of toolCalls) {
-      if (tc.index === undefined) {
-        continue;
-      }
-
-      // Initialize tool call in tracker if needed
-      let trackedTc = this.config.tracker.toolCalls.get(tc.index);
-      if (!trackedTc && tc.id) {
-        trackedTc = {
-          id: tc.id,
-          type: 'function',
-          function: {
-            name: '',
-            arguments: '',
-          },
-        };
-        this.config.tracker.toolCalls.set(tc.index, trackedTc);
-      }
-
-      // Build the streaming delta
-      const streamDelta: ChatCompletionChunkChoice['delta'] = {
-        tool_calls: [
-          {
-            index: tc.index,
-            ...(tc.id && { id: tc.id }),
-            ...(tc.type && { type: tc.type as 'function' }),
-            ...(tc.function && {
-              function: {
-                ...(tc.function.name && { name: tc.function.name }),
-                ...(tc.function.arguments && { arguments: tc.function.arguments }),
-              },
-            }),
-          },
-        ],
-      };
-
-      // Update tracked tool call
-      if (trackedTc) {
-        if (tc.function?.name) {
-          trackedTc.function.name += tc.function.name;
-        }
-        if (tc.function?.arguments) {
-          trackedTc.function.arguments += tc.function.arguments;
-        }
-      }
-
-      const chunk = createChunk(this.config.context, streamDelta);
-      writeSSE(this.config.res, chunk);
-    }
+    this.toolCallStream.onRunStepDelta(data);
   }
 }
 
 /**
- * Handler for run step events - sends initial tool call info
+ * Handler for run step events - declares a tool call's id and name at its
+ * outward index, before any argument fragment references that index
  */
 export class OpenAIRunStepHandler implements EventHandler {
-  constructor(private config: OpenAIStreamHandlerConfig) {}
+  constructor(private toolCallStream: OpenAIToolCallStream) {}
 
-  handle(_event: string, data: { stepDetails?: { type?: string } }): void {
-    // Run step events are primarily for LibreChat UI, we use deltas for streaming
-    // This handler is a no-op for OpenAI format
-    if (data?.stepDetails?.type === StepTypes.TOOL_CALLS) {
-      // Tool calls will be streamed via delta events
-    }
+  handle(_event: string, data: RunStepData): void {
+    this.toolCallStream.onRunStep(data);
   }
 }
 
@@ -417,11 +517,16 @@ export function createOpenAIHandlers(
   config: OpenAIStreamHandlerConfig,
   toolExecuteOptions?: ToolExecuteOptions,
 ): Record<string, EventHandler> {
+  /** One projection across both events, so a call keeps a single outward index. */
+  const toolCallStream = createOpenAIToolCallStream({
+    toolCalls: config.tracker.toolCalls,
+    emit: (delta) => writeSSE(config.res, createChunk(config.context, delta)),
+  });
   const handlers: Record<string, EventHandler> = {
     [GraphEvents.ON_MESSAGE_DELTA]: new OpenAIMessageDeltaHandler(config),
-    [GraphEvents.ON_RUN_STEP_DELTA]: new OpenAIRunStepDeltaHandler(config),
-    [GraphEvents.ON_RUN_STEP]: new OpenAIRunStepHandler(config),
-    [GraphEvents.ON_RUN_STEP_COMPLETED]: new OpenAIRunStepHandler(config),
+    [GraphEvents.ON_RUN_STEP_DELTA]: new OpenAIRunStepDeltaHandler(toolCallStream),
+    [GraphEvents.ON_RUN_STEP]: new OpenAIRunStepHandler(toolCallStream),
+    [GraphEvents.ON_RUN_STEP_COMPLETED]: new OpenAIRunStepHandler(toolCallStream),
     [GraphEvents.CHAT_MODEL_END]: new OpenAIModelEndHandler(config),
     [GraphEvents.CHAT_MODEL_STREAM]: new OpenAIChatModelStreamHandler(),
     [GraphEvents.TOOL_END]: new OpenAIToolEndHandler(),
@@ -445,9 +550,10 @@ export function sendFinalChunk(
 ): void {
   const { res, context, tracker } = config;
 
-  // Determine finish reason based on content
+  /** A response that called tools finishes with `tool_calls`, including when the
+   *  model emitted text alongside them. */
   let reason = finishReason;
-  if (tracker.toolCalls.size > 0 && !tracker.hasText) {
+  if (tracker.toolCalls.size > 0) {
     reason = 'tool_calls';
   }
 

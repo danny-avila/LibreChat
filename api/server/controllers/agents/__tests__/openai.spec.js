@@ -217,6 +217,10 @@ jest.mock('@librechat/api', () => ({
   buildAgentContextAttachmentsByAgentId: (...args) =>
     mockBuildAgentContextAttachmentsByAgentId(...args),
   createChunk: jest.fn().mockReturnValue({}),
+  /** Not stubbed: the outward tool-call index this allocates is the behavior the
+   *  controller is responsible for wiring, so the spec runs the real projection. */
+  createOpenAIToolCallStream: (...args) =>
+    jest.requireActual('@librechat/api').createOpenAIToolCallStream(...args),
   buildRunToolSet: jest.fn().mockReturnValue(new Set()),
   buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
