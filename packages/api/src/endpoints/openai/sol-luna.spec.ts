@@ -102,6 +102,10 @@ describe.each(['gpt-6-sol', 'gpt-6-luna'])('%s requests', (model) => {
     [false, true, 'none'],
     [false, false, 'none', true],
     [true, false, 'none', true],
+    [false, false, 'max', true, false],
+    [true, false, 'max', true, false],
+    [false, true, 'low', false, false],
+    [true, true, 'low', false, false],
     [false, false, undefined, false, false],
     [false, true, undefined, false, false],
   ] as const)(
@@ -176,8 +180,11 @@ describe.each(['gpt-6-sol', 'gpt-6-luna'])('%s requests', (model) => {
             model,
             max_tokens: 2048,
             reasoning_effort: effort as ReasoningEffort,
+            temperature: 0.7,
+            top_p: 0.9,
             ...(chatCompletions ? { useResponsesApi: false } : {}),
           },
+          addParams: { logprobs: true, topLogprobs: 3 },
           ...(isAzure ? { azure } : {}),
         },
         isAzure ? EModelEndpoint.azureOpenAI : EModelEndpoint.openAI,
@@ -232,6 +239,14 @@ describe.each(['gpt-6-sol', 'gpt-6-luna'])('%s requests', (model) => {
       expect(JSON.stringify(bodies[0][chatCompletions ? 'messages' : 'input'])).toContain(
         'data:image/png;base64,dGVzdA==',
       );
+      const reasoningEnabledResponses = !chatCompletions && effort !== ReasoningEffort.none;
+      if (reasoningEnabledResponses) {
+        for (const param of ['temperature', 'top_p', 'logprobs', 'top_logprobs']) {
+          expect(bodies[0]).not.toHaveProperty(param);
+        }
+      } else {
+        expect(bodies[0]).toHaveProperty('temperature', 0.7);
+      }
       expect(message.usage_metadata).toMatchObject({
         input_tokens: 300000,
         output_tokens: 100,

@@ -944,19 +944,31 @@ export function getOpenAILLMConfig({
     reasoningEffort = ReasoningEffort.low;
   }
 
-  /** LangChain constructor fields drop flat `reasoning_effort`. For the one
-   * Sol/Luna Chat Completions tool mode the provider permits, use the shared
-   * reasoning object so the adapter serializes `reasoning_effort: none`. */
-  const solLunaChatCompletions =
-    firstPartyEndpoint &&
-    /^gpt-6-(?:sol|luna)(?:-|$)/i.test(llmConfig.model ?? '') &&
-    llmConfig.useResponsesApi === false;
-  if (solLunaChatCompletions && reasoningEffort === ReasoningEffort.none) {
-    /** Azure's SDK model is the deployment alias, so its reasoning-model gate
-     * cannot infer Sol/Luna. modelKwargs survives that gate on both clients. */
-    modelKwargs.reasoning_effort = ReasoningEffort.none;
+  const solLunaRulesApply =
+    firstPartyEndpoint && /^gpt-6-(?:sol|luna)(?:-|$)/i.test(llmConfig.model ?? '');
+  /** LangChain constructor fields drop flat `reasoning_effort`. Chat
+   * Completions supports every Sol/Luna effort without tools (and `none` with
+   * tools), so put the effective value in model kwargs for both OpenAI and
+   * Azure deployment aliases. */
+  const solLunaChatCompletions = solLunaRulesApply && llmConfig.useResponsesApi === false;
+  if (solLunaChatCompletions && reasoningEffort != null && reasoningEffort !== '') {
+    modelKwargs.reasoning_effort = reasoningEffort;
     hasModelKwargs = true;
     reasoningEffort = undefined;
+  }
+
+  /** Sol/Luna reject sampling controls when Responses uses reasoning. The
+   * provider default is medium, so an unset effort is reasoning-enabled too.
+   * Strip only the request copy; saved settings remain available when the user
+   * switches models or explicitly selects `none`. */
+  const solLunaResponsesReasoning =
+    solLunaRulesApply &&
+    llmConfig.useResponsesApi === true &&
+    reasoningEffort !== ReasoningEffort.none;
+  if (solLunaResponsesReasoning) {
+    for (const param of ['temperature', 'topP', 'logprobs', 'topLogprobs']) {
+      deleteConfigParam({ param, llmConfig, modelKwargs });
+    }
   }
 
   if (!useOpenRouter) {
