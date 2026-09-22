@@ -410,6 +410,7 @@ export class AccessControlService {
     revokedPrincipals = [],
     grantedBy,
     session,
+    maxWriteAttempts,
   }: {
     resourceType: ResourceType;
     resourceId: string | Types.ObjectId;
@@ -417,6 +418,7 @@ export class AccessControlService {
     revokedPrincipals?: BulkPrincipal[];
     grantedBy: string | Types.ObjectId;
     session?: ClientSession;
+    maxWriteAttempts?: number;
   }): Promise<BulkPermissionUpdateResult> {
     const supportsTransactions = await getTransactionSupport(
       this._mongoose,
@@ -638,7 +640,10 @@ export class AccessControlService {
       }
 
       if (roleBitsWrites.length > 0) {
-        await this._dbMethods.replaceRoleBits(roleBitsWrites, sessionOptions);
+        await this._dbMethods.replaceRoleBits(roleBitsWrites, {
+          ...sessionOptions,
+          maxAttempts: maxWriteAttempts,
+        });
       }
 
       if (bulkWrites.length > 0) {

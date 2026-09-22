@@ -178,7 +178,6 @@ describe('role-only ACL writes', () => {
   test.each([
     { label: 'grant', initial: 1, concurrent: 17, expected: 19 },
     { label: 'revocation', initial: 17, concurrent: 1, expected: 3 },
-    { label: 'deletion', initial: 17, concurrent: null, expected: 3 },
   ])(
     'preserves a concurrent Insights $label after the snapshot',
     async ({ initial, concurrent, expected }) => {
@@ -288,7 +287,7 @@ describe('role-only ACL writes', () => {
     expect(entry!.roleId?.toString()).toBe(role!._id.toString());
   });
 
-  test('propagates a partial batch failure without leaving half-updated role bits', async () => {
+  test('propagates failure before any write and permits an explicit retry', async () => {
     await seed(RoleBits.OWNER);
     await seed(RoleBits.OWNER | PermissionBits.VIEW_INSIGHTS);
     jest
@@ -319,6 +318,156 @@ describe('role-only ACL writes', () => {
       ['tenant-a', 19],
       ['tenant-b', 1],
     ]);
+  });
+
+  test('does not resurrect an ACL deleted between read and write', async () => {
+    await seed(17);
+    const spy = raceBeforeWrite(() => entries.deleteMany(filter));
+    await expect(updateRole()).rejects.toThrow('ACL deleted');
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(await entries.countDocuments(filter)).toBe(0);
+  });
+
+  test('does not replay completed entries when a later duplicate conflicts', async () => {
+    await seed(1);
+    await seed(17);
+    const before = await entries.find(filter).sort({ _id: 1 }).lean();
+    const real = entries.bulkWrite.bind(entries);
+    let calls = 0;
+    const intercept = (async (...args: Parameters<typeof real>) => {
+      calls++;
+      if (calls === 2) {
+        // Revoke the already-completed row, and make only the second CAS miss.
+        await entries.deleteOne({ _id: before[0]._id });
+        await entries.updateOne({ _id: before[1]._id }, { $set: { permBits: 1 } });
+      }
+      return real(...args);
+    }) as unknown as typeof entries.bulkWrite;
+    const spy = jest.spyOn(entries, 'bulkWrite').mockImplementation(intercept);
+    const result = await updateRole();
+    expect(result.errors).toEqual([]);
+    expect(spy).toHaveBeenCalledTimes(3);
+    expect(await entries.findById(before[0]._id)).toBeNull();
+    expect((await entries.findById(before[1]._id))!.permBits).toBe(3);
+    expect(await entries.countDocuments(filter)).toBe(1);
+  });
+
+  test('reports completed entries after a real partial failure without replaying them', async () => {
+    await seed(15);
+    await seed(31);
+    const real = entries.bulkWrite.bind(entries);
+    let calls = 0;
+    const intercept = (async (...args: Parameters<typeof real>) => {
+      if (++calls === 2) throw new Error('injected second-write failure');
+      return real(...args);
+    }) as unknown as typeof entries.bulkWrite;
+    jest.spyOn(entries, 'bulkWrite').mockImplementation(intercept);
+    await expect(updateRole()).rejects.toMatchObject({ completedEntries: 1 });
+    expect(calls).toBe(2);
+    const after = await entries.find(filter).sort({ _id: 1 }).lean();
+    expect(after.map((entry) => entry.permBits)).toEqual([3, 31]);
+    const storedRole = await mongoose.models.AccessRole.findById(after[0].roleId).lean<{
+      permBits: number;
+    }>();
+    expect(storedRole!.permBits).toBe(3);
+  });
+
+  test('reads from primary even with a nontransactional secondaryPreferred session', async () => {
+    await seed(17);
+    const session = await mongoose.startSession();
+    const find = jest.spyOn(entries, 'find');
+    try {
+      await methods.replaceRoleBits(
+        [
+          {
+            filter,
+            insert: {},
+            roleBits: 3,
+            metadata: {},
+          },
+        ],
+        { session },
+      );
+      expect(session.inTransaction()).toBe(false);
+      expect(find.mock.results.length).toBeGreaterThan(0);
+      for (const result of find.mock.results) {
+        expect(result.value.getOptions().readPreference.mode).toBe('primary');
+      }
+    } finally {
+      await session.endSession();
+    }
+  });
+
+  test.each([NaN, Infinity, -1, 0, 1.5, 101])(
+    'rejects invalid retry budget %s before writing',
+    async (maxAttempts) => {
+      const spy = jest.spyOn(entries, 'bulkWrite');
+      await expect(methods.replaceRoleBits([], { maxAttempts })).rejects.toThrow();
+      expect(spy).not.toHaveBeenCalled();
+    },
+  );
+
+  test('honors a supplied one-attempt budget', async () => {
+    await seed(17);
+    const spy = raceBeforeWrite(() => entries.updateMany(filter, { $set: { permBits: 1 } }));
+    await expect(
+      methods.replaceRoleBits([{ filter, insert: {}, roleBits: 3, metadata: {} }], {
+        maxAttempts: 1,
+      }),
+    ).rejects.toThrow('after 1 attempts');
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect((await entries.findOne(filter))!.permBits).toBe(1);
+  });
+
+  test.each([null, -1, 1.5, 4294967297])(
+    'rejects malformed stored permissions %s without truncating',
+    async (permBits) => {
+      await seed(1);
+      await entries.collection.updateMany(filter, { $set: { permBits } });
+      const spy = jest.spyOn(entries, 'bulkWrite');
+      await expect(updateRole()).rejects.toThrow('Invalid permBits');
+      expect(spy).not.toHaveBeenCalled();
+      expect((await entries.collection.findOne(filter))!.permBits).toBe(permBits);
+    },
+  );
+
+  test('serializes two overlapping add/remove requests without accumulating both grants', async () => {
+    await seed(1);
+    const spy = raceBeforeWrite(async () => {
+      const b = await methods.modifyPermissionBits(
+        PrincipalType.USER,
+        userId,
+        ResourceType.AGENT,
+        resourceId,
+        4,
+        2,
+      );
+      expect(b!.permBits).toBe(5);
+    });
+    const a = await methods.modifyPermissionBits(
+      PrincipalType.USER,
+      userId,
+      ResourceType.AGENT,
+      resourceId,
+      2,
+      4,
+    );
+    expect(spy).toHaveBeenCalledTimes(3);
+    expect(a!.permBits).toBe(3);
+    expect((await entries.findOne(filter))!.permBits).toBe(3);
+  });
+
+  test('removal wins when add/remove masks overlap', async () => {
+    await seed(17);
+    const result = await methods.modifyPermissionBits(
+      PrincipalType.USER,
+      userId,
+      ResourceType.AGENT,
+      resourceId,
+      3,
+      2,
+    );
+    expect(result!.permBits).toBe(17);
   });
 
   test('keeps all guarded writes inside a caller-owned transaction', async () => {

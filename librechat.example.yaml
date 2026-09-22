@@ -1431,3 +1431,7 @@ endpoints:
 #       - id: anthropic_api_key
 #         label: Anthropic API key
 #         regex: "sk-ant-[A-Za-z0-9_-]{20,}"
+
+# ACL writes retry only conflicts on an individual document.
+# permissions:
+#   maxWriteAttempts: 3 # Integer 1-100, including the first attempt.
