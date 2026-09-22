@@ -91,18 +91,16 @@ export default function ChangeEmail() {
       </div>
       <OGDialogContent
         id="change-email-dialog"
-        className="w-11/12 max-w-md bg-surface-primary text-text-primary"
+        className="w-11/12 max-w-md"
         showCloseButton={false}
       >
-        <OGDialogHeader className="space-y-2">
+        <OGDialogHeader>
           <OGDialogTitle>{localize('com_ui_email_change_title')}</OGDialogTitle>
-          <OGDialogDescription className="leading-5">
-            {localize('com_ui_email_change_description')}
-          </OGDialogDescription>
+          <OGDialogDescription>{localize('com_ui_email_change_description')}</OGDialogDescription>
         </OGDialogHeader>
         <form id="change-email-form" className="space-y-5" onSubmit={handleSubmit}>
           <div className="space-y-2">
-            <Label htmlFor="new-email" className="font-medium text-text-primary">
+            <Label htmlFor="new-email" className="font-medium">
               {localize('com_ui_email_change_new_email')}
             </Label>
             <Input
@@ -116,7 +114,7 @@ export default function ChangeEmail() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="current-password" className="font-medium text-text-primary">
+            <Label htmlFor="current-password" className="font-medium">
               {localize('com_ui_email_change_current_password')}
             </Label>
             <SecretInput
@@ -135,7 +133,7 @@ export default function ChangeEmail() {
             </p>
           )}
         </form>
-        <OGDialogFooter className="gap-2 sm:space-x-0">
+        <OGDialogFooter>
           <OGDialogClose asChild>
             <Button type="button" variant="outline">
               {localize('com_ui_cancel')}
