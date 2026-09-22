@@ -90,15 +90,19 @@ async function serveReplyNotificationConfig(
   page: Page,
   replyNotifications: Record<string, boolean | number>,
 ) {
-  await page.route('**/api/config', async (route) => {
+  await page.route('**/api/config*', async (route) => {
     const response = await route.fetch();
     const config = await response.json();
+    /* Fulfilled with a fresh body and headers rather than the upstream response: reusing its
+       encoding headers for a re-serialized body leaves the client unable to read the config,
+       which reads here exactly like an operator who configured nothing. */
     await route.fulfill({
-      response,
-      json: {
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
         ...config,
         interface: { ...config.interface, replyNotifications },
-      },
+      }),
     });
   });
 }
@@ -202,11 +206,11 @@ test.describe('unseen replies', () => {
       /* The dot belongs to the conversation list, not to the away alerts, so the gate leaves it. */
       await expect(row.locator('span[aria-hidden="true"].bg-status-info')).toBeVisible();
       await expect.poll(() => page.title()).not.toMatch(/^\(\d+\)/);
-      await page
-        .getByRole('button', { name: /settings/i })
-        .first()
-        .click();
-      await expect(page.getByRole('dialog')).toBeVisible();
+      await page.getByTestId('nav-user').click();
+      await page.getByRole('menuitem', { name: 'Settings' }).click();
+      /* The settings dialog's outer node carries the role while the panel inside it is what is
+         painted, so the General tab is what says the settings are on screen. */
+      await expect(page.getByRole('tab', { name: 'General' })).toBeVisible({ timeout: 15000 });
       await expect(page.getByTestId('unseenTabBadge')).toHaveCount(0);
     } finally {
       await cleanup(id);
