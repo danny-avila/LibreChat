@@ -49,6 +49,10 @@ import {
   markTitleGenerationProcessed,
   useReconcileConversationCodeEnvironmentMutation,
 } from '~/data-provider';
+import {
+  getFailedCodeDecisionRequest,
+  withSubmittedCodeDecision,
+} from '~/hooks/Agents/codeDecision';
 import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
 import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
@@ -435,8 +439,17 @@ export const buildRecoveryPreset = (
   submissionConvo: Partial<TConversation>,
   cachedConvo: TConversation | null | undefined,
   conversationId: string,
+  submittedDecision?: Pick<EventSubmission, 'codeEnvironmentMode' | 'codeWorkspaces'>,
 ): TPreset =>
-  tPresetSchema.parse(keepLocalCodeApprovalMode(submissionConvo, cachedConvo, conversationId));
+  tPresetSchema.parse(
+    keepLocalCodeApprovalMode(
+      submittedDecision == null
+        ? submissionConvo
+        : withSubmittedCodeDecision(submissionConvo as TConversation, submittedDecision)!,
+      cachedConvo,
+      conversationId,
+    ),
+  );
 
 export const getConvoTitle = ({
   parentId,
@@ -492,26 +505,10 @@ export default function useEventHandlers({
   const { mutate: reconcileCodeDecision } =
     useReconcileConversationCodeEnvironmentMutation(setConversation);
   const reconcileFailedCodeDecision = useCallback(
-    (submission: EventSubmission) => {
-      const conversationId = submission.conversation?.conversationId;
-      const codeEnvironmentMode =
-        submission.codeEnvironmentMode ??
-        ((submission.codeWorkspaces?.length ?? 0) > 0 ? 'attached' : undefined);
-      if (
-        isAddedRequest ||
-        !conversationId ||
-        conversationId === Constants.NEW_CONVO ||
-        conversationId === Constants.PENDING_CONVO ||
-        codeEnvironmentMode == null
-      )
-        return;
-      reconcileCodeDecision({
-        conversationId,
-        attempted: {
-          codeEnvironmentMode,
-          codeWorkspaces: submission.codeWorkspaces,
-        },
-      });
+    (submission: EventSubmission, conversationId?: string) => {
+      if (isAddedRequest) return;
+      const request = getFailedCodeDecisionRequest(submission, conversationId);
+      if (request != null) reconcileCodeDecision(request);
     },
     [isAddedRequest, reconcileCodeDecision],
   );
@@ -525,9 +522,21 @@ export default function useEventHandlers({
         QueryKeys.conversation,
         conversationId,
       ]);
+      const preset = buildRecoveryPreset(
+        submission.conversation,
+        cachedConvo,
+        conversationId,
+        submission,
+      );
       newConversation({
-        template: { conversationId },
-        preset: buildRecoveryPreset(submission.conversation, cachedConvo, conversationId),
+        // Endpoint preset parsing omits code decisions. Carry them on the conversation template
+        // too, so rebuilding after a first-turn stream failure cannot discard the implicit pick.
+        template: {
+          conversationId,
+          codeEnvironmentMode: preset.codeEnvironmentMode,
+          codeWorkspaces: preset.codeWorkspaces,
+        },
+        preset,
       });
     },
     [newConversation, queryClient],
@@ -932,7 +941,6 @@ export default function useEventHandlers({
       try {
         // Handle early abort - aborted before any response message was saved.
         if ((data as Record<string, unknown>).earlyAbort) {
-          reconcileFailedCodeDecision(submission);
           console.log('[finalHandler] Early abort detected - no response message saved');
           setShowStopButton(false);
           setIsSubmitting(false);
@@ -942,6 +950,7 @@ export default function useEventHandlers({
           const isExistingConvo =
             currentConvoId && currentConvoId !== Constants.NEW_CONVO && !isInitialNewConvo;
           if (isExistingConvo) {
+            reconcileFailedCodeDecision(submission, currentConvoId);
             const abortMessages = getExistingConversationAbortMessages({
               messages,
               isRegenerate,
@@ -1195,7 +1204,6 @@ export default function useEventHandlers({
       setCompleted((prev) => new Set(prev.add(submission.initialResponse.messageId)));
       setSubmissionStart(null);
 
-      reconcileFailedCodeDecision(submission);
       const { conversationId, errorResponse, recover } = resolveErrorTurn({
         data,
         submission,
@@ -1208,6 +1216,7 @@ export default function useEventHandlers({
       if (recover) {
         recoverConversation(conversationId, submission);
       }
+      reconcileFailedCodeDecision(submission, conversationId);
       setIsSubmitting(false);
     },
     [

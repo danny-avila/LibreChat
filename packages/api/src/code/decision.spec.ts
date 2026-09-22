@@ -433,7 +433,7 @@ describe('resolveAdmittedCodeEnvironmentDecision', () => {
           conversation,
           readDecision,
         }),
-      ).toEqual({ mode: 'attached', codeWorkspaces: [selection] });
+      ).toEqual({ decision: { mode: 'attached', codeWorkspaces: [selection] }, conversation });
       expect(readDecision).not.toHaveBeenCalled();
     },
   );
@@ -448,7 +448,7 @@ describe('resolveAdmittedCodeEnvironmentDecision', () => {
         requestedMode: 'without_attached',
         readDecision,
       }),
-    ).toEqual({ mode: 'without_attached' });
+    ).toEqual({ decision: { mode: 'without_attached' }, conversation: null });
     expect(readDecision).not.toHaveBeenCalled();
   });
 
@@ -465,9 +465,51 @@ describe('resolveAdmittedCodeEnvironmentDecision', () => {
         conversation: { conversationId: 'saved', codeEnvironmentMode: 'without_attached' },
         readDecision,
       }),
-    ).toEqual({ mode: 'attached', codeWorkspaces: [selection] });
+    ).toEqual({
+      decision: { mode: 'attached', codeWorkspaces: [selection] },
+      conversation: {
+        conversationId: 'saved',
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [selection],
+      },
+    });
     expect(readDecision).toHaveBeenCalledWith('saved');
   });
+  it('carries the authoritative selections rather than a cached machine into validation', async () => {
+    const old = { environmentId: 'old', workspaceId: 'repo' };
+    const conversation = {
+      conversationId: 'saved',
+      codeEnvironmentMode: 'attached' as const,
+      codeWorkspaces: [old],
+    };
+    const result = await resolveAdmittedCodeEnvironmentDecision({
+      appConfig: withMoves({ enabled: true }),
+      conversationId: 'saved',
+      conversation,
+      readDecision: async () => ({ ...conversation, codeWorkspaces: [selection] }),
+    });
+    expect(result.conversation?.codeWorkspaces).toEqual([selection]);
+    expect(result.decision.codeWorkspaces).toEqual(result.conversation?.codeWorkspaces);
+  });
+
+  it('keeps an unpersisted first choice separate from the admitted snapshot', async () => {
+    const result = await resolveAdmittedCodeEnvironmentDecision({
+      appConfig: withMoves({ enabled: true }),
+      conversationId: 'saved',
+      conversation: {
+        conversationId: 'saved',
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [selection],
+      },
+      requestedMode: 'attached',
+      requestedSelections: [selection],
+      readDecision: async () => ({ conversationId: 'saved' }),
+    });
+    expect(result.decision.mode).toBe('attached');
+    expect(result.conversation?.codeEnvironmentMode).toBeUndefined();
+    expect(result.conversation?.codeWorkspaces).toBeUndefined();
+  });
+
   it('rejects an old requested mode when the transition won first', async () => {
     const readDecision = jest.fn().mockResolvedValue({
       conversationId: 'saved',

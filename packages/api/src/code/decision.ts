@@ -250,10 +250,26 @@ export async function resolveAdmittedCodeEnvironmentDecision({
 }: Parameters<typeof resolveConversationCodeEnvironmentDecision>[0] & {
   appConfig: Pick<AppConfig, 'endpoints'> | undefined;
   readDecision: (conversationId: string) => Promise<StoredConversationDecision | null | undefined>;
-}): Promise<ConversationCodeEnvironmentDecision> {
+}): Promise<{
+  decision: ConversationCodeEnvironmentDecision;
+  conversation: StoredConversationDecision | null | undefined;
+}> {
   const conversation =
     resolveCodeEnvironmentMoveVersion(appConfig) != null
       ? await readDecision(request.conversationId)
       : request.conversation;
-  return resolveConversationCodeEnvironmentDecision({ ...request, conversation });
+  return {
+    decision: resolveConversationCodeEnvironmentDecision({ ...request, conversation }),
+    // Keep owner-loaded metadata, but never the pre-admission environment fields. An absent
+    // stored decision must remain absent; the submitted first choice is not persisted yet.
+    conversation:
+      conversation == null
+        ? conversation
+        : {
+            ...request.conversation,
+            ...conversation,
+            codeEnvironmentMode: conversation.codeEnvironmentMode,
+            codeWorkspaces: conversation.codeWorkspaces,
+          },
+  };
 }

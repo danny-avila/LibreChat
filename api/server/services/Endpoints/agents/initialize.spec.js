@@ -1617,6 +1617,7 @@ describe('initializeClient — subagent loading', () => {
     [true, 'override', false],
     [true, 'override-resolved', false],
     [true, 'resolved', false],
+    [true, 'moved', true],
     [false, 'resolved-null', false],
     [true, 'resolved-null', true],
     [false, 'other-owner', false],
@@ -1670,7 +1671,12 @@ describe('initializeClient — subagent loading', () => {
           codeWorkspaces: req.body.codeWorkspaces,
         });
         delete req.body.codeWorkspaces;
-        if (source === 'resolved') req.resolvedConversation = conversation.toObject();
+        if (source === 'moved') {
+          req.resolvedConversation = {
+            ...conversation.toObject(),
+            codeWorkspaces: [{ environmentId: 'old-machine', workspaceId: 'old-project' }],
+          };
+        } else if (source === 'resolved') req.resolvedConversation = conversation.toObject();
         else if (source !== 'resolved-null') delete req.resolvedConversation;
         if (source.startsWith('override')) {
           conversation.codeWorkspaces = [

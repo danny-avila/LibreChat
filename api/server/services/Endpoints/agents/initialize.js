@@ -602,14 +602,16 @@ const initializeClientWithProvider = async ({
   ]);
   /** Preserve the owner-scoped fallback for loaders that share this request. */
   req.resolvedConversation = requestConversation;
-  const codeEnvironmentDecision = await resolveAdmittedCodeEnvironmentDecision({
-    appConfig,
-    conversation: requestConversation,
-    conversationId,
-    requestedMode: runtimeRequestBody?.codeEnvironmentMode,
-    requestedSelections: runtimeRequestBody?.codeWorkspaces,
-    readDecision: (id) => db.readAdmittedConvoCodeEnvironmentDecision(req.user.id, id),
-  });
+  const { decision: codeEnvironmentDecision, conversation: admittedConversation } =
+    await resolveAdmittedCodeEnvironmentDecision({
+      appConfig,
+      conversation: requestConversation,
+      conversationId,
+      requestedMode: runtimeRequestBody?.codeEnvironmentMode,
+      requestedSelections: runtimeRequestBody?.codeWorkspaces,
+      readDecision: (id) => db.readAdmittedConvoCodeEnvironmentDecision(req.user.id, id),
+    });
+  req.resolvedConversation = admittedConversation;
   /** Trusted, normalized pair used by every persistence path, including init failures. */
   req._codeEnvironmentDecision = codeEnvironmentDecision;
   runtimeRequestBody = {
@@ -1127,7 +1129,7 @@ const initializeClientWithProvider = async ({
       ? await resolveCodeExecutionWorkspaceContext({
           context: baseCodeExecutionContext,
           requestedSelections: runtimeRequestBody?.codeWorkspaces,
-          persistedSelections: requestConversation?.codeWorkspaces,
+          persistedSelections: admittedConversation?.codeWorkspaces,
           environments: configuredCodeEnvironments,
           getAppConfig,
         })

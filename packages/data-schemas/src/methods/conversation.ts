@@ -45,6 +45,7 @@ import {
 import { createChatExpirationDate, createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { isAgentFadingTier, isAgentFadingTierEntries } from '~/utils/fading';
 import { isCompactionSemanticIndexProjection } from '~/types/compaction';
+import { withoutMeiliIndexing } from '~/models/plugins/mongoMeili';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { decrementTagCounts } from './conversationTag';
@@ -2658,24 +2659,19 @@ export function createConversationMethods(
   }
 
   /**
-   * Call only AFTER publishing the generation's active job, and keep it active through the read.
-   * Advancing the revision fences transitions that already checked for idle work. A transition
-   * taking its snapshot after this increment instead sees the published job and refuses. If the
-   * transition wins before the increment, the following read observes its new decision.
-   * No expiring lock or crashed-owner cleanup is required.
+   * Call only AFTER publishing the generation's active job. Atomically advance the fence and
+   * return the post-update decision in one round trip. A run that wins invalidates an in-flight
+   * transition's revision; a transition that wins is observed by this read.
    */
   async function readAdmittedConvoCodeEnvironmentDecision(user: string, conversationId: string) {
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
-    // updateOne preserves tenant middleware without running the content-reindexing
-    // findOneAndUpdate hooks. This private counter is not activity or searchable content.
-    const claimed = await Conversation.updateOne(
-      { user, conversationId },
-      { $inc: { codeEnvironmentRevision: 1 } },
-      { timestamps: false },
-    );
-    if (claimed.matchedCount === 0) return null;
-    return Conversation.findOne({ user, conversationId })
-      .read('primary')
+    return withoutMeiliIndexing(
+      Conversation.findOneAndUpdate(
+        { user, conversationId },
+        { $inc: { codeEnvironmentRevision: 1 } },
+        { new: true, timestamps: false },
+      ),
+    )
       .select('conversationId codeEnvironmentMode codeWorkspaces')
       .lean<IConversation>();
   }

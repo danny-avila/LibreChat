@@ -462,14 +462,16 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         req.resolvedConversation = conversation;
       }
 
-      const codeEnvironmentDecision = await resolveAdmittedCodeEnvironmentDecision({
-        appConfig,
-        conversation: req.resolvedConversation,
-        conversationId,
-        requestedMode: request.code_environment_mode,
-        requestedSelections: request.code_workspaces,
-        readDecision: (id) => db.readAdmittedConvoCodeEnvironmentDecision(principal.userId, id),
-      });
+      const { decision: codeEnvironmentDecision, conversation: admittedConversation } =
+        await resolveAdmittedCodeEnvironmentDecision({
+          appConfig,
+          conversation: req.resolvedConversation,
+          conversationId,
+          requestedMode: request.code_environment_mode,
+          requestedSelections: request.code_workspaces,
+          readDecision: (id) => db.readAdmittedConvoCodeEnvironmentDecision(principal.userId, id),
+        });
+      req.resolvedConversation = admittedConversation;
       const parentMessageId = request.parent_message_id ?? null;
       let mcpParentMessageId;
       if (
