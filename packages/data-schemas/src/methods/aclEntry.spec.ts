@@ -1682,6 +1682,120 @@ describe('AclEntry Model Tests', () => {
    * `permBits: { $in: permissionBitSupersets(X) }`), so it warrants direct
    * coverage independent of the higher-level parity and behavior specs.
    */
+  describe('modifyPermissionBits (single-operator $bit, issue #16163)', () => {
+    const principal = new mongoose.Types.ObjectId();
+    const resource = new mongoose.Types.ObjectId();
+    const INSIGHTS = PermissionBits.VIEW_INSIGHTS;
+
+    const seed = (permBits: number) =>
+      AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalId: principal,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.AGENT,
+        resourceId: resource,
+        permBits,
+        grantedBy: grantedById,
+      });
+
+    const modify = (add?: number | null, remove?: number | null) =>
+      methods.modifyPermissionBits(
+        PrincipalType.USER,
+        principal,
+        ResourceType.AGENT,
+        resource,
+        add,
+        remove,
+      );
+
+    test('adds bits, leaving independently administered bits alone', async () => {
+      await seed(PermissionBits.VIEW | INSIGHTS);
+      const updated = await modify(PermissionBits.EDIT, null);
+      expect(updated?.permBits).toBe(PermissionBits.VIEW | PermissionBits.EDIT | INSIGHTS);
+    });
+
+    test('removes bits, leaving independently administered bits alone', async () => {
+      await seed(PermissionBits.VIEW | PermissionBits.EDIT | INSIGHTS);
+      const updated = await modify(null, PermissionBits.EDIT);
+      expect(updated?.permBits).toBe(PermissionBits.VIEW | INSIGHTS);
+    });
+
+    test('applies an add and a remove in one stored value', async () => {
+      await seed(PermissionBits.VIEW | PermissionBits.EDIT | INSIGHTS);
+      const updated = await modify(PermissionBits.SHARE, PermissionBits.EDIT);
+      expect(updated?.permBits).toBe(PermissionBits.VIEW | PermissionBits.SHARE | INSIGHTS);
+    });
+
+    test('never sends more than one $bit operator per field', async () => {
+      await seed(PermissionBits.VIEW);
+      const model = mongoose.models.AclEntry;
+      const spy = jest.spyOn(model, 'findOneAndUpdate');
+      try {
+        await modify(PermissionBits.EDIT, null);
+        await modify(null, PermissionBits.EDIT);
+        await modify(PermissionBits.SHARE, PermissionBits.VIEW);
+        const bags = spy.mock.calls
+          .map(([, update]) => (update as Record<string, never> | undefined)?.$bit)
+          .filter((bit): bit is Record<string, object> => bit != null)
+          .flatMap((bit) => Object.values(bit));
+        expect(bags.length).toBeGreaterThan(0);
+        for (const bag of bags) {
+          expect(Object.keys(bag)).toHaveLength(1);
+        }
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    test('retries and preserves a concurrent change to bits it was not asked to touch', async () => {
+      await seed(PermissionBits.VIEW | PermissionBits.EDIT);
+      const model = mongoose.models.AclEntry;
+      const real = model.findOneAndUpdate.bind(model);
+      const spy = jest
+        .spyOn(model, 'findOneAndUpdate')
+        .mockImplementationOnce(((...args: never[]) =>
+          model
+            .updateMany({ principalId: principal }, { $bit: { permBits: { or: INSIGHTS } } })
+            .then(() => real(...(args as Parameters<typeof real>)))) as never);
+      try {
+        const updated = await modify(PermissionBits.SHARE, PermissionBits.EDIT);
+        expect(updated?.permBits).toBe(PermissionBits.VIEW | PermissionBits.SHARE | INSIGHTS);
+        expect(spy).toHaveBeenCalledTimes(2);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    test('reports a persistent conflict instead of reporting success', async () => {
+      await seed(PermissionBits.VIEW | PermissionBits.EDIT);
+      const model = mongoose.models.AclEntry;
+      const real = model.findOneAndUpdate.bind(model);
+      const spy = jest
+        .spyOn(model, 'findOneAndUpdate')
+        .mockImplementation(((...args: never[]) =>
+          model
+            .updateMany({ principalId: principal }, { $bit: { permBits: { xor: INSIGHTS } } })
+            .then(() => real(...(args as Parameters<typeof real>)))) as never);
+      try {
+        await expect(modify(PermissionBits.SHARE, PermissionBits.EDIT)).rejects.toThrow(
+          /permBits/i,
+        );
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    test('returns null when no entry matches', async () => {
+      expect(await modify(PermissionBits.EDIT, PermissionBits.VIEW)).toBeNull();
+    });
+
+    test('returns the entry unchanged when neither side is requested', async () => {
+      await seed(PermissionBits.VIEW | INSIGHTS);
+      const updated = await modify(null, null);
+      expect(updated?.permBits).toBe(PermissionBits.VIEW | INSIGHTS);
+    });
+  });
+
   describe('permissionBitSupersets', () => {
     test('requiredBits=0 matches every permBits value in [0, 31]', () => {
       const result = permissionBitSupersets(0);

@@ -20,6 +20,11 @@ const EMPTY_SUPERSETS: readonly number[] = Object.freeze([]);
 
 const supersetCache = new Map<number, readonly number[]>();
 
+/** Bounded retries for the two-sided `permBits` compare-and-set; a conflict is
+ * another writer finishing first, so a small ceiling is enough and exhaustion
+ * must surface rather than silently drop the update. */
+const PERM_BITS_CAS_ATTEMPTS = 3;
+
 /**
  * Enumerates every `permBits` value (in the range `[0, MAX_PERM_BITS]`) whose
  * set bits include all bits in `requiredBits`. Used with a `$in` filter to push
@@ -468,26 +473,63 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
           : principalId;
     }
 
-    const update: Record<string, unknown> = {};
+    const addMask = addBits ?? 0;
+    const removeMask = removeBits ?? 0;
+    const options = { new: true, ...(session ? { session } : {}) };
+    const sessionOptions = session ? { session } : {};
 
-    if (addBits) {
-      update.$bit = { permBits: { or: addBits } };
+    /**
+     * One operator per `$bit` field. Combining `or` and `and` on `permBits` is
+     * rejected by MongoDB-compatible engines (issue #16163), so each
+     * single-sided call keeps its atomic one-round-trip `$bit` write and only
+     * the two-sided case takes the compare-and-set path below.
+     */
+    if (addMask !== 0 && removeMask === 0) {
+      return await AclEntry.findOneAndUpdate(
+        query,
+        { $bit: { permBits: { or: addMask } } },
+        options,
+      );
+    }
+    if (removeMask !== 0 && addMask === 0) {
+      return await AclEntry.findOneAndUpdate(
+        query,
+        { $bit: { permBits: { and: ~removeMask } } },
+        options,
+      );
+    }
+    if (addMask === 0 && removeMask === 0) {
+      return await AclEntry.findOne(query, null, sessionOptions);
     }
 
-    if (removeBits) {
-      if (!update.$bit) {
-        update.$bit = {};
+    /**
+     * Both sides at once: compare and set on the value actually stored, so the
+     * write stays a single atomic document update that cannot clobber a
+     * concurrent change to bits this call was not asked to touch. The guard
+     * predicate distinguishes a concurrent change from a missing entry, so a
+     * conflict retries instead of reporting success.
+     */
+    for (let attempt = 0; attempt < PERM_BITS_CAS_ATTEMPTS; attempt++) {
+      const current = await AclEntry.findOne(query, null, sessionOptions).lean();
+      if (current == null) {
+        return null;
       }
-      const bitUpdate = update.$bit as Record<string, unknown>;
-      bitUpdate.permBits = { ...(bitUpdate.permBits as Record<string, unknown>), and: ~removeBits };
+      const observed = current.permBits;
+      const updated = await AclEntry.findOneAndUpdate(
+        {
+          ...query,
+          ...(observed == null ? { permBits: { $exists: false } } : { permBits: observed }),
+        },
+        { $set: { permBits: ((observed ?? 0) & ~removeMask) | addMask } },
+        options,
+      );
+      if (updated != null) {
+        return updated;
+      }
     }
-
-    const options = {
-      new: true,
-      ...(session ? { session } : {}),
-    };
-
-    return await AclEntry.findOneAndUpdate(query, update, options);
+    throw new Error(
+      '[modifyPermissionBits] permBits changed concurrently on every attempt; no update applied',
+    );
   }
 
   /**

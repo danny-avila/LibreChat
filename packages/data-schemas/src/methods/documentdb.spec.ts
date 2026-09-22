@@ -564,6 +564,55 @@ function findMixedSelectStrings(sourceFile: ts.SourceFile): string[] {
   return offenses;
 }
 
+/** `$bit` carries ONE operator per field. MongoDB accepts `{ or: x, and: y }`
+ * on a single field; MongoDB-compatible engines reject the combination with
+ * `The $bit modifier only supports 'and', 'or', and 'xor'` (issue #16163),
+ * which broke every role-only agent share on those deployments. A field's
+ * operator bag is legal only as an object literal carrying exactly one of
+ * `and`/`or`/`xor`, and only when nothing is spread into it: a spread merges a
+ * bag whose keys are not visible here, which is exactly how the combination
+ * reached `modifyPermissionBits` past the literal-shape detectors. Two
+ * operators on one field must become two writes or an operator-free update. */
+const BIT_OPERATORS = new Set(['and', 'or', 'xor']);
+
+function bitOperatorKeys(bag: ts.ObjectLiteralExpression): ts.ObjectLiteralElementLike[] {
+  return bag.properties.filter((property) => BIT_OPERATORS.has(propertyName(property) ?? ''));
+}
+
+function findCombinedBitOperators(sourceFile: ts.SourceFile): string[] {
+  const offenses: string[] = [];
+  const visit = (node: ts.Node): void => {
+    /** A `$bit` document written as a literal: judge each field's bag. */
+    if (ts.isPropertyAssignment(node) && propertyName(node) === '$bit') {
+      const document = unwrapExpression(node.initializer);
+      if (ts.isObjectLiteralExpression(document)) {
+        for (const field of document.properties) {
+          if (!ts.isPropertyAssignment(field)) {
+            continue;
+          }
+          const bag = unwrapExpression(field.initializer);
+          if (ts.isObjectLiteralExpression(bag) && bitOperatorKeys(bag).length > 1) {
+            offenses.push(offenseAt(sourceFile, field, `$bit.${propertyName(field) ?? '?'}`));
+          }
+        }
+      }
+    }
+    /** An operator bag merged from another bag, wherever it is built. `and` and
+     * `or` as object keys occur nowhere else in these workspaces, so this stays
+     * narrow while reaching the accumulate-then-assign shape. */
+    if (
+      ts.isObjectLiteralExpression(node) &&
+      bitOperatorKeys(node).length > 0 &&
+      node.properties.some(ts.isSpreadAssignment)
+    ) {
+      offenses.push(offenseAt(sourceFile, node, 'merged $bit operator bag'));
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return offenses;
+}
+
 function propertyName(property: ts.ObjectLiteralElementLike): string | undefined {
   const name = property.name;
   if (name == null || !(ts.isIdentifier(name) || ts.isStringLiteral(name))) {
@@ -715,6 +764,10 @@ describe('Amazon DocumentDB compatibility', () => {
     expect(parsedSources.flatMap(findMixedSelectStrings)).toEqual([]);
   });
 
+  it('combines no $bit operators on one field', () => {
+    expect(parsedSources.flatMap(findCombinedBitOperators)).toEqual([]);
+  });
+
   it('uses no $set or $unset pipeline stages', () => {
     expect(parsedSources.flatMap(findAliasStages)).toEqual([]);
   });
@@ -799,6 +852,38 @@ describe('Amazon DocumentDB compatibility', () => {
       ],
     ])('accepts a supported shape: %s', (_shape, source) => {
       expect(findPipelineUpdates(parse('fixture.ts', source))).toEqual([]);
+    });
+
+    it.each([
+      [
+        'literal combination',
+        `Model.updateOne(filter, { $bit: { permBits: { or: 1, and: -2 } } });`,
+      ],
+      [
+        'bulk payload combination',
+        `await Model.bulkWrite([{ updateMany: { filter, update: { $bit: { p: { or: 1, and: -2 } } } } }]);`,
+      ],
+      ['three operators', `Model.updateOne(filter, { $bit: { p: { or: 1, and: -2, xor: 4 } } });`],
+      ['bag merged by spread', `bag.permBits = { ...bag.permBits, and: ~remove };`],
+      [
+        'bag merged behind a cast',
+        `bitUpdate.permBits = { ...(bitUpdate.permBits as Record<string, unknown>), and: ~remove };`,
+      ],
+    ])('flags a combined $bit update: %s', (_shape, source) => {
+      expect(findCombinedBitOperators(parse('fixture.ts', source))).not.toEqual([]);
+    });
+
+    it.each([
+      ['single or', `Model.updateOne(filter, { $bit: { permBits: { or: 1 } } });`],
+      ['single and', `Model.findOneAndUpdate(filter, { $bit: { permBits: { and: -2 } } });`],
+      [
+        'one operator per field on two fields',
+        `Model.updateOne(filter, { $bit: { a: { or: 1 }, b: { and: -2 } } });`,
+      ],
+      ['spread without an operator key', `const update = { ...base, permBits: 3 };`],
+      ['unrelated and/or naming', `const flags = { and: true, or: false };`],
+    ])('accepts a single-operator $bit shape: %s', (_shape, source) => {
+      expect(findCombinedBitOperators(parse('fixture.ts', source))).toEqual([]);
     });
 
     it.each([
