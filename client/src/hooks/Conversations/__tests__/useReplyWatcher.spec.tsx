@@ -136,6 +136,31 @@ describe('useReplyWatcher', () => {
     await waitFor(() => expect(isConversationUnseen(cachedConvo())).toBe(true));
   });
 
+  /* Signing out or switching accounts unmounts the watcher while a completion fetch can still
+     be in flight; its answer belongs to the previous session and must not reach the caches. */
+  it('discards a completion that resolves after the watcher has gone', async () => {
+    let resolveFetch: (value: unknown) => void = () => undefined;
+    mockGetConversationById.mockReturnValue(
+      new Promise((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+
+    mockActiveJobIds = [CONVO_ID];
+    const { rerender, unmount, cachedConvo } = setup();
+
+    mockActiveJobIds = [];
+    rerender();
+    await waitFor(() => expect(mockGetConversationById).toHaveBeenCalledWith(CONVO_ID));
+
+    unmount();
+    await act(async () => {
+      resolveFetch({ conversationId: CONVO_ID, lastResponseAt: RESPONDED_AT });
+    });
+
+    expect(isConversationUnseen(cachedConvo())).toBe(false);
+  });
+
   it('does not treat the first observation of a running job as a completion', () => {
     mockActiveJobIds = [CONVO_ID];
     setup();

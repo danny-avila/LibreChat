@@ -412,6 +412,18 @@ export default function useReplyWatcher() {
   } = useReplyAlertPreferences();
   const { data: activeJobsData } = useActiveJobs();
   const activeJobIds = activeJobsData?.activeJobIds;
+  /** A completion fetch can outlive the watcher. Signing out or switching accounts unmounts
+   *  it, and a response for the previous session must not write into the caches the next
+   *  one reads. Tracked on unmount rather than in the jobs effect's cleanup: that effect
+   *  re-runs on every change to the running set, and the completions it started are still
+   *  wanted. */
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
   const runningRef = useRef<Set<string> | null>(null);
   /** Reply stamps whose list refetch has already been attempted for a conversation no cache
    *  knows, keyed by id. Keyed on the stamp rather than the id alone so a later reply to the
@@ -444,7 +456,18 @@ export default function useReplyWatcher() {
          establish the final reply. The merge leaves already-delivered stamps alone. */
       dataService
         .getConversationById(conversationId)
-        .then((convo) => mergeTimestamps(queryClient, convo, aggregateRevealedRef.current, true))
+        .then((convo) => {
+          if (!mountedRef.current) {
+            return;
+          }
+          return mergeTimestamps(
+            queryClient,
+            convo,
+            aggregateRevealedRef.current,
+            true,
+            () => mountedRef.current,
+          );
+        })
         .catch((error: unknown) => {
           /* Deleted while it generated is the only terminal answer. Anything else has
              consumed the one completion transition this tab will see, and with the away poll
@@ -452,7 +475,7 @@ export default function useReplyWatcher() {
              while the user stays here; the list refetch is the same recovery the poll uses
              for an unknown id. The messages go stale first so an open conversation refetches
              the reply and the seen trigger holds until it has rendered. */
-          if (isNotFoundError(error)) {
+          if (!mountedRef.current || isNotFoundError(error)) {
             return;
           }
           queryClient.invalidateQueries([QueryKeys.messages, conversationId]);
