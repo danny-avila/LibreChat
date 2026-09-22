@@ -1,0 +1,189 @@
+import { HumanMessage, AIMessage } from '@librechat/agents/langchain/messages';
+import type {
+  Classifier,
+  ClassificationResult,
+  ClassificationRequest,
+} from '~/classification/types';
+import type { MemoryGateSettings } from './gate';
+import { createMemoryGate, transcribeTail, DURABLE_QUESTION } from './gate';
+
+const ON: MemoryGateSettings = { enabled: true, threshold: 0.25 };
+
+function stubClassifier(probability: number | Error): {
+  classifier: Classifier;
+  requests: ClassificationRequest[];
+} {
+  const requests: ClassificationRequest[] = [];
+  const classifier: Classifier = {
+    id: 'stub',
+    model: 'stub-1',
+    async classify(params: ClassificationRequest): Promise<ClassificationResult> {
+      requests.push(params);
+      if (probability instanceof Error) {
+        throw probability;
+      }
+      return {
+        model: 'stub-1',
+        answers: { durable: { type: 'boolean', probability } },
+        usage: { inputTokens: 40, outputTokens: 4 },
+      };
+    },
+  };
+  return { classifier, requests };
+}
+
+const TURN = [
+  new HumanMessage('I always deploy on Fridays, never on Mondays.'),
+  new AIMessage('Noted.'),
+];
+
+describe('transcribeTail', () => {
+  it('reads the last messages in order, labelled by role', () => {
+    const text = transcribeTail(TURN, 6, 1_000);
+
+    expect(text).toBe('human: I always deploy on Fridays, never on Mondays.\nai: Noted.');
+  });
+
+  it('keeps only the newest messages inside the window', () => {
+    const messages = [
+      new HumanMessage('oldest'),
+      new HumanMessage('middle'),
+      new HumanMessage('newest'),
+    ];
+
+    expect(transcribeTail(messages, 2, 1_000)).toBe('human: middle\nhuman: newest');
+  });
+
+  it('stays inside the character budget', () => {
+    const messages = [new HumanMessage('x'.repeat(500)), new HumanMessage('y'.repeat(500))];
+
+    expect(transcribeTail(messages, 10, 100).length).toBeLessThanOrEqual(100);
+  });
+
+  it('reads text out of structured content parts', () => {
+    const message = new HumanMessage({
+      content: [
+        { type: 'text', text: 'I use metric units' },
+        { type: 'image_url', image_url: { url: 'https://example.test/a.png' } },
+      ],
+    });
+
+    expect(transcribeTail([message], 4, 1_000)).toBe('human: I use metric units');
+  });
+
+  it('skips messages with no text at all', () => {
+    const empty = new HumanMessage({ content: [] });
+
+    expect(transcribeTail([empty, new HumanMessage('real')], 4, 1_000)).toBe('human: real');
+  });
+});
+
+describe('createMemoryGate', () => {
+  it('is absent when the capability is off, so the caller keeps one path', () => {
+    const { classifier } = stubClassifier(0.9);
+
+    expect(
+      createMemoryGate({ classifier, settings: { enabled: false, threshold: 0.25 } }),
+    ).toBeNull();
+  });
+
+  it('processes a turn that carries something durable', async () => {
+    const { classifier, requests } = stubClassifier(0.88);
+    const gate = createMemoryGate({ classifier, settings: ON });
+
+    await expect(gate?.(TURN)).resolves.toBe(true);
+    expect(requests).toHaveLength(1);
+    expect(requests[0].questions.durable).toBeDefined();
+  });
+
+  it('skips a turn that carries nothing durable', async () => {
+    const { classifier } = stubClassifier(0.03);
+    const gate = createMemoryGate({ classifier, settings: ON });
+
+    await expect(gate?.([new HumanMessage('thanks!')])).resolves.toBe(false);
+  });
+
+  it('treats the threshold as inclusive', async () => {
+    const { classifier } = stubClassifier(0.25);
+    const gate = createMemoryGate({ classifier, settings: ON });
+
+    await expect(gate?.(TURN)).resolves.toBe(true);
+  });
+
+  it('respects a stricter threshold', async () => {
+    const { classifier } = stubClassifier(0.5);
+    const gate = createMemoryGate({ classifier, settings: { enabled: true, threshold: 0.8 } });
+
+    await expect(gate?.(TURN)).resolves.toBe(false);
+  });
+
+  it('processes the turn when the judgment fails, rather than losing a memory', async () => {
+    const { classifier } = stubClassifier(new Error('upstream exploded'));
+    const gate = createMemoryGate({ classifier, settings: ON });
+
+    await expect(gate?.(TURN)).resolves.toBe(true);
+  });
+
+  it('processes the turn when the answer comes back the wrong shape', async () => {
+    const classifier: Classifier = {
+      id: 'stub',
+      model: 'stub-1',
+      classify: async () => ({
+        model: 'stub-1',
+        answers: { durable: { type: 'choice', choice: 'yes', confidence: 1, probabilities: {} } },
+        usage: { inputTokens: 1, outputTokens: 1 },
+      }),
+    };
+    const gate = createMemoryGate({ classifier, settings: ON });
+
+    await expect(gate?.(TURN)).resolves.toBe(true);
+  });
+
+  it('skips an empty turn without calling out', async () => {
+    const { classifier, requests } = stubClassifier(0.9);
+    const gate = createMemoryGate({ classifier, settings: ON });
+
+    await expect(gate?.([])).resolves.toBe(false);
+    expect(requests).toHaveLength(0);
+  });
+});
+
+describe('createMemoryGate prompt overrides', () => {
+  it('uses the built-in wording when nothing is configured', async () => {
+    const { classifier, requests } = stubClassifier(0.9);
+    const gate = createMemoryGate({ classifier, settings: ON });
+
+    await gate?.(TURN);
+
+    const question = requests[0].questions.durable as unknown as {
+      instructions: string;
+      criteria: { true: string; false: string };
+    };
+    expect(question.instructions).toBe(DURABLE_QUESTION.instructions);
+    expect(question.criteria.true).toBe(DURABLE_QUESTION.criteria?.true);
+    expect(question.criteria.false).toBe(DURABLE_QUESTION.criteria?.false);
+  });
+
+  it('sends operator wording instead when it is configured', async () => {
+    const { classifier, requests } = stubClassifier(0.9);
+    const gate = createMemoryGate({
+      classifier,
+      settings: {
+        ...ON,
+        instructions: 'Is there a dietary requirement here?',
+        whenTrue: 'An allergy or a standing preference.',
+        whenFalse: 'Anything about one meal only.',
+      },
+    });
+
+    await gate?.(TURN);
+
+    const question = requests[0].questions.durable as unknown as {
+      instructions: string;
+      criteria: { true: string; false: string };
+    };
+    expect(question.instructions).toBe('Is there a dietary requirement here?');
+    expect(question.criteria.true).toBe('An allergy or a standing preference.');
+    expect(question.criteria.false).toBe('Anything about one meal only.');
+  });
+});

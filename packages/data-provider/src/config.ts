@@ -2927,6 +2927,48 @@ export const classificationSchema = z.object({
   /** Which registered provider answers. An unknown name disables classification. */
   provider: z.string().default('http'),
   providers: z.record(z.string(), classificationProviderSchema).default({}),
+  /**
+   * Surfaces deferred tools the turn is likely to need. Only ever adds: a tool
+   * it passes over stays listed by name and one `tool_search` away.
+   */
+  toolSelection: z
+    .object({
+      enabled: z.boolean().default(false),
+      shortlist: z.number().int().positive().max(50).default(5),
+      minProbability: z.number().min(0).max(1).default(0.05),
+      /** Below this, only tools the request names outright are surfaced. */
+      needsToolThreshold: z.number().min(0).max(1).default(0.15),
+      /** An omission costs a round trip, so an unsure ranking widens instead. */
+      lowConfidenceExtra: z.number().int().nonnegative().max(20).default(3),
+      lowConfidenceBelow: z.number().min(0).max(1).default(0.5),
+      /** Covers "no, use the other tool" without waiting for the next ranking. */
+      surfaceNamedTools: z.boolean().default(true),
+      /** Above this the catalog is ranked in batches. */
+      maxCatalogTools: z.number().int().positive().max(250).default(200),
+      descriptionChars: z.number().int().positive().max(2_000).default(300),
+      /** Replaces the ranking question. Unset uses the built-in wording. */
+      instructions: z.string().min(1).max(4_000).optional(),
+      /** Replaces the rubric shown beside the ranking question. */
+      guidance: z.string().min(1).max(4_000).optional(),
+      /** Replaces the question asking whether the turn needs a tool at all. */
+      needsToolInstructions: z.string().min(1).max(4_000).optional(),
+    })
+    .default({}),
+  /** Skips the memory model on turns that carry nothing durable. */
+  memoryGate: z
+    .object({
+      enabled: z.boolean().default(false),
+      threshold: z.number().min(0).max(1).default(0.25),
+      /** Replaces the durability question. Unset uses the built-in wording. */
+      instructions: z.string().min(1).max(4_000).optional(),
+      /**
+       * What a yes and a no mean. Named `whenTrue`/`whenFalse` because YAML
+       * reads bare `true:` and `false:` keys as booleans, not strings.
+       */
+      whenTrue: z.string().min(1).max(4_000).optional(),
+      whenFalse: z.string().min(1).max(4_000).optional(),
+    })
+    .default({}),
 });
 
 export type TClassificationConfig = z.infer<typeof classificationSchema>;

@@ -70,3 +70,24 @@ export function resolveClassifier(params: ResolveClassifierParams): Classifier |
     return null;
   }
 }
+
+export type ClassificationCapabilityName = 'toolSelection' | 'memoryGate';
+
+export function classificationCapability<K extends ClassificationCapabilityName>(
+  config: TClassificationConfig | null | undefined,
+  capability: K,
+  options?: { apiKey?: string; fetch?: ProviderFetch },
+): { classifier: Classifier; settings: NonNullable<TClassificationConfig>[K] } | null {
+  if (config == null || config.enabled !== true) {
+    return null;
+  }
+  const settings = config[capability];
+  if (settings == null || settings.enabled !== true) {
+    return null;
+  }
+  const classifier = resolveClassifier({ config, apiKey: options?.apiKey, fetch: options?.fetch });
+  if (classifier == null) {
+    return null;
+  }
+  return { classifier, settings };
+}
