@@ -587,6 +587,11 @@ endpoints:
   #   # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
   # agents:
+  #   # Maximum provider response-body inactivity for Agent model calls. Defaults to 15 minutes;
+  #   # each received chunk resets the timer. Set to 0 to disable the idle timeout.
+  #   modelResponseBodyTimeoutMs: 900000
+  #   # Maximum wait for provider response headers. Defaults to 5 minutes; 0 disables.
+  #   modelResponseHeadersTimeoutMs: 300000
   #   # (optional) Default recursion depth for agents, defaults to 25
   #   recursionLimit: 50
   #   # Maximum provider error characters retained without content protection (0 hides detail).
