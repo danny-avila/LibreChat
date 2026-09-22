@@ -45,6 +45,11 @@ on:
         required: true
       DOCKERHUB_TOKEN:
         required: true
+      LEGACY_GHCR_TOKEN:
+        description: >-
+          Token that can write to the LEGACY_GHCR_OWNER namespace. Without it the
+          mirror step is skipped.
+        required: false
 
 permissions:
   contents: read
@@ -242,3 +247,43 @@ jobs:
           set -euo pipefail
           first_tag=$(grep -m1 -v '^[[:space:]]*$' <<< "$TAG_SUFFIXES")
           docker buildx imagetools inspect "${GHCR_IMAGE}:${first_tag}"
+
+      # After the move to another owner, deployments still pull the old GHCR
+      # namespace. Copying each published tag there keeps them updating until the
+      # deprecation window closes. Copies are cross-repo blob mounts within GHCR,
+      # so no image data is rebuilt or re-uploaded.
+      #
+      # Set the LEGACY_GHCR_OWNER variable and the LEGACY_GHCR_TOKEN secret (a token
+      # with write:packages for that owner) to turn this on. It stays off when either
+      # is unset, and while the owner still matches the one publishing the images.
+      - name: Mirror tags to the legacy namespace
+        if: ${{ vars.LEGACY_GHCR_OWNER != '' }}
+        continue-on-error: true
+        env:
+          LEGACY_OWNER: ${{ vars.LEGACY_GHCR_OWNER }}
+          LEGACY_TOKEN: ${{ secrets.LEGACY_GHCR_TOKEN }}
+          IMAGE_NAME: ${{ matrix.image.image_name }}
+          TAG_SUFFIXES: ${{ inputs.tag_suffixes }}
+        run: |
+          set -euo pipefail
+
+          legacy_owner="${LEGACY_OWNER,,}"
+          if [ "$legacy_owner" = "${GITHUB_REPOSITORY_OWNER,,}" ]; then
+            echo "Legacy owner matches the current owner; nothing to mirror."
+            exit 0
+          fi
+          if [ -z "$LEGACY_TOKEN" ]; then
+            echo "::warning::LEGACY_GHCR_OWNER is set but LEGACY_GHCR_TOKEN is not; skipping the mirror."
+            exit 0
+          fi
+
+          # The pull side needs this login too: it replaces the GITHUB_TOKEN
+          # credential for ghcr.io, and both namespaces are read with it.
+          echo "$LEGACY_TOKEN" | docker login ghcr.io -u "$legacy_owner" --password-stdin
+
+          legacy_image="ghcr.io/${legacy_owner}/${IMAGE_NAME}"
+          while IFS= read -r suffix; do
+            [ -n "$suffix" ] || continue
+            echo "Mirroring ${GHCR_IMAGE}:${suffix} -> ${legacy_image}:${suffix}"
+            docker buildx imagetools create -t "${legacy_image}:${suffix}" "${GHCR_IMAGE}:${suffix}"
+          done <<< "$TAG_SUFFIXES"
