@@ -262,6 +262,60 @@ describe('live fold parity with the cards it hides', () => {
     expect(screen.queryByTestId('live-phase-combo')).toBeNull();
   });
 
+  it('changes the multiplier with the throttled status line', () => {
+    jest.useFakeTimers();
+    const first = toPart(
+      { name: 'create_file', args: '{"intent":"Creating the first file"}', output: '' },
+      'first',
+    );
+    const second = toPart(
+      { name: 'create_file', args: '{"intent":"Creating the second file"}', output: '' },
+      'second',
+    );
+    const view = mount([first], undefined, true);
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <RecoilRoot>
+          <ContentParts
+            content={[first, second]}
+            messageId="m1"
+            conversationId="c1"
+            isCreatedByUser={false}
+            isLast
+            isLatestMessage
+            isSubmitting
+            showThinking={false}
+          />
+        </RecoilRoot>
+      </QueryClientProvider>,
+    );
+
+    const header = within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0];
+    expect(header).toHaveAccessibleName('Creating the first file');
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(header).toHaveAccessibleName('Creating the second file ×2');
+  });
+
+  it('resets the multiplier across an agent handoff', () => {
+    const handoff = {
+      type: ContentTypes.AGENT_UPDATE,
+      [ContentTypes.AGENT_UPDATE]: { agentId: 'agent-b', index: 1 },
+    } as TMessageContentParts;
+    mount(
+      [
+        toPart({ name: 'create_file', output: 'created' }, 'first'),
+        handoff,
+        toPart({ name: 'create_file', output: '' }, 'second'),
+      ],
+      undefined,
+      true,
+    );
+
+    expect(screen.queryByTestId('live-phase-combo')).toBeNull();
+  });
+
   it('treats a second call that reuses a provider id as a new line', () => {
     jest.useFakeTimers();
     const first = toPart({ name: 'lookup', args: '{"intent":"First pass"}', output: 'ok' }, 'dup');

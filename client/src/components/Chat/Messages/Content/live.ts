@@ -249,6 +249,9 @@ function consecutiveToolCount(
   let count = 1;
   for (let index = position - 1; index >= 0; index -= 1) {
     const previousPart = parts[index];
+    if (previousPart?.type === ContentTypes.AGENT_UPDATE) {
+      break;
+    }
     const previous = previousPart == null ? undefined : getStandardToolCall(previousPart);
     if (previous == null) {
       continue;

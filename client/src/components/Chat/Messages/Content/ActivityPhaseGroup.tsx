@@ -294,7 +294,10 @@ function LivePhaseHeader({
       ? localize('com_ui_sandbox_starting')
       : activity.text;
   const { source } = activity;
-  const line = useMemo(() => ({ text, source }), [text, source]);
+  const line = useMemo(
+    () => ({ text, source, comboCount: activity.comboCount }),
+    [text, source, activity.comboCount],
+  );
   const previewRef = useRef<HTMLSpanElement>(null);
   const [isPreviewFull, setIsPreviewFull] = useState(false);
   const painted = useThrottledValue(
@@ -329,7 +332,7 @@ function LivePhaseHeader({
    *  fail while a later one runs, and the line alone would never say so. The
    *  hidden group header carries the same counts in the same words. */
   const { failed, cancelled } = activity.outcome;
-  const combo = activity.comboCount > 1 ? `×${activity.comboCount}` : '';
+  const combo = painted.comboCount > 1 ? `×${painted.comboCount}` : '';
   const detail = useMemo(() => {
     const notes: string[] = [];
     if (failed > 0) {
