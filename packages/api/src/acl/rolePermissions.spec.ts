@@ -299,6 +299,14 @@ describe('role-only ACL writes', () => {
         roleId: role!._id,
         grantedBy,
       });
+      /**
+       * `createModels` schedules autoIndex builds and the insert above creates
+       * the collection; both are catalog changes. A transaction that starts
+       * while one is still in flight aborts with a transient "Unable to write
+       * to collection ... due to catalog changes" error, so let the models this
+       * transaction touches finish building before opening the session.
+       */
+      await Promise.all([acl.init(), connection.models.AccessRole.init()]);
       const session = await connection.startSession();
       try {
         session.startTransaction();
