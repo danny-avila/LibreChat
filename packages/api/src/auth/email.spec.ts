@@ -120,6 +120,27 @@ describe('email change service', () => {
       );
     });
 
+    it('never says a link lasts longer than it does', async () => {
+      const { deps, service } = createDeps();
+
+      await service.requestEmailChange({
+        body: { currentPassword: 'correct-password', newEmail: 'new@example.com' },
+        userId: '507f1f77bcf86cd799439011',
+        tenantId: 'tenant-1',
+        /** Ninety minutes is not two hours; rounding up would outlive the token. */
+        settings: { enabled: true, tokenTTLSeconds: 5400 },
+        emailEnabled: true,
+      });
+
+      expect(deps.sendEmail).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          template: 'verifyEmailChange.handlebars',
+          payload: expect.objectContaining({ linkLifetime: '90 minutes' }),
+        }),
+      );
+    });
+
     it('states the lifetime the link was actually issued with', async () => {
       const { deps, service } = createDeps();
 

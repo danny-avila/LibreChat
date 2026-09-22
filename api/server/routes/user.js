@@ -18,6 +18,7 @@ const {
   emailChangeSubmissionIpLimiter,
   verifyEmailSubmissionLimiter,
   configMiddleware,
+  strictConfigMiddleware,
   canDeleteAccount,
   requireJwtAuth,
 } = require('~/server/middleware');
@@ -42,7 +43,7 @@ router.post(
   '/email/change',
   requireJwtAuth,
   emailChangeLimiter,
-  configMiddleware,
+  strictConfigMiddleware,
   requestEmailChangeController,
 );
 router.post(

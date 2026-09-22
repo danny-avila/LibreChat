@@ -221,13 +221,17 @@ function displayName(user: EmailChangeUser): string {
   return user.name || user.username || user.email;
 }
 
-/** The template promises a lifetime, so it has to be the one the token was issued with. */
+/**
+ * The template promises a lifetime, so it has to be the one the token was issued with, and
+ * never a longer one: rounding 90 minutes up to "2 hours" would keep claiming a link is
+ * valid half an hour after it expired. Only a whole number of hours is said in hours.
+ */
 function formatLifetime(seconds: number): string {
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) {
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60 || minutes % 60 !== 0) {
     return `${minutes} minute${minutes === 1 ? '' : 's'}`;
   }
-  const hours = Math.round(minutes / 60);
+  const hours = minutes / 60;
   return `${hours} hour${hours === 1 ? '' : 's'}`;
 }
 

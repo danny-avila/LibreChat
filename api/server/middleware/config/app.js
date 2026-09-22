@@ -24,4 +24,27 @@ const configMiddleware = async (req, res, next) => {
   }
 };
 
+/**
+ * The same resolution, without the fallback. A route that decides policy from `req.config`
+ * must not be handed the base configuration when principal or override resolution fails,
+ * because the base can be broader than the scope that should have decided.
+ */
+const strictConfigMiddleware = async (req, res, next) => {
+  try {
+    req.config = await getAppConfig({
+      ...getAppConfigOptionsFromUser(req.user),
+      failClosed: true,
+    });
+    next();
+  } catch (error) {
+    logger.error('Strict config middleware error:', {
+      error: error.message,
+      userRole: req.user?.role,
+      path: req.path,
+    });
+    next(error);
+  }
+};
+
 module.exports = configMiddleware;
+module.exports.strictConfigMiddleware = strictConfigMiddleware;
