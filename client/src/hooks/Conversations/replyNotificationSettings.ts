@@ -37,27 +37,42 @@ export const REPLY_NOTIFICATION_DEFAULTS: Required<TReplyNotificationsConfig> = 
 const isBounded = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 100;
 
+/** Nothing is permitted until the deployment has answered. */
+const PENDING_CAPABILITIES: Required<TReplyNotificationsConfig> = {
+  tabBadge: false,
+  desktop: false,
+  sound: false,
+  pollLimit: REPLY_NOTIFICATION_DEFAULTS.pollLimit,
+};
+
 /**
  * The reply-alert capabilities this deployment permits.
  *
- * Every field is re-checked here rather than trusted from the payload: a cached startup config
- * can outlive the schema that produced it, and an out-of-range poll limit would otherwise reach
- * the list request as a page size the server has to reject.
+ * Off until the startup config has loaded: a device that stored "on" would otherwise badge,
+ * poll or notify in the window before an operator's `false` arrives. Once a config is in hand,
+ * a missing field means a backend that predates the setting, and reads as the shipped default.
+ *
+ * Every field is re-checked rather than trusted from the payload: a cached startup config can
+ * outlive the schema that produced it, and an out-of-range poll limit would otherwise reach the
+ * list request as a page size the server has to clamp.
  */
 export function useReplyNotificationCapabilities(): Required<TReplyNotificationsConfig> {
   const { data: startupConfig } = useGetStartupConfig();
+  const loaded = startupConfig != null;
   const configured = startupConfig?.interface?.replyNotifications;
-  return useMemo(
-    () => ({
+  return useMemo(() => {
+    if (!loaded) {
+      return PENDING_CAPABILITIES;
+    }
+    return {
       tabBadge: configured?.tabBadge !== false,
       desktop: configured?.desktop !== false,
       sound: configured?.sound !== false,
       pollLimit: isBounded(configured?.pollLimit)
         ? configured.pollLimit
         : REPLY_NOTIFICATION_DEFAULTS.pollLimit,
-    }),
-    [configured?.tabBadge, configured?.desktop, configured?.sound, configured?.pollLimit],
-  );
+    };
+  }, [loaded, configured?.tabBadge, configured?.desktop, configured?.sound, configured?.pollLimit]);
 }
 
 /** What this device wants, once the deployment's gate has been applied to it. */

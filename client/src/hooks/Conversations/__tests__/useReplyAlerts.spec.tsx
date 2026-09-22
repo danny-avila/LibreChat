@@ -10,6 +10,7 @@ import { replyNotificationsAtom, replyNotificationSoundAtom } from '../replyNoti
 import useReplyAlerts, { requestReplyNotificationPermission } from '../useReplyAlerts';
 import { consumeFocusSuppression } from '../notificationNavigation';
 import useUnseenConversations from '../useUnseenConversations';
+import { startupConfigKey } from '~/data-provider';
 import { applyServerReplyStamp } from '~/utils';
 
 /* The hooks barrel is circular with ~/data-provider; mocking it wholesale keeps the
@@ -17,6 +18,13 @@ import { applyServerReplyStamp } from '~/utils';
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
 }));
+
+/* The alert capabilities stay off until the deployment has answered, so every render starts
+   from a loaded startup config that restricts none of them. */
+const withLoadedConfig = (client: QueryClient): QueryClient => {
+  client.setQueryData(startupConfigKey(false), { interface: {} });
+  return client;
+};
 
 const permissionRequest = jest.fn();
 
@@ -115,9 +123,10 @@ function setup(
   settings.set(replyNotificationsAtom, notifications);
   settings.set(replyNotificationSoundAtom, sound);
 
+  const configClient = withLoadedConfig(new QueryClient());
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <RecoilRoot>
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={configClient}>
         <JotaiProvider store={settings}>
           <MemoryRouter initialEntries={[initialRoute]}>
             {children}
@@ -142,7 +151,9 @@ function setupWithAggregate(toggles: Toggles = {}) {
   settings.set(replyNotificationsAtom, notifications);
   settings.set(replyNotificationSoundAtom, sound);
 
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = withLoadedConfig(
+    new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  );
   queryClient.setQueryData([QueryKeys.allConversations, { isArchived: false }], {
     pages: [
       {

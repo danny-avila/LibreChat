@@ -1392,7 +1392,10 @@ const executeResponse = async (envelope, { req, res }) => {
             await announceReply(db, {
               userId: req?.user?.id,
               conversationId,
-              reply: { ...savedResponse, isTemporary: req?.body?.isTemporary },
+              reply: {
+                ...savedResponse,
+                isTemporary: req?.resolvedConversation?.isTemporary ?? req?.body?.isTemporary,
+              },
               context: 'Responses API - announce stored reply',
             });
 
@@ -1628,7 +1631,10 @@ const executeResponse = async (envelope, { req, res }) => {
             await announceReply(db, {
               userId: req?.user?.id,
               conversationId,
-              reply: { ...savedResponse, isTemporary: req?.body?.isTemporary },
+              reply: {
+                ...savedResponse,
+                isTemporary: req?.resolvedConversation?.isTemporary ?? req?.body?.isTemporary,
+              },
               context: 'Responses API - announce stored reply',
             });
 

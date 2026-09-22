@@ -18,6 +18,7 @@ import {
   replyNotificationSoundAtom,
 } from '../replyNotificationSettings';
 import useUnseenConversations from '../useUnseenConversations';
+import { startupConfigKey } from '~/data-provider';
 import useReplyWatcher from '../useReplyWatcher';
 import { isConversationUnseen } from '~/utils';
 
@@ -42,11 +43,20 @@ const RESPONDED_AT = '2026-08-16T10:00:00.000Z';
 
 const listKey = [QueryKeys.allConversations, { isArchived: false }];
 
+/* The alert capabilities stay off until the deployment has answered, so every render starts
+   from a loaded startup config that restricts none of them. */
+const withLoadedConfig = (client: QueryClient): QueryClient => {
+  client.setQueryData(startupConfigKey(false), { interface: {} });
+  return client;
+};
+
 type Toggles = { notifications?: boolean; sound?: boolean; badge?: boolean };
 
 function setup(toggles: Toggles = {}) {
   const { notifications = false, sound = false, badge = false } = toggles;
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const queryClient = withLoadedConfig(
+    new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  );
   queryClient.setQueryData(listKey, {
     pages: [
       {

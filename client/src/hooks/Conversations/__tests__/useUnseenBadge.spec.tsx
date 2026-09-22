@@ -1,11 +1,19 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { renderHook, waitFor } from '@testing-library/react';
 import { Provider as JotaiProvider, createStore } from 'jotai';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { unseenTabBadgeAtom } from '../replyNotificationSettings';
+import { startupConfigKey } from '~/data-provider';
 import useUnseenBadge from '../useUnseenBadge';
 import { setDocumentTitle } from '~/utils';
+
+/* The alert capabilities stay off until the deployment has answered, so every render starts
+   from a loaded startup config that restricts none of them. */
+const withLoadedConfig = (client: QueryClient): QueryClient => {
+  client.setQueryData(startupConfigKey(false), { interface: {} });
+  return client;
+};
 
 function mountIcons() {
   const icon32 = document.createElement('link');
@@ -20,14 +28,18 @@ function mountIcons() {
   return { icon32, icon16 };
 }
 
-function mount(count: number, badgeEnabled = true) {
+function mount(
+  count: number,
+  badgeEnabled = true,
+  client: QueryClient = withLoadedConfig(new QueryClient()),
+) {
   const settings = createStore();
   settings.set(unseenTabBadgeAtom, badgeEnabled);
   return renderHook((nextCount: number) => useUnseenBadge(nextCount), {
     initialProps: count,
     wrapper: ({ children }: { children: React.ReactNode }) => (
       <RecoilRoot>
-        <QueryClientProvider client={new QueryClient()}>
+        <QueryClientProvider client={client}>
           <JotaiProvider store={settings}>{children}</JotaiProvider>
         </QueryClientProvider>
       </RecoilRoot>
@@ -55,6 +67,32 @@ describe('useUnseenBadge', () => {
        leaves those browsers without a badge. `link.href` is the resolved original. */
     expect(icons.icon32.dataset.originalHref).toBe(icons.icon32.href);
     expect(icons.icon16.dataset.originalHref).toBe(icons.icon16.href);
+  });
+
+  /* A device that stored "on" must not badge in the window before an operator's `false` has
+     arrived, so nothing is shown until the startup config has loaded. */
+  it('shows no count until the deployment has answered', () => {
+    const client = new QueryClient();
+    const { rerender } = mount(3, true, client);
+
+    expect(document.title).toBe('LibreChat');
+
+    act(() => {
+      client.setQueryData(startupConfigKey(false), { interface: {} });
+    });
+    rerender(3);
+
+    expect(document.title).toBe('(3) LibreChat');
+  });
+
+  it('keeps the count off when the deployment disables the tab badge', () => {
+    const client = new QueryClient();
+    client.setQueryData(startupConfigKey(false), {
+      interface: { replyNotifications: { tabBadge: false } },
+    });
+    mount(3, true, client);
+
+    expect(document.title).toBe('LibreChat');
   });
 
   it('prefixes the title with the count and restores it at zero', () => {
