@@ -248,7 +248,8 @@ function consecutiveToolCount(
   const identity = toolIdentity(toolCall);
   let count = 1;
   for (let index = position - 1; index >= 0; index -= 1) {
-    const previous = parts[index] == null ? undefined : getStandardToolCall(parts[index]);
+    const previousPart = parts[index];
+    const previous = previousPart == null ? undefined : getStandardToolCall(previousPart);
     if (previous == null) {
       continue;
     }
