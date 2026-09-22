@@ -407,8 +407,12 @@ function LivePhaseHeader({
           data-testid={detail ? 'live-phase-outcome' : 'live-phase-combo'}
         >
           {combo && <span>{combo}</span>}
-          {combo && detail && <span className="mx-1 text-text-secondary">·</span>}
-          {detail && <span>{detail}</span>}
+          {detail && (
+            <>
+              <span className={cn(combo ? 'mx-1' : 'mr-1', 'text-text-secondary')}>·</span>
+              <span>{detail}</span>
+            </>
+          )}
         </span>
       )}
     </>
