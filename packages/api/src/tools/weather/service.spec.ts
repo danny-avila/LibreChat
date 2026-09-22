@@ -546,42 +546,39 @@ describe('executeOpenWeather', () => {
     ['snow-only hourly rate', { snow: { '1h': 3 } }],
     ['mixed hourly rain and snow rates', { rain: { '1h': 2 }, snow: { '1h': 3 } }],
     ['unavailable daily totals', {}],
-  ] as const)(
-    'omits daily_aggregation precipitation.total for %s',
-    async (_label, extra) => {
-      const { fetch } = createFetch((url) => {
-        if (url.pathname === '/data/4.0/onecall/timeline/1day') {
-          return jsonResponse({
-            timezone: 'America/New_York',
-            data: [
-              {
-                dt: 1583298000,
-                temp: { morn: 10.2, day: 20.4, eve: 15.6, night: 8.1, min: 7.4, max: 21.9 },
-                ...extra,
-              },
-            ],
-          });
-        }
-        throw new Error(`unexpected url ${url.toString()}`);
-      });
+  ] as const)('omits daily_aggregation precipitation.total for %s', async (_label, extra) => {
+    const { fetch } = createFetch((url) => {
+      if (url.pathname === '/data/4.0/onecall/timeline/1day') {
+        return jsonResponse({
+          timezone: 'America/New_York',
+          data: [
+            {
+              dt: 1583298000,
+              temp: { morn: 10.2, day: 20.4, eve: 15.6, night: 8.1, min: 7.4, max: 21.9 },
+              ...extra,
+            },
+          ],
+        });
+      }
+      throw new Error(`unexpected url ${url.toString()}`);
+    });
 
-      const parsed = JSON.parse(
-        await executeOpenWeather(
-          {
-            action: 'daily_aggregation',
-            lat: 35.96,
-            lon: -83.92,
-            date: '2020-03-04',
-            tz: 'America/New_York',
-          },
-          { apiKey, fetch },
-        ),
-      ) as { precipitation?: { total?: number }; temperature?: { afternoon?: number } };
+    const parsed = JSON.parse(
+      await executeOpenWeather(
+        {
+          action: 'daily_aggregation',
+          lat: 35.96,
+          lon: -83.92,
+          date: '2020-03-04',
+          tz: 'America/New_York',
+        },
+        { apiKey, fetch },
+      ),
+    ) as { precipitation?: { total?: number }; temperature?: { afternoon?: number } };
 
-      expect(parsed.temperature?.afternoon).toBe(20);
-      expect(parsed.precipitation).toBeUndefined();
-    },
-  );
+    expect(parsed.temperature?.afternoon).toBe(20);
+    expect(parsed.precipitation).toBeUndefined();
+  });
 
   it('synthesizes overview from current weather when 4.0 has no overview endpoint', async () => {
     const { fetch, urls } = createFetch((url) => {
