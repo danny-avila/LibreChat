@@ -11,20 +11,46 @@ function getDispatcherTimeouts(dispatcher: object): {
   bodyTimeout?: number;
   headersTimeout?: number;
 } {
-  const optionsSym = Object.getOwnPropertySymbols(dispatcher).find(
-    (s) => s.toString() === 'Symbol(options)',
-  );
-  if (optionsSym == null) {
-    return {};
-  }
+  const seen = new Set<object>();
 
-  const options = (dispatcher as Record<symbol, { bodyTimeout?: number; headersTimeout?: number }>)[
-    optionsSym
-  ];
-  return {
-    bodyTimeout: options.bodyTimeout,
-    headersTimeout: options.headersTimeout,
+  const walk = (value: object): { bodyTimeout?: number; headersTimeout?: number } => {
+    if (seen.has(value)) {
+      return {};
+    }
+    seen.add(value);
+
+    const optionsSym = Object.getOwnPropertySymbols(value).find(
+      (s) => s.toString() === 'Symbol(options)',
+    );
+    if (optionsSym != null) {
+      const options = (
+        value as Record<symbol, { bodyTimeout?: number; headersTimeout?: number }>
+      )[optionsSym];
+      if (typeof options?.bodyTimeout === 'number' || typeof options?.headersTimeout === 'number') {
+        return {
+          bodyTimeout: options.bodyTimeout,
+          headersTimeout: options.headersTimeout,
+        };
+      }
+    }
+
+    for (const symbol of Object.getOwnPropertySymbols(value)) {
+      const nested = (value as Record<symbol, unknown>)[symbol];
+      if (nested != null && typeof nested === 'object') {
+        const nestedTimeouts = walk(nested);
+        if (
+          typeof nestedTimeouts.bodyTimeout === 'number' ||
+          typeof nestedTimeouts.headersTimeout === 'number'
+        ) {
+          return nestedTimeouts;
+        }
+      }
+    }
+
+    return {};
   };
+
+  return walk(dispatcher);
 }
 
 function collectBodyTimeouts(dispatcher: object): number[] {
