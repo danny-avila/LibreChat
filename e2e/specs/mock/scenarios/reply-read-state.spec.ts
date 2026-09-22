@@ -123,7 +123,11 @@ test('later visible read wins over a delayed unread response, and stale seen can
   try {
     await openSidebar(page);
     await openConversationMenu(row);
-    await page.getByRole('menuitem', { name: 'Mark as unread', exact: true }).click();
+    /* Dispatched rather than clicked, as the row's own controls are: the menu is portaled, and
+       behind the mobile drawer's scrim it inherits `pointer-events: none` and goes click-dead. */
+    await page
+      .getByRole('menuitem', { name: 'Mark as unread', exact: true })
+      .dispatchEvent('click');
     await committed.promise;
     expect((await readState(conversationId))?.lastSeenAt).toBeUndefined();
     await page.keyboard.press('Escape');
@@ -138,6 +142,9 @@ test('later visible read wins over a delayed unread response, and stale seen can
       .toBeGreaterThanOrEqual(initial!.lastResponseAt.getTime());
     release.resolve();
     expect((await unreadDelivered).ok()).toBe(true);
+    /* Opening the chat closed the drawer on the mobile project, which is what it does for a
+       reader too, so the list is opened again to read the row's settled name. */
+    await openSidebar(page);
     await expect(
       row.getByRole('button', { name: `${title} conversation`, exact: true }),
     ).toBeVisible();

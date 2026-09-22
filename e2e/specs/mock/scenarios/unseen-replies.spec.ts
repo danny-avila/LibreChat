@@ -310,7 +310,9 @@ test.describe('unseen replies', () => {
       const second = await context.newPage();
       try {
         await second.goto(`/c/${id}`);
-        await openSidebar(second);
+        /* This page only ever sends a reply, so it wants the composer rather than the list. On
+           the mobile project an open drawer sits over the composer and marks the pane inert,
+           which is the reader's own experience of it and would leave nothing here to type in. */
         await expect(second.getByRole('textbox', { name: 'Message input' })).toBeVisible();
         await selectMockEndpoint(second, MOCK_ENDPOINTS[0]);
         await second.bringToFront();
@@ -472,7 +474,9 @@ test.describe('unseen replies', () => {
       const second = await context.newPage();
       try {
         await second.goto(`/c/${id}`);
-        await openSidebar(second);
+        /* This page only ever sends a reply, so it wants the composer rather than the list. On
+           the mobile project an open drawer sits over the composer and marks the pane inert,
+           which is the reader's own experience of it and would leave nothing here to type in. */
         await expect(second.getByRole('textbox', { name: 'Message input' })).toBeVisible();
         await selectMockEndpoint(second, MOCK_ENDPOINTS[0]);
         await second.bringToFront();
@@ -499,6 +503,10 @@ test.describe('unseen replies', () => {
         ).__grantNotificationPermission();
       });
       await restoreUnreadBaseline(id, now(), replyAt);
+      /* `sidebarExpanded` is stored per browser, so the reply tab's own mobile shell closed this
+         list while it was open. Looking at the list again is what a reader does, and it is where
+         the dot has to show. */
+      await openSidebar(page);
       await expect(row.locator('span[aria-hidden="true"].bg-status-info')).toBeVisible({
         timeout: 45_000,
       });
@@ -530,7 +538,7 @@ test.describe('unseen replies', () => {
       try {
         for (const [index, otherPage] of pages.entries()) {
           await otherPage.goto(`/c/${id}`);
-          await openSidebar(otherPage);
+          /* Only the composer is used here; see the note on the reply page above. */
           await expect(otherPage.getByRole('textbox', { name: 'Message input' })).toBeVisible();
           await selectMockEndpoint(otherPage, MOCK_ENDPOINTS[0]);
           await sendMessageAndWaitForCompletion(
