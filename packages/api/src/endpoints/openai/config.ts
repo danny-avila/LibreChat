@@ -6,10 +6,10 @@ import type * as t from '~/types';
 import { getGoogleConfig, stripGeminiFlashBlockedParams } from '~/endpoints/google/llm';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { createSSRFSafeAgents, createSSRFSafeUndiciConnect } from '~/auth';
+import { getDirectDispatcher, getProxyDispatcher } from '~/utils/proxy';
 import { getOpenAILLMConfig, extractDefaultParams } from './llm';
 import { constructAzureResponsesURL } from '~/utils/azure';
 import { transformToOpenAIConfig } from './transform';
-import { getDirectDispatcher, getProxyDispatcher } from '~/utils/proxy';
 import { createFetch } from '~/utils/generators';
 import { mergeHeaders } from '~/utils/headers';
 
@@ -18,8 +18,8 @@ type FetchOptions = RequestInit & { dispatcher?: Dispatcher };
 type OpenAIConfiguration = NonNullable<t.OpenAIConfiguration>;
 
 const OPENROUTER_DEFAULT_PARAMS = { promptCache: true };
-const MODEL_RESPONSE_HEADERS_TIMEOUT_MS = 300_000;
-const MODEL_RESPONSE_BODY_TIMEOUT_MS = 0;
+export const MODEL_RESPONSE_HEADERS_TIMEOUT_MS = 300_000;
+export const MODEL_RESPONSE_BODY_TIMEOUT_MS = 0;
 
 const MODEL_RESPONSE_DISPATCHER_OPTIONS = {
   headersTimeout: MODEL_RESPONSE_HEADERS_TIMEOUT_MS,

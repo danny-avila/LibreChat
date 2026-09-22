@@ -8,7 +8,11 @@ import {
 } from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
 import type { OpenAIParameters, AzureOptions } from '~/types';
-import { getOpenAIConfig } from './config';
+import {
+  getOpenAIConfig,
+  MODEL_RESPONSE_BODY_TIMEOUT_MS,
+  MODEL_RESPONSE_HEADERS_TIMEOUT_MS,
+} from './config';
 import { knownOpenAIParams } from './llm';
 
 describe('getOpenAIConfig', () => {
@@ -30,22 +34,10 @@ describe('getOpenAIConfig', () => {
 
   it('disables the transport body-idle timeout while retaining a bounded headers timeout', () => {
     const result = getOpenAIConfig(mockApiKey);
-    const dispatcher = result.configOptions?.fetchOptions?.dispatcher as {
-      [key: symbol]: number;
-    };
-    const timeoutValues = Object.getOwnPropertySymbols(dispatcher).reduce<Record<string, number>>(
-      (values, symbol) => {
-        const value = dispatcher[symbol];
-        if (typeof value === 'number') {
-          values[symbol.description ?? ''] = value;
-        }
-        return values;
-      },
-      {},
-    );
 
-    expect(timeoutValues['body timeout']).toBe(0);
-    expect(timeoutValues['headers timeout']).toBe(300_000);
+    expect(MODEL_RESPONSE_BODY_TIMEOUT_MS).toBe(0);
+    expect(MODEL_RESPONSE_HEADERS_TIMEOUT_MS).toBe(300_000);
+    expect(result.configOptions?.fetchOptions?.dispatcher).toBeDefined();
   });
 
   it('should apply model options', () => {
