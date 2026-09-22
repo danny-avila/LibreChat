@@ -14,18 +14,20 @@ describe('SplitText', () => {
     },
   );
 
-  it('preserves the logical order of mixed Persian and Latin text', () => {
-    const { container } = render(<SplitText text="سلام OpenAI 123!" />);
-    const words = container.querySelectorAll('p > span');
+  it.each(['سلام OpenAI 123!', 'سلام John Smith', 'Hello שלום עולם', 'مرحبا بكم'])(
+    'keeps %s in one wrapping text run so the browser can resolve bidi order',
+    (text) => {
+      const { container } = render(<SplitText text={text} />);
+      const animatedSegments = container.querySelectorAll('p > span > span.inline-block');
 
-    expect(Array.from(words, (word) => word.textContent?.trim())).toEqual([
-      'سلام',
-      'OpenAI',
-      '123!',
-    ]);
-    expect(words[1].querySelectorAll('span.inline-block')).toHaveLength(1);
-    expect(words[2].querySelectorAll('span.inline-block')).toHaveLength(1);
-  });
+      expect(animatedSegments).toHaveLength(1);
+      expect(animatedSegments[0].childNodes).toHaveLength(1);
+      expect(animatedSegments[0].firstChild?.nodeType).toBe(Node.TEXT_NODE);
+      expect(animatedSegments[0].textContent).toBe(text);
+      expect(animatedSegments[0].parentElement).toHaveStyle({ whiteSpace: 'normal' });
+      expect(container.querySelector('.sr-only')).toHaveTextContent(text);
+    },
+  );
 
   it('keeps per-grapheme animation for Latin-only text', () => {
     const { container } = render(<SplitText text="OpenAI" />);

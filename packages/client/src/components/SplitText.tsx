@@ -73,7 +73,7 @@ const SplitText: React.FC<SplitTextProps> = ({
   onLineCountChange,
 }) => {
   const containsRtl = /[\p{Script=Arabic}\p{Script=Hebrew}]/u.test(text);
-  const words = text.split(' ').map((word) => (containsRtl ? [word] : splitGraphemes(word)));
+  const words = containsRtl ? [[text]] : text.split(' ').map(splitGraphemes);
   const letters = words.flat();
   const [inView, setInView] = useState(false);
   const ref = useRef<HTMLParagraphElement>(null);
@@ -146,7 +146,10 @@ const SplitText: React.FC<SplitTextProps> = ({
         aria-hidden="true"
       >
         {words.map((word, wordIndex) => (
-          <span key={wordIndex} style={{ display: 'inline-block', whiteSpace: 'nowrap' }}>
+          <span
+            key={wordIndex}
+            style={{ display: 'inline-block', whiteSpace: containsRtl ? 'normal' : 'nowrap' }}
+          >
             {word.map((letter, letterIndex) => {
               const index =
                 words.slice(0, wordIndex).reduce((acc, w) => acc + w.length, 0) + letterIndex;
