@@ -62,20 +62,21 @@ function sanitizeCredentialPlaceholders(
  * Sanitizes every header map a shared config carries. `requestHeaders` is
  * included because it reaches the upstream server exactly like `headers` does:
  * left unsanitized, a user-managed config could name a privileged placeholder
- * there and have the runtime resolve it at chat time.
+ * there and have the runtime resolve it at chat time. Absent maps stay omitted
+ * because BSON can serialize explicit undefined properties as null.
  */
-function sanitizeConfigHeaderMaps(config: ParsedServerConfig): {
-  headers?: Record<string, string>;
-  requestHeaders?: Record<string, string>;
-} {
-  const carrier = config as ParsedServerConfig & {
+function sanitizeConfigHeaderMaps(config: ParsedServerConfig): ParsedServerConfig {
+  const { headers, requestHeaders, ...rest } = config as ParsedServerConfig & {
     headers?: Record<string, string>;
     requestHeaders?: Record<string, string>;
   };
   return {
-    headers: sanitizeCredentialPlaceholders(carrier.headers),
-    requestHeaders: sanitizeCredentialPlaceholders(carrier.requestHeaders),
-  };
+    ...rest,
+    ...(headers != null && { headers: sanitizeCredentialPlaceholders(headers) }),
+    ...(requestHeaders != null && {
+      requestHeaders: sanitizeCredentialPlaceholders(requestHeaders),
+    }),
+  } as ParsedServerConfig;
 }
 
 function stripBlockedOAuthEndpointParams(url?: string): string | undefined {
@@ -121,13 +122,18 @@ function sanitizeUserManagedOAuthConfig(config: ParsedServerConfig): ParsedServe
 function normalizePersistedConfig(config: ParsedServerConfig): ParsedServerConfig {
   const persistedConfig = config as ParsedServerConfig & {
     headers?: Record<string, string> | null;
+    requestHeaders?: Record<string, string> | null;
   };
-  if (persistedConfig.headers !== null) {
+  if (persistedConfig.headers !== null && persistedConfig.requestHeaders !== null) {
     return config;
   }
 
-  const { headers: _legacyNullHeaders, ...normalizedConfig } = persistedConfig;
-  return normalizedConfig as ParsedServerConfig;
+  const { headers, requestHeaders, ...rest } = persistedConfig;
+  return {
+    ...rest,
+    ...(headers != null && { headers }),
+    ...(requestHeaders != null && { requestHeaders }),
+  } as ParsedServerConfig;
 }
 
 function normalizeOAuthUrl(value?: string): string | undefined {
@@ -315,10 +321,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       );
     }
 
-    const sanitizedConfig = sanitizeUserManagedOAuthConfig({
-      ...config,
-      ...sanitizeConfigHeaderMaps(config),
-    } as ParsedServerConfig);
+    const sanitizedConfig = sanitizeUserManagedOAuthConfig(sanitizeConfigHeaderMaps(config));
 
     /** Transformed user-provided API key config (adds customUserVars and headers) */
     const transformedConfig = this.transformUserApiKeyConfig(sanitizedConfig);
@@ -366,10 +369,9 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       requireApiKeyReentryForRebinding(existingServer.config, config);
     }
 
-    let configToSave: ParsedServerConfig = sanitizeUserManagedOAuthConfig({
-      ...config,
-      ...sanitizeConfigHeaderMaps(config),
-    } as ParsedServerConfig);
+    let configToSave: ParsedServerConfig = sanitizeUserManagedOAuthConfig(
+      sanitizeConfigHeaderMaps(config),
+    );
 
     /** Transformed user-provided API key config (adds customUserVars and headers) */
     configToSave = this.transformUserApiKeyConfig(configToSave);
