@@ -1005,8 +1005,13 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         on_run_step: createHandler((data) => {
           const stepDetails = data?.stepDetails;
           if (stepDetails?.type === 'tool_calls' && stepDetails.tool_calls) {
-            for (const tc of stepDetails.tool_calls) {
-              const toolIndex = data.index ?? 0;
+            for (const [position, tc] of stepDetails.tool_calls.entries()) {
+              // Key id/name chunks by the tool call's index within the model
+              // response so they match the argument deltas emitted later by
+              // `on_run_step_delta`. `data.index` is the run step ordinal, so
+              // using it here strands the id/name chunk at an index no delta
+              // ever targets and mislabels parallel tool calls within a step.
+              const toolIndex = tc.index ?? position;
               const toolId = tc.id ?? '';
               const toolName = tc.name ?? '';
               const toolCall = {
