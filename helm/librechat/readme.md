@@ -8,6 +8,21 @@ In this Chart, LibreChat will only work with environment Variables. You can Spec
 
 1. Generate Variables
 Generate unique values for `CREDS_KEY`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, and `MEILI_MASTER_KEY` using `openssl rand -hex 32`, and `CREDS_IV` using `openssl rand -hex 16`. Store them in the existing Kubernetes Secret so every replica uses the same values.
+
+The Secret named by `global.librechat.existingSecretName` must exist before the
+LibreChat container can start. A missing or misspelled Secret now blocks container
+startup instead of silently falling back to temporary, pod-local credentials.
+This does not validate the keys inside the Secret: ensure it contains all four
+`CREDS_KEY`, `CREDS_IV`, `JWT_SECRET`, and `JWT_REFRESH_SECRET` values.
+
+If you supply all credentials through `librechat.configEnv` or
+`global.librechat.env` (including `valueFrom.secretKeyRef`), set
+`global.librechat.existingSecretName: ""` to omit the bulk Secret reference.
+Prefer Kubernetes Secrets over literal config values for production. Keep the
+same existing encryption keys across upgrades and replicas; do not regenerate
+them to resolve a missing Secret. No credential PVC is needed when permanent
+credentials are injected through the environment.
+
 place them in a secret like this (If you want to change the secret name, remember to change it in your helm values):
 ```yaml
 apiVersion: v1
