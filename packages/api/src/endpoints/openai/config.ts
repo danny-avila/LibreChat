@@ -18,13 +18,6 @@ type FetchOptions = RequestInit & { dispatcher?: Dispatcher };
 type OpenAIConfiguration = NonNullable<t.OpenAIConfiguration>;
 
 const OPENROUTER_DEFAULT_PARAMS = { promptCache: true };
-export const MODEL_RESPONSE_HEADERS_TIMEOUT_MS = 300_000;
-export const MODEL_RESPONSE_BODY_TIMEOUT_MS = 0;
-
-const MODEL_RESPONSE_DISPATCHER_OPTIONS = {
-  headersTimeout: MODEL_RESPONSE_HEADERS_TIMEOUT_MS,
-  bodyTimeout: MODEL_RESPONSE_BODY_TIMEOUT_MS,
-};
 
 function includesOpenRouter(value?: string | null): boolean {
   return typeof value === 'string' && value.toLowerCase().includes(KnownEndpoints.openrouter);
@@ -254,10 +247,11 @@ export function getOpenAIConfig(
     configOptions.defaultQuery = defaultQuery;
   }
 
+  const transportTimeouts = options.transportTimeouts;
   if (shouldProtectUserBaseURL) {
     mergeFetchOptions(configOptions, {
       dispatcher: new Agent({
-        ...MODEL_RESPONSE_DISPATCHER_OPTIONS,
+        ...transportTimeouts,
         connect: createSSRFSafeUndiciConnect(
           options.allowedAddresses,
           getEffectiveURLPort(baseURL),
@@ -265,13 +259,16 @@ export function getOpenAIConfig(
       }),
       redirect: 'error',
     });
-  }
-
-  const proxyDispatcher = getProxyDispatcher(proxy, MODEL_RESPONSE_DISPATCHER_OPTIONS);
-  if (!shouldProtectUserBaseURL) {
+  } else if (transportTimeouts != null) {
+    const proxyDispatcher = getProxyDispatcher(proxy, transportTimeouts);
     mergeFetchOptions(configOptions, {
-      dispatcher: proxyDispatcher ?? getDirectDispatcher(MODEL_RESPONSE_DISPATCHER_OPTIONS),
+      dispatcher: proxyDispatcher ?? getDirectDispatcher(transportTimeouts),
     });
+  } else {
+    const proxyDispatcher = getProxyDispatcher(proxy);
+    if (proxyDispatcher) {
+      mergeFetchOptions(configOptions, { dispatcher: proxyDispatcher });
+    }
   }
 
   if (azure && !isAnthropic) {

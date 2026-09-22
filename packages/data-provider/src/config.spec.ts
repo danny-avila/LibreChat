@@ -25,6 +25,35 @@ const endpointsConfig: TEndpointsConfig = {
   Gemini: { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
 };
 
+describe('agent model response timeouts', () => {
+  it('ships finite defaults and accepts explicit overrides including disabled timeouts', () => {
+    expect(agentsEndpointSchema.parse({})).toMatchObject({
+      modelResponseBodyTimeoutMs: 900_000,
+      modelResponseHeadersTimeoutMs: 300_000,
+    });
+    expect(
+      agentsEndpointSchema.parse({
+        modelResponseBodyTimeoutMs: 1_800_000,
+        modelResponseHeadersTimeoutMs: 0,
+      }),
+    ).toMatchObject({
+      modelResponseBodyTimeoutMs: 1_800_000,
+      modelResponseHeadersTimeoutMs: 0,
+    });
+  });
+
+  it('rejects negative, fractional, and over-one-day values', () => {
+    for (const value of [-1, 1.5, 86_400_001]) {
+      expect(agentsEndpointSchema.safeParse({ modelResponseBodyTimeoutMs: value }).success).toBe(
+        false,
+      );
+      expect(agentsEndpointSchema.safeParse({ modelResponseHeadersTimeoutMs: value }).success).toBe(
+        false,
+      );
+    }
+  });
+});
+
 describe('repository instruction configuration', () => {
   it('defaults optional reads to two seconds and bounds operator overrides', () => {
     expect(agentsEndpointSchema.parse({}).repositoryInstructions).toBeUndefined();

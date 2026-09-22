@@ -8,11 +8,7 @@ import {
 } from 'librechat-data-provider';
 import type { RequestInit } from 'undici';
 import type { OpenAIParameters, AzureOptions } from '~/types';
-import {
-  getOpenAIConfig,
-  MODEL_RESPONSE_BODY_TIMEOUT_MS,
-  MODEL_RESPONSE_HEADERS_TIMEOUT_MS,
-} from './config';
+import { getOpenAIConfig } from './config';
 import { knownOpenAIParams } from './llm';
 
 describe('getOpenAIConfig', () => {
@@ -26,17 +22,15 @@ describe('getOpenAIConfig', () => {
       model: '',
       apiKey: mockApiKey,
     });
-    expect(result.configOptions).toMatchObject({
-      fetchOptions: { dispatcher: expect.any(Object) },
-    });
+    expect(result.configOptions).toEqual({});
     expect(result.tools).toEqual([]);
   });
 
-  it('disables the transport body-idle timeout while retaining a bounded headers timeout', () => {
-    const result = getOpenAIConfig(mockApiKey);
+  it('applies an explicit model transport timeout policy', () => {
+    const result = getOpenAIConfig(mockApiKey, {
+      transportTimeouts: { bodyTimeout: 900_000, headersTimeout: 300_000 },
+    });
 
-    expect(MODEL_RESPONSE_BODY_TIMEOUT_MS).toBe(0);
-    expect(MODEL_RESPONSE_HEADERS_TIMEOUT_MS).toBe(300_000);
     expect(result.configOptions?.fetchOptions?.dispatcher).toBeDefined();
   });
 
@@ -1577,9 +1571,7 @@ describe('getOpenAIConfig', () => {
           streaming: true, // default
           apiKey: mockApiKey,
         });
-        expect(result.configOptions).toMatchObject({
-          fetchOptions: { dispatcher: expect.any(Object) },
-        });
+        expect(result.configOptions).toEqual({});
         expect(result.tools).toEqual([]);
       });
 

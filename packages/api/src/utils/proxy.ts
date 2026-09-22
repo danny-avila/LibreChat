@@ -47,11 +47,16 @@ function getProxyConfigKey(config: ProxyEnvConfig): string {
   return [config.httpProxy ?? '', config.httpsProxy ?? '', config.noProxy ?? ''].join('|');
 }
 
-function getDispatcherOptionsKey(options: Agent.Options): string {
-  return JSON.stringify(options);
+export interface DispatcherTimeoutOptions {
+  bodyTimeout?: number;
+  headersTimeout?: number;
 }
 
-export function getDirectDispatcher(options: Agent.Options = {}): Dispatcher {
+function getDispatcherOptionsKey(options: DispatcherTimeoutOptions): string {
+  return `${options.bodyTimeout ?? ''}|${options.headersTimeout ?? ''}`;
+}
+
+export function getDirectDispatcher(options: DispatcherTimeoutOptions = {}): Dispatcher {
   const key = getDispatcherOptionsKey(options);
   const cached = directDispatchers.get(key);
   if (cached) return cached;
@@ -61,7 +66,9 @@ export function getDirectDispatcher(options: Agent.Options = {}): Dispatcher {
   return dispatcher;
 }
 
-export function getEnvProxyDispatcher(options: Agent.Options = {}): Dispatcher | undefined {
+export function getEnvProxyDispatcher(
+  options: DispatcherTimeoutOptions = {},
+): Dispatcher | undefined {
   const proxyConfig = getProxyEnvConfig();
   if (!proxyConfig) return undefined;
 
@@ -74,7 +81,10 @@ export function getEnvProxyDispatcher(options: Agent.Options = {}): Dispatcher |
   return dispatcher;
 }
 
-function getExplicitProxyDispatcher(proxyUrl: string, options: Agent.Options): Dispatcher {
+function getExplicitProxyDispatcher(
+  proxyUrl: string,
+  options: DispatcherTimeoutOptions,
+): Dispatcher {
   const key = `${proxyUrl}|${getDispatcherOptionsKey(options)}`;
   const cached = explicitDispatchers.get(key);
   if (cached) return cached;
@@ -89,7 +99,7 @@ function getExplicitProxyDispatcher(proxyUrl: string, options: Agent.Options): D
 
 export function getProxyDispatcher(
   proxyUrl?: string | null,
-  options: Agent.Options = {},
+  options: DispatcherTimeoutOptions = {},
 ): Dispatcher | undefined {
   const trimmedProxy = proxyUrl?.trim();
   if (!trimmedProxy) return getEnvProxyDispatcher(options);

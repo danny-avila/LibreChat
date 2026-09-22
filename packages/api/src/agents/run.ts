@@ -83,6 +83,12 @@ import {
   usesSubagentCompletionWakeups,
 } from '~/agents/subagentDelivery';
 import {
+  resolveStreamLimits,
+  resolveModelTransportTimeouts,
+  resolveSubagentMaxTurns,
+  resolveRecursionLimit,
+} from '~/agents/config';
+import {
   isSteeringSupported,
   isSteerPreemptSupported,
   isSteerTerminalContinuationSupported,
@@ -101,11 +107,6 @@ import {
   eventOnlyRunFileTools,
   isRunFileSharingSupported,
 } from './files/runtime';
-import {
-  resolveStreamLimits,
-  resolveSubagentMaxTurns,
-  resolveRecursionLimit,
-} from '~/agents/config';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
 import { resolveConfigHeaders, resolveModelHeaders, mergeHeaders } from '~/utils/headers';
@@ -906,6 +907,7 @@ function resolveOpenAISummarization(
         tenantId: headerContext.tenantId,
         body: headerContext.requestBody,
       }),
+      transportTimeouts: resolveModelTransportTimeouts(appConfig?.endpoints?.agents),
     },
     EModelEndpoint.openAI,
   );
@@ -1077,6 +1079,7 @@ function resolveAzureSummarization(
       dropParams: group?.dropParams?.filter(
         (key) => key !== 'useResponsesApi' || typeof parameters?.useResponsesApi !== 'boolean',
       ),
+      transportTimeouts: resolveModelTransportTimeouts(appConfig?.endpoints?.agents),
     },
     EModelEndpoint.azureOpenAI,
   );
@@ -1251,6 +1254,7 @@ function resolveSummarizationProvider(
         dropParams: customEndpointConfig.dropParams,
         customParams: customEndpointConfig.customParams,
         directEndpoint: customEndpointConfig.directEndpoint,
+        transportTimeouts: resolveModelTransportTimeouts(appConfig?.endpoints?.agents),
       },
       rawProvider,
     );
