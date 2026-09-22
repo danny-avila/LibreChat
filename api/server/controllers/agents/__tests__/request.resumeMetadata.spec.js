@@ -254,6 +254,8 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  /** Real, because whether a skipped-persistence turn may raise an indicator is under test. */
+  isAnnounceableReply: jest.requireActual('@librechat/api').isAnnounceableReply,
   logAgentMemorySnapshot: jest.fn(),
   isScheduleFireRequest: (...args) => mockIsScheduleFireRequest(...args),
   exemptFromConcurrencyLimiter: (...args) => mockExemptFromConcurrencyLimiter(...args),
@@ -6235,6 +6237,7 @@ describe('ResumableAgentController resume metadata', () => {
       addTitle: suppliedAddTitle,
       clientOverrides,
       databaseResult,
+      responseContent = [{ type: 'text', text: 'Truncated answer' }],
     } = {}) => {
       let signalFinished;
       const finished = new Promise((resolve) => {
@@ -6267,7 +6270,7 @@ describe('ResumableAgentController resume metadata', () => {
             messageId: 'response-msg',
             parentMessageId: 'user-msg',
             conversationId: options.conversationId,
-            content: [{ type: 'text', text: 'Truncated answer' }],
+            content: responseContent,
             databasePromise: Promise.resolve(
               databaseResult ?? {
                 conversation: { conversationId: options.conversationId, title: null },
@@ -6353,6 +6356,24 @@ describe('ResumableAgentController resume metadata', () => {
       expect(mockStampConvoLastResponse).toHaveBeenCalledTimes(1);
       const finalEvent = mockGenerationJobManager.publishTerminalClaim.mock.calls.at(-1)[1];
       expect(finalEvent.conversation.lastResponseAt).toEqual(stampedAt);
+    });
+
+    /* A preempted turn can persist its row before the model produced anything readable. A dot
+       raised for that row could never be acknowledged, because acknowledgement requires the
+       stamped reply to be on screen. */
+    it('does not stamp a skipped-persistence turn that persisted nothing to read', async () => {
+      mockSaveMessage.mockImplementation(async (_ctx, message) => message);
+
+      await runFirstTurn({
+        run: preemptIncompleteRun,
+        responseContent: [],
+        databaseResult: {
+          persistenceSkipped: true,
+          conversation: { conversationId: 'new', title: null },
+        },
+      });
+
+      expect(mockStampConvoLastResponse).not.toHaveBeenCalled();
     });
 
     it('still generates a deferred title for a completed first turn', async () => {

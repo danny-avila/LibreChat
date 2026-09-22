@@ -131,6 +131,31 @@ const claimReplyAnnouncement = (
   }
 };
 
+/**
+ * Gives back a claim whose announcement never happened, so another tab, or this one on a
+ * later arrival pass, can still deliver it. Removes the entry only while it still names this
+ * exact stamp: a newer reply claimed in the meantime belongs to whoever claimed it.
+ */
+const releaseReplyAnnouncement = (
+  channel: AlertChannel,
+  conversationId: string,
+  lastResponseAt: string,
+): void => {
+  try {
+    const raw = window.localStorage.getItem(ANNOUNCED_KEY[channel]);
+    const parsed: unknown = raw != null ? JSON.parse(raw) : [];
+    const entries = (Array.isArray(parsed) ? parsed : []) as Array<[string, string]>;
+    const next = entries.filter(
+      ([id, stamp]) => !(id === conversationId && stamp === lastResponseAt),
+    );
+    if (next.length !== entries.length) {
+      window.localStorage.setItem(ANNOUNCED_KEY[channel], JSON.stringify(next));
+    }
+  } catch {
+    /* Storage unavailable: the claim could not have been written either. */
+  }
+};
+
 const notificationPermission = (): NotificationPermission | null =>
   'Notification' in window ? Notification.permission : null;
 
@@ -331,7 +356,14 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
           notification.close();
         };
       } catch {
-        /* Constructor unsupported on this platform, or the notification was rejected. */
+        /* Constructor unsupported on this platform, or the notification was rejected. The
+           claim was taken before construction, so it is handed back rather than left to
+           silence this reply in every tab for good. */
+        releaseReplyAnnouncement(
+          'notification',
+          conversation.conversationId,
+          conversation.lastResponseAt,
+        );
       }
     }
   }, [state, soundEnabled, notificationsEnabled, permission, localize, navigate]);

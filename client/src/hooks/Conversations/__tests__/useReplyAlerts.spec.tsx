@@ -384,6 +384,24 @@ describe('useReplyAlerts', () => {
     ).not.toThrow();
   });
 
+  /* The claim is written before construction, so a throw must hand it back: otherwise every
+     tab reads the reply as already announced and nobody ever delivers it. */
+  it('leaves a reply claimable when its notification could not be created', () => {
+    window.Notification = function () {
+      throw new TypeError('Illegal constructor');
+    } as unknown as typeof Notification;
+    (window.Notification as unknown as { permission: string }).permission = 'granted';
+    const { rerender } = setup({ notifications: true });
+
+    act(() => {
+      rerender(stateOf([row('convo-b', 'Beta')]));
+    });
+
+    const raw = window.localStorage.getItem('replyAlerts:announced:notification');
+    const claims = raw == null ? [] : (JSON.parse(raw) as Array<[string, string]>);
+    expect(claims.some(([id]) => id === 'convo-b')).toBe(false);
+  });
+
   it('notifies for arrivals while the user is away', async () => {
     const { rerender } = setup({ notifications: true });
 

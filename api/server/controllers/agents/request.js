@@ -50,6 +50,7 @@ const {
   resolvePersistableCodeEnvironmentDecision,
   getFailedTurnTraceFields,
   resolveFailedTurnContent,
+  isAnnounceableReply,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -3077,12 +3078,18 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         /** A persisted BaseClient response already advanced lastResponseAt. Re-stamp only
          * when its terminal persistence was explicitly skipped, then refresh the payload's
-         * conversation snapshot so it acknowledges the durable timestamp. */
+         * conversation snapshot so it acknowledges the durable timestamp. A preempted or
+         * stopped turn can persist a row with nothing a reader can open, and a dot raised for
+         * it could never be acknowledged, so it is judged by the shared predicate. */
         if (
           responseIsUnfinished &&
           responsePersistenceWasSkipped &&
-          reqCtx.isTemporary !== true &&
-          savedResponseMessage.messageId
+          isAnnounceableReply({
+            messageId: savedResponseMessage.messageId,
+            content: response.content,
+            text: response.text,
+            isTemporary: reqCtx.isTemporary,
+          })
         ) {
           try {
             await stampConvoLastResponse(

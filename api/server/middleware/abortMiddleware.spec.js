@@ -31,6 +31,7 @@ jest.mock('@librechat/api', () => ({
    *  behavior. */
   isAbortError: jest.requireActual('@librechat/api').isAbortError,
   hasPersistableAbortContent: jest.requireActual('@librechat/api').hasPersistableAbortContent,
+  announceReply: jest.requireActual('@librechat/api').announceReply,
   countTokens: jest.fn().mockResolvedValue(100),
   isEnabled: jest.fn().mockReturnValue(false),
   sendEvent: jest.fn(),

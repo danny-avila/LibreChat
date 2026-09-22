@@ -7,8 +7,8 @@ const {
   isAbortError,
   GenerationJobManager,
   sanitizeMessageForTransmit,
-  hasPersistableAbortContent,
   buildAbortedResponseMetadata,
+  announceReply,
 } = require('@librechat/api');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const clearPendingReq = require('~/cache/clearPendingReq');
@@ -100,17 +100,17 @@ async function abortMessage(req, res) {
      An interrupt before the first real token still persists the unfinished assistant row, but
      that row renders nothing: stamping it would raise a dot for a reply with nothing to read,
      and opening the conversation could never clear it. */
-  const stampConversationId = jobData?.conversationId;
-  const isTemporaryJob = (jobData?.isTemporary ?? req?.body?.isTemporary) === true;
-  const replyIsReadable =
-    hasPersistableAbortContent(content) || (typeof text === 'string' && text.trim().length > 0);
-  if (savedMessage?.messageId && replyIsReadable && !isTemporaryJob && stampConversationId) {
-    try {
-      await db.stampConvoLastResponse(userId, stampConversationId, savedMessage.messageId);
-    } catch (error) {
-      logger.warn('[abortMessage] Failed to stamp lastResponseAt', error);
-    }
-  }
+  await announceReply(db, {
+    userId,
+    conversationId: jobData?.conversationId,
+    reply: {
+      messageId: savedMessage?.messageId,
+      content,
+      text,
+      isTemporary: (jobData?.isTemporary ?? req?.body?.isTemporary) === true,
+    },
+    context: 'abortMessage',
+  });
 
   // Get conversation for title
   const conversation = await db.getConvo(userId, conversationId);
