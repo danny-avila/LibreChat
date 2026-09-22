@@ -5,6 +5,7 @@
  * streaming format (SSE with chat.completion.chunk objects).
  */
 import type { Response as ServerResponse } from 'express';
+import type { Agents } from 'librechat-data-provider';
 import type { Graph } from '@librechat/agents';
 import type {
   ChatCompletionChunkChoice,
@@ -15,7 +16,6 @@ import type {
 } from './types';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { ToolExecuteOptions } from '~/agents/handlers';
-import type { JsonValue } from '../json';
 import { createToolExecuteHandler } from '~/agents/handlers';
 import { aggregateCollectedUsage } from '../usage';
 
@@ -202,22 +202,13 @@ export interface MessageDeltaData {
 
 /**
  * One tool-call fragment of a run step delta, as `@librechat/agents` emits it:
- * `id` and `name` arrive on the fragment that opens a call, `args` on the ones
- * that stream its arguments, and `index` is the provider's content-block index
- * within the current model invocation. `function` is accepted for callers that
- * hand-build the OpenAI wire shape instead.
+ * `id`, `name`, and `args` can all be substrings. `index` identifies their
+ * provider stream within the current model invocation. Reuse the shared chunk
+ * contract and accept equivalent function-shaped name/argument fragments.
  */
-export interface RunStepToolCallChunk {
-  index?: number;
-  id?: string;
-  name?: string;
-  args?: string;
-  type?: string;
-  function?: {
-    name?: string;
-    arguments?: string;
-  };
-}
+export type RunStepToolCallChunk = Agents.ToolCallChunk & {
+  function?: { name?: string; arguments?: string };
+};
 
 export interface RunStepDeltaData {
   /** The run step these fragments belong to. */
@@ -229,18 +220,11 @@ export interface RunStepDeltaData {
 }
 
 /** A tool call as the run step that opened it declares it. */
-export interface RunStepToolCall {
-  /** Parsed declaration snapshot, not an append-only delta. */
-  args?: JsonValue;
+export type RunStepToolCall = Partial<Pick<Agents.ToolCall, 'id' | 'name' | 'args'>> & {
   index?: number;
-  id?: string;
-  name?: string;
   type?: string;
-  function?: {
-    name?: string;
-    arguments?: string;
-  };
-}
+  function?: Partial<Agents.AgentFunctionToolCall['function']>;
+};
 
 export interface RunStepData {
   /** The run step's own id, shared with every delta dispatched for it. */
@@ -300,13 +284,15 @@ export interface EventHandler {
  * content-block index, which restarts at zero on each model invocation of the
  * run, so two different calls can share it.
  *
- * Outward indexes are allocated per run step and provider tool-call id. Provider
- * IDs can repeat across steps too; they are not completion-wide identities.
+ * Outward indexes identify calls within declaring steps, using declaration slots
+ * when IDs are absent. Provider indexes correlate raw fragments within an
+ * invocation. IDs and names are assembled before publication: a client can freeze
+ * both on its first chunk, and the graph provides no per-field completion seal.
  */
 export interface OpenAIToolCallStreamConfig {
-  /** Accumulated tool calls, keyed by their outward index. */
+  /** Completed tool calls, populated at successful finish and keyed by outward index. */
   toolCalls: Map<number, ToolCall>;
-  /** Emits one outward delta. Omitted for non-streaming responses. */
+  /** Emits complete identity/argument chunks at finish. Omitted for non-streaming. */
   emit?: (delta: ChatCompletionChunkChoice['delta']) => void;
   signal?: AbortSignal;
 }
@@ -320,29 +306,31 @@ export interface OpenAIToolCallStream {
     metadata?: Record<string, unknown>,
     graph?: ToolCallGraph,
   ) => void;
-  /** Flush complete-only snapshots once, after successful execution, before DONE/JSON. */
+  /** Publish assembled, validated calls once after success, before DONE/JSON. */
   finish: () => void;
-  /** Discard pending snapshots on failure and reject further writes. */
+  /** Discard pending calls on failure and reject further writes. */
   abort: () => void;
 }
 
 type ToolCallGraph = Pick<Graph, 'getStepBaseKey'>;
 
 interface ProjectedToolCall {
-  providerId: string;
   index: number;
-  id: string;
-  pendingArgs: string[];
-  declared: boolean;
-  snapshot?: string;
-  hasFragments: boolean;
+  snapshotId?: string;
+  snapshotName?: string;
+  snapshotArgs?: string;
+  idFragments: string[];
+  nameFragments: string[];
+  argFragments: string[];
 }
 
 interface ToolCallStep {
   byId: Map<string, ProjectedToolCall>;
+  byDeclaration: Map<string, ProjectedToolCall>;
   byProviderIndex: Map<number, ProjectedToolCall>;
   /** Declaration position is a fallback, never stronger than a provider binding. */
   byPosition: Map<number, ProjectedToolCall>;
+  calls: Set<ProjectedToolCall>;
 }
 
 export function createOpenAIToolCallStream(
@@ -351,14 +339,14 @@ export function createOpenAIToolCallStream(
   const { toolCalls, emit, signal } = config;
   let phase: 'open' | 'finished' | 'aborted' = 'open';
   let unattributableArguments = false;
+  const calls: ProjectedToolCall[] = [];
   const steps = new Map<string, ToolCallStep>();
-  const wireIds = new Set<string>();
   const invocations = new Map<string, Map<number, ProjectedToolCall>>();
   const stepScopes = new Map<string, string>();
 
-  /** SDK deltas may use the latest step ID while still referring to an earlier
-   * parallel call. Provider indexes span that model invocation, not that step.
-   * Without invocation metadata, fall back to step isolation rather than guess. */
+  /** The SDK can send earlier parallel calls under the latest step ID. Its
+   * invocation key owns segment/checkpoint transitions; cache it at declaration
+   * so late events never borrow a new segment. Step isolation is the fallback. */
   const getBindings = (
     stepId: string,
     metadata?: Record<string, unknown>,
@@ -366,19 +354,21 @@ export function createOpenAIToolCallStream(
   ): Map<number, ProjectedToolCall> => {
     let scope = stepScopes.get(stepId);
     if (scope === undefined) {
-      scope =
-        typeof metadata?.langgraph_node === 'string' && typeof metadata.langgraph_step === 'number'
-          ? JSON.stringify([
-              metadata.run_id ?? '',
-              metadata.thread_id ?? '',
-              metadata.langgraph_node,
-              metadata.langgraph_step,
-              metadata.langgraph_checkpoint_ns ?? metadata.checkpoint_ns ?? '',
-            ])
-          : JSON.stringify(['step', stepId]);
       if (graph && metadata) {
-        /** The SDK owns segment, checkpoint and invoked-tool transitions. */
         scope = graph.getStepBaseKey(metadata);
+      } else if (
+        typeof metadata?.langgraph_node === 'string' &&
+        typeof metadata.langgraph_step === 'number'
+      ) {
+        scope = JSON.stringify([
+          metadata.run_id ?? '',
+          metadata.thread_id ?? '',
+          metadata.langgraph_node,
+          metadata.langgraph_step,
+          metadata.langgraph_checkpoint_ns ?? metadata.checkpoint_ns ?? '',
+        ]);
+      } else {
+        scope = JSON.stringify(['step', stepId]);
       }
       stepScopes.set(stepId, scope);
     }
@@ -389,83 +379,42 @@ export function createOpenAIToolCallStream(
     }
     return bindings;
   };
-  let nextIndex = 0;
 
   const getStep = (stepId: string): ToolCallStep => {
     let step = steps.get(stepId);
     if (step === undefined) {
-      step = { byId: new Map(), byProviderIndex: new Map(), byPosition: new Map() };
+      step = {
+        byId: new Map(),
+        byDeclaration: new Map(),
+        byProviderIndex: new Map(),
+        byPosition: new Map(),
+        calls: new Set(),
+      };
       steps.set(stepId, step);
     }
     return step;
   };
 
-  const getCall = (step: ToolCallStep, id: string): ProjectedToolCall => {
-    let call = step.byId.get(id);
-    if (call !== undefined) {
-      return call;
-    }
-    const index = nextIndex++;
-    let wireId = id;
-    /** Index-based clients and id-based consumers must both see distinct calls. */
-    while (wireIds.has(wireId)) {
-      wireId = `${wireId}_${index}`;
-    }
-    wireIds.add(wireId);
-    call = {
-      providerId: id,
-      index,
-      id: wireId,
-      pendingArgs: [],
-      declared: false,
-      hasFragments: false,
+  const allocate = (step: ToolCallStep): ProjectedToolCall => {
+    const call: ProjectedToolCall = {
+      index: calls.length,
+      idFragments: [],
+      nameFragments: [],
+      argFragments: [],
     };
-    step.byId.set(id, call);
+    calls.push(call);
+    step.calls.add(call);
     return call;
-  };
-
-  const append = (call: ProjectedToolCall, args: string): void => {
-    if (!args) {
-      return;
-    }
-    if (!call.declared) {
-      call.pendingArgs.push(args);
-      return;
-    }
-    const tracked = toolCalls.get(call.index);
-    if (tracked === undefined) {
-      return;
-    }
-    tracked.function.arguments += args;
-    emit?.({ tool_calls: [{ index: call.index, function: { arguments: args } }] });
-  };
-
-  const declare = (call: ProjectedToolCall, name: string): void => {
-    if (call.declared || !name) {
-      return;
-    }
-    call.declared = true;
-    const toolCall: ToolCall = {
-      id: call.id,
-      type: 'function',
-      function: { name, arguments: '' },
-    };
-    toolCalls.set(call.index, toolCall);
-    emit?.({
-      tool_calls: [{ index: call.index, ...toolCall, function: { ...toolCall.function } }],
-    });
-    append(call, call.pendingArgs.join(''));
-    call.pendingArgs.length = 0;
   };
 
   const abort = (): void => {
     if (phase !== 'finished') {
       phase = 'aborted';
     }
+    calls.length = 0;
     steps.clear();
     stepScopes.clear();
     invocations.clear();
-    wireIds.clear();
   };
 
   const writable = (): boolean => {
@@ -490,34 +439,49 @@ export function createOpenAIToolCallStream(
         if (unattributableArguments) {
           throw new Error('Unattributable tool call arguments in agent response');
         }
-        /** A declaration can be a partial parsed snapshot. Any actual argument
-         * fragments take precedence, even when they arrive after the snapshot.
-         * Never concatenate both representations or repair a failed stream with
-         * a stale snapshot. Validate all terminal payloads before flushing any
-         * fallback, so malformed input never completes a snapshot-only call. */
-        for (const step of steps.values()) {
-          for (const call of step.byId.values()) {
-            const args = call.hasFragments
-              ? toolCalls.get(call.index)?.function.arguments
-              : call.snapshot;
-            if (!call.declared || args === undefined || args === '') {
-              throw new Error('Incomplete tool call in agent response');
-            }
-            try {
-              JSON.parse(args);
-            } catch {
-              throw new Error('Invalid tool call arguments in agent response');
-            }
+        const ready: ToolCall[] = [];
+        const ids = new Set<string>();
+        /** There is no per-field name/ID seal in the graph event contract. An
+         * OpenAI-compatible client freezes the name on the first outward chunk.
+         * Validate and assemble every call before publishing any: text still
+         * streams, but tool chunks wait for successful response completion. */
+        for (const call of calls) {
+          const name = call.nameFragments.join('') || call.snapshotName;
+          const args = call.argFragments.length ? call.argFragments.join('') : call.snapshotArgs;
+          if (!name || args === undefined || args === '') {
+            throw new Error('Incomplete tool call in agent response');
           }
-        }
-        for (const step of steps.values()) {
-          for (const call of step.byId.values()) {
-            if (call.declared && !call.hasFragments && call.snapshot !== undefined) {
-              append(call, call.snapshot);
-            }
+          try {
+            JSON.parse(args);
+          } catch {
+            throw new Error('Invalid tool call arguments in agent response');
           }
+          let id = call.idFragments.join('') || call.snapshotId || `call_${call.index}`;
+          while (ids.has(id)) {
+            id = `${id}_${call.index}`;
+          }
+          ids.add(id);
+          ready.push({ id, type: 'function', function: { name, arguments: args } });
         }
+        for (const [index, call] of ready.entries()) {
+          toolCalls.set(index, call);
+        }
+        /** Seal before invoking transport callbacks, including reentrant callers.
+         * An emission failure cannot be retried into duplicate tool requests. */
         phase = 'finished';
+        for (const [index, call] of ready.entries()) {
+          emit?.({
+            tool_calls: [
+              {
+                index,
+                id: call.id,
+                type: 'function',
+                function: { name: call.function.name, arguments: '' },
+              },
+            ],
+          });
+          emit?.({ tool_calls: [{ index, function: { arguments: call.function.arguments } }] });
+        }
       } finally {
         abort();
       }
@@ -533,26 +497,50 @@ export function createOpenAIToolCallStream(
       const step = getStep(data.id ?? '');
       const bindings = getBindings(data.id ?? '', metadata, graph);
       for (const [position, toolCall] of details.tool_calls.entries()) {
-        if (!toolCall.id) {
-          continue;
+        const key =
+          toolCall.index === undefined ? `position:${position}` : `index:${toolCall.index}`;
+        let call =
+          (toolCall.id ? step.byId.get(toolCall.id) : undefined) ?? step.byDeclaration.get(key);
+        if (call === undefined && toolCall.index !== undefined) {
+          call = step.byProviderIndex.get(toolCall.index);
         }
-        const call = getCall(step, toolCall.id);
+        /** A declaration can follow its raw chunks. Positions are meaningful
+         * only inside this declaring step, never across the whole response. */
+        if (call === undefined) {
+          call = step.byProviderIndex.get(position);
+          if (
+            call === undefined &&
+            step.byDeclaration.size === 0 &&
+            details.tool_calls.length === 1 &&
+            step.calls.size === 1
+          ) {
+            call = step.calls.values().next().value;
+          }
+        }
+        call ??= allocate(step);
+        step.byDeclaration.set(key, call);
+        if (toolCall.id) {
+          call.snapshotId = toolCall.id;
+          step.byId.set(toolCall.id, call);
+        }
+        call.snapshotName = toolCall.name ?? toolCall.function?.name ?? call.snapshotName;
+        const args = toolCall.function?.arguments ?? toolCall.args;
+        if (args !== undefined) {
+          /** Both public snapshot fields accept raw JSON strings or objects. */
+          try {
+            call.snapshotArgs = typeof args === 'string' ? args : JSON.stringify(args);
+          } catch {
+            throw new Error('Invalid tool call arguments in agent response');
+          }
+        }
         if (toolCall.index !== undefined) {
           step.byProviderIndex.set(toolCall.index, call);
           bindings.set(toolCall.index, call);
         } else if (details.tool_calls.length > 1) {
           step.byPosition.set(position, call);
         }
-        const snapshot =
-          toolCall.function?.arguments ??
-          (toolCall.args === undefined ? undefined : JSON.stringify(toolCall.args));
-        if (!call.hasFragments && snapshot !== undefined) {
-          call.snapshot = snapshot;
-        }
-        declare(call, toolCall.name ?? toolCall.function?.name ?? '');
       }
     },
-
     onRunStepDelta: (data, metadata, graph) => {
       if (!writable()) {
         return;
@@ -564,48 +552,60 @@ export function createOpenAIToolCallStream(
       const step = getStep(data.id ?? '');
       const bindings = getBindings(data.id ?? '', metadata, graph);
       for (const fragment of delta.tool_calls) {
-        let call: ProjectedToolCall | undefined;
-        if (fragment.id) {
-          const bound = fragment.index === undefined ? undefined : bindings.get(fragment.index);
-          call = bound?.providerId === fragment.id ? bound : getCall(step, fragment.id);
-          if (fragment.index !== undefined) {
-            step.byProviderIndex.set(fragment.index, call);
-            bindings.set(fragment.index, call);
-          }
-        } else if (fragment.index !== undefined) {
-          call = bindings.get(fragment.index) ?? step.byPosition.get(fragment.index);
-        }
-        /** Only an unbound singleton can safely adopt an unknown provider index.
-         * Once bound, an unrelated index must not append to that call. */
+        const name = fragment.name ?? fragment.function?.name ?? '';
+        const args = fragment.args ?? fragment.function?.arguments ?? '';
+        /** An index identifies an already-bound raw stream even if this event
+         * carries only a substring of its ID. Never key identity by that suffix. */
+        let call = fragment.index === undefined ? undefined : bindings.get(fragment.index);
+        call ??= fragment.id ? step.byId.get(fragment.id) : undefined;
+        call ??= fragment.index === undefined ? undefined : step.byPosition.get(fragment.index);
         if (
           call === undefined &&
-          !fragment.id &&
-          step.byId.size === 1 &&
+          step.calls.size === 1 &&
           (fragment.index === undefined || step.byProviderIndex.size === 0)
         ) {
-          call = step.byId.values().next().value;
-          if (call !== undefined && fragment.index !== undefined) {
-            step.byProviderIndex.set(fragment.index, call);
-            bindings.set(fragment.index, call);
+          const singleton = step.calls.values().next().value;
+          /** Without an index, a different full ID starts another raw call, not
+           * another substring of the old call. Split IDs need their index. */
+          if (
+            !fragment.id ||
+            fragment.index !== undefined ||
+            (singleton?.snapshotId === undefined && singleton?.idFragments.length === 0)
+          ) {
+            call = singleton;
           }
         }
+        if (call === undefined && (fragment.id || name)) {
+          call = allocate(step);
+        }
         if (call === undefined) {
-          unattributableArguments ||= !!(fragment.args ?? fragment.function?.arguments);
+          unattributableArguments ||= !!args;
           continue;
         }
-        declare(call, fragment.name ?? fragment.function?.name ?? '');
-        const args = fragment.args ?? fragment.function?.arguments ?? '';
+        if (fragment.index !== undefined) {
+          step.byProviderIndex.set(fragment.index, call);
+          bindings.set(fragment.index, call);
+        }
+        if (fragment.id) {
+          call.idFragments.push(fragment.id);
+          /** Partial IDs are not aliases across indexed calls: two parallel
+           * calls can both begin with `call_`. Their index is authoritative. */
+          if (fragment.index === undefined) {
+            step.byId.set(call.idFragments.join(''), call);
+          }
+        }
+        if (name) {
+          call.nameFragments.push(name);
+        }
         if (args) {
-          call.hasFragments = true;
-          call.snapshot = undefined;
-          append(call, args);
+          call.argFragments.push(args);
         }
       }
     },
   };
 }
 
-/** Success publishes fallback snapshots; failure/abort never does. Both hosts
+/** Success publishes validated calls; failure/abort never does. Both hosts
  * use this boundary so late provider events cannot mutate a settled response. */
 export async function completeOpenAIToolCalls(
   lifecycle: Pick<OpenAIToolCallStream, 'finish' | 'abort'>,

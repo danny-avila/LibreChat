@@ -647,9 +647,13 @@ describe('OpenAIChatCompletionController', () => {
     },
   );
 
-  it.each([true, false])(
-    'flushes complete-only arguments before terminal output (stream=%s)',
-    async (streaming) => {
+  it.each(
+    [true, false].flatMap((stream) =>
+      ['native-string', 'wire-object', 'split', 'idless'].map((shape) => [stream, shape]),
+    ),
+  )(
+    'publishes complete identity and arguments before terminal output (stream=%s, shape=%s)',
+    async (streaming, shape) => {
       const api = require('@librechat/api');
       const actual = jest.requireActual('@librechat/api');
       const names = [
@@ -671,10 +675,28 @@ describe('OpenAIChatCompletionController', () => {
           stepDetails: {
             type: 'tool_calls',
             tool_calls: [
-              { id: 'a', function: { name: 'get_time', arguments: '{"city":"Madrid"}' } },
+              (() => {
+                if (shape === 'native-string')
+                  return { id: 'a', name: 'get_time', args: '{"city":"Madrid"}' };
+                if (shape === 'wire-object')
+                  return { id: 'a', function: { name: 'get_time', arguments: { city: 'Madrid' } } };
+                if (shape === 'idless') return { name: 'get_time', args: { city: 'Madrid' } };
+                return { id: 'a', name: 'get_', args: {} };
+              })(),
             ],
           },
         });
+        if (shape === 'split') {
+          for (const fragment of [
+            { id: 'a', name: 'get_', index: 0, args: '{"city":"Madrid"}' },
+            { index: 0, name: 'time' },
+          ]) {
+            await h.on_run_step_delta.handle('on_run_step_delta', {
+              id: 'complete',
+              delta: { type: 'tool_calls', tool_calls: [fragment] },
+            });
+          }
+        }
       });
       try {
         await OpenAIChatCompletionController(req, res);
@@ -689,6 +711,11 @@ describe('OpenAIChatCompletionController', () => {
               .map((call) => call.function?.arguments ?? '')
               .join(''),
           ).toBe('{"city":"Madrid"}');
+          expect(
+            frames
+              .flatMap((frame) => frame.choices[0].delta.tool_calls ?? [])
+              .find((call) => call.id).function.name,
+          ).toBe('get_time');
           expect(frames.at(-1).choices[0].finish_reason).toBe('tool_calls');
         } else {
           expect(

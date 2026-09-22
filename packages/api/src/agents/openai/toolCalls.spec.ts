@@ -1,4 +1,5 @@
 import type { ChatCompletionChunkChoice, OpenAIResponseContext, ToolCall } from './types';
+import type { RunStepData, RunStepDeltaData } from './handlers';
 import {
   sendFinalChunk,
   completeOpenAIToolCalls,
@@ -18,11 +19,10 @@ type Delta = ChatCompletionChunkChoice['delta'];
  * index and an argument slice. A step's own `index` is its position in the
  * response content, which is why it appears here as an unrelated number.
  */
-function runStep(stepId: string, contentIndex: number, id: string, name: string) {
+function runStep(stepId: string, contentIndex: number, id: string, name: string): RunStepData {
   return {
     id: stepId,
     index: contentIndex,
-    type: 'tool_calls',
     stepDetails: {
       type: 'tool_calls',
       tool_calls: [{ name, args: {}, id, type: 'tool_call' }],
@@ -30,7 +30,12 @@ function runStep(stepId: string, contentIndex: number, id: string, name: string)
   };
 }
 
-function opensCall(stepId: string, providerIndex: number, id: string, name: string) {
+function opensCall(
+  stepId: string,
+  providerIndex: number,
+  id: string,
+  name: string,
+): RunStepDeltaData {
   return {
     id: stepId,
     delta: {
@@ -40,7 +45,7 @@ function opensCall(stepId: string, providerIndex: number, id: string, name: stri
   };
 }
 
-function streamsArgs(stepId: string, providerIndex: number, args: string) {
+function streamsArgs(stepId: string, providerIndex: number, args: string): RunStepDeltaData {
   return {
     id: stepId,
     delta: {
@@ -97,8 +102,10 @@ describe('outward tool call indexes', () => {
     stream.onRunStepDelta(streamsArgs('step_1', 1, '{"city":'));
     stream.onRunStepDelta(streamsArgs('step_1', 1, '"Madrid"}'));
 
+    expect(deltas).toEqual([]);
+    stream.finish();
     expect(deltas.flatMap((delta) => delta.tool_calls ?? []).map((call) => call.index)).toEqual([
-      0, 0, 0,
+      0, 0,
     ]);
     expect(accumulateLikeClient(deltas)).toEqual([
       { index: 0, id: 'call_a', name: 'get_time', arguments: '{"city":"Madrid"}' },
@@ -118,6 +125,7 @@ describe('outward tool call indexes', () => {
     stream.onRunStep(runStep('step_1', 1, 'call_a', 'get_time'));
     stream.onRunStepDelta(opensCall('step_1', 1, 'call_a', 'get_time'));
 
+    stream.finish();
     const declarations = deltas
       .flatMap((delta) => delta.tool_calls ?? [])
       .filter((call) => call.id !== undefined);
@@ -136,6 +144,7 @@ describe('outward tool call indexes', () => {
     stream.onRunStepDelta(opensCall('step_2', 1, 'call_b', 'get_time'));
     stream.onRunStepDelta(streamsArgs('step_2', 1, '{"city":"Paris"}'));
 
+    stream.finish();
     expect(accumulateLikeClient(deltas)).toEqual([
       { index: 0, id: 'call_a', name: 'get_time', arguments: '{"city":"Madrid"}' },
       { index: 1, id: 'call_b', name: 'get_time', arguments: '{"city":"Paris"}' },
@@ -153,6 +162,7 @@ describe('outward tool call indexes', () => {
     stream.onRunStepDelta(opensCall('step_3', 0, 'call_b', 'get_time'));
     stream.onRunStepDelta(streamsArgs('step_3', 0, '{"city":"Paris"}'));
 
+    stream.finish();
     expect(accumulateLikeClient(deltas)).toEqual([
       { index: 0, id: 'call_a', name: 'get_time', arguments: '{"city":"Madrid"}' },
       { index: 1, id: 'call_b', name: 'get_time', arguments: '{"city":"Paris"}' },
@@ -167,6 +177,7 @@ describe('outward tool call indexes', () => {
     stream.onRunStep(runStep('step_1', 1, 'call_a', 'get_time'));
     stream.onRunStepDelta(streamsArgs('step_1', 7, '{"city":"Madrid"}'));
 
+    stream.finish();
     expect(accumulateLikeClient(deltas)).toEqual([
       { index: 0, id: 'call_a', name: 'get_time', arguments: '{"city":"Madrid"}' },
     ]);
@@ -184,9 +195,9 @@ describe('outward tool call indexes', () => {
       delta: { type: 'tool_calls', tool_calls: [{ index: 4, args: '{"city":"Lisbon"}' }] },
     });
 
-    expect(toolCalls.get(0)?.function.arguments).toBe('');
-    expect(toolCalls.get(1)?.function.arguments).toBe('');
-    expect(accumulateLikeClient(deltas).map((call) => call.arguments)).toEqual(['', '']);
+    expect(() => stream.finish()).toThrow('Unattributable tool call arguments');
+    expect(toolCalls.size).toBe(0);
+    expect(deltas).toEqual([]);
   });
 
   it.each([true, false])(
@@ -208,6 +219,7 @@ describe('outward tool call indexes', () => {
       stream.onRunStep(runStep('agent_a_turn_2', 3, 'call_0', 'get_time'));
       stream.onRunStepDelta(opensCall('agent_a_turn_2', 0, 'call_0', 'get_time'));
       stream.onRunStepDelta(streamsArgs('agent_a_turn_2', 0, '{"city":"Lisbon"}'));
+      stream.finish();
       expect([...toolCalls.keys()]).toEqual([0, 1, 2]);
       expect([...toolCalls.values()].map((call) => call.function.arguments)).toEqual([
         '{"city":"Madrid"}',
@@ -239,6 +251,7 @@ describe('outward tool call indexes', () => {
         ],
       },
     });
+    stream.finish();
     expect(toolCalls.get(0)?.function.name).toBe('get_time');
     expect(accumulateLikeClient(deltas)).toMatchObject([
       { index: 0, id: 'call_a', name: 'get_time' },
@@ -263,6 +276,8 @@ describe('outward tool call indexes', () => {
       });
       stream.onRunStepDelta(streamsArgs('parallel', indexes[1], '{"city":"Paris"}'));
       stream.onRunStepDelta(streamsArgs('parallel', indexes[0], '{"city":"Madrid"}'));
+      stream.finish();
+      stream.finish();
       expect(accumulateLikeClient(deltas).map((call) => call.arguments)).toEqual([
         '{"city":"Madrid"}',
         '{"city":"Paris"}',
@@ -281,10 +296,9 @@ describe('outward tool call indexes', () => {
     stream.onRunStepDelta(opensCall('step', 3, 'call_a', 'get_time'));
     stream.onRunStepDelta(streamsArgs('step', 9, '{"wrong":true}'));
     stream.onRunStepDelta(streamsArgs('step', 3, '{}'));
-    expect(accumulateLikeClient(deltas)).toEqual([
-      { index: 0, id: 'call_a', name: 'get_time', arguments: '{}' },
-    ]);
-    expect(toolCalls.size).toBe(1);
+    expect(() => stream.finish()).toThrow('Unattributable tool call arguments');
+    expect(deltas).toEqual([]);
+    expect(toolCalls.size).toBe(0);
   });
 
   it('buffers identified arguments until a later name-only fragment can declare the call', () => {
@@ -301,6 +315,7 @@ describe('outward tool call indexes', () => {
         tool_calls: [{ index: 3, function: { name: 'get_time', arguments: '"Madrid"}' } }],
       },
     });
+    stream.finish();
     expect(accumulateLikeClient(deltas)).toEqual([
       { index: 0, id: 'call_a', name: 'get_time', arguments: '{"city":"Madrid"}' },
     ]);
@@ -323,6 +338,7 @@ describe('outward tool call indexes', () => {
     stream.onRunStepDelta(opensCall('step', 0, 'call_b', 'get_time'));
     stream.onRunStepDelta(streamsArgs('step', 0, '{"city":"Paris"}'));
     stream.onRunStepDelta(streamsArgs('step', 1, '{"city":"Madrid"}'));
+    stream.finish();
     expect(accumulateLikeClient(deltas).map((call) => call.arguments)).toEqual([
       '{"city":"Madrid"}',
       '{"city":"Paris"}',
@@ -345,7 +361,8 @@ describe('outward tool call indexes', () => {
       id: 'step',
       delta: { type: 'tool_calls', tool_calls: [{ args: 'unattributable' }] },
     });
-    expect([...toolCalls.values()].map((call) => call.function.arguments)).toEqual(['', '']);
+    expect(() => stream.finish()).toThrow('Unattributable tool call arguments');
+    expect(toolCalls.size).toBe(0);
   });
 
   it('gives id-based consumers unique IDs and starts each response with fresh state', () => {
@@ -353,9 +370,11 @@ describe('outward tool call indexes', () => {
     stream.onRunStep(runStep('s1', 1, 'call_0', 'get_time'));
     stream.onRunStep(runStep('s2', 2, 'call_0', 'get_time'));
     stream.onRunStep(runStep('s3', 3, 'call_0_1', 'get_time'));
+    stream.finish();
     expect(new Set([...toolCalls.values()].map((call) => call.id)).size).toBe(3);
     const second = streamingBridge();
     second.stream.onRunStep(runStep('s1', 1, 'call_0', 'get_time'));
+    second.stream.finish();
     expect([...second.toolCalls.keys()]).toEqual([0]);
     expect(second.toolCalls.get(0)?.id).toBe('call_0');
   });
@@ -371,6 +390,7 @@ describe('outward tool call indexes', () => {
     stream.onRunStepDelta(opensCall('step_3', 0, 'call_b', 'get_time'));
     stream.onRunStepDelta(streamsArgs('step_3', 0, '{"city":"Paris"}'));
 
+    stream.finish();
     const response = buildNonStreamingResponse(
       { requestId: 'chatcmpl-test', created: 1778317637, model: 'agent_test' },
       'Checking both.',
@@ -440,7 +460,7 @@ describe('complete snapshots and streamed fragments', () => {
       stepDetails: { type: 'tool_calls', tool_calls: [{ id: 'a', name: 'noop', args: {} }] },
     });
     stream.onRunStepDelta(opensCall('complete', 0, 'a', 'noop'));
-    expect(accumulateLikeClient(deltas)[0].arguments).toBe('');
+    expect(deltas).toEqual([]);
     stream.finish();
     expect(accumulateLikeClient(deltas)[0].arguments).toBe('{}');
   });
@@ -482,8 +502,8 @@ describe('complete snapshots and streamed fragments', () => {
       stream.onRunStep(snapshot('late'));
       stream.onRunStepDelta(streamsArgs('complete', 0, '{"city":"Paris"}'));
       expect(() => stream.finish()).toThrow('Agent response aborted');
-      expect(toolCalls.size).toBe(1);
-      expect(accumulateLikeClient(deltas)[0].arguments).toBe('');
+      expect(toolCalls.size).toBe(0);
+      expect(deltas).toEqual([]);
       const retry = streamingBridge();
       retry.stream.onRunStep(snapshot());
       retry.stream.finish();
@@ -502,7 +522,7 @@ describe('complete snapshots and streamed fragments', () => {
     stream.onRunStep(snapshot());
     stream.onRunStepDelta(streamsArgs('complete', 0, '{"city":'));
     expect(() => stream.finish()).toThrow('Invalid tool call arguments');
-    expect(toolCalls.get(0)?.function.arguments).toBe('{"city":');
+    expect(toolCalls.size).toBe(0);
   });
 
   it('fails incomplete identity rather than reporting a successful missing call', () => {
@@ -519,7 +539,7 @@ describe('complete snapshots and streamed fragments', () => {
     stream.onRunStep(snapshot());
     stream.onRunStep(snapshot('bad', 'PRIVATE-INCOMPLETE-INPUT'));
     expect(() => stream.finish()).toThrow('Invalid tool call arguments in agent response');
-    expect(accumulateLikeClient(deltas).map((call) => call.arguments)).toEqual(['', '']);
+    expect(deltas).toEqual([]);
   });
 
   it('keeps a raw stream authoritative over an earlier parsed placeholder', () => {
@@ -566,6 +586,7 @@ describe('finish reason for a response that called tools', () => {
 
     stream.onRunStep(runStep('step_1', 1, 'call_a', 'get_time'));
 
+    stream.finish();
     tracker.addText();
     sendFinalChunk({
       context,
@@ -583,6 +604,7 @@ describe('finish reason for a response that called tools', () => {
 
     stream.onRunStep(runStep('step_1', 1, 'call_a', 'get_time'));
 
+    stream.finish();
     const response = buildNonStreamingResponse(context, 'Checking.', '', toolCalls, {
       prompt_tokens: 0,
       completion_tokens: 0,

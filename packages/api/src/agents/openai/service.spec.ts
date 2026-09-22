@@ -105,9 +105,15 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
     };
   });
 
-  it.each([true, false])(
-    'retains complete and mixed snapshots through the service (stream=%s)',
-    async (stream) => {
+  it.each(
+    [true, false].flatMap((stream) =>
+      ['wire-string', 'wire-object', 'native-string', 'idless'].map(
+        (shape) => [stream, shape] as const,
+      ),
+    ),
+  )(
+    'retains complete and mixed snapshots through the service (stream=%s, shape=%s)',
+    async (stream, shape) => {
       const req = createMockReq(
         { id: 'user' },
         { model: 'agent_test', messages: [{ role: 'user', content: 'hi' }], stream },
@@ -125,11 +131,20 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
             stepDetails: {
               type: 'tool_calls',
               tool_calls: [
-                {
-                  id: 'a',
-                  function: { name: 'get_time', arguments: '{"city":"Madrid"}' },
-                  index: 0,
-                },
+                (() => {
+                  if (shape === 'idless')
+                    return { name: 'get_time', args: { city: 'Madrid' }, index: 0 };
+                  if (shape === 'native-string')
+                    return { id: 'a', name: 'get_time', args: '{"city":"Madrid"}', index: 0 };
+                  return {
+                    id: 'a',
+                    function: {
+                      name: 'get_time',
+                      arguments: shape === 'wire-object' ? { city: 'Madrid' } : '{"city":"Madrid"}',
+                    },
+                    index: 0,
+                  };
+                })(),
                 { id: 'b', name: 'get_time', args: {}, index: 1 },
               ],
             },
@@ -171,7 +186,7 @@ describe('createAgentChatCompletion - MCP permission user propagation', () => {
                   content: 'Finished.',
                   tool_calls: [
                     {
-                      id: 'a',
+                      id: shape === 'idless' ? 'call_0' : 'a',
                       type: 'function',
                       function: { name: 'get_time', arguments: '{"city":"Madrid"}' },
                     },

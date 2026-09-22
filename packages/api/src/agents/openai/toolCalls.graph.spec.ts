@@ -69,6 +69,9 @@ describe('tool-call projection with real SDK graph dispatch', () => {
           graph,
         );
       }
+      expect(frames).toEqual([]);
+      if (streaming) tracker.finishToolCalls?.();
+      else stream.finish();
       expect([...tracker.toolCalls.values()].map((call) => call.function.arguments)).toEqual([
         '{"city":"Madrid"}',
         '{"city":"Paris"}',
@@ -146,6 +149,7 @@ describe('tool-call projection with real SDK graph dispatch', () => {
         meta,
       );
     }
+    stream.finish();
     expect([...tracker.toolCalls.values()].map((call) => call.function.arguments)).toEqual(
       metadata.map((_, i) => JSON.stringify({ i })),
     );
@@ -188,7 +192,7 @@ describe('tool-call projection with real SDK graph dispatch', () => {
         graph,
       );
       const target = streaming ? tracker : aggregator;
-      expect(target.toolCalls.get(0)?.function.arguments).toBe('');
+      expect(target.toolCalls.size).toBe(0);
       if (streaming) sendFinalChunk(config);
       else target.finishToolCalls?.();
       expect(target.toolCalls.get(0)?.function.arguments).toBe('{"city":"Madrid"}');
@@ -253,5 +257,46 @@ describe('tool-call projection with real SDK graph dispatch', () => {
       '{"i":0}',
       '{"i":1}',
     ]);
+  });
+  it('assembles the name before emitting when real SDK chunks split it', async () => {
+    const tracker = createOpenAIStreamTracker();
+    const emitted: ChatCompletionChunk['choices'][number]['delta'][] = [];
+    const stream = createOpenAIToolCallStream({
+      toolCalls: tracker.toolCalls,
+      emit: (delta) => emitted.push(delta),
+    });
+    const graph = new StandardGraph({
+      runId: 'split',
+      agents: [{ agentId: 'a', provider: Providers.OPENAI, tools: [] }],
+    });
+    graph.config = { configurable: { run_id: 'split', thread_id: 'split' } };
+    graph.handlerRegistry = new HandlerRegistry();
+    const handlers: ReturnType<typeof createOpenAIHandlers> = {
+      on_run_step: new OpenAIRunStepHandler(stream),
+      on_run_step_delta: new OpenAIRunStepDeltaHandler(stream),
+    };
+    for (const [event, handler] of Object.entries(handlers))
+      graph.handlerRegistry.register(event, handler);
+    const producer = new ChatModelStreamHandler();
+    for (const chunk of [
+      { id: 'a', index: 0, name: 'get_', args: '' },
+      { index: 0, args: '{}' },
+      { index: 0, name: 'weather' },
+    ])
+      await producer.handle(
+        'on_chat_model_stream',
+        {
+          chunk: new AIMessageChunk({
+            content: '',
+            tool_call_chunks: [{ ...chunk, type: 'tool_call_chunk' }],
+          }),
+        },
+        { langgraph_node: 'agent=a', langgraph_step: 1 },
+        graph,
+      );
+    expect(emitted).toEqual([]);
+    stream.finish();
+    expect(tracker.toolCalls.get(0)?.function.name).toBe('get_weather');
+    expect(emitted[0].tool_calls?.[0].function?.name).toBe('get_weather');
   });
 });
