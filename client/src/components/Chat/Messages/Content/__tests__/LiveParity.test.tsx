@@ -642,6 +642,81 @@ describe('live activity hardening transitions', () => {
     </QueryClientProvider>
   );
 
+  it.each([160, 640])('streams each short sentence freely until it fills a %ipx row', (width) => {
+    jest.useFakeTimers();
+    jest.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(width);
+    jest.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return (this.textContent?.length ?? 0) * 8;
+    });
+    const content = (think: string): TMessageContentParts[] => [
+      { type: ContentTypes.THINK, think },
+    ];
+    const view = render(frame(content('Let me')));
+    const header = screen.getByRole('button');
+    view.rerender(frame(content('Let me check')));
+    expect(header).toHaveAccessibleName('Let me check');
+
+    const full = 'Checking the available evidence '.repeat(Math.ceil(width / 240)).trim();
+    view.rerender(frame(content(full)));
+    expect(header).toHaveAccessibleName(full);
+    view.rerender(frame(content(full + ' carefully')));
+    expect(header).toHaveAccessibleName(full);
+    act(() => jest.advanceTimersByTime(500));
+    expect(header).toHaveAccessibleName(full + ' carefully');
+
+    view.rerender(frame(content(full + ' carefully. Now I')));
+    act(() => jest.advanceTimersByTime(500));
+    expect(header).toHaveAccessibleName('Now I');
+    view.rerender(frame(content(full + ' carefully. Now I can check')));
+    expect(header).toHaveAccessibleName('Now I can check');
+    expect(screen.getByTestId('activity-phase-announcer')).toBeEmptyDOMElement();
+    jest.restoreAllMocks();
+  });
+
+  it('releases a queued reasoning preview when resizing gives the line more room', () => {
+    jest.useFakeTimers();
+    let width = 160;
+    const callbacks = new Set<ResizeObserverCallback>();
+    const disconnect = jest.fn();
+    jest.spyOn(global, 'ResizeObserver').mockImplementation((callback) => {
+      callbacks.add(callback);
+      return {
+        observe: jest.fn(),
+        unobserve: jest.fn(),
+        disconnect: () => {
+          callbacks.delete(callback);
+          disconnect();
+        },
+      };
+    });
+    jest.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width);
+    jest.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      return (this.textContent?.length ?? 0) * 8;
+    });
+    const content = (think: string): TMessageContentParts[] => [
+      { type: ContentTypes.THINK, think },
+    ];
+    const initial = 'Checking the available evidence';
+    const view = render(frame(content(initial)));
+    view.rerender(frame(content(initial + ' carefully')));
+    expect(screen.getByRole('button')).toHaveAccessibleName(initial);
+
+    width = 640;
+    act(() => {
+      for (const callback of callbacks) {
+        callback([], { observe: () => {}, unobserve: () => {}, disconnect: () => {} });
+      }
+    });
+    expect(screen.getByRole('button')).toHaveAccessibleName(initial + ' carefully');
+    view.unmount();
+    expect(disconnect).toHaveBeenCalled();
+    jest.restoreAllMocks();
+  });
+
   function SandboxEvent() {
     const setStarting = useSetAtom(sandboxStartingByToolCallId('sandbox-call'));
     return <button onClick={() => setStarting(true)}>{'Start sandbox'}</button>;
