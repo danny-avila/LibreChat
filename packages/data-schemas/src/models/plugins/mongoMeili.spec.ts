@@ -1,9 +1,11 @@
 import mongoose from 'mongoose';
 import { EModelEndpoint } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import mongoMeili, { type SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
+import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
+import mongoMeili, { MEILI_INDEX_SCHEMA_VERSION } from '~/models/plugins/mongoMeili';
 import { createConversationModel } from '~/models/convo';
 import { createMessageModel } from '~/models/message';
+import meiliLogger from '~/config/meiliLogger';
 
 interface DynamicMeiliDocument extends mongoose.Document {
   docId: string;
@@ -13,6 +15,7 @@ interface DynamicMeiliDocument extends mongoose.Document {
   expiredAt?: Date | null;
   _meiliIndex?: boolean;
   _meiliIndexAttempted?: boolean;
+  _meiliIndexSchemaVersion?: number;
   _meiliCleanupVersion?: number;
 }
 
@@ -128,6 +131,10 @@ describe('Meilisearch Mongoose plugin', () => {
     mockGetDocument.mockClear();
     mockGetDocuments.mockReset().mockResolvedValue({ results: [] });
     mockWaitForTask.mockReset().mockResolvedValue({ status: 'succeeded' });
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   afterAll(async () => {
@@ -1208,7 +1215,10 @@ describe('Meilisearch Mongoose plugin', () => {
 
       rejectMeiliWrite!(new Error('Network error'));
       await waitForMockCalls(mockAddDocuments, 2);
-      await wait(25);
+      await waitForCondition(async () => {
+        const storedDoc = await conversationModel.collection.findOne({ _id: conversation._id });
+        return storedDoc?._meiliIndex === true && storedDoc?._meiliIndexAttempted === true;
+      });
 
       const storedConversation = await conversationModel.collection.findOne({
         _id: conversation._id,
@@ -1223,6 +1233,8 @@ describe('Meilisearch Mongoose plugin', () => {
       const conversationModel = createConversationModel(
         mongoose,
       ) as unknown as SchemaWithMeiliMethods;
+      const finalError = new Error('Final network error');
+      const errorSpy = jest.spyOn(meiliLogger, 'error').mockImplementation(() => meiliLogger);
       await conversationModel.deleteMany({});
 
       const conversation = await conversationModel.create({
@@ -1232,11 +1244,15 @@ describe('Meilisearch Mongoose plugin', () => {
         endpoint: EModelEndpoint.openAI,
       });
       await waitForMock(mockAddDocuments);
-      await wait(25);
+      await waitForCondition(async () => {
+        const storedDoc = await conversationModel.collection.findOne({ _id: conversation._id });
+        return storedDoc?._meiliIndex === true;
+      });
+      errorSpy.mockClear();
       mockUpdateDocuments
         .mockRejectedValueOnce(new Error('Network error'))
         .mockRejectedValueOnce(new Error('Network error'))
-        .mockRejectedValueOnce(new Error('Network error'));
+        .mockRejectedValueOnce(finalError);
 
       conversation._meiliIndex = true;
       conversation.title = 'Updated Conversation';
@@ -1246,11 +1262,15 @@ describe('Meilisearch Mongoose plugin', () => {
         (await conversationModel.collection.findOne({ _id: conversation._id }))?._meiliIndex,
       ).toBe(false);
       await waitForMockCalls(mockUpdateDocuments, 3);
-      await wait(25);
+      await waitForCondition(() => errorSpy.mock.calls.length > 0);
 
       const storedConversation = await conversationModel.collection.findOne({
         _id: conversation._id,
       });
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[updateObjectToMeili] Error updating document in Meili:',
+        finalError,
+      );
       expect(mockUpdateDocuments).toHaveBeenCalledTimes(3);
       expect(storedConversation?._meiliIndex).toBe(false);
       expect(storedConversation?._meiliIndexAttempted).toBe(true);
@@ -1286,13 +1306,21 @@ describe('Meilisearch Mongoose plugin', () => {
             _meiliIndex: true,
             _meiliIndexAttempted: true,
             _meiliIndexVersion: latestVersion,
+            _meiliCleanupVersion: 0,
           },
         },
       );
 
       resolveStaleWrite!({ taskUid: 1 });
       await waitForMockCalls(mockAddDocuments, 2);
-      await wait(25);
+      await waitForCondition(async () => {
+        const storedDoc = await conversationModel.collection.findOne({ _id: conversation._id });
+        return (
+          storedDoc?._meiliIndex === true &&
+          storedDoc?._meiliIndexVersion === latestVersion &&
+          storedDoc?._meiliCleanupVersion === 1
+        );
+      });
 
       expect(mockAddDocuments.mock.calls[1]).toEqual([
         [expect.objectContaining({ title: 'Latest Replica Snapshot' })],
@@ -1301,6 +1329,7 @@ describe('Meilisearch Mongoose plugin', () => {
       expect(await conversationModel.collection.findOne({ _id: conversation._id })).toMatchObject({
         _meiliIndex: true,
         _meiliIndexVersion: latestVersion,
+        _meiliCleanupVersion: 1,
       });
     });
 
@@ -1317,6 +1346,7 @@ describe('Meilisearch Mongoose plugin', () => {
         title: 'Indexed',
         endpoint: EModelEndpoint.openAI,
         _meiliIndex: true,
+        _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
         expiredAt: null,
       });
 
@@ -1336,6 +1366,36 @@ describe('Meilisearch Mongoose plugin', () => {
       expect(progress.isComplete).toBe(false);
     });
 
+    test('reindexes documents from an older indexed schema version', async () => {
+      const conversationModel = mongoose.models.Conversation as SchemaWithMeiliMethods;
+      await conversationModel.deleteMany({});
+
+      await conversationModel.collection.insertOne({
+        conversationId: new mongoose.Types.ObjectId().toString(),
+        user: new mongoose.Types.ObjectId(),
+        title: 'Legacy Indexed Conversation',
+        endpoint: EModelEndpoint.openAI,
+        _meiliIndex: true,
+        _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION - 1,
+        expiredAt: null,
+      });
+
+      const progress = await conversationModel.getSyncProgress();
+
+      expect(progress.totalProcessed).toBe(0);
+      expect(progress.pendingIndexing).toBe(1);
+
+      await conversationModel.syncWithMeili();
+
+      expect(
+        (
+          await conversationModel
+            .findOne({ title: 'Legacy Indexed Conversation' })
+            .select('+_meiliIndexSchemaVersion')
+        )?._meiliIndexSchemaVersion,
+      ).toBe(MEILI_INDEX_SCHEMA_VERSION);
+    });
+
     test('getSyncProgress excludes TTL documents from counts', async () => {
       const conversationModel = createConversationModel(
         mongoose,
@@ -1349,6 +1409,7 @@ describe('Meilisearch Mongoose plugin', () => {
         title: 'Syncable Indexed',
         endpoint: EModelEndpoint.openAI,
         _meiliIndex: true,
+        _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
         expiredAt: null,
       });
 
@@ -1399,6 +1460,7 @@ describe('Meilisearch Mongoose plugin', () => {
         user: new mongoose.Types.ObjectId(),
         isCreatedByUser: true,
         _meiliIndex: true,
+        _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
         expiredAt: null,
       });
 
@@ -1408,6 +1470,7 @@ describe('Meilisearch Mongoose plugin', () => {
         user: new mongoose.Types.ObjectId(),
         isCreatedByUser: false,
         _meiliIndex: true,
+        _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
         expiredAt: null,
       });
 
@@ -2158,6 +2221,7 @@ describe('Meilisearch Mongoose plugin', () => {
           endpoint: EModelEndpoint.openAI,
           expiredAt: null,
           _meiliIndex: true,
+          _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
         },
       ]);
 
@@ -2196,6 +2260,7 @@ describe('Meilisearch Mongoose plugin', () => {
           isCreatedByUser: true,
           expiredAt: null,
           _meiliIndex: true,
+          _meiliIndexSchemaVersion: MEILI_INDEX_SCHEMA_VERSION,
         },
         {
           messageId: new mongoose.Types.ObjectId(),

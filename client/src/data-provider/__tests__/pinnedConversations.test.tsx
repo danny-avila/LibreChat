@@ -1,4 +1,5 @@
 import { createElement } from 'react';
+import { getDefaultStore } from 'jotai';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -9,18 +10,24 @@ import type {
 } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import {
+  removeConvoFromAllQueries,
+  updateConvoInAllQueries,
+  upsertConvoInAllQueries,
+  collectPinnedConversations,
+  withoutListFlags,
+} from '~/utils/convos';
+import {
   useConversationTagMutation,
   useDeleteConversationMutation,
   useDeleteConversationTagMutation,
   usePinConversationMutation,
 } from '../mutations';
 import {
-  removeConvoFromAllQueries,
-  updateConvoInAllQueries,
-  upsertConvoInAllQueries,
-  collectPinnedConversations,
-} from '~/utils/convos';
-import { pinnedConversationsPageSize, usePinnedConversationsQuery } from '../queries';
+  pinnedConversationsPageSize,
+  useConversationsInfiniteQuery,
+  usePinnedConversationsQuery,
+} from '../queries';
+import { chatFilterTagsAtom } from '~/components/Conversations/chatFilters';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -75,13 +82,11 @@ const createWrapper = (queryClient: QueryClient) =>
   };
 
 const readPinnedCache = (queryClient: QueryClient) =>
-  queryClient.getQueryData<ConversationListResponse>([
-    QueryKeys.pinnedConversations,
-    { tags: undefined },
-  ]);
+  queryClient.getQueryData<ConversationListResponse>([QueryKeys.pinnedConversations]);
 
 beforeEach(() => {
   jest.clearAllMocks();
+  getDefaultStore().set(chatFilterTagsAtom, []);
 });
 
 describe('usePinnedConversationsQuery', () => {
@@ -97,7 +102,6 @@ describe('usePinnedConversationsQuery', () => {
     expect(listConversations).toHaveBeenCalledTimes(1);
     expect(listConversations).toHaveBeenCalledWith({
       pinned: true,
-      tags: undefined,
       limit: pinnedConversationsPageSize,
       cursor: undefined,
     });
@@ -108,7 +112,7 @@ describe('usePinnedConversationsQuery', () => {
     listConversations.mockResolvedValue(listResponse([]));
     const queryClient = createQueryClient();
 
-    const { result } = renderHook(() => usePinnedConversationsQuery({}, { enabled: false }), {
+    const { result } = renderHook(() => usePinnedConversationsQuery({ enabled: false }), {
       wrapper: createWrapper(queryClient),
     });
 
@@ -145,7 +149,7 @@ describe('usePinnedConversationsQuery', () => {
     await waitFor(() => expect(result.current.query.data?.conversations).toEqual([pinnedConvo]));
   });
 
-  /** `groupConversationsByDate` keeps pins out of the chats groups, so a pin this query
+  /** `groupConversations` keeps pins out of the chats groups, so a pin this query
    * drops is invisible everywhere, not merely further down a list. */
   it('drains the cursor instead of truncating at one page', async () => {
     const second = { ...pinnedConvo, conversationId: 'convo-pinned-2' } as TConversation;
@@ -197,31 +201,65 @@ describe('usePinnedConversationsQuery', () => {
     expect(readPinnedCache(queryClient)).toBeUndefined();
   });
 
-  /** The chats list beside it is filtered by the selected bookmarks; the pinned section
-   * showed every pin regardless until the tags were threaded through. */
-  it('applies the active bookmark filter and keys the cache by it', async () => {
+  /** The Chats list's bookmark, status and sort choices narrow that list alone: a
+   * curated shortcut row that emptied itself under a filter would stop being one. */
+  it('ignores the chats list filters and keys one cache for every view', async () => {
     listConversations.mockResolvedValue(listResponse([pinnedConvo]));
     const queryClient = createQueryClient();
 
-    const { result } = renderHook(() => usePinnedConversationsQuery({ tags: ['work'] }), {
+    const { result } = renderHook(() => usePinnedConversationsQuery(), {
       wrapper: createWrapper(queryClient),
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(listConversations).toHaveBeenCalledWith(expect.objectContaining({ tags: ['work'] }));
-    expect(
-      queryClient.getQueryData([QueryKeys.pinnedConversations, { tags: ['work'] }]),
-    ).toBeDefined();
+    expect(listConversations).toHaveBeenCalledWith(
+      expect.not.objectContaining({ tags: expect.anything() }),
+    );
+    expect(listConversations).toHaveBeenCalledWith(
+      expect.not.objectContaining({ isArchived: expect.anything() }),
+    );
+    expect(queryClient.getQueryData([QueryKeys.pinnedConversations])).toBeDefined();
+  });
+});
+
+describe('useConversationsInfiniteQuery', () => {
+  /** A row's own `isArchived` decides what its menu offers. A backend that predates that
+   *  field in the list projection would otherwise have archived rows offering Archive. */
+  it('fills a missing archive state from what the variant asked for', async () => {
+    listConversations.mockResolvedValue(
+      listResponse([{ conversationId: 'convo-1', title: 'Archived roadmap' } as TConversation]),
+    );
+    const queryClient = createQueryClient();
+
+    const { result } = renderHook(() => useConversationsInfiniteQuery({ isArchived: true }), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.pages[0].conversations[0].isArchived).toBe(true);
+  });
+
+  it('leaves an explicit archive state alone', async () => {
+    listConversations.mockResolvedValue(
+      listResponse([
+        { conversationId: 'convo-1', title: 'Unarchived pin', isArchived: false } as TConversation,
+      ]),
+    );
+    const queryClient = createQueryClient();
+
+    const { result } = renderHook(() => useConversationsInfiniteQuery({ isArchived: true }), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.pages[0].conversations[0].isArchived).toBe(false);
   });
 });
 
 describe('pinned list cache synchronization', () => {
   it('drops a chat from the pinned cache as soon as it is unpinned', () => {
     const queryClient = createQueryClient();
-    queryClient.setQueryData(
-      [QueryKeys.pinnedConversations, { tags: undefined }],
-      listResponse([pinnedConvo]),
-    );
+    queryClient.setQueryData([QueryKeys.pinnedConversations], listResponse([pinnedConvo]));
 
     updateConvoInAllQueries(queryClient, pinnedConvo.conversationId as string, (convo) => ({
       ...convo,
@@ -233,10 +271,7 @@ describe('pinned list cache synchronization', () => {
 
   it('keeps a renamed pin in the section with its new title', () => {
     const queryClient = createQueryClient();
-    queryClient.setQueryData(
-      [QueryKeys.pinnedConversations, { tags: undefined }],
-      listResponse([pinnedConvo]),
-    );
+    queryClient.setQueryData([QueryKeys.pinnedConversations], listResponse([pinnedConvo]));
 
     updateConvoInAllQueries(queryClient, pinnedConvo.conversationId as string, (convo) => ({
       ...convo,
@@ -250,10 +285,7 @@ describe('pinned list cache synchronization', () => {
 
   it('removes a deleted or archived pin from the section', () => {
     const queryClient = createQueryClient();
-    queryClient.setQueryData(
-      [QueryKeys.pinnedConversations, { tags: undefined }],
-      listResponse([pinnedConvo]),
-    );
+    queryClient.setQueryData([QueryKeys.pinnedConversations], listResponse([pinnedConvo]));
 
     removeConvoFromAllQueries(queryClient, pinnedConvo.conversationId as string);
 
@@ -265,10 +297,7 @@ describe('pinned list cache synchronization', () => {
   it('moves a pin to the top when the caller asks for it', () => {
     const other = { ...pinnedConvo, conversationId: 'convo-other' } as TConversation;
     const queryClient = createQueryClient();
-    queryClient.setQueryData(
-      [QueryKeys.pinnedConversations, { tags: undefined }],
-      listResponse([other, pinnedConvo]),
-    );
+    queryClient.setQueryData([QueryKeys.pinnedConversations], listResponse([other, pinnedConvo]));
 
     updateConvoInAllQueries(
       queryClient,
@@ -294,7 +323,7 @@ describe('pinned list cache synchronization', () => {
     } as TConversation;
     const queryClient = createQueryClient();
     queryClient.setQueryData(
-      [QueryKeys.pinnedConversations, { tags: undefined }],
+      [QueryKeys.pinnedConversations],
       listResponse([other, { ...pinnedConvo, updatedAt: stale } as TConversation]),
     );
 
@@ -315,12 +344,113 @@ describe('pinned list cache synchronization', () => {
     ).toEqual(['convo-pinned', 'convo-other']);
   });
 
+  /** A chat pinned while it is open never hears about the pin in its own conversation
+   * state, so the state the SSE handlers write back still says `pinned: false`. Sending
+   * a message then dropped the chat out of Pinned and back into the date groups. */
+  it('keeps a pin in the section when a new turn writes back stale chat state', () => {
+    const queryClient = createQueryClient();
+    queryClient.setQueryData([QueryKeys.pinnedConversations], listResponse([pinnedConvo]));
+
+    const staleChatState = { ...pinnedConvo, title: 'Replied', pinned: false } as TConversation;
+    updateConvoInAllQueries(
+      queryClient,
+      pinnedConversationId,
+      () => withoutListFlags(staleChatState),
+      true,
+    );
+
+    const conversations = readPinnedCache(queryClient)?.conversations;
+    expect(conversations?.map((c) => c.conversationId)).toEqual([pinnedConversationId]);
+    expect(conversations?.[0].pinned).toBe(true);
+    expect(conversations?.[0].title).toBe('Replied');
+  });
+
+  /** The date groups skip pinned chats, so losing the flag on the chats row put the same
+   * conversation back under Today beside the section it had just left. */
+  it('keeps the flag on the chats row when a new turn writes back stale chat state', () => {
+    const queryClient = createQueryClient();
+    queryClient.setQueryData([QueryKeys.allConversations, { tags: undefined }], {
+      pages: [{ conversations: [pinnedConvo], nextCursor: null }],
+      pageParams: [],
+    });
+
+    const staleChatState = { ...pinnedConvo, title: 'Replied', pinned: false } as TConversation;
+    updateConvoInAllQueries(
+      queryClient,
+      pinnedConversationId,
+      () => withoutListFlags(staleChatState),
+      true,
+    );
+
+    const data = queryClient.getQueryData<{
+      pages: Array<{ conversations: TConversation[] }>;
+    }>([QueryKeys.allConversations, { tags: undefined }]);
+    expect(data?.pages[0].conversations[0].pinned).toBe(true);
+  });
+
+  /** Root-level SSE updates take the upsert path, and an older pin may be outside the
+   * loaded chats pages. The dedicated row has to supply the sidebar-owned flags when
+   * upsert inserts the conversation into that cache. */
+  it('keeps list flags when an older pin upserts into the chats cache', () => {
+    const queryClient = createQueryClient();
+    const cachedPin = { ...pinnedConvo, isShared: true } as TConversation;
+    queryClient.setQueryData([QueryKeys.pinnedConversations], listResponse([cachedPin]));
+    queryClient.setQueryData([QueryKeys.allConversations, { tags: undefined }], {
+      pages: [
+        {
+          conversations: [
+            {
+              conversationId: 'other-recent',
+              title: 'Recent',
+              endpoint: 'openAI',
+            } as TConversation,
+          ],
+          nextCursor: 'cursor-2',
+        },
+      ],
+      pageParams: [undefined],
+    });
+
+    const staleChatState = {
+      ...cachedPin,
+      title: 'Replied',
+      pinned: false,
+      isShared: false,
+    } as TConversation;
+    upsertConvoInAllQueries(queryClient, withoutListFlags(staleChatState));
+
+    expect(readPinnedCache(queryClient)?.conversations[0]).toEqual(
+      expect.objectContaining({ pinned: true, isShared: true, title: 'Replied' }),
+    );
+    const chats = queryClient.getQueryData<{
+      pages: Array<{ conversations: TConversation[] }>;
+    }>([QueryKeys.allConversations, { tags: undefined }]);
+    expect(chats?.pages[0].conversations[0]).toEqual(
+      expect.objectContaining({
+        conversationId: pinnedConversationId,
+        pinned: true,
+        isShared: true,
+        title: 'Replied',
+      }),
+    );
+  });
+
+  it('withoutListFlags drops only the sidebar-owned flags', () => {
+    const stripped = withoutListFlags({
+      ...pinnedConvo,
+      pinned: false,
+      isShared: true,
+    } as TConversation);
+
+    expect('pinned' in stripped).toBe(false);
+    expect('isShared' in stripped).toBe(false);
+    expect(stripped.conversationId).toBe(pinnedConversationId);
+    expect(stripped.title).toBe(pinnedConvo.title);
+  });
+
   it('leaves the pinned cache untouched for an unrelated conversation', () => {
     const queryClient = createQueryClient();
-    queryClient.setQueryData(
-      [QueryKeys.pinnedConversations, { tags: undefined }],
-      listResponse([pinnedConvo]),
-    );
+    queryClient.setQueryData([QueryKeys.pinnedConversations], listResponse([pinnedConvo]));
 
     updateConvoInAllQueries(queryClient, 'some-other-convo', (convo) => ({
       ...convo,
@@ -334,10 +464,7 @@ describe('pinned list cache synchronization', () => {
    * update, so the independently cached pin has to follow that path too. */
   it('updates an existing pin when the conversation is upserted', () => {
     const queryClient = createQueryClient();
-    queryClient.setQueryData(
-      [QueryKeys.pinnedConversations, { tags: undefined }],
-      listResponse([pinnedConvo]),
-    );
+    queryClient.setQueryData([QueryKeys.pinnedConversations], listResponse([pinnedConvo]));
 
     upsertConvoInAllQueries(queryClient, {
       ...pinnedConvo,
@@ -352,10 +479,7 @@ describe('pinned list cache synchronization', () => {
   it('moves an upserted pin to the top of the pinned cache', () => {
     const other = { ...pinnedConvo, conversationId: 'convo-other' } as TConversation;
     const queryClient = createQueryClient();
-    queryClient.setQueryData(
-      [QueryKeys.pinnedConversations, { tags: undefined }],
-      listResponse([other, pinnedConvo]),
-    );
+    queryClient.setQueryData([QueryKeys.pinnedConversations], listResponse([other, pinnedConvo]));
 
     upsertConvoInAllQueries(queryClient, {
       ...pinnedConvo,
@@ -370,10 +494,7 @@ describe('pinned list cache synchronization', () => {
 
   it('does not insert a conversation that is not already in the pinned cache', () => {
     const queryClient = createQueryClient();
-    queryClient.setQueryData(
-      [QueryKeys.pinnedConversations, { tags: undefined }],
-      listResponse([pinnedConvo]),
-    );
+    queryClient.setQueryData([QueryKeys.pinnedConversations], listResponse([pinnedConvo]));
 
     upsertConvoInAllQueries(queryClient, {
       conversationId: 'convo-new',
@@ -387,10 +508,7 @@ describe('pinned list cache synchronization', () => {
 
   it('keeps the cached pinned flag when the upsert payload omits it', () => {
     const queryClient = createQueryClient();
-    queryClient.setQueryData(
-      [QueryKeys.pinnedConversations, { tags: undefined }],
-      listResponse([pinnedConvo]),
-    );
+    queryClient.setQueryData([QueryKeys.pinnedConversations], listResponse([pinnedConvo]));
 
     upsertConvoInAllQueries(queryClient, {
       conversationId: pinnedConvo.conversationId,
@@ -416,7 +534,7 @@ describe('delete mutation project lookup', () => {
     const queryClient = createQueryClient();
     const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
     queryClient.setQueryData(
-      [QueryKeys.pinnedConversations, { tags: undefined }],
+      [QueryKeys.pinnedConversations],
       listResponse([{ ...pinnedConvo, chatProjectId: projectId }]),
     );
 
@@ -444,8 +562,10 @@ const tagResponse: TConversationTag = {
 };
 
 describe('bookmark mutations invalidate the pinned cache', () => {
-  it('invalidates pins when a bookmark is renamed', async () => {
+  it('invalidates pins and carries a selected bookmark filter across a rename', async () => {
     updateConversationTag.mockResolvedValue(tagResponse);
+    const jotaiStore = getDefaultStore();
+    jotaiStore.set(chatFilterTagsAtom, ['work', 'other']);
     const queryClient = createQueryClient();
     const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
 
@@ -460,10 +580,13 @@ describe('bookmark mutations invalidate the pinned cache', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.pinnedConversations]);
+    expect(jotaiStore.get(chatFilterTagsAtom)).toEqual(['office', 'other']);
   });
 
-  it('invalidates pins when a bookmark is deleted', async () => {
+  it('invalidates pins and removes a selected bookmark filter on delete', async () => {
     deleteConversationTag.mockResolvedValue({ ...tagResponse, tag: 'work' });
+    const jotaiStore = getDefaultStore();
+    jotaiStore.set(chatFilterTagsAtom, ['work', 'other']);
     const queryClient = createQueryClient();
     const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
 
@@ -477,6 +600,7 @@ describe('bookmark mutations invalidate the pinned cache', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
     expect(invalidateSpy).toHaveBeenCalledWith([QueryKeys.pinnedConversations]);
+    expect(jotaiStore.get(chatFilterTagsAtom)).toEqual(['other']);
   });
 });
 
@@ -485,10 +609,7 @@ describe('unpinning a pin that is not on a loaded chats page', () => {
     const unpinned = { ...pinnedConvo, pinned: false } as TConversation;
     pinConversation.mockResolvedValue(unpinned);
     const queryClient = createQueryClient();
-    queryClient.setQueryData(
-      [QueryKeys.pinnedConversations, { tags: undefined }],
-      listResponse([pinnedConvo]),
-    );
+    queryClient.setQueryData([QueryKeys.pinnedConversations], listResponse([pinnedConvo]));
     queryClient.setQueryData([QueryKeys.allConversations], {
       pages: [
         {
@@ -534,7 +655,7 @@ describe('unpinning a pin that is not on a loaded chats page', () => {
     pinConversation.mockResolvedValue(unpinned);
     const queryClient = createQueryClient();
     queryClient.setQueryData(
-      [QueryKeys.pinnedConversations, { tags: undefined }],
+      [QueryKeys.pinnedConversations],
       listResponse([{ ...pinnedConvo, isShared: true } as TConversation]),
     );
     queryClient.setQueryData([QueryKeys.allConversations], {
@@ -567,10 +688,7 @@ describe('unpinning a pin that is not on a loaded chats page', () => {
     const unpinned = { ...pinnedConvo, pinned: false } as TConversation;
     pinConversation.mockResolvedValue(unpinned);
     const queryClient = createQueryClient();
-    queryClient.setQueryData(
-      [QueryKeys.pinnedConversations, { tags: undefined }],
-      listResponse([pinnedConvo]),
-    );
+    queryClient.setQueryData([QueryKeys.pinnedConversations], listResponse([pinnedConvo]));
     queryClient.setQueryData([QueryKeys.allConversations], {
       pages: [
         {
@@ -611,10 +729,7 @@ describe('unpinning a pin that is not on a loaded chats page', () => {
     const unpinned = { ...pinnedConvo, pinned: false, tags: [] } as TConversation;
     pinConversation.mockResolvedValue(unpinned);
     const queryClient = createQueryClient();
-    queryClient.setQueryData(
-      [QueryKeys.pinnedConversations, { tags: undefined }],
-      listResponse([pinnedConvo]),
-    );
+    queryClient.setQueryData([QueryKeys.pinnedConversations], listResponse([pinnedConvo]));
     queryClient.setQueryData([QueryKeys.allConversations, { tags: ['work'] }], {
       pages: [
         {

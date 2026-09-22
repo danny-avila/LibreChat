@@ -1,8 +1,14 @@
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render as rtlRender, screen } from '@testing-library/react';
 import type { Agents } from 'librechat-data-provider';
 import type { ChildActivity } from './adapters';
 import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
+import { ChatSurfaceHarness } from 'test/harness';
+
+const Wrapper = ({ children }: { children: React.ReactNode }) => (
+  <ChatSurfaceHarness>{children}</ChatSurfaceHarness>
+);
+const render = (ui: React.ReactElement) => rtlRender(ui, { wrapper: Wrapper });
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -56,6 +62,9 @@ jest.mock('~/components/Chat/Messages/Content/ContentParts', () => ({
             );
           }
           if (part.type === 'think') {
+            if ((part as { reasoning_unavailable?: boolean }).reasoning_unavailable === true) {
+              return <div key={index}>{`reasoning-marker:${part.reasoning_label ?? ''}`}</div>;
+            }
             return <div key={index}>{part.reasoning_label ?? part.think}</div>;
           }
           if (part.type === 'activity_label') {
@@ -173,8 +182,8 @@ jest.mock('@librechat/client', () => ({
 
 jest.mock('lucide-react', () => ({
   AlertCircle: () => null,
-  ArrowDown: () => null,
   CheckCircle2: () => null,
+  ChevronDown: () => null,
   Clock3: () => null,
   Maximize2: () => null,
   Minimize2: () => null,
@@ -208,13 +217,24 @@ const base: ChildActivity = {
 };
 
 describe('SubagentActivity', () => {
-  it.each(['running', 'completed', 'failed', 'cancelled'] as const)(
+  it.each(['failed', 'cancelled'] as const)(
     'renders the %s lifecycle through the shared view',
     (status) => {
       render(<SubagentActivity activity={{ ...base, status }} />);
       expect(screen.getByText(`com_ui_subagent_thread_status_${status}`)).toBeInTheDocument();
     },
   );
+
+  it('shows no status chip while running, matching the main chat view', () => {
+    render(<SubagentActivity activity={{ ...base, status: 'running' }} />);
+    expect(screen.queryByText('com_ui_subagent_thread_status_running')).not.toBeInTheDocument();
+  });
+
+  it('does not repeat the completed lifecycle in the conversation body', () => {
+    render(<SubagentActivity activity={base} />);
+
+    expect(screen.queryByText('com_ui_subagent_thread_status_completed')).not.toBeInTheDocument();
+  });
 
   it('reports when the durable control history is bounded', () => {
     render(<SubagentActivity activity={{ ...base, controlsTruncated: true }} />);
@@ -270,7 +290,7 @@ describe('SubagentActivity', () => {
     expect(screen.getByTestId('tool-approval')).toBeInTheDocument();
   });
 
-  it('marks bounded activity as shortened without expanding tool details', () => {
+  it('renders bounded tool details without any shortening caption', () => {
     render(
       <SubagentActivity
         activity={{
@@ -290,7 +310,10 @@ describe('SubagentActivity', () => {
     );
 
     expect(screen.queryByText('bounded input')).not.toBeInTheDocument();
-    expect(screen.getByText('com_ui_subagent_thread_history_truncated')).toBeInTheDocument();
+    expect(
+      screen.queryByText('com_ui_subagent_activity_details_truncated'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText('com_ui_subagent_thread_history_truncated')).not.toBeInTheDocument();
   });
 
   it('renders writing, reasoning, grouped tools, and collapsed details', () => {
@@ -380,7 +403,7 @@ describe('SubagentActivity', () => {
       />,
     );
 
-    expect(screen.getByText('com_ui_subagent_thread_status_running')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_subagent_thread_status_running')).not.toBeInTheDocument();
     expect(screen.getByText('com_ui_subagent_control_status_submitted')).toBeInTheDocument();
     expect(screen.getByText('com_ui_subagent_control_status_accepted')).toBeInTheDocument();
     expect(screen.getByText('com_ui_subagent_control_status_applied')).toBeInTheDocument();
@@ -481,7 +504,21 @@ describe('SubagentActivity', () => {
     );
 
     expect(screen.getByTestId('regular-content-parts')).toBeInTheDocument();
-    expect(screen.getByText('com_ui_subagent_ticker_reasoning')).toBeInTheDocument();
+    expect(screen.getByText('reasoning-marker:')).toBeInTheDocument();
+  });
+
+  it('keeps the display-safe reasoning label on a sanitized marker', () => {
+    render(
+      <SubagentActivity
+        activity={{
+          ...base,
+          status: 'running',
+          items: [{ type: 'reasoning', label: 'Planning the answer' }],
+        }}
+      />,
+    );
+
+    expect(screen.getByText('reasoning-marker:Planning the answer')).toBeInTheDocument();
   });
 
   it('uses the regular thinking cursor without running-state prose', () => {

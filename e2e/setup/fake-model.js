@@ -12,6 +12,15 @@
 const { FakeChatModel } = require('@librechat/agents');
 const { ChatGenerationChunk } = require('@langchain/core/outputs');
 const { AIMessageChunk } = require('@langchain/core/messages');
+const { tryBindReplay } = require('./model-replay');
+const { runFileDeliveryResponses } = require('./run-files-model');
+const { createRunFileLifecycleResponses } = require('./run-files-lifecycle-model');
+
+const runFileLifecycle = createRunFileLifecycleResponses({
+  findLastToolMessage,
+  getContentText,
+  messageType,
+});
 
 const MOCK_REPLY = process.env.MOCK_LLM_REPLY || 'E2E mock reply: pong';
 const CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_CHUNK_DELAY_MS) || 10;
@@ -23,6 +32,7 @@ const ASSERT_MANUAL_SKILL_MARKER = 'E2E_ASSERT_MANUAL_SKILL:';
 const INVOKE_SKILL_MARKER = 'E2E_INVOKE_SKILL:';
 const ASSERT_PROVIDER_FILE_MARKER = 'E2E_ASSERT_PROVIDER_FILE:';
 const ASSERT_AGENT_CONTEXT_MARKER = 'E2E_ASSERT_AGENT_CONTEXT:';
+const ASSERT_HISTORY_MARKER = 'E2E_ASSERT_HISTORY:';
 const ASSERT_QUOTE_MARKER = 'E2E_ASSERT_QUOTE:';
 const REPLY_MARKER = 'E2E_REPLY:';
 const THINK_REPLY_MARKER = 'E2E_THINK_REPLY:';
@@ -30,6 +40,9 @@ const COUNTED_REPLY_MARKER = 'E2E_COUNTED_REPLY:';
 const ORDERED_REPLY_MARKER = 'E2E_ORDERED_REPLY:';
 const SLOW_REPLY_MARKER = 'E2E_SLOW_REPLY:';
 const EMPTY_SLOW_REPLY_MARKER = 'E2E_EMPTY_SLOW_REPLY:';
+/** A run that completes having produced no content at all: the shape a
+ *  summarizer takes when it returns nothing for a manual compaction. */
+const EMPTY_REPLY_MARKER = 'E2E_EMPTY_REPLY:';
 const SLOW_COUNTED_REPLY_MARKER = 'E2E_SLOW_COUNTED_REPLY:';
 const STEER_TOOL_REPLY_MARKER = 'E2E_STEER_TOOL_REPLY:';
 const STEER_SPLIT_REPLY_MARKER = 'E2E_STEER_SPLIT_REPLY:';
@@ -40,6 +53,7 @@ const ASK_USER_QUESTION_MARKER = 'E2E_ASK_USER_QUESTION:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
+const STATEFUL_CODE_MARKER = 'E2E_STATEFUL_CODE:';
 /** Two prose paragraphs, so a spec can select the message's *closing* block. */
 const PARAGRAPHS_REPLY_MARKER = 'E2E_PARAGRAPHS_REPLY';
 const MERMAID_ARTIFACT_REPLY_MARKER = 'E2E_MERMAID_ARTIFACT_REPLY';
@@ -57,6 +71,11 @@ const SUBAGENT_RESULT_MARKER = 'E2E_SUBAGENT_RESULT:';
 const SUBAGENT_CHILD_MARKER = 'E2E_SUBAGENT_CHILD:';
 const SUBAGENT_ACTIVITY_MARKER = 'E2E_SUBAGENT_ACTIVITY:';
 const SUBAGENT_ACTIVITY_CHILD_MARKER = 'E2E_SUBAGENT_ACTIVITY_CHILD:';
+const RUN_FILES_MARKER = 'E2E_RUN_FILES:';
+const RUN_FILES_CHILD_MARKER = 'E2E_RUN_FILES_CHILD:';
+const RUN_FILES_FOLLOWUP_MARKER = 'E2E_RUN_FILES_FOLLOWUP:';
+const RUN_FILE_VERSIONS_MARKER = 'E2E_RUN_FILE_VERSIONS:';
+const RUN_FILE_VERSIONS_CHILD_MARKER = 'E2E_RUN_FILE_VERSIONS_CHILD:';
 const SUBAGENT_MODEL_OVERRIDE_ERROR =
   '[e2e] Streamed subagent result coverage requires an @librechat/agents release with ' +
   'StandardGraph.setSubagentModelOverride';
@@ -68,6 +87,8 @@ const MANUAL_SKILL_ASSERTION_FINAL_TEXT = 'E2E manual skill assertion passed';
 const SKILL_TOOL_ASSERTION_FINAL_TEXT = 'E2E skill tool assertion passed';
 const PROVIDER_FILE_ASSERTION_FINAL_TEXT = 'E2E provider file assertion passed';
 const AGENT_CONTEXT_ASSERTION_FINAL_TEXT = 'E2E agent context assertion passed';
+const HISTORY_ASSERTION_PRESENT_TEXT = 'E2E history assertion present';
+const HISTORY_ASSERTION_ABSENT_TEXT = 'E2E history assertion absent';
 const QUOTE_ASSERTION_FINAL_TEXT = 'E2E quote assertion passed';
 const STEER_TOOL_FINAL_TEXT = 'E2E steer tool reply done';
 const STEER_SPLIT_FINAL_TEXT = 'E2E steer split reply done';
@@ -87,6 +108,7 @@ const RESUME_ICON_REPLY_CHUNKS = 240;
 const CREATE_FILE_TOOL_NAME = 'create_file';
 const EDIT_FILE_TOOL_NAME = 'edit_file';
 const BASH_TOOL_NAME = 'bash_tool';
+const STATEFUL_CODE_VALUE = 'librechat-bridge-persisted';
 const SKILL_TOOL_NAME = 'skill';
 const CREATE_SKILL_TOOL_CALL_ID = 'call_e2e_create_skill';
 const EDIT_SKILL_TOOL_CALL_ID = 'call_e2e_edit_skill';
@@ -100,6 +122,27 @@ const APPROVAL_TOOL_NAME = 'approval_probe_mcp_e2e-memory';
 const APPROVAL_TOOL_CALL_PREFIX = 'call_e2e_approval_';
 const BACKGROUND_DISPATCH_TOOL_CALL_ID = 'call_e2e_background_dispatch';
 const BACKGROUND_COLLECT_TOOL_CALL_ID = 'call_e2e_background_collect';
+const EXECUTE_CODE_MARKER = 'E2E_EXECUTE_CODE:';
+const EXEC_UPLOADED_MARKER = 'E2E_EXEC_UPLOADED:';
+const EXEC_PERSIST_MARKER = 'E2E_EXEC_PERSIST:';
+const FILE_SEARCH_MARKER = 'E2E_FILE_SEARCH:';
+/** Code Interpreter advertises bash_tool/read_file at runtime (execute_code is legacy);
+ *  emit whichever the agent actually exposes so the tool batch — and provisioning — fires. */
+const CODE_EXEC_TOOLS = [
+  { name: 'bash_tool', args: { command: 'echo e2e' } },
+  { name: 'read_file', args: { path: '/mnt/data' } },
+  { name: 'execute_code', args: { lang: 'py', code: 'print("e2e")' } },
+];
+const FILE_SEARCH_TOOL_NAME = 'file_search';
+const EXECUTE_CODE_FINAL_TEXT = 'E2E execute_code complete';
+const FILE_SEARCH_FINAL_TEXT = 'E2E file_search complete';
+const EXECUTE_CODE_TOOL_CALL_ID = 'call_e2e_execute_code';
+const EXEC_UPLOADED_TOOL_CALL_ID = 'call_e2e_exec_uploaded';
+const EXEC_PERSIST_TOOL_CALL_ID = 'call_e2e_exec_persist';
+const EXEC_UPLOADED_FINAL_TEXT = 'E2E code exec complete';
+const EXEC_PERSIST_FINAL_TEXT = 'E2E code persistence complete';
+const EXEC_TURN_MARKER_FILE = 'e2e-turn1-marker.txt';
+const FILE_SEARCH_TOOL_CALL_ID = 'call_e2e_file_search';
 const MODEL_SPEC_ACCESSIBLE_SKILL = 'e2e-model-spec-allowed';
 const DEPLOYMENT_SKILL_NAME = 'e2e-deployment-skill';
 const ALWAYS_APPLY_BODY_MARKER = 'E2E_ALWAYS_APPLY_BODY_MARKER';
@@ -170,6 +213,15 @@ function getRequestedSkillName(text, marker) {
   }
   const afterMarker = text.slice(markerIndex + marker.length);
   return afterMarker.match(/[a-z0-9][a-z0-9-]*/)?.[0] ?? '';
+}
+
+function getRequestedSandboxFilename(text, marker) {
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex === -1) {
+    return '';
+  }
+  const afterMarker = text.slice(markerIndex + marker.length);
+  return afterMarker.match(/[A-Za-z0-9][A-Za-z0-9._-]*/)?.[0] ?? '';
 }
 
 function getMarkerValue(text, marker) {
@@ -357,6 +409,32 @@ function agentContextAssertionResponses({ messages, text }) {
 }
 
 /**
+ * Answers whether a token from an EARLIER turn still reaches the model. Scans
+ * every prompt message except the current user turn: the marker line carries
+ * the token itself, so counting that turn would make every history pass.
+ * Presence and absence each get their own sentinel, so a spec asserts what the
+ * model saw rather than matching a failure string — a conversation whose
+ * history was replaced by a checkpoint is a correct absence.
+ */
+function historyAssertionResponses({ messages, text }) {
+  const expected = getMarkerValue(text, ASSERT_HISTORY_MARKER);
+  if (!expected) {
+    return null;
+  }
+
+  const latestUserMessage = getLatestUserMessage(messages);
+  const priorMessages = (messages ?? []).filter((message) => message !== latestUserMessage);
+  const priorText = collectPromptText(priorMessages).join('\n');
+  return {
+    responses: [
+      priorText.includes(expected)
+        ? `${HISTORY_ASSERTION_PRESENT_TEXT}: ${expected}`
+        : `${HISTORY_ASSERTION_ABSENT_TEXT}: ${expected}`,
+    ],
+  };
+}
+
+/**
  * Verifies the quote feature end to end: scans every user message in the prompt
  * the model actually received for a Markdown blockquote line containing the
  * expected token. Passing proves the excerpt was merged into the model-facing
@@ -535,6 +613,11 @@ function replyResponses(text) {
       responses: [' '.repeat(EMPTY_SLOW_REPLY_CHUNKS)],
       sleep: SLOW_CHUNK_DELAY_MS,
     };
+  }
+
+  const emptyName = getMarkerValue(text, EMPTY_REPLY_MARKER);
+  if (emptyName) {
+    return { responses: [''] };
   }
 
   const slowCountedName = getMarkerValue(text, SLOW_COUNTED_REPLY_MARKER);
@@ -1377,6 +1460,288 @@ function subagentResultResponses(text) {
   };
 }
 
+function findRunFile(value, filename) {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  if ((value.filename ?? value.name) === filename) {
+    const id = value.artifact_id ?? value.file_id ?? value.id;
+    if (typeof id === 'string' && id.length > 0) {
+      return { ...value, id };
+    }
+  }
+  for (const child of Object.values(value)) {
+    const match = findRunFile(child, filename);
+    if (match) {
+      return match;
+    }
+  }
+  return null;
+}
+
+function parseRunFileResult(message) {
+  try {
+    return JSON.parse(getContentText(message?.content));
+  } catch {
+    return null;
+  }
+}
+
+function runFilesResponses(text) {
+  const followup = getMarkerValue(text, RUN_FILES_FOLLOWUP_MARKER);
+  if (followup) {
+    const [label, fileId] = followup.split(':');
+    const callId = `call_e2e_run_files_followup_${label}`;
+    return {
+      responses: [''],
+      resolveInvocation: (messages) => {
+        const result = findLastToolMessage(messages, callId);
+        if (!result) {
+          return {
+            response: '',
+            toolCalls: [{ id: callId, name: 'list_run_files', args: {}, type: 'tool_call' }],
+          };
+        }
+        const file = findRunFile(parseRunFileResult(result), `e2e-run-files-${label}.csv`);
+        return {
+          response:
+            file?.id === fileId
+              ? `E2E run file followup ${fileId}`
+              : `E2E run files failed: followup missing ${fileId}: ${getContentText(result.content)}`,
+        };
+      },
+    };
+  }
+
+  const marker = getMarkerValue(text, RUN_FILES_MARKER);
+  if (!marker) {
+    return null;
+  }
+  const [childId, label] = marker.split(':');
+  if (!childId || !/^[A-Za-z0-9-]+$/.test(label ?? '')) {
+    return { responses: ['E2E run files failed: malformed scenario marker'] };
+  }
+  const childPrompt = `${RUN_FILES_CHILD_MARKER}${label}`;
+  const inputName = `e2e-run-files-${label}.pdf`;
+  const outputName = `e2e-run-files-${label}.csv`;
+  const call = (phase, name, args = {}) => ({
+    response: '',
+    toolCalls: [{ id: `call_e2e_run_files_${label}_${phase}`, name, args, type: 'tool_call' }],
+  });
+  const resultFor = (messages, phase) =>
+    findLastToolMessage(messages, `call_e2e_run_files_${label}_${phase}`);
+  const failure = (reason, message) => ({
+    response: `E2E run files failed: ${reason}: ${getContentText(message?.content)}`,
+  });
+
+  return {
+    responses: [''],
+    overrideSubagentModel: true,
+    resolveInvocation: (messages) => {
+      const isChild = messages.some(
+        (message) =>
+          ['human', 'user'].includes(messageType(message)) &&
+          getContentText(message.content).includes(childPrompt),
+      );
+      if (isChild) {
+        const inputs = resultFor(messages, 'inputs');
+        if (!inputs) return call('inputs', 'list_run_files');
+        if (!findRunFile(parseRunFileResult(inputs), inputName)) {
+          return failure('child cannot see current PDF', inputs);
+        }
+        const search = resultFor(messages, 'search');
+        if (!search) return call('search', 'file_search', { query: `e2e ${label}` });
+        const code = resultFor(messages, 'code');
+        if (!code) {
+          return call('code', 'bash_tool', {
+            command: `printf 'source,count\\npdf,1\\n' > /mnt/data/${outputName}\n# E2E_RUN_FILE_ARTIFACT:${label}`,
+          });
+        }
+        const catalog = resultFor(messages, 'artifacts');
+        if (!catalog) return call('artifacts', 'list_run_files');
+        const artifact = findRunFile(parseRunFileResult(catalog), outputName);
+        if (!artifact) return failure('child output was not staged', catalog);
+        const publication = resultFor(messages, 'publish');
+        if (!publication) return call('publish', 'publish_artifact', { artifact_id: artifact.id });
+        const published = findRunFile(parseRunFileResult(publication), outputName);
+        if (!published) return failure('publication returned no durable file', publication);
+        return { response: `E2E run file published ${published.id}` };
+      }
+
+      const child = resultFor(messages, 'delegate');
+      if (!child) {
+        return call('delegate', 'subagent', {
+          description: childPrompt,
+          subagent_type: childId,
+        });
+      }
+      const fileId = getContentText(child.content).match(/E2E run file published ([\w.:-]+)/)?.[1];
+      if (!fileId) return failure('child returned no published reference', child);
+      const catalog = resultFor(messages, 'parent');
+      if (!catalog) return call('parent', 'list_run_files');
+      const file = findRunFile(parseRunFileResult(catalog), outputName);
+      if (file?.id !== fileId) return failure('parent cannot see the published reference', catalog);
+      return { response: `E2E run files complete ${label} file=${fileId}` };
+    },
+  };
+}
+
+function runFileVersionsResponses(text) {
+  const marker = getMarkerValue(text, RUN_FILE_VERSIONS_MARKER);
+  if (!marker) return null;
+  const [childId, label] = marker.split(':');
+  if (!childId || !/^[A-Za-z0-9-]+$/.test(label ?? '')) {
+    return { responses: ['E2E run file versions failed: malformed scenario marker'] };
+  }
+  const childPrompt = `${RUN_FILE_VERSIONS_CHILD_MARKER}${label}`;
+  const outputName = 'analysis.csv';
+  const call = (phase, name, args = {}) => ({
+    response: '',
+    toolCalls: [
+      { id: `call_e2e_run_file_versions_${label}_${phase}`, name, args, type: 'tool_call' },
+    ],
+  });
+  const resultFor = (messages, phase) =>
+    findLastToolMessage(messages, `call_e2e_run_file_versions_${label}_${phase}`);
+  const artifactsFor = (message) =>
+    (parseRunFileResult(message)?.artifacts ?? []).filter(
+      (artifact) => artifact.filename === outputName && typeof artifact.artifact_id === 'string',
+    );
+  const failure = (reason, message) => ({
+    response: `E2E run file versions failed: ${reason}: ${getContentText(message?.content)}`,
+  });
+
+  return {
+    responses: [''],
+    overrideSubagentModel: true,
+    resolveInvocation: (messages) => {
+      const isChild = messages.some(
+        (message) =>
+          ['human', 'user'].includes(messageType(message)) &&
+          getContentText(message.content).includes(childPrompt),
+      );
+      if (isChild) {
+        const inputs = resultFor(messages, 'inputs');
+        if (!inputs) return call('inputs', 'list_run_files');
+        const inputCatalog = parseRunFileResult(inputs);
+        if (
+          !findRunFile(inputCatalog?.files, `e2e-run-file-versions-${label}.pdf`) ||
+          !findRunFile(inputCatalog?.files, `e2e-run-file-versions-${label}.csv`)
+        ) {
+          return failure('child cannot see both current inputs', inputs);
+        }
+        const search = resultFor(messages, 'search');
+        if (!search) return call('search', 'file_search', { query: `e2e ${label}` });
+        const firstWrite = resultFor(messages, 'write_v1');
+        if (!firstWrite) {
+          return call('write_v1', 'bash_tool', {
+            command: `printf 'version,total\\n1,30\\n' > /mnt/data/${outputName}\n# E2E_RUN_FILE_VERSION:${label}:write-v1`,
+          });
+        }
+        const firstCatalog = resultFor(messages, 'after_v1');
+        if (!firstCatalog) return call('after_v1', 'list_run_files');
+        const initialIds = new Set(artifactsFor(inputs).map((artifact) => artifact.artifact_id));
+        const firstArtifact = artifactsFor(firstCatalog).find(
+          (artifact) => !initialIds.has(artifact.artifact_id),
+        );
+        if (!firstArtifact) return failure('first write has no private artifact', firstCatalog);
+        const inspection = resultFor(messages, 'inspect');
+        if (!inspection) {
+          return call('inspect', 'bash_tool', {
+            command: `cat /mnt/data/${outputName}\n# E2E_RUN_FILE_VERSION:${label}:inspect`,
+          });
+        }
+        if (!getContentText(inspection.content).includes('version,total\n1,30')) {
+          return failure('later Bash call cannot read version one', inspection);
+        }
+        const inspectionCatalog = resultFor(messages, 'after_inspect');
+        if (!inspectionCatalog) return call('after_inspect', 'list_run_files');
+        const inspectedIds = new Set(
+          artifactsFor(inspectionCatalog).map((artifact) => artifact.artifact_id),
+        );
+        if (!inspectedIds.has(firstArtifact.artifact_id)) {
+          return failure('inspection retired the original artifact ID', inspectionCatalog);
+        }
+        const secondWrite = resultFor(messages, 'write_v2');
+        if (!secondWrite) {
+          return call('write_v2', 'bash_tool', {
+            command: `printf 'version,total\\n2,35\\n' > /mnt/data/${outputName}\n# E2E_RUN_FILE_VERSION:${label}:write-v2`,
+          });
+        }
+        const secondCatalog = resultFor(messages, 'after_v2');
+        if (!secondCatalog) return call('after_v2', 'list_run_files');
+        const secondArtifacts = artifactsFor(secondCatalog);
+        if (
+          !secondArtifacts.some((artifact) => artifact.artifact_id === firstArtifact.artifact_id)
+        ) {
+          return failure('overwrite retired the original artifact ID', secondCatalog);
+        }
+        const secondArtifact = secondArtifacts.find(
+          (artifact) => !inspectedIds.has(artifact.artifact_id),
+        );
+        if (!secondArtifact) return failure('changed write has no new artifact ID', secondCatalog);
+        const firstPublication = resultFor(messages, 'publish_v1');
+        if (!firstPublication) {
+          return call('publish_v1', 'publish_artifact', { artifact_id: firstArtifact.artifact_id });
+        }
+        const firstPublished = findRunFile(parseRunFileResult(firstPublication), outputName);
+        if (!firstPublished) return failure('version one publication failed', firstPublication);
+        const remainingCatalog = resultFor(messages, 'after_publish_v1');
+        if (!remainingCatalog) return call('after_publish_v1', 'list_run_files');
+        if (
+          !artifactsFor(remainingCatalog).some(
+            (artifact) => artifact.artifact_id === secondArtifact.artifact_id,
+          )
+        ) {
+          return failure('publishing version one retired version two', remainingCatalog);
+        }
+        const secondPublication = resultFor(messages, 'publish_v2');
+        if (!secondPublication) {
+          return call('publish_v2', 'publish_artifact', {
+            artifact_id: secondArtifact.artifact_id,
+          });
+        }
+        const secondPublished = findRunFile(parseRunFileResult(secondPublication), outputName);
+        if (!secondPublished || secondPublished.id === firstPublished.id) {
+          return failure('version two has no distinct durable file', secondPublication);
+        }
+        return {
+          response:
+            `E2E run file versions published v1=${firstPublished.id} v2=${secondPublished.id} ` +
+            `artifact_v1=${firstArtifact.artifact_id} artifact_v2=${secondArtifact.artifact_id}`,
+        };
+      }
+
+      const child = resultFor(messages, 'delegate');
+      if (!child) {
+        return call('delegate', 'subagent', {
+          description: childPrompt,
+          subagent_type: childId,
+        });
+      }
+      const proof = getContentText(child.content).match(
+        /E2E run file versions published v1=([\w.:-]+) v2=([\w.:-]+) artifact_v1=([\w.:-]+) artifact_v2=([\w.:-]+)/,
+      );
+      if (!proof) return failure('child returned no version publications', child);
+      const catalog = resultFor(messages, 'parent');
+      if (!catalog) return call('parent', 'list_run_files');
+      const parentFiles = parseRunFileResult(catalog)?.files ?? [];
+      if (
+        ![proof[1], proof[2]].every((fileId) =>
+          parentFiles.some((file) => file.file_id === fileId && file.filename === outputName),
+        )
+      ) {
+        return failure('parent cannot see both published versions', catalog);
+      }
+      return {
+        response:
+          `E2E run file versions complete ${label} v1=${proof[1]} v2=${proof[2]} ` +
+          `artifact_v1=${proof[3]} artifact_v2=${proof[4]}`,
+      };
+    },
+  };
+}
+
 function parseSubagentActivityMarker(text) {
   const value = getMarkerValue(text, SUBAGENT_ACTIVITY_MARKER);
   const separator = value.indexOf(':');
@@ -1628,6 +1993,61 @@ function backgroundCollectResponses(messages, toolNames) {
   };
 }
 
+/** Fresh host-owned run started when the detached result becomes durable. */
+function backgroundCompletionResponses(text) {
+  if (!text.includes('background tool task has finished') || !text.includes('durable result')) {
+    return null;
+  }
+  const status = text.match(/"status":"(\w+)"/)?.[1] ?? 'missing';
+  const echo = text.match(/E2E slow echo: (bg-[\w-]+)/)?.[1] ?? 'missing';
+  return {
+    responses: [''],
+    resolveInvocation: async (_messages, options, runManager) => {
+      const agentId = getAgentIdFromInvocationOptions(options, runManager) ?? 'missing';
+      return {
+        response: `E2E background notified status=${status} echo=${echo} agent=${agentId}`,
+      };
+    },
+  };
+}
+
+function statefulCodeResponses(operation, toolNames) {
+  if (!toolNames.has(BASH_TOOL_NAME)) {
+    return {
+      responses: [`E2E stateful code unavailable: ${BASH_TOOL_NAME} was not advertised.`],
+    };
+  }
+
+  const commands = {
+    write: `printf ${STATEFUL_CODE_VALUE} > librechat-bridge-state.txt && cat librechat-bridge-state.txt`,
+    read: 'cat librechat-bridge-state.txt',
+  };
+  const command = commands[operation];
+  if (!command) {
+    return { responses: [`E2E stateful code failed: unsupported operation ${operation}`] };
+  }
+
+  const toolCallId = `call_e2e_stateful_code_${operation}`;
+  return {
+    responses: ['', ''],
+    toolCalls: [
+      {
+        id: toolCallId,
+        name: BASH_TOOL_NAME,
+        args: { command },
+        type: 'tool_call',
+      },
+    ],
+    resolveOnStream: (streamMessages) => {
+      const toolMessage = findLastToolMessage(streamMessages, toolCallId);
+      if (!getContentText(toolMessage?.content).includes(STATEFUL_CODE_VALUE)) {
+        return null;
+      }
+      return { responses: [`E2E stateful code ${operation} observed ${STATEFUL_CODE_VALUE}`] };
+    },
+  };
+}
+
 function parseHandoffScript(text) {
   const encodedScript = getMarkerValue(text, HANDOFF_MARKER);
   if (!encodedScript) {
@@ -1776,6 +2196,16 @@ function findToolMessage(messages, toolCallId) {
   return (messages ?? []).find(
     (message) => messageType(message) === 'tool' && message?.tool_call_id === toolCallId,
   );
+}
+
+function findLastToolMessage(messages, toolCallId) {
+  for (let index = (messages?.length ?? 0) - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (messageType(message) === 'tool' && message?.tool_call_id === toolCallId) {
+      return message;
+    }
+  }
+  return undefined;
 }
 
 function deferredHitlCallId(label, phase) {
@@ -2214,7 +2644,129 @@ function buildHandoffResponses(graph, parsed) {
   };
 }
 
+/**
+ * Emit an `execute_code` / `file_search` tool call so the run reaches
+ * ON_TOOL_EXECUTE, where `provisionFiles` lazily uploads message attachments to
+ * the code env / vector DB. The tool's own result is irrelevant to the
+ * provisioning assertion (which inspects the fake servers) — we just need the
+ * batch to fire. Guards assert the resource tool was actually advertised.
+ */
+function provisioningToolResponses({ text, toolNames }) {
+  const uploadedFilename = getRequestedSandboxFilename(text, EXEC_UPLOADED_MARKER);
+  if (uploadedFilename) {
+    return codeExecResponses(
+      {
+        filename: uploadedFilename,
+        toolCallId: EXEC_UPLOADED_TOOL_CALL_ID,
+        finalText: EXEC_UPLOADED_FINAL_TEXT,
+        code: `cat "/mnt/data/${uploadedFilename}" && printf 'turn1-proof-%s\\n' "$((40 + 2))" > "/mnt/data/${EXEC_TURN_MARKER_FILE}"`,
+      },
+      toolNames,
+    );
+  }
+
+  const persistedFilename = getRequestedSandboxFilename(text, EXEC_PERSIST_MARKER);
+  if (persistedFilename) {
+    return codeExecResponses(
+      {
+        filename: persistedFilename,
+        toolCallId: EXEC_PERSIST_TOOL_CALL_ID,
+        finalText: EXEC_PERSIST_FINAL_TEXT,
+        code: `printf 'LINES=%s\\n' "$(wc -l < "/mnt/data/${persistedFilename}")" && cat "/mnt/data/${EXEC_TURN_MARKER_FILE}"`,
+      },
+      toolNames,
+    );
+  }
+
+  const codeLabel = getMarkerValue(text, EXECUTE_CODE_MARKER);
+  if (codeLabel) {
+    const codeTool = CODE_EXEC_TOOLS.find((tool) => toolNames.has(tool.name));
+    if (!codeTool) {
+      return {
+        responses: [
+          `E2E execute_code unavailable: no code-execution tool advertised (saw ${
+            JSON.stringify([...toolNames]) || 'none'
+          }).`,
+        ],
+      };
+    }
+    return {
+      responses: ['', `${EXECUTE_CODE_FINAL_TEXT}: ${codeLabel}`],
+      toolCalls: [
+        {
+          id: EXECUTE_CODE_TOOL_CALL_ID,
+          name: codeTool.name,
+          args: codeTool.args,
+          type: 'tool_call',
+        },
+      ],
+    };
+  }
+
+  const searchLabel = getMarkerValue(text, FILE_SEARCH_MARKER);
+  if (searchLabel) {
+    if (!toolNames.has(FILE_SEARCH_TOOL_NAME)) {
+      return {
+        responses: [`E2E file_search unavailable: ${FILE_SEARCH_TOOL_NAME} was not advertised.`],
+      };
+    }
+    return {
+      responses: ['', `${FILE_SEARCH_FINAL_TEXT}: ${searchLabel}`],
+      toolCalls: [
+        {
+          id: FILE_SEARCH_TOOL_CALL_ID,
+          name: FILE_SEARCH_TOOL_NAME,
+          args: { query: `e2e ${searchLabel}` },
+          type: 'tool_call',
+        },
+      ],
+    };
+  }
+
+  return null;
+}
+
+function codeExecResponses({ filename, toolCallId, finalText, code }, toolNames) {
+  if (!toolNames.has(BASH_TOOL_NAME)) {
+    return {
+      responses: [`E2E code exec unavailable: ${BASH_TOOL_NAME} was not advertised.`],
+    };
+  }
+  return {
+    responses: ['', `${finalText}: ${filename}`],
+    toolCalls: [
+      {
+        id: toolCallId,
+        name: BASH_TOOL_NAME,
+        args: { command: code },
+        type: 'tool_call',
+      },
+    ],
+  };
+}
+
 function resolveResponses({ graph, messages, text, toolNames }) {
+  const lifecycle = runFileLifecycle.responsesForText(text);
+  if (lifecycle) return lifecycle;
+
+  const runFileDelivery = runFileDeliveryResponses(text);
+  if (runFileDelivery) return runFileDelivery;
+
+  const backgroundCompletion = backgroundCompletionResponses(text);
+  if (backgroundCompletion) {
+    return backgroundCompletion;
+  }
+
+  const runFileVersions = runFileVersionsResponses(text);
+  if (runFileVersions) {
+    return runFileVersions;
+  }
+
+  const runFiles = runFilesResponses(text);
+  if (runFiles) {
+    return runFiles;
+  }
+
   const subagentActivity = subagentActivityResponses(text);
   if (subagentActivity) {
     return subagentActivity;
@@ -2250,9 +2802,19 @@ function resolveResponses({ graph, messages, text, toolNames }) {
     return reply;
   }
 
+  const statefulCodeOperation = getMarkerValue(text, STATEFUL_CODE_MARKER);
+  if (statefulCodeOperation) {
+    return statefulCodeResponses(statefulCodeOperation, toolNames);
+  }
+
   const steerToolLabel = getMarkerValue(text, STEER_TOOL_REPLY_MARKER);
   if (steerToolLabel) {
     return steerToolReplyResponses(steerToolLabel, toolNames);
+  }
+
+  const provisioningTool = provisioningToolResponses({ text, toolNames });
+  if (provisioningTool) {
+    return provisioningTool;
   }
 
   const steerSplitLabel = getMarkerValue(text, STEER_SPLIT_REPLY_MARKER);
@@ -2285,6 +2847,14 @@ function resolveResponses({ graph, messages, text, toolNames }) {
       responses: [MOCK_REPLY],
       resolveOnStream: (streamMessages) =>
         agentContextAssertionResponses({ messages: streamMessages, text }),
+    };
+  }
+
+  if (text.includes(ASSERT_HISTORY_MARKER)) {
+    return {
+      responses: [MOCK_REPLY],
+      resolveOnStream: (streamMessages) =>
+        historyAssertionResponses({ messages: streamMessages, text }),
     };
   }
 
@@ -2393,6 +2963,21 @@ module.exports = function fakeModelHook(run, context) {
   }
 
   const text = getLatestUserText(context?.messages);
+  /** Recorded-session replay outranks marker routing: a conversation whose
+   * prompt matches a fixture's next recorded invocation streams that recording
+   * through the real pipeline instead of a scripted mock response. */
+  if (
+    tryBindReplay({
+      graph,
+      text,
+      agents: context?.agents,
+      messages: context?.messages,
+      conversationId: context?.conversationId,
+      modelCallbacks: context?.modelCallbacks,
+    })
+  ) {
+    return;
+  }
   const toolNames = collectToolNames(context?.agents);
   const handoffScript = parseHandoffScript(text);
   const {
@@ -2418,9 +3003,11 @@ module.exports = function fakeModelHook(run, context) {
     sleep,
     toolCalls,
     thrownError,
-    overrideSubagentModel,
+    overrideSubagentModel:
+      overrideSubagentModel || runFileLifecycle.isFixtureAgents(context?.agents),
     disableHumanInTheLoop,
     resolveInvocation: async (streamMessages, streamOptions, runManager) =>
+      runFileLifecycle.resolveInvocation(streamMessages) ??
       deferredHitlInvocationResponse({
         graph,
         messages: streamMessages,

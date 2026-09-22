@@ -1,5 +1,9 @@
 import { AIMessage } from '@langchain/core/messages';
 import type { IConversation } from '@librechat/data-schemas';
+import {
+  EVENT_ACTOR_DETACHED_COMPLETION_SOURCE,
+  EVENT_ACTOR_DETACHED_COMPLETION_TYPE,
+} from './detachedAction';
 import { createAgentTriggerEnvelope, type AgentContinueTriggerEnvelope } from './envelope';
 import { createAgentEventContinueResolver } from './bindingResolver';
 
@@ -30,26 +34,63 @@ function envelope(): AgentContinueTriggerEnvelope {
   }) as AgentContinueTriggerEnvelope;
 }
 
-describe('agent event continuation resolver', () => {
-  it('defers without consuming attempts while the rollout gate is disabled', async () => {
-    const resolver = createAgentEventContinueResolver({
-      enabled: () => false,
-      methods: {
-        getAgentEventBinding: jest.fn(),
-        getConvo: jest.fn(),
-        getMessages: jest.fn(),
+function detachedCompletionEnvelope(generationCreatedAt: number): AgentContinueTriggerEnvelope {
+  return createAgentTriggerEnvelope({
+    mode: 'continue',
+    requestId: 'request-completion',
+    deliveryId: 'detached_completion:task-1',
+    receivedAt: 2,
+    principal: { id: 'user-1', tenantId: 'tenant-1' },
+    event: {
+      id: 'task-1',
+      type: EVENT_ACTOR_DETACHED_COMPLETION_TYPE,
+      occurredAt: 2,
+      source: { id: EVENT_ACTOR_DETACHED_COMPLETION_SOURCE, type: 'internal' },
+      payload: {
+        version: 1,
+        invocationId: 'delivery-1',
+        generationCreatedAt,
+        wakeGenerationCreatedAt: generationCreatedAt,
+        taskId: 'task-1',
+        idempotencyKey: 'a'.repeat(64),
+      },
+    },
+    input: 'Detached completion.',
+    target: {
+      agentId: 'agent-player',
+      conversationId: 'child-thread',
+      parentMessageId: 'placeholder',
+      bindingId,
+      sourceKeyId,
+    },
+  }) as AgentContinueTriggerEnvelope;
+}
+
+function boundMethods() {
+  return {
+    getAgentEventBinding: jest.fn(async () => ({
+      conversationId: 'child-thread',
+      agentId: 'agent-player',
+      tenantId: 'tenant-1',
+      binding: { bindingId, sourceKeyId, actorId: 'player' },
+      lineage: {
+        parentConversationId: 'parent-thread',
+        parentAgentId: 'agent-director',
       } as never,
-    });
+    })),
+    getConvo: jest.fn(
+      async () =>
+        ({
+          conversationId: 'parent-thread',
+          agent_id: 'agent-director',
+          tenantId: 'tenant-1',
+        }) as IConversation,
+    ),
+    getMessages: jest.fn(async () => []) as never,
+  };
+}
 
-    await expect(
-      resolver(envelope(), { idempotencyKey: 'trigger-1' } as never),
-    ).rejects.toMatchObject({
-      code: 'EVENT_BINDING_DISABLED',
-      retryable: true,
-      deferWithoutAttempt: true,
-    });
-  });
-
+describe('agent event continuation resolver', () => {
   it('re-resolves the latest assistant leaf immediately before dispatch', async () => {
     const getMessages = jest.fn(async () => [
       Object.assign(new AIMessage('done'), {
@@ -59,7 +100,6 @@ describe('agent event continuation resolver', () => {
       }),
     ]) as never;
     const resolver = createAgentEventContinueResolver({
-      enabled: () => true,
       methods: {
         getAgentEventBinding: jest.fn(async () => ({
           conversationId: 'child-thread',
@@ -97,7 +137,6 @@ describe('agent event continuation resolver', () => {
 
   it('fails closed when the durable binding target changed', async () => {
     const resolver = createAgentEventContinueResolver({
-      enabled: () => true,
       methods: {
         getAgentEventBinding: jest.fn(async () => ({
           conversationId: 'another-thread',
@@ -117,7 +156,6 @@ describe('agent event continuation resolver', () => {
 
   it('defers an event while the actor has an active generation', async () => {
     const resolver = createAgentEventContinueResolver({
-      enabled: () => true,
       getGenerationJob: jest.fn(async () => ({ status: 'running' })),
       methods: {
         getAgentEventBinding: jest.fn(async () => ({
@@ -151,9 +189,35 @@ describe('agent event continuation resolver', () => {
     });
   });
 
+  it('admits only the exact detached completion through its terminal host-action fence', async () => {
+    const createdAt = 77;
+    const resolver = createAgentEventContinueResolver({
+      getGenerationJob: jest.fn(async () => ({
+        status: 'complete',
+        createdAt,
+        metadata: { terminalPersistencePending: true },
+      })),
+      methods: boundMethods(),
+    });
+
+    await expect(
+      resolver(detachedCompletionEnvelope(createdAt), {
+        idempotencyKey: 'completion-1',
+      } as never),
+    ).resolves.toMatchObject({ status: 'ready' });
+
+    await expect(
+      resolver(detachedCompletionEnvelope(createdAt + 1), {
+        idempotencyKey: 'completion-stale',
+      } as never),
+    ).rejects.toMatchObject({
+      code: 'EVENT_ACTOR_NOT_READY',
+      deferWithoutAttempt: true,
+    });
+  });
+
   it('fails closed after the binding parent is removed', async () => {
     const resolver = createAgentEventContinueResolver({
-      enabled: () => true,
       methods: {
         getAgentEventBinding: jest.fn(async () => ({
           conversationId: 'child-thread',
@@ -185,7 +249,6 @@ describe('agent event continuation resolver', () => {
       } as never,
     }));
     const resolver = createAgentEventContinueResolver({
-      enabled: () => true,
       methods: {
         getAgentEventBinding,
         getConvo: jest.fn(),

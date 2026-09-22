@@ -46,6 +46,7 @@ interface ResolvedConversationRequest extends Request {
     isTemporary?: boolean;
     expiredAt?: Date;
   };
+  _agentEventBindingId?: string;
   _agentEventBindingParentConversationId?: string;
   _agentEventBindingParentAgentId?: string;
   _agentEventBindingTenantId?: string;
@@ -69,6 +70,7 @@ function applyEventBindingContext(
     ...(conversation.isTemporary == null ? {} : { isTemporary: conversation.isTemporary }),
     ...(conversation.expiredAt == null ? {} : { expiredAt: conversation.expiredAt }),
   };
+  request._agentEventBindingId = conversation.agentEventBinding?.bindingId;
   request._agentEventBindingParentConversationId =
     conversation.subagentThread?.parentConversationId;
   request._agentEventBindingParentAgentId = conversation.subagentThread?.parentAgentId;

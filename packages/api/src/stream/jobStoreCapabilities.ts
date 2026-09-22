@@ -22,6 +22,7 @@ export const JOB_STORE_V2_REQUIRED_METHODS = [
   'enqueueSteerWithReceipt',
   'getSteerReceipt',
   'restoreClaimedSteers',
+  'admitTerminalSteers',
   'peekClaimedSteers',
   'armSteer',
   'armSteerVersioned',
@@ -29,6 +30,12 @@ export const JOB_STORE_V2_REQUIRED_METHODS = [
   'claimParkedSteersDetailed',
   'consumeParkedSteer',
   'discardSteerLeftover',
+  'settleEarlyBufferRecovery',
+  'finalizeEarlyBufferOverflow',
+  'hasSubscriberAttached',
+  'claimFirstSubscriber',
+  'detachSubscriber',
+  'hasActiveSubscriber',
 ] as const satisfies ReadonlyArray<keyof IJobStoreV2>;
 
 export type JobStoreV2RequiredMethod = (typeof JOB_STORE_V2_REQUIRED_METHODS)[number];

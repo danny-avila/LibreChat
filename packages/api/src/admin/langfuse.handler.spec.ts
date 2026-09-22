@@ -106,6 +106,7 @@ function createHandlers(overrides = {}) {
     ),
     getMessages: jest.fn().mockResolvedValue([]),
     invalidateConfigCaches: jest.fn().mockResolvedValue(undefined),
+    recordConnectionUpdate: jest.fn(),
     ...overrides,
   };
   const handlers = createAdminLangfuseHandlers(deps);
@@ -322,6 +323,7 @@ describe('createAdminLangfuseHandlers', () => {
       expect(res.statusCode).toBe(200);
       expect(res.body).toEqual({
         url: 'https://cloud.langfuse.com/project/project-1/sessions/conversation-1',
+        destinationId: getLangfuseDestinationId('https://cloud.langfuse.com', 'project-1'),
       });
       expect(deps.getMessages).toHaveBeenCalledWith(
         {
@@ -386,6 +388,7 @@ describe('createAdminLangfuseHandlers', () => {
 
       expect(linkRes.body).toEqual({
         url: 'https://cloud.langfuse.com/project/tenant-project-1/sessions/conversation-1',
+        destinationId: getLangfuseDestinationId('https://cloud.langfuse.com', 'tenant-project-1'),
       });
       expect(getMessages).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -411,6 +414,7 @@ describe('createAdminLangfuseHandlers', () => {
 
       expect(res.body).toEqual({
         url: 'https://langfuse.example/base/path/project/project-1/sessions/conversation-1',
+        destinationId: getLangfuseDestinationId('https://langfuse.example/base/path', 'project-1'),
       });
     });
 
@@ -529,6 +533,18 @@ describe('createAdminLangfuseHandlers', () => {
       expect(fields['langfuse.projectId']).toBe('project-1');
       expect(res.body?.secretKey).toBeUndefined();
       expect(deps.invalidateConfigCaches).toHaveBeenCalledWith('t1');
+      expect(deps.recordConnectionUpdate).toHaveBeenCalledWith({
+        event_name: 'librechat.langfuse.connection.changed',
+        tenant_id: 't1',
+        configured: true,
+        enabled: true,
+        destination: 'eu',
+        change: 'created',
+        changes: ['created'],
+        verification_result: 'success',
+      });
+      expect(JSON.stringify(deps.recordConnectionUpdate.mock.calls)).not.toContain('sk-lf-secret');
+      expect(JSON.stringify(deps.recordConnectionUpdate.mock.calls)).not.toContain('pk-lf-1');
     });
 
     it('requires a new secret when connection fields change', async () => {
@@ -615,6 +631,7 @@ describe('createAdminLangfuseHandlers', () => {
         error: 'Langfuse rejected these keys. Check the destination and keys',
       });
       expect(deps.patchConfigFields).not.toHaveBeenCalled();
+      expect(deps.recordConnectionUpdate).not.toHaveBeenCalled();
     });
 
     it('rejects credentials when Langfuse does not return a stable project identity', async () => {
@@ -667,6 +684,14 @@ describe('createAdminLangfuseHandlers', () => {
       expect(deps.patchConfigFields).toHaveBeenCalledTimes(1);
       expect(deps.patchConfigFields.mock.calls[0][3]['langfuse.enabled']).toBe(true);
       expect(deps.patchConfigFields.mock.calls[0][3]['langfuse.projectId']).toBe('project-1');
+      expect(deps.recordConnectionUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenant_id: 't1',
+          change: 'enabled',
+          changes: ['enabled'],
+          verification_result: 'skipped',
+        }),
+      );
     });
 
     it('allows an existing connection to be disabled after its destination is removed', async () => {

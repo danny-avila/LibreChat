@@ -4,6 +4,12 @@ const { batchUploadCodeEnvFiles } = require('~/server/services/Files/Code/crud')
 const {
   getSessionInfo,
   checkIfActive,
+  readWorkspaceFile,
+  searchWorkspace,
+  listWorkspaceFiles,
+  writeWorkspaceFile,
+  previewWorkspaceEdit,
+  editWorkspaceFile,
   readSandboxFile,
   readSandboxImage,
   writeSandboxFile,
@@ -158,7 +164,11 @@ function canEditSkill({ req, skillId }) {
   });
 }
 
-function isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }) {
+function isAgentSkillAuthoringEnabledForRun({
+  agent,
+  skillsCapabilityEnabled,
+  ephemeralSkillsToggle,
+}) {
   if (!skillsCapabilityEnabled) {
     return false;
   }
@@ -171,7 +181,7 @@ function isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralS
     }
     return ephemeralSkillsToggle === true;
   }
-  return agent.skills_enabled === true;
+  return agent.skills_enabled === true || agent.skill_authoring_enabled === true;
 }
 
 function canAuthorSkillFiles({
@@ -182,7 +192,11 @@ function canAuthorSkillFiles({
   ephemeralSkillsToggle,
 }) {
   return (
-    isAgentSkillsEnabledForRun({ agent, skillsCapabilityEnabled, ephemeralSkillsToggle }) &&
+    isAgentSkillAuthoringEnabledForRun({
+      agent,
+      skillsCapabilityEnabled,
+      ephemeralSkillsToggle,
+    }) &&
     (scopedEditableSkillIds.length > 0 || skillCreateAllowed === true)
   );
 }
@@ -275,6 +289,14 @@ function buildSkillPrimedIdsByName(manualSkillPrimes, alwaysApplySkillPrimes) {
 function buildAgentToolContext({ agent, config }) {
   return {
     agent,
+    fileEncodingAgent: {
+      provider: config.provider,
+      model_parameters: config.model_parameters,
+      imageDetail: config.imageDetail,
+      agentContextAttachments: config.agentContextAttachments,
+      fileConsumers: config.fileConsumers,
+      deliveryRouting: config.deliveryRouting,
+    },
     /** Per-agent resolved endpoint token/pricing config. Retained here because
      *  `agentToolContexts` is the one map that holds every agent — including
      *  pure subagents pruned from `agentConfigs` — so usage can be priced with
@@ -297,6 +319,7 @@ function buildAgentToolContext({ agent, config }) {
     fileAuthoringToolNames: config.fileAuthoringToolNames,
     skillPrimedIdsByName:
       buildSkillPrimedIdsByName(config.manualSkillPrimes, config.alwaysApplySkillPrimes) ?? {},
+    provisionState: config.provisionState,
   };
 }
 
@@ -372,6 +395,12 @@ const skillToolDeps = {
   updateSkillFileCodeEnvIds: deploymentSkillMethods.updateSkillFileCodeEnvIds,
   getSkillFileByPath: deploymentSkillMethods.getSkillFileByPath,
   updateSkillFileContent: deploymentSkillMethods.updateSkillFileContent,
+  readWorkspaceFile,
+  searchWorkspace,
+  listWorkspaceFiles,
+  writeWorkspaceFile,
+  previewWorkspaceEdit,
+  editWorkspaceFile,
   /**
    * `read_file` falls back to a sandbox `cat` for `/mnt/data/...` paths
    * and for `{firstSegment}/...` paths whose first segment isn't a known
@@ -397,7 +426,7 @@ function getSkillToolDeps() {
 module.exports = {
   getSkillToolDeps,
   canAuthorSkillFiles,
-  isAgentSkillsEnabledForRun,
+  isAgentSkillAuthoringEnabledForRun,
   getSkillDbMethods,
   withDeploymentSkillIds,
   getSkillStrategyFunctions,

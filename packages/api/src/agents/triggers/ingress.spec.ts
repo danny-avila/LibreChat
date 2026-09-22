@@ -205,6 +205,31 @@ describe('agent trigger event ingress', () => {
     );
   });
 
+  it('passes explicit observational coalescing only for a resolved bound continuation', async () => {
+    const deps = dependencies();
+    const response = await request(createApp(deps, undefined, true))
+      .post('/api/agents/v1/events')
+      .set('Idempotency-Key', 'commentary-game-start-1')
+      .send({
+        mode: 'continue',
+        event: fireEvent().event,
+        target: {
+          agentId: 'commentator',
+          conversationId: 'commentator-thread',
+          parentMessageId: 'placeholder',
+          bindingId: `evtbind_${'b'.repeat(48)}`,
+          sourceKeyId: API_KEY_ID,
+        },
+        input: 'Comment on this game start.',
+        coalesce: { key: 'championship-commentary' },
+      });
+
+    expect(response.status).toBe(202);
+    expect(deps.enqueue).toHaveBeenCalledWith(expect.objectContaining({ mode: 'continue' }), {
+      coalesce: { key: 'championship-commentary' },
+    });
+  });
+
   it('fails closed when the idempotency header is absent or duplicated', async () => {
     const deps = dependencies();
     const app = createApp(deps);
@@ -267,16 +292,17 @@ describe('agent trigger event ingress', () => {
     const deps = dependencies({
       getDeliveryStatus: jest.fn(async () =>
         delivery({
-          status: 'dead',
+          status: 'succeeded',
           attempts: 3,
           settledAt,
-          lastError: {
-            code: 'FORBIDDEN',
-            message: 'Agent access was revoked',
-            certainty: 'definite',
-            retryable: false,
-            attemptedAt,
-            status: 403,
+          handling: {
+            status: 'failed',
+            conversationId: 'conversation-1',
+            streamId: 'conversation-1',
+            generationCreatedAt: 1_787_000_000_000,
+            startedAt: attemptedAt,
+            settledAt,
+            error: 'Agent access was revoked',
           },
         }),
       ),
@@ -287,18 +313,19 @@ describe('agent trigger event ingress', () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       id: DELIVERY_KEY,
-      status: 'dead',
+      status: 'succeeded',
       attempts: 3,
       availableAt: AVAILABLE_AT.toISOString(),
       createdAt: CREATED_AT.toISOString(),
       settledAt: settledAt.toISOString(),
-      error: {
-        code: 'FORBIDDEN',
-        message: 'Agent access was revoked',
-        certainty: 'definite',
-        retryable: false,
-        attemptedAt: attemptedAt.toISOString(),
-        status: 403,
+      handling: {
+        status: 'failed',
+        conversationId: 'conversation-1',
+        streamId: 'conversation-1',
+        generationCreatedAt: 1_787_000_000_000,
+        startedAt: attemptedAt.toISOString(),
+        settledAt: settledAt.toISOString(),
+        error: 'Agent access was revoked',
       },
     });
     expect(response.body).not.toHaveProperty('envelope');

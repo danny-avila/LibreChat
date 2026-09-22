@@ -43,7 +43,6 @@ export interface AgentEventBindingDependencies {
   getMessage: MessageMethods['getMessage'];
   deleteConvos: ConversationMethods['deleteConvos'];
   reserveThread: ConversationMethods['reserveSubagentThread'];
-  enabled?: () => boolean;
 }
 
 class AgentEventBindingError extends Error {
@@ -201,16 +200,6 @@ function sendError(res: Response, error: unknown): void {
   throw error;
 }
 
-function requireEnabled(deps: AgentEventBindingDependencies): void {
-  if (deps.enabled?.() !== true) {
-    throw new AgentEventBindingError(
-      'Event-driven child turns are not enabled on this deployment',
-      503,
-      'event_binding_unavailable',
-    );
-  }
-}
-
 export function createAgentEventBindingHandlers(deps: AgentEventBindingDependencies): {
   register: RequestHandler;
   resolve: RequestHandler;
@@ -218,7 +207,6 @@ export function createAgentEventBindingHandlers(deps: AgentEventBindingDependenc
   const register: RequestHandler = async (baseReq, res, next) => {
     const req = baseReq as EventBindingRequest;
     try {
-      requireEnabled(deps);
       const principal = requirePrincipal(req);
       const body = (req.body ?? {}) as RegisterBindingBody;
       const actorId = requireString(body.actorId, 'actorId', MAX_ACTOR_ID_LENGTH);
@@ -417,7 +405,6 @@ export function createAgentEventBindingHandlers(deps: AgentEventBindingDependenc
         next();
         return;
       }
-      requireEnabled(deps);
       const id = requireString(body.bindingId, 'bindingId');
       if (!BINDING_ID_PATTERN.test(id)) {
         throw new AgentEventBindingError('bindingId is invalid');

@@ -364,17 +364,22 @@ describe('detached subagent activity stream', () => {
     expect(Buffer.byteLength(JSON.stringify(envelope), 'utf8')).toBeLessThanOrEqual(64 * 1024);
   });
 
-  it('never transports hidden reasoning text to the detached panel', async () => {
+  it('transports bounded reasoning deltas to the detached panel like other phases', async () => {
     const transport = new TestTransport();
     const stream = new SubagentActivityStream(transport);
 
     await stream.publish(
       'child-thread',
       'task-1',
-      update({ phase: 'reasoning_delta', data: { delta: { content: [{ think: 'secret' }] } } }),
+      update({
+        phase: 'reasoning_delta',
+        data: { delta: { content: [{ think: 'Visible reasoning' }] } },
+      }),
     );
 
-    expect((transport.emitted[0]?.event as SubagentActivityEnvelope).data.data).toBeUndefined();
+    expect((transport.emitted[0]?.event as SubagentActivityEnvelope).data.data).toEqual({
+      delta: { content: [{ think: 'Visible reasoning' }] },
+    });
   });
 
   it('delivers terminal state before the subscriber releases its task stream', async () => {

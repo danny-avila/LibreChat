@@ -1,4 +1,4 @@
-import { EModelEndpoint } from './schemas';
+import { EModelEndpoint, Providers } from './schemas';
 import { KnownEndpoints } from './config';
 
 /** Canonical provider identity used for branding across client and server. */
@@ -18,6 +18,7 @@ export enum ProviderId {
   groq = 'groq',
   helicone = 'helicone',
   huggingface = 'huggingface',
+  lemonade = 'lemonade',
   mistral = 'mistral',
   mlx = 'mlx',
   ollama = 'ollama',
@@ -48,6 +49,7 @@ export const knownEndpointToProvider: Record<KnownEndpoints, ProviderId> = {
   [KnownEndpoints.groq]: ProviderId.groq,
   [KnownEndpoints.helicone]: ProviderId.helicone,
   [KnownEndpoints.huggingface]: ProviderId.huggingface,
+  [KnownEndpoints.lemonade]: ProviderId.lemonade,
   [KnownEndpoints.mistral]: ProviderId.mistral,
   [KnownEndpoints.mlx]: ProviderId.mlx,
   [KnownEndpoints.ollama]: ProviderId.ollama,
@@ -74,8 +76,14 @@ const providerAliases: Record<string, ProviderId> = {
   grok: ProviderId.xai,
   kimi: ProviderId.moonshot,
   moonshotai: ProviderId.moonshot,
+  amdlemonade: ProviderId.lemonade,
+  lemonadeserver: ProviderId.lemonade,
   mistralai: ProviderId.mistral,
   togetherai: ProviderId.together,
+};
+
+const modelCatalogAliases: Partial<Record<string, string>> = {
+  [Providers.VERTEXAI]: EModelEndpoint.google,
 };
 
 const normalize = (input: string): string => input.toLowerCase().replace(/[\s._-]/g, '');
@@ -95,4 +103,13 @@ export function resolveProviderId(input?: string | null): ProviderId | null {
   }
   const key = normalize(input);
   return providerByNormalizedId[key] ?? providerAliases[key] ?? null;
+}
+
+/** Resolves a runtime provider to its model catalog, using a native alias only when needed. */
+export function resolveModelCatalogKey<T>(
+  provider?: string | null,
+  catalogs?: Partial<Record<string, T>>,
+): string {
+  const key = provider ?? '';
+  return catalogs?.[key] != null ? key : (modelCatalogAliases[key] ?? key);
 }

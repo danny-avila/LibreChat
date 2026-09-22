@@ -9,6 +9,7 @@ import type {
 } from '@librechat/agents';
 import type { Agents } from 'librechat-data-provider';
 import { ASK_USER_QUESTION_TOOL_NAME } from './askUserQuestionTool';
+import { isToolApprovalPayloadValid } from './policy';
 
 /**
  * Translate the host-facing approval wire format into the SDK's resume value.
@@ -69,6 +70,26 @@ const MAX_ASK_ANSWER_LENGTH = 16_000;
 const ASK_QUESTION_ID_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const MAX_ASK_QUESTIONS = 4;
 
+function getBoundedAskUserAnswerEntries(answers: unknown): Array<[string, string]> | undefined {
+  if (answers == null || typeof answers !== 'object' || Array.isArray(answers)) {
+    return undefined;
+  }
+  const entries = Object.entries(answers);
+  if (
+    entries.length === 0 ||
+    entries.length > MAX_ASK_QUESTIONS ||
+    entries.some(([, value]) => typeof value !== 'string' || value.length > MAX_ASK_ANSWER_LENGTH)
+  ) {
+    return undefined;
+  }
+  return entries as Array<[string, string]>;
+}
+
+/** Return batched ask-user values when their count and length are bounded. */
+export function getBoundedAskUserAnswerValues(answers: unknown): string[] {
+  return getBoundedAskUserAnswerEntries(answers)?.map(([, value]) => value) ?? [];
+}
+
 /**
  * Serialize every ordering a validated batch can take after the SDK rebuilds
  * its answer map in question order. Batches are capped at four questions, so
@@ -76,22 +97,15 @@ const MAX_ASK_QUESTIONS = 4;
  * checks inspect the exact ToolMessage even for a crafted key order.
  */
 export function serializeAskUserAnswerVariants(answers: unknown): string[] {
-  if (answers == null || typeof answers !== 'object' || Array.isArray(answers)) {
-    return [];
-  }
-  const entries = Object.entries(answers);
-  if (
-    entries.length === 0 ||
-    entries.length > MAX_ASK_QUESTIONS ||
-    entries.some(([, value]) => typeof value !== 'string')
-  ) {
+  const entries = getBoundedAskUserAnswerEntries(answers);
+  if (entries == null) {
     return [];
   }
 
   const variants: string[] = [];
-  const visit = (remaining: Array<[string, unknown]>, ordered: Array<[string, unknown]>) => {
+  const visit = (remaining: Array<[string, string]>, ordered: Array<[string, string]>) => {
     if (remaining.length === 0) {
-      const normalized = Object.create(null) as Record<string, unknown>;
+      const normalized = Object.create(null) as Record<string, string>;
       for (const [key, value] of ordered) {
         normalized[key] = value;
       }
@@ -253,6 +267,22 @@ export function findUndecidedToolCalls(
   return payload.action_requests.map((a) => a.tool_call_id).filter((id) => !decided.has(id));
 }
 
+/** Reject ambiguous or foreign decisions before adapting them to the SDK's ID-keyed map. */
+export function hasInvalidToolApprovalResolutions(
+  payload: Agents.ToolApprovalInterruptPayload,
+  resolutions: readonly Agents.ToolApprovalResolution[],
+): boolean {
+  const requestedIds = new Set(payload.action_requests.map((request) => request.tool_call_id));
+  const resolutionIds = new Set<string>();
+  for (const resolution of resolutions) {
+    if (resolutionIds.has(resolution.tool_call_id) || !requestedIds.has(resolution.tool_call_id)) {
+      return true;
+    }
+    resolutionIds.add(resolution.tool_call_id);
+  }
+  return false;
+}
+
 /**
  * Enforce the policy's per-tool `allowed_decisions`. Returns the `tool_call_id`s
  * whose submitted decision is NOT one the interrupt's `review_configs` permits for
@@ -302,6 +332,39 @@ export function findIncompleteDecisions(
       return false;
     })
     .map((r) => r.tool_call_id);
+}
+
+/** Validate and translate one complete tool-approval batch for the resume controller. */
+export function resolveToolApprovalResume(
+  payload: Agents.ToolApprovalInterruptPayload,
+  resolutions: readonly Agents.ToolApprovalResolution[],
+):
+  | { resumeValue: ToolApprovalDecisionMap }
+  | { status: 400; error: string; undecided?: string[]; incomplete?: string[] }
+  | { status: 403; error: string; disallowed: string[] } {
+  if (!isToolApprovalPayloadValid(payload)) {
+    return { status: 400, error: 'Invalid tool approval payload' };
+  }
+  if (hasInvalidToolApprovalResolutions(payload, resolutions)) {
+    return { status: 400, error: 'Invalid tool approval decisions' };
+  }
+  const undecided = findUndecidedToolCalls(payload, resolutions);
+  if (undecided.length > 0) {
+    return { status: 400, error: 'Every paused tool call must be decided', undecided };
+  }
+  const disallowed = findDisallowedDecisions(payload, resolutions);
+  if (disallowed.length > 0) {
+    return { status: 403, error: 'Decision not permitted for one or more tools', disallowed };
+  }
+  const incomplete = findIncompleteDecisions(resolutions);
+  if (incomplete.length > 0) {
+    return {
+      status: 400,
+      error: 'edit requires editedArguments and respond requires responseText',
+      incomplete,
+    };
+  }
+  return { resumeValue: mapToolApprovalResolutions(resolutions) };
 }
 
 /**

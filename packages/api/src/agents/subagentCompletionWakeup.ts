@@ -16,7 +16,7 @@ import { AgentTriggerExecutionError } from './triggers/host';
 const WAKEUP_ADMISSION_DELAY_MS = 250;
 /** SDK tasks time out after 30 minutes; this grace covers terminal persistence. */
 const CHILD_READY_WAIT_MS = 35 * 60_000;
-const SOURCE_ID = 'subagent-completion';
+export const SUBAGENT_COMPLETION_SOURCE = 'subagent-completion';
 const EVENT_TYPE = 'subagent.completion';
 const MESSAGE_SELECT = 'messageId parentMessageId isCreatedByUser createdAt';
 const TASK_SELECT =
@@ -88,7 +88,7 @@ function payloadRegistration(
 ): Pick<SubagentTaskWakeupRegistration, 'taskId' | 'threadId' | 'subagentType'> | null | undefined {
   if (
     envelope.event.source.type !== 'internal' ||
-    envelope.event.source.id !== SOURCE_ID ||
+    envelope.event.source.id !== SUBAGENT_COMPLETION_SOURCE ||
     envelope.event.type !== EVENT_TYPE
   ) {
     return;
@@ -817,7 +817,7 @@ export function createSubagentCompletionWakeupHandler(
         id: eventId,
         type: EVENT_TYPE,
         occurredAt: registration.createdAt,
-        source: { id: SOURCE_ID, type: 'internal' },
+        source: { id: SUBAGENT_COMPLETION_SOURCE, type: 'internal' },
         payload: {
           taskId: registration.taskId,
           threadId: registration.threadId,

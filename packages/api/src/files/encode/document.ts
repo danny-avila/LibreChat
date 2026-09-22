@@ -15,8 +15,12 @@ import type {
   DocumentResult,
   ServerRequest,
 } from '~/types';
+import {
+  getFileStream,
+  getConfiguredFileSizeLimit,
+  isAttachmentObjectNotFoundError,
+} from './utils';
 import { validatePdf, validateBedrockDocument } from '~/files/validation';
-import { getFileStream, getConfiguredFileSizeLimit } from './utils';
 import { runGuardedEncode } from './memoryGuard';
 
 /** Anthropic only accepts PDFs as base64 documents; textual types must use a text source */
@@ -209,6 +213,9 @@ export async function encodeAndFormatDocuments(
 
   for (const settledResult of results) {
     if (settledResult.status === 'rejected') {
+      if (isAttachmentObjectNotFoundError(settledResult.reason)) {
+        throw settledResult.reason;
+      }
       console.error('Document processing failed:', settledResult.reason);
       continue;
     }

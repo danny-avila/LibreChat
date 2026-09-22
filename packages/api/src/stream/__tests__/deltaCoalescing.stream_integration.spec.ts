@@ -506,11 +506,12 @@ describe('Delta coalescing integration', () => {
       await manager.emitChunk(streamId, {
         event: 'on_run_step_completed',
         data: {
-          id: 'step-1',
-          runId: 'run-1',
-          index: 0,
-          stepDetails: { type: 'message_creation' },
-          result: { id: 'step-1' },
+          result: {
+            id: 'step-1',
+            runId: 'run-1',
+            index: 0,
+            stepDetails: { type: 'message_creation' },
+          },
         },
       });
 
