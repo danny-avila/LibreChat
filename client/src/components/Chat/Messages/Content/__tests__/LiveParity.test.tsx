@@ -233,6 +233,7 @@ describe('live fold parity with the cards it hides', () => {
   });
 
   it('shows a multiplier for consecutive uses of the same tool and resets on a different tool', () => {
+    jest.useFakeTimers();
     const first = toPart({ name: 'create_file', output: 'created' }, 'first');
     const second = toPart({ name: 'create_file', output: '' }, 'second');
     const view = mount([first, second], undefined, true);
@@ -259,6 +260,10 @@ describe('live fold parity with the cards it hides', () => {
       </QueryClientProvider>,
     );
 
+    expect(screen.getByTestId('live-phase-combo')).toHaveTextContent('×2');
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
     expect(screen.queryByTestId('live-phase-combo')).toBeNull();
   });
 
