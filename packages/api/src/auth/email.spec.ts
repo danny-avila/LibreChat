@@ -28,7 +28,7 @@ function createDeps(overrides: Partial<EmailChangeDeps> = {}) {
     verifyPassword: jest.fn().mockResolvedValue(true),
     resolveAllowedDomains: jest.fn().mockResolvedValue(null),
     sendEmail: jest.fn().mockResolvedValue(undefined),
-    isEmailChangeAllowed: jest.fn().mockReturnValue(true),
+    resolveSettings: jest.fn().mockResolvedValue({ enabled: true, tokenTTLSeconds: 900 }),
     clientDomain: 'https://chat.example.com/',
     appName: 'LibreChat',
     ...overrides,
@@ -40,7 +40,7 @@ describe('email change service', () => {
   describe('requestEmailChange', () => {
     it('rejects requests when email changes are disabled', async () => {
       const { deps, service } = createDeps({
-        isEmailChangeAllowed: jest.fn().mockReturnValue(false),
+        resolveSettings: jest.fn().mockResolvedValue({ enabled: false, tokenTTLSeconds: 900 }),
       });
 
       const response = await service.requestEmailChange({
@@ -362,7 +362,7 @@ describe('email change service', () => {
 
     it('rejects pending confirmations when email changes are disabled', async () => {
       const { deps, service } = createDeps({
-        isEmailChangeAllowed: jest.fn().mockReturnValue(false),
+        resolveSettings: jest.fn().mockResolvedValue({ enabled: false, tokenTTLSeconds: 900 }),
         findToken: jest.fn().mockResolvedValue(await pendingToken()),
       });
 

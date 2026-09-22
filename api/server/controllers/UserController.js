@@ -6,8 +6,8 @@ const {
   needsRefresh,
   comparePassword,
   checkEmailConfig,
-  isEmailChangeAllowed,
   createEmailChangeService,
+  createEmailChangeDeps,
   GenerationJobManager,
   getAppConfigOptionsFromUser,
   normalizeHttpError,
@@ -48,59 +48,26 @@ const {
 const { sendEmail } = require('~/server/utils');
 const db = require('~/models');
 
-const withTenant = (tenantId, operation) =>
-  tenantId ? tenantStorage.run({ tenantId }, operation) : runAsSystem(operation);
-
-const emailChangeService = createEmailChangeService({
-  findUserByEmail: (email, tenantId) =>
-    withTenant(tenantId, () =>
-      db.findUser(
-        tenantId
-          ? { email }
-          : {
-              email,
-              $or: [{ tenantId: { $exists: false } }, { tenantId: null }],
-            },
-        'email _id tenantId',
-      ),
-    ),
-  getUserById: (userId, tenantId) =>
-    withTenant(tenantId, () =>
-      db.getUserById(
-        userId,
-        'email _id name username provider role tenantId idOnTheSource +password',
-      ),
-    ),
-  updateUser: (userId, update, expectedState, tenantId) =>
-    withTenant(tenantId, () => db.updateUser(userId, update, expectedState)),
-  findToken: (query, tenantId) =>
-    withTenant(tenantId, () => db.findToken(query, { sort: { createdAt: -1 } })),
-  replaceTokenIfCurrent: (scope, expectedToken, data, tenantId) =>
-    withTenant(tenantId, () => db.replaceTokenIfCurrent(scope, expectedToken, data)),
-  deleteTokens: (query, tenantId) => withTenant(tenantId, () => db.deleteTokens(query)),
-  verifyPassword: (user, password) => comparePassword(user, password, { compare: bcrypt.compare }),
-  /** Confirmation is unauthenticated and so has no `req.config`. Resolve the same full
-   * principal scope issuance used, otherwise a role, group, or user override of
-   * `registration.allowedDomains` is silently unenforced here. Deliberately not `withTenant`:
-   * a tenant-less user would fall back to the system context, which suppresses tenant
-   * filtering, so another tenant's override of a shared principal such as the `USER` role
-   * would decide this policy. */
-  resolveAllowedDomains: async (user) => {
-    const resolveConfig = () =>
-      getAppConfig(
-        getAppConfigOptionsFromUser({ ...user, id: (user?._id ?? user?.id)?.toString() }),
-      );
-    const tenantId = user?.tenantId;
-    const appConfig = await (tenantId
-      ? tenantStorage.run({ tenantId }, resolveConfig)
-      : resolveConfig());
-    return appConfig?.registration?.allowedDomains;
-  },
-  sendEmail,
-  isEmailChangeAllowed,
-  clientDomain: process.env.DOMAIN_CLIENT ?? 'http://localhost:3080',
-  appName: process.env.APP_TITLE || 'LibreChat',
-});
+const emailChangeService = createEmailChangeService(
+  createEmailChangeDeps({
+    store: {
+      findUser: db.findUser,
+      getUserById: db.getUserById,
+      updateUser: db.updateUser,
+      findToken: db.findToken,
+      replaceTokenIfCurrent: db.replaceTokenIfCurrent,
+      deleteTokens: db.deleteTokens,
+    },
+    withTenant: (tenantId, operation) =>
+      tenantId ? tenantStorage.run({ tenantId }, operation) : runAsSystem(operation),
+    comparePassword: (user, password) =>
+      comparePassword(user, password, { compare: bcrypt.compare }),
+    sendEmail,
+    getAppConfig,
+    clientDomain: process.env.DOMAIN_CLIENT ?? 'http://localhost:3080',
+    appName: process.env.APP_TITLE || 'LibreChat',
+  }),
+);
 
 const PUBLIC_USER_RESPONSE_FIELDS = [
   '_id',

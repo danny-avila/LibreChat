@@ -1,7 +1,7 @@
 const express = require('express');
 const {
   isEnabled,
-  isEmailChangeAllowed,
+  resolveEmailChangeSettings,
   checkEmailConfig,
   isLangfuseConnectionAvailable,
   isLangfuseFanoutEnabled,
@@ -135,7 +135,7 @@ function buildPublicSharePayload() {
  * openid token-reuse marker) and are not needed on the pre-login screens, so they
  * are not exposed to unauthenticated callers.
  */
-function buildPostLoginPayload() {
+function buildPostLoginPayload(appConfig) {
   /** @type {Partial<TStartupConfig>} */
   const payload = {
     showBirthdayIcon:
@@ -150,7 +150,7 @@ function buildPostLoginPayload() {
     allowAccountDeletion:
       process.env.ALLOW_ACCOUNT_DELETION === undefined ||
       isEnabled(process.env.ALLOW_ACCOUNT_DELETION),
-    allowEmailChange: isEmailChangeAllowed(),
+    allowEmailChange: resolveEmailChangeSettings(appConfig?.config?.emailChange).enabled,
   };
 
   return payload;
@@ -290,7 +290,7 @@ router.get('/', async function (req, res) {
     const payload = {
       ...preLoginPayload,
       ...publicSharePayload,
-      ...buildPostLoginPayload(),
+      ...buildPostLoginPayload(appConfig),
       sharedLinksSnapshotFilesEnabled: sharedLinksEnabled && isFileSnapshotEnabled(appConfig),
       socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
       interface: appConfig?.interfaceConfig,

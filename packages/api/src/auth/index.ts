@@ -12,5 +12,6 @@ export * from './codeapi';
 export * from './openidRoleSync';
 export * from './userDocCache';
 export * from './email';
+export * from './emailChangeStore';
 export * from './reuse';
 export * from './openid/index';

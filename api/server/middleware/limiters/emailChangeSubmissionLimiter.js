@@ -4,12 +4,12 @@ const { limiterCache, removePorts } = require('@librechat/api');
 const { logViolation } = require('~/cache');
 
 const {
-  VERIFY_EMAIL_SUBMISSION_WINDOW = process.env.VERIFY_EMAIL_WINDOW ?? 2,
-  VERIFY_EMAIL_SUBMISSION_MAX = process.env.VERIFY_EMAIL_MAX ?? 2,
+  EMAIL_CHANGE_CONFIRM_USER_WINDOW = process.env.VERIFY_EMAIL_WINDOW ?? 2,
+  EMAIL_CHANGE_CONFIRM_USER_MAX = process.env.VERIFY_EMAIL_MAX ?? 2,
   VERIFY_EMAIL_SUBMISSION_VIOLATION_SCORE: score,
 } = process.env;
-const windowMs = VERIFY_EMAIL_SUBMISSION_WINDOW * 60 * 1000;
-const max = VERIFY_EMAIL_SUBMISSION_MAX;
+const windowMs = EMAIL_CHANGE_CONFIRM_USER_WINDOW * 60 * 1000;
+const max = EMAIL_CHANGE_CONFIRM_USER_MAX;
 const windowInMinutes = windowMs / 60000;
 const message = `Too many attempts, please try again after ${windowInMinutes} minute(s)`;
 const objectIdPattern = /^[a-f\d]{24}$/i;

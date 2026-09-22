@@ -1,8 +1,7 @@
 import { z } from 'zod';
 import { timingSafeEqual } from 'node:crypto';
 import { logger, hashToken, getRandomValues, isValidObjectIdString } from '@librechat/data-schemas';
-import type { IUser, IToken, TokenCreateData, TokenQuery } from '@librechat/data-schemas';
-import type { EmailChangeErrorCode } from 'librechat-data-provider';
+import type { EmailChangeErrorCode, TCustomConfig } from 'librechat-data-provider';
 import { isEmailDomainAllowed } from './domain';
 import { isEnabled } from '../utils/common';
 
@@ -17,7 +16,21 @@ export function isEmailChangeAllowed(
   return value === undefined || isEnabled(value);
 }
 
-const EMAIL_CHANGE_TOKEN_TTL_SECONDS = 15 * 60;
+/**
+ * yaml wins over the environment, which wins over the documented default, so a deployment
+ * that sets neither keeps exactly the behavior it has today.
+ */
+export function resolveEmailChangeSettings(
+  config?: TCustomConfig['emailChange'],
+  env: NodeJS.ProcessEnv = process.env,
+): EmailChangeSettings {
+  return {
+    enabled: config?.enabled ?? isEmailChangeAllowed(env.ALLOW_EMAIL_CHANGE),
+    tokenTTLSeconds: config?.tokenTTLSeconds ?? DEFAULT_EMAIL_CHANGE_TOKEN_TTL_SECONDS,
+  };
+}
+
+export const DEFAULT_EMAIL_CHANGE_TOKEN_TTL_SECONDS: number = 15 * 60;
 const EMAIL_CHANGE_ERROR_MESSAGE = 'Invalid or expired email change request';
 
 const requestSchema = z.object({
@@ -41,19 +54,64 @@ const confirmSchema = z.object({
   userId: z.string().refine(isValidObjectIdString),
 });
 
-export type EmailChangeUser = Pick<IUser, 'email'> &
-  Partial<
-    Pick<IUser, 'id' | 'name' | 'username' | 'password' | 'provider' | 'role' | 'tenantId'>
-  > & {
-    _id?: IUser['_id'] | string;
-  };
+/**
+ * The service speaks in plain records so a caller can implement it without Mongoose. The
+ * adapter that owns the database is the one that turns documents into these.
+ */
+export interface EmailChangeUser {
+  _id?: string;
+  id?: string;
+  email: string;
+  name?: string;
+  username?: string;
+  password?: string;
+  provider?: string;
+  role?: string;
+  tenantId?: string;
+}
 
-export type EmailChangeToken = Pick<IToken, 'token'> &
-  Partial<
-    Pick<IToken, 'email' | 'scope' | 'identifier' | 'expiresAt' | 'metadata' | 'tenantId'>
-  > & {
-    userId: IToken['userId'] | string;
-  };
+/** `lean()` yields a Map for a Mongoose map field, so reads tolerate either shape. */
+export type EmailChangeTokenMetadata =
+  | { requestIp?: string; passwordFingerprint?: string }
+  | Map<string, unknown>;
+
+export interface EmailChangeToken {
+  userId: string;
+  token: string;
+  email?: string;
+  scope?: string;
+  identifier?: string;
+  expiresAt?: Date | string;
+  metadata?: EmailChangeTokenMetadata;
+  tenantId?: string;
+}
+
+/** `null` matches a stored field that is absent, which is how legacy reset tokens are found. */
+export interface EmailChangeTokenQuery {
+  userId?: string;
+  email?: string | null;
+  identifier?: string | null;
+  type?: string | null;
+  scope?: string;
+  token?: string;
+}
+
+export interface EmailChangeTokenData {
+  userId: string;
+  email: string;
+  scope: string;
+  identifier: string;
+  type: string;
+  token: string;
+  expiresIn: number;
+  metadata?: EmailChangeTokenMetadata;
+}
+
+/** What an operator may set, resolved once per call from yaml, then env, then the default. */
+export interface EmailChangeSettings {
+  enabled: boolean;
+  tokenTTLSeconds: number;
+}
 
 interface EmailData {
   email: string;
@@ -71,20 +129,24 @@ export interface EmailChangeDeps {
     expectedState: Pick<EmailChangeUser, 'email' | 'password' | 'provider'>,
     tenantId?: string,
   ) => Promise<EmailChangeUser | null>;
-  findToken: (query: TokenQuery, tenantId?: string) => Promise<EmailChangeToken | null>;
+  findToken: (query: EmailChangeTokenQuery, tenantId?: string) => Promise<EmailChangeToken | null>;
   replaceTokenIfCurrent: (
     scope: string,
     expectedToken: string | null,
-    data: TokenCreateData,
+    data: EmailChangeTokenData,
     tenantId?: string,
   ) => Promise<boolean>;
-  deleteTokens: (query: TokenQuery, tenantId?: string) => Promise<{ deletedCount?: number }>;
+  deleteTokens: (
+    query: EmailChangeTokenQuery,
+    tenantId?: string,
+  ) => Promise<{ deletedCount?: number }>;
   verifyPassword: (user: EmailChangeUser, password: string) => Promise<boolean>;
   /** Resolves the tenant's current registration allowlist so confirmation cannot
    * commit an address that policy stopped permitting while the link was pending. */
   resolveAllowedDomains: (user: EmailChangeUser) => Promise<string[] | null | undefined>;
   sendEmail: (data: EmailData) => Promise<void>;
-  isEmailChangeAllowed: () => boolean;
+  /** The operator's settings for the tenant a call belongs to. */
+  resolveSettings: (tenantId?: string) => Promise<EmailChangeSettings>;
   clientDomain: string;
   appName: string;
 }
@@ -219,7 +281,10 @@ function remainingLifetimeSeconds(token: EmailChangeToken): number {
   return expiresAt === null ? 0 : Math.floor((expiresAt - Date.now()) / 1000);
 }
 
-function tokenMetadataValue(token: EmailChangeToken, key: string): unknown {
+function tokenMetadataValue(
+  token: EmailChangeToken,
+  key: 'requestIp' | 'passwordFingerprint',
+): unknown {
   if (token.metadata instanceof Map) {
     return token.metadata.get(key);
   }
@@ -228,7 +293,7 @@ function tokenMetadataValue(token: EmailChangeToken, key: string): unknown {
 
 async function deleteTokensOrLog(
   deps: EmailChangeDeps,
-  query: TokenQuery,
+  query: EmailChangeTokenQuery,
   tenantId: string | undefined,
   context: string,
 ): Promise<void> {
@@ -246,7 +311,7 @@ type TokenClaim = 'claimed' | 'superseded' | 'unavailable';
  * is reported separately because it must not be read as a superseded link. */
 async function claimTokenIfCurrent(
   deps: EmailChangeDeps,
-  query: TokenQuery,
+  query: EmailChangeTokenQuery,
   tenantId: string | undefined,
 ): Promise<TokenClaim> {
   try {
@@ -268,7 +333,9 @@ async function restoreClaimedToken(
   tenantId: string | undefined,
 ): Promise<void> {
   const expiresIn = remainingLifetimeSeconds(token);
-  if (expiresIn <= 0) {
+  const { email, identifier } = token;
+  /** A pending change always carries both; without them there is no link to reinstate. */
+  if (expiresIn <= 0 || !email || !identifier) {
     return;
   }
   try {
@@ -277,9 +344,9 @@ async function restoreClaimedToken(
       null,
       {
         userId: token.userId,
-        email: token.email,
+        email,
         scope,
-        identifier: token.identifier,
+        identifier,
         type: EMAIL_CHANGE_TOKEN_TYPE,
         token: token.token,
         expiresIn,
@@ -297,7 +364,8 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
   confirmEmailChange: (input: ConfirmEmailChangeInput) => Promise<EmailChangeResult>;
 } {
   async function requestEmailChange(input: RequestEmailChangeInput): Promise<EmailChangeResult> {
-    if (!deps.isEmailChangeAllowed()) {
+    const settings = await deps.resolveSettings(input.tenantId);
+    if (!settings.enabled) {
       logger.warn(
         `[emailChange] Rejected disabled request [User ID: ${input.userId}] [IP: ${input.ip ?? 'unknown'}]`,
       );
@@ -368,7 +436,17 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       return result(403, 'Email domain is not allowed', 'email_domain_not_allowed');
     }
 
-    const existingUser = await deps.findUserByEmail(newEmail, user.tenantId);
+    const tokenScope = emailChangeTokenScope(userId);
+    /** Nothing here depends on another's result and all three stay scoped to the requesting
+     * user's tenant, so issuance makes one round trip instead of three before delivery. The
+     * results are still validated in the order they were, and none of them is acted on until
+     * the check that owns it passes. */
+    const [existingUser, previousToken, latestUser] = await Promise.all([
+      deps.findUserByEmail(newEmail, user.tenantId),
+      deps.findToken({ scope: tokenScope }, user.tenantId),
+      deps.getUserById(input.userId, input.tenantId),
+    ]);
+
     if (existingUser && userIdOf(existingUser) !== userId) {
       logger.warn(
         `[emailChange] Email already in use [User ID: ${userId}] [New Email: ${newEmail}] [IP: ${ip}]`,
@@ -379,8 +457,6 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
     const rawToken = await getRandomValues(32);
     const tokenHash = await hashToken(rawToken);
     const passwordFingerprint = await hashToken(user.password);
-    const tokenScope = emailChangeTokenScope(userId);
-    const previousToken = await deps.findToken({ scope: tokenScope }, user.tenantId);
     const tokenQuery = {
       userId,
       email: newEmail,
@@ -388,9 +464,8 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       token: tokenHash,
     };
 
-    /** Re-read before delivery so an account change during request validation does not
-     * result in a verification message whose link can never be used. */
-    const latestUser = await deps.getUserById(input.userId, input.tenantId);
+    /** The re-read above guards delivery: an account change during request validation must not
+     * produce a verification message whose link can never be used. */
     if (!accountMatchesRequest(latestUser, userId, oldEmail, user.password)) {
       logger.warn(
         `[emailChange] Account changed while issuing [User ID: ${userId}] [New Email: ${newEmail}] [IP: ${ip}]`,
@@ -429,7 +504,7 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
         identifier: oldEmail,
         type: EMAIL_CHANGE_TOKEN_TYPE,
         token: tokenHash,
-        expiresIn: EMAIL_CHANGE_TOKEN_TTL_SECONDS,
+        expiresIn: settings.tokenTTLSeconds,
         metadata: { requestIp: ip, passwordFingerprint },
       },
       user.tenantId,
@@ -459,7 +534,7 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
   }
 
   async function confirmEmailChange(input: ConfirmEmailChangeInput): Promise<EmailChangeResult> {
-    if (!deps.isEmailChangeAllowed()) {
+    if (!(await deps.resolveSettings()).enabled) {
       logger.warn(`[emailChange] Rejected disabled confirmation [IP: ${input.ip ?? 'unknown'}]`);
       return result(403, 'Email changes are disabled', 'email_change_disabled');
     }

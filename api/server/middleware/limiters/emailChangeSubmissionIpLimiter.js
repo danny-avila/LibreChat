@@ -10,12 +10,12 @@ const { logViolation } = require('~/cache');
  * isolation without letting one client issue unbounded token lookups.
  */
 const {
-  EMAIL_CHANGE_SUBMISSION_IP_WINDOW = 2,
-  EMAIL_CHANGE_SUBMISSION_IP_MAX = 20,
+  EMAIL_CHANGE_CONFIRM_IP_WINDOW = 2,
+  EMAIL_CHANGE_CONFIRM_IP_MAX = 20,
   EMAIL_CHANGE_SUBMISSION_IP_VIOLATION_SCORE: score,
 } = process.env;
-const windowMs = EMAIL_CHANGE_SUBMISSION_IP_WINDOW * 60 * 1000;
-const max = EMAIL_CHANGE_SUBMISSION_IP_MAX;
+const windowMs = EMAIL_CHANGE_CONFIRM_IP_WINDOW * 60 * 1000;
+const max = EMAIL_CHANGE_CONFIRM_IP_MAX;
 const windowInMinutes = windowMs / 60000;
 const message = `Too many attempts, please try again after ${windowInMinutes} minute(s)`;
 

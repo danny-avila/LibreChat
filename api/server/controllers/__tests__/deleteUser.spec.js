@@ -52,6 +52,7 @@ jest.mock('@librechat/api', () => ({
     requestEmailChange: jest.fn(),
     confirmEmailChange: jest.fn(),
   })),
+  createEmailChangeDeps: jest.fn(() => ({})),
   MCPOAuthHandler: {},
   MCPTokenStorage: {},
   normalizeHttpError: jest.fn(),
