@@ -56,6 +56,7 @@ jest.mock('~/hooks', () => ({
   useAssistantListMap: () => mockAssistantListMap,
   useIdChangeEffect: () => {},
   useAppStartup: () => {},
+  useMCPDeepLink: () => jest.requireActual('~/hooks/MCP/useMCPDeepLink').default(),
   useNewConvo: () => ({ newConversation: mockNewConversation }),
   useLocalize: () => (key: string) => key,
 }));
@@ -78,6 +79,12 @@ jest.mock('~/utils', () => ({
   clearMessagesCache: jest.fn(),
   logger: { log: jest.fn() },
 }));
+jest.mock('~/components/SidePanel/MCPBuilder/MCPDeepLinkDialog', () => ({
+  __esModule: true,
+  default: ({ isOpen }: { isOpen: boolean }) =>
+    isOpen ? <div data-testid="mcp-deep-link-dialog" /> : null,
+}));
+
 jest.mock('~/components/Chat/ChatView', () => ({
   __esModule: true,
   default: () => <div data-testid="composer">{mockConversation.conversationId}</div>,
@@ -230,4 +237,21 @@ it('reconciles a remounted chat route with conversation state retained by the sh
   setup(['/c/chat-b']);
   await waitFor(() => expect(screen.getByTestId('composer')).toHaveTextContent('chat-b'));
   expect(mockFetchConversation).toHaveBeenCalledWith('chat-b');
+});
+
+it('opens a deep link during chat navigation without losing the departing composer', async () => {
+  mockFetchConversation.mockReturnValue(new Promise(() => {}));
+  const { router } = setup();
+  const composer = screen.getByTestId('composer');
+  await act(async () => {
+    await router.navigate('/c/chat-b?projectId=keep#section', {
+      state: { mcpName: 'Server', mcpUrl: 'https://example.com/mcp' },
+    });
+  });
+  expect(screen.getByTestId('mcp-deep-link-dialog')).toBeVisible();
+  expect(screen.getByTestId('composer')).toBe(composer);
+  expect(composer).not.toBeVisible();
+  expect(router.state.location.search).toBe('?projectId=keep');
+  expect(router.state.location.hash).toBe('#section');
+  expect(router.state.location.state).toBeNull();
 });

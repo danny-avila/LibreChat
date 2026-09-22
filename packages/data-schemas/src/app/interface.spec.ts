@@ -3,6 +3,32 @@ import type { TCustomConfig } from 'librechat-data-provider';
 import { loadDefaultInterface } from './interface';
 
 describe('loadDefaultInterface', () => {
+  it('enables MCP deep links by default', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.mcpServers?.deepLinks).toBe(true);
+  });
+
+  it('preserves disabled MCP deep-link config', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        mcpServers: {
+          deepLinks: false,
+        },
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.mcpServers?.deepLinks).toBe(false);
+  });
+
   it('uses the schema default for URL auto-submit when not configured', async () => {
     const interfaceConfig = await loadDefaultInterface({
       config: {},

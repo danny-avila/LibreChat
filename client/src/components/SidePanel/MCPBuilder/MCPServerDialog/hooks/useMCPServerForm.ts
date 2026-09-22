@@ -56,13 +56,23 @@ export interface MCPServerFormData {
   trust: boolean;
 }
 
+export type MCPServerInitialValues = Partial<
+  Pick<MCPServerFormData, 'title' | 'description' | 'icon' | 'url' | 'type'>
+>;
+
 interface UseMCPServerFormProps {
   server?: MCPServerDefinition | null;
+  initialValues?: MCPServerInitialValues;
   onSuccess?: (serverName: string, isOAuth: boolean) => void;
   onClose?: () => void;
 }
 
-export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFormProps) {
+export function useMCPServerForm({
+  server,
+  initialValues,
+  onSuccess,
+  onClose,
+}: UseMCPServerFormProps) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
 
@@ -119,12 +129,18 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
       };
     }
 
+    const initialUrl = initialValues?.url ?? '';
+    const normalizedInitialUrl = normalizeUrl(initialUrl);
+    const titleFromInitialUrl = isValidUrl(normalizedInitialUrl)
+      ? extractServerNameFromUrl(normalizedInitialUrl)
+      : '';
+
     return {
-      title: '',
-      description: '',
-      url: '',
-      type: 'streamable-http',
-      icon: '',
+      title: initialValues?.title || titleFromInitialUrl,
+      description: initialValues?.description ?? '',
+      url: initialUrl,
+      type: initialValues?.type ?? 'streamable-http',
+      icon: initialValues?.icon ?? '',
       auth: {
         auth_type: AuthTypeEnum.None,
         api_key: '',
@@ -141,7 +157,7 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
       },
       trust: false,
     };
-  }, [server]);
+  }, [server, initialValues]);
 
   // Form instance
   const methods = useForm<MCPServerFormData>({

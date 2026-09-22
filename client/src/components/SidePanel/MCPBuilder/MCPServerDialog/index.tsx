@@ -22,6 +22,7 @@ import {
   OGDialogContent,
   OGDialogTemplate,
 } from '@librechat/client';
+import type { MCPServerInitialValues } from './hooks/useMCPServerForm';
 import { useAuthContext, useHasAccess, useResourcePermissions, MCPServerDefinition } from '~/hooks';
 import { GenericGrantAccessDialog } from '~/components/Sharing';
 import { useMCPServerForm } from './hooks/useMCPServerForm';
@@ -34,6 +35,7 @@ interface MCPServerDialogProps {
   children?: React.ReactNode;
   triggerRef?: React.MutableRefObject<HTMLDivElement | HTMLButtonElement | null>;
   server?: MCPServerDefinition | null;
+  initialValues?: MCPServerInitialValues;
 }
 
 export default function MCPServerDialog({
@@ -42,6 +44,7 @@ export default function MCPServerDialog({
   children,
   triggerRef,
   server,
+  initialValues,
 }: MCPServerDialogProps) {
   const localize = useLocalize();
   const { user } = useAuthContext();
@@ -56,6 +59,7 @@ export default function MCPServerDialog({
   // Form hook
   const formHook = useMCPServerForm({
     server,
+    initialValues,
     onSuccess: (serverName, isOAuth) => {
       if (isOAuth) {
         setCreatedServerId(serverName);
