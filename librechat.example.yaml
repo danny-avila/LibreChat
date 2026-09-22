@@ -257,8 +257,9 @@ interface:
   #   tabBadge: true # Allow the unseen count in the tab title and favicon (default: true)
   #   desktop: true # Allow readers to turn on desktop notifications for replies (default: true)
   #   sound: true # Allow readers to turn on the reply chime (default: true)
-  #   # How many conversations one background poll looks at (1-1000, default: 100). Raise it
-  #   # when scheduled runs routinely reply to more chats than this between two polls.
+  #   # How many conversations one background poll looks at (1-100, default: 100). The list's
+  #   # own maximum page is the ceiling, so covering a deployment whose replies outpace one
+  #   # page is not a matter of raising this.
   #   pollLimit: 100
   # Conversation trace viewer: a waterfall of the model calls and tool spans behind
   # each response, read from the deployment's Langfuse project. The control only

@@ -35,7 +35,7 @@ export const REPLY_NOTIFICATION_DEFAULTS: Required<TReplyNotificationsConfig> = 
 };
 
 const isBounded = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 1000;
+  typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 100;
 
 /**
  * The reply-alert capabilities this deployment permits.

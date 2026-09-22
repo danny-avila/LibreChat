@@ -1,6 +1,6 @@
 const path = require('path');
 const { v4 } = require('uuid');
-const { countTokens, announceReply } = require('@librechat/api');
+const { countTokens, announceReply, isAnnounceableReply } = require('@librechat/api');
 const { escapeRegExp } = require('@librechat/data-schemas');
 const {
   Constants,
@@ -168,6 +168,13 @@ async function saveAssistantMessage(req, params) {
     spec: params.spec,
   });
 
+  const announceable = isAnnounceableReply({
+    messageId: message?.messageId,
+    content: params.content,
+    text: params.text,
+    isTemporary: ctx.isTemporary,
+  });
+
   const savedConvo = await saveConvo(
     { ...ctx, expiredAt: message?.expiredAt ?? ctx.expiredAt },
     {
@@ -182,14 +189,12 @@ async function saveAssistantMessage(req, params) {
     },
     {
       context: 'api/server/services/Threads/manage.js #saveAssistantMessage',
-      /** Only reached once the assistant message above is actually in the history: a write
-       *  that resolved empty would announce a reply nobody can open. `saveConvo` assigns the
-       *  timestamp past its own awaited reads, so a catch-up recorded while one of them is in
-       *  flight cannot outrank this reply. */
-      stampReply: message != null && ctx.isTemporary !== true && Boolean(message.messageId),
-      ...(message != null && ctx.isTemporary !== true && message.messageId
-        ? { replyMessageId: message.messageId }
-        : {}),
+      /** Judged by the same predicate every other persistence path asks, so an assistant row
+       *  that renders nothing cannot raise a dot here that opening the chat can never clear.
+       *  `saveConvo` assigns the timestamp past its own awaited reads, so a catch-up recorded
+       *  while one of them is in flight cannot outrank this reply. */
+      stampReply: announceable,
+      ...(announceable ? { replyMessageId: message.messageId } : {}),
       ...(message?._id != null ? { appendMessageIds: [message._id] } : {}),
     },
   );

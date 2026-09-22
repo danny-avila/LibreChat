@@ -10,6 +10,10 @@ const mockSpendTokens = jest.fn().mockResolvedValue();
 
 jest.mock('@librechat/api', () => ({
   countTokens: jest.fn().mockResolvedValue(0),
+  /* The real predicate, because what may raise an unseen indicator is the behaviour under test
+     here; a stub would assert only that this file calls something. */
+  isAnnounceableReply: jest.requireActual('@librechat/api').isAnnounceableReply,
+  announceReply: jest.fn().mockResolvedValue(false),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -117,6 +121,23 @@ describe('saveAssistantMessage', () => {
       expect.not.objectContaining({ lastResponseAt: expect.anything() }),
       expect.objectContaining({ stampReply: true }),
     );
+  });
+
+  it.each([
+    ['no content and no text', { ...params, text: undefined, content: undefined }],
+    ['an empty content array', { ...params, text: undefined, content: [] }],
+    ['whitespace-only text', { ...params, text: '   ' }],
+  ])('does not stamp an assistant row with %s', async (_case, emptyParams) => {
+    /* Acknowledging a reply needs the stamped message on screen, so a row that renders nothing
+       would leave a dot that opening the conversation could never clear. */
+    await saveAssistantMessage({ user: { id: 'user-123' }, body: {} }, emptyParams);
+
+    expect(saveConvo).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ stampReply: false }),
+    );
+    expect(saveConvo.mock.calls[0][2]).not.toHaveProperty('replyMessageId');
   });
 
   it('never stamps a temporary conversation', async () => {

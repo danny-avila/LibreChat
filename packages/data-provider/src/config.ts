@@ -2221,10 +2221,14 @@ export const interfaceSchema = z
         sound: z.boolean().optional(),
         /**
          * How many conversations one away poll looks at. A reply lifts its conversation, so the
-         * newest activity is what the first page holds; a deployment whose scheduled runs reply
-         * to more chats than this between two ticks raises it.
+         * newest activity is what the first page holds.
+         *
+         * Bounded by the conversation list's own maximum page, which the server clamps every
+         * request to: advertising a wider range here would accept a number the read silently
+         * truncates. Covering a deployment whose replies outpace a single page wants the
+         * server-side unseen query rather than a larger page.
          */
-        pollLimit: z.number().int().min(1).max(1000).optional(),
+        pollLimit: z.number().int().min(1).max(100).optional(),
       })
       .default({ tabBadge: true, desktop: true, sound: true, pollLimit: 100 }),
     schedules: z
