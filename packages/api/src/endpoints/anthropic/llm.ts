@@ -372,6 +372,25 @@ function getLLMConfig(
     }
   }
 
+  /** The SDK reads outputConfig, not invocationKwargs.output_config. Keep the
+   * legacy field for persisted configs and OpenAI-compatible transforms. */
+  if (
+    requestOptions.invocationKwargs?.output_config &&
+    !options.dropParams?.includes('outputConfig')
+  ) {
+    requestOptions.outputConfig = requestOptions.invocationKwargs.output_config;
+  }
+
+  /** block_binding is invalid without its beta header. Honor an administrator
+   * dropping clientOptions without leaving a beta-only field in the body. */
+  if (
+    shouldDropClientOptions &&
+    requestOptions.thinking &&
+    'block_binding' in requestOptions.thinking
+  ) {
+    delete requestOptions.thinking.block_binding;
+  }
+
   if (shouldOmitSamplingParameters) {
     delete requestOptions.temperature;
     delete requestOptions.topP;

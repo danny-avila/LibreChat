@@ -20,8 +20,8 @@ export default function AnthropicSettings({
       return undefined;
     }
     return {
-      col1: applyModelAwareDefaults(settings.col1, endpointKey, conversation?.model),
-      col2: applyModelAwareDefaults(settings.col2, endpointKey, conversation?.model),
+      col1: applyModelAwareDefaults(settings.col1, endpointKey, conversation?.model ?? undefined),
+      col2: applyModelAwareDefaults(settings.col2, endpointKey, conversation?.model ?? undefined),
     };
   }, [conversation]);
 
@@ -40,7 +40,6 @@ export default function AnthropicSettings({
     const { key, default: defaultValue, ...rest } = setting;
 
     const props = {
-      key,
       settingKey: key,
       defaultValue,
       ...rest,
@@ -50,10 +49,10 @@ export default function AnthropicSettings({
     };
 
     if (key === 'model') {
-      return <Component {...props} options={models} />;
+      return <Component key={key} {...props} options={models} />;
     }
 
-    return <Component {...props} />;
+    return <Component key={key} {...props} />;
   };
 
   return (

@@ -515,6 +515,48 @@ describe('bedrockInputParser', () => {
     expect(additionalFields.anthropic_beta).toEqual(['thinking-binding-controls-2026-08-01']);
   });
 
+  test('restores Opus 5.5 settings and removes its generated binding on a model switch', () => {
+    const first = bedrockOutputParser(
+      bedrockInputParser.parse({
+        model: 'global.anthropic.claude-opus-5-5',
+        additionalModelRequestFields: {
+          thinking: { type: 'disabled', display: 'omitted' },
+          output_config: { effort: 'max' },
+          top_k: 40,
+          anthropic_beta: ['custom-beta', BEDROCK_OUTPUT_128K_BETA],
+        },
+      }),
+    );
+    const fields = structuredClone(first.additionalModelRequestFields);
+    expect(fields).toMatchObject({
+      thinking: {
+        type: 'adaptive',
+        display: 'omitted',
+        block_binding: { prefix_mismatch_behavior: 'drop_block' },
+      },
+      output_config: { effort: 'max' },
+      anthropic_beta: ['custom-beta', 'thinking-binding-controls-2026-08-01'],
+    });
+    expect(fields).not.toHaveProperty('top_k');
+    expect(first.maxTokens).toBe(128000);
+    expect(bedrockOutputParser(bedrockInputParser.parse(first))).toEqual(first);
+
+    const switched = bedrockOutputParser(
+      bedrockInputParser.parse({
+        ...first,
+        model: 'global.anthropic.claude-opus-5',
+        thinking: false,
+      }),
+    );
+    expect(switched.additionalModelRequestFields).toMatchObject({
+      thinking: { type: 'disabled' },
+      output_config: { effort: 'high' },
+      anthropic_beta: ['custom-beta', ...BEDROCK_CLAUDE_4_BETAS],
+    });
+    expect(switched.additionalModelRequestFields).not.toHaveProperty('thinking.block_binding');
+    expect(first.additionalModelRequestFields).toEqual(fields);
+  });
+
   describe('Model Matching for Reasoning Configuration', () => {
     test('should match anthropic.claude-3-7-sonnet model', () => {
       const input = {
