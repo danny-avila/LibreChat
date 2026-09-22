@@ -81,6 +81,7 @@ const {
   settleAgentEventActorDetachedAction,
   claimAgentEventActorSuspension,
   settleAgentEventActorSuspension,
+  stampConvoLastResponse,
   isAgentTriggerPrincipalActive,
   isSubagentOwnerAdmissible,
   appendConvoMessageReference,
@@ -543,6 +544,16 @@ async function saveErrorTurn(
           }
         : { context, noUpsert: true },
     );
+    /* A failed run still persisted an assistant message, and a user on another device has no
+       other way to learn the turn ended. Best effort: the error turn is already durable, and
+       a missed indicator must not turn a handled failure into a thrown one. */
+    if (reqCtx.isTemporary !== true && savedErrorMessage.messageId) {
+      try {
+        await stampConvoLastResponse(userId, conversationId, savedErrorMessage.messageId);
+      } catch (stampError) {
+        logger.error('[AgentController] Failed to stamp the persisted error turn', stampError);
+      }
+    }
   } catch (err) {
     logger.error('[AgentController] Failed to persist error turn', err);
     throw err;
@@ -2900,11 +2911,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
          *  message's write is observed: the retry below cannot tell on its own
          *  whether the conversation already references what it just re-saved. */
         convoSignal.observeMessageWrite(databasePromise);
-        const { conversation: convoData = {} } = await databasePromise;
-        const conversation = { ...convoData };
+        const databaseResult = await databasePromise;
+        const { conversation: convoData = {}, persistenceSkipped = false } = databaseResult;
+        const responsePersistenceWasSkipped = persistenceSkipped === true;
+        let conversation = { ...convoData };
         conversation.title =
           conversation && !conversation.title ? null : conversation?.title || 'New Chat';
-
         if (!terminalClaim) {
           /** Stop/replacement won before the response persistence hook. The
            * BaseClient contract skipped its completed response write; cancel
@@ -3062,6 +3074,30 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         }
         await eventActorTurn?.historyPersisted();
         eventActorPersistenceComplete = true;
+
+        /** A persisted BaseClient response already advanced lastResponseAt. Re-stamp only
+         * when its terminal persistence was explicitly skipped, then refresh the payload's
+         * conversation snapshot so it acknowledges the durable timestamp. */
+        if (
+          responseIsUnfinished &&
+          responsePersistenceWasSkipped &&
+          reqCtx.isTemporary !== true &&
+          savedResponseMessage.messageId
+        ) {
+          try {
+            await stampConvoLastResponse(
+              reqCtx.userId,
+              response.conversationId,
+              savedResponseMessage.messageId,
+            );
+            const stampedConversation = await getConvo(reqCtx.userId, response.conversationId);
+            if (stampedConversation) {
+              conversation = { ...conversation, ...stampedConversation };
+            }
+          } catch (error) {
+            logger.warn('[AgentController] Failed to stamp lastResponseAt', error);
+          }
+        }
 
         // If the user stopped this turn — or an empty preempt boundary truncated
         // it, which persists under the same honest `unfinished` contract — cancel

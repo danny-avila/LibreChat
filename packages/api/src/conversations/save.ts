@@ -44,6 +44,11 @@ export interface TurnConversationWrite extends TurnConversationFields {
   initialized?: boolean;
   /** The message this write just saved, appended to the conversation's message list. */
   savedMessageId?: SavedMessageId;
+  /**
+   * The assistant reply this write announces, when the turn persisted one a reader can open.
+   * Absent for the user's own turn, and for a reply whose message write resolved empty.
+   */
+  replyMessageId?: string;
 }
 
 export interface TurnConversationResult {
@@ -135,6 +140,24 @@ async function loadExistingConversation(
   return deps.getConvo(write.ctx.userId, write.conversationId);
 }
 
+/**
+ * The reply stamp a write carries, and nothing when it carries none.
+ *
+ * `saveConvo` assigns the timestamp itself, past its own awaited reads and against the write, so
+ * a catch-up recorded by `/seen` while one of those reads is in flight cannot outrank this reply
+ * and leave it reading as already seen. A temporary chat is never announced: it has no row in the
+ * lists the indicator is read from.
+ */
+function getReplyStamp(
+  write: TurnConversationWrite,
+): { stampReply: true; replyMessageId: string } | Record<string, never> {
+  const replyMessageId = write.replyMessageId;
+  if (replyMessageId == null || replyMessageId === '' || write.ctx.isTemporary === true) {
+    return {};
+  }
+  return { stampReply: true, replyMessageId };
+}
+
 async function writeConversation(
   deps: ConversationStore,
   write: TurnConversationWrite,
@@ -159,6 +182,7 @@ async function writeConversation(
       createdAtOnInsert:
         write.initialized !== true && existing == null ? getCreatedAtOnInsert(req) : undefined,
       ...(appendMessageIds != null ? { appendMessageIds } : {}),
+      ...getReplyStamp(write),
     },
   );
   if (req != null && conversation != null && 'conversationId' in conversation) {

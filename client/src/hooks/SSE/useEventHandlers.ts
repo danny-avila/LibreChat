@@ -37,6 +37,8 @@ import {
   getAllContentText,
   upsertConvoInAllQueries,
   updateConvoInAllQueries,
+  applyServerReplyStamp,
+  markLocallyCommittedReply,
   removeConvoFromAllQueries,
   findConversationInInfinite,
   preserveStreamedContentIdentity,
@@ -337,6 +339,46 @@ export interface ErrorTurn {
 }
 
 /** Builds the row a failed turn leaves in the transcript and names the conversation it belongs to. */
+type SettledErrorReadState = {
+  lastResponseAt: string;
+  lastResponseMessageId?: string;
+  updatedAt?: string;
+};
+
+/**
+ * A persisted terminal error still carries the server's winning reply stamp in its nested
+ * conversation snapshot. Pairing the error messages cache object with that stamp before the list
+ * update lets `useConversationSeen` acknowledge the reply the user just watched fail, instead of
+ * leaving a dot on a conversation they are looking at.
+ */
+const resolveSettledErrorReadState = ({
+  data,
+  submission,
+  conversationId,
+}: {
+  data?: TResData;
+  submission: EventSubmission;
+  conversationId: string;
+}): SettledErrorReadState | undefined => {
+  if (submission.isTemporary === true || !data || !conversationId) {
+    return undefined;
+  }
+  const settledConversation = data.conversation;
+  const lastResponseAt = settledConversation?.lastResponseAt;
+  if (typeof lastResponseAt !== 'string' || lastResponseAt.length === 0) {
+    return undefined;
+  }
+  return {
+    lastResponseAt,
+    lastResponseMessageId:
+      typeof settledConversation.lastResponseMessageId === 'string'
+        ? settledConversation.lastResponseMessageId
+        : undefined,
+    updatedAt:
+      typeof settledConversation.updatedAt === 'string' ? settledConversation.updatedAt : undefined,
+  };
+};
+
 export const resolveErrorTurn = ({
   data,
   submission,
@@ -1080,6 +1122,21 @@ export default function useEventHandlers({
          *  holds for a stopped turn too: the server persists a title that finished
          *  generating before the Stop, so the local one stays in sync. */
         if (setConversation && isAddedRequest !== true) {
+          /* Pair the durable server stamp with the exact final messages cache object before
+           * point/list cache events can ask useConversationSeen to acknowledge it. */
+          const serverLastResponseAt = serverConversation.lastResponseAt;
+          if (conversation.conversationId && !_isTemporary && serverLastResponseAt) {
+            markLocallyCommittedReply(
+              queryClient,
+              conversation.conversationId,
+              serverLastResponseAt,
+            );
+            applyServerReplyStamp(queryClient, conversation.conversationId, {
+              lastResponseAt: serverLastResponseAt,
+              lastResponseMessageId: serverConversation.lastResponseMessageId,
+              updatedAt: serverConversation.updatedAt,
+            });
+          }
           setConversation((prevState) => {
             const update = keepLocalCodeApprovalMode(
               { ...prevState, ...(conversation as TConversation) },
@@ -1174,6 +1231,11 @@ export default function useEventHandlers({
       const finalMessages = mergeErrorMessages({ ...submission, errorMessage: errorResponse });
       setMessages(finalMessages);
       queryClient.setQueryData<TMessage[]>([QueryKeys.messages, conversationId], finalMessages);
+      const settled = resolveSettledErrorReadState({ data, submission, conversationId });
+      if (settled) {
+        markLocallyCommittedReply(queryClient, conversationId, settled.lastResponseAt);
+        applyServerReplyStamp(queryClient, conversationId, settled);
+      }
       if (recover) {
         recoverConversation(conversationId, submission);
       }

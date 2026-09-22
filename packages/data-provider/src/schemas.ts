@@ -1170,6 +1170,14 @@ export const tConversationSchema = z.object({
   chatProjectId: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  /** Set only when an assistant message is persisted; drives the unseen-reply indicator. */
+  lastResponseAt: z.string().optional(),
+  /** Durable messageId of the assistant reply named by `lastResponseAt`. */
+  lastResponseMessageId: z.string().optional(),
+  /** True only while `lastResponseAt` is the synthetic marker from "mark unread". */
+  lastResponseIsManual: z.boolean().optional(),
+  /** Set when the user has the newest message on screen; compared against `lastResponseAt`. */
+  lastSeenAt: z.string().optional(),
   /* Files */
   resendFiles: z.boolean().optional(),
   file_ids: z.array(z.string()).optional(),
@@ -1234,6 +1242,12 @@ export const tPresetSchema = tConversationSchema
     createdAt: true,
     updatedAt: true,
     title: true,
+    /* Runtime unseen-reply state must not ride into presets: applying one would stamp
+       stale timestamps back onto conversations. */
+    lastResponseAt: true,
+    lastResponseMessageId: true,
+    lastResponseIsManual: true,
+    lastSeenAt: true,
   })
   .merge(
     z.object({

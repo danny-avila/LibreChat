@@ -211,6 +211,7 @@ describe('excludedKeys', () => {
     'agentEventActorCleanup',
     'agentEventActorSuspension',
     'agentEventActorReconciliations',
+    'lastResponseMessageId',
     '__v',
   ])('excludes system field "%s"', (field) => {
     expect(excludedKeys.has(field)).toBe(true);
