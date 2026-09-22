@@ -294,7 +294,10 @@ function LivePhaseHeader({
       ? localize('com_ui_sandbox_starting')
       : activity.text;
   const { source } = activity;
-  const line = useMemo(() => ({ text, source }), [text, source]);
+  const line = useMemo(
+    () => ({ text, source, comboCount: activity.comboCount }),
+    [text, source, activity.comboCount],
+  );
   const previewRef = useRef<HTMLSpanElement>(null);
   const [isPreviewFull, setIsPreviewFull] = useState(false);
   const painted = useThrottledValue(
@@ -329,6 +332,7 @@ function LivePhaseHeader({
    *  fail while a later one runs, and the line alone would never say so. The
    *  hidden group header carries the same counts in the same words. */
   const { failed, cancelled } = activity.outcome;
+  const combo = painted.comboCount > 1 ? `×${painted.comboCount}` : '';
   const detail = useMemo(() => {
     const notes: string[] = [];
     if (failed > 0) {
@@ -396,13 +400,22 @@ function LivePhaseHeader({
         lineId={lineId}
         previewRef={previewRef}
       />
-      {detail && (
+      {(combo || detail) && (
         <span
           id={detailId}
-          className="shrink-0 text-xs font-normal text-text-warning"
-          data-testid="live-phase-outcome"
+          className={cn(
+            'shrink-0 text-xs font-normal',
+            detail ? 'text-text-warning' : 'text-text-secondary',
+          )}
+          data-testid={detail ? 'live-phase-outcome' : 'live-phase-combo'}
         >
-          · {detail}
+          {combo && <span>{combo}</span>}
+          {detail && (
+            <>
+              <span className={cn(combo ? 'mx-1' : 'mr-1', 'text-text-secondary')}>·</span>
+              <span>{detail}</span>
+            </>
+          )}
         </span>
       )}
     </>

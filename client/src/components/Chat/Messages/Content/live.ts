@@ -34,6 +34,8 @@ export type LiveActivity = {
    *  the content array; the header reads the same signal for this call rather
    *  than unfolding the span to let the card say it. */
   pendingToolCallId?: string;
+  /** Consecutive uses of the newest tool, including the current call. */
+  comboCount: number;
   /** Failed and stopped calls anywhere in the span, not just the newest line. */
   outcome: SpanOutcome;
 };
@@ -235,7 +237,7 @@ function newestLine(
   localize: Localize,
   serverNames: readonly string[],
   span: SpanSummary,
-): Pick<LiveActivity, 'text' | 'source' | 'pendingToolCallId'> {
+): Pick<LiveActivity, 'text' | 'source' | 'pendingToolCallId' | 'comboCount'> {
   for (let position = parts.length - 1; position >= 0; position -= 1) {
     const part = parts[position];
     if (part == null) {
@@ -248,11 +250,15 @@ function newestLine(
       const reasoning = typeof part.think === 'string' ? part.think : (part.think?.value ?? '');
       const sentence = lastReasoningSentence(reasoning);
       if (sentence != null) {
-        return { text: sentence, source: `think:${position}` };
+        return { text: sentence, source: `think:${position}`, comboCount: 1 };
       }
       const label = part.reasoning_label?.trim();
       if (label || reasoning.trim()) {
-        return { text: label || localize('com_ui_thinking'), source: `think:${position}` };
+        return {
+          text: label || localize('com_ui_thinking'),
+          source: `think:${position}`,
+          comboCount: 1,
+        };
       }
       continue;
     }
@@ -264,13 +270,13 @@ function newestLine(
       const value = typeof part.text === 'string' ? part.text : (part.text?.value ?? '');
       const commentary = boundIntentLabel(value);
       if (commentary != null) {
-        return { text: commentary, source: `text:${position}` };
+        return { text: commentary, source: `text:${position}`, comboCount: 1 };
       }
       continue;
     }
     const labelText = getActivityLabelText(getBatchActivityLabelPart(part));
     if (labelText) {
-      return { text: labelText, source: `label:${position}` };
+      return { text: labelText, source: `label:${position}`, comboCount: 1 };
     }
     const toolCall = getStandardToolCall(part);
     if (toolCall != null) {
@@ -280,11 +286,12 @@ function newestLine(
          *  identity: a second call reusing an id is a new line, not the first
          *  one still growing. */
         source: `tool:${toolCall.id ?? ''}:${position}`,
+        comboCount: Math.max(1, span.trailingToolCount),
         ...(isAwaitingStartup(part, toolCall, span) && { pendingToolCallId: toolCall.id }),
       };
     }
   }
-  return { text: '', source: '' };
+  return { text: '', source: '', comboCount: 1 };
 }
 
 /**
@@ -293,9 +300,9 @@ function newestLine(
  * label once one lands after it, or the thought streaming after both. Later parts win, so the
  * header always reads as the bottom line of the list it stands for.
  *
- * Runs on every streamed delta. Outcome aggregation visits the full span so
- * late failures cannot disappear; the line stops at the newest nameable part
- * and icons only inspect a fixed tail window.
+ * Runs on every streamed delta. Outcomes and the tool combo share one full-span
+ * pass so late failures cannot disappear; the line stops at the newest nameable
+ * part and icons only inspect a fixed tail window.
  */
 export function getLiveActivity(
   parts: ReadonlyArray<TMessageContentParts | undefined>,
