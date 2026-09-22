@@ -41,6 +41,12 @@ These are patterns we actually receive, not hypotheticals:
 - **Unverifiable claims.** A description asserting a bug, a root cause, or a passing test suite with nothing a reviewer can reproduce. Say what you ran and what you did not.
 - **A patch you cannot discuss.** You are the author of anything you submit. If you cannot explain in review why the change is correct, what it affects, and why the tests cover it, it is not ready.
 
+### If we continue your work
+
+A maintainer, or one of the agents working alongside us, may push commits to your branch and take a pull request the rest of the way instead of asking you for another round. That is the house style here, and it is meant as help rather than a takeover: the branch stays yours, and so does the authorship.
+
+If you would rather finish the work yourself, say so in the pull request description. One line is enough, and we will keep our suggestions in review instead.
+
 ## Our Standards
 
 We strive to maintain a positive and inclusive environment within our project community. We expect all contributors to adhere to the following standards:
