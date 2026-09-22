@@ -796,7 +796,10 @@
       "count": 1
     },
     "shadcn/no-restyle": {
-      "count": 14
+      "count": 2
+    },
+    "shadcn/require-static-classes": {
+      "count": 1
     }
   },
   "client/src/components/Chat/Messages/Content/WebSearch.tsx": {
@@ -937,7 +940,10 @@
   },
   "client/src/components/Chat/Subagents/SubagentConversation.tsx": {
     "shadcn/no-restyle": {
-      "count": 13
+      "count": 4
+    },
+    "shadcn/require-static-classes": {
+      "count": 1
     }
   },
   "client/src/components/Chat/Subagents/SubagentThreadPanel.tsx": {
@@ -962,7 +968,7 @@
   },
   "client/src/components/Chat/Trace/Ledger.tsx": {
     "shadcn/no-arbitrary-values": {
-      "count": 1
+      "count": 2
     },
     "shadcn/no-inline-styles": {
       "count": 4
@@ -2397,7 +2403,7 @@
   },
   "client/src/components/UnifiedSidebar/UnifiedSidebar.tsx": {
     "shadcn/no-inline-styles": {
-      "count": 2
+      "count": 3
     }
   },
   "client/src/components/UnifiedSidebar/mobile/BottomBar.tsx": {
@@ -2473,7 +2479,7 @@
   },
   "client/src/routes/ChatRoute.tsx": {
     "shadcn/no-restyle": {
-      "count": 1
+      "count": 2
     }
   },
   "client/src/routes/Root.tsx": {
