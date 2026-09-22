@@ -9,7 +9,7 @@ import { createSSRFSafeAgents, createSSRFSafeUndiciConnect } from '~/auth';
 import { getOpenAILLMConfig, extractDefaultParams } from './llm';
 import { constructAzureResponsesURL } from '~/utils/azure';
 import { transformToOpenAIConfig } from './transform';
-import { getProxyDispatcher } from '~/utils/proxy';
+import { getDirectDispatcher, getProxyDispatcher } from '~/utils/proxy';
 import { createFetch } from '~/utils/generators';
 import { mergeHeaders } from '~/utils/headers';
 
@@ -18,6 +18,13 @@ type FetchOptions = RequestInit & { dispatcher?: Dispatcher };
 type OpenAIConfiguration = NonNullable<t.OpenAIConfiguration>;
 
 const OPENROUTER_DEFAULT_PARAMS = { promptCache: true };
+const MODEL_RESPONSE_HEADERS_TIMEOUT_MS = 300_000;
+const MODEL_RESPONSE_BODY_TIMEOUT_MS = 0;
+
+const MODEL_RESPONSE_DISPATCHER_OPTIONS = {
+  headersTimeout: MODEL_RESPONSE_HEADERS_TIMEOUT_MS,
+  bodyTimeout: MODEL_RESPONSE_BODY_TIMEOUT_MS,
+};
 
 function includesOpenRouter(value?: string | null): boolean {
   return typeof value === 'string' && value.toLowerCase().includes(KnownEndpoints.openrouter);
@@ -250,6 +257,7 @@ export function getOpenAIConfig(
   if (shouldProtectUserBaseURL) {
     mergeFetchOptions(configOptions, {
       dispatcher: new Agent({
+        ...MODEL_RESPONSE_DISPATCHER_OPTIONS,
         connect: createSSRFSafeUndiciConnect(
           options.allowedAddresses,
           getEffectiveURLPort(baseURL),
@@ -259,9 +267,11 @@ export function getOpenAIConfig(
     });
   }
 
-  const proxyDispatcher = getProxyDispatcher(proxy);
-  if (proxyDispatcher && !shouldProtectUserBaseURL) {
-    mergeFetchOptions(configOptions, { dispatcher: proxyDispatcher });
+  const proxyDispatcher = getProxyDispatcher(proxy, MODEL_RESPONSE_DISPATCHER_OPTIONS);
+  if (!shouldProtectUserBaseURL) {
+    mergeFetchOptions(configOptions, {
+      dispatcher: proxyDispatcher ?? getDirectDispatcher(MODEL_RESPONSE_DISPATCHER_OPTIONS),
+    });
   }
 
   if (azure && !isAnthropic) {

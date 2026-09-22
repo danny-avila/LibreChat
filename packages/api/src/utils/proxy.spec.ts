@@ -104,7 +104,31 @@ describe('proxy helpers', () => {
 
     expect(second).toBe(first);
     expect(MockProxyAgent).toHaveBeenCalledTimes(1);
-    expect(MockProxyAgent).toHaveBeenCalledWith('http://explicit-proxy:8080');
+    expect(MockProxyAgent).toHaveBeenCalledWith({
+      uri: 'http://explicit-proxy:8080',
+    });
+  });
+
+  it('keys proxy dispatchers by transport options', () => {
+    const proxy = 'http://timeout-proxy:8080';
+
+    const defaultDispatcher = getProxyDispatcher(proxy);
+    const longStreamDispatcher = getProxyDispatcher(proxy, {
+      bodyTimeout: 0,
+      headersTimeout: 300_000,
+    });
+    const repeatedLongStreamDispatcher = getProxyDispatcher(proxy, {
+      bodyTimeout: 0,
+      headersTimeout: 300_000,
+    });
+
+    expect(longStreamDispatcher).not.toBe(defaultDispatcher);
+    expect(repeatedLongStreamDispatcher).toBe(longStreamDispatcher);
+    expect(MockProxyAgent).toHaveBeenLastCalledWith({
+      uri: proxy,
+      bodyTimeout: 0,
+      headersTimeout: 300_000,
+    });
   });
 
   it('uses the env dispatcher when the explicit proxy matches PROXY', () => {

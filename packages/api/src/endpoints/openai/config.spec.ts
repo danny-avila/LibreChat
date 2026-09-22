@@ -22,8 +22,30 @@ describe('getOpenAIConfig', () => {
       model: '',
       apiKey: mockApiKey,
     });
-    expect(result.configOptions).toEqual({});
+    expect(result.configOptions).toMatchObject({
+      fetchOptions: { dispatcher: expect.any(Object) },
+    });
     expect(result.tools).toEqual([]);
+  });
+
+  it('disables the transport body-idle timeout while retaining a bounded headers timeout', () => {
+    const result = getOpenAIConfig(mockApiKey);
+    const dispatcher = result.configOptions?.fetchOptions?.dispatcher as {
+      [key: symbol]: number;
+    };
+    const timeoutValues = Object.getOwnPropertySymbols(dispatcher).reduce<Record<string, number>>(
+      (values, symbol) => {
+        const value = dispatcher[symbol];
+        if (typeof value === 'number') {
+          values[symbol.description ?? ''] = value;
+        }
+        return values;
+      },
+      {},
+    );
+
+    expect(timeoutValues['body timeout']).toBe(0);
+    expect(timeoutValues['headers timeout']).toBe(300_000);
   });
 
   it('should apply model options', () => {
@@ -1563,7 +1585,9 @@ describe('getOpenAIConfig', () => {
           streaming: true, // default
           apiKey: mockApiKey,
         });
-        expect(result.configOptions).toEqual({});
+        expect(result.configOptions).toMatchObject({
+          fetchOptions: { dispatcher: expect.any(Object) },
+        });
         expect(result.tools).toEqual([]);
       });
 
