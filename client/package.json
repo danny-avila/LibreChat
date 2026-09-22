@@ -126,7 +126,7 @@
     "remark-supersub": "^1.0.0",
     "sse.js": "^2.8.0",
     "swr": "^2.3.8",
-    "tailwind-merge": "^1.9.1",
+    "tailwind-merge": "^2.6.1",
     "tailwindcss-animate": "^1.0.5",
     "tailwindcss-radix": "^2.8.0",
     "ts-md5": "^1.3.1",
