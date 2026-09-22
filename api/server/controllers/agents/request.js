@@ -50,7 +50,8 @@ const {
   resolvePersistableCodeEnvironmentDecision,
   getFailedTurnTraceFields,
   resolveFailedTurnContent,
-  isAnnounceableReply,
+  announceReply,
+  announceErrorTurn,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -546,15 +547,17 @@ async function saveErrorTurn(
         : { context, noUpsert: true },
     );
     /* A failed run still persisted an assistant message, and a user on another device has no
-       other way to learn the turn ended. Best effort: the error turn is already durable, and
-       a missed indicator must not turn a handled failure into a thrown one. */
-    if (reqCtx.isTemporary !== true && savedErrorMessage.messageId) {
-      try {
-        await stampConvoLastResponse(userId, conversationId, savedErrorMessage.messageId);
-      } catch (stampError) {
-        logger.error('[AgentController] Failed to stamp the persisted error turn', stampError);
-      }
-    }
+       other way to learn the turn ended. */
+    await announceErrorTurn(
+      { stampConvoLastResponse },
+      {
+        userId,
+        conversationId,
+        messageId: savedErrorMessage.messageId,
+        isTemporary: reqCtx.isTemporary,
+        context: 'AgentController - persisted error turn',
+      },
+    );
   } catch (err) {
     logger.error('[AgentController] Failed to persist error turn', err);
     throw err;
@@ -3078,31 +3081,31 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
 
         /** A persisted BaseClient response already advanced lastResponseAt. Re-stamp only
          * when its terminal persistence was explicitly skipped, then refresh the payload's
-         * conversation snapshot so it acknowledges the durable timestamp. A preempted or
-         * stopped turn can persist a row with nothing a reader can open, and a dot raised for
-         * it could never be acknowledged, so it is judged by the shared predicate. */
-        if (
-          responseIsUnfinished &&
-          responsePersistenceWasSkipped &&
-          isAnnounceableReply({
-            messageId: savedResponseMessage.messageId,
-            content: response.content,
-            text: response.text,
-            isTemporary: reqCtx.isTemporary,
-          })
-        ) {
-          try {
-            await stampConvoLastResponse(
-              reqCtx.userId,
-              response.conversationId,
-              savedResponseMessage.messageId,
-            );
-            const stampedConversation = await getConvo(reqCtx.userId, response.conversationId);
-            if (stampedConversation) {
-              conversation = { ...conversation, ...stampedConversation };
+         * conversation snapshot so it acknowledges the durable timestamp. */
+        if (responseIsUnfinished && responsePersistenceWasSkipped) {
+          const announced = await announceReply(
+            { stampConvoLastResponse },
+            {
+              userId: reqCtx.userId,
+              conversationId: response.conversationId,
+              reply: {
+                messageId: savedResponseMessage.messageId,
+                content: response.content,
+                text: response.text,
+                isTemporary: reqCtx.isTemporary,
+              },
+              context: 'AgentController - skipped terminal persistence',
+            },
+          );
+          if (announced) {
+            try {
+              const stampedConversation = await getConvo(reqCtx.userId, response.conversationId);
+              if (stampedConversation) {
+                conversation = { ...conversation, ...stampedConversation };
+              }
+            } catch (error) {
+              logger.warn('[AgentController] Failed to read back the stamped conversation', error);
             }
-          } catch (error) {
-            logger.warn('[AgentController] Failed to stamp lastResponseAt', error);
           }
         }
 

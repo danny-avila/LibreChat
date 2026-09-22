@@ -256,6 +256,8 @@ jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
   /** Real, because whether a skipped-persistence turn may raise an indicator is under test. */
   isAnnounceableReply: jest.requireActual('@librechat/api').isAnnounceableReply,
+  announceReply: jest.requireActual('@librechat/api').announceReply,
+  announceErrorTurn: jest.requireActual('@librechat/api').announceErrorTurn,
   logAgentMemorySnapshot: jest.fn(),
   isScheduleFireRequest: (...args) => mockIsScheduleFireRequest(...args),
   exemptFromConcurrencyLimiter: (...args) => mockExemptFromConcurrencyLimiter(...args),

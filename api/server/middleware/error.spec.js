@@ -17,6 +17,8 @@ jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
   handleError: (...args) => mockHandleError(...args),
   sanitizeMessageForTransmit: jest.fn((message) => message),
+  /** Real, because when an error turn is stamped and what its event carries is under test. */
+  announceErrorTurn: jest.requireActual('@librechat/api').announceErrorTurn,
 }));
 
 jest.mock('~/models', () => ({

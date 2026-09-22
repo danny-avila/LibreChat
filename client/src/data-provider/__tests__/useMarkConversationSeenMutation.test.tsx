@@ -280,7 +280,7 @@ describe('useMarkConversationSeenMutation', () => {
       });
     });
 
-    expect(invalidate).toHaveBeenCalledWith(listKey, { exact: true });
+    expect(invalidate).toHaveBeenCalledWith(listKey, { exact: true, refetchType: 'all' });
   });
 
   it('does not undo a newer acknowledgement when an older request fails last', async () => {

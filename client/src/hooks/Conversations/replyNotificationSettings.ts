@@ -43,7 +43,7 @@ const isWithin =
 
 const isBounded = isWithin(1, 100);
 const isPollInterval = isWithin(10_000, 600_000);
-const isFocusedRefresh = isWithin(60_000, 3_600_000);
+const isFocusedRefresh = isWithin(60_000, 300_000);
 
 /** Nothing is permitted until the deployment has answered. */
 const PENDING_CAPABILITIES: Required<TReplyNotificationsConfig> = {

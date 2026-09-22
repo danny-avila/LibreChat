@@ -855,6 +855,8 @@ export const convoQueryAuthority = (
   return fetchedAt.get(query)!;
 };
 
+/** Also the ceiling on `interface.replyNotifications.focusedRefreshMs`, the refresh that renews
+ *  the discovery snapshot; the two have to move together. */
 const AGGREGATE_CACHE_AUTHORITY_AGE_MS = 5 * 60_000;
 
 export const isAggregateQueryAuthoritative = (queryClient: QueryClient, query: Query): boolean => {

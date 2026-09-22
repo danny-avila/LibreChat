@@ -2234,8 +2234,13 @@ export const interfaceSchema = z
         /**
          * Milliseconds between list refreshes while the tab is focused, so a reply produced
          * elsewhere eventually shows its dot. Deliberately far slower than the away poll.
+         *
+         * Capped at five minutes because this refresh is what renews the unfiltered discovery
+         * snapshot, and the client holds an unobserved snapshot authoritative for five minutes:
+         * a slower refresh would let it lapse, dropping its unseen rows from the count until the
+         * next one.
          */
-        focusedRefreshMs: z.number().int().min(60_000).max(3_600_000).optional(),
+        focusedRefreshMs: z.number().int().min(60_000).max(300_000).optional(),
       })
       .default({
         tabBadge: true,

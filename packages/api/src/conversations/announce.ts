@@ -139,3 +139,79 @@ export async function announceStoppedReply(
     return false;
   }
 }
+
+/** What a durable reply stamp settled to, as the stamping write reports it. */
+export interface SettledReplyStamp {
+  lastResponseAt?: Date | string | null;
+  lastResponseMessageId?: string | null;
+  updatedAt?: Date | string | null;
+}
+
+export interface ErrorTurnStampStore {
+  stampConvoLastResponse(
+    user: string,
+    conversationId: string,
+    messageId: string,
+  ): Promise<SettledReplyStamp | null | undefined>;
+}
+
+/** The conversation snapshot an error event carries so the client can acknowledge it. */
+export interface ErrorTurnSnapshot {
+  conversationId: string;
+  lastResponseAt: Date | string;
+  lastResponseMessageId?: string;
+  updatedAt?: Date | string;
+}
+
+export interface ErrorTurnAnnouncement {
+  userId?: string | null;
+  conversationId?: string | null;
+  /** The persisted error row; absent when its write resolved empty. */
+  messageId?: string | null;
+  isTemporary?: boolean;
+  context: string;
+}
+
+/**
+ * Stamps a persisted error turn and returns the snapshot its terminal event should carry.
+ *
+ * A failed run is still a persisted assistant turn, and on the fallback paths it is the only one:
+ * without a stamp another device never learns the run ended. Error turns are not judged by
+ * `isAnnounceableReply`, because the error card is what renders them. Best effort, and it never
+ * throws: the error row is already durable, and a failed stamp must not turn a handled error into
+ * an unhandled one. The snapshot is what the client acknowledges, so no browser-generated time can
+ * stand in for it.
+ */
+export async function announceErrorTurn(
+  deps: ErrorTurnStampStore,
+  { userId, conversationId, messageId, isTemporary, context }: ErrorTurnAnnouncement,
+): Promise<ErrorTurnSnapshot | undefined> {
+  if (
+    isTemporary === true ||
+    userId == null ||
+    userId === '' ||
+    conversationId == null ||
+    conversationId === '' ||
+    messageId == null ||
+    messageId === ''
+  ) {
+    return undefined;
+  }
+  try {
+    const settled = await deps.stampConvoLastResponse(userId, conversationId, messageId);
+    if (settled?.lastResponseAt == null) {
+      return undefined;
+    }
+    return {
+      conversationId,
+      lastResponseAt: settled.lastResponseAt,
+      ...(settled.lastResponseMessageId != null
+        ? { lastResponseMessageId: settled.lastResponseMessageId }
+        : {}),
+      ...(settled.updatedAt != null ? { updatedAt: settled.updatedAt } : {}),
+    };
+  } catch (error) {
+    logger.error(`[announceErrorTurn] ${context}`, error);
+    return undefined;
+  }
+}

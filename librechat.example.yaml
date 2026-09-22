@@ -263,7 +263,8 @@ interface:
   #   pollLimit: 100
   #   # Milliseconds between list checks while a tab is away (10000-600000, default: 30000).
   #   pollIntervalMs: 30000
-  #   # Milliseconds between list refreshes while a tab is focused (60000-3600000, default: 300000).
+  #   # Milliseconds between list refreshes while a tab is focused (60000-300000, default: 300000).
+  #   # It renews the snapshot the unread count reads, so it cannot be slower than five minutes.
   #   focusedRefreshMs: 300000
   # Conversation trace viewer: a waterfall of the model calls and tool spans behind
   # each response, read from the deployment's Langfuse project. The control only

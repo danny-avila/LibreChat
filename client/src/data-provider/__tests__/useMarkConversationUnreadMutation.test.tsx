@@ -398,6 +398,36 @@ describe('useMarkConversationUnreadMutation', () => {
     expect(isConversationUnseen(cached())).toBe(false);
   });
 
+  /* The older call no longer owns the row once a newer one has started, but its no-match is
+     still the server saying the conversation is gone. Dropping it with the other non-owning
+     answers would leave a deleted conversation restored to the list by the newer failure. */
+  it('removes the conversation when an older overlapping call reports no match', async () => {
+    const first = deferred();
+    const second = deferred();
+    mockMarkUnread.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const { result, queryClient } = setup(RESPONDED_AT, SEEN_AT);
+    const listed = () =>
+      (
+        queryClient.getQueryData<InfiniteData<ConversationCursorData>>(listKey)?.pages ?? []
+      ).flatMap((page) => page.conversations.map((convo) => convo.conversationId));
+
+    await act(async () => {
+      const firstPending = result.current
+        .mutateAsync({ conversationId: CONVO_ID })
+        .catch(() => undefined);
+      await flush();
+      const secondPending = result.current
+        .mutateAsync({ conversationId: CONVO_ID })
+        .catch(() => undefined);
+      await flush();
+      second.reject(new Error('network down'));
+      first.resolve({ modified: false });
+      await Promise.all([firstPending, secondPending]);
+    });
+
+    expect(listed()).not.toContain(CONVO_ID);
+  });
+
   it('rolls an archived row back when the server refuses the unread write', async () => {
     /* Mark as unread is offered from the archived view, where the row lives in its own list
        cache: a baseline read that skipped it left the failed write's dot on screen. */

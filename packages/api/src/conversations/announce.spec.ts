@@ -1,5 +1,10 @@
 import { Types } from 'mongoose';
-import { announceReply, announceStoppedReply, isAnnounceableReply } from './announce';
+import {
+  announceReply,
+  announceErrorTurn,
+  announceStoppedReply,
+  isAnnounceableReply,
+} from './announce';
 
 const readable = [{ type: 'text', text: 'here is the answer' }];
 const rowA = new Types.ObjectId();
@@ -184,5 +189,56 @@ describe('announceStoppedReply', () => {
         },
       ),
     ).resolves.toBe(false);
+  });
+});
+
+describe('announceErrorTurn', () => {
+  const settled = {
+    lastResponseAt: '2026-09-22T12:00:00.000Z',
+    lastResponseMessageId: 'err-1',
+    updatedAt: '2026-09-22T12:00:00.000Z',
+  };
+
+  it('stamps a persisted error turn and returns the snapshot its event carries', async () => {
+    const stampConvoLastResponse = jest.fn().mockResolvedValue(settled);
+    const snapshot = await announceErrorTurn(
+      { stampConvoLastResponse },
+      { userId: 'user-1', conversationId: 'convo-1', messageId: 'err-1', context: 'spec' },
+    );
+
+    expect(stampConvoLastResponse).toHaveBeenCalledWith('user-1', 'convo-1', 'err-1');
+    expect(snapshot).toEqual({ conversationId: 'convo-1', ...settled });
+  });
+
+  it.each([
+    ['a temporary chat', { isTemporary: true }],
+    ['an error write that resolved empty', { messageId: undefined }],
+    ['a request without a user', { userId: undefined }],
+  ])('writes nothing for %s', async (_case, override) => {
+    const stampConvoLastResponse = jest.fn();
+    const snapshot = await announceErrorTurn(
+      { stampConvoLastResponse },
+      {
+        userId: 'user-1',
+        conversationId: 'convo-1',
+        messageId: 'err-1',
+        context: 'spec',
+        ...override,
+      },
+    );
+
+    expect(snapshot).toBeUndefined();
+    expect(stampConvoLastResponse).not.toHaveBeenCalled();
+  });
+
+  /* The error row is already durable; a failed stamp must not turn a handled error into a thrown one. */
+  it('returns no snapshot, rather than throwing, when the stamp fails', async () => {
+    const stampConvoLastResponse = jest.fn().mockRejectedValue(new Error('mongo is away'));
+    await expect(
+      announceErrorTurn(
+        { stampConvoLastResponse },
+        { userId: 'user-1', conversationId: 'convo-1', messageId: 'err-1', context: 'spec' },
+      ),
+    ).resolves.toBeUndefined();
   });
 });

@@ -327,7 +327,11 @@ const cancelConvoReadFetches = async (
  */
 const restartInterruptedReads = (queryClient: QueryClient, keys: QueryKey[] | undefined): void => {
   for (const key of keys ?? []) {
-    queryClient.invalidateQueries(key, { exact: true });
+    /* Every key here was already in flight when this mutation cancelled it, so restarting it
+       costs nothing it was not already spending. The default refetches observed queries only,
+       and a reply-discovery snapshot has no observer: it would be marked stale and never run
+       again, leaving whatever it carried missing until the next focused refresh. */
+    queryClient.invalidateQueries(key, { exact: true, refetchType: 'all' });
   }
 };
 
@@ -727,7 +731,27 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         return context;
       },
       onSuccess: (data, vars, context) => {
+        /* A superseded call never reached the server: the mutation function resolves a
+           synthetic `modified: false` for it, which is not a no-match and must not be read
+           as one. */
         if (context?.superseded === true) {
+          return;
+        }
+        /* Nothing matched: the conversation is gone, deleted on another device or between the
+           access check and the write. The server's second update is owner-scoped and returns
+           the row even when it changes nothing, so no match proves the row no longer exists
+           rather than that nothing needed doing. That holds whoever owns the latest intent, so
+           it is settled before ownership is consulted: a non-owning call is exactly the one whose
+           answer would otherwise be dropped, leaving a conversation that does not exist in the
+           sidebar and the badge. An accepted unread cannot bring it back, because the cache
+           writers only update rows they still hold. */
+        if (!data.modified) {
+          if (context?.chain && !context.chain.accepted) {
+            context.chain.latestFailureSettled = true;
+          }
+          removeConvoFromAllQueries(queryClient, vars.conversationId);
+          queryClient.removeQueries([QueryKeys.conversation, vars.conversationId]);
+          clearDeletedConversationMessagesCache(queryClient, vars.conversationId);
           return;
         }
         if (data.modified && context?.chain) {
@@ -741,22 +765,6 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
           return;
         }
         const cached = findConvoInAllQueries(queryClient, vars.conversationId);
-        /* Nothing matched: the conversation is gone, deleted on another device or between the
-           access check and the write. The server's second update is owner-scoped and returns
-           the row even when it changes nothing, so no match proves the row no longer exists
-           rather than that nothing needed doing. Rolling back only the read fields would keep a
-           conversation that does not exist in the sidebar and the badge; removing it is right
-           whatever else is in flight, and an earlier accepted unread cannot bring it back,
-           because the cache writers only ever update rows they still hold. */
-        if (!data.modified) {
-          if (context?.chain && !context.chain.accepted) {
-            context.chain.latestFailureSettled = true;
-          }
-          removeConvoFromAllQueries(queryClient, vars.conversationId);
-          queryClient.removeQueries([QueryKeys.conversation, vars.conversationId]);
-          clearDeletedConversationMessagesCache(queryClient, vars.conversationId);
-          return;
-        }
         /* Two things settle here. A conversation with no reply yet gets its marker stamped
            server-side and the optimistic guess above is necessarily earlier, so leaving the
            guess cached would send it to `/seen`, where the observed-reply filter cannot match
