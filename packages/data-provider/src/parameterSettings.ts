@@ -17,7 +17,7 @@ import {
   anthropicSettings,
 } from './types';
 import { SettingDefinition, SettingsConfiguration } from './generate';
-import { supportsPromptCache } from './bedrock';
+import { isOpus55Model, supportsPromptCache } from './bedrock';
 
 // Base definitions
 const baseDefinitions: Record<string, SettingDefinition> = {
@@ -1333,6 +1333,12 @@ export function applyModelAwareDefaults(
             ],
           }
         : setting,
+    );
+  }
+  if (isOpus55Model(model)) {
+    return settings.filter(
+      (setting) =>
+        !['thinking', 'thinkingBudget', 'temperature', 'topP', 'topK'].includes(setting.key),
     );
   }
   const modelAwareSettings =

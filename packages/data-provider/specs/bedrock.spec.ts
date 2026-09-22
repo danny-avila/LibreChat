@@ -500,6 +500,21 @@ describe('resolveThinkingDisplay', () => {
 });
 
 describe('bedrockInputParser', () => {
+  test('keeps Opus 5.5 adaptive thinking enabled and binds prior blocks', () => {
+    const result = bedrockInputParser.parse({
+      model: 'anthropic.claude-opus-5-5',
+      thinking: false,
+    }) as Record<string, unknown>;
+    const additionalFields = result.additionalModelRequestFields as Record<string, unknown>;
+
+    expect(additionalFields.thinking).toEqual({
+      type: 'adaptive',
+      display: 'summarized',
+      block_binding: { prefix_mismatch_behavior: 'drop_block' },
+    });
+    expect(additionalFields.anthropic_beta).toEqual(['thinking-binding-controls-2026-08-01']);
+  });
+
   describe('Model Matching for Reasoning Configuration', () => {
     test('should match anthropic.claude-3-7-sonnet model', () => {
       const input = {

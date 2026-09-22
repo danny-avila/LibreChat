@@ -2,6 +2,8 @@ import { Agent } from 'undici';
 import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
 import {
+  isOpus55Model,
+  THINKING_BINDING_BETA,
   clampOutputConfigEffort,
   omitsSamplingParameters,
   isThinkingDisabled,
@@ -402,7 +404,7 @@ function getLLMConfig(
     }
     requestOptions.clientOptions.defaultHeaders = appendAnthropicBetaHeader(
       requestOptions.clientOptions.defaultHeaders as Record<string, string> | undefined,
-      FINE_GRAINED_TOOL_STREAMING_BETA,
+      isOpus55Model(resolvedModel) ? THINKING_BINDING_BETA : FINE_GRAINED_TOOL_STREAMING_BETA,
     );
   }
 

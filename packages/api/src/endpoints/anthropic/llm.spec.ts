@@ -1274,6 +1274,31 @@ describe('getLLMConfig', () => {
         expect((result.llmConfig.thinking as unknown as { type: string }).type).toBe('disabled');
       });
 
+      it('should keep adaptive thinking enabled and bind prior blocks for Opus 5.5', () => {
+        const result = getLLMConfig('test-key', {
+          modelOptions: {
+            model: 'claude-opus-5-5',
+            thinking: false,
+            temperature: 0.7,
+            topP: 0.9,
+            topK: 40,
+          },
+        });
+
+        expect(result.llmConfig.thinking).toMatchObject({
+          type: 'adaptive',
+          block_binding: { prefix_mismatch_behavior: 'drop_block' },
+        });
+        expect(result.llmConfig).not.toHaveProperty('temperature');
+        expect(result.llmConfig).not.toHaveProperty('topP');
+        expect(result.llmConfig).not.toHaveProperty('topK');
+        expect(
+          (result.llmConfig.clientOptions?.defaultHeaders as Record<string, string>)[
+            'anthropic-beta'
+          ],
+        ).toContain('thinking-binding-controls-2026-08-01');
+      });
+
       it('should omit sampling parameters for Opus 5', () => {
         const result = getLLMConfig('test-key', {
           modelOptions: {
