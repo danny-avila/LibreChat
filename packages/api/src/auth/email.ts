@@ -154,8 +154,6 @@ export interface EmailChangeDeps {
    * group, or user override has since disabled. */
   resolvePolicy: (user: EmailChangeUser) => Promise<EmailChangePolicy>;
   sendEmail: (data: EmailData) => Promise<void>;
-  /** The deployment default, for the gate that runs before the link names its owner. */
-  resolveSettings: () => Promise<EmailChangeSettings>;
   clientDomain: string;
   appName: string;
 }
@@ -520,21 +518,35 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       return result(500, 'Failed to send verification email', 'email_delivery_failed');
     }
 
-    const replacedToken = await deps.replaceTokenIfCurrent(
+    const replacement = {
+      userId,
+      email: newEmail,
+      scope: tokenScope,
+      identifier: oldEmail,
+      type: EMAIL_CHANGE_TOKEN_TYPE,
+      token: tokenHash,
+      expiresIn: settings.tokenTTLSeconds,
+      metadata: { requestIp: ip, passwordFingerprint },
+    };
+    let replacedToken = await deps.replaceTokenIfCurrent(
       tokenScope,
       previousToken?.token ?? null,
-      {
-        userId,
-        email: newEmail,
-        scope: tokenScope,
-        identifier: oldEmail,
-        type: EMAIL_CHANGE_TOKEN_TYPE,
-        token: tokenHash,
-        expiresIn: settings.tokenTTLSeconds,
-        metadata: { requestIp: ip, passwordFingerprint },
-      },
+      replacement,
       user.tenantId,
     );
+    /** The observed token can be swept by the expiry monitor while the message is in flight,
+     * and a compare-and-set against a hash that no longer exists cannot tell that apart from
+     * a competitor. The empty expectation answers it atomically: the scoped index admits the
+     * insert only while nothing holds the scope, so a real competitor still refuses it and a
+     * delivered link is not reported as a losing race. */
+    if (!replacedToken && previousToken) {
+      replacedToken = await deps.replaceTokenIfCurrent(
+        tokenScope,
+        null,
+        replacement,
+        user.tenantId,
+      );
+    }
     if (!replacedToken) {
       logger.warn(
         `[emailChange] Competing request completed first [User ID: ${userId}] [New Email: ${newEmail}] [IP: ${ip}]`,
@@ -559,12 +571,11 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
     return result(200, 'Verification link sent to your new email address');
   }
 
+  /** Issuance answers from the requesting user's effective configuration, so confirmation has
+   * to answer from the same scope or a tenant, role, group, or user override that enables
+   * changes would offer a link the deployment default then refuses. The toggle is therefore
+   * read once here, after the link names its owner, rather than twice from two scopes. */
   async function confirmEmailChange(input: ConfirmEmailChangeInput): Promise<EmailChangeResult> {
-    if (!(await deps.resolveSettings()).enabled) {
-      logger.warn(`[emailChange] Rejected disabled confirmation [IP: ${input.ip ?? 'unknown'}]`);
-      return result(403, 'Email changes are disabled', 'email_change_disabled');
-    }
-
     const parsed = confirmSchema.safeParse(input.body);
     if (!parsed.success) {
       return result(400, EMAIL_CHANGE_ERROR_MESSAGE, 'invalid_token');
@@ -608,8 +619,8 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       return result(400, EMAIL_CHANGE_ERROR_MESSAGE, 'invalid_token');
     }
 
-    /** The gate above answered for the deployment; this one answers for the account the link
-     * names, whose tenant, role, group, or user override may say something different. */
+    /** The policy of the account the link names, which is the scope that issued it: a
+     * deployment default reaches this through the same read when nothing overrides it. */
     const policy = await deps.resolvePolicy(user);
     if (!policy.settings.enabled) {
       logger.warn(

@@ -31,7 +31,6 @@ function createDeps(overrides: Partial<EmailChangeDeps> = {}) {
       allowedDomains: null,
     }),
     sendEmail: jest.fn().mockResolvedValue(undefined),
-    resolveSettings: jest.fn().mockResolvedValue({ enabled: true, tokenTTLSeconds: 900 }),
     clientDomain: 'https://chat.example.com/',
     appName: 'LibreChat',
     ...overrides,
@@ -165,6 +164,70 @@ describe('email change service', () => {
           payload: expect.objectContaining({ linkLifetime: '1 hour' }),
         }),
       );
+    });
+
+    it('stores the link when the observed token expires away during delivery', async () => {
+      /** The expiry monitor can sweep an already-expired token while the message is in
+       *  flight; the recipient holds a live link, so the request must not report a race. */
+      const swept = { token: 'expired-token' };
+      const findToken: EmailChangeDeps['findToken'] = jest.fn(async () => ({
+        userId: '507f1f77bcf86cd799439011',
+        email: 'stale@example.com',
+        token: swept.token,
+      }));
+      const replaceTokenIfCurrent: EmailChangeDeps['replaceTokenIfCurrent'] = jest.fn(
+        async (_scope, expectedToken) => expectedToken === null,
+      );
+      const { deps, service } = createDeps({ findToken, replaceTokenIfCurrent });
+
+      const response = await service.requestEmailChange({
+        body: { currentPassword: 'correct-password', newEmail: 'new@example.com' },
+        userId: '507f1f77bcf86cd799439011',
+        tenantId: 'tenant-1',
+        settings: DEFAULT_SETTINGS,
+        emailEnabled: true,
+      });
+
+      expect(response).toMatchObject({ status: 200 });
+      expect(deps.replaceTokenIfCurrent).toHaveBeenNthCalledWith(
+        1,
+        expect.any(String),
+        'expired-token',
+        expect.anything(),
+        expect.anything(),
+      );
+      expect(deps.replaceTokenIfCurrent).toHaveBeenNthCalledWith(
+        2,
+        expect.any(String),
+        null,
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    it('still reports a race when another request holds the scope', async () => {
+      const findToken: EmailChangeDeps['findToken'] = jest.fn(async () => ({
+        userId: '507f1f77bcf86cd799439011',
+        email: 'stale@example.com',
+        token: 'observed-token',
+      }));
+      /** A competitor replaced the scoped token, so neither the observed hash nor an empty
+       *  scope is available to claim. */
+      const replaceTokenIfCurrent: EmailChangeDeps['replaceTokenIfCurrent'] = jest.fn(
+        async () => false,
+      );
+      const { deps, service } = createDeps({ findToken, replaceTokenIfCurrent });
+
+      const response = await service.requestEmailChange({
+        body: { currentPassword: 'correct-password', newEmail: 'new@example.com' },
+        userId: '507f1f77bcf86cd799439011',
+        tenantId: 'tenant-1',
+        settings: DEFAULT_SETTINGS,
+        emailEnabled: true,
+      });
+
+      expect(response).toMatchObject({ status: 409, code: 'request_in_progress' });
+      expect(deps.replaceTokenIfCurrent).toHaveBeenCalledTimes(2);
     });
 
     it('notifies the old address but does not disclose conflicts until the password is valid', async () => {
@@ -444,10 +507,16 @@ describe('email change service', () => {
       expect(deps.updateUser).not.toHaveBeenCalled();
     });
 
-    it('rejects pending confirmations when email changes are disabled', async () => {
+    it('confirms a link an override enabled even when the deployment default is off', async () => {
+      /** Issuance read the requesting user's effective configuration, so a link exists only
+       *  because that scope allowed it; a second read of the deployment default would refuse
+       *  a link the account can legitimately complete. */
       const { deps, service } = createDeps({
-        resolveSettings: jest.fn().mockResolvedValue({ enabled: false, tokenTTLSeconds: 900 }),
         findToken: jest.fn().mockResolvedValue(await pendingToken()),
+        resolvePolicy: jest.fn().mockResolvedValue({
+          settings: { enabled: true, tokenTTLSeconds: 900 },
+          allowedDomains: null,
+        }),
       });
 
       const response = await service.confirmEmailChange({
@@ -458,13 +527,8 @@ describe('email change service', () => {
         },
       });
 
-      expect(response).toEqual({
-        status: 403,
-        message: 'Email changes are disabled',
-        code: 'email_change_disabled',
-      });
-      expect(deps.findToken).not.toHaveBeenCalled();
-      expect(deps.updateUser).not.toHaveBeenCalled();
+      expect(response).toMatchObject({ status: 200 });
+      expect(deps.updateUser).toHaveBeenCalled();
     });
 
     it('rejects malformed user IDs before querying the database', async () => {

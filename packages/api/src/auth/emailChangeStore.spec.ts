@@ -169,14 +169,23 @@ describe('createEmailChangeDeps', () => {
     });
   });
 
-  describe('operator settings', () => {
+  describe('confirmation-time policy', () => {
+    const owner = {
+      _id: 'user-1',
+      email: 'current@example.com',
+      role: 'USER',
+      tenantId: 'tenant-a',
+    };
+
     it('prefers the yaml section over the environment', async () => {
       const getAppConfig = jest
         .fn()
         .mockResolvedValue({ config: {}, emailChange: { enabled: false } } as AppConfig);
       const deps = createEmailChangeDeps(createRuntime({ getAppConfig }));
 
-      await expect(deps.resolveSettings()).resolves.toMatchObject({ enabled: false });
+      await expect(deps.resolvePolicy(owner)).resolves.toMatchObject({
+        settings: { enabled: false },
+      });
     });
 
     it('reads the merged field, not the base yaml a scoped override supersedes', async () => {
@@ -187,26 +196,10 @@ describe('createEmailChangeDeps', () => {
         .mockResolvedValue({ config: { emailChange: { enabled: false } } } as AppConfig);
       const deps = createEmailChangeDeps(createRuntime({ getAppConfig }));
 
-      await expect(deps.resolveSettings()).resolves.toMatchObject({ enabled: true });
+      await expect(deps.resolvePolicy(owner)).resolves.toMatchObject({
+        settings: { enabled: true },
+      });
     });
-
-    it('resolves fail-closed so a transient failure cannot enable a disabled change', async () => {
-      const getAppConfig = jest.fn().mockResolvedValue({ config: {} } as AppConfig);
-      const deps = createEmailChangeDeps(createRuntime({ getAppConfig }));
-
-      await deps.resolveSettings();
-
-      expect(getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ failClosed: true }));
-    });
-  });
-
-  describe('confirmation-time policy', () => {
-    const owner = {
-      _id: 'user-1',
-      email: 'current@example.com',
-      role: 'USER',
-      tenantId: 'tenant-a',
-    };
 
     it('resolves the allowlist against the principal scope of that user', async () => {
       const getAppConfig = jest.fn().mockResolvedValue({
