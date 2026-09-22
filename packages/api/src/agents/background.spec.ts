@@ -2310,6 +2310,76 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
   });
 
+  it('reports ISO dispatch and settlement stamps with the elapsed span', async () => {
+    /** Just ahead of the real clock: the dispatch stamp is monotonic per process, so a
+     * mocked past would be bumped past the last real stamp instead of being taken. */
+    const dispatchedAt = Date.now() + 1_000;
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(dispatchedAt);
+    try {
+      const created = backgroundTaskRegistry.create({
+        userId: 'timing_user',
+        conversationId: 'timing_convo',
+        toolCallId: 'call_timing',
+        toolName: 'search_mcp_docs',
+      });
+      if ('atCapacity' in created) {
+        throw new Error('unexpected capacity');
+      }
+
+      nowSpy.mockReturnValue(dispatchedAt + 90_000);
+      const running = JSON.parse(
+        await runCheckBackgroundTask({
+          userId: 'timing_user',
+          conversationId: 'timing_convo',
+          args: { background_task_id: created.task.id },
+        }),
+      );
+      expect(running).toMatchObject({
+        status: 'running',
+        started_at: new Date(dispatchedAt).toISOString(),
+        elapsed_ms: 90_000,
+      });
+      /** A running task has not settled, so it must not claim a terminal stamp. */
+      expect(running.settled_at).toBeUndefined();
+
+      nowSpy.mockReturnValue(dispatchedAt + 120_000);
+      backgroundTaskRegistry.complete('timing_user', 'timing_convo', created.task.id, {
+        content: 'RESULT',
+      });
+
+      nowSpy.mockReturnValue(dispatchedAt + 600_000);
+      const settled = JSON.parse(
+        await runCheckBackgroundTask({
+          userId: 'timing_user',
+          conversationId: 'timing_convo',
+          args: { background_task_id: created.task.id },
+        }),
+      );
+      /** The span freezes at settlement instead of growing with every later poll. */
+      expect(settled).toMatchObject({
+        status: 'completed',
+        started_at: new Date(dispatchedAt).toISOString(),
+        settled_at: new Date(dispatchedAt + 120_000).toISOString(),
+        elapsed_ms: 120_000,
+      });
+
+      const listed = JSON.parse(
+        await runCheckBackgroundTask({
+          userId: 'timing_user',
+          conversationId: 'timing_convo',
+          args: {},
+        }),
+      );
+      expect(listed.tasks[0]).toMatchObject({
+        started_at: new Date(dispatchedAt).toISOString(),
+        settled_at: new Date(dispatchedAt + 120_000).toISOString(),
+        elapsed_ms: 120_000,
+      });
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it('lets a later-generation poll collect a receipt without inheriting an abandoned local claim', async () => {
     const created = backgroundTaskRegistry.create({
       userId: 'claim_user',
@@ -2566,6 +2636,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     { status: 'completed' as const, field: 'result', output: 'RECOVERED RESULT' },
     { status: 'error' as const, field: 'error', output: 'RECOVERED FAILURE' },
   ])('recovers a durable $status receipt after process-local state is lost', async (terminal) => {
+    const settledAt = new Date('2026-09-22T09:00:00.000Z');
     const claimBackgroundToolResult = jest.fn(async () => ({
       status: 'acquired' as const,
       messageId: 'response-recovered',
@@ -2576,6 +2647,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
           toolName: 'slow_tool',
           status: terminal.status,
           output: terminal.output,
+          settledAt,
         },
       ],
     }));
@@ -2595,7 +2667,11 @@ describe('runCheckBackgroundTask (singleton)', () => {
       status: terminal.status,
       background_task_id: 'task-recovered',
       [terminal.field]: terminal.output,
+      /** The receipt records settlement only, so a recovered poll reports no span. */
+      settled_at: settledAt.toISOString(),
     });
+    expect(result.started_at).toBeUndefined();
+    expect(result.elapsed_ms).toBeUndefined();
     expect(claimBackgroundToolResult).toHaveBeenCalledWith(
       expect.not.objectContaining({ messageId: expect.anything() }),
     );
@@ -2915,6 +2991,15 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(second).toEqual(expect.objectContaining({ status: 'claimed', result_claimed: true }));
     expect(second.result).toBeUndefined();
     expect(claimBackgroundToolResult).not.toHaveBeenCalled();
+
+    /** A subagent task reports the same timings as an ordinary one. */
+    for (const polled of [first, second]) {
+      expect(Number.isNaN(Date.parse(polled.started_at))).toBe(false);
+      expect(Date.parse(polled.settled_at)).toBeGreaterThanOrEqual(Date.parse(polled.started_at));
+      expect(polled.elapsed_ms).toBe(
+        Date.parse(polled.settled_at) - Date.parse(polled.started_at),
+      );
+    }
   });
 
   it('falls through cleanly when neither background store recognizes a poll id', async () => {
