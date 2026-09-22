@@ -928,7 +928,28 @@ const managementClientBindingSchema = z
   })
   .strict();
 
-const managementApiOidcSchema = oidcAccessTokenSchema.strict().superRefine(validateEnabledOidc);
+const managementApiOidcSchema = oidcAccessTokenSchema
+  .extend({
+    tokenUse: z.literal('access').optional(),
+    requiredScopes: z.array(z.string().trim().min(1).max(256)).min(1).max(20).optional(),
+  })
+  .strict()
+  .superRefine((oidc, ctx) => {
+    if (oidc.enabled === true && !oidc.issuer) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['issuer'],
+        message: 'issuer is required when OIDC auth is enabled',
+      });
+    }
+    if (oidc.enabled === true && !oidc.audience && oidc.tokenUse !== 'access') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['audience'],
+        message: 'audience or access-token validation is required when OIDC auth is enabled',
+      });
+    }
+  });
 
 const managementApiAuthSchema = z
   .object({
