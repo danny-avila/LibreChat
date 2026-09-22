@@ -348,6 +348,7 @@ export const codeTypeMapping: { [key: string]: string } = {
   zip: 'application/zip', // .zip - ZIP archive
   txt: 'text/plain', // .txt - Plain text file
   log: 'text/plain', // .log - Log file
+  rst: 'text/plain', // .rst - reStructuredText document
   csv: 'text/csv', // .csv - Comma-separated values
   tsv: 'text/tab-separated-values', // .tsv - Tab-separated values
   parquet: 'application/x-parquet', // .parquet - Apache Parquet columnar storage
