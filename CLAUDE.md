@@ -294,7 +294,12 @@ Multi-line imports count total character length across all lines. Consolidate va
   written before ESLint reports it — so `lint:design:suppress` runs `lint:design:record` inside
   `|| node -e ""` (`true` is not a command under `cmd.exe`, where npm runs scripts on Windows)
   and lets the prune be the step that can fail. Expect the same when running a scoped re-record
-  by hand.
+  by hand, and build the primitives first: `shadcn/no-restyle` reads each variant out of
+  `packages/client/dist`, so a missing or stale bundle records counts that describe a library
+  nobody is compiling against. `lint`, `lint:fix`, `lint:design:record` and `lint:design:prune`
+  each run `npm run build:client-package` before they lint, which is why `lint:design:suppress`
+  no longer builds on its own account; a bare `eslint --suppress-rule ...` does not, so run that
+  build ahead of it.
 - **The ratchet is on the count, and on what the count stands for.** ESLint compares a file's
   current violation count for a rule against the recorded one and suppresses when it is not higher,
   so replacing one suppressed violation with a different violation of the same rule in the same
