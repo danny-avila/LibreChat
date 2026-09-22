@@ -1682,9 +1682,7 @@ describe('AclEntry Model Tests', () => {
    * `permBits: { $in: permissionBitSupersets(X) }`), so it warrants direct
    * coverage independent of the higher-level parity and behavior specs.
    */
-  type BitUpdate = { $bit?: Record<string, Record<string, number>> };
-
-  describe('modifyPermissionBits (single-operator $bit, issue #16163)', () => {
+  describe('modifyPermissionBits (atomic guarded writes, issue #16163)', () => {
     const principal = new mongoose.Types.ObjectId();
     const resource = new mongoose.Types.ObjectId();
     const INSIGHTS = PermissionBits.VIEW_INSIGHTS;
@@ -1728,43 +1726,37 @@ describe('AclEntry Model Tests', () => {
       expect(updated?.permBits).toBe(PermissionBits.VIEW | PermissionBits.SHARE | INSIGHTS);
     });
 
-    test('never sends more than one $bit operator per field', async () => {
+    test('changes bits in one guarded write and never emits $bit', async () => {
       await seed(PermissionBits.VIEW);
-      const model = mongoose.models.AclEntry;
-      const spy = jest.spyOn(model, 'findOneAndUpdate');
+      const spy = jest.spyOn(AclEntry, 'bulkWrite');
       try {
-        await modify(PermissionBits.EDIT, null);
-        await modify(null, PermissionBits.EDIT);
-        await modify(PermissionBits.SHARE, PermissionBits.VIEW);
-        const bags = spy.mock.calls.flatMap(([, update]) =>
-          Object.values((update as unknown as BitUpdate | undefined)?.$bit ?? {}),
-        );
-        expect(bags.length).toBeGreaterThan(0);
-        for (const bag of bags) {
-          expect(Object.keys(bag)).toHaveLength(1);
-        }
+        await modify(PermissionBits.EDIT, PermissionBits.VIEW);
+        expect(spy).toHaveBeenCalledTimes(1);
+        expect(spy.mock.calls[0][0]).toHaveLength(1);
+        expect(spy.mock.calls[0][0][0]).toMatchObject({
+          updateOne: {
+            filter: { permBits: PermissionBits.VIEW },
+            update: { $set: { permBits: PermissionBits.EDIT } },
+          },
+        });
+        expect(JSON.stringify(spy.mock.calls)).not.toContain('$bit');
       } finally {
         spy.mockRestore();
       }
     });
 
-    test('preserves a concurrent change to bits it was not asked to touch', async () => {
+    test('retries a concurrent Insights grant without overwriting it', async () => {
       await seed(PermissionBits.VIEW | PermissionBits.EDIT);
-      const model = mongoose.models.AclEntry;
-      const real = model.findOneAndUpdate.bind(model);
-      const raced = ((...args: Parameters<typeof real>) =>
-        real(...args).then(async (result: unknown) => {
-          /** An admin grants Insights between the clear and the set. */
-          await model.updateMany(
-            { principalId: principal },
-            { $bit: { permBits: { or: INSIGHTS } } },
-          );
-          return result;
-        })) as unknown as typeof model.findOneAndUpdate;
-      const spy = jest.spyOn(model, 'findOneAndUpdate').mockImplementationOnce(raced);
+      const real = AclEntry.bulkWrite.bind(AclEntry);
+      const race = (async (...args: Parameters<typeof real>) => {
+        await AclEntry.updateMany({ principalId: principal }, { $set: { permBits: 19 } });
+        return real(...args);
+      }) as unknown as typeof AclEntry.bulkWrite;
+      const spy = jest.spyOn(AclEntry, 'bulkWrite').mockImplementationOnce(race);
       try {
         const updated = await modify(PermissionBits.SHARE, PermissionBits.EDIT);
         expect(updated?.permBits).toBe(PermissionBits.VIEW | PermissionBits.SHARE | INSIGHTS);
+        expect(spy).toHaveBeenCalledTimes(2);
       } finally {
         spy.mockRestore();
       }
