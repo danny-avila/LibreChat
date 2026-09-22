@@ -1,12 +1,22 @@
 import { logger } from '@librechat/data-schemas';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { TClassificationConfig } from 'librechat-data-provider';
-import type { BooleanQuestion } from '~/classification/types';
-import type { Classifier } from '~/classification/types';
-import { boolean, isTrue } from '~/classification/questions';
-import { isBooleanAnswer } from '~/classification/types';
+import type { Classifier, BooleanQuestion, ClassificationQuestion } from '~/classification/types';
+import { isBooleanAnswer, isChoiceAnswer } from '~/classification/types';
+import { boolean, choice, isTrue } from '~/classification/questions';
 
-export type MemoryGate = (messages: BaseMessage[]) => Promise<boolean>;
+export interface MemoryJudgment {
+  process: boolean;
+  hint?: string;
+}
+
+export interface MemoryGateInput {
+  messages: BaseMessage[];
+  /** Keys the memory model may write. Categorization is skipped without them. */
+  validKeys?: string[];
+}
+
+export type MemoryGate = (input: MemoryGateInput) => Promise<MemoryJudgment>;
 
 export type MemoryGateSettings = TClassificationConfig['memoryGate'];
 
@@ -20,6 +30,7 @@ export interface CreateMemoryGateParams {
 
 const DEFAULT_WINDOW = 6;
 const DEFAULT_MAX_CHARS = 8_000;
+const PROCESS = { process: true } as const;
 
 export const DURABLE_QUESTION: BooleanQuestion = boolean(
   'Does `conversation` hold something about this user that would still matter in an unrelated ' +
@@ -29,6 +40,18 @@ export const DURABLE_QUESTION: BooleanQuestion = boolean(
       'A lasting preference, a fact about who they are or what they work on, or a decision ' +
       'they want remembered.',
     false: 'Small talk, or a detail that only matters inside this task.',
+  },
+);
+
+export const CATEGORY_INSTRUCTIONS =
+  'Which stored memory does the durable part of `conversation` belong under?';
+
+export const UPDATE_QUESTION: BooleanQuestion = boolean(
+  'Does `conversation` change something already known about this user, rather than adding ' +
+    'something new?',
+  {
+    true: 'It corrects, replaces or narrows a fact the assistant would already hold.',
+    false: 'It is new, or it repeats what is already stored without changing it.',
   },
 );
 
@@ -85,6 +108,21 @@ export function transcribeTail(
   return lines.reverse().join('\n');
 }
 
+export function buildHint(key: string | null, updates: boolean): string | undefined {
+  if (key == null) {
+    return undefined;
+  }
+  const change = updates
+    ? ' It looks like a change to what is already stored there, not a new fact.'
+    : '';
+  return (
+    '<memory_hint>\n' +
+    `The durable part of this turn most likely belongs under \`${key}\`.${change}\n` +
+    'Ignore this if it does not fit what the user actually said.\n' +
+    '</memory_hint>'
+  );
+}
+
 export function createMemoryGate(params: CreateMemoryGateParams): MemoryGate | null {
   const { classifier, settings, signal } = params;
   if (settings?.enabled !== true) {
@@ -93,39 +131,72 @@ export function createMemoryGate(params: CreateMemoryGateParams): MemoryGate | n
   const windowSize = params.windowSize ?? DEFAULT_WINDOW;
   const maxChars = params.maxChars ?? DEFAULT_MAX_CHARS;
   const threshold = settings.threshold;
-  const question = boolean(settings.instructions ?? DURABLE_QUESTION.instructions, {
+  const durable = boolean(settings.instructions ?? DURABLE_QUESTION.instructions, {
     true: settings.whenTrue ?? DURABLE_QUESTION.criteria?.true,
     false: settings.whenFalse ?? DURABLE_QUESTION.criteria?.false,
   });
 
-  return async function memoryGate(messages: BaseMessage[]): Promise<boolean> {
+  function buildQuestions(validKeys: string[]): Record<string, ClassificationQuestion> {
+    const questions: Record<string, ClassificationQuestion> = { durable };
+    if (settings.categorize === true && validKeys.length > 0) {
+      questions.category = choice(
+        CATEGORY_INSTRUCTIONS,
+        Object.fromEntries(validKeys.map((key) => [key, null])),
+      );
+    }
+    if (settings.detectUpdates === true) {
+      questions.updates = UPDATE_QUESTION;
+    }
+    return questions;
+  }
+
+  return async function memoryGate({
+    messages,
+    validKeys = [],
+  }: MemoryGateInput): Promise<MemoryJudgment> {
     const transcript = transcribeTail(messages ?? [], windowSize, maxChars);
     if (transcript.length === 0) {
-      return false;
+      return { process: false };
     }
     try {
       const response = await classifier.classify({
         label: 'memory-gate',
         signal,
         state: { conversation: transcript },
-        questions: { durable: question },
+        questions: buildQuestions(validKeys),
       });
+
       const answer = response.answers.durable;
       if (!isBooleanAnswer(answer)) {
-        return true;
+        return PROCESS;
       }
-      const keep = isTrue(answer, threshold);
+      if (!isTrue(answer, threshold)) {
+        logger.debug(
+          `[memoryGate] durable ${answer.probability.toFixed(2)} below ${threshold}: skipping`,
+        );
+        return { process: false };
+      }
+
+      const categoryAnswer = response.answers.category;
+      const key =
+        isChoiceAnswer(categoryAnswer) &&
+        (categoryAnswer.probabilities[categoryAnswer.choice] ?? 0) >= settings.categoryThreshold
+          ? categoryAnswer.choice
+          : null;
+      const updatesAnswer = response.answers.updates;
+      const updates = isBooleanAnswer(updatesAnswer) && updatesAnswer.probability >= 0.5;
+
       logger.debug(
-        `[memoryGate] durable ${answer.probability.toFixed(2)} vs threshold ${threshold}: ` +
-          `${keep ? 'processing' : 'skipping'} memory`,
+        `[memoryGate] durable ${answer.probability.toFixed(2)}: processing` +
+          (key != null ? `, suggesting \`${key}\`${updates ? ' as an update' : ''}` : ''),
       );
-      return keep;
+      return { process: true, hint: buildHint(key, updates) };
     } catch (error) {
       logger.warn(
         '[memoryGate] judgment failed, processing memory as usual: ' +
           (error instanceof Error ? error.message : String(error)),
       );
-      return true;
+      return PROCESS;
     }
   };
 }

@@ -1078,13 +1078,20 @@ export async function createMemoryProcessor({
       messages: BaseMessage[],
       inspectionMessages?: BaseMessage[],
     ): Promise<(TAttachment | null)[] | undefined> {
-      if (gate != null && !(await gate(messages))) {
-        logger.debug('[MemoryAgent] Turn carries nothing durable; skipping', {
-          userId,
-          conversationId,
-          messageId,
-        });
-        return undefined;
+      let turnInstructions = finalInstructions;
+      if (gate != null) {
+        const judgment = await gate({ messages, validKeys });
+        if (!judgment.process) {
+          logger.debug('[MemoryAgent] Turn carries nothing durable; skipping', {
+            userId,
+            conversationId,
+            messageId,
+          });
+          return undefined;
+        }
+        if (judgment.hint != null) {
+          turnInstructions = `${finalInstructions}\n\n${judgment.hint}`;
+        }
       }
       try {
         return await processMemory({
@@ -1105,7 +1112,7 @@ export async function createMemoryProcessor({
           totalTokens: totalTokens || 0,
           tokenCountsByKey,
           filters,
-          instructions: finalInstructions,
+          instructions: turnInstructions,
           setMemory: memoryMethods.setMemory,
           deleteMemory: memoryMethods.deleteMemory,
           user,
