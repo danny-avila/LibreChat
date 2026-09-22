@@ -11,6 +11,7 @@ import type { ChatCompletionChunk, ToolCall } from './types';
 import {
   createOpenAIHandlers,
   createOpenAIStreamTracker,
+  createOpenAIContentAggregator,
   createOpenAIToolCallStream,
   OpenAIRunStepHandler,
   OpenAIRunStepDeltaHandler,
@@ -149,5 +150,108 @@ describe('tool-call projection with real SDK graph dispatch', () => {
       metadata.map((_, i) => JSON.stringify({ i })),
     );
     expect(new Set([...tracker.toolCalls.values()].map((call) => call.id)).size).toBe(4);
+  });
+  it.each([true, false])(
+    'projects complete-only SDK messages at response completion (stream=%s)',
+    async (streaming) => {
+      const frames: string[] = [];
+      const res: Response = Object.create(response);
+      jest.spyOn(res, 'write').mockImplementation((frame) => {
+        frames.push(String(frame));
+        return true;
+      });
+      const tracker = createOpenAIStreamTracker();
+      const aggregator = createOpenAIContentAggregator();
+      const config = {
+        tracker,
+        res,
+        context: { requestId: 'complete', created: 1, model: 'fixture' },
+      };
+      const handlers = createOpenAIHandlers(streaming ? config : { aggregator });
+      const graph = new StandardGraph({
+        runId: 'complete',
+        agents: [{ agentId: 'agent', provider: Providers.OPENAI, tools: [] }],
+      });
+      graph.config = { configurable: { run_id: 'complete', thread_id: 'thread' } };
+      graph.handlerRegistry = new HandlerRegistry();
+      for (const [event, handler] of Object.entries(handlers))
+        graph.handlerRegistry.register(event, handler);
+      await new ChatModelStreamHandler().handle(
+        'on_chat_model_stream',
+        {
+          chunk: new AIMessageChunk({
+            content: '',
+            tool_calls: [{ id: 'a', name: 'get_time', args: { city: 'Madrid' } }],
+          }),
+        },
+        { langgraph_node: 'agent=agent', langgraph_step: 1 },
+        graph,
+      );
+      const target = streaming ? tracker : aggregator;
+      expect(target.toolCalls.get(0)?.function.arguments).toBe('');
+      if (streaming) sendFinalChunk(config);
+      else target.finishToolCalls?.();
+      expect(target.toolCalls.get(0)?.function.arguments).toBe('{"city":"Madrid"}');
+      if (streaming) {
+        const chunks: ChatCompletionChunk[] = frames
+          .filter((frame) => frame !== 'data: [DONE]\n\n')
+          .map((frame) => JSON.parse(frame.slice(6)));
+        expect(
+          chunks
+            .flatMap((chunk) => chunk.choices[0].delta.tool_calls ?? [])
+            .map((call) => call.function?.arguments)
+            .join(''),
+        ).toBe('{"city":"Madrid"}');
+      }
+    },
+  );
+
+  it('uses graph-owned stream segments without stealing late fragments from the old segment', () => {
+    const graph = new StandardGraph({
+      runId: 'segments',
+      agents: [{ agentId: 'a', provider: Providers.OPENAI, tools: [] }],
+    });
+    graph.config = { configurable: { run_id: 'segments', thread_id: 'thread' } };
+    const meta = { langgraph_node: 'agent=a', langgraph_step: 1 };
+    const tracker = createOpenAIStreamTracker();
+    const stream = createOpenAIToolCallStream({ toolCalls: tracker.toolCalls });
+    const start = new OpenAIRunStepHandler(stream);
+    const delta = new OpenAIRunStepDeltaHandler(stream);
+    for (let i = 0; i < 2; i++) {
+      start.handle(
+        'on_run_step',
+        {
+          id: `step_${i}`,
+          stepDetails: { type: 'tool_calls', tool_calls: [{ id: 'call_0', name: 'get_time' }] },
+        },
+        meta,
+        graph,
+      );
+      delta.handle(
+        'on_run_step_delta',
+        {
+          id: `step_${i}`,
+          delta: { type: 'tool_calls', tool_calls: [{ id: 'call_0', index: 0, name: 'get_time' }] },
+        },
+        meta,
+        graph,
+      );
+      graph.advanceStreamSegment();
+    }
+    for (let i = 0; i < 2; i++)
+      delta.handle(
+        'on_run_step_delta',
+        {
+          id: `step_${i}`,
+          delta: { type: 'tool_calls', tool_calls: [{ index: 0, args: JSON.stringify({ i }) }] },
+        },
+        meta,
+        graph,
+      );
+    stream.finish();
+    expect([...tracker.toolCalls.values()].map((call) => call.function.arguments)).toEqual([
+      '{"i":0}',
+      '{"i":1}',
+    ]);
   });
 });

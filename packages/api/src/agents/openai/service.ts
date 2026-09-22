@@ -63,6 +63,7 @@ import {
   createOpenAIContentAggregator,
   createOpenAIStreamTracker,
   createOpenAIHandlers,
+  completeOpenAIToolCalls,
   sendFinalChunk,
   createChunk,
   writeSSE,
@@ -833,19 +834,21 @@ export async function createAgentChatCompletion(
         : null;
 
     // Create event handlers
-    const eventHandlers =
-      isStreaming && handlerConfig
-        ? createOpenAIHandlers(
-            handlerConfig,
-            deps.toolExecuteOptions == null
-              ? undefined
-              : {
-                  ...deps.toolExecuteOptions,
-                  runSignal: abortController.signal,
-                  foregroundRunId: requestId,
-                },
-          )
-        : {};
+    const eventHandlers = createOpenAIHandlers(
+      handlerConfig
+        ? { ...handlerConfig, signal: abortController.signal }
+        : {
+            aggregator: aggregator!,
+            signal: abortController.signal,
+          },
+      deps.toolExecuteOptions == null
+        ? undefined
+        : {
+            ...deps.toolExecuteOptions,
+            runSignal: abortController.signal,
+            foregroundRunId: requestId,
+          },
+    );
 
     // Convert messages to internal format
     const messages = convertMessages(request.messages);
@@ -877,32 +880,40 @@ export async function createAgentChatCompletion(
       });
 
       if (run) {
-        await run.processStream(
-          { messages },
+        const target = tracker ?? aggregator!;
+        await completeOpenAIToolCalls(
           {
-            runName: 'AgentRun',
-            configurable: {
-              thread_id: conversationId,
-              user_id: userId,
-              user: safeUser,
-              requestBody: mcpRequestBody,
-              /** Same per-agent channel the in-repo controllers thread via
-               *  `loadTools`: without it, the executor's PTC path cannot
-               *  strip host-injected `intent` params from the schemas the
-               *  sandbox bridge advertises on this route. */
-              ...(initializedAgent.intentToolNames?.length
-                ? { intentToolNames: initializedAgent.intentToolNames }
-                : {}),
-            },
-            recursionLimit: resolveRecursionLimit(
-              agentsConfig as Partial<TAgentsEndpoint> | undefined,
-              initializedAgent,
-            ),
-            signal: abortController.signal,
-            streamMode: 'values',
-            version: 'v2',
+            finish: () => target.finishToolCalls?.(),
+            abort: () => target.abortToolCalls?.(),
           },
-          {},
+          () =>
+            run.processStream(
+              { messages },
+              {
+                runName: 'AgentRun',
+                configurable: {
+                  thread_id: conversationId,
+                  user_id: userId,
+                  user: safeUser,
+                  requestBody: mcpRequestBody,
+                  /** Same per-agent channel the in-repo controllers thread via
+                   *  `loadTools`: without it, the executor's PTC path cannot
+                   *  strip host-injected `intent` params from the schemas the
+                   *  sandbox bridge advertises on this route. */
+                  ...(initializedAgent.intentToolNames?.length
+                    ? { intentToolNames: initializedAgent.intentToolNames }
+                    : {}),
+                },
+                recursionLimit: resolveRecursionLimit(
+                  agentsConfig as Partial<TAgentsEndpoint> | undefined,
+                  initializedAgent,
+                ),
+                signal: abortController.signal,
+                streamMode: 'values',
+                version: 'v2',
+              },
+              {},
+            ),
         );
       }
     }
@@ -912,6 +923,7 @@ export async function createAgentChatCompletion(
       sendFinalChunk(handlerConfig);
       res.end();
     } else if (aggregator) {
+      aggregator.finishToolCalls?.();
       // Build and send non-streaming response
       const usage: CompletionUsage = {
         prompt_tokens: aggregator.usage.promptTokens,

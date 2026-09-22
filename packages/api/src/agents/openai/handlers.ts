@@ -5,6 +5,7 @@
  * streaming format (SSE with chat.completion.chunk objects).
  */
 import type { Response as ServerResponse } from 'express';
+import type { Graph } from '@librechat/agents';
 import type {
   ChatCompletionChunkChoice,
   OpenAIResponseContext,
@@ -14,6 +15,7 @@ import type {
 } from './types';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { ToolExecuteOptions } from '~/agents/handlers';
+import type { JsonValue } from '../json';
 import { createToolExecuteHandler } from '~/agents/handlers';
 import { aggregateCollectedUsage } from '../usage';
 
@@ -58,6 +60,9 @@ export function writeSSE(res: ServerResponse, data: ChatCompletionChunk | string
  * Only tracks what's needed for finish_reason and usage - doesn't store content.
  */
 export interface OpenAIStreamTracker {
+  /** Successful response completion, installed by the response handlers. */
+  finishToolCalls?: () => void;
+  abortToolCalls?: () => void;
   /** Whether any text content was emitted */
   hasText: boolean;
   /** Whether any reasoning content was emitted */
@@ -105,6 +110,9 @@ export function createOpenAIStreamTracker(): OpenAIStreamTracker {
  * Uses arrays for O(n) text accumulation instead of O(n²) string concatenation.
  */
 export interface OpenAIContentAggregator {
+  /** Successful response completion, installed by the response handlers. */
+  finishToolCalls?: () => void;
+  abortToolCalls?: () => void;
   /** Accumulated text chunks */
   textChunks: string[];
   /** Accumulated reasoning/thinking chunks */
@@ -154,6 +162,7 @@ export function createOpenAIContentAggregator(): OpenAIContentAggregator {
  * Handler configuration for OpenAI streaming
  */
 export interface OpenAIStreamHandlerConfig {
+  signal?: AbortSignal;
   res: ServerResponse;
   context: OpenAIResponseContext;
   tracker: OpenAIStreamTracker;
@@ -187,7 +196,7 @@ export const StepTypes = {
  */
 export interface MessageDeltaData {
   id?: string;
-  content?: Array<{ type: string; text?: string }>;
+  content?: Array<{ type: string; text?: string; think?: string }>;
   delta?: { content?: MessageDeltaData['content'] };
 }
 
@@ -221,6 +230,8 @@ export interface RunStepDeltaData {
 
 /** A tool call as the run step that opened it declares it. */
 export interface RunStepToolCall {
+  /** Parsed declaration snapshot, not an append-only delta. */
+  args?: JsonValue;
   index?: number;
   id?: string;
   name?: string;
@@ -297,14 +308,25 @@ export interface OpenAIToolCallStreamConfig {
   toolCalls: Map<number, ToolCall>;
   /** Emits one outward delta. Omitted for non-streaming responses. */
   emit?: (delta: ChatCompletionChunkChoice['delta']) => void;
+  signal?: AbortSignal;
 }
 
 export interface OpenAIToolCallStream {
   /** Declares the tool calls a run step opened. */
-  onRunStep: (data: RunStepData, metadata?: Record<string, unknown>) => void;
+  onRunStep: (data: RunStepData, metadata?: Record<string, unknown>, graph?: ToolCallGraph) => void;
   /** Accumulates the name and argument fragments streamed for a run step. */
-  onRunStepDelta: (data: RunStepDeltaData, metadata?: Record<string, unknown>) => void;
+  onRunStepDelta: (
+    data: RunStepDeltaData,
+    metadata?: Record<string, unknown>,
+    graph?: ToolCallGraph,
+  ) => void;
+  /** Flush complete-only snapshots once, after successful execution, before DONE/JSON. */
+  finish: () => void;
+  /** Discard pending snapshots on failure and reject further writes. */
+  abort: () => void;
 }
+
+type ToolCallGraph = Pick<Graph, 'getStepBaseKey'>;
 
 interface ProjectedToolCall {
   providerId: string;
@@ -312,6 +334,8 @@ interface ProjectedToolCall {
   id: string;
   pendingArgs: string[];
   declared: boolean;
+  snapshot?: string;
+  hasFragments: boolean;
 }
 
 interface ToolCallStep {
@@ -324,7 +348,9 @@ interface ToolCallStep {
 export function createOpenAIToolCallStream(
   config: OpenAIToolCallStreamConfig,
 ): OpenAIToolCallStream {
-  const { toolCalls, emit } = config;
+  const { toolCalls, emit, signal } = config;
+  let phase: 'open' | 'finished' | 'aborted' = 'open';
+  let unattributableArguments = false;
   const steps = new Map<string, ToolCallStep>();
   const wireIds = new Set<string>();
   const invocations = new Map<string, Map<number, ProjectedToolCall>>();
@@ -336,6 +362,7 @@ export function createOpenAIToolCallStream(
   const getBindings = (
     stepId: string,
     metadata?: Record<string, unknown>,
+    graph?: ToolCallGraph,
   ): Map<number, ProjectedToolCall> => {
     let scope = stepScopes.get(stepId);
     if (scope === undefined) {
@@ -349,6 +376,10 @@ export function createOpenAIToolCallStream(
               metadata.langgraph_checkpoint_ns ?? metadata.checkpoint_ns ?? '',
             ])
           : JSON.stringify(['step', stepId]);
+      if (graph && metadata) {
+        /** The SDK owns segment, checkpoint and invoked-tool transitions. */
+        scope = graph.getStepBaseKey(metadata);
+      }
       stepScopes.set(stepId, scope);
     }
     let bindings = invocations.get(scope);
@@ -381,7 +412,14 @@ export function createOpenAIToolCallStream(
       wireId = `${wireId}_${index}`;
     }
     wireIds.add(wireId);
-    call = { providerId: id, index, id: wireId, pendingArgs: [], declared: false };
+    call = {
+      providerId: id,
+      index,
+      id: wireId,
+      pendingArgs: [],
+      declared: false,
+      hasFragments: false,
+    };
     step.byId.set(id, call);
     return call;
   };
@@ -420,14 +458,80 @@ export function createOpenAIToolCallStream(
     call.pendingArgs.length = 0;
   };
 
+  const abort = (): void => {
+    if (phase !== 'finished') {
+      phase = 'aborted';
+    }
+    steps.clear();
+    stepScopes.clear();
+    invocations.clear();
+    wireIds.clear();
+  };
+
+  const writable = (): boolean => {
+    if (signal?.aborted) {
+      abort();
+    }
+    return phase === 'open';
+  };
+
   return {
-    onRunStep: (data, metadata) => {
+    abort,
+    finish: () => {
+      if (phase === 'finished') {
+        return;
+      }
+      if (!writable()) {
+        const error = new Error('Agent response aborted');
+        error.name = 'AbortError';
+        throw error;
+      }
+      try {
+        if (unattributableArguments) {
+          throw new Error('Unattributable tool call arguments in agent response');
+        }
+        /** A declaration can be a partial parsed snapshot. Any actual argument
+         * fragments take precedence, even when they arrive after the snapshot.
+         * Never concatenate both representations or repair a failed stream with
+         * a stale snapshot. Validate all terminal payloads before flushing any
+         * fallback, so malformed input never completes a snapshot-only call. */
+        for (const step of steps.values()) {
+          for (const call of step.byId.values()) {
+            const args = call.hasFragments
+              ? toolCalls.get(call.index)?.function.arguments
+              : call.snapshot;
+            if (!call.declared || args === undefined || args === '') {
+              throw new Error('Incomplete tool call in agent response');
+            }
+            try {
+              JSON.parse(args);
+            } catch {
+              throw new Error('Invalid tool call arguments in agent response');
+            }
+          }
+        }
+        for (const step of steps.values()) {
+          for (const call of step.byId.values()) {
+            if (call.declared && !call.hasFragments && call.snapshot !== undefined) {
+              append(call, call.snapshot);
+            }
+          }
+        }
+        phase = 'finished';
+      } finally {
+        abort();
+      }
+    },
+    onRunStep: (data, metadata, graph) => {
+      if (!writable()) {
+        return;
+      }
       const details = data?.stepDetails;
       if (details?.type !== StepTypes.TOOL_CALLS || !Array.isArray(details.tool_calls)) {
         return;
       }
       const step = getStep(data.id ?? '');
-      const bindings = getBindings(data.id ?? '', metadata);
+      const bindings = getBindings(data.id ?? '', metadata, graph);
       for (const [position, toolCall] of details.tool_calls.entries()) {
         if (!toolCall.id) {
           continue;
@@ -439,17 +543,26 @@ export function createOpenAIToolCallStream(
         } else if (details.tool_calls.length > 1) {
           step.byPosition.set(position, call);
         }
+        const snapshot =
+          toolCall.function?.arguments ??
+          (toolCall.args === undefined ? undefined : JSON.stringify(toolCall.args));
+        if (!call.hasFragments && snapshot !== undefined) {
+          call.snapshot = snapshot;
+        }
         declare(call, toolCall.name ?? toolCall.function?.name ?? '');
       }
     },
 
-    onRunStepDelta: (data, metadata) => {
+    onRunStepDelta: (data, metadata, graph) => {
+      if (!writable()) {
+        return;
+      }
       const delta = data?.delta;
       if (delta?.type !== StepTypes.TOOL_CALLS || !Array.isArray(delta.tool_calls)) {
         return;
       }
       const step = getStep(data.id ?? '');
-      const bindings = getBindings(data.id ?? '', metadata);
+      const bindings = getBindings(data.id ?? '', metadata, graph);
       for (const fragment of delta.tool_calls) {
         let call: ProjectedToolCall | undefined;
         if (fragment.id) {
@@ -477,20 +590,40 @@ export function createOpenAIToolCallStream(
           }
         }
         if (call === undefined) {
+          unattributableArguments ||= !!(fragment.args ?? fragment.function?.arguments);
           continue;
         }
         declare(call, fragment.name ?? fragment.function?.name ?? '');
-        append(call, fragment.args ?? fragment.function?.arguments ?? '');
+        const args = fragment.args ?? fragment.function?.arguments ?? '';
+        if (args) {
+          call.hasFragments = true;
+          call.snapshot = undefined;
+          append(call, args);
+        }
       }
     },
   };
+}
+
+/** Success publishes fallback snapshots; failure/abort never does. Both hosts
+ * use this boundary so late provider events cannot mutate a settled response. */
+export async function completeOpenAIToolCalls(
+  lifecycle: Pick<OpenAIToolCallStream, 'finish' | 'abort'>,
+  execute: () => Promise<void>,
+): Promise<void> {
+  try {
+    await execute();
+    lifecycle.finish();
+  } finally {
+    lifecycle.abort();
+  }
 }
 
 /**
  * Handler for message delta events - streams text content
  */
 export class OpenAIMessageDeltaHandler implements EventHandler {
-  constructor(private config: OpenAIStreamHandlerConfig) {}
+  constructor(private config: OpenAIContentHandlerConfig) {}
 
   handle(_event: string, data: MessageDeltaData): void {
     const content = data?.delta?.content ?? data?.content;
@@ -500,6 +633,10 @@ export class OpenAIMessageDeltaHandler implements EventHandler {
 
     for (const part of content) {
       if (part.type === 'text' && part.text) {
+        if ('aggregator' in this.config) {
+          this.config.aggregator.addText(part.text);
+          continue;
+        }
         this.config.tracker.addText();
         const chunk = createChunk(this.config.context, { content: part.text });
         writeSSE(this.config.res, chunk);
@@ -514,8 +651,13 @@ export class OpenAIMessageDeltaHandler implements EventHandler {
 export class OpenAIRunStepDeltaHandler implements EventHandler {
   constructor(private toolCallStream: OpenAIToolCallStream) {}
 
-  handle(_event: string, data: RunStepDeltaData, metadata?: Record<string, unknown>): void {
-    this.toolCallStream.onRunStepDelta(data, metadata);
+  handle(
+    _event: string,
+    data: RunStepDeltaData,
+    metadata?: Record<string, unknown>,
+    graph?: ToolCallGraph,
+  ): void {
+    this.toolCallStream.onRunStepDelta(data, metadata, graph);
   }
 }
 
@@ -526,8 +668,13 @@ export class OpenAIRunStepDeltaHandler implements EventHandler {
 export class OpenAIRunStepHandler implements EventHandler {
   constructor(private toolCallStream: OpenAIToolCallStream) {}
 
-  handle(_event: string, data: RunStepData, metadata?: Record<string, unknown>): void {
-    this.toolCallStream.onRunStep(data, metadata);
+  handle(
+    _event: string,
+    data: RunStepData,
+    metadata?: Record<string, unknown>,
+    graph?: ToolCallGraph,
+  ): void {
+    this.toolCallStream.onRunStep(data, metadata, graph);
   }
 }
 
@@ -535,7 +682,7 @@ export class OpenAIRunStepHandler implements EventHandler {
  * Handler for model end events - captures usage
  */
 export class OpenAIModelEndHandler implements EventHandler {
-  constructor(private config: OpenAIStreamHandlerConfig) {}
+  constructor(private config: OpenAIContentHandlerConfig) {}
 
   handle(_event: string, data: ModelEndData): void {
     const usage = data?.output?.usage_metadata;
@@ -543,9 +690,10 @@ export class OpenAIModelEndHandler implements EventHandler {
       return;
     }
 
-    this.config.tracker.usage.promptTokens += usage.input_tokens ?? 0;
-    this.config.tracker.usage.completionTokens += usage.output_tokens ?? 0;
-    this.config.tracker.usage.reasoningTokens +=
+    const target = 'aggregator' in this.config ? this.config.aggregator : this.config.tracker;
+    target.usage.promptTokens += usage.input_tokens ?? 0;
+    target.usage.completionTokens += usage.output_tokens ?? 0;
+    target.usage.reasoningTokens +=
       usage.output_token_details?.reasoning ?? usage.output_token_details?.reasoning_tokens ?? 0;
   }
 }
@@ -574,7 +722,7 @@ export class OpenAIToolEndHandler implements EventHandler {
  * Streams reasoning/thinking content using the `delta.reasoning` field (OpenRouter convention).
  */
 export class OpenAIReasoningDeltaHandler implements EventHandler {
-  constructor(private config: OpenAIStreamHandlerConfig) {}
+  constructor(private config: OpenAIContentHandlerConfig) {}
 
   handle(_event: string, data: MessageDeltaData): void {
     const content = data?.delta?.content ?? data?.content;
@@ -583,12 +731,17 @@ export class OpenAIReasoningDeltaHandler implements EventHandler {
     }
 
     for (const part of content) {
-      if (part.type === 'text' && part.text) {
+      if ((part.type === 'text' || part.type === 'think') && (part.think || part.text)) {
+        const text = part.think || part.text!;
+        if ('aggregator' in this.config) {
+          this.config.aggregator.addReasoning(text);
+          continue;
+        }
         // Mark that reasoning was emitted
         this.config.tracker.addReasoning();
 
         // Stream as delta.reasoning (OpenRouter convention)
-        const chunk = createChunk(this.config.context, { reasoning: part.text });
+        const chunk = createChunk(this.config.context, { reasoning: text });
         writeSSE(this.config.res, chunk);
       }
     }
@@ -598,15 +751,29 @@ export class OpenAIReasoningDeltaHandler implements EventHandler {
 /**
  * Create all handlers for OpenAI streaming format
  */
+export interface OpenAIAggregationHandlerConfig {
+  aggregator: OpenAIContentAggregator;
+  signal?: AbortSignal;
+}
+
+type OpenAIContentHandlerConfig = OpenAIStreamHandlerConfig | OpenAIAggregationHandlerConfig;
+
 export function createOpenAIHandlers(
-  config: OpenAIStreamHandlerConfig,
+  config: OpenAIContentHandlerConfig,
   toolExecuteOptions?: ToolExecuteOptions,
 ): Record<string, EventHandler> {
   /** One projection across both events, so a call keeps a single outward index. */
   const toolCallStream = createOpenAIToolCallStream({
-    toolCalls: config.tracker.toolCalls,
-    emit: (delta) => writeSSE(config.res, createChunk(config.context, delta)),
+    signal: config.signal,
+    toolCalls: 'aggregator' in config ? config.aggregator.toolCalls : config.tracker.toolCalls,
+    emit:
+      'aggregator' in config
+        ? undefined
+        : (delta) => writeSSE(config.res, createChunk(config.context, delta)),
   });
+  const target = 'aggregator' in config ? config.aggregator : config.tracker;
+  target.finishToolCalls = toolCallStream.finish;
+  target.abortToolCalls = toolCallStream.abort;
   const handlers: Record<string, EventHandler> = {
     [GraphEvents.ON_MESSAGE_DELTA]: new OpenAIMessageDeltaHandler(config),
     [GraphEvents.ON_RUN_STEP_DELTA]: new OpenAIRunStepDeltaHandler(toolCallStream),
@@ -634,6 +801,7 @@ export function sendFinalChunk(
   usageOverride?: CompletionUsage,
 ): void {
   const { res, context, tracker } = config;
+  tracker.finishToolCalls?.();
 
   // Determine finish reason based on content
   let reason = finishReason;

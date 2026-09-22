@@ -1,6 +1,7 @@
 import type { ChatCompletionChunkChoice, OpenAIResponseContext, ToolCall } from './types';
 import {
   sendFinalChunk,
+  completeOpenAIToolCalls,
   createOpenAIStreamTracker,
   createOpenAIToolCallStream,
   createOpenAIContentAggregator,
@@ -390,6 +391,161 @@ describe('outward tool call indexes', () => {
         function: { name: 'get_time', arguments: '{"city":"Paris"}' },
       },
     ]);
+  });
+});
+
+describe('complete snapshots and streamed fragments', () => {
+  function snapshot(step = 'complete', args = '{"city":"Madrid"}') {
+    return {
+      id: step,
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [{ id: 'a', function: { name: 'get_time', arguments: args } }],
+      },
+    };
+  }
+
+  it.each(['before', 'after', 'between'])(
+    'never concatenates a snapshot %s raw fragments',
+    (order) => {
+      const { stream, deltas, toolCalls } = streamingBridge();
+      if (order === 'before') stream.onRunStep(snapshot());
+      stream.onRunStepDelta(opensCall('complete', 0, 'a', 'get_time'));
+      stream.onRunStepDelta(streamsArgs('complete', 0, '{"city":'));
+      if (order === 'between') stream.onRunStep(snapshot());
+      stream.onRunStepDelta(streamsArgs('complete', 0, '"Madrid"}'));
+      if (order === 'after') stream.onRunStep(snapshot());
+      stream.finish();
+      expect(accumulateLikeClient(deltas)[0].arguments).toBe('{"city":"Madrid"}');
+      expect(toolCalls.get(0)?.function.arguments).toBe('{"city":"Madrid"}');
+    },
+  );
+
+  it('captures a native snapshot without retaining the producer object', () => {
+    const { stream, toolCalls } = streamingBridge();
+    const args = { city: 'Madrid' };
+    stream.onRunStep({
+      id: 'step',
+      stepDetails: { type: 'tool_calls', tool_calls: [{ id: 'a', name: 'get_time', args }] },
+    });
+    args.city = 'Paris';
+    stream.finish();
+    expect(toolCalls.get(0)?.function.arguments).toBe('{"city":"Madrid"}');
+  });
+
+  it('preserves empty native objects and does not flush a snapshot on identifying-only chunks', () => {
+    const { stream, deltas } = streamingBridge();
+    stream.onRunStep({
+      id: 'complete',
+      stepDetails: { type: 'tool_calls', tool_calls: [{ id: 'a', name: 'noop', args: {} }] },
+    });
+    stream.onRunStepDelta(opensCall('complete', 0, 'a', 'noop'));
+    expect(accumulateLikeClient(deltas)[0].arguments).toBe('');
+    stream.finish();
+    expect(accumulateLikeClient(deltas)[0].arguments).toBe('{}');
+  });
+
+  it('flushes replayed declarations only once and ignores writes after completion', () => {
+    const { stream, deltas } = streamingBridge();
+    stream.onRunStep(snapshot());
+    stream.onRunStep(snapshot());
+    stream.finish();
+    stream.finish();
+    stream.onRunStep(snapshot('late'));
+    stream.onRunStepDelta(streamsArgs('complete', 0, 'late'));
+    expect(accumulateLikeClient(deltas)).toEqual([
+      { index: 0, id: 'a', name: 'get_time', arguments: '{"city":"Madrid"}' },
+    ]);
+  });
+
+  it.each(['abort', 'reject', 'sync throw'])(
+    'does not flush fallback snapshots on %s',
+    async (failure) => {
+      const signal = new AbortController();
+      const deltas: Delta[] = [];
+      const toolCalls = new Map<number, ToolCall>();
+      const stream = createOpenAIToolCallStream({
+        toolCalls,
+        signal: signal.signal,
+        emit: (delta) => deltas.push(delta),
+      });
+      stream.onRunStep(snapshot());
+      const error = new Error('provider failed');
+      const run = completeOpenAIToolCalls(stream, () => {
+        if (failure === 'sync throw') throw error;
+        if (failure === 'reject') return Promise.reject(error);
+        signal.abort();
+        return Promise.resolve();
+      });
+      if (failure === 'abort') await expect(run).rejects.toMatchObject({ name: 'AbortError' });
+      else await expect(run).rejects.toBe(error);
+      stream.onRunStep(snapshot('late'));
+      stream.onRunStepDelta(streamsArgs('complete', 0, '{"city":"Paris"}'));
+      expect(() => stream.finish()).toThrow('Agent response aborted');
+      expect(toolCalls.size).toBe(1);
+      expect(accumulateLikeClient(deltas)[0].arguments).toBe('');
+      const retry = streamingBridge();
+      retry.stream.onRunStep(snapshot());
+      retry.stream.finish();
+      expect(retry.toolCalls.get(0)?.function.arguments).toBe('{"city":"Madrid"}');
+    },
+  );
+
+  it('does not report success when argument fragments could not be attributed', () => {
+    const { stream } = streamingBridge();
+    stream.onRunStepDelta(streamsArgs('unknown', 9, '{}'));
+    expect(() => stream.finish()).toThrow('Unattributable tool call arguments');
+  });
+
+  it('never repairs truncated streamed arguments with a complete snapshot', () => {
+    const { stream, toolCalls } = streamingBridge();
+    stream.onRunStep(snapshot());
+    stream.onRunStepDelta(streamsArgs('complete', 0, '{"city":'));
+    expect(() => stream.finish()).toThrow('Invalid tool call arguments');
+    expect(toolCalls.get(0)?.function.arguments).toBe('{"city":');
+  });
+
+  it('fails incomplete identity rather than reporting a successful missing call', () => {
+    const { stream } = streamingBridge();
+    stream.onRunStepDelta({
+      id: 'complete',
+      delta: { type: 'tool_calls', tool_calls: [{ id: 'a', index: 0, args: '{}' }] },
+    });
+    expect(() => stream.finish()).toThrow('Incomplete tool call');
+  });
+
+  it('validates all terminal snapshots before flushing any of them', () => {
+    const { stream, deltas } = streamingBridge();
+    stream.onRunStep(snapshot());
+    stream.onRunStep(snapshot('bad', 'PRIVATE-INCOMPLETE-INPUT'));
+    expect(() => stream.finish()).toThrow('Invalid tool call arguments in agent response');
+    expect(accumulateLikeClient(deltas).map((call) => call.arguments)).toEqual(['', '']);
+  });
+
+  it('keeps a raw stream authoritative over an earlier parsed placeholder', () => {
+    const { stream, deltas } = streamingBridge();
+    stream.onRunStep(snapshot('complete', '{}'));
+    stream.onRunStepDelta(streamsArgs('complete', 0, '{"city":"Madrid"}'));
+    stream.finish();
+    expect(accumulateLikeClient(deltas)[0].arguments).toBe('{"city":"Madrid"}');
+  });
+
+  it.each(['wire', 'native'])('retains complete %s declarations without deltas', (shape) => {
+    const { stream, deltas, toolCalls } = streamingBridge();
+    stream.onRunStep({
+      id: 'complete',
+      stepDetails: {
+        type: 'tool_calls',
+        tool_calls: [
+          shape === 'wire'
+            ? { id: 'a', function: { name: 'get_time', arguments: '{"city":"Madrid"}' } }
+            : { id: 'a', name: 'get_time', args: { city: 'Madrid' } },
+        ],
+      },
+    });
+    stream.finish();
+    expect(toolCalls.get(0)?.function.arguments).toBe('{"city":"Madrid"}');
+    expect(accumulateLikeClient(deltas)[0].arguments).toBe('{"city":"Madrid"}');
   });
 });
 

@@ -62,6 +62,7 @@ const {
   OpenAIRunStepHandler,
   OpenAIRunStepDeltaHandler,
   createOpenAIToolCallStream,
+  completeOpenAIToolCalls,
   createOpenAIStreamTracker,
   resolveAgentScopedSkillIds,
   createOpenAIContentAggregator,
@@ -983,6 +984,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
        * event alone.
        */
       const toolCallStream = createOpenAIToolCallStream({
+        signal: execution.signal,
         toolCalls: isStreaming ? tracker.toolCalls : aggregator.toolCalls,
         ...(isStreaming && {
           emit: (delta) => writeSSE(res, createChunk(context, delta)),
@@ -1033,7 +1035,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
             }
           },
         },
-        on_run_step_completed: createHandler(),
+        on_run_step_completed: new OpenAIRunStepHandler(toolCallStream),
         // Use proper ToolEndHandler for processing artifacts (images, file citations, code output)
         on_tool_end: createOwnedToolEndHandler(toolEndCallback, logger),
         on_chain_stream: createHandler(),
@@ -1137,47 +1139,49 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         version: 'v2',
       };
 
-      await run.processStream({ messages: formattedMessages }, config, {
-        callbacks: {
-          [Callback.TOOL_ERROR]: (graph, error, toolId) => {
-            logger.error(`[OpenAI API] Tool Error "${toolId}"`, getSafeErrorMetadata(error));
+      await completeOpenAIToolCalls(toolCallStream, async () => {
+        await run.processStream({ messages: formattedMessages }, config, {
+          callbacks: {
+            [Callback.TOOL_ERROR]: (graph, error, toolId) => {
+              logger.error(`[OpenAI API] Tool Error "${toolId}"`, getSafeErrorMetadata(error));
+            },
           },
-        },
-      });
+        });
 
-      // Record token usage against balance
-      const balanceConfig = getBalanceConfig(appConfig);
-      const transactionsConfig = getTransactionsConfig(appConfig);
-      execution.track(
-        recordCollectedUsage(
-          {
-            spendTokens: db.spendTokens,
-            spendStructuredTokens: db.spendStructuredTokens,
-            pricing: {
-              getMultiplier: db.getMultiplier,
-              getCacheMultiplier: db.getCacheMultiplier,
+        // Record token usage against balance
+        const balanceConfig = getBalanceConfig(appConfig);
+        const transactionsConfig = getTransactionsConfig(appConfig);
+        execution.track(
+          recordCollectedUsage(
+            {
+              spendTokens: db.spendTokens,
+              spendStructuredTokens: db.spendStructuredTokens,
+              pricing: {
+                getMultiplier: db.getMultiplier,
+                getCacheMultiplier: db.getCacheMultiplier,
+              },
+              bulkWriteOps: {
+                insertMany: db.bulkInsertTransactions,
+                updateBalance: db.updateBalance,
+              },
             },
-            bulkWriteOps: {
-              insertMany: db.bulkInsertTransactions,
-              updateBalance: db.updateBalance,
+            {
+              user: userId,
+              conversationId,
+              collectedUsage,
+              context: 'message',
+              messageId: responseId,
+              balance: balanceConfig,
+              transactions: transactionsConfig,
+              model: primaryConfig.model || agent.model_parameters?.model,
+              endpointTokenConfig: primaryConfig.endpointTokenConfig,
+              resolveEndpointTokenConfig,
             },
-          },
-          {
-            user: userId,
-            conversationId,
-            collectedUsage,
-            context: 'message',
-            messageId: responseId,
-            balance: balanceConfig,
-            transactions: transactionsConfig,
-            model: primaryConfig.model || agent.model_parameters?.model,
-            endpointTokenConfig: primaryConfig.endpointTokenConfig,
-            resolveEndpointTokenConfig,
-          },
-        ).catch((err) => {
-          logger.error('[OpenAI API] Error recording usage:', getSafeErrorMetadata(err));
-        }),
-      );
+          ).catch((err) => {
+            logger.error('[OpenAI API] Error recording usage:', getSafeErrorMetadata(err));
+          }),
+        );
+      });
 
       const usage = buildCompletionUsage(collectedUsage);
 

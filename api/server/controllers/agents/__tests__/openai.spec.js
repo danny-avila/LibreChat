@@ -221,6 +221,7 @@ jest.mock('@librechat/api', () => ({
    *  controller is responsible for wiring, so the spec runs the real projection. */
   createOpenAIToolCallStream: (...args) =>
     jest.requireActual('@librechat/api').createOpenAIToolCallStream(...args),
+  completeOpenAIToolCalls: jest.requireActual('@librechat/api').completeOpenAIToolCalls,
   OpenAIRunStepHandler: jest.requireActual('@librechat/api').OpenAIRunStepHandler,
   OpenAIRunStepDeltaHandler: jest.requireActual('@librechat/api').OpenAIRunStepDeltaHandler,
   buildRunToolSet: jest.fn().mockReturnValue(new Set()),
@@ -645,6 +646,78 @@ describe('OpenAIChatCompletionController', () => {
       }
     },
   );
+
+  it.each([true, false])(
+    'flushes complete-only arguments before terminal output (stream=%s)',
+    async (streaming) => {
+      const api = require('@librechat/api');
+      const actual = jest.requireActual('@librechat/api');
+      const names = [
+        'createChunk',
+        'writeSSE',
+        'sendFinalChunk',
+        'buildNonStreamingResponse',
+        'createOpenAIStreamTracker',
+        'createOpenAIContentAggregator',
+      ];
+      const originals = names.map((name) => [name, api[name].getMockImplementation()]);
+      for (const name of names) api[name].mockImplementation(actual[name]);
+      req.body.stream = streaming;
+      api.validateRequest.mockReturnValueOnce({ request: req.body });
+      mockProcessStream.mockImplementationOnce(async () => {
+        const { customHandlers: h } = api.createRun.mock.calls.at(-1)[0];
+        await h.on_run_step.handle('on_run_step', {
+          id: 'complete',
+          stepDetails: {
+            type: 'tool_calls',
+            tool_calls: [
+              { id: 'a', function: { name: 'get_time', arguments: '{"city":"Madrid"}' } },
+            ],
+          },
+        });
+      });
+      try {
+        await OpenAIChatCompletionController(req, res);
+        if (streaming) {
+          const frames = res.write.mock.calls
+            .map(([frame]) => frame)
+            .filter((frame) => frame !== 'data: [DONE]\n\n')
+            .map((frame) => JSON.parse(frame.slice(6)));
+          expect(
+            frames
+              .flatMap((frame) => frame.choices[0].delta.tool_calls ?? [])
+              .map((call) => call.function?.arguments ?? '')
+              .join(''),
+          ).toBe('{"city":"Madrid"}');
+          expect(frames.at(-1).choices[0].finish_reason).toBe('tool_calls');
+        } else {
+          expect(
+            res.json.mock.calls[0][0].choices[0].message.tool_calls[0].function.arguments,
+          ).toBe('{"city":"Madrid"}');
+        }
+      } finally {
+        for (const [name, implementation] of originals)
+          api[name].mockImplementation(implementation);
+      }
+    },
+  );
+
+  it('records completed model usage even when terminal snapshot validation fails', async () => {
+    mockProcessStream.mockImplementationOnce(async () => {
+      const h = require('@librechat/api').createRun.mock.calls.at(-1)[0].customHandlers;
+      await h.on_run_step.handle('on_run_step', {
+        id: 'bad',
+        stepDetails: {
+          type: 'tool_calls',
+          tool_calls: [{ id: 'a', function: { name: 'get_time', arguments: 'NOT-JSON' } }],
+        },
+      });
+    });
+    await OpenAIChatCompletionController(req, res);
+    expect(mockRecordCollectedUsage).toHaveBeenCalledTimes(1);
+    expect(require('@librechat/api').buildNonStreamingResponse).not.toHaveBeenCalled();
+    expect(JSON.stringify(res.json.mock.calls)).not.toContain('NOT-JSON');
+  });
 
   it('enrolls, starts, and settles the remote execution lifecycle', async () => {
     await OpenAIChatCompletionController(req, res);
