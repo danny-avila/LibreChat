@@ -2905,8 +2905,12 @@ export const openIdDiscoverySchema = z.object({
 
 export type TOpenIdDiscoveryConfig = z.infer<typeof openIdDiscoverySchema>;
 
+/** Maximum CAS attempts per ACL document, including the initial attempt. */
+export const permissionWriteAttemptsSchema = z.number().int().min(1).max(100).default(3);
+
 export const configSchema = z.object({
   version: z.string(),
+  permissions: z.object({ maxWriteAttempts: permissionWriteAttemptsSchema }).optional(),
   cache: z.boolean().default(true),
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
