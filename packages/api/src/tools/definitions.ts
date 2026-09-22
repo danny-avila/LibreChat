@@ -47,6 +47,8 @@ export interface LoadToolDefinitionsParams {
   toolOptions?: AgentToolOptions;
   /** Whether deferred tools feature is enabled */
   deferredToolsEnabled?: boolean;
+  /** See `mcpSettings.deferSchemaBytes`. `0` leaves every tool as configured. */
+  deferSchemaBytes?: number;
   /** Whether programmatic tool calling is enabled */
   programmaticToolsEnabled?: boolean;
   /** Whether code execution is enabled and requested by this agent */
@@ -130,6 +132,7 @@ export async function loadToolDefinitions(
     tools,
     toolOptions = {},
     deferredToolsEnabled = false,
+    deferSchemaBytes = 0,
     programmaticToolsEnabled = false,
     codeExecutionEnabled = false,
     codeExecutionContext,
@@ -376,6 +379,7 @@ export async function loadToolDefinitions(
     getAppConfig,
     definitionsOnly: true,
     agentToolOptions: toolOptions,
+    deferSchemaBytes,
   });
 
   const { toolDefinitions, hasDeferredTools } = classificationResult;
