@@ -13,5 +13,6 @@ export * from './openidRoleSync';
 export * from './userDocCache';
 export * from './email';
 export * from './emailChangeStore';
+export * from './passwordReset';
 export * from './reuse';
 export * from './openid/index';

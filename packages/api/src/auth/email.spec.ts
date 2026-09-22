@@ -3,6 +3,7 @@ import type { TokenQuery } from '@librechat/data-schemas';
 import {
   EMAIL_CHANGE_TOKEN_TYPE,
   createEmailChangeService,
+  emailChangeSubmissionKey,
   type EmailChangeDeps,
   type EmailChangeToken,
   type EmailChangeUser,
@@ -40,6 +41,35 @@ function createDeps(overrides: Partial<EmailChangeDeps> = {}) {
 }
 
 const DEFAULT_SETTINGS = { enabled: true, tokenTTLSeconds: 900 };
+
+describe('emailChangeSubmissionKey', () => {
+  it('isolates confirmation attempts by address and by account', () => {
+    const first = emailChangeSubmissionKey('203.0.113.10', '507f1f77bcf86cd799439011');
+    const second = emailChangeSubmissionKey('203.0.113.10', '507f1f77bcf86cd799439012');
+
+    expect(first).toBe('ip:203.0.113.10:user:507f1f77bcf86cd799439011');
+    expect(first).not.toBe(second);
+  });
+
+  it('collapses ids that cannot name an account into one bucket', () => {
+    /** Otherwise a caller mints a fresh allowance by varying an id it invented. */
+    expect(emailChangeSubmissionKey('203.0.113.10', 'not-an-id')).toBe(
+      'ip:203.0.113.10:user:invalid',
+    );
+    expect(emailChangeSubmissionKey('203.0.113.10', undefined)).toBe(
+      'ip:203.0.113.10:user:invalid',
+    );
+    expect(emailChangeSubmissionKey('203.0.113.10', { toString: () => 'x' })).toBe(
+      'ip:203.0.113.10:user:invalid',
+    );
+  });
+
+  it('normalizes the case of an id so one account is one bucket', () => {
+    expect(emailChangeSubmissionKey('203.0.113.10', '507F1F77BCF86CD799439011')).toBe(
+      'ip:203.0.113.10:user:507f1f77bcf86cd799439011',
+    );
+  });
+});
 
 describe('email change service', () => {
   describe('requestEmailChange', () => {

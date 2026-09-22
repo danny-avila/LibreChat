@@ -31,6 +31,22 @@ export function resolveEmailChangeSettings(
 }
 
 export const DEFAULT_EMAIL_CHANGE_TOKEN_TTL_SECONDS: number = 15 * 60;
+
+const SUBMITTED_ID_PATTERN = /^[a-f\d]{24}$/i;
+
+/**
+ * The confirmation endpoint is unauthenticated, so its per-submission allowance is keyed on
+ * the address the request came from together with the account it names. The submitted id is
+ * untrusted: one that cannot identify an account collapses to a single bucket, so a caller
+ * cannot mint a fresh allowance per malformed value.
+ */
+export function emailChangeSubmissionKey(ip: string, submittedUserId: unknown): string {
+  const userId =
+    typeof submittedUserId === 'string' && SUBMITTED_ID_PATTERN.test(submittedUserId)
+      ? submittedUserId.toLowerCase()
+      : 'invalid';
+  return `ip:${ip}:user:${userId}`;
+}
 const EMAIL_CHANGE_ERROR_MESSAGE = 'Invalid or expired email change request';
 
 const requestSchema = z.object({

@@ -1,6 +1,6 @@
 const rateLimit = require('express-rate-limit');
 const { ViolationTypes } = require('librechat-data-provider');
-const { limiterCache, removePorts } = require('@librechat/api');
+const { limiterCache, removePorts, emailChangeSubmissionKey } = require('@librechat/api');
 const { logViolation } = require('~/cache');
 
 const {
@@ -12,7 +12,6 @@ const windowMs = EMAIL_CHANGE_CONFIRM_USER_WINDOW * 60 * 1000;
 const max = EMAIL_CHANGE_CONFIRM_USER_MAX;
 const windowInMinutes = windowMs / 60000;
 const message = `Too many attempts, please try again after ${windowInMinutes} minute(s)`;
-const objectIdPattern = /^[a-f\d]{24}$/i;
 
 const handler = async (req, res) => {
   const type = ViolationTypes.VERIFY_EMAIL_LIMIT;
@@ -27,21 +26,11 @@ const handler = async (req, res) => {
   return res.status(429).json({ message });
 };
 
-const getEmailChangeSubmissionKey = (req) => {
-  const ip = removePorts(req) ?? 'unknown';
-  const submittedUserId = req.body?.userId;
-  const userId =
-    typeof submittedUserId === 'string' && objectIdPattern.test(submittedUserId)
-      ? submittedUserId.toLowerCase()
-      : 'invalid';
-  return `ip:${ip}:user:${userId}`;
-};
-
 const limiterOptions = {
   windowMs,
   max,
   handler,
-  keyGenerator: getEmailChangeSubmissionKey,
+  keyGenerator: (req) => emailChangeSubmissionKey(removePorts(req) ?? 'unknown', req.body?.userId),
   store: limiterCache('email_change_submission_limiter'),
 };
 

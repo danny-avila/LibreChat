@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { getAppConfigOptionsFromUser } = require('@librechat/api');
+const { getAppConfigOptionsFromUser, resolveStrictAppConfig } = require('@librechat/api');
 const { getAppConfig } = require('~/server/services/Config');
 
 const configMiddleware = async (req, res, next) => {
@@ -24,17 +24,10 @@ const configMiddleware = async (req, res, next) => {
   }
 };
 
-/**
- * The same resolution, without the fallback. A route that decides policy from `req.config`
- * must not be handed the base configuration when principal or override resolution fails,
- * because the base can be broader than the scope that should have decided.
- */
+/** The same resolution, without the fallback; `resolveStrictAppConfig` owns that choice. */
 const strictConfigMiddleware = async (req, res, next) => {
   try {
-    req.config = await getAppConfig({
-      ...getAppConfigOptionsFromUser(req.user),
-      failClosed: true,
-    });
+    req.config = await resolveStrictAppConfig(getAppConfig, req.user);
     next();
   } catch (error) {
     logger.error('Strict config middleware error:', {
