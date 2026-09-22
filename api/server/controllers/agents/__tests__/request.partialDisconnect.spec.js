@@ -47,6 +47,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  applyForcedTemporaryRequest: jest.fn(),
   sendEvent: jest.fn(),
   isScheduleFireRequest: jest.fn(() => false),
   exemptFromConcurrencyLimiter: jest.fn(() => false),
