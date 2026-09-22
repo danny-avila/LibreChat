@@ -178,8 +178,17 @@ const observeArrivalQuery = (
   }
   if (mode !== 'none') {
     const data = query.state.data as InfiniteData<ConversationCursorData> | PinnedConversationsData;
-    const firstPage = 'pages' in data ? data.pages[0] : data;
-    for (const convo of firstPage?.conversations ?? []) {
+    const pages = 'pages' in data ? data.pages : [data];
+    /* A server response is read on its first page, where a reply lands and where discovery
+       names what it found. A local merge can touch a row wherever the list holds it: a title
+       or oldest-first sort leaves a replied row on a later page, and missing it there would add
+       its stamp to the baseline with no arrival behind it. Only rows the previous snapshot
+       already knew are considered below, so this cannot announce backlog. */
+    const candidates =
+      mode === 'local'
+        ? pages.flatMap((page) => page.conversations)
+        : (pages[0]?.conversations ?? []);
+    for (const convo of candidates) {
       const { conversationId, lastResponseAt } = convo;
       if (
         !conversationId ||

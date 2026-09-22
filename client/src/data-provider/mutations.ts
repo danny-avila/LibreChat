@@ -742,29 +742,19 @@ export const useMarkConversationUnreadMutation = (): UseMutationResult<
         }
         const cached = findConvoInAllQueries(queryClient, vars.conversationId);
         /* Nothing matched: the conversation is gone, deleted on another device or between the
-           access check and the write. Keeping the optimistic dot would leave a row that no
-           longer exists counted in the badge, but only this mutation's own state is safe to
-           undo, for the same reason the failure path checks. */
+           access check and the write. The server's second update is owner-scoped and returns
+           the row even when it changes nothing, so no match proves the row no longer exists
+           rather than that nothing needed doing. Rolling back only the read fields would keep a
+           conversation that does not exist in the sidebar and the badge; removing it is right
+           whatever else is in flight, and an earlier accepted unread cannot bring it back,
+           because the cache writers only ever update rows they still hold. */
         if (!data.modified) {
-          if (context?.chain?.accepted) {
-            return;
-          }
-          if (context?.chain) {
+          if (context?.chain && !context.chain.accepted) {
             context.chain.latestFailureSettled = true;
           }
-          const isOwnWrite =
-            cached?.lastSeenAt === undefined &&
-            cached?.lastResponseAt === context?.optimisticResponseAt;
-          if (!isOwnWrite) {
-            return;
-          }
-          updateConvoInAllQueries(queryClient, vars.conversationId, (convo) => ({
-            ...convo,
-            lastResponseAt: context?.lastResponseAt,
-            lastResponseMessageId: resolveReplyIdentity(convo, context),
-            lastResponseIsManual: context?.lastResponseIsManual,
-            lastSeenAt: context?.lastSeenAt,
-          }));
+          removeConvoFromAllQueries(queryClient, vars.conversationId);
+          queryClient.removeQueries([QueryKeys.conversation, vars.conversationId]);
+          clearDeletedConversationMessagesCache(queryClient, vars.conversationId);
           return;
         }
         /* Two things settle here. A conversation with no reply yet gets its marker stamped

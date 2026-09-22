@@ -1423,16 +1423,7 @@ export function updateConvoInAllQueries(
        * fields are absent from those payloads too, but they are carried on key presence rather
        * than on value: a present-but-undefined field is an explicit clear. */
       const next = updater(found);
-      const merged: TConversation = { ...preserveListFlags(next, found) };
-      if (!('lastResponseAt' in next)) {
-        merged.lastResponseAt = found.lastResponseAt;
-      }
-      if (!('lastResponseIsManual' in next)) {
-        merged.lastResponseIsManual = found.lastResponseIsManual;
-      }
-      if (!('lastSeenAt' in next)) {
-        merged.lastSeenAt = found.lastSeenAt;
-      }
+      const merged: TConversation = preserveReadState(preserveListFlags(next, found), found);
       /* `moveToTop` normally refreshes the date itself, because callers that swap in an SSE
          payload can carry the previous turn's `updatedAt`. A caller that deliberately changed
          it is naming the server's own value, which is the more accurate one to keep. */

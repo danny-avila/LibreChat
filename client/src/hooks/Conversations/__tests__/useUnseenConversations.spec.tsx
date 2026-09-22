@@ -169,6 +169,33 @@ describe('useUnseenConversations', () => {
     ]);
   });
 
+  /* A title-sorted list leaves a replied row where it is, so a local merge can land its first
+     reply on a later loaded page. Missing it there would add the stamp to the alerts baseline
+     with no arrival behind it, and no later refresh could recover the chime. */
+  it('records a first reply a local merge lands on a later loaded page', () => {
+    const { result, queryClient } = setup();
+    const titleSorted = [
+      QueryKeys.allConversations,
+      { isArchived: false, sortBy: 'title', sortDirection: 'asc' },
+    ];
+
+    act(() => {
+      queryClient.setQueryData(titleSorted, {
+        pages: [
+          { conversations: [{ conversationId: 'first', title: 'A first' }], nextCursor: 'c1' },
+          { conversations: [{ conversationId: 'later', title: 'Z later' }], nextCursor: null },
+        ],
+        pageParams: [null, 'c1'],
+      });
+    });
+
+    act(() => {
+      applyServerReplyStamp(queryClient, 'later', { lastResponseAt: RESPONDED_AT });
+    });
+
+    expect(result.current?.arrivalStamps).toEqual([['later', RESPONDED_AT]]);
+  });
+
   it('does not record a stamp when a new cached row brings in backlog', () => {
     const { result, queryClient } = setup();
 

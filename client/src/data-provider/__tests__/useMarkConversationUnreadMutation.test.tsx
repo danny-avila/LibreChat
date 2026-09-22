@@ -212,18 +212,23 @@ describe('useMarkConversationUnreadMutation', () => {
     expect(isConversationUnseen(cached())).toBe(true);
   });
 
-  it('drops the optimistic dot when the server matched nothing', async () => {
-    /* Deleted on another device, or between the access check and the write: keeping the dot
-       would leave a row that no longer exists counted in the badge. */
+  it('removes a conversation the server no longer has', async () => {
+    /* Deleted on another device, or between the access check and the write. The server's
+       owner-scoped update returns the row even when it changes nothing, so no match means the
+       row is gone: rolling back its read state would keep a conversation that does not exist in
+       the sidebar and the badge. */
     mockMarkUnread.mockResolvedValue({ modified: false });
-    const { result, cached } = setup(RESPONDED_AT, SEEN_AT);
+    const { result, queryClient } = setup(RESPONDED_AT, SEEN_AT);
+    const listed = () =>
+      (
+        queryClient.getQueryData<InfiniteData<ConversationCursorData>>(listKey)?.pages ?? []
+      ).flatMap((page) => page.conversations.map((convo) => convo.conversationId));
 
     await act(async () => {
       await result.current.mutateAsync({ conversationId: CONVO_ID });
     });
 
-    await waitFor(() => expect(isConversationUnseen(cached())).toBe(false));
-    expect(cached()?.lastSeenAt).toBe(SEEN_AT);
+    await waitFor(() => expect(listed()).not.toContain(CONVO_ID));
   });
 
   it('caches the server marker for a conversation that had no reply', async () => {

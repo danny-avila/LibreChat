@@ -1158,6 +1158,7 @@ describe('Conversation Utilities', () => {
         updateConvoInAllQueries(queryClient, 'a', (c) => ({
           ...c,
           lastResponseAt: '2026-08-16T10:00:00.000Z',
+          lastResponseMessageId: 'reply-a',
           lastResponseIsManual: true,
           lastSeenAt: '2026-08-16T09:00:00.000Z',
         }));
@@ -1176,6 +1177,9 @@ describe('Conversation Utilities', () => {
         expect(data!.pages[0].conversations[0].lastResponseAt).toBe('2026-08-16T10:00:00.000Z');
         expect(data!.pages[0].conversations[0].lastResponseIsManual).toBe(true);
         expect(data!.pages[0].conversations[0].lastSeenAt).toBe('2026-08-16T09:00:00.000Z');
+        /* The reply's identity is what ties the dot to the branch it landed on; dropping it
+           reads as "visible", which can acknowledge a reply on a hidden sibling branch. */
+        expect(data!.pages[0].conversations[0].lastResponseMessageId).toBe('reply-a');
       });
 
       it('updateConvoInAllQueries lets an explicit lastSeenAt win over the cached one', () => {
