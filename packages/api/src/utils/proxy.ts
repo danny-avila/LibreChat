@@ -79,7 +79,10 @@ function getExplicitProxyDispatcher(proxyUrl: string, options: Agent.Options): D
   const cached = explicitDispatchers.get(key);
   if (cached) return cached;
 
-  const dispatcher = new ProxyAgent({ uri: proxyUrl, ...options });
+  const dispatcher =
+    Object.keys(options).length === 0
+      ? new ProxyAgent(proxyUrl)
+      : new ProxyAgent({ uri: proxyUrl, ...options });
   explicitDispatchers.set(key, dispatcher);
   return dispatcher;
 }

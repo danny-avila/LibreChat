@@ -104,9 +104,7 @@ describe('proxy helpers', () => {
 
     expect(second).toBe(first);
     expect(MockProxyAgent).toHaveBeenCalledTimes(1);
-    expect(MockProxyAgent).toHaveBeenCalledWith({
-      uri: 'http://explicit-proxy:8080',
-    });
+    expect(MockProxyAgent).toHaveBeenCalledWith('http://explicit-proxy:8080');
   });
 
   it('keys proxy dispatchers by transport options', () => {
