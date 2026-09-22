@@ -35,9 +35,11 @@ import {
   useAssistantListMap,
   useIdChangeEffect,
   useAppStartup,
+  useMCPDeepLink,
   useNewConvo,
   useLocalize,
 } from '~/hooks';
+import MCPDeepLinkDialog from '~/components/SidePanel/MCPBuilder/MCPDeepLinkDialog';
 import { ToolCallsMapProvider, useAgentsMapContext } from '~/Providers';
 import ChatView from '~/components/Chat/ChatView';
 import { NotificationSeverity } from '~/common';
@@ -49,6 +51,7 @@ const isValidChatProjectId = (projectId: string | null): projectId is string =>
   projectId != null && /^[a-f\d]{24}$/i.test(projectId);
 
 export default function ChatRoute() {
+  const mcpDeepLink = useMCPDeepLink();
   const { data: startupConfig } = useGetStartupConfig();
   const { isAuthenticated, user, roles } = useAuthRedirect();
   const queryClient = useQueryClient();
@@ -344,50 +347,51 @@ export default function ChatRoute() {
     conversation?.conversationId,
   ]);
 
+  let content: JSX.Element | null = null;
+
   if (endpointsQuery.isLoading || modelsQuery.isLoading) {
-    return (
+    content = (
       <div className="flex h-screen items-center justify-center" aria-live="polite" role="status">
         <Spinner className="text-text-primary" />
       </div>
     );
-  }
-
-  if (!isAuthenticated) {
-    return null;
-  }
-
-  // if not a conversation
-  if (conversation?.conversationId === Constants.SEARCH) {
-    return null;
-  }
-  // if conversationId not match
-  if (conversation?.conversationId !== conversationId && !conversation) {
-    return null;
-  }
-  // if conversationId is null
-  if (!conversationId) {
-    return null;
+  } else if (
+    isAuthenticated &&
+    conversation != null &&
+    conversation.conversationId !== Constants.SEARCH &&
+    conversationId
+  ) {
+    content = (
+      <ToolCallsMapProvider conversationId={conversation.conversationId ?? ''}>
+        {routeState.pending && (
+          <div
+            className="flex h-screen items-center justify-center"
+            aria-live="polite"
+            role="status"
+          >
+            {initialConvoQuery.isError && !initialConvoQuery.isFetching ? (
+              <div className="flex flex-col items-center gap-3" role="alert">
+                <p>{localize('com_ui_conversation_load_error')}</p>
+                <Button onClick={() => initialConvoQuery.refetch()}>
+                  {localize('com_ui_retry')}
+                </Button>
+              </div>
+            ) : (
+              <Spinner className="text-text-primary" />
+            )}
+          </div>
+        )}
+        <div hidden={routeState.pending} className={routeState.pending ? 'hidden' : 'contents'}>
+          <ChatView index={index} project={verifiedChatProjectId ? projectQuery.data : undefined} />
+        </div>
+      </ToolCallsMapProvider>
+    );
   }
 
   return (
-    <ToolCallsMapProvider conversationId={conversation.conversationId ?? ''}>
-      {routeState.pending && (
-        <div className="flex h-screen items-center justify-center" aria-live="polite" role="status">
-          {initialConvoQuery.isError && !initialConvoQuery.isFetching ? (
-            <div className="flex flex-col items-center gap-3" role="alert">
-              <p>{localize('com_ui_conversation_load_error')}</p>
-              <Button onClick={() => initialConvoQuery.refetch()}>
-                {localize('com_ui_retry')}
-              </Button>
-            </div>
-          ) : (
-            <Spinner className="text-text-primary" />
-          )}
-        </div>
-      )}
-      <div hidden={routeState.pending} className={routeState.pending ? 'hidden' : 'contents'}>
-        <ChatView index={index} project={verifiedChatProjectId ? projectQuery.data : undefined} />
-      </div>
-    </ToolCallsMapProvider>
+    <>
+      {isAuthenticated && <MCPDeepLinkDialog {...mcpDeepLink} />}
+      {content}
+    </>
   );
 }

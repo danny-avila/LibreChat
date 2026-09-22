@@ -14,6 +14,7 @@ import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import RouteErrorBoundary from './RouteErrorBoundary';
 import StartupLayout from './Layouts/Startup';
+import MCPAddRedirect from './MCPAddRedirect';
 import LoginLayout from './Layouts/Login';
 import dashboardRoutes from './Dashboard';
 import WithRum from '~/lib/rum/WithRum';
@@ -134,6 +135,10 @@ export const router = createBrowserRouter(
             {
               path: 'c/:conversationId?',
               element: <ChatRoute />,
+            },
+            {
+              path: 'mcps/add',
+              element: <MCPAddRedirect />,
             },
             {
               path: 'search',

@@ -5,3 +5,5 @@ export * from './useMCPConnectionStatus';
 
 export { useMCPIconMap, useMCPServerNames } from './useMCPIconMap';
 export { useRemoveMCPTool } from './useRemoveMCPTool';
+export { default as useMCPDeepLink } from './useMCPDeepLink';
+export type { MCPDeepLinkResult } from './useMCPDeepLink';
