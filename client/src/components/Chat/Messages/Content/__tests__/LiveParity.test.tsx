@@ -335,6 +335,63 @@ describe('live fold parity with the cards it hides', () => {
     expect(screen.queryByTestId('live-phase-combo')).toBeNull();
   });
 
+  it('prints the multiplier beside the line it counts, not at the row edge', () => {
+    mount(
+      [
+        toPart({ name: 'create_file', output: 'created' }, 'first'),
+        toPart({ name: 'create_file', output: '' }, 'second'),
+      ],
+      undefined,
+      true,
+    );
+    const header = within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0];
+    const [lineId] = (header.getAttribute('aria-labelledby') ?? '').split(' ');
+    const line = document.getElementById(lineId);
+    const combo = screen.getByTestId('live-phase-combo');
+
+    expect(line).not.toBeNull();
+    /** One flex track with the line, directly after the box holding it: the
+     *  count belongs to that line, so nothing may sit between them and the
+     *  row's free space has to open up after the pair, not inside it. */
+    expect(combo.parentElement).toContainElement(line);
+    expect(combo.previousElementSibling).toContainElement(line);
+    expect(combo.previousElementSibling?.className).not.toContain('flex-1');
+    expect(combo.nextElementSibling).toBeNull();
+  });
+
+  it('keeps the whole row for a line with no multiplier', () => {
+    /** The reasoning preview decides whether it may stream freely by comparing
+     *  itself to the row, so a lone line must still be measured full width. */
+    mount([toPart({ name: 'create_file', output: '' }, 'only')], undefined, true);
+    const header = within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0];
+    const [lineId] = (header.getAttribute('aria-labelledby') ?? '').split(' ');
+
+    expect(screen.queryByTestId('live-phase-combo')).toBeNull();
+    expect(document.getElementById(lineId)?.parentElement?.className).toContain('flex-1');
+  });
+
+  it('keeps the span verdict after the multiplier', () => {
+    mount(
+      [
+        toPart({ name: 'create_file', output: 'created', runStepStatus: 'failed' }, 'first'),
+        toPart({ name: 'create_file', output: '' }, 'second'),
+      ],
+      undefined,
+      true,
+    );
+    const combo = screen.getByTestId('live-phase-combo');
+    const outcome = screen.getByTestId('live-phase-outcome');
+
+    expect(combo).toHaveTextContent('×2');
+    expect(outcome).toHaveTextContent('1 failed');
+    /** The count reads with the line; the verdict stays where the row ends. */
+    expect(combo.compareDocumentPosition(outcome) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(combo.parentElement).not.toContainElement(outcome);
+    expect(
+      within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0],
+    ).toHaveAccessibleName(/×2 · 1 failed$/);
+  });
+
   it('changes the multiplier with the throttled status line', () => {
     jest.useFakeTimers();
     const first = toPart(
