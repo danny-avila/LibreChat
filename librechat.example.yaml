@@ -571,6 +571,11 @@ actions:
 #     # as booleans.
 #     whenTrue: A lasting preference or a fact about the user.
 #     whenFalse: Small talk, or a detail that only matters in this task.
+#     # Also ask which of memory.validKeys the turn belongs under and suggest it
+#     # to the memory model. Rides in the request the gate already makes.
+#     categorize: true
+#     categoryThreshold: 0.4
+#     detectUpdates: true
 
 # Example MCP Servers Object Structure
 # mcpServers:

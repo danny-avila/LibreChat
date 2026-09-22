@@ -2969,7 +2969,6 @@ export const classificationSchema = z.object({
     .object({
       enabled: z.boolean().default(false),
       threshold: z.number().min(0).max(1).default(0.25),
-      /** Replaces the durability question. Unset uses the built-in wording. */
       instructions: z.string().min(1).max(4_000).optional(),
       /**
        * What a yes and a no mean. Named `whenTrue`/`whenFalse` because YAML
@@ -2977,6 +2976,9 @@ export const classificationSchema = z.object({
        */
       whenTrue: z.string().min(1).max(4_000).optional(),
       whenFalse: z.string().min(1).max(4_000).optional(),
+      categorize: z.boolean().default(false),
+      categoryThreshold: z.number().min(0).max(1).default(0.4),
+      detectUpdates: z.boolean().default(false),
     })
     .default({}),
 });
