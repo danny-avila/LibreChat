@@ -12,6 +12,7 @@ const {
   agentUpdateSchema,
   agentSubagentsSchema,
   resolveAvatarRefresh,
+  applyCachedAvatarUrl,
   collectEdgeAgentIds,
   replaceEdgeSourceId,
   mergeDeploymentSkillIds,
@@ -1863,7 +1864,6 @@ const getListAgentsHandler = async (req, res) => {
     /** Null for EDIT-scoped requests, where every matched agent is editable by definition. */
     const editableSet = editableIds ? new Set(editableIds.map((oid) => oid.toString())) : null;
     const agentsWithContacts = await attachOwnerContacts(agents);
-    const urlCache = cachedRefresh?.urlCache;
 
     data.data = agentsWithContacts.map((agent) => {
       if (accessibleSkillSet) {
@@ -1874,19 +1874,7 @@ const getListAgentsHandler = async (req, res) => {
           agent.isPublic = true;
         }
         agent.isEditable = editableSet == null || editableSet.has(agent?._id?.toString());
-        const cachedAvatar = agent?.id && urlCache?.[agent.id];
-        /*
-         * A signed URL is valid only for the filepath it was generated from.
-         * Legacy cache values are strings without that binding, so ignore them.
-         */
-        if (
-          cachedAvatar?.filepath &&
-          cachedAvatar?.url &&
-          agent?.avatar?.source === FileSources.s3 &&
-          cachedAvatar.filepath === agent.avatar.filepath
-        ) {
-          agent.avatar = { ...agent.avatar, filepath: cachedAvatar.url };
-        }
+        return applyCachedAvatarUrl(agent, cachedRefresh);
       } catch (err) {
         logger.warn('[/Agents] Error mapping agent %s for list response: %o', agent?.id, err);
       }

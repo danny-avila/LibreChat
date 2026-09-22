@@ -10,6 +10,7 @@ import type {
 import {
   AVATAR_REFRESH_BATCH_SIZE,
   MAX_AVATAR_REFRESH_AGENTS,
+  applyCachedAvatarUrl,
   getAvatarRefreshCoveredIds,
   mergeAvatarRefreshCacheEntry,
   refreshListAvatars,
@@ -816,6 +817,55 @@ describe('refreshListAvatars', () => {
     expect(cache.set).toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalled();
     now.mockRestore();
+  });
+});
+
+describe('applyCachedAvatarUrl', () => {
+  const s3Agent = (filepath: string): Agent =>
+    ({ id: 'agent1', avatar: { source: FileSources.s3, filepath } }) as Agent;
+  const entry = (filepath: string, url: string) => ({ urlCache: { agent1: { filepath, url } } });
+
+  it('serves the signed URL for the filepath it was signed from', () => {
+    const applied = applyCachedAvatarUrl(s3Agent('a.jpg'), entry('a.jpg', 'https://signed/a'));
+
+    expect(applied.avatar).toEqual({ source: FileSources.s3, filepath: 'https://signed/a' });
+  });
+
+  it('leaves a replaced avatar alone rather than serving the URL of the old one', () => {
+    const agent = s3Agent('b.jpg');
+    const applied = applyCachedAvatarUrl(agent, entry('a.jpg', 'https://signed/a'));
+
+    expect(applied).toBe(agent);
+    expect(applied.avatar?.filepath).toBe('b.jpg');
+  });
+
+  it('ignores a legacy string cache value, which carries no filepath binding', () => {
+    const agent = s3Agent('a.jpg');
+    const applied = applyCachedAvatarUrl(agent, { urlCache: { agent1: 'https://signed/a' } });
+
+    expect(applied).toBe(agent);
+  });
+
+  it('leaves a non-S3 avatar alone and tolerates a missing or malformed entry', () => {
+    const local = {
+      id: 'agent1',
+      avatar: { source: FileSources.local, filepath: 'a.jpg' },
+    } as Agent;
+    expect(applyCachedAvatarUrl(local, entry('a.jpg', 'https://signed/a'))).toBe(local);
+
+    const agent = s3Agent('a.jpg');
+    expect(applyCachedAvatarUrl(agent, undefined)).toBe(agent);
+    expect(applyCachedAvatarUrl(agent, {})).toBe(agent);
+    expect(applyCachedAvatarUrl(agent, { urlCache: { agent1: { filepath: 'a.jpg' } } })).toBe(
+      agent,
+    );
+  });
+
+  it('does not mutate the row it was handed', () => {
+    const agent = s3Agent('a.jpg');
+    applyCachedAvatarUrl(agent, entry('a.jpg', 'https://signed/a'));
+
+    expect(agent.avatar?.filepath).toBe('a.jpg');
   });
 });
 

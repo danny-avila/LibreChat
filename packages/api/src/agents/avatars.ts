@@ -77,6 +77,27 @@ const getCachedAvatarUrl = (entry: unknown, id: string): AvatarRefreshUrl | unde
     : undefined;
 };
 
+/**
+ * Lays a cached signed URL over the row it was signed for. A signed URL describes one
+ * filepath, so it applies only while the row still carries that filepath and still names
+ * S3; a row whose avatar has since been replaced keeps its own. Legacy cache values are
+ * bare strings with no filepath binding, which {@link getCachedAvatarUrl} already refuses.
+ *
+ * The cache entry is read here rather than in the caller so the shape of the entry stays
+ * private to this module and one reader decides what a usable entry is.
+ */
+export const applyCachedAvatarUrl = (agent: Agent, cacheEntry: unknown): Agent => {
+  const avatar = agent?.avatar;
+  if (!agent?.id || avatar?.source !== FileSources.s3 || !avatar.filepath) {
+    return agent;
+  }
+  const cached = getCachedAvatarUrl(cacheEntry, agent.id);
+  if (!cached || cached.filepath !== avatar.filepath) {
+    return agent;
+  }
+  return { ...agent, avatar: { ...avatar, filepath: cached.url } };
+};
+
 const getAvatarRefreshCoverage = (
   entry: unknown,
   now: number,

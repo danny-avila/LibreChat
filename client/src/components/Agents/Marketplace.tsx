@@ -162,8 +162,13 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
             ref={scrollContainerRef}
             className="scrollbar-gutter-stable min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3"
           >
+            {/* Deliberately unkeyed: the grid's own `scopeKey` already carries the category,
+                so it replaces the results itself and hands focus back when the scope
+                changes. Remounting it on the category instead would destroy an open detail
+                dialog and its return target, and the replacement grid starts with an empty
+                `previousScopeKeyRef`, so it reads that render as a first mount and leaves
+                focus on the document. */}
             <AgentGrid
-              key={activeCategory}
               category={activeCategory}
               searchQuery={searchQuery}
               scrollElementRef={scrollContainerRef}
