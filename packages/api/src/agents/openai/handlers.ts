@@ -188,6 +188,7 @@ export const StepTypes = {
 export interface MessageDeltaData {
   id?: string;
   content?: Array<{ type: string; text?: string }>;
+  delta?: { content?: MessageDeltaData['content'] };
 }
 
 /**
@@ -224,6 +225,10 @@ export interface RunStepToolCall {
   id?: string;
   name?: string;
   type?: string;
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
 }
 
 export interface RunStepData {
@@ -284,8 +289,8 @@ export interface EventHandler {
  * content-block index, which restarts at zero on each model invocation of the
  * run, so two different calls can share it.
  *
- * Outward indexes are therefore allocated here, one per tool call id, in the
- * order the calls are declared, and every emission for a call uses its own.
+ * Outward indexes are allocated per run step and provider tool-call id. Provider
+ * IDs can repeat across steps too; they are not completion-wide identities.
  */
 export interface OpenAIToolCallStreamConfig {
   /** Accumulated tool calls, keyed by their outward index. */
@@ -296,106 +301,186 @@ export interface OpenAIToolCallStreamConfig {
 
 export interface OpenAIToolCallStream {
   /** Declares the tool calls a run step opened. */
-  onRunStep: (data: RunStepData) => void;
+  onRunStep: (data: RunStepData, metadata?: Record<string, unknown>) => void;
   /** Accumulates the name and argument fragments streamed for a run step. */
-  onRunStepDelta: (data: RunStepDeltaData) => void;
+  onRunStepDelta: (data: RunStepDeltaData, metadata?: Record<string, unknown>) => void;
+}
+
+interface ProjectedToolCall {
+  providerId: string;
+  index: number;
+  id: string;
+  pendingArgs: string[];
+  declared: boolean;
+}
+
+interface ToolCallStep {
+  byId: Map<string, ProjectedToolCall>;
+  byProviderIndex: Map<number, ProjectedToolCall>;
+  /** Declaration position is a fallback, never stronger than a provider binding. */
+  byPosition: Map<number, ProjectedToolCall>;
 }
 
 export function createOpenAIToolCallStream(
   config: OpenAIToolCallStreamConfig,
 ): OpenAIToolCallStream {
   const { toolCalls, emit } = config;
-  /** Outward index per tool call id; its size is the next index to hand out. */
-  const indexById = new Map<string, number>();
-  /** Outward index per `<step id, provider index>`, bound by an identified fragment. */
-  const indexByFragment = new Map<string, number>();
-  /** Outward indexes opened by each run step, for fragments that carry no id. */
-  const indexesByStep = new Map<string, number[]>();
-  /** Indexes already declared to the client, so `id` and `name` are sent once. */
-  const declared = new Set<number>();
+  const steps = new Map<string, ToolCallStep>();
+  const wireIds = new Set<string>();
+  const invocations = new Map<string, Map<number, ProjectedToolCall>>();
+  const stepScopes = new Map<string, string>();
 
-  const fragmentKey = (stepId: string, index: number): string => `${stepId}\u0000${index}`;
+  /** SDK deltas may use the latest step ID while still referring to an earlier
+   * parallel call. Provider indexes span that model invocation, not that step.
+   * Without invocation metadata, fall back to step isolation rather than guess. */
+  const getBindings = (
+    stepId: string,
+    metadata?: Record<string, unknown>,
+  ): Map<number, ProjectedToolCall> => {
+    let scope = stepScopes.get(stepId);
+    if (scope === undefined) {
+      scope =
+        typeof metadata?.langgraph_node === 'string' && typeof metadata.langgraph_step === 'number'
+          ? JSON.stringify([
+              metadata.run_id ?? '',
+              metadata.thread_id ?? '',
+              metadata.langgraph_node,
+              metadata.langgraph_step,
+              metadata.langgraph_checkpoint_ns ?? metadata.checkpoint_ns ?? '',
+            ])
+          : JSON.stringify(['step', stepId]);
+      stepScopes.set(stepId, scope);
+    }
+    let bindings = invocations.get(scope);
+    if (bindings === undefined) {
+      bindings = new Map();
+      invocations.set(scope, bindings);
+    }
+    return bindings;
+  };
+  let nextIndex = 0;
 
-  const declare = (stepId: string, id: string, name: string): number => {
-    let index = indexById.get(id);
-    if (index === undefined) {
-      index = indexById.size;
-      indexById.set(id, index);
+  const getStep = (stepId: string): ToolCallStep => {
+    let step = steps.get(stepId);
+    if (step === undefined) {
+      step = { byId: new Map(), byProviderIndex: new Map(), byPosition: new Map() };
+      steps.set(stepId, step);
     }
-    const stepIndexes = indexesByStep.get(stepId);
-    if (stepIndexes === undefined) {
-      indexesByStep.set(stepId, [index]);
-    } else if (!stepIndexes.includes(index)) {
-      stepIndexes.push(index);
+    return step;
+  };
+
+  const getCall = (step: ToolCallStep, id: string): ProjectedToolCall => {
+    let call = step.byId.get(id);
+    if (call !== undefined) {
+      return call;
     }
-    /** A client rejects a first chunk that lacks either field, so a call whose
-     *  name has not arrived yet waits for the fragment carrying it. */
-    if (declared.has(index) || !name) {
-      return index;
+    const index = nextIndex++;
+    let wireId = id;
+    /** Index-based clients and id-based consumers must both see distinct calls. */
+    while (wireIds.has(wireId)) {
+      wireId = `${wireId}_${index}`;
     }
-    declared.add(index);
-    toolCalls.set(index, { id, type: 'function', function: { name, arguments: '' } });
-    emit?.({ tool_calls: [{ index, id, type: 'function', function: { name, arguments: '' } }] });
-    return index;
+    wireIds.add(wireId);
+    call = { providerId: id, index, id: wireId, pendingArgs: [], declared: false };
+    step.byId.set(id, call);
+    return call;
+  };
+
+  const append = (call: ProjectedToolCall, args: string): void => {
+    if (!args) {
+      return;
+    }
+    if (!call.declared) {
+      call.pendingArgs.push(args);
+      return;
+    }
+    const tracked = toolCalls.get(call.index);
+    if (tracked === undefined) {
+      return;
+    }
+    tracked.function.arguments += args;
+    emit?.({ tool_calls: [{ index: call.index, function: { arguments: args } }] });
+  };
+
+  const declare = (call: ProjectedToolCall, name: string): void => {
+    if (call.declared || !name) {
+      return;
+    }
+    call.declared = true;
+    const toolCall: ToolCall = {
+      id: call.id,
+      type: 'function',
+      function: { name, arguments: '' },
+    };
+    toolCalls.set(call.index, toolCall);
+    emit?.({
+      tool_calls: [{ index: call.index, ...toolCall, function: { ...toolCall.function } }],
+    });
+    append(call, call.pendingArgs.join(''));
+    call.pendingArgs.length = 0;
   };
 
   return {
-    onRunStep: (data) => {
-      const stepDetails = data?.stepDetails;
-      if (stepDetails?.type !== StepTypes.TOOL_CALLS || !Array.isArray(stepDetails.tool_calls)) {
+    onRunStep: (data, metadata) => {
+      const details = data?.stepDetails;
+      if (details?.type !== StepTypes.TOOL_CALLS || !Array.isArray(details.tool_calls)) {
         return;
       }
-      const stepId = data.id ?? '';
-      for (const toolCall of stepDetails.tool_calls) {
-        const id = toolCall.id ?? '';
-        if (id) {
-          declare(stepId, id, toolCall.name ?? '');
+      const step = getStep(data.id ?? '');
+      const bindings = getBindings(data.id ?? '', metadata);
+      for (const [position, toolCall] of details.tool_calls.entries()) {
+        if (!toolCall.id) {
+          continue;
         }
+        const call = getCall(step, toolCall.id);
+        if (toolCall.index !== undefined) {
+          step.byProviderIndex.set(toolCall.index, call);
+          bindings.set(toolCall.index, call);
+        } else if (details.tool_calls.length > 1) {
+          step.byPosition.set(position, call);
+        }
+        declare(call, toolCall.name ?? toolCall.function?.name ?? '');
       }
     },
 
-    onRunStepDelta: (data) => {
+    onRunStepDelta: (data, metadata) => {
       const delta = data?.delta;
       if (delta?.type !== StepTypes.TOOL_CALLS || !Array.isArray(delta.tool_calls)) {
         return;
       }
-      const stepId = data.id ?? '';
+      const step = getStep(data.id ?? '');
+      const bindings = getBindings(data.id ?? '', metadata);
       for (const fragment of delta.tool_calls) {
-        const id = fragment.id ?? '';
-        const name = fragment.name ?? fragment.function?.name ?? '';
-        const args = fragment.args ?? fragment.function?.arguments ?? '';
-        const key = fragment.index === undefined ? '' : fragmentKey(stepId, fragment.index);
-
-        let index: number | undefined;
-        if (id) {
-          index = declare(stepId, id, name);
-          if (key) {
-            indexByFragment.set(key, index);
+        let call: ProjectedToolCall | undefined;
+        if (fragment.id) {
+          const bound = fragment.index === undefined ? undefined : bindings.get(fragment.index);
+          call = bound?.providerId === fragment.id ? bound : getCall(step, fragment.id);
+          if (fragment.index !== undefined) {
+            step.byProviderIndex.set(fragment.index, call);
+            bindings.set(fragment.index, call);
           }
-        } else if (key && indexByFragment.has(key)) {
-          index = indexByFragment.get(key);
-        } else {
-          /** A provider that streams arguments without repeating the id: when the
-           *  step opened exactly one call, they can only belong to it. */
-          const stepIndexes = indexesByStep.get(stepId);
-          if (stepIndexes?.length !== 1) {
-            continue;
-          }
-          index = stepIndexes[0];
-          if (key) {
-            indexByFragment.set(key, index);
+        } else if (fragment.index !== undefined) {
+          call = bindings.get(fragment.index) ?? step.byPosition.get(fragment.index);
+        }
+        /** Only an unbound singleton can safely adopt an unknown provider index.
+         * Once bound, an unrelated index must not append to that call. */
+        if (
+          call === undefined &&
+          !fragment.id &&
+          step.byId.size === 1 &&
+          (fragment.index === undefined || step.byProviderIndex.size === 0)
+        ) {
+          call = step.byId.values().next().value;
+          if (call !== undefined && fragment.index !== undefined) {
+            step.byProviderIndex.set(fragment.index, call);
+            bindings.set(fragment.index, call);
           }
         }
-
-        if (!args || index === undefined) {
+        if (call === undefined) {
           continue;
         }
-        const tracked = toolCalls.get(index);
-        if (tracked === undefined) {
-          continue;
-        }
-        tracked.function.arguments += args;
-        emit?.({ tool_calls: [{ index, function: { arguments: args } }] });
+        declare(call, fragment.name ?? fragment.function?.name ?? '');
+        append(call, fragment.args ?? fragment.function?.arguments ?? '');
       }
     },
   };
@@ -408,7 +493,7 @@ export class OpenAIMessageDeltaHandler implements EventHandler {
   constructor(private config: OpenAIStreamHandlerConfig) {}
 
   handle(_event: string, data: MessageDeltaData): void {
-    const content = data?.content;
+    const content = data?.delta?.content ?? data?.content;
     if (!content || !Array.isArray(content)) {
       return;
     }
@@ -429,8 +514,8 @@ export class OpenAIMessageDeltaHandler implements EventHandler {
 export class OpenAIRunStepDeltaHandler implements EventHandler {
   constructor(private toolCallStream: OpenAIToolCallStream) {}
 
-  handle(_event: string, data: RunStepDeltaData): void {
-    this.toolCallStream.onRunStepDelta(data);
+  handle(_event: string, data: RunStepDeltaData, metadata?: Record<string, unknown>): void {
+    this.toolCallStream.onRunStepDelta(data, metadata);
   }
 }
 
@@ -441,8 +526,8 @@ export class OpenAIRunStepDeltaHandler implements EventHandler {
 export class OpenAIRunStepHandler implements EventHandler {
   constructor(private toolCallStream: OpenAIToolCallStream) {}
 
-  handle(_event: string, data: RunStepData): void {
-    this.toolCallStream.onRunStep(data);
+  handle(_event: string, data: RunStepData, metadata?: Record<string, unknown>): void {
+    this.toolCallStream.onRunStep(data, metadata);
   }
 }
 
@@ -492,7 +577,7 @@ export class OpenAIReasoningDeltaHandler implements EventHandler {
   constructor(private config: OpenAIStreamHandlerConfig) {}
 
   handle(_event: string, data: MessageDeltaData): void {
-    const content = data?.content;
+    const content = data?.delta?.content ?? data?.content;
     if (!content || !Array.isArray(content)) {
       return;
     }
@@ -550,10 +635,9 @@ export function sendFinalChunk(
 ): void {
   const { res, context, tracker } = config;
 
-  /** A response that called tools finishes with `tool_calls`, including when the
-   *  model emitted text alongside them. */
+  // Determine finish reason based on content
   let reason = finishReason;
-  if (tracker.toolCalls.size > 0) {
+  if (tracker.toolCalls.size > 0 && !tracker.hasText) {
     reason = 'tool_calls';
   }
 

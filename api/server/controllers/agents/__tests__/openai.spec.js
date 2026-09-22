@@ -221,6 +221,8 @@ jest.mock('@librechat/api', () => ({
    *  controller is responsible for wiring, so the spec runs the real projection. */
   createOpenAIToolCallStream: (...args) =>
     jest.requireActual('@librechat/api').createOpenAIToolCallStream(...args),
+  OpenAIRunStepHandler: jest.requireActual('@librechat/api').OpenAIRunStepHandler,
+  OpenAIRunStepDeltaHandler: jest.requireActual('@librechat/api').OpenAIRunStepDeltaHandler,
   buildRunToolSet: jest.fn().mockReturnValue(new Set()),
   buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
@@ -521,6 +523,128 @@ describe('OpenAIChatCompletionController', () => {
       off: jest.fn(),
     };
   });
+
+  it.each([true, false])(
+    'projects interleaved calls and preserves the final stop (stream=%s)',
+    async (streaming) => {
+      const api = require('@librechat/api');
+      const actual = jest.requireActual('@librechat/api');
+      const names = [
+        'createChunk',
+        'writeSSE',
+        'sendFinalChunk',
+        'buildNonStreamingResponse',
+        'createOpenAIStreamTracker',
+        'createOpenAIContentAggregator',
+      ];
+      const original = names.map((name) => [name, api[name].getMockImplementation()]);
+      for (const name of names) api[name].mockImplementation(actual[name]);
+      req.body.stream = streaming;
+      api.validateRequest.mockReturnValueOnce({ request: req.body });
+      mockProcessStream.mockImplementationOnce(async () => {
+        const { customHandlers: h } = api.createRun.mock.calls.at(-1)[0];
+        const meta = { langgraph_node: 'agent=test', langgraph_step: 1 };
+        for (const [step, id, index] of [
+          ['s1', 'a', 0],
+          ['s2', 'b', 1],
+        ]) {
+          await h.on_run_step.handle(
+            'on_run_step',
+            {
+              id: step,
+              stepDetails: {
+                type: 'tool_calls',
+                tool_calls: [{ id, name: 'get_time' }],
+              },
+            },
+            meta,
+          );
+          await h.on_run_step_delta.handle(
+            'on_run_step_delta',
+            {
+              id: step,
+              delta: {
+                type: 'tool_calls',
+                tool_calls: [{ id, name: 'get_time', index }],
+              },
+            },
+            meta,
+          );
+        }
+        for (const [index, city] of [
+          [0, 'Madrid'],
+          [1, 'Paris'],
+        ]) {
+          await h.on_run_step_delta.handle(
+            'on_run_step_delta',
+            {
+              id: 's2',
+              delta: {
+                type: 'tool_calls',
+                tool_calls: [{ index, args: JSON.stringify({ city }) }],
+              },
+            },
+            meta,
+          );
+        }
+        await h.on_message_delta.handle(
+          'on_message_delta',
+          {
+            id: 'answer',
+            delta: {
+              content: [{ type: 'text', text: 'Both tools completed.' }],
+            },
+          },
+          { ...meta, langgraph_step: 3 },
+        );
+      });
+      try {
+        await OpenAIChatCompletionController(req, res);
+        if (streaming) {
+          const frames = res.write.mock.calls
+            .map(([frame]) => frame)
+            .filter((frame) => frame !== 'data: [DONE]\n\n')
+            .map((frame) => JSON.parse(frame.slice(6)));
+          expect(frames.at(-1).choices[0].finish_reason).toBe('stop');
+          expect(
+            frames
+              .flatMap((frame) => frame.choices[0].delta.tool_calls ?? [])
+              .filter((call) => call.function?.arguments),
+          ).toEqual([
+            { index: 0, function: { arguments: '{"city":"Madrid"}' } },
+            { index: 1, function: { arguments: '{"city":"Paris"}' } },
+          ]);
+        } else {
+          expect(res.json).toHaveBeenCalledWith(
+            expect.objectContaining({
+              choices: [
+                expect.objectContaining({
+                  finish_reason: 'stop',
+                  message: expect.objectContaining({
+                    content: 'Both tools completed.',
+                    tool_calls: [
+                      {
+                        id: 'a',
+                        type: 'function',
+                        function: { name: 'get_time', arguments: '{"city":"Madrid"}' },
+                      },
+                      {
+                        id: 'b',
+                        type: 'function',
+                        function: { name: 'get_time', arguments: '{"city":"Paris"}' },
+                      },
+                    ],
+                  }),
+                }),
+              ],
+            }),
+          );
+        }
+      } finally {
+        for (const [name, implementation] of original) api[name].mockImplementation(implementation);
+      }
+    },
+  );
 
   it('enrolls, starts, and settles the remote execution lifecycle', async () => {
     await OpenAIChatCompletionController(req, res);

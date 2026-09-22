@@ -59,6 +59,8 @@ const {
   createToolExecuteHandler,
   createOwnedToolEndHandler,
   buildNonStreamingResponse,
+  OpenAIRunStepHandler,
+  OpenAIRunStepDeltaHandler,
   createOpenAIToolCallStream,
   createOpenAIStreamTracker,
   resolveAgentScopedSkillIds,
@@ -1015,10 +1017,10 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         }),
 
         // Tool call initiation - declares id and name (from on_run_step)
-        on_run_step: createHandler((data) => toolCallStream.onRunStep(data)),
+        on_run_step: new OpenAIRunStepHandler(toolCallStream),
 
         // Tool call argument streaming (from on_run_step_delta)
-        on_run_step_delta: createHandler((data) => toolCallStream.onRunStepDelta(data)),
+        on_run_step_delta: new OpenAIRunStepDeltaHandler(toolCallStream),
 
         // Usage tracking
         on_chat_model_end: {
