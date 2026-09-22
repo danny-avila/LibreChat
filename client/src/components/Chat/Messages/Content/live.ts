@@ -232,38 +232,6 @@ function isAwaitingStartup(
   );
 }
 
-function toolIdentity(toolCall: LiveToolCall): string {
-  const name = toolCall.name ?? '';
-  return isBashProgrammaticToolCall(name, toolCall.args) ? Tools.bash_tool : name;
-}
-
-/** Counts the current tool and the same actions immediately preceding it.
- *  Reasoning and activity labels describe those actions, so they do not break
- *  a combo; encountering another tool does. */
-function consecutiveToolCount(
-  parts: ReadonlyArray<TMessageContentParts | undefined>,
-  position: number,
-  toolCall: LiveToolCall,
-): number {
-  const identity = toolIdentity(toolCall);
-  let count = 1;
-  for (let index = position - 1; index >= 0; index -= 1) {
-    const previousPart = parts[index];
-    if (previousPart?.type === ContentTypes.AGENT_UPDATE) {
-      break;
-    }
-    const previous = previousPart == null ? undefined : getStandardToolCall(previousPart);
-    if (previous == null) {
-      continue;
-    }
-    if (toolIdentity(previous) !== identity) {
-      break;
-    }
-    count += 1;
-  }
-  return count;
-}
-
 function newestLine(
   parts: ReadonlyArray<TMessageContentParts | undefined>,
   localize: Localize,
@@ -318,7 +286,7 @@ function newestLine(
          *  identity: a second call reusing an id is a new line, not the first
          *  one still growing. */
         source: `tool:${toolCall.id ?? ''}:${position}`,
-        comboCount: consecutiveToolCount(parts, position, toolCall),
+        comboCount: Math.max(1, span.trailingToolCount),
         ...(isAwaitingStartup(part, toolCall, span) && { pendingToolCallId: toolCall.id }),
       };
     }
@@ -332,9 +300,9 @@ function newestLine(
  * label once one lands after it, or the thought streaming after both. Later parts win, so the
  * header always reads as the bottom line of the list it stands for.
  *
- * Runs on every streamed delta. Outcome aggregation visits the full span so
- * late failures cannot disappear; the line stops at the newest nameable part
- * and icons only inspect a fixed tail window.
+ * Runs on every streamed delta. Outcomes and the tool combo share one full-span
+ * pass so late failures cannot disappear; the line stops at the newest nameable
+ * part and icons only inspect a fixed tail window.
  */
 export function getLiveActivity(
   parts: ReadonlyArray<TMessageContentParts | undefined>,

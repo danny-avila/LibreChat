@@ -13,6 +13,7 @@ import type {
 import { resolveAskUserQuestionPart } from '~/utils/approval';
 import { sandboxStartingByToolCallId } from '~/store';
 import ContentParts from '../ContentParts';
+import { getLiveActivity } from '../live';
 import store from '~/store';
 
 /**
@@ -184,6 +185,73 @@ const foldVerdict = (): Verdict => {
     ? 'running'
     : 'completed';
 };
+
+describe('live combo aggregation', () => {
+  const activity = (parts: Array<TMessageContentParts | undefined>) =>
+    getLiveActivity(parts, (key) => key, []);
+
+  it('counts a long repeated suffix without reading the historical prefix twice per delta', () => {
+    const parts = Array.from({ length: 1024 }, (_, index) =>
+      toPart({ name: 'lookup', output: 'ok' }, `call-${index}`),
+    );
+    const first = parts[0];
+    const readFirst = jest.fn(() => first);
+    Object.defineProperty(parts, 0, { get: readFirst });
+
+    for (const intent of ['Checking', 'Checking the', 'Checking the last file']) {
+      parts[parts.length - 1] = toPart({ name: 'lookup', args: { intent } }, 'tail');
+      readFirst.mockClear();
+      expect(activity(parts).comboCount).toBe(1024);
+      expect(readFirst).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('counts only the suffix, ignoring descriptive metadata and sparse slots', () => {
+    const call = (name: string) => toPart({ name, output: 'ok' });
+    expect(
+      activity([
+        call('read_file'),
+        call('edit_file'),
+        call('read_file'),
+        undefined,
+        { type: ContentTypes.THINK, think: 'Checking another file' },
+        { type: ContentTypes.ACTIVITY_LABEL, activity_label: 'Read a file' },
+        call('read_file'),
+      ]).comboCount,
+    ).toBe(2);
+  });
+
+  it('uses full tool identity, not the shared MCP server or icon', () => {
+    expect(
+      activity([
+        toPart({ name: 'read_mcp_workspace', output: 'ok' }),
+        toPart({ name: 'edit_mcp_workspace', output: 'ok' }),
+      ]).comboCount,
+    ).toBe(1);
+  });
+
+  it('reuses normalized Bash identity and recomputes it when streamed arguments change', () => {
+    const first = toPart({ name: Tools.bash_tool, output: 'ok' });
+    const programmatic = (lang: string) =>
+      toPart({ name: Constants.PROGRAMMATIC_TOOL_CALLING, args: { lang } });
+    expect(activity([first, programmatic('bash')]).comboCount).toBe(2);
+    expect(activity([first, programmatic('python')]).comboCount).toBe(1);
+  });
+
+  it.each<TMessageContentParts>([
+    { type: ContentTypes.THINK, think: 'Considering the results' },
+    { type: ContentTypes.TEXT, text: 'Checking the results', phase: 'commentary' },
+    { type: ContentTypes.ACTIVITY_LABEL, activity_label: 'Checked the results' },
+  ])('does not attach a tool multiplier to a trailing $type line', (tail) => {
+    expect(
+      activity([
+        toPart({ name: 'lookup', output: 'ok' }, 'first'),
+        toPart({ name: 'lookup', output: 'ok' }, 'second'),
+        tail,
+      ]).comboCount,
+    ).toBe(1);
+  });
+});
 
 describe('live fold parity with the cards it hides', () => {
   afterEach(() => {
