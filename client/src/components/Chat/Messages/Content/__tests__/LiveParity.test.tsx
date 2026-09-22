@@ -900,7 +900,7 @@ describe('live activity hardening transitions', () => {
       jest.advanceTimersByTime(500);
     });
     const header = screen.getByRole('button');
-    expect(header).toHaveAccessibleName('Checking the next file');
+    expect(header).toHaveAccessibleName('Checking the next file ×2');
     expect(header.querySelector('.absolute[aria-hidden="true"]')).toBeNull();
   });
 
