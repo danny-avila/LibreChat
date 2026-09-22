@@ -329,6 +329,7 @@ function LivePhaseHeader({
    *  fail while a later one runs, and the line alone would never say so. The
    *  hidden group header carries the same counts in the same words. */
   const { failed, cancelled } = activity.outcome;
+  const combo = activity.comboCount > 1 ? `×${activity.comboCount}` : '';
   const detail = useMemo(() => {
     const notes: string[] = [];
     if (failed > 0) {
@@ -396,13 +397,18 @@ function LivePhaseHeader({
         lineId={lineId}
         previewRef={previewRef}
       />
-      {detail && (
+      {(combo || detail) && (
         <span
           id={detailId}
-          className="shrink-0 text-xs font-normal text-text-warning"
-          data-testid="live-phase-outcome"
+          className={cn(
+            'shrink-0 text-xs font-normal',
+            detail ? 'text-text-warning' : 'text-text-secondary',
+          )}
+          data-testid={detail ? 'live-phase-outcome' : 'live-phase-combo'}
         >
-          · {detail}
+          {combo && <span>{combo}</span>}
+          {combo && detail && <span className="mx-1 text-text-secondary">·</span>}
+          {detail && <span>{detail}</span>}
         </span>
       )}
     </>

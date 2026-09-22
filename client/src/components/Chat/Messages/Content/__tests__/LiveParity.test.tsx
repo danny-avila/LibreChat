@@ -232,6 +232,36 @@ describe('live fold parity with the cards it hides', () => {
     expect(screen.queryByTestId('activity-phase-card')).toBeNull();
   });
 
+  it('shows a multiplier for consecutive uses of the same tool and resets on a different tool', () => {
+    const first = toPart({ name: 'create_file', output: 'created' }, 'first');
+    const second = toPart({ name: 'create_file', output: '' }, 'second');
+    const view = mount([first, second], undefined, true);
+
+    expect(screen.getByTestId('live-phase-combo')).toHaveTextContent('×2');
+    expect(
+      within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0],
+    ).toHaveAccessibleName(/×2/);
+
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <RecoilRoot>
+          <ContentParts
+            content={[first, second, toPart({ name: 'edit_file', output: '' }, 'third')]}
+            messageId="m1"
+            conversationId="c1"
+            isCreatedByUser={false}
+            isLast
+            isLatestMessage
+            isSubmitting
+            showThinking={false}
+          />
+        </RecoilRoot>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.queryByTestId('live-phase-combo')).toBeNull();
+  });
+
   it('treats a second call that reuses a provider id as a new line', () => {
     jest.useFakeTimers();
     const first = toPart({ name: 'lookup', args: '{"intent":"First pass"}', output: 'ok' }, 'dup');
