@@ -1682,6 +1682,8 @@ describe('AclEntry Model Tests', () => {
    * `permBits: { $in: permissionBitSupersets(X) }`), so it warrants direct
    * coverage independent of the higher-level parity and behavior specs.
    */
+  type BitUpdate = { $bit?: Record<string, Record<string, number>> };
+
   describe('modifyPermissionBits (single-operator $bit, issue #16163)', () => {
     const principal = new mongoose.Types.ObjectId();
     const resource = new mongoose.Types.ObjectId();
@@ -1734,10 +1736,9 @@ describe('AclEntry Model Tests', () => {
         await modify(PermissionBits.EDIT, null);
         await modify(null, PermissionBits.EDIT);
         await modify(PermissionBits.SHARE, PermissionBits.VIEW);
-        const bags = spy.mock.calls
-          .map(([, update]) => (update as Record<string, never> | undefined)?.$bit)
-          .filter((bit): bit is Record<string, object> => bit != null)
-          .flatMap((bit) => Object.values(bit));
+        const bags = spy.mock.calls.flatMap(([, update]) =>
+          Object.values((update as unknown as BitUpdate | undefined)?.$bit ?? {}),
+        );
         expect(bags.length).toBeGreaterThan(0);
         for (const bag of bags) {
           expect(Object.keys(bag)).toHaveLength(1);
@@ -1751,12 +1752,11 @@ describe('AclEntry Model Tests', () => {
       await seed(PermissionBits.VIEW | PermissionBits.EDIT);
       const model = mongoose.models.AclEntry;
       const real = model.findOneAndUpdate.bind(model);
-      const spy = jest
-        .spyOn(model, 'findOneAndUpdate')
-        .mockImplementationOnce(((...args: never[]) =>
-          model
-            .updateMany({ principalId: principal }, { $bit: { permBits: { or: INSIGHTS } } })
-            .then(() => real(...(args as Parameters<typeof real>)))) as never);
+      const raced = ((...args: Parameters<typeof real>) =>
+        model
+          .updateMany({ principalId: principal }, { $bit: { permBits: { or: INSIGHTS } } })
+          .then(() => real(...args))) as unknown as typeof model.findOneAndUpdate;
+      const spy = jest.spyOn(model, 'findOneAndUpdate').mockImplementationOnce(raced);
       try {
         const updated = await modify(PermissionBits.SHARE, PermissionBits.EDIT);
         expect(updated?.permBits).toBe(PermissionBits.VIEW | PermissionBits.SHARE | INSIGHTS);
@@ -1770,12 +1770,11 @@ describe('AclEntry Model Tests', () => {
       await seed(PermissionBits.VIEW | PermissionBits.EDIT);
       const model = mongoose.models.AclEntry;
       const real = model.findOneAndUpdate.bind(model);
-      const spy = jest
-        .spyOn(model, 'findOneAndUpdate')
-        .mockImplementation(((...args: never[]) =>
-          model
-            .updateMany({ principalId: principal }, { $bit: { permBits: { xor: INSIGHTS } } })
-            .then(() => real(...(args as Parameters<typeof real>)))) as never);
+      const alwaysRaced = ((...args: Parameters<typeof real>) =>
+        model
+          .updateMany({ principalId: principal }, { $bit: { permBits: { xor: INSIGHTS } } })
+          .then(() => real(...args))) as unknown as typeof model.findOneAndUpdate;
+      const spy = jest.spyOn(model, 'findOneAndUpdate').mockImplementation(alwaysRaced);
       try {
         await expect(modify(PermissionBits.SHARE, PermissionBits.EDIT)).rejects.toThrow(
           /permBits/i,
