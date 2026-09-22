@@ -154,6 +154,10 @@ export interface EmailChangeDeps {
    * group, or user override has since disabled. */
   resolvePolicy: (user: EmailChangeUser) => Promise<EmailChangePolicy>;
   sendEmail: (data: EmailData) => Promise<void>;
+  /** The deployment default, which answers only for a link that resolves to no owner: a
+   * disabled deployment reports an unavailable endpoint rather than an invalid token. It
+   * never decides a link that does resolve; `resolvePolicy` owns that. */
+  resolveSettings: () => Promise<EmailChangeSettings>;
   clientDomain: string;
   appName: string;
 }
@@ -571,14 +575,24 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
     return result(200, 'Verification link sent to your new email address');
   }
 
+  /** A link that names no owner has no policy to consult, so the deployment answers for it:
+   * an operator who turned changes off gets an unavailable endpoint rather than a report
+   * about the token. A link that does resolve is decided by its owner's policy alone. */
+  async function unresolvedLink(): Promise<EmailChangeResult> {
+    if (!(await deps.resolveSettings()).enabled) {
+      return result(403, 'Email changes are disabled', 'email_change_disabled');
+    }
+    return result(400, EMAIL_CHANGE_ERROR_MESSAGE, 'invalid_token');
+  }
+
   /** Issuance answers from the requesting user's effective configuration, so confirmation has
    * to answer from the same scope or a tenant, role, group, or user override that enables
-   * changes would offer a link the deployment default then refuses. The toggle is therefore
-   * read once here, after the link names its owner, rather than twice from two scopes. */
+   * changes would offer a link the deployment default then refuses. The toggle that decides a
+   * real link is therefore read once, below, after the link names its owner. */
   async function confirmEmailChange(input: ConfirmEmailChangeInput): Promise<EmailChangeResult> {
     const parsed = confirmSchema.safeParse(input.body);
     if (!parsed.success) {
-      return result(400, EMAIL_CHANGE_ERROR_MESSAGE, 'invalid_token');
+      return unresolvedLink();
     }
 
     const { email, token, userId } = parsed.data;
@@ -595,7 +609,7 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       logger.warn(
         `[emailChange] Invalid confirmation [User ID: ${userId}] [New Email: ${email}] [IP: ${ip}]`,
       );
-      return result(400, EMAIL_CHANGE_ERROR_MESSAGE, 'invalid_token');
+      return unresolvedLink();
     }
 
     const tenantId = emailChangeToken.tenantId;
@@ -616,7 +630,7 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       logger.warn(
         `[emailChange] Stale confirmation [User ID: ${userId}] [New Email: ${email}] [IP: ${ip}]`,
       );
-      return result(400, EMAIL_CHANGE_ERROR_MESSAGE, 'invalid_token');
+      return unresolvedLink();
     }
 
     /** The policy of the account the link names, which is the scope that issued it: a

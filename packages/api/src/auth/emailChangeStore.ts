@@ -1,6 +1,7 @@
 import type { AppConfig } from '@librechat/data-schemas';
 import type {
   EmailChangeDeps,
+  EmailChangeSettings,
   EmailChangeToken,
   EmailChangeTokenData,
   EmailChangeTokenMetadata,
@@ -210,6 +211,10 @@ export function createEmailChangeDeps(runtime: EmailChangeRuntime): EmailChangeD
       };
     },
     sendEmail: runtime.sendEmail,
+    resolveSettings: async (): Promise<EmailChangeSettings> => {
+      const appConfig = await runtime.getAppConfig({ failClosed: true });
+      return resolveEmailChangeSettings(appConfig?.emailChange);
+    },
     clientDomain: runtime.clientDomain,
     appName: runtime.appName,
   };

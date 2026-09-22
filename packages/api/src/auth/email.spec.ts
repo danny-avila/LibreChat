@@ -31,6 +31,7 @@ function createDeps(overrides: Partial<EmailChangeDeps> = {}) {
       allowedDomains: null,
     }),
     sendEmail: jest.fn().mockResolvedValue(undefined),
+    resolveSettings: jest.fn().mockResolvedValue({ enabled: true, tokenTTLSeconds: 900 }),
     clientDomain: 'https://chat.example.com/',
     appName: 'LibreChat',
     ...overrides,
@@ -505,6 +506,45 @@ describe('email change service', () => {
 
       expect(response).toMatchObject({ status: 403, code: 'email_change_disabled' });
       expect(deps.updateUser).not.toHaveBeenCalled();
+    });
+
+    it('reports an unavailable endpoint, not a bad token, when a link names no owner', async () => {
+      /** I3: a deployment that disabled changes answers for a link there is no owner to ask,
+       *  so the confirmation endpoint stays visibly unavailable rather than reporting on the
+       *  token a caller supplied. */
+      const { deps, service } = createDeps({
+        resolveSettings: jest.fn().mockResolvedValue({ enabled: false, tokenTTLSeconds: 900 }),
+        findToken: jest.fn().mockResolvedValue(null),
+      });
+
+      const response = await service.confirmEmailChange({
+        body: {
+          email: 'new@example.com',
+          token: 'unused-token',
+          userId: '507f1f77bcf86cd799439011',
+        },
+      });
+
+      expect(response).toEqual({
+        status: 403,
+        message: 'Email changes are disabled',
+        code: 'email_change_disabled',
+      });
+      expect(deps.updateUser).not.toHaveBeenCalled();
+    });
+
+    it('still reports an invalid token when the deployment allows changes', async () => {
+      const { service } = createDeps({ findToken: jest.fn().mockResolvedValue(null) });
+
+      const response = await service.confirmEmailChange({
+        body: {
+          email: 'new@example.com',
+          token: 'unused-token',
+          userId: '507f1f77bcf86cd799439011',
+        },
+      });
+
+      expect(response).toMatchObject({ status: 400, code: 'invalid_token' });
     });
 
     it('confirms a link an override enabled even when the deployment default is off', async () => {
