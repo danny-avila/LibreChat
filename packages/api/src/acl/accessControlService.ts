@@ -1,5 +1,11 @@
 import { Types } from 'mongoose';
 import {
+  createMethods,
+  getTransactionSupport,
+  logger,
+  runAfterTransaction,
+} from '@librechat/data-schemas';
+import {
   CacheKeys,
   AccessRoleIds,
   PermissionBits,
@@ -7,13 +13,6 @@ import {
   PrincipalType,
   ResourceType,
 } from 'librechat-data-provider';
-import {
-  createMethods,
-  getTransactionSupport,
-  logger,
-  runAfterTransaction,
-  buildRoleBitsBulkOps,
-} from '@librechat/data-schemas';
 import type { AllMethods, IAclEntry } from '@librechat/data-schemas';
 import type { ClientSession, DeleteResult } from 'mongoose';
 import type { TPrincipal } from 'librechat-data-provider';
@@ -459,6 +458,8 @@ export class AccessControlService {
         errors: [],
       };
       const bulkWrites: Parameters<AllMethods['bulkWriteAclEntries']>[0] = [];
+      /** Role-only edits go through the atomic guarded write, not this batch. */
+      const roleBitsWrites: Parameters<AllMethods['replaceRoleBits']>[0] = [];
       const insightsChangesByBulkWriteIndex = new Map<number, InsightsPermissionChange>();
 
       const updatedPrincipalKey = (principal: BulkPrincipal | null | undefined) => {
@@ -584,14 +585,12 @@ export class AccessControlService {
           };
           const bulkWriteIndex = bulkWrites.length;
           if (preserveInsights) {
-            bulkWrites.push(
-              ...buildRoleBitsBulkOps({
-                filter: query,
-                insert: update.$setOnInsert,
-                roleBits: role.permBits,
-                metadata: update.$set,
-              }),
-            );
+            roleBitsWrites.push({
+              filter: query,
+              insert: update.$setOnInsert,
+              roleBits: role.permBits,
+              metadata: update.$set,
+            });
           } else {
             bulkWrites.push({
               updateMany: { filter: query, update, upsert: true },
@@ -636,6 +635,10 @@ export class AccessControlService {
             error: error instanceof Error ? error.message : String(error),
           });
         }
+      }
+
+      if (roleBitsWrites.length > 0) {
+        await this._dbMethods.replaceRoleBits(roleBitsWrites, sessionOptions);
       }
 
       if (bulkWrites.length > 0) {

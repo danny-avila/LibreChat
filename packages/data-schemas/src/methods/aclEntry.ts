@@ -22,51 +22,6 @@ const EMPTY_SUPERSETS: readonly number[] = Object.freeze([]);
 const supersetCache = new Map<number, readonly number[]>();
 
 /**
- * Bulk operations that replace an ACL entry's role bits while preserving every
- * bit administered independently of the role (Insights today).
- *
- * `$bit` carries ONE operator per field. MongoDB accepts `{ or, and }` on a
- * single field, but MongoDB-compatible engines reject the combination (issue
- * #16163), so the replacement is two single-operator writes. Clearing before
- * setting keeps the only observable intermediate state at FEWER permissions
- * than either endpoint; the reverse order would briefly grant more. Neither
- * write filters on the stored mask, so a concurrent change to a preserved bit
- * cannot make a row escape the update, and a row whose `permBits` is absent or
- * out of range still receives the requested role. Cost is constant in the
- * number of permission bits.
- */
-export function buildRoleBitsBulkOps({
-  filter,
-  insert,
-  roleBits,
-  metadata,
-}: {
-  filter: Record<string, unknown>;
-  insert: Record<string, unknown>;
-  roleBits: number;
-  metadata: Record<string, unknown>;
-}): AnyBulkWriteOperation[] {
-  const roleOnly = roleBits & RoleBits.OWNER;
-  return [
-    {
-      updateMany: {
-        filter,
-        update: { $bit: { permBits: { and: ~RoleBits.OWNER } }, $set: metadata },
-      },
-    },
-    { updateMany: { filter, update: { $bit: { permBits: { or: roleOnly } } } } },
-    {
-      /** Identity only: never inherit a preserved bit from a stale read. */
-      updateOne: {
-        filter,
-        update: { $setOnInsert: { ...insert, ...metadata, permBits: roleOnly } },
-        upsert: true,
-      },
-    },
-  ];
-}
-
-/**
  * Enumerates every `permBits` value (in the range `[0, MAX_PERM_BITS]`) whose
  * set bits include all bits in `requiredBits`. Used with a `$in` filter to push
  * permission-mask matching down to the database without relying on the
@@ -120,6 +75,36 @@ export function permissionBitSupersets(requiredBits: number): readonly number[] 
   const frozen = Object.freeze(supersets);
   supersetCache.set(requiredBits, frozen);
   return frozen;
+}
+
+/**
+ * Attempts for a guarded permission write before it reports failure. Callers
+ * may override per call; a conflict is only ever resolved by retrying, never by
+ * writing over a value the caller did not observe.
+ */
+export const PERM_BITS_WRITE_ATTEMPTS = 3;
+
+/** One principal's role replacement, as requested by the caller. */
+export type RoleBitsWrite = {
+  /** Identity of the principal on the resource; never filters on permissions. */
+  filter: Record<string, unknown>;
+  /** Identity fields used only when the entry has to be created. */
+  insert: Record<string, unknown>;
+  /** The requested role's bits; non-role bits are masked off. */
+  roleBits: number;
+  /** Role metadata that must land in the SAME write as the role bits. */
+  metadata: Record<string, unknown>;
+};
+
+/** Identity of an ACL entry, for matching a read document to its request. */
+function aclIdentityKey(source: Record<string, unknown>): string {
+  const principalId = source.principalId;
+  return [
+    String(source.principalType),
+    principalId == null ? 'null' : String(principalId),
+    String(source.resourceType),
+    String(source.resourceId),
+  ].join('|');
 }
 
 export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
@@ -192,6 +177,10 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     filter: Record<string, unknown>,
     options?: { session?: ClientSession },
   ) => Promise<DeleteResult>;
+  replaceRoleBits: (
+    writes: RoleBitsWrite[],
+    options?: { session?: ClientSession; maxAttempts?: number },
+  ) => Promise<{ upsertedWrites: Set<number> }>;
   bulkWriteAclEntries: (
     ops: AnyBulkWriteOperation[],
     options?: { session?: ClientSession },
@@ -590,6 +579,130 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
   }
 
   /**
+   * Replaces the role bits of every ACL entry named by each write, preserving
+   * every bit administered independently of the role (Insights today).
+   *
+   * The invariant this owns: for each entry, its role bits and its role
+   * metadata change in ONE atomic document update, no independently
+   * administered bit is disturbed, and a write that did not land is never
+   * reported as success.
+   *
+   * Mechanism is compare-and-set. The update is an ordinary `$set` computed
+   * from the value actually read, and the filter carries that observed value,
+   * so a concurrent change makes the write MISS instead of clobbering. A miss
+   * re-reads and retries; exhausting the budget throws. No bit operator is
+   * used, so nothing here depends on an engine supporting `$bit` (issue
+   * #16163), and cost is constant in the number of permission bits: one read
+   * plus one bulk write per attempt, whatever the enum grows to.
+   *
+   * A stored value outside the known enum keeps its unknown bits: the guard is
+   * the value itself, never an enumeration of legal masks.
+   */
+  async function replaceRoleBits(
+    writes: RoleBitsWrite[],
+    options?: { session?: ClientSession; maxAttempts?: number },
+  ): Promise<{ upsertedWrites: Set<number> }> {
+    const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
+    const session = options?.session;
+    const sessionOptions = session ? { session } : {};
+    const maxAttempts = Math.max(1, options?.maxAttempts ?? PERM_BITS_WRITE_ATTEMPTS);
+    const upsertedWrites = new Set<number>();
+    if (writes.length === 0) {
+      return { upsertedWrites };
+    }
+
+    let pending = writes.map((_, index) => index);
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const query = AclEntry.find(
+        { $or: pending.map((index) => writes[index].filter) },
+        null,
+        sessionOptions,
+      );
+      if (!session) {
+        /** Guard against the write authority, never a lagging secondary. */
+        query.read('primary');
+      }
+      const documents = await query.lean<Array<IAclEntry & { _id: Types.ObjectId }>>();
+      const byIdentity = new Map<string, Array<IAclEntry & { _id: Types.ObjectId }>>();
+      for (const document of documents) {
+        const key = aclIdentityKey(document as unknown as Record<string, unknown>);
+        const found = byIdentity.get(key);
+        if (found) {
+          found.push(document);
+        } else {
+          byIdentity.set(key, [document]);
+        }
+      }
+
+      const ops: AnyBulkWriteOperation[] = [];
+      const upsertOps = new Map<number, number>();
+      let guardedOps = 0;
+      for (const index of pending) {
+        const write = writes[index];
+        const roleOnly = write.roleBits & RoleBits.OWNER;
+        const existing = byIdentity.get(aclIdentityKey(write.filter)) ?? [];
+        if (existing.length === 0) {
+          /** Identity only: never inherit a preserved bit from a vanished entry. */
+          upsertOps.set(ops.length, index);
+          ops.push({
+            updateOne: {
+              filter: write.filter,
+              update: {
+                $setOnInsert: { ...write.insert, ...write.metadata, permBits: roleOnly },
+              },
+              upsert: true,
+            },
+          });
+          continue;
+        }
+        for (const document of existing) {
+          const observed = document.permBits;
+          guardedOps++;
+          ops.push({
+            updateOne: {
+              filter: {
+                _id: document._id,
+                ...(observed == null ? { permBits: { $exists: false } } : { permBits: observed }),
+              },
+              update: {
+                $set: {
+                  ...write.metadata,
+                  permBits: ((observed ?? 0) & ~RoleBits.OWNER) | roleOnly,
+                },
+              },
+            },
+          });
+        }
+      }
+
+      const result = await bulkWriteAclEntries(ops, sessionOptions);
+      let inserted = 0;
+      for (const [opIndex, writeIndex] of upsertOps) {
+        if (result.upsertedIds?.[opIndex] != null) {
+          inserted++;
+          upsertedWrites.add(writeIndex);
+          pending = pending.filter((index) => index !== writeIndex);
+        }
+      }
+      /**
+       * A guarded op that missed did not match; an upsert that matched an entry
+       * created concurrently did not apply the role. Either way the batch is
+       * only settled when every op reached its own target.
+       */
+      if (result.matchedCount === guardedOps && inserted === upsertOps.size) {
+        return { upsertedWrites };
+      }
+      if (attempt === maxAttempts) {
+        break;
+      }
+    }
+    throw new Error(
+      `[replaceRoleBits] permBits changed concurrently on every attempt (${maxAttempts}); ` +
+        `${pending.length} of ${writes.length} role updates were not applied`,
+    );
+  }
+
+  /**
    * Performs a bulk write operation on ACL entries.
    * @param ops - Array of bulk write operations
    * @param options - Optional query options (e.g., { session })
@@ -700,6 +813,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     modifyPermissionBits,
     findAccessibleResources,
     deleteAclEntries,
+    replaceRoleBits,
     bulkWriteAclEntries,
     findPublicResourceIds,
     aggregateAclEntries,

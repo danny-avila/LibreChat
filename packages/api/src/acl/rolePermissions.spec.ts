@@ -120,36 +120,59 @@ describe('role-only ACL writes', () => {
     },
   );
 
-  test('emits single-operator bit writes and an identity-only insert', async () => {
-    const spy = jest.spyOn(methods, 'bulkWriteAclEntries');
+  /**
+   * Intercept the write where it reaches the driver, not at a package method:
+   * the guarded write is issued from inside data-schemas, so a spy on the
+   * methods object silently observes nothing and every race test would pass
+   * while injecting nothing at all.
+   */
+  function raceBeforeWrite(between: () => Promise<unknown>, { once = true } = {}) {
+    const real = entries.bulkWrite.bind(entries) as (...args: never[]) => Promise<never>;
+    const impl = (async (...args: never[]) => {
+      await between();
+      return real(...args);
+    }) as unknown as typeof entries.bulkWrite;
+    const spy = jest.spyOn(entries, 'bulkWrite');
+    return once ? spy.mockImplementationOnce(impl) : spy.mockImplementation(impl);
+  }
+
+  test('emits one guarded $set per entry and an identity-only insert', async () => {
+    const spy = jest.spyOn(entries, 'bulkWrite');
     await updateRole();
+    const insertOps = spy.mock.calls[spy.mock.calls.length - 1][0];
     await updateRole();
+    const guardedOps = spy.mock.calls[spy.mock.calls.length - 1][0];
+
     expect(await entries.countDocuments(filter)).toBe(1);
     expect((await entries.findOne(filter))!.permBits).toBe(RoleBits.EDITOR);
-    for (const [ops] of spy.mock.calls) {
-      expect(ops).toHaveLength(3);
-      for (const op of ops) {
-        if ('updateMany' in op) {
-          const update = op.updateMany.update as { $bit?: Record<string, object> };
-          expect(op.updateMany.filter).toEqual(expect.objectContaining(filter));
-          expect(op.updateMany.filter).not.toHaveProperty('permBits');
-          expect(op.updateMany.upsert).not.toBe(true);
-          expect(Array.isArray(update)).toBe(false);
-          for (const bag of Object.values(update.$bit ?? {})) {
-            expect(Object.keys(bag)).toHaveLength(1);
-          }
-        } else {
-          expect(op).toMatchObject({
-            updateOne: {
-              filter,
-              update: { $setOnInsert: { permBits: RoleBits.EDITOR } },
-              upsert: true,
-            },
-          });
-          if ('updateOne' in op) expect(op.updateOne.filter).not.toHaveProperty('permBits');
-        }
-      }
-    }
+
+    /** No entry yet: identity only, so a vanished grant is never inherited. */
+    expect(insertOps).toHaveLength(1);
+    expect(insertOps[0]).toMatchObject({
+      updateOne: {
+        filter,
+        update: { $setOnInsert: { permBits: RoleBits.EDITOR } },
+        upsert: true,
+      },
+    });
+
+    /** Entry exists: compare-and-set on the observed value, metadata included. */
+    expect(guardedOps).toHaveLength(1);
+    const op = guardedOps[0] as {
+      updateOne: {
+        filter: Record<string, unknown>;
+        update: { $set?: Record<string, unknown> };
+        upsert?: boolean;
+      };
+    };
+    expect(op.updateOne.filter).toHaveProperty('_id');
+    expect(op.updateOne.filter.permBits).toBe(RoleBits.EDITOR);
+    expect(op.updateOne.upsert).not.toBe(true);
+    expect(op.updateOne.update).not.toHaveProperty('$bit');
+    expect(Array.isArray(op.updateOne.update)).toBe(false);
+    expect(op.updateOne.update.$set).toEqual(
+      expect.objectContaining({ permBits: RoleBits.EDITOR, roleId: expect.anything() }),
+    );
   });
 
   test.each([
@@ -160,11 +183,9 @@ describe('role-only ACL writes', () => {
     'preserves a concurrent Insights $label after the snapshot',
     async ({ initial, concurrent, expected }) => {
       await seed(initial);
-      const write = methods.bulkWriteAclEntries;
-      jest.spyOn(methods, 'bulkWriteAclEntries').mockImplementationOnce(async (...args) => {
+      raceBeforeWrite(async () => {
         if (concurrent === null) await entries.deleteMany(filter);
         else await entries.updateMany(filter, { $set: { permBits: concurrent } });
-        return write(...args);
       });
       const result = await updateRole();
       expect((await entries.findOne(filter))!.permBits).toBe(expected);
@@ -173,45 +194,35 @@ describe('role-only ACL writes', () => {
     },
   );
 
-  test.each([
-    { initial: 1, concurrent: 17, expected: 19 },
-    { initial: 17, concurrent: 1, expected: 3 },
-  ])(
-    'does not overwrite an Insights change between mask partitions: $concurrent',
-    async ({ initial, concurrent, expected }) => {
-      await seed(initial);
-      const write = methods.bulkWriteAclEntries;
-      jest.spyOn(methods, 'bulkWriteAclEntries').mockImplementationOnce(async (ops, options) => {
-        let result = await write([ops[0]], options);
-        await entries.updateMany(filter, { $set: { permBits: concurrent } });
-        for (const op of ops.slice(1)) result = await write([op], options);
-        return result;
-      });
-      const result = await updateRole();
-      expect((await entries.findOne(filter))!.permBits).toBe(expected);
-      expect(result.insightsChanges).toEqual([]);
-    },
-  );
-
-  test('does not overwrite a new Insights grant between partitions and the identity upsert', async () => {
-    const write = methods.bulkWriteAclEntries;
-    jest.spyOn(methods, 'bulkWriteAclEntries').mockImplementationOnce(async (ops, options) => {
-      await write(ops.slice(0, -1), options);
-      await seed(PermissionBits.VIEW | PermissionBits.VIEW_INSIGHTS);
-      return write(ops.slice(-1), options);
-    });
+  test('never filters a permission write on an enumerated mask list', async () => {
+    await seed(PermissionBits.VIEW | PermissionBits.VIEW_INSIGHTS);
+    const spy = jest.spyOn(entries, 'bulkWrite');
     await updateRole();
+    /**
+     * The guard is the observed value, never a list of legal masks, so this
+     * write needs no bit-operator or mask-enumeration support from the engine.
+     */
+    const payload = JSON.stringify(spy.mock.calls.map(([ops]) => ops));
+    expect(payload).not.toContain('$in');
+    expect(payload).not.toContain('$bit');
+    expect((await entries.findOne(filter))!.permBits).toBe(19);
+  });
+
+  test('applies the role to an entry created after the read, without duplicating it', async () => {
+    raceBeforeWrite(() => seed(PermissionBits.VIEW | PermissionBits.VIEW_INSIGHTS));
+    await updateRole();
+    /**
+     * The identity upsert matched the entry that appeared instead of inserting,
+     * so the role had not been applied; that is a miss, and the retry applies it
+     * while keeping the Insights grant the other writer just made.
+     */
     expect(await entries.countDocuments(filter)).toBe(1);
-    expect((await entries.findOne(filter))!.permBits).toBe(17);
+    expect((await entries.findOne(filter))!.permBits).toBe(19);
   });
 
   test('keeps explicit Insights upsert indices correct after expanded role-only writes', async () => {
     await seed(17);
-    const write = methods.bulkWriteAclEntries;
-    jest.spyOn(methods, 'bulkWriteAclEntries').mockImplementationOnce(async (...args) => {
-      await entries.deleteMany(filter);
-      return write(...args);
-    });
+    raceBeforeWrite(() => entries.deleteMany(filter));
     const result = await service.bulkUpdateResourcePermissions({
       resourceType: ResourceType.AGENT,
       resourceId,
@@ -253,15 +264,9 @@ describe('role-only ACL writes', () => {
 
   test('applies the role even when a preserved bit changes mid-write (#16170 review)', async () => {
     await seed(RoleBits.OWNER | PermissionBits.VIEW_INSIGHTS);
-    const write = methods.bulkWriteAclEntries;
-    jest.spyOn(methods, 'bulkWriteAclEntries').mockImplementationOnce(async (ops, options) => {
-      let result = await write([ops[0]], options);
-      /** An admin revokes Insights between the two bit writes. */
-      await entries.updateMany(filter, {
-        $bit: { permBits: { and: ~PermissionBits.VIEW_INSIGHTS } },
-      });
-      for (const op of ops.slice(1)) result = await write([op], options);
-      return result;
+    raceBeforeWrite(async () => {
+      /** An admin revokes Insights between our read and our write. */
+      await entries.updateMany(filter, { $set: { permBits: RoleBits.OWNER } });
     });
     const result = await service.bulkUpdateResourcePermissions({
       resourceType: ResourceType.AGENT,
@@ -286,14 +291,16 @@ describe('role-only ACL writes', () => {
   test('propagates a partial batch failure without leaving half-updated role bits', async () => {
     await seed(RoleBits.OWNER);
     await seed(RoleBits.OWNER | PermissionBits.VIEW_INSIGHTS);
-    const write = methods.bulkWriteAclEntries;
-    jest.spyOn(methods, 'bulkWriteAclEntries').mockImplementationOnce(async (ops, options) => {
-      await write([ops[0]], options);
-      throw new Error('injected write failure');
-    });
+    jest
+      .spyOn(entries, 'bulkWrite')
+      .mockImplementationOnce((() =>
+        Promise.reject(
+          new Error('injected write failure'),
+        )) as unknown as typeof entries.bulkWrite);
     await expect(updateRole()).rejects.toThrow('injected write failure');
     const after = await entries.find(filter).lean();
-    expect(after.map((entry) => entry.permBits).sort((a, b) => a - b)).toEqual([0, 16]);
+    /** The whole batch failed, so both rows keep their pre-write state. */
+    expect(after.map((entry) => entry.permBits).sort((a, b) => a - b)).toEqual([15, 31]);
     await updateRole();
     const retried = await entries.find(filter).lean();
     expect(retried.map((entry) => entry.permBits).sort((a, b) => a - b)).toEqual([3, 19]);
@@ -371,4 +378,78 @@ describe('role-only ACL writes', () => {
       await replica.stop();
     }
   }, 30000);
+
+  test('keeps role bits and metadata consistent under two concurrent role updates', async () => {
+    await seed(RoleBits.OWNER | PermissionBits.VIEW_INSIGHTS);
+    const viewer = await methods.findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER);
+    raceBeforeWrite(() =>
+      /** A competing Viewer request lands atomically between our read and write. */
+      entries.updateMany(filter, {
+        $set: {
+          permBits: RoleBits.VIEWER | PermissionBits.VIEW_INSIGHTS,
+          roleId: viewer!._id,
+        },
+      }),
+    );
+
+    const result = await updateRole(AccessRoleIds.AGENT_EDITOR);
+    expect(result.errors).toEqual([]);
+
+    const entry = (await entries.findOne(filter).lean())!;
+    /**
+     * One logical winner: the stored role bits and the stored role reference
+     * cannot disagree. Resolved through the reference rather than compared to a
+     * freshly looked-up role, so repeated seeding cannot mask a divergence.
+     */
+    expect(entry.permBits & RoleBits.OWNER).toBe(RoleBits.EDITOR);
+    const storedRole = await mongoose.models.AccessRole.findById(entry.roleId).lean<{
+      accessRoleId: string;
+      permBits: number;
+    }>();
+    expect(storedRole?.accessRoleId).toBe(AccessRoleIds.AGENT_EDITOR);
+    expect(entry.permBits & RoleBits.OWNER).toBe(storedRole!.permBits & RoleBits.OWNER);
+    expect(entry.permBits & PermissionBits.VIEW_INSIGHTS).toBe(PermissionBits.VIEW_INSIGHTS);
+  });
+
+  test('reports failure, not success, when the guard never holds', async () => {
+    await seed(RoleBits.OWNER | PermissionBits.VIEW_INSIGHTS);
+    const viewer = await methods.findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER);
+    let round = 0;
+    raceBeforeWrite(
+      () =>
+        /** A different value every attempt, so no guard can ever match. */
+        entries.updateMany(filter, {
+          $set: {
+            permBits: PermissionBits.VIEW_INSIGHTS | (round++ % 2 === 0 ? 1 : 2),
+            roleId: viewer!._id,
+          },
+        }),
+      { once: false },
+    );
+
+    await expect(updateRole()).rejects.toThrow(/permBits|attempt/i);
+    const entry = (await entries.findOne(filter).lean())!;
+    /** Failed loudly and left the competing writer's state intact. */
+    expect(entry.roleId?.toString()).toBe(viewer!._id.toString());
+    expect([17, 18]).toContain(entry.permBits);
+  });
+
+  test('preserves stored bits outside the known permission enum', async () => {
+    const role = await methods.findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER);
+    /** Written past the schema validator, as a legacy or external writer could. */
+    await entries.collection.insertOne({
+      ...filter,
+      principalModel: PrincipalModel.USER,
+      permBits: PermissionBits.VIEW | 64,
+      roleId: role!._id,
+      grantedBy,
+      grantedAt: new Date(),
+    });
+
+    await updateRole();
+
+    const entry = (await entries.findOne(filter).lean())!;
+    expect(entry.permBits & RoleBits.OWNER).toBe(RoleBits.EDITOR);
+    expect(entry.permBits & 64).toBe(64);
+  });
 });
