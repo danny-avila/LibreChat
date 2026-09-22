@@ -40,20 +40,20 @@ export const unlockReplyNotificationSound = (): void => {
  * no cache entry. Failure is always silent, because a missed chime is not worth an error toast.
  */
 const playChime = (arrivals: ReplyReadState['unseen']) => {
+  const claimed: ReplyReadState['unseen'] = [];
   try {
     const context = openAudioContext();
     if (!context || context.state !== 'running') {
       return;
     }
-    let claimed = false;
     for (const conversation of arrivals) {
       if (
         claimReplyAnnouncement('sound', conversation.conversationId, conversation.lastResponseAt)
       ) {
-        claimed = true;
+        claimed.push(conversation);
       }
     }
-    if (!claimed) {
+    if (claimed.length === 0) {
       return;
     }
     const start = context.currentTime;
@@ -75,7 +75,11 @@ const playChime = (arrivals: ReplyReadState['unseen']) => {
       oscillator.stop(start + offset + 0.3);
     }
   } catch {
-    /* Autoplay policy or an unavailable output device. */
+    /* Autoplay policy or an unavailable output device. Nothing played, so the claims taken
+       above are handed back rather than left to silence these replies in every tab. */
+    for (const conversation of claimed) {
+      releaseReplyAnnouncement('sound', conversation.conversationId, conversation.lastResponseAt);
+    }
   }
 };
 

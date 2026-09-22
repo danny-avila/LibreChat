@@ -582,6 +582,23 @@ describe('useReplyAlerts', () => {
     expect(createOscillator).toHaveBeenCalledTimes(2);
   });
 
+  /* A running context can still throw while the tones are being built. Nothing played, so the
+     claim is handed back instead of silencing the reply in every tab. */
+  it('leaves a reply claimable when its chime could not be scheduled', () => {
+    createOscillator.mockImplementation(() => {
+      throw new Error('output device lost');
+    });
+    const { rerender } = setup({ sound: true });
+
+    act(() => {
+      rerender(stateOf([row('convo-b', 'Beta')]));
+    });
+
+    const raw = window.localStorage.getItem('replyAlerts:announced:sound');
+    const claims = raw == null ? [] : (JSON.parse(raw) as Array<[string, string]>);
+    expect(claims.some(([id]) => id === 'convo-b')).toBe(false);
+  });
+
   it('leaves a suspended tab’s chime claim available to a usable audio context', async () => {
     audioState = 'suspended';
     resumeAudio.mockReturnValue(Promise.withResolvers<void>().promise);

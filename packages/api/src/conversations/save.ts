@@ -2,6 +2,8 @@ import { logger } from '@librechat/data-schemas';
 import { excludedKeys, isAgentsEndpoint, isEphemeralAgentId } from 'librechat-data-provider';
 import type { AppConfig, ConversationMethods, IConversation } from '@librechat/data-schemas';
 import type { TConversation } from 'librechat-data-provider';
+import type { PersistedReply } from './announce';
+import { isAnnounceableReply } from './announce';
 
 type SaveConvo = ConversationMethods['saveConvo'];
 type SaveConvoOptions = NonNullable<Parameters<SaveConvo>[2]>;
@@ -45,10 +47,11 @@ export interface TurnConversationWrite extends TurnConversationFields {
   /** The message this write just saved, appended to the conversation's message list. */
   savedMessageId?: SavedMessageId;
   /**
-   * The assistant reply this write announces, when the turn persisted one a reader can open.
-   * Absent for the user's own turn, and for a reply whose message write resolved empty.
+   * The assistant reply this write persisted, if any. Absent for the user's own turn and for a
+   * reply whose message write resolved empty; whether it may raise an indicator is decided by
+   * `isAnnounceableReply`, the same predicate every other persistence path asks.
    */
-  replyMessageId?: string;
+  reply?: PersistedReply;
 }
 
 export interface TurnConversationResult {
@@ -146,16 +149,16 @@ async function loadExistingConversation(
  * `saveConvo` assigns the timestamp itself, past its own awaited reads and against the write, so
  * a catch-up recorded by `/seen` while one of those reads is in flight cannot outrank this reply
  * and leave it reading as already seen. A temporary chat is never announced: it has no row in the
- * lists the indicator is read from.
+ * lists the indicator is read from, and a row with nothing a reader can open is not either.
  */
 function getReplyStamp(
   write: TurnConversationWrite,
 ): { stampReply: true; replyMessageId: string } | Record<string, never> {
-  const replyMessageId = write.replyMessageId;
-  if (replyMessageId == null || replyMessageId === '' || write.ctx.isTemporary === true) {
+  const { reply } = write;
+  if (reply == null || !isAnnounceableReply({ ...reply, isTemporary: write.ctx.isTemporary })) {
     return {};
   }
-  return { stampReply: true, replyMessageId };
+  return { stampReply: true, replyMessageId: reply.messageId as string };
 }
 
 async function writeConversation(

@@ -1400,7 +1400,9 @@ class BaseClient {
       ctx: reqCtx,
       initialized: this.fetchedConvo === true,
       savedMessageId: savedMessage?._id,
-      replyMessageId: persistedReply ? savedMessage?.messageId : undefined,
+      reply: persistedReply
+        ? { messageId: savedMessage.messageId, content: message.content, text: message.text }
+        : undefined,
     });
     if (initialized) {
       this.fetchedConvo = true;

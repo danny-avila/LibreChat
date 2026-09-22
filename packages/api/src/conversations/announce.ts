@@ -1,9 +1,10 @@
 import { logger } from '@librechat/data-schemas';
 import type { ConversationMethods } from '@librechat/data-schemas';
-import type { ConversationWriteContext } from './save';
 import { hasPersistableAbortContent } from '../stream/abortContent';
 
 type SaveConvo = ConversationMethods['saveConvo'];
+/** Derived here rather than imported from `./save`, which depends on this module. */
+type ConversationWriteContext = Parameters<SaveConvo>[0];
 type SaveConvoOptions = NonNullable<Parameters<SaveConvo>[2]>;
 type SavedMessageId = NonNullable<SaveConvoOptions['appendMessageIds']>[number];
 
