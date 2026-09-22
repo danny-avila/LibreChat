@@ -335,6 +335,18 @@ describe('PanelTable handleFileClick', () => {
     expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
   });
 
+  it('leaves file search alone when a saved agent owns the conversation', () => {
+    mockConversation = { endpoint: 'openAI', agent_id: 'agent_abc123' };
+    const file = makeFile({ file_id: 'embedded-file', embedded: true });
+    mockFileMap = { [file.file_id]: file };
+
+    renderTable([file]);
+    clickFilenameCell();
+
+    expect(mockAddFile).toHaveBeenCalledTimes(1);
+    expect(mockSetEphemeralAgent).not.toHaveBeenCalled();
+  });
+
   it('leaves file search alone when the attachment itself is rejected', () => {
     const file = makeFile({ file_id: 'embedded-file', embedded: true });
     mockFileMap = { [file.file_id]: file };

@@ -13,17 +13,6 @@ import {
   useToastContext,
 } from '@librechat/client';
 import {
-  megabyte,
-  Constants,
-  EToolResources,
-  mergeFileConfig,
-  checkOpenAIStorage,
-  isAssistantsEndpoint,
-  getEndpointFileConfig,
-  defaultAgentCapabilities,
-  fileConfig as defaultFileConfig,
-} from 'librechat-data-provider';
-import {
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -35,6 +24,18 @@ import {
   type VisibilityState,
   type ColumnFiltersState,
 } from '@tanstack/react-table';
+import {
+  megabyte,
+  Constants,
+  EToolResources,
+  mergeFileConfig,
+  checkOpenAIStorage,
+  isEphemeralAgentId,
+  isAssistantsEndpoint,
+  getEndpointFileConfig,
+  defaultAgentCapabilities,
+  fileConfig as defaultFileConfig,
+} from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import { useLocalize, useUpdateFiles, useGetAgentsConfig, useAgentCapabilities } from '~/hooks';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
@@ -194,8 +195,14 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         }
       }
 
-      /** Mirror `AttachFileMenu`: an embedded file is unreadable unless file search is on. */
-      if (fileData.embedded === true && capabilities.fileSearchEnabled) {
+      /** Mirror `AttachFileMenu`: an embedded file is unreadable unless file search is on.
+       * The ephemeral flag governs direct chats only — a saved agent's own `tools` decide,
+       * so writing it there would be dead state the badge row still reflects. */
+      if (
+        fileData.embedded === true &&
+        capabilities.fileSearchEnabled &&
+        isEphemeralAgentId(conversation.agent_id)
+      ) {
         setEphemeralAgent((prev) => ({
           ...prev,
           [EToolResources.file_search]: true,
