@@ -10,6 +10,37 @@ Please note that a pull request involving a feature that has not been reviewed a
 
 If you would like to discuss the changes you wish to make, join our [Discord community](https://discord.librechat.ai), where you can engage with other contributors and seek guidance from the community.
 
+## AI-Assisted Contributions
+
+AI coding agents are welcome here. A good part of this project is written with them, and we do not judge a pull request by whether a model helped write it. What we do ask is that agent-assisted work arrives the same way human work always has: attached to an issue, claimed in the open, and expected by someone.
+
+An agent makes a patch cheap to produce, which moves the whole cost of it onto the person reviewing it. Maintainer review time is the scarce resource in this project, so the rules below are about protecting that, not about which tools you use.
+
+### Claim the work first
+
+1. Find an existing issue, or open one describing the problem.
+2. Say in the issue that you would like to take it, and wait to be assigned.
+3. Open one pull request, linked to that issue, after it is assigned to you.
+
+A pull request that appears unannounced, with no issue, no assignment and no prior conversation, may be closed without review no matter how good the patch is. Features need prior approval as described above; agent assistance does not exempt a feature from the roadmap or the discussions board.
+
+**The one exception is a novel P0/P1 defect**: data loss, a broken release, a crash, or a regression with no workaround, that nobody has reported yet. Open it, and put the impact and the reproduction in the first paragraph. Novel is the operative word. A patch for something already reported, already assigned, or already fixed on `dev` is not an exception, and neither is a cosmetic or speculative change dressed up as urgent.
+
+**Security is never an exception.** Do not open a pull request, an issue, or a public message that describes a vulnerability, even a critical one, and even with a fix attached. A pull request is a public disclosure that explains the attack and points at the affected code. Report it through LibreChat's [private vulnerability reporting form](https://github.com/danny-avila/LibreChat/security/advisories/new) and we will open a private channel and coordinate the fix and its release there. See [SECURITY.md](./SECURITY.md).
+
+### Pull requests generated from issues
+
+A pull request produced by pointing an agent at our issue tracker will be rejected unless the issue it addresses was assigned to you. Sweeping open issues and emitting patches for them is not a contribution; it asks a maintainer to review work they never scoped, on an issue that may already belong to someone else. Being first to a patch does not claim an issue, and an issue assigned to another contributor is not available even if your fix is better.
+
+### What we close on sight
+
+These are patterns we actually receive, not hypotheticals:
+
+- **Batches.** Several unrelated pull requests opened minutes apart, or the same sweep run across many projects at once. One issue, one pull request, one conversation.
+- **Whole-file rewrites.** A one-line fix arriving as a thousand-line diff because the file was reformatted or its line endings were converted. Keep the diff to the lines you changed, and configure your tooling not to rewrite the rest (`git config core.autocrlf input` on Windows). An unreadable diff hides things, including reverts of recent commits your branch predates.
+- **Unverifiable claims.** A description asserting a bug, a root cause, or a passing test suite with nothing a reviewer can reproduce. Say what you ran and what you did not.
+- **A patch you cannot discuss.** You are the author of anything you submit. If you cannot explain in review why the change is correct, what it affects, and why the tests cover it, it is not ready.
+
 ## Our Standards
 
 We strive to maintain a positive and inclusive environment within our project community. We expect all contributors to adhere to the following standards:
