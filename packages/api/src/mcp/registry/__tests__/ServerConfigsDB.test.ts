@@ -193,6 +193,19 @@ describe('ServerConfigsDB', () => {
       expect(retrieved?.description).toBe('Updated description');
     });
 
+    it('should not persist omitted header maps as null', async () => {
+      const config = createSSEConfig('Headerless Server');
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+
+      await serverConfigsDB.update(created.serverName, config, userId);
+
+      const stored = await mongoose.models.MCPServer.findOne({
+        serverName: created.serverName,
+      }).lean<{ config: Record<string, unknown> } | null>();
+      expect(stored?.config).not.toHaveProperty('headers');
+      expect(stored?.config).not.toHaveProperty('requestHeaders');
+    });
+
     it('should preserve oauth.client_secret when not provided in update', async () => {
       const config: ParsedServerConfig = {
         type: 'sse',
@@ -1047,7 +1060,7 @@ describe('ServerConfigsDB', () => {
   });
 
   describe('get()', () => {
-    it('normalizes null headers from historical stored configs before runtime use', async () => {
+    it('normalizes null header maps from historical stored configs before runtime use', async () => {
       const server = await mongoose.models.MCPServer.create({
         serverName: 'legacy-null-headers',
         normalizedServerName: 'legacy-null-headers',
@@ -1057,6 +1070,7 @@ describe('ServerConfigsDB', () => {
           url: 'https://example.com/mcp',
           title: 'Legacy Null Headers',
           headers: null,
+          requestHeaders: null,
         },
       });
       await mongoose.models.AclEntry.create({
@@ -1073,6 +1087,7 @@ describe('ServerConfigsDB', () => {
 
       expect(result).toBeDefined();
       expect(result).not.toHaveProperty('headers');
+      expect(result).not.toHaveProperty('requestHeaders');
       expect(MCPOptionsSchema.safeParse(result).success).toBe(true);
     });
 

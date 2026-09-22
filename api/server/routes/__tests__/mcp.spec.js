@@ -2692,6 +2692,7 @@ describe('MCP Routes', () => {
 
       expect(reinitSpy).toHaveBeenCalledWith(
         expect.objectContaining({
+          forceNew: true,
           upstreamTokenProvider: expect.any(Function),
           oboIdentityContext: expect.objectContaining({
             appUserId: 'test-user-id',

@@ -288,7 +288,6 @@ async function reinitMCPServer({
       if (isMCPInitializationError(err, signal)) {
         throw err;
       }
-      logger.info('[MCP Reinitialize] Connection attempt failed');
       logger.info(
         `[MCP Reinitialize] OAuth state - oauthRequired: ${oauthRequired}, oauthUrl: ${oauthUrl ? 'present' : 'null'}`,
       );

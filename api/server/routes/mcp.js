@@ -975,6 +975,7 @@ router.post(
       const result = await reinitMCPServer({
         user,
         serverName,
+        forceNew: true,
         serverConfig,
         configServers,
         userMCPAuthMap,

@@ -72,9 +72,11 @@ function sanitizeConfigHeaderMaps(config: ParsedServerConfig): {
     headers?: Record<string, string>;
     requestHeaders?: Record<string, string>;
   };
+  const headers = sanitizeCredentialPlaceholders(carrier.headers);
+  const requestHeaders = sanitizeCredentialPlaceholders(carrier.requestHeaders);
   return {
-    headers: sanitizeCredentialPlaceholders(carrier.headers),
-    requestHeaders: sanitizeCredentialPlaceholders(carrier.requestHeaders),
+    ...(headers !== undefined && { headers }),
+    ...(requestHeaders !== undefined && { requestHeaders }),
   };
 }
 
@@ -121,13 +123,23 @@ function sanitizeUserManagedOAuthConfig(config: ParsedServerConfig): ParsedServe
 function normalizePersistedConfig(config: ParsedServerConfig): ParsedServerConfig {
   const persistedConfig = config as ParsedServerConfig & {
     headers?: Record<string, string> | null;
+    requestHeaders?: Record<string, string> | null;
   };
-  if (persistedConfig.headers !== null) {
+  if (persistedConfig.headers !== null && persistedConfig.requestHeaders !== null) {
     return config;
   }
 
-  const { headers: _legacyNullHeaders, ...normalizedConfig } = persistedConfig;
-  return normalizedConfig as ParsedServerConfig;
+  const {
+    headers: legacyHeaders,
+    requestHeaders: legacyRequestHeaders,
+    ...normalizedConfig
+  } = persistedConfig;
+  return {
+    ...normalizedConfig,
+    ...(legacyHeaders !== null && legacyHeaders !== undefined && { headers: legacyHeaders }),
+    ...(legacyRequestHeaders !== null &&
+      legacyRequestHeaders !== undefined && { requestHeaders: legacyRequestHeaders }),
+  } as ParsedServerConfig;
 }
 
 function normalizeOAuthUrl(value?: string): string | undefined {
