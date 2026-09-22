@@ -1391,6 +1391,7 @@ describe('Message Operations', () => {
             status: 'completed',
             output: 'durable result',
             agentId: 'agent-a',
+            settledAt: expect.any(Date),
           },
         ],
       };
@@ -1600,6 +1601,7 @@ describe('Message Operations', () => {
             toolName: 'bash_tool',
             status: 'cancelled',
             output: 'Background task cancellation requested',
+            settledAt: expect.any(Date),
           },
         ],
       });
@@ -1646,6 +1648,7 @@ describe('Message Operations', () => {
             status: 'completed',
             output: 'one',
             agentId: 'agent-a',
+            settledAt: expect.any(Date),
           },
           {
             taskId: 'task-2',
@@ -1654,6 +1657,7 @@ describe('Message Operations', () => {
             status: 'completed',
             output: 'two',
             agentId: 'agent-a',
+            settledAt: expect.any(Date),
           },
         ],
       });
@@ -1957,6 +1961,7 @@ describe('Message Operations', () => {
             status: 'completed',
             output: 'a',
             agentId: 'agent-a',
+            settledAt: expect.any(Date),
           },
         ],
       });

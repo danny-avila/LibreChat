@@ -2311,10 +2311,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
   });
 
   it('reports ISO dispatch and settlement stamps with the elapsed span', async () => {
-    /** Just ahead of the real clock: the dispatch stamp is monotonic per process, so a
-     * mocked past would be bumped past the last real stamp instead of being taken. */
-    const dispatchedAt = Date.now() + 1_000;
-    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(dispatchedAt);
+    const nowSpy = jest.spyOn(Date, 'now');
     try {
       const created = backgroundTaskRegistry.create({
         userId: 'timing_user',
@@ -2325,6 +2322,9 @@ describe('runCheckBackgroundTask (singleton)', () => {
       if ('atCapacity' in created) {
         throw new Error('unexpected capacity');
       }
+      /** The dispatch stamp is monotonic per process, so it is whatever the registry
+       * assigned rather than the clock at this instant; drive the clock from it. */
+      const dispatchedAt = created.task.createdAt;
 
       nowSpy.mockReturnValue(dispatchedAt + 90_000);
       const running = JSON.parse(
@@ -2996,9 +2996,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     for (const polled of [first, second]) {
       expect(Number.isNaN(Date.parse(polled.started_at))).toBe(false);
       expect(Date.parse(polled.settled_at)).toBeGreaterThanOrEqual(Date.parse(polled.started_at));
-      expect(polled.elapsed_ms).toBe(
-        Date.parse(polled.settled_at) - Date.parse(polled.started_at),
-      );
+      expect(polled.elapsed_ms).toBe(Date.parse(polled.settled_at) - Date.parse(polled.started_at));
     }
   });
 
