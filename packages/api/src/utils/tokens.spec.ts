@@ -212,3 +212,25 @@ describe('vendor-prefixed model ids', () => {
     expect(getModelMaxTokens('us.anthropic.claude-3-5-sonnet-20241022-v2:0')).toBe(200000);
   });
 });
+
+describe('Grok 4.7 context window', () => {
+  it.each(['grok-4.7', 'x-ai/grok-4.7', 'xai/grok-4.7', 'grok-4-7'])(
+    'resolves %s through the custom endpoint without falling back to Grok 4',
+    (model) => {
+      expect(getModelMaxTokens(model, EModelEndpoint.custom)).toBe(500000);
+    },
+  );
+
+  it('preserves explicit operator context overrides', () => {
+    const config: EndpointTokenConfig = {
+      'grok-4.7': { prompt: 2, completion: 6, context: 32000, output: 4096 },
+    };
+    expect(getModelMaxTokens('grok-4.7', EModelEndpoint.custom, config)).toBe(32000);
+  });
+
+  it('keeps older Grok context windows unchanged', () => {
+    expect(getModelMaxTokens('grok-4', EModelEndpoint.custom)).toBe(256000);
+    expect(getModelMaxTokens('grok-4-fast', EModelEndpoint.custom)).toBe(2000000);
+    expect(getModelMaxTokens('grok-4.6', EModelEndpoint.custom)).toBe(500000);
+  });
+});

@@ -7,6 +7,7 @@ const fileRefSchema = new Schema(
     type: { type: String, maxlength: 256 },
     filepath: { type: String, maxlength: 2048 },
     filename: { type: String, maxlength: 1024 },
+    llmDeliveryPath: { type: String, enum: ['provider', 'text', 'none'] },
     height: { type: Number, min: 0 },
     width: { type: Number, min: 0 },
     bytes: { type: Number, min: 0 },

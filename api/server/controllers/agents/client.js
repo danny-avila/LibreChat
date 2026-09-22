@@ -1,9 +1,5 @@
 require('events').EventEmitter.defaultMaxListeners = 100;
-const {
-  logger,
-  MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH,
-  MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH,
-} = require('@librechat/data-schemas');
+const { logger, MAX_AGENT_EVENT_ACTOR_ENCODING_LENGTH } = require('@librechat/data-schemas');
 const { getBufferString, HumanMessage } = require('@librechat/agents/langchain/messages');
 const {
   createRun,
@@ -78,6 +74,11 @@ const {
   checkpointOwnerNamespacePrefix,
   isAskUserQuestionAdminDisabled,
   attachAskUserQuestionArgs,
+  prepareRetainedAnswers,
+  withRetainedAnswerTokenCounter,
+  applyRetainedAnswers,
+  prepareRetainedAnswerInvocationMessages,
+  resolveRetainedAnswersConfig,
   hydrateResumeRunSteps,
   createContentIndexOffsetHandlers,
   createSteerIndexOffsetHandlers,
@@ -109,6 +110,11 @@ const {
   traceIdForMessage,
   settlePendingLabelFills,
   stripActivityLabelParts,
+  stripUnusableSummaryParts,
+  dropUnusableSummaryParts,
+  getLatestEventActorSummary,
+  createAgentEventActorSummary,
+  normalizeAgentEventActorSummary,
   getRequestMemories,
   getMemoryAgentId,
   createMemoryProcessor,
@@ -136,6 +142,7 @@ const {
   isAttachmentObjectNotFoundError,
   buildAgentScopedContext,
   buildAgentScopedAttachmentMap,
+  resolveScopedTurnAttachments,
   buildAgentContextAttachmentsByAgentId,
   buildSkillPrimeContentParts,
   buildInitialToolSessions,
@@ -174,7 +181,6 @@ const {
   resolveToolRoleGrants,
   createTerminalRunErrorObserver,
   isAgentRunCancellation,
-  getSummaryPartText,
   markCompactionOutcome,
   resolvePersistableCodeEnvironmentDecision,
 } = require('@librechat/api');
@@ -220,28 +226,12 @@ const db = require('~/models');
 
 const loadAgent = (params) =>
   loadAgentFn(params, {
-    getAgent: db.getAgent,
+    getAgent: db.getAgentWithVersionCount,
     getMCPServerTools,
     getAccessibleMCPServers,
   });
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
-
-function normalizeEventActorSummary(summary) {
-  if (summary == null) {
-    return undefined;
-  }
-  if (
-    typeof summary.text !== 'string' ||
-    summary.text.length === 0 ||
-    summary.text.length > MAX_AGENT_EVENT_ACTOR_SUMMARY_LENGTH ||
-    !Number.isFinite(summary.tokenCount) ||
-    summary.tokenCount < 0
-  ) {
-    throw new RangeError('Event actor summary state is invalid');
-  }
-  return { text: summary.text, tokenCount: summary.tokenCount };
-}
 
 function normalizeEventActorContextMeta(contextMeta) {
   if (contextMeta == null) {
@@ -337,24 +327,6 @@ function captureRunContextMeta(client) {
   });
 }
 
-function getLatestEventActorSummary(contentParts) {
-  if (!Array.isArray(contentParts)) {
-    return undefined;
-  }
-  for (let index = contentParts.length - 1; index >= 0; index -= 1) {
-    const part = contentParts[index];
-    const text = getSummaryPartText(part);
-    if (text.length === 0) {
-      continue;
-    }
-    return normalizeEventActorSummary({
-      text,
-      tokenCount: Number.isFinite(part.tokenCount) && part.tokenCount >= 0 ? part.tokenCount : 0,
-    });
-  }
-  return undefined;
-}
-
 /**
  * User-visible text for a failed run. LangChain classifies provider errors by mutating
  * `error.message` with a docs URL, so a classified failure becomes typed copy the client localizes
@@ -423,7 +395,7 @@ class AgentClient extends BaseClient {
     }
   }
 
-  async processAttachments(message, attachments) {
+  async processAttachments(message, attachments, fileConsumers) {
     const modelBoundAttachments = this.getModelBoundAttachmentsForEndpoint(attachments);
     const processableAttachments = this.getProcessableAttachmentsForEndpoint(
       attachments,
@@ -443,7 +415,7 @@ class AgentClient extends BaseClient {
     };
     logAgentMemorySnapshot('before_process_attachments', memoryContext);
     try {
-      return await super.processAttachments(message, processableAttachments);
+      return await super.processAttachments(message, processableAttachments, fileConsumers);
     } finally {
       logAgentMemorySnapshot('after_process_attachments', memoryContext);
     }
@@ -1971,7 +1943,7 @@ class AgentClient extends BaseClient {
       agentsEConfig?.toolApproval?.enabled !== false,
     );
     const persistedCodeEnvironmentDecision = resolvePersistableCodeEnvironmentDecision({
-      conversationId: this.conversationId,
+      conversationId: this.options.req.body.conversationId,
       decision: this.options.req._codeEnvironmentDecision,
       conversation: this.options.req.resolvedConversation,
       requested: this.options.req.body,
@@ -2014,6 +1986,15 @@ class AgentClient extends BaseClient {
         this.options.req?.config?.filters,
         this.options.req?.config?.messageFilter?.pii,
       )
+    );
+  }
+
+  /** Attachments alone defer only the message, so a new conversation still gets its row when
+   * the run starts, as it did before that deferral. A content policy holds back every write. */
+  shouldSeedDeferredConversation() {
+    return !hasModelBoundContentProtection(
+      this.options.req?.config?.filters,
+      this.options.req?.config?.messageFilter?.pii,
     );
   }
 
@@ -2117,7 +2098,7 @@ class AgentClient extends BaseClient {
     let compactionSemanticIndex;
     try {
       discoveredToolNames = normalizeAgentEventActorDiscoveredTools(state.discoveredToolNames);
-      summary = normalizeEventActorSummary(state.summary);
+      summary = normalizeAgentEventActorSummary(state.summary);
       contextMeta = normalizeEventActorContextMeta(state.contextMeta);
       compactionSemanticIndex = restoreCompactionSemanticIndexSnapshot(
         state.compactionSemanticIndex,
@@ -2206,7 +2187,13 @@ class AgentClient extends BaseClient {
         (this.eventActorContinuation === 'warm' ? (this.eventActorDiscoveredToolNames ?? []) : [])),
       ...(this.run == null ? [] : getRunDiscoveredTools(this.run)),
     ]);
-    const summary = getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary;
+    /** Stamped where state is assembled, not where each source is read: a
+     *  summary inherited from the formatter arrives in the SDK's
+     *  `{ text, tokenCount }` shape, and persisting it unstamped would have the
+     *  next event refuse its own state and reload the whole history. */
+    const summary = createAgentEventActorSummary(
+      getLatestEventActorSummary(this.contentParts) ?? this.eventActorSummary,
+    );
     this.eventActorSummary = summary;
     const compactionSemanticIndex = createCompactionSemanticIndexProjection(
       this.compactionSemanticIndexSnapshot,
@@ -2216,6 +2203,7 @@ class AgentClient extends BaseClient {
         agents: this.eventActorAgentContextSources ?? agents,
         invokedSkills: skillManifest,
         approvalPolicy: agentsConfig?.toolApproval,
+        retainedAnswers: resolveRetainedAnswersConfig(agentsConfig?.askUserQuestion),
         memory,
         discoveredToolNames,
         checkpointerType: agentsConfig?.checkpointer?.type,
@@ -2278,6 +2266,12 @@ class AgentClient extends BaseClient {
     void this.publishRunContextMeta?.();
   }
 
+  /** Every row `loadHistory` read this turn, held only until the retained
+   *  answers are built: the walk it returns stops at a checkpoint summary. */
+  onHistoryLoaded(rows) {
+    this.loadedHistoryRows = rows;
+  }
+
   async loadHistory(conversationId, parentMessageId = null) {
     if (this.eventActorContinuation === 'warm') {
       logger.debug('[AgentClient] Skipping durable history for compatible event actor', {
@@ -2304,6 +2298,26 @@ class AgentClient extends BaseClient {
       mapMethod: createMultiAgentMapper(this.options.agent, this.agentConfigs),
       mapCondition: (message) => message.addedConvo === true,
     });
+    /**
+     * Answers the user gave to earlier `ask_user_question` calls. Read from the
+     * rows before `messages` is narrowed to `orderedMessages`; when those rows
+     * stop short of the branch root (the history read stopped at a checkpoint
+     * summary, or a warm event-actor turn holds only its new event message) the
+     * module completes the branch from the rows that read already fetched, or
+     * through the stored-row query when there was no read. Rendered here,
+     * applied after SDK summary slicing in chatCompletion.
+     */
+    const retainedAnswersPromise = prepareRetainedAnswers({
+      messages,
+      parentMessageId,
+      storedRows: this.loadedHistoryRows,
+      getMessages: db.getMessages,
+      conversationId: this.conversationId,
+      userId: this.user ?? this.options.req.user?.id,
+      config: this.options.req.config?.endpoints?.[EModelEndpoint.agents]?.askUserQuestion,
+      encoding: this.getEncoding(),
+    });
+    this.loadedHistoryRows = undefined;
 
     let payload;
     /** @type {number | undefined} */
@@ -2402,6 +2416,16 @@ class AgentClient extends BaseClient {
       ...modelBoundRequestAttachments,
     ];
     const sharedRunAttachmentIds = collectFileIds(sharedAttachmentFiles);
+    this.options.agentContextAttachmentsByAgentId = resolveScopedTurnAttachments({
+      agents: allAgents,
+      sharedConversationAgentIds: [this.options.agent.id, ...(this.agentConfigs?.keys() ?? [])],
+      resendFiles: this.options.resendFiles,
+      messages: orderedMessages,
+      historicalFiles: this.authorizedHistoricalFiles,
+      requestAttachments,
+      sharedRunAttachmentIds,
+      attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
+    });
     const scopedAttachmentMap = buildAgentScopedAttachmentMap({
       agentIds: allAgents.map(({ agentId }) => agentId),
       attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
@@ -2590,6 +2614,17 @@ class AgentClient extends BaseClient {
       const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
       applyAttachmentOnlyText(formattedMessage, turnFiles);
 
+      /**
+       * A summarize round that errored or was cut off never reaches the model:
+       * the formatter would take its partial text as the history boundary and
+       * drop everything older. Dropped from the prompt copy here, ahead of the
+       * counts, so the per-index count, the prompt total admission checks, and
+       * the steer-media adjustments below all describe what is actually sent.
+       * The stored message keeps the part — the renderer labels it — so a
+       * canonical recount reads an unstripped surface instead.
+       */
+      const droppedPromptSummary = dropUnusableSummaryParts(formattedMessage);
+
       const dbTokenCount = Number(orderedMessages[i].tokenCount);
       const hasDbTokenCount = Number.isFinite(dbTokenCount) && dbTokenCount > 0;
       /**
@@ -2607,19 +2642,21 @@ class AgentClient extends BaseClient {
       let canonicalTokenCount = hasDbTokenCount ? dbTokenCount : 0;
       if (needsCanonicalTokenCount) {
         /** Without fileContext the memory copy is content-identical to the
-         *  prompt copy, so the prompt copy is the counting surface; with it,
-         *  the canonical count must exclude the prepended context. */
+         *  prompt copy, so the prompt copy is the counting surface; with it (or
+         *  with a dropped summary), the canonical count must be taken from the
+         *  message as stored. */
         let countSurface = formattedMessage;
-        if (message.fileContext) {
+        if (message.fileContext || droppedPromptSummary) {
           memoryFormattedMessages[i] = buildMemoryFormattedMessage(message);
           countSurface = memoryFormattedMessages[i];
         }
         canonicalTokenCount = countFormattedMessageTokens(countSurface, encoding);
       }
 
-      const promptMessageTokenCount = message.fileContext
-        ? countFormattedMessageTokens(formattedMessage, encoding)
-        : canonicalTokenCount;
+      const promptMessageTokenCount =
+        message.fileContext || droppedPromptSummary
+          ? countFormattedMessageTokens(formattedMessage, encoding)
+          : canonicalTokenCount;
 
       /* If message has files, calculate image token cost */
       if (this.message_file_map && this.message_file_map[message.messageId]) {
@@ -2819,6 +2856,9 @@ class AgentClient extends BaseClient {
       earlySharedContextPromise,
       agentScopedContextPromise,
     ]);
+
+    this.retainedAnswers = await retainedAnswersPromise;
+    promptTokens += this.retainedAnswers.tokenCount;
 
     /** Augmented prompt from RAG/context handlers */
     this.augmentedPrompt = augmentedPrompt;
@@ -4371,13 +4411,18 @@ class AgentClient extends BaseClient {
     let run;
     /** @type {Promise<(TAttachment | null)[] | undefined>} */
     let memoryPromise;
+    const appConfig = this.options.req.config;
     const terminalRunError = createTerminalRunErrorObserver({
+      maxProviderErrorChars: appConfig?.endpoints?.agents?.maxProviderErrorChars,
       logger,
       responseMessageId: this.responseMessageId,
       source: '[api/server/controllers/agents/client.js #sendCompletion]',
       genericMessage: '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error',
+      protectionEnabled: hasModelBoundContentProtection(
+        appConfig?.filters,
+        appConfig?.messageFilter?.pii,
+      ),
     });
-    const appConfig = this.options.req.config;
     const balanceConfig = getBalanceConfig(appConfig);
     const transactionsConfig = getTransactionsConfig(appConfig);
     try {
@@ -4531,7 +4576,10 @@ class AgentClient extends BaseClient {
         this.options.subagentTasks == null ? undefined : [Constants.CHECK_BACKGROUND_TASK],
         payload,
       );
-      const tokenCounter = await createCachedTokenCounter(this.getEncoding());
+      const tokenCounter = withRetainedAnswerTokenCounter(
+        await createCachedTokenCounter(this.getEncoding()),
+        this.getEncoding(),
+      );
 
       /** Pre-resolve invoked skill bodies + re-prime files before formatting messages */
       if (this.eventActorContinuation === 'cold') {
@@ -4620,6 +4668,10 @@ class AgentClient extends BaseClient {
           intentToolNames: semanticIntentToolNames,
         },
       };
+      /** The payload reached here already free of unusable summary parts:
+       *  `buildMessages` drops them from each prompt copy before counting it,
+       *  so the formatter's summary scan cannot take a failed round's prefix as
+       *  the history boundary and every count describes what is sent. */
       let {
         messages: initialMessages,
         indexTokenCountMap,
@@ -4716,16 +4768,24 @@ class AgentClient extends BaseClient {
         tokenCounter,
       });
 
+      const memorySourceMessages = initialMessages;
+      ({ messages: initialMessages, indexTokenCountMap } = applyRetainedAnswers({
+        block: this.retainedAnswers?.block,
+        messages: initialMessages,
+        indexTokenCountMap,
+        tokenCounter,
+      }));
+
       const memoryMessages =
         this.processMemory && this.memoryPayload && !isCompactionTurn
           ? formatAgentMessages(
-              stripActivityLabelParts(this.memoryPayload),
+              stripUnusableSummaryParts(stripActivityLabelParts(this.memoryPayload)),
               undefined,
               toolSet,
               skillPrimeResult?.skills,
               hasMessageFormatOptions ? messageFormatOptions : undefined,
             ).messages
-          : initialMessages;
+          : memorySourceMessages;
 
       /**
        * @param {BaseMessage[]} messages
@@ -4967,8 +5027,11 @@ class AgentClient extends BaseClient {
         /** The inherited tier must be on the job before any Stop can read it. */
         await this.publishRunContextMeta?.();
         try {
-          const invocationMessages =
-            this.eventActorContinuation === 'warm' ? messages.slice(-1) : messages;
+          const invocationMessages = await prepareRetainedAnswerInvocationMessages(
+            messages,
+            this.eventActorContinuation === 'warm',
+            () => run.graphRunnable.getState(config),
+          );
           await run.processStream({ messages: invocationMessages }, config, {
             callbacks: {
               [Callback.TOOL_ERROR]: logToolError,
@@ -5238,13 +5301,18 @@ class AgentClient extends BaseClient {
     let config;
     /** @type {ReturnType<createRun>} */
     let run;
+    const appConfig = this.options.req.config;
     const terminalRunError = createTerminalRunErrorObserver({
+      maxProviderErrorChars: appConfig?.endpoints?.agents?.maxProviderErrorChars,
       logger,
       responseMessageId: this.responseMessageId,
       source: '[api/server/controllers/agents/client.js #resumeCompletion]',
       genericMessage: '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
+      protectionEnabled: hasModelBoundContentProtection(
+        appConfig?.filters,
+        appConfig?.messageFilter?.pii,
+      ),
     });
-    const appConfig = this.options.req.config;
     const balanceConfig = getBalanceConfig(appConfig);
     const transactionsConfig = getTransactionsConfig(appConfig);
     try {
@@ -5312,7 +5380,10 @@ class AgentClient extends BaseClient {
         this.contentParts.push(...seedContent);
       }
 
-      const tokenCounter = await createCachedTokenCounter(this.getEncoding());
+      const tokenCounter = withRetainedAnswerTokenCounter(
+        await createCachedTokenCounter(this.getEncoding()),
+        this.getEncoding(),
+      );
       this.compactionSemanticIndexSnapshot =
         restoreCompactionSemanticIndexSnapshot(compactionSemanticIndex);
       const agents = collectReachableAgents([

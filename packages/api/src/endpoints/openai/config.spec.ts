@@ -909,9 +909,9 @@ describe('getOpenAIConfig', () => {
         reverseProxyUrl: 'https://${INSTANCE_NAME}.openai.azure.com/openai/v1',
       });
 
-      // The constructAzureURL should replace placeholders with actual values
+      // AzureChatOpenAI appends the deployment to its base path, including for a v1 resource URL.
       expect((result.llmConfig as Record<string, unknown>).azureOpenAIBasePath).toBe(
-        'https://test-instance.openai.azure.com/openai/v1',
+        'https://test-instance.openai.azure.com/openai/deployments',
       );
     });
 
@@ -2197,5 +2197,32 @@ describe('getOpenAIConfig', () => {
         expect(result.llmConfig.maxTokens).toBe(500);
       });
     });
+  });
+});
+
+describe('Grok 4.7 xAI configuration', () => {
+  it.each([
+    ReasoningEffort.low,
+    ReasoningEffort.medium,
+    ReasoningEffort.high,
+    ReasoningEffort.xhigh,
+  ])('forwards %s effort through the existing Chat Completions path', (effort) => {
+    const result = getOpenAIConfig(
+      'test-xai-key',
+      {
+        reverseProxyUrl: 'https://api.x.ai/v1',
+        modelOptions: { model: 'grok-4.7', reasoning_effort: effort },
+      },
+      'xai',
+    );
+    expect(result.configOptions?.baseURL).toBe('https://api.x.ai/v1');
+    expect(result.llmConfig.model).toBe('grok-4.7');
+    expect(result.llmConfig.modelKwargs).toMatchObject({ reasoning_effort: effort });
+    expect(result.llmConfig.useResponsesApi).not.toBe(true);
+  });
+
+  it('leaves reasoning effort unset so xAI applies its default', () => {
+    const result = getOpenAIConfig('test-xai-key', { modelOptions: { model: 'grok-4.7' } }, 'xai');
+    expect(result.llmConfig.modelKwargs?.reasoning_effort).toBeUndefined();
   });
 });

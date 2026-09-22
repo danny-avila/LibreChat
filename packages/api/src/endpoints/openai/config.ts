@@ -7,9 +7,9 @@ import { getGoogleConfig, stripGeminiFlashBlockedParams } from '~/endpoints/goog
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { createSSRFSafeAgents, createSSRFSafeUndiciConnect } from '~/auth';
 import { getOpenAILLMConfig, extractDefaultParams } from './llm';
+import { constructAzureResponsesURL } from '~/utils/azure';
 import { transformToOpenAIConfig } from './transform';
 import { getProxyDispatcher } from '~/utils/proxy';
-import { constructAzureURL } from '~/utils/azure';
 import { createFetch } from '~/utils/generators';
 import { mergeHeaders } from '~/utils/headers';
 
@@ -270,20 +270,21 @@ export function getOpenAIConfig(
         return;
       }
 
-      const updatedUrl = configOptions.baseURL?.replace(/\/deployments(?:\/.*)?$/, '/v1');
-
-      configOptions.baseURL = constructAzureURL({
-        baseURL: updatedUrl || 'https://${INSTANCE_NAME}.openai.azure.com/openai/v1',
-        azureOptions: azure,
-      });
+      const responsesURL = constructAzureResponsesURL(configOptions.baseURL, azure);
+      const urlQuery = Object.fromEntries(responsesURL.searchParams);
+      responsesURL.search = '';
+      responsesURL.hash = '';
+      configOptions.baseURL = responsesURL.toString();
 
       configOptions.defaultHeaders = {
         ...configOptions.defaultHeaders,
         'api-key': apiKey,
       };
       configOptions.defaultQuery = {
+        ...urlQuery,
         ...configOptions.defaultQuery,
-        'api-version': configOptions.defaultQuery?.['api-version'] ?? 'preview',
+        'api-version':
+          configOptions.defaultQuery?.['api-version'] ?? urlQuery['api-version'] ?? 'preview',
       };
     };
 

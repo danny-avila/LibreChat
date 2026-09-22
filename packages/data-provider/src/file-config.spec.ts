@@ -9,6 +9,7 @@ import {
   bedrockDocumentMimeTypes,
   isAnthropicDocumentType,
   isPermissiveMimeConfig,
+  isExplicitMimeConfig,
   convertStringsToRegex,
   setFileConfigRegexCompiler,
   documentParserMimeTypes,
@@ -967,6 +968,20 @@ describe('getEndpointFileConfig', () => {
       expect(merged.skills?.fileSizeLimit).toBe(15 * 1024 * 1024);
     });
 
+    it('defaults skill rollback concurrency and preserves configured overrides', () => {
+      expect(mergeFileConfig(undefined).skills?.importCleanupConcurrency).toBe(8);
+      const parsed = fileConfigSchema.parse({ skills: { importCleanupConcurrency: 3 } });
+      const merged = mergeFileConfig(parsed);
+      expect(merged.skills?.importCleanupConcurrency).toBe(3);
+      expect(merged.skills?.fileSizeLimit).toBe(50 * 1024 * 1024);
+    });
+
+    it.each([0, -1, 1.5])('rejects invalid rollback concurrency %s', (concurrency) => {
+      expect(
+        fileConfigSchema.safeParse({ skills: { importCleanupConcurrency: concurrency } }).success,
+      ).toBe(false);
+    });
+
     it('should default skills fileSizeLimit to 50 MB', () => {
       const merged = mergeFileConfig(undefined);
 
@@ -1396,6 +1411,35 @@ describe('getEndpointFileConfig', () => {
       expect(result.totalSizeLimit).toBe(0);
       expect(result.supportedMimeTypes).toEqual([]);
     });
+  });
+});
+
+describe('isExplicitMimeConfig', () => {
+  it('is false for undefined or empty lists', () => {
+    expect(isExplicitMimeConfig(undefined)).toBe(false);
+    expect(isExplicitMimeConfig([])).toBe(false);
+  });
+
+  it('is false for the built-in default list (inherited, not configured)', () => {
+    expect(isExplicitMimeConfig(supportedMimeTypes)).toBe(false);
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: mergeFileConfig({ endpoints: { Other: { fileLimit: 1 } } }),
+      endpoint: 'MyGateway',
+      endpointType: 'custom',
+    });
+    expect(isExplicitMimeConfig(endpointConfig.supportedMimeTypes)).toBe(false);
+  });
+
+  it('is true for an admin-configured list, permissive or not', () => {
+    const endpointConfig = getEndpointFileConfig({
+      fileConfig: mergeFileConfig({
+        endpoints: { MyGateway: { supportedMimeTypes: ['image/.*', 'video/.*'] } },
+      }),
+      endpoint: 'MyGateway',
+      endpointType: 'custom',
+    });
+    expect(isExplicitMimeConfig(endpointConfig.supportedMimeTypes)).toBe(true);
+    expect(isExplicitMimeConfig([/.*/])).toBe(true);
   });
 });
 
@@ -1975,6 +2019,58 @@ describe('defaultLLMDeliveryPath config merging', () => {
   it('should default legacyFileUploadUX to undefined when not set', () => {
     const merged = mergeFileConfig(undefined);
     expect(merged.legacyFileUploadUX).toBeUndefined();
+  });
+});
+
+describe('textFallbackWithoutTools config merging', () => {
+  const resolveFor = (dynamic: Parameters<typeof mergeFileConfig>[0], endpoint: string) =>
+    getEndpointFileConfig({ fileConfig: mergeFileConfig(dynamic), endpoint })
+      .textFallbackWithoutTools;
+
+  it('is off unless configured', () => {
+    expect(mergeFileConfig(undefined).textFallbackWithoutTools).toBeUndefined();
+    expect(resolveFor(undefined, EModelEndpoint.openAI)).toBeUndefined();
+    expect(resolveFor({ endpoints: { default: {} } }, EModelEndpoint.openAI)).toBeUndefined();
+  });
+
+  it('accepts the setting at the top level and on an endpoint', () => {
+    expect(
+      fileConfigSchema.safeParse({
+        textFallbackWithoutTools: true,
+        endpoints: { openAI: { textFallbackWithoutTools: false } },
+      }).success,
+    ).toBe(true);
+    expect(fileConfigSchema.safeParse({ textFallbackWithoutTools: 'yes' }).success).toBe(false);
+  });
+
+  it('reaches an endpoint configured for it', () => {
+    expect(
+      resolveFor(
+        { endpoints: { [EModelEndpoint.openAI]: { textFallbackWithoutTools: true } } },
+        EModelEndpoint.openAI,
+      ),
+    ).toBe(true);
+  });
+
+  it('is inherited from the top level and from the default endpoint', () => {
+    expect(resolveFor({ textFallbackWithoutTools: true }, EModelEndpoint.anthropic)).toBe(true);
+    expect(
+      resolveFor({ endpoints: { default: { textFallbackWithoutTools: true } } }, 'MyGateway'),
+    ).toBe(true);
+  });
+
+  it('lets an endpoint turn off what it would inherit', () => {
+    expect(
+      resolveFor(
+        {
+          endpoints: {
+            default: { textFallbackWithoutTools: true },
+            [EModelEndpoint.openAI]: { textFallbackWithoutTools: false },
+          },
+        },
+        EModelEndpoint.openAI,
+      ),
+    ).toBe(false);
   });
 });
 

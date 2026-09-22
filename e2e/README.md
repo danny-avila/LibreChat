@@ -2,6 +2,40 @@
 
 The mock e2e profile is the safest default for generated tests. It starts LibreChat with `e2e/config/librechat.e2e.yaml`, injects an in-process fake LLM (via `LIBRECHAT_TEST_RUN_HOOK`), creates an authenticated e2e user, and avoids real provider credentials.
 
+## Deployed-instance smoke test
+
+The deployed profile exercises an existing LibreChat deployment without starting another app or
+database. It uses the deployment's configured model provider and persists a real conversation, so
+run it only with a dedicated test account in an environment where that traffic is expected.
+
+First, create Playwright storage state by signing in through the deployment's normal login flow:
+
+```sh
+npx playwright codegen \
+  --save-storage=e2e/storageState.json \
+  https://librechat.example.com/c/new
+```
+
+Close codegen after sign-in, then run the smoke test:
+
+```sh
+E2E_BASE_URL=https://librechat.example.com \
+  npm run e2e:deployed
+```
+
+The storage-state file contains session credentials. The default path is ignored by Git; do not
+commit it or include it in test artifacts.
+
+Set `E2E_STORAGE_STATE` when the auth file is mounted elsewhere. If the account has no default
+model, set `E2E_DEPLOYED_MODEL` to the exact configured model label. `E2E_DEPLOYED_PROMPT` can
+replace the short default prompt, and `E2E_IGNORE_HTTPS_ERRORS=true` supports deployments using a
+self-signed certificate.
+
+The profile deliberately has no global setup, database access, or web server. It verifies the
+authenticated shell, sends one real prompt, reloads the resulting conversation, and deletes only
+the conversation created by that run through LibreChat's authenticated API. Keep deterministic
+provider behavior and destructive database fixtures in the mock profile instead.
+
 ## Stream Stores and Shards
 
 The mock profile uses the in-memory generation stream store by default. To exercise the same browser scenarios through a real Redis job store and pub/sub transport, start Redis on port 6379 and run:
