@@ -13,16 +13,6 @@ import {
 import { REPLY_NOTIFICATION_DEFAULTS, useReplyAlertPreferences } from './replyNotificationSettings';
 import { useActiveJobs } from '~/data-provider';
 
-const AWAY_POLL_MS = 30_000;
-/**
- * How often a focused tab refreshes the list on its own.
- *
- * Deliberately far slower than the away poll: the user is looking at the sidebar, alerts are
- * suppressed here anyway, and this exists only so a reply produced elsewhere while they sit
- * still eventually shows its dot rather than waiting for an unrelated refetch.
- */
-const FOCUSED_REFRESH_MS = 5 * 60_000;
-
 /**
  * Timestamps are the only thing worth taking from a fresher copy; everything else in the row is
  * either already current or derived per list request.
@@ -409,8 +399,17 @@ const mergeTimestamps = async (
  */
 export default function useReplyWatcher() {
   const queryClient = useQueryClient();
-  const { notificationsEnabled, soundEnabled, badgeEnabled, pollLimit } =
-    useReplyAlertPreferences();
+  /* Both cadences come from `interface.replyNotifications`. The focused refresh is deliberately
+     far slower than the away poll: the user is looking at the sidebar, alerts are suppressed
+     there anyway, and it exists only so a reply produced elsewhere eventually shows its dot. */
+  const {
+    notificationsEnabled,
+    soundEnabled,
+    badgeEnabled,
+    pollLimit,
+    pollIntervalMs,
+    focusedRefreshMs,
+  } = useReplyAlertPreferences();
   const { data: activeJobsData } = useActiveJobs();
   const activeJobIds = activeJobsData?.activeJobIds;
   const runningRef = useRef<Set<string> | null>(null);
@@ -468,9 +467,9 @@ export default function useReplyWatcher() {
       if (document.hasFocus()) {
         void refreshConversationLists(queryClient, [], pollLimit).catch(() => {});
       }
-    }, FOCUSED_REFRESH_MS);
+    }, focusedRefreshMs);
     return () => window.clearInterval(timer);
-  }, [queryClient, pollLimit]);
+  }, [queryClient, pollLimit, focusedRefreshMs]);
 
   useEffect(() => {
     if (!notificationsEnabled && !soundEnabled && !badgeEnabled) {
@@ -585,10 +584,10 @@ export default function useReplyWatcher() {
       }
     };
 
-    const timer = window.setInterval(poll, AWAY_POLL_MS);
+    const timer = window.setInterval(poll, pollIntervalMs);
     return () => {
       active = false;
       window.clearInterval(timer);
     };
-  }, [notificationsEnabled, soundEnabled, badgeEnabled, pollLimit, queryClient]);
+  }, [notificationsEnabled, soundEnabled, badgeEnabled, pollLimit, pollIntervalMs, queryClient]);
 }

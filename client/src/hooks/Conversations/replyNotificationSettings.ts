@@ -32,17 +32,25 @@ export const REPLY_NOTIFICATION_DEFAULTS: Required<TReplyNotificationsConfig> = 
   desktop: true,
   sound: true,
   pollLimit: 100,
+  pollIntervalMs: 30_000,
+  focusedRefreshMs: 300_000,
 };
 
-const isBounded = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 100;
+const isWithin =
+  (min: number, max: number) =>
+  (value: unknown): value is number =>
+    typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
+
+const isBounded = isWithin(1, 100);
+const isPollInterval = isWithin(10_000, 600_000);
+const isFocusedRefresh = isWithin(60_000, 3_600_000);
 
 /** Nothing is permitted until the deployment has answered. */
 const PENDING_CAPABILITIES: Required<TReplyNotificationsConfig> = {
+  ...REPLY_NOTIFICATION_DEFAULTS,
   tabBadge: false,
   desktop: false,
   sound: false,
-  pollLimit: REPLY_NOTIFICATION_DEFAULTS.pollLimit,
 };
 
 /**
@@ -71,8 +79,22 @@ export function useReplyNotificationCapabilities(): Required<TReplyNotifications
       pollLimit: isBounded(configured?.pollLimit)
         ? configured.pollLimit
         : REPLY_NOTIFICATION_DEFAULTS.pollLimit,
+      pollIntervalMs: isPollInterval(configured?.pollIntervalMs)
+        ? configured.pollIntervalMs
+        : REPLY_NOTIFICATION_DEFAULTS.pollIntervalMs,
+      focusedRefreshMs: isFocusedRefresh(configured?.focusedRefreshMs)
+        ? configured.focusedRefreshMs
+        : REPLY_NOTIFICATION_DEFAULTS.focusedRefreshMs,
     };
-  }, [loaded, configured?.tabBadge, configured?.desktop, configured?.sound, configured?.pollLimit]);
+  }, [
+    loaded,
+    configured?.tabBadge,
+    configured?.desktop,
+    configured?.sound,
+    configured?.pollLimit,
+    configured?.pollIntervalMs,
+    configured?.focusedRefreshMs,
+  ]);
 }
 
 /** What this device wants, once the deployment's gate has been applied to it. */
@@ -81,6 +103,8 @@ export interface ReplyAlertPreferences {
   notificationsEnabled: boolean;
   soundEnabled: boolean;
   pollLimit: number;
+  pollIntervalMs: number;
+  focusedRefreshMs: number;
 }
 
 /**
@@ -98,6 +122,8 @@ export function useReplyAlertPreferences(): ReplyAlertPreferences {
       notificationsEnabled: capabilities.desktop && notificationsPreferred,
       soundEnabled: capabilities.sound && soundPreferred,
       pollLimit: capabilities.pollLimit,
+      pollIntervalMs: capabilities.pollIntervalMs,
+      focusedRefreshMs: capabilities.focusedRefreshMs,
     }),
     [capabilities, badgePreferred, notificationsPreferred, soundPreferred],
   );

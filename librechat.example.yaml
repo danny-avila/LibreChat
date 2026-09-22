@@ -261,6 +261,10 @@ interface:
   #   # own maximum page is the ceiling, so covering a deployment whose replies outpace one
   #   # page is not a matter of raising this.
   #   pollLimit: 100
+  #   # Milliseconds between list checks while a tab is away (10000-600000, default: 30000).
+  #   pollIntervalMs: 30000
+  #   # Milliseconds between list refreshes while a tab is focused (60000-3600000, default: 300000).
+  #   focusedRefreshMs: 300000
   # Conversation trace viewer: a waterfall of the model calls and tool spans behind
   # each response, read from the deployment's Langfuse project. The control only
   # appears on the requesting user's own conversations with a sampled trace, and

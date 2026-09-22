@@ -2229,8 +2229,22 @@ export const interfaceSchema = z
          * server-side unseen query rather than a larger page.
          */
         pollLimit: z.number().int().min(1).max(100).optional(),
+        /** Milliseconds between list checks while the tab is unfocused and an away alert is on. */
+        pollIntervalMs: z.number().int().min(10_000).max(600_000).optional(),
+        /**
+         * Milliseconds between list refreshes while the tab is focused, so a reply produced
+         * elsewhere eventually shows its dot. Deliberately far slower than the away poll.
+         */
+        focusedRefreshMs: z.number().int().min(60_000).max(3_600_000).optional(),
       })
-      .default({ tabBadge: true, desktop: true, sound: true, pollLimit: 100 }),
+      .default({
+        tabBadge: true,
+        desktop: true,
+        sound: true,
+        pollLimit: 100,
+        pollIntervalMs: 30_000,
+        focusedRefreshMs: 300_000,
+      }),
     schedules: z
       .union([
         z.boolean(),
@@ -2325,6 +2339,8 @@ export const interfaceSchema = z
       desktop: true,
       sound: true,
       pollLimit: 100,
+      pollIntervalMs: 30_000,
+      focusedRefreshMs: 300_000,
     },
     // `schedules` is deliberately ABSENT from this default. It is experimental and
     // default-off in v1, and zod applies this whole object when `interface` is omitted

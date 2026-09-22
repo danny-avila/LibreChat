@@ -52,11 +52,14 @@ const withLoadedConfig = (client: QueryClient): QueryClient => {
 
 type Toggles = { notifications?: boolean; sound?: boolean; badge?: boolean };
 
-function setup(toggles: Toggles = {}) {
+function setup(toggles: Toggles = {}, replyNotifications?: Record<string, number | boolean>) {
   const { notifications = false, sound = false, badge = false } = toggles;
   const queryClient = withLoadedConfig(
     new QueryClient({ defaultOptions: { queries: { retry: false } } }),
   );
+  if (replyNotifications) {
+    queryClient.setQueryData(startupConfigKey(false), { interface: { replyNotifications } });
+  }
   queryClient.setQueryData(listKey, {
     pages: [
       {
@@ -225,6 +228,22 @@ describe('useReplyWatcher', () => {
 
     expect(mockListConversations).toHaveBeenCalled();
     await waitFor(() => expect(isConversationUnseen(cachedConvo())).toBe(true));
+  });
+
+  it('polls away at the cadence the deployment configured', async () => {
+    mockListConversations.mockResolvedValue({ conversations: [], nextCursor: null });
+
+    setup({ notifications: true }, { pollIntervalMs: 10_000 });
+
+    await act(async () => {
+      jest.advanceTimersByTime(9_999);
+    });
+    expect(mockListConversations).not.toHaveBeenCalled();
+
+    await act(async () => {
+      jest.advanceTimersByTime(1);
+    });
+    expect(mockListConversations).toHaveBeenCalledTimes(1);
   });
 
   it('polls while away when only the notification sound is enabled', async () => {
