@@ -3356,6 +3356,8 @@ export const visionModels = [
   'grok-vision',
   'grok-2-vision',
   'grok-3',
+  'grok-4.7',
+  'grok-4-7',
   'gpt-4o-mini',
   'gpt-4o',
   'gpt-4-turbo',

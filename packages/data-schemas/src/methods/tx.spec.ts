@@ -3154,3 +3154,41 @@ describe('vendor-prefixed pricing keys', () => {
 
 // Cross-package sync validation tests (tokens.ts ↔ tx.ts) moved to
 // packages/api tests since they require maxTokensMap from @librechat/api.
+
+describe('Grok 4.7 pricing', () => {
+  it.each(['grok-4.7', 'x-ai/grok-4.7', 'xai/grok-4.7', 'grok-4-7'])(
+    'bills %s at standard and inclusive long-context rates',
+    (model) => {
+      const key = model.split('/').pop()!;
+      for (const inputTokenCount of [199999, 200000, 200001, 500000]) {
+        const rates = inputTokenCount < 200000 ? tokenValues[key] : premiumTokenValues[key];
+        const cache =
+          inputTokenCount < 200000 ? cacheTokenValues[key] : premiumCacheTokenValues[key];
+        expect(getMultiplier({ model, tokenType: 'prompt', inputTokenCount })).toBe(rates.prompt);
+        expect(getMultiplier({ model, tokenType: 'completion', inputTokenCount })).toBe(
+          rates.completion,
+        );
+        expect(getCacheMultiplier({ model, cacheType: 'read', inputTokenCount })).toBe(cache.read);
+        expect(getCacheMultiplier({ model, cacheType: 'write', inputTokenCount })).toBe(
+          cache.write,
+        );
+      }
+    },
+  );
+
+  it('preserves explicit operator billing overrides', () => {
+    const model = 'grok-4.7';
+    const endpointTokenConfig = { [model]: { prompt: 3, completion: 7, read: 0.75, write: 3 } };
+    expect(
+      getMultiplier({ model, tokenType: 'prompt', inputTokenCount: 200000, endpointTokenConfig }),
+    ).toBe(endpointTokenConfig[model].prompt);
+    expect(
+      getCacheMultiplier({
+        model,
+        cacheType: 'read',
+        inputTokenCount: 200000,
+        endpointTokenConfig,
+      }),
+    ).toBe(endpointTokenConfig[model].read);
+  });
+});
