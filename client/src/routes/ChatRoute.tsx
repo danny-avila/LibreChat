@@ -9,7 +9,6 @@ import {
   EModelEndpoint,
   PermissionBits,
   isAgentsEndpoint,
-  isEphemeralAgentId,
 } from 'librechat-data-provider';
 import type { TPreset, TAgentsMap } from 'librechat-data-provider';
 import {
@@ -80,10 +79,7 @@ export default function ChatRoute() {
   } else if (routeState.pending && conversation?.conversationId === conversationId) {
     setRouteState({ conversationId, pending: false });
   }
-  const mcpWarmupAllowed =
-    conversation != null &&
-    !(isAgentsEndpoint(conversation.endpoint) && isEphemeralAgentId(conversation.agent_id ?? ''));
-  useAppStartup({ startupConfig, user, mcpWarmupAllowed });
+  useAppStartup({ startupConfig, user });
   const { newConversation } = useNewConvo();
   const { showToast } = useToastContext();
   const localize = useLocalize();
