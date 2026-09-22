@@ -16,7 +16,6 @@ function isDuplicateKeyError(error: unknown): boolean {
 export function createTokenMethods(mongoose: typeof import('mongoose')): {
   findToken: (query: TokenQuery, options?: QueryOptions) => Promise<IToken | null>;
   createToken: (tokenData: TokenCreateData) => Promise<IToken>;
-  upsertToken: (scope: string, tokenData: TokenCreateData) => Promise<IToken>;
   replaceTokenIfCurrent: (
     scope: string,
     expectedToken: string | null,
@@ -55,55 +54,6 @@ export function createTokenMethods(mongoose: typeof import('mongoose')): {
       return await Token.create(newTokenData);
     } catch (error) {
       logger.debug('An error occurred while creating token:', error);
-      throw error;
-    }
-  }
-
-  /** Atomically creates or replaces a token at a caller-defined unique scope. */
-  async function upsertToken(scope: string, tokenData: TokenCreateData): Promise<IToken> {
-    try {
-      const Token = mongoose.models.Token;
-      await ensureIndexes();
-      const currentTime = new Date();
-      const { expiresIn, ...storedTokenData } = tokenData;
-      const replacement = {
-        ...storedTokenData,
-        scope,
-        createdAt: currentTime,
-        expiresAt: new Date(currentTime.getTime() + expiresIn * 1000),
-      };
-      const options = { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true };
-
-      try {
-        const upsertedToken = await Token.findOneAndUpdate(
-          { scope },
-          { $set: replacement },
-          options,
-        );
-        if (!upsertedToken) {
-          throw new Error('Token upsert failed');
-        }
-        return upsertedToken as IToken;
-      } catch (error) {
-        if (!isDuplicateKeyError(error)) {
-          throw error;
-        }
-
-        const retriedToken = await Token.findOneAndUpdate(
-          { scope },
-          { $set: replacement },
-          {
-            ...options,
-            upsert: false,
-          },
-        );
-        if (!retriedToken) {
-          throw new Error('Token upsert retry failed');
-        }
-        return retriedToken as IToken;
-      }
-    } catch (error) {
-      logger.debug('An error occurred while upserting token:', error);
       throw error;
     }
   }
@@ -271,7 +221,6 @@ export function createTokenMethods(mongoose: typeof import('mongoose')): {
   return {
     findToken,
     createToken,
-    upsertToken,
     replaceTokenIfCurrent,
     updateToken,
     deleteTokens,

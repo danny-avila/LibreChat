@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type * as t from '~/types';
-import { tenantStorage } from '~/config/tenantContext';
 import { createTokenModel } from '~/models/token';
 import { createTokenMethods } from './token';
 
@@ -536,118 +535,6 @@ describe('Token Methods - Detailed Tests', () => {
     });
   });
 
-  describe('upsertToken', () => {
-    test('atomically keeps one pending email change token under concurrent replacement', async () => {
-      const userId = new mongoose.Types.ObjectId();
-      const scope = `email_change:${userId.toString()}`;
-      const results = await Promise.all([
-        methods.upsertToken(scope, {
-          userId,
-          type: 'email_change',
-          scope,
-          email: 'first@example.com',
-          token: 'first-token',
-          expiresIn: 900,
-        }),
-        methods.upsertToken(scope, {
-          userId,
-          type: 'email_change',
-          scope,
-          email: 'second@example.com',
-          token: 'second-token',
-          expiresIn: 900,
-        }),
-      ]);
-
-      expect(results).toHaveLength(2);
-      expect(await Token.countDocuments({ userId, type: 'email_change' })).toBe(1);
-      const pending = await Token.findOne({ userId, type: 'email_change' }).lean();
-      expect(['first-token', 'second-token']).toContain(pending?.token);
-      expect(await Token.collection.indexExists('unique_token_scope')).toBe(true);
-    });
-
-    test('preserves the tenant when replacing a scoped token', async () => {
-      const userId = new mongoose.Types.ObjectId();
-      const scope = `email_change:${userId.toString()}`;
-
-      await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
-        methods.upsertToken(scope, {
-          userId,
-          type: 'email_change',
-          email: 'first@example.com',
-          token: 'first-token',
-          expiresIn: 900,
-        }),
-      );
-      await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
-        methods.upsertToken(scope, {
-          userId,
-          type: 'email_change',
-          email: 'second@example.com',
-          token: 'second-token',
-          expiresIn: 900,
-        }),
-      );
-
-      const pending = await Token.findOne({ scope }).lean();
-      expect(pending?.tenantId).toBe('tenant-a');
-      expect(pending?.token).toBe('second-token');
-
-      const crossTenant = await tenantStorage.run({ tenantId: 'tenant-b' }, () =>
-        methods.findToken({ scope }),
-      );
-      expect(crossTenant).toBeNull();
-    });
-
-    test('does not collapse tokens outside the email change scope', async () => {
-      const userId = new mongoose.Types.ObjectId();
-
-      await Promise.all([
-        methods.createToken({
-          userId,
-          type: 'mcp_oauth',
-          identifier: 'first',
-          token: 'first-token',
-          expiresIn: 900,
-        }),
-        methods.createToken({
-          userId,
-          type: 'mcp_oauth',
-          identifier: 'second',
-          token: 'second-token',
-          expiresIn: 900,
-        }),
-      ]);
-
-      expect(await Token.countDocuments({ userId, type: 'mcp_oauth' })).toBe(2);
-    });
-
-    test('retries a deadlocked index build instead of failing the caller', async () => {
-      const userId = new mongoose.Types.ObjectId();
-      const scope = `email_change:${userId.toString()}`;
-      const createIndexes = jest
-        .spyOn(Token, 'createIndexes')
-        .mockRejectedValueOnce(new Error('deadlock detected while creating index'));
-
-      try {
-        const pending = await methods.upsertToken(scope, {
-          userId,
-          type: 'email_change',
-          scope,
-          email: 'retried@example.com',
-          token: 'retried-token',
-          expiresIn: 900,
-        });
-
-        expect(pending.token).toBe('retried-token');
-        expect(createIndexes.mock.calls.length).toBeGreaterThan(1);
-        expect(await Token.countDocuments({ userId, type: 'email_change' })).toBe(1);
-      } finally {
-        createIndexes.mockRestore();
-      }
-    });
-  });
-
   describe('replaceTokenIfCurrent', () => {
     test('allows only one concurrent insert into an empty scope', async () => {
       const userId = new mongoose.Types.ObjectId();
@@ -684,7 +571,7 @@ describe('Token Methods - Detailed Tests', () => {
     test('allows only one concurrent replacement of the observed token', async () => {
       const userId = new mongoose.Types.ObjectId();
       const scope = `email_change:${userId.toString()}`;
-      await methods.upsertToken(scope, {
+      await methods.replaceTokenIfCurrent(scope, null, {
         userId,
         type: 'email_change',
         email: 'existing@example.com',
@@ -724,7 +611,7 @@ describe('Token Methods - Detailed Tests', () => {
     test('preserves the current token when the expected token is stale', async () => {
       const userId = new mongoose.Types.ObjectId();
       const scope = `email_change:${userId.toString()}`;
-      await methods.upsertToken(scope, {
+      await methods.replaceTokenIfCurrent(scope, null, {
         userId,
         type: 'email_change',
         email: 'current@example.com',

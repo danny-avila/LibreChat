@@ -46,7 +46,6 @@ const {
   restoreUserSchedulesFromDeletion,
 } = require('~/server/services/Schedules');
 const { sendEmail } = require('~/server/utils');
-const { getLogStores } = require('~/cache');
 const db = require('~/models');
 
 const withTenant = (tenantId, operation) =>
