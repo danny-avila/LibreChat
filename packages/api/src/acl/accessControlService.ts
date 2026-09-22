@@ -11,7 +11,6 @@ import {
   createMethods,
   getTransactionSupport,
   logger,
-  RoleBits,
   runAfterTransaction,
   buildRoleBitsBulkOps,
 } from '@librechat/data-schemas';
