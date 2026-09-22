@@ -193,17 +193,23 @@ describe('ServerConfigsDB', () => {
       expect(retrieved?.description).toBe('Updated description');
     });
 
-    it('should not persist omitted header maps as null', async () => {
+    it('should not persist omitted header maps as null on add or update', async () => {
       const config = createSSEConfig('Headerless Server');
       const created = await serverConfigsDB.add('temp-name', config, userId);
 
-      await serverConfigsDB.update(created.serverName, config, userId);
-
-      const stored = await mongoose.models.MCPServer.findOne({
+      const storedAfterAdd = await mongoose.models.MCPServer.findOne({
         serverName: created.serverName,
       }).lean<{ config: Record<string, unknown> } | null>();
-      expect(stored?.config).not.toHaveProperty('headers');
-      expect(stored?.config).not.toHaveProperty('requestHeaders');
+      expect(storedAfterAdd?.config).not.toHaveProperty('headers');
+      expect(storedAfterAdd?.config).not.toHaveProperty('requestHeaders');
+
+      await serverConfigsDB.update(created.serverName, config, userId);
+
+      const storedAfterUpdate = await mongoose.models.MCPServer.findOne({
+        serverName: created.serverName,
+      }).lean<{ config: Record<string, unknown> } | null>();
+      expect(storedAfterUpdate?.config).not.toHaveProperty('headers');
+      expect(storedAfterUpdate?.config).not.toHaveProperty('requestHeaders');
     });
 
     it('should preserve oauth.client_secret when not provided in update', async () => {
