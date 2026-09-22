@@ -1905,12 +1905,14 @@ describe('interface.traceViewer', () => {
       parse({
         enabled: true,
         showInputOutput: true,
+        showToolNames: true,
         maxRecords: 500,
         maxContentLength: 2000,
         requestsPerMinute: 10,
         requestTimeoutMs: 30_000,
       }),
     ).toBe(true);
+    expect(parse({ showToolNames: 'yes' })).toBe(false);
     expect(parse({ requestTimeoutMs: 999 })).toBe(false);
     expect(parse({ requestTimeoutMs: 300_001 })).toBe(false);
     expect(parse({ maxRecords: 0 })).toBe(false);
@@ -1924,11 +1926,19 @@ describe('interface.traceViewer', () => {
     expect(interfaceSchema.parse({}).traceViewer).toBeUndefined();
   });
 
+  it('names tool rounds from the tracing backend only when asked to', () => {
+    expect(resolveTraceViewerConfig({ enabled: true }).showToolNames).toBe(false);
+    expect(resolveTraceViewerConfig({ enabled: true, showToolNames: true }).showToolNames).toBe(
+      true,
+    );
+  });
+
   it('re-validates overrides that bypassed the schema', () => {
     expect(
       resolveTraceViewerConfig({
         enabled: 'true',
         showInputOutput: 1,
+        showToolNames: 'true',
         maxRecords: 50_000,
         maxContentLength: -5,
         requestsPerMinute: Number.NaN,
@@ -1937,6 +1947,7 @@ describe('interface.traceViewer', () => {
     ).toEqual({
       enabled: false,
       showInputOutput: false,
+      showToolNames: false,
       maxRecords: 10_000,
       maxContentLength: traceViewerDefaults.maxContentLength,
       requestsPerMinute: traceViewerDefaults.requestsPerMinute,

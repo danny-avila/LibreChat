@@ -13,15 +13,12 @@ const {
   GenerationJobManager,
   GENERATION_RECOVERY_FAILED_ERROR,
   isPendingActionStale,
-  mapToolApprovalResolutions,
+  resolveToolApprovalResume,
   resolveAskUserQuestionResume,
   buildResolvedAskUserQuestion,
   appendResolvedAskUserQuestion,
   attachAskUserQuestionAnswers,
   findAskUserQuestionContentIndex,
-  findUndecidedToolCalls,
-  findDisallowedDecisions,
-  findIncompleteDecisions,
   computeAgentRequestFingerprint,
   computeLegacyAgentRequestFingerprint,
   captureAgentCheckpointGeneration,
@@ -50,6 +47,7 @@ const {
   findAgentEventAppliedAction,
   assertCodeExecutionApprovalBinding,
   collectReachableAgents,
+  restoreScheduledTokenContext,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const { decryptMetadata } = require('~/server/services/ActionService');
@@ -351,27 +349,7 @@ function resolveResumeValue(pendingAction, body) {
   const payload = pendingAction.payload;
   if (payload?.type === 'tool_approval') {
     const resolutions = Array.isArray(body.decisions) ? body.decisions : [];
-    const undecided = findUndecidedToolCalls(payload, resolutions);
-    if (undecided.length > 0) {
-      return { status: 400, error: 'Every paused tool call must be decided', undecided };
-    }
-    // Enforce the policy's per-tool allowed_decisions — a crafted POST must not
-    // approve a tool the policy restricted to (e.g.) reject/respond.
-    const disallowed = findDisallowedDecisions(payload, resolutions);
-    if (disallowed.length > 0) {
-      return { status: 403, error: 'Decision not permitted for one or more tools', disallowed };
-    }
-    // `edit`/`respond` must carry their payload — otherwise toSdkDecision's defensive
-    // defaults ({} / '') would resume with an empty input/result the user didn't approve.
-    const incomplete = findIncompleteDecisions(resolutions);
-    if (incomplete.length > 0) {
-      return {
-        status: 400,
-        error: 'edit requires editedArguments and respond requires responseText',
-        incomplete,
-      };
-    }
-    return { resumeValue: mapToolApprovalResolutions(resolutions) };
+    return resolveToolApprovalResume(payload, resolutions);
   }
   if (payload?.type === 'ask_user_question') {
     return resolveAskUserQuestionResume(payload, body);
@@ -1835,6 +1813,7 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         parentMessageId: job.metadata.userMessage?.messageId ?? Constants.NO_PARENT,
       });
     const result = await initializeClient({
+      scheduledTokenContext: restoreScheduledTokenContext(req, job.metadata),
       req,
       res,
       endpointOption: req.body.endpointOption,

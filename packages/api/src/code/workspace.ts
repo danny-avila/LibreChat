@@ -1,3 +1,4 @@
+import { CODE_ENVIRONMENT_QUEUE_WAIT_DEFAULT_MS } from 'librechat-data-provider';
 import type { CodeBridgeFetch } from './bridge';
 
 const WORKSPACE_TOOL_TIMEOUT_MS = 30_000;
@@ -20,6 +21,9 @@ const MAX_COMMAND_SIGNAL_LENGTH = 32;
 const WORKSPACE_COMMAND_TRANSPORT_GRACE_MS = 5_000;
 /** Matches Code API's bounded admission wait and command settlement allowance. */
 const WORKSPACE_QUEUE_TIMEOUT_MS = 30_000;
+/** Compatibility export; the deployment schema owns the default and hard cap. */
+export const WORKSPACE_QUEUE_MAX_WAIT_MS: number = CODE_ENVIRONMENT_QUEUE_WAIT_DEFAULT_MS;
+const WORKSPACE_QUEUE_RETRY_DELAY_MS = 1_000;
 const WORKSPACE_COMMAND_SETTLEMENT_GRACE_MS = 5_000;
 const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MAX_ERROR_BODY_BYTES = 4096;
@@ -95,15 +99,18 @@ export interface WorkspaceReadRequest {
   protocolVersion: 1;
   operation: 'read_file';
   workspaceId: string;
+  workspaceInstanceId?: string;
   path: string;
   startLine?: number;
   maxLines?: number;
+  instructionSha256?: string;
 }
 
 export interface WorkspaceSearchRequest {
   protocolVersion: 1;
   operation: 'search_text';
   workspaceId: string;
+  workspaceInstanceId?: string;
   query: string;
   path?: string;
   maxResults?: number;
@@ -113,6 +120,7 @@ export interface WorkspaceListRequest {
   protocolVersion: 1;
   operation: 'list_files';
   workspaceId: string;
+  workspaceInstanceId?: string;
   path?: string;
   maxResults?: number;
   afterPath?: string;
@@ -122,16 +130,19 @@ export interface WorkspaceExecuteCommandRequest {
   protocolVersion: 1;
   operation: 'execute_command';
   workspaceId: string;
+  workspaceInstanceId?: string;
   command: string;
   cwd?: string;
   timeoutMs?: number;
   maxOutputBytes?: number;
+  environmentAction?: { name: string; fingerprint: string };
 }
 
 export interface WorkspaceWriteRequest {
   protocolVersion: 1;
   operation: 'write_file';
   workspaceId: string;
+  workspaceInstanceId?: string;
   path: string;
   content: string;
   overwrite?: boolean;
@@ -146,6 +157,7 @@ export interface WorkspaceEditRequest {
   protocolVersion: 1;
   operation: 'edit_file';
   workspaceId: string;
+  workspaceInstanceId?: string;
   path: string;
   edits: WorkspaceTextEdit[];
   expectedBaseSha256?: string;
@@ -155,6 +167,7 @@ export interface WorkspacePreviewEditRequest {
   protocolVersion: 1;
   operation: 'preview_edit';
   workspaceId: string;
+  workspaceInstanceId?: string;
   path: string;
   edits: WorkspaceTextEdit[];
 }
@@ -256,13 +269,52 @@ export class WorkspaceToolHttpError extends Error {
     public readonly upstreamBodyTruncated = false,
   ) {
     super(
-      `Workspace tool request ${reason}` +
+      (reason === 'rejected' &&
+      isWorkspaceAdmissionTimeout(upstreamStatus, upstreamBody, upstreamBodyTruncated)
+        ? 'Workspace capacity was unavailable before the queue deadline. The operation was not started. Wait for active work to finish or select an independent workspace on a machine with available capacity.'
+        : `Workspace tool request ${reason}`) +
         (upstreamStatus == null ? '' : ` (upstreamStatus: ${upstreamStatus})`) +
         (upstreamBody ? `; upstreamBody: ${JSON.stringify(upstreamBody)}` : '') +
         (upstreamBodyTruncated ? ' [body truncated or incomplete]' : ''),
     );
     this.name = 'WorkspaceToolHttpError';
   }
+}
+
+function isWorkspaceAdmissionTimeout(status?: number, body?: string, truncated = false): boolean {
+  if (status !== 503 || !body || truncated || body.length > MAX_ERROR_BODY_BYTES) {
+    return false;
+  }
+  try {
+    const parsed: { code?: string } | null = JSON.parse(body);
+    return parsed?.code === 'WORKSPACE_QUEUE_TIMEOUT';
+  } catch {
+    return false;
+  }
+}
+
+function waitForWorkspaceAdmission(delayMs: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal?.removeEventListener('abort', abort);
+    const finish = () => {
+      cleanup();
+      resolve();
+    };
+    const abort = () => {
+      clearTimeout(timer);
+      cleanup();
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(finish, delayMs);
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted === true) abort();
+  });
+}
+
+function workspaceAdmissionRetryDelay(value: string | null): number {
+  if (value == null || !/^\d+$/.test(value)) return WORKSPACE_QUEUE_RETRY_DELAY_MS;
+  return Math.max(100, Math.min(Number(value) * 1_000, WORKSPACE_QUEUE_TIMEOUT_MS));
 }
 
 /** Keep a received HTTP status even if reading its diagnostic body fails or stalls. */
@@ -441,11 +493,21 @@ async function readBoundedJson(response: Response, signal?: AbortSignal): Promis
 function isValidRequest(request: WorkspaceToolRequest): boolean {
   if (
     request.protocolVersion !== 1 ||
-    !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(request.workspaceId)
+    !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(request.workspaceId) ||
+    (request.workspaceInstanceId !== undefined &&
+      !/^[a-f0-9]{64}$/.test(request.workspaceInstanceId))
   ) {
     return false;
   }
   if (request.operation === 'read_file') {
+    if (request.instructionSha256 !== undefined) {
+      return (
+        /^[a-f0-9]{64}$/.test(request.instructionSha256) &&
+        (request.path === 'AGENTS.md' || request.path === 'CLAUDE.md') &&
+        request.startLine === undefined &&
+        request.maxLines === undefined
+      );
+    }
     return (
       isSafePath(request.path) &&
       (request.startLine == null ||
@@ -517,6 +579,18 @@ function isValidResult(
     return false;
   }
   if (request.operation === 'read_file') {
+    if (request.instructionSha256 !== undefined) {
+      return (
+        hasOnlyKeys(value, READ_RESULT_KEYS) &&
+        value.path === request.path &&
+        typeof value.content === 'string' &&
+        Buffer.byteLength(value.content) <= 32768 &&
+        value.startLine === 1 &&
+        value.endLine === value.content.split('\n').length &&
+        typeof value.truncated === 'boolean' &&
+        value.nextStartLine === undefined
+      );
+    }
     const startLine = request.startLine ?? 1;
     const maxLines = request.maxLines ?? 200;
     const content = typeof value.content === 'string' ? value.content : null;
@@ -666,62 +740,110 @@ function getWorkspaceToolTimeoutMs(request: WorkspaceToolRequest): number {
   return WORKSPACE_QUEUE_TIMEOUT_MS + executionBudgetMs + WORKSPACE_COMMAND_TRANSPORT_GRACE_MS;
 }
 
+/**
+ * Credentials for one admission attempt. A supplier is minted per attempt, so a
+ * call that stays queued past the Code API token TTL presents a fresh token
+ * instead of failing permanently with 401 while capacity is still pending.
+ */
+export type WorkspaceToolAuthHeaders =
+  | Record<string, string>
+  | (() => Promise<Record<string, string>> | Record<string, string>);
+
 export async function executeWorkspaceTool({
   baseURL,
   authHeaders,
   request,
   signal,
   fetchImpl = fetch,
+  maxQueueWaitMs = WORKSPACE_QUEUE_MAX_WAIT_MS,
 }: {
   baseURL: string;
-  authHeaders: Record<string, string>;
+  authHeaders: WorkspaceToolAuthHeaders;
   request: WorkspaceToolRequest;
   signal?: AbortSignal;
   fetchImpl?: CodeBridgeFetch;
+  maxQueueWaitMs?: number;
 }): Promise<WorkspaceToolResult> {
-  if (!isValidRequest(request)) {
+  if (
+    !isValidRequest(request) ||
+    !Number.isSafeInteger(maxQueueWaitMs) ||
+    maxQueueWaitMs < 0 ||
+    maxQueueWaitMs > WORKSPACE_QUEUE_MAX_WAIT_MS
+  ) {
     throw new WorkspaceToolHttpError('invalid');
   }
-  try {
-    const timeoutSignal = AbortSignal.timeout(getWorkspaceToolTimeoutMs(request));
-    const requestSignal =
-      signal != null && typeof AbortSignal.any === 'function'
-        ? AbortSignal.any([signal, timeoutSignal])
-        : timeoutSignal;
-    const response = await fetchImpl(
-      `${baseURL.trim().replace(/\/+$/, '')}/workspace-tools/execute`,
-      {
-        method: 'POST',
-        headers: {
-          ...authHeaders,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(request),
-        redirect: 'error',
-        signal: requestSignal,
-      },
-    );
-    if (!response.ok) {
-      const { body, truncated } = await readErrorBody(response, requestSignal);
+  const queueDeadlineAt = Date.now() + maxQueueWaitMs;
+  const body = JSON.stringify(request);
+  let lastAdmissionRejection: WorkspaceToolHttpError | undefined;
+  while (true) {
+    try {
       signal?.throwIfAborted();
-      throw new WorkspaceToolHttpError('rejected', response.status, body, truncated);
+      /** The endpoint replies only after execution settles. Capping this by the
+       * retry horizon would also abort already-admitted commands, with an unknown
+       * mutation outcome. Server admission and execution retain separate budgets. */
+      const timeoutSignal = AbortSignal.timeout(getWorkspaceToolTimeoutMs(request));
+      const requestSignal =
+        signal != null && typeof AbortSignal.any === 'function'
+          ? AbortSignal.any([signal, timeoutSignal])
+          : timeoutSignal;
+      const attemptHeaders = typeof authHeaders === 'function' ? await authHeaders() : authHeaders;
+      requestSignal.throwIfAborted();
+      if (lastAdmissionRejection && Date.now() >= queueDeadlineAt) {
+        throw lastAdmissionRejection;
+      }
+      const response = await fetchImpl(
+        `${baseURL.trim().replace(/\/+$/, '')}/workspace-tools/execute`,
+        {
+          method: 'POST',
+          headers: {
+            ...attemptHeaders,
+            'Content-Type': 'application/json',
+          },
+          body,
+          redirect: 'error',
+          signal: requestSignal,
+        },
+      );
+      if (!response.ok) {
+        const { body, truncated } = await readErrorBody(response, requestSignal);
+        signal?.throwIfAborted();
+        const rejection = new WorkspaceToolHttpError('rejected', response.status, body, truncated);
+        if (
+          !isWorkspaceAdmissionTimeout(response.status, body, truncated) ||
+          Date.now() >= queueDeadlineAt
+        ) {
+          throw rejection;
+        }
+        const delayMs = Math.min(
+          workspaceAdmissionRetryDelay(response.headers.get('Retry-After')),
+          queueDeadlineAt - Date.now(),
+        );
+        lastAdmissionRejection = rejection;
+        await waitForWorkspaceAdmission(delayMs, signal);
+        /** A clamped delay can land exactly on the deadline: the budget is spent,
+         * so never open another admission window that could still be admitted. */
+        if (Date.now() >= queueDeadlineAt) {
+          throw rejection;
+        }
+        continue;
+      }
+      const result = await readBoundedJson(response, requestSignal);
+      if (!isValidResult(request, result)) {
+        throw new WorkspaceToolHttpError('invalid');
+      }
+      return result;
+    } catch (error) {
+      if (error instanceof WorkspaceToolHttpError) throw error;
+      if (
+        signal?.aborted === true &&
+        (error === signal.reason || (isRecord(error) && error.name === 'AbortError'))
+      ) {
+        throw error;
+      }
+      if (error instanceof Error && error.name === 'TimeoutError') {
+        throw new WorkspaceToolHttpError('timeout');
+      }
+      throw new WorkspaceToolHttpError('failed');
     }
-    const result = await readBoundedJson(response, requestSignal);
-    if (!isValidResult(request, result)) {
-      throw new WorkspaceToolHttpError('invalid');
-    }
-    return result;
-  } catch (error) {
-    if (error instanceof WorkspaceToolHttpError) throw error;
-    if (
-      signal?.aborted === true &&
-      (error === signal.reason || (isRecord(error) && error.name === 'AbortError'))
-    ) {
-      throw error;
-    }
-    if (error instanceof Error && error.name === 'TimeoutError') {
-      throw new WorkspaceToolHttpError('timeout');
-    }
-    throw new WorkspaceToolHttpError('failed');
   }
 }

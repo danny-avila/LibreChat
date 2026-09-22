@@ -25,6 +25,7 @@ export * from './handlers';
 export * from './guard';
 export * from './harvest';
 export * from './backgroundCompletion';
+export * from './backgroundClaims';
 export * from './backgroundCompletionWakeup';
 export * from './initialize';
 export * from './legacy';

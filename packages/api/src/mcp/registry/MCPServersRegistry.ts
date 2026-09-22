@@ -13,6 +13,7 @@ import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/erro
 import { canBackfillSharedServerInstructions, isUserSourced } from '~/mcp/utils';
 import { ReadThroughAllCache } from './cache/ReadThroughAllCache';
 import { isPluginSourced, MCP_PLUGIN_SOURCE } from '~/utils/env';
+import { requireApiKeyReentryForRebinding } from './binding';
 import { ReadThroughCache } from './cache/ReadThroughCache';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
@@ -106,6 +107,7 @@ const ADMIN_CONFIGURABLE_FIELDS = [
   'stderr',
   'url',
   'headers',
+  'requestHeaders',
   'proxy',
   'requiresOAuth',
   'apiKey',
@@ -121,6 +123,9 @@ const ADMIN_CONFIGURABLE_FIELDS = [
   'customUserVars',
   'timeout',
   'sseReadTimeout',
+  'oauthRefreshWaitTimeout',
+  'oauthRefreshCoordination',
+  'oauthPersistenceWaitTimeout',
   'initTimeout',
 ] as const;
 
@@ -926,11 +931,12 @@ export class MCPServersRegistry {
     const configRepo = this.getConfigRepository(storageLocation);
     const source = resolveServerSource(config, storageLocation === 'CACHE' ? 'yaml' : 'user');
 
-    // Merge existing admin API key if not provided in update (needed for inspection)
+    // Merge an equivalent update's existing admin API key for inspection.
     let configForInspection = { ...config };
     if (config.apiKey?.source === 'admin' && !config.apiKey?.key) {
       const existingConfig = await configRepo.get(serverName, userId);
       if (existingConfig?.apiKey?.key) {
+        requireApiKeyReentryForRebinding(existingConfig, config);
         configForInspection = {
           ...configForInspection,
           apiKey: {

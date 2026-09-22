@@ -909,9 +909,9 @@ describe('getOpenAIConfig', () => {
         reverseProxyUrl: 'https://${INSTANCE_NAME}.openai.azure.com/openai/v1',
       });
 
-      // The constructAzureURL should replace placeholders with actual values
+      // AzureChatOpenAI appends the deployment to its base path, including for a v1 resource URL.
       expect((result.llmConfig as Record<string, unknown>).azureOpenAIBasePath).toBe(
-        'https://test-instance.openai.azure.com/openai/v1',
+        'https://test-instance.openai.azure.com/openai/deployments',
       );
     });
 

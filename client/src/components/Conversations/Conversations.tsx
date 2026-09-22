@@ -24,7 +24,7 @@ import {
   useEffectiveProjectId,
   useUnpinDroppedConversation,
 } from './dnd';
-import { useLocalize, TranslationKeys, useElementSize } from '~/hooks';
+import { useLocalize, TranslationKeys, useElementSize, useOuterScrollWindow } from '~/hooks';
 import { groupConversations, cn } from '~/utils';
 import { useActiveJobs } from '~/data-provider';
 import Convo from './Convo';
@@ -58,6 +58,12 @@ interface ConversationsProps {
   isError?: boolean;
   /** Re-run the conversations request from the error state. */
   onRetry?: () => void;
+  /** The sidebar's single scroll viewport: the list is windowed by it rather than
+   *  scrolling on its own, so the sections above it scroll with the chats. */
+  scrollViewport: HTMLElement | null;
+  /** Wrapper around everything inside that viewport, whose height changes when a
+   *  section above the list expands or collapses. */
+  scrollContent: HTMLElement | null;
 }
 
 interface MeasuredRowProps {
@@ -187,6 +193,8 @@ const Conversations: FC<ConversationsProps> = ({
   hasNextPage = false,
   isError = false,
   onRetry,
+  scrollViewport,
+  scrollContent,
 }) => {
   const localize = useLocalize();
   const search = useRecoilValue(store.search);
@@ -232,11 +240,25 @@ const Conversations: FC<ConversationsProps> = ({
   });
   dropRef(chatsRegionRef);
   const convoHeight = isSmallScreen ? 44 : 34;
+  const { ref: listContainerRef, width: listWidth } = useElementSize<HTMLDivElement>();
+  /** The list does not scroll: the sidebar's one scroll container does, and the
+   *  list virtualizes against the slice of it the rows currently occupy. */
   const {
-    ref: listContainerRef,
-    width: listWidth,
-    height: listHeight,
-  } = useElementSize<HTMLDivElement>();
+    ref: listWindowRef,
+    height: windowHeight,
+    scrollTop: windowScrollTop,
+    isOnScreen: isListOnScreen,
+  } = useOuterScrollWindow(scrollViewport, scrollContent);
+
+  /** One element is both the width source and the window anchor; a stable
+   *  callback keeps React from detaching and reattaching it every render. */
+  const setListNode = useCallback(
+    (node: HTMLDivElement | null) => {
+      listContainerRef(node);
+      listWindowRef(node);
+    },
+    [listContainerRef, listWindowRef],
+  );
 
   // Fetch active job IDs for showing generation indicators
   const { data: activeJobsData } = useActiveJobs();
@@ -440,11 +462,26 @@ const Conversations: FC<ConversationsProps> = ({
 
   const handleRowsRendered = useCallback(
     ({ stopIndex }: { stopIndex: number }) => {
+      /** Reaching the end of what is rendered only means the reader is near the
+       *  end of the list when the reader can see it. A list still below the
+       *  fold renders its first row to keep a height, and on a page whose chats
+       *  are nearly all pinned that row is already within the threshold — which
+       *  would spend another request on chats nobody has looked at. The list
+       *  fills the moment it comes into view instead; a page holding no chats
+       *  at all is drained by the separate all-pin effect above.
+       *
+       *  Asked here rather than read from the last frame: a commit that swaps
+       *  what the sidebar holds — leaving a search restores the sections and
+       *  the unfiltered page together — reports its rows before any observer
+       *  has seen the new layout. */
+      if (!isListOnScreen()) {
+        return;
+      }
       if (stopIndex >= flattenedItems.length - 8) {
         throttledLoadMore();
       }
     },
-    [flattenedItems.length, throttledLoadMore],
+    [flattenedItems.length, throttledLoadMore, isListOnScreen],
   );
   const isListError =
     isChatsExpanded &&
@@ -477,11 +514,13 @@ const Conversations: FC<ConversationsProps> = ({
   }
 
   let body: ReactNode = (
-    <div ref={listContainerRef} className="min-h-0 flex-1 overflow-hidden">
+    <div ref={setListNode} className="flex-1">
       <List
         ref={containerRef}
+        autoHeight
         width={listWidth}
-        height={listHeight}
+        height={windowHeight}
+        scrollTop={windowScrollTop}
         deferredMeasurementCache={cache}
         rowCount={flattenedItems.length}
         rowHeight={getRowHeight}
@@ -546,7 +585,7 @@ const Conversations: FC<ConversationsProps> = ({
   return (
     <div
       ref={chatsRegionRef}
-      className="relative flex h-full min-h-0 flex-col pb-2 text-sm text-text-primary"
+      className="relative flex flex-1 flex-col pb-2 text-sm text-text-primary"
     >
       <div className="px-3">
         <ChatsHeader

@@ -421,8 +421,9 @@ jest.mock('~/cache', () => ({
 jest.mock('~/server/services/ToolService', () => ({
   loadAgentTools: jest.fn().mockResolvedValue([]),
   loadToolsForExecution: jest.fn().mockResolvedValue([]),
-  isFatalAgentInitializationError: (error) =>
+  isFatalAgentInitializationError: jest.fn((error) =>
     ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
+  ),
 }));
 
 const mockGetMultiplier = jest.fn().mockReturnValue(1);
@@ -630,6 +631,7 @@ describe('OpenAIChatCompletionController', () => {
       expect.objectContaining({
         primaryConfig,
         rootConfigs: [primaryConfig],
+        signal: mockExecution.signal,
         resourceType: ResourceType.REMOTE_AGENT,
         memoryAvailable: true,
       }),
@@ -1353,7 +1355,10 @@ describe('OpenAIChatCompletionController', () => {
       const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
       const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 
-      req.config.endpoints.agents.backgroundTasks = { ordinaryToolCancellation: true };
+      req.config.endpoints.agents.backgroundTasks = {
+        ordinaryToolCancellation: true,
+        completionResultMaxChars: 4096,
+      };
       await OpenAIChatCompletionController(req, res);
 
       const [initializeParams, dbMethods] = initializeAgent.mock.calls.at(-1);
@@ -1382,6 +1387,7 @@ describe('OpenAIChatCompletionController', () => {
 
       const toolExecuteOptions = createToolExecuteHandler.mock.calls.at(-1)[0];
       expect(toolExecuteOptions.ordinaryToolCancellation).toBe(true);
+      expect(toolExecuteOptions.backgroundCompletionResultMaxChars).toBe(4096);
       expect(toolExecuteOptions.runSignal).toBe(mockExecution.signal);
       expect(toolExecuteOptions.foregroundRunId).toBe(initializeParams.requestBody.messageId);
       const effectiveSignal = new AbortController().signal;
@@ -1435,6 +1441,9 @@ describe('OpenAIChatCompletionController', () => {
       await OpenAIChatCompletionController(req, res);
 
       expect(res.status).toHaveBeenCalledWith(503);
+      expect(
+        require('~/server/services/ToolService').isFatalAgentInitializationError,
+      ).toHaveBeenCalledWith(toolError, { signal: loadAgentTools.mock.calls.at(-1)[0].signal });
     });
 
     it('returns the resource recovery status and code before model invocation', async () => {
