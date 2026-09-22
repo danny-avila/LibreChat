@@ -1,10 +1,19 @@
-import { memo, useId, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  memo,
+  useId,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useLayoutEffect,
+} from 'react';
 import { useAtomValue } from 'jotai';
 import { Button } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
 import { Check, Lightbulb, ChevronDown, TriangleAlert } from 'lucide-react';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, ReactNode, RefObject } from 'react';
 import {
   useLocalize,
   useExpandCollapse,
@@ -100,8 +109,12 @@ function PhaseGlyph({ failed }: { failed: boolean }) {
  * from adding descender space, which made a live row 2px taller than the
  * settled row it becomes.
  */
-function LiveLine({ text }: { text: string }) {
-  return <span className="shimmer max-w-full truncate align-top">{text}</span>;
+function LiveLine({ text, previewRef }: { text: string; previewRef?: RefObject<HTMLSpanElement> }) {
+  return (
+    <span ref={previewRef} className="shimmer max-w-full truncate align-top">
+      {text}
+    </span>
+  );
 }
 
 const PhaseLabel = memo(function PhaseLabel({
@@ -111,6 +124,7 @@ const PhaseLabel = memo(function PhaseLabel({
   source,
   live = false,
   lineId,
+  previewRef,
 }: {
   text: string;
   animate: boolean;
@@ -122,6 +136,7 @@ const PhaseLabel = memo(function PhaseLabel({
   live?: boolean;
   /** Id for the current line, so a live disclosure can be named by it alone. */
   lineId?: string;
+  previewRef?: RefObject<HTMLSpanElement>;
 }) {
   const [lines, setLines] = useState<{
     current: string;
@@ -187,7 +202,7 @@ const PhaseLabel = memo(function PhaseLabel({
           failed && 'text-text-warning',
         )}
       >
-        {live ? <LiveLine text={lines.current} /> : lines.current}
+        {live ? <LiveLine text={lines.current} previewRef={previewRef} /> : lines.current}
       </span>
     </span>
   );
@@ -242,8 +257,8 @@ function SpanGlyph({
  *
  * Its own component so only a live card pays for it — the localization and MCP
  * lookups, and the throttle. `liveParts` is rebuilt on every streamed delta;
- * the throttle is what keeps that from reaching the DOM more than twice a
- * second.
+ * full reasoning lines and tool activity repaint at most twice a second.
+ * Short reasoning sentences stream freely until they fill the available row.
  */
 function LivePhaseHeader({
   parts,
@@ -280,7 +295,32 @@ function LivePhaseHeader({
       : activity.text;
   const { source } = activity;
   const line = useMemo(() => ({ text, source }), [text, source]);
-  const painted = useThrottledValue(line, LIVE_ACTIVITY_THROTTLE_MS);
+  const previewRef = useRef<HTMLSpanElement>(null);
+  const [isPreviewFull, setIsPreviewFull] = useState(false);
+  const painted = useThrottledValue(
+    line,
+    source.startsWith('think:') && !isPreviewFull ? 0 : LIVE_ACTIVITY_THROTTLE_MS,
+  );
+  const measurePreview = useCallback(() => {
+    const preview = previewRef.current;
+    const width = preview?.parentElement?.clientWidth ?? 0;
+    setIsPreviewFull(width > 0 && (preview?.scrollWidth ?? 0) >= width);
+  }, []);
+
+  /** Measure the painted sentence, not the accumulated reasoning or the next
+   *  queued line: a newly displayed short sentence must fill before it waits. */
+  useLayoutEffect(measurePreview, [measurePreview, painted.text, painted.source]);
+  useLayoutEffect(() => {
+    const preview = previewRef.current;
+    const row = preview?.parentElement;
+    if (!preview || !row || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    const observer = new ResizeObserver(measurePreview);
+    observer.observe(row);
+    observer.observe(preview);
+    return () => observer.disconnect();
+  }, [measurePreview, painted.source]);
   const iconKey = activity.iconNames.join('|');
   const iconNames = useMemo(() => (iconKey ? iconKey.split('|') : []), [iconKey]);
   const sourceDomains = useMemo(() => getSourceDomains(attachments, SPAN_SITES), [attachments]);
@@ -354,6 +394,7 @@ function LivePhaseHeader({
         animate={animate}
         live
         lineId={lineId}
+        previewRef={previewRef}
       />
       {detail && (
         <span
