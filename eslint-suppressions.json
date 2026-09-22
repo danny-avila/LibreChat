@@ -5,26 +5,21 @@
     }
   },
   "client/src/components/Agents/AgentCard.tsx": {
-    "shadcn/no-arbitrary-values": {
-      "count": 2
-    },
-    "shadcn/no-restyle": {
-      "count": 2
-    }
-  },
-  "client/src/components/Agents/AgentDetail.tsx": {
-    "shadcn/no-restyle": {
-      "count": 2
+    "shadcn/no-inline-styles": {
+      "count": 3
     }
   },
   "client/src/components/Agents/AgentDetailContent.tsx": {
+    "shadcn/no-inline-styles": {
+      "count": 4
+    },
     "shadcn/no-restyle": {
-      "count": 2
+      "count": 18
     }
   },
   "client/src/components/Agents/AgentGrid.tsx": {
     "shadcn/no-restyle": {
-      "count": 2
+      "count": 1
     }
   },
   "client/src/components/Agents/CategoryTabs.tsx": {
@@ -32,30 +27,47 @@
       "count": 3
     }
   },
-  "client/src/components/Agents/ErrorDisplay.tsx": {
+  "client/src/components/Agents/CopyLink.tsx": {
+    "shadcn/no-arbitrary-values": {
+      "count": 1
+    },
     "shadcn/no-restyle": {
-      "count": 3
+      "count": 1
+    }
+  },
+  "client/src/components/Agents/GridSkeleton.tsx": {
+    "shadcn/no-restyle": {
+      "count": 7
+    }
+  },
+  "client/src/components/Agents/Marketplace.tsx": {
+    "shadcn/no-restyle": {
+      "count": 1
     }
   },
   "client/src/components/Agents/MarketplaceAdminSettings.tsx": {
+    "shadcn/no-restyle": {
+      "count": 1
+    }
+  },
+  "client/src/components/Agents/MineFilterToggle.tsx": {
     "shadcn/no-restyle": {
       "count": 7
     }
   },
   "client/src/components/Agents/SearchBar.tsx": {
-    "shadcn/no-arbitrary-values": {
-      "count": 1
-    },
     "shadcn/no-restyle": {
-      "count": 21
+      "count": 7
+    }
+  },
+  "client/src/components/Agents/SortDropdown.tsx": {
+    "shadcn/no-restyle": {
+      "count": 5
     }
   },
   "client/src/components/Agents/VirtualizedAgentGrid.tsx": {
     "shadcn/no-inline-styles": {
-      "count": 2
-    },
-    "shadcn/no-restyle": {
-      "count": 2
+      "count": 3
     }
   },
   "client/src/components/Artifacts/ArtifactCodeEditor.tsx": {
@@ -2500,11 +2512,6 @@
       "count": 2
     }
   },
-  "client/src/utils/agents.tsx": {
-    "shadcn/no-inline-styles": {
-      "count": 2
-    }
-  },
   "packages/client/src/components/Avatar.tsx": {
     "shadcn/no-inline-styles": {
       "count": 3
@@ -2546,6 +2553,11 @@
     }
   },
   "packages/client/src/components/HoverCard.tsx": {
+    "shadcn/no-inline-styles": {
+      "count": 1
+    }
+  },
+  "packages/client/src/components/LoadingDots.tsx": {
     "shadcn/no-inline-styles": {
       "count": 1
     }
