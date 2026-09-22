@@ -11,7 +11,7 @@ const SMTP_PORT = process.env.E2E_SMTP_PORT ?? '1025';
 const MAILBOX_PORT = process.env.E2E_MAILBOX_PORT ?? '8025';
 const MAILBOX_URL = `http://127.0.0.1:${MAILBOX_PORT}`;
 
-Object.assign(process.env, {
+const emailEnv: Record<string, string> = {
   EMAIL_HOST: '127.0.0.1',
   EMAIL_PORT: SMTP_PORT,
   EMAIL_FROM: 'noreply@librechat.test',
@@ -24,12 +24,25 @@ Object.assign(process.env, {
   MAILGUN_DOMAIN: '',
   ALLOW_EMAIL_CHANGE: emailChangeDisabled ? 'false' : 'true',
   E2E_MAILBOX_URL: MAILBOX_URL,
-});
+};
+
+/** The global setup and the mailbox helpers read these from this process. */
+Object.assign(process.env, emailEnv);
 
 if (!Array.isArray(mockConfig.webServer)) {
   throw new Error('The email E2E profile requires the mock profile web servers');
 }
-const mockWebServers = mockConfig.webServer;
+/**
+ * The mock profile snapshots `process.env` into each server's `env` while this
+ * module is still importing it, which is before the assignment above runs. The
+ * app would then start with no mail delivery configured and registration would
+ * silently verify the account instead of sending a link, so merge the mail
+ * settings into the inherited entries rather than relying on that ordering.
+ */
+const mockWebServers = mockConfig.webServer.map((server) => ({
+  ...server,
+  env: { ...(server.env ?? process.env), ...emailEnv },
+}));
 
 export default defineConfig({
   ...mockConfig,
