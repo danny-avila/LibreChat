@@ -30,3 +30,25 @@ export function useReasoningDisclosure(index: number) {
 /** Panel spacing is genuine feature layout, so it stays here. The chevron
  *  appearance lives in `@librechat/client` as `disclosureChevronVariants`. */
 export const toolPanelSpacingClassName = 'mb-2 mt-0';
+
+export type ToolDisclosures = Map<string, PrimitiveAtom<boolean | undefined>>;
+
+/** Kept above part keys and activity layouts; never shared between message views. */
+export const ToolDisclosureContext = createContext<ToolDisclosures | null>(null);
+export const ToolDisclosureKeyContext = createContext<string | undefined>(undefined);
+
+export function useToolDisclosure() {
+  const disclosures = useContext(ToolDisclosureContext);
+  const key = useContext(ToolDisclosureKeyContext);
+  return useMemo(() => {
+    if (disclosures == null || key == null) {
+      return atom<boolean | undefined>(undefined);
+    }
+    let disclosure = disclosures.get(key);
+    if (disclosure == null) {
+      disclosure = atom<boolean | undefined>(undefined);
+      disclosures.set(key, disclosure);
+    }
+    return disclosure;
+  }, [disclosures, key]);
+}

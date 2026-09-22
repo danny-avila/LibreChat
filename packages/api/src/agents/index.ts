@@ -65,6 +65,7 @@ export * from './run';
 export * from './fading';
 export * from './publication';
 export * from './runtime';
+export * from './convoPersistence';
 export * from './testHook';
 export * from './tools';
 export * from './validation';
