@@ -2174,6 +2174,9 @@ export const interfaceSchema = z
           fireConcurrency: z.number().int().min(1).optional(),
           mcpPreflightConcurrency: z.number().int().min(1).max(10).optional(),
           mcpPreflightTimeoutMs: z.number().int().min(1000).max(600000).optional(),
+          /** Persist the owner's OpenID refresh token so scheduled OBO/MCP runs
+           *  can refresh unattended. Default off: today's fail-closed behaviour. */
+          unattendedOpenIDTokens: z.boolean().optional(),
           /** Refuse schedules that are not filed under a chat project. Enforced on
            *  create/update AND at every fire, so raising it later stops schedules
            *  that predate the policy instead of grandfathering them. */

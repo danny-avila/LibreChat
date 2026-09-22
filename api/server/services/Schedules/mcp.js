@@ -6,13 +6,14 @@ const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const { exchangeOboToken } = require('~/server/services/OboTokenService');
 const { createOboTrustChecker } = require('~/server/services/OboPolicyService');
+const { resolveUpstreamTokenProvider: defaultResolveUpstreamTokenProvider } = require('./upstream');
 const { getLogStores } = require('~/cache');
 const methods = require('~/models');
 
 /**
- * Builds the schedule MCP preflight with an optional host-owned renewable
- * credential resolver. The default application has no durable upstream
- * credential source and therefore remains fail-closed for unattended OBO.
+ * Builds the schedule MCP preflight. The default application installs a host
+ * resolver that redeems a durable OpenID refresh token when
+ * `interface.schedules.unattendedOpenIDTokens` is enabled.
  *
  * @param {object} [options]
  * @param {import('@librechat/api').HostUpstreamTokenProviderResolver} [options.resolveUpstreamTokenProvider]
@@ -30,7 +31,8 @@ function createMCPPreflight(options = {}) {
     getServerConfigs: (userId, config, role) =>
       getMCPServersRegistry().getAllServerConfigs(userId, config, role),
     findPluginAuthsByKeys: methods.findPluginAuthsByKeys,
-    resolveUpstreamTokenProvider: options.resolveUpstreamTokenProvider,
+    resolveUpstreamTokenProvider:
+      options.resolveUpstreamTokenProvider ?? defaultResolveUpstreamTokenProvider,
     connect: (connectionOptions) =>
       getMCPManager().getConnection({
         ...connectionOptions,

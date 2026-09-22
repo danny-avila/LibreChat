@@ -935,6 +935,31 @@ const setOpenIDAuthTokens = (
 
     setCloudFrontAuthCookies(req, res, req.user, { userId, tenantId });
 
+    const ownerId = userId ?? req?.user?.id ?? req?.user?._id;
+    if (ownerId && refreshToken) {
+      const accessTokenExpiresAt = req.session?.openidTokens?.accessTokenExpiresAt;
+      void require('~/server/services/Schedules/upstream')
+        .persistOpenIDTokens(
+          {
+            id: String(ownerId),
+            tenantId: tenantId ?? req?.user?.tenantId,
+            provider: req?.user?.provider ?? 'openid',
+            openidId: req?.user?.openidId ?? sessionIdentity.openidSubject,
+            openidIssuer: req?.user?.openidIssuer ?? sessionIdentity.openidIssuer,
+            role: req?.user?.role,
+          },
+          {
+            access_token: tokenset.access_token,
+            id_token: logoutIdToken,
+            refresh_token: refreshToken,
+            ...(accessTokenExpiresAt != null ? { expires_at: accessTokenExpiresAt } : {}),
+          },
+        )
+        .catch((error) => {
+          logger.warn('[setOpenIDAuthTokens] Failed to persist unattended OpenID tokens', error);
+        });
+    }
+
     return appAuthToken;
   } catch (error) {
     logger.error('[setOpenIDAuthTokens] Error in setting authentication tokens:', error);

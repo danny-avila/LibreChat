@@ -122,6 +122,7 @@ interface OpenIDSessionRefreshDeps {
     timeoutMs?: number;
     intervalMs?: number;
   }) => Promise<TokenResult | null>;
+  persistUnattendedOpenIDTokens?: (user: OpenIDUser, tokens: OIDCTokens) => Promise<void>;
   assertOpenIDRefreshFlightAvailable: (args: {
     key?: string | null;
     ownerId?: string;
@@ -243,7 +244,35 @@ export function createOpenIDSessionRefreshService(
     assertOpenIDRefreshFlightAvailable,
     assertOpenIDRefreshSessionGenerationAvailable,
     withOpenIDRefreshFlightLease,
+    persistUnattendedOpenIDTokens,
   } = deps;
+
+  async function persistUnattendedCopy(
+    user: OpenIDUser,
+    tokens: OIDCTokens | null | undefined,
+  ): Promise<void> {
+    if (!persistUnattendedOpenIDTokens || !tokens?.refresh_token) return;
+    const ownerId =
+      (typeof user.id === 'string' && user.id.trim()) ||
+      (user._id != null ? String(user._id).trim() : '');
+    if (!ownerId) return;
+    try {
+      await persistUnattendedOpenIDTokens(
+        { ...user, id: ownerId },
+        {
+          access_token: tokens.access_token,
+          id_token: tokens.id_token,
+          refresh_token: tokens.refresh_token,
+          expires_at: tokens.expires_at,
+        },
+      );
+    } catch (error) {
+      logger.warn(
+        '[OpenIDSessionRefresh] Failed to persist unattended OpenID tokens',
+        toOpenIDLogArgument(error),
+      );
+    }
+  }
 
   /**
    * Shape of `req.session.openidTokens`. Established by `setOpenIDAuthTokens`
@@ -1203,6 +1232,8 @@ export function createOpenIDSessionRefreshService(
       throw error;
     }
 
+    await persistUnattendedCopy(user, resolvedTokens);
+
     logger.info('[OpenIDSessionRefresh] Inline refresh succeeded');
     /**
      * Pass the same expiry as the explicit `expiresAtOverride` so the returned
@@ -1307,6 +1338,9 @@ export function createOpenIDSessionRefreshService(
       false,
       publicationGeneration,
     );
+    if (hydrated) {
+      await persistUnattendedCopy(user, requestTokens);
+    }
     if (effects && hydrated) {
       effects.expressSession = true;
     }

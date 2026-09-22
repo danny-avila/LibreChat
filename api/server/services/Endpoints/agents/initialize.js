@@ -1891,6 +1891,9 @@ function createInitializeClient(dependencies = {}) {
   };
 }
 
-const initializeClient = createInitializeClient();
+const initializeClient = createInitializeClient({
+  resolveUpstreamTokenProvider: require('~/server/services/Schedules/upstream')
+    .resolveUpstreamTokenProvider,
+});
 
 module.exports = { createInitializeClient, initializeClient };

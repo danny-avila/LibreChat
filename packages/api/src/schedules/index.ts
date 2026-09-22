@@ -9,3 +9,4 @@ export * from './readiness';
 export * from './trigger';
 export * from './types';
 export * from './mcp';
+export * from './upstream';

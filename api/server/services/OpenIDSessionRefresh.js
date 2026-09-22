@@ -44,4 +44,6 @@ module.exports = api.createOpenIDSessionRefreshService({
   failOpenIDRefreshFlight: flight.failOpenIDRefreshFlight,
   waitForOpenIDRefreshFlight: flight.waitForOpenIDRefreshFlight,
   withOpenIDRefreshFlightLease: flight.withOpenIDRefreshFlightLease,
+  persistUnattendedOpenIDTokens: (user, tokens) =>
+    require('./Schedules/upstream').persistOpenIDTokens(user, tokens),
 });

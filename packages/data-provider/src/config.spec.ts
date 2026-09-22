@@ -199,6 +199,21 @@ describe('scheduled MCP preflight config', () => {
       }).success,
     ).toBe(false);
   });
+
+  it('accepts an opt-in for unattended OpenID tokens', () => {
+    expect(
+      configSchema.safeParse({
+        version: '1.2.1',
+        interface: { schedules: { use: true, unattendedOpenIDTokens: true } },
+      }).success,
+    ).toBe(true);
+    expect(
+      configSchema.parse({
+        version: '1.2.1',
+        interface: { schedules: { use: true } },
+      }).interface?.schedules,
+    ).toEqual({ use: true });
+  });
 });
 
 describe('excludedKeys', () => {

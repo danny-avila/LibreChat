@@ -127,6 +127,10 @@ jest.mock('./RefreshTokenBridge', () => ({
     ({ userId, oldRefreshToken }) => `publication:${userId}:${oldRefreshToken}`,
   ),
 }));
+jest.mock('./Schedules/upstream', () => ({
+  persistOpenIDTokens: jest.fn().mockResolvedValue(undefined),
+  resolveUpstreamTokenProvider: jest.fn(),
+}));
 jest.mock('./OpenIDRefreshFlight', () => ({
   acquireOpenIDRefreshFlight: jest.fn(),
   assertOpenIDRefreshFlightAvailable: jest.fn(),

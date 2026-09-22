@@ -21,11 +21,16 @@ Supported authentication is determined by a successful unattended connection:
 - Persisted custom user variables, including API keys.
 - Stored MCP OAuth credentials that can connect or refresh without user interaction.
 
-Browser-only credentials, interactive OpenID bearer/OBO sources, missing user
-variables, and OAuth grants needing renewed consent cannot be assumed available.
-Reconnect or configure the server in an interactive agent chat, or remove it from the
-agent, then enable the schedule. A browser connection alone does not prove readiness;
-enabling always reruns the unattended check.
+Browser-only credentials, interactive OpenID bearer sources without a stored
+refresh token, missing user variables, and OAuth grants needing renewed consent
+cannot be assumed available. When `interface.schedules.unattendedOpenIDTokens`
+is enabled and `OPENID_REUSE_TOKENS` is on, login and interactive refresh persist
+an encrypted OpenID refresh token for the schedule owner. Scheduled preflight and
+execution then redeem that token through the default
+`HostUpstreamTokenProviderResolver`. The owner must sign in once after the toggle
+is enabled. Reconnect or configure the server in an interactive agent chat, or
+remove it from the agent, then enable the schedule. A browser connection alone
+does not prove readiness; enabling always reruns the unattended check.
 
 `mcp_reauth_required`, `mcp_configuration_missing`, and `mcp_permission_denied` stop a
 scheduled occurrence and disable the schedule immediately. The permission status tells
@@ -42,7 +47,9 @@ re-enable existing schedules automatically or repair credentials on the user's b
 ## Host token-provider context
 
 `createMCPPreflight` and `createInitializeClient` accept a
-`HostUpstreamTokenProviderResolver`. The default application does not install one.
+`HostUpstreamTokenProviderResolver`. The default application installs one that
+loads the owner's stored OpenID refresh token when
+`interface.schedules.unattendedOpenIDTokens` is true. Hosts may still replace it.
 The host receives the persisted/authenticated user and these optional fields:
 
 ```ts
@@ -79,4 +86,7 @@ Current schedules execute with their owner's authority, hence `delegated`. Dedic
 authorization requires a separate implementation. Scopes are not an STS audience; audience
 mapping and authorization remain the host's responsibility.
 
-This interface adds no token store, STS exchange, consent API, or new MCP credential mode.
+The injection interface itself adds no STS exchange, consent API, or new MCP
+credential mode. The default application optionally persists encrypted OpenID
+refresh tokens in the existing Token collection (`openid_offline`) so scheduled
+OBO can refresh without a live browser session.

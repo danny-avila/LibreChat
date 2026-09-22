@@ -128,6 +128,10 @@ jest.mock('~/strategies/validators', () => ({
   },
 }));
 jest.mock('~/server/services/Config', () => ({ getAppConfig: jest.fn() }));
+jest.mock('~/server/services/Schedules/upstream', () => ({
+  persistOpenIDTokens: jest.fn().mockResolvedValue(undefined),
+  resolveUpstreamTokenProvider: jest.fn(),
+}));
 jest.mock('~/server/utils', () => ({ sendEmail: jest.fn() }));
 
 let checkEmailConfig;
