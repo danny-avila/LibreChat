@@ -26,6 +26,14 @@ describe('getOpenAIConfig', () => {
     expect(result.tools).toEqual([]);
   });
 
+  it('applies an explicit model transport timeout policy', () => {
+    const result = getOpenAIConfig(mockApiKey, {
+      transportTimeouts: { bodyTimeout: 900_000, headersTimeout: 300_000 },
+    });
+
+    expect(result.configOptions?.fetchOptions?.dispatcher).toBeDefined();
+  });
+
   it('should apply model options', () => {
     const modelOptions = {
       model: 'gpt-4',

@@ -13,6 +13,7 @@ import type {
 import { resolveAskUserQuestionPart } from '~/utils/approval';
 import { sandboxStartingByToolCallId } from '~/store';
 import ContentParts from '../ContentParts';
+import { getLiveActivity } from '../live';
 import store from '~/store';
 
 /**
@@ -185,6 +186,73 @@ const foldVerdict = (): Verdict => {
     : 'completed';
 };
 
+describe('live combo aggregation', () => {
+  const activity = (parts: Array<TMessageContentParts | undefined>) =>
+    getLiveActivity(parts, (key) => key, []);
+
+  it('counts a long repeated suffix without reading the historical prefix twice per delta', () => {
+    const parts = Array.from({ length: 1024 }, (_, index) =>
+      toPart({ name: 'lookup', output: 'ok' }, `call-${index}`),
+    );
+    const first = parts[0];
+    const readFirst = jest.fn(() => first);
+    Object.defineProperty(parts, 0, { get: readFirst });
+
+    for (const intent of ['Checking', 'Checking the', 'Checking the last file']) {
+      parts[parts.length - 1] = toPart({ name: 'lookup', args: { intent } }, 'tail');
+      readFirst.mockClear();
+      expect(activity(parts).comboCount).toBe(1024);
+      expect(readFirst).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it('counts only the suffix, ignoring descriptive metadata and sparse slots', () => {
+    const call = (name: string) => toPart({ name, output: 'ok' });
+    expect(
+      activity([
+        call('read_file'),
+        call('edit_file'),
+        call('read_file'),
+        undefined,
+        { type: ContentTypes.THINK, think: 'Checking another file' },
+        { type: ContentTypes.ACTIVITY_LABEL, activity_label: 'Read a file' },
+        call('read_file'),
+      ]).comboCount,
+    ).toBe(2);
+  });
+
+  it('uses full tool identity, not the shared MCP server or icon', () => {
+    expect(
+      activity([
+        toPart({ name: 'read_mcp_workspace', output: 'ok' }),
+        toPart({ name: 'edit_mcp_workspace', output: 'ok' }),
+      ]).comboCount,
+    ).toBe(1);
+  });
+
+  it('reuses normalized Bash identity and recomputes it when streamed arguments change', () => {
+    const first = toPart({ name: Tools.bash_tool, output: 'ok' });
+    const programmatic = (lang: string) =>
+      toPart({ name: Constants.PROGRAMMATIC_TOOL_CALLING, args: { lang } });
+    expect(activity([first, programmatic('bash')]).comboCount).toBe(2);
+    expect(activity([first, programmatic('python')]).comboCount).toBe(1);
+  });
+
+  it.each<TMessageContentParts>([
+    { type: ContentTypes.THINK, think: 'Considering the results' },
+    { type: ContentTypes.TEXT, text: 'Checking the results', phase: 'commentary' },
+    { type: ContentTypes.ACTIVITY_LABEL, activity_label: 'Checked the results' },
+  ])('does not attach a tool multiplier to a trailing $type line', (tail) => {
+    expect(
+      activity([
+        toPart({ name: 'lookup', output: 'ok' }, 'first'),
+        toPart({ name: 'lookup', output: 'ok' }, 'second'),
+        tail,
+      ]).comboCount,
+    ).toBe(1);
+  });
+});
+
 describe('live fold parity with the cards it hides', () => {
   afterEach(() => {
     jest.useRealTimers();
@@ -230,6 +298,95 @@ describe('live fold parity with the cards it hides', () => {
 
     mount([toPart({ name: 'subagent', output: 'done' })], undefined, true);
     expect(screen.queryByTestId('activity-phase-card')).toBeNull();
+  });
+
+  it('shows a multiplier for consecutive uses of the same tool and resets on a different tool', () => {
+    jest.useFakeTimers();
+    const first = toPart({ name: 'create_file', output: 'created' }, 'first');
+    const second = toPart({ name: 'create_file', output: '' }, 'second');
+    const view = mount([first, second], undefined, true);
+
+    expect(screen.getByTestId('live-phase-combo')).toHaveTextContent('×2');
+    expect(
+      within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0],
+    ).toHaveAccessibleName(/×2/);
+
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <RecoilRoot>
+          <ContentParts
+            content={[first, second, toPart({ name: 'edit_file', output: '' }, 'third')]}
+            messageId="m1"
+            conversationId="c1"
+            isCreatedByUser={false}
+            isLast
+            isLatestMessage
+            isSubmitting
+            showThinking={false}
+          />
+        </RecoilRoot>
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByTestId('live-phase-combo')).toHaveTextContent('×2');
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(screen.queryByTestId('live-phase-combo')).toBeNull();
+  });
+
+  it('changes the multiplier with the throttled status line', () => {
+    jest.useFakeTimers();
+    const first = toPart(
+      { name: 'create_file', args: '{"intent":"Creating the first file"}', output: '' },
+      'first',
+    );
+    const second = toPart(
+      { name: 'create_file', args: '{"intent":"Creating the second file"}', output: '' },
+      'second',
+    );
+    const view = mount([first], undefined, true);
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <RecoilRoot>
+          <ContentParts
+            content={[first, second]}
+            messageId="m1"
+            conversationId="c1"
+            isCreatedByUser={false}
+            isLast
+            isLatestMessage
+            isSubmitting
+            showThinking={false}
+          />
+        </RecoilRoot>
+      </QueryClientProvider>,
+    );
+
+    const header = within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0];
+    expect(header).toHaveAccessibleName('Creating the first file');
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(header).toHaveAccessibleName('Creating the second file ×2');
+  });
+
+  it('resets the multiplier across an agent handoff', () => {
+    const handoff = {
+      type: ContentTypes.AGENT_UPDATE,
+      [ContentTypes.AGENT_UPDATE]: { agentId: 'agent-b', index: 1 },
+    } as TMessageContentParts;
+    mount(
+      [
+        toPart({ name: 'create_file', output: 'created' }, 'first'),
+        handoff,
+        toPart({ name: 'create_file', output: '' }, 'second'),
+      ],
+      undefined,
+      true,
+    );
+
+    expect(screen.queryByTestId('live-phase-combo')).toBeNull();
   });
 
   it('treats a second call that reuses a provider id as a new line', () => {
@@ -870,7 +1027,7 @@ describe('live activity hardening transitions', () => {
       jest.advanceTimersByTime(500);
     });
     const header = screen.getByRole('button');
-    expect(header).toHaveAccessibleName('Checking the next file');
+    expect(header).toHaveAccessibleName('Checking the next file ×2');
     expect(header.querySelector('.absolute[aria-hidden="true"]')).toBeNull();
   });
 

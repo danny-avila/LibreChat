@@ -11,6 +11,7 @@ import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerCon
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import type { ResolvedPrincipal } from '~/types/principal';
 import { requireApiKeyReentryForRebinding } from '~/mcp/registry/binding';
+import { normalizeLegacyHeaderMaps } from '~/mcp/registry/compat';
 import { MCPOAuthSecretReentryRequiredError } from '~/mcp/errors';
 import { AccessControlService } from '~/acl/accessControlService';
 
@@ -116,24 +117,6 @@ function sanitizeUserManagedOAuthConfig(config: ParsedServerConfig): ParsedServe
       }),
     },
   };
-}
-
-/** Normalizes legacy values that predate the current runtime config schemas. */
-function normalizePersistedConfig(config: ParsedServerConfig): ParsedServerConfig {
-  const persistedConfig = config as ParsedServerConfig & {
-    headers?: Record<string, string> | null;
-    requestHeaders?: Record<string, string> | null;
-  };
-  if (persistedConfig.headers !== null && persistedConfig.requestHeaders !== null) {
-    return config;
-  }
-
-  const { headers, requestHeaders, ...rest } = persistedConfig;
-  return {
-    ...rest,
-    ...(headers != null && { headers }),
-    ...(requestHeaders != null && { requestHeaders }),
-  } as ParsedServerConfig;
 }
 
 function normalizeOAuthUrl(value?: string): string | undefined {
@@ -663,7 +646,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       ...(authorId ? { author: authorId } : {}),
     };
     return sanitizeUserManagedOAuthConfig(
-      await this.decryptConfig(normalizePersistedConfig(config)),
+      await this.decryptConfig(normalizeLegacyHeaderMaps(config)),
     );
   }
 
