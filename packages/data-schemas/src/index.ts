@@ -18,6 +18,7 @@ export {
   defaultRate,
   createTxMethods,
   permissionBitSupersets,
+  buildRoleBitsBulkOps,
   partitionIssues,
   validateSkillName,
   validateSkillBody,

@@ -120,7 +120,7 @@ describe('role-only ACL writes', () => {
     },
   );
 
-  test('uses classic guarded writes and identity-only insert without adding duplicates', async () => {
+  test('emits single-operator bit writes and an identity-only insert', async () => {
     const spy = jest.spyOn(methods, 'bulkWriteAclEntries');
     await updateRole();
     await updateRole();
@@ -130,10 +130,14 @@ describe('role-only ACL writes', () => {
       expect(ops).toHaveLength(3);
       for (const op of ops) {
         if ('updateMany' in op) {
+          const update = op.updateMany.update as { $bit?: Record<string, object> };
           expect(op.updateMany.filter).toEqual(expect.objectContaining(filter));
+          expect(op.updateMany.filter).not.toHaveProperty('permBits');
           expect(op.updateMany.upsert).not.toBe(true);
-          expect(op.updateMany.update).not.toHaveProperty('$bit');
-          expect(Array.isArray(op.updateMany.update)).toBe(false);
+          expect(Array.isArray(update)).toBe(false);
+          for (const bag of Object.values(update.$bit ?? {})) {
+            expect(Object.keys(bag)).toHaveLength(1);
+          }
         } else {
           expect(op).toMatchObject({
             updateOne: {
@@ -171,7 +175,7 @@ describe('role-only ACL writes', () => {
 
   test.each([
     { initial: 1, concurrent: 17, expected: 19 },
-    { initial: 17, concurrent: 1, expected: 1 },
+    { initial: 17, concurrent: 1, expected: 3 },
   ])(
     'does not overwrite an Insights change between mask partitions: $concurrent',
     async ({ initial, concurrent, expected }) => {
@@ -247,6 +251,38 @@ describe('role-only ACL writes', () => {
     expect(after[0].permBits).toBe(RoleBits.EDITOR);
   });
 
+  test('applies the role even when a preserved bit changes mid-write (#16170 review)', async () => {
+    await seed(RoleBits.OWNER | PermissionBits.VIEW_INSIGHTS);
+    const write = methods.bulkWriteAclEntries;
+    jest.spyOn(methods, 'bulkWriteAclEntries').mockImplementationOnce(async (ops, options) => {
+      let result = await write([ops[0]], options);
+      /** An admin revokes Insights between the two bit writes. */
+      await entries.updateMany(filter, {
+        $bit: { permBits: { and: ~PermissionBits.VIEW_INSIGHTS } },
+      });
+      for (const op of ops.slice(1)) result = await write([op], options);
+      return result;
+    });
+    const result = await service.bulkUpdateResourcePermissions({
+      resourceType: ResourceType.AGENT,
+      resourceId,
+      updatedPrincipals: [
+        {
+          type: PrincipalType.USER,
+          id: userId.toString(),
+          accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        },
+      ],
+      grantedBy,
+    });
+    expect(result.errors).toEqual([]);
+    const entry = await entries.findOne(filter).lean();
+    /** The downgrade lands: no retained owner bits, no resurrected Insights. */
+    expect(entry!.permBits).toBe(RoleBits.VIEWER);
+    const role = await methods.findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER);
+    expect(entry!.roleId?.toString()).toBe(role!._id.toString());
+  });
+
   test('propagates a partial batch failure without leaving half-updated role bits', async () => {
     await seed(RoleBits.OWNER);
     await seed(RoleBits.OWNER | PermissionBits.VIEW_INSIGHTS);
@@ -257,7 +293,7 @@ describe('role-only ACL writes', () => {
     });
     await expect(updateRole()).rejects.toThrow('injected write failure');
     const after = await entries.find(filter).lean();
-    expect(after.map((entry) => entry.permBits).sort((a, b) => a - b)).toEqual([3, 31]);
+    expect(after.map((entry) => entry.permBits).sort((a, b) => a - b)).toEqual([0, 16]);
     await updateRole();
     const retried = await entries.find(filter).lean();
     expect(retried.map((entry) => entry.permBits).sort((a, b) => a - b)).toEqual([3, 19]);

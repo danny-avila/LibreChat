@@ -42,7 +42,12 @@ import {
   type UserGroupMethods,
   type UserGroupDeps,
 } from './userGroup';
-import { createAclEntryMethods, permissionBitSupersets, type AclEntryMethods } from './aclEntry';
+import {
+  createAclEntryMethods,
+  permissionBitSupersets,
+  buildRoleBitsBulkOps,
+  type AclEntryMethods,
+} from './aclEntry';
 import { createSystemGrantMethods, type SystemGrantMethods } from './systemGrant';
 import {
   createAuditLogMethods,
@@ -197,7 +202,7 @@ export {
   digestMCPAuthorityValue,
 };
 export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate, createTxMethods };
-export { permissionBitSupersets };
+export { permissionBitSupersets, buildRoleBitsBulkOps };
 export { CLIENT_MESSAGE_SELECT, SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT };
 export {
   partitionIssues,
