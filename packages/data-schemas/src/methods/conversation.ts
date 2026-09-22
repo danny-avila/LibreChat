@@ -282,7 +282,8 @@ export interface ConversationMethods {
       /** `_id`s of messages this save just wrote. When present, they are appended with
        *  `$addToSet` and the O(n) read-and-rewrite of the `messages` array is skipped;
        *  every save without this option still rebuilds the array from the database. */
-      appendMessageIds?: Types.ObjectId[];
+      /** Casts plain string ids, so callers outside this package need not name the id type. */
+      appendMessageIds?: Array<Types.ObjectId | string>;
       /** Advance the reply version and clear the catch-up after persisting an assistant reply. */
       stampReply?: boolean;
       /** Durable messageId paired atomically with a reply stamp. */
@@ -2256,7 +2257,8 @@ export function createConversationMethods(
       createdAtOnInsert?: Date;
       preserveUpdatedAt?: boolean;
       initialAgentId?: string | null;
-      appendMessageIds?: Types.ObjectId[];
+      /** Casts plain string ids, so callers outside this package need not name the id type. */
+      appendMessageIds?: Array<Types.ObjectId | string>;
       /** Stamp `lastResponseAt` at write time: this save carries a persisted assistant reply. */
       stampReply?: boolean;
       /** Durable messageId paired atomically with a reply stamp. */

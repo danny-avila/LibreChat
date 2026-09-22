@@ -3092,6 +3092,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 messageId: savedResponseMessage.messageId,
                 content: response.content,
                 text: response.text,
+                attachments: response.attachments,
                 isTemporary: reqCtx.isTemporary,
               },
               context: 'AgentController - skipped terminal persistence',

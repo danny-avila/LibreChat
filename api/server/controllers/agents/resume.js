@@ -603,6 +603,7 @@ async function finalizeResumedTurn({
           messageId: savedResponseMessage.messageId,
           content: responseMessage.content,
           text: responseMessage.text,
+          attachments: responseMessage.attachments,
           isTemporary,
         },
         context: 'ResumeAgentController - resumed response end',

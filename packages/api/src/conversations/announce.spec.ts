@@ -4,11 +4,12 @@ import {
   announceErrorTurn,
   announceStoppedReply,
   isAnnounceableReply,
+  settleAssistantFinal,
 } from './announce';
 
 const readable = [{ type: 'text', text: 'here is the answer' }];
-const rowA = new Types.ObjectId();
-const rowB = new Types.ObjectId();
+const rowA = new Types.ObjectId().toString();
+const rowB = new Types.ObjectId().toString();
 
 describe('isAnnounceableReply', () => {
   it('announces a persisted reply that has something to read', () => {
@@ -240,5 +241,47 @@ describe('announceErrorTurn', () => {
         { userId: 'user-1', conversationId: 'convo-1', messageId: 'err-1', context: 'spec' },
       ),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('settleAssistantFinal', () => {
+  it('returns the plain settled conversation for the final event', async () => {
+    const settled = { conversationId: 'convo-1', lastResponseAt: '2026-09-23T10:00:00.000Z' };
+    const conversation = await settleAssistantFinal(async () => ({
+      message: { messageId: 'msg-1' },
+      conversation: { ...settled, toObject: () => settled },
+    }));
+
+    expect(conversation).toEqual(settled);
+  });
+
+  /* A save that persisted nothing is not a snapshot, so nothing may be published from it. */
+  it('refuses to publish when the response row was not persisted', async () => {
+    await expect(
+      settleAssistantFinal(async () => ({ message: null, conversation: { conversationId: 'c' } })),
+    ).rejects.toThrow('Assistant response could not be persisted before final publication');
+  });
+
+  it('refuses to publish when the conversation write returned its error shape', async () => {
+    await expect(
+      settleAssistantFinal(async () => ({
+        message: { messageId: 'msg-1' },
+        conversation: { message: 'Error saving conversation' },
+      })),
+    ).rejects.toThrow('Assistant conversation could not be persisted before final publication');
+  });
+});
+
+describe('isAnnounceableReply attachments', () => {
+  /* The message body renders attachments, and acknowledgement checks the body, so a reply made
+     only of files can be both announced and cleared. */
+  it('announces a reply made only of attachments', () => {
+    expect(
+      isAnnounceableReply({ messageId: 'msg-1', content: [], text: '', attachments: [{}] }),
+    ).toBe(true);
+  });
+
+  it('does not treat an empty attachment list as something to read', () => {
+    expect(isAnnounceableReply({ messageId: 'msg-1', content: [], attachments: [] })).toBe(false);
   });
 });

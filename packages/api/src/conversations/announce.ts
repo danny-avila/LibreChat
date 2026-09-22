@@ -5,8 +5,6 @@ import { hasPersistableAbortContent } from '../stream/abortContent';
 type SaveConvo = ConversationMethods['saveConvo'];
 /** Derived here rather than imported from `./save`, which depends on this module. */
 type ConversationWriteContext = Parameters<SaveConvo>[0];
-type SaveConvoOptions = NonNullable<Parameters<SaveConvo>[2]>;
-type SavedMessageId = NonNullable<SaveConvoOptions['appendMessageIds']>[number];
 
 /** Declared structurally so a caller hands over its store rather than this module reaching for one. */
 export interface ReplyStampStore {
@@ -25,6 +23,8 @@ export interface PersistedReply {
   content?: unknown;
   /** Plain text, for the paths that persist text instead of content parts. */
   text?: string | null;
+  /** Files the reply produced; a reply made only of them still renders in the message body. */
+  attachments?: readonly object[] | null;
   /** A temporary chat holds no row in the lists the indicator is read from. */
   isTemporary?: boolean;
 }
@@ -36,7 +36,8 @@ export interface PersistedReply {
  * would leave a dot the reader can never clear by opening the conversation. Every path that
  * persists an assistant row asks here: a stopped turn interrupted before its first token, a
  * run cancelled before any output, and a Responses API completion whose output carried only
- * reasoning or tool calls all persist a row with nothing readable in it.
+ * reasoning or tool calls all persist a row with nothing readable in it. A reply made only of
+ * attachments is readable: the message body renders them, which is what acknowledgement checks.
  */
 export function isAnnounceableReply(reply: PersistedReply): boolean {
   if (reply.isTemporary === true) {
@@ -48,7 +49,8 @@ export function isAnnounceableReply(reply: PersistedReply): boolean {
   }
   return (
     hasPersistableAbortContent(reply.content) ||
-    (typeof reply.text === 'string' && reply.text.trim().length > 0)
+    (typeof reply.text === 'string' && reply.text.trim().length > 0) ||
+    (Array.isArray(reply.attachments) && reply.attachments.length > 0)
   );
 }
 
@@ -91,8 +93,11 @@ export interface StoppedReplyAnnouncement {
   endpoint?: string | null;
   model?: string | null;
   reply: PersistedReply;
-  /** The rows this turn already wrote, so the stamp write does not reload the whole history. */
-  appendMessageIds?: SavedMessageId[];
+  /**
+   * The rows this turn already wrote, so the stamp write does not reload the whole history.
+   * Plain ids: the storage engine's own id type stays behind `saveConvo`, which casts them.
+   */
+  appendMessageIds?: string[];
   context: string;
 }
 
@@ -214,4 +219,39 @@ export async function announceErrorTurn(
     logger.error(`[announceErrorTurn] ${context}`, error);
     return undefined;
   }
+}
+
+/** The conversation a save settled, as the conversation write returns it. */
+interface SettledConversationDocument<TConversation> {
+  /** Present on the error shape a failed conversation write returns in place of the row. */
+  message?: string;
+  toObject?: () => TConversation;
+}
+
+/** What the assistant save reports: the persisted row and the conversation it settled. */
+export interface AssistantFinalSave<TConversation extends object> {
+  message?: object | null;
+  conversation?: (TConversation & SettledConversationDocument<TConversation>) | null;
+}
+
+/**
+ * Persists an assistant response ahead of its final event and returns the conversation that
+ * event must carry.
+ *
+ * The final event is the history barrier for active clients, so the response is written first
+ * and the snapshot carries the server-owned read-state stamp the client has to acknowledge,
+ * rather than a timestamp invented from the response. A save that persisted nothing is not a
+ * snapshot at all, so either failure throws before anything is published.
+ */
+export async function settleAssistantFinal<TConversation extends object>(
+  save: () => Promise<AssistantFinalSave<TConversation>>,
+): Promise<TConversation> {
+  const { message, conversation } = await save();
+  if (!message) {
+    throw new Error('Assistant response could not be persisted before final publication');
+  }
+  if (!conversation || conversation.message) {
+    throw new Error('Assistant conversation could not be persisted before final publication');
+  }
+  return typeof conversation.toObject === 'function' ? conversation.toObject() : conversation;
 }

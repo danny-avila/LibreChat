@@ -1383,6 +1383,7 @@ class BaseClient {
           messageId: persistedReply ? savedMessage.messageId : undefined,
           content: message.content,
           text: message.text,
+          attachments: message.attachments,
           isTemporary: reqCtx.isTemporary,
         },
         context: 'BaseClient - skipped conversation save',
@@ -1401,7 +1402,12 @@ class BaseClient {
       initialized: this.fetchedConvo === true,
       savedMessageId: savedMessage?._id,
       reply: persistedReply
-        ? { messageId: savedMessage.messageId, content: message.content, text: message.text }
+        ? {
+            messageId: savedMessage.messageId,
+            content: message.content,
+            text: message.text,
+            attachments: message.attachments,
+          }
         : undefined,
     });
     if (initialized) {
