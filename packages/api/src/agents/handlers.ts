@@ -221,14 +221,38 @@ export type ToolEndCallback = (
  * by ToolNode for the actual provider tool call; this wrapper never invents a
  * fallback identity.
  */
+/**
+ * Caps a tool result in place, before it reaches history. A capped result is
+ * what every later turn re-sends, so the saving repeats for the life of the
+ * conversation.
+ */
+export function capToolOutput(output: unknown, maxChars: number): number {
+  if (maxChars <= 0 || output == null || typeof output !== 'object') {
+    return 0;
+  }
+  const message = output as { content?: unknown };
+  const content = message.content;
+  if (typeof content !== 'string' || content.length <= maxChars) {
+    return 0;
+  }
+  const capped = truncateMiddle(content, maxChars);
+  message.content = capped;
+  return content.length - capped.length;
+}
+
 export function createOwnedToolEndHandler(
   callback: SdkToolEndCallback,
   loggerArg: typeof logger = logger,
+  maxResultChars = 0,
 ): EventHandler {
   const toolEndHandler = new ToolEndHandler(callback, loggerArg);
   return {
     handle: async (event, data: StreamEventData, metadata, graph) => {
       const output = data?.output;
+      const trimmed = capToolOutput(output, maxResultChars);
+      if (trimmed > 0) {
+        loggerArg.debug(`[toolEnd] result capped at ${maxResultChars} chars, ${trimmed} dropped`);
+      }
       const toolCallId =
         typeof output === 'object' && output != null
           ? (output as { tool_call_id?: unknown }).tool_call_id

@@ -407,6 +407,7 @@ function getDefaultHandlers({
   streamId = null,
   jobCreatedAt,
   toolExecuteOptions = null,
+  maxToolResultChars = 0,
   summarizationOptions = null,
   subagentAggregatorsByToolCallId = null,
   usageCost = null,
@@ -518,7 +519,7 @@ function getDefaultHandlers({
       collectedThoughtSignatures,
       emitTokenUsage,
     ),
-    [GraphEvents.TOOL_END]: createOwnedToolEndHandler(toolEndCallback, logger),
+    [GraphEvents.TOOL_END]: createOwnedToolEndHandler(toolEndCallback, logger, maxToolResultChars),
     [GraphEvents.ON_RUN_STEP]: {
       /**
        * Handle ON_RUN_STEP event.

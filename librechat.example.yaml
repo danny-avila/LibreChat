@@ -515,6 +515,13 @@ actions:
 #     - 'host.docker.internal:8080'
 #     - '127.0.0.1:8080'
 
+# Characters of a tool result kept in the conversation. A longer result is cut
+# from the middle, keeping its start and end, with a marker telling the model it
+# was cut. 0, the default, keeps every result whole.
+# endpoints:
+#   agents:
+#     maxToolResultChars: 28800
+
 # Example MCP Servers Object Structure
 # mcpServers:
 #   everything:
