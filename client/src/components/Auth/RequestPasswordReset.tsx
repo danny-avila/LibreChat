@@ -28,7 +28,7 @@ const ResetPasswordBodyText = () => {
     <div className="flex flex-col space-y-4">
       <p>{localize('com_auth_reset_password_if_email_exists')}</p>
       <a
-        className="text-accent-primary hover:text-accent-primary-hover inline-flex text-sm font-medium"
+        className="text-accent-primary hover:text-accent-primary-hover inline-flex text-sm font-medium transition-colors"
         href={loginPage()}
       >
         {localize('com_auth_back_to_login')}
@@ -139,7 +139,7 @@ function RequestPasswordReset() {
         </Button>
         <a
           href={loginPage()}
-          className="text-accent-primary hover:text-accent-primary-hover block text-center text-sm font-medium"
+          className="text-accent-primary hover:text-accent-primary-hover block text-center text-sm font-medium transition-colors"
         >
           {localize('com_auth_back_to_login')}
         </a>

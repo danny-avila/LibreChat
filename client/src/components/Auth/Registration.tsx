@@ -251,7 +251,7 @@ const Registration: React.FC = () => {
             <a
               href={loginPage()}
               aria-label="Login"
-              className="text-accent-primary hover:text-accent-primary-hover inline-flex p-1 text-sm font-medium"
+              className="text-accent-primary hover:text-accent-primary-hover inline-flex p-1 text-sm font-medium transition-colors"
             >
               {localize('com_auth_login')}
             </a>
