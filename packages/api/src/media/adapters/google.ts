@@ -5,6 +5,7 @@ import type {
   MediaProviderContext,
   MediaProviderInput,
   MediaProviderPart,
+  MediaProviderUsage,
   MediaProviderResult,
 } from '../provider';
 import { nativeDownload, nativeRequest, imageBytes, providerOptions } from './native';
@@ -135,6 +136,7 @@ async function submitGoogle(
         .object({
           promptTokenCount: z.number().optional(),
           candidatesTokenCount: z.number().optional(),
+          thoughtsTokenCount: z.number().optional(),
         })
         .optional(),
     }),
@@ -183,15 +185,28 @@ async function submitGoogle(
     }
   }
   if (parts.length === 0) {
-    return { status: 'failed' };
+    return {
+      status: 'failed',
+      ...(result.usageMetadata ? { usage: geminiUsage(result.usageMetadata) } : {}),
+    };
   }
+  return { status: 'completed', parts, usage: geminiUsage(result.usageMetadata) };
+}
+
+/** Gemini bills thinking as output but reports it outside `candidatesTokenCount`. */
+function geminiUsage(metadata?: {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  thoughtsTokenCount?: number;
+}): MediaProviderUsage {
+  const candidates = metadata?.candidatesTokenCount;
+  const thinking = metadata?.thoughtsTokenCount;
   return {
-    status: 'completed',
-    parts,
-    usage: {
-      inputTokens: result.usageMetadata?.promptTokenCount,
-      outputTokens: result.usageMetadata?.candidatesTokenCount,
-    },
+    inputTokens: metadata?.promptTokenCount,
+    outputTokens:
+      candidates === undefined && thinking === undefined
+        ? undefined
+        : (candidates ?? 0) + (thinking ?? 0),
   };
 }
 

@@ -443,6 +443,40 @@ describe('native Gemini models and continuation', () => {
       thoughtSignature: 'empty-text-signature',
     });
   });
+  it('bills thinking tokens as output and keeps usage on a response without parts', async () => {
+    const usageMetadata = {
+      promptTokenCount: 40,
+      candidatesTokenCount: 1290,
+      thoughtsTokenCount: 210,
+    };
+    const { context } = fixture('google.generateContent', [
+      {
+        candidates: [
+          {
+            content: {
+              parts: [
+                { text: 'plan', thought: true },
+                { inlineData: { mimeType: 'image/png', data: imageResponse.data[0].b64_json } },
+              ],
+            },
+          },
+        ],
+        usageMetadata,
+      },
+      { candidates: [], usageMetadata: { promptTokenCount: 40 } },
+      { candidates: [] },
+    ]);
+    const submission = request('gemini-3.1-flash-image');
+    await expect(adapter.submit(submission, [], context)).resolves.toMatchObject({
+      status: 'completed',
+      usage: { inputTokens: 40, outputTokens: 1500 },
+    });
+    await expect(adapter.submit(submission, [], context)).resolves.toEqual({
+      status: 'failed',
+      usage: { inputTokens: 40, outputTokens: undefined },
+    });
+    await expect(adapter.submit(submission, [], context)).resolves.toEqual({ status: 'failed' });
+  });
   it.each([
     'google/gemini-3.1-flash-lite-image',
     'gemini-3.1-flash-image',

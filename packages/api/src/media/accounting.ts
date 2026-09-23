@@ -189,6 +189,11 @@ export function createMediaAccounting({
       });
       return;
     }
+    // A provider-reported failure without a cost is unbilled; an uncertain outcome never gets here.
+    if (costUSD === undefined && job.provider.recovery?.terminalStatus === 'failed') {
+      await release(job, context);
+      return;
+    }
     if (credits === undefined || costUSD === undefined || creditsPerUSD === undefined) {
       throw new MediaServiceError('not_ready', 409, 'The paid media cost needs reconciliation.');
     }

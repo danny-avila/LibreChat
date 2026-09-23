@@ -7,6 +7,17 @@ export type MediaPricing = Pick<
   'getMultiplier' | 'getValueKey' | 'tokenValues' | 'imageTokenValues' | 'premiumTokenValues'
 >;
 
+const RELEASE_SUFFIX = /(?:-(?:preview|latest|exp|\d+))+$/;
+
+/**
+ * Substring lookup is right for chat, but it prices `gemini-3.1-flash-image` as the `gemini-3.1`
+ * text model. A media match must name the whole model apart from its vendor path and release tag.
+ */
+function namesModel(model: string, valueKey: string): boolean {
+  const name = model.toLowerCase().slice(model.lastIndexOf('/') + 1);
+  return name === valueKey || name.replace(RELEASE_SUFFIX, '') === valueKey;
+}
+
 /** Resolves only explicitly priced models, freezing rates before a durable job is admitted. */
 export function snapshotMediaPricing(
   pricing: MediaPricing,
@@ -52,7 +63,9 @@ export function snapshotMediaPricing(
   }
   // Responses wrappers have separately billed language-model and image-tool usage.
   if (integration.api === 'openai.images') return;
-  const valueKey = override || pricing.tokenValues[model] ? model : pricing.getValueKey(model);
+  const matchedKey = override || pricing.tokenValues[model] ? model : pricing.getValueKey(model);
+  const valueKey =
+    matchedKey && (matchedKey === model || namesModel(model, matchedKey)) ? matchedKey : undefined;
   if (!valueKey || (!override && !pricing.tokenValues[valueKey])) return;
   const explicit = override ?? pricing.tokenValues[valueKey];
   if (![explicit.prompt, explicit.completion].every((rate) => Number.isFinite(rate) && rate >= 0))

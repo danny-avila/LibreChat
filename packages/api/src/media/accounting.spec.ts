@@ -2,8 +2,9 @@ import mongoose from 'mongoose';
 import { createTxMethods } from '@librechat/data-schemas';
 import {
   FileSources,
-  mediaSubmissionRequestSchema,
+  EModelEndpoint,
   resolveMediaConfig,
+  mediaSubmissionRequestSchema,
 } from 'librechat-data-provider';
 import type { MediaAccountingMethods, MediaStoredJob } from '@librechat/data-schemas';
 import type { MediaContext } from './service';
@@ -156,6 +157,30 @@ describe('media accounting provider bridge', () => {
     );
     expect(service.snapshot!('gpt-image-future', integration, context.appConfig)).toBeUndefined();
     expect(service.snapshot!('gpt-5-image', integration, context.appConfig)).toBeUndefined();
+  });
+
+  it('does not price an image model at the rate of its text sibling', () => {
+    const service = createMediaAccounting({ repository, now: Date.now, pricing });
+    const integration = {
+      ...config.integrations[0],
+      api: 'google.generateContent' as const,
+      endpointRef: { kind: 'builtin' as const, endpoint: EModelEndpoint.google },
+    };
+    const snapshot = (model: string) => service.snapshot!(model, integration, context.appConfig);
+    expect(snapshot('gemini-3.1-flash-image')).toBeUndefined();
+    expect(snapshot('gemini-3.1-flash-image-preview')).toBeUndefined();
+    expect(snapshot('gemini-3.1-flash-lite-image')).toBeUndefined();
+    expect(snapshot('gemini-2.5-flash-image')).toMatchObject({
+      valueKey: 'gemini-2.5-flash-image',
+    });
+    expect(snapshot('google/gemini-2.5-flash-image')).toMatchObject({
+      valueKey: 'gemini-2.5-flash-image',
+      completion: 30,
+    });
+    expect(snapshot('gemini-3-pro-image-preview')).toMatchObject({
+      valueKey: 'gemini-3-pro-image',
+      completion: 120,
+    });
   });
 
   it('honors explicit per-model image input overrides without changing a frozen snapshot', () => {
@@ -345,20 +370,29 @@ describe('media accounting provider bridge', () => {
     );
   });
 
-  it.each(['failed', 'cancelled'] as const)(
-    'keeps an unknown %s cost unresolved even with a successful-request estimate',
-    async (terminalStatus) => {
-      const terminal: MediaStoredJob = {
-        ...job,
-        provider: { certainty: 'terminal', recovery: { terminalStatus } },
-      };
-      await expect(bridge().settle(terminal, { inputTokens: 20 }, context)).rejects.toMatchObject({
-        code: 'not_ready',
-      });
-      expect(repository.settleMediaJob).not.toHaveBeenCalled();
-      expect(repository.releaseMediaHold).not.toHaveBeenCalled();
-    },
-  );
+  it('keeps an unknown cancelled cost unresolved even with a successful-request estimate', async () => {
+    const terminal: MediaStoredJob = {
+      ...job,
+      provider: { certainty: 'terminal', recovery: { terminalStatus: 'cancelled' } },
+    };
+    await expect(bridge().settle(terminal, { inputTokens: 20 }, context)).rejects.toMatchObject({
+      code: 'not_ready',
+    });
+    expect(repository.settleMediaJob).not.toHaveBeenCalled();
+    expect(repository.releaseMediaHold).not.toHaveBeenCalled();
+  });
+
+  it('releases the hold for a provider failure that reports no cost', async () => {
+    const terminal: MediaStoredJob = {
+      ...job,
+      provider: { certainty: 'terminal', recovery: { terminalStatus: 'failed' } },
+    };
+    await bridge().settle(terminal, { inputTokens: 20 }, context);
+    expect(repository.settleMediaJob).not.toHaveBeenCalled();
+    expect(repository.releaseMediaHold).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: job.jobId, certainNoCharge: true }),
+    );
+  });
 
   it.each([
     ['failed', 0],
