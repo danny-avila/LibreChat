@@ -1,10 +1,7 @@
-import { MAX_PASSKEYS_PER_USER } from 'librechat-data-provider';
 import type { DeleteResult } from 'mongoose';
 import type { IPasskey, PasskeyCreateData } from '~/types';
 import { createIndexesWithRetry } from '~/utils/retry';
 import logger from '~/config/winston';
-
-export { MAX_PASSKEYS_PER_USER };
 
 export interface PasskeyMethods {
   createPasskey: (data: PasskeyCreateData) => Promise<IPasskey>;

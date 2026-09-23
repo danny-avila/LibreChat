@@ -12,7 +12,7 @@ import {
   type RefreshTokenBridgeMethods,
 } from './refreshTokenBridge';
 import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
-import { createPasskeyMethods, MAX_PASSKEYS_PER_USER, type PasskeyMethods } from './passkey';
+import { createPasskeyMethods, type PasskeyMethods } from './passkey';
 import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
 import { createFileMethods, type FileMethods, type FileOwnerScope } from './file';
 import { createTokenMethods, type TokenMethods } from './token';
@@ -226,7 +226,6 @@ export {
   AgentQueuedTurnConflictError,
   AgentQueuedTurnLaneRetiredError,
 };
-export { MAX_PASSKEYS_PER_USER };
 
 export type AllMethods = UserMethods &
   SessionMethods &

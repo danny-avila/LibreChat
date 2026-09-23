@@ -1,4 +1,5 @@
-import { logger, MAX_PASSKEYS_PER_USER } from '@librechat/data-schemas';
+import { logger } from '@librechat/data-schemas';
+import { MAX_PASSKEYS_PER_USER } from 'librechat-data-provider';
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
 import type { IUser, IPasskey, UserMethods, PasskeyMethods } from '@librechat/data-schemas';
 import type { TPasskey } from 'librechat-data-provider';

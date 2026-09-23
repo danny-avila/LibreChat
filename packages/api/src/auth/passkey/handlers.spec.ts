@@ -1,12 +1,8 @@
 import mongoose from 'mongoose';
 import { createHash } from 'node:crypto';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import {
-  logger,
-  createMethods,
-  createModels,
-  MAX_PASSKEYS_PER_USER,
-} from '@librechat/data-schemas';
+import { MAX_PASSKEYS_PER_USER } from 'librechat-data-provider';
+import { logger, createMethods, createModels } from '@librechat/data-schemas';
 import type { RegistrationResponseJSON } from '@simplewebauthn/server';
 import type { IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';

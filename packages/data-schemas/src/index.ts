@@ -51,7 +51,6 @@ export {
   createMCPAuthorityCredentialRevision,
   createMCPAuthorityDatabaseSourceRevision,
   digestMCPAuthorityValue,
-  MAX_PASSKEYS_PER_USER,
 } from './methods';
 export { FAVORITE_ITEM_TYPES } from './types/favorite';
 export {
