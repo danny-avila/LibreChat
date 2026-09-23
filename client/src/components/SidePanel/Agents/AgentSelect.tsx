@@ -4,7 +4,7 @@ import { ControlCombobox } from '@librechat/client';
 import { useFormContext, Controller } from 'react-hook-form';
 import {
   AgentCapabilities,
-  DEFAULT_AGENT_SELECTOR_LIMIT,
+  normalizeAgentSelectorLimit,
   defaultAgentFormValues,
 } from 'librechat-data-provider';
 import type { Agent, AgentCreateParams, StatefulCodeEnvironment } from 'librechat-data-provider';
@@ -50,8 +50,7 @@ function AgentSelect({
   dirtyFieldsRef.current = dirtyFields;
   const permissionLevel = useAgentDefaultPermissionLevel();
   const { data: startupConfig } = useGetStartupConfig();
-  const selectorLimit =
-    startupConfig?.interface?.agentSelectorLimit ?? DEFAULT_AGENT_SELECTOR_LIMIT;
+  const selectorLimit = normalizeAgentSelectorLimit(startupConfig?.interface?.agentSelectorLimit);
 
   const { data: agents = null } = useListAgentsQuery(
     { requiredPermission: permissionLevel },
