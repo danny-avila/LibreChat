@@ -197,11 +197,11 @@ export function usePasskeySignIn({ enabled }: { enabled: boolean }) {
           setIsSigningIn(false);
         }
       } catch {
-        /** Autofill is a progressive enhancement: a failure leaves the form usable. */
-        if (!cancelled) {
-          inFlightRef.current = false;
-          setIsSigningIn(false);
-        }
+        /**
+         * Autofill is a progressive enhancement: a failure leaves the form usable.
+         * It holds the lock only inside the inner try, which releases it itself, so
+         * an autofill ceremony superseded by the button must not unlock that one.
+         */
       }
     };
 
