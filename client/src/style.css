@@ -1,6 +1,27 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss';
+@config '../tailwind.config.cjs';
+
+/* Tailwind v4 changed two preflight defaults this app was built against. Each rule below
+ * restores the v3 default rather than adopting the new one, so the upgrade carries no visual
+ * change; drop one only as a deliberate design decision.
+ *   - border-color: v3 used gray-200, v4 uses currentColor.
+ *   - ::placeholder: v3 used gray-400, v4 uses currentColor at 50% opacity.
+ * Both read the palette through `theme()` so they follow createTailwindColors() rather than
+ * pinning a hex here. `button { cursor: pointer }` below already covers v4's third change. */
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: theme(colors.gray.200);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: theme(colors.gray.400);
+  }
+}
 
 .message-render {
   scroll-margin-top: 4rem;
@@ -437,10 +458,21 @@ html.high-contrast ::-webkit-scrollbar-track {
 }
 html.high-contrast * {
   scrollbar-color: rgb(var(--border-heavy)) rgb(var(--surface-primary));
-  /* Controls that halve their own ring (`ring-opacity-50`, `ring-opacity-20`)
-   * keep it at full strength here. The outline rules below cover the controls
-   * that blank it outright. */
-  --tw-ring-opacity: 1;
+}
+/* Controls that halve their own ring (`focus-visible:ring-text-primary/50` on the
+ * composer's collapse, tools, attach-file and attach-file-menu buttons,
+ * `focus:ring-text-primary/20` in `defaultTextProps`) keep it at full strength
+ * here. v4 has no ring-opacity variable — the slash bakes the alpha into
+ * `--tw-ring-color` as a `color-mix(...)` — so restoring full strength means
+ * re-declaring the colour rather than resetting an opacity.
+ *
+ * Matched by the class the caller wrote, not by `*`: a control that names its own
+ * ring colour means it, and `ring-current` on the toast close button is the ink
+ * that contrasts with a status fill, where `--text-primary` would be black on
+ * the light fills and white on the dark ones. The `:focus-visible` rule below
+ * carries the mode's 3px perimeter for everything either way. */
+html.high-contrast [class*='ring-text-primary/'] {
+  --tw-ring-color: rgb(var(--text-primary));
 }
 /* `.dark body`/`.dark html` pin the page to #212121, which would leave a
  * near-black canvas behind the pure black surfaces. */
@@ -710,23 +742,36 @@ html.high-contrast.dark .btn-neutral:hover {
   src: url('$fonts/roboto-mono-latin-400-italic.woff2') format('woff2');
 }
 
-select {
-  --tw-shadow: 0 0 transparent;
-  -webkit-appearance: none;
-  appearance: none;
-  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%238e8ea0' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
-  background-position: right 0.5rem center;
-  background-repeat: no-repeat;
-  background-size: 1.5em 1.5em;
-  padding-right: 2.5rem;
-  background-color: #fff;
-  border-color: #8e8ea0;
-  border-radius: 0;
-  border-width: 1px;
-  font-size: 1rem;
-  line-height: 1.5rem;
+/* v4 puts every utility in `@layer utilities`, and an unlayered declaration outranks a
+ * layered one whatever its specificity. The rules below are element and bare-pseudo
+ * resets that utilities beat under v3 by being classes; each is layered so it keeps
+ * losing to a utility. A rule that is meant to beat utilities stays unlayered
+ * (`.dark :focus-visible`, the `code, pre` font reset, the `.hidden`/`.overflow-*`
+ * class overrides). */
+@layer base {
+  select {
+    --tw-shadow: 0 0 transparent;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%238e8ea0' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+    background-position: right 0.5rem center;
+    background-repeat: no-repeat;
+    background-size: 1.5em 1.5em;
+    padding-right: 2.5rem;
+    background-color: #fff;
+    border-color: #8e8ea0;
+    border-radius: 0;
+    border-width: 1px;
+    font-size: 1rem;
+    line-height: 1.5rem;
+  }
 }
 
+/* `overflow-*-auto` deliberately overrides the utility of the same name with `overlay`, so it
+ * stays unlayered and keeps beating it; no source pairs it with a variant that would need to win
+ * back. `.hidden` had no such reason to exist — Tailwind emits the identical rule — and unlayered
+ * it outranked every responsive variant that reveals an element, so `hidden md:block` stayed
+ * hidden at every width and the composer's MCP button lost its accessible name. */
 .overflow-y-auto {
   overflow-y: overlay;
 }
@@ -743,10 +788,6 @@ select {
 
 .reset-rc-number-input-text-right input {
   text-align: right;
-}
-
-.hidden {
-  display: none;
 }
 
 p > small {
@@ -778,21 +819,23 @@ p > small {
   }
 }
 
-blockquote,
-dd,
-dl,
-fieldset,
-figure,
-h1,
-h2,
-h3,
-h4,
-h5,
-h6,
-hr,
-p,
-pre {
-  margin: 0;
+@layer base {
+  blockquote,
+  dd,
+  dl,
+  fieldset,
+  figure,
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  hr,
+  p,
+  pre {
+    margin: 0;
+  }
 }
 
 /* Show the message time when the row is hovered. Tailwind group-hover
@@ -1303,9 +1346,16 @@ pre[class*='language-'] {
   color: rgb(var(--syntax-title));
 }
 
-[role='button'],
-button {
-  cursor: pointer;
+/* Tailwind 3 gave every button a pointer cursor and Tailwind 4 leaves the
+ * platform default, so this shim is what keeps the affordance. It belongs in
+ * `base`: unlayered it would outrank every utility in the sheet, and
+ * `cursor-default` on `SelectDropDown` or `disabled:cursor-not-allowed` on a
+ * disabled button would stop meaning anything. */
+@layer base {
+  [role='button'],
+  button {
+    cursor: pointer;
+  }
 }
 
 .btn {
@@ -2364,8 +2414,10 @@ html {
   box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.35);
 }
 
-:focus {
-  outline: none;
+@layer base {
+  :focus {
+    outline: none;
+  }
 }
 
 html[data-input-modality='pointer']
@@ -2414,9 +2466,11 @@ html[data-input-modality='keyboard']
   outline-offset: 2px !important;
 }
 
-:focus-visible {
-  outline: 2px solid #000;
-  outline-offset: 2px;
+@layer base {
+  :focus-visible {
+    outline: 2px solid #000;
+    outline-offset: 2px;
+  }
 }
 
 .dark :focus-visible {

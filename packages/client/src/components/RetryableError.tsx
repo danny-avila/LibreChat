@@ -91,9 +91,9 @@ export function RetryableError({
         )}
 
         <div className="max-w-sm">
-          <h3 className="text-base font-semibold text-text-primary">{title}</h3>
+          <h3 className="text-text-primary text-base font-semibold">{title}</h3>
           {detail != null && detail !== '' && (
-            <p className="mt-1 text-sm leading-6 text-text-secondary" id={detailId}>
+            <p className="text-text-secondary mt-1 text-sm leading-6" id={detailId}>
               {detail}
             </p>
           )}
@@ -136,7 +136,7 @@ export function RetryableError({
           {/* Ticks every second, so it stays out of the alert's announcement. */}
           {countdown != null && (
             <p
-              className="mt-1.5 flex items-center gap-1.5 text-xs text-text-tertiary"
+              className="text-text-tertiary mt-1.5 flex items-center gap-1.5 text-xs"
               aria-hidden="true"
             >
               {labels.countdown(countdown)}

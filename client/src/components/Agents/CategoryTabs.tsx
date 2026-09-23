@@ -49,7 +49,7 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
     <div className="w-full">
       <div className="flex flex-wrap justify-start gap-1.5">
         {[...Array(6)].map((_, i) => (
-          <div key={i} className="h-8 min-w-[80px] rounded-full bg-surface-tertiary" />
+          <div key={i} className="bg-surface-tertiary h-8 min-w-[80px] rounded-full" />
         ))}
       </div>
     </div>
@@ -107,7 +107,7 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
   // Early return if no categories available
   if (!isLoading && (!categories || categories.length === 0)) {
     return (
-      <div className="text-center text-text-secondary">{localize('com_ui_no_categories')}</div>
+      <div className="text-text-secondary text-center">{localize('com_ui_no_categories')}</div>
     );
   }
 
@@ -140,8 +140,8 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
             onClick={() => onChange(category.value)}
             onKeyDown={(e) => handleKeyDown(e, category.value)}
             className={cn(
-              'inline-flex h-8 cursor-pointer select-none items-center justify-center whitespace-nowrap rounded-full border px-2.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary',
-              isSmallScreen ? 'min-w-fit flex-shrink-0' : '',
+              'focus-visible:ring-text-primary inline-flex h-8 cursor-pointer items-center justify-center rounded-full border px-2.5 text-xs font-medium whitespace-nowrap select-none focus-visible:ring-2 focus-visible:outline-hidden focus-visible:ring-inset',
+              isSmallScreen ? 'min-w-fit shrink-0' : '',
               activeTab === category.value
                 ? 'border-border-heavy bg-surface-active-alt text-text-primary'
                 : 'border-border-light bg-surface-secondary text-text-secondary hover:bg-surface-hover hover:text-text-primary',

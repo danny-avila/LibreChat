@@ -84,7 +84,7 @@ const AgentCard = memo(
         className={cn(
           /* The article keeps a plain resting fill so the grid slot still reads as a
              card while the surface layer is away being the dialog. */
-          'group relative flex h-full min-h-[17.5rem] min-w-0 flex-col rounded-theme-surface bg-surface-secondary p-5',
+          'group rounded-theme-surface bg-surface-secondary relative flex h-full min-h-[17.5rem] min-w-0 flex-col p-5',
           className,
         )}
       >
@@ -97,7 +97,7 @@ const AgentCard = memo(
             borderRadius: surfaceRadius,
             willChange: morphing ? 'transform' : undefined,
           }}
-          className="pointer-events-none absolute inset-0 z-0 rounded-theme-surface border border-border-light bg-surface-secondary transition-colors duration-150 group-hover:border-border-medium group-hover:bg-surface-tertiary"
+          className="rounded-theme-surface border-border-light bg-surface-secondary group-hover:border-border-medium group-hover:bg-surface-tertiary pointer-events-none absolute inset-0 z-0 border transition-colors duration-150"
           {...shared}
         />
 
@@ -105,7 +105,7 @@ const AgentCard = memo(
           ref={ref}
           type="button"
           className={cn(
-            'absolute inset-0 z-10 cursor-pointer rounded-theme-surface border-0 bg-transparent p-0 text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary',
+            'rounded-theme-surface focus-visible:ring-text-primary absolute inset-0 z-10 cursor-pointer border-0 bg-transparent p-0 text-start focus-visible:ring-2 focus-visible:outline-hidden focus-visible:ring-inset',
             morphing && 'focus-visible:ring-0',
           )}
           aria-label={expanded ? name : undefined}
@@ -138,12 +138,12 @@ const AgentCard = memo(
               <motion.div
                 layout="position"
                 layoutId={agentMorphId('category', agent.id)}
-                className="min-w-0 max-w-[60%] shrink-0 text-end"
+                className="max-w-[60%] min-w-0 shrink-0 text-end"
                 {...shared}
               >
                 <AgentCategoryBadge
                   category={agent.category}
-                  className="transition-colors duration-150 group-hover:border-border-medium [&>span]:line-clamp-2"
+                  className="group-hover:border-border-medium transition-colors duration-150 [&>span]:line-clamp-2"
                 />
               </motion.div>
             )}
@@ -155,7 +155,7 @@ const AgentCard = memo(
             layout
             layoutId={agentMorphId('title', agent.id)}
             id={titleId}
-            className="mt-4 line-clamp-2 break-words text-lg font-semibold leading-6 text-text-primary"
+            className="text-text-primary mt-4 line-clamp-2 text-lg leading-6 font-semibold break-words"
             {...shared}
           >
             {name}
@@ -171,7 +171,7 @@ const AgentCard = memo(
             layoutId={agentMorphId('description', agent.id)}
             id={descriptionId}
             style={{ willChange: morphing ? 'transform' : undefined }}
-            className="mb-5 mt-2 line-clamp-3 break-words text-sm leading-6 text-text-secondary"
+            className="text-text-secondary mt-2 mb-5 line-clamp-3 text-sm leading-6 break-words"
             {...shared}
           >
             {description}
@@ -181,7 +181,7 @@ const AgentCard = memo(
             <motion.span
               aria-hidden="true"
               variants={CARD_HANDOFF_VARIANTS}
-              className="absolute inset-x-0 top-0 h-px bg-border-light"
+              className="bg-border-light absolute inset-x-0 top-0 h-px"
             />
             {contact != null && (
               <motion.div
@@ -193,13 +193,13 @@ const AgentCard = memo(
                 <AgentContact
                   agent={agent}
                   compact
-                  className="max-w-full text-xs text-text-secondary [&_a]:text-text-primary"
+                  className="text-text-secondary [&_a]:text-text-primary max-w-full text-xs"
                 />
               </motion.div>
             )}
             <motion.span
               variants={CARD_HANDOFF_VARIANTS}
-              className="ms-auto flex shrink-0 items-center gap-1 text-sm font-medium text-text-primary"
+              className="text-text-primary ms-auto flex shrink-0 items-center gap-1 text-sm font-medium"
             >
               {localize('com_agents_view_details')}
               <ArrowUpRight className="h-4 w-4" aria-hidden="true" />

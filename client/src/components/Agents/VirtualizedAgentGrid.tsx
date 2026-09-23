@@ -474,7 +474,7 @@ export default function VirtualizedAgentGrid({
       {/* Stays mounted in both states so the dialog always has somewhere to hand focus
           back to, even when the refresh that removed the selected agent also emptied the
           marketplace. */}
-      <div ref={setHostElement} tabIndex={-1} className="min-w-0 focus-visible:outline-none">
+      <div ref={setHostElement} tabIndex={-1} className="min-w-0 focus-visible:outline-hidden">
         {/* The rows stay mounted while the marketplace has something else to say: replacing
             the list collapses its scrollable height, the browser clamps the scroll position to
             the shorter document, and the remount that follows a recovery starts the list at
@@ -541,7 +541,7 @@ export default function VirtualizedAgentGrid({
                   ref={virtualizer.measureElement}
                   className={
                     windowed
-                      ? 'absolute left-0 top-0 grid w-full items-stretch gap-5'
+                      ? 'absolute top-0 left-0 grid w-full items-stretch gap-5'
                       : 'relative col-span-full grid items-stretch gap-5'
                   }
                   style={{

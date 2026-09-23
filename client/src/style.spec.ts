@@ -1,12 +1,11 @@
 import fs from 'node:fs';
+import v8 from 'node:v8';
 import path from 'node:path';
 import postcss, { AtRule, Rule } from 'postcss';
 import type { ChildNode, Container, Result } from 'postcss';
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-const tailwindcss = require('tailwindcss');
-const tailwindConfig = require('../tailwind.config.cjs');
-/* eslint-enable @typescript-eslint/no-require-imports */
+/* eslint-disable-next-line @typescript-eslint/no-require-imports */
+const tailwindcss = require('@tailwindcss/postcss');
 
 type FontDeclaration = { selector: string; value: string; important: boolean };
 
@@ -40,15 +39,20 @@ describe('code typography', () => {
   let fontFamilies: FontDeclaration[];
 
   beforeAll(async () => {
-    const stylesheet = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
-    /** Raw content rather than the config's globs, so the emitted utilities depend on the
-     *  names asserted here and not on the working directory a runner happens to use. */
-    const config = {
-      ...tailwindConfig,
-      content: [{ raw: 'font-mono font-sans', extension: 'html' }],
-    };
-    const compiled: Result = await postcss([tailwindcss(config)]).process(stylesheet, {
-      from: undefined,
+    /** Tailwind v4's compiler clones its AST with `structuredClone`, which Node has and
+     *  jsdom, the environment this suite shares with the components, does not. */
+    globalThis.structuredClone ??= <T>(value: T): T => v8.deserialize(v8.serialize(value));
+    const file = path.join(__dirname, 'style.css');
+    /** Inline sources rather than a scan of the tree, so the emitted utilities depend on
+     *  the names asserted here and not on the working directory a runner happens to use. */
+    const stylesheet = fs
+      .readFileSync(file, 'utf8')
+      .replace(
+        "@import 'tailwindcss';",
+        "@import 'tailwindcss' source(none);\n@source inline('font-mono font-sans');",
+      );
+    const compiled: Result = await postcss([tailwindcss({ base: __dirname })]).process(stylesheet, {
+      from: file,
     });
 
     fontFamilies = [];

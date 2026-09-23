@@ -25,7 +25,7 @@ function renderSortMenuItem(label: string, isSelected: boolean): RenderProp {
       <div {...props} className={cn(className, 'justify-between gap-5')}>
         <span className="truncate">{label}</span>
         {isSelected ? (
-          <Check className="h-4 w-4 shrink-0 text-text-primary" aria-hidden="true" />
+          <Check className="text-text-primary h-4 w-4 shrink-0" aria-hidden="true" />
         ) : (
           <span className="h-4 w-4 shrink-0" aria-hidden="true" />
         )}
@@ -118,7 +118,7 @@ export default function ProjectWorkspace() {
 
   if (isProjectLoading) {
     return (
-      <div className="flex h-full items-center justify-center bg-presentation">
+      <div className="bg-presentation flex h-full items-center justify-center">
         <Spinner className="text-text-primary" />
       </div>
     );
@@ -126,8 +126,8 @@ export default function ProjectWorkspace() {
 
   if (!project) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 bg-presentation px-6 text-center">
-        <p className="text-sm text-text-secondary">{localize('com_ui_project_not_found')}</p>
+      <div className="bg-presentation flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+        <p className="text-text-secondary text-sm">{localize('com_ui_project_not_found')}</p>
         <Button type="button" variant="outline" size="sm" onClick={() => navigate('/projects')}>
           {localize('com_ui_all_projects')}
         </Button>
@@ -136,8 +136,8 @@ export default function ProjectWorkspace() {
   }
 
   return (
-    <main className="flex h-full min-h-0 flex-col overflow-y-auto bg-presentation text-text-primary">
-      <header className="sticky top-0 z-10 border-b border-border-light bg-presentation">
+    <main className="bg-presentation text-text-primary flex h-full min-h-0 flex-col overflow-y-auto">
+      <header className="border-border-light bg-presentation sticky top-0 z-10 border-b">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-2 px-4 md:h-16 md:px-6">
           {isSmallScreen ? <OpenSidebar className="size-9 shrink-0" /> : null}
           <Button
@@ -145,7 +145,7 @@ export default function ProjectWorkspace() {
             variant="ghost"
             size="sm"
             onClick={() => navigate('/projects')}
-            className="-ml-1.5 text-text-secondary hover:text-text-primary"
+            className="text-text-secondary hover:text-text-primary -ml-1.5"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             {localize('com_ui_all_projects')}
@@ -153,24 +153,24 @@ export default function ProjectWorkspace() {
         </div>
       </header>
 
-      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 pb-10 pt-6 md:px-6 md:pt-8">
+      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 pt-6 pb-10 md:px-6 md:pt-8">
         <div className="flex items-start gap-3.5">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-surface-secondary text-text-secondary">
+          <span className="bg-surface-secondary text-text-secondary flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl">
             <Folder className="h-6 w-6" aria-hidden="true" />
           </span>
           <div className="min-w-0 flex-1 pt-0.5">
-            <h1 className="truncate text-balance text-2xl font-semibold tracking-tight text-text-primary">
+            <h1 className="text-text-primary truncate text-2xl font-semibold tracking-tight text-balance">
               {project.name}
             </h1>
             {project.description ? (
-              <p className="mt-1 text-pretty text-sm leading-relaxed text-text-secondary">
+              <p className="text-text-secondary mt-1 text-sm leading-relaxed text-pretty">
                 {project.description}
               </p>
             ) : (
               <button
                 type="button"
                 onClick={() => setIsEditOpen(true)}
-                className="mt-1 text-sm text-text-tertiary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+                className="text-text-tertiary hover:text-text-primary focus-visible:ring-text-primary mt-1 text-sm transition-colors focus-visible:ring-2 focus-visible:outline-hidden"
               >
                 {localize('com_ui_add_description')}
               </button>
@@ -184,7 +184,7 @@ export default function ProjectWorkspace() {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="size-8 shrink-0 text-text-secondary hover:text-text-primary"
+                  className="text-text-secondary hover:text-text-primary size-8 shrink-0"
                   aria-label={localize('com_ui_edit_project')}
                   onClick={() => setIsEditOpen(true)}
                 >
@@ -199,7 +199,7 @@ export default function ProjectWorkspace() {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="size-8 shrink-0 text-text-secondary hover:text-text-destructive"
+                  className="text-text-secondary hover:text-text-destructive size-8 shrink-0"
                   aria-label={localize('com_ui_delete_project_action')}
                   onClick={() => setIsDeleteOpen(true)}
                 >
@@ -217,25 +217,25 @@ export default function ProjectWorkspace() {
           type="button"
           onClick={startProjectChat}
           className={cn(
-            'mt-7 flex w-full items-center gap-3 rounded-2xl border border-border-light bg-surface-secondary px-3.5 py-3 text-left',
-            'transition-colors duration-150 hover:bg-surface-hover',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
+            'border-border-light bg-surface-secondary mt-7 flex w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left',
+            'hover:bg-surface-hover transition-colors duration-150',
+            'focus-visible:ring-text-primary focus-visible:ring-2 focus-visible:outline-hidden',
           )}
           aria-label={localize('com_ui_new_chat_in_project', { name: project.name })}
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-surface-tertiary text-text-primary">
+          <span className="bg-surface-tertiary text-text-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-xl">
             <Plus className="h-4 w-4" aria-hidden="true" />
           </span>
-          <span className="min-w-0 flex-1 truncate text-sm text-text-primary">
+          <span className="text-text-primary min-w-0 flex-1 truncate text-sm">
             {localize('com_ui_new_chat_in_project', { name: project.name })}
           </span>
         </button>
 
         <section className="mt-8 flex min-h-0 flex-1 flex-col">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="flex items-baseline gap-2 text-sm font-medium text-text-primary">
+            <h2 className="text-text-primary flex items-baseline gap-2 text-sm font-medium">
               {localize('com_ui_chats')}
-              <span className="tabular-nums text-text-secondary">{project.conversationCount}</span>
+              <span className="text-text-secondary tabular-nums">{project.conversationCount}</span>
             </h2>
             <DropdownPopup
               portal={true}
@@ -249,7 +249,7 @@ export default function ProjectWorkspace() {
                 <Ariakit.MenuButton
                   aria-label={localize('com_ui_sort_chats_by')}
                   className={cn(
-                    'inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-sm font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
+                    'text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:ring-text-primary inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-2.5 text-sm font-medium whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:outline-hidden',
                     isSortMenuOpen && 'bg-surface-hover text-text-primary',
                   )}
                 >

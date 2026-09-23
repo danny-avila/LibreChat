@@ -90,7 +90,7 @@ function MessagesViewContent({
           >
             <div
               ref={contentRef}
-              className="flex flex-col pb-9 pt-14"
+              className="flex flex-col pt-14 pb-9"
               style={
                 steerOverlayHeight > 0
                   ? { paddingBottom: `calc(2.25rem + ${steerOverlayHeight}px)` }
@@ -100,7 +100,7 @@ function MessagesViewContent({
               {(_messagesTree && _messagesTree.length == 0) || _messagesTree === null ? (
                 <div
                   className={cn(
-                    'flex w-full items-center justify-center p-3 text-text-secondary',
+                    'text-text-secondary flex w-full items-center justify-center p-3',
                     fontSize,
                   )}
                 >
@@ -133,11 +133,7 @@ function MessagesViewContent({
                   />
                 </>
               )}
-              <div
-                id="messages-end"
-                className="group h-0 w-full flex-shrink-0"
-                ref={messagesEndRef}
-              />
+              <div id="messages-end" className="group h-0 w-full shrink-0" ref={messagesEndRef} />
             </div>
           </div>
 

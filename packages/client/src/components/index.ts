@@ -11,6 +11,7 @@ export * from './Dialog';
 export * from './DropdownMenu';
 export * from './HoverCard';
 export * from './Field';
+export * from './Focus';
 export * from './Input';
 export * from './InputNumber';
 export * from './SecretInput';

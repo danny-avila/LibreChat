@@ -126,7 +126,7 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
     <button
       type="button"
       className={cn(
-        'flex w-full min-w-0 grow cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary',
+        'focus-visible:ring-text-primary flex w-full min-w-0 grow cursor-pointer items-center gap-2 overflow-hidden rounded-lg px-2 text-left outline-hidden focus-visible:ring-2 focus-visible:ring-inset',
         isActiveConvo || isPopoverActive ? 'bg-surface-active-alt' : '',
       )}
       aria-current={isActiveConvo ? 'page' : undefined}
@@ -145,7 +145,7 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
       <span
         ref={titleRef}
         className={cn(
-          'min-w-0 flex-1 overflow-hidden whitespace-nowrap [--convo-title-fade-width:24px] [--convo-title-reveal-duration:800ms] [mask-position:left] [mask-repeat:no-repeat] [mask-size:100%_100%] [text-align:start] [transition-duration:0ms] [transition-property:mask-size] [transition-timing-function:linear] [&:dir(rtl)]:[mask-position:right]',
+          'min-w-0 flex-1 overflow-hidden [mask-size:100%_100%] [mask-position:left] [mask-repeat:no-repeat] [text-align:start] whitespace-nowrap [transition-property:mask-size] [transition-duration:0ms] [transition-timing-function:linear] [--convo-title-fade-width:24px] [--convo-title-reveal-duration:800ms] [&:dir(rtl)]:[mask-position:right]',
           isOverflowing &&
             '[mask-image:linear-gradient(to_right,currentColor_calc(100%_-_var(--convo-title-fade-width)),transparent)] [&:dir(rtl)]:[mask-image:linear-gradient(to_left,currentColor_calc(100%_-_var(--convo-title-fade-width)),transparent)]',
           'data-[title-revealed=true]:[mask-size:calc(100%_+_var(--convo-title-fade-width))_100%] data-[title-revealed=true]:[transition-duration:var(--convo-title-reveal-duration)]',
