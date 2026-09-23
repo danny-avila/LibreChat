@@ -123,6 +123,7 @@ router.post(
 router.post(
   '/passkey/login/verify',
   middleware.logHeaders,
+  middleware.requireSameOrigin,
   middleware.passkeyLimiter,
   middleware.validateEmailLogin,
   middleware.checkBan,

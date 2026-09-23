@@ -138,6 +138,22 @@ describe('local login endpoints reject cross-site submissions', () => {
     expect(mockLoginController).not.toHaveBeenCalled();
   });
 
+  it('rejects a cross-site passkey assertion before verifying it', async () => {
+    const { authenticatePasskey } = require('~/server/controllers/auth/PasskeyController');
+
+    await request(app)
+      .post('/api/auth/passkey/login/verify')
+      .set('Host', 'chat.example.com')
+      .set('Sec-Fetch-Site', 'cross-site')
+      .set('Origin', OTHER_ORIGIN)
+      .type('form')
+      .send({ sessionId: 'attacker-session', 'credential[id]': 'attacker-credential' })
+      .expect(403);
+
+    expect(authenticatePasskey).not.toHaveBeenCalled();
+    expect(mockLoginController).not.toHaveBeenCalled();
+  });
+
   it('rejects a cross-site temp-token 2FA submission before verifying it', async () => {
     await request(app)
       .post('/api/auth/2fa/verify-temp')
