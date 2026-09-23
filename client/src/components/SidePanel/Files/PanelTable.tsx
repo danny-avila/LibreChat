@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useRef } from 'react';
+import { useSetRecoilState } from 'recoil';
 import { ArrowUpLeft } from 'lucide-react';
 import {
   Table,
@@ -25,17 +26,22 @@ import {
 } from '@tanstack/react-table';
 import {
   megabyte,
+  Constants,
+  EToolResources,
   mergeFileConfig,
   checkOpenAIStorage,
+  isEphemeralAgentId,
   isAssistantsEndpoint,
   getEndpointFileConfig,
+  defaultAgentCapabilities,
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
+import { useLocalize, useUpdateFiles, useGetAgentsConfig, useAgentCapabilities } from '~/hooks';
 import { MyFilesModal } from '~/components/Chat/Input/Files/MyFilesModal';
 import { useFileMapContext, useChatContext } from '~/Providers';
-import { useLocalize, useUpdateFiles } from '~/hooks';
 import { useGetFileConfig } from '~/data-provider';
+import { ephemeralAgentByConvoId } from '~/store';
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
@@ -91,6 +97,11 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
     select: (data) => mergeFileConfig(data),
   });
   const { addFile } = useUpdateFiles(setFiles);
+  const setEphemeralAgent = useSetRecoilState(
+    ephemeralAgentByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
+  );
+  const { agentsConfig } = useGetAgentsConfig();
+  const capabilities = useAgentCapabilities(agentsConfig?.capabilities ?? defaultAgentCapabilities);
 
   const handleFileClick = useCallback(
     (file: TFile) => {
@@ -184,6 +195,20 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         }
       }
 
+      /** Mirror `AttachFileMenu`: an embedded file is unreadable unless file search is on.
+       * The ephemeral flag governs direct chats only — a saved agent's own `tools` decide,
+       * so writing it there would be dead state the badge row still reflects. */
+      if (
+        fileData.embedded === true &&
+        capabilities.fileSearchEnabled &&
+        isEphemeralAgentId(conversation.agent_id)
+      ) {
+        setEphemeralAgent((prev) => ({
+          ...prev,
+          [EToolResources.file_search]: true,
+        }));
+      }
+
       addFile({
         progress: 1,
         attached: true,
@@ -197,9 +222,20 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         source: fileData.source,
         size: fileData.bytes,
         metadata: fileData.metadata,
+        llmDeliveryPath: fileData.llmDeliveryPath,
       });
     },
-    [addFile, files, fileMap, conversation, localize, showToast, fileConfig],
+    [
+      addFile,
+      files,
+      fileMap,
+      conversation,
+      localize,
+      showToast,
+      fileConfig,
+      setEphemeralAgent,
+      capabilities.fileSearchEnabled,
+    ],
   );
 
   const filenameFilter = table.getColumn('filename')?.getFilterValue() as string;
@@ -213,17 +249,17 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
       />
 
-      <div className="rounded-lg border border-border-light bg-transparent shadow-sm transition-colors">
+      <div className="border-border-light rounded-lg border bg-transparent shadow-xs transition-colors">
         <div className="overflow-hidden">
           <Table className="table-fixed">
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id} className="border-b border-border-light">
+                <TableRow key={headerGroup.id} className="border-border-light border-b">
                   {headerGroup.headers.map((header, index) => (
                     <TableHead
                       key={header.id}
                       style={{ width: index === 0 ? '75%' : '25%' }}
-                      className="bg-surface-secondary py-2 text-sm font-medium text-text-secondary"
+                      className="bg-surface-secondary text-text-secondary py-2 text-sm font-medium"
                     >
                       <div className={index === 0 ? 'px-2' : 'flex justify-end px-1'}>
                         {header.isPlaceholder
@@ -241,7 +277,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                   <TableRow
                     key={row.id}
                     data-state={row.getIsSelected() && 'selected'}
-                    className="border-b border-border-light transition-colors hover:bg-surface-secondary [&:last-child]:border-0"
+                    className="border-border-light hover:bg-surface-secondary border-b transition-colors [&:last-child]:border-0"
                   >
                     {row.getVisibleCells().map((cell) => {
                       const isFilenameCell = cell.column.id === 'filename';
@@ -257,7 +293,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                           }}
                           className={
                             isFilenameCell
-                              ? 'focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-text-primary'
+                              ? 'focus-visible:outline-text-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px]'
                               : ''
                           }
                           data-skip-refocus="true"
@@ -302,7 +338,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                 <TableRow>
                   <TableCell
                     colSpan={columns.length}
-                    className="h-24 text-center text-sm text-text-secondary"
+                    className="text-text-secondary h-24 text-center text-sm"
                   >
                     {localize('com_files_no_results')}
                   </TableCell>

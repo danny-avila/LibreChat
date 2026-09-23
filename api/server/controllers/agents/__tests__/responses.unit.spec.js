@@ -241,6 +241,13 @@ jest.mock('@librechat/api', () => ({
   buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
   applyContextToAgent: (...args) => mockApplyContextToAgent(...args),
   buildRunToolSet: jest.fn().mockReturnValue(new Set()),
+  /** No fixture declares a caller-executed tool, so the handoff stays inert. */
+  createClientToolHandoff: jest.fn(({ agentDefinitions }) => ({
+    toolDefinitions: agentDefinitions,
+    appliedTools: [],
+    wrapRunStep: (delegate) => delegate,
+    wrapToolExecute: (delegate) => delegate,
+  })),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
   resolveConversationCodeEnvironmentDecision: ({
@@ -877,6 +884,28 @@ describe('createResponse controller', () => {
       }),
     );
   });
+
+  it.each([false, true])(
+    'excludes caller-executed tools from eager execution: stream=%s',
+    async (stream) => {
+      const api = require('@librechat/api');
+      const clientToolNames = new Set(['submit_sql']);
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', input: 'Hello', stream },
+      });
+      api.createClientToolHandoff.mockImplementationOnce(({ agentDefinitions }) => ({
+        toolDefinitions: agentDefinitions,
+        appliedTools: [],
+        clientToolNames,
+        wrapRunStep: (delegate) => delegate,
+        wrapToolExecute: (delegate) => delegate,
+      }));
+
+      await createResponse(req, res);
+
+      expect(api.createRun).toHaveBeenCalledWith(expect.objectContaining({ clientToolNames }));
+    },
+  );
 
   it('invokes the graph with the resolved recursion limit rather than the SDK default', async () => {
     const api = require('@librechat/api');
@@ -2065,7 +2094,10 @@ describe('createResponse controller', () => {
         const { loadAgentTools, loadToolsForExecution } = require('~/server/services/ToolService');
         const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 
-        req.config.endpoints.agents.backgroundTasks = { ordinaryToolCancellation: true };
+        req.config.endpoints.agents.backgroundTasks = {
+          ordinaryToolCancellation: true,
+          completionResultMaxChars: 4096,
+        };
         req.body.stream = stream;
         await createResponse(req, res);
 
@@ -2095,6 +2127,7 @@ describe('createResponse controller', () => {
 
         const toolExecuteOptions = createToolExecuteHandler.mock.calls.at(-1)[0];
         expect(toolExecuteOptions.ordinaryToolCancellation).toBe(true);
+        expect(toolExecuteOptions.backgroundCompletionResultMaxChars).toBe(4096);
         expect(toolExecuteOptions.runSignal).toBe(mockExecution.signal);
         expect(toolExecuteOptions.foregroundRunId).toBe(initializeParams.requestBody.messageId);
         const effectiveSignal = new AbortController().signal;

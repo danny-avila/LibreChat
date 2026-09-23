@@ -134,6 +134,7 @@ jest.mock('~/utils/approval', () => ({
 }));
 
 jest.mock('~/utils', () => ({
+  getPartKeyIndex: jest.requireActual('~/utils').getPartKeyIndex,
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
   getToolDisplayLabel: (name: string, _localize: unknown, knownServerNames?: readonly string[]) => {
     const configuredServer = knownServerNames?.find((server) => name.endsWith(`_mcp_${server}`));
@@ -163,6 +164,7 @@ jest.mock('~/utils', () => ({
   getBatchActivityLabelPart: jest.requireActual('~/utils/activityLabels').getBatchActivityLabelPart,
   getActivityLabelText: jest.requireActual('~/utils/activityLabels').getActivityLabelText,
   hasPendingApprovalInPart: jest.requireActual('~/utils/groupToolCalls').hasPendingApprovalInPart,
+  hasPendingAuthInPart: jest.requireActual('~/utils/groupToolCalls').hasPendingAuthInPart,
 }));
 
 jest.mock('../Parts', () => ({

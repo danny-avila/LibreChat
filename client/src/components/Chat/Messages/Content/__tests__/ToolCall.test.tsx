@@ -1,11 +1,12 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { Tools, Constants } from 'librechat-data-provider';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { Tools, Constants, dataService } from 'librechat-data-provider';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import type { TStartupConfig } from 'librechat-data-provider';
 import { MCPAppsPolicyProvider } from '~/Providers/MCPAppsPolicyContext';
 import { ToolAuthWarningContext } from '../auth';
 import ToolCall from '../ToolCall';
+import { logger } from '~/utils';
 
 // Mock dependencies
 jest.mock('~/hooks', () => ({
@@ -110,7 +111,20 @@ jest.mock('~/utils', () => ({
   cn: (...classes: any[]) => classes.filter(Boolean).join(' '),
   getToolDisplayLabel: (name: string, localize: (key: string) => string) =>
     name === 'set_memory' ? localize('com_ui_tool_name_set_memory') : name,
+  openInNewTab: jest.requireActual('~/utils/links').openInNewTab,
 }));
+
+jest.mock('librechat-data-provider', () => {
+  const actual = jest.requireActual('librechat-data-provider');
+  return {
+    ...actual,
+    dataService: {
+      ...actual.dataService,
+      bindMCPOAuth: jest.fn(),
+      bindActionOAuth: jest.fn(),
+    },
+  };
+});
 
 describe('ToolCall', () => {
   const originalSandboxUrl = process.env.VITE_MCP_SANDBOX_URL;
@@ -499,8 +513,10 @@ describe('ToolCall', () => {
 
   describe('authentication flow', () => {
     it('should show sign-in button when auth URL is provided', () => {
-      const originalOpen = window.open;
-      window.open = jest.fn();
+      const open = jest.spyOn(window, 'open').mockImplementation(() => null);
+      const click = jest
+        .spyOn(HTMLAnchorElement.prototype, 'click')
+        .mockImplementation(() => undefined);
 
       renderWithRecoil(
         <ToolCall
@@ -515,13 +531,122 @@ describe('ToolCall', () => {
       expect(signInButton).toBeInTheDocument();
 
       fireEvent.click(signInButton);
-      expect(window.open).toHaveBeenCalledWith(
-        'https://auth.example.com',
-        '_blank',
-        'noopener,noreferrer',
-      );
+      expect(click).toHaveBeenCalledTimes(1);
+      const link = click.mock.instances[0] as unknown as HTMLAnchorElement;
+      expect(link.href).toBe('https://auth.example.com/');
+      expect(link.target).toBe('_blank');
+      expect(link.rel).toBe('noopener noreferrer');
+      /** A features string makes WebKit request a popup window, which iOS web apps cannot open. */
+      expect(open).not.toHaveBeenCalled();
 
-      window.open = originalOpen;
+      click.mockRestore();
+      open.mockRestore();
+    });
+
+    describe('MCP sign-in', () => {
+      const callbackUrl = 'https://chat.example.com/api/mcp/clickhouse/oauth/callback';
+      const mcpAuth = `https://mcp.example.com/authorize?redirect_uri=${encodeURIComponent(callbackUrl)}`;
+      const mcpProps = {
+        ...mockProps,
+        name: `oauth${Constants.mcp_delimiter}clickhouse`,
+        auth: mcpAuth,
+        initialProgress: 0.5,
+        isSubmitting: true,
+      };
+      let click: jest.SpyInstance;
+
+      beforeEach(() => {
+        click = jest
+          .spyOn(HTMLAnchorElement.prototype, 'click')
+          .mockImplementation(() => undefined);
+      });
+
+      afterEach(() => {
+        click.mockRestore();
+      });
+
+      const signInButton = () => screen.getByRole('button', { name: 'Sign in to mcp.example.com' });
+
+      it('binds when the prompt appears and opens the provider within the tap', async () => {
+        (dataService.bindMCPOAuth as jest.Mock).mockResolvedValue({ success: true });
+        renderWithRecoil(<ToolCall {...mcpProps} />);
+        expect(dataService.bindMCPOAuth).toHaveBeenCalledWith('clickhouse');
+        await waitFor(() => expect(signInButton()).toBeEnabled());
+
+        fireEvent.click(signInButton());
+
+        expect(click).toHaveBeenCalledTimes(1);
+        expect((click.mock.instances[0] as unknown as HTMLAnchorElement).href).toBe(mcpAuth);
+        expect(dataService.bindMCPOAuth).toHaveBeenCalledTimes(2);
+        expect(dataService.bindMCPOAuth).toHaveBeenLastCalledWith('clickhouse');
+      });
+
+      it('claims the shared CSRF binding for the prompt the user taps', async () => {
+        (dataService.bindMCPOAuth as jest.Mock).mockResolvedValue({ success: true });
+        const notionCallback = 'https://chat.example.com/api/mcp/notion/oauth/callback';
+        const notionAuth = `https://notion.example.com/authorize?redirect_uri=${encodeURIComponent(notionCallback)}`;
+        const notionButton = () =>
+          screen.getByRole('button', { name: 'Sign in to notion.example.com' });
+        renderWithRecoil(
+          <>
+            <ToolCall {...mcpProps} />
+            <ToolCall
+              {...mcpProps}
+              name={`oauth${Constants.mcp_delimiter}notion`}
+              auth={notionAuth}
+            />
+          </>,
+        );
+        await waitFor(() => expect(signInButton()).toBeEnabled());
+        await waitFor(() => expect(notionButton()).toBeEnabled());
+        expect(dataService.bindMCPOAuth).toHaveBeenLastCalledWith('notion');
+
+        fireEvent.click(signInButton());
+
+        expect(click).toHaveBeenCalledTimes(1);
+        expect((click.mock.instances[0] as unknown as HTMLAnchorElement).href).toBe(mcpAuth);
+        expect(dataService.bindMCPOAuth).toHaveBeenLastCalledWith('clickhouse');
+      });
+
+      it('keeps sign-in disabled until the bind lands', async () => {
+        let finishBind: (() => void) | undefined;
+        (dataService.bindMCPOAuth as jest.Mock).mockReturnValue(
+          new Promise((resolve) => {
+            finishBind = () => resolve({ success: true });
+          }),
+        );
+        renderWithRecoil(<ToolCall {...mcpProps} />);
+
+        expect(signInButton()).toBeDisabled();
+        expect(signInButton()).toHaveAttribute('aria-busy', 'true');
+        fireEvent.click(signInButton());
+        expect(click).not.toHaveBeenCalled();
+
+        finishBind!();
+        await waitFor(() => expect(signInButton()).toBeEnabled());
+        fireEvent.click(signInButton());
+        expect(click).toHaveBeenCalledTimes(1);
+      });
+
+      it('retries a failed bind on tap instead of opening the provider', async () => {
+        (dataService.bindMCPOAuth as jest.Mock)
+          .mockRejectedValueOnce(new Error('bind failed'))
+          .mockResolvedValue({ success: true });
+        renderWithRecoil(<ToolCall {...mcpProps} />);
+        await waitFor(() => expect(logger.error).toHaveBeenCalled());
+        await waitFor(() => expect(signInButton()).toBeEnabled());
+
+        fireEvent.click(signInButton());
+
+        expect(click).not.toHaveBeenCalled();
+        expect(screen.getByRole('alert')).toHaveTextContent('com_ui_oauth_error_generic');
+        await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+        expect(dataService.bindMCPOAuth).toHaveBeenCalledTimes(2);
+        await waitFor(() => expect(signInButton()).toBeEnabled());
+
+        fireEvent.click(signInButton());
+        expect(click).toHaveBeenCalledTimes(1);
+      });
     });
 
     it('should not show auth section when cancelled', () => {

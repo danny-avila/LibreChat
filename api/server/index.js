@@ -292,7 +292,6 @@ const startServer = async () => {
      caller's and the client prefers it. */
   indexHTML = injectConfiguredFooterBootstrap(indexHTML, {
     customFooter: process.env.CUSTOM_FOOTER,
-    interfaceConfig: appConfig?.interfaceConfig,
   });
 
   const cspPolicy = createCspPolicy();
@@ -448,6 +447,8 @@ const startServer = async () => {
 
   app.use('/metrics', metricsRouter);
 
+  app.use('/api', routes.openapi);
+
   /** 404 for unmatched API routes */
   app.use('/api', apiNotFound);
 
@@ -496,7 +497,11 @@ const startServer = async () => {
       if (inspectFlags || isEnabled(process.env.MEM_DIAG)) {
         memoryDiagnostics.start();
       }
-      await initializeAgentTriggerService({ address: server.address() });
+      await initializeAgentTriggerService({
+        address: server.address(),
+        completionResultBatchSize:
+          appConfig?.endpoints?.agents?.backgroundTasks?.completionResultBatchSize,
+      });
       const scheduleEngineArmed = (await initializeScheduleEngine()) != null;
       scheduleEngineState = scheduleEngineArmed ? 'armed' : 'unavailable';
       if (!scheduleEngineArmed) {

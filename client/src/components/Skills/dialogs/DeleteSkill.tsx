@@ -26,8 +26,12 @@ function DeleteSkill({ skillId, skillName, disabled, onDelete }: DeleteSkillProp
   const localize = useLocalize();
   const { showToast } = useToastContext();
   const deleteSkill = useDeleteSkillMutation({
-    onSuccess: () => {
-      showToast({ status: 'success', message: localize('com_ui_skill_deleted') });
+    onSuccess: (response) => {
+      const cleanupComplete = response.cleanupComplete !== false;
+      showToast({
+        status: cleanupComplete ? 'success' : 'error',
+        message: localize(cleanupComplete ? 'com_ui_skill_deleted' : 'com_ui_skill_delete_partial'),
+      });
       onDelete?.();
     },
     onError: () => {
@@ -75,7 +79,7 @@ function DeleteSkill({ skillId, skillName, disabled, onDelete }: DeleteSkillProp
         title={localize('com_ui_delete')}
         className="max-w-[450px]"
         main={
-          <p className="text-left text-sm text-text-primary">
+          <p className="text-text-primary text-left text-sm">
             {localize('com_ui_skill_delete_confirm', { 0: skillName })}
           </p>
         }

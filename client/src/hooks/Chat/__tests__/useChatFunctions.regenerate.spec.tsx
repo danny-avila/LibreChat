@@ -1,3 +1,4 @@
+import { getDefaultStore } from 'jotai';
 import { renderHook, act } from '@testing-library/react';
 import { Constants, ContentTypes, EModelEndpoint, createPayload } from 'librechat-data-provider';
 import type {
@@ -7,6 +8,8 @@ import type {
   TMessage,
   TSubmission,
 } from 'librechat-data-provider';
+import { activeUsageResponseIdFamily, pendingUsageFamily } from '~/store/usage';
+import { revealedQueuedTurnFamily } from '~/store/steer';
 import useChatFunctions from '../useChatFunctions';
 import { isPasteSubmitted } from '~/utils';
 
@@ -155,6 +158,26 @@ describe('useChatFunctions ask', () => {
     mockResolveCodeWorkspaceSubmission.mockReturnValue({});
   });
 
+  it.each([EModelEndpoint.agents, EModelEndpoint.openAI])(
+    'binds the optimistic %s response before publishing its messages',
+    (endpoint) => {
+      const { result, setMessages, setSubmission } = renderAsk([], 'conversation-1', { endpoint });
+      const store = getDefaultStore();
+      store.set(activeUsageResponseIdFamily('conversation-1'), null);
+      setMessages.mockImplementation((messages: TMessage[]) => {
+        expect(store.get(activeUsageResponseIdFamily('conversation-1'))).toBe(
+          messages.at(-1)?.messageId,
+        );
+      });
+      act(() => result.current.ask({ text: 'Hello', conversationId: 'conversation-1' }));
+      const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+      expect(store.get(activeUsageResponseIdFamily('conversation-1'))).toBe(
+        submission.initialResponse?.messageId,
+      );
+      expect(store.get(pendingUsageFamily('conversation-1')).eventCount).toBe(0);
+    },
+  );
+
   it('reads an approval-mode selection made immediately before send', () => {
     mockGetLatestConversation.mockReturnValue({
       ...conversation('conversation-1'),
@@ -168,6 +191,7 @@ describe('useChatFunctions ask', () => {
 
     const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
     expect(submission.codeApprovalMode).toBe('acceptEdits');
+    expect(submission.conversation.codeApprovalMode).toBe('acceptEdits');
   });
 
   it('preallocates a durable Agents user id for the optimistic response anchor', () => {
@@ -205,6 +229,30 @@ describe('useChatFunctions ask', () => {
     const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
     expect(mockResolveCodeWorkspaceSubmission).toHaveBeenCalledWith([selection], 'attached');
     expect(submission.codeWorkspaces).toEqual([selection]);
+  });
+
+  it('refuses every direct send before consuming composer context during handoff', () => {
+    const family = revealedQueuedTurnFamily('conversation-1');
+    getDefaultStore().set(family, {
+      clientRequestId: 'queued',
+      parentMessageId: 'response',
+      generationCreatedAt: 41,
+      text: 'queued',
+      revealedAt: new Date().toISOString(),
+    });
+    try {
+      const { result, setSubmission, getMessages } = renderAsk([]);
+      expect(result.current.ask({ text: 'direct' })).toBe(false);
+      expect(
+        result.current.ask({ text: 'rerun', parentMessageId: 'earlier' }, { isRegenerate: true }),
+      ).toBe(false);
+      expect(mockResolveCodeWorkspaceSubmission).not.toHaveBeenCalled();
+      expect(getMessages).not.toHaveBeenCalled();
+      expect(setSubmission).not.toHaveBeenCalled();
+      expect(mockSetFilesToDelete).not.toHaveBeenCalled();
+    } finally {
+      getDefaultStore().set(family, null);
+    }
   });
 
   it('refuses to send when workspace submission resolution is not ready', () => {

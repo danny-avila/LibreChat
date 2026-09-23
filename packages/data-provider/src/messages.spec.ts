@@ -1,4 +1,4 @@
-import type { SummaryContentPart } from './types/assistants';
+import type { SummaryContentPart } from './types/content';
 import type { ParentMessage } from './messages';
 import type { TFile } from './types/files';
 import type { TMessage } from './types';

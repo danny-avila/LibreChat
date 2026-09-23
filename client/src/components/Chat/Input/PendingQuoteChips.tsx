@@ -8,9 +8,9 @@ import store from '~/store';
 const CHIP_CLASS =
   'inline-flex max-w-full items-center gap-1 rounded-2xl border border-border-light bg-surface-secondary px-2.5 py-1.5 text-sm text-text-secondary';
 const REMOVE_BTN_CLASS =
-  '-mr-0.5 shrink-0 rounded-full p-0.5 text-text-secondary hover:bg-surface-tertiary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy';
+  '-mr-0.5 shrink-0 rounded-full p-0.5 text-text-secondary hover:bg-surface-tertiary hover:text-text-primary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-border-xheavy';
 const TRIGGER_CLASS =
-  'inline-flex min-w-0 items-center gap-1.5 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy';
+  'inline-flex min-w-0 items-center gap-1.5 rounded-full focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-border-xheavy';
 /**
  * Quote mark. Semantic `status-info` rather than `cyan-500`, matching the queue
  * identity in `Chat/Steering/identity.ts`: the raw hue lands at 2.43:1 on the
@@ -175,26 +175,26 @@ function PendingQuoteChips({
             data-testid="quote-selections-popup"
             onPointerEnter={cancelClose}
             onPointerLeave={scheduleClose}
-            className="z-50 w-80 max-w-[90vw] rounded-xl border border-border-light bg-surface-secondary p-2 text-text-primary shadow-lg outline-none"
+            className="border-border-light bg-surface-secondary text-text-primary z-50 w-80 max-w-[90vw] rounded-xl border p-2 shadow-lg outline-hidden"
           >
             <ul className="flex flex-col gap-1" aria-label={localize('com_ui_referenced_quotes')}>
               {quotes.map((text, index) => (
                 <li
                   key={`${index}-${text.slice(0, 24)}`}
-                  className="flex items-start gap-1.5 rounded-xl px-1.5 py-1 hover:bg-surface-tertiary"
+                  className="hover:bg-surface-tertiary flex items-start gap-1.5 rounded-xl px-1.5 py-1"
                 >
                   <TextQuote
-                    className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-tertiary"
+                    className="text-text-tertiary mt-0.5 h-3.5 w-3.5 shrink-0"
                     aria-hidden="true"
                   />
-                  <span className="line-clamp-2 flex-1 whitespace-pre-wrap break-words text-sm text-text-secondary">
+                  <span className="text-text-secondary line-clamp-2 flex-1 text-sm break-words whitespace-pre-wrap">
                     {text}
                   </span>
                   <button
                     type="button"
                     aria-label={localize('com_ui_remove_quote')}
                     onClick={() => removeAt(index)}
-                    className="mt-0.5 shrink-0 rounded-full p-0.5 text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy"
+                    className="text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:ring-border-xheavy mt-0.5 shrink-0 rounded-full p-0.5 focus-visible:ring-2 focus-visible:outline-hidden"
                   >
                     <X className="h-3.5 w-3.5" aria-hidden="true" />
                   </button>

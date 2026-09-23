@@ -208,6 +208,9 @@ describe('Conversation Operations', () => {
           checkpointNs: 'event-actor/other',
           checkpointId: 'other',
         },
+        lastResponseAt: new Date('2026-08-16T10:00:00.000Z'),
+        lastResponseMessageId: 'forged-reply',
+        lastResponseIsManual: true,
       };
       await saveConvo(mockCtx, { ...mockConversationData, ...forged });
       await methods.bulkSaveConvos([{ ...mockConversationData, user: mockCtx.userId, ...forged }]);
@@ -278,6 +281,125 @@ describe('Conversation Operations', () => {
         { conversationId: mockConversationData.conversationId, user: mockCtx.userId },
         '_id',
       );
+    });
+
+    it('does not let metadata forge a reply timestamp or identity', async () => {
+      const replyAt = new Date('2026-08-16T10:05:00.000Z');
+      await saveConvo(
+        mockCtx,
+        { ...mockConversationData },
+        { stampReply: true, replyMessageId: 'reply-newer' },
+      );
+      await saveConvo(mockCtx, {
+        ...mockConversationData,
+        lastResponseAt: new Date('2026-08-16T11:00:00.000Z'),
+        lastResponseMessageId: 'forged',
+      });
+
+      const convo = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+      });
+      expect(convo?.lastResponseAt?.getTime()).toBeGreaterThanOrEqual(replyAt.getTime());
+      expect(convo?.lastResponseMessageId).toBe('reply-newer');
+    });
+
+    it('stamps a first reply through the monotonic path', async () => {
+      await saveConvo(
+        mockCtx,
+        { ...mockConversationData },
+        { stampReply: true, replyMessageId: 'reply-first' },
+      );
+
+      const convo = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+      });
+      expect(convo?.lastResponseAt).toBeInstanceOf(Date);
+      expect(convo?.lastResponseMessageId).toBe('reply-first');
+    });
+
+    it('stamps the reply at write time and clears the catch-up it outranks', async () => {
+      /* `/seen` can match the previous reply while this save is in flight and record a
+         catch-up later than any timestamp the caller could hold. The stamp and the clear are
+         one conditional write, so the reply this save persists is never born seen. */
+      const before = new Date();
+      await saveConvo(mockCtx, { ...mockConversationData });
+      await Conversation.updateOne(
+        { conversationId: mockConversationData.conversationId },
+        { $set: { lastSeenAt: new Date(Date.now() + 5_000) } },
+      );
+
+      await saveConvo(
+        mockCtx,
+        { ...mockConversationData },
+        { stampReply: true, replyMessageId: 'reply-write-time' },
+      );
+
+      const convo = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+      });
+      expect(convo?.lastResponseAt).toBeInstanceOf(Date);
+      expect(convo?.lastResponseAt?.getTime()).toBeGreaterThanOrEqual(before.getTime());
+      expect(convo?.lastSeenAt == null).toBe(true);
+    });
+
+    it('returns the durable conversation when the optional reply stamp fails', async () => {
+      const find = jest.spyOn(Conversation, 'findOne').mockImplementationOnce(() => {
+        throw new Error('reply stamp read unavailable');
+      });
+      let result;
+      try {
+        result = await saveConvo(mockCtx, mockConversationData, {
+          stampReply: true,
+          replyMessageId: 'reply-failed-read',
+        });
+      } finally {
+        find.mockRestore();
+      }
+
+      expect(result).toMatchObject({
+        conversationId: mockConversationData.conversationId,
+        title: mockConversationData.title,
+      });
+      const saved = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(saved?.title).toBe(mockConversationData.title);
+      expect(saved?.lastResponseAt).toBeUndefined();
+    });
+
+    it('advances past a future stamp when a save host clock is behind', async () => {
+      await saveConvo(
+        mockCtx,
+        { ...mockConversationData },
+        { stampReply: true, replyMessageId: 'reply-before-future' },
+      );
+      const newer = new Date(Date.now() + 60_000);
+      const seenAt = new Date(Date.now() + 90_000);
+      await Conversation.updateOne(
+        { conversationId: mockConversationData.conversationId },
+        { $set: { lastResponseAt: newer, lastSeenAt: seenAt } },
+      );
+
+      await saveConvo(
+        mockCtx,
+        { ...mockConversationData },
+        { stampReply: true, replyMessageId: 'reply-after-future' },
+      );
+
+      const convo = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+      });
+      expect(convo?.lastResponseAt?.getTime()).toBeGreaterThan(newer.getTime());
+      expect(convo?.lastSeenAt).toBeUndefined();
+    });
+
+    it('leaves the reply stamp alone for a save that does not carry one', async () => {
+      await saveConvo(mockCtx, { ...mockConversationData });
+
+      const convo = await Conversation.findOne<IConversation>({
+        conversationId: mockConversationData.conversationId,
+      });
+      expect(convo?.lastResponseAt).toBeUndefined();
     });
 
     it('should handle newConversationId when provided', async () => {
@@ -1079,6 +1201,137 @@ describe('Conversation Operations', () => {
     });
   });
 
+  describe('code environment persistence during ordinary saves', () => {
+    const mac = { environmentId: 'code-mac', workspaceId: 'primary' };
+    const vm = { environmentId: 'code-vm', workspaceId: 'primary' };
+    const userId = 'user123';
+    const unsetFields = { codeEnvironmentMode: 1, codeWorkspaces: 1 };
+
+    it.each([
+      { codeEnvironmentMode: 'attached', codeWorkspaces: [mac] },
+      { codeEnvironmentMode: 'without_attached' },
+    ])(
+      'preserves $codeEnvironmentMode through an approval pause and later saves',
+      async (decision) => {
+        const conversationId = uuidv4();
+        await saveConvo({ userId }, { conversationId, ...decision });
+
+        for (const title of ['Approval required', 'Resumed', 'Completed']) {
+          await saveConvo({ userId }, { conversationId, title }, { unsetFields });
+          const stored = await getConvo(userId, conversationId);
+          expect(stored?.codeEnvironmentMode).toBe(decision.codeEnvironmentMode);
+          expect(stored?.codeWorkspaces).toEqual(decision.codeWorkspaces);
+          expect(stored?.title).toBe(title);
+        }
+      },
+    );
+
+    it('cannot overwrite an explicit move with a stale turn-start snapshot', async () => {
+      const conversationId = uuidv4();
+      const decision = { codeEnvironmentMode: 'attached' as const, codeWorkspaces: [mac] };
+      await saveConvo({ userId }, { conversationId, ...decision });
+      await methods.replaceConvoCodeEnvironmentDecision({
+        user: userId,
+        conversationId,
+        expected: decision,
+        codeWorkspaces: [vm],
+      });
+
+      await saveConvo({ userId }, { conversationId, ...decision });
+      expect((await getConvo(userId, conversationId))?.codeWorkspaces).toEqual([vm]);
+      await saveConvo(
+        { userId },
+        { conversationId, codeEnvironmentMode: null, codeWorkspaces: [] },
+      );
+      const stored = await getConvo(userId, conversationId);
+      expect(stored?.codeEnvironmentMode).toBe('attached');
+      expect(stored?.codeWorkspaces).toEqual([vm]);
+    });
+
+    it('seeds imported decisions without letting repeated imports undo a move', async () => {
+      const conversationId = uuidv4();
+      const decision = { codeEnvironmentMode: 'attached' as const, codeWorkspaces: [mac] };
+      const imported = { conversationId, user: userId, ...decision };
+      await methods.bulkSaveConvos([imported]);
+      expect((await getConvo(userId, conversationId))?.codeWorkspaces).toEqual([mac]);
+      await methods.replaceConvoCodeEnvironmentDecision({
+        user: userId,
+        conversationId,
+        expected: decision,
+        codeWorkspaces: [vm],
+      });
+      await methods.bulkSaveConvos([imported]);
+      const stored = await getConvo(userId, conversationId);
+      expect(stored?.codeEnvironmentMode).toBe('attached');
+      expect(stored?.codeWorkspaces).toEqual([vm]);
+    });
+
+    it('preserves a legacy decision', async () => {
+      const conversationId = uuidv4();
+      await Conversation.collection.insertOne({
+        conversationId,
+        user: userId,
+        codeWorkspaces: [mac],
+      });
+      await saveConvo(
+        { userId },
+        { conversationId, codeEnvironmentMode: 'attached', codeWorkspaces: [vm] },
+        { unsetFields },
+      );
+      const stored = await getConvo(userId, conversationId);
+      expect(stored?.codeEnvironmentMode).toBeUndefined();
+      expect(stored?.codeWorkspaces).toEqual([mac]);
+    });
+
+    it('records the first decision of a saved chat that holds none', async () => {
+      const conversationId = uuidv4();
+      await Conversation.collection.insertOne({ conversationId, user: userId, title: 'Saved' });
+
+      const saved = await saveConvo(
+        { userId },
+        { conversationId, codeEnvironmentMode: 'attached', codeWorkspaces: [mac] },
+        { unsetFields },
+      );
+
+      expect(saved?.codeEnvironmentMode).toBe('attached');
+      expect(saved?.codeWorkspaces).toEqual([mac]);
+      const stored = await getConvo(userId, conversationId);
+      expect(stored?.codeEnvironmentMode).toBe('attached');
+      expect(stored?.codeWorkspaces).toEqual([mac]);
+    });
+
+    it('keeps the decision it recorded when a later turn resolves another', async () => {
+      const conversationId = uuidv4();
+      await Conversation.collection.insertOne({ conversationId, user: userId, title: 'Saved' });
+      await saveConvo(
+        { userId },
+        { conversationId, codeEnvironmentMode: 'attached', codeWorkspaces: [mac] },
+        { unsetFields },
+      );
+
+      await saveConvo(
+        { userId },
+        { conversationId, codeEnvironmentMode: 'without_attached', codeWorkspaces: [vm] },
+        { unsetFields },
+      );
+
+      const stored = await getConvo(userId, conversationId);
+      expect(stored?.codeEnvironmentMode).toBe('attached');
+      expect(stored?.codeWorkspaces).toEqual([mac]);
+    });
+
+    it('leaves a chat undecided when a save carries selections without a mode', async () => {
+      const conversationId = uuidv4();
+      await Conversation.collection.insertOne({ conversationId, user: userId, title: 'Saved' });
+
+      await saveConvo({ userId }, { conversationId, codeWorkspaces: [vm] }, { unsetFields });
+
+      const stored = await getConvo(userId, conversationId);
+      expect(stored?.codeEnvironmentMode).toBeUndefined();
+      expect(stored?.codeWorkspaces).toBeUndefined();
+    });
+  });
+
   describe('replaceConvoCodeEnvironmentDecision', () => {
     const anchor = new Date('2026-09-12T11:22:22.976Z');
     const mac = { environmentId: 'code-mac', workspaceId: 'primary' };
@@ -1295,6 +1548,139 @@ describe('Conversation Operations', () => {
       expect(getMessages).toHaveBeenCalledWith({ conversationId, user: ctx.userId }, '_id');
       const stored = await Conversation.findOne({ conversationId }).lean();
       expect(stored?.messages?.map(String)).toEqual(rebuilt.map(String));
+    });
+
+    /** An empty append is how a metadata-only write asks for the title (or any other
+     *  field) to land without the array being rebuilt underneath it. */
+    it('leaves the array untouched when the append is empty', async () => {
+      const existing = new mongoose.Types.ObjectId();
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [existing] });
+      getMessages.mockClear();
+
+      await saveConvo(ctx, { conversationId, title: 'metadata only' }, { appendMessageIds: [] });
+
+      expect(getMessages).not.toHaveBeenCalled();
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.title).toBe('metadata only');
+      expect(stored?.messages?.map(String)).toEqual([String(existing)]);
+    });
+
+    /** The concurrency an immediate-mode title introduced: it saves while the turn is
+     *  still running, so its write and the response's own append overlap. A title that
+     *  rebuilt the array from a snapshot taken before the response existed erased the
+     *  response's id permanently — nothing later re-adds it. Asking for no messages at
+     *  all is what makes the interleaving irrelevant. */
+    it('keeps a concurrently appended id when a metadata-only write overlaps it', async () => {
+      const userMessage = new mongoose.Types.ObjectId();
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [userMessage] });
+      /** What a rebuilding write would have read: the turn before the response. The
+       *  outer `beforeEach` restores the default, so this cannot leak. */
+      getMessages.mockResolvedValue([{ _id: userMessage }]);
+      getMessages.mockClear();
+
+      const responseMessage = new mongoose.Types.ObjectId();
+      await Promise.all([
+        saveConvo(ctx, { conversationId, title: 'generated mid-turn' }, { appendMessageIds: [] }),
+        saveConvo(ctx, { conversationId }, { appendMessageIds: [responseMessage] }),
+      ]);
+
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.title).toBe('generated mid-turn');
+      expect(stored?.messages?.map(String)).toEqual([userMessage, responseMessage].map(String));
+      /** No snapshot was taken, so there was no window to lose the append in. */
+      expect(getMessages).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('appendConvoMessageReference', () => {
+    const ctx = { userId: 'append-ref-user' };
+    const conversationId = 'append-ref-conversation';
+
+    const appendConvoMessageReference = (
+      ...args: Parameters<ConversationMethods['appendConvoMessageReference']>
+    ) => methods.appendConvoMessageReference(...args);
+
+    beforeEach(async () => {
+      await Conversation.deleteMany({});
+      getMessages.mockClear();
+    });
+
+    it('appends the id without reading or rewriting the message array', async () => {
+      const existing = new mongoose.Types.ObjectId();
+      await saveConvo(ctx, { conversationId, title: 'seeded' }, { appendMessageIds: [existing] });
+      getMessages.mockClear();
+
+      const recovered = new mongoose.Types.ObjectId();
+      const row = await appendConvoMessageReference(ctx.userId, conversationId, String(recovered));
+
+      expect(row?.messages?.map(String)).toEqual([existing, recovered].map(String));
+      expect(getMessages).not.toHaveBeenCalled();
+    });
+
+    it('does not duplicate an id the conversation already references', async () => {
+      const id = new mongoose.Types.ObjectId();
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [id] });
+
+      await appendConvoMessageReference(ctx.userId, conversationId, String(id));
+      await appendConvoMessageReference(ctx.userId, conversationId, String(id));
+
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual([String(id)]);
+    });
+
+    /** Repairing a reference is not activity: the sidebar orders by `updatedAt`, and
+     *  hoisting an untouched chat to Today would be a visible lie. */
+    it('leaves updatedAt alone', async () => {
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [] });
+      const before = await Conversation.findOne({ conversationId }).lean();
+
+      await appendConvoMessageReference(
+        ctx.userId,
+        conversationId,
+        String(new mongoose.Types.ObjectId()),
+      );
+
+      const after = await Conversation.findOne({ conversationId }).lean();
+      expect(after?.updatedAt?.getTime()).toBe(before?.updatedAt?.getTime());
+    });
+
+    it('never inserts a conversation that does not exist', async () => {
+      const row = await appendConvoMessageReference(
+        ctx.userId,
+        'no-such-conversation',
+        String(new mongoose.Types.ObjectId()),
+      );
+
+      expect(row).toBeNull();
+      expect(
+        await Conversation.findOne({ conversationId: 'no-such-conversation' }).lean(),
+      ).toBeNull();
+    });
+
+    /** The repair runs on a turn's own behalf, so it must never reach another owner's row. */
+    it("cannot touch another owner's conversation", async () => {
+      const owner = new mongoose.Types.ObjectId();
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [owner] });
+
+      const row = await appendConvoMessageReference(
+        'someone-else',
+        conversationId,
+        String(new mongoose.Types.ObjectId()),
+      );
+
+      expect(row).toBeNull();
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages?.map(String)).toEqual([String(owner)]);
+    });
+
+    it('ignores an id the store could never hold', async () => {
+      await saveConvo(ctx, { conversationId }, { appendMessageIds: [] });
+
+      const row = await appendConvoMessageReference(ctx.userId, conversationId, 'not-an-id');
+
+      expect(row).toBeNull();
+      const stored = await Conversation.findOne({ conversationId }).lean();
+      expect(stored?.messages ?? []).toEqual([]);
     });
   });
 
@@ -2055,6 +2441,555 @@ describe('Conversation Operations', () => {
     });
   });
 
+  describe('markConvoSeen', () => {
+    const markConvoSeen = (...args: Parameters<ConversationMethods['markConvoSeen']>) =>
+      methods.markConvoSeen(...args);
+
+    it('records lastSeenAt for the owning user', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: new Date(),
+      });
+
+      const result = await markConvoSeen('user123', mockConversationData.conversationId);
+      expect(result.modified).toBe(true);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastSeenAt).toBeInstanceOf(Date);
+    });
+
+    it('acknowledges only the reply the client observed', async () => {
+      /* Another device persists a newer reply while the seen write is in flight; stamping
+         "now" would clear an indicator for a message nobody has read. */
+      const observed = new Date('2026-08-16T10:00:00.000Z');
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: new Date('2026-08-16T10:05:00.000Z'),
+      });
+
+      const result = await markConvoSeen('user123', mockConversationData.conversationId, observed);
+      expect(result.modified).toBe(false);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastSeenAt).toBeUndefined();
+    });
+
+    it('never writes a catch-up older than the reply it acknowledges', async () => {
+      /* Across replicas the node handling this can be behind the one that stamped the reply;
+         a catch-up earlier than that reply would read as unseen again on the next refetch. */
+      const observed = new Date(Date.now() + 60_000);
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: observed,
+      });
+
+      const result = await markConvoSeen('user123', mockConversationData.conversationId, observed);
+      expect(result.modified).toBe(true);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastSeenAt?.getTime()).toBeGreaterThanOrEqual(observed.getTime());
+    });
+
+    it('records the catch-up when the observed reply is still the newest', async () => {
+      const observed = new Date('2026-08-16T10:00:00.000Z');
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: observed,
+      });
+
+      const result = await markConvoSeen('user123', mockConversationData.conversationId, observed);
+      expect(result.modified).toBe(true);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastSeenAt).toBeInstanceOf(Date);
+    });
+
+    it('reports success when a retried acknowledgement changes nothing', async () => {
+      /* A future-dated observed reply is stored verbatim, so a retry after a lost response
+         writes the identical value: zero documents modified, but the database is already
+         caught up. Reporting failure would make the client roll back to unseen. */
+      const observed = new Date(Date.now() + 60_000);
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: observed,
+      });
+
+      const first = await markConvoSeen('user123', mockConversationData.conversationId, observed);
+      expect(first.modified).toBe(true);
+
+      const retry = await markConvoSeen('user123', mockConversationData.conversationId, observed);
+      expect(retry.modified).toBe(true);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastSeenAt?.getTime()).toBe(observed.getTime());
+    });
+
+    it('leaves updatedAt alone so reading a conversation does not reorder the sidebar', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: new Date(),
+      });
+
+      const before = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+
+      await markConvoSeen('user123', mockConversationData.conversationId);
+
+      const after = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+
+      expect(after?.updatedAt?.toISOString()).toBe(before?.updatedAt?.toISOString());
+    });
+
+    it('does not touch another user’s conversation', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      const result = await markConvoSeen('someone-else', mockConversationData.conversationId);
+      expect(result.modified).toBe(false);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastSeenAt).toBeUndefined();
+    });
+  });
+
+  describe('stampConvoLastResponse', () => {
+    const stampConvoLastResponse = (
+      ...args: Parameters<ConversationMethods['stampConvoLastResponse']>
+    ) => methods.stampConvoLastResponse(...args);
+
+    it('carries the project activity forward with the conversation', async () => {
+      /* The workspace sorts on `ChatProject.lastConversationAt`, so lifting the conversation
+         without it would leave the project sitting at its old position. */
+      const ChatProject = mongoose.models.ChatProject;
+      const project = await ChatProject.create({
+        name: 'Stamped',
+        user: 'user123',
+        lastConversationAt: new Date('2026-08-16T09:00:00.000Z'),
+      });
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        chatProjectId: project._id.toString(),
+        createdAt: new Date('2026-08-16T09:00:00.000Z'),
+        updatedAt: new Date('2026-08-16T09:00:00.000Z'),
+      });
+
+      await stampConvoLastResponse('user123', mockConversationData.conversationId, 'reply-project');
+
+      const refreshed = await ChatProject.findById(project._id).lean<{
+        lastConversationAt?: Date;
+      }>();
+      expect(refreshed?.lastConversationAt).toBeDefined();
+      expect(new Date(refreshed?.lastConversationAt as Date).getTime()).toBeGreaterThan(
+        new Date('2026-08-16T09:00:00.000Z').getTime(),
+      );
+    });
+
+    it('returns the durable reply stamp when project maintenance fails', async () => {
+      const project = await ChatProject.create({
+        name: 'Unavailable project update',
+        user: 'user123',
+      });
+      await Conversation.create({
+        ...mockConversationData,
+        user: 'user123',
+        chatProjectId: project._id.toString(),
+      });
+      const update = jest.spyOn(ChatProject, 'updateOne').mockImplementationOnce(() => {
+        throw new Error('project update unavailable');
+      });
+      try {
+        const settled = await stampConvoLastResponse(
+          'user123',
+          mockConversationData.conversationId,
+          'reply-project-failure',
+        );
+        const saved = await Conversation.findOne({
+          conversationId: mockConversationData.conversationId,
+        }).lean<IConversation>();
+        expect(settled?.lastResponseAt).toBeInstanceOf(Date);
+        expect(settled?.lastResponseAt).toEqual(saved?.lastResponseAt);
+        expect(settled?.updatedAt).toEqual(saved?.updatedAt);
+      } finally {
+        update.mockRestore();
+      }
+    });
+
+    it('keeps a saved reply stamp when project maintenance fails', async () => {
+      /* The caller hands this document to the client as the turn's conversation. Answering a
+         durable save with an error would drop the stamp from the terminal event, and the next
+         list refresh would present a reply the user watched arrive as unread. */
+      const project = await ChatProject.create({
+        name: 'Unavailable project stats',
+        user: 'user123',
+      });
+      await Conversation.create({
+        ...mockConversationData,
+        user: 'user123',
+        chatProjectId: project._id.toString(),
+      });
+      const update = jest.spyOn(ChatProject, 'updateOne').mockImplementation(() => {
+        throw new Error('project update unavailable');
+      });
+      try {
+        const saved = await saveConvo(
+          mockCtx,
+          { ...mockConversationData, chatProjectId: project._id.toString() },
+          { stampReply: true, replyMessageId: 'reply-project-tail' },
+        );
+        expect(saved).not.toMatchObject({ message: 'Error saving conversation' });
+        expect((saved as IConversation).lastResponseMessageId).toBe('reply-project-tail');
+        const stored = await Conversation.findOne({
+          conversationId: mockConversationData.conversationId,
+        }).lean<IConversation>();
+        expect(stored?.lastResponseMessageId).toBe('reply-project-tail');
+      } finally {
+        update.mockRestore();
+      }
+    });
+
+    it('stamps lastResponseAt and lifts the conversation like any other reply', async () => {
+      /* The away poll pages by `updatedAt`, so a reply that left the order alone would be
+         invisible on any conversation that had fallen past the first page. BaseClient's own
+         reply path moves it too. */
+      const createdAt = new Date('2026-08-16T09:00:00.000Z');
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        createdAt,
+        updatedAt: createdAt,
+      });
+
+      const settled = await stampConvoLastResponse(
+        'user123',
+        mockConversationData.conversationId,
+        'reply-latest',
+      );
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(settled?.lastResponseAt).toBeInstanceOf(Date);
+      expect(settled?.lastResponseMessageId).toBe('reply-latest');
+      expect(settled?.updatedAt).toBeInstanceOf(Date);
+      expect(settled?.lastResponseAt?.getTime()).toBe(convo?.lastResponseAt?.getTime());
+      expect(settled?.updatedAt?.getTime()).toBe(convo?.updatedAt?.getTime());
+      expect(convo?.lastResponseAt).toBeInstanceOf(Date);
+      expect(convo?.lastResponseAt?.getTime()).toBeGreaterThanOrEqual(createdAt.getTime());
+      expect(convo?.updatedAt?.getTime()).toBeGreaterThan(createdAt.getTime());
+    });
+
+    it('makes a new reply the latest activity even after a future-dated metadata update', async () => {
+      const metadataAt = new Date(Date.now() + 60_000);
+      await Conversation.create({
+        ...mockConversationData,
+        user: 'user123',
+      });
+      await Conversation.updateOne(
+        { conversationId: mockConversationData.conversationId },
+        { $set: { updatedAt: metadataAt } },
+        { timestamps: false },
+      );
+
+      const settled = await stampConvoLastResponse(
+        'user123',
+        mockConversationData.conversationId,
+        'reply-future',
+      );
+
+      expect(settled?.lastResponseAt?.getTime()).toBeGreaterThan(metadataAt.getTime());
+      expect(settled?.updatedAt).toEqual(settled?.lastResponseAt);
+    });
+
+    it('clears a catch-up and manual marker when the real reply advances the stamp', async () => {
+      /* `/seen` can accept the previous reply while this one is being persisted, and a
+         replica's clock can date that catch-up ahead: the stamp and the clear are one write. */
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: new Date('2026-08-16T09:00:00.000Z'),
+        lastResponseIsManual: true,
+        lastSeenAt: new Date(Date.now() + 5_000),
+      });
+
+      await stampConvoLastResponse(
+        'user123',
+        mockConversationData.conversationId,
+        'reply-manual-clear',
+      );
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastResponseAt).toBeInstanceOf(Date);
+      expect(convo?.lastResponseIsManual).toBeUndefined();
+      expect(convo?.lastSeenAt == null).toBe(true);
+    });
+    it('advances past a future reply stamp when this host clock is behind', async () => {
+      const newer = new Date(Date.now() + 60_000);
+      const seenAt = new Date(Date.now() + 90_000);
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: newer,
+        lastSeenAt: seenAt,
+      });
+
+      await stampConvoLastResponse('user123', mockConversationData.conversationId, 'reply-future');
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastResponseAt?.getTime()).toBeGreaterThan(newer.getTime());
+      expect(convo?.lastSeenAt).toBeUndefined();
+    });
+
+    it('does not stamp another user’s conversation', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      const settled = await stampConvoLastResponse(
+        'someone-else',
+        mockConversationData.conversationId,
+        'reply-other-user',
+      );
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(settled).toBeNull();
+      expect(convo?.lastResponseAt).toBeUndefined();
+    });
+
+    it('does not expose a reply stamp for a stored temporary conversation', async () => {
+      const original = await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        isTemporary: true,
+      });
+
+      const settled = await stampConvoLastResponse(
+        'user123',
+        original.conversationId,
+        'reply-temporary',
+      );
+      const current = await Conversation.findById(original._id).lean<IConversation>();
+
+      expect(settled).toBeNull();
+      expect(current?.lastResponseAt).toBeUndefined();
+      expect(current?.updatedAt).toEqual(original.updatedAt);
+    });
+  });
+
+  describe('markConvoUnread', () => {
+    const markConvoUnread = (...args: Parameters<ConversationMethods['markConvoUnread']>) =>
+      methods.markConvoUnread(...args);
+
+    it('clears the catch-up on a read conversation, restoring the unread state', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: new Date('2026-08-16T10:00:00.000Z'),
+        lastSeenAt: new Date('2026-08-16T11:00:00.000Z'),
+      });
+
+      const result = await markConvoUnread('user123', mockConversationData.conversationId);
+      expect(result.modified).toBe(true);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastSeenAt).toBeUndefined();
+      expect(convo?.lastResponseAt?.toISOString()).toBe('2026-08-16T10:00:00.000Z');
+      expect(convo?.lastResponseIsManual).toBeUndefined();
+    });
+
+    it('returns the stamp it settled on so the client never invents one', async () => {
+      /* The optimistic marker the client guesses is necessarily earlier than the server's;
+         sending that guess to /seen would miss the observed-reply filter. */
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+      });
+      const result = await markConvoUnread('user123', mockConversationData.conversationId);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(result.lastResponseAt?.toISOString()).toBe(convo?.lastResponseAt?.toISOString());
+      expect(result.lastResponseMessageId).toBeUndefined();
+      expect(result.lastResponseIsManual).toBe(true);
+    });
+
+    it('reports nothing modified for a conversation the user does not own', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'someone-else',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: new Date('2026-08-16T10:00:00.000Z'),
+      });
+
+      const result = await markConvoUnread('user123', mockConversationData.conversationId);
+      expect(result.modified).toBe(false);
+    });
+
+    it('keeps the existing reply stamp rather than restamping it', async () => {
+      const responded = new Date('2026-08-16T10:00:00.000Z');
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: responded,
+        lastResponseMessageId: 'reply-existing',
+      });
+
+      const result = await markConvoUnread('user123', mockConversationData.conversationId);
+
+      expect(result.lastResponseAt?.toISOString()).toBe(responded.toISOString());
+      expect(result.lastResponseMessageId).toBe('reply-existing');
+      expect(result.lastResponseIsManual).toBe(false);
+    });
+    it('marks a never-replied conversation with a monotonic manual marker so the dot lights', async () => {
+      const created = await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+      });
+
+      await markConvoUnread('user123', mockConversationData.conversationId);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastResponseAt?.getTime()).toBeGreaterThanOrEqual(
+        created.updatedAt?.getTime() ?? 0,
+      );
+      expect(convo?.lastResponseIsManual).toBe(true);
+      expect(convo?.lastSeenAt).toBeUndefined();
+    });
+
+    it('leaves updatedAt alone so flagging does not reorder the sidebar', async () => {
+      const createdAt = new Date('2026-08-16T09:00:00.000Z');
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: new Date('2026-08-16T10:00:00.000Z'),
+        lastSeenAt: new Date('2026-08-16T11:00:00.000Z'),
+        createdAt,
+        updatedAt: createdAt,
+      });
+
+      await markConvoUnread('user123', mockConversationData.conversationId);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.updatedAt?.toISOString()).toBe(createdAt.toISOString());
+    });
+
+    it('does not touch another user’s conversation', async () => {
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt: new Date('2026-08-16T10:00:00.000Z'),
+        lastSeenAt: new Date('2026-08-16T11:00:00.000Z'),
+      });
+
+      const result = await markConvoUnread('someone-else', mockConversationData.conversationId);
+      expect(result.modified).toBe(false);
+
+      const convo = await Conversation.findOne({
+        conversationId: mockConversationData.conversationId,
+      }).lean<IConversation>();
+      expect(convo?.lastSeenAt).toBeInstanceOf(Date);
+    });
+  });
+  describe('unseen-reply fields', () => {
+    it('returns lastResponseAt, manual marker, and lastSeenAt from the cursor listing', async () => {
+      const lastResponseAt = new Date('2026-08-16T10:00:00.000Z');
+      const lastSeenAt = new Date('2026-08-16T09:00:00.000Z');
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt,
+        lastResponseMessageId: 'reply-listed',
+        lastResponseIsManual: true,
+        lastSeenAt,
+      });
+
+      const { conversations } = await getConvosByCursor('user123');
+      expect(conversations).toHaveLength(1);
+      expect(conversations[0].lastResponseAt?.toISOString()).toBe(lastResponseAt.toISOString());
+      expect(conversations[0].lastResponseMessageId).toBe('reply-listed');
+      expect(conversations[0].lastResponseIsManual).toBe(true);
+      expect(conversations[0].lastSeenAt?.toISOString()).toBe(lastSeenAt.toISOString());
+    });
+
+    it('keeps them through a title-only saveConvo, whose partial $set leaves absent fields alone', async () => {
+      /* saveConvo never $unsets fields it is not given; the wipe threat lives in BaseClient's
+         unsetFields loop, which excludedKeys guards (covered in the api BaseClient spec). */
+      const lastResponseAt = new Date('2026-08-16T10:00:00.000Z');
+      await Conversation.create({
+        conversationId: mockConversationData.conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.openAI,
+        lastResponseAt,
+      });
+
+      await saveConvo(mockCtx, {
+        conversationId: mockConversationData.conversationId,
+        title: 'Generated title',
+      });
+
+      const convo = await getConvo('user123', mockConversationData.conversationId);
+      expect(convo?.title).toBe('Generated title');
+      expect(convo?.lastResponseAt?.toISOString()).toBe(lastResponseAt.toISOString());
+    });
+  });
+
   describe('getConvoFiles', () => {
     it('should return conversation files', async () => {
       const files = ['file1', 'file2'];
@@ -2099,10 +3034,14 @@ describe('Conversation Operations', () => {
       const deleteAgentQueuedTurns = jest.fn(async () => {
         transitions.push('queue-retired');
       });
+      const eraseAgentTriggerDeliveryConversationResults = jest.fn(async () => {
+        transitions.push('trigger-results-erased');
+      });
       const scopedMethods = createConversationMethods(mongoose, {
         getMessages,
         deleteMessages,
         deleteAgentQueuedTurns,
+        eraseAgentTriggerDeliveryConversationResults,
       });
 
       await scopedMethods.deleteConvos(
@@ -2118,7 +3057,99 @@ describe('Conversation Operations', () => {
       expect(deleteAgentQueuedTurns).toHaveBeenCalledWith('user123', [
         { conversationId, tenantId: 'tenant-1' },
       ]);
-      expect(transitions).toEqual(['queue-retired', 'generation-drained']);
+      expect(eraseAgentTriggerDeliveryConversationResults).toHaveBeenCalledWith('user123', [
+        conversationId,
+      ]);
+      expect(transitions).toEqual([
+        'queue-retired',
+        'generation-drained',
+        'trigger-results-erased',
+      ]);
+    });
+
+    it('preserves background receipts when a pre-delete drain fails', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: EModelEndpoint.agents,
+      });
+      const eraseAgentTriggerDeliveryConversationResults = jest.fn(async () => undefined);
+      const scopedMethods = createConversationMethods(mongoose, {
+        getMessages,
+        deleteMessages,
+        eraseAgentTriggerDeliveryConversationResults,
+      });
+
+      await expect(
+        scopedMethods.deleteConvos(
+          'user123',
+          { conversationId },
+          { beforeDelete: async () => Promise.reject(new Error('drain unavailable')) },
+        ),
+      ).rejects.toThrow('drain unavailable');
+
+      expect(await Conversation.findOne({ conversationId })).not.toBeNull();
+      expect(eraseAgentTriggerDeliveryConversationResults).not.toHaveBeenCalled();
+    });
+
+    it('finishes descendant bookkeeping and message cleanup when receipt erasure fails', async () => {
+      const parentId = uuidv4();
+      const childId = uuidv4();
+      const grandchildId = uuidv4();
+      const ids = [parentId, childId, grandchildId];
+      const project = await ChatProject.create({ user: 'user123', name: 'Receipt cleanup' });
+      await ConversationTag.create({ user: 'user123', tag: 'work', count: 3, position: 0 });
+      await Conversation.create(
+        ids.map((conversationId, depth) => ({
+          conversationId,
+          user: 'user123',
+          endpoint: EModelEndpoint.agents,
+          tags: ['work'],
+          chatProjectId: project._id.toString(),
+          ...(depth === 0
+            ? {}
+            : {
+                subagentThread: {
+                  rootConversationId: parentId,
+                  parentConversationId: ids[depth - 1],
+                  parentMessageId: `message-${depth}`,
+                  parentToolCallId: `call-${depth}`,
+                  subagentType: 'agent-child',
+                  subagentKind: 'agent',
+                  depth,
+                },
+              }),
+        })),
+      );
+      const prepare = jest.fn(async () => undefined);
+      const erase = jest.fn(async () => {
+        throw new Error('receipt storage unavailable');
+      });
+      const scopedMethods = createConversationMethods(mongoose, {
+        getMessages,
+        deleteMessages,
+        prepareAgentTriggerConversationResultErasure: prepare,
+        eraseAgentTriggerDeliveryConversationResults: erase,
+      });
+
+      const result = await scopedMethods.deleteConvos('user123', { conversationId: parentId });
+      expect(result).toMatchObject({ deletedCount: 3, conversationIds: ids });
+      expect(prepare.mock.calls).toHaveLength(3);
+      expect(erase.mock.calls).toHaveLength(3);
+      expect(await Conversation.countDocuments({ user: 'user123' })).toBe(0);
+      expect((await ConversationTag.findOne({ user: 'user123', tag: 'work' }).lean())?.count).toBe(
+        0,
+      );
+      expect((await ChatProject.findById(project._id).lean())?.conversationCount).toBe(0);
+      expect(deleteMessages).toHaveBeenCalledWith({
+        user: 'user123',
+        conversationId: { $in: ids },
+      });
+
+      await expect(
+        scopedMethods.deleteConvos('user123', { conversationId: parentId }, { allowEmpty: true }),
+      ).resolves.toMatchObject({ deletedCount: 0, conversationIds: [parentId] });
     });
 
     it('fails closed before deleting a conversation when queued-turn retirement fails', async () => {
@@ -2337,13 +3368,22 @@ describe('Conversation Operations', () => {
     });
 
     it('allows a single-conversation cleanup retry after topology and messages are gone', async () => {
-      const result = await deleteConvos(
+      const eraseAgentTriggerDeliveryConversationResults = jest.fn(async () => undefined);
+      const scopedMethods = createConversationMethods(mongoose, {
+        getMessages,
+        deleteMessages,
+        eraseAgentTriggerDeliveryConversationResults,
+      });
+      const result = await scopedMethods.deleteConvos(
         'user123',
         { conversationId: 'already-absent' },
         { allowEmpty: true },
       );
       expect(result.deletedCount).toBe(0);
       expect(result.conversationIds).toEqual(['already-absent']);
+      expect(eraseAgentTriggerDeliveryConversationResults).toHaveBeenCalledWith('user123', [
+        'already-absent',
+      ]);
     });
 
     it('supports an idempotent empty recovery sweep without hiding storage failures', async () => {

@@ -1,12 +1,14 @@
 import { z } from 'zod';
-import type { TMessageContentParts, AgentSubagentGraph, FunctionTool } from './types/assistants';
+import type { TMessageContentParts } from './types/content';
+import type { AgentSubagentGraph } from './types/agents';
 import type { SearchResultData } from './types/web';
+import type { FunctionTool } from './types/tools';
 import type { TFile } from './types/files';
 import { CODE_ENVIRONMENT_MODES, CODE_WORKSPACE_ID_PATTERN } from './code/workspace';
 import { userSubmittedMessageFieldPathSchema } from './filters';
 import { TFeedback, feedbackSchema } from './feedback';
 import { CODE_APPROVAL_MODES } from './code/approval';
-import { Tools } from './types/assistants';
+import { Tools } from './types/tools';
 
 export const isUUID = z.string().uuid();
 
@@ -387,6 +389,7 @@ export const defaultAgentFormValues = {
   stateful_code_environment: 'user' as const,
   code_environment_id: undefined as string | null | undefined,
   code_workspace_id: undefined as string | undefined,
+  repositoryInstructions: undefined as 'prefer' | 'defer' | 'off' | undefined,
   category: 'general',
   support_contact: {
     name: '',
@@ -1189,6 +1192,14 @@ export const tConversationSchema = z.object({
   chatProjectId: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  /** Set only when an assistant message is persisted; drives the unseen-reply indicator. */
+  lastResponseAt: z.string().optional(),
+  /** Durable messageId of the assistant reply named by `lastResponseAt`. */
+  lastResponseMessageId: z.string().optional(),
+  /** True only while `lastResponseAt` is the synthetic marker from "mark unread". */
+  lastResponseIsManual: z.boolean().optional(),
+  /** Set when the user has the newest message on screen; compared against `lastResponseAt`. */
+  lastSeenAt: z.string().optional(),
   /* Files */
   resendFiles: z.boolean().optional(),
   file_ids: z.array(z.string()).optional(),
@@ -1253,6 +1264,12 @@ export const tPresetSchema = tConversationSchema
     createdAt: true,
     updatedAt: true,
     title: true,
+    /* Runtime unseen-reply state must not ride into presets: applying one would stamp
+       stale timestamps back onto conversations. */
+    lastResponseAt: true,
+    lastResponseMessageId: true,
+    lastResponseIsManual: true,
+    lastSeenAt: true,
   })
   .merge(
     z.object({

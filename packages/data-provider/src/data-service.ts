@@ -8,6 +8,7 @@ import type {
 } from './types/traces';
 import type { TInsightsAccessResponse, TInsightsParams, TInsightsResponse } from './types/insights';
 import type { TFileConfig } from './file-config';
+import type * as tl from './types/tools';
 import type * as t from './types';
 import * as permissions from './accessPermissions';
 import * as endpoints from './api-endpoints';
@@ -326,6 +327,18 @@ export const resetPassword = (payload: t.TResetPassword) => {
 
 export const verifyEmail = (payload: t.TVerifyEmail): Promise<t.VerifyEmailResponse> => {
   return request.post(endpoints.verifyEmail(), payload);
+};
+
+export const requestEmailChange = (
+  payload: t.TRequestEmailChange,
+): Promise<t.TEmailChangeResponse> => {
+  return request.post(endpoints.requestEmailChange(), payload);
+};
+
+export const confirmEmailChange = (
+  payload: t.TConfirmEmailChange,
+): Promise<t.TEmailChangeResponse> => {
+  return request.post(endpoints.confirmEmailChange(), payload);
 };
 
 export const resendVerificationEmail = (
@@ -667,11 +680,11 @@ export const deleteAction = async ({
  * Agents
  */
 
-export const createAgent = ({ ...data }: a.AgentCreateParams): Promise<a.Agent> => {
+export const createAgent = ({ ...data }: ag.AgentCreateParams): Promise<ag.Agent> => {
   return request.post(endpoints.agents({}), data);
 };
 
-export const getAgentById = ({ agent_id }: { agent_id: string }): Promise<a.Agent> => {
+export const getAgentById = ({ agent_id }: { agent_id: string }): Promise<ag.Agent> => {
   return request.get(
     endpoints.agents({
       path: agent_id,
@@ -679,7 +692,7 @@ export const getAgentById = ({ agent_id }: { agent_id: string }): Promise<a.Agen
   );
 };
 
-export const getExpandedAgentById = ({ agent_id }: { agent_id: string }): Promise<a.Agent> => {
+export const getExpandedAgentById = ({ agent_id }: { agent_id: string }): Promise<ag.Agent> => {
   return request.get(
     endpoints.agents({
       path: `${agent_id}/expanded`,
@@ -687,7 +700,7 @@ export const getExpandedAgentById = ({ agent_id }: { agent_id: string }): Promis
   );
 };
 
-export const getAgentVersions = ({ agent_id }: { agent_id: string }): Promise<a.Agent[]> => {
+export const getAgentVersions = ({ agent_id }: { agent_id: string }): Promise<ag.Agent[]> => {
   return request.get(
     endpoints.agents({
       path: `${agent_id}/versions`,
@@ -700,8 +713,8 @@ export const updateAgent = ({
   data,
 }: {
   agent_id: string;
-  data: a.AgentUpdateParams;
-}): Promise<a.Agent> => {
+  data: ag.AgentUpdateParams;
+}): Promise<ag.Agent> => {
   return request.patch(
     endpoints.agents({
       path: agent_id,
@@ -712,7 +725,7 @@ export const updateAgent = ({
 
 export const duplicateAgent = ({
   agent_id,
-}: m.DuplicateAgentBody): Promise<{ agent: a.Agent; actions: ag.Action[] }> => {
+}: m.DuplicateAgentBody): Promise<{ agent: ag.Agent; actions: ag.Action[] }> => {
   return request.post(
     endpoints.agents({
       path: `${agent_id}/duplicate`,
@@ -728,7 +741,7 @@ export const deleteAgent = ({ agent_id }: m.DeleteAgentBody): Promise<void> => {
   );
 };
 
-export const listAgents = (params: a.AgentListParams): Promise<a.AgentListResponse> => {
+export const listAgents = (params: ag.AgentListParams): Promise<ag.AgentListResponse> => {
   return request.get(
     endpoints.agents({
       options: params,
@@ -742,7 +755,7 @@ export const revertAgentVersion = ({
 }: {
   agent_id: string;
   version_index: number;
-}): Promise<a.Agent> => request.post(endpoints.revertAgentVersion(agent_id), { version_index });
+}): Promise<ag.Agent> => request.post(endpoints.revertAgentVersion(agent_id), { version_index });
 
 /* Marketplace */
 
@@ -756,17 +769,9 @@ export const getAgentCategories = (): Promise<t.TMarketplaceCategory[]> => {
 /**
  * Unified marketplace agents endpoint with query string controls
  */
-export const getMarketplaceAgents = (params: {
-  requiredPermission: number;
-  category?: string;
-  search?: string;
-  limit?: number;
-  cursor?: string;
-  promoted?: 0 | 1;
-}): Promise<a.AgentListResponse> => {
+export const getMarketplaceAgents = (params: ag.AgentListParams): Promise<ag.AgentListResponse> => {
   return request.get(
     endpoints.agents({
-      // path: 'marketplace',
       options: params,
     }),
   );
@@ -877,7 +882,7 @@ export const uploadAssistantAvatar = (data: m.AssistantAvatarVariables): Promise
   );
 };
 
-export const uploadAgentAvatar = (data: m.AgentAvatarVariables): Promise<a.Agent> => {
+export const uploadAgentAvatar = (data: m.AgentAvatarVariables): Promise<ag.Agent> => {
   return request.postMultiPart(
     `${endpoints.images()}/agents/${data.agent_id}/avatar`,
     data.formData,
@@ -926,7 +931,7 @@ export const deleteFiles = async (payload: {
   files: f.BatchFile[];
   agent_id?: string;
   assistant_id?: string;
-  tool_resource?: a.EToolResources;
+  tool_resource?: tl.EToolResources;
 }): Promise<f.DeleteFilesResponse> =>
   request.deleteWithOptions(endpoints.files(), {
     data: payload,
@@ -1047,6 +1052,18 @@ export function pinConversation(
   payload: t.TPinConversationRequest,
 ): Promise<t.TPinConversationResponse> {
   return request.post(endpoints.pinConversation(), { arg: payload });
+}
+
+export function markConversationSeen(
+  payload: t.TMarkConversationSeenRequest,
+): Promise<t.TMarkConversationSeenResponse> {
+  return request.post(endpoints.markConversationSeen(), { arg: payload });
+}
+
+export function markConversationUnread(
+  payload: t.TMarkConversationUnreadRequest,
+): Promise<t.TMarkConversationUnreadResponse> {
+  return request.post(endpoints.markConversationUnread(), { arg: payload });
 }
 
 export function genTitle(payload: m.TGenTitleRequest): Promise<m.TGenTitleResponse> {
@@ -1547,6 +1564,47 @@ export function verifyTwoFactorTemp(
   payload: t.TVerify2FATempRequest,
 ): Promise<t.TVerify2FATempResponse> {
   return request.post(endpoints.verifyTwoFactorTemp(), payload);
+}
+
+// Passkeys (WebAuthn)
+export function getPasskeys(): Promise<t.TPasskeysResponse> {
+  return request.get(endpoints.passkeys());
+}
+
+export function getPasskeyRegistrationOptions(
+  payload: t.TPasskeyRegistrationOptionsRequest,
+): Promise<t.TPasskeyCreationOptions> {
+  return request.post(endpoints.passkeyRegistrationOptions(), payload);
+}
+
+export function verifyPasskeyRegistration(
+  payload: t.TVerifyPasskeyRegistrationRequest,
+): Promise<t.TPasskeyResponse> {
+  return request.post(endpoints.passkeyRegistrationVerify(), payload);
+}
+
+export function getPasskeyLoginOptions(): Promise<t.TPasskeyAuthenticationOptionsResponse> {
+  return request.post(endpoints.passkeyLoginOptions(), {});
+}
+
+export function verifyPasskeyLogin(
+  payload: t.TVerifyPasskeyLoginRequest,
+): Promise<t.TLoginResponse> {
+  return request.post(endpoints.passkeyLoginVerify(), payload);
+}
+
+export function renamePasskey({
+  passkeyId,
+  name,
+}: t.TRenamePasskeyRequest): Promise<t.TPasskeyResponse> {
+  return request.patch(endpoints.passkey(passkeyId), { name });
+}
+
+export function deletePasskey({
+  passkeyId,
+  password,
+}: t.TDeletePasskeyRequest): Promise<{ message: string }> {
+  return request.deleteWithOptions(endpoints.passkey(passkeyId), { data: { password } });
 }
 
 /* Memories */

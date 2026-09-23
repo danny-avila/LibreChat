@@ -1,6 +1,8 @@
 const express = require('express');
 const {
   isEnabled,
+  resolveEmailChangeSettings,
+  checkEmailConfig,
   isLangfuseConnectionAvailable,
   isLangfuseFanoutEnabled,
   getBalanceConfig,
@@ -14,6 +16,7 @@ const {
   getEndpointsDropParamsMap,
   resolveCodeEnvironmentDecisionVersion,
   resolveCodeEnvironmentMoveVersion,
+  isPasskeyEnabled,
 } = require('@librechat/api');
 const {
   DEFAULT_MCP_APP_CSP_LIMITS,
@@ -87,6 +90,7 @@ function buildPreLoginPayload() {
       !!process.env.APPLE_TEAM_ID &&
       !!process.env.APPLE_KEY_ID &&
       !!process.env.APPLE_PRIVATE_KEY_PATH,
+    passkeyLoginEnabled: isPasskeyEnabled(),
     openidLoginEnabled: isOpenIdEnabled,
     openidLabel: process.env.OPENID_BUTTON_LABEL || 'Continue with OpenID',
     openidImageUrl: process.env.OPENID_IMAGE_URL,
@@ -98,11 +102,7 @@ function buildPreLoginPayload() {
     emailLoginEnabled,
     registrationEnabled: !ldap?.enabled && isEnabled(process.env.ALLOW_REGISTRATION),
     socialLoginEnabled: isEnabled(process.env.ALLOW_SOCIAL_LOGIN),
-    emailEnabled:
-      (!!process.env.EMAIL_SERVICE || !!process.env.EMAIL_HOST) &&
-      !!process.env.EMAIL_USERNAME &&
-      !!process.env.EMAIL_PASSWORD &&
-      !!process.env.EMAIL_FROM,
+    emailEnabled: checkEmailConfig(),
     passwordResetEnabled,
   };
 
@@ -142,7 +142,7 @@ function buildPublicSharePayload() {
  * openid token-reuse marker) and are not needed on the pre-login screens, so they
  * are not exposed to unauthenticated callers.
  */
-function buildPostLoginPayload() {
+function buildPostLoginPayload(appConfig) {
   /** @type {Partial<TStartupConfig>} */
   const payload = {
     showBirthdayIcon:
@@ -157,6 +157,7 @@ function buildPostLoginPayload() {
     allowAccountDeletion:
       process.env.ALLOW_ACCOUNT_DELETION === undefined ||
       isEnabled(process.env.ALLOW_ACCOUNT_DELETION),
+    allowEmailChange: resolveEmailChangeSettings(appConfig?.emailChange).enabled,
   };
 
   return payload;
@@ -299,7 +300,7 @@ router.get('/', async function (req, res) {
     const payload = {
       ...preLoginPayload,
       ...publicSharePayload,
-      ...buildPostLoginPayload(),
+      ...buildPostLoginPayload(appConfig),
       sharedLinksSnapshotFilesEnabled: sharedLinksEnabled && isFileSnapshotEnabled(appConfig),
       socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
       interface: appConfig?.interfaceConfig,

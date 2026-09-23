@@ -16,7 +16,7 @@ const TabsList: React.ForwardRefExoticComponent<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      'inline-flex items-center justify-center rounded-md bg-surface-primary',
+      'bg-surface-primary inline-flex items-center justify-center rounded-md',
       className,
     )}
     {...props}
@@ -33,7 +33,7 @@ const TabsTrigger: React.ForwardRefExoticComponent<
 >(({ className = '', ...props }, ref) => (
   <TabsPrimitive.Trigger
     className={cn(
-      'inline-flex min-w-[100px] items-center justify-center rounded-[0.185rem] px-3 py-1.5 text-sm font-medium text-text-secondary transition-all disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-surface-primary data-[state=active]:text-text-primary data-[state=active]:shadow-sm',
+      'text-text-secondary data-[state=active]:bg-surface-primary data-[state=active]:text-text-primary inline-flex min-w-[100px] items-center justify-center rounded-[0.185rem] px-3 py-1.5 text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-xs',
       className,
     )}
     {...props}

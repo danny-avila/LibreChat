@@ -12,6 +12,7 @@ import {
   type RefreshTokenBridgeMethods,
 } from './refreshTokenBridge';
 import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
+import { createPasskeyMethods, type PasskeyMethods } from './passkey';
 import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
 import { createFileMethods, type FileMethods, type FileOwnerScope } from './file';
 import { createTokenMethods, type TokenMethods } from './token';
@@ -42,7 +43,12 @@ import {
   type UserGroupMethods,
   type UserGroupDeps,
 } from './userGroup';
-import { createAclEntryMethods, permissionBitSupersets, type AclEntryMethods } from './aclEntry';
+import {
+  createAclEntryMethods,
+  permissionBitSupersets,
+  PERM_BITS_WRITE_ATTEMPTS,
+  type AclEntryMethods,
+} from './aclEntry';
 import { createSystemGrantMethods, type SystemGrantMethods } from './systemGrant';
 import {
   createAuditLogMethods,
@@ -128,6 +134,8 @@ import {
   type ListSkillsByAccessResult,
   type UpdateSkillResult,
   type ValidationIssue,
+  type DeleteSkillCleanupStep,
+  type DeleteSkillResult,
 } from './skill';
 import { createScheduleMethods, type ScheduleMethods } from './schedule';
 import {
@@ -195,7 +203,7 @@ export {
   digestMCPAuthorityValue,
 };
 export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate, createTxMethods };
-export { permissionBitSupersets };
+export { permissionBitSupersets, PERM_BITS_WRITE_ATTEMPTS };
 export { CLIENT_MESSAGE_SELECT, SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT };
 export {
   partitionIssues,
@@ -212,6 +220,7 @@ export {
 export { AUDIT_SCHEMA_VERSION, MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT, MAX_AUDIT_VERIFY_ROWS };
 export { MAX_TOOL_FAVORITES };
 export { AgentTriggerDeliveryConflictError };
+export { AGENT_OWNER_CONTACT_RESOLVED_FIELD, AgentSortCursorError } from './agent';
 export {
   AgentQueuedTurnCapacityError,
   AgentQueuedTurnConflictError,
@@ -223,6 +232,7 @@ export type AllMethods = UserMethods &
   TokenMethods &
   RefreshTokenBridgeMethods &
   OpenIDRefreshFlightMethods &
+  PasskeyMethods &
   RoleMethods &
   KeyMethods &
   FileMethods &
@@ -323,6 +333,10 @@ export function createMethods(
     getMessages: messageMethods.getMessages,
     deleteMessages: messageMethods.deleteMessages,
     searchMessages: messageMethods.searchMessages,
+    eraseAgentTriggerDeliveryConversationResults:
+      agentTriggerDeliveryMethods.eraseAgentTriggerDeliveryConversationResults,
+    prepareAgentTriggerConversationResultErasure:
+      agentTriggerDeliveryMethods.prepareAgentTriggerConversationResultErasure,
     deleteAgentQueuedTurns: async (user, conversations) => {
       /** Queued-turn ownership is ObjectId-backed. Conversation methods also
        * support synthetic/non-ObjectId owners in embedded integrations and
@@ -344,6 +358,9 @@ export function createMethods(
             sourceId: 'agent-queued-turn',
             reason: 'queued_turn_conversation_deleted',
             settledAt,
+            /** The source lane is fenced and admission has settled. Queued-turn
+             * deliveries need not receive a later terminal handling receipt. */
+            allowSucceeded: true,
           };
           let retired = await agentTriggerDeliveryMethods.retireAgentTriggerDelivery(retirement);
           if (!retired) {
@@ -446,6 +463,7 @@ export function createMethods(
     ...createTokenMethods(mongoose),
     ...createRefreshTokenBridgeMethods(mongoose),
     ...createOpenIDRefreshFlightMethods(mongoose),
+    ...createPasskeyMethods(mongoose),
     ...roleMethods,
     ...createKeyMethods(mongoose),
     ...createFileMethods(mongoose),
@@ -498,6 +516,7 @@ export function createMethods(
 
 export type {
   UserMethods,
+  PasskeyMethods,
   SessionMethods,
   TokenMethods,
   RefreshTokenBridgeMethods,
@@ -553,6 +572,8 @@ export type {
   ListSkillsByAccessResult,
   UpdateSkillResult,
   ValidationIssue,
+  DeleteSkillCleanupStep,
+  DeleteSkillResult,
   SkillSyncStatusInput,
   SkillSyncCredentialSummary,
   UpsertSkillSyncCredentialInput,

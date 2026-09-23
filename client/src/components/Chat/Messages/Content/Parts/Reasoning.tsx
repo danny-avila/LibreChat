@@ -1,6 +1,6 @@
 import { memo, useMemo, useState, useEffect, useCallback, useRef, useId } from 'react';
 import copy from 'copy-to-clipboard';
-import { useAtomValue } from 'jotai';
+import { useAtom, useAtomValue } from 'jotai';
 import { Lightbulb, ChevronDown } from 'lucide-react';
 import { ContentTypes } from 'librechat-data-provider';
 import { Button, disclosureChevronVariants } from '@librechat/client';
@@ -16,6 +16,7 @@ import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { showThinkingAtom } from '~/store/showThinking';
+import { useReasoningDisclosure } from '../disclosure';
 import { fontSizeAtom } from '~/store/fontSize';
 import { useMessageContext } from '~/Providers';
 import { ROW_GLYPH_SLOT } from '../rows';
@@ -86,7 +87,7 @@ const StreamingThoughtPeek = memo(({ text }: { text: string }) => {
   return (
     <div
       aria-hidden="true"
-      className="mt-1 overflow-hidden rounded-2xl border border-border-light px-4 py-3"
+      className="border-border-light mt-1 overflow-hidden rounded-2xl border px-4 py-3"
     >
       <div
         ref={ref}
@@ -94,7 +95,7 @@ const StreamingThoughtPeek = memo(({ text }: { text: string }) => {
           /** Fixed-height window the text scrolls through. The one-line top pad
            *  keeps the first streaming line below the top fade (a blank line
            *  above it) instead of jammed against the faded edge. */
-          'h-[5.5rem] overflow-hidden whitespace-pre-wrap break-words pt-[26px] leading-[26px] text-text-primary',
+          'text-text-primary h-[5.5rem] overflow-hidden pt-[26px] leading-[26px] break-words whitespace-pre-wrap',
           fontSize,
         )}
         style={{ maskImage: PEEK_FADE, WebkitMaskImage: PEEK_FADE }}
@@ -108,6 +109,7 @@ const StreamingThoughtPeek = memo(({ text }: { text: string }) => {
 StreamingThoughtPeek.displayName = 'StreamingThoughtPeek';
 
 type ReasoningProps = {
+  partKeyIndex?: number;
   reasoning: string;
   isLast: boolean;
   reasoningLabel?: string;
@@ -147,12 +149,14 @@ export const ReasoningMarker = memo(({ label }: { label?: string }) => {
 ReasoningMarker.displayName = 'ReasoningMarker';
 
 const Reasoning = memo((props: ReasoningProps) => {
-  const { reasoning, isLast, reasoningLabel } = props;
+  const { reasoning, isLast, reasoningLabel, partKeyIndex = 0 } = props;
   const contentId = useId();
   const localize = useLocalize();
   const showThinking = useAtomValue(showThinkingAtom);
   const smoothStreaming = useSmoothStreaming();
-  const [isExpanded, setIsExpanded] = useState(showThinking);
+  const [expansionOverride, setIsExpanded] = useAtom(useReasoningDisclosure(partKeyIndex));
+  const [defaultExpanded] = useState(showThinking);
+  const isExpanded = expansionOverride ?? defaultExpanded;
   const [isBarVisible, setIsBarVisible] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const { ref: headerRef, inViewport: headerInViewport } = useInViewport();
@@ -167,9 +171,9 @@ const Reasoning = memo((props: ReasoningProps) => {
     (e: MouseEvent<HTMLButtonElement>) => {
       e.preventDefault();
       mountBody();
-      setIsExpanded((prev) => !prev);
+      setIsExpanded(!isExpanded);
     },
-    [mountBody],
+    [mountBody, isExpanded, setIsExpanded],
   );
 
   const handleFocus = useCallback(() => {
@@ -218,7 +222,7 @@ const Reasoning = memo((props: ReasoningProps) => {
       onBlur={handleBlur}
     >
       <div className="group/thinking-container">
-        <div className="mb-2 pb-2 pt-2" ref={headerRef}>
+        <div className="mb-2 pt-2 pb-2" ref={headerRef}>
           <ThinkingButton
             isExpanded={isExpanded}
             onClick={handleClick}
@@ -272,6 +276,7 @@ const Reasoning = memo((props: ReasoningProps) => {
 Reasoning.displayName = 'Reasoning';
 
 type ReasoningCompactProps = {
+  partKeyIndex?: number;
   reasoning: string;
   label: string;
   /** The host's thoughts-visible preference, supplied by the group rather
@@ -298,11 +303,14 @@ export const ReasoningCompact = memo(
     showThinking,
     isAfterTool = false,
     isStreaming = false,
+    partKeyIndex = 0,
   }: ReasoningCompactProps) => {
     const contentId = useId();
     const localize = useLocalize();
     const fontSize = useAtomValue(fontSizeAtom);
-    const [isExpanded, setIsExpanded] = useState(showThinking);
+    const [expansionOverride, setIsExpanded] = useAtom(useReasoningDisclosure(partKeyIndex));
+    const [defaultExpanded] = useState(showThinking);
+    const isExpanded = expansionOverride ?? defaultExpanded;
     const [isBarVisible, setIsBarVisible] = useState(false);
     const [isCopied, setIsCopied] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -320,9 +328,9 @@ export const ReasoningCompact = memo(
       (e: MouseEvent<HTMLButtonElement>) => {
         e.preventDefault();
         mountBody();
-        setIsExpanded((prev) => !prev);
+        setIsExpanded(!isExpanded);
       },
-      [mountBody],
+      [mountBody, isExpanded, setIsExpanded],
     );
 
     const handleCopy = useCallback(() => {
@@ -364,10 +372,10 @@ export const ReasoningCompact = memo(
             onClick={handleToggle}
             aria-expanded={isExpanded}
             aria-controls={contentId}
-            className="group/disclosure h-auto min-w-0 flex-1 justify-start gap-2 rounded-none p-0 font-normal text-text-secondary hover:bg-transparent"
+            className="group/disclosure text-text-secondary h-auto min-w-0 flex-1 justify-start gap-2 rounded-none p-0 font-normal hover:bg-transparent"
           >
             <span className={ROW_GLYPH_SLOT} aria-hidden="true">
-              <Lightbulb className="size-4 shrink-0 text-text-secondary" />
+              <Lightbulb className="text-text-secondary size-4 shrink-0" />
             </span>
             <span className="tool-status-text font-medium">{label}</span>
             <ChevronDown
@@ -404,8 +412,8 @@ export const ReasoningCompact = memo(
         >
           <div className="overflow-hidden" ref={expandRef}>
             {shouldRenderBody && (
-              <div className="relative my-2 rounded-2xl border border-border-light bg-surface-secondary p-4 pb-9 text-text-secondary">
-                <p className={cn('whitespace-pre-wrap leading-[26px]', fontSize)}>
+              <div className="border-border-light bg-surface-secondary text-text-secondary relative my-2 rounded-2xl border p-4 pb-9">
+                <p className={cn('leading-[26px] whitespace-pre-wrap', fontSize)}>
                   {reasoningText}
                 </p>
                 <FloatingThinkingBar

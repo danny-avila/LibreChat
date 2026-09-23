@@ -45,9 +45,16 @@ export type UpstreamTokenProvider = (options?: {
   signal?: AbortSignal;
 }) => Promise<OIDCTokens | null>;
 
+/** Target resolved from server configuration after the OBO trust check. Scopes are not an audience. */
+export interface UpstreamTokenTarget {
+  readonly mcpServer: string;
+  readonly scopes: string;
+}
+
 /** Lazily supplies a renewable upstream-token provider when an OBO server actually needs one. */
 export type UpstreamTokenProviderResolver = (options?: {
   signal?: AbortSignal;
+  target?: UpstreamTokenTarget;
 }) => UpstreamTokenProvider | undefined | Promise<UpstreamTokenProvider | undefined>;
 
 /** Scheduled OBO credentials must not replace the browser's direct-bearer source. */
@@ -90,6 +97,7 @@ export async function awaitOboOperation<T>(
 export function createLazyOboUpstreamTokenProvider(
   resolver: UpstreamTokenProviderResolver,
   signal?: AbortSignal,
+  target?: UpstreamTokenTarget,
 ): UpstreamTokenProvider {
   let pending: Promise<UpstreamTokenProvider | undefined> | undefined;
   return async (options) => {
@@ -99,7 +107,7 @@ export function createLazyOboUpstreamTokenProvider(
       pending ??= Promise.resolve()
         .then(() => {
           effectiveSignal?.throwIfAborted();
-          return resolver({ signal: effectiveSignal });
+          return resolver({ signal: effectiveSignal, ...(target ? { target } : {}) });
         })
         .catch((error) => {
           pending = undefined;

@@ -83,8 +83,15 @@ feature-local styles. Use semantic theme/Tailwind roles for color and shared app
 introduce raw palette utilities, hard-coded colors, or arbitrary theme CSS. If the system cannot
 express a reusable design need, deepen the shared primitive or versioned theme-token registry
 instead of copying classes into a feature. Keep genuine layout and behavior local, and document
-why any new custom CSS cannot be expressed by the shared system. See the detailed policy in
-`CLAUDE.md` under “Theming and styling.”
+why any new custom CSS cannot be expressed by the shared system.
+
+`npm run lint` enforces this: `@shadcn/lint` reads each primitive's `cva` variants and reports a
+`className` that overrides what the primitive owns, naming the variant, size or file to use
+instead. Do not reach for `eslint-disable`, and do not widen a file's recorded count in
+`eslint-suppressions.json` to land a restyle — that file holds the backlog the rules inherited, so
+raising an entry is a reviewable claim that the override is right. After fixing violations, run
+`npm run lint:design:prune`; after moving a file that carries suppressions, run
+`npm run lint:design:suppress`. See the detailed policy in `CLAUDE.md` under “Theming and styling.”
 
 ## Backend auth cache
 

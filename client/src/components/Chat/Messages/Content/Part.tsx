@@ -25,10 +25,16 @@ import {
   SubagentCall,
   SteerPart,
 } from './Parts';
-import { getCachedPreview, getActivityLabelPart, getActivityLabelText } from '~/utils';
+import {
+  getCachedPreview,
+  getActivityLabelPart,
+  getActivityLabelText,
+  getPartKeyIndex,
+} from '~/utils';
 import { getAskUserQuestionPart } from '~/utils/approval';
 import AskUserQuestionCall from './AskUserQuestionCall';
 import { isBashProgrammaticToolCall } from './routing';
+import { useMessageContext } from '~/Providers';
 import { ErrorMessage } from './MessageContent';
 import AskUserQuestion from './AskUserQuestion';
 import RetrievalCall from './RetrievalCall';
@@ -61,6 +67,7 @@ const Part = memo(function Part({
   hideAttachments,
   onToolExpand,
 }: PartProps) {
+  const { partIndex } = useMessageContext();
   if (!part) {
     return null;
   }
@@ -153,6 +160,7 @@ const Part = memo(function Part({
     }
     return (
       <Reasoning
+        partKeyIndex={getPartKeyIndex(part, partIndex ?? 0)}
         reasoning={reasoning}
         isLast={isLast ?? false}
         reasoningLabel={part.reasoning_label}
@@ -181,7 +189,7 @@ const Part = memo(function Part({
     const failed = part.status === 'failed' || part.status === 'partial';
     return (
       <div
-        className={`my-1 break-words pl-1 text-sm italic ${failed ? 'text-text-warning' : 'text-text-secondary'}`}
+        className={`my-1 pl-1 text-sm break-words italic ${failed ? 'text-text-warning' : 'text-text-secondary'}`}
       >
         {display}
       </div>

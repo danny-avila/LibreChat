@@ -1,4 +1,4 @@
-import type { TMessageContentParts } from './types/assistants';
+import type { TMessageContentParts } from './types/content';
 import type { TFile } from './types/files';
 import type { TMessage } from './types';
 import { ContentTypes } from './types/runs';

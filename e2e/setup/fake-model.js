@@ -59,6 +59,8 @@ const ASK_USER_QUESTION_MARKER = 'E2E_ASK_USER_QUESTION:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
 const MARKDOWN_REPLY_MARKER = 'E2E_MARKDOWN_REPLY';
+const STREAMING_MARKDOWN_REPLY_MARKER = 'E2E_STREAMING_MARKDOWN_REPLY';
+const HIGHLIGHT_CODE_MARKER = 'E2E_HIGHLIGHT_CODE:';
 const STATEFUL_CODE_MARKER = 'E2E_STATEFUL_CODE:';
 /** Two prose paragraphs, so a spec can select the message's *closing* block. */
 const PARAGRAPHS_REPLY_MARKER = 'E2E_PARAGRAPHS_REPLY';
@@ -89,6 +91,8 @@ const HANDOFF_TOOL_PREFIX = 'lc_transfer_to_';
 const CREATE_FILE_AUTHORING_FINAL_TEXT = 'E2E file authoring complete';
 const EDIT_FILE_AUTHORING_FINAL_TEXT = 'E2E file edit complete';
 const SKILL_ASSERTION_FINAL_TEXT = 'E2E skill assertion passed';
+/** Summary for a run with no invocable skill yet, but the tool to invoke one it authors. */
+const SKILL_ASSERTION_AUTHORING_ONLY_SUMMARY = 'authoring-only';
 const MANUAL_SKILL_ASSERTION_FINAL_TEXT = 'E2E manual skill assertion passed';
 const SKILL_TOOL_ASSERTION_FINAL_TEXT = 'E2E skill tool assertion passed';
 const PROVIDER_FILE_ASSERTION_FINAL_TEXT = 'E2E provider file assertion passed';
@@ -107,6 +111,11 @@ const STEER_TOOL_NAME_PREFIX = 'remember_fact';
 const MCP_APP_TOOL_NAME_PREFIX = 'show_app';
 const ASK_USER_QUESTION_TOOL_NAME = 'ask_user_question';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
+/** The highlight cancellation scenario has to open the code card and stop the
+ *  run while its arguments are still arriving. At the ordinary slow cadence
+ *  those ~40 chunks are gone in under two seconds, which is not a window a
+ *  loaded runner can be relied on to hit, so that one variant streams wider. */
+const HIGHLIGHT_CANCEL_CHUNK_DELAY_MS = 200;
 const ORDERED_CHUNK_DELAY_MS = 2;
 const ORDERED_REPLY_PIECES = 64;
 const SLOW_REPLY_CHUNKS = 160;
@@ -245,22 +254,31 @@ function getMarkerValue(text, marker) {
   );
 }
 
-function collectToolNames(agents) {
-  const names = new Set();
-  const add = (name) => {
-    if (typeof name === 'string' && name) {
-      names.add(name);
+/**
+ * Every tool name the run advertises, mapped to the definition the model sees
+ * for it. `toolDefinitions` is the array handed to the provider, so it wins
+ * over a same-named entry in `tools`; registry-only names keep whatever the
+ * earlier sources carried, which may be nothing. Names alone drive most
+ * assertions, but the `skill` tool ships two descriptions for one name, so the
+ * definition has to survive collection.
+ */
+function collectToolDefinitions(agents) {
+  const definitions = new Map();
+  const add = (name, definition) => {
+    if (typeof name !== 'string' || !name) {
+      return;
     }
+    definitions.set(name, definition ?? definitions.get(name));
   };
   for (const agent of agents ?? []) {
     if (!agent) {
       continue;
     }
     for (const tool of agent.tools ?? []) {
-      add(tool?.name);
+      add(tool?.name, tool);
     }
     for (const def of agent.toolDefinitions ?? []) {
-      add(def?.name);
+      add(def?.name, def);
     }
     if (agent.toolRegistry && typeof agent.toolRegistry.keys === 'function') {
       for (const name of agent.toolRegistry.keys()) {
@@ -268,7 +286,11 @@ function collectToolNames(agents) {
       }
     }
   }
-  return names;
+  return definitions;
+}
+
+function collectToolNames(agents) {
+  return new Set(collectToolDefinitions(agents).keys());
 }
 
 async function getStreamAgentView({ graph, messages, options, runManager }) {
@@ -290,10 +312,12 @@ async function getStreamAgentView({ graph, messages, options, runManager }) {
     systemRunnable && typeof systemRunnable.invoke === 'function'
       ? await systemRunnable.invoke(messages)
       : messages;
+  const toolDefinitions = collectToolDefinitions(agentContext ? [agentContext] : []);
   return {
     agentId,
     messages: promptMessages,
-    toolNames: collectToolNames(agentContext ? [agentContext] : []),
+    toolDefinitions,
+    toolNames: new Set(toolDefinitions.keys()),
   };
 }
 
@@ -522,6 +546,28 @@ function replyResponses(text) {
       ],
     };
   }
+  if (text.includes(STREAMING_MARKDOWN_REPLY_MARKER)) {
+    return {
+      responses: [
+        [
+          '## E2E streaming markdown heading',
+          '',
+          'E2E streaming opening paragraph with 日本語 content.',
+          '',
+          '```javascript',
+          'const e2eIncrementalMarkdown = "complete";',
+          '```',
+          '',
+          '| E2E column | E2E value |',
+          '| --- | --- |',
+          '| completed block | visible |',
+          '',
+          'E2E streaming markdown final paragraph.',
+        ].join('\n'),
+      ],
+      sleep: SLOW_CHUNK_DELAY_MS,
+    };
+  }
 
   if (text.includes(PARAGRAPHS_REPLY_MARKER)) {
     /** The quoted cell sits in the first column, so scrolling the table to its
@@ -693,15 +739,40 @@ class UsageEmittingFakeChatModel extends FakeChatModel {
 
     if (toolCalls?.length) {
       await new Promise((resolve) => setTimeout(resolve, this.streamSleep));
-      const toolCallChunks = toolCalls.map((toolCall, index) => ({
-        name: toolCall.name,
-        args: JSON.stringify(toolCall.args),
-        id: toolCall.id,
-        index,
-        type: 'tool_call_chunk',
-      }));
-      yield this._createResponseChunk('', toolCallChunks);
-      void runManager?.handleLLMNewToken('');
+      if (!toolCalls.some((toolCall) => toolCall.streamArgs)) {
+        const toolCallChunks = toolCalls.map((toolCall, index) => ({
+          name: toolCall.name,
+          args: JSON.stringify(toolCall.args),
+          id: toolCall.id,
+          index,
+          type: 'tool_call_chunk',
+        }));
+        yield this._createResponseChunk('', toolCallChunks);
+        void runManager?.handleLLMNewToken('');
+        return;
+      }
+
+      for (const [index, toolCall] of toolCalls.entries()) {
+        const serializedArgs = JSON.stringify(toolCall.args);
+        const chunks = toolCall.streamArgs
+          ? (serializedArgs.match(/.{1,64}/gs) ?? [''])
+          : [serializedArgs];
+        for (const [chunkIndex, args] of chunks.entries()) {
+          const toolCallChunk = {
+            name: chunkIndex === 0 ? toolCall.name : undefined,
+            args,
+            id: chunkIndex === 0 ? toolCall.id : undefined,
+            index,
+            type: 'tool_call_chunk',
+          };
+          yield this._createResponseChunk('', [toolCallChunk]);
+          void runManager?.handleLLMNewToken('');
+          if (chunkIndex < chunks.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, this.streamSleep));
+          }
+        }
+      }
+      return;
     }
   }
 
@@ -921,7 +992,22 @@ function expectedSkillBodyMarker(skillName) {
   return `# ${skillName}`;
 }
 
-function skillAssertionResponses({ messages, assertion, toolNames }) {
+/**
+ * The `skill` tool's authoring-only wording, from `AUTHORED_SKILL_CONSTRAINTS`
+ * in `packages/api/src/agents/tools.ts`. A run that may write
+ * `skills/{skillName}/SKILL.md` gets that variant instead of the SDK's
+ * catalog-only text, which is what makes the two cases below separable from
+ * the prompt alone.
+ */
+const AUTHORED_SKILL_GUIDANCE = 'a skill you created in this conversation';
+
+function isAuthoringSkillTool(definition) {
+  return typeof definition?.description === 'string'
+    ? definition.description.includes(AUTHORED_SKILL_GUIDANCE)
+    : false;
+}
+
+function skillAssertionResponses({ messages, assertion, toolNames, toolDefinitions }) {
   const failures = [];
   if (assertion.error) {
     failures.push(assertion.error);
@@ -929,10 +1015,23 @@ function skillAssertionResponses({ messages, assertion, toolNames }) {
   const promptText = collectPromptText(messages).join('\n');
   const skillPrimeMessages = collectSkillPrimeMessages(messages);
 
-  if (assertion.required.length > 0 && !toolNames.has(SKILL_TOOL_NAME)) {
+  const skillToolAdvertised = toolNames.has(SKILL_TOOL_NAME);
+  /**
+   * An empty catalog no longer implies an absent `skill` tool: a run that can
+   * author skills keeps the tool bound so the model can invoke one it writes
+   * mid-run, and it gets the authoring variant's description to say so. Both
+   * states still have to be told apart, so the pass text names which one
+   * happened — `none` for no tool at all, `authoring-only` for a tool with
+   * nothing yet to invoke — and neither string contains the other, so a spec
+   * asserting one cannot pass on the other.
+   */
+  const authoringSkillTool =
+    skillToolAdvertised && isAuthoringSkillTool(toolDefinitions?.get(SKILL_TOOL_NAME));
+
+  if (assertion.required.length > 0 && !skillToolAdvertised) {
     failures.push(`${SKILL_TOOL_NAME} tool was not advertised`);
   }
-  if (assertion.required.length === 0 && toolNames.has(SKILL_TOOL_NAME)) {
+  if (assertion.required.length === 0 && skillToolAdvertised && !authoringSkillTool) {
     failures.push(`${SKILL_TOOL_NAME} tool was unexpectedly advertised`);
   }
   for (const name of assertion.required) {
@@ -968,11 +1067,16 @@ function skillAssertionResponses({ messages, assertion, toolNames }) {
   }
   return {
     responses: [
-      `${SKILL_ASSERTION_FINAL_TEXT}: ${
-        assertion.required.length > 0 ? assertion.required.join(', ') : 'none'
-      }`,
+      `${SKILL_ASSERTION_FINAL_TEXT}: ${resolveSkillAssertionSummary(assertion, authoringSkillTool)}`,
     ],
   };
+}
+
+function resolveSkillAssertionSummary(assertion, authoringSkillTool) {
+  if (assertion.required.length > 0) {
+    return assertion.required.join(', ');
+  }
+  return authoringSkillTool ? SKILL_ASSERTION_AUTHORING_ONLY_SUMMARY : 'none';
 }
 
 function manualSkillAssertionResponses({ messages, skillName }) {
@@ -2834,6 +2938,37 @@ function provisioningToolResponses({ text, toolNames }) {
       toolNames,
     );
   }
+  const highlightLabel = getMarkerValue(text, HIGHLIGHT_CODE_MARKER);
+  if (highlightLabel) {
+    const codeTool = CODE_EXEC_TOOLS.find((tool) => toolNames.has(tool.name));
+    if (!codeTool) {
+      return {
+        responses: [`E2E highlight code unavailable: ${JSON.stringify([...toolNames])}`],
+      };
+    }
+    const command = Array.from({ length: 120 }, (_, index) => `printf 'line-${index}-☃\\n'`).join(
+      '\n',
+    );
+    const args =
+      codeTool.name === 'bash_tool'
+        ? { command }
+        : codeTool.name === 'execute_code'
+          ? { lang: 'bash', code: command }
+          : codeTool.args;
+    return {
+      responses: ['', `E2E highlighted code complete: ${highlightLabel}`],
+      sleep: highlightLabel === 'cancel' ? HIGHLIGHT_CANCEL_CHUNK_DELAY_MS : SLOW_CHUNK_DELAY_MS,
+      toolCalls: [
+        {
+          id: EXECUTE_CODE_TOOL_CALL_ID,
+          name: codeTool.name,
+          args,
+          streamArgs: true,
+          type: 'tool_call',
+        },
+      ],
+    };
+  }
 
   const codeLabel = getMarkerValue(text, EXECUTE_CODE_MARKER);
   if (codeLabel) {
@@ -2859,7 +2994,6 @@ function provisioningToolResponses({ text, toolNames }) {
       ],
     };
   }
-
   const searchLabel = getMarkerValue(text, FILE_SEARCH_MARKER);
   if (searchLabel) {
     if (!toolNames.has(FILE_SEARCH_TOOL_NAME)) {
@@ -3068,6 +3202,7 @@ function resolveResponses({ graph, messages, text, toolNames }) {
           messages: agentView.messages,
           assertion: parseSkillAssertion(text, agentView.agentId),
           toolNames: agentView.toolNames,
+          toolDefinitions: agentView.toolDefinitions,
         });
       },
     };

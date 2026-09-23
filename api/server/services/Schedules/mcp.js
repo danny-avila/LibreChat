@@ -15,7 +15,7 @@ const methods = require('~/models');
  * credential source and therefore remains fail-closed for unattended OBO.
  *
  * @param {object} [options]
- * @param {(user: import('@librechat/data-schemas').IUser, options: { signal?: AbortSignal }) => import('@librechat/api').UpstreamTokenProvider | undefined | Promise<import('@librechat/api').UpstreamTokenProvider | undefined>} [options.resolveUpstreamTokenProvider]
+ * @param {import('@librechat/api').HostUpstreamTokenProviderResolver} [options.resolveUpstreamTokenProvider]
  */
 function createMCPPreflight(options = {}) {
   return createScheduleMCPPreflight({

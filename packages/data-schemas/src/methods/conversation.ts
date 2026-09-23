@@ -72,6 +72,11 @@ const MEILI_SEARCH_LIMIT = 1000;
 /** Ceiling for a single conversation page; the sidebar's largest request is 100. */
 const MAX_CONVO_PAGE_SIZE = 100;
 const DEFAULT_CONVO_PAGE_SIZE = 25;
+const nextMonotonicStamp = (previous?: Date): Date => {
+  const previousMs = previous?.getTime() ?? 0;
+  return new Date(Math.max(Date.now(), Number.isFinite(previousMs) ? previousMs + 1 : 0));
+};
+
 const escapeMeiliFilterValue = (value: string): string =>
   value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
@@ -277,13 +282,23 @@ export interface ConversationMethods {
       /** `_id`s of messages this save just wrote. When present, they are appended with
        *  `$addToSet` and the O(n) read-and-rewrite of the `messages` array is skipped;
        *  every save without this option still rebuilds the array from the database. */
-      appendMessageIds?: Types.ObjectId[];
+      /** Casts plain string ids, so callers outside this package need not name the id type. */
+      appendMessageIds?: Array<Types.ObjectId | string>;
+      /** Advance the reply version and clear the catch-up after persisting an assistant reply. */
+      stampReply?: boolean;
+      /** Durable messageId paired atomically with a reply stamp. */
+      replyMessageId?: string;
     },
   ): Promise<IConversation | { message: string } | null>;
   setConvoPinned(
     user: string,
     conversationId: string,
     pinned: boolean,
+  ): Promise<IConversation | null>;
+  appendConvoMessageReference(
+    user: string,
+    conversationId: string,
+    messageId: string,
   ): Promise<IConversation | null>;
   replaceConvoCodeEnvironmentDecision(params: {
     user: string;
@@ -494,6 +509,25 @@ export interface ConversationMethods {
     conversationId: string,
   ): Promise<Pick<IConversation, 'expiredAt' | 'isTemporary'> | null>;
   getConvoTitle(user: string, conversationId: string): Promise<string | null>;
+  markConvoSeen(
+    user: string,
+    conversationId: string,
+    observedResponseAt?: Date,
+  ): Promise<{ modified: boolean }>;
+  markConvoUnread(
+    user: string,
+    conversationId: string,
+  ): Promise<{
+    modified: boolean;
+    lastResponseAt?: Date;
+    lastResponseMessageId?: string;
+    lastResponseIsManual?: boolean;
+  }>;
+  stampConvoLastResponse(
+    user: string,
+    conversationId: string,
+    responseMessageId: string,
+  ): Promise<{ lastResponseAt: Date; lastResponseMessageId: string; updatedAt?: Date } | null>;
   deleteConvos(
     user: string,
     filter: FilterQuery<IConversation>,
@@ -512,6 +546,14 @@ export interface ConversationMethodDeps
     user: string,
     conversations: Array<{ conversationId: string; tenantId?: string; allTenants?: true }>,
   ) => Promise<void>;
+  eraseAgentTriggerDeliveryConversationResults?: (
+    user: string,
+    conversationIds: string[],
+  ) => Promise<void>;
+  prepareAgentTriggerConversationResultErasure?: (
+    user: string,
+    conversationIds: string[],
+  ) => Promise<void>;
 }
 
 export function createConversationMethods(
@@ -520,6 +562,56 @@ export function createConversationMethods(
 ): ConversationMethods {
   let legacyReceiptExpiryCursor: Types.ObjectId | undefined;
 
+  /**
+   * Stamps a real assistant reply with a strictly increasing server value.
+   *
+   * The read and write are a classic compare-and-set pair so this remains compatible with
+   * DocumentDB: concurrent writers that read the same value retry against the winner and use
+   * `max(now, previous + 1ms, updatedAt + 1ms)`. Advancing both versions makes the reply itself
+   * distinguishable from a metadata-only promotion. Only a successful write supplies a stamp.
+   */
+  async function stampReplyWithCas(
+    Conversation: Model<IConversation>,
+    filter: FilterQuery<IConversation>,
+    responseMessageId: string,
+    projection?: Record<string, 0 | 1>,
+  ): Promise<{ stamp: Date; conversation: Partial<IConversation> } | null> {
+    const replyFilter = { ...filter, isTemporary: { $ne: true } };
+    for (;;) {
+      const current = await Conversation.findOne(replyFilter)
+        .select({ lastResponseAt: 1, updatedAt: 1 })
+        .lean<Pick<IConversation, 'lastResponseAt' | 'updatedAt'> | null>();
+      if (!current) {
+        return null;
+      }
+      const previous = current.lastResponseAt;
+      const latestActivity =
+        current.updatedAt && (!previous || current.updatedAt > previous)
+          ? current.updatedAt
+          : previous;
+      const stamp = nextMonotonicStamp(latestActivity);
+      const casFilter: FilterQuery<IConversation> =
+        previous == null
+          ? {
+              ...replyFilter,
+              updatedAt: current.updatedAt ?? null,
+              $or: [{ lastResponseAt: null }, { lastResponseAt: { $exists: false } }],
+            }
+          : { ...replyFilter, lastResponseAt: previous, updatedAt: current.updatedAt ?? null };
+      const stamped = await Conversation.findOneAndUpdate(
+        casFilter,
+        {
+          $set: { lastResponseAt: stamp, lastResponseMessageId: responseMessageId },
+          $unset: { lastSeenAt: '', lastResponseIsManual: '' },
+          $max: { updatedAt: stamp },
+        },
+        { new: true, projection, timestamps: false },
+      ).lean<Partial<IConversation> | null>();
+      if (stamped) {
+        return { stamp, conversation: stamped };
+      }
+    }
+  }
   function getMessageMethods() {
     if (!deps) {
       throw new Error('Message methods not injected into conversation methods');
@@ -2165,7 +2257,12 @@ export function createConversationMethods(
       createdAtOnInsert?: Date;
       preserveUpdatedAt?: boolean;
       initialAgentId?: string | null;
-      appendMessageIds?: Types.ObjectId[];
+      /** Casts plain string ids, so callers outside this package need not name the id type. */
+      appendMessageIds?: Array<Types.ObjectId | string>;
+      /** Stamp `lastResponseAt` at write time: this save carries a persisted assistant reply. */
+      stampReply?: boolean;
+      /** Durable messageId paired atomically with a reply stamp. */
+      replyMessageId?: string;
     },
   ) {
     try {
@@ -2180,7 +2277,21 @@ export function createConversationMethods(
       const update: Record<string, unknown> = { ...convo, user: userId };
       delete update.isTemporary;
       delete update.expiredAt;
+      /* Read-state fields are server-owned. A stale marker must never be reintroduced by a
+       * metadata save after a real reply cleared it. */
+      delete update.lastResponseIsManual;
+      delete update.lastResponseAt;
+      delete update.lastResponseMessageId;
       delete update.initial_agent_id;
+      /** Ordinary saves may seed a decision, but only an explicit move may replace it. */
+      const decisionOnInsert = {
+        ...(convo.codeEnvironmentMode != null && {
+          codeEnvironmentMode: convo.codeEnvironmentMode,
+        }),
+        ...(convo.codeWorkspaces != null && { codeWorkspaces: convo.codeWorkspaces }),
+      };
+      delete update.codeEnvironmentMode;
+      delete update.codeWorkspaces;
       stripActorCheckpointFields(update);
       if (appendMessageIds == null) {
         update.messages = await getMessages({ conversationId, user: userId }, '_id');
@@ -2188,7 +2299,12 @@ export function createConversationMethods(
         delete update.messages;
       }
       const unsetFields: Record<string, number> = { ...(metadata?.unsetFields ?? {}) };
+      delete unsetFields.lastResponseIsManual;
+      delete unsetFields.lastResponseMessageId;
+      delete unsetFields.lastResponseAt;
       delete unsetFields.initial_agent_id;
+      delete unsetFields.codeEnvironmentMode;
+      delete unsetFields.codeWorkspaces;
       stripActorCheckpointFields(unsetFields);
 
       if (Object.prototype.hasOwnProperty.call(update, 'chatProjectId') && update.chatProjectId) {
@@ -2309,8 +2425,20 @@ export function createConversationMethods(
         if (appendMessageIds != null && appendMessageIds.length > 0) {
           operation.$addToSet = { messages: { $each: appendMessageIds } };
         }
+        /* Two responses can persist concurrently, and the older one can reach the write last.
+         * `$max` keeps whichever stamp is later without a pipeline update, which the
+         * DocumentDB targets rule out. */
+        if (setFields.lastResponseAt instanceof Date) {
+          const { lastResponseAt, ...withoutReplyStamp } = setFields;
+          operation.$set = withoutReplyStamp;
+          operation.$max = { lastResponseAt };
+          operation.$unset = { lastResponseIsManual: '' };
+        }
         if (Object.keys(unsetFields).length > 0) {
-          operation.$unset = unsetFields;
+          operation.$unset = {
+            ...(operation.$unset as Record<string, unknown> | undefined),
+            ...unsetFields,
+          };
         }
         const createdAtForInsert = updatesArchiveState
           ? (createdAtOnInsert ??
@@ -2318,6 +2446,7 @@ export function createConversationMethods(
           : createdAtOnInsert;
         operation.$setOnInsert = {
           initial_agent_id: initialAgentId,
+          ...decisionOnInsert,
           ...retentionOnInsert,
           ...(createdAtForInsert ? { createdAt: createdAtForInsert } : {}),
         };
@@ -2405,6 +2534,31 @@ export function createConversationMethods(
         return null;
       }
 
+      /** `$setOnInsert` only reaches a chat this save creates, yet a chat whose earlier turns never
+       * involved a code-capable agent holds no decision either: without this fill its first
+       * workspace choice is dropped and the next turn starts undecided again. The filter repeats
+       * that absence, so a concurrent writer that decided first keeps its decision and a chat that
+       * already holds one is never touched. Only a whole decision seeds a row, never bare
+       * selections. */
+      if (
+        decisionOnInsert.codeEnvironmentMode != null &&
+        conversation.codeEnvironmentMode == null &&
+        (conversation.codeWorkspaces?.length ?? 0) === 0
+      ) {
+        const seeded = await Conversation.updateOne(
+          {
+            _id: conversation._id,
+            codeEnvironmentMode: { $in: [null] },
+            $or: [{ codeWorkspaces: { $in: [null] } }, { codeWorkspaces: { $size: 0 } }],
+          },
+          { $set: decisionOnInsert },
+          { timestamps: false },
+        );
+        if (seeded.modifiedCount > 0) {
+          Object.assign(conversation, decisionOnInsert);
+        }
+      }
+
       /** Reuse the saved row's chat type when callers omit it, preserving existing deadlines. */
       if (
         interfaceConfig?.retentionMode === RetentionMode.ALL &&
@@ -2430,6 +2584,42 @@ export function createConversationMethods(
         }
       }
 
+      /* Advance the version and clear the previous catch-up atomically. The database CAS orders
+       * concurrent replies even when their application hosts disagree about wall-clock time. */
+      let replyStampApplied = false;
+      if (metadata?.stampReply === true) {
+        const responseMessageId = metadata.replyMessageId;
+        if (typeof responseMessageId === 'string' && responseMessageId.length > 0) {
+          try {
+            const stamped = await stampReplyWithCas(
+              Conversation,
+              { _id: conversation._id },
+              responseMessageId,
+              {
+                lastResponseAt: 1,
+                lastResponseMessageId: 1,
+                lastResponseIsManual: 1,
+                updatedAt: 1,
+              },
+            );
+            if (stamped) {
+              /* The caller hands this document to the client as the turn's conversation, and the
+               * seen acknowledgement is bound to the stamp it carries. */
+              replyStampApplied = true;
+              conversation.lastResponseAt = stamped.stamp;
+              conversation.lastResponseMessageId = stamped.conversation.lastResponseMessageId;
+              conversation.lastResponseIsManual = stamped.conversation.lastResponseIsManual;
+              conversation.lastSeenAt = undefined;
+              if (stamped.conversation.updatedAt) {
+                conversation.updatedAt = stamped.conversation.updatedAt;
+              }
+            }
+          } catch (error) {
+            logger.error('[saveConvo] Failed to stamp persisted reply', error);
+          }
+        }
+      }
+
       if (
         interfaceConfig?.retentionMode === RetentionMode.ALL &&
         typeof isTemporary !== 'boolean' &&
@@ -2438,11 +2628,15 @@ export function createConversationMethods(
       ) {
         /* This backfill runs after the main write, so it needs the same timestamp
            suppression: otherwise the first pin or archive of a legacy chat under
-           `RetentionMode.ALL` bumps `updatedAt` here and lands in Today anyway. */
+           `RetentionMode.ALL` bumps `updatedAt` here and lands in Today anyway.
+           A reply stamp is the same case for a different reason: the CAS above set `updatedAt`
+           to the stamp deliberately, and an away tab that has never cached this conversation
+           reads the two disagreeing as a metadata-only promotion, withholding the reply's
+           chime and desktop notification. */
         await Conversation.updateOne(
           { _id: conversation._id, isTemporary: { $ne: false } },
           { $set: { isTemporary: false } },
-          preserveUpdatedAt ? { timestamps: false } : {},
+          preserveUpdatedAt || replyStampApplied ? { timestamps: false } : {},
         );
         conversation.isTemporary = false;
       }
@@ -2450,56 +2644,65 @@ export function createConversationMethods(
       const newChatProjectId = conversation.chatProjectId ?? null;
       const projectMembershipChanged = previousChatProjectId !== newChatProjectId;
 
-      /**
-       * A chat that moved between projects (e.g. a stale tab re-submitting an
-       * older project id) must fully recompute the stats of the project it left;
-       * the incremental path only ever touches the project it now belongs to.
-       */
-      if (projectMembershipChanged && previousChatProjectId) {
-        await refreshChatProjectStatsForUser(mongoose, userId, previousChatProjectId);
-      }
-
-      if (conversation.chatProjectId) {
-        const isRetentionVisibilityUpdate =
-          typeof update.isTemporary === 'boolean' ||
-          Object.prototype.hasOwnProperty.call(convo, 'expiredAt') ||
-          Object.prototype.hasOwnProperty.call(unsetFields, 'isTemporary') ||
-          Object.prototype.hasOwnProperty.call(unsetFields, 'expiredAt');
+      /* The conversation and its reply stamp are durable by now, and the caller hands this
+         document to the client as the turn's conversation. Project statistics are maintenance
+         on a different collection: letting one of their failures reach the catch below would
+         answer a successful save with an error, dropping the stamp from the terminal event and
+         presenting a reply the user already watched arrive as unread on the next refresh. */
+      try {
         /**
-         * Saving a conversation that is itself archived or retention-hidden (e.g.
-         * renaming or title generation on an archived project chat) must recompute
-         * stats rather than take the incremental fast path, otherwise the project's
-         * lastConversationAt/Id would point at a chat the project workspace hides.
+         * A chat that moved between projects (e.g. a stale tab re-submitting an
+         * older project id) must fully recompute the stats of the project it left;
+         * the incremental path only ever touches the project it now belongs to.
          */
-        const isConversationHidden =
-          conversation.isArchived === true ||
-          conversation.isTemporary === true ||
-          (conversation.expiredAt != null &&
-            new Date(conversation.expiredAt).getTime() <= Date.now());
-        /**
-         * A move into this project (projectMembershipChanged) also needs a full
-         * refresh: the incremental path only bumps the count for brand-new inserts,
-         * so a pre-existing chat joining the project would otherwise be uncounted.
-         */
-        const isNewConversation = conversationResult.lastErrorObject?.updatedExisting === false;
-        const shouldRefreshProjectStats =
-          projectMembershipChanged ||
-          isNewConversation ||
-          typeof update.isArchived === 'boolean' ||
-          Object.prototype.hasOwnProperty.call(unsetFields, 'isArchived') ||
-          isRetentionVisibilityUpdate ||
-          isConversationHidden;
-
-        if (shouldRefreshProjectStats) {
-          await refreshChatProjectStatsForUser(mongoose, userId, conversation.chatProjectId);
-        } else {
-          await updateChatProjectLastConversationForUser(
-            mongoose,
-            userId,
-            conversation.chatProjectId,
-            conversation,
-          );
+        if (projectMembershipChanged && previousChatProjectId) {
+          await refreshChatProjectStatsForUser(mongoose, userId, previousChatProjectId);
         }
+
+        if (conversation.chatProjectId) {
+          const isRetentionVisibilityUpdate =
+            typeof update.isTemporary === 'boolean' ||
+            Object.prototype.hasOwnProperty.call(convo, 'expiredAt') ||
+            Object.prototype.hasOwnProperty.call(unsetFields, 'isTemporary') ||
+            Object.prototype.hasOwnProperty.call(unsetFields, 'expiredAt');
+          /**
+           * Saving a conversation that is itself archived or retention-hidden (e.g.
+           * renaming or title generation on an archived project chat) must recompute
+           * stats rather than take the incremental fast path, otherwise the project's
+           * lastConversationAt/Id would point at a chat the project workspace hides.
+           */
+          const isConversationHidden =
+            conversation.isArchived === true ||
+            conversation.isTemporary === true ||
+            (conversation.expiredAt != null &&
+              new Date(conversation.expiredAt).getTime() <= Date.now());
+          /**
+           * A move into this project (projectMembershipChanged) also needs a full
+           * refresh: the incremental path only bumps the count for brand-new inserts,
+           * so a pre-existing chat joining the project would otherwise be uncounted.
+           */
+          const isNewConversation = conversationResult.lastErrorObject?.updatedExisting === false;
+          const shouldRefreshProjectStats =
+            projectMembershipChanged ||
+            isNewConversation ||
+            typeof update.isArchived === 'boolean' ||
+            Object.prototype.hasOwnProperty.call(unsetFields, 'isArchived') ||
+            isRetentionVisibilityUpdate ||
+            isConversationHidden;
+
+          if (shouldRefreshProjectStats) {
+            await refreshChatProjectStatsForUser(mongoose, userId, conversation.chatProjectId);
+          } else {
+            await updateChatProjectLastConversationForUser(
+              mongoose,
+              userId,
+              conversation.chatProjectId,
+              conversation,
+            );
+          }
+        }
+      } catch (error) {
+        logger.error('[saveConvo] Failed to maintain project statistics', error);
       }
 
       return conversation.toObject();
@@ -2534,6 +2737,42 @@ export function createConversationMethods(
     } catch (error) {
       logger.error('[setConvoPinned] Error updating pinned state', error);
       throw new Error('Error updating pinned state');
+    }
+  }
+
+  /**
+   * Adds one message's id to a conversation's message list, and nothing else.
+   *
+   * A message write that failed, or that resolved falsy on a duplicate key it could not
+   * re-read, leaves its row out of `messages`, and the bare `saveMessage` retries that
+   * restore the row never add it. Going direct keeps the repair to what it is: no
+   * `getMessages` round trip, no rewrite of the whole array, and no `$set` of fields the
+   * caller never meant to touch. `timestamps: false` because repairing a reference is not
+   * activity and must not reorder the sidebar.
+   *
+   * Takes the id as a string so callers stay free of the storage engine's own id type; the
+   * cast to it happens here. Returns null when no conversation matched, so a repair can
+   * never insert one.
+   */
+  async function appendConvoMessageReference(
+    user: string,
+    conversationId: string,
+    messageId: string,
+  ) {
+    if (!isValidObjectIdString(messageId)) {
+      logger.warn('[appendConvoMessageReference] Ignoring an unusable message id');
+      return null;
+    }
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      return await Conversation.findOneAndUpdate(
+        { conversationId, user },
+        { $addToSet: { messages: new mongoose.Types.ObjectId(messageId) } },
+        { new: true, timestamps: false },
+      ).lean<IConversation>();
+    } catch (error) {
+      logger.error('[appendConvoMessageReference] Error appending the message reference', error);
+      throw new Error('Error appending the message reference');
     }
   }
 
@@ -2642,7 +2881,13 @@ export function createConversationMethods(
 
       const affectedProjectStats = new Map<string, { user: string; projectId: string }>();
       const bulkOps = conversations.map((convo) => {
-        const sanitized = { ...convo };
+        const { codeEnvironmentMode, codeWorkspaces, ...sanitized } = convo;
+        /* Read state belongs to the reader who lived through the replies, so an import never
+           carries one in: the rows arrive unseen-free and unread-free. */
+        delete sanitized.lastResponseAt;
+        delete sanitized.lastResponseMessageId;
+        delete sanitized.lastResponseIsManual;
+        delete sanitized.lastSeenAt;
         delete sanitized.initial_agent_id;
         stripActorCheckpointFields(sanitized);
         if (typeof sanitized.user === 'string' && typeof sanitized.chatProjectId === 'string') {
@@ -2676,7 +2921,11 @@ export function createConversationMethods(
             },
             update: {
               $set: sanitized,
-              $setOnInsert: { initial_agent_id: null },
+              $setOnInsert: {
+                initial_agent_id: null,
+                ...(codeEnvironmentMode != null && { codeEnvironmentMode }),
+                ...(codeWorkspaces != null && { codeWorkspaces }),
+              },
             },
             upsert: true,
             timestamps: false,
@@ -2941,7 +3190,7 @@ export function createConversationMethods(
            the sidebar lists archived and unarchived chats in the same session, and the
            active list also carries the unarchived pins beside them. */
         .select(
-          'conversationId endpoint title createdAt updatedAt archivedAt isArchived user model agent_id assistant_id spec iconURL chatProjectId pinned',
+          'conversationId endpoint title createdAt updatedAt archivedAt isArchived user model agent_id assistant_id spec iconURL chatProjectId pinned lastResponseAt lastResponseMessageId lastResponseIsManual lastSeenAt',
         )
         .sort(sortObj)
         .limit(pageSize + 1)
@@ -3194,7 +3443,18 @@ export function createConversationMethods(
           })),
         );
         await options?.beforeDelete?.(waveIds);
+        await deps?.prepareAgentTriggerConversationResultErasure?.(user, waveIds);
         const result = await Conversation.deleteMany({ user, conversationId: { $in: waveIds } });
+        if (result.deletedCount > 0) {
+          /** Result erasure is irreversible. Keep receipts intact when a
+           * pre-delete hook or the conversation delete itself fails, so a
+           * retained conversation cannot lose a receipt-only completion. */
+          try {
+            await deps?.eraseAgentTriggerDeliveryConversationResults?.(user, waveIds);
+          } catch (error) {
+            logger.error('[deleteConvos] Receipt erasure deferred to durable cleanup', error);
+          }
+        }
         acknowledged &&= result.acknowledged;
         deletedCount += result.deletedCount;
         await reconcileDeletedWave(wave, result.deletedCount);
@@ -3225,6 +3485,11 @@ export function createConversationMethods(
             allTenants: true,
           })),
         );
+        try {
+          await deps?.eraseAgentTriggerDeliveryConversationResults?.(user, recoveryConversationIds);
+        } catch (error) {
+          logger.error('[deleteConvos] Receipt erasure deferred to durable cleanup', error);
+        }
       }
 
       const deleteConvoResult: DeleteResult = { acknowledged, deletedCount };
@@ -3383,12 +3648,182 @@ export function createConversationMethods(
     }
   }
 
+  /**
+   * Records that the user has caught up with a conversation's newest message.
+   *
+   * `observedResponseAt` is the reply the client actually had on screen. Filtering on it keeps
+   * the acknowledgement bound to that reply: if another device persisted a newer one in the
+   * meantime, nothing matches and the indicator survives instead of being cleared for a message
+   * nobody read. The stamp itself stays server-side, so no client clock is trusted.
+   *
+   * Deliberately bypasses `saveConvo`: this needs neither the message lookup nor the upsert,
+   * and `timestamps: false` keeps `updatedAt` untouched so reading a conversation does not
+   * reorder the sidebar.
+   */
+  async function markConvoSeen(user: string, conversationId: string, observedResponseAt?: Date) {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      const filter: FilterQuery<IConversation> = { conversationId, user };
+      if (observedResponseAt) {
+        filter.lastResponseAt = { $lte: observedResponseAt };
+      }
+      /* Never earlier than the reply being acknowledged. The filter guarantees the stored
+       * response is no newer than what the client observed, but across replicas the node
+       * writing this can be behind the one that stamped the reply, and a catch-up older than
+       * the response it acknowledges would read as unseen again on the next refetch. */
+      const now = new Date();
+      const lastSeenAt = observedResponseAt && observedResponseAt > now ? observedResponseAt : now;
+      const result = await Conversation.updateOne(
+        filter,
+        { $set: { lastSeenAt } },
+        { timestamps: false },
+      );
+      /* Matched, not modified: a retry of an acknowledgement that already landed writes the
+       * same value back, which MongoDB reports as zero documents modified. The client reads
+       * `modified: false` as a rejected stale acknowledgement and rolls its cache back to
+       * unseen, so success has to mean "the observed reply is still the newest", which is
+       * exactly what the filter matching does. */
+      return { modified: result.matchedCount > 0 };
+    } catch (error) {
+      logger.error('[markConvoSeen] Error marking conversation seen', error);
+      throw new Error('Error marking conversation seen');
+    }
+  }
+
+  /**
+   * Flags a conversation as unread again: the user explicitly wants the indicator back.
+   *
+   * A conversation that has never been replied to has no stamp for the dot to compare against,
+   * so the flag stamps a strictly monotonic server value and records its source explicitly.
+   * A real reply racing this write either wins first (and the clear-only path preserves it) or
+   * sees the synthetic stamp and advances past it while clearing the marker.
+   *
+   * Classic operators only. Pipeline-form updates (and `$$REMOVE`) are unsupported on every
+   * DocumentDB engine this project targets.
+   */
+  async function markConvoUnread(user: string, conversationId: string) {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      const projection = { lastResponseAt: 1, lastResponseMessageId: 1, lastResponseIsManual: 1 };
+      const stamped = await Conversation.findOneAndUpdate(
+        {
+          conversationId,
+          user,
+          $or: [{ lastResponseAt: null }, { lastResponseAt: { $exists: false } }],
+        },
+        {
+          $set: { lastResponseAt: new Date(), lastResponseIsManual: true },
+          $unset: { lastSeenAt: '', lastResponseMessageId: '' },
+        },
+        { timestamps: false, new: true, projection },
+      ).lean<
+        Pick<IConversation, 'lastResponseAt' | 'lastResponseMessageId' | 'lastResponseIsManual'>
+      >();
+      if (stamped) {
+        return {
+          modified: true,
+          lastResponseAt: stamped.lastResponseAt,
+          lastResponseMessageId: stamped.lastResponseMessageId,
+          lastResponseIsManual: stamped.lastResponseIsManual === true,
+        };
+      }
+
+      const cleared = await Conversation.findOneAndUpdate(
+        { conversationId, user },
+        { $unset: { lastSeenAt: '' } },
+        { timestamps: false, new: true, projection },
+      ).lean<
+        Pick<IConversation, 'lastResponseAt' | 'lastResponseMessageId' | 'lastResponseIsManual'>
+      >();
+
+      return cleared
+        ? {
+            modified: true,
+            lastResponseAt: cleared.lastResponseAt,
+            lastResponseMessageId: cleared.lastResponseMessageId,
+            lastResponseIsManual: cleared.lastResponseIsManual === true,
+          }
+        : { modified: false };
+    } catch (error) {
+      logger.error('[markConvoUnread] Error marking conversation unread', error);
+      throw new Error('Error marking conversation unread');
+    }
+  }
+
+  /**
+   * Stamps a persisted assistant reply for paths that save the message directly
+   * (assistants threads, resumed runs, terminal abort re-saves) rather than through
+   * BaseClient's saveConvo payload.
+   *
+   * The same compare-and-set write `saveConvo` uses advances the reply version and clears the
+   * previous catch-up atomically. Every persisted reply advances beyond the stored version,
+   * including concurrent replies and replies from hosts whose clocks are behind.
+   *
+   * `updatedAt` moves with it, exactly as BaseClient's reply path already does: a new reply is
+   * real activity and belongs at the top of the sidebar. It is also what the away poll pages
+   * by, so a stamp that left the order alone would hide replies to any conversation that had
+   * fallen past the first page. Contrast `markConvoSeen`, where reading must not reorder.
+   */
+  async function stampConvoLastResponse(
+    user: string,
+    conversationId: string,
+    responseMessageId: string,
+  ) {
+    try {
+      const Conversation = mongoose.models.Conversation as Model<IConversation>;
+      const stamped = await stampReplyWithCas(
+        Conversation,
+        { conversationId, user },
+        responseMessageId,
+        {
+          conversationId: 1,
+          chatProjectId: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          lastResponseMessageId: 1,
+        },
+      );
+
+      /* Moving `updatedAt` is only half of what `saveConvo` does for a project chat: the
+       * workspace sorts on `ChatProject.lastConversationAt`, so lifting the conversation
+       * while leaving its project behind would make the two views disagree. */
+      if (stamped?.conversation.chatProjectId) {
+        try {
+          await updateChatProjectLastConversationForUser(
+            mongoose,
+            user,
+            stamped.conversation.chatProjectId,
+            stamped.conversation as IConversation,
+          );
+        } catch (error) {
+          logger.error('[stampConvoLastResponse] Failed to update project activity', error);
+        }
+      }
+
+      /* Return the exact server-side stamp that won the CAS. Callers that deliver a terminal
+       * event can merge this into their read-state cache without inventing a browser timestamp. */
+      return stamped
+        ? {
+            lastResponseAt: stamped.stamp,
+            lastResponseMessageId: responseMessageId,
+            ...(stamped.conversation.updatedAt
+              ? { updatedAt: stamped.conversation.updatedAt }
+              : {}),
+          }
+        : null;
+    } catch (error) {
+      logger.error('[stampConvoLastResponse] Error stamping conversation reply', error);
+      throw new Error('Error stamping conversation reply');
+    }
+  }
+
   return {
     getConvoFiles,
     searchConversation,
     deleteNullOrEmptyConversations,
     saveConvo,
     setConvoPinned,
+    appendConvoMessageReference,
     replaceConvoCodeEnvironmentDecision,
     bulkSaveConvos,
     getConvosByCursor,
@@ -3419,6 +3854,9 @@ export function createConversationMethods(
     getConvoOwnership,
     getConvoRetention,
     getConvoTitle,
+    markConvoSeen,
+    markConvoUnread,
+    stampConvoLastResponse,
     deleteConvos,
     archiveAllConvos,
   };

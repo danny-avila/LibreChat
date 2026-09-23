@@ -88,6 +88,38 @@ function renderMenu(ui: React.ReactElement) {
 }
 
 describe('CodeWorkspaceMenu', () => {
+  test('shows the instruction file and truncation reported by the worker', async () => {
+    const state = workspace();
+    state.environments[0].workspaces[0].instructions = [
+      { path: 'AGENTS.md', bytes: 32768, sha256: 'a'.repeat(64), truncated: true },
+    ];
+    renderMenu(
+      <CodeWorkspaceMenu setConversation={jest.fn()} workspace={state} disabled={false} />,
+    );
+    await userEvent.click(screen.getByTestId('code-workspace'));
+    expect(
+      await screen.findByText('AGENTS.md · 32.0 KB · com_ui_repository_instructions_truncated'),
+    ).toBeInTheDocument();
+  });
+  test.each([
+    ['example/app', 'example/app · dev'],
+    [undefined, 'dev'],
+  ])('shows project metadata without changing selection (%s)', async (repo, label) => {
+    const state = workspace();
+    state.environments[0].workspaces[0].environment = {
+      fingerprint: 'a'.repeat(64),
+      repo,
+      ref: 'dev',
+      actions: ['typecheck'],
+    };
+    const setConversation = jest.fn();
+    renderMenu(
+      <CodeWorkspaceMenu setConversation={setConversation} workspace={state} disabled={false} />,
+    );
+    await userEvent.click(screen.getByTestId('code-workspace'));
+    expect(await screen.findByText(label!)).toBeInTheDocument();
+    expect(setConversation).not.toHaveBeenCalled();
+  });
   test('shows a suggested workspace without committing the conversation decision', () => {
     const setConversation = jest.fn();
     renderMenu(

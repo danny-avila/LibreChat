@@ -45,6 +45,7 @@ export * from './mcp/reinitialize';
 export * from './mcp/icons';
 /* Utilities */
 export * from './mcp/utils';
+export * from './mcp/domainValidation';
 export * from './mcp/context';
 export * from './utils';
 export { default as Tokenizer, countTokens } from './utils/tokenizer';
@@ -127,6 +128,9 @@ export * from './stream';
 export { memoryDiagnostics } from './utils/memory';
 /* RUM */
 export * from './rum/proxy';
+/* OpenAPI */
+export { createOpenApiRouter } from './openapi/router';
+export type { OpenApiRouterDeps } from './openapi/router';
 /* types */
 export type * from './mcp/types';
 export type * from './flow/types';

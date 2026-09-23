@@ -1,4 +1,5 @@
 import { v4 } from 'uuid';
+import { useStore } from 'jotai';
 import { cloneDeep } from 'lodash';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -42,6 +43,8 @@ import useCodeApprovalMode from '~/hooks/Agents/useCodeApprovalMode';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useCodeWorkspace from '~/hooks/Agents/useCodeWorkspace';
 import useGetSender from '~/hooks/Conversations/useGetSender';
+import { activeUsageResponseIdFamily } from '~/store/usage';
+import { revealedQueuedTurnFamily } from '~/store/steer';
 import store, { useGetEphemeralAgent } from '~/store';
 import { startupConfigKey } from '~/data-provider';
 import useUserKey from '~/hooks/Input/useUserKey';
@@ -227,6 +230,7 @@ export default function useChatFunctions({
   const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(index));
   const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(index));
   const focusRegeneratedResponse = useFocusRegeneratedResponse();
+  const jotaiStore = useStore();
   const getConversation = useGetConversation(index);
   const addedConversation = useRecoilValue(store.conversationByKeySelector(1));
   const { modes: codeApprovalModes, selected: fallbackCodeApprovalMode } = useCodeApprovalMode(
@@ -320,6 +324,8 @@ export default function useChatFunctions({
     const regenerateShaped = isRegenerate || compact;
     if (
       !!isSubmitting ||
+      jotaiStore.get(revealedQueuedTurnFamily(immutableConversation?.conversationId ?? '')) !=
+        null ||
       (!regenerateShaped && !isSubmittableMessage(text, (files?.size ?? 0) + replayFileCount))
     ) {
       return false;
@@ -611,6 +617,7 @@ export default function useChatFunctions({
         filepath: file.filepath,
         filename: file.filename,
         type: file.type ?? '', // Ensure type is not undefined
+        llmDeliveryPath: file.llmDeliveryPath,
         height: file.height,
         width: file.width,
       }));
@@ -740,6 +747,7 @@ export default function useChatFunctions({
       conversation: {
         ...conversation,
         ...(chatProjectId ? { chatProjectId } : {}),
+        ...(latestCodeApprovalMode != null ? { codeApprovalMode: latestCodeApprovalMode } : {}),
         conversationId,
       },
       endpointOption,
@@ -769,6 +777,13 @@ export default function useChatFunctions({
       expectedPredecessorCreatedAt: overrideExpectedPredecessorCreatedAt,
       queuedMessageOrigin: overrideQueuedMessageOrigin,
     };
+
+    /** Bind before publishing the optimistic tail, not after the first provider
+     * event: a waiting request already owns a turn even when no usage exists. */
+    jotaiStore.set(
+      activeUsageResponseIdFamily(conversationId ?? Constants.NEW_CONVO),
+      initialResponse.messageId,
+    );
 
     if (regenerateShaped) {
       setMessages([...submissionMessages, initialResponse]);

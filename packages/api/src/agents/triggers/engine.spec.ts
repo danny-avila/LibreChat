@@ -589,6 +589,32 @@ describe('createAgentTriggerDeliveryEngine', () => {
     expect(store.dead).toHaveBeenCalledWith(expect.objectContaining({ claimToken: 'claim-1' }));
   });
 
+  it.each([false, true])(
+    'offers configured receipt recovery when already exhausted is %s',
+    async (exhausted) => {
+      const store = storeWith({
+        claimNext: jest.fn(async () => delivery({ attempts: exhausted ? 1 : 0 })),
+      });
+      const engine = createAgentTriggerDeliveryEngine(
+        {
+          store,
+          now: () => START,
+          dispatch: async () => {
+            throw new Error('database unavailable');
+          },
+        },
+        { concurrency: 1, maxAttempts: 1, retryCapMs: 123_000 },
+      );
+      await engine.runTick();
+      expect(store.dead).toHaveBeenCalledWith(
+        expect.objectContaining({
+          receiptRetryAt: new Date(START.getTime() + 123_000),
+          error: expect.objectContaining({ retryable: true }),
+        }),
+      );
+    },
+  );
+
   it('bounds a persisted last failure before exhausting its source', async () => {
     const oversized = 'x'.repeat(3_000);
     const store = storeWith({

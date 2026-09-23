@@ -91,6 +91,7 @@ export function composeAgentUpdatePayload(
     stateful_code_sessions,
     stateful_code_environment,
     code_environment_id,
+    repositoryInstructions,
     code_workspace_id,
     git_identity,
     recursion_limit,
@@ -162,6 +163,7 @@ export function composeAgentUpdatePayload(
       stateful_code_sessions: normalizedStatefulCodeSessions,
       stateful_code_environment: normalizedStatefulCodeEnvironment,
       code_environment_id: agent_id ? code_environment_id : (code_environment_id ?? undefined),
+      repositoryInstructions,
       code_workspace_id,
       git_identity: normalizedGitIdentity,
       recursion_limit,
@@ -667,6 +669,7 @@ export default function AgentPanel() {
       create.mutate({
         ...basePayload,
         git_identity: basePayload.git_identity ?? undefined,
+        repositoryInstructions: basePayload.repositoryInstructions,
         model,
         tools,
         provider,
@@ -710,7 +713,7 @@ export default function AgentPanel() {
     <FormProvider {...methods}>
       <form
         onSubmit={handleSubmit(onSubmit)}
-        className="scrollbar-gutter-stable flex flex-1 flex-col px-3 pb-3 pt-2"
+        className="flex flex-1 scrollbar-gutter-stable flex-col px-3 pt-2 pb-3"
         aria-label="Agent configuration form"
       >
         <div className="flex-1">
@@ -758,10 +761,10 @@ export default function AgentPanel() {
           {!canEditAgent && !agentQuery.isInitialLoading && (
             <div className="flex h-[30vh] w-full items-center justify-center">
               <div className="text-center">
-                <h2 className="text-token-text-primary m-2 text-xl font-semibold">
+                <h2 className="text-text-primary m-2 text-xl font-semibold">
                   {localize('com_agents_not_available')}
                 </h2>
-                <p className="text-token-text-secondary">{localize('com_agents_no_access')}</p>
+                <p className="text-text-secondary">{localize('com_agents_no_access')}</p>
               </div>
             </div>
           )}

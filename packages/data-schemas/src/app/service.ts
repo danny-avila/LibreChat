@@ -164,6 +164,7 @@ export const AppService = async (params?: {
   const mcpAppSandbox = config.mcpAppSandbox ?? configDefaults.mcpAppSandbox;
   const actions = config.actions;
   const registration = config.registration ?? configDefaults.registration;
+  const emailChange = config.emailChange;
   const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
   const turnstileConfig = loadTurnstileConfig(config, configDefaults);
   const speech = config.speech;
@@ -185,6 +186,7 @@ export const AppService = async (params?: {
     mcpAppSandbox,
     fileStrategy,
     registration,
+    emailChange,
     transactions,
     filteredTools,
     includedTools,

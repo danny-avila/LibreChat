@@ -171,11 +171,11 @@ function ControlCombobox({
         aria-invalid={ariaInvalid || undefined}
         aria-describedby={ariaDescribedBy}
         className={cn(
-          'flex items-center justify-center gap-2 rounded-full bg-surface-secondary',
+          'bg-surface-secondary flex items-center justify-center gap-2 rounded-full',
           'text-text-primary hover:bg-surface-tertiary',
-          'border border-border-light',
+          'border-border-light border',
           isCollapsed ? 'h-9 w-9' : 'h-9 w-full rounded-xl px-3 py-2 text-sm',
-          variant === 'field' && cn(fieldControl, 'justify-start hover:bg-surface-hover'),
+          variant === 'field' && cn(fieldControl, 'hover:bg-surface-hover justify-start'),
           className,
         )}
       >
@@ -185,7 +185,7 @@ function ControlCombobox({
         {!isCollapsed && (
           <>
             <span
-              className="flex-grow truncate text-left"
+              className="grow truncate text-left"
               title={(displayValue != null ? displayValue : selectedValue) || undefined}
             >
               {displayValue != null
@@ -195,7 +195,7 @@ function ControlCombobox({
             {SelectIcon != null && iconSide === 'right' && (
               <div className={selectIconClassName}>{SelectIcon}</div>
             )}
-            {showCarat && <ChevronDown className="h-4 w-4 text-text-secondary" />}
+            {showCarat && <ChevronDown className="text-text-secondary h-4 w-4" />}
           </>
         )}
       </Ariakit.Select>
@@ -204,7 +204,7 @@ function ControlCombobox({
         gutter={gutter}
         portal={portal}
         className={cn(
-          'overflow-hidden rounded-xl border border-border-light bg-surface-secondary shadow-lg',
+          'border-border-light bg-surface-secondary overflow-hidden rounded-xl border shadow-lg',
           popoverClassName ?? 'animate-popover',
         )}
         style={{
@@ -216,12 +216,12 @@ function ControlCombobox({
       >
         <div className="py-1.5">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-primary" />
+            <Search className="text-text-primary absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
             <Ariakit.Combobox
               store={combobox}
               autoSelect
               placeholder={searchPlaceholder}
-              className="w-full rounded-md bg-surface-secondary py-2 pl-9 pr-3 text-sm text-text-primary focus:outline-none"
+              className="bg-surface-secondary text-text-primary w-full rounded-md py-2 pr-3 pl-9 text-sm focus:outline-hidden"
             />
           </div>
         </div>
@@ -242,7 +242,7 @@ function ControlCombobox({
                   {icon != null && iconSide === 'left' && (
                     <div className={optionIconClassName}>{icon}</div>
                   )}
-                  <span className="flex-grow truncate text-left">{label}</span>
+                  <span className="grow truncate text-left">{label}</span>
                   {icon != null && iconSide === 'right' && (
                     <div className={optionIconClassName}>{icon}</div>
                   )}

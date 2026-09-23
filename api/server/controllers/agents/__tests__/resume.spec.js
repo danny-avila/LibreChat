@@ -93,6 +93,7 @@ const mockGetRoleByName = jest.fn();
 const mockCheckAccess = jest.fn();
 const mockCheckPermission = jest.fn();
 const mockDecryptMetadata = jest.fn();
+const mockStampConvoLastResponse = jest.fn().mockResolvedValue(undefined);
 const mockDisposeClient = jest.fn();
 const mockGetMCPRequestContext = jest.fn();
 const mockCleanupMCPRequestContextForReq = jest.fn();
@@ -172,6 +173,7 @@ jest.mock('~/models', () => ({
     mockMarkAgentEventActorDetachedActionRunning(...args),
   settleAgentEventActorDetachedAction: (...args) =>
     mockSettleAgentEventActorDetachedAction(...args),
+  stampConvoLastResponse: (...args) => mockStampConvoLastResponse(...args),
 }));
 
 jest.mock('~/server/services/Endpoints/agents/eventChildLease', () => ({
@@ -1275,6 +1277,13 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       await settled;
 
       expect(capturedInit.isScheduledFire).toBe(true);
+      expect(mockInitializeClient.mock.calls[0][0].scheduledTokenContext).toEqual({
+        scheduleId: 'schedule-1',
+        ownerId: USER_ID,
+        tenantId: TENANT_ID,
+        agentId: AGENT_ID,
+        invocationMode: 'delegated',
+      });
 
       expect(mockClaimScheduleResume).toHaveBeenCalledWith('schedule-1', scheduledFor, {
         expectedConfigRevision: 4,
@@ -2367,6 +2376,42 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(res.status).toBe(400);
       expect(res.body.error).toMatch(/must be decided/i);
       expect(res.body.undecided).toEqual(['tc2']);
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    it('400 when a persisted approval payload aliases two calls to the same id', async () => {
+      const job = makeToolApprovalJob();
+      job.metadata.pendingAction.payload.action_requests = [
+        { tool_call_id: 'tc1', name: 'write', arguments: { value: 'hidden' } },
+        { tool_call_id: 'tc1', name: 'write', arguments: { value: 'visible' } },
+      ];
+      job.metadata.pendingAction.payload.review_configs = [
+        { tool_call_id: 'tc1', action_name: 'write', allowed_decisions: ['approve', 'reject'] },
+        { tool_call_id: 'tc1', action_name: 'write', allowed_decisions: ['approve', 'reject'] },
+      ];
+      mockGenerationJobManager.getJob.mockResolvedValue(job);
+
+      const res = await post(approveBody());
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/invalid tool approval payload/i);
+      expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
+    });
+
+    it('400 when the client submits duplicate decisions for one tool-call id', async () => {
+      mockGenerationJobManager.getJob.mockResolvedValue(makeToolApprovalJob());
+
+      const res = await post(
+        approveBody({
+          decisions: [
+            { tool_call_id: 'tc1', decision: 'approve' },
+            { tool_call_id: 'tc1', decision: 'reject' },
+          ],
+        }),
+      );
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/invalid tool approval decisions/i);
       expect(mockGenerationJobManager.approvals.resolve).not.toHaveBeenCalled();
     });
 

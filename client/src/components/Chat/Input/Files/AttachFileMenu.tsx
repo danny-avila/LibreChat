@@ -20,6 +20,7 @@ import {
   Providers,
   EToolResources,
   EModelEndpoint,
+  isExplicitMimeConfig,
   getConfiguredMimeAccept,
   bedrockDocumentMimeTypes,
   defaultAgentCapabilities,
@@ -52,7 +53,8 @@ type FileUploadType =
   | 'document'
   | 'image_document'
   | 'image_document_extended'
-  | 'image_document_video_audio';
+  | 'image_document_video_audio'
+  | 'image_document_video_audio_configured';
 
 /** What each provider upload path can actually send, used to scope the picker filter to selectable files. */
 const fileTypeCapabilities: Record<FileUploadType, MimeUploadCapability> = {
@@ -67,6 +69,10 @@ const fileTypeCapabilities: Record<FileUploadType, MimeUploadCapability> = {
   image_document_video_audio: {
     categories: ['image', 'document', 'audio', 'video'],
     documentMimeTypes: ['application/pdf'],
+  },
+  /** Custom endpoint with an admin-configured allowlist: the config decides, including video/audio. */
+  image_document_video_audio_configured: {
+    categories: ['image', 'document', 'audio', 'video'],
   },
 };
 
@@ -164,6 +170,10 @@ const AttachFileMenu = ({
         inputRef.current.accept = `image/*,.heif,.heic,${bedrockDocumentExtensions}`;
       } else if (fileType === 'image_document_video_audio') {
         inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf,video/*,audio/*';
+      } else if (fileType === 'image_document_video_audio_configured') {
+        /** Only reached with an explicit allowlist the accept string cannot represent; leave the
+         * picker open so it never hides a file the admin allowed (backend still enforces). */
+        inputRef.current.accept = '';
       } else {
         inputRef.current.accept = '';
       }
@@ -237,6 +247,11 @@ const AttachFileMenu = ({
               endpointType === EModelEndpoint.bedrock
             ) {
               fileType = 'image_document_extended';
+            } else if (
+              endpointType === EModelEndpoint.custom &&
+              isExplicitMimeConfig(endpointFileConfig?.supportedMimeTypes)
+            ) {
+              fileType = 'image_document_video_audio_configured';
             }
             onAction(fileType);
           },
@@ -324,6 +339,7 @@ const AttachFileMenu = ({
     handleUploadClick,
     setEphemeralAgent,
     sharePointEnabled,
+    endpointFileConfig?.supportedMimeTypes,
     codeAllowedByAgent,
     fileSearchAllowedByAgent,
     setIsSharePointDialogOpen,
@@ -338,7 +354,7 @@ const AttachFileMenu = ({
           aria-label="Attach File Options"
           aria-keyshortcuts={uploadFileAriaKey}
           className={cn(
-            'flex size-theme-control items-center justify-center rounded-theme-control-round p-1 transition-colors duration-theme-fast hover:bg-surface-composer-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-opacity-50',
+            'size-theme-control rounded-theme-control-round duration-theme-fast hover:bg-surface-composer-hover focus-visible:ring-text-primary/50 flex items-center justify-center p-1 transition-colors focus-visible:ring-2 focus-visible:outline-hidden',
             isPopoverActive && 'bg-surface-composer-hover',
           )}
         >
@@ -395,7 +411,7 @@ const AttachFileMenu = ({
                   label={localize('com_sidepanel_attach_files')}
                   onClick={handleUnifiedUpload}
                   aria-keyshortcuts={uploadFileAriaKey}
-                  className="p-1 hover:bg-surface-composer-hover"
+                  className="hover:bg-surface-composer-hover p-1"
                 >
                   <AttachmentIcon />
                 </IconButton>

@@ -32,6 +32,8 @@ export async function loadDefaultInterface({
     modelSelect:
       interfaceConfig?.modelSelect ??
       (hasModelSpecs ? includesAddedEndpoints : defaults.modelSelect),
+    codeHighlightThrottleMs:
+      interfaceConfig?.codeHighlightThrottleMs ?? defaults.codeHighlightThrottleMs,
     parameters: interfaceConfig?.parameters ?? (hasModelSpecs ? false : defaults.parameters),
     presets: interfaceConfig?.presets ?? (hasModelSpecs ? false : defaults.presets),
     privacyPolicy: interfaceConfig?.privacyPolicy ?? defaults.privacyPolicy,
@@ -68,6 +70,13 @@ export async function loadDefaultInterface({
     skills: interfaceConfig?.skills,
     sharedLinks: interfaceConfig?.sharedLinks,
     schedules: interfaceConfig?.schedules,
+
+    /* Merged per field rather than taken whole, so an operator who sets one capability keeps
+       the defaults for the rest instead of silently turning the others off. */
+    replyNotifications: {
+      ...defaults.replyNotifications,
+      ...interfaceConfig?.replyNotifications,
+    },
   });
 
   return loadedInterface;

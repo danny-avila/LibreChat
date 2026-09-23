@@ -719,6 +719,10 @@ async function discoverCandidate(
         deps.onOAuthCredentialsChanging,
         trackPublication,
       ),
+      onOAuthCredentialsAdopted: async (generation) => {
+        // Adoption changes the generation this flight serves without writing another fence.
+        await trackPublication?.(async () => generation);
+      },
       onDiscoveryDetached: onDetached,
       capabilityProfile,
     });

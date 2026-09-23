@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import copy from 'copy-to-clipboard';
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import { parseBackgroundHandle, splitBackgroundAttachments } from './handle';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
@@ -52,7 +52,7 @@ export default function BashCall({
   const localize = useLocalize();
   const command = useMemo(() => parseJsonField(args, commandField), [args, commandField]);
   const isWritingCommand = !command || !areToolCallArgsComplete(args);
-  const sandboxStarting = useRecoilValue(sandboxStartingByToolCallId(toolCallId ?? ''));
+  const sandboxStarting = useAtomValue(sandboxStartingByToolCallId(toolCallId ?? ''));
 
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
   /** A backgrounded call's persisted output stays the dispatch handle until
@@ -90,7 +90,7 @@ export default function BashCall({
     extraCancelled: cancelledInBackground,
   });
 
-  const highlighted = useLazyHighlight(command || undefined, 'bash');
+  const highlighted = useLazyHighlight(showCode ? command || undefined : undefined, 'bash');
   const { ref: commandPaneRef, onScroll: onCommandPaneScroll } = useFollowScroll<HTMLDivElement>(
     highlighted ?? command,
     phase === 'running',
@@ -151,7 +151,7 @@ export default function BashCall({
             <LangIcon
               lang="bash"
               className={cn(
-                'size-4 shrink-0 text-text-secondary',
+                'text-text-secondary size-4 shrink-0',
                 phase === 'running' && 'animate-pulse',
               )}
             />
@@ -165,16 +165,20 @@ export default function BashCall({
           <div
             className={cn(
               toolPanelSpacingClassName,
-              'overflow-hidden rounded-lg border border-border-light',
+              'border-border-light overflow-hidden rounded-lg border',
             )}
           >
             {command && (
-              <div className="relative bg-surface-tertiary dark:bg-gray-950">
+              // The command is a code surface, so it takes the role every other one takes
+              // (`DiffView`, the user-turn code bars) instead of a palette shade a theme
+              // cannot reach: the previous `dark:bg-gray-950` was Tailwind's blue-black,
+              // outside this palette entirely.
+              <div className="bg-surface-code relative">
                 <CopyButton
                   iconOnly
                   isCopied={isCopied}
                   onClick={handleCopy}
-                  className="absolute right-1.5 top-1"
+                  className="absolute top-1 right-1.5"
                   label={localize('com_ui_copy_code')}
                 />
                 <div
@@ -182,8 +186,8 @@ export default function BashCall({
                   onScroll={onCommandPaneScroll}
                   className="max-h-[300px] overflow-auto"
                 >
-                  <pre className="whitespace-pre-wrap break-words px-3 py-2.5 pr-10 font-mono text-xs">
-                    <span className="select-none text-text-tertiary" aria-hidden="true">
+                  <pre className="px-3 py-2.5 pr-10 font-mono text-xs break-words whitespace-pre-wrap">
+                    <span className="text-text-tertiary select-none" aria-hidden="true">
                       {'$ '}
                     </span>
                     <code className="hljs language-bash">{highlighted ?? command}</code>
@@ -194,13 +198,13 @@ export default function BashCall({
             <PtcToolTrace
               toolCallId={toolCallId}
               expanded={showCode}
-              className={cn(command && 'border-t border-border-light')}
+              className={cn(command && 'border-border-light border-t')}
             />
             {hasOutput && backgroundHandle == null && (
-              <div className={cn(command && 'border-t border-border-light')}>
+              <div className={cn(command && 'border-border-light border-t')}>
                 <pre
                   className={cn(
-                    'max-h-[300px] overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs',
+                    'max-h-[300px] overflow-auto px-3 py-2.5 font-mono text-xs break-words whitespace-pre-wrap',
                     outputHasError ? 'text-status-error' : 'text-text-primary',
                   )}
                 >

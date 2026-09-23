@@ -28,6 +28,7 @@ const subagentCompletionAdapter = createSubagentCompletionWakeupResolver({
 const backgroundToolCompletionAdapter = createBackgroundToolCompletionWakeupResolver({
   methods,
   getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),
+  getResultBatchSize: () => service.getBackgroundCompletionResultBatchSize(),
 });
 const eventActorAdapter = createAgentEventContinueResolver({
   methods,
@@ -86,6 +87,9 @@ module.exports = {
   requeueAgentTrigger: service.requeue,
   retireAgentTrigger: service.retire,
   renewAgentTriggerProducerLease: service.renewProducerLease,
+  persistAgentBackgroundToolResult: service.persistBackgroundToolResult,
+  getAgentBackgroundToolResultClaim: service.getBackgroundToolResultClaim,
+  releaseAgentBackgroundToolResultClaims: service.releaseBackgroundToolResultClaims,
   drainAgentTriggerDeliveriesForUser: service.drainUser,
   prepareAgentTriggerUserPurge: service.prepareUserPurge,
   cancelAgentTriggerUserPurge: service.cancelUserPurge,

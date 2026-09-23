@@ -277,7 +277,7 @@ export function ErrorDetails({ label, children }: { label: string; children: Rea
         onClick={() => setOpen((expanded) => !expanded)}
         aria-expanded={open}
         aria-controls={panelId}
-        className="flex items-center gap-1 rounded-md text-xs font-medium text-text-secondary transition-colors hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+        className="text-text-secondary hover:text-text-primary focus-visible:ring-text-primary flex items-center gap-1 rounded-md text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:outline-hidden"
       >
         {label}
         <ChevronRight
@@ -290,12 +290,45 @@ export function ErrorDetails({ label, children }: { label: string; children: Rea
       </button>
       <div id={panelId} style={panelStyle} aria-hidden={!open}>
         <div ref={panelRef} className="overflow-hidden">
-          <div className="mt-1 whitespace-pre-wrap break-words text-xs text-text-secondary">
+          <div className="text-text-secondary mt-1 text-xs break-words whitespace-pre-wrap">
             {children}
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+/** Past a sentence's worth of text, or across lines, a detail is a body to open rather than read. */
+const INLINE_DETAIL_LENGTH = 240;
+
+/**
+ * A headline plus the failure's own words, the way every provider-produced error reads: what is
+ * known first, the reported text second. A single sentence stays in place, where a reader gets it
+ * without acting; a body of text collapses under `label`.
+ */
+export function ErrorWithDetail({
+  headline,
+  detail,
+  label,
+}: {
+  headline: string;
+  detail?: string;
+  label: string;
+}) {
+  if (detail == null) {
+    return <>{headline}</>;
+  }
+
+  return (
+    <ErrorBody>
+      <div>{headline}</div>
+      {detail.length <= INLINE_DETAIL_LENGTH && !/[\r\n]/.test(detail) ? (
+        <div className="text-text-secondary">{detail}</div>
+      ) : (
+        <ErrorDetails label={label}>{detail}</ErrorDetails>
+      )}
+    </ErrorBody>
   );
 }
 

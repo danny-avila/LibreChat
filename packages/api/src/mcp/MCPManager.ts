@@ -21,6 +21,8 @@ import type { RequestBody } from '~/types';
 import type * as t from './types';
 import {
   getMissingRuntimeBodyPlaceholderFields,
+  toCatalogConnectionConfig,
+  applyRequestHeaders,
   createDeadlineAbortSignal,
   canUseAppConnection,
   isOAuthServer,
@@ -575,8 +577,12 @@ export class MCPManager extends UserConnectionManager {
       return { tools: null, oauthRequired: false, oauthUrl: null };
     }
 
+    /** Discovery sends no `requestHeaders`, so only the body values the catalog
+     *  connection itself needs can block it. A server whose body placeholders
+     *  live solely in `requestHeaders` still lists its tools. */
+    const catalogConfig = toCatalogConnectionConfig(serverConfig);
     const missingBodyFields = getMissingRuntimeBodyPlaceholderFields(
-      serverConfig,
+      catalogConfig,
       args.requestBody,
     );
     if (missingBodyFields.length > 0) {
@@ -589,7 +595,7 @@ export class MCPManager extends UserConnectionManager {
     const { allowedDomains, allowedAddresses, useSSRFProtection } =
       await registry.resolveAllowlists({ userId: user?.id, role: user?.role });
     await this.assertResolvedRuntimeConfigAllowed({
-      config: serverConfig,
+      config: catalogConfig,
       user,
       customUserVars: args.customUserVars,
       requestBody: args.requestBody,
@@ -604,7 +610,8 @@ export class MCPManager extends UserConnectionManager {
     const basic: t.BasicConnectionOptions = {
       dbSourced,
       serverName,
-      serverConfig,
+      serverConfig: catalogConfig,
+      serverDefinition: serverConfig,
       useSSRFProtection,
       allowedDomains,
       allowedAddresses,
@@ -669,7 +676,10 @@ export class MCPManager extends UserConnectionManager {
       connectionTimeout: args.connectionTimeout,
       deadlineMs: args.deadlineMs,
       onOAuthCredentialsChanged: args.onOAuthCredentialsChanged,
+      onOAuthCredentialsAdopted: args.onOAuthCredentialsAdopted,
       onOAuthCredentialsChanging: args.onOAuthCredentialsChanging,
+      onOAuthCredentialsInvalidated: () =>
+        getMCPToolsChangedGeneration({ userId: user.id, serverName }),
       onDiscoveryDetached: args.onDiscoveryDetached,
       oboTokenResolver: args.oboTokenResolver,
       oboTrustChecker: args.oboTrustChecker,
@@ -901,6 +911,7 @@ Please follow these instructions when using tools from the respective MCP server
     flowManager: FlowStateManager<MCPOAuthTokens | null>,
     signal?: AbortSignal,
     allowsTakeover = true,
+    rejectedCredentialSetId?: string | null,
   ): Promise<void> {
     const existingRecovery = this.oauthRecoveries.get(connection);
     if (existingRecovery) {
@@ -941,6 +952,7 @@ Please follow these instructions when using tools from the respective MCP server
           connection.emit('oauthReauthenticationRequired', {
             serverName,
             error,
+            rejectedCredentialSetId,
             serverUrl: connection.url,
             userId,
           }),
@@ -1038,7 +1050,7 @@ Please follow these instructions when using tools from the respective MCP server
       try {
         recoverySignal.throwIfAborted();
         const refreshedConfig = await resolveDirectOpenIDBearerConfig({
-          config: serverConfig,
+          config: applyRequestHeaders(serverConfig),
           upstreamTokenProvider,
           forceRefresh: true,
           signal: recoverySignal,
@@ -1546,8 +1558,13 @@ Please follow these instructions when using tools from the respective MCP server
         }
 
         const registry = MCPServersRegistry.getInstance();
-        const rawConfig = providedConfig ?? (await registry.getServerConfig(serverName, userId));
-        if (!rawConfig) {
+        const declaredConfig =
+          providedConfig ?? (await registry.getServerConfig(serverName, userId));
+        /** Folded in before scope detection, Graph preprocessing and
+         *  direct-bearer resolution, so this pipeline sees the same single
+         *  header map the factory does. */
+        const rawConfig = declaredConfig && applyRequestHeaders(declaredConfig);
+        if (!rawConfig || !declaredConfig) {
           throw new McpError(
             ErrorCode.InvalidRequest,
             `${logPrefix} Configuration for server "${serverName}" not found.`,
@@ -1602,6 +1619,7 @@ Please follow these instructions when using tools from the respective MCP server
             oboUpstreamTokenProvider = createLazyOboUpstreamTokenProvider(
               upstreamTokenProviderResolver,
               options?.signal,
+              { mcpServer: serverName, scopes: oboConfig.scopes },
             );
           }
           if (!oboUpstreamTokenProvider) {
@@ -1684,6 +1702,7 @@ Please follow these instructions when using tools from the respective MCP server
               {
                 serverName,
                 serverConfig: currentOptions,
+                serverDefinition: declaredConfig,
                 dbSourced: isDbSourced,
                 skipEnvProcessing: true,
                 useSSRFProtection,
@@ -1702,6 +1721,8 @@ Please follow these instructions when using tools from the respective MCP server
                 requestBody,
                 onOAuthCredentialsChanged,
                 onOAuthCredentialsChanging,
+                onOAuthCredentialsInvalidated: () =>
+                  getMCPToolsChangedGeneration({ userId, serverName }),
               },
               connection!,
             );
@@ -1709,7 +1730,9 @@ Please follow these instructions when using tools from the respective MCP server
 
         connection.setRequestHeaders(resolvedHeaders);
 
+        const checkedCredentialSetId = connection.getOAuthCredentialSetId?.();
         const connectionIsActive = await connection.isConnected(options?.signal);
+        const recordedCredentialSetId = connection.getLastConnectionCheckCredentialSetId?.();
         const connectionCheckError = connectionIsActive
           ? undefined
           : connection.getLastConnectionCheckError();
@@ -1739,7 +1762,7 @@ Please follow these instructions when using tools from the respective MCP server
           const recovery = this.recoverDirectOpenIDBearerConnection({
             connection,
             serverName,
-            serverConfig: rawConfig,
+            serverConfig: declaredConfig,
             user,
             flowManager,
             tokenMethods,
@@ -1784,6 +1807,9 @@ Please follow these instructions when using tools from the respective MCP server
                 flowManager,
                 options?.signal,
                 !recoveryTakeoverConsumed,
+                recordedCredentialSetId !== undefined
+                  ? recordedCredentialSetId
+                  : checkedCredentialSetId,
               ),
             );
           } catch (recoveryError) {
@@ -1820,6 +1846,7 @@ Please follow these instructions when using tools from the respective MCP server
 
         // Deliberately use `request`: the typed wrapper also enforces the tool's output schema and
         // rejects task-required tools, which would turn a server response into a host-side failure.
+        const requestedCredentialSetId = connection.getOAuthCredentialSetId?.();
         let result: Awaited<ReturnType<typeof requestTool>>;
         try {
           result = await requestTool();
@@ -1832,7 +1859,7 @@ Please follow these instructions when using tools from the respective MCP server
             const recovery = this.recoverDirectOpenIDBearerConnection({
               connection,
               serverName,
-              serverConfig: rawConfig,
+              serverConfig: declaredConfig,
               user,
               flowManager,
               tokenMethods,
@@ -1892,6 +1919,7 @@ Please follow these instructions when using tools from the respective MCP server
                   flowManager,
                   options?.signal,
                   !recoveryTakeoverConsumed,
+                  requestedCredentialSetId,
                 ),
               );
             } catch (recoveryError) {

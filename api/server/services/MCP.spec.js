@@ -3087,6 +3087,165 @@ describe('User parameter passing tests', () => {
       );
     });
 
+    it('loads the tool when the early domain gate meets an expired OpenID snapshot token', async () => {
+      const mockUser = {
+        id: 'expired-token-user',
+        role: 'user',
+        provider: 'openid',
+        federatedTokens: {
+          access_token: 'stale-token',
+          expires_at: Math.floor(Date.now() / 1000) - 3600,
+        },
+      };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      const serverConfig = {
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp',
+        source: 'yaml',
+        requiresOAuth: false,
+        headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_TOKEN}}' },
+      };
+      mockRegistryInstance.getServerConfig.mockResolvedValue(serverConfig);
+      mockGetAppConfig.mockResolvedValue({
+        mcpSettings: { allowedDomains: ['mcp.example.com'] },
+      });
+      mockIsMCPDomainAllowed.mockResolvedValueOnce(true);
+
+      const upstreamTokenProvider = jest.fn().mockResolvedValue({ access_token: 'fresh-token' });
+
+      const result = await createMCPTool({
+        res: mockRes,
+        user: mockUser,
+        toolKey: `test-tool${D}test-server`,
+        provider: 'openai',
+        userMCPAuthMap: {},
+        upstreamTokenProvider,
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Test tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      expect(result).toBeDefined();
+      /** The gate decides from the URL, so it must not spend an IdP round trip per tool. */
+      expect(upstreamTokenProvider).not.toHaveBeenCalled();
+      const [validationConfig, domains, addresses] = mockIsMCPDomainAllowed.mock.calls[0];
+      expect(validationConfig.url).toBe('https://mcp.example.com/mcp');
+      expect(validationConfig.headers).toBeUndefined();
+      expect([domains, addresses]).toEqual([['mcp.example.com'], undefined]);
+      /** The connection path still receives the placeholder it can refresh. */
+      expect(serverConfig.headers).toEqual({
+        Authorization: 'Bearer {{LIBRECHAT_OPENID_TOKEN}}',
+      });
+    });
+
+    it('still fails closed when the URL itself carries an unresolvable OpenID credential', async () => {
+      const { OpenIDReauthRequiredError } = require('@librechat/api');
+      const mockUser = {
+        id: 'no-session-user',
+        role: 'user',
+        provider: 'openid',
+        federatedTokens: {
+          access_token: 'stale-token',
+          expires_at: Math.floor(Date.now() / 1000) - 3600,
+        },
+      };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      mockRegistryInstance.getServerConfig.mockResolvedValue({
+        type: 'streamable-http',
+        url: 'https://mcp.example.com/mcp/{{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+        source: 'yaml',
+        requiresOAuth: false,
+        headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_TOKEN}}' },
+      });
+      mockGetAppConfig.mockResolvedValue({
+        mcpSettings: { allowedDomains: ['mcp.example.com'] },
+      });
+
+      const upstreamTokenProvider = jest.fn().mockResolvedValue(null);
+
+      await expect(
+        createMCPTool({
+          res: mockRes,
+          user: mockUser,
+          toolKey: `test-tool${D}test-server`,
+          provider: 'openai',
+          userMCPAuthMap: {},
+          upstreamTokenProvider,
+          availableTools: {
+            [`test-tool${D}test-server`]: {
+              function: {
+                description: 'Test tool',
+                parameters: { type: 'object', properties: {} },
+              },
+            },
+          },
+        }),
+      ).rejects.toThrow(OpenIDReauthRequiredError);
+    });
+
+    it('loads the batch path when the domain gate meets an expired OpenID snapshot token', async () => {
+      const mockUser = {
+        id: 'expired-token-batch-user',
+        role: 'user',
+        provider: 'openid',
+        federatedTokens: {
+          access_token: 'stale-token',
+          expires_at: Math.floor(Date.now() / 1000) - 3600,
+        },
+      };
+      const mockRes = { write: jest.fn(), flush: jest.fn() };
+
+      mockGetAppConfig.mockResolvedValue({
+        mcpSettings: { allowedDomains: ['mcp.example.com'] },
+      });
+      mockReinitMCPServer.mockResolvedValue({
+        tools: [{ name: 'test-tool' }],
+        availableTools: {
+          [`test-tool${D}test-server`]: {
+            function: {
+              description: 'Test tool',
+              parameters: { type: 'object', properties: {} },
+            },
+          },
+        },
+      });
+
+      const upstreamTokenProvider = jest.fn().mockResolvedValue({ access_token: 'fresh-token' });
+
+      const tools = await createMCPTools({
+        res: mockRes,
+        user: mockUser,
+        serverName: 'test-server',
+        provider: 'openai',
+        userMCPAuthMap: {},
+        upstreamTokenProvider,
+        config: {
+          type: 'streamable-http',
+          url: 'https://mcp.example.com/mcp',
+          source: 'yaml',
+          requiresOAuth: false,
+          headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_TOKEN}}' },
+        },
+      });
+
+      expect(tools).toHaveLength(1);
+      expect(upstreamTokenProvider).not.toHaveBeenCalled();
+      const [validationConfig] = mockIsMCPDomainAllowed.mock.calls[0];
+      expect(validationConfig.url).toBe('https://mcp.example.com/mcp');
+      expect(validationConfig.headers).toBeUndefined();
+      /** Recovery still owns the placeholder on the connection path. */
+      expect(mockReinitMCPServer).toHaveBeenCalledWith(
+        expect.objectContaining({ upstreamTokenProvider }),
+      );
+    });
+
     it('should skip domain validation for stdio transports (no URL)', async () => {
       const mockUser = { id: 'stdio-test-user' };
       const mockRes = { write: jest.fn(), flush: jest.fn() };

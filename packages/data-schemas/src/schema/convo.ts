@@ -385,6 +385,20 @@ const convoSchema: Schema<IConversation> = new Schema(
     archivedAt: {
       type: Date,
     },
+    lastResponseAt: {
+      type: Date,
+    },
+    /** Durable messageId of the assistant reply named by lastResponseAt. */
+    lastResponseMessageId: {
+      type: String,
+    },
+    /** True only for the synthetic unread marker; real replies clear this field. */
+    lastResponseIsManual: {
+      type: Boolean,
+    },
+    lastSeenAt: {
+      type: Date,
+    },
   },
   { timestamps: true },
 );
@@ -412,6 +426,12 @@ convoSchema.index({ user: 1, isArchived: 1, title: 1, updatedAt: 1, _id: 1 });
 
 /** The sidebar's pinned section filters on user + pinned and pages by `updatedAt`. */
 convoSchema.index({ user: 1, pinned: 1, updatedAt: -1, _id: -1 });
+
+/** The default chats list, and the away poll that reads its first page every thirty seconds
+ *  for the unseen indicators, filter on user alone and page by `updatedAt`. Neither of the
+ *  `updatedAt` indexes above can serve them: a compound index only provides the sort when the
+ *  keys before it are pinned by equality, and those two pin `chatProjectId` and `pinned`. */
+convoSchema.index({ user: 1, updatedAt: -1, _id: -1 });
 
 convoSchema.index({ user: 1, isTemporary: 1, expiredAt: 1 });
 /** Owner-scoped child-thread cascade lookup used when a parent is deleted. */

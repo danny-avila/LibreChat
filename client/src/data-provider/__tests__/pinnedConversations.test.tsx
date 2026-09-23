@@ -435,15 +435,23 @@ describe('pinned list cache synchronization', () => {
     );
   });
 
-  it('withoutListFlags drops only the sidebar-owned flags', () => {
+  it('withoutListFlags drops the sidebar-owned flags and read state', () => {
+    /* The chat's own state snapshots both when the chat is opened: writing them back would
+       drop the chat out of Pinned, or relight a dot the user has already cleared. */
     const stripped = withoutListFlags({
       ...pinnedConvo,
       pinned: false,
       isShared: true,
+      lastResponseAt: '2026-08-16T10:00:00.000Z',
+      lastResponseIsManual: true,
+      lastSeenAt: '2026-08-16T10:01:00.000Z',
     } as TConversation);
 
     expect('pinned' in stripped).toBe(false);
     expect('isShared' in stripped).toBe(false);
+    expect('lastResponseAt' in stripped).toBe(false);
+    expect('lastResponseIsManual' in stripped).toBe(false);
+    expect('lastSeenAt' in stripped).toBe(false);
     expect(stripped.conversationId).toBe(pinnedConversationId);
     expect(stripped.title).toBe(pinnedConvo.title);
   });
@@ -519,6 +527,57 @@ describe('pinned list cache synchronization', () => {
     expect(readPinnedCache(queryClient)?.conversations).toEqual([
       expect.objectContaining({ ...pinnedConvo, title: 'Root turn' }),
     ]);
+  });
+});
+
+describe('delete mutation failure recovery', () => {
+  it('reports a failed delete without removing cached chats and allows a successful retry', async () => {
+    const error = new Error('Request failed with status code 500');
+    deleteConversation.mockRejectedValueOnce(error).mockResolvedValueOnce({
+      acknowledged: true,
+      deletedCount: 1,
+      messages: { acknowledged: true, deletedCount: 0 },
+    });
+    const queryClient = createQueryClient();
+    const conversationKey = [QueryKeys.conversation, pinnedConversationId];
+    const pinnedKey = [QueryKeys.pinnedConversations];
+    const listKeys = [QueryKeys.allConversations, QueryKeys.archivedConversations];
+    queryClient.setQueryData(conversationKey, pinnedConvo);
+    queryClient.setQueryData(pinnedKey, listResponse([pinnedConvo]));
+    for (const key of listKeys) {
+      queryClient.setQueryData([key], {
+        pages: [listResponse([pinnedConvo])],
+        pageParams: [undefined],
+      });
+    }
+    const onError = jest.fn();
+    const onSuccess = jest.fn();
+    const payload = { conversationId: pinnedConversationId };
+    const { result } = renderHook(() => useDeleteConversationMutation({ onError, onSuccess }), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    act(() => result.current.mutate(payload));
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(error, payload, undefined);
+    expect(onSuccess).not.toHaveBeenCalled();
+    expect(queryClient.getQueryData(conversationKey)).toEqual(pinnedConvo);
+    expect(queryClient.getQueryData(pinnedKey)).toEqual(listResponse([pinnedConvo]));
+    for (const key of listKeys) {
+      expect(queryClient.getQueryData([key])).toMatchObject({
+        pages: [listResponse([pinnedConvo])],
+      });
+    }
+
+    act(() => result.current.mutate(payload));
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryData(conversationKey)).toBeUndefined();
+    expect(queryClient.getQueryData(pinnedKey)).toEqual(listResponse([]));
   });
 });
 
@@ -605,6 +664,37 @@ describe('bookmark mutations invalidate the pinned cache', () => {
 });
 
 describe('unpinning a pin that is not on a loaded chats page', () => {
+  it('does not let an older list refresh restore a successfully removed pin', async () => {
+    const queryClient = createQueryClient();
+    const queryKey = [QueryKeys.allConversations];
+    const stalePage = { pages: [listResponse([pinnedConvo])], pageParams: [undefined] };
+    queryClient.setQueryData(queryKey, stalePage);
+    queryClient.setQueryData([QueryKeys.pinnedConversations], listResponse([pinnedConvo]));
+    let finishRefresh!: (data: typeof stalePage) => void;
+    const refresh = queryClient
+      .fetchQuery(
+        queryKey,
+        () =>
+          new Promise<typeof stalePage>((resolve) => {
+            finishRefresh = resolve;
+          }),
+      )
+      .catch(() => undefined);
+    pinConversation.mockResolvedValue({ ...pinnedConvo, pinned: false });
+    const { result } = renderHook(() => usePinConversationMutation(), {
+      wrapper: createWrapper(queryClient),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({ conversationId: pinnedConversationId, pinned: false });
+      finishRefresh(stalePage);
+      await refresh;
+    });
+    expect(
+      queryClient.getQueryData<typeof stalePage>(queryKey)?.pages[0].conversations[0].pinned,
+    ).toBe(false);
+    queryClient.clear();
+  });
+
   it('inserts the unpinned conversation at the top of the chats list', async () => {
     const unpinned = { ...pinnedConvo, pinned: false } as TConversation;
     pinConversation.mockResolvedValue(unpinned);

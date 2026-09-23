@@ -27,8 +27,8 @@ import {
   useDefaultToggleEntry,
   useInterruptToggleEntry,
 } from './SteerMenu';
+import { escalatingSteerFamily, revealedQueuedTurnFamily } from '~/store/steer';
 import { QUEUE_ICON, STEER_ICON } from '~/components/Chat/Steering/identity';
-import { escalatingSteerFamily } from '~/store/steer';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -49,7 +49,7 @@ function ContextCount({
     return null;
   }
   return (
-    <span className="flex shrink-0 items-center gap-0.5 text-xs text-text-secondary">
+    <span className="text-text-secondary flex shrink-0 items-center gap-0.5 text-xs">
       {icon}
       {count}
       <span className="sr-only">{label}</span>
@@ -86,18 +86,19 @@ function QuoteCount({ count, label }: { count: number; label: string }) {
  */
 function QueuedIcon({ warning, hint }: { warning: boolean; hint?: string }) {
   if (warning) {
-    return <TriangleAlert className="h-4 w-4 shrink-0 text-text-warning" aria-hidden="true" />;
+    return <TriangleAlert className="text-text-warning h-4 w-4 shrink-0" aria-hidden="true" />;
   }
   if (!hint) {
     return <Clock className={cn('h-4 w-4 shrink-0', QUEUE_ICON)} aria-hidden="true" />;
   }
   return (
     <TooltipAnchor
+      focusOutline="hidden"
       description={hint}
       role="img"
       aria-label={hint}
       tabIndex={0}
-      className="flex shrink-0 cursor-help rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy"
+      className="focus-visible:ring-border-xheavy flex shrink-0 cursor-help rounded-full focus-visible:ring-2"
     >
       <Clock className={cn('h-4 w-4', QUEUE_ICON)} aria-hidden="true" />
     </TooltipAnchor>
@@ -109,6 +110,7 @@ function QueuedRow({
   steering,
   conversationId,
   interruptPending,
+  revealed,
   onEditToComposer,
   onRestoreToComposer,
 }: {
@@ -116,6 +118,8 @@ function QueuedRow({
   steering: SteeringControls;
   conversationId: string;
   interruptPending: boolean;
+  /** Shown as the next user turn already; only removal remains meaningful. */
+  revealed?: boolean;
   onEditToComposer: (
     text: string,
     files?: TMessage['files'],
@@ -186,12 +190,16 @@ function QueuedRow({
   // Edit/remove are safe because `afterDiscard` tombstones that source first.
   const canSteerNow = steering.duringRunActive && steering.canSteer && !isRecovered;
   const showPrimary =
-    serverActionable && (canSteerNow || (!steering.duringRunActive && steering.canSendQueuedNow));
+    revealed !== true &&
+    serverActionable &&
+    (canSteerNow || (!steering.duringRunActive && steering.canSendQueuedNow));
   /** `canSteer` is defined as false while paused on approval, but the
    *  escalation control must stay visible-and-disabled there — hiding it
    *  during the pause is exactly the discoverability gap this button fixes. */
   const showEscalate =
-    !isRecovered && (steering.pausedOnApproval || (steering.duringRunActive && steering.canSteer));
+    revealed !== true &&
+    !isRecovered &&
+    (steering.pausedOnApproval || (steering.duringRunActive && steering.canSteer));
 
   const entries: MenuEntry[] = [
     {
@@ -254,7 +262,12 @@ function QueuedRow({
         })}
       />
       {(isRejected || isUnconfirmed || isIndeterminate) && (
-        <span className="shrink-0 text-xs text-text-warning">{localize(statusLabel)}</span>
+        <span className="text-text-warning shrink-0 text-xs">{localize(statusLabel)}</span>
+      )}
+      {revealed === true && (
+        <span className="text-text-secondary shrink-0 text-xs">
+          {localize('com_ui_queued_turn_starting')}
+        </span>
       )}
       {showPrimary && (
         <button
@@ -291,7 +304,12 @@ function QueuedRow({
         aria-label={localize(
           isUnconfirmed ? 'com_ui_dismiss_unconfirmed_delivery' : 'com_ui_remove_queued',
         )}
-        disabled={actionPending || (!serverActionable && !isUnconfirmed)}
+        disabled={
+          actionPending ||
+          (!serverActionable &&
+            !isUnconfirmed &&
+            !(message.server?.id != null && message.server.status === 'claimed'))
+        }
         onClick={() => {
           if (isUnconfirmed) {
             steering.removeQueued(message.id);
@@ -320,11 +338,13 @@ function QueuedRow({
       >
         <Trash2 className="h-4 w-4" aria-hidden="true" />
       </button>
-      <RowMenu
-        label={localize('com_ui_more_options')}
-        entries={entries}
-        preferences={preferences}
-      />
+      {revealed !== true && (
+        <RowMenu
+          label={localize('com_ui_more_options')}
+          entries={entries}
+          preferences={preferences}
+        />
+      )}
     </div>
   );
 }
@@ -384,7 +404,7 @@ function FailedSteerRow({
       className={cn(ROW_CLASS, 'border-border-destructive')}
       data-testid="steer-message-row"
     >
-      <Zap className="h-4 w-4 shrink-0 text-text-destructive" aria-hidden="true" />
+      <Zap className="text-text-destructive h-4 w-4 shrink-0" aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate" title={steer.text}>
         {steer.text}
       </span>
@@ -394,7 +414,7 @@ function FailedSteerRow({
           0: String(steer.quotes?.length ?? 0),
         })}
       />
-      <span className="shrink-0 text-xs text-text-destructive">
+      <span className="text-text-destructive shrink-0 text-xs">
         {localize(
           steer.deliveryUncertain ? 'com_ui_steer_delivery_unconfirmed' : 'com_ui_steer_failed',
         )}
@@ -472,6 +492,9 @@ function PendingSteerChips({
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
   const queued = useRecoilValue(store.queuedMessagesByConvoId(steering.queueKey));
+  /** A row already shown as the next user turn keeps only its remove action
+   *  here: the turn can still be retracted until the server admits it. */
+  const revealed = useAtomValue(revealedQueuedTurnFamily(steering.queueKey));
   const failedSteers = useMemo(() => steers.filter((steer) => steer.status === 'failed'), [steers]);
   /** Only one interrupt can be in flight: a second preempt while one is
    *  unresolved would arm a second seal, so escalation buttons disable. The
@@ -509,6 +532,11 @@ function PendingSteerChips({
             steering={steering}
             conversationId={conversationId}
             interruptPending={interruptPending}
+            revealed={
+              revealed != null &&
+              message.clientRequestId != null &&
+              revealed.clientRequestId === message.clientRequestId
+            }
             onEditToComposer={onEditToComposer}
             onRestoreToComposer={onRestoreToComposer}
           />

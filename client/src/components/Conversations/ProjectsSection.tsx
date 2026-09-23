@@ -128,7 +128,7 @@ const ProjectChatsInline = memo(function ProjectChatsInline({
 
   if (conversations.length === 0) {
     return (
-      <div className="py-1.5 pl-2 text-xs text-text-secondary">
+      <div className="text-text-secondary py-1.5 pl-2 text-xs">
         {localize('com_ui_no_project_chats')}
       </div>
     );
@@ -152,7 +152,7 @@ const ProjectChatsInline = memo(function ProjectChatsInline({
           variant="ghost"
           size="sm"
           onClick={onShowAll}
-          className="ml-1 mt-0.5 h-auto rounded-md px-2 py-1 text-xs font-medium text-text-secondary transition-colors hover:text-text-primary"
+          className="text-text-secondary hover:text-text-primary mt-0.5 ml-1 h-auto rounded-md px-2 py-1 text-xs font-medium transition-colors"
         >
           {localize('com_ui_show_all')}
         </Button>
@@ -259,19 +259,19 @@ const ProjectItem = memo(
         {
           id: `${menuId}-open`,
           label: localize('com_ui_open_project'),
-          icon: <Folder className="size-4 text-text-secondary" aria-hidden="true" />,
+          icon: <Folder className="text-text-secondary size-4" aria-hidden="true" />,
           onClick: openProject,
         },
         {
           id: `${menuId}-rename`,
           label: localize('com_ui_edit_project'),
-          icon: <Pencil className="size-4 text-text-secondary" aria-hidden="true" />,
+          icon: <Pencil className="text-text-secondary size-4" aria-hidden="true" />,
           onClick: () => setIsRenameOpen(true),
         },
         {
           id: `${menuId}-delete`,
           label: localize('com_ui_delete'),
-          icon: <Trash2 className="size-4 text-text-secondary" aria-hidden="true" />,
+          icon: <Trash2 className="text-text-secondary size-4" aria-hidden="true" />,
           onClick: () => setIsDeleteOpen(true),
         },
       ],
@@ -282,10 +282,10 @@ const ProjectItem = memo(
       <li className="list-none" ref={projectRowRef}>
         <div
           className={cn(
-            'group/project-row relative flex h-9 items-center rounded-lg text-sm text-text-primary hover:bg-surface-hover',
+            'group/project-row text-text-primary hover:bg-surface-hover relative flex h-9 items-center rounded-lg text-sm',
             isActive && 'bg-surface-active-alt hover:bg-surface-active-alt',
             !isActive && isMenuOpen && 'bg-surface-hover',
-            isDropOver && canDrop && 'bg-surface-active-alt ring-1 ring-inset ring-border-medium',
+            isDropOver && canDrop && 'bg-surface-active-alt ring-border-medium ring-1 ring-inset',
           )}
         >
           <button
@@ -294,16 +294,16 @@ const ProjectItem = memo(
             onClick={() => setExpanded((prev) => !prev)}
             aria-expanded={expanded}
             aria-label={project.name}
-            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1.5 pl-1.5 pr-16 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
+            className="focus-visible:ring-text-primary flex min-w-0 flex-1 items-center gap-2 rounded-lg py-1.5 pr-16 pl-1.5 text-left outline-hidden focus-visible:ring-2 focus-visible:ring-inset"
           >
             <ChevronRight
               className={cn(
-                'h-3.5 w-3.5 shrink-0 text-text-tertiary transition-transform duration-200',
+                'text-text-tertiary h-3.5 w-3.5 shrink-0 transition-transform duration-200',
                 expanded && 'rotate-90',
               )}
               aria-hidden="true"
             />
-            <Folder className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
+            <Folder className="text-text-secondary h-4 w-4 shrink-0" aria-hidden="true" />
             <span className="min-w-0 truncate">{project.name}</span>
           </button>
           <div
@@ -311,7 +311,7 @@ const ProjectItem = memo(
               /* The 4px between the two controls, and from the row's trailing
                  edge, that a pinned chat keeps between its unpin badge and its
                  overflow menu. */
-              'absolute right-1 top-1/2 flex -translate-y-1/2 items-center gap-1',
+              'absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-1',
               isMenuOpen
                 ? 'opacity-100'
                 : [
@@ -428,7 +428,7 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
     if (isLoading && projects.length === 0) {
       return (
         <div className="flex justify-start py-2 pl-2">
-          <Spinner className="h-4 w-4 text-text-secondary" />
+          <Spinner className="text-text-secondary h-4 w-4" />
         </div>
       );
     }
@@ -439,7 +439,7 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
           type="button"
           variant="ghost"
           onClick={() => setIsCreateOpen(true)}
-          className="flex h-9 w-full justify-start gap-2 rounded-lg px-2 text-sm font-normal text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+          className="text-text-secondary hover:bg-surface-hover hover:text-text-primary flex h-9 w-full justify-start gap-2 rounded-lg px-2 text-sm font-normal transition-colors"
         >
           <FolderPlus className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span className="truncate">{localize('com_ui_new_project')}</span>
@@ -464,7 +464,7 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
               type="button"
               variant="ghost"
               onClick={openProjects}
-              className="flex h-8 w-full justify-start rounded-lg px-2 text-xs font-medium text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+              className="text-text-secondary hover:bg-surface-hover hover:text-text-primary flex h-8 w-full justify-start rounded-lg px-2 text-xs font-medium transition-colors"
             >
               {localize('com_ui_all_projects')}
             </Button>
@@ -490,7 +490,7 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
           className={cn(buttonVariants({ variant: 'section-header' }), 'group min-w-0 flex-1')}
           aria-expanded={isExpanded}
         >
-          <span className="select-none truncate">{localize('com_ui_projects')}</span>
+          <span className="truncate select-none">{localize('com_ui_projects')}</span>
           <ChevronDown
             className={cn(
               'h-3 w-3 shrink-0 transition-transform duration-200',

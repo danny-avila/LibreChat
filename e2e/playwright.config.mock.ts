@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import { getLocalE2EEnv, getE2EBaseURL } from './setup/env';
+import { managementAuth } from './setup/agent-management';
 
 const rootPath = path.resolve(__dirname, '..');
 const replicaCount = Number(process.env.E2E_REPLICAS || '1');
@@ -139,9 +140,26 @@ const mcpSandboxUrl = process.env.E2E_MCP_SANDBOX_URL ?? defaultMcpSandboxUrl.hr
 process.env.E2E_MCP_SANDBOX_URL = mcpSandboxUrl;
 const chromiumChannel = process.env.E2E_CHROMIUM_CHANNEL || undefined;
 
+/** WebAuthn rejects an IP address as the relying party, so passkey ceremonies reach
+ *  the same server through its `localhost` name. */
+const passkeyOrigin = (() => {
+  const url = new URL(baseURL);
+  url.hostname = 'localhost';
+  return url.origin;
+})();
+
 const vanillaOverrides = {
   TENANT_ISOLATION_STRICT: 'false',
   TRUST_TENANT_HEADER: 'true',
+  ALLOW_PASSKEY_LOGIN: 'true',
+  /** The password-reset scenario needs the reset routes; CI has no developer `.env`. */
+  ALLOW_PASSWORD_RESET: 'true',
+  PASSKEY_RP_ID: 'localhost',
+  PASSKEY_ORIGINS: passkeyOrigin,
+  /** Every project reruns the reset and passkey sign-in scenarios from one IP, and each
+   *  login page load spends a passkey request on autofill; the defaults allow 2 and 20. */
+  RESET_PASSWORD_MAX: '100',
+  PASSKEY_MAX: '500',
   OPENAI_API_KEY: 'user_provided',
   OPENID_CLIENT_ID: '',
   OPENID_ISSUER: '',
@@ -225,6 +243,10 @@ function writeRuntimeMockConfig() {
     process.env.E2E_MODEL_SPECS_ENFORCE === 'true'
       ? template.replace('\n  enforce: false\n', '\n  enforce: true\n')
       : template;
+  config = config.replace(
+    '  agents:\n',
+    `  agents:\n    managementApi: ${JSON.stringify({ auth: managementAuth })}\n`,
+  );
   const dynamicMcpConfig = enableDynamicMcp
     ? {
         allowedDomain: '- http://127.0.0.1:8766',

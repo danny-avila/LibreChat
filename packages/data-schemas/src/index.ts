@@ -7,6 +7,8 @@ export * from './utils';
 export { createModels } from './models';
 export {
   createMethods,
+  AGENT_OWNER_CONTACT_RESOLVED_FIELD,
+  AgentSortCursorError,
   CLIENT_MESSAGE_SELECT,
   SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
   RoleConflictError,
@@ -18,6 +20,7 @@ export {
   defaultRate,
   createTxMethods,
   permissionBitSupersets,
+  PERM_BITS_WRITE_ATTEMPTS,
   partitionIssues,
   validateSkillName,
   validateSkillBody,
@@ -67,6 +70,8 @@ export {
   isCompactionSemanticIndexProjection,
 } from './types/compaction';
 export {
+  AGENT_BACKGROUND_TOOL_RESULT_STORAGE_MAX_CHARS,
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
   AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,

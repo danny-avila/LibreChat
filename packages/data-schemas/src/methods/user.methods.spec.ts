@@ -128,6 +128,30 @@ describe('User personalization', () => {
 });
 
 describe('User Methods - Database Tests', () => {
+  describe('findOwnerContactUsers', () => {
+    test('returns only projected owner contact rows for matching ids', async () => {
+      const owner = await User.create({
+        name: 'Ada Owner',
+        username: 'ada',
+        email: 'ada@example.com',
+        provider: 'local',
+      });
+      await User.create({
+        name: 'Other User',
+        username: 'other',
+        email: 'other@example.com',
+        provider: 'local',
+      });
+
+      const rows = await methods.findOwnerContactUsers([
+        owner._id.toString(),
+        new mongoose.Types.ObjectId().toString(),
+      ]);
+
+      expect(rows).toEqual([{ _id: owner._id, name: 'Ada Owner', username: 'ada' }]);
+      expect(rows[0]).not.toHaveProperty('email');
+    });
+  });
   describe('findUser', () => {
     test('should find user by exact email', async () => {
       await User.create({
@@ -367,6 +391,29 @@ describe('User Methods - Database Tests', () => {
 
       expect(updated).toBeDefined();
       expect(updated?.expiresAt).toBeUndefined();
+    });
+
+    test('should update only when the expected account state still matches', async () => {
+      const user = await User.create({
+        name: 'Conditional User',
+        email: 'original@example.com',
+        password: 'original-password-hash',
+        provider: 'local',
+      });
+
+      const staleUpdate = await methods.updateUser(
+        user._id?.toString() ?? '',
+        { email: 'stale@example.com' },
+        { email: 'different@example.com', password: 'original-password-hash' },
+      );
+      const currentUpdate = await methods.updateUser(
+        user._id?.toString() ?? '',
+        { email: 'current@example.com' },
+        { email: 'original@example.com', password: 'original-password-hash' },
+      );
+
+      expect(staleUpdate).toBeNull();
+      expect(currentUpdate?.email).toBe('current@example.com');
     });
 
     test('should invalidate cached auth user documents on update', async () => {

@@ -74,9 +74,9 @@ export default function HeaderMenu({
       id: 'header-bookmarks',
       label: localize('com_ui_bookmarks'),
       icon: bookmarks.hasBookmarks ? (
-        <BookmarkFilledIcon className="size-4 text-text-secondary" />
+        <BookmarkFilledIcon className="text-text-secondary size-4" />
       ) : (
-        <BookmarkIcon className="size-4 text-text-secondary" />
+        <BookmarkIcon className="text-text-secondary size-4" />
       ),
       subItems: bookmarks.items,
     });
@@ -86,7 +86,7 @@ export default function HeaderMenu({
     items.push({
       id: 'header-compare',
       label: localize('com_ui_add_multi_conversation'),
-      icon: <PlusCircle className="size-4 text-text-secondary" />,
+      icon: <PlusCircle className="text-text-secondary size-4" />,
       onClick: multiConvo.addConversation,
     });
   }
@@ -95,7 +95,7 @@ export default function HeaderMenu({
     pushGroup({
       id: 'header-trace',
       label: localize('com_ui_trace_view'),
-      icon: <ChartNoAxesGantt className="size-4 text-text-secondary" />,
+      icon: <ChartNoAxesGantt className="text-text-secondary size-4" />,
       onClick: trace.open,
     });
   }
@@ -111,9 +111,9 @@ export default function HeaderMenu({
       ariaChecked: temporary.isTemporary,
       className: temporary.isTemporary ? 'bg-surface-active' : undefined,
       icon: temporary.isTemporary ? (
-        <Check className="size-4 text-text-primary" />
+        <Check className="text-text-primary size-4" />
       ) : (
-        <HatGlasses className="size-4 text-text-secondary" />
+        <HatGlasses className="text-text-secondary size-4" />
       ),
       onClick: temporary.toggle,
     });
@@ -152,7 +152,7 @@ export default function HeaderMenu({
                     size="icon"
                     variant="outline"
                     className={cn(
-                      'relative size-9 flex-shrink-0 rounded-xl bg-presentation hover:bg-surface-active-alt',
+                      'bg-presentation hover:bg-surface-active-alt relative size-9 shrink-0 rounded-xl',
                       className,
                     )}
                   />
@@ -161,7 +161,7 @@ export default function HeaderMenu({
                 <Ellipsis className="icon-md" aria-hidden="true" />
                 {exportShare.hasSharedLink && (
                   <span
-                    className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-status-info ring-2 ring-presentation"
+                    className="bg-status-info ring-presentation absolute -top-0.5 -right-0.5 size-2 rounded-full ring-2"
                     data-testid="header-menu-shared-link-indicator"
                     aria-hidden="true"
                   />

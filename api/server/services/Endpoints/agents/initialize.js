@@ -95,6 +95,7 @@ const subagentThreadTaskStore = require('./subagentThreadStore');
 const {
   preregisterBackgroundToolCompletion,
   createBackgroundToolResultPersistence,
+  claimBackgroundToolResult,
   createDeadBackgroundToolClaimRecovery,
 } = require('./backgroundCompletion');
 const { logViolation } = require('~/cache');
@@ -215,6 +216,8 @@ const initializeClientWithProvider = async ({
   const ordinaryToolCancellationEnabled =
     appConfig?.endpoints?.[EModelEndpoint.agents]?.backgroundTasks?.ordinaryToolCancellation ===
     true;
+  const backgroundCompletionResultMaxChars =
+    appConfig?.endpoints?.[EModelEndpoint.agents]?.backgroundTasks?.completionResultMaxChars;
   /** The normal controller resolves this once for timestamp anchoring. Reuse
    * that trusted document for child-thread execution policy; resume and direct
    * callers fall back to the same owner-scoped lookup. */
@@ -440,6 +443,7 @@ const initializeClientWithProvider = async ({
     runSignal: signal,
     foregroundRunId,
     ordinaryToolCancellation: ordinaryToolCancellationEnabled,
+    backgroundCompletionResultMaxChars,
     loadTools: async (
       toolNames,
       agentId,
@@ -515,7 +519,7 @@ const initializeClientWithProvider = async ({
         req,
         updateToolCallResult: db.updateToolCallResult,
       }),
-      claim: db.claimBackgroundToolResults,
+      claim: (input) => claimBackgroundToolResult(db, input),
       recoverDeadClaim: createDeadBackgroundToolClaimRecovery(
         db.releaseBackgroundToolResultClaims,
         (conversationId) => GenerationJobManager.getJob(conversationId),
@@ -1873,7 +1877,7 @@ const initializeClientWithProvider = async ({
  * token material so refresh remains owned by the host integration.
  *
  * @param {object} [dependencies]
- * @param {(user: import('@librechat/data-schemas').IUser, options: { signal?: AbortSignal }) => import('@librechat/api').UpstreamTokenProvider | undefined | Promise<import('@librechat/api').UpstreamTokenProvider | undefined>} [dependencies.resolveUpstreamTokenProvider]
+ * @param {import('@librechat/api').HostUpstreamTokenProviderResolver} [dependencies.resolveUpstreamTokenProvider]
  */
 function createInitializeClient(dependencies = {}) {
   return async (params) => {
@@ -1881,6 +1885,7 @@ function createInitializeClient(dependencies = {}) {
       params.req,
       dependencies.resolveUpstreamTokenProvider,
       params.signal,
+      params.scheduledTokenContext,
     );
     return initializeClientWithProvider({ ...params, upstreamTokenProviderResolver });
   };

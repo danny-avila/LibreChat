@@ -2,202 +2,32 @@ import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
 import { ChevronDown, MessageCircleQuestion, Users } from 'lucide-react';
-import { Tools, Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
-import type {
-  TAttachment,
-  TMessageContentParts,
-  Agents,
-  FunctionToolCall,
-  PartMetadata,
-} from 'librechat-data-provider';
+import { Tools, Constants, ContentTypes } from 'librechat-data-provider';
+import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
+import type { ToolMeta } from './outcome';
 import {
   cn,
   getToolDisplayLabel,
+  getPartKeyIndex,
+  hasPendingAuthInPart,
   hasPendingApprovalInPart,
   getBatchActivityLabelPart,
   getActivityLabelText,
 } from '~/utils';
 import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
-import { parseBackgroundHandle, splitBackgroundAttachments } from './Parts/handle';
 import { ASK_USER_QUESTION, getSubmittedAskAnswer } from '~/utils/approval';
-import { mapAttachments, filterAttachmentsForPart } from '~/utils/map';
 import { ToolAuthWarning, ToolAuthWarningContext } from './auth';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
-import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import { AttachmentGroup, ReasoningCompact } from './Parts';
-import { isMemoryFailureOutput } from './Parts/MemoryCall';
-import { isError, StackedToolIcons } from './ToolOutput';
+import { getOutcomeStatus, summarizeSpan } from './outcome';
 import { MCPAppViews } from '~/components/MCPUIResource';
-import { isBashProgrammaticToolCall } from './routing';
+import { StackedToolIcons } from './ToolOutput';
+import { mapAttachments } from '~/utils/map';
+import { getSourceDomains } from './sources';
 import SearchVerticals from './verticals';
 import { ROW_GLYPH_SLOT } from './rows';
 import store from '~/store';
-
-interface ToolMeta {
-  name: string;
-  iconName: string;
-  hasOutput: boolean;
-  failed: boolean;
-  cancelled: boolean;
-}
-
-function hasFailedOutput(output: unknown): boolean {
-  return typeof output === 'string' && isError(output);
-}
-
-/**
- * Group metadata must agree with the individual card, which resolves its
- * outcome from the run step's terminal verdict through `resolveToolCallPhase`.
- * Reading output alone leaves a step the run closed as `failed` with empty or
- * benign output counted as neither failed nor finished, so the group sits on
- * "Running" until the response ends and then reports that it ran successfully
- * with no failures while the card beside it shows the failure. A closed step
- * is never running. Parts carrying no terminal status keep the legacy
- * output/progress signal, which is all the older endpoints emit.
- */
-function resolveOutcome(
-  runStepStatus: PartMetadata['runStepStatus'],
-  completed: boolean,
-  hasError: boolean,
-): Pick<ToolMeta, 'hasOutput' | 'failed' | 'cancelled'> {
-  if (runStepStatus == null) {
-    return { hasOutput: completed, failed: hasError, cancelled: false };
-  }
-  const phase = resolveToolCallPhase({
-    runStepStatus,
-    displayProgress: 1,
-    reportedProgress: 1,
-    isSubmitting: false,
-    hasError,
-  });
-  return {
-    hasOutput: phase !== 'running',
-    failed: phase === 'failed',
-    /** Tracked separately from `failed`: a stopped step is settled and not an
-     *  error, but the group still must not auto-collapse under a
-     *  success-sounding header with the only cancellation notice hidden in the
-     *  panel. */
-    cancelled: phase === 'cancelled',
-  };
-}
-
-function hasPendingAuth(part: TMessageContentParts): boolean {
-  if (part.type !== ContentTypes.TOOL_CALL) {
-    return false;
-  }
-  const toolCall = part[ContentTypes.TOOL_CALL];
-  if (!toolCall || !('args' in toolCall)) {
-    return false;
-  }
-  /** A step the run already closed can never be waiting on a sign-in, whatever
-   *  its progress says. `ToolCall` hides the sign-in button on a terminal
-   *  status, so counting it as pending here left the group showing a trust
-   *  warning with no authentication action behind it. */
-  if (toolCall.runStepStatus != null) {
-    return false;
-  }
-  const standardToolCall = toolCall as Agents.ToolCall & { progress?: number };
-  const progress = standardToolCall.progress ?? 0.1;
-
-  return (
-    typeof standardToolCall.auth === 'string' && standardToolCall.auth.length > 0 && progress < 1
-  );
-}
-
-function getToolMeta(
-  part: TMessageContentParts,
-  attachmentsByToolCallId?: Record<string, TAttachment[] | undefined>,
-): ToolMeta | null {
-  if (part.type !== ContentTypes.TOOL_CALL) {
-    return null;
-  }
-  const toolCall = part[ContentTypes.TOOL_CALL];
-  if (!toolCall) {
-    return null;
-  }
-  /** Terminal verdict lives on the outer `tool_call` object (`PartMetadata`),
-   *  not on the per-variant payload, so it is read before any narrowing cast. */
-  const runStepStatus = toolCall.runStepStatus;
-
-  const isStandard =
-    'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
-  if (isStandard) {
-    /** `agentId` disambiguates attachments when a handoff response repeats a
-     *  provider tool-call id across agents; `filterAttachmentsForPart` reads it
-     *  the same way. */
-    const tc = toolCall as Agents.ToolCall & { progress?: number; agentId?: string };
-    /** Subagents can finish with `progress === 1` and no final output
-     *  text (the parent saw "" / undefined back). Fall back to progress
-     *  so the group header flips from "Running N agents" to "Ran N
-     *  agents" on completion even when the child returned no text. */
-    const completed = !!tc.output || tc.progress === 1;
-    const name = tc.name ?? '';
-    const iconName = isBashProgrammaticToolCall(name, tc.args) ? Tools.bash_tool : name;
-    /** Memory tools report failure in prose ("Invalid key ...") that generic
-     *  `isError` parsing does not recognize, so `MemoryCall` classifies it with
-     *  its own predicate. Reuse that here or a persisted call with no terminal
-     *  status shows a failed card inside a group claiming success. */
-    const failedOutput =
-      name === 'set_memory' || name === 'delete_memory'
-        ? isMemoryFailureOutput(name, tc.output ?? '')
-        : hasFailedOutput(tc.output);
-    /** A backgrounded bash/code task reports its verdict through a
-     *  `background_task_status` attachment, not its output: the dispatch step
-     *  keeps a benign handle and usually closes as `completed`. The child card
-     *  folds that marker in as `extraError`, so without it here the group
-     *  reported no failed action beside a card showing failure. Correlated the
-     *  same way the child is, since provider tool-call ids repeat across agents
-     *  and execution steps in handoff responses. */
-    const backgroundHandle = parseBackgroundHandle(tc.output);
-    const backgroundStatus = splitBackgroundAttachments(
-      filterAttachmentsForPart(attachmentsByToolCallId?.[tc.id ?? ''], tc.agentId, toolCall.stepId),
-      tc.id,
-    ).backgroundStatus;
-    const backgroundFailed = backgroundHandle != null && backgroundStatus === 'error';
-    const backgroundCancelled =
-      tc.backgroundTask?.cancelled === true ||
-      (backgroundHandle != null && backgroundStatus === 'cancelled');
-    return {
-      name,
-      iconName,
-      ...resolveOutcome(
-        backgroundCancelled ? 'cancelled' : runStepStatus,
-        completed,
-        failedOutput || backgroundFailed,
-      ),
-    };
-  }
-
-  if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
-    const ci = (toolCall as { code_interpreter?: { outputs?: unknown[] } }).code_interpreter;
-    return {
-      name: 'code_interpreter',
-      iconName: 'code_interpreter',
-      ...resolveOutcome(runStepStatus, (ci?.outputs?.length ?? 0) > 0, false),
-    };
-  }
-
-  if (toolCall.type === ToolCallTypes.RETRIEVAL || toolCall.type === ToolCallTypes.FILE_SEARCH) {
-    const output = (toolCall as { output?: string }).output;
-    return {
-      name: 'file_search',
-      iconName: 'file_search',
-      ...resolveOutcome(runStepStatus, !!output, hasFailedOutput(output)),
-    };
-  }
-
-  if (toolCall.type === ToolCallTypes.FUNCTION && ToolCallTypes.FUNCTION in toolCall) {
-    const fn = (toolCall as FunctionToolCall).function;
-    return {
-      name: fn.name,
-      iconName: fn.name,
-      ...resolveOutcome(runStepStatus, !!fn.output, hasFailedOutput(fn.output)),
-    };
-  }
-
-  return null;
-}
 
 interface ToolCallGroupProps {
   parts: PartWithIndex[];
@@ -212,6 +42,9 @@ interface ToolCallGroupProps {
   ) => React.ReactNode;
   lastContentIdx: number;
   groupAttachments?: TAttachment[];
+  /** The group's owned attachments for header glyphs AND outcomes, even when
+   *  a parent phase hoists the files and `groupAttachments` is withheld. */
+  sourceAttachments?: TAttachment[];
   initialExpansionState?: ToolCallGroupExpansionState;
   onExpansionChange?: (state: ToolCallGroupExpansionState) => void;
   /** Activity-label part terminating this block; when it carries generated
@@ -240,6 +73,7 @@ export default function ToolCallGroup({
   renderPart,
   lastContentIdx,
   groupAttachments,
+  sourceAttachments,
   initialExpansionState,
   onExpansionChange,
   labelPart,
@@ -255,19 +89,19 @@ export default function ToolCallGroup({
   /** Re-keyed by tool-call id so each part's metadata sees only its own
    *  attachments: `groupAttachments` arrives flattened across the group. */
   const attachmentsByToolCallId = useMemo(
-    () => mapAttachments(groupAttachments ?? []),
-    [groupAttachments],
+    () => mapAttachments(sourceAttachments ?? groupAttachments ?? []),
+    [sourceAttachments, groupAttachments],
   );
   /** `parts` may include interleaved reasoning ("Thoughts") parts that render
    *  inside the body but are not actions. Count and summarize only the real
    *  tool calls so the header and stacked icons stay accurate. */
-  const toolMetadata = useMemo(
-    () =>
-      parts
-        .map((p) => getToolMeta(p.part, attachmentsByToolCallId))
-        .filter((m): m is ToolMeta => m != null),
-    [parts, attachmentsByToolCallId],
-  );
+  const toolMetadata = useMemo(() => {
+    const summary = summarizeSpan(
+      parts.map(({ part }) => part),
+      attachmentsByToolCallId,
+    );
+    return parts.map(({ part }) => summary.metaOf(part)).filter((m): m is ToolMeta => m != null);
+  }, [parts, attachmentsByToolCallId]);
   const count = toolMetadata.length;
   /** Approval state is read from the RAW parts, not `toolMetadata`: a pending
    *  call can be nested inside a subagent's content, which never surfaces as
@@ -289,6 +123,10 @@ export default function ToolCallGroup({
   const allCompleted = useMemo(
     () => labelSettled || toolMetadata.every((m) => m.hasOutput === true),
     [toolMetadata, labelSettled],
+  );
+  const sourceDomains = useMemo(
+    () => getSourceDomains(sourceAttachments ?? groupAttachments, 3),
+    [sourceAttachments, groupAttachments],
   );
   const iconToolNames = useMemo(() => toolMetadata.map((m) => m.iconName), [toolMetadata]);
 
@@ -604,13 +442,17 @@ export default function ToolCallGroup({
     .join(', ');
   /** Single category glyph for homogeneous groups (else StackedToolIcons). */
   const CategoryIcon = allSubagents ? Users : MessageCircleQuestion;
+  const iconStatus = getOutcomeStatus({
+    failed: activityFailed ? 1 : activitySummary.failedCount,
+    cancelled: activitySummary.cancelledCount,
+  });
 
   const hasActiveToolCall = useMemo(
     () => isSubmitting && toolMetadata.some((m) => m && !m.hasOutput),
     [toolMetadata, isSubmitting],
   );
   const hasPendingAuthRequest = useMemo(
-    () => parts.some(({ part }) => hasPendingAuth(part)),
+    () => parts.some(({ part }) => hasPendingAuthInPart(part)),
     [parts],
   );
 
@@ -622,16 +464,16 @@ export default function ToolCallGroup({
   }, [hasActiveToolCall, userOverride, suppressAutoExpand]);
 
   return (
-    <div className="mb-2 mt-1" ref={rootRef}>
+    <div className="mt-1 mb-2" ref={rootRef}>
       <Button
         variant="ghost"
         type="button"
-        className="inline-flex h-auto w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-text-secondary hover:bg-transparent hover:text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy focus-visible:ring-offset-0"
+        className="text-text-secondary hover:text-text-secondary focus-visible:ring-border-heavy inline-flex h-auto w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 hover:bg-transparent focus-visible:ring-2 focus-visible:ring-offset-0"
         onClick={handleToggle}
         aria-expanded={isExpanded}
         aria-label={groupAriaLabel}
       >
-        {allSubagents || allAskQuestions ? (
+        {iconStatus == null && (allSubagents || allAskQuestions) ? (
           /** Homogeneous category groups get a single category glyph instead
            *  of StackedToolIcons' generic wrenches: a Users glyph for
            *  subagents, a question glyph for ask_user_question — matching
@@ -641,7 +483,7 @@ export default function ToolCallGroup({
             className={cn(
               ROW_GLYPH_SLOT,
               'text-text-secondary',
-              isGroupLive && 'animate-pulse text-text-primary',
+              isGroupLive && 'text-text-primary animate-pulse',
             )}
             aria-hidden="true"
           >
@@ -653,6 +495,8 @@ export default function ToolCallGroup({
               toolNames={iconToolNames}
               mcpIconMap={mcpIconMap}
               maxIcons={4}
+              sourceDomains={sourceDomains}
+              status={iconStatus}
               isAnimating={isGroupLive}
             />
           </div>
@@ -669,7 +513,7 @@ export default function ToolCallGroup({
         </span>
         {groupDetail && (
           <span
-            className="min-w-0 max-w-[40%] truncate text-xs font-normal text-text-secondary"
+            className="text-text-secondary max-w-[40%] min-w-0 truncate text-xs font-normal"
             title={groupDetail}
           >
             · {groupDetail}
@@ -677,7 +521,7 @@ export default function ToolCallGroup({
         )}
         <ChevronDown
           className={cn(
-            'size-4 shrink-0 text-text-secondary transition-transform duration-200 ease-out',
+            'text-text-secondary size-4 shrink-0 transition-transform duration-200 ease-out',
             isExpanded && 'rotate-180',
           )}
           aria-hidden="true"
@@ -723,6 +567,7 @@ export default function ToolCallGroup({
                     return (
                       <ReasoningCompact
                         key={`reasoning-${idx}`}
+                        partKeyIndex={getPartKeyIndex(part, idx)}
                         reasoning={reasoning}
                         label={label}
                         showThinking={showThinking}
@@ -735,7 +580,7 @@ export default function ToolCallGroup({
                 })}
               </div>
             </ToolAuthWarningContext.Provider>
-            {hasPendingAuthRequest && <ToolAuthWarning className="mb-1 mt-2.5" />}
+            {hasPendingAuthRequest && <ToolAuthWarning className="mt-2.5 mb-1" />}
           </div>
         )}
       </div>

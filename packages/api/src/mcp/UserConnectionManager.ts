@@ -3,8 +3,9 @@ import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { MCPClientCapabilityProfile } from './capabilities';
 import type * as t from './types';
 import {
-  canBackfillSharedServerInstructions,
+  applyRequestHeaders,
   canUseAppConnection,
+  canBackfillSharedServerInstructions,
   getMissingRuntimeBodyPlaceholderFields,
   hasRuntimeUrlPlaceholders,
   isUserSourced,
@@ -779,7 +780,7 @@ export abstract class UserConnectionManager {
     const existingPublicationGeneration = connection
       ? this.toolPublicationGenerations.get(connection)
       : undefined;
-    const configGeneration = config ? getMCPAppToolsPublicationGeneration(config) : undefined;
+    const configGeneration = getMCPAppToolsPublicationGeneration(config);
     const existingConfigGeneration = connection
       ? this.toolConfigGenerations.get(connection)
       : undefined;
@@ -967,11 +968,10 @@ export abstract class UserConnectionManager {
               }
             };
       const recaptureCredentialGeneration: t.UserConnectionContext['onOAuthCredentialsInvalidated'] =
-        ephemeralConnection
-          ? undefined
-          : async () => {
-              credentialGeneration = await getMCPToolsChangedGeneration({ userId, serverName });
-            };
+        async () => {
+          credentialGeneration = await getMCPToolsChangedGeneration({ userId, serverName });
+          return credentialGeneration;
+        };
 
       const useOAuth = usesDirectOpenIDBearerRecovery(config)
         ? false
@@ -1224,12 +1224,16 @@ export abstract class UserConnectionManager {
     requestBody?: t.UserMCPConnectionOptions['requestBody'];
     graphTokenResolver?: t.UserMCPConnectionOptions['graphTokenResolver'];
   }): Promise<t.ParsedServerConfig> {
-    const dbSourced = isUserSourced(config);
+    /** Mirrors the factory's entry-point normalization; without it this
+     *  validation pass would inspect a different header map than the one the
+     *  connection ends up sending. */
+    const runtimeConfig = applyRequestHeaders(config);
+    const dbSourced = isUserSourced(runtimeConfig);
     /** Plugin-authored placeholders must never resolve against the user's Graph token. */
     const graphProcessedConfig =
-      dbSourced || isPluginSourced(config)
-        ? config
-        : await preProcessGraphTokens(config, {
+      dbSourced || isPluginSourced(runtimeConfig)
+        ? runtimeConfig
+        : await preProcessGraphTokens(runtimeConfig, {
             user,
             graphTokenResolver,
             scopes: process.env.GRAPH_API_SCOPES,
