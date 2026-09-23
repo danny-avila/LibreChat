@@ -2,21 +2,25 @@ import { memo, useCallback, useEffect, useRef } from 'react';
 import { EarthIcon } from 'lucide-react';
 import { ControlCombobox } from '@librechat/client';
 import { useFormContext, Controller } from 'react-hook-form';
-import { AgentCapabilities, defaultAgentFormValues } from 'librechat-data-provider';
+import {
+  AgentCapabilities,
+  DEFAULT_AGENT_SELECTOR_LIMIT,
+  defaultAgentFormValues,
+} from 'librechat-data-provider';
 import type { Agent, AgentCreateParams, StatefulCodeEnvironment } from 'librechat-data-provider';
 import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-query';
 import type { TAgentCapabilities, AgentForm } from '~/common';
 import { cn, createProviderOption, processAgentOption, getDefaultAgentFormValues } from '~/utils';
+import { useListAgentsQuery, useGetStartupConfig } from '~/data-provider';
 import { useLocalize, useAgentDefaultPermissionLevel } from '~/hooks';
 import { mergeDirtyToolsWithServerActions } from './agentTools';
-import { useListAgentsQuery } from '~/data-provider';
 
 const keys = new Set(Object.keys(defaultAgentFormValues));
 
-/** Dropdown caps: 480px tall, at most 10 agents listed unsearched; the search
- * field covers agents past the cut. */
+/** Dropdown cap: 480px tall; the unsearched list cap comes from
+ * `interface.agentSelectorLimit` (default 10), and the search field covers
+ * agents past the cut. */
 const SELECTOR_MAX_HEIGHT = 480;
-const SELECTOR_ITEMS_LIMIT = 10;
 
 function AgentSelect({
   agentQuery,
@@ -45,6 +49,9 @@ function AgentSelect({
   const dirtyFieldsRef = useRef(dirtyFields);
   dirtyFieldsRef.current = dirtyFields;
   const permissionLevel = useAgentDefaultPermissionLevel();
+  const { data: startupConfig } = useGetStartupConfig();
+  const selectorLimit =
+    startupConfig?.interface?.agentSelectorLimit ?? DEFAULT_AGENT_SELECTOR_LIMIT;
 
   const { data: agents = null } = useListAgentsQuery(
     { requiredPermission: permissionLevel },
@@ -280,7 +287,7 @@ function AgentSelect({
           iconSide="right"
           searchPlaceholder={localize('com_agents_search_name')}
           popoverMaxHeight={SELECTOR_MAX_HEIGHT}
-          unsearchedLimit={SELECTOR_ITEMS_LIMIT}
+          unsearchedLimit={selectorLimit}
           SelectIcon={field?.value?.icon}
           setValue={onSelect}
           items={

@@ -227,10 +227,12 @@ describe('ControlCombobox dropdown caps', () => {
     value: `agent-${index + 1}`,
   }));
 
-  const renderCapped = (overrides: { popoverMaxHeight?: number; unsearchedLimit?: number } = {}) =>
+  const renderCapped = (
+    overrides: { popoverMaxHeight?: number; unsearchedLimit?: number; selectedValue?: string } = {},
+  ) =>
     render(
       <ControlCombobox
-        selectedValue="agent-1"
+        selectedValue={overrides.selectedValue ?? 'agent-1'}
         displayValue="Agent 1"
         items={manyItems}
         setValue={() => undefined}
@@ -260,11 +262,24 @@ describe('ControlCombobox dropdown caps', () => {
     expect(screen.getByRole('option', { name: 'Agent 15' })).toBeInTheDocument();
   });
 
+  it('keeps the selected option in the capped list when it ranks past the cut', () => {
+    renderCapped({ selectedValue: 'agent-15' });
+    openPopover();
+    /** SelectRenderer windowing renders only the visible slice in jsdom, so
+     * the cap is read off aria-setsize rather than the option count. */
+    expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-setsize', '10');
+    expect(screen.getByRole('option', { name: 'Agent 15' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.queryByRole('option', { name: 'Agent 10' })).not.toBeInTheDocument();
+  });
+
   it('caps the popover at popoverMaxHeight with the list as the scrolling region', () => {
     renderCapped();
     openPopover();
     const popover = document.querySelector('.animate-popover') as HTMLElement;
-    expect(popover.style.maxHeight).toBe('480px');
+    expect(popover.style.maxHeight).toBe('min(480px, var(--popover-available-height, 480px))');
     expect(popover.className).toContain('flex-col');
     const scroller = popover.querySelector('div.overflow-auto');
     expect(scroller?.className).toContain('flex-1');

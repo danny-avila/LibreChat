@@ -123,10 +123,20 @@ function ControlCombobox({
     });
     const mapped = filteredItems.map(getItem);
     if (unsearchedLimit != null && searchValue.trim() === '') {
-      return mapped.slice(0, unsearchedLimit);
+      const capped = mapped.slice(0, unsearchedLimit);
+      /** The open list keeps offering the current selection: an option that
+       * ranks past the cut takes the last slot instead of vanishing until the
+       * user knows to search for it. */
+      if (selectedValue != null && !capped.some((item) => item.value === selectedValue)) {
+        const selected = mapped.find((item) => item.value === selectedValue);
+        if (selected != null) {
+          capped[capped.length - 1] = selected;
+        }
+      }
+      return capped;
     }
     return mapped;
-  }, [searchValue, items, unsearchedLimit]);
+  }, [searchValue, items, unsearchedLimit, selectedValue]);
 
   useEffect(() => {
     const button = buttonRef.current;
@@ -223,7 +233,15 @@ function ControlCombobox({
         )}
         style={{
           zIndex: popoverZIndex,
-          ...(popoverMaxHeight != null ? { maxHeight: popoverMaxHeight } : null),
+          /** `--popover-available-height` is the space Ariakit measured for this
+           * placement, so a short viewport shrinks the cap instead of pushing
+           * lower options offscreen; the fallback keeps the cap when the
+           * variable is absent. */
+          ...(popoverMaxHeight != null
+            ? {
+                maxHeight: `min(${popoverMaxHeight}px, var(--popover-available-height, ${popoverMaxHeight}px))`,
+              }
+            : null),
           ...(matchTriggerWidth
             ? { width: isCollapsed ? '300px' : (buttonWidth ?? '300px') }
             : { minWidth: '16rem' }),

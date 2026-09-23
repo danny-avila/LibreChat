@@ -2100,6 +2100,10 @@ export enum RetentionMode {
   TEMPORARY = 'temporary',
 }
 
+/** Single source for the agents panel selector's unsearched list cap; the
+ * schema default and the client fallback both read it. */
+export const DEFAULT_AGENT_SELECTOR_LIMIT = 10;
+
 export const interfaceSchema = z
   .object({
     privacyPolicy: z
@@ -2114,6 +2118,9 @@ export const interfaceSchema = z
     modelSelect: z.boolean().optional(),
     /** Milliseconds between syntax highlights while a code block streams. */
     codeHighlightThrottleMs: z.number().int().min(0).max(60_000).default(300),
+    /** Most agents the agents panel selector lists before a search term is
+     * typed; typing lifts the cap so search reaches every agent. */
+    agentSelectorLimit: z.number().int().min(1).max(100).default(DEFAULT_AGENT_SELECTOR_LIMIT),
     parameters: z.boolean().optional(),
     multiConvo: z.boolean().optional(),
     bookmarks: z.boolean().optional(),
@@ -2236,6 +2243,7 @@ export const interfaceSchema = z
   .default({
     modelSelect: true,
     codeHighlightThrottleMs: 300,
+    agentSelectorLimit: DEFAULT_AGENT_SELECTOR_LIMIT,
     parameters: true,
     presets: true,
     multiConvo: true,

@@ -1932,3 +1932,16 @@ describe('interface.traceViewer', () => {
     });
   });
 });
+
+describe('interfaceSchema agentSelectorLimit', () => {
+  it('defaults the unsearched agents selector list to ten entries', () => {
+    const result = interfaceSchema.parse({});
+    expect(result.agentSelectorLimit).toBe(10);
+  });
+
+  it('honors a deployment override and rejects out-of-bounds values', () => {
+    expect(interfaceSchema.parse({ agentSelectorLimit: 25 }).agentSelectorLimit).toBe(25);
+    expect(interfaceSchema.safeParse({ agentSelectorLimit: 0 }).success).toBe(false);
+    expect(interfaceSchema.safeParse({ agentSelectorLimit: 101 }).success).toBe(false);
+  });
+});
