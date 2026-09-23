@@ -1,0 +1,15 @@
+# Build the `api` service from this repository instead of pulling the upstream
+# prebuilt image referenced by deploy-compose.yml.
+#
+# Compose only auto-loads an override for the default `docker-compose.yml`, so
+# this file must be passed explicitly:
+#
+#   docker compose -f deploy-compose.yml -f deploy-compose.override.yml up -d --build
+
+services:
+  api:
+    image: klima-librechat:local
+    build:
+      context: .
+      dockerfile: Dockerfile.multi
+      target: api-build
