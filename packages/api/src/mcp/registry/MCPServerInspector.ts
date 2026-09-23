@@ -11,6 +11,7 @@ import {
 } from '~/mcp/utils';
 import { isMCPDomainAllowed, extractMCPServerDomain } from '~/auth/domain';
 import { normalizeJsonSchema, resolveJsonSchemaRefs } from '~/mcp/zod';
+import { isDirectOpenIDBearerRecoveryEnabled } from '~/mcp/openid';
 import { MCPConnectionFactory } from '~/mcp/MCPConnectionFactory';
 import { MCPDomainNotAllowedError } from '~/mcp/errors';
 import { detectOAuthRequirement } from '~/mcp/oauth';
@@ -123,6 +124,11 @@ export class MCPServerInspector {
   }
 
   private async detectOAuth(): Promise<void> {
+    if (isDirectOpenIDBearerRecoveryEnabled(this.config)) {
+      this.config.requiresOAuth = false;
+      this.config.oauthMetadata = null;
+      return;
+    }
     if (this.config.requiresOAuth != null) return;
     if (hasRuntimeUrlPlaceholders(this.config)) return;
     if (this.config.url == null || this.config.startup === false) {
@@ -177,8 +183,10 @@ export class MCPServerInspector {
   public static async getToolCatalog(
     serverName: string,
     connection: MCPConnection,
+    deadlineMs?: number,
+    signal?: AbortSignal,
   ): Promise<{ tools: t.LCAvailableTools; publicationRevision?: string }> {
-    const snapshot = await connection.fetchOrderedToolsSnapshot();
+    const snapshot = await connection.fetchOrderedToolsSnapshot(deadlineMs, signal);
     if (!snapshot.complete) {
       throw new Error(`Incomplete tools/list snapshot for MCP server ${serverName}`);
     }

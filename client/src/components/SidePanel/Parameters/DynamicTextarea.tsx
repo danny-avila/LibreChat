@@ -26,7 +26,9 @@ function DynamicTextarea({
   const localize = useLocalize();
   const { preset } = useChatContext();
 
-  const [setInputValue, inputValue, setLocalValue] = useDebouncedInput<string | null>({
+  const [setInputValue, inputValue, setLocalValue, flushInputValue] = useDebouncedInput<
+    string | null
+  >({
     optionKey: settingKey,
     initialValue:
       optionType !== OptionTypes.Custom
@@ -60,7 +62,7 @@ function DynamicTextarea({
             >
               {labelCode ? (localize(label as TranslationKeys) ?? label) : label || settingKey}{' '}
               {showDefault && (
-                <small className="opacity-40">
+                <small className="opacity-40 high-contrast:opacity-100">
                   (
                   {typeof defaultValue === 'undefined' || !(defaultValue as string).length
                     ? localize('com_endpoint_default_blank')
@@ -75,6 +77,9 @@ function DynamicTextarea({
             disabled={readonly}
             value={inputValue ?? ''}
             onChange={setInputValue}
+            /** Clicking Save blurs this first, so the pending edit is committed
+             *  before submitPreset reads the preset. */
+            onBlur={flushInputValue}
             aria-label={localize(label as TranslationKeys)}
             placeholder={
               placeholderCode

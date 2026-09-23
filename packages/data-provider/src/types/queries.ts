@@ -1,4 +1,5 @@
 import type { InfiniteData } from '@tanstack/react-query';
+import type { RerankerTypes, SearchProviders, ScraperProviders } from '../config';
 import type * as p from '../accessPermissions';
 import type * as a from '../types/agents';
 import type * as s from '../schemas';
@@ -32,6 +33,7 @@ export type MinimalConversation = Pick<
   | 'createdAt'
   | 'updatedAt'
   | 'archivedAt'
+  | 'isArchived'
   | 'user'
   | 'chatProjectId'
   | 'pinned'
@@ -139,6 +141,10 @@ export type MCPServer = {
   name: string;
   icon: string;
   authenticated: boolean;
+  /** Passive discovery found that stored OAuth authorization must be renewed. */
+  authorizationState?: 'reauth_required';
+  /** Shared credential/catalog generation observed by passive discovery. */
+  authorizationGeneration?: string;
   authConfig: s.TPluginAuthConfig[];
   tools: MCPTool[];
 };
@@ -152,6 +158,9 @@ export type VerifyToolAuthResponse = {
   authenticated: boolean;
   message?: string | s.AuthType;
   authTypes?: [string, s.AuthType][];
+  searchProvider?: SearchProviders;
+  scraperProvider?: ScraperProviders;
+  rerankerType?: RerankerTypes;
 };
 
 export type GetToolCallParams = { conversationId: string };
@@ -238,6 +247,8 @@ export interface MCPServerStatus {
     | 'authorized'
     | 'needs_authorization'
     | 'error';
+  /** Shared credential/catalog generation observed by the status endpoint. */
+  authorizationGeneration?: string;
 }
 
 export interface MCPConnectionStatusResponse {
@@ -255,6 +266,7 @@ export interface MCPServerConnectionStatusResponse {
   configurationState?: MCPServerStatus['configurationState'];
   connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
   authorizationState?: MCPServerStatus['authorizationState'];
+  authorizationGeneration?: string;
 }
 
 export interface MCPAuthValuesResponse {

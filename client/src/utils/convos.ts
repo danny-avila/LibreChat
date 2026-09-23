@@ -11,6 +11,7 @@ import {
   isWithinInterval,
 } from 'date-fns';
 import type { TConversation, GroupedConversations } from 'librechat-data-provider';
+import type { InvalidateQueryFilters } from '@tanstack/react-query';
 import type { InfiniteData } from '@tanstack/react-query';
 import { isTemporaryConversation } from './conversation';
 
@@ -77,72 +78,120 @@ const dateGroupsSet = new Set([
   dateKeys.previous30Days,
 ]);
 
-export const groupConversationsByDate = (
+type ConversationDateField = 'updatedAt' | 'createdAt' | 'archivedAt';
+
+export type ConversationGroupOptions = {
+  field?: ConversationDateField | 'title';
+  direction?: 'asc' | 'desc';
+  includePinned?: boolean;
+};
+
+const getConversationDate = (
+  conversation: TConversation,
+  field: ConversationDateField,
+  fallbackDate: Date,
+) => {
+  /* The archive's legacy group — archived before `archivedAt` was recorded — is ordered
+     and dated by `createdAt` on the server, so reading `updatedAt` first here would put
+     those rows in a bucket the cursor never sorted them into. */
+  const fallbackField = field === 'archivedAt' ? conversation.createdAt : conversation.updatedAt;
+  const dateValue = conversation[field] ?? fallbackField ?? conversation.createdAt;
+  return dateValue ? parseISO(dateValue) : fallbackDate;
+};
+
+/** A title's own initial, as a code point: `charAt(0)` on a supplementary-plane letter
+ *  returns half a surrogate pair, which renders as a replacement character and collapses
+ *  unrelated initials into one heading. Non-letters share a single `#` group. The case is
+ *  left as written so each heading matches the order the server paged the titles in. */
+const getTitleInitial = (title: string): string => {
+  const initial = [...title][0];
+  if (initial == null || !/\p{L}/u.test(initial)) {
+    return '#';
+  }
+  return initial;
+};
+
+export const groupConversations = (
   conversations: Array<TConversation | null>,
-  dateField: 'updatedAt' | 'createdAt' = 'updatedAt',
+  { field = 'updatedAt', direction = 'desc', includePinned = false }: ConversationGroupOptions = {},
 ): GroupedConversations => {
   if (!Array.isArray(conversations)) {
     return [];
   }
-  const seenConversationIds = new Set();
-  const groups = new Map();
+
+  const seenConversationIds = new Set<string | null>();
+  const groups = new Map<string, TConversation[]>();
+  /* Title paging is a keyset over the server's own string order, so re-sorting what arrived
+     can only disagree with it: a title that belongs before this page sits behind its cursor
+     and arrives later. These groups therefore keep the fetched order, which means a heading
+     can repeat — `!draft`, `Apple`, `_scratch` puts two non-letter rows either side of `A` —
+     and merging those two into one `#` group would move a row across the cursor boundary. */
+  const runs: GroupedConversations = [];
   const now = new Date(Date.now());
 
   conversations.forEach((conversation) => {
-    if (
-      !conversation ||
-      seenConversationIds.has(conversation.conversationId) ||
-      conversation.pinned
-    ) {
+    if (!conversation || (!includePinned && conversation.pinned)) {
+      return;
+    }
+    if (seenConversationIds.has(conversation.conversationId)) {
       return;
     }
     seenConversationIds.add(conversation.conversationId);
 
-    let date: Date;
-    const dateValue = conversation[dateField] ?? conversation.updatedAt ?? conversation.createdAt;
-    if (dateValue) {
-      date = parseISO(dateValue);
+    if (field === 'title') {
+      const title = typeof conversation.title === 'string' ? conversation.title : '';
+      const groupName = getTitleInitial(title);
+      const currentRun = runs[runs.length - 1];
+      if (currentRun && currentRun[0] === groupName) {
+        currentRun[1].push(conversation);
+      } else {
+        runs.push([groupName, [conversation]]);
+      }
+      return;
+    }
+
+    const groupName = getGroupName(getConversationDate(conversation, field, now));
+    const group = groups.get(groupName);
+    if (group) {
+      group.push(conversation);
     } else {
-      date = now;
+      groups.set(groupName, [conversation]);
     }
-    const groupName = getGroupName(date);
-    if (!groups.has(groupName)) {
-      groups.set(groupName, []);
-    }
-    groups.get(groupName).push(conversation);
   });
 
-  const sortedGroups = new Map();
-  dateGroupsSet.forEach((group) => {
-    if (groups.has(group)) {
-      sortedGroups.set(group, groups.get(group));
-    }
-  });
+  if (field === 'title') {
+    return runs;
+  }
 
   const yearMonthGroups = Array.from(groups.keys())
     .filter((group) => !dateGroupsSet.has(group))
     .sort((a, b) => {
-      const [yearA, yearB] = [parseInt(a.trim()), parseInt(b.trim())];
-      if (yearA !== yearB) {
-        return yearB - yearA;
-      }
-      const [monthA, monthB] = [dateKeysReverse[a], dateKeysReverse[b]];
-      const bOrder = monthOrderMap.get(monthB) ?? -1,
-        aOrder = monthOrderMap.get(monthA) ?? -1;
-      return bOrder - aOrder;
+      const getOrder = (group: string) => {
+        const month = dateKeysReverse[group];
+        if (month) {
+          return now.getFullYear() * 12 + (monthOrderMap.get(month) ?? 0);
+        }
+        return parseInt(group.trim(), 10) * 12;
+      };
+      const orderA = getOrder(a);
+      const orderB = getOrder(b);
+      return direction === 'asc' ? orderA - orderB : orderB - orderA;
     });
-  yearMonthGroups.forEach((group) => {
-    sortedGroups.set(group, groups.get(group));
+  const recentGroups = Array.from(dateGroupsSet).filter((group) => groups.has(group));
+  const orderedGroupNames =
+    direction === 'asc'
+      ? [...yearMonthGroups, ...recentGroups.reverse()]
+      : [...recentGroups, ...yearMonthGroups];
+
+  orderedGroupNames.forEach((groupName) => {
+    groups.get(groupName)!.sort((a, b) => {
+      const comparison =
+        getConversationDate(b, field, now).getTime() - getConversationDate(a, field, now).getTime();
+      return direction === 'asc' ? -comparison : comparison;
+    });
   });
 
-  sortedGroups.forEach((conversations) => {
-    conversations.sort(
-      (a: TConversation, b: TConversation) =>
-        new Date(b[dateField] ?? b.updatedAt ?? 0).getTime() -
-        new Date(a[dateField] ?? a.updatedAt ?? 0).getTime(),
-    );
-  });
-  return Array.from(sortedGroups, ([key, value]) => [key, value]);
+  return orderedGroupNames.map((groupName) => [groupName, groups.get(groupName)!]);
 };
 
 export type ConversationCursorData = {
@@ -175,36 +224,132 @@ function conversationMatchesProjectQuery(
 function getConversationListQueryParams(queryKey: readonly unknown[]): {
   tags?: string[];
   search?: string;
+  sortBy?: string;
+  sortDirection?: string;
+  isArchived?: boolean;
 } {
   const params = queryKey[1];
   if (!params || typeof params !== 'object') {
     return {};
   }
-  return params as { tags?: string[]; search?: string };
+  return params as {
+    tags?: string[];
+    search?: string;
+    sortBy?: string;
+    sortDirection?: string;
+    isArchived?: boolean;
+  };
 }
 
-/** Inserts must not land in a bookmark or search cache the row would not
- * appear in on the server. Search is not matchable client-side, so those
- * variants are skipped. */
-function conversationMatchesListQuery(
+/**
+ * Newest-first is the only order these writers can reproduce. A title or created-at
+ * variant, or an ascending one, orders rows by a key the client cannot place a row
+ * against without the server's cursor, so moving a row to the front of those pages —
+ * or seeding one there — would invent an order the next page contradicts. Those
+ * variants take the field update in place and are refetched instead.
+ */
+function queryListsNewestFirst(queryKey: readonly unknown[]): boolean {
+  const { sortBy, sortDirection } = getConversationListQueryParams(queryKey);
+  return (
+    (sortBy == null || sortBy === 'updatedAt') &&
+    (sortDirection == null || sortDirection === 'desc')
+  );
+}
+
+/**
+ * Every cached conversation list, active and archived alike. A write that visits only
+ * one prefix leaves the other rendering the row it just changed: the sidebar lists the
+ * archive from the same components, so both are live caches now.
+ */
+export const CONVERSATION_LIST_KEYS = [
+  QueryKeys.allConversations,
+  QueryKeys.archivedConversations,
+] as const;
+
+function findConversationListQueries(queryClient: QueryClient) {
+  return CONVERSATION_LIST_KEYS.flatMap((listKey) =>
+    queryClient.getQueryCache().findAll([listKey], { exact: false }),
+  );
+}
+
+/**
+ * Reconciles both list prefixes against the server. For callers that cannot say what
+ * changed — a recovered stream, a schedule that moved, a project that took its chats'
+ * fields with it — and so cannot write the row themselves.
+ */
+export function invalidateConversationLists(
+  queryClient: QueryClient,
+  filters?: Omit<InvalidateQueryFilters, 'queryKey'>,
+): Promise<void> {
+  return Promise.all(
+    CONVERSATION_LIST_KEYS.map((listKey) =>
+      queryClient.invalidateQueries({ queryKey: [listKey], ...filters }),
+    ),
+  ).then(() => undefined);
+}
+
+/** Whether a list variant shows archived chats, which its key states and its root implies. */
+function queryListsArchived(queryKey: readonly unknown[]): boolean {
+  if (queryKey[0] === QueryKeys.archivedConversations) {
+    return true;
+  }
+  return getConversationListQueryParams(queryKey).isArchived === true;
+}
+
+/**
+ * Whether a row still belongs in a variant at all, by the facets the client can decide:
+ * its project and whether it is archived. Bookmark and search membership are deliberately
+ * excluded — a search cache matches nothing client-side, so judging a row that is already
+ * in one by that rule would evict every row it holds.
+ */
+function conversationBelongsToListQuery(
   queryKey: readonly unknown[],
-  conversation: Pick<TConversation, 'chatProjectId' | 'tags'>,
+  conversation: Pick<TConversation, 'chatProjectId' | 'isArchived'>,
 ): boolean {
-  if (!conversationMatchesProjectQuery(queryKey, conversation)) {
-    return false;
+  return (
+    conversationMatchesProjectQuery(queryKey, conversation) &&
+    queryListsArchived(queryKey) === (conversation.isArchived === true)
+  );
+}
+
+/**
+ * Whether only the server can say what a variant holds after a write. Two things put it
+ * out of the client's reach: an order keyed on something other than last activity, which
+ * these writers cannot place a row against, and a search, which the server evaluates —
+ * a title edit or a new message can make a row start or stop matching one.
+ */
+function queryNeedsServerReconciliation(queryKey: readonly unknown[]): boolean {
+  if (!queryListsNewestFirst(queryKey)) {
+    return true;
   }
-  const { tags, search } = getConversationListQueryParams(queryKey);
-  if (typeof search === 'string' && search.trim() !== '') {
-    return false;
+  const { search } = getConversationListQueryParams(queryKey);
+  return typeof search === 'string' && search.trim() !== '';
+}
+
+/**
+ * What a writer may do with a row it wants to add to a variant.
+ *
+ * `skip` is only for a variant the row provably does not belong to, by the facets the
+ * client decides: project, archive state, bookmarks. Anything left to the server is
+ * refetched instead — skipping it silently would leave a mounted list missing a row.
+ */
+type ListInsertVerdict = 'insert' | 'skip' | 'refetch';
+
+function conversationInsertVerdict(
+  queryKey: readonly unknown[],
+  conversation: Pick<TConversation, 'chatProjectId' | 'tags' | 'isArchived'>,
+): ListInsertVerdict {
+  if (!conversationBelongsToListQuery(queryKey, conversation)) {
+    return 'skip';
   }
+  const { tags } = getConversationListQueryParams(queryKey);
   if (Array.isArray(tags) && tags.length > 0) {
     const conversationTags = conversation.tags;
-    if (!Array.isArray(conversationTags) || conversationTags.length === 0) {
-      return false;
+    if (!Array.isArray(conversationTags) || !tags.some((tag) => conversationTags.includes(tag))) {
+      return 'skip';
     }
-    return tags.some((tag) => conversationTags.includes(tag));
   }
-  return true;
+  return queryNeedsServerReconciliation(queryKey) ? 'refetch' : 'insert';
 }
 
 /** Dedicated pinned data wins for ids it already has. Pins that only live on
@@ -312,13 +457,13 @@ export function addConversationToAllConversationsQueries(
   queryClient: QueryClient,
   newConversation: TConversation,
 ) {
-  // Find all keys that start with QueryKeys.allConversations
-  const queries = queryClient
-    .getQueryCache()
-    .findAll([QueryKeys.allConversations], { exact: false });
-
-  for (const query of queries) {
-    if (!conversationMatchesProjectQuery(query.queryKey, newConversation)) {
+  for (const query of findConversationListQueries(queryClient)) {
+    const verdict = conversationInsertVerdict(query.queryKey, newConversation);
+    if (verdict === 'skip') {
+      continue;
+    }
+    if (verdict === 'refetch') {
+      queryClient.invalidateQueries({ queryKey: query.queryKey, refetchType: 'active' });
       continue;
     }
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (old) => {
@@ -430,12 +575,15 @@ export function storeEndpointSettings(conversation: TConversation | null) {
 
 // Add
 export function addConvoToAllQueries(queryClient: QueryClient, newConvo: TConversation) {
-  const queries = queryClient
-    .getQueryCache()
-    .findAll([QueryKeys.allConversations], { exact: false });
-
-  for (const query of queries) {
-    if (!conversationMatchesListQuery(query.queryKey, newConvo)) {
+  for (const query of findConversationListQueries(queryClient)) {
+    /* The unpin path reinserts a row that the update helper may have just marked stale;
+       seeding it at page one would clear that invalidation and fabricate a position. */
+    const verdict = conversationInsertVerdict(query.queryKey, newConvo);
+    if (verdict === 'skip') {
+      continue;
+    }
+    if (verdict === 'refetch') {
+      queryClient.invalidateQueries({ queryKey: query.queryKey, refetchType: 'active' });
       continue;
     }
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (oldData) => {
@@ -474,6 +622,7 @@ export function upsertConvoInAllQueries(
   if (!nextConvo.conversationId) {
     return;
   }
+  const conversationId = nextConvo.conversationId;
 
   /* The history query excludes temporary conversations server-side, so seeding
      one into the list caches would surface it in the sidebar until the next
@@ -483,26 +632,33 @@ export function upsertConvoInAllQueries(
     return;
   }
 
+  const cachedPin = findPinnedConversation(queryClient, conversationId);
+  const listConvo = cachedPin ? preserveListFlags(nextConvo, cachedPin) : nextConvo;
+
   /* Root-level SSE updates and resumable settlement go through upsert, not
      update. Merge into any already-cached pin so that path cannot leave the
-     section at the old title or position. Do not insert: a new chat is not
-     pinned until the pin mutation refetches. */
+     section at the old title or position. Carry its list flags into history
+     too when the conversation is older than the loaded pages. Do not insert
+     into the pinned cache: a new chat is not pinned until the pin mutation
+     refetches. */
   updatePinnedConvosQuery(
     queryClient,
-    nextConvo.conversationId,
+    conversationId,
     (found) => ({
       ...found,
-      ...nextConvo,
-      updatedAt: nextConvo.updatedAt ?? (moveToTop ? new Date().toISOString() : found.updatedAt),
+      ...listConvo,
+      updatedAt: listConvo.updatedAt ?? (moveToTop ? new Date().toISOString() : found.updatedAt),
     }),
     moveToTop,
   );
 
-  const queries = queryClient
-    .getQueryCache()
-    .findAll([QueryKeys.allConversations], { exact: false });
+  const queries = findConversationListQueries(queryClient);
 
   for (const query of queries) {
+    /* A variant the writers cannot order takes the merge in place and is refetched, so the
+       row's new text shows at once while the server decides where it belongs. */
+    const newestFirst = queryListsNewestFirst(query.queryKey);
+    const verdict = conversationInsertVerdict(query.queryKey, listConvo);
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (oldData) => {
       if (!oldData) {
         return oldData;
@@ -512,7 +668,7 @@ export function upsertConvoInAllQueries(
       let convoIdx = -1;
       for (let pi = 0; pi < oldData.pages.length; pi++) {
         const ci = oldData.pages[pi].conversations.findIndex(
-          (c) => c.conversationId === nextConvo.conversationId,
+          (c) => c.conversationId === conversationId,
         );
         if (ci !== -1) {
           pageIdx = pi;
@@ -523,7 +679,7 @@ export function upsertConvoInAllQueries(
 
       const now = new Date().toISOString();
       if (pageIdx === -1) {
-        if (!conversationMatchesListQuery(query.queryKey, nextConvo)) {
+        if (verdict !== 'insert') {
           return oldData;
         }
         const firstPage = oldData.pages[0] ?? { conversations: [], nextCursor: null };
@@ -533,7 +689,7 @@ export function upsertConvoInAllQueries(
             {
               ...firstPage,
               conversations: [
-                { ...nextConvo, updatedAt: nextConvo.updatedAt ?? now },
+                { ...listConvo, updatedAt: listConvo.updatedAt ?? now },
                 ...firstPage.conversations,
               ],
             },
@@ -545,15 +701,15 @@ export function upsertConvoInAllQueries(
       const found = oldData.pages[pageIdx].conversations[convoIdx];
       const updated = {
         ...found,
-        ...nextConvo,
-        updatedAt: nextConvo.updatedAt ?? (moveToTop ? now : found.updatedAt),
+        ...listConvo,
+        updatedAt: listConvo.updatedAt ?? (moveToTop ? now : found.updatedAt),
       };
 
-      if (!conversationMatchesProjectQuery(query.queryKey, updated)) {
+      if (!conversationBelongsToListQuery(query.queryKey, updated)) {
         return removeConvoFromInfinitePages(oldData, updated.conversationId ?? '');
       }
 
-      if (!moveToTop || (pageIdx === 0 && convoIdx === 0)) {
+      if (!moveToTop || !newestFirst || (pageIdx === 0 && convoIdx === 0)) {
         return {
           ...oldData,
           pages: oldData.pages.map((page, pi) =>
@@ -586,6 +742,10 @@ export function upsertConvoInAllQueries(
 
       return { ...oldData, pages };
     });
+    if (queryNeedsServerReconciliation(query.queryKey)) {
+      /* Inactive variants are only marked stale: they refresh when something mounts them. */
+      queryClient.invalidateQueries({ queryKey: query.queryKey, refetchType: 'active' });
+    }
   }
 }
 
@@ -616,6 +776,43 @@ export function findPinnedConversation(
 }
 
 /**
+ * Flags the sidebar owns rather than the chat: `isShared` is derived per list request from
+ * the shared-links collection, and `pinned` is set by the pin mutation alone. Neither is
+ * carried by the single-conversation payloads callers swap in wholesale, so an omitted flag
+ * means "unchanged" rather than "cleared".
+ */
+const listFlags = ['isShared', 'pinned'] as const;
+
+function preserveListFlags(next: TConversation, found: TConversation): TConversation {
+  const carried = listFlags.filter((flag) => next[flag] === undefined && found[flag] !== undefined);
+  if (carried.length === 0) {
+    return next;
+  }
+  const merged = { ...next };
+  for (const flag of carried) {
+    merged[flag] = found[flag];
+  }
+  return merged;
+}
+
+/**
+ * A chat's conversation state snapshots the sidebar flags when the chat is opened and never
+ * hears about a later change, so pinning an open chat leaves a stale `pinned: false` on it.
+ * Strip them before that state reaches the list caches, or the next message would write the
+ * stale value back over the sidebar and drop the chat out of Pinned.
+ */
+export function withoutListFlags(conversation: TConversation): TConversation {
+  if (listFlags.every((flag) => conversation[flag] === undefined)) {
+    return conversation;
+  }
+  const stripped = { ...conversation };
+  for (const flag of listFlags) {
+    delete stripped[flag];
+  }
+  return stripped;
+}
+
+/**
  * The pinned sidebar section is fed by its own request rather than by the paginated
  * chats list, so every edit that reaches the chats cache has to reach this one too or
  * the section keeps showing a stale title, or a chat that is no longer pinned.
@@ -643,16 +840,13 @@ function updatePinnedConvosQuery(
       }
       const found = oldData.conversations[index];
       const updated = updater(found);
-      if (!updated || updated.pinned !== true) {
+      const merged = updated && preserveListFlags(updated, found);
+      if (!merged || merged.pinned !== true) {
         return {
           ...oldData,
           conversations: oldData.conversations.filter((_, i) => i !== index),
         };
       }
-      const merged =
-        updated.isShared === undefined && found.isShared !== undefined
-          ? { ...updated, isShared: found.isShared }
-          : updated;
 
       /* The server returns pins newest-first, so a pin that just received a message has
          to lead the section the same way it leads the chats list. The SSE payload can
@@ -684,11 +878,12 @@ export function updateConvoInAllQueries(
 ) {
   updatePinnedConvosQuery(queryClient, conversationId, updater, moveToTop);
 
-  const queries = queryClient
-    .getQueryCache()
-    .findAll([QueryKeys.allConversations], { exact: false });
+  const queries = findConversationListQueries(queryClient);
 
   for (const query of queries) {
+    /* A variant ordered by a key the client cannot place a row against keeps its positions
+       and is refetched instead: a rename also moves a row under a title sort. */
+    const newestFirst = queryListsNewestFirst(query.queryKey);
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (oldData) => {
       if (!oldData) {
         return oldData;
@@ -713,23 +908,18 @@ export function updateConvoInAllQueries(
       }
 
       const found = oldData.pages[pageIdx].conversations[convoIdx];
-      /** `isShared` is derived per list request from the shared-links collection and is
-       * absent from single-conversation payloads, so callers that swap in a server
-       * response wholesale (rename, pin, SSE updates) would otherwise drop the sidebar
-       * badge until an unrelated list refetch. Carry it forward when the updater omits it. */
-      const next = updater(found);
-      const merged =
-        next.isShared === undefined && found.isShared !== undefined
-          ? { ...next, isShared: found.isShared }
-          : next;
+      /** Callers that swap in a server response or the chat's own state wholesale (rename,
+       * pin, SSE updates) omit the sidebar-only flags, which would otherwise drop the
+       * shared badge and push a pinned chat back into the date groups. */
+      const merged = preserveListFlags(updater(found), found);
       const updated = moveToTop ? { ...merged, updatedAt: new Date().toISOString() } : merged;
 
-      if (!conversationMatchesProjectQuery(query.queryKey, updated)) {
+      if (!conversationBelongsToListQuery(query.queryKey, updated)) {
         return removeConvoFromInfinitePages(oldData, conversationId);
       }
 
       // If not moving to top, or already at top of page 0, update in place
-      if (!moveToTop || (pageIdx === 0 && convoIdx === 0)) {
+      if (!moveToTop || !newestFirst || (pageIdx === 0 && convoIdx === 0)) {
         return {
           ...oldData,
           pages: oldData.pages.map((page, pi) =>
@@ -766,6 +956,10 @@ export function updateConvoInAllQueries(
 
       return { ...oldData, pages: newPages };
     });
+    if (queryNeedsServerReconciliation(query.queryKey)) {
+      /* Inactive variants are only marked stale: they refresh when something mounts them. */
+      queryClient.invalidateQueries({ queryKey: query.queryKey, refetchType: 'active' });
+    }
   }
 }
 
@@ -773,9 +967,7 @@ export function updateConvoInAllQueries(
 export function removeConvoFromAllQueries(queryClient: QueryClient, conversationId: string) {
   updatePinnedConvosQuery(queryClient, conversationId, () => null);
 
-  const queries = queryClient
-    .getQueryCache()
-    .findAll([QueryKeys.allConversations], { exact: false });
+  const queries = findConversationListQueries(queryClient);
 
   for (const query of queries) {
     queryClient.setQueryData<InfiniteData<ConversationCursorData>>(query.queryKey, (oldData) => {

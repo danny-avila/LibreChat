@@ -1,4 +1,4 @@
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import {
   megabyte,
   Constants,
@@ -17,6 +17,7 @@ type MockUploadMutationOptions = {
       filename: string;
       source: string;
       embedded: boolean;
+      llmDeliveryPath?: string;
       height?: number;
       width?: number;
     },
@@ -62,11 +63,18 @@ const makeSizedFile = (name: string, type: string, size: number): File => {
   return file;
 };
 
-let mockConversation: Record<string, string | null | undefined> = {};
+let mockConversation: Record<string, string | boolean | null | undefined> = {};
 let mockFileConfig: ReturnType<typeof mergeFileConfig> | null = null;
 let mockIsConfigPending = false;
 let mockIsTemporary = false;
 let mockUploadOptions: MockUploadMutationOptions = {};
+
+let mockAgentsMap: Record<string, unknown> = {};
+let mockEndpointsConfig: Record<string, unknown> | undefined = undefined;
+let mockAgentQueryData: Record<string, unknown> | undefined = undefined;
+jest.mock('~/Providers/AgentsMapContext', () => ({
+  useAgentsMapContext: () => mockAgentsMap,
+}));
 
 jest.mock('~/Providers/ChatContext', () => ({
   useChatContext: jest.fn(() => ({
@@ -104,6 +112,8 @@ jest.mock('@tanstack/react-query', () => ({
 
 jest.mock('~/data-provider', () => ({
   useGetFileConfig: jest.fn(() => ({ data: mockFileConfig })),
+  useGetEndpointsQuery: jest.fn(() => ({ data: mockEndpointsConfig })),
+  useGetAgentByIdQuery: jest.fn(() => ({ data: mockAgentQueryData })),
   useUploadFileMutation: jest.fn((opts: MockUploadMutationOptions) => {
     mockUploadOptions = opts;
     return { mutate: mockMutate };
@@ -154,11 +164,14 @@ jest.mock('../useUpdateFiles', () => ({
 }));
 
 jest.mock('~/utils', () => {
-  const { validateFileSizes, validateFileDuplicates } = jest.requireActual('~/utils/files');
+  const { partitionUploads, validateFileSizes, validateFileLimit, validateFileDuplicates } =
+    jest.requireActual('~/utils/files');
   return {
     logger: { log: jest.fn() },
     validateFiles: jest.fn(() => true),
+    partitionUploads: jest.fn(partitionUploads),
     validateFileSizes: jest.fn(validateFileSizes),
+    validateFileLimit: jest.fn(validateFileLimit),
     validateFileDuplicates: jest.fn(validateFileDuplicates),
     cachePreview: jest.fn(),
     getCachedPreview: jest.fn(() => undefined),
@@ -167,14 +180,18 @@ jest.mock('~/utils', () => {
 });
 
 const mockValidateFiles = jest.requireMock('~/utils').validateFiles;
+const mockPartitionUploads = jest.requireMock('~/utils').partitionUploads;
 const mockValidateFileSizes = jest.requireMock('~/utils').validateFileSizes;
+const mockValidateFileLimit = jest.requireMock('~/utils').validateFileLimit;
 const mockValidateFileDuplicates = jest.requireMock('~/utils').validateFileDuplicates;
 
 describe('useFileHandling', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockValidateFiles.mockImplementation(() => true);
+    mockPartitionUploads.mockImplementation(jest.requireActual('~/utils/files').partitionUploads);
     mockValidateFileSizes.mockImplementation(jest.requireActual('~/utils/files').validateFileSizes);
+    mockValidateFileLimit.mockImplementation(jest.requireActual('~/utils/files').validateFileLimit);
     mockValidateFileDuplicates.mockImplementation(
       jest.requireActual('~/utils/files').validateFileDuplicates,
     );
@@ -182,6 +199,9 @@ describe('useFileHandling', () => {
     mockResizeImageIfNeeded.mockImplementation(async (file: File) => ({ file, resized: false }));
     mockWaitForConfig.mockResolvedValue(undefined);
     mockConversation = {};
+    mockAgentsMap = {};
+    mockEndpointsConfig = undefined;
+    mockAgentQueryData = undefined;
     mockFileConfig = null;
     mockIsConfigPending = false;
     mockIsTemporary = false;
@@ -190,6 +210,40 @@ describe('useFileHandling', () => {
   });
 
   const loadHook = async () => (await import('../useFileHandling')).default;
+
+  it('removes rejected provider audio and localizes the upload error before retry', async () => {
+    const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    const useFileHandling = await loadHook();
+    const { result } = renderHook(() => useFileHandling());
+    const recovery = jest.fn();
+    await act(async () => {
+      await result.current.handleFiles(
+        [new File(['audio'], 'clip.wma', { type: 'audio/wma' })],
+        undefined,
+        { onError: recovery },
+      );
+    });
+    const body = mockMutate.mock.calls[0][0] as FormData;
+    const fileId = body.get('file_id');
+    act(() =>
+      mockUploadOptions.onError?.(
+        {
+          response: { status: 415, data: { message: 'com_error_files_provider_audio_format' } },
+        },
+        body,
+      ),
+    );
+    expect(mockDeleteFileById).toHaveBeenCalledWith(fileId);
+    await waitFor(() =>
+      expect(mockLocalize).toHaveBeenCalledWith('com_error_files_provider_audio_format'),
+    );
+    expect(recovery).toHaveBeenCalledWith(fileId);
+    await act(async () => {
+      await result.current.handleFiles([new File(['audio'], 'clip.wav', { type: 'audio/wav' })]);
+    });
+    expect(mockMutate).toHaveBeenCalledTimes(2);
+    consoleLog.mockRestore();
+  });
 
   describe('endpointOverride', () => {
     it('clears the loading state when file validation throws', async () => {
@@ -374,6 +428,269 @@ describe('useFileHandling', () => {
       }
     });
 
+    it('uploads the files under the limit when one of them is oversized', async () => {
+      jest.useFakeTimers();
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileSizeLimit: 20, totalSizeLimit: 500 } },
+        });
+        const batch = [
+          makeSizedFile('small.txt', 'text/plain', 1 * megabyte),
+          makeSizedFile('huge.txt', 'text/plain', 21 * megabyte),
+          makeSizedFile('medium.txt', 'text/plain', 5 * megabyte),
+        ];
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        let accepted: boolean | undefined;
+        await act(async () => {
+          accepted = await result.current.handleFiles(batch);
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(accepted).toBe(true);
+        expect(mockMutate).toHaveBeenCalledTimes(2);
+        expect(mockLocalize).toHaveBeenCalledWith('com_error_files_skipped_size', {
+          0: '20',
+          1: 'huge.txt',
+        });
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'com_error_files_skipped_size',
+          status: 'error',
+          duration: 5000,
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('names every oversized file it skipped', async () => {
+      jest.useFakeTimers();
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileSizeLimit: 20, totalSizeLimit: 500 } },
+        });
+        const batch = [
+          makeSizedFile('huge.txt', 'text/plain', 21 * megabyte),
+          makeSizedFile('small.txt', 'text/plain', 1 * megabyte),
+          makeSizedFile('massive.txt', 'text/plain', 40 * megabyte),
+        ];
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        await act(async () => {
+          await result.current.handleFiles(batch);
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(mockMutate).toHaveBeenCalledTimes(1);
+        expect(mockLocalize).toHaveBeenCalledWith('com_error_files_skipped_size', {
+          0: '20',
+          1: 'huge.txt, massive.txt',
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('uploads the rest of a batch when one file duplicates an attachment', async () => {
+      jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileSizeLimit: 20, totalSizeLimit: 500 } },
+        });
+        const alreadyAttached = makeSizedFile('report.txt', 'text/plain', 1 * megabyte);
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        await act(async () => {
+          await result.current.handleFiles([alreadyAttached]);
+          await Promise.resolve();
+        });
+        expect(mockMutate).toHaveBeenCalledTimes(1);
+
+        await act(async () => {
+          await result.current.handleFiles([
+            makeSizedFile('report.txt', 'text/plain', 1 * megabyte),
+            makeSizedFile('notes.txt', 'text/plain', 2 * megabyte),
+          ]);
+          await Promise.resolve();
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(mockMutate).toHaveBeenCalledTimes(2);
+        expect(mockLocalize).toHaveBeenCalledWith('com_error_files_skipped_dupe', {
+          0: 'report.txt',
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('does not announce skipped files when the batch is rejected anyway', async () => {
+      jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileSizeLimit: 20, totalSizeLimit: 7 } },
+        });
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        await act(async () => {
+          await result.current.handleFiles([
+            makeSizedFile('attached.txt', 'text/plain', 1 * megabyte),
+          ]);
+          await Promise.resolve();
+        });
+        expect(mockMutate).toHaveBeenCalledTimes(1);
+
+        mockLocalize.mockClear();
+        /** The duplicate drops out, but what is left still busts the total, so nothing uploads. */
+        await act(async () => {
+          await result.current.handleFiles([
+            makeSizedFile('attached.txt', 'text/plain', 1 * megabyte),
+            makeSizedFile('one.txt', 'text/plain', 4 * megabyte),
+            makeSizedFile('two.txt', 'text/plain', 4 * megabyte),
+          ]);
+          await Promise.resolve();
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(mockMutate).toHaveBeenCalledTimes(1);
+        expect(mockLocalize).not.toHaveBeenCalledWith(
+          'com_error_files_skipped_dupe',
+          expect.anything(),
+        );
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'Total file size limit exceeded: 7 MB',
+          status: 'error',
+          duration: 5000,
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('does not let an oversized file spend the last file limit slot', async () => {
+      jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileLimit: 2, fileSizeLimit: 20, totalSizeLimit: 500 } },
+        });
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        await act(async () => {
+          await result.current.handleFiles([
+            makeSizedFile('attached.txt', 'text/plain', 1 * megabyte),
+          ]);
+          await Promise.resolve();
+        });
+        expect(mockMutate).toHaveBeenCalledTimes(1);
+
+        /** One slot is left, so counting the oversized file would reject the valid one with it. */
+        let accepted: boolean | undefined;
+        await act(async () => {
+          accepted = await result.current.handleFiles([
+            makeSizedFile('huge.txt', 'text/plain', 21 * megabyte),
+            makeSizedFile('valid.txt', 'text/plain', 2 * megabyte),
+          ]);
+          await Promise.resolve();
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(accepted).toBe(true);
+        expect(mockMutate).toHaveBeenCalledTimes(2);
+        expect(mockMutate.mock.calls[1][0].get('file').name).toBe('valid.txt');
+        /** The count sees the survivors, not the selection it was picked from. */
+        const [countedAgainst] = mockValidateFileLimit.mock.calls.at(-1) ?? [];
+        expect(countedAgainst?.fileList.map((file: File) => file.name)).toEqual(['valid.txt']);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('counts only the files it will upload against the file limit', async () => {
+      jest.useFakeTimers({ doNotFake: ['queueMicrotask'] });
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileLimit: 2, fileSizeLimit: 20, totalSizeLimit: 500 } },
+        });
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        await act(async () => {
+          await result.current.handleFiles([
+            makeSizedFile('report.txt', 'text/plain', 1 * megabyte),
+          ]);
+          await Promise.resolve();
+        });
+
+        mockValidateFiles.mockClear();
+        await act(async () => {
+          await result.current.handleFiles([
+            makeSizedFile('report.txt', 'text/plain', 1 * megabyte),
+            makeSizedFile('notes.txt', 'text/plain', 2 * megabyte),
+          ]);
+          await Promise.resolve();
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        /** The duplicate is dropped before the count check, so it never spends a slot. */
+        const [{ fileList: counted }] = mockValidateFiles.mock.calls[0];
+        expect(counted.map((file: File) => file.name)).toEqual(['notes.txt']);
+        expect(mockMutate).toHaveBeenCalledTimes(2);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('still applies the total size limit to the files left after a skip', async () => {
+      jest.useFakeTimers();
+      try {
+        mockFileConfig = mergeFileConfig({
+          endpoints: { default: { fileSizeLimit: 10, totalSizeLimit: 7 } },
+        });
+        const batch = [
+          makeSizedFile('huge.txt', 'text/plain', 21 * megabyte),
+          makeSizedFile('one.txt', 'text/plain', 4 * megabyte),
+          makeSizedFile('two.txt', 'text/plain', 4 * megabyte),
+        ];
+        const useFileHandling = await loadHook();
+        const { result } = renderHook(() => useFileHandling());
+
+        let accepted: boolean | undefined;
+        await act(async () => {
+          accepted = await result.current.handleFiles(batch);
+        });
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(accepted).toBe(false);
+        expect(mockMutate).not.toHaveBeenCalled();
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'Total file size limit exceeded: 7 MB',
+          status: 'error',
+          duration: 5000,
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('applies the total size limit to the complete transformed batch', async () => {
       jest.useFakeTimers();
       try {
@@ -413,6 +730,43 @@ describe('useFileHandling', () => {
       } finally {
         jest.useRealTimers();
       }
+    });
+
+    it('validates a replacement without counting the source attachment', async () => {
+      mockFileConfig = mergeFileConfig({
+        endpoints: { default: { fileLimit: 1, totalSizeLimit: 7 } },
+      });
+      const source = makeSizedFile('original.txt', 'text/plain', 4 * megabyte);
+      const replacement = makeSizedFile('replacement.txt', 'text/plain', 4 * megabyte);
+      const sharedState = {
+        files: new Map([
+          [
+            'source-file',
+            {
+              file_id: 'source-file',
+              file: source,
+              filename: source.name,
+              type: source.type,
+              size: source.size,
+              progress: 1,
+            },
+          ],
+        ]),
+        setFiles: jest.fn(),
+        setFilesLoading: mockSetFilesLoading,
+      };
+      const { useFileHandlingNoChatContext } = await import('../useFileHandling');
+      const menu = renderHook(() => useFileHandlingNoChatContext(undefined, sharedState));
+
+      let accepted = false;
+      await act(async () => {
+        accepted = await menu.result.current.handleFiles([replacement], undefined, {
+          replacesFileId: 'source-file',
+        });
+      });
+
+      expect(accepted).toBe(true);
+      expect(mockMutate).toHaveBeenCalledTimes(1);
     });
 
     it('uploads the selected file when the input is reset before processing starts', async () => {
@@ -472,7 +826,11 @@ describe('useFileHandling', () => {
           jest.advanceTimersByTime(250);
         });
 
-        expect(mockValidateFileDuplicates).toHaveBeenCalledTimes(2);
+        /** The duplicate only emerges once resizing has run, so it is the processed batch that
+         * has to catch it — and with nothing left to upload the batch still reports the plain
+         * duplicate error rather than a per-file skip notice. */
+        const [lastPartition] = mockPartitionUploads.mock.calls.at(-1) ?? [];
+        expect(lastPartition?.fileList[0].size).toBe(4 * megabyte);
         expect(mockMutate).toHaveBeenCalledTimes(1);
         expect(mockShowToast).toHaveBeenCalledWith({
           message: 'com_error_files_dupe',
@@ -754,6 +1112,127 @@ describe('useFileHandling', () => {
       expect(formData.get('endpoint')).toBe(EModelEndpoint.agents);
       expect(formData.get('endpointType')).toBe(EModelEndpoint.agents);
       expect(formData.get('conversationId')).toBeNull();
+    });
+
+    it('validates against the agent provider policy, not the agents entry', async () => {
+      /* The server validates a saved agent's upload under its provider, so preflighting the
+       * `agents` entry rejects provider-supported files that the request would have accepted. */
+      mockConversation = { conversationId: 'convo-1', endpoint: 'agents', agent_id: 'agent_a1' };
+      mockAgentsMap = { agent_a1: { provider: 'Custom Provider' } };
+      mockFileConfig = mergeFileConfig({
+        endpoints: {
+          agents: { fileSizeLimit: 5 },
+          'Custom Provider': { fileSizeLimit: 20 },
+        },
+      });
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([makeSizedFile('notes.txt', 'text/plain', megabyte)]);
+      });
+
+      expect(mockValidateFiles).toHaveBeenCalledWith(
+        expect.objectContaining({
+          endpointFileConfig: expect.objectContaining({
+            fileSizeLimit: mockFileConfig.endpoints['Custom Provider']?.fileSizeLimit,
+          }),
+        }),
+      );
+      expect(mockFileConfig.endpoints['Custom Provider']?.fileSizeLimit).not.toEqual(
+        mockFileConfig.endpoints.agents?.fileSizeLimit,
+      );
+    });
+
+    it('sends the Responses flag a saved agent holds on its own record', async () => {
+      /* A saved Azure agent keeps the setting in model_parameters, and without it the
+       * server routes a natively supported PDF to extracted text. */
+      mockConversation = { conversationId: 'convo-1', endpoint: 'agents', agent_id: 'agent_a1' };
+      mockAgentsMap = { agent_a1: { model_parameters: { useResponsesApi: true } } };
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([new File(['hi'], 'a.txt', { type: 'text/plain' })]);
+      });
+
+      const formData: FormData = mockMutate.mock.calls[0][0];
+      expect(formData.get('useResponsesApi')).toBe('true');
+    });
+
+    it('resolves the provider and Responses flag from a fetched agent on a cache miss', async () => {
+      /* A direct-link load has no entry for the agent in the map. The record is fetched
+       * for the controls, so preflight has to read the same one or the upload is measured
+       * against the generic agents limits and loses the Responses flag. */
+      mockConversation = { conversationId: 'convo-1', endpoint: 'agents', agent_id: 'agent_a1' };
+      mockAgentsMap = {};
+      mockAgentQueryData = {
+        provider: 'Custom Provider',
+        model_parameters: { useResponsesApi: true },
+      };
+      mockFileConfig = mergeFileConfig({
+        endpoints: {
+          agents: { fileSizeLimit: 5 },
+          'Custom Provider': { fileSizeLimit: 20 },
+        },
+      });
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([makeSizedFile('notes.txt', 'text/plain', megabyte)]);
+      });
+
+      expect(mockValidateFiles).toHaveBeenCalledWith(
+        expect.objectContaining({
+          endpointFileConfig: expect.objectContaining({
+            fileSizeLimit: mockFileConfig.endpoints['Custom Provider']?.fileSizeLimit,
+          }),
+        }),
+      );
+      const formData: FormData = mockMutate.mock.calls[0][0];
+      expect(formData.get('useResponsesApi')).toBe('true');
+    });
+
+    it('lets a saved agent override the conversation Responses flag', async () => {
+      /* Execution runs on the agent's own model parameters, so an upload that trusted
+       * the conversation would store a raw provider document the turn then re-resolves
+       * to text it has no extraction for. */
+      mockConversation = {
+        conversationId: 'convo-1',
+        endpoint: 'agents',
+        agent_id: 'agent_a1',
+        useResponsesApi: true,
+      };
+      mockAgentsMap = { agent_a1: { model_parameters: { useResponsesApi: false } } };
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([new File(['hi'], 'a.txt', { type: 'text/plain' })]);
+      });
+
+      const formData: FormData = mockMutate.mock.calls[0][0];
+      expect(formData.get('useResponsesApi')).toBeNull();
+    });
+
+    it('omits the flag when neither the conversation nor the agent sets it', async () => {
+      mockConversation = { conversationId: 'convo-1', endpoint: 'agents', agent_id: 'agent_a1' };
+      mockAgentsMap = { agent_a1: { model_parameters: {} } };
+
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([new File(['hi'], 'a.txt', { type: 'text/plain' })]);
+      });
+
+      const formData: FormData = mockMutate.mock.calls[0][0];
+      expect(formData.get('useResponsesApi')).toBeNull();
     });
 
     it('does not enter assistants upload path when override is agents', async () => {
@@ -1087,6 +1566,45 @@ describe('useFileHandling', () => {
       expect(onSuccess).toHaveBeenCalledWith(fileId);
     });
 
+    it('keeps the upload delivery path on the completed attachment', async () => {
+      jest.useFakeTimers();
+      const useFileHandling = await loadHook();
+      const { result } = renderHook(() => useFileHandling());
+
+      await act(async () => {
+        await result.current.handleFiles([
+          new File(['hello'], 'notes.docx', {
+            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          }),
+        ]);
+      });
+
+      const uploadBody = mockMutate.mock.calls[0][0] as FormData;
+      act(() => {
+        mockUploadOptions.onSuccess?.(
+          {
+            temp_file_id: uploadBody.get('file_id') as string,
+            file_id: 'saved-file-id',
+            filepath: '/files/notes.docx',
+            type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            filename: 'notes.docx',
+            source: 'local',
+            embedded: false,
+            llmDeliveryPath: 'text',
+          },
+          uploadBody,
+        );
+        jest.runAllTimers();
+      });
+      jest.useRealTimers();
+
+      const [, completion] = mockUpdateFileById.mock.calls.at(-1) as [
+        string,
+        { llmDeliveryPath?: string },
+      ];
+      expect(completion.llmDeliveryPath).toBe('text');
+    });
+
     it('resolves false when every file fails preprocessing', async () => {
       const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
       mockProcessFileForUpload.mockRejectedValue(new Error('HEIC conversion failed'));
@@ -1292,7 +1810,7 @@ describe('useFileHandling', () => {
       });
 
       rerender();
-      mockValidateFileDuplicates.mockClear();
+      mockPartitionUploads.mockClear();
       mockImageDecodes = true;
       await act(async () => {
         await result.current.handleFiles([pick()]);
@@ -1301,7 +1819,7 @@ describe('useFileHandling', () => {
       /** A reservation the failed decode left behind is merged into the next batch's
        * validation, so re-picking the same file reads as a duplicate and its size
        * keeps counting against the composer's limits. */
-      const [{ files: validatedAgainst }] = mockValidateFileDuplicates.mock.calls[0];
+      const [{ files: validatedAgainst }] = mockPartitionUploads.mock.calls[0];
       expect(validatedAgainst.size).toBe(0);
       expect(mockMutate).toHaveBeenCalledTimes(1);
     });

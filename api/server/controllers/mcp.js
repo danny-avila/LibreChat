@@ -6,21 +6,27 @@
  * @import { MCPServerDocument } from 'librechat-data-provider'
  */
 const { randomUUID } = require('crypto');
-const { logger, SystemCapabilities } = require('@librechat/data-schemas');
+const mongoose = require('mongoose');
+const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   checkAccess,
   isUserSourced,
+  createAuthIdentityContext,
   MCPConnection,
   MCPErrorCodes,
+  MCPCatalogCapacityError,
   splitMCPToolKey,
   normalizeServerName,
   findShadowedServerNames,
   redactServerSecrets,
+  sanitizeMcpIconPath,
   redactAllServerSecrets,
   resolveMCPServerOwnerContacts,
   isMCPDomainNotAllowedError,
   isMCPInspectionFailedError,
   isMCPOAuthSecretReentryRequiredError,
+  prepareMCPServerOAuthDeletion,
+  cleanupDeletedMCPServerOAuthUsers,
 } = require('@librechat/api');
 const {
   Constants,
@@ -36,6 +42,8 @@ const {
   resolveMcpConfigNames,
   resolveAllMcpConfigs,
 } = require('~/server/services/MCP');
+const { loadMCPServerCatalogs } = require('~/server/services/Tools/mcp');
+const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
 const {
   cacheMCPServerTools,
   getMCPServerTools,
@@ -194,65 +202,43 @@ const getMCPTools = async (req, res) => {
       return res.status(200).json({ servers: {} });
     }
 
-    const mcpManager = getMCPManager();
     const mcpServers = {};
-
-    const serverToolsMap = new Map();
-    const serversWithoutTools = [];
-    const cacheResults = await Promise.all(
-      configuredServers.map(async (serverName) => {
-        try {
-          return {
-            serverName,
-            tools: await getMCPServerTools(userId, serverName, mcpConfig[serverName]),
-          };
-        } catch (error) {
-          logger.error(`[getMCPTools] Error fetching cached tools for ${serverName}:`, error);
-          return { serverName, tools: null };
-        }
-      }),
-    );
-    for (const { serverName, tools } of cacheResults) {
-      if (tools) {
-        serverToolsMap.set(serverName, tools);
-        continue;
+    const oboIdentityContext = createAuthIdentityContext({
+      user: req.user,
+      tenantId: getTenantId(),
+    });
+    const catalogAbortController = new AbortController();
+    const abortCatalogLoad = () => {
+      if (!res.writableEnded) {
+        catalogAbortController.abort();
       }
-
-      let serverTools;
-      let publicationGeneration;
-      let publicationRevision;
-      try {
-        ({
-          tools: serverTools,
-          publicationGeneration,
-          publicationRevision,
-        } = await mcpManager.getServerToolFunctionsSnapshot(
-          userId,
+    };
+    res.once('close', abortCatalogLoad);
+    let catalogResult;
+    try {
+      catalogResult = await loadMCPServerCatalogs({
+        user: req.user,
+        servers: configuredServers.map((serverName) => ({
           serverName,
-          mcpConfig[serverName],
-        ));
-      } catch (error) {
-        logger.error(`[getMCPTools] Error fetching tools for server ${serverName}:`, error);
-        continue;
-      }
-      if (!serverTools) {
-        serversWithoutTools.push(serverName);
-        continue;
-      }
-      serverToolsMap.set(serverName, serverTools);
-
-      // Empty is an authoritative catalog too; re-cache it after TTL expiry to avoid polling.
-      cacheMCPServerTools({
-        userId,
-        serverName,
-        serverTools,
-        serverConfig: mcpConfig[serverName],
-        publicationGeneration,
-        publicationRevision,
-      }).catch((err) =>
-        logger.error(`[getMCPTools] Failed to cache tools for ${serverName}:`, err),
-      );
+          serverConfig: mcpConfig[serverName],
+        })),
+        upstreamTokenProvider: createOpenIDSessionTokenProvider({
+          req,
+          res,
+          user: req.user,
+          identityContext: oboIdentityContext,
+          tokenPreference: 'access_token',
+        }),
+        oboIdentityContext,
+        signal: catalogAbortController.signal,
+        recoveryPolicy: req.config?.mcpSettings?.catalogRecovery,
+      });
+    } finally {
+      res.off('close', abortCatalogLoad);
     }
+    const { serverTools: serverToolsMap, serversWithoutTools } = catalogResult;
+    const reauthRequiredServers = catalogResult.reauthRequiredServers ?? new Set();
+    const reauthRequiredGenerations = catalogResult.reauthRequiredGenerations ?? new Map();
     if (serversWithoutTools.length > 0) {
       logger.debug(
         `[getMCPTools] No tools (${serversWithoutTools.length}): ${serversWithoutTools.join(', ')}`,
@@ -269,7 +255,11 @@ const getMCPTools = async (req, res) => {
         const server = {
           name: serverName,
           icon: serverConfig?.iconPath || '',
-          authenticated: true,
+          authenticated: !reauthRequiredServers.has(serverName),
+          ...(reauthRequiredServers.has(serverName) && {
+            authorizationState: 'reauth_required',
+            authorizationGeneration: reauthRequiredGenerations.get(serverName),
+          }),
           authConfig: [],
           tools: [],
         };
@@ -323,7 +313,11 @@ const getMCPTools = async (req, res) => {
     res.status(200).json({ servers: mcpServers });
   } catch (error) {
     logger.error('[getMCPTools]', error);
-    res.status(500).json({ message: error.message });
+    if (res.destroyed || res.headersSent) {
+      return;
+    }
+    const status = error instanceof MCPCatalogCapacityError ? 503 : 500;
+    res.status(status).json({ message: error.message });
   }
 };
 /**
@@ -489,6 +483,9 @@ const createMCPServerController = async (req, res) => {
         errors: validation.error.errors,
       });
     }
+    if (validation.data.iconPath) {
+      validation.data.iconPath = sanitizeMcpIconPath(validation.data.iconPath);
+    }
     if (configHasObo(validation.data) && !(await callerCanConfigureObo(req))) {
       logger.warn(
         `[createMCPServer] User ${userId} attempted to configure OBO without ${Permissions.CONFIGURE_OBO} permission`,
@@ -578,6 +575,9 @@ const updateMCPServerController = async (req, res) => {
         errors: validation.error.errors,
       });
     }
+    if (validation.data.iconPath) {
+      validation.data.iconPath = sanitizeMcpIconPath(validation.data.iconPath);
+    }
 
     /**
      * On an existing OBO server, lock down every user-input field except the
@@ -648,13 +648,33 @@ const updateMCPServerController = async (req, res) => {
  * Delete MCP server
  * @route DELETE /api/mcp/servers/:serverName
  */
-const deleteMCPServerController = async (req, res) => {
+const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
   try {
     const userId = req.user?.id;
     const { serverName } = req.params;
     const registry = getMCPServersRegistry();
     const existingConfig = await registry.getServerConfig(serverName, userId);
-    const retainedTools = await getMCPServerTools(userId, serverName, existingConfig);
+    const tokenIdentifier = `mcp:${serverName}`;
+    const getTokenUserIds = () =>
+      mongoose.models.Token
+        ? mongoose.models.Token.distinct('userId', {
+            identifier: {
+              $in: [tokenIdentifier, `${tokenIdentifier}:client`, `${tokenIdentifier}:refresh`],
+            },
+          })
+        : Promise.resolve([]);
+    const getAclEntries = () =>
+      existingConfig?.dbId && mongoose.models.AclEntry
+        ? mongoose.models.AclEntry.find({
+            resourceType: ResourceType.MCPSERVER,
+            resourceId: existingConfig.dbId,
+            permBits: { $bitsAnySet: PermissionBits.VIEW },
+          }).lean()
+        : Promise.resolve([]);
+    const [oauthDeletionSnapshot, retainedTools] = await Promise.all([
+      prepareMCPServerOAuthDeletion({ getTokenUserIds, getAclEntries }),
+      getMCPServerTools(userId, serverName, existingConfig),
+    ]);
     await invalidateCachedTools({ userId, serverName });
     try {
       await registry.removeServer(serverName, 'DB', userId);
@@ -670,6 +690,32 @@ const deleteMCPServerController = async (req, res) => {
     /** Fence connections another replica could have created before deletion committed. */
     await fenceCommittedMCPMutation({ userId, serverName });
     await disconnectLocalMCPServer(userId, serverName);
+    try {
+      await cleanupDeletedMCPServerOAuthUsers({
+        ownerUserId: userId,
+        serverName,
+        serverConfig: existingConfig,
+        snapshot: oauthDeletionSnapshot,
+        getTokenUserIds,
+        getUserPrincipals: (candidateUserId) => db.getUserPrincipals({ userId: candidateUserId }),
+        resolveAllowlists: (candidateUserId) =>
+          registry.resolveAllowlists({ userId: candidateUserId }),
+        fenceAndDisconnectUser: async (candidateUserId) => {
+          if (candidateUserId === userId) {
+            return;
+          }
+          await fenceCommittedMCPMutation({ userId: candidateUserId, serverName });
+          await disconnectLocalMCPServer(candidateUserId, serverName);
+        },
+        uninstallOAuthMCP,
+      });
+    } catch (error) {
+      logger.warn(
+        `[deleteMCPServer] Server ${serverName} was deleted, but OAuth cleanup failed for user ${userId}:`,
+        error,
+      );
+      throw error;
+    }
     res.status(200).json({ message: 'MCP server deleted successfully' });
   } catch (error) {
     logger.error('[deleteMCPServer]', error);

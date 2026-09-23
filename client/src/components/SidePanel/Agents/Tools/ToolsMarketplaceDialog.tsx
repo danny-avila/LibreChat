@@ -11,6 +11,7 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { AgentItem, AgentItemKind, ItemFilter } from './items/types';
+import type { CapabilityFileCounts } from './items/capabilities';
 import type { AgentForm } from '~/common';
 import {
   itemKey,
@@ -19,7 +20,8 @@ import {
   matchesMcpServer,
   mcpServerIds,
 } from './items/selectors';
-import { useAgentItems, useUninstallToolCredentials } from './hooks';
+import { useAgentFileEntries, useAgentItems, useUninstallToolCredentials } from './hooks';
+import { requiresFileManagerRemoval } from './items/capabilities';
 import AddMcpServerDialog from './ItemDialog/AddMcpServerDialog';
 import { computeToggleAction } from './items/mutations';
 import { useLocalize, useToolFavorites } from '~/hooks';
@@ -86,6 +88,11 @@ export default function ToolsMarketplaceDialog({
   );
 
   const selectedIds = useMemo(() => new Set(selectedItems.map(itemKey)), [selectedItems]);
+  const { knowledgeFiles, codeFiles } = useAgentFileEntries();
+  const fileCounts: CapabilityFileCounts = useMemo(
+    () => ({ knowledge_files: knowledgeFiles.length, code_files: codeFiles.length }),
+    [knowledgeFiles, codeFiles],
+  );
 
   const counts = useMemo(
     () => ({
@@ -106,7 +113,15 @@ export default function ToolsMarketplaceDialog({
 
   const handleToggle = useCallback(
     (item: AgentItem) => {
-      const patch = computeToggleAction(item, { selected: selectedIds.has(itemKey(item)) });
+      const selected = selectedIds.has(itemKey(item));
+      /** A file-backed built-in cannot be switched off by its flag while it holds
+       * files — the row would stay selected and the save would disagree with it — so
+       * send the user to the dialog that manages those files, as the tools list does. */
+      if (selected && item.kind === 'builtin' && requiresFileManagerRemoval(item.id, fileCounts)) {
+        setDetailItem(item);
+        return;
+      }
+      const patch = computeToggleAction(item, { selected });
       switch (patch.type) {
         case 'builtin':
           setValue(patch.field as keyof AgentForm, patch.value as never, { shouldDirty: true });
@@ -133,9 +148,10 @@ export default function ToolsMarketplaceDialog({
         }
         case 'mcp-add': {
           if (item.kind !== 'mcp') break;
-          const toolIds = item.server.requestScoped
-            ? [mcpAllToken(item.id)]
-            : (item.server.tools ?? []).map((t) => t.tool_id);
+          const toolIds =
+            item.server.requestScoped || !item.server.tools?.length
+              ? [mcpAllToken(item.id)]
+              : (item.server.tools ?? []).map((t) => t.tool_id);
           const current = (getValues('tools') ?? []) as string[];
           setValue(
             'tools',
@@ -160,7 +176,7 @@ export default function ToolsMarketplaceDialog({
           break;
       }
     },
-    [getValues, setValue, selectedIds, uninstallToolCredentials, catalog],
+    [getValues, setValue, selectedIds, uninstallToolCredentials, catalog, fileCounts],
   );
 
   const handleCardClick = useCallback(
@@ -175,14 +191,14 @@ export default function ToolsMarketplaceDialog({
         return;
       }
       const wasSelected = selectedIds.has(itemKey(item));
-      /** An unselected, toolless MCP server normally needs its setup dialog.
-       *  An authorized request-scoped server is already ready and attaches via
-       *  its runtime wildcard; a selected toolless server must remain removable. */
+      /** Ready servers can resolve their tools with user credentials at runtime,
+       * even when the instance catalog is empty. Unready servers still need setup;
+       * a selected toolless server must remain removable. */
       if (
         item.kind === 'mcp' &&
         item.toolCount === 0 &&
         !wasSelected &&
-        !(item.server.requestScoped === true && item.server.isReadyForAgent === true)
+        !(item.server.isReadyForAgent ?? item.server.isConnected)
       ) {
         setDetailItem(item);
         return;

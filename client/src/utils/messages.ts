@@ -204,7 +204,7 @@ const getPartToolCall = (part: TMessageContentParts): Agents.ToolCall | undefine
 /** Slots the persistence compaction leaves nothing behind for: the
  * dual-message `type: ''` placeholders, text/think parts that never received a
  * delta, and tool calls missing their `tool_call` payload. */
-const isEmptyContentPart = (part: TMessageContentParts): boolean => {
+export const isEmptyContentPart = (part: TMessageContentParts): boolean => {
   if (!part.type) {
     return true;
   }
@@ -826,6 +826,9 @@ export function areMessageFieldsEqual(
     prevMsg.text === nextMsg.text &&
     prevMsg.error === nextMsg.error &&
     prevMsg.unfinished === nextMsg.unfinished &&
+    /** Read by the row: `useGenerationsByLatest` gates the Continue button on it and
+     *  `ContentRender` renders the tool-call-limit notice from it. */
+    prevMsg.finish_reason === nextMsg.finish_reason &&
     prevMsg.createdAt === nextMsg.createdAt &&
     prevMsg.depth === nextMsg.depth &&
     prevMsg.isCreatedByUser === nextMsg.isCreatedByUser &&

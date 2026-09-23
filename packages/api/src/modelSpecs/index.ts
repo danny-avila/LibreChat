@@ -134,6 +134,36 @@ export function isModelSpecEndpointMatch(
   return Boolean(modelSpec && endpoint === resolveModelSpecEndpoint(modelSpec));
 }
 
+export type ModelSpecEndpointResolution =
+  | { modelSpec: TModelSpec }
+  | { error: 'invalid-model-spec' | 'model-spec-mismatch' };
+
+/**
+ * Resolves the selected spec only when it serves the requested endpoint.
+ * Authorization and endpoint construction use this same result so a preset
+ * cannot change the resource identity after its access check has completed.
+ */
+export function resolveModelSpecForEndpoint({
+  modelSpecs,
+  spec,
+  endpoint,
+}: {
+  modelSpecs: Pick<TSpecsConfig, 'list'> | undefined;
+  spec: string;
+  endpoint: string | null | undefined;
+}): ModelSpecEndpointResolution {
+  const modelSpec = findModelSpecByName(modelSpecs, spec);
+  if (!modelSpec) {
+    return { error: 'invalid-model-spec' };
+  }
+
+  if (!isModelSpecEndpointMatch(modelSpec, endpoint)) {
+    return { error: 'model-spec-mismatch' };
+  }
+
+  return { modelSpec };
+}
+
 export function applyModelSpecPreset({
   modelSpec,
   parsedBody,

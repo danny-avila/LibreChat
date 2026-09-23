@@ -1,3 +1,5 @@
+import { maxWorkers } from '../../config/jest.workers.cjs';
+
 export default {
   collectCoverageFrom: ['src/**/*.{js,jsx,ts,tsx}', '!<rootDir>/node_modules/'],
   coveragePathIgnorePatterns: ['/node_modules/', '/dist/'],
@@ -22,7 +24,8 @@ export default {
   // Download the in-memory MongoDB binary once, before workers fork: on a cold
   // cache the parallel downloads race their final rename and fail whole suites.
   globalSetup: '<rootDir>/jest.globalSetup.mjs',
-  maxWorkers: '50%',
+  setupFiles: ['<rootDir>/../../config/jest.setup.logging.cjs'],
+  maxWorkers,
   restoreMocks: true,
   testTimeout: 15000,
 };

@@ -57,6 +57,24 @@ describe('filtersConfigSchema', () => {
     ).toBe(false);
   });
 
+  it('accepts omitted, audit, and block actions while rejecting unsupported actions', () => {
+    expect(filtersConfigSchema.parse({ messages: { pii: {} } })).toEqual({
+      messages: { pii: {} },
+    });
+    expect(
+      filtersConfigSchema.parse({
+        messages: { pii: { action: 'audit' } },
+        prompts: { pii: { action: 'block' } },
+      }),
+    ).toEqual({
+      messages: { pii: { action: 'audit' } },
+      prompts: { pii: { action: 'block' } },
+    });
+    expect(filtersConfigSchema.safeParse({ messages: { pii: { action: 'redact' } } }).success).toBe(
+      false,
+    );
+  });
+
   it('combines active-pattern and selected-field checks', () => {
     expect(hasActivePiiFields({}, ['arguments'])).toBe(true);
     expect(hasActivePiiFields({ fields: ['name'] }, ['arguments'])).toBe(false);

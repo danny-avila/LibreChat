@@ -74,6 +74,10 @@ describe('getToolDisplayLabel', () => {
     );
   });
 
+  it.each(['set_memory', 'delete_memory'])('returns a friendly memory label for %s', (toolName) => {
+    expect(getToolDisplayLabel(toolName, identityLocalize)).toBe(TOOL_FRIENDLY_NAME_KEYS[toolName]);
+  });
+
   it('returns the raw name for an unknown native tool', () => {
     expect(getToolDisplayLabel('custom_tool', identityLocalize)).toBe('custom_tool');
   });

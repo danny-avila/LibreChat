@@ -20,11 +20,16 @@ const mockShowToast = jest.fn();
 const mockOpenModal = jest.fn();
 const mockLocalize = jest.fn((key: string) => key);
 const mockSetActivePrompt = jest.fn();
+const mockSetPendingComposerText = jest.fn();
+const mockSetValue = jest.fn();
+let mockActivePrompt: string | undefined;
+let mockPendingComposerText: string | undefined;
 
 let useTextarea: typeof import('./useTextarea').default;
 let mockIndex = 0;
 let mockIsSubmitting = false;
 let mockIsUploadConfigPending = false;
+let mockIsUnifiedMode = false;
 let mockConversation: { endpoint: string; conversationId?: string } = {
   endpoint: 'openAI',
   conversationId: 'convo-1',
@@ -32,6 +37,7 @@ let mockConversation: { endpoint: string; conversationId?: string } = {
 
 jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils/drafts'),
+  ...jest.requireActual('~/utils/files'),
   forceResize: mockForceResize,
   insertTextAtCursor: mockInsertTextAtCursor,
   resolvePastedTextFile: mockResolvePastedTextFile,
@@ -42,7 +48,11 @@ jest.mock('~/utils', () => ({
 
 jest.mock('recoil', () => ({
   useRecoilValue: jest.fn(() => true),
-  useRecoilState: jest.fn(() => [undefined, mockSetActivePrompt]),
+  useRecoilState: jest.fn((atom: { key?: string }) =>
+    atom?.key === 'pendingComposerText'
+      ? [mockPendingComposerText, mockSetPendingComposerText]
+      : [mockActivePrompt, mockSetActivePrompt],
+  ),
 }));
 
 jest.mock('@librechat/client', () => ({
@@ -56,6 +66,7 @@ jest.mock('~/store', () => ({
     saveDrafts: { key: 'saveDrafts' },
     pasteLongTextAsFile: { key: 'pasteLongTextAsFile' },
     activePromptByIndex: jest.fn(() => ({ key: 'activePrompt' })),
+    pendingComposerTextByConvoId: jest.fn(() => ({ key: 'pendingComposerText' })),
   },
 }));
 
@@ -92,6 +103,8 @@ jest.mock('~/hooks/Files/useUploadOptions', () => ({
     getOptions: mockGetUploadOptions,
     uploadsDisabled: false,
     isConfigPending: mockIsUploadConfigPending,
+    isConfigResolved: !mockIsUploadConfigPending,
+    isUnifiedMode: mockIsUnifiedMode,
   })),
 }));
 
@@ -110,6 +123,7 @@ jest.mock('~/Providers/ChatContext', () => ({
 }));
 
 jest.mock('~/Providers', () => ({
+  useChatFormContext: jest.fn(() => ({ setValue: mockSetValue })),
   useUploadModalContext: jest.fn(() => ({ openModal: mockOpenModal })),
 }));
 
@@ -162,15 +176,73 @@ describe('useTextarea long-paste fallback', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     localStorage.clear();
+    mockActivePrompt = undefined;
+    mockPendingComposerText = undefined;
     mockIndex = 0;
     mockIsSubmitting = false;
     mockIsUploadConfigPending = false;
+    mockIsUnifiedMode = false;
     mockConversation = { endpoint: 'openAI', conversationId: 'convo-1' };
     mockGetUploadOptions.mockReturnValue([EToolResources.context]);
+    mockSetValue.mockReset();
     mockResolvePastedTextFile.mockImplementation((text: string) => ({
       file: new File([text], 'pasted-text.txt', { type: 'text/plain' }),
       toolResource: EToolResources.context,
     }));
+  });
+
+  it('inserts a preset prompt when the textarea refuses focus', () => {
+    mockActivePrompt = 'selected prompt';
+    const textArea = document.createElement('textarea');
+    textArea.value = 'draft text';
+    textArea.setSelectionRange(6, 10);
+    const focus = jest.spyOn(textArea, 'focus').mockImplementation();
+    mockSetValue.mockImplementation((_name: string, value: string) => {
+      textArea.value = value;
+    });
+
+    renderHook(() =>
+      useTextarea({
+        textAreaRef: { current: textArea },
+        submitButtonRef: { current: null },
+        setIsScrollable: jest.fn(),
+      }),
+    );
+
+    expect(mockSetValue).toHaveBeenCalledWith('text', 'draft selected prompt', {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    expect(focus).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).not.toBe(textArea);
+    expect(textArea.selectionStart).toBe(21);
+    expect(textArea.selectionEnd).toBe(21);
+    expect(mockSetActivePrompt).toHaveBeenCalledWith(undefined);
+  });
+
+  it('dispatches an input event when handing text to the composer', () => {
+    mockPendingComposerText = 'continued text';
+    const textArea = document.createElement('textarea');
+    const inputListener = jest.fn();
+    textArea.addEventListener('input', inputListener);
+    mockSetValue.mockImplementation((_name: string, value: string) => {
+      textArea.value = value;
+    });
+
+    renderHook(() =>
+      useTextarea({
+        textAreaRef: { current: textArea },
+        submitButtonRef: { current: null },
+        setIsScrollable: jest.fn(),
+      }),
+    );
+
+    expect(mockSetValue).toHaveBeenCalledWith('text', 'continued text', {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    expect(inputListener).toHaveBeenCalledTimes(1);
+    expect(mockSetPendingComposerText).toHaveBeenCalledWith(undefined);
   });
 
   it('keeps long pasted text inline while the composer is the answer box', () => {
@@ -209,7 +281,7 @@ describe('useTextarea long-paste fallback', () => {
 
   it('does not restore the paste when the attachment is accepted', async () => {
     mockRouteFiles.mockResolvedValueOnce(true);
-    const { result } = renderTextareaHook();
+    const { result, textArea } = renderTextareaHook();
     const event = createPasteEvent();
 
     act(() =>
@@ -224,7 +296,7 @@ describe('useTextarea long-paste fallback', () => {
       }),
     );
     expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
-    expect(mockForceResize).not.toHaveBeenCalled();
+    expect(textArea.value).toBe('');
   });
 
   it('replaces selected draft text when the attachment is accepted', async () => {
@@ -275,7 +347,9 @@ describe('useTextarea long-paste fallback', () => {
 
     expect(mockInsertTextAtCursor).toHaveBeenCalledWith(textArea, pastedText);
     expect(mockForceResize).toHaveBeenCalledWith(textArea);
-    expect(getFilesDraft('convo-1')).toEqual({ fileIds: [], pendingPastes: {} });
+    expect(getFilesDraft('convo-1')).toEqual(
+      expect.objectContaining({ fileIds: [], pendingPastes: {} }),
+    );
   });
 
   it('skips upload-failure recovery when the conversation changed', async () => {
@@ -354,6 +428,44 @@ describe('useTextarea long-paste fallback', () => {
     expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
     expect(mockForceResize).not.toHaveBeenCalled();
     expect(getFilesDraft('convo-1').pendingPastes['file-1']?.text).toBe(pastedText);
+  });
+
+  it('reinserts a failed paste at its anchor when another tab owns the draft', async () => {
+    /** The ownership guard skips the only durable copy of the paste, so this callback is all that
+     * is left holding it: refusing because the composer moved on would lose the text outright. */
+    localStorage.setItem('librechat-live-tab:other-tab', JSON.stringify({ seenAt: Date.now() }));
+    localStorage.setItem(
+      'filesDraft_convo-1',
+      JSON.stringify({ fileIds: ['other-tab-file'], pendingPastes: {}, tabId: 'other-tab' }),
+    );
+    let insertOffset = -1;
+    mockInsertTextAtCursor.mockImplementationOnce((element: HTMLTextAreaElement) => {
+      insertOffset = element.selectionStart;
+    });
+    let uploadLifecycle: UploadLifecycleCallbacks | undefined;
+    mockRouteFiles.mockImplementationOnce(
+      (_files: File[], _toolResource: EToolResources, lifecycle?: UploadLifecycleCallbacks) => {
+        uploadLifecycle = lifecycle;
+        return Promise.resolve(true);
+      },
+    );
+    const { result, textArea } = renderTextareaHook();
+    textArea.value = 'draft at paste time';
+    textArea.setSelectionRange('draft at paste time'.length, 'draft at paste time'.length);
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(uploadLifecycle).toBeDefined());
+    expect(getFilesDraft('convo-1').pendingPastes).toEqual({});
+    textArea.value = 'draft at paste time and more';
+
+    act(() => uploadLifecycle?.onError?.('file-1'));
+
+    expect(mockInsertTextAtCursor).toHaveBeenCalledWith(textArea, pastedText);
+    expect(insertOffset).toBe('draft at paste time'.length);
   });
 
   it('forwards upload recovery through the assistants route', async () => {
@@ -436,7 +548,9 @@ describe('useTextarea long-paste fallback', () => {
 
     expect(mockInsertTextAtCursor).toHaveBeenCalledWith(textArea, pastedText);
     expect(mockForceResize).toHaveBeenCalledWith(textArea);
-    expect(getFilesDraft('convo-1')).toEqual({ fileIds: [], pendingPastes: {} });
+    expect(getFilesDraft('convo-1')).toEqual(
+      expect.objectContaining({ fileIds: [], pendingPastes: {} }),
+    );
   });
 
   it('stores a pending paste under the submitting pane draft key', async () => {
@@ -462,7 +576,9 @@ describe('useTextarea long-paste fallback', () => {
         pastedText,
       ),
     );
-    expect(getFilesDraft(Constants.PENDING_CONVO)).toEqual({ fileIds: [], pendingPastes: {} });
+    expect(getFilesDraft(Constants.PENDING_CONVO)).toEqual(
+      expect.objectContaining({ fileIds: [], pendingPastes: {} }),
+    );
     expect(uploadLifecycle).toBeDefined();
   });
 
@@ -489,7 +605,9 @@ describe('useTextarea long-paste fallback', () => {
         getFilesDraft(getNewConversationDraftId(1)).pendingPastes['pane-1-new-file']?.text,
       ).toBe(pastedText),
     );
-    expect(getFilesDraft(Constants.NEW_CONVO)).toEqual({ fileIds: [], pendingPastes: {} });
+    expect(getFilesDraft(Constants.NEW_CONVO)).toEqual(
+      expect.objectContaining({ fileIds: [], pendingPastes: {} }),
+    );
     expect(uploadLifecycle).toBeDefined();
   });
 
@@ -677,10 +795,12 @@ describe('useTextarea long-paste fallback', () => {
     );
     act(() => uploadLifecycle?.onSuccess?.('successful-file'));
 
-    expect(getFilesDraft('convo-1')).toEqual({
-      fileIds: ['successful-file'],
-      pendingPastes: {},
-    });
+    expect(getFilesDraft('convo-1')).toEqual(
+      expect.objectContaining({
+        fileIds: ['successful-file'],
+        pendingPastes: {},
+      }),
+    );
   });
 
   it('does not treat a successful upload as failed when draft storage reads throw', async () => {
@@ -898,5 +1018,107 @@ describe('useTextarea long-paste fallback', () => {
     await act(async () => {
       finish(false);
     });
+  });
+});
+
+describe('useTextarea composer handoff', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockSetValue.mockReset();
+    mockActivePrompt = undefined;
+    mockPendingComposerText = undefined;
+    mockConversation = { endpoint: 'openAI', conversationId: 'convo-1' };
+  });
+
+  /** A surface the reader is leaving (a continued subagent thread) hands its
+   *  words to the destination conversation. It travels in memory, so it is
+   *  delivered whatever the Save Drafts preference is. */
+  it('drains text handed to this conversation into the composer exactly once', () => {
+    mockPendingComposerText = 'Take this further.';
+    mockSetValue.mockImplementation((_name: string, value: string) => {
+      expect(value).toBe('Take this further.');
+    });
+    const { textArea } = renderTextareaHook();
+
+    expect(mockSetValue).toHaveBeenCalledWith('text', 'Take this further.', {
+      shouldDirty: true,
+      shouldValidate: true,
+    });
+    expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
+    expect(mockForceResize).toHaveBeenCalledWith(textArea);
+    expect(mockSetPendingComposerText).toHaveBeenCalledWith(undefined);
+    expect(getDraft('convo-1')).toBe('');
+  });
+
+  it('leaves the composer alone when nothing was handed to this conversation', () => {
+    renderTextareaHook();
+
+    expect(mockInsertTextAtCursor).not.toHaveBeenCalled();
+    expect(mockSetPendingComposerText).not.toHaveBeenCalled();
+  });
+});
+
+describe('useTextarea clipboard routing in unified mode', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    localStorage.clear();
+    mockIndex = 0;
+    mockIsSubmitting = false;
+    mockIsUploadConfigPending = false;
+    mockIsUnifiedMode = true;
+    mockConversation = { endpoint: 'openAI', conversationId: 'convo-1' };
+    mockGetUploadOptions.mockReturnValue([EToolResources.context, EToolResources.execute_code]);
+  });
+
+  it('routes a pasted file without offering the destination chooser', async () => {
+    /* The attach button no longer shows the chooser in unified mode, so raising it here
+     * would deliver the same file differently depending on how it was added. */
+    mockRouteFiles.mockResolvedValueOnce(true);
+    const { result } = renderTextareaHook();
+    const pastedFile = new File(['%PDF-'], 'report.pdf', { type: 'application/pdf' });
+    const event = createPasteEvent([pastedFile]);
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(mockRouteFiles).toHaveBeenCalledTimes(1));
+    expect(mockRouteFiles.mock.calls[0][1]).toBeUndefined();
+    expect(mockOpenModal).not.toHaveBeenCalled();
+  });
+
+  it('holds a paste rather than offering the chooser before the config lands', async () => {
+    /* Neither answer is safe while pending: the chooser sends an explicit destination a
+     * unified deployment no longer uses, and skipping it sends none, which a legacy one
+     * refuses. */
+    mockIsUnifiedMode = false;
+    mockIsUploadConfigPending = true;
+    const { result } = renderTextareaHook();
+    const pastedFile = new File(['%PDF-'], 'report.pdf', { type: 'application/pdf' });
+    const event = createPasteEvent([pastedFile]);
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(mockShowToast).toHaveBeenCalled());
+    expect(mockOpenModal).not.toHaveBeenCalled();
+    expect(mockRouteFiles).not.toHaveBeenCalled();
+  });
+
+  it('still honors a destination the caller already resolved', async () => {
+    /* The long-text paste knows the file belongs in the text context, and unified routing
+     * does not override a caller that already decided. */
+    mockRouteFiles.mockResolvedValueOnce(true);
+    const { result } = renderTextareaHook();
+    const event = createPasteEvent();
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    await waitFor(() => expect(mockRouteFiles).toHaveBeenCalledTimes(1));
+    expect(mockRouteFiles.mock.calls[0][1]).toBe(EToolResources.context);
+    expect(mockOpenModal).not.toHaveBeenCalled();
   });
 });

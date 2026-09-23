@@ -5,16 +5,24 @@ const mongoose = require('mongoose');
 const mockGetSharedLinkExpiration = jest.fn();
 const mockGrantCreationPermissions = jest.fn();
 const mockUpdateSharedLinkPermissionsExpiration = jest.fn();
+const mockRecordShareLinkRejection = jest.fn();
 const mockSharedLinksAccess = jest.fn((_req, _res, next) => next());
 const mockSharedLinkConfigMiddleware = jest.fn((_req, _res, next) => next());
 let mockShareTenantId;
+const mockHasCapability = jest.fn();
+const mockHasConfigCapability = jest.fn();
+const mockGetSharedLangfuseSessionUrl = jest.fn();
 const mockBuildSharedLinkStartupPayload = jest.fn();
 const mockCanAccessSharedLink = jest.fn((req, _res, next) => {
   req.shareResourceId = 'resource-123';
   req.shareTenantId = mockShareTenantId;
+  req.shareConversationId = 'conversation-owner-123';
+  req.shareOwnerId = 'owner-123';
   next();
 });
 const mockGetAppConfig = jest.fn();
+const mockShareIpLimiter = jest.fn((_req, _res, next) => next());
+const mockShareUserLimiter = jest.fn((_req, _res, next) => next());
 const mockParseSharedLinksPageSize = jest.fn(() => 10);
 const mockIsValidSharedLinksCursor = jest.fn(() => true);
 const mockAssertConversationContentAllowed = jest.fn();
@@ -70,6 +78,7 @@ const mockCreateShareContentPreflight = jest.fn((filters, options = {}) => {
 });
 
 jest.mock('@librechat/api', () => ({
+  resolveDownloadPath: (file) => file.storageKey || file.filepath,
   assertModelBoundContent: (...args) => mockAssertModelBoundContent(...args),
   assertSharedFileMetadataAllowed: (...args) => mockAssertSharedFileMetadataAllowed(...args),
   createShareContentPreflight: (...args) => mockCreateShareContentPreflight(...args),
@@ -93,18 +102,30 @@ jest.mock('@librechat/api', () => ({
   buildShareFileEtag: (file) =>
     `"share-${file.file_id}-${file.previewRevision ?? 0}-${file.bytes ?? 0}-${file.filepath ?? ''}"`,
   MAX_SHARED_LINK_SEARCH_LENGTH: 256,
+  createSharedLangfuseSessionResolver: jest.fn(
+    () =>
+      (...args) =>
+        mockGetSharedLangfuseSessionUrl(...args),
+  ),
+  recordShareLinkRejection: (...args) => mockRecordShareLinkRejection(...args),
+  traceIdForMessage: (messageId) => `trace-${messageId}`,
   isContentFilterError: jest.fn(
     (error) =>
       error?.code === 'content_filter_block' || error?.code === 'content_filter_uninspectable',
   ),
+  isConversationImportError: jest.fn((error) => error?.name === 'ConversationImportError'),
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), warn: jest.fn() },
-  createTempChatExpirationDate: jest.fn(() => new Date('2030-01-01T00:00:00.000Z')),
+  createChatExpirationDate: jest.fn(() => new Date('2030-01-01T00:00:00.000Z')),
   runAsSystem: jest.fn((fn) => fn()),
-  tenantStorage: { run: jest.fn((_ctx, fn) => fn()) },
+  tenantStorage: {
+    getStore: jest.fn(() => ({ requestId: 'request-123' })),
+    run: jest.fn((_ctx, fn) => fn()),
+  },
   SYSTEM_TENANT_ID: '__SYSTEM__',
+  SystemCapabilities: { ACCESS_ADMIN: 'access:admin' },
 }));
 
 jest.mock('librechat-data-provider', () => ({
@@ -151,7 +172,13 @@ jest.mock('~/models', () => ({
   getSharedLink: jest.fn(),
   getSharedLinkFile: jest.fn(),
   backfillSharedLinkFiles: jest.fn(),
+  getMessages: jest.fn(),
   getRoleByName: jest.fn(),
+}));
+
+jest.mock('~/server/middleware/roles/capabilities', () => ({
+  hasCapability: (...args) => mockHasCapability(...args),
+  hasConfigCapability: (...args) => mockHasConfigCapability(...args),
 }));
 
 const mockGetStrategyFunctions = jest.fn();
@@ -182,6 +209,10 @@ jest.mock('~/server/middleware/limiters', () => ({
     forkIpLimiter: (_req, _res, next) => next(),
     forkUserLimiter: (_req, _res, next) => next(),
   }),
+  createShareLimiters: () => ({
+    shareIpLimiter: (req, res, next) => mockShareIpLimiter(req, res, next),
+    shareUserLimiter: (req, res, next) => mockShareUserLimiter(req, res, next),
+  }),
 }));
 
 jest.mock('~/server/utils/import/fork', () => ({
@@ -193,7 +224,7 @@ jest.mock('~/server/utils/import/importBatchBuilder', () => ({
 
 const { Readable } = require('stream');
 const { RetentionMode } = require('librechat-data-provider');
-const { createTempChatExpirationDate, logger } = require('@librechat/data-schemas');
+const { createChatExpirationDate, logger } = require('@librechat/data-schemas');
 const {
   deleteSharedLinkWithCleanup,
   isFileSnapshotEnabled,
@@ -233,6 +264,7 @@ const buildApp = ({
   user = { id: 'user-123' },
   filters,
   messageFilter,
+  langfuse,
 } = {}) => {
   const app = express();
   app.use(express.json());
@@ -242,6 +274,7 @@ const buildApp = ({
       interfaceConfig: { retentionMode },
       ...(filters == null ? {} : { filters }),
       ...(messageFilter == null ? {} : { messageFilter }),
+      ...(langfuse == null ? {} : { langfuse }),
     };
     next();
   });
@@ -278,6 +311,9 @@ describe('share routes', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockShareTenantId = undefined;
+    mockHasCapability.mockResolvedValue(false);
+    mockHasConfigCapability.mockResolvedValue(false);
+    mockGetSharedLangfuseSessionUrl.mockResolvedValue(null);
     mockGetAppConfig.mockResolvedValue({
       interfaceConfig: {
         privacyPolicy: { externalUrl: 'https://example.com/privacy' },
@@ -342,6 +378,15 @@ describe('share routes', () => {
     expect(mockGetAppConfig).toHaveBeenCalledWith({ baseOnly: true });
   });
 
+  it('rate limits shared message retrieval by IP and by user', async () => {
+    mockSharedMessagesResult({ shareId: 'share-123', messages: [] });
+
+    await request(buildApp()).get('/api/share/share-123').expect(200);
+
+    expect(mockShareIpLimiter).toHaveBeenCalledTimes(1);
+    expect(mockShareUserLimiter).toHaveBeenCalledTimes(1);
+  });
+
   it('prevents successful shared message responses from being cached', async () => {
     mockSharedMessagesResult({ shareId: 'share-123', messages: [] });
 
@@ -351,6 +396,88 @@ describe('share routes', () => {
     expect(response.headers['cache-control']).toBe('private, no-store');
     expect(mockAssertConversationContentAllowed).not.toHaveBeenCalled();
     expect(mockAssertSharedFileMetadataAllowed).not.toHaveBeenCalled();
+  });
+
+  it('includes the source conversation session for an admin in the share tenant', async () => {
+    mockShareTenantId = 'tenant-abc';
+    mockGetSharedLangfuseSessionUrl.mockResolvedValue(
+      'https://cloud.langfuse.com/project/project-1/sessions/conversation-owner-123',
+    );
+    mockSharedMessagesResult({ shareId: 'share-123', messages: [] });
+    const langfuse = { enabled: true, destination: 'eu', projectId: 'project-1' };
+
+    const response = await request(
+      buildApp({
+        user: { id: 'admin-123', role: 'ADMIN', tenantId: 'tenant-abc' },
+        langfuse,
+      }),
+    ).get('/api/share/share-123');
+
+    expect(response.status).toBe(200);
+    expect(response.body.langfuseSessionUrl).toBe(
+      'https://cloud.langfuse.com/project/project-1/sessions/conversation-owner-123',
+    );
+    expect(mockGetSharedLangfuseSessionUrl).toHaveBeenCalledWith({
+      viewer: expect.objectContaining({ id: 'admin-123', tenantId: 'tenant-abc' }),
+      shareTenantId: 'tenant-abc',
+      shareConversationId: 'conversation-owner-123',
+      shareOwnerId: 'owner-123',
+      config: langfuse,
+    });
+  });
+
+  it('omits the session link when the shared-session resolver denies access', async () => {
+    mockShareTenantId = 'tenant-abc';
+    mockSharedMessagesResult({ shareId: 'share-123', messages: [] });
+
+    const response = await request(
+      buildApp({ user: { id: 'user-123', role: 'USER', tenantId: 'tenant-abc' } }),
+    ).get('/api/share/share-123');
+
+    expect(response.status).toBe(200);
+    expect(response.body).not.toHaveProperty('langfuseSessionUrl');
+  });
+
+  it('serves the shared chat when session-link resolution fails', async () => {
+    mockShareTenantId = 'tenant-abc';
+    mockGetSharedLangfuseSessionUrl.mockRejectedValue(new Error('Langfuse lookup failed'));
+    mockSharedMessagesResult({ shareId: 'share-123', messages: [] });
+
+    const response = await request(
+      buildApp({ user: { id: 'admin-123', role: 'ADMIN', tenantId: 'tenant-abc' } }),
+    ).get('/api/share/share-123');
+
+    expect(response.status).toBe(200);
+    expect(response.body).not.toHaveProperty('langfuseSessionUrl');
+    expect(logger.warn).toHaveBeenCalledWith(
+      '[share] Failed to resolve Langfuse session link:',
+      expect.any(Error),
+    );
+  });
+
+  it('resolves the session link while loading the shared snapshot', async () => {
+    let resolveShare;
+    let markShareStarted;
+    const shareStarted = new Promise((resolve) => {
+      markShareStarted = resolve;
+    });
+    const pendingShare = new Promise((resolve) => {
+      resolveShare = resolve;
+    });
+    getSharedMessages.mockImplementationOnce(() => {
+      markShareStarted();
+      return pendingShare;
+    });
+    mockGetSharedLangfuseSessionUrl.mockResolvedValue(null);
+
+    const responsePromise = request(buildApp())
+      .get('/api/share/share-123')
+      .then((response) => response);
+    await shareStarted;
+
+    expect(mockGetSharedLangfuseSessionUrl).toHaveBeenCalledTimes(1);
+    resolveShare({ shareId: 'share-123', messages: [] });
+    await expect(responsePromise).resolves.toMatchObject({ status: 200 });
   });
 
   it('normalizes shared-link list parameters without double-decoding search text', async () => {
@@ -663,7 +790,7 @@ describe('share routes', () => {
       }),
       expect.objectContaining({
         getConvo: expect.any(Function),
-        createExpirationDate: createTempChatExpirationDate,
+        createExpirationDate: createChatExpirationDate,
         logger,
       }),
     );
@@ -728,7 +855,31 @@ describe('share routes', () => {
     const response = await request(buildApp()).post('/api/share/convo-123').send({});
 
     expect(response.status).toBe(409);
-    expect(response.body).toEqual({ message: 'Share already exists' });
+    expect(response.body).toEqual({ message: 'Share already exists', code: 'SHARE_EXISTS' });
+  });
+
+  it.each([
+    ['TARGET_MESSAGE_NOT_FOUND', 'Target message not found', 'trace-msg-123'],
+    ['NO_MESSAGES', 'No messages to share', 'trace-msg-123'],
+  ])('returns and records the %s create rejection', async (code, message, traceId) => {
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    createSharedLink.mockRejectedValue(Object.assign(new Error(message), { code }));
+
+    const response = await request(buildApp())
+      .post('/api/share/convo-123')
+      .send({ targetMessageId: 'msg-123' });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ message, code });
+    expect(mockRecordShareLinkRejection).toHaveBeenCalledWith('create', code);
+    expect(logger.warn).toHaveBeenCalledWith('[share] Shared link publication rejected', {
+      event: 'share_link_rejected',
+      operation: 'create',
+      code,
+      request_id: 'request-123',
+      trace_id: traceId,
+    });
+    expect(logger.error).not.toHaveBeenCalledWith('Error creating shared link:', expect.anything());
   });
 
   it('returns a raw-free 400 when the exact create snapshot fails policy preflight', async () => {
@@ -1025,7 +1176,7 @@ describe('share routes', () => {
       }),
       expect.objectContaining({
         getConvo: expect.any(Function),
-        createExpirationDate: createTempChatExpirationDate,
+        createExpirationDate: createChatExpirationDate,
         logger,
       }),
     );
@@ -1228,7 +1379,35 @@ describe('share routes', () => {
     const response = await request(buildApp()).patch('/api/share/share-123').send({});
 
     expect(response.status).toBe(404);
-    expect(response.body).toEqual({ message: 'Share not found' });
+    expect(response.body).toEqual({ message: 'Share not found', code: 'SHARE_NOT_FOUND' });
+  });
+
+  it('returns and records a missing-tail update rejection', async () => {
+    mongoose.models.SharedLink.findOne.mockReturnValue(lean({ conversationId: 'convo-123' }));
+    mockGetSharedLinkExpiration.mockResolvedValue(activeExpiration);
+    updateSharedLink.mockRejectedValue(
+      Object.assign(new Error('Target message not found'), {
+        code: 'TARGET_MESSAGE_NOT_FOUND',
+      }),
+    );
+
+    const response = await request(buildApp())
+      .patch('/api/share/share-123')
+      .send({ targetMessageId: 'msg-123' });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      message: 'Target message not found',
+      code: 'TARGET_MESSAGE_NOT_FOUND',
+    });
+    expect(mockRecordShareLinkRejection).toHaveBeenCalledWith('update', 'TARGET_MESSAGE_NOT_FOUND');
+    expect(logger.warn).toHaveBeenCalledWith('[share] Shared link publication rejected', {
+      event: 'share_link_rejected',
+      operation: 'update',
+      code: 'TARGET_MESSAGE_NOT_FOUND',
+      request_id: 'request-123',
+      trace_id: 'trace-msg-123',
+    });
   });
 
   it('allows deleting existing shares without CREATE permission gate', async () => {
@@ -1352,6 +1531,23 @@ describe('share fork route', () => {
     expect(response.status).toBe(500);
   });
 
+  it('returns an actionable client error when a cloned record is oversized', async () => {
+    const message = 'Each imported conversation or message must be at most 16711680 bytes';
+    const error = Object.assign(new Error(message), {
+      name: 'ConversationImportError',
+      code: 'invalid_request',
+      statusCode: 413,
+      body: { error: 'invalid_request', message },
+    });
+    forkSharedConversation.mockRejectedValue(error);
+
+    const response = await request(buildApp()).post('/api/share/share-123/fork');
+
+    expect(response.status).toBe(413);
+    expect(response.body).toEqual(error.body);
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
   it('answers 409 when the viewer forks a payload the owner has republished', async () => {
     const conflict = new Error('Shared link was updated');
     conflict.code = 'SHARE_REVISION_MISMATCH';
@@ -1362,7 +1558,10 @@ describe('share fork route', () => {
       .send({ targetMessageIndex: 3, shareRevision: '2026-01-01T00:00:00.000Z' });
 
     expect(response.status).toBe(409);
-    expect(response.body).toEqual({ message: 'Shared link was updated' });
+    expect(response.body).toEqual({
+      message: 'Shared link was updated',
+      code: 'SHARE_REVISION_MISMATCH',
+    });
   });
 });
 

@@ -957,7 +957,7 @@ describe('userGroup methods', () => {
       expect(groupPrincipalIds(await parkedRead)).toEqual([]);
     });
 
-    it('defers invalidation for transactional writes until the session ends', async () => {
+    it('defers invalidation for transactional writes until the session commits', async () => {
       const user = await createTestUser({ idOnTheSource: 'txn-ext-1' });
       const group = await Group.create({
         name: 'Transactional Team',
@@ -984,13 +984,12 @@ describe('userGroup methods', () => {
       expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([]);
 
       await session.commitTransaction();
-      await session.endSession();
-      await new Promise((resolve) => setTimeout(resolve, 20));
 
       expect(cache.delete).toHaveBeenCalledWith('txn-ext-1');
       expect(groupPrincipalIds(await cachedMethods.getUserPrincipals(params))).toEqual([
         group._id.toString(),
       ]);
+      await session.endSession();
     });
 
     it('caches and invalidates under tenant-scoped keys within a tenant context', async () => {
@@ -1043,13 +1042,12 @@ describe('userGroup methods', () => {
       });
       expect(cache.delete).not.toHaveBeenCalled();
 
-      /** Session ends outside the tenant context; the snapshot must preserve it */
+      /** Commit runs outside the tenant context; the snapshot must preserve it */
       await session.commitTransaction();
-      await session.endSession();
-      await new Promise((resolve) => setTimeout(resolve, 20));
 
       expect(cache.delete).toHaveBeenCalledWith('txn-tenant-ext-1:tenant-b');
       expect(cache.delete).toHaveBeenCalledWith('txn-tenant-ext-1');
+      await session.endSession();
     });
 
     it('runs a delayed second invalidation to evict cross-process stale rewrites', async () => {
@@ -1518,6 +1516,7 @@ describe('userGroup methods', () => {
           username: 'alice',
           password: 'password123',
           provider: 'local',
+          role: SystemRoles.ADMIN,
         },
         {
           name: 'Bob Jones',
@@ -1579,6 +1578,7 @@ describe('userGroup methods', () => {
       const userResults = results.filter((r) => r.type === PrincipalType.USER);
       expect(userResults.length).toBeGreaterThanOrEqual(1);
       expect(userResults[0].name).toBe('Alice Smith');
+      expect(userResults[0].isAdmin).toBe(true);
     });
 
     it('finds matching groups', async () => {
@@ -1610,6 +1610,21 @@ describe('userGroup methods', () => {
       const results = await methods.searchPrincipals('mod', 10, [PrincipalType.ROLE]);
       expect(results.every((r) => r.type === PrincipalType.ROLE)).toBe(true);
       expect(results.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('excludes users from a GROUP and ROLE filter', async () => {
+      const results = await methods.searchPrincipals('a', 10, [
+        PrincipalType.GROUP,
+        PrincipalType.ROLE,
+      ]);
+      expect(new Set(results.map((r) => r.type))).toEqual(
+        new Set([PrincipalType.GROUP, PrincipalType.ROLE]),
+      );
+    });
+
+    it('returns no principals for an empty type filter', async () => {
+      const results = await methods.searchPrincipals('a', 10, []);
+      expect(results).toEqual([]);
     });
 
     it('respects limitPerType', async () => {
