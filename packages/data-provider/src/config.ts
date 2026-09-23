@@ -1940,6 +1940,8 @@ export enum RateLimitPrefix {
   IMPORT = 'IMPORT',
   TTS = 'TTS',
   STT = 'STT',
+  EMAIL_CHANGE = 'EMAIL_CHANGE',
+  EMAIL_CHANGE_CONFIRM = 'EMAIL_CHANGE_CONFIRM',
 }
 
 export const rateLimitSchema = z.object({
@@ -1974,6 +1976,22 @@ export const rateLimitSchema = z.object({
     })
     .optional(),
   stt: z
+    .object({
+      ipMax: z.number().optional(),
+      ipWindowInMinutes: z.number().optional(),
+      userMax: z.number().optional(),
+      userWindowInMinutes: z.number().optional(),
+    })
+    .optional(),
+  /** Requesting a change of the registered email; keyed by the authenticated user. */
+  emailChange: z
+    .object({
+      userMax: z.number().optional(),
+      userWindowInMinutes: z.number().optional(),
+    })
+    .optional(),
+  /** Confirming one; the endpoint is unauthenticated, so the source address is bounded too. */
+  emailChangeConfirm: z
     .object({
       ipMax: z.number().optional(),
       ipWindowInMinutes: z.number().optional(),
@@ -2415,6 +2433,7 @@ export type TStartupConfig = {
   socialLoginEnabled: boolean;
   passwordResetEnabled: boolean;
   emailEnabled: boolean;
+  allowEmailChange: boolean;
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
   /** Admin panel link, only present for users with admin access */
@@ -3074,6 +3093,16 @@ export const configSchema = z.object({
       openidDiscovery: openIdDiscoverySchema.partial().optional(),
     })
     .default({ socialLogins: defaultSocialLogins }),
+  /** Changing the registered email address. An unset field falls back to its env var, then the
+   *  documented default, so an existing deployment keeps the behavior it has today. */
+  emailChange: z
+    .object({
+      /** `ALLOW_EMAIL_CHANGE` when unset; enabled when neither is given. */
+      enabled: z.boolean().optional(),
+      /** Lifetime of a verification link. */
+      tokenTTLSeconds: z.number().int().min(60).max(86_400).optional(),
+    })
+    .optional(),
   balance: balanceSchema.optional(),
   transactions: transactionsSchema.optional(),
   speech: z

@@ -348,6 +348,12 @@ interface:
 #    size: "normal"      # Options: "normal", "compact", "flexible", or "invisible"
 
 # Example Registration Object Structure (optional)
+# Changing the registered email address from Settings > Account.
+# Omitted, these fall back to ALLOW_EMAIL_CHANGE and a 15-minute link.
+# emailChange:
+#   enabled: true
+#   tokenTTLSeconds: 900
+
 registration:
   socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple', 'saml']
   # allowedDomains:
@@ -440,6 +446,17 @@ registration:
 #     ipWindowInMinutes: 60  # Rate limit window for conversation imports per IP
 #     userMax: 50
 #     userWindowInMinutes: 60  # Rate limit window for conversation imports per user
+#   # Asking for a change of the registered email, per authenticated user.
+#   emailChange:
+#     userMax: 3
+#     userWindowInMinutes: 2
+#   # Opening a verification link. The endpoint is unauthenticated, so the source
+#   # address is bounded as well as the account the link names.
+#   emailChangeConfirm:
+#     ipMax: 20
+#     ipWindowInMinutes: 2
+#     userMax: 2
+#     userWindowInMinutes: 2
 
 # Agent Actions domain restrictions (OpenAPI spec validation)
 # SECURITY: If not configured, SSRF targets are blocked (localhost, private IPs, .internal/.local TLDs).

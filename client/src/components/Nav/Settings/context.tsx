@@ -31,6 +31,8 @@ export function useSettingsContext(): SettingsContextValue {
   const langfuseConnectionAccess = startupConfig?.langfuseConnectionAccess === true;
   const adminPanelURL = startupConfig?.adminPanelURL ?? '';
   const isLocalProvider = user?.provider === 'local';
+  const emailEnabled = startupConfig?.emailEnabled === true;
+  const allowEmailChange = startupConfig?.allowEmailChange === true;
   const twoFactorEnabled = user?.twoFactorEnabled === true;
   const allowAccountDeletion = startupConfig?.allowAccountDeletion !== false;
   const aboutEnabled = startupConfig?.interface?.buildInfo !== false;
@@ -53,6 +55,8 @@ export function useSettingsContext(): SettingsContextValue {
       hasMultiConvo: hasMultiConvoBool,
       hasPrompts: hasPromptsBool,
       isLocalProvider,
+      emailEnabled,
+      allowEmailChange,
       twoFactorEnabled,
       allowAccountDeletion,
       aboutEnabled,
@@ -70,6 +74,8 @@ export function useSettingsContext(): SettingsContextValue {
       hasMultiConvoBool,
       hasPromptsBool,
       isLocalProvider,
+      emailEnabled,
+      allowEmailChange,
       twoFactorEnabled,
       allowAccountDeletion,
       aboutEnabled,

@@ -112,6 +112,19 @@ export function getAppConfigOptionsFromUser(
   };
 }
 
+/**
+ * A route that decides policy from the resolved configuration must not be handed the base
+ * configuration when principal or override resolution fails, because the base can be broader
+ * than the scope that should have decided. The caller supplies the reader, so the selection
+ * of that policy lives here rather than in the middleware that assigns the result.
+ */
+export function resolveStrictAppConfig(
+  getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig | undefined>,
+  user?: AppConfigUserLike | null,
+): Promise<AppConfig | undefined> {
+  return getAppConfig({ ...getAppConfigOptionsFromUser(user), failClosed: true });
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────
 
 let _strictOverride: boolean | undefined;
