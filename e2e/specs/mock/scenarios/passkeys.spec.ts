@@ -318,7 +318,7 @@ test.describe('passkeys', () => {
     await expect(page.getByRole('button', { name: 'Sign in with a passkey' })).toHaveCount(0);
   });
 
-  test('with email login off, passkey sign-in is hidden but management stays @scenario:passkey-management-stays-when-email-login-off', async ({
+  test('with email login off, passkey sign-in and management both stay @scenario:passkey-management-stays-when-email-login-off', async ({
     browser,
     playwright,
     baseURL,
@@ -340,7 +340,7 @@ test.describe('passkeys', () => {
     await expect(passkeysDialog.getByText('Office key', { exact: true })).toBeVisible();
 
     await logOut(page);
-    await expect(page.getByRole('button', { name: 'Sign in with a passkey' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Sign in with a passkey' })).toBeVisible();
   });
 
   test('a passkey sign-in on a 2FA account asks for the second factor @scenario:passkey-sign-in-hands-off-to-2fa', async ({
