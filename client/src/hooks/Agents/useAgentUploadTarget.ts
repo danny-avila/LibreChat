@@ -71,11 +71,19 @@ export default function useAgentUploadTarget(
         agentData?.model ??
         mappedAgent?.model)
       : conversation?.model;
-    return resolveEffectiveUseResponsesApi({ value: savedValue, endpoint: endpointType, model });
+    return resolveEffectiveUseResponsesApi({
+      value: savedValue,
+      endpoint: endpointType,
+      model,
+      routing: endpointsConfig?.[agentProvider ?? endpoint ?? '']?.responsesApiRouting,
+    });
   }, [
     isAgents,
     agentId,
     endpointType,
+    endpoint,
+    agentProvider,
+    endpointsConfig,
     conversation?.model,
     conversation?.useResponsesApi,
     agentData,

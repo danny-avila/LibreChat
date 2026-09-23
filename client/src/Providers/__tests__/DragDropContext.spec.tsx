@@ -5,7 +5,21 @@ import type { TEndpointsConfig, Agent } from 'librechat-data-provider';
 import { DragDropProvider, useDragDropContext } from '../DragDropContext';
 
 const mockEndpointsConfig: TEndpointsConfig = {
-  [EModelEndpoint.openAI]: { userProvide: false, order: 0 },
+  [EModelEndpoint.openAI]: {
+    userProvide: false,
+    order: 0,
+    responsesApiRouting: {
+      'gpt-6-sol': { default: true, on: true, off: false },
+      'gpt-6-luna': { default: true, on: true, off: false },
+    },
+  },
+  [EModelEndpoint.azureOpenAI]: {
+    order: 2,
+    responsesApiRouting: {
+      'gpt-6-sol': { default: true, on: true, off: false },
+      'gpt-6-luna': { default: true, on: true, off: false },
+    },
+  },
   [EModelEndpoint.agents]: { userProvide: false, order: 1 },
   [EModelEndpoint.anthropic]: { userProvide: false, order: 6 },
   Moonshot: { type: EModelEndpoint.custom, userProvide: false, order: 9999 },
@@ -34,6 +48,33 @@ function wrapper({ children }: { children: React.ReactNode }) {
 }
 
 describe('DragDropContext endpointType resolution', () => {
+  it.each([EModelEndpoint.openAI, EModelEndpoint.azureOpenAI])(
+    'honors server opt-outs on %s across direct and saved-agent uploads',
+    (endpoint) => {
+      const entry = mockEndpointsConfig![endpoint]!;
+      const previous = entry.responsesApiRouting;
+      entry.responsesApiRouting = { 'gpt-6-sol': { default: false, on: false, off: false } };
+      try {
+        mockConversation = { endpoint, model: 'gpt-6-sol', useResponsesApi: true };
+        const { result, rerender } = renderHook(() => useDragDropContext(), { wrapper });
+        expect(result.current.useResponsesApi).toBe(false);
+        mockConversation = { endpoint: EModelEndpoint.agents, agent_id: 'agent-1' };
+        mockAgentQueryData = {
+          provider: endpoint,
+          model: 'gpt-6-sol',
+          model_parameters: {},
+        } as Partial<Agent>;
+        rerender();
+        expect(result.current.useResponsesApi).toBe(false);
+        entry.responsesApiRouting = undefined;
+        rerender();
+        expect(result.current.useResponsesApi).not.toBe(true);
+      } finally {
+        entry.responsesApiRouting = previous;
+      }
+    },
+  );
+
   beforeEach(() => {
     mockConversation = null;
     mockAgentsMap = {};

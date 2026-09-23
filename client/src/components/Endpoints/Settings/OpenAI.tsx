@@ -3,6 +3,7 @@ import { presetSettings, getSettingsKeys, applyModelAwareDefaults } from 'librec
 import type { SettingDefinition } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';
 import { componentMapping } from '~/components/SidePanel/Parameters/components';
+import { useGetEndpointsQuery } from '~/data-provider';
 
 export default function OpenAISettings({
   conversation,
@@ -10,6 +11,7 @@ export default function OpenAISettings({
   models,
   readonly,
 }: TModelSelectProps) {
+  const { data: endpointsConfig } = useGetEndpointsQuery();
   const parameters = useMemo(() => {
     const [combinedKey, endpointKey] = getSettingsKeys(
       conversation?.endpointType ?? conversation?.endpoint ?? '',
@@ -20,10 +22,20 @@ export default function OpenAISettings({
       return undefined;
     }
     return {
-      col1: applyModelAwareDefaults(settings.col1, endpointKey, conversation?.model ?? undefined),
-      col2: applyModelAwareDefaults(settings.col2, endpointKey, conversation?.model ?? undefined),
+      col1: applyModelAwareDefaults(
+        settings.col1,
+        endpointKey,
+        conversation?.model ?? undefined,
+        endpointsConfig?.[conversation?.endpoint ?? '']?.responsesApiRouting,
+      ),
+      col2: applyModelAwareDefaults(
+        settings.col2,
+        endpointKey,
+        conversation?.model ?? undefined,
+        endpointsConfig?.[conversation?.endpoint ?? '']?.responsesApiRouting,
+      ),
     };
-  }, [conversation]);
+  }, [conversation, endpointsConfig]);
 
   if (!parameters) {
     return null;

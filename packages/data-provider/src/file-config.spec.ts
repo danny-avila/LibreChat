@@ -3,6 +3,7 @@ import type { FileConfig } from './types/files';
 import {
   fileConfig as baseFileConfig,
   fileConfigSchema,
+  resolveEffectiveUseResponsesApi,
   isAnthropicTextDocumentType,
   getConfiguredMimeAccept,
   getDocumentFileExtension,
@@ -2119,5 +2120,41 @@ describe('getDocumentFileExtension', () => {
     [undefined, undefined],
   ])('resolves %s', (mimeType, expected) => {
     expect(getDocumentFileExtension(mimeType)).toBe(expected);
+  });
+});
+
+describe('server-effective Responses routing', () => {
+  const enabled = { default: true, on: true, off: false };
+  const disabled = { default: false, on: false, off: false };
+  it('does not assume model defaults before policy arrives or against an older server', () => {
+    expect(
+      resolveEffectiveUseResponsesApi({ endpoint: EModelEndpoint.azureOpenAI, model: 'gpt-6-sol' }),
+    ).toBeUndefined();
+  });
+  it('uses native snapshot policy but does not invent an Azure deployment', () => {
+    const routing = { 'gpt-6-sol': enabled, '*': disabled };
+    expect(
+      resolveEffectiveUseResponsesApi({
+        endpoint: EModelEndpoint.openAI,
+        model: 'gpt-6-sol-2026-09-22',
+        routing,
+      }),
+    ).toBe(true);
+    expect(
+      resolveEffectiveUseResponsesApi({
+        endpoint: EModelEndpoint.azureOpenAI,
+        model: 'gpt-6-sol-2026-09-22',
+        routing,
+      }),
+    ).toBe(false);
+  });
+  it('leaves custom provider selections alone rather than inferring native support', () => {
+    expect(
+      resolveEffectiveUseResponsesApi({
+        endpoint: EModelEndpoint.custom,
+        model: 'gpt-6-sol',
+        routing: { 'gpt-6-sol': enabled },
+      }),
+    ).toBeUndefined();
   });
 });

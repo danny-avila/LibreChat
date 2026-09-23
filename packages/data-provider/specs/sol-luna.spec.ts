@@ -31,7 +31,11 @@ describe.each(['gpt-6-sol', 'gpt-6-luna'])('%s catalog and settings', (model) =>
       expect(settings.find(({ key }) => key === 'reasoning_effort')?.options).toContain(
         ReasoningEffort.minimal,
       );
-      expect(next.find(({ key }) => key === 'useResponsesApi')?.default).toBe(true);
+      expect(next.find(({ key }) => key === 'useResponsesApi')?.default).toBe(false);
+      const routed = applyModelAwareDefaults(settings, endpoint, model, {
+        [model]: { default: true, on: true, off: false },
+      });
+      expect(routed.find(({ key }) => key === 'useResponsesApi')?.default).toBe(true);
       expect(settings.find(({ key }) => key === 'useResponsesApi')?.default).toBe(false);
     },
   );

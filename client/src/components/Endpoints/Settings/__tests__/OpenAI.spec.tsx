@@ -1,5 +1,6 @@
 import React from 'react';
-import { EModelEndpoint, ReasoningEffort } from 'librechat-data-provider';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { EModelEndpoint, ReasoningEffort, QueryKeys } from 'librechat-data-provider';
 import type { TSetOption } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';
 import {
@@ -25,14 +26,18 @@ describe.each([EModelEndpoint.openAI, EModelEndpoint.azureOpenAI])(
           reasoning_effort: ReasoningEffort.minimal,
           temperature: 0.7,
         } as TModelSelectProps['conversation'];
+        const queryClient = new QueryClient();
+        queryClient.setQueryData([QueryKeys.endpoints], {});
         const view = (model: string) => (
-          <ChatContext.Provider value={context}>
-            <OpenAISettings
-              conversation={{ ...saved, model } as TModelSelectProps['conversation']}
-              setOption={setOption}
-              models={['gpt-5.6', model]}
-            />
-          </ChatContext.Provider>
+          <QueryClientProvider client={queryClient}>
+            <ChatContext.Provider value={context}>
+              <OpenAISettings
+                conversation={{ ...saved, model } as TModelSelectProps['conversation']}
+                setOption={setOption}
+                models={['gpt-5.6', model]}
+              />
+            </ChatContext.Provider>
+          </QueryClientProvider>
         );
         const { rerender } = render(view('gpt-5.6'));
         const slider = () => screen.getByRole('slider', { name: 'Reasoning Effort' });
@@ -52,16 +57,22 @@ describe.each([EModelEndpoint.openAI, EModelEndpoint.azureOpenAI])(
       'shows effective Responses routing for unset %s while preserving explicit false',
       (model) => {
         const setOption: TSetOption = jest.fn(() => jest.fn());
+        const queryClient = new QueryClient();
+        queryClient.setQueryData([QueryKeys.endpoints], {
+          [endpoint]: { responsesApiRouting: { [model]: { default: true, on: true, off: false } } },
+        });
         const view = (useResponsesApi?: boolean) => (
-          <ChatContext.Provider value={context}>
-            <OpenAISettings
-              conversation={
-                { endpoint, model, useResponsesApi } as TModelSelectProps['conversation']
-              }
-              setOption={setOption}
-              models={[model]}
-            />
-          </ChatContext.Provider>
+          <QueryClientProvider client={queryClient}>
+            <ChatContext.Provider value={context}>
+              <OpenAISettings
+                conversation={
+                  { endpoint, model, useResponsesApi } as TModelSelectProps['conversation']
+                }
+                setOption={setOption}
+                models={[model]}
+              />
+            </ChatContext.Provider>
+          </QueryClientProvider>
         );
         const { rerender } = render(view());
         expect(screen.getByRole('switch', { name: 'Use Responses API' })).toBeChecked();

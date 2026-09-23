@@ -1,3 +1,4 @@
+import type { ResponsesApiRouting } from './types';
 import {
   Verbosity,
   ImageDetail,
@@ -17,6 +18,7 @@ import {
   anthropicSettings,
 } from './types';
 import { SettingDefinition, SettingsConfiguration } from './generate';
+import { resolveEffectiveUseResponsesApi } from './file-config';
 import { isOpus55Model, supportsPromptCache } from './bedrock';
 
 // Base definitions
@@ -1315,6 +1317,7 @@ export function applyModelAwareDefaults(
   settings: SettingsConfiguration,
   endpoint: string,
   model?: string,
+  responsesApiRouting?: ResponsesApiRouting,
 ): SettingsConfiguration {
   if (!model) {
     return settings;
@@ -1346,7 +1349,12 @@ export function applyModelAwareDefaults(
       /** Match the native backend's unset default without writing into stored
        * settings. Explicit false still overrides this rendered default. */
       if (setting.key === 'useResponsesApi') {
-        return { ...setting, default: true };
+        return {
+          ...setting,
+          default:
+            resolveEffectiveUseResponsesApi({ endpoint, model, routing: responsesApiRouting }) ??
+            false,
+        };
       }
       return setting;
     });

@@ -138,20 +138,8 @@ function isOpenAIEndpoint(endpoint?: EModelEndpoint | string | null): boolean {
  */
 const responsesApiRequiredPattern = /\bgpt-5\.6\b/;
 
-/**
- * Models that take the Responses API for every turn, not only reasoning ones.
- * Astra requires Responses for tools. Sol/Luna require it for tools with their
- * default (non-none) reasoning. Decide before tools are bound, including when
- * no explicit effort is configured; an explicit Chat Completions choice wins.
- *
- * Decided here rather than in the agents SDK at invocation time: the max-tokens
- * field below is shaped from `useResponsesApi`, so a later switch would send
- * `max_completion_tokens` to an endpoint expecting `max_output_tokens`. Config
- * time is also where Azure decides whether the model keeps its identity, with
- * the deployment as the wire model, or becomes the deployment name outright.
- * @see https://developers.openai.com/api/docs/guides/latest-model
- */
-
+/** Native model defaults apply only to canonical Azure transports; gateways
+ * may implement a different API contract even for the same model name. */
 function isCanonicalAzureBaseURL(baseURL?: string | null, azure?: false | t.AzureOptions): boolean {
   if (!azure) {
     return false;
@@ -954,20 +942,6 @@ export function getOpenAILLMConfig({
     reasoningEffort = undefined;
   }
 
-  /** Sol/Luna reject sampling controls when Responses uses reasoning. The
-   * provider default is medium, so an unset effort is reasoning-enabled too.
-   * Strip only the request copy; saved settings remain available when the user
-   * switches models or explicitly selects `none`. */
-  const solLunaResponsesReasoning =
-    solLunaRulesApply &&
-    llmConfig.useResponsesApi === true &&
-    reasoningEffort !== ReasoningEffort.none;
-  if (solLunaResponsesReasoning) {
-    for (const param of ['temperature', 'topP', 'logprobs', 'topLogprobs']) {
-      deleteConfigParam({ param, llmConfig, modelKwargs });
-    }
-  }
-
   if (!useOpenRouter) {
     hasModelKwargs =
       applyReasoningConfig({
@@ -1039,6 +1013,32 @@ export function getOpenAILLMConfig({
     combinedDropParams.forEach((param) => deleteConfigParam({ param, llmConfig, modelKwargs }));
   } else if (dropParams && Array.isArray(dropParams)) {
     dropParams.forEach((param) => deleteConfigParam({ param, llmConfig, modelKwargs }));
+  }
+
+  /** Sol/Luna reject sampling controls when Responses uses reasoning. The
+   * provider default is medium, so an unset effort is reasoning-enabled too.
+   * Strip only the request copy; saved settings remain available when the user
+   * switches models or explicitly selects `none`. */
+  const solLunaResponsesReasoning =
+    solLunaRulesApply &&
+    llmConfig.useResponsesApi === true &&
+    llmConfig.reasoning?.effort !== ReasoningEffort.none;
+  if (solLunaResponsesReasoning) {
+    for (const param of [
+      'temperature',
+      'topP',
+      'top_p',
+      'logprobs',
+      'topLogprobs',
+      'top_logprobs',
+    ]) {
+      deleteConfigParam({ param, llmConfig, modelKwargs });
+    }
+    for (const target of [llmConfig as Record<string, unknown>, modelKwargs]) {
+      if (Array.isArray(target.include)) {
+        target.include = target.include.filter((value) => value !== 'message.output_text.logprobs');
+      }
+    }
   }
 
   hasModelKwargs =

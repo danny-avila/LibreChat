@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { EndpointFileConfig, FileConfig, RegexLike } from './types/files';
+import type { ResponsesApiRouting } from './types';
 import { EModelEndpoint, isAgentsEndpoint, isDocumentSupportedProvider } from './schemas';
 import { normalizeEndpointName } from './utils';
 
@@ -240,25 +241,33 @@ export const resolveUseResponsesApi = (
 export const prefersResponsesApiByModel = (model?: string | null): boolean =>
   typeof model === 'string' && /^gpt-6-(?:astra|sol|luna)(?:-|$)/i.test(model);
 
+/** The server has transport and administrator settings the browser cannot see.
+ * Missing policy never enables model-based uploads (including during upgrades). */
 export const resolveEffectiveUseResponsesApi = ({
   value,
   endpoint,
   model,
+  routing,
 }: {
   value?: boolean | null;
   endpoint?: string | null;
   model?: string | null;
+  routing?: ResponsesApiRouting;
 }): boolean | undefined => {
-  if (value != null) {
-    return value;
+  if (endpoint !== EModelEndpoint.openAI && endpoint !== EModelEndpoint.azureOpenAI) {
+    return value ?? undefined;
   }
-  if (
-    (endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI) &&
-    prefersResponsesApiByModel(model)
-  ) {
-    return true;
+  let policy = model ? routing?.[model] : undefined;
+  if (!policy && endpoint === EModelEndpoint.openAI && model && prefersResponsesApiByModel(model)) {
+    // Snapshots use the same native family rules. Azure configurations only
+    // advertise exact deployed model names, with '*' as their fallback.
+    const family = /^gpt-6-(?:astra|sol|luna)(?=-|$)/i.exec(model)?.[0].toLowerCase();
+    policy = family ? routing?.[family] : undefined;
   }
-  return undefined;
+  policy ??= routing?.['*'];
+  if (!policy) return value ?? undefined;
+  if (value == null) return policy.default;
+  return value ? policy.on : policy.off;
 };
 
 export const isBedrockDocumentType = (mimeType?: string): boolean =>

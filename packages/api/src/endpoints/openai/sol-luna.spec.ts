@@ -80,6 +80,51 @@ describe.each(['gpt-6-sol', 'gpt-6-luna'])('%s requests', (model) => {
     },
   );
 
+  it.each(['addParams', 'defaultParams'] as const)(
+    'removes both naming conventions from %s without mutating configuration',
+    (source) => {
+      const sampling = {
+        temperature: 0.7,
+        topP: 0.8,
+        top_p: 0.9,
+        logprobs: true,
+        topLogprobs: 3,
+        top_logprobs: 4,
+      };
+      const result = config({ [source]: sampling });
+      for (const key of Object.keys(sampling)) {
+        expect(result).not.toHaveProperty(key);
+        expect(result.modelKwargs ?? {}).not.toHaveProperty(key);
+      }
+      expect(sampling).toEqual({
+        temperature: 0.7,
+        topP: 0.8,
+        top_p: 0.9,
+        logprobs: true,
+        topLogprobs: 3,
+        top_logprobs: 4,
+      });
+      const withoutReasoning = config({
+        [source]: sampling,
+        modelOptions: { model, reasoning_effort: ReasoningEffort.none },
+      });
+      expect(withoutReasoning.modelKwargs).toMatchObject({ top_p: 0.9, top_logprobs: 4 });
+      const defaultReasoning = config({
+        [source]: sampling,
+        modelOptions: { model, reasoning_effort: ReasoningEffort.none },
+        dropParams: ['reasoning_effort'],
+      });
+      expect(defaultReasoning.modelKwargs ?? {}).not.toHaveProperty('top_p');
+    },
+  );
+
+  it('keeps unrelated Responses includes while removing logprob includes for reasoning', () => {
+    const include = ['message.output_text.logprobs', 'reasoning.encrypted_content'];
+    const result = config({ addParams: { include } });
+    expect(result).toHaveProperty('include', ['reasoning.encrypted_content']);
+    expect(include).toHaveLength(2);
+  });
+
   it('routes using the final model override, not the stale selected model', () => {
     expect(
       config({ modelOptions: { model: 'gpt-4.1' }, addParams: { model } }).useResponsesApi,
@@ -197,7 +242,9 @@ describe.each(['gpt-6-sol', 'gpt-6-luna'])('%s requests', (model) => {
             top_p: 0.9,
             ...(chatCompletions ? { useResponsesApi: false } : {}),
           },
-          addParams: { logprobs: true, topLogprobs: 3 },
+          ...(streaming
+            ? { defaultParams: { logprobs: true, topLogprobs: 3, top_p: 0.8, top_logprobs: 4 } }
+            : { addParams: { logprobs: true, topLogprobs: 3, top_p: 0.8, top_logprobs: 4 } }),
           ...(isAzure ? { azure } : {}),
         },
         isAzure ? EModelEndpoint.azureOpenAI : EModelEndpoint.openAI,
