@@ -293,6 +293,7 @@ const openAIParams: Record<string, SettingDefinition> = {
   },
   reasoning_summary: {
     key: 'reasoning_summary',
+    dependsOn: [{ key: 'useResponsesApi', equals: true }],
     label: 'com_endpoint_reasoning_summary',
     labelCode: true,
     description: 'com_endpoint_openai_reasoning_summary',
@@ -317,6 +318,7 @@ const openAIParams: Record<string, SettingDefinition> = {
   },
   reasoning_mode: {
     key: 'reasoning_mode',
+    dependsOn: [{ key: 'useResponsesApi', equals: true }],
     label: 'com_endpoint_reasoning_mode',
     labelCode: true,
     description: 'com_endpoint_openai_reasoning_mode',
@@ -335,6 +337,7 @@ const openAIParams: Record<string, SettingDefinition> = {
   },
   reasoning_context: {
     key: 'reasoning_context',
+    dependsOn: [{ key: 'useResponsesApi', equals: true }],
     label: 'com_endpoint_reasoning_context',
     labelCode: true,
     description: 'com_endpoint_openai_reasoning_context',
@@ -458,6 +461,7 @@ const anthropic: Record<string, SettingDefinition> = {
   },
   promptCacheTtl: {
     key: 'promptCacheTtl',
+    dependsOn: [{ key: 'promptCache', equals: true }],
     label: 'com_endpoint_prompt_cache_ttl',
     labelCode: true,
     description: 'com_endpoint_anthropic_prompt_cache_ttl',
@@ -487,6 +491,7 @@ const anthropic: Record<string, SettingDefinition> = {
   },
   thinkingBudget: {
     key: 'thinkingBudget',
+    dependsOn: [{ key: 'thinking', equals: true }],
     label: 'com_endpoint_thinking_budget',
     labelCode: true,
     description: 'com_endpoint_anthropic_thinking_budget',
@@ -620,6 +625,7 @@ const bedrock: Record<string, SettingDefinition> = {
   },
   promptCacheTtl: {
     key: 'promptCacheTtl',
+    dependsOn: [{ key: 'promptCache', equals: true }],
     label: 'com_endpoint_prompt_cache_ttl',
     labelCode: true,
     description: 'com_endpoint_anthropic_prompt_cache_ttl',
@@ -770,6 +776,7 @@ const google: Record<string, SettingDefinition> = {
   },
   thinkingBudget: {
     key: 'thinkingBudget',
+    dependsOn: [{ key: 'thinking', equals: true }],
     label: 'com_endpoint_thinking_budget',
     labelCode: true,
     description: 'com_endpoint_google_thinking_budget',
