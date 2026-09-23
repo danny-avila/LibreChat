@@ -67,6 +67,19 @@ describe.each(['gpt-6-sol', 'gpt-6-luna'])('%s requests', (model) => {
   ])('still routes unset provider reasoning to Responses: %j', (overrides) => {
     expect(config(overrides).useResponsesApi).toBe(true);
   });
+  it.each([ReasoningEffort.none, ReasoningEffort.max])(
+    'preserves %s reasoning when dropParams forces Chat Completions',
+    (effort) => {
+      const llmConfig = config({
+        modelOptions: { model, reasoning_effort: effort },
+        dropParams: ['useResponsesApi'],
+      });
+      expect(llmConfig.useResponsesApi).toBeUndefined();
+      expect(llmConfig.modelKwargs).toMatchObject({ reasoning_effort: effort });
+      expect(llmConfig).not.toHaveProperty('reasoning_effort');
+    },
+  );
+
   it('routes using the final model override, not the stale selected model', () => {
     expect(
       config({ modelOptions: { model: 'gpt-4.1' }, addParams: { model } }).useResponsesApi,

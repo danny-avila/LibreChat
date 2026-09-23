@@ -48,6 +48,28 @@ describe.each([EModelEndpoint.openAI, EModelEndpoint.azureOpenAI])(
         expect(saved?.temperature).toBe(0.7);
       },
     );
+    it.each(['gpt-6-sol', 'gpt-6-luna'])(
+      'shows effective Responses routing for unset %s while preserving explicit false',
+      (model) => {
+        const setOption: TSetOption = jest.fn(() => jest.fn());
+        const view = (useResponsesApi?: boolean) => (
+          <ChatContext.Provider value={context}>
+            <OpenAISettings
+              conversation={
+                { endpoint, model, useResponsesApi } as TModelSelectProps['conversation']
+              }
+              setOption={setOption}
+              models={[model]}
+            />
+          </ChatContext.Provider>
+        );
+        const { rerender } = render(view());
+        expect(screen.getByRole('switch', { name: 'Use Responses API' })).toBeChecked();
+        rerender(view(false));
+        expect(screen.getByRole('switch', { name: 'Use Responses API' })).not.toBeChecked();
+      },
+    );
+
     it('keeps unsupported saved effort through the agent pruning boundary', () => {
       const settings = resolveAgentParameterSettings({
         provider: endpoint,

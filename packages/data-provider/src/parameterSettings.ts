@@ -1336,14 +1336,20 @@ export function applyModelAwareDefaults(
     );
   }
   if (/^gpt-6-(?:sol|luna)(?:$|-)/i.test(model)) {
-    return settings.map((setting) =>
-      setting.key === 'reasoning_effort'
-        ? {
-            ...setting,
-            options: setting.options?.filter((effort) => effort !== ReasoningEffort.minimal),
-          }
-        : setting,
-    );
+    return settings.map((setting) => {
+      if (setting.key === 'reasoning_effort') {
+        return {
+          ...setting,
+          options: setting.options?.filter((effort) => effort !== ReasoningEffort.minimal),
+        };
+      }
+      /** Match the native backend's unset default without writing into stored
+       * settings. Explicit false still overrides this rendered default. */
+      if (setting.key === 'useResponsesApi') {
+        return { ...setting, default: true };
+      }
+      return setting;
+    });
   }
   if (isOpus55Model(model)) {
     return settings.filter(

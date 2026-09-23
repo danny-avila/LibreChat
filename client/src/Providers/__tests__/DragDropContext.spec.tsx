@@ -47,6 +47,18 @@ describe('DragDropContext endpointType resolution', () => {
       expect(result.current.endpointType).toBe(EModelEndpoint.custom);
     });
 
+    it.each([EModelEndpoint.openAI, EModelEndpoint.azureOpenAI])(
+      'derives Responses for a direct %s Sol conversation but preserves false',
+      (endpoint) => {
+        mockConversation = { endpoint, model: 'gpt-6-sol' };
+        const { result, rerender } = renderHook(() => useDragDropContext(), { wrapper });
+        expect(result.current.useResponsesApi).toBe(true);
+        mockConversation = { endpoint, model: 'gpt-6-sol', useResponsesApi: false };
+        rerender();
+        expect(result.current.useResponsesApi).toBe(false);
+      },
+    );
+
     it('resolves endpoint name for a standard endpoint', () => {
       mockConversation = { endpoint: EModelEndpoint.openAI };
       const { result } = renderHook(() => useDragDropContext(), { wrapper });
@@ -150,6 +162,32 @@ describe('DragDropContext endpointType resolution', () => {
       } as Partial<Agent>;
       const { result } = renderHook(() => useDragDropContext(), { wrapper });
       expect(result.current.useResponsesApi).toBe(true);
+    });
+
+    it.each(['gpt-6-sol', 'gpt-6-luna'])(
+      'derives Responses for an unset Azure %s agent without mutating its setting',
+      (model) => {
+        mockConversation = { endpoint: EModelEndpoint.agents, agent_id: 'agent-1' };
+        mockAgentQueryData = {
+          provider: EModelEndpoint.azureOpenAI,
+          model,
+          model_parameters: {},
+        } as Partial<Agent>;
+        const { result } = renderHook(() => useDragDropContext(), { wrapper });
+        expect(result.current.useResponsesApi).toBe(true);
+        expect(mockAgentQueryData.model_parameters?.useResponsesApi).toBeUndefined();
+      },
+    );
+
+    it('preserves an explicit false for an Azure Sol agent', () => {
+      mockConversation = { endpoint: EModelEndpoint.agents, agent_id: 'agent-1' };
+      mockAgentQueryData = {
+        provider: EModelEndpoint.azureOpenAI,
+        model: 'gpt-6-sol',
+        model_parameters: { useResponsesApi: false },
+      } as Partial<Agent>;
+      const { result } = renderHook(() => useDragDropContext(), { wrapper });
+      expect(result.current.useResponsesApi).toBe(false);
     });
 
     it('keeps the conversation setting when the agent states none', () => {

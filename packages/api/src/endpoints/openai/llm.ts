@@ -4,6 +4,7 @@ import {
   ReasoningEffort,
   ReasoningParameterFormat,
   removeNullishValues,
+  prefersResponsesApiByModel,
   supportsAdaptiveThinking,
 } from 'librechat-data-provider';
 import type { BindToolsInput } from '@librechat/agents/langchain/language_models/chat_models';
@@ -150,11 +151,6 @@ const responsesApiRequiredPattern = /\bgpt-5\.6\b/;
  * the deployment as the wire model, or becomes the deployment name outright.
  * @see https://developers.openai.com/api/docs/guides/latest-model
  */
-const responsesApiPreferredPattern = /^gpt-6-(?:astra|sol|luna)(?:-|$)/i;
-
-function prefersResponsesApi(model?: string): boolean {
-  return typeof model === 'string' && responsesApiPreferredPattern.test(model);
-}
 
 function isCanonicalAzureBaseURL(baseURL?: string | null, azure?: false | t.AzureOptions): boolean {
   if (!azure) {
@@ -900,7 +896,8 @@ export function getOpenAILLMConfig({
     isCanonicalAzureBaseURL(baseURL, azure);
   const firstPartyEndpoint = firstPartyOpenAI || firstPartyAzure;
   /** Keep GPT-6 model identity on Azure, with the deployment name used on the wire. */
-  const firstPartyResponsesModel = firstPartyEndpoint && prefersResponsesApi(llmConfig.model);
+  const firstPartyResponsesModel =
+    firstPartyEndpoint && prefersResponsesApiByModel(llmConfig.model);
   if (
     firstPartyOpenAI &&
     reasoningFormat !== ReasoningParameterFormat.disabled &&
@@ -950,7 +947,7 @@ export function getOpenAILLMConfig({
    * Completions supports every Sol/Luna effort without tools (and `none` with
    * tools), so put the effective value in model kwargs for both OpenAI and
    * Azure deployment aliases. */
-  const solLunaChatCompletions = solLunaRulesApply && llmConfig.useResponsesApi === false;
+  const solLunaChatCompletions = solLunaRulesApply && llmConfig.useResponsesApi !== true;
   if (solLunaChatCompletions && reasoningEffort != null && reasoningEffort !== '') {
     modelKwargs.reasoning_effort = reasoningEffort;
     hasModelKwargs = true;

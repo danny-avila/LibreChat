@@ -234,6 +234,33 @@ export const resolveUseResponsesApi = (
   conversationValue?: boolean | null,
 ): boolean | undefined => agentValue ?? conversationValue ?? undefined;
 
+/** Models whose native OpenAI and Azure execution defaults to Responses. Keep
+ * this shared with client upload routing so documents follow the API that the
+ * backend will actually invoke. Explicit false remains an opt-out. */
+export const prefersResponsesApiByModel = (model?: string | null): boolean =>
+  typeof model === 'string' && /^gpt-6-(?:astra|sol|luna)(?:-|$)/i.test(model);
+
+export const resolveEffectiveUseResponsesApi = ({
+  value,
+  endpoint,
+  model,
+}: {
+  value?: boolean | null;
+  endpoint?: string | null;
+  model?: string | null;
+}): boolean | undefined => {
+  if (value != null) {
+    return value;
+  }
+  if (
+    (endpoint === EModelEndpoint.openAI || endpoint === EModelEndpoint.azureOpenAI) &&
+    prefersResponsesApiByModel(model)
+  ) {
+    return true;
+  }
+  return undefined;
+};
+
 export const isBedrockDocumentType = (mimeType?: string): boolean =>
   mimeType != null && mimeType in bedrockDocumentFormats;
 
