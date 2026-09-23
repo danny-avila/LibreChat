@@ -176,6 +176,36 @@ test.describe('theme token utilities', () => {
 test.describe('logged out', () => {
   test.use({ storageState: { cookies: [], origins: [] } });
 
+  test('auth login links keep their color transitions @scenario:auth-login-links-keep-their-color-transitions', async ({
+    page,
+  }) => {
+    const expectColorTransition = async (link: Locator) => {
+      await expect(link).toBeVisible({ timeout: 30000 });
+      const transition = await link.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return { property: style.transitionProperty, duration: style.transitionDuration };
+      });
+      expect(transition.property).toContain('color');
+      expect(transition.property).not.toBe('all');
+      expect(parseFloat(transition.duration)).toBeGreaterThan(0);
+    };
+
+    await page.goto('/register', { timeout: 15000 });
+    await expectColorTransition(page.getByRole('link', { name: 'Login', exact: true }));
+
+    await page.goto('/forgot-password', { timeout: 15000 });
+    await expectColorTransition(page.getByRole('link', { name: 'Back to Login', exact: true }));
+
+    // Exercise the response state without delivering email; only the rendered link is under test.
+    await page.route('**/api/auth/requestPasswordReset', (route) =>
+      route.fulfill({ status: 200, json: {} }),
+    );
+    await page.getByLabel('Email', { exact: true }).fill('transition-check@example.com');
+    await page.getByRole('button', { name: 'Continue with password reset' }).click();
+    await expect(page.getByRole('form', { name: 'Password reset form' })).not.toBeVisible();
+    await expectColorTransition(page.getByRole('link', { name: 'Back to Login', exact: true }));
+  });
+
   test('the login email field transitions only its colors @scenario:the-login-email-field-transitions-only-its-colors', async ({
     page,
   }) => {
