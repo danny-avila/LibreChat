@@ -21,6 +21,7 @@ const requireReadUsers = requireCapability(SystemCapabilities.READ_USERS);
 
 const handlers = createAdminUsersHandlers({
   media: {
+    hasMediaActivation: db.hasMediaActivation,
     prepareMediaAccountDeletion: db.prepareMediaAccountDeletion,
     cancelMediaAccountDeletion: db.cancelMediaAccountDeletion,
     completeMediaAccountDeletion: db.completeMediaAccountDeletion,

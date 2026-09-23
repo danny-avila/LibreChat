@@ -540,7 +540,7 @@ const deleteUserController = async (req, res) => {
       throw new Error('User disappeared before account deletion could commit');
     }
     userDeleted = true;
-    await completeAccountDeletion({ repository: db, session: mediaDeletion });
+    await completeAccountDeletion({ repository: db, session: mediaDeletion, log: logger.error });
     let codeEnvironmentCleanupSafe = true;
     try {
       await revokeUserCodeEnvironmentWorkers({

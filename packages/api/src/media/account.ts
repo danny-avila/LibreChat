@@ -11,11 +11,18 @@ export interface MediaAccountDeletion {
 }
 export type MediaAccountDeletionRepository = Pick<
   MediaMethods,
-  'prepareMediaAccountDeletion' | 'cancelMediaAccountDeletion' | 'completeMediaAccountDeletion'
+  | 'hasMediaActivation'
+  | 'prepareMediaAccountDeletion'
+  | 'cancelMediaAccountDeletion'
+  | 'completeMediaAccountDeletion'
 > &
   Pick<MediaAccountingMethods, 'hasMediaAccountingObligations'>;
+type DeletionLog = (message: string, error?: Error) => void;
 
-/** Called under the existing account deletion fence, before deleting any account data. */
+/**
+ * Called under the existing account deletion fence, before deleting any account data. A
+ * deployment that never activated media holds no media records, so it has nothing to fence.
+ */
 export async function prepareMediaAccountDeletion({
   repository,
   scope,
@@ -24,7 +31,10 @@ export async function prepareMediaAccountDeletion({
   repository: MediaAccountDeletionRepository;
   scope: MediaOwnerScope;
   token: string;
-}): Promise<MediaAccountDeletion> {
+}): Promise<MediaAccountDeletion | undefined> {
+  if (!(await repository.hasMediaActivation())) {
+    return undefined;
+  }
   const session = { scope, token };
   try {
     if (
@@ -44,14 +54,30 @@ export async function prepareMediaAccountDeletion({
   }
 }
 
+/**
+ * Runs after the User is removed, so it must not fail the deletion: media account reconciliation
+ * completes a prepared owner whose User no longer exists.
+ */
 export async function completeMediaAccountDeletion({
   repository,
   session,
+  log,
 }: {
   repository: MediaAccountDeletionRepository;
-  session: MediaAccountDeletion;
+  session?: MediaAccountDeletion;
+  log: DeletionLog;
 }): Promise<void> {
-  await repository.completeMediaAccountDeletion(session);
+  if (!session) {
+    return;
+  }
+  try {
+    await repository.completeMediaAccountDeletion(session);
+  } catch (error) {
+    log(
+      '[media] Account deletion cleanup deferred to reconciliation.',
+      error instanceof Error ? error : new Error('Media account deletion cleanup failed.'),
+    );
+  }
 }
 
 export async function cancelMediaAccountDeletion({
@@ -63,7 +89,7 @@ export async function cancelMediaAccountDeletion({
   repository: MediaAccountDeletionRepository;
   session?: MediaAccountDeletion;
   userDeleted: boolean;
-  log(message: string, error?: Error): void;
+  log: DeletionLog;
 }): Promise<void> {
   if (!session || userDeleted) {
     return;

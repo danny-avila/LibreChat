@@ -1,4 +1,4 @@
-import type { MediaMethods, MediaAccountingMethods } from '@librechat/data-schemas';
+import type { MediaAccountDeletionRepository } from './account';
 import {
   prepareMediaAccountDeletion,
   completeMediaAccountDeletion,
@@ -30,15 +30,10 @@ describe('media account deletion preflight', () => {
     expect(response.status).toHaveBeenLastCalledWith(500);
     expect(response.json).toHaveBeenLastCalledWith({ message: 'Something went wrong.' });
   });
-  let repository: jest.Mocked<
-    Pick<
-      MediaMethods,
-      'prepareMediaAccountDeletion' | 'cancelMediaAccountDeletion' | 'completeMediaAccountDeletion'
-    > &
-      Pick<MediaAccountingMethods, 'hasMediaAccountingObligations'>
-  >;
+  let repository: jest.Mocked<MediaAccountDeletionRepository>;
   beforeEach(() => {
     repository = {
+      hasMediaActivation: jest.fn().mockResolvedValue(true),
       prepareMediaAccountDeletion: jest.fn().mockResolvedValue(true),
       cancelMediaAccountDeletion: jest.fn().mockResolvedValue(undefined),
       completeMediaAccountDeletion: jest.fn().mockResolvedValue(undefined),
@@ -71,10 +66,35 @@ describe('media account deletion preflight', () => {
       expect(repository.completeMediaAccountDeletion).not.toHaveBeenCalled();
     },
   );
-  it('delegates completion to the durable protocol and preserves the fence after User deletion', async () => {
-    await completeMediaAccountDeletion({ repository, session });
-    expect(repository.completeMediaAccountDeletion).toHaveBeenCalledWith(session);
+  it('leaves a deployment that never activated media out of account deletion', async () => {
+    repository.hasMediaActivation.mockResolvedValue(false);
     const log = jest.fn();
+    const skipped = await prepareMediaAccountDeletion({ repository, ...session });
+    expect(skipped).toBeUndefined();
+    await completeMediaAccountDeletion({ repository, session: skipped, log });
+    await cancelMediaAccountDeletion({ repository, session: skipped, userDeleted: false, log });
+    expect(repository.prepareMediaAccountDeletion).not.toHaveBeenCalled();
+    expect(repository.hasMediaAccountingObligations).not.toHaveBeenCalled();
+    expect(repository.completeMediaAccountDeletion).not.toHaveBeenCalled();
+    expect(repository.cancelMediaAccountDeletion).not.toHaveBeenCalled();
+  });
+  it('defers a failed completion to reconciliation instead of failing a committed deletion', async () => {
+    repository.completeMediaAccountDeletion.mockRejectedValue(new Error('Database unavailable'));
+    const log = jest.fn();
+    await expect(
+      completeMediaAccountDeletion({ repository, session, log }),
+    ).resolves.toBeUndefined();
+    expect(log).toHaveBeenCalledWith(
+      '[media] Account deletion cleanup deferred to reconciliation.',
+      expect.objectContaining({ message: 'Database unavailable' }),
+    );
+    expect(repository.cancelMediaAccountDeletion).not.toHaveBeenCalled();
+  });
+  it('delegates completion to the durable protocol and preserves the fence after User deletion', async () => {
+    const log = jest.fn();
+    await completeMediaAccountDeletion({ repository, session, log });
+    expect(repository.completeMediaAccountDeletion).toHaveBeenCalledWith(session);
+    expect(log).not.toHaveBeenCalled();
     await cancelMediaAccountDeletion({ repository, session, userDeleted: true, log });
     expect(repository.cancelMediaAccountDeletion).not.toHaveBeenCalled();
     await cancelMediaAccountDeletion({ repository, session, userDeleted: false, log });

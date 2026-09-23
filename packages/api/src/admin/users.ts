@@ -226,7 +226,11 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
         return res.status(404).json({ error: 'User not found' });
       }
       userDeleted = true;
-      await completeMediaAccountDeletion({ repository: deps.media, session: mediaDeletion });
+      await completeMediaAccountDeletion({
+        repository: deps.media,
+        session: mediaDeletion,
+        log: logger.error,
+      });
       let codeEnvironmentCleanupSafe = true;
       try {
         await revokeUserCodeEnvironmentWorkers?.(id);

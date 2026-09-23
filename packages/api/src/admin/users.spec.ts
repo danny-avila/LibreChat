@@ -52,6 +52,7 @@ function createReqRes(
 function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
   return {
     media: {
+      hasMediaActivation: jest.fn().mockResolvedValue(true),
       prepareMediaAccountDeletion: jest.fn().mockResolvedValue(true),
       cancelMediaAccountDeletion: jest.fn().mockResolvedValue(undefined),
       completeMediaAccountDeletion: jest.fn().mockResolvedValue(undefined),
@@ -384,18 +385,29 @@ describe('createAdminUsersHandlers', () => {
       expect(deps.media.cancelMediaAccountDeletion).not.toHaveBeenCalled();
     });
 
-    it('keeps media deletion closed after the user commit when immediate cleanup fails', async () => {
+    it('finishes the committed deletion and leaves failed media cleanup to reconciliation', async () => {
       const deps = createDeps();
       (deps.media.completeMediaAccountDeletion as jest.Mock).mockRejectedValue(
         new Error('Storage unavailable'),
       );
       const { req, res, status } = createReqRes({ params: { id: validUserId } });
       await createAdminUsersHandlers(deps).deleteUser(req, res);
-      expect(status).toHaveBeenCalledWith(500);
+      expect(status).toHaveBeenCalledWith(200);
       expect(deps.deleteUserById).toHaveBeenCalled();
+      expect(deps.purgeAgentTriggerDeliveriesForUser).toHaveBeenCalledWith(validUserId);
       expect(deps.media.cancelMediaAccountDeletion).not.toHaveBeenCalled();
       expect(deps.cancelAgentTriggerUserDeletion).not.toHaveBeenCalled();
       expect(deps.media.completeMediaAccountDeletion).toHaveBeenCalledTimes(1);
+    });
+
+    it('deletes a user without touching media when media was never activated', async () => {
+      const deps = createDeps();
+      (deps.media.hasMediaActivation as jest.Mock).mockResolvedValue(false);
+      const { req, res, status } = createReqRes({ params: { id: validUserId } });
+      await createAdminUsersHandlers(deps).deleteUser(req, res);
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.media.prepareMediaAccountDeletion).not.toHaveBeenCalled();
+      expect(deps.media.completeMediaAccountDeletion).not.toHaveBeenCalled();
     });
 
     it('deletes user and returns 200', async () => {

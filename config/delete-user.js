@@ -248,7 +248,11 @@ async function gracefulExit(code = 0) {
     }
     userDeleted = true;
     await runAsSystem(() =>
-      completeMediaAccountDeletion({ repository: methods, session: mediaDeletion }),
+      completeMediaAccountDeletion({
+        repository: methods,
+        session: mediaDeletion,
+        log: console.error,
+      }),
     );
     let codeEnvironmentCleanupSafe = true;
     try {
