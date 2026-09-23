@@ -168,3 +168,34 @@ export async function clearUserPasskeys(userEmail: string): Promise<void> {
     await db.collection('passkeys').deleteMany({ user: userId });
   });
 }
+
+export async function countUserPasskeys(userId: string): Promise<number> {
+  return withMongo((db) =>
+    db.collection('passkeys').countDocuments({ user: new ObjectId(userId) }),
+  );
+}
+
+export async function enableTwoFactorFlag(userEmail: string): Promise<void> {
+  await withMongo(async (db) => {
+    await db
+      .collection('users')
+      .updateOne({ email: userEmail }, { $set: { twoFactorEnabled: true } });
+  });
+}
+
+/** Removes a throwaway user and the records the passkey scenarios create for it. */
+export async function deleteUserByEmail(userEmail: string): Promise<void> {
+  await withMongo(async (db) => {
+    const user = await db.collection('users').findOne({ email: userEmail });
+    if (!user) {
+      return;
+    }
+    await Promise.all([
+      db.collection('passkeys').deleteMany({ user: user._id }),
+      db.collection('sessions').deleteMany({ user: user._id }),
+      db.collection('balances').deleteMany({ user: user._id }),
+      db.collection('tokens').deleteMany({ userId: user._id }),
+    ]);
+    await db.collection('users').deleteOne({ _id: user._id });
+  });
+}
