@@ -119,7 +119,11 @@ function SocialLoginRender({
     ),
   };
 
-  const passkeyEnabled = showPasskey && startupConfig.passkeyLoginEnabled === true;
+  /** The passkey sign-in routes sit behind the email-login gate; management does not. */
+  const passkeyEnabled =
+    showPasskey &&
+    startupConfig.passkeyLoginEnabled === true &&
+    startupConfig.emailLoginEnabled !== false;
   const socialEnabled =
     startupConfig.socialLoginEnabled === true && (startupConfig.socialLogins?.length ?? 0) > 0;
 

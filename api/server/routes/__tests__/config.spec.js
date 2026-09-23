@@ -259,7 +259,7 @@ describe('GET /api/config', () => {
       expect(response.body).not.toHaveProperty('interface');
     });
 
-    it('does not advertise passkey sign-in when email login is disabled', async () => {
+    it('keeps passkeys advertised for management when email login is disabled', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       const previous = {
         ALLOW_EMAIL_LOGIN: process.env.ALLOW_EMAIL_LOGIN,
@@ -278,7 +278,7 @@ describe('GET /api/config', () => {
         const response = await request(app).get('/api/config');
 
         expect(response.body.emailLoginEnabled).toBe(false);
-        expect(response.body.passkeyLoginEnabled).toBe(false);
+        expect(response.body.passkeyLoginEnabled).toBe(true);
       } finally {
         for (const [key, value] of Object.entries(previous)) {
           if (value === undefined) {
