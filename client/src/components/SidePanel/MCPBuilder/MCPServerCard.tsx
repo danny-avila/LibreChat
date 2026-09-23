@@ -111,7 +111,8 @@ export default function MCPServerCard({
       <div
         className={cn(
           'group flex items-center gap-3 rounded-lg px-3 py-2.5',
-          'border-border-light border bg-transparent',
+          /** Flat row, not a card: the hover fill is the only affordance a list needs. */
+          'hover:bg-surface-active-alt bg-transparent',
         )}
         aria-label={`${displayName} - ${getStatusText()}`}
       >

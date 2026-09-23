@@ -733,7 +733,7 @@ export default function InsightsView() {
     (insightsFeatureEnabled && (insights.isLoading || isRecoveringAgentFilters))
   ) {
     return (
-      <div className="bg-presentation h-full w-full p-4">
+      <div className="bg-surface-primary-alt h-full w-full p-4">
         <LoadingState message={localize('com_insights_loading')} />
       </div>
     );
@@ -743,8 +743,8 @@ export default function InsightsView() {
   }
 
   return (
-    <div className="bg-presentation text-text-primary flex h-full w-full min-w-0 flex-col">
-      <header className="border-border-light bg-presentation z-20 flex min-h-14 w-full shrink-0 flex-col gap-3 border-b px-4 py-3 sm:px-5 md:flex-row md:items-center md:justify-between md:px-6 lg:px-8">
+    <div className="bg-surface-primary-alt text-text-primary flex h-full w-full min-w-0 flex-col">
+      <header className="bg-surface-primary-alt z-20 flex min-h-14 w-full shrink-0 flex-col gap-3 px-4 py-3 sm:px-5 md:flex-row md:items-center md:justify-between md:px-6 lg:px-8">
         <div className="flex min-w-0 items-center gap-3">
           {isSmallScreen && <OpenSidebar />}
           <h1 className="text-base font-semibold">{localize('com_insights_title')}</h1>

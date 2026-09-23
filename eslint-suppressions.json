@@ -305,7 +305,7 @@
   },
   "client/src/components/Chat/Input/Files/Table/DataTable.tsx": {
     "shadcn/no-restyle": {
-      "count": 28
+      "count": 26
     }
   },
   "client/src/components/Chat/Input/HeaderOptions.tsx": {
@@ -1459,11 +1459,6 @@
       "count": 6
     }
   },
-  "client/src/components/Prompts/buttons/CreatePromptButton.tsx": {
-    "shadcn/no-restyle": {
-      "count": 1
-    }
-  },
   "client/src/components/Prompts/dialogs/SharePrompt.tsx": {
     "shadcn/no-restyle": {
       "count": 1
@@ -1912,7 +1907,7 @@
   },
   "client/src/components/SidePanel/Bookmarks/BookmarkTable.tsx": {
     "shadcn/no-restyle": {
-      "count": 3
+      "count": 2
     }
   },
   "client/src/components/SidePanel/Builder/Action.tsx": {
@@ -2033,17 +2028,20 @@
       "count": 3
     },
     "shadcn/no-restyle": {
-      "count": 17
+      "count": 15
     }
   },
   "client/src/components/SidePanel/MCPBuilder/MCPBuilderPanel.tsx": {
     "shadcn/no-restyle": {
-      "count": 3
+      "count": 2
     }
   },
   "client/src/components/SidePanel/MCPBuilder/MCPCardActions.tsx": {
     "shadcn/no-restyle": {
-      "count": 57
+      "count": 1
+    },
+    "shadcn/require-static-classes": {
+      "count": 7
     }
   },
   "client/src/components/SidePanel/MCPBuilder/MCPServerCard.tsx": {
@@ -2076,16 +2074,6 @@
       "count": 1
     }
   },
-  "client/src/components/SidePanel/MCPBuilder/MCPServerList.tsx": {
-    "shadcn/no-restyle": {
-      "count": 1
-    }
-  },
-  "client/src/components/SidePanel/Memories/MemoryCardActions.tsx": {
-    "shadcn/no-restyle": {
-      "count": 16
-    }
-  },
   "client/src/components/SidePanel/Memories/MemoryCreateDialog.tsx": {
     "shadcn/no-restyle": {
       "count": 12
@@ -2098,7 +2086,7 @@
   },
   "client/src/components/SidePanel/Memories/MemoryPanel.tsx": {
     "shadcn/no-restyle": {
-      "count": 5
+      "count": 4
     }
   },
   "client/src/components/SidePanel/Parameters/DynamicCombobox.tsx": {
@@ -2151,7 +2139,7 @@
   },
   "client/src/components/SidePanel/Schedules/SchedulePanel.tsx": {
     "shadcn/no-restyle": {
-      "count": 3
+      "count": 2
     }
   },
   "client/src/components/SidePanel/SidePanelGroup.tsx": {

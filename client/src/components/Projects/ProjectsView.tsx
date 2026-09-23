@@ -252,7 +252,7 @@ export default function ProjectsView() {
   };
 
   return (
-    <main className="bg-presentation text-text-primary flex h-full min-h-0 flex-col overflow-auto">
+    <main className="bg-surface-primary-alt text-text-primary flex h-full min-h-0 flex-col overflow-auto">
       <ProjectsNavBar onCreate={() => setIsCreating(true)} />
 
       <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 pt-6 pb-10 md:px-6 md:pt-8">
