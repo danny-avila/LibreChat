@@ -120,7 +120,13 @@ export async function loadEphemeralAgent(
       : typeof modelPromptPrefix === 'string'
         ? modelPromptPrefix
         : requestPromptPrefix;
-  const instructions = resolveResponseAppInstructions(req.body?.appId, requestInstructions);
+  const appInstructions = await resolveResponseAppInstructions(req.body?.appId);
+  const requestTaskInstructions = appInstructions && requestInstructions === appInstructions
+    ? ''
+    : appInstructions && requestInstructions?.startsWith(`${appInstructions}\n\n`)
+      ? requestInstructions.slice(appInstructions.length).replace(/^\s+/, '')
+    : requestInstructions;
+  const instructions = appInstructions || requestInstructions;
 
   // Get endpoint config for modelDisplayLabel fallback
   const appConfig = req.config;
@@ -152,6 +158,7 @@ export async function loadEphemeralAgent(
   const result: Partial<Agent> = {
     id: ephemeralId,
     instructions,
+    additional_instructions: appInstructions ? requestTaskInstructions : undefined,
     provider: endpoint,
     model_parameters: safeModelParameters as AgentModelParameters,
     model,
@@ -210,16 +217,24 @@ export async function loadAgent(
    */
   const requestInstructions =
     typeof req.body?.instructions === 'string' ? req.body.instructions.trim() : '';
-  const appInstructions = resolveResponseAppInstructions(req.body?.appId);
-  const requestTaskInstructions = appInstructions && requestInstructions.startsWith(`${appInstructions}\n\n`)
-    ? requestInstructions.slice(appInstructions.length).replace(/^\s+/, '')
+  const appInstructions = await resolveResponseAppInstructions(req.body?.appId);
+  const requestTaskInstructions = appInstructions && requestInstructions === appInstructions
+    ? ''
+    : appInstructions && requestInstructions.startsWith(`${appInstructions}\n\n`)
+      ? requestInstructions.slice(appInstructions.length).replace(/^\s+/, '')
     : requestInstructions;
 
   if (appInstructions) {
-    agent.instructions = resolveResponseAppInstructions(req.body?.appId, agent.instructions);
-  }
-
-  if (requestTaskInstructions) {
+    const storedInstructions = agent.instructions === appInstructions
+      ? ''
+      : agent.instructions?.startsWith(`${appInstructions}\n\n`)
+        ? agent.instructions.slice(appInstructions.length).replace(/^\s+/, '')
+        : agent.instructions;
+    agent.instructions = appInstructions;
+    agent.additional_instructions = [agent.additional_instructions, storedInstructions, requestTaskInstructions]
+      .filter(Boolean)
+      .join('\n\n');
+  } else if (requestTaskInstructions) {
     agent.additional_instructions = [agent.additional_instructions, requestTaskInstructions]
       .filter(Boolean)
       .join('\n\n');

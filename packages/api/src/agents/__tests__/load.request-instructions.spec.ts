@@ -2,7 +2,15 @@ import type { Agent, AgentModelParameters } from 'librechat-data-provider';
 import { Constants } from 'librechat-data-provider';
 import type { LoadAgentDeps, LoadAgentParams } from '../load';
 import { loadAgent } from '../load';
-import { RESPONSE_PROMPTS_BY_APP_ID } from '../generatedResponsePrompts';
+import * as GeneratedPrompts from '../generatedResponsePrompts';
+
+const APP_PROMPT = 'Prompt content returned by S3.';
+
+beforeEach(() => {
+  jest.spyOn(GeneratedPrompts, 'resolveResponseAppInstructions').mockImplementation(async (appId) =>
+    appId === undefined ? '' : APP_PROMPT,
+  );
+});
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -82,7 +90,7 @@ describe('loadAgent request instructions', () => {
   });
 
   test('uses the repository app prompt as primary instructions for persistent agents', async () => {
-    const prompt = RESPONSE_PROMPTS_BY_APP_ID['1'].instructions;
+    const prompt = APP_PROMPT;
     const getAgent = jest.fn(async () => makeAgent());
     const deps: LoadAgentDeps = {
       getAgent,
@@ -102,12 +110,12 @@ describe('loadAgent request instructions', () => {
       deps,
     );
 
-    expect(result?.instructions).toBe(`${prompt}\n\nStored author instructions.`);
-    expect(result?.additional_instructions).toBe('Case context: active caseId is 73181283.');
+    expect(result?.instructions).toBe(prompt);
+    expect(result?.additional_instructions).toBe(`Stored author instructions.\n\nCase context: active caseId is 73181283.`);
   });
 
   test('keeps the repository app prompt when callers supply alternate instructions', async () => {
-    const prompt = RESPONSE_PROMPTS_BY_APP_ID['2'].instructions;
+    const prompt = APP_PROMPT;
     const deps: LoadAgentDeps = {
       getAgent: jest.fn(async () => makeAgent()),
       getMCPServerTools: jest.fn(),
@@ -123,8 +131,8 @@ describe('loadAgent request instructions', () => {
       deps,
     );
 
-    expect(result?.instructions).toBe(`${prompt}\n\nStored author instructions.`);
-    expect(result?.additional_instructions).toBe('Caller replacement instructions.');
+    expect(result?.instructions).toBe(prompt);
+    expect(result?.additional_instructions).toBe('Stored author instructions.\n\nCaller replacement instructions.');
   });
 
   test('ignores blank request instructions and leaves dynamic context unchanged', async () => {

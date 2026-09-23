@@ -21,6 +21,7 @@
 import { nanoid } from 'nanoid';
 import { AgentCapabilities } from 'librechat-data-provider';
 import { applyResponseAppPrompt } from '../appPrompt';
+import { resolveResponseAppInstructions } from '../generatedResponsePrompts';
 import type { Response as ServerResponse, Request } from 'express';
 import type {
   ChatCompletionResponse,
@@ -412,7 +413,15 @@ export async function createAgentChatCompletion(
     | undefined;
   const requestInstructions =
     typeof requestBody.instructions === 'string' ? requestBody.instructions.trim() : '';
-  const runtimeAgent = applyResponseAppPrompt(agent, appId, requestInstructions);
+  let appInstructions = '';
+  try {
+    appInstructions = await resolveResponseAppInstructions(appId);
+  } catch (error) {
+    logger.error('[OpenAIChatCompletion] Failed to load mapped app prompt from S3', error);
+    sendErrorResponse(res, 503, 'The selected app prompt is temporarily unavailable. Please retry.');
+    return;
+  }
+  const runtimeAgent = applyResponseAppPrompt(agent, appInstructions, requestInstructions);
 
   // Generate IDs
   const requestId = `chatcmpl-${nanoid()}`;
