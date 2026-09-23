@@ -23,6 +23,9 @@ const ctx: SettingsContextValue = {
   engineTTS: 'browser',
   langfuseConnectionAccess: false,
   adminPanelURL: '',
+  replyTabBadgeAllowed: true,
+  replyNotificationsAllowed: true,
+  replyNotificationSoundAllowed: true,
 };
 
 function setup(extra: Partial<SettingsContextValue> = {}, query = '') {

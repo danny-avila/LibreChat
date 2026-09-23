@@ -117,6 +117,10 @@ export const excludedKeys = new Set([
   'spec',
   'disableParams',
   'chatProjectId',
+  'lastResponseAt',
+  'lastResponseMessageId',
+  'lastResponseIsManual',
+  'lastSeenAt',
 ]);
 
 export enum SettingsViews {
@@ -2248,6 +2252,50 @@ export const interfaceSchema = z
         }),
       ])
       .optional(),
+    /**
+     * What the reply-alert capabilities may do on this deployment. Each field gates a
+     * capability rather than setting it: the preferences themselves stay per device, because
+     * notification permission and audio output belong to the machine the reader sits at.
+     */
+    replyNotifications: z
+      .object({
+        /** Whether an unseen count may reach the tab title and favicon. */
+        tabBadge: z.boolean().optional(),
+        /** Whether readers may turn on desktop notifications for replies. */
+        desktop: z.boolean().optional(),
+        /** Whether readers may turn on the reply chime. */
+        sound: z.boolean().optional(),
+        /**
+         * How many conversations one away poll looks at. A reply lifts its conversation, so the
+         * newest activity is what the first page holds.
+         *
+         * Bounded by the conversation list's own maximum page, which the server clamps every
+         * request to: advertising a wider range here would accept a number the read silently
+         * truncates. Covering a deployment whose replies outpace a single page wants the
+         * server-side unseen query rather than a larger page.
+         */
+        pollLimit: z.number().int().min(1).max(100).optional(),
+        /** Milliseconds between list checks while the tab is unfocused and an away alert is on. */
+        pollIntervalMs: z.number().int().min(10_000).max(600_000).optional(),
+        /**
+         * Milliseconds between list refreshes while the tab is focused, so a reply produced
+         * elsewhere eventually shows its dot. Deliberately far slower than the away poll.
+         *
+         * Capped at five minutes because this refresh is what renews the unfiltered discovery
+         * snapshot, and the client holds an unobserved snapshot authoritative for five minutes:
+         * a slower refresh would let it lapse, dropping its unseen rows from the count until the
+         * next one.
+         */
+        focusedRefreshMs: z.number().int().min(60_000).max(300_000).optional(),
+      })
+      .default({
+        tabBadge: true,
+        desktop: true,
+        sound: true,
+        pollLimit: 100,
+        pollIntervalMs: 30_000,
+        focusedRefreshMs: 300_000,
+      }),
     schedules: z
       .union([
         z.boolean(),
@@ -2337,6 +2385,14 @@ export const interfaceSchema = z
       public: true,
       snapshotFiles: true,
     },
+    replyNotifications: {
+      tabBadge: true,
+      desktop: true,
+      sound: true,
+      pollLimit: 100,
+      pollIntervalMs: 30_000,
+      focusedRefreshMs: 300_000,
+    },
     // `schedules` is deliberately ABSENT from this default. It is experimental and
     // default-off in v1, and zod applies this whole object when `interface` is omitted
     // from librechat.yaml — including it would silently enable the feature (and permit
@@ -2345,6 +2401,7 @@ export const interfaceSchema = z
   });
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
+export type TReplyNotificationsConfig = TInterfaceConfig['replyNotifications'];
 export type TBalanceConfig = z.infer<typeof balanceSchema>;
 export type TTransactionsConfig = z.infer<typeof transactionsSchema>;
 
