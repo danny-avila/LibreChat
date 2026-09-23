@@ -484,6 +484,23 @@ describe('useReplyAlerts', () => {
     }
   });
 
+  it('announces a held reply as soon as the focused tab releases its lease', async () => {
+    otherTabLease();
+    const { rerender } = setup({ notifications: true });
+
+    act(() => {
+      rerender(stateOf([row('convo-b', 'Beta')]));
+    });
+    expect(createdNotifications).toHaveLength(0);
+
+    act(() => {
+      window.localStorage.removeItem('replyAlerts:focusedAt');
+      window.dispatchEvent(new StorageEvent('storage', { key: 'replyAlerts:focusedAt' }));
+    });
+
+    await waitFor(() => expect(createdNotifications).toHaveLength(1));
+  });
+
   it('keeps holding the reply while the focused tab keeps its lease alive', async () => {
     jest.useFakeTimers();
     try {

@@ -78,6 +78,17 @@ export const anotherTabLeaseRemainingMs = (): number | null => {
   return remaining > 0 ? remaining : null;
 };
 
+/** Calls back whenever another tab writes or clears the lease, such as on its blur. */
+export const subscribeToFocusLease = (onChange: () => void): (() => void) => {
+  const listener = (event: StorageEvent) => {
+    if (event.key === FOCUS_LEASE_KEY || event.key === null) {
+      onChange();
+    }
+  };
+  window.addEventListener('storage', listener);
+  return () => window.removeEventListener('storage', listener);
+};
+
 /** Publishes the lease for as long as this tab holds focus. */
 export const startFocusLease = (): (() => void) => {
   let heartbeat: number | null = null;

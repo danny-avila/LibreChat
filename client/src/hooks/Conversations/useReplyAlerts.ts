@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import type { ReplyReadState } from './useUnseenConversations';
-import { startFocusLease, anotherTabLeaseRemainingMs } from './focusLease';
+import { startFocusLease, subscribeToFocusLease, anotherTabLeaseRemainingMs } from './focusLease';
 import { suppressFocusAcknowledgement } from './notificationNavigation';
 import { useReplyAlertPreferences } from './replyNotificationSettings';
 import { useLocalize } from '~/hooks';
@@ -228,14 +228,21 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
   const leaseHeldRef = useRef<Map<string, string>>(new Map());
   const leaseTimerRef = useRef<number | null>(null);
   const [leaseRecheck, setLeaseRecheck] = useState(0);
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    /* A tab that blurs normally clears its lease well before the lapse, and the reply it held
+       back is due as soon as nobody is looking. */
+    const unsubscribe = subscribeToFocusLease(() => {
+      if (leaseHeldRef.current.size > 0) {
+        setLeaseRecheck((count) => count + 1);
+      }
+    });
+    return () => {
+      unsubscribe();
       if (leaseTimerRef.current !== null) {
         window.clearTimeout(leaseTimerRef.current);
       }
-    },
-    [],
-  );
+    };
+  }, []);
 
   /* Published for the other tabs of this origin, and read by them below: a reply announced by
      a background tab while the user reads a focused one is exactly the interruption the focus
