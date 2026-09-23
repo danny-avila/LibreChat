@@ -2104,6 +2104,7 @@ export async function createRun({
   compactionSemanticIndex,
   initialSummary,
   modelCallbacks,
+  clientToolNames,
   calibrationRatio,
   fadingTier,
   fadingTiers,
@@ -2170,6 +2171,8 @@ export async function createRun({
   initialSummary?: { text: string; tokenCount: number };
   /** Model callbacks inherited by root, summary, fallback, and subagent clients. */
   modelCallbacks?: readonly RunModelCallback[];
+  /** Caller-executed tools must never run eagerly before handoff is decided. */
+  clientToolNames?: ReadonlySet<string>;
   /** Calibration ratio from previous run's contextMeta, seeds the pruner EMA */
   calibrationRatio?: number;
   /**
@@ -2947,6 +2950,7 @@ export async function createRun({
          */
         CHECK_BACKGROUND_TASK_NAME,
         ...agents.flatMap((agent) => agent.backgroundToolNames ?? []),
+        ...(clientToolNames ?? []),
       ],
     },
     // Let host file tools share the code-execution sandbox session so a file
