@@ -2,7 +2,7 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const readline = require('readline');
 const mongoose = require('mongoose');
-const { User, Passkey } = require('@librechat/data-schemas').createModels(mongoose);
+const { User, Passkey, Session } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askSilentQuestion } = require('./helpers');
 const connect = require('./connect');
@@ -69,6 +69,8 @@ const resetPassword = async () => {
      * logged in after an administrator believes the account has been recovered.
      */
     const { deletedCount } = await Passkey.deleteMany({ user: user._id });
+    /** A refresh session outlives the stamp: refreshing mints a token issued after it. */
+    await Session.deleteMany({ user: user._id });
 
     console.log('Password successfully reset!');
     if (deletedCount > 0) {
