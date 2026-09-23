@@ -10,12 +10,26 @@ import type {
   ReasoningResponseKey,
   ReasoningParameterFormat,
 } from './schemas';
-import type { Agent, EToolResources, StatefulCodeEnvironment } from './types/assistants';
+import type {
+  CodeWorkspaceDescriptor,
+  CodeEnvironmentMode,
+  CodeWorkspaceOperation,
+  CodeWorkspaceSelection,
+} from './code/workspace';
+import type {
+  CodeEnvironmentUserConfigSchema,
+  CodeEnvironmentUserSettings,
+  TAgentsEndpoint,
+} from './config';
+import type { StatefulCodeEnvironment } from './stateful-code';
+import type { CodeApprovalMode } from './code/approval';
+import type { EToolResources } from './types/tools';
 import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
 import type { ProviderId } from './providers';
+import type { Agent } from './types/agents';
 
 export * from './schemas';
 export * from './types/subagents';
@@ -131,6 +145,9 @@ export type TPayload = Partial<TMessage> &
   Partial<TEndpointOption> & {
     isContinued: boolean;
     isRegenerate?: boolean;
+    /** Manual context compaction: summarize the branch up to `parentMessageId`
+     *  and end without a reply. No user message is created. */
+    compact?: boolean;
     conversationId: string | null;
     messages?: TMessages;
     isTemporary: boolean;
@@ -145,6 +162,12 @@ export type TPayload = Partial<TMessage> &
      * before the LLM turn runs.
      */
     manualSkills?: string[];
+    /** Conversation-scoped preference for code tool approval behavior. */
+    codeApprovalMode?: CodeApprovalMode;
+    /** Immutable conversation choice for attached code execution. */
+    codeEnvironmentMode?: CodeEnvironmentMode;
+    /** Conversation-selected workspaces, with at most one binding per environment. */
+    codeWorkspaces?: CodeWorkspaceSelection[];
     /** Browser IANA timezone (e.g. `America/New_York`) used to resolve local-time prompt variables server-side. */
     timezone?: string;
     /**
@@ -185,6 +208,9 @@ export type TSubmission = {
   /** Client-only full message context used to restore branch siblings after scoped regenerate. */
   regenerateMessages?: TMessage[];
   isRegenerate?: boolean;
+  /** Manual context compaction; shaped like a regenerate on the client (no new
+   *  user bubble) and sent to the server as a summarize-only turn. */
+  compact?: boolean;
   initialResponse?: TMessage;
   conversation: Partial<TConversation>;
   endpointOption: TEndpointOption;
@@ -221,6 +247,12 @@ export type TSubmission = {
   addedConvo?: TConversation;
   /** Skills the user invoked via the `$` popover for this submission. */
   manualSkills?: string[];
+  /** Conversation-scoped preference for code tool approval behavior. */
+  codeApprovalMode?: CodeApprovalMode;
+  /** Immutable conversation choice for attached code execution. */
+  codeEnvironmentMode?: CodeEnvironmentMode;
+  /** Conversation-selected workspaces, with at most one binding per environment. */
+  codeWorkspaces?: CodeWorkspaceSelection[];
   /** Stable per-submission idempotency key (uuid) forwarded to the server to dedup retried start-generation requests. */
   clientRequestId?: string;
   /** Client-only carry-through for a receipt-bound queued recovery. */
@@ -444,6 +476,10 @@ export type TPinConversationResponse = TConversation;
 
 export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
   messages: TMessage[];
+  langfuseSessionUrl?: string;
+  /** Whether the link was published with a configured sender label; withholds the
+   * model on hover. */
+  hasConfiguredSender?: boolean;
 };
 
 export type TCreateShareLinkRequest = Pick<TConversation, 'conversationId'>;
@@ -525,6 +561,73 @@ export type TSearchResults = {
   filter: object;
 };
 
+export type TPublicCodeEnvironment = {
+  id: string;
+  name: string;
+  type: 'managed' | 'attached';
+  default?: boolean;
+  pairingAvailable?: boolean;
+  configSchema?: CodeEnvironmentUserConfigSchema;
+  settings?: CodeEnvironmentUserSettings;
+};
+
+export type TCodeEnvironmentSummary = {
+  resourceId: string;
+  id: string;
+  name: string;
+  type: 'managed' | 'attached';
+  canEdit?: boolean;
+  canDelete: boolean;
+  configSchema?: CodeEnvironmentUserConfigSchema;
+  settings?: CodeEnvironmentUserSettings;
+};
+
+export type TCodeControlPlane = {
+  id: string;
+  name: string;
+  configSchema?: CodeEnvironmentUserConfigSchema;
+};
+
+export type TCodeEnvironmentsResponse = {
+  environments: TCodeEnvironmentSummary[];
+  controlPlanes: TCodeControlPlane[];
+};
+
+export type TCodeEnvironmentPairingResponse = {
+  environment: TCodeEnvironmentSummary;
+  pairing: {
+    workerId: string;
+    code: string;
+    expiresAt: string;
+    endpoint: string;
+  };
+};
+
+export type TCodeEnvironmentStatusResponse = {
+  environmentId: string;
+  status: 'offline' | 'starting' | 'ready';
+  statefulWorkspace?: boolean;
+  leaseExpiresInMs?: number;
+  sandboxProfile?: string;
+  runtimes?: string[];
+  operations?: CodeWorkspaceOperation[];
+  workspaces?: CodeWorkspaceDescriptor[];
+};
+
+/** Moves a sealed attached decision onto the environments a conversation's agents now use. */
+export type TCodeEnvironmentMoveRequest = {
+  conversationId: string;
+  /** The persisted selections being replaced; a mismatch rejects the move as stale. */
+  from: CodeWorkspaceSelection[];
+  to: CodeWorkspaceSelection[];
+};
+
+export type TCodeEnvironmentMoveResponse = {
+  conversationId: string;
+  codeEnvironmentMode: 'attached';
+  codeWorkspaces: CodeWorkspaceSelection[];
+};
+
 export type TConfig = {
   order: number;
   type?: EModelEndpoint;
@@ -550,9 +653,18 @@ export type TConfig = {
   capabilities?: string[];
   statefulCodeSessions?: {
     allowedEnvironments: StatefulCodeEnvironment[];
+    environments?: TPublicCodeEnvironment[];
+    approvalsEnabled?: boolean;
+    /** Approval modes the endpoint policy permits the client to offer. */
+    approvalModes?: CodeApprovalMode[];
   };
   /** Effective subagents-per-agent cap served from `endpoints.agents.maxSubagents`. */
   maxSubagents?: number;
+  fileSharing?: TAgentsEndpoint['fileSharing'];
+  /** Concurrent Code API uploads allowed per route and authenticated principal. */
+  codeApiUploadConcurrency?: number;
+  /** Milliseconds one operation may spend waiting on Code API rate limits. */
+  codeApiMaxRetryWaitMs?: number;
   customParams?: {
     defaultParamsEndpoint?: string;
     reasoningFormat?: ReasoningParameterFormat;
@@ -968,4 +1080,6 @@ export type TLangfuseConnectionTestResponse =
 
 export type TLangfuseSessionLinkResponse = {
   url: string | null;
+  /** Opaque identity of the project `url` opens, so a caller can tell whether it holds what it showed. */
+  destinationId?: string;
 };

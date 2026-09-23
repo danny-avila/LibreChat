@@ -7,15 +7,20 @@ const {
   getApprovalTtlMs,
   refreshS3FileUrls,
   handleFilesUsageRequest,
+  buildDeleteFilesResponse,
   shouldUseUploadSse,
   startUploadSseStream,
   sendUploadPolicyError,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
+  createCodeExecutionRouteKey,
   getCodeExecutionBaseUrl,
   assertUploadContentAllowed,
   hasActiveFilePolicy,
   sanitizeFilename,
+  checkToolResourceUploadPermission,
+  resolveAssistantToolPermissions,
+  resolveDownloadPath,
 } = require('@librechat/api');
 const {
   Time,
@@ -37,10 +42,16 @@ const {
   processDeleteRequest,
   processAgentFileUpload,
 } = require('~/server/services/Files/process');
+const {
+  resolveEffectiveToolResource,
+  resolveUploadEndpoint,
+  resolveUploadAgent,
+} = require('~/server/services/Files/routing');
 const { fileAccess } = require('~/server/middleware/accessResources/fileAccess');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
+const { getRoleByName } = require('~/models');
 const { checkPermission } = require('~/server/services/PermissionService');
 const { cleanFileName, getContentDisposition } = require('~/server/utils/files');
 const { getLogStores } = require('~/cache');
@@ -176,6 +187,9 @@ router.post('/usage', async (req, res) => {
 
 router.delete('/', async (req, res) => {
   try {
+    const sendDeleteResult = (result, successMessage) =>
+      res.status(200).json(buildDeleteFilesResponse(result, successMessage));
+
     const { files: _files } = req.body;
 
     /** @type {MongoFile[]} */
@@ -260,14 +274,14 @@ router.delete('/', async (req, res) => {
     }
 
     if (dbFiles.length > 0 && nonOwnedFiles.length === 0) {
-      await processDeleteRequest({ req, files: ownedFiles });
+      const result = await processDeleteRequest({ req, files: ownedFiles });
       logger.debug(
         `[/files] Files deleted successfully: ${ownedFiles
           .filter((f) => f.file_id)
           .map((f) => f.file_id)
           .join(', ')}`,
       );
-      res.status(200).json({ message: 'Files deleted successfully' });
+      sendDeleteResult(result, 'Files deleted successfully');
       return;
     }
 
@@ -284,26 +298,25 @@ router.delete('/', async (req, res) => {
     /* Handle assistant unlinking even if no valid files to delete */
     if (req.body.assistant_id && req.body.tool_resource && dbFiles.length === 0) {
       const assistant = await db.getAssistant({
-        id: req.body.assistant_id,
+        assistantId: req.body.assistant_id,
       });
 
-      const toolResourceFiles = assistant.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
+      const toolResourceFiles = assistant?.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
       const assistantFiles = files.filter((f) => toolResourceFiles.includes(f.file_id));
 
-      await processDeleteRequest({ req, files: assistantFiles });
-      res.status(200).json({ message: 'File associations removed successfully from assistant' });
+      const result = await processDeleteRequest({ req, files: assistantFiles });
+      sendDeleteResult(result, 'File associations removed successfully from assistant');
       return;
     } else if (
       req.body.assistant_id &&
       req.body.files?.[0]?.filepath === EModelEndpoint.azureAssistants
     ) {
-      await processDeleteRequest({ req, files: req.body.files });
-      return res
-        .status(200)
-        .json({ message: 'File associations removed successfully from Azure Assistant' });
+      const result = await processDeleteRequest({ req, files: req.body.files });
+      sendDeleteResult(result, 'File associations removed successfully from Azure Assistant');
+      return;
     }
 
-    await processDeleteRequest({ req, files: authorizedFiles });
+    const result = await processDeleteRequest({ req, files: authorizedFiles });
 
     logger.debug(
       `[/files] Files deleted successfully: ${authorizedFiles
@@ -311,7 +324,7 @@ router.delete('/', async (req, res) => {
         .map((f) => f.file_id)
         .join(', ')}`,
     );
-    res.status(200).json({ message: 'Files deleted successfully' });
+    sendDeleteResult(result, 'Files deleted successfully');
   } catch (error) {
     logger.error('[/files] Error deleting files:', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
@@ -347,7 +360,29 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
       return res.status(400).send('Bad request');
     }
     const executionProfile = requestedProfile ?? 'default';
-    const baseUrl = getCodeExecutionBaseUrl(executionProfile);
+    const requestedRouteKey = req.query.execution_route_key;
+    if (
+      requestedRouteKey != null &&
+      (typeof requestedRouteKey !== 'string' ||
+        executionProfile !== 'stateful' ||
+        !/^stateful:[a-f0-9]{32}$/.test(requestedRouteKey))
+    ) {
+      logger.debug(`${logPrefix} invalid execution_route_key`);
+      return res.status(400).send('Bad request');
+    }
+    const environments =
+      req.config?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments;
+    const configuredEnvironment = requestedRouteKey
+      ? environments?.find(
+          (environment) =>
+            createCodeExecutionRouteKey('stateful', environment) === requestedRouteKey,
+        )
+      : undefined;
+    if (requestedRouteKey && !configuredEnvironment) {
+      logger.debug(`${logPrefix} unknown execution_route_key`);
+      return res.status(404).send('Not found');
+    }
+    const baseUrl = getCodeExecutionBaseUrl(executionProfile, configuredEnvironment);
 
     const { getDownloadStream } = getStrategyFunctions(FileSources.execute_code);
     if (!getDownloadStream) {
@@ -372,7 +407,16 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
         id: req.user.id,
       },
       req,
-      { baseUrl, executionProfile },
+      {
+        baseUrl,
+        executionProfile,
+        ...((configuredEnvironment?.workerId ?? configuredEnvironment?.pairing?.workerId) != null
+          ? {
+              bridgeWorkerId:
+                configuredEnvironment?.workerId ?? configuredEnvironment?.pairing?.workerId,
+            }
+          : {}),
+      },
     );
     res.setHeader('Content-Disposition', 'attachment');
     res.setHeader('Content-Type', 'application/octet-stream');
@@ -665,7 +709,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
         return res.status(501).send('Not Implemented');
       }
 
-      const fileStream = await getDownloadStream(req, file.storageKey || file.filepath);
+      const fileStream = await getDownloadStream(req, resolveDownloadPath(file));
 
       fileStream.on('error', (streamError) => {
         logger.error('[DOWNLOAD ROUTE] Stream error:', streamError);
@@ -690,7 +734,44 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+/**
+ * A v1 Knowledge upload posts `assistant_id` with no `tool_resource`, so the
+ * resource map has nothing to authorize against. What the file will feed is the
+ * assistant's own native tools, so read those and require their grants.
+ *
+ * Runs here rather than at attach time so a denied role never gets its bytes
+ * into provider storage — an authorization failure after the remote upload
+ * leaves an untracked file behind and reports 500 for what is a 403.
+ *
+ * @returns {Promise<{ ok: boolean, openai?: OpenAI }>} `ok: false` once a
+ * response has been sent. The client it had to build is returned so processing
+ * reuses it rather than re-reading the user's key.
+ */
+const assertLegacyAssistantUploadAllowed = async (req, res, metadata) => {
+  const isLegacyAssistantAttach =
+    isAssistantsEndpoint(metadata.endpoint) &&
+    metadata.assistant_id != null &&
+    !metadata.message_file &&
+    !metadata.tool_resource;
+  if (!isLegacyAssistantAttach) {
+    return { ok: true };
+  }
+
+  const { openai } = await getOpenAIClient({ req });
+  const assistant = await openai.beta.assistants.retrieve(metadata.assistant_id);
+  const isNativeToolPermitted = await resolveAssistantToolPermissions({
+    req,
+    tools: assistant?.tools,
+    getRoleByName,
+  });
+  if ((assistant?.tools ?? []).some((tool) => !isNativeToolPermitted(tool))) {
+    res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
+    return { ok: false };
+  }
+  return { ok: true, openai };
+};
+
+const handleFileUpload = async (req, res) => {
   const metadata = req.body;
   let cleanup = true;
 
@@ -705,13 +786,70 @@ router.post('/', async (req, res) => {
 
   try {
     req.file.originalname = sanitizeFilename(req.file.originalname);
-    filterFile({ req });
+    const isAssistants = isAssistantsEndpoint(metadata.endpoint);
+
+    /* Authorization runs before anything reads the target agent. Validating against a
+     * record the caller cannot access answers with that agent's provider limits and
+     * content policy, so the rejection itself reports its configuration. */
+    if (!isAssistants) {
+      const denied = await verifyAgentUploadPermission({
+        req,
+        res,
+        metadata,
+        getAgent: ({ id }) => resolveUploadAgent(req, id),
+        checkPermission,
+        hasUploadBypass: () => hasCapability(req.user, SystemCapabilities.MANAGE_AGENTS),
+      });
+      if (denied) {
+        return;
+      }
+    }
+
+    /* Same configuration for validation and routing: an agent upload arrives as
+     * `agents` but is processed under the agent's own provider. */
+    const effectiveEndpoint = await resolveUploadEndpoint({
+      endpoint: metadata.endpoint,
+      agent_id: metadata.agent_id,
+      req,
+    });
+    /* Carried so processing routes under the same configuration validation used, and so
+     * it can tell whether any enabled tool could consume a file kept off the model path,
+     * both from the one agent read this request already made. */
+    metadata.effectiveEndpoint = effectiveEndpoint;
+    /* Left undefined when no agent record backs this upload, as for an ephemeral agent
+     * that exists only for the request. Processing then cannot judge what tools could
+     * consume the file and does not try. */
+    const uploadAgent = await resolveUploadAgent(req, metadata.agent_id);
+    metadata.agentTools = uploadAgent?.tools;
+    metadata.useResponsesApi ??= uploadAgent?.model_parameters?.useResponsesApi;
+    filterFile({ req, endpoint: effectiveEndpoint });
+
+    /* Same destination the processing path will use: a unified upload routed to text
+     * becomes a context resource, and the preflight must account for that extraction
+     * before fail-closing on an uninspectable derived field. */
+    const effectiveToolResource = await resolveEffectiveToolResource({ req, metadata });
+
+    /** Check the role permission before any content inspection: a forbidden upload
+     * must be rejected without reading or embedding the file. */
+    const uploadAllowed = await checkToolResourceUploadPermission({
+      req,
+      toolResource: metadata.tool_resource,
+      getRoleByName,
+    });
+    if (!uploadAllowed) {
+      return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
+    }
+
+    const legacyAssistantUpload = await assertLegacyAssistantUploadAllowed(req, res, metadata);
+    if (!legacyAssistantUpload.ok) {
+      return;
+    }
 
     await assertUploadContentAllowed({
       filters: req.config?.filters,
       file: req.file,
       endpoint: metadata.endpoint,
-      toolResource: metadata.tool_resource,
+      toolResource: effectiveToolResource,
       fileConfig: mergeFileConfig(req.config?.fileConfig),
       ocrConfigured: req.config?.ocr != null,
       ragConfigured: !!process.env.RAG_API_URL,
@@ -721,29 +859,15 @@ router.post('/', async (req, res) => {
     metadata.temp_file_id = metadata.file_id;
     metadata.file_id = req.file_id;
 
-    if (isAssistantsEndpoint(metadata.endpoint)) {
+    if (isAssistants) {
       openSseStreamIfRequested();
-      return await processFileUpload({ req, res, metadata, sseStream });
-    }
-
-    let skipUploadAuth = false;
-    try {
-      skipUploadAuth = await hasCapability(req.user, SystemCapabilities.MANAGE_AGENTS);
-    } catch (err) {
-      logger.warn('[/files] capability check failed, denying bypass:', getSafeErrorMetadata(err));
-    }
-
-    if (!skipUploadAuth) {
-      const denied = await verifyAgentUploadPermission({
+      return await processFileUpload({
         req,
         res,
         metadata,
-        getAgent: db.getAgent,
-        checkPermission,
+        sseStream,
+        openai: legacyAssistantUpload.openai,
       });
-      if (denied) {
-        return;
-      }
     }
 
     openSseStreamIfRequested();
@@ -810,6 +934,9 @@ router.post('/', async (req, res) => {
       sseStream.close();
     }
   }
-});
+};
+
+router.post('/', handleFileUpload);
 
 module.exports = router;
+module.exports.handleFileUpload = handleFileUpload;

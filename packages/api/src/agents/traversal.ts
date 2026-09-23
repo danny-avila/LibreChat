@@ -1,5 +1,10 @@
 export interface ReachableAgent<TAgent> {
   readonly subagentAgentConfigs?: readonly (TAgent | null | undefined)[];
+  readonly lazySubagentConfigs?: readonly (TAgent | null | undefined)[];
+  readonly subagentGraphMemberMetadata?: readonly (TAgent | null | undefined)[];
+  readonly subagentGraphConfigs?: readonly {
+    readonly memberConfigs?: readonly (TAgent | null | undefined)[];
+  }[];
 }
 
 /**
@@ -21,7 +26,14 @@ export function collectReachableAgents<T extends ReachableAgent<T>>(
     }
     visited.add(agent);
     agents.push(agent);
-    pending.push(...(agent.subagentAgentConfigs ?? []));
+    pending.push(
+      ...(agent.subagentAgentConfigs ?? []),
+      ...(agent.lazySubagentConfigs ?? []),
+      ...(agent.subagentGraphMemberMetadata ?? []),
+    );
+    for (const graph of agent.subagentGraphConfigs ?? []) {
+      pending.push(...(graph.memberConfigs ?? []));
+    }
   }
 
   return agents;

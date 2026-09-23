@@ -24,4 +24,8 @@ export interface FlowManagerOptions {
   retainedFailureTypes?: readonly string[];
   ci?: boolean;
   logger?: Logger;
+  redisScriptExecutor?: (
+    script: string,
+    options: { keys: string[]; arguments: string[] },
+  ) => Promise<unknown>;
 }

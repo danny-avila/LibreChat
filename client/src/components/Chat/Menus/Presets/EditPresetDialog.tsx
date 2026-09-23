@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo } from 'react';
 import { useRecoilState } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, alternateName, isAgentsEndpoint } from 'librechat-data-provider';
+import {
+  QueryKeys,
+  alternateName,
+  isAgentsEndpoint,
+  resolveModelCatalogKey,
+} from 'librechat-data-provider';
 import {
   Input,
   Label,
@@ -77,7 +82,9 @@ const EditPresetDialog = ({
       return;
     }
 
-    const models = modelsConfig[presetEndpoint] as string[] | undefined;
+    const models = modelsConfig[resolveModelCatalogKey(presetEndpoint, modelsConfig)] as
+      | string[]
+      | undefined;
     if (!models) {
       return;
     }

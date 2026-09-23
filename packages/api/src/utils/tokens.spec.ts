@@ -79,6 +79,36 @@ describe('Gemini 3.7 Flash', () => {
   });
 });
 
+describe('Gemini 3.8 Flash', () => {
+  it('resolves the 1,048,576-token context window', () => {
+    expect(getModelMaxTokens('gemini-3.8-flash', EModelEndpoint.google)).toBe(1048576);
+  });
+
+  it('matches the longest key over the shorter gemini-3 pattern for aliases', () => {
+    expect(getModelMaxTokens('models/gemini-3.8-flash-latest', EModelEndpoint.google)).toBe(
+      1048576,
+    );
+  });
+});
+
+describe('GPT-6 Astra', () => {
+  it('resolves 1.05M context and 128K output', () => {
+    expect(getModelMaxTokens('gpt-6-astra', EModelEndpoint.openAI)).toBe(1050000);
+    expect(getModelMaxOutputTokens('gpt-6-astra', EModelEndpoint.openAI)).toBe(128000);
+  });
+
+  it('matches its own key for snapshots and provider prefixes', () => {
+    for (const model of [
+      'gpt-6-astra-2026-04-30',
+      'openai/gpt-6-astra',
+      'gpt-6-astra-2026-04-30/openai',
+    ]) {
+      expect(getModelMaxTokens(model, EModelEndpoint.openAI)).toBe(1050000);
+      expect(getModelMaxOutputTokens(model, EModelEndpoint.openAI)).toBe(128000);
+    }
+  });
+});
+
 describe('Qwen3.5 and later generations', () => {
   it('resolves 262K for the vLLM model id that regressed to the qwen3 window', () => {
     expect(getModelMaxTokens('Qwen/Qwen3.5-397B-A17B-FP8', EModelEndpoint.openAI)).toBe(262144);

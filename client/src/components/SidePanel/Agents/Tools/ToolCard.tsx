@@ -1,5 +1,6 @@
 import { memo, useState } from 'react';
-import { BadgeCheck, Check, Globe, Info, Settings, Star, User } from 'lucide-react';
+import { VerifiedIcon } from '@librechat/client';
+import { Check, Globe, Info, Settings, Star, User } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentItem } from './items/types';
 import { hasConfigurableSettings } from './items/configurable';
@@ -108,7 +109,7 @@ function ToolCardImpl({
       className={cn(
         'group relative flex h-32 w-full flex-col overflow-hidden rounded-2xl border',
         selected
-          ? 'border-emerald-500/60 bg-emerald-500/[0.06] shadow-sm'
+          ? 'border-status-success bg-status-success/10 shadow-sm'
           : 'border-border-light bg-transparent hover:border-border-medium hover:bg-surface-tertiary hover:shadow-sm',
       )}
     >
@@ -128,16 +129,15 @@ function ToolCardImpl({
               <p className="flex min-w-0 flex-1 items-center gap-1 text-sm font-semibold text-text-primary">
                 <span className="truncate">{name}</span>
                 {isNative && (
-                  <BadgeCheck
-                    className="size-4 shrink-0 fill-emerald-500 text-white dark:text-surface-primary"
-                    strokeWidth={2}
+                  <VerifiedIcon
+                    className="size-3.5 shrink-0 text-status-verified"
                     aria-label={localize('com_ui_tools_native')}
                   />
                 )}
               </p>
               {selected && (
                 <span
-                  className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white"
+                  className="flex size-5 shrink-0 items-center justify-center rounded-full bg-status-success-strong text-text-on-status"
                   aria-hidden="true"
                 >
                   <Check className="size-3" strokeWidth={3} />
@@ -226,8 +226,7 @@ function ToolCardImpl({
                 'opacity-0 transition duration-150 hover:bg-surface-hover hover:text-text-primary',
                 'group-focus-within:opacity-100 group-hover:opacity-100',
                 'focus:outline-none focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring-primary',
-                isFavorited &&
-                  'text-amber-600 opacity-100 hover:text-amber-500 dark:text-amber-500 dark:hover:text-amber-400',
+                isFavorited && 'text-series-4 opacity-100 hover:text-series-4',
               )}
             >
               <Star className={cn('size-4', isFavorited && 'fill-current')} aria-hidden="true" />

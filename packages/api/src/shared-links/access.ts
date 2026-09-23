@@ -26,6 +26,8 @@ interface RawSharedLink {
 interface SharedLinkAccessRequest extends Request {
   shareResourceId?: string;
   shareTenantId?: string;
+  shareConversationId?: string;
+  shareOwnerId?: string;
 }
 
 export interface SharedLinkAccessDeps {
@@ -94,6 +96,8 @@ export function createSharedLinkAccessMiddleware(deps: SharedLinkAccessDeps) {
       const sharedRequest = req as SharedLinkAccessRequest;
       sharedRequest.shareResourceId = resourceId;
       sharedRequest.shareTenantId = rawShare.tenantId;
+      sharedRequest.shareConversationId = rawShare.conversationId;
+      sharedRequest.shareOwnerId = rawShare.user;
       next();
     };
 

@@ -44,6 +44,13 @@ export type ToolApprovalHookFactory = (
   context: ToolApprovalHookContext,
 ) => ToolApprovalHook | undefined;
 
+export interface ResolvedToolApprovalHook {
+  hook: ToolApprovalHook;
+  matcher?: string;
+  /** Optional admission-only scope for hooks that inspect the executing agent at runtime. */
+  agentIds?: ReadonlySet<string>;
+}
+
 interface RegisteredHook {
   factory: ToolApprovalHookFactory;
   /** Optional regex matched against the tool name (the `PreToolUse` matcher `pattern`). */
@@ -106,8 +113,8 @@ export function clearToolApprovalHooks(): void {
  */
 export function buildToolApprovalHooks(
   context: ToolApprovalHookContext,
-): Array<{ hook: ToolApprovalHook; matcher?: string }> {
-  const built: Array<{ hook: ToolApprovalHook; matcher?: string }> = [];
+): ResolvedToolApprovalHook[] {
+  const built: ResolvedToolApprovalHook[] = [];
   for (const { factory, matcher } of registeredHooks) {
     const hook = factory(context);
     if (hook) {
@@ -115,4 +122,30 @@ export function buildToolApprovalHooks(
     }
   }
   return built;
+}
+
+/** Whether any resolved hook matcher can run for one of the supplied tool names. */
+export function resolvedToolApprovalHooksCanMatch(
+  hooks: readonly ResolvedToolApprovalHook[],
+  toolNames: readonly string[],
+  agentId?: string,
+): boolean {
+  return hooks.some(({ matcher, agentIds }) => {
+    if (agentIds != null && (agentId == null || !agentIds.has(agentId))) {
+      return false;
+    }
+    if (matcher == null) {
+      return toolNames.length > 0;
+    }
+    let regex: RegExp;
+    try {
+      regex = new RegExp(matcher);
+    } catch {
+      return false;
+    }
+    return toolNames.some((name) => {
+      regex.lastIndex = 0;
+      return regex.test(name);
+    });
+  });
 }

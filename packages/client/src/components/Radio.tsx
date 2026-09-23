@@ -50,6 +50,41 @@ const Radio: React.NamedExoticComponent<RadioProps> = memo(function Radio({
     onChange?.(newValue);
   };
 
+  /** A radiogroup is a single tab stop: the roving `tabIndex` puts focus on the
+   *  checked segment and the arrows move the selection, per WAI-ARIA. Without
+   *  this every segment was its own tab stop and keyboard users could focus a
+   *  segment but never reach the others' selection behavior. */
+  const handleKeyDown = (event: React.KeyboardEvent, index: number) => {
+    if (disabled || options.length < 2) {
+      return;
+    }
+    const moves: Record<string, number> = {
+      ArrowRight: index + 1,
+      ArrowDown: index + 1,
+      ArrowLeft: index - 1,
+      ArrowUp: index - 1,
+      Home: 0,
+      End: options.length - 1,
+    };
+    const target = moves[event.key];
+    if (target == null) {
+      return;
+    }
+    event.preventDefault();
+    // Wraps, so holding ArrowRight from the last segment returns to the first.
+    const next = (target + options.length) % options.length;
+    const nextValue = options[next].value;
+    // Focus follows the key unconditionally; the selection only changes when it
+    // actually moves. Home on the first segment and End on the last land where
+    // they started, and firing `onChange` there would dirty a form for a
+    // selection that never changed.
+    buttonRefs.current[next]?.focus();
+    if (nextValue === currentValue) {
+      return;
+    }
+    handleChange(nextValue);
+  };
+
   const updateBackgroundStyle = useCallback(() => {
     const selectedIndex = options.findIndex((opt) => opt.value === currentValue);
     const selectedButton = buttonRefs.current[selectedIndex];
@@ -142,7 +177,9 @@ const Radio: React.NamedExoticComponent<RadioProps> = memo(function Radio({
           type="button"
           role="radio"
           aria-checked={currentValue === option.value}
+          tabIndex={selectedIndex === index || (selectedIndex < 0 && index === 0) ? 0 : -1}
           onClick={() => handleChange(option.value)}
+          onKeyDown={(event) => handleKeyDown(event, index)}
           disabled={disabled}
           className={`relative z-10 flex h-[34px] items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary ${
             currentValue === option.value ? 'text-text-primary' : 'text-text-secondary'

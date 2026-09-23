@@ -1,6 +1,6 @@
 const rateLimit = require('express-rate-limit');
 const { ViolationTypes } = require('librechat-data-provider');
-const { limiterCache, removePorts } = require('@librechat/api');
+const { limiterCache, removePorts, getRateLimitReset } = require('@librechat/api');
 const denyRequest = require('~/server/middleware/denyRequest');
 const { logViolation } = require('~/cache');
 
@@ -36,6 +36,7 @@ const createHandler = (ip = true) => {
       max: ip ? ipMax : userMax,
       limiter: ip ? 'ip' : 'user',
       windowInMinutes: ip ? ipWindowInMinutes : userWindowInMinutes,
+      ...getRateLimitReset(req.rateLimit, ip ? ipWindowMs : userWindowMs),
     };
 
     await logViolation(req, res, type, errorMessage, score);
@@ -87,16 +88,22 @@ const agentEventUserLimiter = (req, res, next) => {
     configuredAgentEventUserLimiter = rateLimit({
       windowMs: windowInMinutes * 60 * 1000,
       max,
-      handler: async (limitedReq, limitedRes) => {
-        const type = ViolationTypes.MESSAGE_LIMIT;
-        const errorMessage = {
-          type,
-          max,
-          limiter: 'agent_event_principal',
-          windowInMinutes,
-        };
-        await logViolation(limitedReq, limitedRes, type, errorMessage, score);
-        return await denyRequest(limitedReq, limitedRes, errorMessage);
+      handler: (limitedReq, limitedRes) => {
+        const { retryAfterSeconds } = getRateLimitReset(
+          limitedReq.rateLimit,
+          windowInMinutes * 60 * 1000,
+        );
+        limitedRes.set('Retry-After', String(retryAfterSeconds));
+        return limitedRes
+          .status(429)
+          .type('application/json')
+          .json({
+            error: {
+              code: 'agent_event_rate_limited',
+              message: 'Agent event admission rate limit exceeded.',
+              type: 'rate_limit_error',
+            },
+          });
       },
       keyGenerator: (limitedReq) => String(limitedReq.apiKeyId ?? limitedReq.user?.id),
       store: limiterCache('agent_event_user_limiter'),

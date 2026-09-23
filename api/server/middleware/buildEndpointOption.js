@@ -1,8 +1,7 @@
 const {
   handleError,
   applyModelSpecPreset,
-  findModelSpecByName,
-  isModelSpecEndpointMatch,
+  resolveModelSpecForEndpoint,
   resolveModelSpecPromptPrefixVariables,
   inspectContent,
   extractChatContent,
@@ -101,14 +100,20 @@ async function buildEndpointOption(req, res, next) {
       return handleError(res, { text: 'No model spec selected' });
     }
 
-    const currentModelSpec = findModelSpecByName({ list }, spec);
-    if (!currentModelSpec) {
-      return handleError(res, { text: 'Invalid model spec' });
+    const modelSpecResolution = resolveModelSpecForEndpoint({
+      modelSpecs: { list },
+      spec,
+      endpoint,
+    });
+    if ('error' in modelSpecResolution) {
+      return handleError(res, {
+        text:
+          modelSpecResolution.error === 'invalid-model-spec'
+            ? 'Invalid model spec'
+            : 'Model spec mismatch',
+      });
     }
-
-    if (!isModelSpecEndpointMatch(currentModelSpec, endpoint)) {
-      return handleError(res, { text: 'Model spec mismatch' });
-    }
+    const { modelSpec: currentModelSpec } = modelSpecResolution;
 
     try {
       const result = applyModelSpecPreset({
@@ -126,11 +131,13 @@ async function buildEndpointOption(req, res, next) {
       return handleError(res, { text: 'Error parsing model spec' });
     }
   } else if (parsedBody.spec && appConfig.modelSpecs?.list) {
-    const modelSpec = findModelSpecByName(appConfig.modelSpecs, parsedBody.spec);
-    if (modelSpec) {
-      if (!isModelSpecEndpointMatch(modelSpec, endpoint)) {
-        return handleError(res, { text: 'Model spec mismatch' });
-      }
+    const modelSpecResolution = resolveModelSpecForEndpoint({
+      modelSpecs: appConfig.modelSpecs,
+      spec: parsedBody.spec,
+      endpoint,
+    });
+    if ('modelSpec' in modelSpecResolution) {
+      const { modelSpec } = modelSpecResolution;
 
       try {
         const result = applyModelSpecPreset({
@@ -146,6 +153,8 @@ async function buildEndpointOption(req, res, next) {
         logger.error('Error parsing model spec', error);
         return handleError(res, { text: 'Error parsing model spec' });
       }
+    } else if (modelSpecResolution.error === 'model-spec-mismatch') {
+      return handleError(res, { text: 'Model spec mismatch' });
     }
   }
 

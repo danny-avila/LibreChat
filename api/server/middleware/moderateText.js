@@ -3,6 +3,7 @@ const {
   isEnabled,
   getReferencedQuotes,
   mergeQuotedText,
+  getBoundedAskUserAnswerValues,
   serializeAskUserAnswerVariants,
 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
@@ -42,8 +43,8 @@ async function moderateText(req, res, next) {
       typeof req.body.answers === 'object' &&
       !Array.isArray(req.body.answers)
     ) {
-      for (const answer of Object.values(req.body.answers)) {
-        if (typeof answer === 'string' && answer.length > 0) {
+      for (const answer of getBoundedAskUserAnswerValues(req.body.answers)) {
+        if (answer.length > 0) {
           inputs.push(answer);
         }
       }

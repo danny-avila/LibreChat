@@ -46,6 +46,30 @@ const envelope = () =>
     input: 'Handle the ready resource.',
   });
 
+const boundEnvelope = (userId: string, index: number) =>
+  createAgentTriggerEnvelope({
+    mode: 'continue',
+    requestId: `request-${index}`,
+    deliveryId: `delivery-${index}`,
+    receivedAt: Date.now(),
+    principal: { id: userId, tenantId: 'tenant-1' },
+    target: {
+      agentId: 'commentator',
+      conversationId: 'commentator-thread',
+      parentMessageId: 'placeholder',
+      bindingId: `evtbind_${'a'.repeat(48)}`,
+      sourceKeyId: 'source-key',
+    },
+    event: {
+      id: `game-${index}-started`,
+      type: 'game.started',
+      occurredAt: index,
+      source: { id: 'source-key', type: 'remote_api_key' },
+      payload: { gameId: `game-${index}` },
+    },
+    input: `Comment on game ${index}.`,
+  });
+
 async function eventuallySucceeded(deliveryKey: string) {
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
@@ -98,5 +122,53 @@ describe('durable trigger delivery integration', () => {
       },
       history: [{ attempt: 1, outcome: 'succeeded' }],
     });
+  });
+
+  it('delivers one structured child turn while preserving every burst receipt', async () => {
+    const fetcher = jest.fn<ReturnType<AgentTriggerFetch>, Parameters<AgentTriggerFetch>>(
+      async () =>
+        new Response(
+          JSON.stringify({
+            status: 'started',
+            streamId: 'stream-1',
+            conversationId: 'commentator-thread',
+            generationCreatedAt: 25,
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    );
+    service = createAgentTriggerService({
+      methods: createMethods(mongoose) as ReturnType<typeof createMethods> &
+        AgentTriggerDeliveryPersistence,
+      fetch: fetcher,
+      mintToken: () => 'trigger-token',
+      deliveryOptions: { concurrency: 4, tickMs: 5, retryBaseMs: 5 },
+    });
+    await service.initialize({
+      address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+    });
+    const userId = new mongoose.Types.ObjectId().toString();
+    const receipts = await Promise.all(
+      Array.from({ length: 4 }, (_, index) =>
+        service!.enqueue(boundEnvelope(userId, index + 1), {
+          coalesce: { key: 'championship-commentary' },
+        }),
+      ),
+    );
+
+    const settled = await Promise.all(
+      receipts.map(({ deliveryKey }) => eventuallySucceeded(deliveryKey)),
+    );
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    const request = fetcher.mock.calls[0][1];
+    const body = JSON.parse(String(request?.body)) as { text: string };
+    expect(JSON.parse(body.text)).toMatchObject({
+      kind: 'librechat.agent_event_batch',
+      count: 4,
+      summary: { eventTypes: [{ type: 'game.started', count: 4 }] },
+    });
+    expect(settled.every((delivery) => delivery.status === 'succeeded')).toBe(true);
+    expect(new Set(receipts.map(({ deliveryKey }) => deliveryKey)).size).toBe(4);
   });
 });

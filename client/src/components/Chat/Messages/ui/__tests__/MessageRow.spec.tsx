@@ -15,11 +15,13 @@ const renderRow = ({
   hasParallelContent = false,
   fullWidth = false,
   isEditing = false,
+  plain = false,
 }: {
   isCreatedByUser: boolean;
   hasParallelContent?: boolean;
   fullWidth?: boolean;
   isEditing?: boolean;
+  plain?: boolean;
 }) =>
   render(
     <MessageRow
@@ -34,12 +36,26 @@ const renderRow = ({
       hasParallelContent={hasParallelContent}
       fullWidth={fullWidth}
       isEditing={isEditing}
+      plain={plain}
     >
       <p>{MESSAGE_BODY}</p>
     </MessageRow>,
   );
 
 describe('MessageRow', () => {
+  it('renders a plain user row as a full-width block without header or bubble', () => {
+    renderRow({ isCreatedByUser: true, plain: true });
+
+    const row = screen.getByLabelText('User message');
+    const messageSurface = screen.getByText(MESSAGE_BODY).parentElement;
+
+    expect(row).not.toHaveClass('justify-end');
+    expect(messageSurface).not.toHaveClass('bg-surface-tertiary');
+    expect(messageSurface).toHaveClass('w-full');
+    expect(screen.queryByRole('heading', { hidden: true })).not.toBeInTheDocument();
+    expect(screen.getByTestId('message-actions')).toBeInTheDocument();
+  });
+
   it('renders user content as a right-aligned semantic surface without a visible avatar', () => {
     renderRow({ isCreatedByUser: true });
 

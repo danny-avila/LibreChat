@@ -5,6 +5,8 @@ const {
   assertDirectToolOutputAllowed,
   loadWebSearchAuth,
   isContentFilterError,
+  isActiveExpirationDate,
+  getConversationExpirationDate,
 } = require('@librechat/api');
 const {
   Tools,
@@ -56,6 +58,9 @@ const verifyWebSearchAuth = async (req, res) => {
     return res.status(200).json({
       authenticated: result.authenticated,
       authTypes: result.authTypes,
+      searchProvider: result.authResult.searchProvider,
+      scraperProvider: result.authResult.scraperProvider,
+      rerankerType: result.authResult.rerankerType,
     });
   } catch (error) {
     console.error('Error in verifyWebSearchAuth:', error);
@@ -112,7 +117,7 @@ const callTool = async (req, res) => {
       return;
     }
 
-    const { partIndex, blockIndex, messageId, conversationId, ...args } = req.body;
+    const { partIndex, blockIndex, messageId, conversationId: _conversationId, ...args } = req.body;
     if (!messageId) {
       logger.warn(`[${toolId}/call] User ${req.user.id} attempted call without message ID`);
       res.status(400).json({ message: 'Message ID required' });
@@ -120,15 +125,27 @@ const callTool = async (req, res) => {
     }
 
     const message = await getMessage({ user: req.user.id, messageId });
-    if (!message) {
+    const sourceExpiration = getConversationExpirationDate(message);
+    if (!message || (sourceExpiration != null && !isActiveExpirationDate(sourceExpiration))) {
       logger.debug(`[${toolId}/call] User ${req.user.id} attempted call with invalid message ID`);
       res.status(404).json({ message: 'Message not found' });
       return;
     }
+    const conversationId = message.conversationId;
+    req.body.conversationId = conversationId;
+    req.fileRetentionSource = {
+      isTemporary: message.isTemporary,
+      expiredAt: message.expiredAt,
+    };
+    const retentionExpiryPromise = getRetentionExpiry(req);
     logger.debug(`[${toolId}/call] User: ${req.user.id}`);
     let hasAccess = true;
     if (toolAccessPermType[toolId]) {
+      /** `req` is what puts this read in the request cache, so the shared
+       *  `loadTools` gate below resolves the same grant for free instead of
+       *  issuing a second serial role lookup before the sandbox call. */
       hasAccess = await checkAccess({
+        req,
         user: req.user,
         permissionType: toolAccessPermType[toolId],
         permissions: [Permissions.USE],
@@ -179,7 +196,7 @@ const callTool = async (req, res) => {
       conversationId,
       result: content,
       user: req.user.id,
-      ...(await getRetentionExpiry(req)),
+      ...(await retentionExpiryPromise),
     };
 
     if (!hasGeneratedArtifacts) {

@@ -17,6 +17,7 @@ import {
   applyBackgroundToolCalls,
   synthesizeBackgroundToolOptions,
   registerBackgroundTaskTool,
+  buildBackgroundCapacityContent,
   buildBackgroundHandleContent,
   runCheckBackgroundTask,
   getBackgroundCodeDelivery,
@@ -237,6 +238,88 @@ describe('applyBackgroundToolCalls', () => {
     ).toBeUndefined();
   });
 
+  it('resolves an action opt-in stored with the raw `---` domain against the collapsed def name', () => {
+    /** Agents persist `swapi---tech`; the runtime def is named `swapi_tech`. */
+    const defs = [mcpDef('getPerson_action_swapi_tech')];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: { 'getPerson_action_swapi---tech': { run_in_background: true } },
+    });
+    expect(result.backgroundToolNames).toEqual(['getPerson_action_swapi_tech']);
+    expect(registry.has(CHECK_BACKGROUND_TASK_NAME)).toBe(true);
+  });
+
+  it('merges a raw action opt-in into an existing normalized option entry', () => {
+    const defs = [mcpDef('getPerson_action_swapi_tech')];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: {
+        'getPerson_action_swapi---tech': { run_in_background: true },
+        getPerson_action_swapi_tech: { defer_loading: true },
+      },
+    });
+    expect(result.backgroundToolNames).toEqual(['getPerson_action_swapi_tech']);
+  });
+
+  it('keeps an explicit normalized action background option authoritative', () => {
+    const defs = [mcpDef('getPerson_action_swapi_tech')];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: {
+        'getPerson_action_swapi---tech': { run_in_background: true },
+        getPerson_action_swapi_tech: { run_in_background: false },
+      },
+    });
+    expect(result.backgroundToolNames).toEqual([]);
+  });
+
+  it('does not collapse hyphens in the operationId when normalizing an action key', () => {
+    const defs = [
+      mcpDef('get_foo---bar_action_swapi_tech'),
+      mcpDef('get_foo_bar_action_swapi_tech'),
+    ];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: { 'get_foo---bar_action_swapi---tech': { run_in_background: true } },
+    });
+    expect(result.backgroundToolNames).toEqual(['get_foo---bar_action_swapi_tech']);
+  });
+
+  it('injects an opted-in action tool but not one the OAuth excludeTool rejects', () => {
+    const oauthActionNames = new Set(['sendMail_action_mail---example---com']);
+    const defs = [
+      mcpDef('getWeather_action_weather---com'),
+      mcpDef('sendMail_action_mail---example---com'),
+    ];
+    const registry: LCToolRegistry = new Map(defs.map((d) => [d.name, { ...d }]));
+    const result = applyBackgroundToolCalls({
+      toolDefinitions: defs,
+      toolRegistry: registry,
+      toolOptions: {
+        'getWeather_action_weather---com': { run_in_background: true },
+        'sendMail_action_mail---example---com': { run_in_background: true },
+      },
+      excludeTool: (name) => oauthActionNames.has(name),
+    });
+    expect(result.backgroundToolNames).toEqual(['getWeather_action_weather---com']);
+    const oauthDef = result.toolDefinitions.find(
+      (d) => d.name === 'sendMail_action_mail---example---com',
+    );
+    expect(
+      (oauthDef?.parameters as { properties?: Record<string, unknown> }).properties?.[
+        RUN_IN_BACKGROUND_ARG
+      ],
+    ).toBeUndefined();
+  });
+
   it('skips a non-object (string-input) schema without rewriting it', () => {
     const defs = [{ name: 'legacy_tool', parameters: { type: 'string' } } as unknown as LCTool];
     const result = applyBackgroundToolCalls({
@@ -314,7 +397,7 @@ describe('registerBackgroundTaskTool', () => {
     );
   });
 
-  it('advertises automatic delivery only for wakeup-enabled subagents', () => {
+  it('advertises automatic delivery for wakeup-enabled background work', () => {
     const registry: LCToolRegistry = new Map();
     const manual = registerBackgroundTaskTool({ toolRegistry: registry, toolDefinitions: [] });
     const manualDescription = manual.toolDefinitions[0].description ?? '';
@@ -327,10 +410,10 @@ describe('registerBackgroundTaskTool', () => {
     });
     expect(automatic.toolDefinitions).toHaveLength(1);
     expect(automatic.toolDefinitions[0].description).toContain(
-      'Detached subagent tasks use automatic completion delivery',
+      'Background tools and detached subagents use automatic completion delivery',
     );
     expect(automatic.toolDefinitions[0].description).toContain(
-      'Ordinary background tool tasks require polling',
+      'Ordinary tool execution remains process-local',
     );
   });
 });
@@ -422,6 +505,24 @@ describe('selection policy at injection time', () => {
       toolOptions,
     });
     expect(backgroundToolNames).toEqual(['search_mcp_overlay_server']);
+  });
+
+  it('keeps host-side workspace search in the foreground', () => {
+    const { backgroundToolNames } = applyBackgroundToolCalls({
+      toolDefinitions: [mcpDef('search_workspace')],
+      toolRegistry: undefined,
+      toolOptions: { search_workspace: { run_in_background: true } },
+    });
+    expect(backgroundToolNames).toEqual([]);
+  });
+
+  it('keeps host-side workspace file listing in the foreground', () => {
+    const { backgroundToolNames } = applyBackgroundToolCalls({
+      toolDefinitions: [mcpDef('list_workspace_files')],
+      toolRegistry: undefined,
+      toolOptions: { list_workspace_files: { run_in_background: true } },
+    });
+    expect(backgroundToolNames).toEqual([]);
   });
 
   it('rejects and diagnoses a marker whose runtime definitions are all excluded', () => {
@@ -574,6 +675,120 @@ describe('selection policy at injection time', () => {
 });
 
 describe('BackgroundTaskRegistryClass', () => {
+  it('requests cancellation idempotently without settling or releasing running capacity', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const requestCancellation = jest.fn();
+    const created = registry.create({
+      userId: 'cancel-owner',
+      conversationId: 'cancel-conversation',
+      toolCallId: 'cancel-call',
+      toolName: 'bash_tool',
+      requestCancellation,
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+
+    expect(
+      registry.requestCancellation('other-owner', 'cancel-conversation', created.task.id),
+    ).toEqual({ status: 'not_found' });
+    expect(
+      registry.requestCancellation('cancel-owner', 'other-conversation', created.task.id),
+    ).toEqual({ status: 'not_found' });
+    expect(
+      registry.requestCancellation('cancel-owner', 'cancel-conversation', created.task.id).status,
+    ).toBe('requested');
+    expect(
+      registry.requestCancellation('cancel-owner', 'cancel-conversation', created.task.id).status,
+    ).toBe('already_requested');
+    expect(requestCancellation).toHaveBeenCalledTimes(1);
+    expect(created.task).toMatchObject({
+      status: 'running',
+      cancellationRequestedAt: expect.any(Number),
+    });
+
+    for (let index = 0; index < 9; index += 1) {
+      const admitted = registry.create({
+        userId: 'cancel-owner',
+        conversationId: 'cancel-conversation',
+        toolCallId: `other-call-${index}`,
+        toolName: 'background-tool',
+      });
+      expect('atCapacity' in admitted).toBe(false);
+    }
+    expect(
+      registry.create({
+        userId: 'cancel-owner',
+        conversationId: 'cancel-conversation',
+        toolCallId: 'blocked-until-settlement',
+        toolName: 'background-tool',
+      }),
+    ).toEqual({ atCapacity: true, scope: 'conversation_running' });
+
+    registry.cancel(
+      'cancel-owner',
+      'cancel-conversation',
+      created.task.id,
+      'Background task cancellation requested',
+    );
+    expect(created.task.status).toBe('cancelled');
+    expect(
+      registry.create({
+        userId: 'cancel-owner',
+        conversationId: 'cancel-conversation',
+        toolCallId: 'admitted-after-settlement',
+        toolName: 'background-tool',
+      }),
+    ).toMatchObject({ isNew: true });
+    expect(
+      registry.requestCancellation('cancel-owner', 'cancel-conversation', created.task.id).status,
+    ).toBe('settled');
+  });
+
+  it('lets actual completion win when an abort-resistant invocation settles successfully', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'race-owner',
+      conversationId: 'race-conversation',
+      toolCallId: 'race-call',
+      toolName: 'mutation',
+      requestCancellation: jest.fn(),
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+
+    registry.requestCancellation('race-owner', 'race-conversation', created.task.id);
+    registry.complete('race-owner', 'race-conversation', created.task.id, {
+      content: 'completed despite cancellation request',
+    });
+    registry.cancel('race-owner', 'race-conversation', created.task.id, 'cancelled too late');
+
+    expect(created.task).toMatchObject({
+      status: 'completed',
+      result: 'completed despite cancellation request',
+    });
+  });
+
+  it('does not record a manual cancellation when another abort source already won', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'timeout-owner',
+      conversationId: 'timeout-conversation',
+      toolCallId: 'timeout-call',
+      toolName: 'mutation',
+      requestCancellation: () => false,
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+
+    expect(
+      registry.requestCancellation('timeout-owner', 'timeout-conversation', created.task.id),
+    ).toMatchObject({ status: 'unavailable' });
+    expect(created.task.cancellationRequestedAt).toBeUndefined();
+  });
+
   it('creates, completes, and reads a task', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({
@@ -777,6 +992,60 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(registry.get('u1', 'c1', created.task.id)?.attachments).toEqual(attachments);
   });
 
+  it('releases claimed artifact capacity before detached harvest attachments arrive', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u-artifact-budget',
+      conversationId: 'c-artifact-budget',
+      toolCallId: 'call_code_budget',
+      toolName: 'execute_code',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-artifact-budget', 'c-artifact-budget', created.task.id, {
+      content: 'stdout',
+      artifact: { payload: 'a'.repeat(9_000_000) },
+    });
+    expect(
+      registry.claimArtifact('u-artifact-budget', 'c-artifact-budget', created.task.id),
+    ).toBeDefined();
+
+    const attachments = [{ payload: 'b'.repeat(8_000_000) }];
+    registry.attachHarvest('u-artifact-budget', 'c-artifact-budget', created.task.id, attachments);
+    expect(
+      registry.get('u-artifact-budget', 'c-artifact-budget', created.task.id)?.attachments,
+    ).toBe(attachments);
+  });
+
+  it('replaces retained attachments without double-counting their payload', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u-attachment-replace',
+      conversationId: 'c-attachment-replace',
+      toolCallId: 'call_attachment_replace',
+      toolName: 'execute_code',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-attachment-replace', 'c-attachment-replace', created.task.id, {
+      content: 'stdout',
+    });
+    const first = [{ payload: 'a'.repeat(9_000_000) }];
+    const replacement = [{ payload: 'b'.repeat(9_000_000) }];
+    registry.attachHarvest('u-attachment-replace', 'c-attachment-replace', created.task.id, first);
+    registry.attachHarvest(
+      'u-attachment-replace',
+      'c-attachment-replace',
+      created.task.id,
+      replacement,
+    );
+    expect(
+      registry.get('u-attachment-replace', 'c-attachment-replace', created.task.id)?.attachments,
+    ).toBe(replacement);
+  });
+
   it('revokeHarvest hands a pending artifact to the fallback path', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({
@@ -862,7 +1131,42 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(JSON.stringify(task)).not.toContain('raw failure');
   });
 
-  it('exposes reaped (timed-out) tasks to the heal path when harvest was armed at dispatch', () => {
+  it('does not account payloads from rejected late completion updates', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const blocked = registry.create({
+      userId: 'u-blocked-accounting',
+      conversationId: 'c-blocked',
+      toolCallId: 'call_blocked',
+      toolName: 'execute_code',
+    });
+    if ('atCapacity' in blocked) {
+      throw new Error('unexpected capacity');
+    }
+    registry.blockArtifact('u-blocked-accounting', 'c-blocked', blocked.task.id, 'blocked');
+    registry.complete('u-blocked-accounting', 'c-blocked', blocked.task.id, {
+      content: 'late',
+      artifact: { payload: 'a'.repeat(10_000_000 - 20) },
+    });
+
+    const next = registry.create({
+      userId: 'u-blocked-accounting',
+      conversationId: 'c-next',
+      toolCallId: 'call_next',
+      toolName: 'execute_code',
+    });
+    if ('atCapacity' in next) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-blocked-accounting', 'c-next', next.task.id, {
+      content: 'next',
+      artifact: { payload: 'b'.repeat(8_000_000) },
+    });
+    expect(registry.get('u-blocked-accounting', 'c-blocked', blocked.task.id)?.error).toBe(
+      'blocked',
+    );
+  });
+
+  it('keeps abort-resistant tasks nonterminal instead of exposing false timeout evidence', () => {
     jest.useFakeTimers();
     try {
       const created = backgroundTaskRegistry.create({
@@ -877,9 +1181,8 @@ describe('BackgroundTaskRegistryClass', () => {
         throw new Error('unexpected capacity');
       }
 
-      /** Past the running TTL the sweeper reaps the task to an error; the
-       *  dispatch-time harvest flag keeps it visible to marker/re-anchor
-       *  delivery so the original card doesn't stay on "running" forever. */
+      /** The invocation owner may have requested abort, but registry age alone
+       * cannot prove that an external side effect stopped. */
       jest.advanceTimersByTime(31 * 60 * 1000);
       const delivery = getBackgroundCodeDelivery({
         userId: 'reap_user',
@@ -888,10 +1191,9 @@ describe('BackgroundTaskRegistryClass', () => {
       });
       expect(delivery).toEqual(
         expect.objectContaining({
-          status: 'error',
+          status: 'running',
           toolCallId: 'call_reaped',
           messageId: 'dispatch-msg',
-          error: 'Background task timed out',
         }),
       );
     } finally {
@@ -936,6 +1238,55 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(stored).toContain('[truncated: 150000 chars exceeded 100000 limit]');
   });
 
+  it('drops artifacts whose JSON serialization returns undefined', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u-unmeasurable',
+      conversationId: 'c-unmeasurable',
+      toolCallId: 'call_unmeasurable',
+      toolName: 'search_mcp_docs',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-unmeasurable', 'c-unmeasurable', created.task.id, {
+      content: 'done',
+      artifact: { payload: 'x'.repeat(1_000_000), toJSON: () => undefined },
+    });
+    expect(registry.get('u-unmeasurable', 'c-unmeasurable', created.task.id)?.artifact).toBe(
+      undefined,
+    );
+  });
+
+  it('retains only an artifact JSON projection without hidden object state', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const created = registry.create({
+      userId: 'u-hidden-artifact',
+      conversationId: 'c-hidden-artifact',
+      toolCallId: 'call_hidden_artifact',
+      toolName: 'search_mcp_docs',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    const artifact = { visible: 'safe' };
+    Object.defineProperty(artifact, 'hidden', {
+      value: 'x'.repeat(1_000_000),
+      enumerable: false,
+    });
+    registry.complete('u-hidden-artifact', 'c-hidden-artifact', created.task.id, {
+      content: 'done',
+      artifact,
+    });
+    const stored = registry.get(
+      'u-hidden-artifact',
+      'c-hidden-artifact',
+      created.task.id,
+    )?.artifact;
+    expect(stored).toEqual({ visible: 'safe' });
+    expect(stored).not.toBe(artifact);
+  });
+
   it('restores a claimed artifact after a failed delivery so a later claim retries', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({
@@ -965,7 +1316,7 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(registry.claimArtifact('u1', 'c1', created.task.id)).toBeUndefined();
   });
 
-  it('reaps a stuck running task past the running TTL (frees the slot)', () => {
+  it('does not reap an abort-resistant running task by wall clock alone', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({
       userId: 'u1',
@@ -976,11 +1327,11 @@ describe('BackgroundTaskRegistryClass', () => {
     if ('atCapacity' in created) {
       throw new Error('unexpected capacity');
     }
-    // backdate creation past the 30-min running TTL, then trigger a sweep
+    // Backdate past the abort deadline; only invocation settlement is terminal proof.
     created.task.createdAt = Date.now() - 31 * 60 * 1000;
     registry.list('u1', 'c1');
-    expect(created.task.status).toBe('error');
-    expect(created.task.error).toBe('Background task timed out');
+    expect(created.task.status).toBe('running');
+    expect(created.task.error).toBeUndefined();
   });
 
   it('sweeps an expired completed task on direct get() (no indefinite retention)', () => {
@@ -1018,6 +1369,132 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(atCapacity).toBe(true);
   });
 
+  it('caps concurrent running tasks per user across conversations', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    for (let i = 0; i < 40; i++) {
+      const created = registry.create({
+        userId: 'u-cap',
+        conversationId: `c-${i}`,
+        toolCallId: `call_${i}`,
+        toolName: 'search_mcp_docs',
+      });
+      expect('atCapacity' in created).toBe(false);
+    }
+    expect(
+      registry.create({
+        userId: 'u-cap',
+        conversationId: 'c-rejected',
+        toolCallId: 'call_rejected',
+        toolName: 'search_mcp_docs',
+      }),
+    ).toEqual({ atCapacity: true, scope: 'user_running' });
+  });
+
+  it('describes aggregate capacity rejections without blaming the conversation', () => {
+    const content = JSON.parse(buildBackgroundCapacityContent('search', 'user_running')) as {
+      scope: string;
+      message: string;
+    };
+    expect(content.scope).toBe('user_running');
+    expect(content.message).toContain('for this user');
+    expect(content.message).not.toContain('in this conversation');
+  });
+
+  it('caps concurrent running tasks process-wide', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    for (let i = 0; i < 200; i++) {
+      const created = registry.create({
+        userId: `u-${i}`,
+        conversationId: `c-${i}`,
+        toolCallId: `call_${i}`,
+        toolName: 'search_mcp_docs',
+      });
+      expect('atCapacity' in created).toBe(false);
+    }
+    expect(
+      registry.create({
+        userId: 'u-rejected',
+        conversationId: 'c-rejected',
+        toolCallId: 'call_rejected',
+        toolName: 'search_mcp_docs',
+      }),
+    ).toEqual({ atCapacity: true, scope: 'global_running' });
+  });
+
+  it('holds capacity permits before task registration and releases them explicitly', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const permits = Array.from({ length: 10 }, (_, index) =>
+      registry.reserveCapacity({
+        userId: 'u1',
+        conversationId: 'c-permits',
+        toolCallId: `call_${index}`,
+        runId: 'run-1',
+      }),
+    );
+    expect(permits.every((result) => 'permit' in result)).toBe(true);
+    expect(
+      registry.reserveCapacity({
+        userId: 'u1',
+        conversationId: 'c-permits',
+        toolCallId: 'call_rejected',
+        runId: 'run-1',
+      }),
+    ).toEqual({ atCapacity: true, scope: 'conversation_running' });
+    const first = permits[0];
+    if (!('permit' in first)) {
+      throw new Error('expected capacity permit');
+    }
+    registry.releaseCapacity(first.permit);
+    const replacement = registry.reserveCapacity({
+      userId: 'u1',
+      conversationId: 'c-permits',
+      toolCallId: 'call_replacement',
+      runId: 'run-1',
+    });
+    if (!('permit' in replacement)) {
+      throw new Error('expected replacement permit');
+    }
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c-permits',
+      toolCallId: 'call_replacement',
+      toolName: 'search_mcp_docs',
+      runId: 'run-1',
+      capacityPermit: replacement.permit,
+    });
+    expect('atCapacity' in created).toBe(false);
+  });
+
+  it('retains an in-flight capacity permit until durable reservation completes', () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_787_000_000_000);
+    const registry = new BackgroundTaskRegistryClass();
+    const admission = registry.reserveCapacity({
+      userId: 'u1',
+      conversationId: 'c-slow-reservation',
+      toolCallId: 'call_slow',
+      runId: 'run-1',
+    });
+    if (!('permit' in admission)) {
+      throw new Error('expected capacity permit');
+    }
+
+    /** Cross both the former one-minute permit timeout and idle-bucket TTL.
+     * A slow durable reservation still owns this slot until its caller
+     * consumes or releases it. */
+    now.mockReturnValue(1_787_000_000_000 + 7 * 60 * 60 * 1000);
+    const created = registry.create({
+      userId: 'u1',
+      conversationId: 'c-slow-reservation',
+      toolCallId: 'call_slow',
+      toolName: 'search_mcp_docs',
+      runId: 'run-1',
+      capacityPermit: admission.permit,
+    });
+
+    expect('atCapacity' in created).toBe(false);
+    now.mockRestore();
+  });
+
   it('evicts oldest settled tasks instead of blocking when the total cap is full', () => {
     const registry = new BackgroundTaskRegistryClass();
     for (let i = 0; i < 200; i++) {
@@ -1051,6 +1528,508 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(next.isNew).toBe(true);
     // total held stays bounded (one evicted, one added)
     expect(registry.list('u1', 'c-full')).toHaveLength(200);
+  });
+
+  it('evicts oldest settled tasks at the per-user cap across conversations', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    let firstTaskId = '';
+    let latestTaskId = '';
+    for (let i = 0; i <= 400; i++) {
+      const created = registry.create({
+        userId: 'u-aggregate',
+        conversationId: `c-${i}`,
+        toolCallId: `call_${i}`,
+        toolName: 't',
+      });
+      if ('atCapacity' in created) {
+        throw new Error(`unexpected capacity at ${i}`);
+      }
+      firstTaskId ||= created.task.id;
+      latestTaskId = created.task.id;
+      registry.complete('u-aggregate', `c-${i}`, created.task.id, { content: 'x' });
+    }
+    expect(registry.get('u-aggregate', 'c-0', firstTaskId)).toBeUndefined();
+    expect(registry.get('u-aggregate', 'c-400', latestTaskId)?.status).toBe('completed');
+  });
+
+  it('recreates a target bucket when aggregate eviction removes it', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    for (let i = 0; i < 400; i++) {
+      const created = registry.create({
+        userId: 'u-reused-bucket',
+        conversationId: `c-${i}`,
+        toolCallId: `call_${i}`,
+        toolName: 't',
+      });
+      if ('atCapacity' in created) {
+        throw new Error(`unexpected capacity at ${i}`);
+      }
+      registry.complete('u-reused-bucket', `c-${i}`, created.task.id, { content: 'x' });
+    }
+
+    const replacement = registry.create({
+      userId: 'u-reused-bucket',
+      conversationId: 'c-0',
+      toolCallId: 'call_replacement',
+      toolName: 't',
+    });
+    if ('atCapacity' in replacement) {
+      throw new Error('unexpected replacement capacity');
+    }
+    registry.complete('u-reused-bucket', 'c-0', replacement.task.id, { content: 'replacement' });
+    expect(registry.get('u-reused-bucket', 'c-0', replacement.task.id)?.result).toBe('replacement');
+  });
+
+  it('uses one local eviction to satisfy bucket and aggregate task caps', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    let otherOldestId = '';
+    let targetOldestId = '';
+    for (let i = 0; i < 200; i++) {
+      const other = registry.create({
+        userId: 'u-local-first',
+        conversationId: 'c-other',
+        toolCallId: `call_other_${i}`,
+        toolName: 't',
+      });
+      if ('atCapacity' in other) {
+        throw new Error(`unexpected other capacity at ${i}`);
+      }
+      otherOldestId ||= other.task.id;
+      registry.complete('u-local-first', 'c-other', other.task.id, { content: 'other' });
+    }
+    for (let i = 0; i < 200; i++) {
+      const target = registry.create({
+        userId: 'u-local-first',
+        conversationId: 'c-target',
+        toolCallId: `call_target_${i}`,
+        toolName: 't',
+      });
+      if ('atCapacity' in target) {
+        throw new Error(`unexpected target capacity at ${i}`);
+      }
+      targetOldestId ||= target.task.id;
+      registry.complete('u-local-first', 'c-target', target.task.id, { content: 'target' });
+    }
+
+    const replacement = registry.create({
+      userId: 'u-local-first',
+      conversationId: 'c-target',
+      toolCallId: 'call_replacement',
+      toolName: 't',
+    });
+    expect('atCapacity' in replacement).toBe(false);
+    expect(registry.get('u-local-first', 'c-other', otherOldestId)).toBeDefined();
+    expect(registry.get('u-local-first', 'c-target', targetOldestId)).toBeUndefined();
+  });
+
+  it('evicts by settlement time instead of dispatch time', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    let now = Date.now();
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    try {
+      const slow = registry.create({
+        userId: 'u-settlement-order',
+        conversationId: 'c-slow',
+        toolCallId: 'call_slow',
+        toolName: 't',
+      });
+      if ('atCapacity' in slow) {
+        throw new Error('unexpected slow-task capacity');
+      }
+
+      let oldestSettledId = '';
+      for (let i = 0; i < 399; i++) {
+        now++;
+        const fast = registry.create({
+          userId: 'u-settlement-order',
+          conversationId: `c-fast-${i}`,
+          toolCallId: `call_fast_${i}`,
+          toolName: 't',
+        });
+        if ('atCapacity' in fast) {
+          throw new Error(`unexpected fast-task capacity at ${i}`);
+        }
+        oldestSettledId ||= fast.task.id;
+        registry.complete('u-settlement-order', `c-fast-${i}`, fast.task.id, {
+          content: 'fast',
+        });
+      }
+
+      now += 1_000;
+      registry.complete('u-settlement-order', 'c-slow', slow.task.id, { content: 'slow' });
+      now++;
+      const replacement = registry.create({
+        userId: 'u-settlement-order',
+        conversationId: 'c-replacement',
+        toolCallId: 'call_replacement',
+        toolName: 't',
+      });
+      expect('atCapacity' in replacement).toBe(false);
+      expect(registry.get('u-settlement-order', 'c-slow', slow.task.id)?.result).toBe('slow');
+      expect(registry.get('u-settlement-order', 'c-fast-0', oldestSettledId)).toBeUndefined();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('evicts oldest settled tasks at the process-wide cap', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    let firstTaskId = '';
+    let latestTaskId = '';
+    for (let i = 0; i <= 2_000; i++) {
+      const created = registry.create({
+        userId: `u-${i}`,
+        conversationId: `c-${i}`,
+        toolCallId: `call_${i}`,
+        toolName: 't',
+      });
+      if ('atCapacity' in created) {
+        throw new Error(`unexpected capacity at ${i}`);
+      }
+      firstTaskId ||= created.task.id;
+      latestTaskId = created.task.id;
+      registry.complete(`u-${i}`, `c-${i}`, created.task.id, { content: 'x' });
+    }
+    expect(registry.get('u-0', 'c-0', firstTaskId)).toBeUndefined();
+    expect(registry.get('u-2000', 'c-2000', latestTaskId)?.status).toBe('completed');
+  });
+
+  it('bounds retained payloads per user across conversations', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    let firstTaskId = '';
+    let latestTaskId = '';
+    for (let i = 0; i < 18; i++) {
+      const created = registry.create({
+        userId: 'u-payload',
+        conversationId: `c-${i}`,
+        toolCallId: `call_${i}`,
+        toolName: 't',
+      });
+      if ('atCapacity' in created) {
+        throw new Error(`unexpected capacity at ${i}`);
+      }
+      firstTaskId ||= created.task.id;
+      latestTaskId = created.task.id;
+      registry.complete('u-payload', `c-${i}`, created.task.id, {
+        content: 'x',
+        artifact: { payload: 'x'.repeat(1_000_000) },
+      });
+    }
+    expect(registry.get('u-payload', 'c-0', firstTaskId)).toBeUndefined();
+    expect(registry.get('u-payload', 'c-17', latestTaskId)?.artifact).toBeDefined();
+  });
+
+  it('does not evict a completed task while its harvest is pending', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const first = registry.create({
+      userId: 'u-pending-harvest',
+      conversationId: 'c-first',
+      toolCallId: 'call_first',
+      toolName: 'execute_code',
+      harvestStarted: true,
+    });
+    const second = registry.create({
+      userId: 'u-pending-harvest',
+      conversationId: 'c-second',
+      toolCallId: 'call_second',
+      toolName: 'execute_code',
+      harvestStarted: true,
+    });
+    if ('atCapacity' in first || 'atCapacity' in second) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-pending-harvest', 'c-first', first.task.id, {
+      content: 'first',
+      artifact: { payload: 'a'.repeat(9_000_000) },
+      harvestStarted: true,
+    });
+    registry.complete('u-pending-harvest', 'c-second', second.task.id, {
+      content: 'second',
+      artifact: { payload: 'b'.repeat(9_000_000) },
+      harvestStarted: true,
+    });
+    expect(registry.get('u-pending-harvest', 'c-first', first.task.id)?.artifact).toBeDefined();
+    expect(registry.get('u-pending-harvest', 'c-second', second.task.id)?.artifact).toBeUndefined();
+    expect(registry.get('u-pending-harvest', 'c-second', second.task.id)?.result).toBeUndefined();
+  });
+
+  it('does not evict an ordinary task while completion persistence is pending', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const first = registry.create({
+      userId: 'u-pending-persistence',
+      conversationId: 'c-first',
+      toolCallId: 'call_first',
+      toolName: 'search_mcp_docs',
+    });
+    const second = registry.create({
+      userId: 'u-pending-persistence',
+      conversationId: 'c-second',
+      toolCallId: 'call_second',
+      toolName: 'search_mcp_docs',
+    });
+    if ('atCapacity' in first || 'atCapacity' in second) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-pending-persistence', 'c-first', first.task.id, {
+      content: 'first',
+      artifact: { payload: 'a'.repeat(9_000_000) },
+    });
+    registry.markCompletionPersistencePending('u-pending-persistence', 'c-first', first.task.id);
+    registry.complete('u-pending-persistence', 'c-second', second.task.id, {
+      content: 'second',
+      artifact: { payload: 'b'.repeat(9_000_000) },
+    });
+    expect(registry.get('u-pending-persistence', 'c-first', first.task.id)).toBeDefined();
+    expect(
+      registry.get('u-pending-persistence', 'c-second', second.task.id)?.result,
+    ).toBeUndefined();
+  });
+
+  it('skips zero-byte records when evicting retained payloads', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const empty = registry.create({
+      userId: 'u-zero-byte',
+      conversationId: 'c-empty',
+      toolCallId: 'call_empty',
+      toolName: 't',
+    });
+    const retained = registry.create({
+      userId: 'u-zero-byte',
+      conversationId: 'c-retained',
+      toolCallId: 'call_retained',
+      toolName: 't',
+    });
+    const incoming = registry.create({
+      userId: 'u-zero-byte',
+      conversationId: 'c-incoming',
+      toolCallId: 'call_incoming',
+      toolName: 't',
+    });
+    if ('atCapacity' in empty || 'atCapacity' in retained || 'atCapacity' in incoming) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-zero-byte', 'c-empty', empty.task.id, { content: '' });
+    registry.complete('u-zero-byte', 'c-retained', retained.task.id, {
+      content: 'retained',
+      artifact: { payload: 'a'.repeat(9_000_000) },
+    });
+    registry.complete('u-zero-byte', 'c-incoming', incoming.task.id, {
+      content: 'incoming',
+      artifact: { payload: 'b'.repeat(8_000_000) },
+    });
+    expect(registry.get('u-zero-byte', 'c-empty', empty.task.id)).toBeDefined();
+    expect(registry.get('u-zero-byte', 'c-retained', retained.task.id)).toBeUndefined();
+    expect(registry.get('u-zero-byte', 'c-incoming', incoming.task.id)?.artifact).toBeDefined();
+  });
+
+  it('does not partially evict global tasks when user retention cannot be satisfied', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    for (let index = 0; index < 400; index++) {
+      const conversationId = `c-atomic-${Math.floor(index / 200)}`;
+      const created = registry.create({
+        userId: 'u-atomic',
+        conversationId,
+        toolCallId: `call_atomic_${index}`,
+        toolName: 't',
+        harvestStarted: true,
+      });
+      if ('atCapacity' in created) {
+        throw new Error(`unexpected capacity at ${index}: ${created.scope}`);
+      }
+      registry.complete('u-atomic', conversationId, created.task.id, {
+        content: '',
+        harvestStarted: true,
+      });
+    }
+
+    let oldestGlobalTask: { userId: string; conversationId: string; taskId: string } | undefined;
+    for (let userIndex = 0; userIndex < 8; userIndex++) {
+      for (let taskIndex = 0; taskIndex < 200; taskIndex++) {
+        const userId = `u-global-${userIndex}`;
+        const conversationId = `c-global-${userIndex}`;
+        const created = registry.create({
+          userId,
+          conversationId,
+          toolCallId: `call_global_${userIndex}_${taskIndex}`,
+          toolName: 't',
+        });
+        if ('atCapacity' in created) {
+          throw new Error('unexpected capacity');
+        }
+        registry.complete(userId, conversationId, created.task.id, { content: '' });
+        oldestGlobalTask ??= { userId, conversationId, taskId: created.task.id };
+      }
+    }
+
+    const rejected = registry.create({
+      userId: 'u-atomic',
+      conversationId: 'c-atomic-new',
+      toolCallId: 'call_atomic_rejected',
+      toolName: 't',
+    });
+    expect(rejected).toEqual({ atCapacity: true, scope: 'user_retention' });
+    if (oldestGlobalTask == null) {
+      throw new Error('expected a global eviction candidate');
+    }
+    expect(
+      registry.get(
+        oldestGlobalTask.userId,
+        oldestGlobalTask.conversationId,
+        oldestGlobalTask.taskId,
+      ),
+    ).toBeDefined();
+  });
+
+  it('does not partially evict global payloads when user payload retention cannot be satisfied', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    for (let index = 0; index < 2; index++) {
+      const conversationId = `c-payload-protected-${index}`;
+      const created = registry.create({
+        userId: 'u-payload-atomic',
+        conversationId,
+        toolCallId: `call_payload_protected_${index}`,
+        toolName: 't',
+        harvestStarted: true,
+      });
+      if ('atCapacity' in created) {
+        throw new Error('unexpected capacity');
+      }
+      registry.complete('u-payload-atomic', conversationId, created.task.id, {
+        content: 'protected',
+        artifact: { payload: 'p'.repeat(7_999_000) },
+        harvestStarted: true,
+      });
+    }
+
+    let oldestGlobalTask: { userId: string; conversationId: string; taskId: string } | undefined;
+    for (let index = 0; index < 6; index++) {
+      const userId = `u-payload-global-${index}`;
+      const conversationId = `c-payload-global-${index}`;
+      const created = registry.create({
+        userId,
+        conversationId,
+        toolCallId: `call_payload_global_${index}`,
+        toolName: 't',
+      });
+      if ('atCapacity' in created) {
+        throw new Error('unexpected capacity');
+      }
+      registry.complete(userId, conversationId, created.task.id, {
+        content: 'global',
+        artifact: { payload: 'g'.repeat(7_999_000) },
+      });
+      oldestGlobalTask ??= { userId, conversationId, taskId: created.task.id };
+    }
+
+    const incoming = registry.create({
+      userId: 'u-payload-atomic',
+      conversationId: 'c-payload-incoming',
+      toolCallId: 'call_payload_incoming',
+      toolName: 't',
+    });
+    if ('atCapacity' in incoming) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-payload-atomic', 'c-payload-incoming', incoming.task.id, {
+      content: 'incoming',
+      artifact: { payload: 'i'.repeat(20_000) },
+    });
+
+    expect(registry.get('u-payload-atomic', 'c-payload-incoming', incoming.task.id)?.result).toBe(
+      undefined,
+    );
+    if (oldestGlobalTask == null) {
+      throw new Error('expected a global payload eviction candidate');
+    }
+    expect(
+      registry.get(
+        oldestGlobalTask.userId,
+        oldestGlobalTask.conversationId,
+        oldestGlobalTask.taskId,
+      ),
+    ).toBeDefined();
+  });
+
+  it('drops terminal errors when non-evictable payloads exhaust the user budget', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const first = registry.create({
+      userId: 'u-error-budget',
+      conversationId: 'c-first',
+      toolCallId: 'call_first',
+      toolName: 'execute_code',
+      harvestStarted: true,
+    });
+    const second = registry.create({
+      userId: 'u-error-budget',
+      conversationId: 'c-second',
+      toolCallId: 'call_second',
+      toolName: 'execute_code',
+      harvestStarted: true,
+    });
+    const failing = registry.create({
+      userId: 'u-error-budget',
+      conversationId: 'c-failing',
+      toolCallId: 'call_failing',
+      toolName: 'execute_code',
+    });
+    if ('atCapacity' in first || 'atCapacity' in second || 'atCapacity' in failing) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-error-budget', 'c-first', first.task.id, {
+      content: 'a',
+      artifact: { payload: 'a'.repeat(9_000_000) },
+      harvestStarted: true,
+    });
+    registry.complete('u-error-budget', 'c-second', second.task.id, {
+      content: 'b',
+      artifact: { payload: 'b'.repeat(6_999_900) },
+      harvestStarted: true,
+    });
+    registry.fail('u-error-budget', 'c-failing', failing.task.id, 'e'.repeat(100_000));
+    const failed = registry.get('u-error-budget', 'c-failing', failing.task.id);
+    expect(failed?.status).toBe('error');
+    expect(failed?.error).toBeUndefined();
+  });
+
+  it('finishes an empty harvest without evicting payload capacity', () => {
+    const registry = new BackgroundTaskRegistryClass();
+    const first = registry.create({
+      userId: 'u-empty-harvest',
+      conversationId: 'c-first',
+      toolCallId: 'call_first',
+      toolName: 'execute_code',
+    });
+    const second = registry.create({
+      userId: 'u-empty-harvest',
+      conversationId: 'c-second',
+      toolCallId: 'call_second',
+      toolName: 'execute_code',
+    });
+    const empty = registry.create({
+      userId: 'u-empty-harvest',
+      conversationId: 'c-empty',
+      toolCallId: 'call_empty',
+      toolName: 'execute_code',
+      harvestStarted: true,
+    });
+    if ('atCapacity' in first || 'atCapacity' in second || 'atCapacity' in empty) {
+      throw new Error('unexpected capacity');
+    }
+    registry.complete('u-empty-harvest', 'c-first', first.task.id, {
+      content: 'a',
+      artifact: { payload: 'a'.repeat(9_000_000) },
+    });
+    registry.complete('u-empty-harvest', 'c-second', second.task.id, {
+      content: 'b',
+      artifact: { payload: 'b'.repeat(6_999_970) },
+    });
+    registry.complete('u-empty-harvest', 'c-empty', empty.task.id, {
+      content: '',
+      harvestStarted: true,
+    });
+    registry.finishHarvest('u-empty-harvest', 'c-empty', empty.task.id);
+    expect(registry.get('u-empty-harvest', 'c-first', first.task.id)).toBeDefined();
+    expect(registry.get('u-empty-harvest', 'c-empty', empty.task.id)?.harvestPending).toBe(false);
   });
 
   it('scopes tasks by user and conversation', () => {
@@ -1105,6 +2084,10 @@ describe('getBackgroundCodeDelivery (singleton)', () => {
         messageId: 'dispatch-msg',
         result: 'stdout',
         attachments: [{ file_id: 'f1' }],
+        backgroundTask: expect.objectContaining({
+          taskId: created.task.id,
+          status: 'completed',
+        }),
       }),
     );
     /** Not one-shot: a later poll can still re-emit / re-anchor. */
@@ -1150,6 +2133,84 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(JSON.parse(content)).toEqual(
       expect.objectContaining({ status: 'not_found', background_task_id: 'nope' }),
     );
+  });
+
+  it('keeps ordinary cancellation disabled unless the deployment opts in', async () => {
+    const requestCancellation = jest.fn();
+    const created = backgroundTaskRegistry.create({
+      userId: 'disabled-cancel-user',
+      conversationId: 'disabled-cancel-conversation',
+      toolCallId: 'disabled-cancel-call',
+      toolName: 'bash_tool',
+      requestCancellation,
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'disabled-cancel-user',
+        conversationId: 'disabled-cancel-conversation',
+        args: { background_task_id: created.task.id, action: 'cancel' },
+      }),
+    );
+    expect(result).toMatchObject({ status: 'invalid', background_task_id: created.task.id });
+    expect(requestCancellation).not.toHaveBeenCalled();
+    backgroundTaskRegistry.fail(
+      'disabled-cancel-user',
+      'disabled-cancel-conversation',
+      created.task.id,
+      'test cleanup',
+    );
+  });
+
+  it('uses normal durable claim arbitration when cancellation loses the settlement race', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'cancel-race-user',
+      conversationId: 'cancel-race-conversation',
+      toolCallId: 'cancel-race-call',
+      toolName: 'bash_tool',
+      messageId: 'cancel-race-message',
+      requestCancellation: jest.fn(),
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.markCompletionWakeup(
+      'cancel-race-user',
+      'cancel-race-conversation',
+      created.task.id,
+      {
+        renew: jest.fn(async () => true),
+        retire: jest.fn(async () => true),
+      },
+    );
+    backgroundTaskRegistry.complete(
+      'cancel-race-user',
+      'cancel-race-conversation',
+      created.task.id,
+      { content: 'settled result' },
+    );
+    const claimBackgroundToolResult = jest.fn(async () => ({
+      status: 'claimed' as const,
+      claim: { kind: 'wakeup' as const, claimId: 'automatic-delivery' },
+    }));
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'cancel-race-user',
+        conversationId: 'cancel-race-conversation',
+        args: { background_task_id: created.task.id, action: 'cancel' },
+        ordinaryToolCancellation: true,
+        claimBackgroundToolResult,
+      }),
+    );
+    expect(result).toMatchObject({
+      status: 'delivery_scheduled',
+      background_task_id: created.task.id,
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(1);
   });
 
   it('rejects an oversized task id before local or cross-replica lookup', async () => {
@@ -1229,6 +2290,412 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(singleFromString).toEqual(
       expect.objectContaining({ status: 'completed', result: 'RESULT' }),
     );
+  });
+
+  it('lets a later poll collect a receipt without inheriting an abandoned local claim', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'claim_user',
+      conversationId: 'claim_convo',
+      toolCallId: 'call_claim',
+      toolName: 'search_mcp_docs',
+      messageId: 'response-claim',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('claim_user', 'claim_convo', created.task.id, {
+      content: 'CLAIMED RESULT',
+    });
+    const retire = jest.fn(async () => true);
+    backgroundTaskRegistry.markCompletionWakeup('claim_user', 'claim_convo', created.task.id, {
+      renew: jest.fn(async () => true),
+      retire,
+    });
+    const claimBackgroundToolResult = jest
+      .fn()
+      .mockResolvedValueOnce({ status: 'not_ready' })
+      .mockResolvedValueOnce({ status: 'not_ready' })
+      .mockResolvedValueOnce({ status: 'not_ready' })
+      .mockResolvedValueOnce({ status: 'acquired', results: [] });
+    const request = {
+      userId: 'claim_user',
+      conversationId: 'claim_convo',
+      args: { background_task_id: created.task.id },
+      agentId: 'agent_parent_1',
+      runId: 'poll-run',
+      generationId: 'response-claim',
+      claimBackgroundToolResult,
+    };
+
+    const persisting = JSON.parse(
+      await runCheckBackgroundTask({ ...request, toolCallId: 'poll-call-1' }),
+    );
+    expect(persisting).toMatchObject({ status: 'result_persisting' });
+    expect(JSON.stringify(persisting)).not.toContain('CLAIMED RESULT');
+    expect(
+      backgroundTaskRegistry.get('claim_user', 'claim_convo', created.task.id)?.resultClaim,
+    ).toBeUndefined();
+    const laterPoll = JSON.parse(
+      await runCheckBackgroundTask({ ...request, toolCallId: 'poll-call-2' }),
+    );
+    expect(laterPoll).toMatchObject({ status: 'completed', result: 'CLAIMED RESULT' });
+    expect(
+      backgroundTaskRegistry.get('claim_user', 'claim_convo', created.task.id)?.resultClaim,
+    ).toMatchObject({ kind: 'manual', generationId: 'response-claim' });
+    expect(retire).toHaveBeenCalledTimes(1);
+    expect(retire).toHaveBeenCalledWith('completion claimed by same-generation manual poll', {
+      onlyIfUnclaimed: true,
+    });
+    expect(claimBackgroundToolResult).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        messageId: 'response-claim',
+        taskId: created.task.id,
+        kind: 'manual',
+        generationId: 'response-claim',
+        allowUnfinished: true,
+      }),
+    );
+  });
+
+  it('reclaims a dead manual delivery after its owning generation is gone', async () => {
+    const claimBackgroundToolResult = jest
+      .fn()
+      .mockResolvedValueOnce({
+        status: 'claimed',
+        messageId: 'response-recovered',
+        claim: {
+          kind: 'manual',
+          claimId: 'abandoned-poll',
+          generationId: 'response-abandoned',
+        },
+      })
+      .mockResolvedValueOnce({
+        status: 'acquired',
+        messageId: 'response-recovered',
+        results: [
+          {
+            taskId: 'task-recovered-manual',
+            toolCallId: 'call-recovered-manual',
+            toolName: 'mutating_tool',
+            status: 'completed',
+            output: 'mutation already completed',
+          },
+        ],
+      });
+    const recoverDeadBackgroundToolClaim = jest.fn(async () => true);
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'recovered_user',
+        conversationId: 'recovered_convo',
+        args: { background_task_id: 'task-recovered-manual' },
+        toolCallId: 'replacement-poll',
+        runId: 'replacement-run',
+        generationId: 'response-replacement',
+        claimBackgroundToolResult,
+        recoverDeadBackgroundToolClaim,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'completed',
+      background_task_id: 'task-recovered-manual',
+      result: 'mutation already completed',
+    });
+    expect(recoverDeadBackgroundToolClaim).toHaveBeenCalledWith({
+      userId: 'recovered_user',
+      conversationId: 'recovered_convo',
+      messageId: 'response-recovered',
+      claimId: 'abandoned-poll',
+      kind: 'manual',
+      generationId: 'response-abandoned',
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(2);
+  });
+
+  it('delivers a mandatory live-artifact poll without waiting for its dispatch row', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'artifact_poll_user',
+      conversationId: 'artifact_poll_convo',
+      toolCallId: 'call_artifact_poll',
+      toolName: 'artifact_tool',
+      messageId: 'response-artifact-poll',
+      liveArtifactPollRequired: true,
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('artifact_poll_user', 'artifact_poll_convo', created.task.id, {
+      content: 'CONTENT WITH LIVE ARTIFACT',
+      artifact: { type: 'test-artifact' },
+    });
+    const retire = jest.fn(async () => true);
+    backgroundTaskRegistry.markCompletionWakeup(
+      'artifact_poll_user',
+      'artifact_poll_convo',
+      created.task.id,
+      { renew: jest.fn(async () => true), retire },
+    );
+    const claimBackgroundToolResult = jest.fn(async () => ({ status: 'not_ready' as const }));
+
+    const request = {
+      userId: 'artifact_poll_user',
+      conversationId: 'artifact_poll_convo',
+      args: { background_task_id: created.task.id },
+      toolCallId: 'poll-live-artifact',
+      runId: 'dispatch-run',
+      claimBackgroundToolResult,
+    };
+    const result = JSON.parse(await runCheckBackgroundTask(request));
+    const replay = JSON.parse(await runCheckBackgroundTask(request));
+
+    expect(result).toMatchObject({ status: 'completed', result: 'CONTENT WITH LIVE ARTIFACT' });
+    expect(replay).toMatchObject({ status: 'completed', result: 'CONTENT WITH LIVE ARTIFACT' });
+    expect(retire).toHaveBeenCalledWith('completion claimed by same-generation manual poll', {
+      onlyIfUnclaimed: true,
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(2);
+    expect(
+      backgroundTaskRegistry.get('artifact_poll_user', 'artifact_poll_convo', created.task.id)
+        ?.resultClaim,
+    ).toMatchObject({ kind: 'manual' });
+  });
+
+  it('does not expose a result already assigned to an automatic continuation', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'scheduled_user',
+      conversationId: 'scheduled_convo',
+      toolCallId: 'call_scheduled',
+      toolName: 'search_mcp_docs',
+      messageId: 'response-scheduled',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('scheduled_user', 'scheduled_convo', created.task.id, {
+      content: 'PRIVATE UNTIL CONTINUATION',
+    });
+    backgroundTaskRegistry.markCompletionWakeup(
+      'scheduled_user',
+      'scheduled_convo',
+      created.task.id,
+    );
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'scheduled_user',
+        conversationId: 'scheduled_convo',
+        args: { background_task_id: created.task.id },
+        claimBackgroundToolResult: async () => ({ status: 'claimed' }),
+      }),
+    );
+    expect(result).toMatchObject({ status: 'delivery_scheduled' });
+    expect(JSON.stringify(result)).not.toContain('PRIVATE UNTIL CONTINUATION');
+  });
+
+  it.each([
+    { status: 'completed' as const, field: 'result', output: 'RECOVERED RESULT' },
+    { status: 'error' as const, field: 'error', output: 'RECOVERED FAILURE' },
+  ])('recovers a durable $status receipt after process-local state is lost', async (terminal) => {
+    const claimBackgroundToolResult = jest.fn(async () => ({
+      status: 'acquired' as const,
+      messageId: 'response-recovered',
+      results: [
+        {
+          taskId: 'task-recovered',
+          toolCallId: 'call-recovered',
+          toolName: 'slow_tool',
+          status: terminal.status,
+          output: terminal.output,
+        },
+      ],
+    }));
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'recovered_user',
+        conversationId: 'recovered_convo',
+        args: { background_task_id: 'task-recovered' },
+        toolCallId: 'recovery-poll',
+        runId: 'recovery-run',
+        claimBackgroundToolResult,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: terminal.status,
+      background_task_id: 'task-recovered',
+      [terminal.field]: terminal.output,
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledWith(
+      expect.not.objectContaining({ messageId: expect.anything() }),
+    );
+  });
+
+  it('reports a lost executor without implying that a mutating task is safe to retry', async () => {
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'unknown_user',
+        conversationId: 'unknown_convo',
+        args: { background_task_id: 'task-unknown' },
+        toolCallId: 'unknown-poll',
+        runId: 'unknown-run',
+        claimBackgroundToolResult: async () => ({
+          status: 'outcome_unknown',
+          toolName: 'mutating_tool',
+        }),
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'outcome_unknown',
+      background_task_id: 'task-unknown',
+      tool: 'mutating_tool',
+    });
+    expect(result.message).toContain('Do not repeat a mutating operation automatically');
+  });
+
+  it('recovers a result through its dead batch-owner claim', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'dead_claim_user',
+      conversationId: 'dead_claim_convo',
+      toolCallId: 'call_dead_claim',
+      toolName: 'search_mcp_docs',
+      messageId: 'response-dead-claim',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('dead_claim_user', 'dead_claim_convo', created.task.id, {
+      content: 'RECOVERED CLAIMED RESULT',
+    });
+    backgroundTaskRegistry.markCompletionWakeup(
+      'dead_claim_user',
+      'dead_claim_convo',
+      created.task.id,
+    );
+    const claimBackgroundToolResult = jest
+      .fn()
+      .mockResolvedValueOnce({
+        status: 'claimed',
+        claim: { kind: 'wakeup', claimId: 'sibling-batch-root' },
+      })
+      .mockResolvedValueOnce({ status: 'acquired', results: [] });
+    const recoverDeadBackgroundToolClaim = jest.fn(async () => true);
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'dead_claim_user',
+        conversationId: 'dead_claim_convo',
+        args: { background_task_id: created.task.id },
+        toolCallId: 'poll-dead-claim',
+        runId: 'poll-run',
+        claimBackgroundToolResult,
+        recoverDeadBackgroundToolClaim,
+      }),
+    );
+
+    expect(result).toMatchObject({ status: 'completed', result: 'RECOVERED CLAIMED RESULT' });
+    expect(recoverDeadBackgroundToolClaim).toHaveBeenCalledWith({
+      userId: 'dead_claim_user',
+      conversationId: 'dead_claim_convo',
+      messageId: 'response-dead-claim',
+      claimId: 'sibling-batch-root',
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not expose a local result after its automatic resolver owns the lease', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'retire_user',
+      conversationId: 'retire_convo',
+      toolCallId: 'call_retire',
+      toolName: 'search_mcp_docs',
+      messageId: 'response-retire',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('retire_user', 'retire_convo', created.task.id, {
+      content: 'DO NOT DUPLICATE',
+    });
+    const retire = jest.fn(async () => false);
+    backgroundTaskRegistry.markCompletionWakeup('retire_user', 'retire_convo', created.task.id, {
+      renew: jest.fn(async () => true),
+      retire,
+    });
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'retire_user',
+        conversationId: 'retire_convo',
+        args: { background_task_id: created.task.id },
+        toolCallId: 'poll-retire',
+        runId: 'poll-run',
+        claimBackgroundToolResult: async () => ({ status: 'not_ready' }),
+      }),
+    );
+
+    expect(result).toMatchObject({ status: 'result_persisting' });
+    expect(JSON.stringify(result)).not.toContain('DO NOT DUPLICATE');
+    expect(
+      backgroundTaskRegistry.get('retire_user', 'retire_convo', created.task.id)?.resultClaim,
+    ).toBeUndefined();
+    expect(retire).toHaveBeenCalledWith('completion claimed by same-generation manual poll', {
+      onlyIfUnclaimed: true,
+    });
+    expect(retire).toHaveBeenCalledWith(
+      'dead completion recovered by same-generation manual poll',
+      {
+        onlyIfDead: true,
+      },
+    );
+  });
+
+  it('recovers a dead automatic completion into process-local polling', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'dead_user',
+      conversationId: 'dead_convo',
+      toolCallId: 'call_dead',
+      toolName: 'search_mcp_docs',
+      messageId: 'response-dead',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('dead_user', 'dead_convo', created.task.id, {
+      content: 'RECOVERED RESULT',
+    });
+    const retire = jest.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    backgroundTaskRegistry.markCompletionWakeup('dead_user', 'dead_convo', created.task.id, {
+      renew: jest.fn(async () => true),
+      retire,
+    });
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'dead_user',
+        conversationId: 'dead_convo',
+        args: { background_task_id: created.task.id },
+        toolCallId: 'poll-dead',
+        runId: 'poll-run',
+        claimBackgroundToolResult: async () => ({ status: 'not_ready' }),
+      }),
+    );
+
+    expect(result).toMatchObject({ status: 'completed', result: 'RECOVERED RESULT' });
+    expect(retire).toHaveBeenNthCalledWith(1, 'completion claimed by same-generation manual poll', {
+      onlyIfUnclaimed: true,
+    });
+    expect(retire).toHaveBeenNthCalledWith(
+      2,
+      'dead completion recovered by same-generation manual poll',
+      { onlyIfDead: true },
+    );
+    expect(
+      backgroundTaskRegistry.get('dead_user', 'dead_convo', created.task.id)
+        ?.completionPersistenceFailed,
+    ).toBe(true);
   });
 
   it('preserves local task lists when cross-replica subagent discovery is unavailable', async () => {
@@ -1329,6 +2796,9 @@ describe('runCheckBackgroundTask (singleton)', () => {
   it('polls and one-shot claims a detached subagent result', async () => {
     const store = new InMemorySubagentTaskStore();
     const subagentTasks: SubagentTaskConfig = { store, scopeId: 'owner:parent-thread' };
+    const claimBackgroundToolResult = jest.fn(async () => {
+      throw new Error('message recovery unavailable');
+    });
     const started = store.start({
       scopeId: subagentTasks.scopeId,
       idempotencyKey: 'parent-run:parent-agent:call-1',
@@ -1351,6 +2821,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
         conversationId: 'parent-thread',
         args: { background_task_id: started.task.taskId },
         subagentTasks,
+        claimBackgroundToolResult,
       }),
     );
     expect(first).toEqual(
@@ -1369,10 +2840,69 @@ describe('runCheckBackgroundTask (singleton)', () => {
         conversationId: 'parent-thread',
         args: { background_task_id: started.task.taskId },
         subagentTasks,
+        claimBackgroundToolResult,
       }),
     );
     expect(second).toEqual(expect.objectContaining({ status: 'claimed', result_claimed: true }));
     expect(second.result).toBeUndefined();
+    expect(claimBackgroundToolResult).not.toHaveBeenCalled();
+  });
+
+  it('falls through cleanly when neither background store recognizes a poll id', async () => {
+    const store = new InMemorySubagentTaskStore();
+    const claimBackgroundToolResult = jest.fn(async () => ({ status: 'not_found' as const }));
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'parent-thread',
+        args: { background_task_id: 'unknown-task' },
+        subagentTasks: { store, scopeId: 'owner:parent-thread' },
+        claimBackgroundToolResult,
+      }),
+    );
+
+    expect(result).toEqual({
+      status: 'not_found',
+      background_task_id: 'unknown-task',
+      message: 'No background task with that id exists in this thread.',
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(1);
+  });
+
+  it('recovers an ordinary durable result even when the subagent store is unavailable', async () => {
+    const store = Object.assign(new InMemorySubagentTaskStore(), {
+      claimTask: jest.fn().mockRejectedValue(new SubagentTaskOwnerUnavailableError()),
+    });
+    const claimBackgroundToolResult = jest.fn(async () => ({
+      status: 'acquired' as const,
+      results: [
+        {
+          taskId: 'ordinary-task',
+          toolCallId: 'ordinary-call',
+          toolName: 'mutating_tool',
+          status: 'completed' as const,
+          output: 'ordinary result',
+        },
+      ],
+    }));
+
+    const result = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'parent-thread',
+        args: { background_task_id: 'ordinary-task' },
+        subagentTasks: { store, scopeId: 'owner:parent-thread' },
+        claimBackgroundToolResult,
+      }),
+    );
+
+    expect(result).toMatchObject({
+      status: 'completed',
+      background_task_id: 'ordinary-task',
+      result: 'ordinary result',
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(1);
   });
 
   it('tells a wakeup-enabled parent to yield on an unchanged running subagent', async () => {
@@ -1406,6 +2936,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
       await runCheckBackgroundTask({
         userId: 'owner',
         conversationId: 'wakeup-parent',
+        agentId: 'agent_parent',
         args: { background_task_id: started.task.taskId },
         subagentTasks,
       }),
@@ -1419,12 +2950,25 @@ describe('runCheckBackgroundTask (singleton)', () => {
       await runCheckBackgroundTask({
         userId: 'owner',
         conversationId: 'wakeup-parent',
+        agentId: 'agent_parent',
         args: {},
         subagentTasks,
       }),
     );
     expect(listed.message).toBe(SUBAGENT_WAKEUP_GUIDANCE);
     expect(listed.tasks[0].message).toBeUndefined();
+
+    const ephemeralPoll = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'wakeup-parent',
+        agentId: 'openAI__gpt-4o',
+        args: { background_task_id: started.task.taskId },
+        subagentTasks,
+      }),
+    );
+    expect(ephemeralPoll.status).toBe('running');
+    expect(ephemeralPoll.message).toBeUndefined();
 
     store.control(subagentTasks.scopeId, started.task.taskId, { action: 'cancel' });
   });
@@ -1666,6 +3210,18 @@ describe('buildBackgroundHandleContent', () => {
     expect(parsed.background_task_id).toBe(created.task.id);
     expect(parsed.status).toBe('running');
     expect(parsed.message).toContain(CHECK_BACKGROUND_TASK_NAME);
+  });
+
+  it('requires polling when the tool can return a process-local live artifact', () => {
+    const parsed = JSON.parse(
+      buildBackgroundHandleContent(
+        { id: 'artifact-task', toolName: 'artifact_tool', status: 'running' },
+        { completionWakeup: true, liveArtifactPollRequired: true },
+      ),
+    );
+
+    expect(parsed.message).toContain('must call check_background_task');
+    expect(parsed.message).toContain('do not end the turn');
   });
 });
 

@@ -1,10 +1,18 @@
 import type { SettingDefinition } from './generate';
-import { applyModelAwareDefaults, paramSettings } from './parameterSettings';
-import { EModelEndpoint } from './types';
+import {
+  applyModelAwareDefaults,
+  resolveDropParamsUIKeys,
+  paramSettings,
+} from './parameterSettings';
+import { EModelEndpoint, Providers } from './types';
 
 const googleParams = paramSettings[EModelEndpoint.google] as SettingDefinition[];
 const anthropicParams = paramSettings[EModelEndpoint.anthropic] as SettingDefinition[];
 const maxOut = (params: SettingDefinition[]) => params.find((p) => p.key === 'maxOutputTokens');
+const maxContext = (params: SettingDefinition[]) =>
+  params.find((p) => p.key === 'maxContextTokens');
+const thinkingBudget = (params: SettingDefinition[]) =>
+  params.find((p) => p.key === 'thinkingBudget');
 const hasSetting = (params: SettingDefinition[], key: string) =>
   params.some((param) => param.key === key);
 
@@ -75,5 +83,90 @@ describe('applyModelAwareDefaults', () => {
     const override = { ...maxOut(modelAware), default: 2048 } as SettingDefinition;
     const final = modelAware.map((p) => (p.key === 'maxOutputTokens' ? override : p));
     expect(maxOut(final)?.default).toBe(2048);
+  });
+
+  it('keeps thinkingBudget -1 as the range minimum and applies the Pro floor separately', () => {
+    const result = applyModelAwareDefaults(googleParams, EModelEndpoint.google, 'gemini-2.5-pro');
+    expect(thinkingBudget(result)?.range).toMatchObject({
+      min: -1,
+      max: 32768,
+      positiveMin: 128,
+    });
+  });
+
+  it('applies the Flash Lite thinking-budget floor without raising the sentinel minimum', () => {
+    const result = applyModelAwareDefaults(
+      googleParams,
+      EModelEndpoint.google,
+      'gemini-2.5-flash-lite',
+    );
+    expect(thinkingBudget(result)?.range).toMatchObject({
+      min: -1,
+      max: 24576,
+      positiveMin: 512,
+    });
+  });
+
+  it('applies the Flash thinking-budget ceiling and a zero positive floor', () => {
+    const result = applyModelAwareDefaults(googleParams, EModelEndpoint.google, 'gemini-2.5-flash');
+    expect(thinkingBudget(result)?.range).toMatchObject({
+      min: -1,
+      max: 24576,
+      positiveMin: 0,
+    });
+  });
+});
+
+/**
+ * The field is rendered by every endpoint, so bounds written for Gemini would
+ * silently clamp a context window another provider accepts.
+ */
+describe('maxContextTokens bounds', () => {
+  it('bounds the Google field to the documented context window', () => {
+    expect(maxContext(googleParams)?.range).toEqual({ min: 10, max: 2000000, step: 1000 });
+  });
+
+  it('leaves every other endpoint unbounded', () => {
+    const bounded = Object.entries(paramSettings)
+      .filter(([endpoint]) => endpoint !== EModelEndpoint.google)
+      .filter(([, params]) => maxContext(params as SettingDefinition[])?.range != null)
+      .map(([endpoint]) => endpoint);
+
+    expect(bounded).toEqual([]);
+  });
+});
+
+describe('resolveDropParamsUIKeys', () => {
+  it('aliases backend param names to their UI keys for OpenAI-compatible endpoints', () => {
+    expect(
+      resolveDropParamsUIKeys(
+        ['maxTokens', 'topP', 'frequencyPenalty', 'presencePenalty'],
+        EModelEndpoint.openAI,
+      ),
+    ).toEqual(new Set(['max_tokens', 'top_p', 'frequency_penalty', 'presence_penalty']));
+  });
+
+  it('aliases backend param names for azureOpenAI, custom, and openRouter endpoints', () => {
+    expect(resolveDropParamsUIKeys(['maxTokens'], EModelEndpoint.azureOpenAI)).toEqual(
+      new Set(['max_tokens']),
+    );
+    expect(resolveDropParamsUIKeys(['topP'], EModelEndpoint.custom)).toEqual(new Set(['top_p']));
+    expect(resolveDropParamsUIKeys(['topP'], Providers.OPENROUTER)).toEqual(new Set(['top_p']));
+  });
+
+  it('preserves native keys for a custom endpoint overridden to anthropic/google, since their UI key already matches the backend name', () => {
+    expect(resolveDropParamsUIKeys(['topP'], EModelEndpoint.anthropic)).toEqual(new Set(['topP']));
+    expect(resolveDropParamsUIKeys(['topP'], EModelEndpoint.google)).toEqual(new Set(['topP']));
+  });
+
+  it('preserves native keys for bedrock endpoints', () => {
+    expect(
+      resolveDropParamsUIKeys(['maxTokens', 'topP'], `${EModelEndpoint.bedrock}-anthropic`),
+    ).toEqual(new Set(['maxTokens', 'topP']));
+  });
+
+  it('returns an empty set when dropParams is undefined or empty', () => {
+    expect(resolveDropParamsUIKeys(undefined, EModelEndpoint.openAI)).toEqual(new Set());
+    expect(resolveDropParamsUIKeys([], EModelEndpoint.openAI)).toEqual(new Set());
   });
 });
