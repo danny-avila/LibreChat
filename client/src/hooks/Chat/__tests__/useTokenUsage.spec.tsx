@@ -4,7 +4,7 @@ import { QueryKeys } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TMessage, TConversation } from 'librechat-data-provider';
 import type { ContextSnapshot } from '~/store/usage';
-import { contextSnapshotFamily, snapshotsByAnchorFamily } from '~/store/usage';
+import { contextSnapshotFamily, pendingUsageFamily, snapshotsByAnchorFamily } from '~/store/usage';
 import useTokenUsage from '~/hooks/Chat/useTokenUsage';
 
 jest.mock('~/hooks/Messages/useLatestMessage', () => ({
@@ -87,7 +87,7 @@ const renderTokenUsage = (
     ['a1', anchorSnapshot(196000)],
     ['a2', anchorSnapshot(195000)],
   ]),
-  overrides: { messages?: TMessage[]; snapshot?: ContextSnapshot } = {},
+  overrides: { messages?: TMessage[]; snapshot?: ContextSnapshot; isSubmitting?: boolean } = {},
 ) => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -102,7 +102,7 @@ const renderTokenUsage = (
       useTokenUsage({
         index: 0,
         conversation: { conversationId: convo, endpoint: 'agents' } as TConversation,
-        isSubmitting: false,
+        isSubmitting: overrides.isSubmitting ?? false,
       }),
     {
       wrapper: ({ children }) => (
@@ -113,6 +113,81 @@ const renderTokenUsage = (
 };
 
 describe('useTokenUsage — post-snapshot output', () => {
+  it('uses the selected response rollup, not the cumulative branch usage', () => {
+    const saved = messages.map((message) => {
+      if (message.messageId === 'a1') {
+        return {
+          ...message,
+          metadata: { usage: { input: 100, output: 20, cacheRead: 500, cacheWrite: 0 } },
+        };
+      }
+      if (message.messageId === 'a2') {
+        return {
+          ...message,
+          metadata: { usage: { input: 30, output: 15, cacheRead: 700, cacheWrite: 50, cost: 0 } },
+        };
+      }
+      return message;
+    }) as TMessage[];
+    const { result, unmount } = renderTokenUsage(undefined, { messages: saved });
+
+    expect(result.current.lastTurnUsage).toEqual({
+      input: 30,
+      output: 15,
+      cacheRead: 700,
+      cacheWrite: 50,
+      cost: 0,
+      costKnown: true,
+    });
+    expect(result.current.branchUsage.input).toBe(130);
+    expect(result.current.branchUsage.cacheRead).toBe(1200);
+    expect(result.current.branchUsage.costKnown).toBe(false);
+    unmount();
+  });
+
+  it('reports only confirmed calls in an in-progress turn, never the previous tail', () => {
+    const pendingAtom = pendingUsageFamily(convo);
+    const store = getDefaultStore();
+    const saved = messages.map((message) =>
+      message.messageId === 'a2'
+        ? ({
+            ...message,
+            metadata: { usage: { input: 100, output: 10, cacheRead: 50, cacheWrite: 0 } },
+          } as TMessage)
+        : message,
+    );
+    store.set(pendingAtom, {
+      input: 40,
+      output: 4,
+      cacheRead: 300,
+      cacheWrite: 20,
+      eventCount: 2,
+      costUSD: 0.01,
+      costKnown: true,
+    });
+    const { result, unmount } = renderTokenUsage(undefined, {
+      messages: saved,
+      isSubmitting: true,
+    });
+    expect(result.current.turnInProgress).toBe(true);
+    expect(result.current.lastTurnUsage?.input).toBe(40);
+    expect(result.current.lastTurnUsage?.cacheRead).toBe(300);
+    expect(result.current.branchUsage.cacheRead).toBe(350);
+    unmount();
+    store.set(pendingAtom, {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      eventCount: 0,
+      costUSD: 0,
+      costKnown: true,
+    });
+    const waiting = renderTokenUsage(undefined, { messages: saved, isSubmitting: true });
+    expect(waiting.result.current.lastTurnUsage).toBeUndefined();
+    waiting.unmount();
+  });
+
   it('charges the finalized output against the runway projection', () => {
     const { result } = renderTokenUsage();
 

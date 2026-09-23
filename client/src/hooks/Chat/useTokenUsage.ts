@@ -55,6 +55,10 @@ export interface TokenUsageView {
   branchUsage: BranchUsage;
   /** Provider usage across all branches of the conversation */
   totalUsage: BranchUsage;
+  /** Usage of the selected response, or completed calls in the in-flight turn. */
+  lastTurnUsage?: BranchUsage;
+  /** Distinguishes incomplete in-flight usage from a completed saved turn. */
+  turnInProgress: boolean;
   /** Whether any usage is available to display (branch has token usage) */
   hasUsage: boolean;
   /** Authoritative branch cost; the cost row is gated on `interface.contextCost` at render */
@@ -170,6 +174,12 @@ export default function useTokenUsage({
     () => mergeUsage(committedSubagentUsage, pendingSubagentUsage),
     [committedSubagentUsage, pendingSubagentUsage],
   );
+  /** Do not show the previous response as the current turn during a submission.
+   * Pending contains only provider-confirmed completed calls, not text estimates. */
+  let lastTurnUsage = branchTotals.lastTurnUsage;
+  if (isSubmitting) {
+    lastTurnUsage = pendingUsage.eventCount > 0 ? pendingAsUsage : undefined;
+  }
   const hasUsage =
     branchUsage.input + branchUsage.output + branchUsage.cacheRead + branchUsage.cacheWrite > 0;
 
@@ -334,6 +344,8 @@ export default function useTokenUsage({
         branchTotals,
         branchUsage,
         totalUsage,
+        lastTurnUsage,
+        turnInProgress: isSubmitting,
         hasUsage,
         branchCost: branchUsage.cost,
         totalCost: totalUsage.cost,
@@ -486,6 +498,8 @@ export default function useTokenUsage({
       branchTotals,
       branchUsage,
       totalUsage,
+      lastTurnUsage,
+      turnInProgress: isSubmitting,
       hasUsage,
       branchCost: branchUsage.cost,
       totalCost: totalUsage.cost,
@@ -505,6 +519,7 @@ export default function useTokenUsage({
     branchTotals,
     branchUsage,
     totalUsage,
+    lastTurnUsage,
     hasUsage,
     liveTokens,
     limits,

@@ -130,15 +130,19 @@ export default function Breakdown({
     percent = Math.min(Math.max(view.percent, 0), 100);
   }
   const { snapshot, snapshotActive, branchUsage, hasUsage } = view;
-  /** Show the all-branches total only when it (a) exceeds the active branch —
-   *  epsilon guards against float summation order surfacing a spurious row in an
-   *  unbranched conversation — and (b) has COMPLETE cost coverage, so a sibling
-   *  branch saved without cost can't render an under-reported total. */
+  /** Token differences are visible independently of cost display/coverage;
+   *  only compare costs when both sides are complete to avoid an apparent
+   *  all-branches total made from partially priced history. */
   const showTotal =
-    view.totalUsage.costKnown &&
-    Number.isFinite(view.totalCost) &&
-    Number.isFinite(view.branchCost) &&
-    view.totalCost - view.branchCost > 1e-9;
+    view.totalUsage.input !== branchUsage.input ||
+    view.totalUsage.output !== branchUsage.output ||
+    view.totalUsage.cacheRead !== branchUsage.cacheRead ||
+    view.totalUsage.cacheWrite !== branchUsage.cacheWrite ||
+    (view.totalUsage.costKnown &&
+      branchUsage.costKnown &&
+      Number.isFinite(view.totalCost) &&
+      Number.isFinite(view.branchCost) &&
+      view.totalCost - view.branchCost > 1e-9);
 
   /** Every normalized bucket of the subagent calls: a cached call reports its
    *  prompt under `cacheRead`/`cacheWrite`, so summing input+output alone
@@ -508,6 +512,9 @@ export default function Breakdown({
                   {(normalizeTokenCount(view.cacheRead) > 0 ||
                     normalizeTokenCount(view.cacheWrite) > 0) && (
                     <div className="space-y-1.5 pl-6">
+                      <p className="text-xs font-medium text-text-tertiary">
+                        {localize('com_ui_context_cache_last_call')}
+                      </p>
                       {normalizeTokenCount(view.cacheRead) > 0 && (
                         <Row
                           label={localize('com_ui_context_cached')}
@@ -597,14 +604,51 @@ export default function Breakdown({
               )}
             </div>
 
+            <div className="border-t border-border-light" role="separator" />
+            <div className="space-y-1.5" data-testid="token-usage-last-turn">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">
+                {view.turnInProgress
+                  ? localize('com_ui_context_current_turn')
+                  : localize('com_ui_context_last_turn')}
+              </h3>
+              {view.lastTurnUsage != null ? (
+                <>
+                  <Row
+                    label={localize('com_ui_context_uncached_input')}
+                    value={view.lastTurnUsage.input}
+                  />
+                  <Row label={localize('com_ui_cache_read')} value={view.lastTurnUsage.cacheRead} />
+                  <Row
+                    label={localize('com_ui_cache_write')}
+                    value={view.lastTurnUsage.cacheWrite}
+                  />
+                  <Row label={localize('com_ui_output')} value={view.lastTurnUsage.output} />
+                </>
+              ) : (
+                <p className="text-xs text-text-secondary">
+                  {view.turnInProgress
+                    ? localize('com_ui_context_waiting_usage')
+                    : localize('com_ui_context_unavailable_usage')}
+                </p>
+              )}
+            </div>
+
             {hasUsage && (
               <>
                 <div className="border-t border-border-light" role="separator" />
                 <div className="space-y-1.5" data-testid="token-usage-totals">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">
-                    {localize('com_ui_context_totals')}
-                  </h3>
-                  <Row label={localize('com_ui_input')} value={branchUsage.input} />
+                  <div className="flex items-baseline justify-between gap-2">
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">
+                      {localize('com_ui_context_totals')}
+                    </h3>
+                    <span className="text-xs text-text-tertiary">
+                      {localize('com_ui_context_this_branch')}
+                    </span>
+                  </div>
+                  <Row
+                    label={localize('com_ui_context_uncached_input')}
+                    value={branchUsage.input}
+                  />
                   <Row label={localize('com_ui_output')} value={branchUsage.output} />
                   {normalizeTokenCount(branchUsage.cacheRead) > 0 && (
                     <Row label={localize('com_ui_cache_read')} value={branchUsage.cacheRead} />
@@ -613,43 +657,87 @@ export default function Breakdown({
                     <Row label={localize('com_ui_cache_write')} value={branchUsage.cacheWrite} />
                   )}
                   {/** Subagent calls are accumulated per conversation for the session
-                   *  and are not attributed to a response, so they cannot be scoped to
-                   *  the viewed branch like the rows above; label them all-branches
-                   *  rather than imply branch scope. */}
+                   *  and are not attributed to a response; label them all-branches. */}
                   {subagentTokens > 0 && (
                     <Row label={localize('com_ui_context_subagents_all')} value={subagentTokens} />
                   )}
                 </div>
+                {showTotal && (
+                  <div
+                    className="space-y-1.5 border-t border-border-light pt-2"
+                    data-testid="token-usage-all-branches"
+                  >
+                    <h3 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">
+                      {localize('com_ui_context_cost_total')}
+                    </h3>
+                    <Row
+                      label={localize('com_ui_context_uncached_input')}
+                      value={view.totalUsage.input}
+                    />
+                    <Row label={localize('com_ui_output')} value={view.totalUsage.output} />
+                    {normalizeTokenCount(view.totalUsage.cacheRead) > 0 && (
+                      <Row
+                        label={localize('com_ui_cache_read')}
+                        value={view.totalUsage.cacheRead}
+                      />
+                    )}
+                    {normalizeTokenCount(view.totalUsage.cacheWrite) > 0 && (
+                      <Row
+                        label={localize('com_ui_cache_write')}
+                        value={view.totalUsage.cacheWrite}
+                      />
+                    )}
+                  </div>
+                )}
               </>
             )}
 
-            {showCost && hasUsage && branchUsage.costKnown && (
-              <>
-                <div className="border-t border-border-light" role="separator" />
-                <div className="space-y-1.5" data-testid="token-usage-cost">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-text-secondary">
-                      {showTotal
-                        ? localize('com_ui_context_cost_branch')
-                        : localize('com_ui_context_cost')}
-                    </span>
-                    <span className="font-medium text-text-primary">
-                      {formatCost(view.branchCost, currency)}
-                    </span>
+            {showCost &&
+              (view.lastTurnUsage?.costKnown === true ||
+                (hasUsage && branchUsage.costKnown) ||
+                (hasUsage && showTotal && view.totalUsage.costKnown)) && (
+                <>
+                  <div className="border-t border-border-light" role="separator" />
+                  <div className="space-y-1.5" data-testid="token-usage-cost">
+                    {view.lastTurnUsage?.costKnown === true && (
+                      <div className="flex items-center justify-between gap-4 text-sm">
+                        <span className="text-text-secondary">
+                          {localize(
+                            view.turnInProgress
+                              ? 'com_ui_context_cost_current_turn'
+                              : 'com_ui_context_cost_last_turn',
+                          )}
+                        </span>
+                        <span className="font-medium text-text-primary">
+                          {formatCost(view.lastTurnUsage.cost, currency)}
+                        </span>
+                      </div>
+                    )}
+                    {hasUsage && branchUsage.costKnown && (
+                      <div className="flex items-center justify-between gap-4 text-sm">
+                        <span className="text-text-secondary">
+                          {showTotal
+                            ? localize('com_ui_context_cost_branch')
+                            : localize('com_ui_context_cost')}
+                        </span>
+                        <span className="font-medium text-text-primary">
+                          {formatCost(view.branchCost, currency)}
+                        </span>
+                      </div>
+                    )}
+                    {hasUsage && showTotal && view.totalUsage.costKnown && (
+                      <div className="flex items-center justify-between gap-4 text-xs">
+                        <span className="text-text-secondary">
+                          {localize('com_ui_context_cost_total')}
+                        </span>
+                        <span className="text-text-secondary">
+                          {formatCost(view.totalCost, currency)}
+                        </span>
+                      </div>
+                    )}
                   </div>
-                  {showTotal && (
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-text-secondary">
-                        {localize('com_ui_context_cost_total')}
-                      </span>
-                      <span className="text-text-secondary">
-                        {formatCost(view.totalCost, currency)}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
+                </>
+              )}
 
             {langfuseSessionUrl && (
               <>
