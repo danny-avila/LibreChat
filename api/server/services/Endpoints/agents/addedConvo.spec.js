@@ -10,6 +10,7 @@ const mockGetMCPServerTools = jest.fn();
 const mockRegistryGetSkillByName = jest.fn();
 const mockRegistryListSkillsByAccess = jest.fn();
 const mockRegistryListAlwaysApplySkills = jest.fn();
+const mockInstructionPromptResolver = { resolve: jest.fn() };
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -44,6 +45,7 @@ jest.mock('~/server/services/MCP', () => ({
 jest.mock('~/server/services/ToolService', () => ({
   isFatalAgentInitializationError: (error, { signal } = {}) =>
     (signal?.aborted === true && (error === signal.reason || error?.name === 'AbortError')) ||
+    error?.name === 'AgentInstructionPromptError' ||
     ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
 }));
 
@@ -108,6 +110,7 @@ describe('processAddedConvo', () => {
     primaryAgentId: 'primary-id',
     primaryAgent: { id: 'primary-id' },
     userMCPAuthMap: undefined,
+    instructionPromptResolver: mockInstructionPromptResolver,
     ...overrides,
   });
 
@@ -117,6 +120,15 @@ describe('processAddedConvo', () => {
     expect(mockInitializeAgent).toHaveBeenCalledWith(
       expect.objectContaining({ codeEnvAvailable: true }),
       expect.anything(),
+    );
+  });
+
+  it('forwards the instruction prompt resolver to added-agent initialization', async () => {
+    await processAddedConvo(baseParams());
+
+    expect(mockInitializeAgent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ instructionPromptResolver: mockInstructionPromptResolver }),
     );
   });
 
@@ -172,6 +184,15 @@ describe('processAddedConvo', () => {
     mockInitializeAgent.mockRejectedValueOnce(toolError);
 
     await expect(processAddedConvo(baseParams())).rejects.toBe(toolError);
+  });
+
+  it('propagates instruction prompt resolution failures from an added agent', async () => {
+    const promptError = Object.assign(new Error('Prompt missing'), {
+      name: 'AgentInstructionPromptError',
+    });
+    mockInitializeAgent.mockRejectedValueOnce(promptError);
+
+    await expect(processAddedConvo(baseParams())).rejects.toBe(promptError);
   });
 
   it('forwards and propagates owning-run cancellation from added-agent initialization', async () => {

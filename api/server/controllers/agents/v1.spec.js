@@ -6,6 +6,8 @@ const { v4: uuidv4 } = require('uuid');
 const { createModels, tenantStorage } = require('@librechat/data-schemas');
 const {
   Tools,
+  AgentCapabilities,
+  ErrorTypes,
   SkillsScope,
   FileSources,
   Permissions,
@@ -17,6 +19,11 @@ const {
   actionDelimiter,
 } = require('librechat-data-provider');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const mockInstructionPromptResolve = jest.fn();
+
+jest.mock('~/server/services/Agents/instructionPrompts', () => ({
+  resolve: (...args) => mockInstructionPromptResolve(...args),
+}));
 
 // Only mock the dependencies that are not database-related
 jest.mock('~/server/services/Config', () => ({
@@ -185,6 +192,12 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
     jest.clearAllMocks();
     mergeDeploymentSkillIds.mockImplementation((ids) => ids);
 
+    mockInstructionPromptResolve.mockResolvedValue({
+      prompt: 'resolved instructions',
+      source: 'librechat',
+      name: 'Support policy',
+      version: 1,
+    });
     // Setup mock request and response objects
     mockReq = {
       user: {
@@ -414,6 +427,69 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         }),
       );
       await expect(Agent.countDocuments()).resolves.toBe(0);
+    });
+
+    test('rejects prompt references until the rollout capability is enabled', async () => {
+      mockReq.config = { endpoints: { agents: { capabilities: [] } } };
+      mockReq.body = {
+        name: 'Prompt Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        instructions: '',
+        instruction_prompt: {
+          source: 'librechat',
+          promptId: new mongoose.Types.ObjectId().toString(),
+          name: 'Support policy',
+        },
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(409);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: expect.objectContaining({
+          type: ErrorTypes.AGENT_INSTRUCTION_PROMPT,
+          code: 'not_configured',
+          retryable: true,
+        }),
+      });
+      await expect(Agent.countDocuments()).resolves.toBe(0);
+      expect(mockInstructionPromptResolve).not.toHaveBeenCalled();
+    });
+
+    test('persists a resolved instruction snapshot with the prompt reference', async () => {
+      mockReq.config = {
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.instruction_prompts] },
+        },
+      };
+      mockReq.body = {
+        name: 'Prompt Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        instructions: '',
+        instruction_prompt: {
+          source: 'librechat',
+          promptId: new mongoose.Types.ObjectId().toString(),
+          name: 'Support policy',
+        },
+      };
+
+      await createAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(201);
+      const createdAgent = mockRes.json.mock.calls[0][0];
+      expect(createdAgent.instructions).toBeUndefined();
+      expect(createdAgent.instruction_prompt).toMatchObject(mockReq.body.instruction_prompt);
+      expect(createdAgent.versions[0].instructions).toBeUndefined();
+      const persistedAgent = await Agent.findOne({ id: createdAgent.id }).lean();
+      expect(persistedAgent.instructions).toBe('resolved instructions');
+      expect(persistedAgent.versions[0].instructions).toBe('resolved instructions');
+
+      expect(mockInstructionPromptResolve).toHaveBeenCalledWith(
+        mockReq.body.instruction_prompt,
+        expect.objectContaining({ userId: mockReq.user.id, role: mockReq.user.role }),
+      );
     });
 
     test('should create agent with allowed fields only', async () => {
@@ -1310,6 +1386,29 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(response.model_parameters.temperature).toBeUndefined();
       expect(response.model_parameters.apiKey).toBeUndefined();
     });
+    test('redacts prompt snapshots from the expanded editor response', async () => {
+      const instructionPrompt = {
+        source: 'librechat',
+        promptId: new mongoose.Types.ObjectId().toString(),
+        name: 'Protected policy',
+      };
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Prompt Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: mockReq.user.id,
+        instructions: 'protected snapshot',
+        instruction_prompt: instructionPrompt,
+      });
+      mockReq.params = { id: agent.id };
+
+      await getAgentHandler(mockReq, mockRes, true);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.instructions).toBeUndefined();
+      expect(response.instruction_prompt).toMatchObject(instructionPrompt);
+    });
 
     test('should return owner_contact from the first ACL owner when support_contact is missing', async () => {
       const owner = await createOwner({
@@ -1417,8 +1516,21 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         model: 'gpt-4',
         author: mockReq.user.id,
         versions: [
-          { name: 'V1', provider: 'openai', model: 'gpt-4', updatedAt: new Date() },
-          { name: 'V2', provider: 'openai', model: 'gpt-4', updatedAt: new Date() },
+          {
+            name: 'V1',
+            provider: 'openai',
+            model: 'gpt-4',
+            instructions: 'protected snapshot',
+            instruction_prompt: { source: 'langfuse', name: 'protected-policy' },
+            updatedAt: new Date(),
+          },
+          {
+            name: 'V2',
+            provider: 'openai',
+            model: 'gpt-4',
+            instructions: 'visible inline instructions',
+            updatedAt: new Date(),
+          },
         ],
       });
       mockReq.params = { id: agent.id };
@@ -1436,6 +1548,8 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(Array.isArray(versions)).toBe(true);
       expect(versions).toHaveLength(2);
       expect(versions.map((v) => v.name)).toEqual(['V1', 'V2']);
+      expect(versions[0].instructions).toBeUndefined();
+      expect(versions[1].instructions).toBe('visible inline instructions');
     });
 
     test('returns 404 when the agent does not exist', async () => {
@@ -1499,6 +1613,100 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       // Verify in database
       const agentInDb = await Agent.findOne({ id: existingAgentId });
       expect(agentInDb.name).toBe('Updated Agent');
+    });
+    test('re-resolves prompt fallback for an instructions-only partial update', async () => {
+      const instructionPrompt = {
+        source: 'librechat',
+        promptId: new mongoose.Types.ObjectId().toString(),
+        name: 'Support policy',
+      };
+      await Agent.updateOne(
+        { id: existingAgentId },
+        { instructions: 'old snapshot', instruction_prompt: instructionPrompt },
+      );
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.config = {
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.instruction_prompts] },
+        },
+      };
+      mockReq.body = { instructions: 'unrelated inline value' };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockInstructionPromptResolve).toHaveBeenCalledWith(
+        instructionPrompt,
+        expect.objectContaining({ userId: mockReq.user.id }),
+      );
+      const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+      expect(agentInDb.instructions).toBe('resolved instructions');
+      expect(agentInDb.instruction_prompt).toMatchObject(instructionPrompt);
+    });
+
+    test('returns a typed prompt error when an update cannot resolve its reference', async () => {
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.config = { endpoints: { agents: { capabilities: [] } } };
+      mockReq.body = {
+        instruction_prompt: {
+          source: 'librechat',
+          promptId: new mongoose.Types.ObjectId().toString(),
+          name: 'Unavailable policy',
+        },
+      };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(409);
+      expect(mockRes.json).toHaveBeenCalledWith({
+        error: expect.objectContaining({
+          type: ErrorTypes.AGENT_INSTRUCTION_PROMPT,
+          code: 'not_configured',
+          retryable: true,
+        }),
+      });
+    });
+
+    test('clears a protected fallback when detaching without inline instructions', async () => {
+      const instructionPrompt = {
+        source: 'librechat',
+        promptId: new mongoose.Types.ObjectId().toString(),
+        name: 'Protected policy',
+      };
+      await Agent.updateOne(
+        { id: existingAgentId },
+        { instructions: 'protected snapshot', instruction_prompt: instructionPrompt },
+      );
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = { instruction_prompt: null };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockInstructionPromptResolve).not.toHaveBeenCalled();
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.instructions).toBe('');
+      expect(response.instruction_prompt).toBeNull();
+      const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+      expect(agentInDb.instructions).toBe('');
+      expect(agentInDb.instruction_prompt).toBeNull();
+    });
+    test('keeps inline instructions when clearing an already-empty prompt reference', async () => {
+      await Agent.updateOne({ id: existingAgentId }, { instructions: 'inline instructions' });
+      mockReq.user.id = existingAgentAuthorId.toString();
+      mockReq.params.id = existingAgentId;
+      mockReq.body = { instruction_prompt: null };
+
+      await updateAgentHandler(mockReq, mockRes);
+
+      expect(mockInstructionPromptResolve).not.toHaveBeenCalled();
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.instructions).toBe('inline instructions');
+      expect(response.instruction_prompt).toBeNull();
+      const agentInDb = await Agent.findOne({ id: existingAgentId }).lean();
+      expect(agentInDb.instructions).toBe('inline instructions');
+      expect(agentInDb.instruction_prompt).toBeNull();
     });
 
     test('removes newly added programmatic options when Code Interpreter capability is disabled', async () => {
@@ -2733,6 +2941,134 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(agent.author.toString()).toBe(cloneAuthorId.toString());
       expect(agent.tool_resources.context.file_ids).toEqual([cloneAuthorFileId]);
       expect(agent.tool_resources.context.files).toBeUndefined();
+    });
+
+    test('duplicateAgentHandler preserves prompt resolution error statuses', async () => {
+      const sourceAgent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Prompt Source Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId(),
+        instructions: 'protected snapshot',
+        instruction_prompt: {
+          source: 'librechat',
+          promptId: new mongoose.Types.ObjectId().toString(),
+          name: 'Protected policy',
+        },
+      });
+      const db = require('~/models');
+      jest.spyOn(db, 'getActions').mockResolvedValueOnce([]);
+      const createAgentSpy = jest.spyOn(db, 'createAgent');
+      mockInstructionPromptResolve.mockRejectedValueOnce(
+        Object.assign(new Error('Prompt access denied'), { statusCode: 403 }),
+      );
+      mockReq.config = {
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.instruction_prompts] },
+        },
+      };
+      mockReq.params.id = sourceAgent.id;
+
+      await duplicateAgentHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Prompt access denied' });
+      expect(createAgentSpy).not.toHaveBeenCalled();
+    });
+
+    test('re-resolves a prompt snapshot before restoring a version', async () => {
+      const authorId = new mongoose.Types.ObjectId();
+      const instructionPrompt = {
+        source: 'librechat',
+        promptId: new mongoose.Types.ObjectId().toString(),
+        name: 'Restored policy',
+      };
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Current Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        instructions: 'current inline instructions',
+        versions: [
+          {
+            name: 'Historical Prompt Agent',
+            provider: 'openai',
+            model: 'gpt-4',
+            instructions: 'stale snapshot',
+            instruction_prompt: instructionPrompt,
+          },
+        ],
+      });
+      mockReq.config = {
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.instruction_prompts] },
+        },
+      };
+      mockReq.user.id = authorId.toString();
+      mockReq.params.id = agent.id;
+      mockReq.body = { version_index: 0 };
+
+      await revertAgentVersionHandler(mockReq, mockRes);
+
+      expect(mockInstructionPromptResolve).toHaveBeenCalledWith(
+        instructionPrompt,
+        expect.objectContaining({ userId: mockReq.user.id }),
+      );
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.instructions).toBeUndefined();
+      expect(response.instruction_prompt).toMatchObject(instructionPrompt);
+      const agentInDb = await Agent.findOne({ id: agent.id }).lean();
+      expect(agentInDb.instructions).toBe('resolved instructions');
+      expect(agentInDb.instruction_prompt).toMatchObject(instructionPrompt);
+    });
+
+    test('does not restore a version when prompt resolution fails', async () => {
+      const authorId = new mongoose.Types.ObjectId();
+      const agent = await Agent.create({
+        id: `agent_${uuidv4()}`,
+        name: 'Current Agent',
+        provider: 'openai',
+        model: 'gpt-4',
+        author: authorId,
+        instructions: 'current inline instructions',
+        versions: [
+          {
+            name: 'Historical Prompt Agent',
+            provider: 'openai',
+            model: 'gpt-4',
+            instructions: 'stale snapshot',
+            instruction_prompt: {
+              source: 'librechat',
+              promptId: new mongoose.Types.ObjectId().toString(),
+              name: 'Revoked policy',
+            },
+          },
+        ],
+      });
+      const db = require('~/models');
+      const revertSpy = jest.spyOn(db, 'revertAgentVersion');
+      mockInstructionPromptResolve.mockRejectedValueOnce(
+        Object.assign(new Error('Prompt access denied'), { statusCode: 403 }),
+      );
+      mockReq.config = {
+        endpoints: {
+          agents: { capabilities: [AgentCapabilities.instruction_prompts] },
+        },
+      };
+      mockReq.user.id = authorId.toString();
+      mockReq.params.id = agent.id;
+      mockReq.body = { version_index: 0 };
+
+      await revertAgentVersionHandler(mockReq, mockRes);
+
+      expect(mockRes.status).toHaveBeenCalledWith(403);
+      expect(mockRes.json).toHaveBeenCalledWith({ error: 'Prompt access denied' });
+      expect(revertSpy).not.toHaveBeenCalled();
+      const agentInDb = await Agent.findOne({ id: agent.id }).lean();
+      expect(agentInDb.instructions).toBe('current inline instructions');
+      expect(agentInDb.instruction_prompt).toBeUndefined();
     });
 
     test('revertAgentVersionHandler should block selected content before persistence', async () => {

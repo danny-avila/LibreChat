@@ -54,6 +54,12 @@ cache: true
 #     userIdField: email
 #     userMetadataFields: [email, username, role, provider]
 #     conversationMetadataFields: [conversationId, endpoint, model, modelLabel, spec]
+#     # Export only the resolved prompt source, name, version, and cache status.
+#     # Prompt content is never included. Disabled by default because names may be sensitive.
+#     promptMetadata: false
+#   prompts:
+#     cacheTtlMs: 300000
+#     requestTimeoutMs: 10000
 
 # File storage configuration
 # Single strategy for all file types (legacy format, still supported)
@@ -670,7 +676,9 @@ endpoints:
   #   # (optional) Agent Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["deferred_tools", "execute_code", "file_search", "web_search", "artifacts", "subagents", "actions", "context", "skills", "memory", "ask_user_question", "tools", "chain", "ocr"]
   #   # The following capabilities are opt-in and must be added explicitly:
-  #   # "programmatic_tools", "stateful_code_sessions", "run_in_background", "tool_intents"
+  #   # "instruction_prompts", "programmatic_tools", "stateful_code_sessions", "run_in_background", "tool_intents"
+  #   # Enable "instruction_prompts" only after every application pod runs a version
+  #   # that supports prompt references, so rolling deployments cannot persist empty fallbacks.
   #   # "stateful_code_sessions" is highly experimental and may change substantially.
   #   # (optional) Limit the workspace scopes users may select. Omit to allow all three.
   #   statefulCodeSessions:

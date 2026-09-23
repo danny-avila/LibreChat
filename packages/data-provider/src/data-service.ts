@@ -711,6 +711,17 @@ export const updateAgent = ({
   );
 };
 
+export const previewAgentInstructionPrompt = (
+  name: string,
+  version?: number,
+  signal?: AbortSignal,
+  destinationId?: string,
+): Promise<ag.ResolvedAgentInstructionPrompt> => {
+  return request.get(endpoints.previewAgentInstructionPrompt(name, version, destinationId), {
+    signal,
+  });
+};
+
 export const duplicateAgent = ({
   agent_id,
 }: m.DuplicateAgentBody): Promise<{ agent: ag.Agent; actions: ag.Action[] }> => {

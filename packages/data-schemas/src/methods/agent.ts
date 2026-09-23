@@ -590,6 +590,7 @@ export function createAgentMethods(
   revertAgentVersion: (
     searchParameter: FilterQuery<IAgent>,
     versionIndex: number,
+    restoreOverrides?: Partial<Pick<IAgent, 'instructions' | 'instruction_prompt'>>,
   ) => Promise<IAgent>;
   countPromotedAgents: () => Promise<number>;
   addAgentResourceFile: ({
@@ -1638,6 +1639,7 @@ export function createAgentMethods(
   async function revertAgentVersion(
     searchParameter: FilterQuery<IAgent>,
     versionIndex: number,
+    restoreOverrides?: Partial<Pick<IAgent, 'instructions' | 'instruction_prompt'>>,
   ): Promise<IAgent> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
     const agent = await Agent.findOne(searchParameter);
@@ -1656,6 +1658,7 @@ export function createAgentMethods(
     delete revertToVersion.versions;
     delete revertToVersion.author;
     delete revertToVersion.updatedBy;
+    Object.assign(revertToVersion, restoreOverrides);
 
     /** Version snapshots can predate skill deletions; restoring one verbatim
      *  would resurrect dangling allowlist ids that scope the catalog to
@@ -1682,6 +1685,7 @@ export function createAgentMethods(
       'code_workspace_id',
       'repositoryInstructions',
       'git_identity',
+      'instruction_prompt',
       'skills_scope',
       'skill_authoring_enabled',
     ]) {

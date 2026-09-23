@@ -4,6 +4,7 @@ import {
   parseLangChainErrorCode,
   stripLangChainTroubleshootingUrl,
 } from 'librechat-data-provider';
+import { AgentInstructionPromptError } from './instructions';
 import { isOwnedAbortError } from '~/utils/errors';
 
 export const AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE = 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE';
@@ -58,6 +59,7 @@ export function isFatalAgentInitializationError(
 ): boolean {
   const code = getErrorCode(error);
   return (
+    error instanceof AgentInstructionPromptError ||
     isOwnedAbortError(error, options.signal) ||
     FATAL_AGENT_INITIALIZATION_CODES.has(code as string) ||
     (code === AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE && options.allowExpectedMCPFallback !== true)
@@ -99,6 +101,39 @@ export function resolveLangChainError(error: unknown): string | undefined {
   const code = getLangChainErrorCode(error);
   const type = code == null ? undefined : LANGCHAIN_ERROR_TYPES[code];
   return type == null ? undefined : JSON.stringify({ type });
+}
+/**
+ * Converts instruction-prompt failures to a typed payload so the client renders localized copy
+ * instead of exposing backend English messages.
+ */
+export function resolveAgentInstructionPromptError(error: unknown): string | undefined {
+  if (!(error instanceof AgentInstructionPromptError)) {
+    return undefined;
+  }
+  return JSON.stringify({ type: ErrorTypes.AGENT_INSTRUCTION_PROMPT, reason: error.code });
+}
+
+export function getInstructionPromptErrorResponse(error: unknown):
+  | {
+      error: {
+        type: ErrorTypes.AGENT_INSTRUCTION_PROMPT;
+        code: AgentInstructionPromptError['code'];
+        message: string;
+        retryable: boolean;
+      };
+    }
+  | undefined {
+  if (!(error instanceof AgentInstructionPromptError)) {
+    return undefined;
+  }
+  return {
+    error: {
+      type: ErrorTypes.AGENT_INSTRUCTION_PROMPT,
+      code: error.code,
+      message: error.message,
+      retryable: error.retryable,
+    },
+  };
 }
 
 /**

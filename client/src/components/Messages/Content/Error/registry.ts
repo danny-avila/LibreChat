@@ -23,6 +23,7 @@ export const errorCopy: Record<string, TranslationKeys> = {
   [ErrorTypes.MODELS_NOT_LOADED]: 'com_error_models_not_loaded',
   [ErrorTypes.GOOGLE_TOOL_CONFLICT]: 'com_error_google_tool_conflict',
   [ErrorTypes.GOOGLE_VIDEO_UNPROCESSABLE]: 'com_error_google_video_unprocessable',
+  [ErrorTypes.AGENT_INSTRUCTION_PROMPT]: 'com_agents_prompt_load_error',
   [ErrorTypes.RESOURCE_RECOVERY_REQUIRED]: 'com_error_resource_recovery_required',
   [ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED]:
     'com_error_stateful_code_environment_not_allowed',

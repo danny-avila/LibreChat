@@ -647,6 +647,7 @@ export enum AgentCapabilities {
   end_after_tools = 'end_after_tools',
   deferred_tools = 'deferred_tools',
   execute_code = 'execute_code',
+  instruction_prompts = 'instruction_prompts',
   stateful_code_sessions = 'stateful_code_sessions',
   file_search = 'file_search',
   web_search = 'web_search',
@@ -2900,9 +2901,30 @@ export const langfuseTraceConfigSchema = z.object({
   conversationMetadataFields: z
     .array(z.enum(LANGFUSE_TRACE_CONVERSATION_METADATA_FIELDS))
     .optional(),
+  /** Export resolved agent instruction prompt identity. Prompt text is never exported. */
+  promptMetadata: z.boolean().optional(),
 });
 
 export type LangfuseTraceConfig = z.infer<typeof langfuseTraceConfigSchema>;
+export const LANGFUSE_PROMPT_CACHE_TTL_DEFAULT_MS = 5 * 60 * 1000;
+export const LANGFUSE_PROMPT_REQUEST_TIMEOUT_DEFAULT_MS = 10_000;
+
+export const langfusePromptConfigSchema = z.object({
+  /** Milliseconds before a successfully retrieved prompt is refreshed. */
+  cacheTtlMs: z
+    .number()
+    .int()
+    .min(0)
+    .max(24 * 60 * 60 * 1000)
+    .default(LANGFUSE_PROMPT_CACHE_TTL_DEFAULT_MS),
+  /** Maximum duration of one prompt retrieval request. */
+  requestTimeoutMs: z
+    .number()
+    .int()
+    .min(100)
+    .max(120_000)
+    .default(LANGFUSE_PROMPT_REQUEST_TIMEOUT_DEFAULT_MS),
+});
 
 export const langfuseConfigSchema = z.object({
   enabled: z.boolean().optional(),
@@ -2936,6 +2958,8 @@ export const langfuseConfigSchema = z.object({
    * `Authorization` upstream regardless.
    */
   headers: z.record(z.string()).optional(),
+  /** Prompt retrieval cache and request limits. */
+  prompts: langfusePromptConfigSchema.optional(),
   /** Trace user identity and allowlisted user/request metadata. */
   trace: langfuseTraceConfigSchema.optional(),
 });
@@ -3756,6 +3780,10 @@ export enum ErrorTypes {
    * Google provider returned an error
    */
   GOOGLE_ERROR = 'google_error',
+  /**
+   * Agent instruction prompt resolution failed before model invocation.
+   */
+  AGENT_INSTRUCTION_PROMPT = 'agent_instruction_prompt',
   /**
    * Google provider does not allow custom tools with built-in tools
    */

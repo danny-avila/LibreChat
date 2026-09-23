@@ -37,6 +37,7 @@ export type AgentForm = {
   name: string | null;
   description: string | null;
   instructions: string | null;
+  instruction_prompt?: Agent['instruction_prompt'];
   model: string | null;
   model_parameters: AgentModelParameters;
   tools?: string[];

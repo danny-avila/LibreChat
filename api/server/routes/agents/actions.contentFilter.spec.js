@@ -82,6 +82,39 @@ describe('agent action content filters', () => {
     db.updateAction.mockResolvedValue({ metadata: { domain: 'example.test' } });
   });
 
+  it('redacts prompt snapshots from action mutation agent responses', async () => {
+    const instructionPrompt = {
+      source: 'librechat',
+      promptId: 'prompt-group',
+      name: 'Protected policy',
+    };
+    db.updateAgent.mockResolvedValue({
+      id: 'agent-id',
+      instructions: 'current protected snapshot',
+      instruction_prompt: instructionPrompt,
+      versions: [
+        {
+          instructions: 'historical protected snapshot',
+          instruction_prompt: instructionPrompt,
+        },
+      ],
+    });
+    const app = createApp();
+
+    const response = await request(app)
+      .post('/agent-id')
+      .send({
+        functions: [{ function: { name: 'lookup' } }],
+        metadata: { domain: 'https://example.test' },
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body[0].instruction_prompt).toEqual(instructionPrompt);
+    expect(response.body[0].instructions).toBeUndefined();
+    expect(response.body[0].versions[0].instruction_prompt).toEqual(instructionPrompt);
+    expect(response.body[0].versions[0].instructions).toBeUndefined();
+  });
+
   it('blocks stored action metadata that violates the current read policy', async () => {
     const app = createApp({
       actionMetadata: {

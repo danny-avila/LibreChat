@@ -48,6 +48,20 @@ describe('isActiveVersion', () => {
     expect(isActiveVersion(version, currentAgent, versions)).toBe(false);
   });
 
+  test('returns false when instruction prompt references differ', () => {
+    const version = createVersion({
+      instructions: '',
+      instruction_prompt: { source: 'langfuse', name: 'policy-a', version: 1 },
+    });
+    const currentAgent = createAgentState({
+      instructions: '',
+      instruction_prompt: { source: 'langfuse', name: 'policy-b', version: 1 },
+    });
+    const versions = [version];
+
+    expect(isActiveVersion(version, currentAgent, versions)).toBe(false);
+  });
+
   test('returns false when descriptions do not match', () => {
     const version = createVersion();
     const currentAgent = createAgentState({ description: 'Different Description' });
