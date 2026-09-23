@@ -281,6 +281,64 @@ test.each(['paste', 'drop'] as const)(
   },
 );
 
+test('keeps an upload that switches the draft from generating to editing', async () => {
+  const env = setup();
+  const choices = makeCatalog({
+    offerings: [
+      {
+        ...catalog.offerings[0],
+        capabilities: [
+          catalog.offerings[0].capabilities[0],
+          {
+            operation: 'image.edit',
+            inputs: { min: 1, max: 2, roles: ['reference'] },
+            execution: { kind: 'direct', previews: false },
+            controls: { count: { min: 1, max: 1, default: 1 } },
+          },
+        ],
+      },
+    ],
+  });
+  const uploaded = (file_id: string) => ({
+    file: {
+      file_id,
+      filename: `${file_id}.png`,
+      filepath: `/images/${file_id}.png`,
+      type: 'image/png',
+      bytes: 10,
+    },
+  });
+  const pending: Array<(response: MediaUploadResponse) => void> = [];
+  const upload = jest.mocked(dataService.uploadMedia).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        pending.push(resolve);
+      }),
+  );
+  render(<MediaForm catalog={choices} send={env.send} busy={false} />, { wrapper: env.wrapper });
+  expect(env.store.get(mediaDraftFamily('owner:new')).operation).not.toBe('image.edit');
+  const files = ['first', 'second'].map(
+    (name) => new File(['image'], `${name}.png`, { type: 'image/png' }),
+  );
+  fireEvent.drop(screen.getByRole('textbox', { name: 'com_media_prompt' }), {
+    dataTransfer: { files, types: ['Files'] },
+  });
+  await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+  await act(async () => {
+    pending[0](uploaded('first'));
+  });
+  await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+  await act(async () => {
+    pending[1](uploaded('second'));
+  });
+  await waitFor(() =>
+    expect(
+      env.store.get(mediaDraftFamily('owner:new')).inputs.map((input) => input.file_id),
+    ).toEqual(['first', 'second']),
+  );
+  expect(env.store.get(mediaDraftFamily('owner:new')).operation).toBe('image.edit');
+});
+
 test('uses catalog controls and submits a typed immutable prompt snapshot', async () => {
   const env = setup();
   render(<MediaForm catalog={catalog} send={env.send} busy={false} />, { wrapper: env.wrapper });

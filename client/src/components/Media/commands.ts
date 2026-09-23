@@ -128,15 +128,21 @@ export function useMediaCommands(visibleThreadIds: string[]) {
       if (!host.canCreate || !host.isCurrentSession()) return undefined;
       const saved = store.get(mediaPendingFamily(host.scope));
       let command = input;
+      /** A rejected receipt is final; sending the same draft again is a new request. */
+      let superseded: string | undefined;
       if (input.kind !== 'retry' && !(input.kind === 'submission' && input.after)) {
-        command =
-          saved.find(
-            (item) =>
-              item.kind === input.kind &&
-              !(item.kind === 'submission' && item.after) &&
-              item.draftKey === input.draftKey &&
-              item.draftRevision === input.draftRevision,
-          ) ?? input;
+        const previous = saved.find(
+          (item) =>
+            item.kind === input.kind &&
+            !(item.kind === 'submission' && item.after) &&
+            item.draftKey === input.draftKey &&
+            item.draftRevision === input.draftRevision,
+        );
+        const previousReceipt =
+          previous && client.getQueryData<MediaReceipt>(receiptKey(host.scope, previous));
+        if (previous && previousReceipt?.phase === 'rejected' && previous !== input)
+          superseded = previous.request.clientRequestId;
+        else command = previous ?? input;
       }
       if (command.kind === 'submission' && command.following) {
         const receipt = client.getQueryData<MediaReceipt>(receiptKey(host.scope, command));
@@ -168,7 +174,14 @@ export function useMediaCommands(visibleThreadIds: string[]) {
       inFlight.current.add(id);
       attempted.current.add(id);
       const selected = command;
-      setPending((previous) => {
+      setPending((current) => {
+        const previous = superseded
+          ? current.filter(
+              (p) =>
+                p.request.clientRequestId !== superseded &&
+                !(p.kind === 'submission' && p.after === superseded),
+            )
+          : current;
         const next = previous.some((p) => p.request.clientRequestId === id)
           ? previous.map((p) => (p.request.clientRequestId === id ? selected : p))
           : [...previous, selected];
@@ -267,11 +280,13 @@ export function useMediaCommands(visibleThreadIds: string[]) {
         previous.filter((command) => !published.has(command.request.clientRequestId)),
       );
   }, [pending, receipts, visibleThreadIds, host, setPending, store, client, send, seedThreadDraft]);
+  const clearError = useCallback(() => setError(undefined), []);
   return {
     pending,
     receipts,
     sending,
     error,
+    clearError,
     send,
     dismiss: (id: string) =>
       setPending((previous) => {

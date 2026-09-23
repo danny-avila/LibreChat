@@ -4,6 +4,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, apiBaseUrl, mediaActivitySchema } from 'librechat-data-provider';
 import type { MediaQueryScope } from './queries';
 
+const STREAM_CLOSED = 2;
+
 /** Live hints only. Reconnect, focus and regular HTTP polling always restore durable state. */
 export function useMediaEvents(
   host: MediaQueryScope,
@@ -64,18 +66,31 @@ export function useMediaEvents(
           { queryKey: [QueryKeys.mediaThreads, scope] },
           { cancelRefetch: false },
         );
-        void client.invalidateQueries([QueryKeys.mediaThread, scope, activity.data.threadId]);
-        void client.invalidateQueries([QueryKeys.mediaTurns, scope, activity.data.threadId]);
-        void client.invalidateQueries([QueryKeys.mediaTurnJobs, scope, activity.data.threadId]);
-        void client.invalidateQueries([QueryKeys.mediaJobOutputs, scope]);
+        for (const key of [QueryKeys.mediaThread, QueryKeys.mediaTurns, QueryKeys.mediaTurnJobs])
+          void client.invalidateQueries(
+            { queryKey: [key, scope, activity.data.threadId] },
+            { cancelRefetch: false },
+          );
+        void client.invalidateQueries(
+          { queryKey: [QueryKeys.mediaJobOutputs, scope] },
+          { cancelRefetch: false },
+        );
       });
+      const reconnect = () => {
+        closeStream();
+        const delay = Math.min(pollIntervalMs * 2 ** attempts++, catchUpIntervalMs);
+        retry = setTimeout(connect, delay);
+      };
       next.addEventListener('error', (event: MessageEvent & { responseCode?: number }) => {
         if (stream !== next || closed) return;
         denied = [401, 403, 404].includes(event.responseCode ?? 0);
-        closeStream();
-        if (denied) return;
-        const delay = Math.min(pollIntervalMs * 2 ** attempts++, catchUpIntervalMs);
-        retry = setTimeout(connect, delay);
+        if (denied) closeStream();
+        else reconnect();
+      });
+      /** A server that ends the response cleanly (restart, backpressure) raises no `error`. */
+      next.addEventListener('readystatechange', (event: Event & { readyState?: number }) => {
+        if (stream !== next || closed || event.readyState !== STREAM_CLOSED) return;
+        reconnect();
       });
     };
     const visibility = () => {

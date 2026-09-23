@@ -732,6 +732,23 @@ test('the sidebar offers history while creating and a new creation while browsin
   expect(sidebar().getByRole('button', { name: 'com_media_open_gallery' })).toBeInTheDocument();
 });
 
+test('a command error stays with the thread it came from', async () => {
+  jest
+    .spyOn(dataService, 'submitMedia')
+    .mockRejectedValue({ response: { status: 400, data: { error: { code: 'invalid_request' } } } });
+  mount({ initialThread: 'thread' });
+  const prompt = await screen.findByRole('textbox', { name: 'com_media_prompt' });
+  fireEvent.change(prompt, { target: { value: 'A rejected prompt' } });
+  fireEvent.click(screen.getByRole('button', { name: 'com_media_queue' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('com_media_error_invalid_request');
+  const sidebar = within(screen.getByRole('complementary', { name: 'Studio sidebar' }));
+  fireEvent.click(sidebar.getByRole('button', { name: 'com_media_open_gallery' }));
+  await screen.findByRole('heading', { name: 'com_media_gallery' });
+  fireEvent.click(sidebar.getByRole('button', { name: 'com_media_new_thread' }));
+  expect(await screen.findByRole('heading', { name: 'com_media_welcome' })).toBeVisible();
+  expect(screen.queryByText('com_media_error_invalid_request')).not.toBeInTheDocument();
+});
+
 test('temporary creations are a header toggle for new work only and mark the draft', async () => {
   mount({ features: { temporary: true } });
   await screen.findByRole('textbox', { name: 'com_media_prompt' });

@@ -56,7 +56,10 @@ test('connecting catches up the current owner and denial closes without retries'
       data: JSON.stringify({ event: 'media_update', data: { threadId: 'thread', version: 2 } }),
     }),
   );
-  expect(invalidate).toHaveBeenCalledWith([QueryKeys.mediaThread, host.scope, 'thread']);
+  expect(invalidate).toHaveBeenCalledWith(
+    { queryKey: [QueryKeys.mediaThread, host.scope, 'thread'] },
+    { cancelRefetch: false },
+  );
   invalidate.mockClear();
   active = false;
   await act(async () => handlers.get('message')?.({ data: JSON.stringify({ ready: true }) }));
@@ -67,6 +70,46 @@ test('connecting catches up the current owner and denial closes without retries'
   });
   expect(SSE).toHaveBeenCalledTimes(1);
   expect(close).toHaveBeenCalledTimes(1);
+  hook.unmount();
+  client.clear();
+  jest.useRealTimers();
+});
+
+test('reconnects after the server ends the stream cleanly', async () => {
+  const handlers = new Map<string, (event: unknown) => void>();
+  const close = jest.fn();
+  jest.mocked(SSE).mockReset();
+  jest.mocked(SSE).mockImplementation(
+    () =>
+      ({
+        close,
+        addEventListener: (name: string, callback: (event: unknown) => void) =>
+          handlers.set(name, callback),
+      }) as unknown as SSE,
+  );
+  const client = new QueryClient();
+  const host = {
+    scope: 'owner',
+    pollIntervalMs: 100,
+    catchUpIntervalMs: 1000,
+    isCurrentSession: () => true,
+  };
+  const wrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+  jest.useFakeTimers();
+  const hook = renderHook(() => useMediaEvents(host, 'test-token', true), { wrapper });
+  expect(SSE).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    handlers.get('readystatechange')?.({ readyState: 1 });
+    jest.advanceTimersByTime(1000);
+  });
+  expect(SSE).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    handlers.get('readystatechange')?.({ readyState: 2 });
+    jest.advanceTimersByTime(100);
+  });
+  expect(SSE).toHaveBeenCalledTimes(2);
   hook.unmount();
   client.clear();
   jest.useRealTimers();

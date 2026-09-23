@@ -208,17 +208,26 @@ export function useMediaThread(host: MediaQueryScope, threadId?: string) {
     },
   );
 }
+/**
+ * Older turns continue from the thread detail's cursor, which moves whenever a turn is added.
+ * The loaded pages are refetched from the new cursor instead of being replaced by a single page.
+ */
 export function useMediaTurns(host: MediaQueryScope, detail: MediaThreadDetail, expanded: boolean) {
   const client = useQueryClient();
-  return useInfiniteQuery(
-    [QueryKeys.mediaTurns, host.scope, detail.thread.threadId, detail.turns.nextCursor],
+  const threadId = detail.thread.threadId;
+  const cursor = detail.turns.nextCursor;
+  const firstCursor = useRef(cursor);
+  firstCursor.current = cursor;
+  const queryKey = [QueryKeys.mediaTurns, host.scope, threadId];
+  const query = useInfiniteQuery(
+    queryKey,
     async ({ pageParam, signal }) => {
       const page = current(
         host,
         mediaTurnPageSchema.parse(
           await dataService.listMediaTurns(
-            detail.thread.threadId,
-            { cursor: pageParam ?? detail.turns.nextCursor },
+            threadId,
+            { cursor: pageParam ?? firstCursor.current },
             signal,
           ),
         ),
@@ -227,13 +236,23 @@ export function useMediaTurns(host: MediaQueryScope, detail: MediaThreadDetail, 
       return page;
     },
     {
-      enabled: expanded && !!detail.turns.nextCursor,
+      enabled: expanded && !!cursor,
       getNextPageParam: (page) => page.nextCursor,
       retry: false,
       refetchInterval: detail.thread.pendingJobCount ? host.pollIntervalMs : host.catchUpIntervalMs,
       refetchIntervalInBackground: false,
     },
   );
+  const loadedCursor = useRef(cursor);
+  const { data, refetch } = query;
+  useEffect(() => {
+    if (loadedCursor.current === cursor) return;
+    loadedCursor.current = cursor;
+    if (!cursor) client.removeQueries({ queryKey, exact: true });
+    else if (data) void refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cursor]);
+  return query;
 }
 
 const activeJob = (job: MediaJob) =>

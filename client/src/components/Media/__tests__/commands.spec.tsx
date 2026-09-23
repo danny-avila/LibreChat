@@ -629,6 +629,46 @@ test('a rejected receipt preserves the complete editable draft and saved setting
   env.client.clear();
 });
 
+test('sending a rejected draft again makes a new request instead of replaying the rejection', async () => {
+  const rejected: MediaSubmissionReceipt = {
+    ...preparing,
+    phase: 'rejected',
+    error: { code: 'quota_exceeded' },
+  };
+  jest
+    .mocked(dataService.submitMedia)
+    .mockImplementation(
+      async (request): Promise<MediaSubmissionReceipt> =>
+        request.clientRequestId === 'request'
+          ? rejected
+          : { ...preparing, clientRequestId: request.clientRequestId, phase: 'accepted' },
+    );
+  jest.mocked(dataService.getMediaSubmission).mockResolvedValue(rejected);
+  const env = setup();
+  const draft = configuredDraft();
+  const submission = draftCommand(draft, 'owner:new');
+  env.store.set(mediaDraftFamily(submission.draftKey), draft);
+  const hook = renderHook(() => useMediaCommands([]), { wrapper: env.wrapper });
+  await act(async () => {
+    await hook.result.current.send(submission);
+  });
+  expect(hook.result.current.error).toBe('quota_exceeded');
+  const retried = {
+    ...submission,
+    request: { ...submission.request, clientRequestId: 'second-attempt' },
+  };
+  await act(async () => {
+    await hook.result.current.send(retried);
+  });
+  expect(jest.mocked(dataService.submitMedia).mock.calls.at(-1)?.[0]).toMatchObject({
+    clientRequestId: 'second-attempt',
+  });
+  expect(
+    env.store.get(mediaPendingFamily('owner')).map((item) => item.request.clientRequestId),
+  ).toEqual(['second-attempt']);
+  env.client.clear();
+});
+
 const unknownReceipt = { response: { status: 404, data: { error: { code: 'not_found' } } } };
 const intervals = { pollIntervalMs: 10, catchUpIntervalMs: 20 };
 

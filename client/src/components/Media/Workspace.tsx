@@ -71,6 +71,8 @@ export default function MediaWorkspace({
   useEffect(() => {
     if (commands.error === 'quota_exceeded') refreshBalance?.();
   }, [commands.error, refreshBalance]);
+  const { clearError } = commands;
+  useEffect(() => clearError(), [threadId, clearError]);
   const recoverable = commands.pending.flatMap((command, index) => {
     const receipt = commands.receipts[index]?.data;
     if (!receipt) return [];

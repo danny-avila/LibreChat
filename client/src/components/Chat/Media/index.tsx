@@ -12,10 +12,9 @@ import type { MediaAsset, TConversation } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import { getViableUploadOptions, validateFileLimit, validateFileSizes } from '~/utils/files';
 import useAgentUploadTarget from '~/hooks/Agents/useAgentUploadTarget';
-import { seedMediaEditDraft } from '~/components/Media/seeding';
+import { openMediaEditDraft } from '~/components/Media/seeding';
 import { useMediaAccess } from '~/hooks/Media/useMediaAccess';
 import { MediaHostProvider } from '~/components/Media/host';
-import { mediaDraftFamily } from '~/components/Media/state';
 import { useMediaShellHost } from '~/hooks/Media/host';
 import { useGetFileConfig } from '~/data-provider';
 import { useMediaChatHandoff } from './handoff';
@@ -173,9 +172,7 @@ function ChatMediaEnabled({
                       width: file.width,
                       height: file.height,
                     }));
-                    store.set(mediaDraftFamily(`${host.scope}:new`), (previous) =>
-                      seedMediaEditDraft(previous, assets),
-                    );
+                    openMediaEditDraft(store, host.scope, assets);
                     setThreadId(undefined);
                   }}
                 >

@@ -5,7 +5,11 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { TAuthContext, TMediaFileRef } from '~/common';
-import { clearMediaSessionStorage, mediaDraftFamily } from '~/components/Media/state';
+import {
+  mediaDraftFamily,
+  mediaLibraryFamily,
+  clearMediaSessionStorage,
+} from '~/components/Media/state';
 import { StudioProvider, useStudioAvailable } from '~/components/Chat/Studio';
 import { makeAuthContext, makeStartupConfig, testUser } from 'test/auth';
 import { mediaSessionScope } from '~/components/Media/session';
@@ -110,5 +114,14 @@ test('seeds the new-creation draft with the image as a reference and opens Studi
     inputs: [{ role: 'reference', file_id: 'generated' }],
     assets: [{ file_id: 'generated', filepath: file.filepath, width: 1024, height: 1024 }],
   });
+  expect(screen.getByTestId('studio-route')).toBeInTheDocument();
+});
+
+test('opens the seeded editor even when Studio last showed the gallery', () => {
+  const env = mount();
+  const library = mediaLibraryFamily(mediaSessionScope(testUser));
+  env.jotai.set(library, (previous) => ({ ...previous, view: 'gallery', threadId: undefined }));
+  fireEvent.click(screen.getByRole('button', { name: 'Open in Media Studio' }));
+  expect(env.jotai.get(library).view).toBe('thread');
   expect(screen.getByTestId('studio-route')).toBeInTheDocument();
 });

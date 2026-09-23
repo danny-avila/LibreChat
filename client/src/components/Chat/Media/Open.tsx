@@ -5,9 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import { Button, TooltipAnchor } from '@librechat/client';
 import { mediaAssetSchema } from 'librechat-data-provider';
 import type { TMediaFileRef } from '~/common';
-import { seedMediaEditDraft } from '~/components/Media/seeding';
+import { openMediaEditDraft } from '~/components/Media/seeding';
 import { mediaSessionScope } from '~/components/Media/session';
-import { mediaDraftFamily } from '~/components/Media/state';
 import { AuthContext } from '~/hooks/AuthContext';
 import { useFileMapContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
@@ -34,9 +33,7 @@ export function useOpenInStudio(file: TMediaFileRef) {
   if (!user || !parsed.success) return null;
   const asset = parsed.data;
   return () => {
-    store.set(mediaDraftFamily(`${mediaSessionScope(user)}:new`), (previous) =>
-      seedMediaEditDraft(previous, [asset]),
-    );
+    openMediaEditDraft(store, mediaSessionScope(user), [asset]);
     navigate('/studio');
   };
 }

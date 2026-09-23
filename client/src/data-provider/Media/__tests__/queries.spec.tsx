@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { dataService, QueryKeys, mediaCatalogSchema } from 'librechat-data-provider';
 import type { MediaThreadDetail, TFile } from 'librechat-data-provider';
 import {
+  useMediaTurns,
   useMediaThreads,
   useMediaCatalog,
   useMediaThread,
@@ -17,7 +18,12 @@ jest.mock('librechat-data-provider', () => {
     jest.requireActual<typeof import('librechat-data-provider')>('librechat-data-provider');
   return {
     ...actual,
-    dataService: { ...actual.dataService, listMediaThreads: jest.fn(), getMediaCatalog: jest.fn() },
+    dataService: {
+      ...actual.dataService,
+      listMediaThreads: jest.fn(),
+      listMediaTurns: jest.fn(),
+      getMediaCatalog: jest.fn(),
+    },
   };
 });
 
@@ -319,4 +325,48 @@ test('does not cache a late provider diagnostic after its session ends', async (
   ).toBeUndefined();
   hook.unmount();
   env.client.clear();
+});
+
+test('keeps loaded older turns when a new turn moves the thread cursor', async () => {
+  const env = setup();
+  const turn = (sequence: number) => ({
+    schemaVersion: 1 as const,
+    threadId: 'thread',
+    turnId: `turn-${sequence}`,
+    version: 1,
+    kind: 'generation' as const,
+    sequence,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    prompt: `Prompt ${sequence}`,
+    inputs: [],
+    jobs: [],
+    assets: [],
+  });
+  const load = jest.mocked(dataService.listMediaTurns).mockImplementation(async (_id, request) => {
+    const start = Number(request?.cursor);
+    return {
+      items: [turn(start - 1), turn(start - 2)],
+      ...(start > 3 ? { nextCursor: String(start - 2) } : {}),
+    };
+  });
+  const detail = (cursor: string) =>
+    ({
+      thread: { threadId: 'thread', pendingJobCount: 0 },
+      turns: { items: [], nextCursor: cursor },
+    }) as unknown as MediaThreadDetail;
+  const hook = renderHook(({ cursor }) => useMediaTurns(env.host, detail(cursor), true), {
+    wrapper: env.wrapper,
+    initialProps: { cursor: '10' },
+  });
+  await waitFor(() => expect(hook.result.current.data?.pages).toHaveLength(1));
+  await act(async () => {
+    await hook.result.current.fetchNextPage();
+  });
+  await waitFor(() => expect(hook.result.current.data?.pages).toHaveLength(2));
+  hook.rerender({ cursor: '11' });
+  await waitFor(() =>
+    expect(hook.result.current.data?.pages[0].items[0]).toMatchObject({ turnId: 'turn-10' }),
+  );
+  expect(hook.result.current.data?.pages).toHaveLength(2);
+  expect(load.mock.calls.map(([, request]) => request?.cursor)).toEqual(['10', '8', '11', '9']);
 });

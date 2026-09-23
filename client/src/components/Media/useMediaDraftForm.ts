@@ -73,12 +73,13 @@ export function useMediaDraftForm({
   const automaticReference = draft !== savedDraft;
   const capability =
     capabilities?.find((item) => item.operation === draft.operation) ?? selectedCapability;
+  /** Uploads switch between image operations themselves, so only the media kind owns them. */
   const referenceOwner = JSON.stringify([
     draftKey,
     offering?.connectionId,
     offering?.modelId,
     providerTag,
-    capability?.operation,
+    capability?.operation.split('.')[0],
   ]);
   const hostedRoles = capability?.inputs.hostedRoles ?? [];
   const referenceURLRole =
