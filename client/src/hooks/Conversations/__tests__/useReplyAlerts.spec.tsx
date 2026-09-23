@@ -460,6 +460,51 @@ describe('useReplyAlerts', () => {
     await waitFor(() => expect(createdNotifications).toHaveLength(1));
   });
 
+  it('announces a reply held back by a lease its tab never released once it lapses', async () => {
+    /* A tab killed without firing blur or pagehide leaves its lease behind. The reply that
+       arrived under it is already in the baseline, so only a recheck at the lapse delivers it. */
+    jest.useFakeTimers();
+    try {
+      otherTabLease();
+      const { rerender } = setup({ notifications: true });
+
+      act(() => {
+        rerender(stateOf([row('convo-b', 'Beta')]));
+      });
+      expect(createdNotifications).toHaveLength(0);
+
+      await act(async () => {
+        jest.advanceTimersByTime(60_001);
+      });
+
+      expect(createdNotifications).toHaveLength(1);
+      expect(createdNotifications[0].options?.tag).toBe('convo-b');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps holding the reply while the focused tab keeps its lease alive', async () => {
+    jest.useFakeTimers();
+    try {
+      otherTabLease();
+      const { rerender } = setup({ notifications: true });
+
+      act(() => {
+        rerender(stateOf([row('convo-b', 'Beta')]));
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(40_000);
+        otherTabLease();
+        jest.advanceTimersByTime(20_001);
+      });
+
+      expect(createdNotifications).toHaveLength(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('leaves a lease this tab does not own in place when it unmounts', () => {
     /* Focus reaches the winning tab before the losing tab's blur handler runs, so a release
        that did not check ownership would delete the lease that tab had just written. */

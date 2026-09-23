@@ -485,14 +485,16 @@ export default function useReplyWatcher() {
   }, [activeJobIds, queryClient]);
 
   useEffect(() => {
-    /* Sidebar dots are unconditional, even when every optional away alert is disabled. */
+    /* Sidebar dots are unconditional, even when every optional away alert is disabled. The
+       operator's poll limit bounds the away poll only; the focused refresh reads a full server
+       page, so a lowered limit cannot starve the unseen count behind a filtered list. */
     const timer = window.setInterval(() => {
       if (document.hasFocus()) {
-        void refreshConversationLists(queryClient, [], pollLimit).catch(() => {});
+        void refreshConversationLists(queryClient, []).catch(() => {});
       }
     }, focusedRefreshMs);
     return () => window.clearInterval(timer);
-  }, [queryClient, pollLimit, focusedRefreshMs]);
+  }, [queryClient, focusedRefreshMs]);
 
   useEffect(() => {
     if (!notificationsEnabled && !soundEnabled && !badgeEnabled) {

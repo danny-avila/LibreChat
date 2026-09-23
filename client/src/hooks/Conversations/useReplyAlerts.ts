@@ -1,9 +1,9 @@
 import { useRef, useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import type { ReplyReadState } from './useUnseenConversations';
+import { startFocusLease, anotherTabLeaseRemainingMs } from './focusLease';
 import { suppressFocusAcknowledgement } from './notificationNavigation';
 import { useReplyAlertPreferences } from './replyNotificationSettings';
-import { startFocusLease, isAnotherTabFocused } from './focusLease';
 import { useLocalize } from '~/hooks';
 
 let sharedContext: AudioContext | null = null;
@@ -222,6 +222,20 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
    *  arrival, and keying on membership alone would swallow it. */
   const knownRef = useRef<Map<string, string> | null>(null);
   const unlockedRef = useRef(false);
+  /** Arrivals held back only by another tab's focus lease, keyed to the stamp they arrived with.
+   *  They are already in the baseline, so without this a lease left by a killed tab would retire
+   *  them unannounced; the recheck below replays them once that lease lapses. */
+  const leaseHeldRef = useRef<Map<string, string>>(new Map());
+  const leaseTimerRef = useRef<number | null>(null);
+  const [leaseRecheck, setLeaseRecheck] = useState(0);
+  useEffect(
+    () => () => {
+      if (leaseTimerRef.current !== null) {
+        window.clearTimeout(leaseTimerRef.current);
+      }
+    },
+    [],
+  );
 
   /* Published for the other tabs of this origin, and read by them below: a reply announced by
      a background tab while the user reads a focused one is exactly the interruption the focus
@@ -295,17 +309,34 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
        first-page success may also provide evidence for a newly discovered reply. Pagination and
        newly mounted filter variants expose backlog rather than arrivals. */
     const discovered = new Map(arrivalStamps);
+    const held = leaseHeldRef.current;
     const arrivals = unseen.filter(
       (conversation) =>
         conversation.conversationId &&
         !conversation.flagged &&
-        (priorStamps.has(conversation.conversationId)
-          ? priorStamps.get(conversation.conversationId) !== conversation.lastResponseAt
-          : discovered.get(conversation.conversationId) === conversation.lastResponseAt),
+        (held.get(conversation.conversationId) === conversation.lastResponseAt ||
+          (priorStamps.has(conversation.conversationId)
+            ? priorStamps.get(conversation.conversationId) !== conversation.lastResponseAt
+            : discovered.get(conversation.conversationId) === conversation.lastResponseAt)),
     );
+    held.clear();
+    if (arrivals.length === 0 || document.hasFocus()) {
+      return;
+    }
     /* "Away" means away from LibreChat, not away from this tab: a second tab holding focus is
        the user reading the app, and the sidebar dot already covers them there. */
-    if (arrivals.length === 0 || document.hasFocus() || isAnotherTabFocused()) {
+    const leaseRemainingMs = anotherTabLeaseRemainingMs();
+    if (leaseRemainingMs !== null) {
+      for (const conversation of arrivals) {
+        held.set(conversation.conversationId, conversation.lastResponseAt);
+      }
+      if (leaseTimerRef.current !== null) {
+        window.clearTimeout(leaseTimerRef.current);
+      }
+      leaseTimerRef.current = window.setTimeout(() => {
+        leaseTimerRef.current = null;
+        setLeaseRecheck((count) => count + 1);
+      }, leaseRemainingMs + 1);
       return;
     }
 
@@ -370,5 +401,5 @@ export default function useReplyAlerts(state: ReplyReadState | null) {
         );
       }
     }
-  }, [state, soundEnabled, notificationsEnabled, permission, localize, navigate]);
+  }, [state, soundEnabled, notificationsEnabled, permission, leaseRecheck, localize, navigate]);
 }

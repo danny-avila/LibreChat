@@ -63,12 +63,19 @@ const clearOwnLease = (): void => {
 };
 
 /**
- * Whether some other tab of this origin is currently focused. This tab's own lease never counts:
- * the caller checks its own focus first, so reading one here means a release did not land.
+ * How long another tab of this origin keeps focus by its lease, or null when none holds one. This
+ * tab's own lease never counts: the caller checks its own focus first, so reading one here means
+ * a release did not land. A tab killed without firing
+ * blur or pagehide leaves its lease behind, and nothing announces its lapse, so a caller holding
+ * an arrival back for it has to schedule its own recheck.
  */
-export const isAnotherTabFocused = (): boolean => {
+export const anotherTabLeaseRemainingMs = (): number | null => {
   const lease = readLease();
-  return lease != null && lease.owner !== tabId && Date.now() - lease.at < FOCUS_LEASE_TTL_MS;
+  if (lease == null || lease.owner === tabId) {
+    return null;
+  }
+  const remaining = FOCUS_LEASE_TTL_MS - (Date.now() - lease.at);
+  return remaining > 0 ? remaining : null;
 };
 
 /** Publishes the lease for as long as this tab holds focus. */

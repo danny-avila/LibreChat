@@ -702,6 +702,22 @@ describe('useReplyWatcher', () => {
     expect(mockListConversations.mock.calls[0][0].limit).toBeGreaterThan(25);
   });
 
+  it('reads a full page on the focused refresh when the operator lowered the away limit', async () => {
+    /* The poll limit bounds the away poll. Reusing it for the focused refresh would let a
+       lowered limit keep older replies out of the unseen count behind a filtered list. */
+    (document.hasFocus as jest.Mock).mockReturnValue(true);
+    mockListConversations.mockResolvedValue({ conversations: [], nextCursor: null });
+    setup({}, { pollLimit: 10 });
+
+    await act(async () => {
+      jest.advanceTimersByTime(5 * 60_000);
+    });
+
+    await waitFor(() => expect(mockListConversations).toHaveBeenCalled());
+    expect(mockListConversations.mock.calls.map(([params]) => params.limit)).toContain(100);
+    expect(mockListConversations.mock.calls.map(([params]) => params.limit)).not.toContain(10);
+  });
+
   it('refreshes only the newest page while preserving scrolled rows and cursors', async () => {
     (document.hasFocus as jest.Mock).mockReturnValue(true);
     const { queryClient, unmount } = setup();
