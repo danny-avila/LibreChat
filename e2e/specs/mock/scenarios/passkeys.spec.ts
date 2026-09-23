@@ -423,4 +423,35 @@ test.describe('passkeys', () => {
       await request.dispose();
     }
   });
+
+  test('a configured per-user cap hides the add control at that cap @scenario:passkey-cap-hides-add-control', async ({
+    browser,
+    playwright,
+    baseURL,
+  }) => {
+    test.setTimeout(60000);
+    const request = await playwright.request.newContext({ baseURL: passkeyBaseURL(baseURL) });
+    user = await createFreshUser(request);
+    await seedPasskey(user.email, `e2e-cap-${randomUUID()}`, 'Only key');
+    context = await openContextFor(browser, request, passkeyBaseURL(baseURL));
+    await request.dispose();
+    const page = await context.newPage();
+
+    await page.route('**/api/config', async (route) => {
+      const response = await route.fetch();
+      const config = await response.json();
+      await route.fulfill({ response, json: { ...config, maxPasskeysPerUser: 1 } });
+    });
+
+    const cappedDialog = await openPasskeysDialog(page);
+    await expect(cappedDialog.getByRole('button', { name: 'Add passkey' })).toHaveCount(0);
+    await expect(
+      cappedDialog.getByText('You have reached the maximum number of passkeys'),
+    ).toBeVisible();
+
+    await page.unroute('**/api/config');
+    await page.reload();
+    const defaultDialog = await openPasskeysDialog(page);
+    await expect(defaultDialog.getByRole('button', { name: 'Add passkey' })).toBeVisible();
+  });
 });
