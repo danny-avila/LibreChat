@@ -444,7 +444,9 @@ test.describe('passkeys', () => {
     });
 
     const cappedDialog = await openPasskeysDialog(page);
-    await expect(cappedDialog.getByRole('button', { name: 'Add passkey' })).toHaveCount(0);
+    const cappedAdd = cappedDialog.getByRole('button', { name: 'Add passkey' });
+    await expect(cappedAdd).toBeVisible();
+    await expect(cappedAdd).toBeDisabled();
     await expect(
       cappedDialog.getByText('You have reached the maximum number of passkeys'),
     ).toBeVisible();
@@ -452,6 +454,11 @@ test.describe('passkeys', () => {
     await page.unroute('**/api/config');
     await page.reload();
     const defaultDialog = await openPasskeysDialog(page);
-    await expect(defaultDialog.getByRole('button', { name: 'Add passkey' })).toBeVisible();
+    const defaultAdd = defaultDialog.getByRole('button', { name: 'Add passkey' });
+    await expect(defaultAdd).toBeVisible();
+    await expect(defaultAdd).toBeEnabled();
+    await expect(
+      defaultDialog.getByText('You have reached the maximum number of passkeys'),
+    ).toHaveCount(0);
   });
 });
