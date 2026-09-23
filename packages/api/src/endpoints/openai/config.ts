@@ -235,7 +235,7 @@ export function getOpenAIConfig(
         'HTTP-Referer': 'https://librechat.ai',
         'X-Title': 'LibreChat',
         'X-OpenRouter-Title': 'LibreChat',
-        'X-OpenRouter-Categories': 'general-chat,personal-agent',
+        'X-OpenRouter-Categories': 'general-chat,personal-agent,programming-app',
       },
       headers,
     );
