@@ -124,7 +124,7 @@ librechat-rag-api:
 
 
 image:
-  repository: danny-avila/librechat
+  repository: librechat-ai/librechat
   registry: registry.librechat.ai
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
@@ -148,7 +148,7 @@ serviceAccount:
   name: ""
 
 lifecycle: {}
-# # base for adding a custom banner // see https://github.com/danny-avila/LibreChat/pull/3952 for an example
+# # base for adding a custom banner // see https://github.com/LibreChat-AI/LibreChat/pull/3952 for an example
 #   postStart:
 #     exec:
 #       command: ["/bin/sh", "-c", "npm run update-banner <displayFrom(Format: yyyy-mm-ddTHH:MM:SSZ)> <displayTo(Format: yyyy-mm-ddTHH:MM:SSZ)> <message> <isPublic(true/false)>"]
