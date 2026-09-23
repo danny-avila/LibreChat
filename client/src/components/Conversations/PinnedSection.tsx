@@ -705,7 +705,7 @@ const PinnedSection = ({
   return (
     <div
       ref={setSectionRef}
-      className="flex flex-col px-3 text-sm"
+      className="flex flex-col px-3 pt-3 text-sm"
       role="region"
       /** The focus handoff after an unpin must act only on rows in this list:
        *  `ConversationsSection` is also a labelled region and an ancestor of
@@ -715,7 +715,7 @@ const PinnedSection = ({
     >
       <div
         className={cn(
-          'flex h-8 w-full items-center pr-2',
+          'flex h-8 w-full items-center pr-1',
           isPinOver && canPin && 'bg-surface-active-alt rounded-lg',
         )}
       >

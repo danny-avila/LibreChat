@@ -9,6 +9,9 @@ jest.mock('~/hooks', () => ({
 }));
 
 jest.mock('@librechat/client', () => ({
+  /** The row-action recipe the real component composes; the classes themselves
+   *  are not what these tests assert on. */
+  buttonVariants: () => 'row-action',
   Spinner: (props: React.ComponentProps<'span'>) => <span {...props} />,
   TooltipAnchor: ({
     children,
@@ -44,7 +47,9 @@ describe('MCPCardActions', () => {
     );
 
     const revokeButton = screen.getByRole('button', { name: 'com_ui_revoke' });
-    expect(revokeButton).toHaveClass('hover:text-text-secondary');
+    /** The control takes the shared row-action appearance, and the icon states its
+     *  own colour, so hovering the row cannot repaint a destructive action. */
+    expect(revokeButton).toHaveClass('row-action');
     expect(revokeButton.querySelector('svg')).toHaveClass('text-text-destructive');
   });
 

@@ -605,7 +605,7 @@ export default function Viewer({
       aria-labelledby={headingId}
       data-testid="trace-viewer"
       onKeyDown={handleKeyDown}
-      className="bg-presentation text-text-primary absolute inset-0 z-20 flex flex-col"
+      className="bg-surface-primary-alt text-text-primary absolute inset-0 z-20 flex flex-col"
     >
       <div className="border-border-light flex h-[52px] shrink-0 items-center gap-2 border-b px-2 md:px-4">
         <h2 id={headingId} className="text-base font-semibold">

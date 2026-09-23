@@ -24,13 +24,7 @@ Table.displayName = 'Table';
 const TableHeader: React.ForwardRefExoticComponent<
   React.HTMLAttributes<HTMLTableSectionElement> & React.RefAttributes<HTMLTableSectionElement>
 > = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>(
-  ({ className, ...props }, ref) => (
-    <thead
-      ref={ref}
-      className={cn('[&_tr]:border-border-light [&_tr]:border-b', className)}
-      {...props}
-    />
-  ),
+  ({ className, ...props }, ref) => <thead ref={ref} className={cn(className)} {...props} />,
 );
 TableHeader.displayName = 'TableHeader';
 
@@ -47,14 +41,7 @@ const TableFooter: React.ForwardRefExoticComponent<
   React.HTMLAttributes<HTMLTableSectionElement> & React.RefAttributes<HTMLTableSectionElement>
 > = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>(
   ({ className, ...props }, ref) => (
-    <tfoot
-      ref={ref}
-      className={cn(
-        'border-border-light bg-surface-tertiary border-t font-medium [&>tr]:last:border-b-0',
-        className,
-      )}
-      {...props}
-    />
+    <tfoot ref={ref} className={cn('bg-surface-secondary font-medium', className)} {...props} />
   ),
 );
 TableFooter.displayName = 'TableFooter';
@@ -66,7 +53,9 @@ const TableRow: React.ForwardRefExoticComponent<
     <tr
       ref={ref}
       className={cn(
-        'border-border-light hover:bg-surface-tertiary data-[state=selected]:bg-surface-tertiary border-b transition-colors',
+        /** Rows are separated by their own padding and the hover fill, not by rules:
+         *  a ruled table reads as a grid, and a list of records rarely needs one. */
+        'hover:bg-surface-hover data-[state=selected]:bg-surface-hover transition-colors',
         className,
       )}
       {...props}

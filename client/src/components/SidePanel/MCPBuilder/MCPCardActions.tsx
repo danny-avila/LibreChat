@@ -1,9 +1,9 @@
 import React from 'react';
 import { Spinner, TooltipAnchor } from '@librechat/client';
-import { Pencil, PlugZap, SlidersHorizontal, RefreshCw, X, Trash2 } from 'lucide-react';
+import { KeyRound, Pencil, PlugZap, RefreshCw, Unlink, X } from 'lucide-react';
 import type { MCPServerStatus } from 'librechat-data-provider';
+import { cn, rowActionClasses, rowActionSlotClasses } from '~/utils';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 
 interface MCPCardActionsProps {
   serverName: string;
@@ -21,15 +21,21 @@ interface MCPCardActionsProps {
 }
 
 /**
- * Standardized action buttons for MCP server cards.
+ * The actions on an MCP server row.
  *
- * Unified icon system (each icon has ONE meaning):
- * - Pencil: Edit server definition (Settings panel only)
- * - PlugZap: Connect/Authenticate (for disconnected/error servers)
- * - SlidersHorizontal: Configure custom variables (for connected servers with vars)
- * - Trash2: Revoke OAuth access (for connected OAuth servers)
- * - RefreshCw: Reconnect/Refresh (for connected servers)
- * - Spinner: Loading state (with X on hover for cancel)
+ * One icon, one meaning, and the meaning is the noun the action acts on rather
+ * than a generic verb:
+ * - Pencil: the server definition (Settings panel only)
+ * - KeyRound: the credentials this server asks each user for, which is also what
+ *   marks a server as needing authentication
+ * - PlugZap: the connection, made
+ * - Unlink: the account grant, given up. Revoking is dropping the link between
+ *   this user and the provider, NOT deleting the server, which is what a trash can
+ *   said here before and what it stays reserved for. A broken link rather than a
+ *   pulled plug, because the grant and the transport are different things: revoking
+ *   one does not close the other
+ * - RefreshCw: reconnecting a server that is already connected
+ * - Spinner, with X on hover: a connection in flight, and cancelling it
  */
 export default function MCPCardActions({
   serverName,
@@ -53,18 +59,15 @@ export default function MCPCardActions({
   const isDisconnected = connectionState === 'disconnected';
   const isError = connectionState === 'error';
 
-  const buttonBaseClass = cn(
-    'flex size-7 items-center justify-center rounded-md',
-    'transition-colors duration-150',
-    'text-text-secondary hover:text-text-secondary',
-    'hover:bg-surface-tertiary',
-    'focus-visible:ring-2 focus-visible:ring-text-primary',
-  );
+  const buttonBaseClass = rowActionClasses();
+  /** A run in flight is a state of the row, not an action waiting to be found:
+   *  the spinner and the cancel that replaces it stay put without a hover. */
+  const loadingClass = rowActionClasses({ visible: true });
 
   // Loading state - show spinner (with cancel option)
   if (isInitializing || isConnecting) {
     return (
-      <div className="flex items-center gap-0.5">
+      <div className={rowActionSlotClasses({ open: true })}>
         {/* Edit button stays visible during loading */}
         {canEdit && (
           <TooltipAnchor
@@ -72,12 +75,12 @@ export default function MCPCardActions({
             ref={editButtonRef}
             description={localize('com_ui_edit')}
             side="top"
-            className={buttonBaseClass}
+            className={loadingClass}
             aria-label={localize('com_ui_edit')}
             role="button"
             onClick={onEditClick}
           >
-            <Pencil className="size-3.5" aria-hidden="true" />
+            <Pencil className="size-4" aria-hidden="true" />
           </TooltipAnchor>
         )}
 
@@ -87,18 +90,18 @@ export default function MCPCardActions({
             focusOutline="hidden"
             description={localize('com_ui_cancel')}
             side="top"
-            className={cn(buttonBaseClass, 'group')}
+            className={cn(loadingClass, 'group/cancel')}
             aria-label={localize('com_ui_cancel')}
             role="button"
             onClick={onCancel}
           >
             <div className="relative size-4">
-              <Spinner className="size-4 group-hover:opacity-0" />
-              <X className="text-text-destructive absolute inset-0 size-4 opacity-0 group-hover:opacity-100" />
+              <Spinner className="size-4 group-hover/cancel:opacity-0" />
+              <X className="text-text-destructive absolute inset-0 size-4 opacity-0 group-hover/cancel:opacity-100" />
             </div>
           </TooltipAnchor>
         ) : (
-          <div className={cn(buttonBaseClass, 'cursor-default hover:bg-transparent')}>
+          <div className={cn(loadingClass, 'cursor-default hover:bg-transparent')}>
             <Spinner
               className="size-4"
               aria-label={localize('com_nav_mcp_status_connecting', { 0: serverName })}
@@ -110,7 +113,7 @@ export default function MCPCardActions({
   }
 
   return (
-    <div className="flex items-center gap-0.5">
+    <div className={rowActionSlotClasses()}>
       {/* Edit button - opens MCPServerDialog to edit server definition */}
       {canEdit && (
         <TooltipAnchor
@@ -123,7 +126,7 @@ export default function MCPCardActions({
           role="button"
           onClick={onEditClick}
         >
-          <Pencil className="size-3.5" aria-hidden="true" />
+          <Pencil className="size-4" aria-hidden="true" />
         </TooltipAnchor>
       )}
 
@@ -154,7 +157,7 @@ export default function MCPCardActions({
           role="button"
           onClick={onConfigClick}
         >
-          <SlidersHorizontal className="size-3.5" aria-hidden="true" />
+          <KeyRound className="size-4" aria-hidden="true" />
         </TooltipAnchor>
       )}
 
@@ -169,7 +172,7 @@ export default function MCPCardActions({
           role="button"
           onClick={() => onInitialize()}
         >
-          <RefreshCw className="size-3.5" aria-hidden="true" />
+          <RefreshCw className="size-4" aria-hidden="true" />
         </TooltipAnchor>
       )}
 
@@ -184,7 +187,7 @@ export default function MCPCardActions({
           role="button"
           onClick={onRevoke}
         >
-          <Trash2 className="text-text-destructive size-3.5" aria-hidden="true" />
+          <Unlink className="text-text-destructive size-4" aria-hidden="true" />
         </TooltipAnchor>
       )}
     </div>

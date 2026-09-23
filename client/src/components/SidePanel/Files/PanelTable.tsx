@@ -214,17 +214,17 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
       />
 
-      <div className="border-border-light rounded-lg border bg-transparent shadow-xs transition-colors">
+      <div className="rounded-lg bg-transparent transition-colors">
         <div className="overflow-hidden">
           <Table className="table-fixed">
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id} className="border-border-light border-b">
+                <TableRow key={headerGroup.id} className="border-0">
                   {headerGroup.headers.map((header, index) => (
                     <TableHead
                       key={header.id}
                       style={{ width: index === 0 ? '75%' : '25%' }}
-                      className="bg-surface-secondary text-text-secondary py-2 text-sm font-medium"
+                      className="text-text-secondary bg-transparent py-2 text-xs font-medium"
                     >
                       <div className={index === 0 ? 'px-2' : 'flex justify-end px-1'}>
                         {header.isPlaceholder
@@ -242,7 +242,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                   <TableRow
                     key={row.id}
                     data-state={row.getIsSelected() && 'selected'}
-                    className="border-border-light hover:bg-surface-secondary border-b transition-colors [&:last-child]:border-0"
+                    className="hover:bg-surface-hover rounded-lg border-0 transition-colors"
                   >
                     {row.getVisibleCells().map((cell) => {
                       const isFilenameCell = cell.column.id === 'filename';

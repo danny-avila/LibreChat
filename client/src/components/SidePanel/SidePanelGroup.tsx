@@ -30,7 +30,7 @@ const SidePanelGroup = memo(({ panel, children }: SidePanelProps) => {
         orientation="horizontal"
         defaultLayout={defaultLayout}
         onLayoutChanged={onLayoutChanged}
-        className="relative flex-1 bg-presentation"
+        className="bg-surface-primary-alt relative flex-1"
       >
         <ResizablePanel defaultSize="50" minSize={minSizeMain} id="messages-view">
           {children}
