@@ -299,15 +299,13 @@ function LivePhaseHeader({
   const sandboxStarting = useAtomValue(
     sandboxStartingByToolCallId(activity.pendingToolCallId ?? ''),
   );
-  const text =
-    sandboxStarting && activity.pendingToolCallId != null
-      ? localize('com_ui_sandbox_starting')
-      : activity.text;
+  const showSandboxStartup = sandboxStarting && activity.pendingToolCallId != null;
+  const text = showSandboxStartup ? localize('com_ui_sandbox_starting') : activity.text;
+  /** Startup describes this call, not the repeated tool. Throttle its text
+   *  and suppressed count together so neither can paint with the old value. */
+  const comboCount = showSandboxStartup ? 1 : activity.comboCount;
   const { source } = activity;
-  const line = useMemo(
-    () => ({ text, source, comboCount: activity.comboCount }),
-    [text, source, activity.comboCount],
-  );
+  const line = useMemo(() => ({ text, source, comboCount }), [text, source, comboCount]);
   const previewRef = useRef<HTMLSpanElement>(null);
   /** The full width the line may occupy, which is the flex track rather than
    *  the label box: the box shrinks to its text whenever the multiplier rides

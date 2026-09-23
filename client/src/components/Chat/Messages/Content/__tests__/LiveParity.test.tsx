@@ -986,7 +986,12 @@ describe('live activity hardening transitions', () => {
 
   function SandboxEvent() {
     const setStarting = useSetAtom(sandboxStartingByToolCallId('sandbox-call'));
-    return <button onClick={() => setStarting(true)}>{'Start sandbox'}</button>;
+    return (
+      <>
+        <button onClick={() => setStarting(true)}>{'Start sandbox'}</button>
+        <button onClick={() => setStarting(false)}>{'Clear sandbox startup'}</button>
+      </>
+    );
   }
 
   it.each([
@@ -1001,20 +1006,83 @@ describe('live activity hardening transitions', () => {
      *  reads the same sandbox signal instead, and stays one card throughout. */
     jest.useFakeTimers();
     const call = { name, args, output: '' };
-    const view = render(frame([toPart(call, 'sandbox-call')], <SandboxEvent />));
+    const earlier = toPart({ ...call, output: 'ok' }, 'earlier');
+    const view = render(frame([earlier, toPart(call, 'sandbox-call')], <SandboxEvent />));
     const card = screen.getByTestId('activity-phase-card');
+    const header = within(card).getByRole('button');
     expect(screen.queryByTestId('tool-call')).toBeNull();
+    expect(header).toHaveAccessibleName(/×2$/);
+    expect(screen.getByTestId('live-phase-combo')).toHaveTextContent('×2');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start sandbox' }));
+    expect(header).toHaveAccessibleName(/×2$/);
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(header).toHaveAccessibleName('Starting sandbox environment');
+    expect(screen.queryByTestId('live-phase-combo')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear sandbox startup' }));
+    expect(header).toHaveAccessibleName('Starting sandbox environment');
+    expect(screen.queryByTestId('live-phase-combo')).toBeNull();
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(header).toHaveAccessibleName(/×2$/);
+    expect(screen.getByTestId('live-phase-combo')).toHaveTextContent('×2');
 
     fireEvent.click(screen.getByRole('button', { name: 'Start sandbox' }));
     act(() => {
       jest.advanceTimersByTime(500);
     });
-    expect(card).toHaveTextContent('Starting sandbox');
+    expect(header).toHaveAccessibleName('Starting sandbox environment');
+    /** Output can arrive before the transient startup flag is cleared. */
+    view.rerender(
+      frame([
+        earlier,
+        toPart({ ...call, output: 'ok', runStepStatus: 'completed' }, 'sandbox-call'),
+      ]),
+    );
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(screen.getByTestId('activity-phase-card')).toBe(card);
+    expect(header).toHaveAccessibleName(/^Ran .* ×2$/);
+    expect(screen.getByTestId('live-phase-combo')).toHaveTextContent('×2');
+  });
+
+  it('keeps startup and intent labels uncounted, then counts a new generic call', () => {
+    jest.useFakeTimers();
+    const earlier = toPart({ name: Tools.execute_code, output: 'ok' }, 'earlier');
+    const pending = toPart({ name: Tools.execute_code, output: '' }, 'sandbox-call');
+    const view = render(frame([earlier, pending], <SandboxEvent />));
+    const header = within(screen.getByTestId('activity-phase-card')).getByRole('button');
+    fireEvent.click(screen.getByRole('button', { name: 'Start sandbox' }));
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(header).toHaveAccessibleName('Starting sandbox environment');
+    expect(screen.queryByTestId('live-phase-combo')).toBeNull();
+
+    const named = toPart(
+      { name: Tools.execute_code, args: '{"intent":"Checking the data', output: '' },
+      'sandbox-call',
+    );
+    view.rerender(frame([earlier, named]));
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(header).toHaveAccessibleName('Checking the data');
+    expect(screen.queryByTestId('live-phase-combo')).toBeNull();
 
     view.rerender(
-      frame([toPart({ ...call, output: 'ok', runStepStatus: 'completed' }, 'sandbox-call')]),
+      frame([earlier, named, toPart({ name: Tools.execute_code, output: '' }, 'next-call')]),
     );
-    expect(screen.getByTestId('activity-phase-card')).toBe(card);
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(header).toHaveAccessibleName(/^Running .* ×3$/);
+    expect(screen.getByTestId('live-phase-combo')).toHaveTextContent('×3');
   });
 
   it('holds one card across a run of code calls whose intent is not the first key', () => {
