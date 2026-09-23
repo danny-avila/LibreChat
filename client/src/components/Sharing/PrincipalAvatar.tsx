@@ -67,7 +67,7 @@ export default function PrincipalAvatar({
 
   if (avatar) {
     return (
-      <div className={cn('flex-shrink-0', className)}>
+      <div className={cn('shrink-0', className)}>
         <img
           src={avatar}
           alt={`${displayName} avatar`}
@@ -96,7 +96,7 @@ export default function PrincipalAvatar({
   }
 
   return (
-    <div className={cn('flex-shrink-0', className)}>
+    <div className={cn('shrink-0', className)}>
       <div
         className={cn(
           avatarSizeClass,

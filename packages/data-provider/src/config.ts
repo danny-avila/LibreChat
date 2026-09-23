@@ -117,6 +117,10 @@ export const excludedKeys = new Set([
   'spec',
   'disableParams',
   'chatProjectId',
+  'lastResponseAt',
+  'lastResponseMessageId',
+  'lastResponseIsManual',
+  'lastSeenAt',
 ]);
 
 export enum SettingsViews {
@@ -1260,6 +1264,9 @@ export type CodeWorkerEnrollmentPolicy = NonNullable<
   NonNullable<z.infer<typeof agentsEndpointSchema>['statefulCodeSessions']>['principalWorkers']
 >;
 
+/** Agents whose S3 avatar refresh is remembered for one user; see `avatarRefresh`. */
+export const DEFAULT_AVATAR_REFRESH_COVERAGE_LIMIT = 1000;
+
 export const DEFAULT_MAX_PROVIDER_ERROR_CHARS = 2000;
 export const DEFAULT_AGENT_MODEL_RESPONSE_BODY_TIMEOUT_MS = 900_000;
 export const DEFAULT_AGENT_MODEL_RESPONSE_HEADERS_TIMEOUT_MS = 300_000;
@@ -1354,6 +1361,22 @@ export const agentsEndpointSchema = baseEndpointSchema
       codeApiUploadConcurrency: z.number().int().min(1).max(100).optional().default(3),
       /** Maximum wall-clock time spent waiting on Code API rate limits per operation. */
       codeApiMaxRetryWaitMs: z.number().int().min(0).max(300_000).optional().default(20_000),
+      /** S3 avatar re-signing for agent list responses. */
+      avatarRefresh: z
+        .object({
+          /** Per-agent refresh deadlines remembered for one user across pages. Once this
+           *  many are held the oldest are dropped, and a dropped agent is signed and
+           *  persisted again when a later page shows it, so deployments whose readers
+           *  browse past this many S3-backed avatars should raise it. */
+          coverageLimit: z
+            .number()
+            .int()
+            .min(1)
+            .max(1_000_000)
+            .optional()
+            .default(DEFAULT_AVATAR_REFRESH_COVERAGE_LIMIT),
+        })
+        .optional(),
       allowedProviders: z.array(z.union([z.string(), eModelEndpointSchema])).optional(),
       capabilities: z
         .array(z.nativeEnum(AgentCapabilities))
@@ -1921,6 +1944,8 @@ export enum RateLimitPrefix {
   IMPORT = 'IMPORT',
   TTS = 'TTS',
   STT = 'STT',
+  EMAIL_CHANGE = 'EMAIL_CHANGE',
+  EMAIL_CHANGE_CONFIRM = 'EMAIL_CHANGE_CONFIRM',
 }
 
 export const rateLimitSchema = z.object({
@@ -1955,6 +1980,22 @@ export const rateLimitSchema = z.object({
     })
     .optional(),
   stt: z
+    .object({
+      ipMax: z.number().optional(),
+      ipWindowInMinutes: z.number().optional(),
+      userMax: z.number().optional(),
+      userWindowInMinutes: z.number().optional(),
+    })
+    .optional(),
+  /** Requesting a change of the registered email; keyed by the authenticated user. */
+  emailChange: z
+    .object({
+      userMax: z.number().optional(),
+      userWindowInMinutes: z.number().optional(),
+    })
+    .optional(),
+  /** Confirming one; the endpoint is unauthenticated, so the source address is bounded too. */
+  emailChangeConfirm: z
     .object({
       ipMax: z.number().optional(),
       ipWindowInMinutes: z.number().optional(),
@@ -2168,6 +2209,10 @@ export const interfaceSchema = z
     marketplace: z
       .object({
         use: z.boolean().optional(),
+        /** Backoff steps, in milliseconds, before each automatic retry of a failed
+         *  marketplace request; the count is also how many automatic attempts there are.
+         *  An empty array leaves only the manual Retry. Omit for LibreChat's sequence. */
+        retryDelaysMs: z.array(z.number().int().min(0).max(600_000)).max(20).optional(),
       })
       .optional(),
     fileSearch: z.boolean().optional(),
@@ -2207,6 +2252,50 @@ export const interfaceSchema = z
         }),
       ])
       .optional(),
+    /**
+     * What the reply-alert capabilities may do on this deployment. Each field gates a
+     * capability rather than setting it: the preferences themselves stay per device, because
+     * notification permission and audio output belong to the machine the reader sits at.
+     */
+    replyNotifications: z
+      .object({
+        /** Whether an unseen count may reach the tab title and favicon. */
+        tabBadge: z.boolean().optional(),
+        /** Whether readers may turn on desktop notifications for replies. */
+        desktop: z.boolean().optional(),
+        /** Whether readers may turn on the reply chime. */
+        sound: z.boolean().optional(),
+        /**
+         * How many conversations one away poll looks at. A reply lifts its conversation, so the
+         * newest activity is what the first page holds.
+         *
+         * Bounded by the conversation list's own maximum page, which the server clamps every
+         * request to: advertising a wider range here would accept a number the read silently
+         * truncates. Covering a deployment whose replies outpace a single page wants the
+         * server-side unseen query rather than a larger page.
+         */
+        pollLimit: z.number().int().min(1).max(100).optional(),
+        /** Milliseconds between list checks while the tab is unfocused and an away alert is on. */
+        pollIntervalMs: z.number().int().min(10_000).max(600_000).optional(),
+        /**
+         * Milliseconds between list refreshes while the tab is focused, so a reply produced
+         * elsewhere eventually shows its dot. Deliberately far slower than the away poll.
+         *
+         * Capped at five minutes because this refresh is what renews the unfiltered discovery
+         * snapshot, and the client holds an unobserved snapshot authoritative for five minutes:
+         * a slower refresh would let it lapse, dropping its unseen rows from the count until the
+         * next one.
+         */
+        focusedRefreshMs: z.number().int().min(60_000).max(300_000).optional(),
+      })
+      .default({
+        tabBadge: true,
+        desktop: true,
+        sound: true,
+        pollLimit: 100,
+        pollIntervalMs: 30_000,
+        focusedRefreshMs: 300_000,
+      }),
     schedules: z
       .union([
         z.boolean(),
@@ -2296,6 +2385,14 @@ export const interfaceSchema = z
       public: true,
       snapshotFiles: true,
     },
+    replyNotifications: {
+      tabBadge: true,
+      desktop: true,
+      sound: true,
+      pollLimit: 100,
+      pollIntervalMs: 30_000,
+      focusedRefreshMs: 300_000,
+    },
     // `schedules` is deliberately ABSENT from this default. It is experimental and
     // default-off in v1, and zod applies this whole object when `interface` is omitted
     // from librechat.yaml — including it would silently enable the feature (and permit
@@ -2304,6 +2401,7 @@ export const interfaceSchema = z
   });
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
+export type TReplyNotificationsConfig = TInterfaceConfig['replyNotifications'];
 export type TBalanceConfig = z.infer<typeof balanceSchema>;
 export type TTransactionsConfig = z.infer<typeof transactionsSchema>;
 
@@ -2374,6 +2472,7 @@ export type TStartupConfig = {
   openidLoginEnabled: boolean;
   appleLoginEnabled: boolean;
   samlLoginEnabled: boolean;
+  passkeyLoginEnabled: boolean;
   openidLabel: string;
   openidImageUrl: string;
   openidAutoRedirect: boolean;
@@ -2392,6 +2491,7 @@ export type TStartupConfig = {
   socialLoginEnabled: boolean;
   passwordResetEnabled: boolean;
   emailEnabled: boolean;
+  allowEmailChange: boolean;
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
   /** Admin panel link, only present for users with admin access */
@@ -3051,6 +3151,16 @@ export const configSchema = z.object({
       openidDiscovery: openIdDiscoverySchema.partial().optional(),
     })
     .default({ socialLogins: defaultSocialLogins }),
+  /** Changing the registered email address. An unset field falls back to its env var, then the
+   *  documented default, so an existing deployment keeps the behavior it has today. */
+  emailChange: z
+    .object({
+      /** `ALLOW_EMAIL_CHANGE` when unset; enabled when neither is given. */
+      enabled: z.boolean().optional(),
+      /** Lifetime of a verification link. */
+      tokenTTLSeconds: z.number().int().min(60).max(86_400).optional(),
+    })
+    .optional(),
   balance: balanceSchema.optional(),
   transactions: transactionsSchema.optional(),
   speech: z
@@ -3630,6 +3740,10 @@ export enum CacheKeys {
    * Key for admin panel OAuth exchange codes (one-time-use, short TTL).
    */
   ADMIN_OAUTH_EXCHANGE = 'ADMIN_OAUTH_EXCHANGE',
+  /**
+   * Key for pending WebAuthn (passkey) ceremony challenges (one-time-use, short TTL).
+   */
+  PASSKEY_CHALLENGE = 'PASSKEY_CHALLENGE',
 }
 
 export const AUTH_USER_DOC_BY_ID_PREFIX = 'auth-user-doc-byid';
@@ -4332,6 +4446,9 @@ export function splitToolCallName(
 }
 
 /** Maximum explicit subagent hops allowed from any root agent at runtime. */
+/** Upper bound on WebAuthn credentials a single user may register. */
+export const MAX_PASSKEYS_PER_USER = 20;
+
 export const MAX_SUBAGENT_DEPTH = 5;
 
 /** Maximum unique explicit subagent targets that may be loaded at runtime. */

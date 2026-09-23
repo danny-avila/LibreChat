@@ -58,15 +58,15 @@ function Row({
         {track === true && (
           <span
             aria-hidden="true"
-            className="size-2 flex-none rounded-sm bg-surface-tertiary ring-1 ring-inset ring-border-medium"
+            className="bg-surface-tertiary ring-border-medium size-2 flex-none rounded-sm ring-1 ring-inset"
           />
         )}
-        <span className="min-w-0 break-words text-text-secondary">{label}</span>
+        <span className="text-text-secondary min-w-0 break-words">{label}</span>
       </span>
-      <span className="shrink-0 whitespace-nowrap font-medium text-text-primary">
+      <span className="text-text-primary shrink-0 font-medium whitespace-nowrap">
         {formatTokens(safeValue)}
         {percent != null && (
-          <span className="ml-1 text-xs text-text-secondary" aria-hidden="true">
+          <span className="text-text-secondary ml-1 text-xs" aria-hidden="true">
             ({Math.round(percent)}%)
           </span>
         )}
@@ -76,7 +76,7 @@ function Row({
   const className = cn(
     'flex w-full items-center justify-between gap-4 text-left text-sm',
     onClick != null &&
-      'rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary',
+      'rounded-sm focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-text-primary',
   );
   const handlers = {
     onPointerEnter: id != null ? () => onHoverChange?.(id) : undefined,
@@ -354,19 +354,20 @@ export default function Breakdown({
     <div className="w-72" role="region" aria-label={localize('com_ui_context_usage')}>
       <Collapsible open={expanded} onOpenChange={setExpanded}>
         <CollapsibleTrigger
-          className="group flex w-full items-center justify-between gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary"
+          focusOutline="hidden"
+          className="group focus-visible:ring-text-primary flex w-full items-center justify-between gap-2 rounded-sm focus-visible:ring-2"
           data-testid="context-breakdown-toggle"
         >
-          <span className="whitespace-nowrap text-sm font-medium text-text-primary">
+          <span className="text-text-primary text-sm font-medium whitespace-nowrap">
             {localize('com_ui_context_window')}
           </span>
-          <span className="flex items-center gap-1 whitespace-nowrap text-xs font-medium text-text-secondary">
+          <span className="text-text-secondary flex items-center gap-1 text-xs font-medium whitespace-nowrap">
             {maxTokens != null
               ? `${formatTokens(usedTokens)} / ${formatTokens(maxTokens)} (${Math.round(percent)}%)`
               : formatTokens(usedTokens)}
             <ChevronDown
               aria-hidden="true"
-              className="size-3.5 shrink-0 text-text-tertiary transition-transform duration-300 ease-out group-data-[state=open]:rotate-180 motion-reduce:transition-none"
+              className="text-text-tertiary size-3.5 shrink-0 transition-transform duration-300 ease-out group-data-[state=open]:rotate-180 motion-reduce:transition-none"
             />
           </span>
         </CollapsibleTrigger>
@@ -387,7 +388,7 @@ export default function Breakdown({
             so it collapses with the height. On the parent it would be a margin
             outside the animation, and unmounting the content would drop it in a
             single 12px jump after the height reached zero. */}
-        <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none">
+        <CollapsibleContent className="data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none">
           <div className="mt-3 space-y-3">
             {(pressure !== 'none' || insights.length > 0) && (
               <div className="relative flex items-center justify-between gap-2">
@@ -419,7 +420,7 @@ export default function Breakdown({
                         aria-expanded={insightsOpen}
                         aria-controls={insightsOpen ? insightsId : undefined}
                         data-testid="context-insights-toggle"
-                        className="size-6 text-text-secondary"
+                        className="text-text-secondary size-6"
                         onFocus={() => setInsightsOpen(true)}
                         onBlur={() => setInsightsOpen(false)}
                         onClick={() => setInsightsOpen(true)}
@@ -437,7 +438,7 @@ export default function Breakdown({
                         align="end"
                       >
                         {insights.map((insight, index) => (
-                          <p className="break-words text-xs text-text-secondary" key={index}>
+                          <p className="text-text-secondary text-xs break-words" key={index}>
                             {insight}
                           </p>
                         ))}
@@ -485,7 +486,7 @@ export default function Breakdown({
                         )}
                         {id === 'tool-calls' && toolsExpanded && hasToolCounts && (
                           <div id={toolBreakdownId} className="space-y-1 pl-6">
-                            <p className="text-xs font-medium text-text-tertiary">
+                            <p className="text-text-tertiary text-xs font-medium">
                               {localize('com_ui_context_tool_breakdown')}
                             </p>
                             {toolBreakdown.map((tool) => (
@@ -512,7 +513,7 @@ export default function Breakdown({
                   {(normalizeTokenCount(view.cacheRead) > 0 ||
                     normalizeTokenCount(view.cacheWrite) > 0) && (
                     <div className="space-y-1.5 pl-6">
-                      <p className="text-xs font-medium text-text-tertiary">
+                      <p className="text-text-tertiary text-xs font-medium">
                         {localize('com_ui_context_cache_last_call')}
                       </p>
                       {normalizeTokenCount(view.cacheRead) > 0 && (
@@ -593,20 +594,20 @@ export default function Breakdown({
                     <Row label={localize('com_ui_context_system')} value={view.overheadTokens} />
                   )}
                   {maxTokens == null && (
-                    <p className="text-xs text-text-secondary">
+                    <p className="text-text-secondary text-xs">
                       {localize('com_ui_context_unknown')}
                     </p>
                   )}
-                  <p className="text-xs italic text-text-secondary">
+                  <p className="text-text-secondary text-xs italic">
                     {localize('com_ui_estimated')}
                   </p>
                 </>
               )}
             </div>
 
-            <div className="border-t border-border-light" role="separator" />
+            <div className="border-border-light border-t" role="separator" />
             <div className="space-y-1.5" data-testid="token-usage-last-turn">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">
+              <h3 className="text-text-tertiary text-xs font-semibold tracking-wider uppercase">
                 {view.turnInProgress
                   ? localize('com_ui_context_current_turn')
                   : localize('com_ui_context_last_turn')}
@@ -625,7 +626,7 @@ export default function Breakdown({
                   <Row label={localize('com_ui_output')} value={view.lastTurnUsage.output} />
                 </>
               ) : (
-                <p className="text-xs text-text-secondary">
+                <p className="text-text-secondary text-xs">
                   {view.turnInProgress
                     ? localize('com_ui_context_waiting_usage')
                     : localize('com_ui_context_unavailable_usage')}
@@ -635,13 +636,13 @@ export default function Breakdown({
 
             {hasUsage && (
               <>
-                <div className="border-t border-border-light" role="separator" />
+                <div className="border-border-light border-t" role="separator" />
                 <div className="space-y-1.5" data-testid="token-usage-totals">
                   <div className="flex items-baseline justify-between gap-2">
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">
+                    <h3 className="text-text-tertiary text-xs font-semibold tracking-wider uppercase">
                       {localize('com_ui_context_totals')}
                     </h3>
-                    <span className="text-xs text-text-tertiary">
+                    <span className="text-text-tertiary text-xs">
                       {localize('com_ui_context_this_branch')}
                     </span>
                   </div>
@@ -666,10 +667,10 @@ export default function Breakdown({
             )}
             {showTotal && (
               <div
-                className="space-y-1.5 border-t border-border-light pt-2"
+                className="border-border-light space-y-1.5 border-t pt-2"
                 data-testid="token-usage-all-branches"
               >
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">
+                <h3 className="text-text-tertiary text-xs font-semibold tracking-wider uppercase">
                   {localize('com_ui_context_cost_total')}
                 </h3>
                 <Row
@@ -691,7 +692,7 @@ export default function Breakdown({
                 (hasUsage && branchUsage.costKnown) ||
                 (showTotal && view.totalUsage.costKnown)) && (
                 <>
-                  <div className="border-t border-border-light" role="separator" />
+                  <div className="border-border-light border-t" role="separator" />
                   <div className="space-y-1.5" data-testid="token-usage-cost">
                     {view.lastTurnUsage?.costKnown === true && (
                       <div className="flex items-center justify-between gap-4 text-sm">
@@ -702,7 +703,7 @@ export default function Breakdown({
                               : 'com_ui_context_cost_last_turn',
                           )}
                         </span>
-                        <span className="font-medium text-text-primary">
+                        <span className="text-text-primary font-medium">
                           {formatCost(view.lastTurnUsage.cost, currency)}
                         </span>
                       </div>
@@ -714,7 +715,7 @@ export default function Breakdown({
                             ? localize('com_ui_context_cost_branch')
                             : localize('com_ui_context_cost')}
                         </span>
-                        <span className="font-medium text-text-primary">
+                        <span className="text-text-primary font-medium">
                           {formatCost(view.branchCost, currency)}
                         </span>
                       </div>
@@ -735,7 +736,7 @@ export default function Breakdown({
 
             {langfuseSessionUrl && (
               <>
-                <div className="border-t border-border-light" role="separator" />
+                <div className="border-border-light border-t" role="separator" />
                 <Button asChild variant="link" className="h-auto w-full justify-between gap-2 p-0">
                   <a href={langfuseSessionUrl} target="_blank" rel="noopener noreferrer">
                     <span>{localize('com_ui_langfuse_view_session')}</span>

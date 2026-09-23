@@ -18,6 +18,7 @@ import {
   ArchiveRestore,
   FolderInput,
   FolderX,
+  Mail,
   Pen,
   Pin,
   Trash,
@@ -31,6 +32,7 @@ import {
   useGetStartupConfig,
   useArchiveConvoMutation,
   usePinConversationMutation,
+  useMarkConversationUnreadMutation,
 } from '~/data-provider';
 import { useHasAccess, useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
 import { useChatContext, useLiveAnnouncer } from '~/Providers';
@@ -57,6 +59,7 @@ function ConvoOptions({
   title,
   isPinned = false,
   isArchived = false,
+  isUnseen = false,
   retainView,
   renameHandler,
   isPopoverActive,
@@ -70,6 +73,7 @@ function ConvoOptions({
   isPinned?: boolean;
   /** This row's own archive state, which the sidebar filter does not stand in for. */
   isArchived?: boolean;
+  isUnseen?: boolean;
   retainView: () => void;
   renameHandler: (e: MouseEvent) => void;
   isPopoverActive: boolean;
@@ -114,6 +118,7 @@ function ConvoOptions({
   const archiveConvoMutation = useArchiveConvoMutation();
   const assignConversationToProject = useAssignConversationToProjectMutation();
   const pinConvoMutation = usePinConversationMutation();
+  const markUnreadMutation = useMarkConversationUnreadMutation();
 
   const deleteMutation = useDeleteConversationMutation({
     onSuccess: () => {
@@ -294,6 +299,26 @@ function ConvoOptions({
     );
   }, [conversationId, isPinned, pinConvoMutation, setIsPopoverActive, showToast, localize]);
 
+  const handleMarkUnreadClick = useCallback(() => {
+    const convoId = conversationId ?? '';
+    if (!convoId) {
+      return;
+    }
+    markUnreadMutation.mutate(
+      { conversationId: convoId },
+      {
+        onSuccess: () => setIsPopoverActive(false),
+        onError: () => {
+          showToast({
+            message: localize('com_ui_mark_unread_error'),
+            severity: NotificationSeverity.ERROR,
+            showIcon: true,
+          });
+        },
+      },
+    );
+  }, [conversationId, markUnreadMutation, setIsPopoverActive, showToast, localize]);
+
   const handleDuplicateClick = useCallback(() => {
     duplicateConversation.mutate({
       conversationId: conversationId ?? '',
@@ -305,7 +330,7 @@ function ConvoOptions({
       {
         label: localize('com_ui_share'),
         onClick: shareHandler,
-        icon: <Share2 className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        icon: <Share2 className="icon-sm text-text-primary mr-2" aria-hidden="true" />,
         show: startupConfig && startupConfig.sharedLinksEnabled && canCreateSharedLinks,
         ariaHasPopup: 'dialog' as const,
         ariaControls: 'share-conversation-dialog',
@@ -321,13 +346,21 @@ function ConvoOptions({
         icon: isPinLoading ? (
           <Spinner className="size-4" />
         ) : (
-          <Pin className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
+          <Pin className="icon-sm text-text-primary mr-2" aria-hidden="true" />
         ),
+      },
+      {
+        label: localize('com_ui_mark_unread'),
+        onClick: handleMarkUnreadClick,
+        /* The conversation on screen is definitionally read: its own seen triggers would
+           clear the flag the moment it is set. */
+        show: !isActiveConvo && !isUnseen,
+        icon: <Mail className="icon-sm text-text-primary mr-2" aria-hidden="true" />,
       },
       {
         label: localize('com_ui_rename'),
         onClick: renameHandler,
-        icon: <Pen className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        icon: <Pen className="icon-sm text-text-primary mr-2" aria-hidden="true" />,
       },
       {
         label: localize('com_ui_duplicate'),
@@ -336,13 +369,13 @@ function ConvoOptions({
         icon: isDuplicateLoading ? (
           <Spinner className="size-4" />
         ) : (
-          <CopyPlus className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
+          <CopyPlus className="icon-sm text-text-primary mr-2" aria-hidden="true" />
         ),
       },
       {
         label: localize('com_ui_change_project'),
         onClick: projectHandler,
-        icon: <FolderInput className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        icon: <FolderInput className="icon-sm text-text-primary mr-2" aria-hidden="true" />,
         ariaHasPopup: 'dialog' as const,
         ariaControls: 'project-conversation-dialog',
         hideOnClick: false,
@@ -357,7 +390,7 @@ function ConvoOptions({
         icon: assignConversationToProject.isLoading ? (
           <Spinner className="size-4" />
         ) : (
-          <FolderX className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
+          <FolderX className="icon-sm text-text-primary mr-2" aria-hidden="true" />
         ),
       },
       {
@@ -369,7 +402,7 @@ function ConvoOptions({
       {
         label: localize('com_ui_delete'),
         onClick: deleteHandler,
-        icon: <Trash className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        icon: <Trash className="icon-sm text-text-primary mr-2" aria-hidden="true" />,
         ariaHasPopup: 'dialog' as const,
         ariaControls: 'delete-conversation-dialog',
         /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
@@ -381,6 +414,8 @@ function ConvoOptions({
     [
       localize,
       isPinned,
+      isUnseen,
+      isActiveConvo,
       isPinLoading,
       shareHandler,
       startupConfig,
@@ -390,6 +425,7 @@ function ConvoOptions({
       isArchived,
       isDuplicateLoading,
       handlePinClick,
+      handleMarkUnreadClick,
       handleArchiveClick,
       canCreateSharedLinks,
       handleDuplicateClick,
@@ -524,6 +560,7 @@ export default memo(ConvoOptions, (prevProps, nextProps) => {
     prevProps.chatProjectId === nextProps.chatProjectId &&
     prevProps.isPinned === nextProps.isPinned &&
     prevProps.isArchived === nextProps.isArchived &&
+    prevProps.isUnseen === nextProps.isUnseen &&
     prevProps.isPopoverActive === nextProps.isPopoverActive &&
     prevProps.isActiveConvo === nextProps.isActiveConvo &&
     prevProps.isShiftHeld === nextProps.isShiftHeld

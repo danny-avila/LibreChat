@@ -15,6 +15,7 @@ export enum QueryKeys {
   conversationTraceRecords = 'conversationTraceRecords',
   conversationTraceRecord = 'conversationTraceRecord',
   user = 'user',
+  passkeys = 'passkeys',
   name = 'name', // user key name
   models = 'models',
   balance = 'balance',
@@ -146,6 +147,10 @@ export enum MutationKeys {
   updateRole = 'updateRole',
   enableTwoFactor = 'enableTwoFactor',
   verifyTwoFactor = 'verifyTwoFactor',
+  registerPasskey = 'registerPasskey',
+  renamePasskey = 'renamePasskey',
+  deletePasskey = 'deletePasskey',
+  passkeyLogin = 'passkeyLogin',
   updateMemoryPreferences = 'updateMemoryPreferences',
   createProject = 'createProject',
   updateProject = 'updateProject',
@@ -167,4 +172,6 @@ export enum MutationKeys {
   updateCodeEnvironmentSettings = 'updateCodeEnvironmentSettings',
   deleteCodeEnvironment = 'deleteCodeEnvironment',
   moveConversationCodeEnvironment = 'moveConversationCodeEnvironment',
+  convoSeen = 'convoSeen',
+  convoUnread = 'convoUnread',
 }

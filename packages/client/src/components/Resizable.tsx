@@ -22,13 +22,13 @@ const ResizableHandle = ({
 }): JSX.Element => (
   <Separator
     className={cn(
-      'relative flex w-px items-center justify-center bg-border-medium after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-text-primary focus-visible:ring-offset-1',
+      'bg-border-medium focus-visible:ring-text-primary relative flex w-px items-center justify-center after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:outline-hidden',
       className,
     )}
     {...props}
   >
     {withHandle && (
-      <div className="z-10 flex h-4 w-3 items-center justify-center rounded-sm border bg-border-medium">
+      <div className="bg-border-medium border-border-light z-10 flex h-4 w-3 items-center justify-center rounded-sm border">
         <GripVertical className="h-2.5 w-2.5" />
       </div>
     )}
@@ -44,13 +44,13 @@ const ResizableHandleAlt = ({
 }): JSX.Element => (
   <Separator
     className={cn(
-      'group relative flex w-px items-center justify-center bg-border-medium after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-text-primary focus-visible:ring-offset-1',
+      'group bg-border-medium focus-visible:ring-text-primary relative flex w-px items-center justify-center after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:outline-hidden',
       className,
     )}
     {...props}
   >
     {withHandle && (
-      <div className="invisible z-10 flex h-4 w-3 items-center justify-center rounded-sm border bg-border-medium group-hover:visible group-active:visible group-data-[separator=active]:visible">
+      <div className="bg-border-medium border-border-light invisible z-10 flex h-4 w-3 items-center justify-center rounded-sm border group-hover:visible group-active:visible group-data-[separator=active]:visible">
         <GripVertical className="h-2.5 w-2.5" />
       </div>
     )}

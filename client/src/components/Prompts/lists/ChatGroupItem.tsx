@@ -114,21 +114,21 @@ function ChatGroupItem({
       {
         label: localize('com_ui_preview'),
         onClick: () => setPreviewDialogOpen(true),
-        icon: <Eye className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        icon: <Eye className="icon-sm text-text-primary mr-2" aria-hidden="true" />,
       },
     ];
     if (canEdit) {
       items.push({
         label: localize('com_ui_edit'),
         onClick: () => navigate(`${PROMPT_PATH}/${group._id}`),
-        icon: <SquarePen className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        icon: <SquarePen className="icon-sm text-text-primary mr-2" aria-hidden="true" />,
       });
     }
     if (canDelete) {
       items.push({
         label: localize('com_ui_delete'),
         onClick: () => setDeleteOpen(true),
-        icon: <Trash className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        icon: <Trash className="icon-sm text-text-primary mr-2" aria-hidden="true" />,
       });
     }
     return items;
@@ -138,14 +138,14 @@ function ChatGroupItem({
     <>
       <div
         className={cn(
-          'group/prompt relative mb-1.5 rounded-xl border border-border-light bg-transparent transition-colors hover:bg-surface-secondary',
+          'group/prompt border-border-light hover:bg-surface-secondary relative mb-1.5 rounded-xl border bg-transparent transition-colors',
           !isChatRoute && params.promptId === group._id && 'bg-surface-hover',
         )}
       >
         {/* Clickable overlay for card */}
         <button
           type="button"
-          className="absolute inset-0 z-0 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+          className="focus-visible:ring-ring-primary absolute inset-0 z-0 rounded-xl focus:outline-hidden focus-visible:ring-2"
           onClick={onCardClick}
           aria-label={ariaLabel}
         />
@@ -161,7 +161,7 @@ function ChatGroupItem({
                 description={group.name}
                 side="top"
                 render={
-                  <span className="truncate text-sm font-semibold text-text-primary">
+                  <span className="text-text-primary truncate text-sm font-semibold">
                     {group.name}
                   </span>
                 }
@@ -177,7 +177,7 @@ function ChatGroupItem({
                       aria-label={localize('com_ui_by_author', { 0: group.authorName })}
                       className="flex shrink-0 items-center"
                     >
-                      <User className="size-3.5 text-text-secondary" aria-hidden="true" />
+                      <User className="text-text-secondary size-3.5" aria-hidden="true" />
                     </span>
                   }
                 />
@@ -193,13 +193,13 @@ function ChatGroupItem({
                       aria-label={localize('com_ui_sr_global_prompt')}
                       className="flex shrink-0 items-center"
                     >
-                      <EarthIcon className="size-3.5 text-accent-primary" aria-hidden="true" />
+                      <EarthIcon className="text-accent-primary size-3.5" aria-hidden="true" />
                     </span>
                   }
                 />
               )}
             </div>
-            <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-text-secondary">
+            <p className="text-text-secondary mt-0.5 line-clamp-2 text-xs leading-relaxed">
               {snippet}
             </p>
           </div>
@@ -217,10 +217,10 @@ function ChatGroupItem({
                   ref={menuButtonRef}
                   aria-label={localize('com_nav_convo_menu_options')}
                   className={cn(
-                    'flex size-7 items-center justify-center rounded-md text-text-secondary transition-opacity hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+                    'text-text-secondary hover:bg-surface-hover focus-visible:ring-ring-primary flex size-7 items-center justify-center rounded-md transition-opacity focus-visible:ring-2 focus-visible:outline-hidden',
                     menuOpen
                       ? 'opacity-100'
-                      : 'opacity-0 focus-visible:opacity-100 group-hover/prompt:opacity-100',
+                      : 'opacity-0 group-hover/prompt:opacity-100 focus-visible:opacity-100',
                   )}
                   onClick={(e) => e.stopPropagation()}
                 >

@@ -1,18 +1,16 @@
-/* eslint-disable */
 import * as React from 'react';
-import TextareaAutosize from 'react-textarea-autosize';
 import { fieldBase } from './Field';
 import { cn } from '~/utils';
 import './Field.css';
 
-export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {}
+export type TextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement>;
 
 const Textarea: React.ForwardRefExoticComponent<
   TextareaProps & React.RefAttributes<HTMLTextAreaElement>
 > = React.forwardRef<HTMLTextAreaElement, TextareaProps>(({ className = '', ...props }, ref) => {
   return (
     <textarea
-      className={cn(fieldBase, 'min-h-20 resize-none bg-surface-secondary', className)}
+      className={cn(fieldBase, 'bg-surface-secondary min-h-20 resize-none', className)}
       ref={ref}
       {...props}
     />

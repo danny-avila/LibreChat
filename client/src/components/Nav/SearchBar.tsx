@@ -139,17 +139,17 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
   return (
     <div
       ref={ref}
-      className="group relative flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg border-2 border-transparent px-3 py-1.5 text-text-primary focus-within:border-ring-primary focus-within:bg-surface-active-alt hover:bg-surface-active-alt"
+      className="group text-text-primary focus-within:border-ring-primary focus-within:bg-surface-active-alt hover:bg-surface-active-alt relative flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg border-2 border-transparent px-3 py-1.5"
     >
       <Search
         aria-hidden="true"
-        className="absolute left-3 h-4 w-4 text-text-secondary group-focus-within:text-text-primary group-hover:text-text-primary"
+        className="text-text-secondary group-focus-within:text-text-primary group-hover:text-text-primary absolute left-3 h-4 w-4"
       />
       <input
         type="text"
         data-testid="nav-search-input"
         ref={inputRef}
-        className="m-0 mr-0 w-full border-none bg-transparent p-0 pl-7 text-sm leading-tight placeholder-text-secondary placeholder-opacity-100 focus-visible:outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"
+        className="placeholder-text-secondary placeholder-opacity-100 group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary m-0 mr-0 w-full border-none bg-transparent p-0 pl-7 text-sm leading-tight focus-visible:outline-hidden"
         value={text}
         onChange={onChange}
         onKeyDown={(e) => {

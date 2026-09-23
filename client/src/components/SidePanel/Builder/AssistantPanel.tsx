@@ -259,7 +259,7 @@ export default function AssistantPanel({
     <FormProvider {...methods}>
       <form
         onSubmit={handleSubmit(onSubmit)}
-        className="h-auto w-full flex-shrink-0 overflow-x-hidden pt-2"
+        className="h-auto w-full shrink-0 overflow-x-hidden pt-2"
       >
         <div className="flex w-full flex-wrap">
           <Controller
@@ -281,7 +281,7 @@ export default function AssistantPanel({
           {/* Select Button */}
           {assistant_id && (
             <button
-              className="btn mx-2 mt-1 h-[40px] rounded bg-surface-submit px-4 py-2 font-semibold text-text-on-status hover:bg-surface-submit-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary"
+              className="btn bg-surface-submit text-text-on-status hover:bg-surface-submit-hover focus-visible:ring-text-primary focus-visible:ring-offset-surface-primary mx-2 mt-1 h-[40px] rounded px-4 py-2 font-semibold focus:outline-hidden focus-visible:ring-2 focus-visible:ring-offset-2"
               type="button"
               disabled={!assistant_id}
               onClick={(e) => {
@@ -293,7 +293,7 @@ export default function AssistantPanel({
             </button>
           )}
         </div>
-        <div className="h-auto bg-surface-primary px-4 pb-8 pt-3 dark:bg-transparent">
+        <div className="bg-surface-primary h-auto px-4 pt-3 pb-8 dark:bg-transparent">
           {/* Avatar & Name */}
           <div className="mb-4">
             <AssistantAvatar
@@ -325,7 +325,7 @@ export default function AssistantPanel({
               name="id"
               control={control}
               render={({ field }) => (
-                <p className="h-3 text-xs italic text-text-secondary">{field.value}</p>
+                <p className="text-text-secondary h-3 text-xs italic">{field.value}</p>
               )}
             />
           </div>
@@ -421,7 +421,7 @@ export default function AssistantPanel({
                     )}
                   />
                   {error && (
-                    <span className="text-sm text-text-destructive transition duration-300 ease-in-out">
+                    <span className="text-text-destructive text-sm transition duration-300 ease-in-out">
                       {localize('com_ui_field_required')}
                     </span>
                   )}
@@ -508,7 +508,7 @@ export default function AssistantPanel({
             />
             {/* Submit Button */}
             <button
-              className="btn flex w-full items-center justify-center bg-surface-submit px-4 py-2 font-semibold text-text-on-status hover:bg-surface-submit-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary"
+              className="btn bg-surface-submit text-text-on-status hover:bg-surface-submit-hover focus-visible:ring-text-primary focus-visible:ring-offset-surface-primary flex w-full items-center justify-center px-4 py-2 font-semibold focus:outline-hidden focus-visible:ring-2 focus-visible:ring-offset-2"
               type="submit"
             >
               {submitContext}

@@ -5,6 +5,7 @@ const {
   GenerationJobManager,
   TERMINAL_PUBLICATION_RECONNECT_ERROR,
   hasPersistableAbortContent,
+  announceStoppedReply,
   buildAbortedResponseMetadata,
   isPendingActionStale,
   toClientPendingAction,
@@ -48,7 +49,7 @@ const {
   getServerGenerationProtocol,
   negotiateExistingGenerationProtocol,
 } = require('~/server/controllers/agents/protocol');
-const { getFiles, saveMessage } = require('~/models');
+const { getFiles, saveConvo, saveMessage } = require('~/models');
 const {
   recordScheduleOutcome,
   beginScheduledStop,
@@ -827,6 +828,7 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
              * await the user prerequisite first, but still attempt the child
              * write and checkpoint cleanup so every independently useful
              * operation gets a chance to succeed. */
+            let persistedRequestId;
             try {
               const persistedRequest = await saveMessage(messageContext, requestMessage, {
                 context: 'api/server/routes/agents/index.js - abort user prerequisite',
@@ -834,6 +836,7 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
               if (!persistedRequest) {
                 throw new Error('Abort user prerequisite was not persisted');
               }
+              persistedRequestId = persistedRequest._id;
             } catch (error) {
               persistenceErrors.push(error);
             }
@@ -846,6 +849,28 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
                 throw new Error('Abort response was not persisted');
               }
               logger.debug(`[AgentStream] Saved partial response for: ${jobStreamId}`);
+              /* When Stop wins the terminal claim the request controller returns before its
+                 own stamp, so this is the only place a stopped turn's reply reaches the
+                 unseen-reply indicator.
+                 The two rows this barrier just wrote are handed over directly: without them
+                 the conversation write reloads the entire message list to rebuild `messages`,
+                 and that serial read sits between Stop and the FINAL event. */
+              await announceStoppedReply(
+                { saveConvo },
+                {
+                  ctx: messageContext,
+                  conversationId: jobData.conversationId,
+                  endpoint: jobData.endpoint,
+                  model: jobData.model,
+                  reply: {
+                    messageId: persistedResponse.messageId,
+                    content,
+                    attachments: responseMessage.attachments,
+                  },
+                  appendMessageIds: [persistedRequestId, persistedResponse._id],
+                  context: 'api/server/routes/agents/index.js - abort reply stamp',
+                },
+              );
             } catch (error) {
               persistenceErrors.push(error);
             }

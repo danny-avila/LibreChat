@@ -49,6 +49,7 @@ const {
   collectReachableAgents,
   restoreScheduledTokenContext,
   recoverTurnMessageReference,
+  announceReply,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const { decryptMetadata } = require('~/server/services/ActionService');
@@ -79,6 +80,7 @@ const {
   markAgentEventActorDetachedActionRunning,
   settleAgentEventActorDetachedAction,
   appendConvoMessageReference,
+  stampConvoLastResponse,
 } = require('~/models');
 const {
   acquireEventChildGenerationLease,
@@ -589,6 +591,24 @@ async function finalizeResumedTurn({
       conversationId,
       metadata: meta,
     });
+
+    /* This path saves the message directly, so nothing else stamps the unseen-reply
+       indicator. Best-effort: a missed stamp must not fail the resumed turn. */
+    await announceReply(
+      { stampConvoLastResponse },
+      {
+        userId,
+        conversationId,
+        reply: {
+          messageId: savedResponseMessage.messageId,
+          content: responseMessage.content,
+          text: responseMessage.text,
+          attachments: responseMessage.attachments,
+          isTemporary,
+        },
+        context: 'ResumeAgentController - resumed response end',
+      },
+    );
 
     const convo = await getConvo(userId, conversationId);
     const conversation = { ...(convo ?? {}), conversationId };

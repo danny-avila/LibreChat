@@ -39,6 +39,9 @@ export function createUserMethods(
     fieldsToSelect?: string | string[] | null,
     options?: { limit?: number; offset?: number; sort?: Record<string, 1 | -1> },
   ) => Promise<IUser[]>;
+  findOwnerContactUsers: (
+    ownerIds: string[],
+  ) => Promise<Array<Pick<IUser, '_id' | 'name' | 'username'>>>;
   countUsers: (filter?: FilterQuery<IUser>) => Promise<number>;
   createUser: (
     data: CreateUserRequest,
@@ -46,7 +49,11 @@ export function createUserMethods(
     disableTTL?: boolean,
     returnUser?: boolean,
   ) => Promise<mongoose.Types.ObjectId | Partial<IUser>>;
-  updateUser: (userId: string, updateData: Partial<IUser>) => Promise<IUser | null>;
+  updateUser: (
+    userId: string,
+    updateData: Partial<IUser>,
+    expectedState?: FilterQuery<IUser>,
+  ) => Promise<IUser | null>;
   claimSamlIdentity: (
     userId: string,
     samlId: string,
@@ -212,6 +219,19 @@ export function createUserMethods(
     }
     return await query.lean<IUser[]>();
   }
+  async function findOwnerContactUsers(
+    ownerIds: string[],
+  ): Promise<Array<Pick<IUser, '_id' | 'name' | 'username'>>> {
+    if (ownerIds.length === 0) {
+      return [];
+    }
+
+    const User = mongoose.models.User as mongoose.Model<IUser>;
+    const objectIds = ownerIds.map((ownerId) => new mongoose.Types.ObjectId(ownerId));
+    return await User.find({ _id: { $in: objectIds } })
+      .select('_id name username')
+      .lean<Array<Pick<IUser, '_id' | 'name' | 'username'>>>();
+  }
 
   /**
    * Count the number of user documents in the collection based on the provided filter.
@@ -288,16 +308,24 @@ export function createUserMethods(
   /**
    * Update a user with new data without overwriting existing properties.
    */
-  async function updateUser(userId: string, updateData: Partial<IUser>): Promise<IUser | null> {
+  async function updateUser(
+    userId: string,
+    updateData: Partial<IUser>,
+    expectedState: FilterQuery<IUser> = {},
+  ): Promise<IUser | null> {
     const User = mongoose.models.User;
     const updateOperation = {
       $set: updateData,
       $unset: { expiresAt: '' }, // Remove the expiresAt field to prevent TTL
     };
-    const updated = await User.findByIdAndUpdate(userId, updateOperation, {
-      new: true,
-      runValidators: true,
-    }).lean<IUser>();
+    const updated = await User.findOneAndUpdate(
+      { ...expectedState, _id: userId },
+      updateOperation,
+      {
+        new: true,
+        runValidators: true,
+      },
+    ).lean<IUser>();
     await invalidateAuthUserDocCache(userId);
     return updated;
   }
@@ -828,6 +856,7 @@ export function createUserMethods(
   return {
     findUser,
     findUsers,
+    findOwnerContactUsers,
     countUsers,
     createUser,
     updateUser,

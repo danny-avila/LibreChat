@@ -38,6 +38,16 @@ jest.mock('~/server/controllers/auth/TwoFactorAuthController', () => ({
   verify2FAWithTempToken: (...args) => mockVerify2FAWithTempToken(...args),
 }));
 
+jest.mock('~/server/controllers/auth/PasskeyController', () => ({
+  listPasskeys: jest.fn((req, res) => res.status(204).end()),
+  updatePasskey: jest.fn((req, res) => res.status(204).end()),
+  removePasskey: jest.fn((req, res) => res.status(204).end()),
+  authenticatePasskey: jest.fn((req, res, next) => next()),
+  loginPasskeyOptions: jest.fn((req, res) => res.status(204).end()),
+  registerPasskeyOptions: jest.fn((req, res) => res.status(204).end()),
+  registerPasskeyVerify: jest.fn((req, res) => res.status(204).end()),
+}));
+
 jest.mock('~/server/controllers/auth/LogoutController', () => ({
   logoutController: jest.fn((req, res) => res.status(204).end()),
 }));
@@ -61,6 +71,8 @@ jest.mock('~/server/middleware', () => {
     logHeaders: pass,
     requireSameOrigin: jest.requireActual('~/server/middleware/requireSameOrigin'),
     loginLimiter: (...args) => mockLoginLimiter(...args),
+    passkeyLimiter: pass,
+    passkeyStepUpLimiter: pass,
     setTwoFactorTempUser: (...args) => mockSetTwoFactorTempUser(...args),
     twoFactorTempLimiter: pass,
     checkBan: pass,
@@ -123,6 +135,22 @@ describe('local login endpoints reject cross-site submissions', () => {
     expect(response.headers['set-cookie']).toBeUndefined();
     expect(mockLoginLimiter).not.toHaveBeenCalled();
     expect(mockRequireLocalAuth).not.toHaveBeenCalled();
+    expect(mockLoginController).not.toHaveBeenCalled();
+  });
+
+  it('rejects a cross-site passkey assertion before verifying it', async () => {
+    const { authenticatePasskey } = require('~/server/controllers/auth/PasskeyController');
+
+    await request(app)
+      .post('/api/auth/passkey/login/verify')
+      .set('Host', 'chat.example.com')
+      .set('Sec-Fetch-Site', 'cross-site')
+      .set('Origin', OTHER_ORIGIN)
+      .type('form')
+      .send({ sessionId: 'attacker-session', 'credential[id]': 'attacker-credential' })
+      .expect(403);
+
+    expect(authenticatePasskey).not.toHaveBeenCalled();
     expect(mockLoginController).not.toHaveBeenCalled();
   });
 

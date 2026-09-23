@@ -19,7 +19,35 @@ module.exports = {
          */
         'theme-control-touch': 'max(var(--theme-control-height, 2.25rem), 2.75rem)',
       },
+      keyframes: {
+        /** Discord-style "connecting" dots: each dot lifts and brightens in
+         *  turn, so a stalled request still shows motion. Lives in the preset
+         *  because `LoadingDots` ships from this package and the app's own
+         *  config extends it. */
+        'loading-dot': {
+          '0%, 70%, 100%': { opacity: '0.35', transform: 'translateY(0)' },
+          '35%': { opacity: '1', transform: 'translateY(-2px)' },
+        },
+      },
+      animation: {
+        'loading-dot': 'loading-dot 1.2s ease-in-out infinite',
+      },
       borderRadius: {
+        /**
+         * Tailwind 4 renamed the radius steps: the old `sm` (0.125rem) is now
+         * `xs`, and `sm` means 0.25rem. Every published primitive that says
+         * `rounded-sm` — the checkbox, the menu items, the resize grips — would
+         * double its corners for a consumer who upgrades Tailwind under it, so
+         * the three named steps are pinned to what this preset produced before.
+         * The fallbacks stay in `rem`, and so does what is subtracted from
+         * them: mixing in `px` would only reproduce the old scale at a 16px
+         * root font size, and `sm` would go negative below it. Setting
+         * `--radius` retunes all three; the SPA sets 0.5rem and restates the
+         * same family in its own config, so nothing there moves either.
+         */
+        lg: 'var(--radius, 0.5rem)',
+        md: 'calc(var(--radius, 0.5rem) - 0.125rem)',
+        sm: 'calc(var(--radius, 0.5rem) - 0.375rem)',
         'theme-control': 'var(--theme-control-radius, 0.75rem)',
         'theme-control-round': 'var(--theme-round-control-radius, 9999px)',
         'theme-surface': 'var(--theme-surface-radius, 1rem)',

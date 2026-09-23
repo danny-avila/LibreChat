@@ -68,6 +68,7 @@ const mockFilterPersistableAbortContent = jest.fn((content) =>
 );
 const mockGetConvo = jest.fn();
 const mockGetMessages = jest.fn();
+const mockStampConvoLastResponse = jest.fn().mockResolvedValue(undefined);
 const mockSaveMessage = jest.fn();
 const mockSaveConvo = jest.fn();
 const mockAppendConvoMessageReference = jest.fn();
@@ -253,6 +254,10 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  /** Real, because whether a skipped-persistence turn may raise an indicator is under test. */
+  isAnnounceableReply: jest.requireActual('@librechat/api').isAnnounceableReply,
+  announceReply: jest.requireActual('@librechat/api').announceReply,
+  announceErrorTurn: jest.requireActual('@librechat/api').announceErrorTurn,
   logAgentMemorySnapshot: jest.fn(),
   isScheduleFireRequest: (...args) => mockIsScheduleFireRequest(...args),
   exemptFromConcurrencyLimiter: (...args) => mockExemptFromConcurrencyLimiter(...args),
@@ -396,6 +401,7 @@ jest.mock('~/models', () => ({
   getAgentEventActorDetachedAction: (...args) => mockGetAgentEventActorDetachedAction(...args),
   claimAgentEventActorSuspension: (...args) => mockClaimAgentEventActorSuspension(...args),
   settleAgentEventActorSuspension: (...args) => mockSettleAgentEventActorSuspension(...args),
+  stampConvoLastResponse: (...args) => mockStampConvoLastResponse(...args),
   isAgentTriggerPrincipalActive: (...args) => mockIsAgentTriggerPrincipalActive(...args),
   isSubagentOwnerAdmissible: (...args) => mockIsSubagentOwnerAdmissible(...args),
 }));
@@ -6228,7 +6234,13 @@ describe('ResumableAgentController resume metadata', () => {
       getHaltReason: () => 'preempt_incomplete',
     };
 
-    const runFirstTurn = async ({ run, addTitle: suppliedAddTitle, clientOverrides } = {}) => {
+    const runFirstTurn = async ({
+      run,
+      addTitle: suppliedAddTitle,
+      clientOverrides,
+      databaseResult,
+      responseContent = [{ type: 'text', text: 'Truncated answer' }],
+    } = {}) => {
       let signalFinished;
       const finished = new Promise((resolve) => {
         signalFinished = resolve;
@@ -6260,10 +6272,12 @@ describe('ResumableAgentController resume metadata', () => {
             messageId: 'response-msg',
             parentMessageId: 'user-msg',
             conversationId: options.conversationId,
-            content: [{ type: 'text', text: 'Truncated answer' }],
-            databasePromise: Promise.resolve({
-              conversation: { conversationId: options.conversationId, title: null },
-            }),
+            content: responseContent,
+            databasePromise: Promise.resolve(
+              databaseResult ?? {
+                conversation: { conversationId: options.conversationId, title: null },
+              },
+            ),
           };
         }),
       };
@@ -6299,6 +6313,69 @@ describe('ResumableAgentController resume metadata', () => {
       const { addTitle } = await runFirstTurn({ run: preemptIncompleteRun });
 
       expect(addTitle).not.toHaveBeenCalled();
+    });
+    it('does not re-stamp an unfinished response already persisted by BaseClient', async () => {
+      const stampedAt = new Date('2026-09-07T12:00:00.000Z');
+
+      await runFirstTurn({
+        run: preemptIncompleteRun,
+        databaseResult: {
+          conversation: {
+            conversationId: 'new',
+            title: null,
+            lastResponseAt: stampedAt,
+          },
+        },
+      });
+
+      expect(mockStampConvoLastResponse).not.toHaveBeenCalled();
+      const finalEvent = mockGenerationJobManager.publishTerminalClaim.mock.calls.at(-1)[1];
+      expect(finalEvent.conversation.lastResponseAt).toEqual(stampedAt);
+    });
+
+    it('stamps and acknowledges the fallback conversation when BaseClient persistence is skipped', async () => {
+      const stampedAt = new Date('2026-09-07T12:00:00.000Z');
+      mockSaveMessage.mockImplementation(async (_ctx, message) => message);
+      mockGetConvo.mockResolvedValue({
+        conversationId: 'new',
+        title: null,
+        createdAt: '2026-06-07T00:00:00.000Z',
+        lastResponseAt: stampedAt,
+      });
+
+      await runFirstTurn({
+        run: preemptIncompleteRun,
+        databaseResult: {
+          persistenceSkipped: true,
+          conversation: {
+            conversationId: 'new',
+            title: null,
+            lastResponseAt: new Date('2026-09-07T11:59:00.000Z'),
+          },
+        },
+      });
+
+      expect(mockStampConvoLastResponse).toHaveBeenCalledTimes(1);
+      const finalEvent = mockGenerationJobManager.publishTerminalClaim.mock.calls.at(-1)[1];
+      expect(finalEvent.conversation.lastResponseAt).toEqual(stampedAt);
+    });
+
+    /* A preempted turn can persist its row before the model produced anything readable. A dot
+       raised for that row could never be acknowledged, because acknowledgement requires the
+       stamped reply to be on screen. */
+    it('does not stamp a skipped-persistence turn that persisted nothing to read', async () => {
+      mockSaveMessage.mockImplementation(async (_ctx, message) => message);
+
+      await runFirstTurn({
+        run: preemptIncompleteRun,
+        responseContent: [],
+        databaseResult: {
+          persistenceSkipped: true,
+          conversation: { conversationId: 'new', title: null },
+        },
+      });
+
+      expect(mockStampConvoLastResponse).not.toHaveBeenCalled();
     });
 
     it('still generates a deferred title for a completed first turn', async () => {

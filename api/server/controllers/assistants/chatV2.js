@@ -15,6 +15,7 @@ const {
   preflightAssistantRunContent,
   reportLocatorTraversalFailure,
   preflightAssistantUserMessageContent,
+  settleAssistantFinal,
 } = require('@librechat/api');
 const {
   Time,
@@ -542,20 +543,23 @@ const chatV2 = async (req, res) => {
       iconURL: endpointOption.iconURL,
     };
 
+    if (userMessagePromise) {
+      await userMessagePromise;
+    }
+
+    const settledConversation = await settleAssistantFinal(() =>
+      saveAssistantMessage(req, { ...responseMessage, model }),
+    );
+
     sendEvent(res, {
       final: true,
-      conversation,
+      conversation: { ...conversation, ...settledConversation },
       requestMessage: {
         parentMessageId,
         thread_id,
       },
     });
     res.end();
-
-    if (userMessagePromise) {
-      await userMessagePromise;
-    }
-    await saveAssistantMessage(req, { ...responseMessage, model });
 
     if (parentMessageId === Constants.NO_PARENT && !_thread_id) {
       addTitle(req, {

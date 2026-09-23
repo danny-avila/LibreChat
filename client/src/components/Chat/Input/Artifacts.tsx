@@ -101,7 +101,7 @@ function Artifacts() {
         <Ariakit.MenuProvider open={isPopoverOpen} setOpen={setIsPopoverOpen}>
           <Ariakit.MenuButton
             className={cn(
-              'w-7 rounded-l-none rounded-r-full border-b border-l-0 border-r border-t border-border-light md:w-6',
+              'border-border-light w-7 rounded-l-none rounded-r-full border-t border-r border-b border-l-0 md:w-6',
               badgeAccents.amber,
               'transition-colors',
             )}
@@ -109,7 +109,7 @@ function Artifacts() {
           >
             <ChevronDown
               className={cn(
-                'ml-1 h-4 w-4 text-text-secondary transition-transform duration-300 md:ml-0.5',
+                'text-text-secondary ml-1 h-4 w-4 transition-transform duration-300 md:ml-0.5',
                 isButtonExpanded && 'rotate-180',
               )}
               aria-hidden="true"
@@ -120,13 +120,13 @@ function Artifacts() {
             gutter={4}
             className={cn(
               'animate-popover-top-left z-40 flex min-w-[250px] flex-col rounded-xl',
-              'border border-border-light bg-surface-secondary shadow-lg',
+              'border-border-light bg-surface-secondary border shadow-lg',
             )}
             portal={true}
             unmountOnHide={true}
           >
             <div className="px-2 py-1.5">
-              <div className="mb-2 text-xs font-medium text-text-secondary">
+              <div className="text-text-secondary mb-2 text-xs font-medium">
                 {localize('com_ui_artifacts_options')}
               </div>
 
@@ -140,7 +140,7 @@ function Artifacts() {
                 }}
                 className={cn(
                   'mb-1 flex items-center justify-between gap-2 rounded-lg px-2 py-2',
-                  'cursor-pointer bg-surface-secondary text-text-primary outline-none transition-colors',
+                  'bg-surface-secondary text-text-primary cursor-pointer outline-hidden transition-colors',
                   'hover:bg-surface-hover data-[active-item]:bg-surface-hover',
                   isShadcnEnabled && 'bg-surface-active',
                 )}
@@ -161,7 +161,7 @@ function Artifacts() {
                 }}
                 className={cn(
                   'mb-1 flex items-center justify-between gap-2 rounded-lg px-2 py-2',
-                  'cursor-pointer bg-surface-secondary text-text-primary outline-none transition-colors',
+                  'bg-surface-secondary text-text-primary cursor-pointer outline-hidden transition-colors',
                   'hover:bg-surface-hover data-[active-item]:bg-surface-hover',
                   isCustomEnabled && 'bg-surface-active',
                 )}

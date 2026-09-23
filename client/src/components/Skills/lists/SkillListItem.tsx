@@ -156,9 +156,9 @@ function FileTreeNode({
         }
       }}
       className={cn(
-        'flex w-full select-none items-center gap-1.5 rounded-lg text-sm transition-colors',
+        'flex w-full items-center gap-1.5 rounded-lg text-sm transition-colors select-none',
         isFileActive
-          ? 'bg-surface-active font-medium text-text-primary'
+          ? 'bg-surface-active text-text-primary font-medium'
           : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary',
       )}
       aria-expanded={isFolder ? isOpen : undefined}
@@ -310,7 +310,7 @@ function SkillListItem({
           }
         }}
         className={cn(
-          'flex w-full cursor-pointer select-none items-center gap-3 rounded-lg px-3 py-1.5 text-left text-sm text-text-primary transition-colors',
+          'text-text-primary flex w-full cursor-pointer items-center gap-3 rounded-lg px-3 py-1.5 text-left text-sm transition-colors select-none',
           isActive && !activeFile && 'bg-surface-active',
           !isActive && 'hover:bg-surface-hover',
         )}
@@ -318,8 +318,8 @@ function SkillListItem({
         aria-expanded={hasFiles ? expanded : undefined}
       >
         <span className="flex size-6 shrink-0 items-center justify-center">
-          <span className="flex size-6 items-center justify-center rounded-md border border-border-light bg-surface-primary shadow-sm">
-            <ScrollText className="size-3.5 text-text-secondary" aria-hidden="true" />
+          <span className="border-border-light bg-surface-primary flex size-6 items-center justify-center rounded-md border shadow-xs">
+            <ScrollText className="text-text-secondary size-3.5" aria-hidden="true" />
           </span>
         </span>
 
@@ -327,7 +327,7 @@ function SkillListItem({
           <span className="truncate">{skill.name}</span>
           {skill.alwaysApply === true && (
             <Pin
-              className="size-3 shrink-0 text-status-info"
+              className="text-status-info size-3 shrink-0"
               aria-label={localize('com_ui_skills_always_apply_pin_title')}
             />
           )}
@@ -337,7 +337,7 @@ function SkillListItem({
           <button
             type="button"
             onClick={handleChevronClick}
-            className="-mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-md text-text-secondary hover:text-text-primary"
+            className="text-text-secondary hover:text-text-primary -mr-1 inline-flex size-6 shrink-0 items-center justify-center rounded-md"
             aria-label="Toggle files"
             tabIndex={-1}
           >
