@@ -284,21 +284,26 @@ export async function updateChatProjectLastConversationForUser(
   };
   const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
   const projectFilter = { _id: new mongoose.Types.ObjectId(projectId), user };
+  const activityFilter = {
+    ...projectFilter,
+    $or: [{ lastConversationAt: null }, { lastConversationAt: { $lte: lastConversationAt } }],
+  };
 
   if (!incrementCount) {
-    await ChatProject.updateOne(projectFilter, { $set: lastConversationFields });
+    await ChatProject.updateOne(activityFilter, { $set: lastConversationFields });
   } else {
     /**
-     * Skip `$inc` when a concurrent refresh already recorded this conversation as
-     * `lastConversationId`. The conversation is visible to countDocuments as soon
-     * as it is persisted, so a later increment would double-count it.
+     * A refresh may already have counted this conversation, or a newer reply may own the
+     * activity pointer. Recount after a lost conditional update rather than double-counting
+     * membership or walking the pointer backwards.
      */
     const incremented = await ChatProject.updateOne(
-      { ...projectFilter, lastConversationId: { $ne: conversation.conversationId } },
+      { ...activityFilter, lastConversationId: { $ne: conversation.conversationId } },
       { $set: lastConversationFields, $inc: { conversationCount: 1 } },
     );
     if ((incremented.matchedCount ?? 0) === 0) {
-      await ChatProject.updateOne(projectFilter, { $set: lastConversationFields });
+      await refreshChatProjectStatsForUser(mongoose, user, projectId);
+      return;
     }
   }
 

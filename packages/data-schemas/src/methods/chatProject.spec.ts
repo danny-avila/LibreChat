@@ -436,6 +436,48 @@ describe('ChatProject methods', () => {
     expect(persisted?.lastConversationId).toBe('new-convo');
   });
 
+  it.each([false, true])(
+    'keeps newer project activity when an older update arrives last (increment: %s)',
+    async (incrementCount) => {
+      const project = await methods.createChatProject(user, { name: 'Concurrent Replies' });
+      const chatProjectId = project._id!.toString();
+      const olderAt = new Date('2026-04-01T00:00:00.000Z');
+      const newerAt = new Date('2026-04-02T00:00:00.000Z');
+      await Conversation.create([
+        {
+          user,
+          chatProjectId,
+          endpoint: 'openAI',
+          conversationId: 'older-reply',
+          createdAt: olderAt,
+          updatedAt: olderAt,
+        },
+        {
+          user,
+          chatProjectId,
+          endpoint: 'openAI',
+          conversationId: 'newer-reply',
+          createdAt: newerAt,
+          updatedAt: newerAt,
+        },
+      ]);
+      await methods.refreshChatProjectStats(user, chatProjectId);
+
+      await updateChatProjectLastConversationForUser(
+        mongoose,
+        user,
+        chatProjectId,
+        { conversationId: 'older-reply', createdAt: olderAt, updatedAt: olderAt },
+        incrementCount,
+      );
+
+      const persisted = await methods.getChatProject(user, chatProjectId);
+      expect(persisted?.lastConversationId).toBe('newer-reply');
+      expect(persisted?.lastConversationAt).toEqual(newerAt);
+      expect(persisted?.conversationCount).toBe(2);
+    },
+  );
+
   it('enforces one project per chat when moving conversations', async () => {
     const firstProject = await methods.createChatProject(user, { name: 'First' });
     const secondProject = await methods.createChatProject(user, { name: 'Second' });

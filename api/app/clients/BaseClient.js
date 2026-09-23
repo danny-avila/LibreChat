@@ -28,6 +28,7 @@ const {
   runAfterSeed,
   saveTurnConversation,
   seedTurnConversation,
+  announceReply,
   needsRetentionConversation,
   getConversationWriteContext,
 } = require('@librechat/api');
@@ -1361,7 +1362,32 @@ class BaseClient {
       { context: 'api/app/clients/BaseClient.js - saveMessageToDatabase #saveMessage' },
     );
 
+    /** Only a reply that is actually in the message history may light an indicator: a write
+     *  that resolved empty (duplicate-key recovery that could not re-read the row) would
+     *  otherwise announce a reply nobody can open. */
+    const persistedReply = savedMessage != null && message.isCreatedByUser === false;
+
     if (this.skipSaveConvo) {
+      /* The secondary response of an override pair persists its message but deliberately skips
+         the conversation-field save, so the stamp below is never reached. The reply still has
+         to light the indicator: the primary response's stamp is older whenever this one
+         finishes later, and absent altogether when the primary failed. Best effort, because a
+         missed indicator must not fail a reply that is already persisted. */
+      /* `user` is the same id the message was just saved under; `reqCtx` carries an empty
+         string when no request object is present, which the direct-save paths do not
+         guarantee, so the fallback turns on truthiness rather than on nullishness. */
+      await announceReply(db, {
+        userId: reqCtx.userId || user || this.user,
+        conversationId: message.conversationId,
+        reply: {
+          messageId: persistedReply ? savedMessage.messageId : undefined,
+          content: message.content,
+          text: message.text,
+          attachments: message.attachments,
+          isTemporary: reqCtx.isTemporary,
+        },
+        context: 'BaseClient - skipped conversation save',
+      });
       return { message: savedMessage };
     }
 
@@ -1375,6 +1401,14 @@ class BaseClient {
       ctx: reqCtx,
       initialized: this.fetchedConvo === true,
       savedMessageId: savedMessage?._id,
+      reply: persistedReply
+        ? {
+            messageId: savedMessage.messageId,
+            content: message.content,
+            text: message.text,
+            attachments: message.attachments,
+          }
+        : undefined,
     });
     if (initialized) {
       this.fetchedConvo = true;
