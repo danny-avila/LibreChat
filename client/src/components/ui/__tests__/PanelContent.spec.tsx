@@ -24,10 +24,11 @@ describe('PanelContent', () => {
 
   test('marks the scroll container busy only while loading', () => {
     const { container, rerender } = render(<PanelContent isLoading={true} skeleton={skeleton} />);
-    expect(container.firstChild).toHaveAttribute('aria-busy', 'true');
+    const scroller = () => container.querySelector('.overflow-y-auto');
+    expect(scroller()).toHaveAttribute('aria-busy', 'true');
 
     rerender(<PanelContent isLoading={false} skeleton={skeleton} />);
-    expect(container.firstChild).toHaveAttribute('aria-busy', 'false');
+    expect(scroller()).toHaveAttribute('aria-busy', 'false');
   });
 
   test('renders children once loaded', () => {
@@ -74,7 +75,23 @@ describe('PanelContent', () => {
       <PanelContent ref={ref} isLoading={false} skeleton={skeleton} className="px-4" />,
     );
 
-    expect(ref.current).toBe(container.firstChild);
+    expect(ref.current).toBe(container.querySelector('.overflow-y-auto'));
     expect(ref.current).toHaveClass('overflow-y-auto', 'px-4');
+  });
+
+  test('hints at content below the fold only while there is some', () => {
+    const { container } = render(
+      <PanelContent isLoading={false} skeleton={skeleton}>
+        <span data-testid="rows" />
+      </PanelContent>,
+    );
+
+    /** jsdom reports every element as zero-height, so nothing overflows and the
+     *  fade stays hidden. What this pins is that it renders, is decorative, and
+     *  never intercepts a click aimed at the last row. */
+    const fade = container.querySelector('.pointer-events-none.absolute');
+    expect(fade).toBeInTheDocument();
+    expect(fade).toHaveAttribute('aria-hidden', 'true');
+    expect(fade).toHaveClass('opacity-0');
   });
 });
