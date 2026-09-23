@@ -48,6 +48,8 @@ export interface IUser extends Document {
     used: boolean;
     usedAt?: Date | null;
   }>;
+  /** Instant of the last credential change; access tokens issued before it are rejected */
+  credentialsChangedAt?: Date;
   refreshToken?: Array<{
     refreshToken: string;
   }>;

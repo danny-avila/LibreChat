@@ -259,6 +259,37 @@ describe('GET /api/config', () => {
       expect(response.body).not.toHaveProperty('interface');
     });
 
+    it('keeps passkeys advertised for management when email login is disabled', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      const previous = {
+        ALLOW_EMAIL_LOGIN: process.env.ALLOW_EMAIL_LOGIN,
+        ALLOW_PASSKEY_LOGIN: process.env.ALLOW_PASSKEY_LOGIN,
+      };
+      process.env.ALLOW_EMAIL_LOGIN = 'false';
+      process.env.ALLOW_PASSKEY_LOGIN = 'true';
+      try {
+        let isolatedRoute;
+        jest.isolateModules(() => {
+          isolatedRoute = require('../config');
+        });
+        const app = express();
+        app.use('/api/config', isolatedRoute);
+
+        const response = await request(app).get('/api/config');
+
+        expect(response.body.emailLoginEnabled).toBe(false);
+        expect(response.body.passkeyLoginEnabled).toBe(true);
+      } finally {
+        for (const [key, value] of Object.entries(previous)) {
+          if (value === undefined) {
+            delete process.env[key];
+          } else {
+            process.env[key] = value;
+          }
+        }
+      }
+    });
+
     it('should include shared env var fields', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       process.env.APP_TITLE = 'Test App';

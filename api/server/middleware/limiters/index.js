@@ -2,6 +2,7 @@ const createTTSLimiters = require('./ttsLimiters');
 const createSTTLimiters = require('./sttLimiters');
 
 const loginLimiter = require('./loginLimiter');
+const passkeyLimiter = require('./passkeyLimiter');
 const importLimiters = require('./importLimiters');
 const uploadLimiters = require('./uploadLimiters');
 const forkLimiters = require('./forkLimiters');
@@ -16,6 +17,7 @@ const emailChangeSubmissionLimiter = require('./emailChangeSubmissionLimiter');
 const emailChangeSubmissionIpLimiter = require('./emailChangeSubmissionIpLimiter');
 const resetPasswordLimiter = require('./resetPasswordLimiter');
 const twoFactorTempLimiter = require('./twoFactorTempLimiter');
+const passkeyStepUpLimiter = require('./passkeyStepUpLimiter');
 const verifyEmailSubmissionLimiter = require('./verifyEmailSubmissionLimiter');
 const resetPasswordSubmissionLimiter = require('./resetPasswordSubmissionLimiter');
 
@@ -27,6 +29,8 @@ module.exports = {
   ...shareLimiters,
   ...promptUsageLimiter,
   loginLimiter,
+  passkeyLimiter,
+  passkeyStepUpLimiter,
   registerLimiter,
   toolCallLimiter,
   createTTSLimiters,

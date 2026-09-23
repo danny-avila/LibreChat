@@ -18,6 +18,7 @@ const mockStartupConfig: TStartupConfig = {
   githubLoginEnabled: true,
   googleLoginEnabled: true,
   openidLoginEnabled: true,
+  passkeyLoginEnabled: false,
   appleLoginEnabled: false,
   openidLabel: 'Test OpenID',
   openidImageUrl: 'http://test-server.com',

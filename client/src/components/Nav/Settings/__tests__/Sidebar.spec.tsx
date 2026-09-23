@@ -17,6 +17,7 @@ const ctx: SettingsContextValue = {
   isLocalProvider: true,
   emailEnabled: true,
   allowEmailChange: true,
+  passkeyLoginEnabled: false,
   twoFactorEnabled: false,
   allowAccountDeletion: true,
   aboutEnabled: false,

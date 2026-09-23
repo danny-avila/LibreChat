@@ -12,6 +12,7 @@ import {
   type RefreshTokenBridgeMethods,
 } from './refreshTokenBridge';
 import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
+import { createPasskeyMethods, type PasskeyMethods } from './passkey';
 import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
 import { createFileMethods, type FileMethods, type FileOwnerScope } from './file';
 import { createTokenMethods, type TokenMethods } from './token';
@@ -231,6 +232,7 @@ export type AllMethods = UserMethods &
   TokenMethods &
   RefreshTokenBridgeMethods &
   OpenIDRefreshFlightMethods &
+  PasskeyMethods &
   RoleMethods &
   KeyMethods &
   FileMethods &
@@ -461,6 +463,7 @@ export function createMethods(
     ...createTokenMethods(mongoose),
     ...createRefreshTokenBridgeMethods(mongoose),
     ...createOpenIDRefreshFlightMethods(mongoose),
+    ...createPasskeyMethods(mongoose),
     ...roleMethods,
     ...createKeyMethods(mongoose),
     ...createFileMethods(mongoose),
@@ -513,6 +516,7 @@ export function createMethods(
 
 export type {
   UserMethods,
+  PasskeyMethods,
   SessionMethods,
   TokenMethods,
   RefreshTokenBridgeMethods,

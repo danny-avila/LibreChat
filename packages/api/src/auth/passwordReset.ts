@@ -22,7 +22,7 @@ export interface PasswordResetDeps {
   getUserById: (userId: string, select: string) => Promise<PasswordResetUser | null>;
   updateUser: (
     userId: string,
-    update: { password: string },
+    update: { password: string; credentialsChangedAt: Date },
     expectedState: { email: string },
   ) => Promise<PasswordResetUser | null>;
   deleteTokens: (query: { userId: string; type: string }) => Promise<unknown>;
@@ -106,7 +106,8 @@ export async function commitPasswordReset(
 
   const user = await deps.updateUser(
     input.userId,
-    { password: deps.hashPassword(input.password) },
+    /** Stamped with the new password so access tokens issued before the reset stop verifying */
+    { password: deps.hashPassword(input.password), credentialsChangedAt: new Date() },
     { email: account.email },
   );
   if (!user) {
