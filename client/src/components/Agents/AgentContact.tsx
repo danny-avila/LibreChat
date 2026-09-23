@@ -45,7 +45,7 @@ export default function AgentContact({
   return (
     <div
       className={cn(
-        'flex min-w-0 items-center gap-1 text-text-secondary',
+        'text-text-secondary flex min-w-0 items-center gap-1',
         compact && 'gap-2 text-xs',
         className,
       )}
@@ -59,7 +59,7 @@ export default function AgentContact({
         {contact?.email ? (
           <a
             href={`mailto:${contact.email}`}
-            className="inline-block max-w-full truncate rounded-sm py-1 text-text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
+            className="text-text-primary focus-visible:ring-text-primary inline-block max-w-full truncate rounded-sm py-1 hover:underline focus-visible:ring-2 focus-visible:outline-hidden focus-visible:ring-inset"
           >
             {label}
           </a>

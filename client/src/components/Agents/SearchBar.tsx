@@ -77,7 +77,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ value, onSearch, className = '' }
         ref={inputRef}
         value={searchTerm}
         onChange={handleChange}
-        className="pe-10 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-text-primary"
+        className="focus-visible:ring-text-primary pe-10 focus-visible:ring-2 focus-visible:ring-inset"
         aria-describedby="search-instructions search-results-count"
         autoComplete="off"
         spellCheck="false"
@@ -96,7 +96,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ value, onSearch, className = '' }
           onClick={handleClear}
           /* `ghost` only colours its hover state, so the glyph would inherit the
              document's colour and disappear against a dark surface. */
-          className="absolute end-0.5 top-1/2 -translate-y-1/2 rounded-md text-text-secondary transition-none"
+          className="text-text-secondary absolute end-0.5 top-1/2 -translate-y-1/2 rounded-md transition-none"
           aria-label={localize('com_agents_clear_search')}
         >
           <X className="size-4" aria-hidden="true" />

@@ -37,7 +37,7 @@ const FilterInput: React.ForwardRefExoticComponent<
           placeholder=" "
           aria-label={label}
           className={cn(
-            'peer flex h-9 w-full rounded-lg border border-border-light bg-transparent px-3 py-2 text-sm text-text-primary ring-offset-surface-primary placeholder:text-text-secondary focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50',
+            'peer border-border-light text-text-primary ring-offset-surface-primary placeholder:text-text-secondary flex h-9 w-full rounded-lg border bg-transparent px-3 py-2 text-sm focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50',
             className,
           )}
           {...props}
@@ -45,7 +45,7 @@ const FilterInput: React.ForwardRefExoticComponent<
         <label
           htmlFor={inputId}
           className={cn(
-            'pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-text-secondary transition-all duration-200 peer-focus:top-0 peer-focus:px-1 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:px-1 peer-[:not(:placeholder-shown)]:text-xs',
+            'text-text-secondary pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm transition-all duration-200 peer-focus:top-0 peer-focus:px-1 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:px-1 peer-[:not(:placeholder-shown)]:text-xs',
             surface === 'presentation'
               ? 'peer-focus:bg-presentation peer-[:not(:placeholder-shown)]:bg-presentation'
               : 'peer-focus:bg-surface-primary peer-[:not(:placeholder-shown)]:bg-surface-primary',

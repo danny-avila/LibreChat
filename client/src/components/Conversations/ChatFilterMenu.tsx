@@ -33,14 +33,14 @@ import { useHasAccess, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 const itemClassName =
-  'flex w-full cursor-pointer select-none items-center gap-2 rounded-lg px-2 py-2 text-sm text-text-primary outline-none data-[active-item]:bg-surface-hover md:py-1.5';
+  'flex w-full cursor-pointer select-none items-center gap-2 rounded-lg px-2 py-2 text-sm text-text-primary outline-hidden data-[active-item]:bg-surface-hover md:py-1.5';
 
 const groupLabelClassName = 'px-2 pb-1 pt-1.5 text-xs font-medium text-text-secondary';
 
 /** Keeps every row's label on the same x, checked or not. */
 const CheckSlot = ({ checked }: { checked: boolean }) =>
   checked ? (
-    <Check className="ml-auto size-4 shrink-0 text-text-primary" aria-hidden="true" />
+    <Check className="text-text-primary ml-auto size-4 shrink-0" aria-hidden="true" />
   ) : (
     <span className="ml-auto size-4 shrink-0" aria-hidden="true" />
   );
@@ -62,7 +62,7 @@ const Choice = ({ label, icon, checked, onSelect }: ChoiceProps) => (
     onClick={onSelect}
     className={itemClassName}
   >
-    <span className="shrink-0 text-text-secondary" aria-hidden="true">
+    <span className="text-text-secondary shrink-0" aria-hidden="true">
       {icon}
     </span>
     <span className="truncate">{label}</span>
@@ -102,7 +102,7 @@ const BookmarkChoices = memo(() => {
     return (
       <Ariakit.MenuItem
         disabled={true}
-        className={cn(itemClassName, 'cursor-default text-text-secondary')}
+        className={cn(itemClassName, 'text-text-secondary cursor-default')}
       >
         <span className="truncate text-xs">{localize('com_ui_no_bookmarks_title')}</span>
       </Ariakit.MenuItem>
@@ -122,7 +122,7 @@ const BookmarkChoices = memo(() => {
             onClick={() => toggleTag(bookmark.tag)}
             className={itemClassName}
           >
-            <span className="shrink-0 text-text-secondary" aria-hidden="true">
+            <span className="text-text-secondary shrink-0" aria-hidden="true">
               {checked ? (
                 <BookmarkFilledIcon className="size-4" />
               ) : (
@@ -130,7 +130,7 @@ const BookmarkChoices = memo(() => {
               )}
             </span>
             <span className="truncate">{bookmark.tag}</span>
-            <span className="ml-auto shrink-0 text-xs tabular-nums text-text-tertiary">
+            <span className="text-text-tertiary ml-auto shrink-0 text-xs tabular-nums">
               {bookmark.count}
             </span>
           </Ariakit.MenuItem>
@@ -221,7 +221,7 @@ const ChatFilterMenu = () => {
             <ListFilter aria-hidden="true" className="size-4" />
             {activeCount > 0 && (
               <span
-                className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-text-primary"
+                className="bg-text-primary absolute top-0.5 right-0.5 size-1.5 rounded-full"
                 aria-hidden="true"
               />
             )}
@@ -233,7 +233,7 @@ const ChatFilterMenu = () => {
         portal={true}
         gutter={8}
         unmountOnHide={true}
-        className="popover-ui min-w-56 max-w-72"
+        className="popover-ui max-w-72 min-w-56"
         /** Portaled beside modal dialog layers, which disable pointer events on body. */
         style={{ zIndex, pointerEvents: 'auto' }}
       >
@@ -252,7 +252,7 @@ const ChatFilterMenu = () => {
           ))}
         </Ariakit.MenuGroup>
 
-        <Ariakit.MenuSeparator className="my-1 h-px border-border-medium" />
+        <Ariakit.MenuSeparator className="border-border-medium my-1 h-px" />
 
         <Ariakit.MenuGroup>
           <Ariakit.MenuGroupLabel className={groupLabelClassName}>
@@ -269,7 +269,7 @@ const ChatFilterMenu = () => {
           ))}
         </Ariakit.MenuGroup>
 
-        <Ariakit.MenuSeparator className="my-1 h-px border-border-medium" />
+        <Ariakit.MenuSeparator className="border-border-medium my-1 h-px" />
 
         <Ariakit.MenuGroup>
           <Ariakit.MenuGroupLabel className={groupLabelClassName}>
@@ -292,7 +292,7 @@ const ChatFilterMenu = () => {
 
         {hasAccessToBookmarks && (
           <>
-            <Ariakit.MenuSeparator className="my-1 h-px border-border-medium" />
+            <Ariakit.MenuSeparator className="border-border-medium my-1 h-px" />
             <Ariakit.MenuGroup>
               <Ariakit.MenuGroupLabel className={groupLabelClassName}>
                 {localize('com_ui_bookmarks')}
@@ -302,7 +302,7 @@ const ChatFilterMenu = () => {
           </>
         )}
 
-        <Ariakit.MenuSeparator className="my-1 h-px border-border-medium" />
+        <Ariakit.MenuSeparator className="border-border-medium my-1 h-px" />
         <Ariakit.MenuItem
           hideOnClick={false}
           disabled={activeCount === 0}

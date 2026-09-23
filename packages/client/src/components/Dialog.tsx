@@ -29,7 +29,7 @@ const DialogOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     className={cn(
-      'fixed inset-0 z-[999] bg-surface-overlay/65 transition-all duration-100 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=open]:fade-in',
+      'bg-surface-overlay/65 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=open]:fade-in fixed inset-0 z-[999] transition-all duration-100',
       className ?? '',
     )}
     {...props}
@@ -62,9 +62,9 @@ const DialogContent: React.ForwardRefExoticComponent<
           className={cn(
             /** The dialog surface is otherwise borderless: in high contrast it sits
              *  on a canvas of its own colour, so it needs a drawn edge. */
-            'fixed z-[999] grid w-full gap-4 rounded-b-lg bg-surface-dialog pb-6 animate-in data-[state=open]:fade-in-90 data-[state=open]:slide-in-from-bottom-10 high-contrast:border high-contrast:border-solid high-contrast:border-border-medium sm:rounded-lg',
+            'bg-surface-dialog animate-in data-[state=open]:fade-in-90 data-[state=open]:slide-in-from-bottom-10 high-contrast:border high-contrast:border-solid high-contrast:border-border-medium fixed z-[999] grid w-full gap-4 rounded-b-lg pb-6 sm:rounded-lg',
             isSmallScreen
-              ? 'fixed left-1/2 top-1/2 z-[999] m-auto grid w-11/12 -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-surface-dialog pb-6'
+              ? 'bg-surface-dialog fixed top-1/2 left-1/2 z-[999] m-auto grid w-11/12 -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl pb-6'
               : '',
             disableScroll ? 'overflow-hidden' : '',
             className ?? '',
@@ -73,8 +73,8 @@ const DialogContent: React.ForwardRefExoticComponent<
         >
           {children}
           {showCloseButton && (
-            <DialogPrimitive.Close className="absolute right-6 top-[1.6rem] rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-text-primary focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-surface-hover">
-              <X className="h-5 w-5 text-text-primary" aria-hidden="true" />
+            <DialogPrimitive.Close className="focus:ring-text-primary data-[state=open]:bg-surface-hover absolute top-[1.6rem] right-6 rounded-sm opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none">
+              <X className="text-text-primary h-5 w-5" aria-hidden="true" />
               <span className="sr-only">Close</span>
             </DialogPrimitive.Close>
           )}
@@ -91,7 +91,7 @@ const DialogHeader: {
 } = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>): JSX.Element => (
   <div
     className={cn(
-      'flex flex-col space-y-2 border-b border-border-light p-6 pb-4 text-left',
+      'border-border-light flex flex-col space-y-2 border-b p-6 pb-4 text-left',
       className ?? '',
     )}
     {...props}
@@ -119,7 +119,7 @@ const DialogTitle: React.ForwardRefExoticComponent<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn('text-lg font-semibold text-text-primary', className ?? '')}
+    className={cn('text-text-primary text-lg font-semibold', className ?? '')}
     {...props}
   />
 ));
@@ -134,7 +134,7 @@ const DialogDescription: React.ForwardRefExoticComponent<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Description
     ref={ref}
-    className={cn('text-sm text-text-secondary', className ?? '')}
+    className={cn('text-text-secondary text-sm', className ?? '')}
     {...props}
   />
 ));
@@ -150,10 +150,10 @@ const DialogClose: React.ForwardRefExoticComponent<
   <DialogPrimitive.Close
     ref={ref}
     className={cn(
-      'mt-2 inline-flex h-10 items-center justify-center rounded-lg border border-border-light bg-transparent px-4 py-2 text-sm font-semibold text-text-primary transition-colors hover:bg-surface-hover focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 sm:mt-0',
+      'border-border-light text-text-primary hover:bg-surface-hover mt-2 inline-flex h-10 items-center justify-center rounded-lg border bg-transparent px-4 py-2 text-sm font-semibold transition-colors focus:outline-hidden disabled:cursor-not-allowed disabled:opacity-50 sm:mt-0',
       className ?? '',
       /* Important: for accessibility */
-      'focus:ring-2 focus:ring-text-primary focus:ring-offset-2',
+      'focus:ring-text-primary focus:ring-2 focus:ring-offset-2',
     )}
     {...props}
   />
@@ -171,10 +171,10 @@ const DialogButton: React.ForwardRefExoticComponent<
     ref={ref}
     variant="outline"
     className={cn(
-      'mt-2 inline-flex h-10 items-center justify-center rounded-lg border border-border-light bg-transparent px-4 py-2 text-sm font-semibold text-text-primary transition-colors hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-text-primary focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:mt-0',
+      'border-border-light text-text-primary hover:bg-surface-hover focus:ring-text-primary mt-2 inline-flex h-10 items-center justify-center rounded-lg border bg-transparent px-4 py-2 text-sm font-semibold transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:cursor-not-allowed disabled:opacity-50 sm:mt-0',
       className ?? '',
       /* Important: for accessibility */
-      'focus:ring-2 focus:ring-text-primary focus:ring-offset-2',
+      'focus:ring-text-primary focus:ring-2 focus:ring-offset-2',
     )}
     {...props}
   />

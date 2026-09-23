@@ -26,7 +26,7 @@ export function LoadingDots({ count = 3, className, ...props }: LoadingDotsProps
       {Array.from({ length: count }, (_, index) => (
         <span
           key={index}
-          className="size-1 animate-loading-dot rounded-full bg-current motion-reduce:animate-none motion-reduce:opacity-60"
+          className="animate-loading-dot size-1 rounded-full bg-current motion-reduce:animate-none motion-reduce:opacity-60"
           style={{ animationDelay: `${index * DOT_STAGGER_MS}ms` }}
         />
       ))}

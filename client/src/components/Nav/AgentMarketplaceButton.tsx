@@ -35,7 +35,7 @@ export default function AgentMarketplaceButton({
          *  keeps it a router Link, so modifier- and middle-clicks still open
          *  the marketplace in a new tab, and those stay on the current page and
          *  so must not dismiss. */
-        <Button asChild variant="ghost" size="icon" className="h-9 w-9 flex-shrink-0">
+        <Button asChild variant="ghost" size="icon" className="h-9 w-9 shrink-0">
           <Link
             to="/agents"
             data-testid="nav-agents-marketplace-button"
@@ -47,7 +47,7 @@ export default function AgentMarketplaceButton({
               onNavigate?.();
             }}
           >
-            <LayoutGrid className="h-5 w-5 text-text-primary" aria-hidden="true" />
+            <LayoutGrid className="text-text-primary h-5 w-5" aria-hidden="true" />
           </Link>
         </Button>
       }

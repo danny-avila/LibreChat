@@ -66,14 +66,14 @@ const MCPSubMenu = React.forwardRef<HTMLButtonElement, MCPSubMenuProps>(
               menuStore.toggle();
             }}
             className={cn(
-              'flex w-full cursor-pointer items-center justify-between rounded-lg p-2 hover:bg-surface-hover',
+              'hover:bg-surface-hover flex w-full cursor-pointer items-center justify-between rounded-lg p-2',
               className,
             )}
           >
             <div className="flex items-center gap-2">
-              <MCPIcon className="h-5 w-5 flex-shrink-0 text-text-primary" aria-hidden="true" />
+              <MCPIcon className="text-text-primary h-5 w-5 shrink-0" aria-hidden="true" />
               <span>{placeholder || placeholderText}</span>
-              <ChevronRight className="h-3 w-3 flex-shrink-0" aria-hidden="true" />
+              <ChevronRight className="h-3 w-3 shrink-0" aria-hidden="true" />
             </div>
             <button
               type="button"
@@ -83,7 +83,7 @@ const MCPSubMenu = React.forwardRef<HTMLButtonElement, MCPSubMenuProps>(
               }}
               className={cn(
                 'rounded p-1 transition-all duration-200',
-                'hover:bg-surface-tertiary hover:shadow-sm',
+                'hover:bg-surface-tertiary hover:shadow-xs',
                 !isPinned && 'text-text-secondary hover:text-text-primary',
               )}
               aria-label={isPinned ? localize('com_ui_unpin') : localize('com_ui_pin')}
@@ -101,8 +101,8 @@ const MCPSubMenu = React.forwardRef<HTMLButtonElement, MCPSubMenuProps>(
             flip="left bottom-end top-end"
             aria-label={localize('com_ui_mcp_servers')}
             className={cn(
-              'animate-popover-left z-40 flex min-w-[min(260px,calc(100vw-1rem))] max-w-[min(320px,calc(100vw-1rem))] flex-col rounded-xl',
-              'border border-border-light bg-presentation p-1.5 shadow-lg',
+              'animate-popover-left z-40 flex max-w-[min(320px,calc(100vw-1rem))] min-w-[min(260px,calc(100vw-1rem))] flex-col rounded-xl',
+              'border-border-light bg-presentation border p-1.5 shadow-lg',
             )}
           >
             <div className="flex max-h-[320px] flex-col gap-1 overflow-y-auto">

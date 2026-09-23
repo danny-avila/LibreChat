@@ -162,7 +162,7 @@ export default function ExecuteCode({
           icon={
             <SquareTerminal
               className={cn(
-                'size-4 shrink-0 text-text-secondary',
+                'text-text-secondary size-4 shrink-0',
                 phase === 'running' && 'animate-pulse',
               )}
               aria-hidden="true"
@@ -177,7 +177,7 @@ export default function ExecuteCode({
           <div
             className={cn(
               toolPanelSpacingClassName,
-              'overflow-hidden rounded-lg border border-border-light bg-surface-secondary',
+              'border-border-light bg-surface-secondary overflow-hidden rounded-lg border',
             )}
           >
             {code && <CodeWindowHeader language={lang} code={code} />}
@@ -185,7 +185,7 @@ export default function ExecuteCode({
               <pre
                 ref={codePaneRef}
                 onScroll={onCodePaneScroll}
-                className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt"
+                className="bg-surface-chat dark:bg-surface-primary-alt max-h-[300px] overflow-auto p-4 font-mono text-xs"
               >
                 <code className={`hljs language-${lang} !whitespace-pre`}>
                   {highlighted ?? code}
@@ -195,16 +195,16 @@ export default function ExecuteCode({
             <PtcToolTrace
               toolCallId={toolCallId}
               expanded={showCode}
-              className={cn(code && 'border-t border-border-light')}
+              className={cn(code && 'border-border-light border-t')}
             />
             {hasOutput && backgroundHandle == null && (
               <div
                 className={cn(
                   'bg-surface-primary-alt p-4 text-xs dark:bg-transparent',
-                  code && 'border-t border-border-light',
+                  code && 'border-border-light border-t',
                 )}
               >
-                <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
+                <div className="text-text-secondary mb-1.5 text-[10px] font-medium tracking-wide uppercase">
                   {localize('com_ui_output')}
                 </div>
                 <div

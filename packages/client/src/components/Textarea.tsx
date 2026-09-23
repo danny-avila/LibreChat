@@ -10,7 +10,7 @@ const Textarea: React.ForwardRefExoticComponent<
 > = React.forwardRef<HTMLTextAreaElement, TextareaProps>(({ className = '', ...props }, ref) => {
   return (
     <textarea
-      className={cn(fieldBase, 'min-h-20 resize-none bg-surface-secondary', className)}
+      className={cn(fieldBase, 'bg-surface-secondary min-h-20 resize-none', className)}
       ref={ref}
       {...props}
     />

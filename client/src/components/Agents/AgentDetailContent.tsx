@@ -197,7 +197,7 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
       className={cn(
         'inset-0 m-auto h-fit w-11/12 max-w-3xl',
         !morphing &&
-          'duration-150 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+          'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 duration-150',
       )}
       /* While morphing, the dim is owned by the grid: it has to outlive this
          dialog's mount so it can fade out across the whole contraction. */
@@ -218,7 +218,7 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
           borderRadius: surfaceRadius,
           willChange: morphing ? 'transform' : undefined,
         }}
-        className="relative flex max-h-[88dvh] w-full flex-col overflow-hidden rounded-theme-surface bg-surface-dialog shadow-lg high-contrast:border high-contrast:border-solid high-contrast:border-border-medium high-contrast:shadow-none"
+        className="rounded-theme-surface bg-surface-dialog high-contrast:border high-contrast:border-solid high-contrast:border-border-medium high-contrast:shadow-none relative flex max-h-[88dvh] w-full flex-col overflow-hidden shadow-lg"
         {...shared}
       >
         {/* Card-coloured wash so the surface interpolates its fill and border
@@ -228,7 +228,7 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
           initial={morphing ? { opacity: 1 } : false}
           animate={{ opacity: morphing && morph === 'closing' ? 1 : 0 }}
           transition={MORPH_OPEN_TRANSITION}
-          className="pointer-events-none absolute inset-0 border border-border-light bg-surface-secondary"
+          className="border-border-light bg-surface-secondary pointer-events-none absolute inset-0 border"
         />
 
         {/* Only the category and the close control are pinned above the scroll:
@@ -256,7 +256,7 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="-mr-2 -mt-2 shrink-0 rtl:-ml-2 rtl:mr-0"
+                className="-mt-2 -mr-2 shrink-0 rtl:mr-0 rtl:-ml-2"
                 aria-label={localize('com_ui_close')}
               >
                 <X className="size-4" aria-hidden="true" />
@@ -268,7 +268,7 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
         <motion.div
           {...pinned}
           layoutScroll
-          className="relative z-10 min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-4 sm:px-6 sm:pb-6"
+          className="relative z-10 min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-4 pb-5 sm:px-6 sm:pb-6"
         >
           <OGDialogHeader className="space-y-0 text-left sm:text-left rtl:text-right sm:rtl:text-right">
             {/* The avatar holds the top of the row and the copy centres on it,
@@ -295,9 +295,10 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
                   {...shared}
                 >
                   <OGDialogTitle
+                    focusOutline="hidden"
                     ref={titleRef}
                     tabIndex={-1}
-                    className="break-words text-2xl font-semibold leading-tight text-text-primary outline-none sm:text-3xl"
+                    className="text-text-primary text-2xl leading-tight font-semibold break-words sm:text-3xl"
                   >
                     {agent.name?.trim() || localize('com_ui_agent')}
                   </OGDialogTitle>
@@ -333,7 +334,7 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
           {actionsUnavailable && (
             <p
               ref={unavailableRef}
-              className="mt-8 text-sm text-text-secondary"
+              className="text-text-secondary mt-8 text-sm"
               role="status"
               tabIndex={-1}
             >
@@ -349,10 +350,10 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
               onFocusCapture={handleActionFocusCapture}
               onBlurCapture={handleActionBlurCapture}
             >
-              <h3 id={`${id}-starters`} className="text-sm font-semibold text-text-primary">
+              <h3 id={`${id}-starters`} className="text-text-primary text-sm font-semibold">
                 {localize('com_agents_starters_heading')}
               </h3>
-              <p className="mt-1 text-sm leading-6 text-text-secondary">
+              <p className="text-text-secondary mt-1 text-sm leading-6">
                 {localize('com_agents_starters_hint')}
               </p>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -360,7 +361,7 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
                   <Button
                     key={`${starter}-${index}`}
                     variant="outline"
-                    className="h-auto min-h-14 items-start justify-between gap-3 whitespace-normal px-4 py-3 text-left rtl:text-right"
+                    className="h-auto min-h-14 items-start justify-between gap-3 px-4 py-3 text-left whitespace-normal rtl:text-right"
                     aria-disabled={actionsDisabled || undefined}
                     onClick={() => {
                       if (!actionsDisabled) {

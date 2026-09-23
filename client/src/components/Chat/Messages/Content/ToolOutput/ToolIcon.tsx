@@ -126,7 +126,7 @@ export default function ToolIcon({ type, iconUrl, isAnimating = false, className
         src={iconUrl}
         alt=""
         className={cn(
-          'size-4 shrink-0 rounded-full object-cover text-text-secondary',
+          'text-text-secondary size-4 shrink-0 rounded-full object-cover',
           isAnimating && 'animate-pulse',
           className,
         )}
@@ -138,7 +138,7 @@ export default function ToolIcon({ type, iconUrl, isAnimating = false, className
   return (
     <IconComponent
       className={cn(
-        'size-4 shrink-0 text-text-secondary',
+        'text-text-secondary size-4 shrink-0',
         isAnimating && 'animate-pulse',
         className,
       )}
