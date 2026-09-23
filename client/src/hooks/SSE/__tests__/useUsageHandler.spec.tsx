@@ -54,7 +54,7 @@ describe('useUsageHandler — live snapshot reconciliation', () => {
     const { result } = renderHook(() => useUsageHandler());
     const submission = {
       userMessage: { messageId: 'server-user', conversationId: convo },
-      initialResponse: { messageId: 'local-user_', parentMessageId: 'local-user' },
+      initialResponse: { messageId: 'server-user_', parentMessageId: 'server-user' },
       conversation: { conversationId: convo },
     };
     result.current.contextHandler(inflatedSnapshot(), submission);
@@ -72,10 +72,41 @@ describe('useUsageHandler — live snapshot reconciliation', () => {
     result.current.seedLive(40, resumed);
     expect(store.get(activeUsageResponseIdFamily(convo))).toBe('durable-response');
     result.current.resetLive(submission);
-    const regenerated = { ...submission, isRegenerate: true };
+    const regenerated = {
+      ...submission,
+      initialResponse: { messageId: 'local-user_', parentMessageId: 'server-user' },
+    };
     result.current.backfillUsage([], regenerated);
     expect(store.get(activeUsageResponseIdFamily(convo))).toBe('local-user_');
     result.current.attributePending('local-user_', regenerated);
+    expect(store.get(activeUsageResponseIdFamily(convo))).toBeNull();
+  });
+
+  it('binds a waiting response without usage and remaps its live context on an authoritative ID', () => {
+    const convo = 'waiting-response-id';
+    const store = getDefaultStore();
+    const { result } = renderHook(() => useUsageHandler());
+    const submission = {
+      conversation: { conversationId: convo },
+      userMessage: { messageId: 'user-id', conversationId: convo },
+      initialResponse: { messageId: 'optimistic-id', parentMessageId: 'user-id' },
+    };
+    result.current.bindResponse(submission);
+    expect(store.get(activeUsageResponseIdFamily(convo))).toBe('optimistic-id');
+    expect(store.get(pendingUsageFamily(convo)).eventCount).toBe(0);
+    result.current.contextHandler(inflatedSnapshot(), submission);
+    result.current.usageHandler(primaryUsage(), submission);
+    const pending = store.get(pendingUsageFamily(convo));
+    const authoritative = {
+      ...submission,
+      initialResponse: { messageId: 'server-id', parentMessageId: 'user-id' },
+    };
+    result.current.bindResponse(authoritative);
+    expect(store.get(contextSnapshotFamily(convo))?.responseMessageId).toBe('server-id');
+    expect(store.get(pendingUsageFamily(convo))).toBe(pending);
+    result.current.tapContent('some text', authoritative);
+    expect(store.get(activeUsageResponseIdFamily(convo))).toBe('server-id');
+    result.current.resetLive(authoritative);
     expect(store.get(activeUsageResponseIdFamily(convo))).toBeNull();
   });
 

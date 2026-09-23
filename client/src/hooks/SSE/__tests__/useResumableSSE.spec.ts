@@ -10,6 +10,12 @@ import {
   request,
 } from 'librechat-data-provider';
 import type { TMessage, TSubmission } from 'librechat-data-provider';
+import {
+  activeUsageResponseIdFamily,
+  liveTokensFamily,
+  pendingUsageFamily,
+  removeUsageAtoms,
+} from '~/store/usage';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 
 type SSEEventListener = (e: Partial<MessageEvent> & { responseCode?: number }) => void;
@@ -19,6 +25,7 @@ interface MockSSEInstance {
   addEventListener: jest.Mock;
   stream: jest.Mock;
   close: jest.Mock;
+  dispatchEvent: jest.Mock;
   headers: Record<string, string>;
   readyState: number;
   _listeners: Record<string, SSEEventListener>;
@@ -40,6 +47,7 @@ jest.mock('sse.js', () => {
           listeners[event] = cb;
         }),
         stream: jest.fn(),
+        dispatchEvent: jest.fn(),
         close: jest.fn(() => {
           if (instance.readyState === 2) {
             return;
@@ -229,6 +237,12 @@ jest.mock('~/hooks/SSE/useEventHandlers', () => {
   return {
     __esModule: true,
     ...actual,
+    // Read at call time: the hooks barrel imports useSSE during this factory.
+    startedAsNewConversation: (submission: TSubmission) =>
+      jest.requireActual('~/hooks/SSE/useEventHandlers').startedAsNewConversation(submission),
+    buildCreatedInitialResponse: (
+      submission: Pick<TSubmission, 'initialResponse' | 'userMessage' | 'isRegenerate'>,
+    ) => jest.requireActual('~/hooks/SSE/useEventHandlers').buildCreatedInitialResponse(submission),
     default: jest.fn(() => ({
       errorHandler: mockErrorHandler,
       finalHandler: mockFinalHandler,
@@ -242,6 +256,8 @@ jest.mock('~/hooks/SSE/useEventHandlers', () => {
       prunePtcTraces: jest.fn(),
       clearStepMaps: mockClearStepMaps,
       flushPendingDeltas: jest.fn(),
+      cancelPendingDeltaFlush: jest.fn(),
+      abortConversation: jest.fn(),
       messageHandler: jest.fn(),
       setIsSubmitting: mockSetIsSubmitting,
       setShowStopButton: jest.fn(),
@@ -275,6 +291,7 @@ jest.mock('librechat-data-provider', () => {
 });
 
 import useResumableSSE from '~/hooks/SSE/useResumableSSE';
+import useSSE from '~/hooks/SSE/useSSE';
 
 const CONV_ID = 'conv-abc-123';
 
@@ -447,6 +464,102 @@ describe('useResumableSSE', () => {
 
     return { sse, unmount, chatHelpers };
   };
+
+  it.each([useSSE, useResumableSSE])(
+    '%p binds a created response before any output or usage',
+    async (useTransport) => {
+      removeUsageAtoms(CONV_ID);
+      const submission = buildSubmission();
+      const { unmount } = renderHook(() => useTransport(submission, buildChatHelpers()));
+      await flushMicrotasks();
+      const sse = getLastSSE();
+      await act(async () => {
+        sse._emit('message', {
+          data: JSON.stringify({
+            created: true,
+            message: { ...submission.userMessage, messageId: 'created-user-id' },
+          }),
+        });
+      });
+      expect(getDefaultStore().get(activeUsageResponseIdFamily(CONV_ID))).toBe('created-user-id_');
+      expect(getDefaultStore().get(pendingUsageFamily(CONV_ID)).eventCount).toBe(0);
+      sse.readyState = MOCK_SSE_CLOSED;
+      unmount();
+    },
+  );
+
+  it('binds the waiting submission before the start request resolves', async () => {
+    removeUsageAtoms(CONV_ID);
+    let finishStart!: (value: unknown) => void;
+    (request.post as jest.Mock).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishStart = resolve;
+        }),
+    );
+    const submission = buildSubmission();
+    const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+    expect(getDefaultStore().get(activeUsageResponseIdFamily(CONV_ID))).toBe('resp-1');
+    expect(getDefaultStore().get(pendingUsageFamily(CONV_ID)).eventCount).toBe(0);
+    unmount();
+    await act(async () => {
+      finishStart({ streamId: 'stream-123', generationCreatedAt: 1000 });
+    });
+  });
+
+  it.each([useSSE, useResumableSSE])(
+    '%p retains authoritative legacy text response ownership for subsequent usage events',
+    async (useTransport) => {
+      removeUsageAtoms(CONV_ID);
+      const submission = buildSubmission();
+      const { unmount } = renderHook(() => useTransport(submission, buildChatHelpers()));
+      await flushMicrotasks();
+      const sse = getLastSSE();
+      await act(async () => {
+        sse._emit('message', {
+          data: JSON.stringify({
+            message: true,
+            messageId: 'server-text-id',
+            parentMessageId: 'msg-1',
+            text: 'a'.repeat(400),
+          }),
+        });
+      });
+      const store = getDefaultStore();
+      expect(store.get(activeUsageResponseIdFamily(CONV_ID))).toBe('server-text-id');
+      expect(store.get(liveTokensFamily(CONV_ID))).toBe(100);
+      await act(async () => {
+        sse._emit('message', {
+          data: JSON.stringify({
+            event: 'on_token_usage',
+            data: { input_tokens: 5, output_tokens: 100, runId: 'legacy-call', seq: 1 },
+          }),
+        });
+      });
+      expect(store.get(activeUsageResponseIdFamily(CONV_ID))).toBe('server-text-id');
+      expect(store.get(pendingUsageFamily(CONV_ID)).eventCount).toBe(1);
+      await act(async () => {
+        sse._emit('message', {
+          data: JSON.stringify({
+            final: true,
+            responseMessage: {
+              messageId: 'server-text-id',
+              parentMessageId: 'msg-1',
+              conversationId: CONV_ID,
+              isCreatedByUser: false,
+              text: 'done',
+            },
+            conversation: { conversationId: CONV_ID },
+          }),
+        });
+      });
+      expect(store.get(activeUsageResponseIdFamily(CONV_ID))).toBeNull();
+      expect(store.get(pendingUsageFamily(CONV_ID)).eventCount).toBe(0);
+      // A finalized legacy stream closes without dispatching cancellation.
+      sse.readyState = MOCK_SSE_CLOSED;
+      unmount();
+    },
+  );
 
   it('clears the text and files draft from localStorage on 404', async () => {
     seedDraft(CONV_ID);

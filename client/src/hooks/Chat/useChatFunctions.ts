@@ -43,6 +43,7 @@ import useCodeApprovalMode from '~/hooks/Agents/useCodeApprovalMode';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
 import useCodeWorkspace from '~/hooks/Agents/useCodeWorkspace';
 import useGetSender from '~/hooks/Conversations/useGetSender';
+import { activeUsageResponseIdFamily } from '~/store/usage';
 import { revealedQueuedTurnFamily } from '~/store/steer';
 import store, { useGetEphemeralAgent } from '~/store';
 import { startupConfigKey } from '~/data-provider';
@@ -776,6 +777,13 @@ export default function useChatFunctions({
       expectedPredecessorCreatedAt: overrideExpectedPredecessorCreatedAt,
       queuedMessageOrigin: overrideQueuedMessageOrigin,
     };
+
+    /** Bind before publishing the optimistic tail, not after the first provider
+     * event: a waiting request already owns a turn even when no usage exists. */
+    jotaiStore.set(
+      activeUsageResponseIdFamily(conversationId ?? Constants.NEW_CONVO),
+      initialResponse.messageId,
+    );
 
     if (regenerateShaped) {
       setMessages([...submissionMessages, initialResponse]);

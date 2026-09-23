@@ -44,7 +44,6 @@ const FLUSH_INTERVAL_MS = 250;
 interface UsageSubmissionLike {
   userMessage?: Pick<TMessage, 'messageId' | 'conversationId'> | null;
   initialResponse?: Pick<TMessage, 'messageId' | 'parentMessageId'> | null;
-  isRegenerate?: boolean;
   conversation?: Partial<Pick<TConversation, 'conversationId' | 'endpoint' | 'model'>> | null;
 }
 
@@ -55,6 +54,8 @@ interface FinalDataLike {
 }
 
 export interface UsageHandlers {
+  /** Bind an optimistic, created, or resumed response without inventing usage. */
+  bindResponse: (submission: UsageSubmissionLike) => string | null;
   contextHandler: (data: TContextUsageEvent, submission: UsageSubmissionLike) => void;
   usageHandler: (data: TTokenUsageEvent, submission: UsageSubmissionLike) => void;
   tapStream: (data: { delta?: { content?: unknown } }, submission: UsageSubmissionLike) => void;
@@ -125,20 +126,26 @@ export default function useUsageHandler(): UsageHandlers {
   return useMemo<UsageHandlers>(() => {
     const jotai = getDefaultStore();
 
-    /** Match the created response identity, including legacy user-id hydration.
-     * Regeneration and resumed durable responses keep their own response id. */
-    const bindResponse = (submission: UsageSubmissionLike) => {
-      const initial = submission.initialResponse;
-      let responseId = initial?.messageId ?? null;
+    /** The transport owns response-id normalization. Use the same response it
+     * renders, including durable IDs assigned by legacy text and resume events. */
+    const bindResponse: UsageHandlers['bindResponse'] = (submission) => {
+      const convoKey = getConvoKey(submission);
+      const responseId = submission.initialResponse?.messageId ?? null;
+      const ownerAtom = activeUsageResponseIdFamily(convoKey);
+      const previousId = jotai.get(ownerAtom);
+      jotai.set(ownerAtom, responseId);
+      /** A server ID remap doesn't invalidate this turn's pending usage or its
+       * live context. Only move a snapshot owned by the previous response. */
+      const snapshotAtom = contextSnapshotFamily(convoKey);
+      const snapshot = jotai.get(snapshotAtom);
       if (
-        !submission.isRegenerate &&
-        initial?.parentMessageId != null &&
-        responseId === `${initial.parentMessageId}_` &&
-        submission.userMessage?.messageId != null
+        previousId != null &&
+        responseId != null &&
+        previousId !== responseId &&
+        snapshot?.responseMessageId === previousId
       ) {
-        responseId = `${submission.userMessage.messageId}_`;
+        jotai.set(snapshotAtom, { ...snapshot, responseMessageId: responseId });
       }
-      jotai.set(activeUsageResponseIdFamily(getConvoKey(submission)), responseId);
       return responseId;
     };
 
@@ -486,6 +493,7 @@ export default function useUsageHandler(): UsageHandlers {
     };
 
     return {
+      bindResponse,
       contextHandler,
       usageHandler,
       tapStream,
