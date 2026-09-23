@@ -6,7 +6,12 @@ import { logger, createMethods, createModels } from '@librechat/data-schemas';
 import type { RegistrationResponseJSON } from '@simplewebauthn/server';
 import type { IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
-import type { PasskeyHandlersDeps, PasskeyRequest, AuthenticatedPasskeyRequest } from './handlers';
+import type {
+  PasskeyAccount,
+  PasskeyHandlersDeps,
+  PasskeyRequest,
+  AuthenticatedPasskeyRequest,
+} from './handlers';
 import type { PasskeyChallengeStore } from '~/auth/passkey';
 import {
   verifyPasskeyRegistration,
@@ -75,7 +80,7 @@ function buildDeps(overrides: Partial<PasskeyHandlersDeps> = {}): PasskeyHandler
     compare,
     getChallengeCache: memoryCache,
     getUserById: methods.getUserById,
-    updateUser: (userId, update) => methods.updateUser(userId.toString(), update),
+    updateUser: (userId, update) => methods.updateUser(userId.toString(), update as Partial<IUser>),
     createPasskey: methods.createPasskey,
     deletePasskey: methods.deletePasskey,
     renamePasskey: methods.renamePasskey,
@@ -273,7 +278,7 @@ describe('passkey registration provider enforcement', () => {
     expect(stored).toHaveLength(1);
     expect(res.json).toHaveBeenCalledWith({
       passkey: {
-        id: stored[0]._id.toString(),
+        id: stored[0].id,
         name: 'Work laptop',
         deviceType: 'singleDevice',
         backedUp: false,
@@ -500,7 +505,7 @@ describe('passkey rename', () => {
     const res = buildRes();
 
     await handlers.updatePasskey(
-      authedReq(user, { name: `  ${'x'.repeat(80)}  ` }, { passkeyId: passkey._id.toString() }),
+      authedReq(user, { name: `  ${'x'.repeat(80)}  ` }, { passkeyId: passkey.id }),
       res,
     );
 
@@ -528,7 +533,7 @@ describe('passkey rename', () => {
     const res = buildRes();
 
     await handlers.updatePasskey(
-      authedReq(other, { name: 'Mine now' }, { passkeyId: passkey._id.toString() }),
+      authedReq(other, { name: 'Mine now' }, { passkeyId: passkey.id }),
       res,
     );
 
@@ -553,7 +558,7 @@ describe('passkey removal password confirmation (step-up)', () => {
     const passkey = await createStoredPasskey(user);
     const res = buildRes();
 
-    await handlers.removePasskey(authedReq(user, body, { passkeyId: passkey._id.toString() }), res);
+    await handlers.removePasskey(authedReq(user, body, { passkeyId: passkey.id }), res);
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.status).not.toHaveBeenCalledWith(401);
@@ -584,7 +589,7 @@ describe('passkey removal password confirmation (step-up)', () => {
     const res = buildRes();
 
     await handlers.removePasskey(
-      authedReq(user, { password: PASSWORD }, { passkeyId: passkey._id.toString() }),
+      authedReq(user, { password: PASSWORD }, { passkeyId: passkey.id }),
       res,
     );
 
@@ -600,7 +605,7 @@ describe('passkey removal password confirmation (step-up)', () => {
     const res = buildRes();
 
     await handlers.removePasskey(
-      authedReq(user, { password: PASSWORD }, { passkeyId: passkey._id.toString() }),
+      authedReq(user, { password: PASSWORD }, { passkeyId: passkey.id }),
       res,
     );
 
@@ -618,7 +623,7 @@ describe('passkey removal password confirmation (step-up)', () => {
     const res = buildRes();
 
     await handlers.removePasskey(
-      authedReq(other, { password: PASSWORD }, { passkeyId: passkey._id.toString() }),
+      authedReq(other, { password: PASSWORD }, { passkeyId: passkey.id }),
       res,
     );
 
@@ -633,10 +638,7 @@ describe('passkey removal password confirmation (step-up)', () => {
     const passkey = await createStoredPasskey(user);
     const res = buildRes();
 
-    await handlers.removePasskey(
-      authedReq(user, undefined, { passkeyId: passkey._id.toString() }),
-      res,
-    );
+    await handlers.removePasskey(authedReq(user, undefined, { passkeyId: passkey.id }), res);
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(await methods.countPasskeysByUser(user._id.toString())).toBe(0);
@@ -649,10 +651,7 @@ describe('passkey removal password confirmation (step-up)', () => {
     const passkey = await createStoredPasskey(user);
     const res = buildRes();
 
-    await handlers.removePasskey(
-      authedReq(user, undefined, { passkeyId: passkey._id.toString() }),
-      res,
-    );
+    await handlers.removePasskey(authedReq(user, undefined, { passkeyId: passkey.id }), res);
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith({ message: 'Incorrect password' });
@@ -703,7 +702,7 @@ describe('passkey sign-in', () => {
     await handlers.authenticatePasskey(req, buildRes(), next);
 
     expect(next).toHaveBeenCalledTimes(1);
-    expect(req.user?._id.toString()).toBe(user._id.toString());
+    expect(req.user?._id?.toString()).toBe(user._id.toString());
     const stored = await methods.findPasskeyByCredentialId('cred-1');
     expect(stored?.counter).toBe(1);
     expect(stored?.lastUsedAt).toBeInstanceOf(Date);
@@ -879,7 +878,7 @@ describe('passkey sign-in ban enforcement', () => {
   });
 
   it('re-checks the ban with the resolved user before handing off', async () => {
-    let userAtCheck: IUser | undefined;
+    let userAtCheck: PasskeyAccount | undefined;
     checkBan.mockImplementation(async (req) => {
       userAtCheck = req.user;
     });
@@ -889,7 +888,7 @@ describe('passkey sign-in ban enforcement', () => {
     await handlers.authenticatePasskey(loginReq(), buildRes(), next);
 
     expect(checkBan).toHaveBeenCalledTimes(1);
-    expect(userAtCheck?._id.toString()).toBe(user._id.toString());
+    expect(userAtCheck?._id?.toString()).toBe(user._id.toString());
     expect(next).toHaveBeenCalledTimes(1);
   });
 

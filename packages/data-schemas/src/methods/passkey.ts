@@ -1,21 +1,39 @@
 import type { DeleteResult } from 'mongoose';
-import type { IPasskey, PasskeyCreateData } from '~/types';
+import type { IPasskey, PasskeyCreateData, PasskeyRecord } from '~/types';
 import { createIndexesWithRetry } from '~/utils/retry';
 import logger from '~/config/winston';
 
 export interface PasskeyMethods {
-  createPasskey: (data: PasskeyCreateData) => Promise<IPasskey>;
-  findPasskeysByUser: (userId: string) => Promise<IPasskey[]>;
-  findPasskeyByCredentialId: (credentialId: string) => Promise<IPasskey | null>;
+  createPasskey: (data: PasskeyCreateData) => Promise<PasskeyRecord>;
+  findPasskeysByUser: (userId: string) => Promise<PasskeyRecord[]>;
+  findPasskeyByCredentialId: (credentialId: string) => Promise<PasskeyRecord | null>;
   countPasskeysByUser: (userId: string) => Promise<number>;
   recordPasskeyUse: (credentialId: string, counter: number, backedUp?: boolean) => Promise<boolean>;
-  renamePasskey: (passkeyId: string, userId: string, name: string) => Promise<IPasskey | null>;
+  renamePasskey: (passkeyId: string, userId: string, name: string) => Promise<PasskeyRecord | null>;
   deletePasskey: (passkeyId: string, userId: string) => Promise<DeleteResult>;
   deletePasskeysByUser: (userId: string) => Promise<DeleteResult>;
 }
 
 /** The shapes a `Buffer` schema field can come back as, depending on `lean()`. */
 type StoredBinary = Buffer | Uint8Array | { buffer: Buffer };
+
+/** What the driver hands back for a stored passkey: `lean()` rows or saved documents. */
+type StoredPasskey = Pick<
+  IPasskey,
+  | 'credentialId'
+  | 'publicKey'
+  | 'counter'
+  | 'transports'
+  | 'deviceType'
+  | 'backedUp'
+  | 'name'
+  | 'lastUsedAt'
+  | 'tenantId'
+  | 'createdAt'
+> & {
+  _id: { toString(): string };
+  user: { toString(): string };
+};
 
 /**
  * `lean()` skips Mongoose casting, so a `Buffer` field arrives as the driver's
@@ -33,11 +51,22 @@ function toBuffer(value: StoredBinary): Buffer {
   return Buffer.from(value as Uint8Array);
 }
 
-function normalizePasskey<T extends IPasskey | null>(passkey: T): T {
-  if (passkey?.publicKey) {
-    passkey.publicKey = toBuffer(passkey.publicKey as StoredBinary);
-  }
-  return passkey;
+/** Maps a stored row to the plain record the methods expose. */
+function toPasskeyRecord(passkey: StoredPasskey): PasskeyRecord {
+  return {
+    id: passkey._id.toString(),
+    userId: passkey.user.toString(),
+    credentialId: passkey.credentialId,
+    publicKey: toBuffer(passkey.publicKey as StoredBinary),
+    counter: passkey.counter,
+    transports: passkey.transports ?? [],
+    deviceType: passkey.deviceType,
+    backedUp: passkey.backedUp,
+    name: passkey.name,
+    lastUsedAt: passkey.lastUsedAt ?? null,
+    tenantId: passkey.tenantId,
+    createdAt: passkey.createdAt,
+  };
 }
 
 export function createPasskeyMethods(mongoose: typeof import('mongoose')): PasskeyMethods {
@@ -59,30 +88,33 @@ export function createPasskeyMethods(mongoose: typeof import('mongoose')): Passk
   }
 
   /** Registers a newly verified credential for a user. */
-  async function createPasskey(data: PasskeyCreateData): Promise<IPasskey> {
+  async function createPasskey(data: PasskeyCreateData): Promise<PasskeyRecord> {
     await ensurePasskeyIndexes();
     const Passkey = mongoose.models.Passkey;
-    return (await Passkey.create(data)) as IPasskey;
+    const stored = (await Passkey.create(data)) as unknown as StoredPasskey;
+    return toPasskeyRecord(stored);
   }
 
   /** Lists a user's credentials, newest first. */
-  async function findPasskeysByUser(userId: string): Promise<IPasskey[]> {
+  async function findPasskeysByUser(userId: string): Promise<PasskeyRecord[]> {
     const Passkey = mongoose.models.Passkey;
     const passkeys = (await Passkey.find({ user: userId })
       .sort({ createdAt: -1 })
       .lean()
-      .exec()) as unknown as IPasskey[];
-    return passkeys.map(normalizePasskey);
+      .exec()) as unknown as StoredPasskey[];
+    return passkeys.map(toPasskeyRecord);
   }
 
   /**
    * Looks up a credential by its authenticator-supplied ID. Called before the
    * caller is authenticated, so it is intentionally not scoped to a user.
    */
-  async function findPasskeyByCredentialId(credentialId: string): Promise<IPasskey | null> {
+  async function findPasskeyByCredentialId(credentialId: string): Promise<PasskeyRecord | null> {
     const Passkey = mongoose.models.Passkey;
-    const passkey = (await Passkey.findOne({ credentialId }).lean().exec()) as IPasskey | null;
-    return normalizePasskey(passkey);
+    const passkey = (await Passkey.findOne({ credentialId })
+      .lean()
+      .exec()) as unknown as StoredPasskey | null;
+    return passkey ? toPasskeyRecord(passkey) : null;
   }
 
   async function countPasskeysByUser(userId: string): Promise<number> {
@@ -136,15 +168,16 @@ export function createPasskeyMethods(mongoose: typeof import('mongoose')): Passk
     passkeyId: string,
     userId: string,
     name: string,
-  ): Promise<IPasskey | null> {
+  ): Promise<PasskeyRecord | null> {
     const Passkey = mongoose.models.Passkey;
-    return (await Passkey.findOneAndUpdate(
+    const renamed = (await Passkey.findOneAndUpdate(
       { _id: passkeyId, user: userId },
       { name },
       { new: true },
     )
       .lean()
-      .exec()) as IPasskey | null;
+      .exec()) as unknown as StoredPasskey | null;
+    return renamed ? toPasskeyRecord(renamed) : null;
   }
 
   async function deletePasskey(passkeyId: string, userId: string): Promise<DeleteResult> {

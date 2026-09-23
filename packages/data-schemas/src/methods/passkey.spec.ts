@@ -59,6 +59,17 @@ describe('createPasskey', () => {
     expect(created.createdAt).toBeInstanceOf(Date);
   });
 
+  it('returns a plain record, not a Mongoose document', async () => {
+    await methods.createPasskey(passkeyData());
+
+    const found = await methods.findPasskeyByCredentialId('credential-one');
+
+    expect(found).not.toHaveProperty('$__');
+    expect(found).not.toHaveProperty('_doc');
+    expect(found?.id).toMatch(/^[a-f\d]{24}$/);
+    expect(found?.userId).toBe(userId.toString());
+  });
+
   it('rejects a credential ID that is already registered', async () => {
     await methods.createPasskey(passkeyData());
 
@@ -103,7 +114,7 @@ describe('findPasskeyByCredentialId', () => {
 
     const found = await methods.findPasskeyByCredentialId('credential-one');
 
-    expect(found?.user.toString()).toBe(userId.toString());
+    expect(found?.userId).toBe(userId.toString());
   });
 
   it('returns null for an unknown credential', async () => {
@@ -241,11 +252,7 @@ describe('renamePasskey', () => {
   it('renames a credential the user owns', async () => {
     const created = await methods.createPasskey(passkeyData());
 
-    const renamed = await methods.renamePasskey(
-      created._id.toString(),
-      userId.toString(),
-      'Work laptop',
-    );
+    const renamed = await methods.renamePasskey(created.id, userId.toString(), 'Work laptop');
 
     expect(renamed?.name).toBe('Work laptop');
   });
@@ -253,11 +260,7 @@ describe('renamePasskey', () => {
   it('refuses to rename another user credential', async () => {
     const created = await methods.createPasskey(passkeyData());
 
-    const renamed = await methods.renamePasskey(
-      created._id.toString(),
-      otherUserId.toString(),
-      'Stolen',
-    );
+    const renamed = await methods.renamePasskey(created.id, otherUserId.toString(), 'Stolen');
 
     expect(renamed).toBeNull();
     const untouched = await methods.findPasskeyByCredentialId('credential-one');
@@ -269,7 +272,7 @@ describe('deletePasskey', () => {
   it('deletes a credential the user owns', async () => {
     const created = await methods.createPasskey(passkeyData());
 
-    const result = await methods.deletePasskey(created._id.toString(), userId.toString());
+    const result = await methods.deletePasskey(created.id, userId.toString());
 
     expect(result.deletedCount).toBe(1);
     expect(await methods.findPasskeyByCredentialId('credential-one')).toBeNull();
@@ -278,7 +281,7 @@ describe('deletePasskey', () => {
   it('refuses to delete another user credential', async () => {
     const created = await methods.createPasskey(passkeyData());
 
-    const result = await methods.deletePasskey(created._id.toString(), otherUserId.toString());
+    const result = await methods.deletePasskey(created.id, otherUserId.toString());
 
     expect(result.deletedCount).toBe(0);
     expect(await methods.findPasskeyByCredentialId('credential-one')).not.toBeNull();
