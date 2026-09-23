@@ -61,6 +61,7 @@ const PARAGRAPHS_REPLY_MARKER = 'E2E_PARAGRAPHS_REPLY';
 const MERMAID_ARTIFACT_REPLY_MARKER = 'E2E_MERMAID_ARTIFACT_REPLY';
 const LARGE_MERMAID_ARTIFACT_REPLY_MARKER = 'E2E_LARGE_MERMAID_ARTIFACT_REPLY';
 const HTML_ARTIFACT_REPLY_MARKER = 'E2E_HTML_ARTIFACT_REPLY';
+const TWO_ARTIFACT_REPLY_MARKER = 'E2E_TWO_ARTIFACT_REPLY';
 const BACKGROUND_DISPATCH_MARKER = 'E2E_BACKGROUND_DISPATCH:';
 const BACKGROUND_COLLECT_MARKER = 'E2E_BACKGROUND_COLLECT:';
 const TOOL_APPROVAL_MARKER = 'E2E_TOOL_APPROVAL:';
@@ -515,6 +516,22 @@ function replyResponses(text) {
         [
           ':::artifact{identifier="e2e-html" type="text/html" title="E2E HTML Artifact"}',
           '<h1>HTML sandbox fixture</h1>',
+          ':::',
+        ].join('\n'),
+      ],
+    };
+  }
+
+  if (text.includes(TWO_ARTIFACT_REPLY_MARKER)) {
+    return {
+      responses: [
+        [
+          ':::artifact{identifier="e2e-first" type="text/html" title="E2E First Artifact"}',
+          '<h1>First sandbox fixture</h1>',
+          ':::',
+          '',
+          ':::artifact{identifier="e2e-second" type="text/html" title="E2E Second Artifact"}',
+          '<h1>Second sandbox fixture</h1>',
           ':::',
         ].join('\n'),
       ],
@@ -2792,12 +2809,12 @@ function provisioningToolResponses({ text, toolNames }) {
     const command = Array.from({ length: 120 }, (_, index) => `printf 'line-${index}-☃\\n'`).join(
       '\n',
     );
-    const args =
-      codeTool.name === 'bash_tool'
-        ? { command }
-        : codeTool.name === 'execute_code'
-          ? { lang: 'bash', code: command }
-          : codeTool.args;
+    let args = codeTool.args;
+    if (codeTool.name === 'bash_tool') {
+      args = { command };
+    } else if (codeTool.name === 'execute_code') {
+      args = { lang: 'bash', code: command };
+    }
     return {
       responses: ['', `E2E highlighted code complete: ${highlightLabel}`],
       sleep: highlightLabel === 'cancel' ? HIGHLIGHT_CANCEL_CHUNK_DELAY_MS : SLOW_CHUNK_DELAY_MS,
