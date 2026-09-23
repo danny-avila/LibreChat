@@ -7,7 +7,7 @@ import { repoRoot } from './lint.helpers';
  * A consumer's stylesheet begins `@import '@librechat/client/theme.css'`, so the
  * export has to be a file a bundler can read. It pointed at a directory once,
  * which resolves to nothing and fails at build time in the consumer's project
- * rather than here — hence a scenario that resolves the export the way a bundler
+ * rather than here, hence a scenario that resolves the export the way a bundler
  * does and reads the tokens out of whatever it lands on.
  */
 

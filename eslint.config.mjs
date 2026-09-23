@@ -259,7 +259,7 @@ export default [
       'shadcn/require-static-classes': 'error',
       // Now answerable: the rule asks the installed Tailwind whether a class generates CSS, and
       // the app is on v4. Classes declared in a stylesheet Tailwind reads are recognized on their
-      // own; these are the ones it cannot see — plain selectors in files loaded separately
+      // own; these are the ones it cannot see, plain selectors in files loaded separately
       // (style.css families, the library's component CSS) and classes a third party puts in the
       // DOM. Everything outside this list that generates no CSS is reported: the `prose` variants
       // that quietly render nothing today, and the `token-`-prefixed names, which were painting

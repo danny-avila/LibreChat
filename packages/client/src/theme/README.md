@@ -169,7 +169,7 @@ module.exports = {
 ```
 
 The colors come from the stylesheet imported in step 3, so the config carries only content,
-dark mode and the preset — and it only applies through the `@config` line in that stylesheet:
+dark mode and the preset, and it only applies through the `@config` line in that stylesheet:
 v4 loads no config file on its own, so without the directive the preset, the `content` globs
 and class-based dark mode are all silently absent.
 

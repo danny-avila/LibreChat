@@ -2498,7 +2498,7 @@
   },
   "client/src/components/ui/AdminSettingsDialog.tsx": {
     "shadcn/no-restyle": {
-      "count": 22
+      "count": 18
     },
     "shadcn/require-static-classes": {
       "count": 1

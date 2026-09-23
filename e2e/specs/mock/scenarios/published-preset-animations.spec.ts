@@ -7,7 +7,7 @@ import { repoRoot } from './lint.helpers';
  * A consumer following the documented setup loads one file from this package:
  * the exported Tailwind preset. The published components write `animate-in`,
  * `fade-in-0`, `zoom-in-95` and `slide-in-from-*` on dialogs, popovers and
- * dropdowns, and those are `tailwindcss-animate` utilities — so the preset has
+ * dropdowns, and those are `tailwindcss-animate` utilities, so the preset has
  * to register the plugin, or the surfaces arrive without their motion and
  * nothing says why. This compiles the preset the way a consumer's build does
  * and asks for the CSS.
@@ -28,6 +28,7 @@ const ANIMATION_CANDIDATES = [
   'animate-accordion-down',
   'animate-accordion-up',
   'animate-caret-blink',
+  'animate-loading-dot',
 ];
 
 test.describe('the published preset', () => {
@@ -40,7 +41,7 @@ test.describe('the published preset', () => {
     ) as ClientManifest;
     expect(manifest.peerDependencies['tailwindcss-animate']).toBeDefined();
 
-    /** Compile with the preset alone — no app config, the way a consumer does. */
+    /** Compile with the preset alone, no app config, the way a consumer does. */
     const { compile } = (await import('tailwindcss')) as {
       compile: (
         css: string,
@@ -92,8 +93,8 @@ test.describe('the published preset', () => {
     expect(css).toContain('@keyframes');
 
     /** And the preset is the only place the plugin is registered. A config that
-     *  names it again as well emits every `@keyframes` block it owns twice —
-     *  Tailwind deduplicates the utilities but not the keyframes — so the count
+     *  names it again as well emits every `@keyframes` block it owns twice;
+     *  Tailwind deduplicates the utilities but not the keyframes, so the count
      *  is what says whether the ownership is still single. */
     const keyframes = css.match(/@keyframes\s+[\w-]+/g) ?? [];
     expect(keyframes.length).toBeGreaterThan(0);

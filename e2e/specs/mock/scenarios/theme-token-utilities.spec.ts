@@ -73,7 +73,7 @@ async function openAccountMenu(page: Page): Promise<Locator> {
     timeout: 30000,
   });
   // Below `md` the account button lives in the drawer's own header, which renders
-  // off-canvas until the toggle opens it — present and "visible" to a locator, but not
+  // off-canvas until the toggle opens it, present and "visible" to a locator, but not
   // clickable. The toggle itself is `md:hidden`, so its visibility is the layout probe.
   const opener = page.getByTestId('header-open-sidebar-button');
   if (await opener.isVisible()) {

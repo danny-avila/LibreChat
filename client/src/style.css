@@ -724,8 +724,7 @@ html.high-contrast.dark .btn-neutral:hover {
  * layered one whatever its specificity. The rules below are element and bare-pseudo
  * resets that utilities beat under v3 by being classes; each is layered so it keeps
  * losing to a utility. A rule that is meant to beat utilities stays unlayered
- * (`.dark :focus-visible`, the `code, pre` font reset, the `.hidden`/`.overflow-*`
- * class overrides). */
+ * (`.dark :focus-visible`, the `code, pre` font reset). */
 @layer base {
   select {
     --tw-shadow: 0 0 transparent;

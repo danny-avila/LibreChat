@@ -270,7 +270,7 @@ Multi-line imports count total character length across all lines. Consolidate va
   CSS (`packages/client/src/theme/tokens.css`) for the rule to resolve a theme; under 3.4 its
   fallback reported every preset utility (`duration-theme-fast`, `rounded-theme-control`) as a
   typo. What it cannot see is a class defined in a stylesheet Tailwind does not read, or one a
-  dependency puts in the DOM, so those live in its `allow` list in `eslint.config.mjs` — add a
+  dependency puts in the DOM, so those live in its `allow` list in `eslint.config.mjs`, add a
   name there when a plain selector or a third party owns it, and fix the class when nothing
   defines it. `no-raw-colors` additionally reports a `bg-`/`text-`/`border-` name whose token is
   not declared in the theme, which is the same failure wearing a color's clothes.
@@ -283,21 +283,21 @@ Multi-line imports count total character length across all lines. Consolidate va
 - **The existing backlog is recorded, not exempted.** `eslint-suppressions.json` holds the
   violations the tree carried when the rules landed, as a per-file, per-rule count.
   Adding a violation to a file reports every violation of that rule in it, so raising a file's
-  count is a visible diff in that file — review it like any other change, and expect a raise to
+  count is a visible diff in that file, review it like any other change, and expect a raise to
   be justified by what the diff does. Strengthening a rule is the one case where counts rise in
   files nobody edited: when a rule starts seeing a class it could not classify before, the
   violations it reports are the tree's existing styling, and recording them is the same backlog
   arriving later. Say which change did that and keep the two apart in review.
   `npm run lint:design:prune` drops entries whose violations are gone (do this after fixing
   some); `npm run lint:design:suppress` re-records the design rules and then prunes, which is
-  what a file move needs, since suppressions are keyed by path — the re-record adds the new
+  what a file move needs, since suppressions are keyed by path, the re-record adds the new
   path and only the prune removes the old one. It re-baselines everything under `client/src`
-  and `packages/client/src`, so for a single move prefer a scoped re-record of just that file —
+  and `packages/client/src`, so for a single move prefer a scoped re-record of just that file:
   the same six `--suppress-rule` flags `lint:design:suppress` passes (`shadcn/no-restyle`,
   `no-raw-colors`, `no-arbitrary-values`, `no-inline-styles`, `require-static-classes`,
   `no-unknown-classes`) with
   `<new/path.tsx>` in place of the directories, since a moved file usually carries entries for
-  more than one rule — followed by `npm run lint:design:prune`;
+  more than one rule, followed by `npm run lint:design:prune`;
   `npm run lint:design:suppress -- <file>` does not scope, because npm appends the argument to
   the script's own directory arguments. Neither command changes which rules run; both only
   rewrite the recorded counts. The re-record's own exit status is deliberately ignored: it lints

@@ -28,9 +28,24 @@ module.exports = {
           '0%, 70%, 100%': { opacity: '0.35', transform: 'translateY(0)' },
           '35%': { opacity: '1', transform: 'translateY(-2px)' },
         },
+        'accordion-down': {
+          from: { height: '0' },
+          to: { height: 'var(--radix-accordion-content-height)' },
+        },
+        'accordion-up': {
+          from: { height: 'var(--radix-accordion-content-height)' },
+          to: { height: '0' },
+        },
+        'caret-blink': {
+          '0%,70%,100%': { opacity: '1' },
+          '20%,50%': { opacity: '0' },
+        },
       },
       animation: {
         'loading-dot': 'loading-dot 1.2s ease-in-out infinite',
+        'accordion-down': 'accordion-down 0.2s ease-out',
+        'accordion-up': 'accordion-up 0.2s ease-out',
+        'caret-blink': 'caret-blink 1.25s ease-out infinite',
       },
       borderRadius: {
         /**
@@ -60,33 +75,6 @@ module.exports = {
       transitionDuration: {
         'theme-fast': 'var(--theme-motion-fast, 150ms)',
         'theme-normal': 'var(--theme-motion-normal, 200ms)',
-      },
-      /**
-       * The keyframes the published components name themselves: `Accordion`
-       * writes `animate-accordion-up`/`-down` and `InputOTP` writes
-       * `animate-caret-blink`. They live here rather than only in the app's
-       * config, because a consumer loads this preset and nothing else — and an
-       * accordion that never animates its height is the kind of miss that looks
-       * like a styling opinion rather than a missing utility.
-       */
-      keyframes: {
-        'accordion-down': {
-          from: { height: '0' },
-          to: { height: 'var(--radix-accordion-content-height)' },
-        },
-        'accordion-up': {
-          from: { height: 'var(--radix-accordion-content-height)' },
-          to: { height: '0' },
-        },
-        'caret-blink': {
-          '0%,70%,100%': { opacity: '1' },
-          '20%,50%': { opacity: '0' },
-        },
-      },
-      animation: {
-        'accordion-down': 'accordion-down 0.2s ease-out',
-        'accordion-up': 'accordion-up 0.2s ease-out',
-        'caret-blink': 'caret-blink 1.25s ease-out infinite',
       },
     },
   },

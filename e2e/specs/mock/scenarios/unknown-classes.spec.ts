@@ -2,8 +2,8 @@ import { expect, test } from '@playwright/test';
 import { designMessages, lintStdin, messagesFor } from './lint.helpers';
 
 /**
- * Three classes in this app rendered nothing at all — `transition-color`,
- * `pointer-cursor`, `scrollbar-hide` — because nothing could tell a typo from a
+ * Three classes in this app rendered nothing at all, `transition-color`,
+ * `pointer-cursor`, `scrollbar-hide`, because nothing could tell a typo from a
  * utility. Moving the colours into `@theme inline` made the theme readable, which
  * is what lets `no-unknown-classes` ask the installed Tailwind whether a class
  * generates CSS and lets `no-raw-colors` spot a token nobody declared. Both
@@ -27,7 +27,7 @@ test.describe('class and token existence', () => {
     const reported = designMessages(lintStdin('client/src/__probe__.tsx', MISSPELLED));
 
     /** The class generates no CSS, and the report says so and names the class
-     *  the author meant — otherwise a typo reads as a deliberate no-op. */
+     *  the author meant, otherwise a typo reads as a deliberate no-op. */
     const unknown = messagesFor(reported, 'shadcn/no-unknown-classes').join('\n');
     expect(unknown).toContain('"transition-color" is not a class this project\'s Tailwind knows');
     expect(unknown).toContain('Did you mean "transition-colors"?');
@@ -39,7 +39,7 @@ test.describe('class and token existence', () => {
     expect(raw).toContain('Did you mean "bg-surface-primary"?');
 
     /** The one variant class the tree still wrote through a hand-rolled token
-     *  rule — `aria-selected:text-token-text-primary` on the animated tabs —
+     *  rule, `aria-selected:text-token-text-primary` on the animated tabs,
      *  now has nowhere to resolve, and the rules say so rather than leaving the
      *  selected tab unstyled. Its semantic replacement is silent. */
     const stale = designMessages(

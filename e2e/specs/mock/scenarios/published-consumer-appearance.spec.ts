@@ -66,9 +66,9 @@ test.describe('the published package appearance', () => {
     writeFileSync(probeMarkup, markup);
 
     /** A consumer's stylesheet, in the order the theme README documents:
-     *  Tailwind, the published token stylesheet — the colours are declared there
+     *  Tailwind, the published token stylesheet, the colours are declared there
      *  as `@theme inline`, not in the config, so a consumer that skips this
-     *  import gets no `border-border-light` to paint with — the package's config,
+     *  import gets no `border-border-light` to paint with, the package's config,
      *  and nothing of this app. */
     const entry = join(PROBE_DIR, 'consumer.css');
     writeFileSync(

@@ -27,8 +27,8 @@ export default defineConfig({
     { from: 'src/icons/provider/assets', to: 'dist' },
     // The color tokens ship as CSS: an app imports `@librechat/client/theme.css` into the
     // stylesheet that imports Tailwind, and gets `bg-surface-primary` and the rest. `to` names
-    // the destination directory, not the file — pointing it at `dist/theme.css` produced a
-    // directory of that name holding `tokens.css`, and the export resolved to a folder — so the
+    // the destination directory, not the file, pointing it at `dist/theme.css` produced a
+    // directory of that name holding `tokens.css`, and the export resolved to a folder, so the
     // file keeps its name in `dist` and the export maps `./theme.css` onto it.
     { from: 'src/theme/tokens.css', to: 'dist' },
   ],
