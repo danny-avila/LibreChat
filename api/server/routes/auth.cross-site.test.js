@@ -76,7 +76,7 @@ jest.mock('~/server/middleware', () => {
     setTwoFactorTempUser: (...args) => mockSetTwoFactorTempUser(...args),
     twoFactorTempLimiter: pass,
     checkBan: pass,
-    validateEmailLogin: pass,
+    validateEmailLogin: jest.requireActual('~/server/middleware/validateEmailLogin'),
     requireLocalAuth: (...args) => mockRequireLocalAuth(...args),
     requireLdapAuth: (...args) => mockRequireLocalAuth(...args),
     registerLimiter: pass,
@@ -212,5 +212,41 @@ describe('local login endpoints reject cross-site submissions', () => {
       .expect(204);
 
     expect(mockLoginController).toHaveBeenCalledTimes(1);
+  });
+
+  describe('with email login disabled', () => {
+    beforeEach(() => {
+      process.env.ALLOW_EMAIL_LOGIN = 'false';
+    });
+
+    afterEach(() => {
+      delete process.env.ALLOW_EMAIL_LOGIN;
+    });
+
+    it('still rejects the password login', async () => {
+      await request(app)
+        .post('/api/auth/login')
+        .send({ email: 'user@example.com', password: 'password' })
+        .expect(403);
+
+      expect(mockLoginController).not.toHaveBeenCalled();
+    });
+
+    it('keeps passkey sign-in reachable', async () => {
+      const {
+        authenticatePasskey,
+        loginPasskeyOptions,
+      } = require('~/server/controllers/auth/PasskeyController');
+
+      await request(app).post('/api/auth/passkey/login/options').expect(204);
+      await request(app)
+        .post('/api/auth/passkey/login/verify')
+        .send({ sessionId: 'session', credential: { id: 'credential' } })
+        .expect(204);
+
+      expect(loginPasskeyOptions).toHaveBeenCalledTimes(1);
+      expect(authenticatePasskey).toHaveBeenCalledTimes(1);
+      expect(mockLoginController).toHaveBeenCalledTimes(1);
+    });
   });
 });
