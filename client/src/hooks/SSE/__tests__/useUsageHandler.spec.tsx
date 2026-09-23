@@ -1,9 +1,11 @@
 import { getDefaultStore } from 'jotai';
 import { renderHook } from '@testing-library/react';
 import { Constants, reconcileContextUsageFromEvent } from 'librechat-data-provider';
-import type { TContextUsageEvent, TTokenUsageEvent } from 'librechat-data-provider';
+import type { TMessage, TContextUsageEvent, TTokenUsageEvent } from 'librechat-data-provider';
 import {
   contextSnapshotFamily,
+  snapshotsByAnchorFamily,
+  removeUsageAtoms,
   branchTotalsFamily,
   totalUsageFamily,
   pendingUsageFamily,
@@ -12,6 +14,7 @@ import {
   subagentUsageFamily,
   pendingSubagentUsageFamily,
 } from '~/store/usage';
+import { buildIndex, sumTotalUsage, sumBranch, clearIndex } from '~/utils/tokens';
 import useUsageHandler from '~/hooks/SSE/useUsageHandler';
 
 /** Mirrors a real web-search + summarization turn: calibration pinned at 5
@@ -50,6 +53,119 @@ const primaryUsage = (over?: Partial<TTokenUsageEvent>): TTokenUsageEvent => ({
 });
 
 describe('useUsageHandler — live snapshot reconciliation', () => {
+  it.each([true, false])(
+    'retains a stopped snapshot with confirmed or unflushed output (confirmed=%s)',
+    (confirmed) => {
+      const convo = `stop-snapshot-${confirmed}`;
+      const store = getDefaultStore();
+      const { result } = renderHook(() => useUsageHandler());
+      const submission = {
+        conversation: { conversationId: convo },
+        userMessage: { messageId: 'u', conversationId: convo },
+        initialResponse: { messageId: 'r', parentMessageId: 'u' },
+      };
+      result.current.contextHandler(inflatedSnapshot({ calibrationRatio: 1 }), submission);
+      if (confirmed) {
+        result.current.usageHandler(
+          primaryUsage({ output_tokens: 42, total_tokens: undefined }),
+          submission,
+        );
+      } else {
+        result.current.tapContent('x'.repeat(168), submission);
+      }
+      result.current.attributePending('r', submission);
+      const snapshot = store.get(contextSnapshotFamily(convo));
+      expect(snapshot?.anchorMessageId).toBe('r');
+      expect(snapshot?.responseMessageId).toBe('r');
+      expect(snapshot?.completedOutputTokens).toBe(42);
+      expect(store.get(snapshotsByAnchorFamily(convo)).get('r')).toEqual(snapshot);
+      expect(store.get(activeUsageResponseIdFamily(convo))).toBeNull();
+      expect(store.get(liveTokensFamily(convo))).toBe(0);
+      result.current.attributePending('r', submission);
+      expect(store.get(contextSnapshotFamily(convo))?.completedOutputTokens).toBe(42);
+      result.current.contextHandler(inflatedSnapshot(), {
+        ...submission,
+        initialResponse: { messageId: 'other', parentMessageId: 'u' },
+      });
+      result.current.attributePending('r', submission);
+      expect(store.get(contextSnapshotFamily(convo))?.anchorMessageId).toBe('u');
+      expect(store.get(snapshotsByAnchorFamily(convo)).get('r')).toEqual(snapshot);
+    },
+  );
+
+  it.each(['created', 'context', 'final'])(
+    'migrates unsaved usage at %s without retaining earlier optimistic branches',
+    (handoff) => {
+      const store = getDefaultStore();
+      const temp = String(Constants.NEW_CONVO);
+      removeUsageAtoms(temp);
+      clearIndex(temp);
+      const { result } = renderHook(() => useUsageHandler());
+      for (let i = 0; i < 3; i++) {
+        const real = `assigned-${handoff}-${i}`;
+        const responseId = `response-${i}`;
+        const old = {
+          conversation: { conversationId: temp },
+          userMessage: { messageId: `u-${i}`, conversationId: temp },
+          initialResponse: { messageId: responseId, parentMessageId: `u-${i}` },
+        };
+        buildIndex(temp, [
+          {
+            messageId: `older-${i}`,
+            text: 'Prior recorded response',
+            conversationId: temp,
+            parentMessageId: null,
+            isCreatedByUser: false,
+            metadata: { usage: { input: 20, output: 5, cacheRead: 0, cacheWrite: 0, cost: 0.01 } },
+          } as TMessage,
+        ]);
+        result.current.bindResponse(old);
+        const oldOwner = activeUsageResponseIdFamily(temp);
+        result.current.contextHandler(inflatedSnapshot({ calibrationRatio: 1 }), old);
+        const event = primaryUsage({
+          runId: `call-${i}`,
+          output_tokens: 12,
+          total_tokens: undefined,
+        });
+        result.current.usageHandler(event, old);
+        const moved = {
+          ...old,
+          conversation: { conversationId: real },
+          userMessage: { ...old.userMessage, conversationId: real },
+        };
+        if (handoff === 'created') result.current.bindResponse(moved);
+        if (handoff === 'context')
+          result.current.contextHandler(inflatedSnapshot({ calibrationRatio: 1 }), moved);
+        if (handoff !== 'final') {
+          expect(store.get(oldOwner)).toBeNull();
+          expect(sumTotalUsage(temp).input).toBe(0);
+          expect(store.get(activeUsageResponseIdFamily(temp))).toBeNull();
+          expect(store.get(pendingUsageFamily(real)).eventCount).toBe(1);
+          result.current.backfillUsage([event], moved);
+          expect(store.get(pendingUsageFamily(real)).eventCount).toBe(1);
+        }
+        // Even a terminal callback holding the original submission resolves real.
+        result.current.finalizeUsage(
+          {
+            conversation: { conversationId: real },
+            responseMessage: {
+              messageId: responseId,
+              parentMessageId: `u-${i}`,
+              isCreatedByUser: false,
+            },
+          },
+          old,
+        );
+        expect(sumBranch(real, responseId).lastTurnUsage?.output).toBe(12);
+        expect(sumTotalUsage(temp).input).toBe(0);
+        expect(store.get(activeUsageResponseIdFamily(temp))).toBeNull();
+        expect(store.get(pendingUsageFamily(temp)).eventCount).toBe(0);
+        removeUsageAtoms(real);
+        clearIndex(real);
+      }
+    },
+  );
+
   it.each([undefined, 0, 0.05])(
     'prefers the server rollup to partially observed events (cost=%s)',
     (cost) => {

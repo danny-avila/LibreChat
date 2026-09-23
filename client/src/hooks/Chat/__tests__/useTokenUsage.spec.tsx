@@ -342,6 +342,34 @@ describe('useTokenUsage — post-snapshot output', () => {
     removeUsageAtoms('newly-saved');
   });
 
+  it('keeps the granular context gauge after a local stop and branch revisit', () => {
+    const { result: writer } = renderHook(() => useUsageHandler());
+    const submission = {
+      conversation: { conversationId: convo },
+      userMessage: { messageId: 'u2', conversationId: convo },
+      initialResponse: { messageId: 'a2', parentMessageId: 'u2' },
+    };
+    writer.current.contextHandler(tailSnapshot, submission);
+    writer.current.tapContent('x'.repeat(168), submission);
+    const live = getDefaultStore().get(contextSnapshotFamily(convo))!;
+    const { result, rerender } = renderTokenUsage(new Map(), {
+      snapshot: live,
+      isSubmitting: true,
+    });
+    expect(result.current.isEstimate).toBe(false);
+    act(() => writer.current.attributePending('a2', submission));
+    rerender({ isSubmitting: false });
+    expect(result.current.isEstimate).toBe(false);
+    expect(result.current.usedTokens).toBe(195042);
+    expect(result.current.liveTokens).toBe(0);
+    jest.mocked(useLatestMessageId).mockReturnValue('a1');
+    rerender({ isSubmitting: false });
+    jest.mocked(useLatestMessageId).mockReturnValue('a2');
+    rerender({ isSubmitting: false });
+    expect(result.current.isEstimate).toBe(false);
+    expect(result.current.usedTokens).toBe(195042);
+  });
+
   it('keeps a viewed sibling isolated while another response streams and finalizes', () => {
     const saved = messages.map((message) =>
       message.messageId === 'a2'
