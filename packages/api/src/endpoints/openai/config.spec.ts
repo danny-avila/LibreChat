@@ -1207,9 +1207,9 @@ describe('getOpenAIConfig', () => {
         },
       });
 
-      expect(result.configOptions?.defaultHeaders?.['X-OpenRouter-Categories']).toBe(
-        'general-chat',
-      );
+      expect(result.configOptions?.defaultHeaders).toMatchObject({
+        'X-OpenRouter-Categories': 'general-chat',
+      });
     });
   });
 
