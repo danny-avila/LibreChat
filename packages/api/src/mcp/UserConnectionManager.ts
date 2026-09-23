@@ -748,7 +748,9 @@ export abstract class UserConnectionManager {
       );
     }
 
-    const config = connectionTarget.serverConfig;
+    const declaredConfig = connectionTarget.serverConfig;
+    /** Resolution uses effective headers; identity and persistence keep the declaration. */
+    const config = applyRequestHeaders(declaredConfig);
     const poolKey = getMCPConnectionPoolKey(serverName, capabilityProfile);
 
     /** Capture before resolving credentials/creating the connection. If another replica rotates
@@ -780,7 +782,7 @@ export abstract class UserConnectionManager {
     const existingPublicationGeneration = connection
       ? this.toolPublicationGenerations.get(connection)
       : undefined;
-    const configGeneration = getMCPAppToolsPublicationGeneration(config);
+    const configGeneration = getMCPAppToolsPublicationGeneration(declaredConfig);
     const existingConfigGeneration = connection
       ? this.toolConfigGenerations.get(connection)
       : undefined;
@@ -825,12 +827,10 @@ export abstract class UserConnectionManager {
       }
       connection = undefined; // Force creation of a new connection
     } else if (connection) {
-      if (!config || (config.updatedAt && connection.isStale(config.updatedAt))) {
-        if (config) {
-          logger.info(
-            `[MCP][User: ${userId}] Server configuration updated; disconnecting stale connection`,
-          );
-        }
+      if (declaredConfig.updatedAt && connection.isStale(declaredConfig.updatedAt)) {
+        logger.info(
+          `[MCP][User: ${userId}] Server configuration updated; disconnecting stale connection`,
+        );
         await this.disconnectUserConnection(userId, serverName, {
           preservedCreation: creationGuard,
           capabilityProfile,
@@ -876,14 +876,6 @@ export abstract class UserConnectionManager {
       }
     }
 
-    // Now check if config exists for new connection creation
-    if (!config) {
-      throw new McpError(
-        ErrorCode.InvalidRequest,
-        `[MCP][User: ${userId}] Configuration for server "${serverName}" not found.`,
-      );
-    }
-
     // If no valid connection exists, create a new one
     logger.info(`[MCP][User: ${userId}] Establishing new connection`);
 
@@ -924,7 +916,7 @@ export abstract class UserConnectionManager {
         serverConfig: runtimeConfig,
         /** Runtime OAuth detection enriches the connection config. Keep the durable definition
          * separate so callback liveness compares against the config that actually owns it. */
-        serverDefinition: config,
+        serverDefinition: declaredConfig,
         ...(usesDirectOpenIDBearerRecovery(config) && { directBearerSourceConfig: config }),
         directBearerRecoveryState,
         serverName: serverName,
@@ -1041,7 +1033,7 @@ export abstract class UserConnectionManager {
           tools,
           userId,
           serverName,
-          serverConfig: config,
+          serverConfig: declaredConfig,
           ...(effectiveGeneration && { publicationGeneration: effectiveGeneration }),
           ...(publicationRevision && { publicationRevision }),
           capabilityProfile,
@@ -1122,7 +1114,7 @@ export abstract class UserConnectionManager {
         capabilityProfile === STANDARD_MCP_CAPABILITY_PROFILE ||
         connectionTarget.connectionOwner !== 'operator'
       ) {
-        await this.backfillResolvedInstructions(serverName, config, connection, userId);
+        await this.backfillResolvedInstructions(serverName, declaredConfig, connection, userId);
       }
       signal?.throwIfAborted();
       if (!ephemeralConnection) {
