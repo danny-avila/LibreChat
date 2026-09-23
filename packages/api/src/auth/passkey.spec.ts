@@ -131,6 +131,18 @@ describe('resolveMaxPasskeysPerUser', () => {
       } as NodeJS.ProcessEnv),
     ).toBe(MAX_PASSKEYS_PER_USER);
   });
+
+  it('applies the schema bounds to the environment value too', () => {
+    const rejected = ['0', '-1', '101', '9abc', '1.5'];
+    for (const value of rejected) {
+      expect(
+        resolveMaxPasskeysPerUser(undefined, { MAX_PASSKEYS_PER_USER: value } as NodeJS.ProcessEnv),
+      ).toBe(MAX_PASSKEYS_PER_USER);
+    }
+    expect(
+      resolveMaxPasskeysPerUser(undefined, { MAX_PASSKEYS_PER_USER: '100' } as NodeJS.ProcessEnv),
+    ).toBe(100);
+  });
 });
 
 describe('getPasskeyConfig', () => {

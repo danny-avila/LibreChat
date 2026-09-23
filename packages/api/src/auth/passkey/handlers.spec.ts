@@ -290,6 +290,45 @@ describe('passkey registration provider enforcement', () => {
     expect(res.json).toHaveBeenCalledWith({ message: 'Passkey limit reached' });
   });
 
+  it('rolls back a credential that wins the enrollment race past the cap', async () => {
+    /** Both verifies observe the pre-enrollment count, as two concurrent
+     *  ceremonies for the same account do, so both pass the early check. */
+    const racedCount = jest
+      .fn()
+      .mockImplementationOnce(async () => 0)
+      .mockImplementationOnce(async () => 0)
+      .mockImplementation(methods.countPasskeysByUser);
+    const handlers = createPasskeyHandlers(
+      buildDeps({ maxPasskeysPerUser: () => 1, countPasskeysByUser: racedCount }),
+    );
+    let ceremony = 0;
+    mockVerifyRegistration.mockImplementation(async () =>
+      verifiedRegistration(`raced-cred-${++ceremony}`),
+    );
+    const user = await createUser();
+    const results = await Promise.allSettled(
+      [1, 2].map((index) =>
+        handlers.registerPasskeyVerify(
+          authedReq(user, {
+            credential: { id: `raced-cred-${index}` } as RegistrationResponseJSON,
+            name: `Raced ${index}`,
+            password: PASSWORD,
+          }),
+          buildRes(),
+        ),
+      ),
+    );
+
+    expect(
+      results.every(
+        (result) =>
+          result.status === 'fulfilled' ||
+          result.reason === undefined /** handlers return rather than throw */,
+      ),
+    ).toBe(true);
+    expect(await methods.countPasskeysByUser(user._id.toString())).toBeLessThanOrEqual(1);
+  });
+
   it('stores the credential when the account is local', async () => {
     const handlers = createPasskeyHandlers(buildDeps());
     const user = await createUser();

@@ -149,14 +149,17 @@ export function isPasskeyEnabled(config: PasskeyConfig = getPasskeyConfig()): bo
 
 /**
  * yaml wins over the environment, which wins over the documented default, so a
- * deployment that sets neither keeps exactly the behavior it has today.
+ * deployment that sets neither keeps exactly the behavior it has today. The
+ * environment value carries the schema's own bounds, so a stray setting cannot
+ * brick enrollment or bypass the documented ceiling.
  */
 export function resolveMaxPasskeysPerUser(
   config?: TCustomConfig['passkeys'],
   env: NodeJS.ProcessEnv = process.env,
 ): number {
-  const fromEnv = Number.parseInt(env.MAX_PASSKEYS_PER_USER ?? '', 10);
-  return config?.perUserMax ?? (Number.isFinite(fromEnv) ? fromEnv : MAX_PASSKEYS_PER_USER);
+  const fromEnv = Number(env.MAX_PASSKEYS_PER_USER);
+  const envWithinBounds = Number.isInteger(fromEnv) && fromEnv >= 1 && fromEnv <= 100;
+  return config?.perUserMax ?? (envWithinBounds ? fromEnv : MAX_PASSKEYS_PER_USER);
 }
 
 /** Namespaced cache key for a pending registration ceremony. */

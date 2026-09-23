@@ -426,6 +426,17 @@ export function createPasskeyHandlers(deps: PasskeyHandlersDeps): PasskeyHandler
           trimmedName.slice(0, MAX_PASSKEY_NAME_LENGTH) || defaultPasskeyName(verified.transports),
       });
 
+      /**
+       * The early count check races a concurrent ceremony for the same account:
+       * both can observe a below-cap count and both insert. Re-counting after
+       * the write and rolling this credential back keeps the stored set within
+       * the cap without a transaction, at the cost of rejecting the whole race.
+       */
+      if ((await countPasskeysByUser(req.user.id)) > (await resolveMaxPasskeys())) {
+        await deletePasskey(passkey.id, req.user.id);
+        return res.status(409).json({ message: 'Passkey limit reached' });
+      }
+
       return res.status(201).json({ passkey: serializePasskey(passkey) });
     } catch (err) {
       if (isDuplicateKeyError(err as MongoWriteError)) {
