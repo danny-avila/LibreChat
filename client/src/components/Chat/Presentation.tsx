@@ -157,7 +157,7 @@ export default function Presentation({ children }: { children: React.ReactNode }
   const panelElement = (isUndocked ? null : artifactsElement) ?? subagentElement;
 
   return (
-    <DragDropWrapper className="relative flex w-full grow overflow-hidden bg-presentation">
+    <DragDropWrapper className="bg-presentation relative flex w-full grow overflow-hidden">
       <AppChatSurface>
         {/* The editor buffer belongs to the pane's session, not to the window
             it happens to be in: hoisted, an undock keeps unsaved edits. */}
