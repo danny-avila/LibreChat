@@ -112,26 +112,17 @@ export interface PasskeyHandlers {
 }
 
 /**
- * Challenge store with getDel so consumeChallenge prefers an atomic pop path.
- * Keyv itself is get-then-delete under the hood unless the adapter exposes getDel;
- * wrapping here keeps the ceremony helpers on the preferred API surface.
+ * Challenge store handed to the ceremony helpers. `getDel` is exposed only when the
+ * cache has a native one; otherwise `consumeChallenge` arbitrates on `delete`, which
+ * reports removal to exactly one concurrent caller.
  */
 export function createPasskeyChallengeStore(cache: PasskeyChallengeStore): PasskeyChallengeStore {
+  const nativeGetDel = cache.getDel?.bind(cache);
   return {
     get: (key) => cache.get(key),
     set: (key, value, ttl) => cache.set(key, value, ttl),
     delete: (key) => cache.delete(key),
-    getDel: async (key) => {
-      if (typeof cache.getDel === 'function') {
-        return cache.getDel(key);
-      }
-      const value = await cache.get(key);
-      if (value === undefined || value === null) {
-        return undefined;
-      }
-      await cache.delete(key);
-      return value;
-    },
+    ...(nativeGetDel ? { getDel: nativeGetDel } : {}),
   };
 }
 

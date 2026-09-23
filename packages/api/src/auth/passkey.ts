@@ -55,7 +55,8 @@ export interface VerifiedPasskeyRegistration {
 export interface PasskeyChallengeStore {
   get: (key: string) => Promise<string | undefined>;
   set: (key: string, value: string, ttl?: number) => Promise<unknown>;
-  delete: (key: string) => Promise<unknown>;
+  /** Resolves true only for the caller that actually removed the key. */
+  delete: (key: string) => Promise<boolean>;
   /** Optional atomic get-and-delete (Redis GETDEL). Prefer when available. */
   getDel?: (key: string) => Promise<string | undefined>;
 }
@@ -158,7 +159,8 @@ export const authenticationChallengeKey = (sessionId: string): string =>
  * most one ceremony even if the client replays the verification request.
  *
  * Prefers atomic get-and-delete when the store implements `getDel` (e.g. Redis
- * GETDEL). Falls back to get-then-delete for stores that do not.
+ * GETDEL). Otherwise the delete arbitrates: `DEL` and `Map#delete` report removal to
+ * exactly one caller, so a replayed or concurrent verification cannot share a challenge.
  */
 export async function consumeChallenge(
   store: PasskeyChallengeStore,
@@ -173,8 +175,8 @@ export async function consumeChallenge(
   if (challenge == null) {
     return undefined;
   }
-  await store.delete(key);
-  return challenge;
+  /** Concurrent readers can all see the value; only the one whose delete removed it may use it. */
+  return (await store.delete(key)) ? challenge : undefined;
 }
 
 /**

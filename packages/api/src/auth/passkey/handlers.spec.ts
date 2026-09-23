@@ -931,12 +931,16 @@ describe('passkey sign-in ban enforcement', () => {
 });
 
 describe('createPasskeyChallengeStore', () => {
-  it('pops a value once through the get-then-delete fallback', async () => {
+  it('leaves arbitration to delete when the cache has no native getDel', async () => {
     const store = createPasskeyChallengeStore(memoryCache());
     await store.set('k', 'challenge');
 
-    await expect(store.getDel?.('k')).resolves.toBe('challenge');
-    await expect(store.getDel?.('k')).resolves.toBeUndefined();
+    expect(store.getDel).toBeUndefined();
+    await expect(store.get('k')).resolves.toBe('challenge');
+    await expect(Promise.all([store.delete('k'), store.delete('k')])).resolves.toEqual([
+      true,
+      false,
+    ]);
   });
 
   it('prefers the cache getDel when the adapter exposes one', async () => {

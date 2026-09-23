@@ -1,3 +1,4 @@
+import Keyv from 'keyv';
 import { logger } from '@librechat/data-schemas';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
@@ -169,6 +170,24 @@ describe('consumeChallenge', () => {
 
   it('returns undefined for an unknown key', async () => {
     expect(await consumeChallenge(createStore(), 'missing')).toBeUndefined();
+  });
+
+  it('hands a challenge to only one of two concurrent readers without a native getDel', async () => {
+    const keyv = new Keyv<string>();
+    const store: PasskeyChallengeStore = {
+      get: (key) => keyv.get(key),
+      set: (key, value, ttl) => keyv.set(key, value, ttl),
+      delete: (key) => keyv.delete(key),
+    };
+    await store.set('key', 'challenge-value');
+
+    const results = await Promise.all([
+      consumeChallenge(store, 'key'),
+      consumeChallenge(store, 'key'),
+    ]);
+
+    expect(results.filter((value) => value === 'challenge-value')).toHaveLength(1);
+    expect(results.filter((value) => value === undefined)).toHaveLength(1);
   });
 
   it('uses getDel when present so concurrent consumers cannot both win', async () => {
