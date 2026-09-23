@@ -43,7 +43,7 @@ import ProjectCreateDialog from '~/components/Projects/ProjectCreateDialog';
 import ProjectDeleteDialog from '~/components/Projects/ProjectDeleteDialog';
 import ProjectEditDialog from '~/components/Projects/ProjectEditDialog';
 import { useLocalize, useLocalStorage, useNewConvo } from '~/hooks';
-import { clearMessagesCache, cn } from '~/utils';
+import { clearMessagesCache, cn, rowActionClasses } from '~/utils';
 import { Collapse } from '~/components/ui';
 import Convo from './Convo';
 import store from '~/store';
@@ -55,17 +55,6 @@ const iconButtonClassName = cn(
   buttonVariants({ variant: 'section-action', size: 'icon-xs' }),
   'shrink-0',
 );
-
-/** The same control on a project row rather than beside the heading. The row
- *  itself already fills on hover, so the variant's hover surface would leave
- *  the button reading as a second, weaker hover on top of it. These take the
- *  active fill instead — the same one the row's own selected state uses — both
- *  under the pointer and while the menu they own is open. */
-const rowActionClassName = cn(
-  iconButtonClassName,
-  'hover:bg-surface-active hover:text-text-primary',
-);
-const rowActionOpenClassName = 'bg-surface-active text-text-primary';
 
 const noop = () => {};
 
@@ -282,9 +271,9 @@ const ProjectItem = memo(
       <li className="list-none" ref={projectRowRef}>
         <div
           className={cn(
-            'group/project-row text-text-primary hover:bg-surface-hover relative flex h-9 items-center rounded-lg text-sm',
+            'group text-text-primary hover:bg-surface-active-alt relative flex h-9 items-center rounded-lg text-sm',
             isActive && 'bg-surface-active-alt hover:bg-surface-active-alt',
-            !isActive && isMenuOpen && 'bg-surface-hover',
+            !isActive && isMenuOpen && 'bg-surface-active-alt',
             isDropOver && canDrop && 'bg-surface-active-alt ring-border-medium ring-1 ring-inset',
           )}
         >
@@ -307,19 +296,10 @@ const ProjectItem = memo(
             <span className="min-w-0 truncate">{project.name}</span>
           </button>
           <div
-            className={cn(
-              /* The 4px between the two controls, and from the row's trailing
-                 edge, that a pinned chat keeps between its unpin badge and its
-                 overflow menu. */
-              'absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-1',
-              isMenuOpen
-                ? 'opacity-100'
-                : [
-                    '[@media(hover:hover)]:opacity-0 [@media(hover:hover)]:transition-opacity',
-                    'group-hover/project-row:opacity-100',
-                    'has-[:focus-visible]:opacity-100',
-                  ],
-            )}
+            /* The 4px between the two controls, and from the row's trailing edge,
+               that a pinned chat keeps between its unpin badge and its overflow
+               menu. Each control reveals itself. */
+            className="absolute top-1/2 right-1 flex -translate-y-1/2 items-center gap-1"
           >
             <TooltipAnchor
               description={localize('com_ui_new_chat_in_project', { name: project.name })}
@@ -327,7 +307,7 @@ const ProjectItem = memo(
                 <a
                   href={projectChatPath}
                   aria-label={localize('com_ui_new_chat_in_project', { name: project.name })}
-                  className={rowActionClassName}
+                  className={rowActionClasses({ visible: isMenuOpen })}
                   onClick={startChat}
                 >
                   <NewChatIcon className="h-4 w-4" />
@@ -346,7 +326,7 @@ const ProjectItem = memo(
               trigger={
                 <Ariakit.MenuButton
                   aria-label={localize('com_ui_more_options')}
-                  className={cn(rowActionClassName, isMenuOpen && rowActionOpenClassName)}
+                  className={rowActionClasses({ open: isMenuOpen })}
                 >
                   <Ellipsis className="h-4 w-4" aria-hidden="true" />
                 </Ariakit.MenuButton>
@@ -439,7 +419,7 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
           type="button"
           variant="ghost"
           onClick={() => setIsCreateOpen(true)}
-          className="text-text-secondary hover:bg-surface-hover hover:text-text-primary flex h-9 w-full justify-start gap-2 rounded-lg px-2 text-sm font-normal transition-colors"
+          className="text-text-secondary hover:bg-surface-active-alt hover:text-text-primary flex h-9 w-full justify-start gap-2 rounded-lg px-2 text-sm font-normal transition-colors"
         >
           <FolderPlus className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span className="truncate">{localize('com_ui_new_project')}</span>
@@ -464,7 +444,7 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
               type="button"
               variant="ghost"
               onClick={openProjects}
-              className="text-text-secondary hover:bg-surface-hover hover:text-text-primary flex h-8 w-full justify-start rounded-lg px-2 text-xs font-medium transition-colors"
+              className="text-text-secondary hover:bg-surface-active-alt hover:text-text-primary flex h-8 w-full justify-start rounded-lg px-2 text-xs font-medium transition-colors"
             >
               {localize('com_ui_all_projects')}
             </Button>
@@ -479,8 +459,8 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
   }
 
   return (
-    <div className="flex flex-col px-3 text-sm">
-      <div className="flex h-8 w-full items-center pr-2">
+    <div className="flex flex-col px-3 pt-3 text-sm">
+      <div className="flex h-8 w-full items-center pr-1">
         <button
           type="button"
           onClick={() => {

@@ -3,13 +3,7 @@ import * as Ariakit from '@ariakit/react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import { QueryKeys, PermissionTypes, Permissions } from 'librechat-data-provider';
-import {
-  DropdownPopup,
-  Spinner,
-  buttonVariants,
-  useToastContext,
-  useMediaQuery,
-} from '@librechat/client';
+import { DropdownPopup, Spinner, useToastContext, useMediaQuery } from '@librechat/client';
 import {
   Ellipsis,
   Share2,
@@ -37,10 +31,10 @@ import {
 import { useHasAccess, useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
 import { useChatContext, useLiveAnnouncer } from '~/Providers';
 import { NotificationSeverity } from '~/common';
+import { cn, rowActionClasses } from '~/utils';
 import ProjectButton from './ProjectButton';
 import DeleteButton from './DeleteButton';
 import ShareButton from './ShareButton';
-import { cn } from '~/utils';
 /** The overflow menu and the shift-held quick action show the same archive control in two
  *  sizes, and must never disagree about which direction it moves the conversation. */
 function renderArchiveIcon(isLoading: boolean, isArchived: boolean, className: string) {
@@ -436,16 +430,9 @@ function ConvoOptions({
     ],
   );
 
-  const buttonClassName = cn(
-    /** The same shared row action the unpin badge beside it uses, rather than a
-     *  second copy of that recipe. */
-    buttonVariants({ variant: 'row-action', size: 'icon-xs' }),
-    'text-text-secondary',
-    /** Touch has no hover, so a reveal-on-hover trigger is simply invisible there. */
-    isActiveConvo === true || isPopoverActive || isSmallScreen
-      ? 'opacity-100'
-      : 'opacity-0 focus:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[open]:opacity-100',
-  );
+  const buttonClassName = rowActionClasses({
+    visible: isActiveConvo === true || isPopoverActive || isSmallScreen,
+  });
 
   if (isShiftHeld && isActiveConvo && !isPopoverActive && !showShareDialog && !showDeleteDialog) {
     return (

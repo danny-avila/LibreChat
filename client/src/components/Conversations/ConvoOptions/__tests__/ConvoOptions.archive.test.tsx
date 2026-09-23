@@ -29,6 +29,7 @@ jest.mock('@ariakit/react', () => ({
 }));
 jest.mock('~/utils', () => ({
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
+  rowActionClasses: () => 'row-action',
 }));
 jest.mock('librechat-data-provider', () => ({
   QueryKeys: { messages: 'messages' },

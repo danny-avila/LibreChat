@@ -80,7 +80,7 @@ const ConversationStarters = () => {
             key={index}
             onClick={() => sendConversationStarter(text)}
             style={{ animationDelay: `${index * 75}ms`, animationFillMode: 'backwards' }}
-            className="border-border-medium bg-surface-secondary text-text-secondary fade-in hover:border-border-heavy hover:bg-surface-tertiary hover:text-text-primary focus-visible:ring-ring-primary flex max-w-[16rem] cursor-pointer items-center justify-center rounded-2xl border px-4 py-2.5 text-center text-sm shadow-xs transition-colors duration-200 focus-visible:ring-2 focus-visible:outline-hidden"
+            className="bg-surface-secondary text-text-secondary fade-in hover:bg-surface-hover hover:text-text-primary focus-visible:ring-text-primary flex max-w-[16rem] cursor-pointer items-center justify-center rounded-2xl px-4 py-2.5 text-center text-sm transition-colors duration-200 focus-visible:ring-2 focus-visible:outline-hidden"
           >
             <span className="line-clamp-2 text-balance break-words">{text}</span>
           </button>

@@ -127,7 +127,7 @@ const ChatsHeader: FC<ChatsHeaderProps> = memo(({ isExpanded, onToggle, trailing
   return (
     <div
       className={cn(
-        'flex h-8 w-full items-center pr-2',
+        'flex h-8 w-full items-center pr-1',
         highlight && 'bg-surface-active-alt rounded-lg',
       )}
     >
@@ -163,7 +163,7 @@ const DateLabel: FC<{ groupName: string; isFirst?: boolean; isAlphabetical?: boo
           isAlphabetical ? 'com_a11y_chats_alpha_section' : 'com_a11y_chats_date_section',
           isAlphabetical ? { letter: displayName } : { date: displayName },
         )}
-        className={cn('text-text-secondary pt-1 pl-1', isFirst === true ? 'mt-0' : 'mt-2')}
+        className={cn('text-text-secondary pt-0.5 pl-1', isFirst === true ? 'mt-0' : 'mt-1.5')}
         style={{ fontSize: '0.7rem' }}
       >
         {displayName}
@@ -585,7 +585,7 @@ const Conversations: FC<ConversationsProps> = ({
   return (
     <div
       ref={chatsRegionRef}
-      className="text-text-primary relative flex flex-1 flex-col pb-2 text-sm"
+      className="text-text-primary relative flex flex-1 flex-col pt-3 pb-2 text-sm"
     >
       <div className="px-3">
         <ChatsHeader
