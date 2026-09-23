@@ -1,6 +1,10 @@
 const axios = require('axios');
 const AzureSoraTool = require('~/app/clients/tools/structured/AzureSora');
 
+const mockResolveAzureSoraCredentials = jest.fn();
+const mockValidateAzureSoraEndpoint = jest.fn();
+const mockCreateAzureSoraRequestConfig = jest.fn();
+
 jest.mock('axios');
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -12,6 +16,9 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   logAxiosError: jest.fn(),
+  resolveAzureSoraCredentials: (...args) => mockResolveAzureSoraCredentials(...args),
+  validateAzureSoraEndpoint: (...args) => mockValidateAzureSoraEndpoint(...args),
+  createAzureSoraRequestConfig: (...args) => mockCreateAzureSoraRequestConfig(...args),
 }));
 
 process.env.AZURE_SORA_POLL_INTERVAL_MS = '10';
@@ -22,39 +29,45 @@ describe('AzureSora Video Generation Tool', () => {
     userId: 'user-1',
     AZURE_SORA_API_KEY: 'test-key',
     AZURE_SORA_ENDPOINT: 'https://test-resource.openai.azure.com',
-    fileStrategy: 'local',
-    processFileURL: jest.fn(),
+    uploadImageBuffer: jest.fn(),
   };
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-    axios.post.mockReset();
-    axios.get.mockReset();
-    processFileDefaults();
-  });
-
   const processFileDefaults = () => {
-    baseFields.processFileURL.mockResolvedValue({
+    baseFields.uploadImageBuffer.mockResolvedValue({
       file_id: 'file-1',
       filepath: '/files/vid-job-1.mp4',
     });
   };
 
-  const buildTool = (overrides = {}) =>
-    new AzureSoraTool({ ...baseFields, ...overrides });
+  const buildTool = (overrides = {}) => new AzureSoraTool({ ...baseFields, ...overrides });
 
-  test('generates a video end-to-end and returns a video_url artifact', async () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    axios.post.mockReset();
+    axios.get.mockReset();
+    mockResolveAzureSoraCredentials.mockImplementation((fields) => ({
+      apiKey: fields.AZURE_SORA_API_KEY || '',
+      endpoint: fields.AZURE_SORA_ENDPOINT || '',
+    }));
+    mockValidateAzureSoraEndpoint.mockImplementation(async (endpoint) => new URL(endpoint).origin);
+    mockCreateAzureSoraRequestConfig.mockImplementation((_url, config) => ({
+      ...config,
+      maxRedirects: 0,
+      proxy: false,
+    }));
+    processFileDefaults();
+  });
+
+  test('generates a video end-to-end and persists the buffer safely', async () => {
     const tool = buildTool();
 
     axios.post.mockResolvedValueOnce({ data: { id: 'job-1', status: 'queued' } });
     axios.get
       .mockResolvedValueOnce({ data: { id: 'job-1', status: 'running' } })
-      .mockResolvedValueOnce({ data: { id: 'job-1', status: 'succeeded' } });
-
-    // content download (arraybuffer)
-    axios.get.mockResolvedValueOnce({
-      data: new Uint8Array([1, 2, 3, 4]).buffer,
-    });
+      .mockResolvedValueOnce({ data: { id: 'job-1', status: 'succeeded' } })
+      .mockResolvedValueOnce({
+        data: new Uint8Array([1, 2, 3, 4]).buffer,
+      });
 
     const [textResponse, artifact] = await tool._call({
       prompt: 'a drone shot over a coastline at sunset',
@@ -70,8 +83,34 @@ describe('AzureSora Video Generation Tool', () => {
       size: '1280x720',
       seconds: '4',
     });
-    expect(axios.post.mock.calls[0][2].headers['api-key']).toBe('test-key');
+    expect(axios.post.mock.calls[0][2]).toMatchObject({
+      headers: { 'api-key': 'test-key' },
+      maxRedirects: 0,
+      proxy: false,
+    });
+    expect(mockValidateAzureSoraEndpoint).toHaveBeenCalledWith(
+      'https://test-resource.openai.azure.com',
+    );
+    expect(mockCreateAzureSoraRequestConfig).toHaveBeenCalledTimes(4);
+    for (const [url, config] of mockCreateAzureSoraRequestConfig.mock.calls) {
+      expect(url).toContain('https://test-resource.openai.azure.com/');
+      expect(config.maxRedirects).toBeUndefined();
+    }
 
+    expect(baseFields.uploadImageBuffer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: 'video_generation',
+        resize: false,
+        metadata: expect.objectContaining({
+          buffer: Buffer.from([1, 2, 3, 4]),
+          bytes: 4,
+          filename: 'vid-job-1.mp4',
+          type: 'video/mp4',
+          file_id: expect.any(String),
+        }),
+      }),
+    );
+    expect(baseFields.uploadImageBuffer.mock.calls[0][0]).not.toHaveProperty('URL');
     expect(textResponse[0].type).toBe('text');
     expect(artifact.content[0].type).toBe('video_url');
     expect(artifact.content[0].video_url.url).toBe('/files/vid-job-1.mp4');
@@ -86,9 +125,9 @@ describe('AzureSora Video Generation Tool', () => {
       data: { id: 'job-2', status: 'failed', error: { message: 'content policy' } },
     });
 
-    await expect(
-      tool._call({ prompt: 'bad prompt' }),
-    ).rejects.toThrow('Azure Sora generation failed: content policy');
+    await expect(tool._call({ prompt: 'bad prompt' })).rejects.toThrow(
+      'Azure Sora generation failed: content policy',
+    );
   });
 
   test('throws when credentials are not configured', async () => {
@@ -96,11 +135,48 @@ describe('AzureSora Video Generation Tool', () => {
       userId: 'user-1',
       AZURE_SORA_API_KEY: '',
       AZURE_SORA_ENDPOINT: '',
-      processFileURL: baseFields.processFileURL,
     });
 
-    await expect(tool._call({ prompt: 'test' })).rejects.toThrow(
-      /Azure Sora is not configured/,
+    await expect(tool._call({ prompt: 'test' })).rejects.toThrow(/Azure Sora is not configured/);
+    expect(axios.post).not.toHaveBeenCalled();
+  });
+
+  test('rejects an unsafe endpoint before any request carries the key', async () => {
+    mockValidateAzureSoraEndpoint.mockRejectedValueOnce(
+      new Error('Invalid Azure Sora endpoint: the host is not an approved Azure OpenAI host'),
+    );
+    const tool = buildTool();
+
+    await expect(tool._call({ prompt: 'test prompt' })).rejects.toThrow(
+      'not an approved Azure OpenAI host',
+    );
+    expect(axios.post).not.toHaveBeenCalled();
+    expect(axios.get).not.toHaveBeenCalled();
+  });
+
+  test('fails immediately when polling is redirected', async () => {
+    const tool = buildTool();
+    const redirectError = Object.assign(new Error('redirect blocked'), {
+      response: { status: 302 },
+    });
+
+    axios.post.mockResolvedValueOnce({ data: { id: 'job-3' } });
+    axios.get.mockRejectedValueOnce(redirectError);
+
+    await expect(tool._call({ prompt: 'test prompt' })).rejects.toThrow('redirect blocked');
+  });
+
+  test('fails immediately when connect-time SSRF protection blocks polling', async () => {
+    const tool = buildTool();
+    const ssrfError = Object.assign(new Error('SSRF protection blocked DNS rebinding'), {
+      code: 'ESSRF',
+    });
+
+    axios.post.mockResolvedValueOnce({ data: { id: 'job-4' } });
+    axios.get.mockRejectedValueOnce(ssrfError);
+
+    await expect(tool._call({ prompt: 'test prompt' })).rejects.toThrow(
+      'SSRF protection blocked DNS rebinding',
     );
   });
 
@@ -109,8 +185,8 @@ describe('AzureSora Video Generation Tool', () => {
 
     axios.post.mockRejectedValue(new Error('connect ECONNREFUSED'));
 
-    await expect(
-      tool._call({ prompt: 'test prompt' }),
-    ).rejects.toThrow(/Failed to submit the video generation job/);
+    await expect(tool._call({ prompt: 'test prompt' })).rejects.toThrow(
+      /Failed to submit the video generation job/,
+    );
   });
 });

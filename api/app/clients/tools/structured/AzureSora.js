@@ -1,8 +1,14 @@
+const { randomUUID } = require('crypto');
 const axios = require('axios');
 const { logger } = require('@librechat/data-schemas');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { ContentTypes, FileContext } = require('librechat-data-provider');
-const { logAxiosError } = require('@librechat/api');
+const {
+  logAxiosError,
+  resolveAzureSoraCredentials,
+  validateAzureSoraEndpoint,
+  createAzureSoraRequestConfig,
+} = require('@librechat/api');
 
 const DEFAULT_API_VERSION = 'preview';
 const DEFAULT_DEPLOYMENT = 'sora';
@@ -49,21 +55,16 @@ class AzureSoraTool extends Tool {
     if (this.isAgent) {
       this.responseFormat = 'content_and_artifact';
     }
-    this.processFileURL = fields.processFileURL?.bind(this);
-    this.fileStrategy = fields.fileStrategy;
+    this.uploadImageBuffer = fields.uploadImageBuffer?.bind(this);
 
     this.name = 'video_gen_sora_azure';
     this.description =
       'Generates a short video from a detailed text prompt using Azure OpenAI Sora. Use this when the user explicitly asks to create, generate or make a video.';
     this.schema = azureSoraJsonSchema;
 
-    this.apiKey =
-      fields.AZURE_SORA_API_KEY || process.env.AZURE_SORA_API_KEY || process.env.AZURE_API_KEY || '';
-    this.endpoint =
-      fields.AZURE_SORA_ENDPOINT ||
-      process.env.AZURE_SORA_ENDPOINT ||
-      process.env.AZURE_OPENAI_ENDPOINT ||
-      '';
+    const credentials = resolveAzureSoraCredentials(fields, process.env);
+    this.apiKey = credentials.apiKey;
+    this.endpoint = credentials.endpoint;
     this.apiVersion = process.env.AZURE_SORA_API_VERSION || DEFAULT_API_VERSION;
     this.deploymentName = process.env.AZURE_SORA_DEPLOYMENT_NAME || DEFAULT_DEPLOYMENT;
     this.pollIntervalMs = Number(process.env.AZURE_SORA_POLL_INTERVAL_MS) || POLL_INTERVAL_MS;
@@ -105,10 +106,10 @@ class AzureSoraTool extends Tool {
         const response = await axios.post(
           url,
           payload,
-          {
+          createAzureSoraRequestConfig(url, {
             headers: { 'api-key': this.apiKey, 'Content-Type': 'application/json' },
             timeout: 30000,
-          },
+          }),
         );
         return response.data;
       } catch (error) {
@@ -131,13 +132,21 @@ class AzureSoraTool extends Tool {
 
       let data;
       try {
-        const response = await axios.get(statusUrl, {
-          headers: { 'api-key': this.apiKey },
-          timeout: 15000,
-        });
+        const response = await axios.get(
+          statusUrl,
+          createAzureSoraRequestConfig(statusUrl, {
+            headers: { 'api-key': this.apiKey },
+            timeout: 15000,
+          }),
+        );
         data = response.data;
       } catch (error) {
-        // transient network errors during polling are retried until the timeout
+        if (
+          error.code === 'ESSRF' ||
+          (error.response?.status >= 300 && error.response?.status < 400)
+        ) {
+          throw error;
+        }
         logger.warn(`[AzureSora] Poll request failed, retrying: ${error.message}`);
         continue;
       }
@@ -159,18 +168,19 @@ class AzureSoraTool extends Tool {
 
   async downloadVideo(jobId) {
     const contentUrl = this.getVideoContentUrl(jobId);
-    const response = await axios.get(contentUrl, {
-      headers: { 'api-key': this.apiKey },
-      responseType: 'arraybuffer',
-      timeout: 120000,
-      maxContentLength: MAX_VIDEO_BYTES,
-      maxBodyLength: MAX_VIDEO_BYTES,
-    });
+    const response = await axios.get(
+      contentUrl,
+      createAzureSoraRequestConfig(contentUrl, {
+        headers: { 'api-key': this.apiKey },
+        responseType: 'arraybuffer',
+        timeout: 120000,
+        maxContentLength: MAX_VIDEO_BYTES,
+        maxBodyLength: MAX_VIDEO_BYTES,
+      }),
+    );
     const videoBuffer = Buffer.from(response.data);
     if (videoBuffer.length > MAX_VIDEO_BYTES) {
-      throw new Error(
-        `Azure Sora video exceeds the ${MAX_VIDEO_BYTES} byte download limit.`,
-      );
+      throw new Error(`Azure Sora video exceeds the ${MAX_VIDEO_BYTES} byte download limit.`);
     }
     return videoBuffer;
   }
@@ -184,6 +194,7 @@ class AzureSoraTool extends Tool {
         'Azure Sora is not configured. Set AZURE_SORA_API_KEY and AZURE_SORA_ENDPOINT (or AZURE_API_KEY / AZURE_OPENAI_ENDPOINT).',
       );
     }
+    this.endpoint = await validateAzureSoraEndpoint(this.endpoint);
 
     const job = await this.submitJob(prompt, size, seconds);
     const jobId = job?.id;
@@ -194,22 +205,21 @@ class AzureSoraTool extends Tool {
     await this.pollJobUntilComplete(jobId);
     const videoBuffer = await this.downloadVideo(jobId);
 
-    // The Azure content URL requires the api-key header, which file storage
-    // strategies cannot send when fetching a URL. Embed the bytes as a data URI
-    // so every file strategy can persist them, and keep a graceful fallback to
-    // returning the video inline when storage fails.
     const dataUri = `data:video/mp4;base64,${videoBuffer.toString('base64')}`;
 
-    if (this.processFileURL) {
+    if (this.uploadImageBuffer) {
       try {
-        const fileRecord = await this.processFileURL({
-          URL: dataUri,
-          basePath: 'files',
-          userId: this.userId,
-          fileName: `vid-${jobId}.mp4`,
-          fileStrategy: this.fileStrategy,
-          context: FileContext.video_generation,
+        const fileRecord = await this.uploadImageBuffer({
           req: this.req,
+          context: FileContext.video_generation,
+          resize: false,
+          metadata: {
+            buffer: videoBuffer,
+            bytes: videoBuffer.length,
+            filename: `vid-${jobId}.mp4`,
+            file_id: randomUUID(),
+            type: 'video/mp4',
+          },
         });
 
         const file_id = fileRecord?.file_id;

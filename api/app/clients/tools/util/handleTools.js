@@ -263,7 +263,7 @@ const loadTools = async ({
         fileStrategy,
       });
     },
-    video_gen_sora_azure: async (_toolContextMap, dynamicToolContextMap) => {
+    video_gen_sora_azure: async (_toolContextMap, _dynamicToolContextMap) => {
       const authFields = getAuthFields('video_gen_sora_azure');
       const authValues = await loadAuthValues({ userId: user, authFields, throwError: false });
       return createAzureSoraTools({
@@ -272,7 +272,7 @@ const loadTools = async ({
         req: options.req,
         userId: user,
         fileStrategy,
-        processFileURL: options.processFileURL,
+        uploadImageBuffer: options.uploadImageBuffer,
       });
     },
   };
