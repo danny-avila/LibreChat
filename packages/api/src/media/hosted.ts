@@ -48,13 +48,15 @@ async function readHostedMediaReference(
     fileConfig.serverFileSizeLimit ?? Number.MAX_SAFE_INTEGER,
   );
   const sourceURL = new URL(request.url).href;
+  /** The transport timeout only bounds socket idleness; a public URL must not drip indefinitely. */
+  const deadline = AbortSignal.timeout(context.config.timeouts.downloadMs);
   let bytes = 0;
   try {
     const stream = await transport.stream({
       url: sourceURL,
       headers: {},
       publicOnly: true,
-      signal,
+      signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
       timeoutMs: context.config.timeouts.downloadMs,
       maxBytes,
       maxRedirects: context.config.transfers.maxRedirects,
@@ -141,9 +143,15 @@ export async function importHostedMediaReference(
   input: MediaURLUploadRequest,
   context: MediaContext,
   deps: MediaHostedDependencies,
+  signal?: AbortSignal,
 ): Promise<MediaURLUploadResponse> {
   assertMediaStorage(context);
-  const { sourceURL, data, type } = await fetchHostedMediaReference(input, context, deps.transport);
+  const { sourceURL, data, type } = await fetchHostedMediaReference(
+    input,
+    context,
+    deps.transport,
+    signal,
+  );
   const filename = `${input.role}-reference.${mediaContentExtension(type)}`;
   try {
     await assertUploadContentAllowed({

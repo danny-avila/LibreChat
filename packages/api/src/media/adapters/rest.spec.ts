@@ -173,3 +173,22 @@ describe('OpenRouter native video request translation', () => {
     },
   );
 });
+
+describe('OpenRouter usage accounting', () => {
+  it.each([
+    ['a platform-billed request', { cost: 0.4 }, 0.4],
+    [
+      'a bring-your-own-key request',
+      { cost: 0.02, is_byok: true, cost_details: { upstream_inference_cost: 0.4 } },
+      0.42,
+    ],
+  ])('settles the full cost of %s', async (_label, usage, costUSD) => {
+    const { adapter, context } = fixture('openrouter.videos', {
+      id: 'job',
+      status: 'completed',
+      usage,
+    });
+    const result = await adapter.poll!('job', context);
+    expect(result.status === 'completed' && result.usage?.costUSD).toBeCloseTo(costUSD);
+  });
+});

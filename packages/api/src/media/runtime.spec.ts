@@ -1194,6 +1194,31 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     ).toEqual(archived);
   });
 
+  it('gives up on a hosted reference that drips bytes past the download deadline', async () => {
+    config.media!.timeouts.downloadMs = 300;
+    let drip: ReturnType<typeof setInterval> | undefined;
+    holdReference = (response) => {
+      response.write(remoteReference.subarray(0, 8));
+      drip = setInterval(() => response.write(Buffer.alloc(1)), 50);
+      response.once('close', () => clearInterval(drip));
+    };
+    const publication = jest.spyOn(repository, 'reserveMediaAssetWrite');
+    try {
+      const started = Date.now();
+      const response = await request(app)
+        .post('/api/media/uploads/url')
+        .send({ url: referenceURL, role: 'audio' })
+        .timeout(5_000);
+      expect(response.status).toBe(422);
+      expect(response.body).toEqual({ error: { code: 'reference_unavailable' } });
+      expect(Date.now() - started).toBeLessThan(3_000);
+      expect(publication).not.toHaveBeenCalled();
+    } finally {
+      clearInterval(drip);
+      holdReference = undefined;
+    }
+  });
+
   it.each([401, 403, 404, 410])(
     'reports an unavailable hosted reference for HTTP %s without publishing a file',
     async (status) => {

@@ -373,6 +373,18 @@ describe('media worker admission with standalone MongoDB', () => {
       .lean();
   }
 
+  it('stops polling a provider that never leaves running once the job needs attention', async () => {
+    const receipt = await remoteJob('krea.images', 'never-finishes');
+    const scope = { ownerId: currentOwner, tenantId: null };
+    const created = (await repository.getMediaJob(scope, receipt.jobId))!.createdAt.getTime();
+    clock = created + config.media!.recovery.attentionAfterMs;
+    expect(await run(currentOwner, receipt.jobId, clock + 60_000)).toMatchObject({
+      phase: 'requires_attention',
+      error: { code: 'submission_uncertain' },
+      provider: { certainty: 'submitted' },
+    });
+  });
+
   it('persists an HTTP rejection privately and logs only its redacted classification', async () => {
     const receipt = await submitAs(currentOwner, 'diagnostic-rejection');
     const json = jest.spyOn(transport, 'json').mockRejectedValueOnce(
@@ -1114,6 +1126,32 @@ describe('media worker admission with standalone MongoDB', () => {
       cleanup.resolve();
       await pending;
       await runtime.worker.stop();
+    }
+  });
+
+  it('rescans a saturated page instead of skipping the owners after the break', async () => {
+    config.media!.execution.maxActiveTotal = 1;
+    config.media!.limits.pageSize = 2;
+    config.media!.limits.maxPageSize = 2;
+    config.media!.worker.tickMs = 5;
+    const owners = [owner(), owner(), owner(), owner()].sort();
+    for (const [index, ownerId] of owners.entries()) await submitAs(ownerId, `saturated-${index}`);
+    const cursors: Array<string | undefined> = [];
+    const list = repository.listDueMediaScopes;
+    const scans = jest.spyOn(repository, 'listDueMediaScopes').mockImplementation(async (input) => {
+      cursors.push(input.cursor);
+      return list(input);
+    });
+    try {
+      await runtime.worker.start();
+      await waitForSubmissions(1);
+      const seen = cursors.length;
+      while (cursors.length < seen + 4) await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(new Set(cursors)).toEqual(new Set([undefined]));
+    } finally {
+      submissions.forEach((submission) => submission.release());
+      await runtime.worker.stop();
+      scans.mockRestore();
     }
   });
 

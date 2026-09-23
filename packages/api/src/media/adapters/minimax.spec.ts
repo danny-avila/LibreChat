@@ -84,3 +84,34 @@ describe('MiniMax native input parity', () => {
     },
   );
 });
+
+describe('MiniMax legacy submission outcomes', () => {
+  const input: MediaProviderInput = {
+    role: 'start_frame',
+    file_id: 'owned-first-frame',
+    type: 'image/png',
+    data: Buffer.from('first-frame'),
+  };
+  it.each([
+    {
+      label: 'a client rejection',
+      response: { base_resp: { status_code: 1004 } },
+      certainty: 'rejected',
+    },
+    {
+      label: 'a server error',
+      response: { base_resp: { status_code: 1013 } },
+      certainty: 'uncertain',
+    },
+    {
+      label: 'an error that still names a task',
+      response: { task_id: 'task', base_resp: { status_code: 1026 } },
+      certainty: 'uncertain',
+    },
+  ])('treats $label as $certainty', async ({ response, certainty }) => {
+    const { context, request, adapter } = fixture('minimax/hailuo-2.3', input);
+    request.parameters = { ...request.parameters, durationSeconds: 6 };
+    context.transport.json = async (_request, schema) => schema.parse(response);
+    await expect(adapter.submit(request, [input], context)).rejects.toMatchObject({ certainty });
+  });
+});

@@ -12,6 +12,7 @@ import type {
   MediaUserKey,
   MediaErrorCode,
 } from 'librechat-data-provider';
+import type { MediaOwnerScope } from '@librechat/data-schemas';
 import type { MediaTransport, MediaTransportRequest } from './transport';
 import type { MediaConnection, MediaProviderAdapter } from './provider';
 import type { ResolvedMediaOffering } from './discovery';
@@ -162,7 +163,7 @@ export function createMediaCatalog({
     async read(
       config: MediaConfig,
       resolve: (integration: MediaIntegration) => Promise<MediaConnection>,
-      scope: string,
+      scope: MediaOwnerScope,
       describeUserKey?: (integration: MediaIntegration) => MediaUserKey | undefined,
     ): Promise<MediaCatalogSnapshot> {
       const configured = config.integrations.filter((integration) => integration.enabled !== false);
@@ -184,7 +185,10 @@ export function createMediaCatalog({
             const key = createHash('sha256')
               .update(
                 JSON.stringify({
-                  scope,
+                  // Discovery is per credential, not per user: resolved headers carry any user
+                  // templating, and user-owned keys already bind to their owner.
+                  tenantId: scope.tenantId ?? null,
+                  headers: connection.headers,
                   integration,
                   binding: connection.binding,
                   routing: connection.routing,

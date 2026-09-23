@@ -225,7 +225,11 @@ export interface MediaServices {
     admission?: boolean,
   ): Promise<PreparedMedia>;
   commands: {
-    uploadURL(input: MediaURLUploadRequest, context: MediaContext): Promise<MediaURLUploadResponse>;
+    uploadURL(
+      input: MediaURLUploadRequest,
+      context: MediaContext,
+      signal?: AbortSignal,
+    ): Promise<MediaURLUploadResponse>;
     submit(input: MediaSubmissionRequest, context: MediaContext): Promise<MediaSubmissionReceipt>;
     import(input: MediaImportRequest, context: MediaContext): Promise<MediaImportReceipt>;
     retry(
@@ -305,7 +309,7 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
         }
         return resolve(context, integration);
       },
-      `${context.scope.tenantId ?? ''}:${context.scope.ownerId}`,
+      context.scope,
       (integration) => deps.describeUserKey?.({ integration, appConfig: context.appConfig }),
     );
 
@@ -525,9 +529,9 @@ export function createMediaServices(deps: MediaServiceDependencies): MediaServic
   return {
     prepare,
     commands: {
-      async uploadURL(input, context) {
+      async uploadURL(input, context, signal) {
         assertMediaAccess(context, true);
-        return importHostedMediaReference(input, context, deps);
+        return importHostedMediaReference(input, context, deps, signal);
       },
       async submit(
         input: MediaSubmissionRequest,

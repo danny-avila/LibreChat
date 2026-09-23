@@ -426,21 +426,31 @@ describe('Media provider key setup matches chat credential storage', () => {
       const resolve = async () => {
         throw new MediaServiceError(code, 403, 'Saved key unavailable');
       };
-      const first = await catalog.read(config, resolve, 'owner', () => ({
-        keyName: 'Router',
-        encoding: 'apiKey',
-        userProvideURL: false,
-      }));
+      const first = await catalog.read(
+        config,
+        resolve,
+        { ownerId: 'owner', tenantId: null },
+        () => ({
+          keyName: 'Router',
+          encoding: 'apiKey',
+          userProvideURL: false,
+        }),
+      );
       expect(first.catalog.offerings).toEqual([]);
       expect(first.catalog.integrations?.[0]).toMatchObject({
         unavailableReason: code,
         userKey: { keyName: 'Router', encoding: 'apiKey', userProvideURL: false },
       });
-      const changed = await catalog.read(config, resolve, 'owner', () => ({
-        keyName: 'Router',
-        encoding: 'apiKey',
-        userProvideURL: true,
-      }));
+      const changed = await catalog.read(
+        config,
+        resolve,
+        { ownerId: 'owner', tenantId: null },
+        () => ({
+          keyName: 'Router',
+          encoding: 'apiKey',
+          userProvideURL: true,
+        }),
+      );
       expect(changed.catalog.version).not.toBe(first.catalog.version);
     },
   );

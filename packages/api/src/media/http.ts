@@ -89,6 +89,15 @@ export function sendMediaError(res: Response, error: Error): void {
   res.status(mapped.status).json({ error: { code: mapped.code } });
 }
 
+/** Aborts work for a client that disconnected before its response was written. */
+function disconnectSignal(res: Response): AbortSignal {
+  const controller = new AbortController();
+  res.once('close', () => {
+    if (!res.writableFinished) controller.abort();
+  });
+  return controller.signal;
+}
+
 function isMulterError(error: unknown): error is Error & { code: string } {
   return error instanceof Error && error.name === 'MulterError' && 'code' in error;
 }
@@ -396,7 +405,12 @@ export function createMediaRouter({
     '/uploads/url',
     ...(admission?.uploadLimiters ?? []),
     handle(
-      (req, context) => services.commands.uploadURL(parseHostedMediaReference(req.body), context),
+      (req, context) =>
+        services.commands.uploadURL(
+          parseHostedMediaReference(req.body),
+          context,
+          req.res ? disconnectSignal(req.res) : undefined,
+        ),
       201,
     ),
   );

@@ -31,6 +31,8 @@ const modernOptionSchema = z
   })
   .strict();
 const taskId = z.union([z.string().min(1), z.number().int().safe()]);
+/** Unknown error, timeout and internal error do not prove the paid task was never created. */
+const MINIMAX_SERVER_ERRORS = new Set([1000, 1001, 1013]);
 
 function profiles(config: MediaConfig): MediaModelProfile[] {
   return [...models].map(([modelId, modelName]) => {
@@ -176,7 +178,11 @@ export function createMinimaxMediaAdapters(): MediaProviderAdapter[] {
               base_resp: z.object({ status_code: z.number() }),
             }),
           );
-          if (result.base_resp.status_code !== 0) throw new MediaProviderError('rejected');
+          if (result.base_resp.status_code !== 0) {
+            const created =
+              result.task_id || MINIMAX_SERVER_ERRORS.has(result.base_resp.status_code);
+            throw new MediaProviderError(created ? 'uncertain' : 'rejected');
+          }
           if (!result.task_id) throw new MediaProviderError('uncertain');
           return {
             status: 'running',

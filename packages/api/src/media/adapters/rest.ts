@@ -31,6 +31,11 @@ import { mediaAPIURL } from '../provider';
 const usageSchema = z
   .object({
     cost: z.number().nonnegative().optional(),
+    is_byok: z.boolean().optional(),
+    cost_details: z
+      .object({ upstream_inference_cost: z.number().nonnegative().nullish() })
+      .passthrough()
+      .nullish(),
     prompt_tokens: z.number().nonnegative().optional(),
     completion_tokens: z.number().nonnegative().optional(),
     input_tokens: z.number().nonnegative().optional(),
@@ -71,8 +76,10 @@ function providerUsage(usage: z.infer<typeof usageSchema>) {
   if (!usage) {
     return undefined;
   }
+  /** With a bring-your-own key, `cost` is only OpenRouter's fee; the provider bills the rest. */
+  const upstream = usage.is_byok ? (usage.cost_details?.upstream_inference_cost ?? 0) : 0;
   return {
-    costUSD: usage.cost,
+    costUSD: usage.cost === undefined ? undefined : usage.cost + upstream,
     inputTokens: usage.prompt_tokens ?? usage.input_tokens,
     outputTokens: usage.completion_tokens ?? usage.output_tokens,
   };

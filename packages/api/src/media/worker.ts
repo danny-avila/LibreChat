@@ -547,6 +547,17 @@ export function createMediaWorker(
         return;
       }
       if (result.status === 'running') {
+        // Unknown provider states read as running, so polling needs the same bound as recovery.
+        if (deps.now() - job.createdAt.getTime() >= context.config.recovery.attentionAfterMs) {
+          title?.controller.abort();
+          await observe({
+            phase: 'requires_attention',
+            provider: { ...job.provider, certainty: 'submitted', operationId: result.operationId },
+            error: { code: 'submission_uncertain' },
+            releaseLease: true,
+          });
+          return;
+        }
         const pendingTitle = title && titleControllers.has(title.controller) ? title : undefined;
         const dueAt = new Date(
           deps.now() + context.config.polling.providerIntervalMs,
@@ -955,9 +966,13 @@ export function createMediaWorker(
         cursor: dueCursor,
       }),
     );
-    dueCursor = scopes.nextCursor;
+    let saturated = false;
     for (const scope of scopes.items) {
-      if (stopped || active.size >= baseConfig.execution.maxActiveTotal) break;
+      if (stopped) break;
+      if (active.size >= baseConfig.execution.maxActiveTotal) {
+        saturated = true;
+        break;
+      }
       const scanned = await attempt('A media queue could not be scanned.', async () => {
         await deps.withScope(scope, async () => {
           await deps.repository.recoverMediaPublications({
@@ -999,6 +1014,8 @@ export function createMediaWorker(
       });
       if (!scanned) healthy = false;
     }
+    // A saturated page is scanned again, so owners after the break are not skipped for a cycle.
+    if (!saturated) dueCursor = scopes.nextCursor;
     return healthy;
   }
 

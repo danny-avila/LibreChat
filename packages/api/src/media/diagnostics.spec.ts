@@ -62,6 +62,15 @@ describe('private media provider diagnostics', () => {
     });
   });
 
+  it('redacts the bare key of any Authorization scheme without redacting other header words', () => {
+    const secrets = mediaDiagnosticSecrets({
+      Authorization: 'Riverflow-Key sourceful-secret',
+      'X-Title': 'Studio App',
+    });
+    expect(secrets).toContain('sourceful-secret');
+    expect(secrets).not.toContain('App');
+  });
+
   it('redacts credentials, signed URLs, embedded media and control characters before bounding fields', () => {
     const secrets = mediaDiagnosticSecrets({
       Authorization: 'Bearer fixture-secret',

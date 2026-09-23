@@ -377,7 +377,10 @@ describe('Vertex Veo adapter', () => {
       adapters: createRESTMediaAdapters(),
       now: () => 0,
     });
-    const snapshot = await catalog.read(config, async () => context.connection, 'owner');
+    const snapshot = await catalog.read(config, async () => context.connection, {
+      ownerId: 'owner',
+      tenantId: null,
+    });
     expect(
       snapshot.catalog.offerings.map((o) => ({ name: o.modelName, available: o.available })),
     ).toEqual([

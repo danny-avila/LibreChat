@@ -230,7 +230,7 @@ describe('native OpenAI model mappings', () => {
         transport: context.transport,
         adapters: [videos],
         now: () => 0,
-      }).read(context.config, async () => context.connection, 'owner');
+      }).read(context.config, async () => context.connection, { ownerId: 'owner', tenantId: null });
       const submission = request(modelId, 'video.generate', {
         durationSeconds: 8,
         resolution: '1280x720',

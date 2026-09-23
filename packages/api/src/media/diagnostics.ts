@@ -17,7 +17,8 @@ export function mediaDiagnosticSecrets(headers: Record<string, string> = {}): st
   for (const [name, value] of Object.entries(headers)) {
     if (!value || publicHeaders.test(name)) continue;
     secrets.add(value);
-    const token = /^(?:Bearer|Basic)\s+(.+)$/i.exec(value)?.[1];
+    const scheme = /^authorization$/i.test(name) ? /^\S+\s+(.+)$/ : /^(?:Bearer|Basic)\s+(.+)$/i;
+    const token = scheme.exec(value)?.[1];
     if (token) secrets.add(token);
   }
   return [...secrets].sort((left, right) => right.length - left.length);

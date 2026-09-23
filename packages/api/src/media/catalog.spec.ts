@@ -151,6 +151,7 @@ function publicTransport(override?: (request: MediaTransportRequest) => string |
   });
 }
 
+const scope = (ownerId: string, tenantId: string | null = null) => ({ ownerId, tenantId });
 function connection(integration: MediaIntegration): MediaConnection {
   return {
     id: integration.id,
@@ -186,7 +187,7 @@ describe('media catalog provider conformance', () => {
     const snapshot = await catalog.read(
       config,
       async (integration) => connection(integration),
-      'owner',
+      scope('owner'),
     );
     expect(
       snapshot.catalog.offerings.map(({ available, capabilities }) => ({
@@ -222,7 +223,7 @@ describe('media catalog provider conformance', () => {
       ...connection(integration),
       allowedAddresses: ['provider.example:443'],
     });
-    await catalog.read(config, allowed, 'owner-one');
+    await catalog.read(config, allowed, scope('owner-one'));
     const first = fixture.calls.length;
     expect(
       fixture.calls.every((call) => call.allowedAddresses?.includes('provider.example:443')),
@@ -230,13 +231,33 @@ describe('media catalog provider conformance', () => {
     await catalog.read(
       config,
       async (integration) => ({ ...connection(integration), allowedAddresses: [] }),
-      'owner-two',
+      scope('owner-two'),
     );
     expect(fixture.calls.length).toBe(first * 2);
     expect(fixture.calls.slice(first).every((call) => call.allowedAddresses?.length === 0)).toBe(
       true,
     );
-    await catalog.read(config, allowed, 'owner-one');
+    await catalog.read(config, allowed, scope('owner-one'));
+    expect(fixture.calls).toHaveLength(first * 2);
+  });
+
+  it('shares discovery for a shared credential and separates user-specific connections', async () => {
+    const fixture = imageTransport(() => JSON.stringify(imageEndpoints));
+    const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
+    const shared = async (integration: MediaIntegration) => connection(integration);
+    await catalog.read(config, shared, scope('owner-one', 'tenant'));
+    const first = fixture.calls.length;
+    expect(first).toBeGreaterThan(0);
+    await catalog.read(config, shared, scope('owner-two', 'tenant'));
+    expect(fixture.calls).toHaveLength(first);
+    await catalog.read(
+      config,
+      async (integration) => ({
+        ...connection(integration),
+        headers: { Authorization: 'Bearer fixture', 'X-User': 'owner-three' },
+      }),
+      scope('owner-three', 'tenant'),
+    );
     expect(fixture.calls).toHaveLength(first * 2);
   });
 
@@ -249,7 +270,7 @@ describe('media catalog provider conformance', () => {
         ...connection(integration),
         routing: { only: ['google-vertex'], ignore: ['google-ai-studio'], zdr: true },
       }),
-      'owner',
+      scope('owner'),
     );
     const offering = result.catalog.offerings[0];
     expect(offering.available).toBe(true);
@@ -281,7 +302,7 @@ describe('media catalog provider conformance', () => {
       encoding: 'apiKey' as const,
       userProvideURL: false,
     }));
-    const enabled = await catalog.read(config, resolve, 'owner', describeKey);
+    const enabled = await catalog.read(config, resolve, scope('owner'), describeKey);
     expect(enabled.catalog.integrations?.[0].userKey).toBeDefined();
     expect(enabled.catalog.offerings).toHaveLength(1);
     resolve.mockClear();
@@ -290,7 +311,7 @@ describe('media catalog provider conformance', () => {
     const excluded = await catalog.read(
       { ...config, integrations: [{ ...imageIntegration, enabled: false }] },
       resolve,
-      'owner',
+      scope('owner'),
       describeKey,
     );
     expect(excluded.catalog.integrations).toEqual([]);
@@ -303,7 +324,7 @@ describe('media catalog provider conformance', () => {
     const restored = await catalog.read(
       { ...config, integrations: [{ ...imageIntegration, enabled: true }] },
       resolve,
-      'owner',
+      scope('owner'),
       describeKey,
     );
     expect(restored.catalog.offerings).toHaveLength(1);
@@ -319,7 +340,7 @@ describe('media catalog provider conformance', () => {
         ...connection(integration),
         routing: { order: ['unavailable', 'google-vertex'], allow_fallbacks: false },
       }),
-      'owner',
+      scope('owner'),
     );
     expect(result.resolved.get('images:google/image')?.providerTag).toBe('google-vertex/global');
     const denied = await catalog.read(
@@ -328,7 +349,7 @@ describe('media catalog provider conformance', () => {
         ...connection(integration),
         routing: { only: ['another-provider'] },
       }),
-      'owner',
+      scope('owner'),
     );
     expect(denied.catalog.offerings[0].available).toBe(false);
   });
@@ -362,7 +383,7 @@ describe('media catalog provider conformance', () => {
           ],
         },
         async (integration) => connection(integration),
-        'owner',
+        scope('owner'),
       );
       const offering = result.catalog.offerings[0];
       expect(offering.available).toBe(values.length > 1);
@@ -404,7 +425,7 @@ describe('media catalog provider conformance', () => {
     const result = await catalog.read(
       config,
       async (integration) => connection(integration),
-      'owner',
+      scope('owner'),
     );
     expect(result.catalog.offerings[0].available).toBe(false);
   });
@@ -416,7 +437,7 @@ describe('media catalog provider conformance', () => {
     const result = await catalog.read(
       videoConfig,
       async (integration) => connection(integration),
-      'owner',
+      scope('owner'),
     );
     expect(result.catalog.offerings.map((offering) => offering.available)).toEqual([
       true,
@@ -456,7 +477,7 @@ describe('media catalog provider conformance', () => {
     const result = await catalog.read(
       videoConfig,
       async (integration) => connection(integration),
-      'owner',
+      scope('owner'),
     );
 
     expect(result.catalog.offerings.map((offering) => offering.available)).toEqual([
@@ -493,7 +514,7 @@ describe('media catalog provider conformance', () => {
       const result = await catalog.read(
         videoConfig,
         async (integration) => connection(integration),
-        'owner',
+        scope('owner'),
       );
       const offering = result.catalog.offerings[0];
       expect(offering.available).toBe(true);
@@ -529,7 +550,7 @@ describe('media catalog provider conformance', () => {
     const result = await catalog.read(
       videoConfig,
       async (integration) => ({ ...connection(integration), routing }),
-      'owner',
+      scope('owner'),
     );
     expect(result.catalog.offerings.every((offering) => !offering.available)).toBe(true);
   });
@@ -546,7 +567,7 @@ describe('media catalog provider conformance', () => {
       catalog.read(
         bounded,
         async (integration) => ({ ...connection(integration), binding }),
-        'owner',
+        scope('owner'),
       );
     await read('a');
     await read('b');
@@ -571,8 +592,8 @@ describe('media catalog provider conformance', () => {
     const fixture = imageTransport(() => JSON.stringify(imageEndpoints));
     const first = createMediaCatalog({ ...fixture, adapters, cache: shared, now: () => time });
     const second = createMediaCatalog({ ...fixture, adapters, cache: shared, now: () => time });
-    await first.read(config, async (integration) => connection(integration), 'owner');
-    await second.read(config, async (integration) => connection(integration), 'owner');
+    await first.read(config, async (integration) => connection(integration), scope('owner'));
+    await second.read(config, async (integration) => connection(integration), scope('owner'));
     expect(fixture.calls).toHaveLength(1);
     expect(shared.set).toHaveBeenLastCalledWith(
       expect.stringMatching(/^[a-f0-9]{64}$/),
@@ -582,20 +603,24 @@ describe('media catalog provider conformance', () => {
     await second.read(
       config,
       async (integration) => ({ ...connection(integration), binding: 'other' }),
-      'owner',
+      scope('owner'),
     );
     expect(fixture.calls).toHaveLength(2);
-    await second.read(config, async (integration) => connection(integration), 'other-tenant:owner');
+    await second.read(
+      config,
+      async (integration) => connection(integration),
+      scope('owner', 'other-tenant'),
+    );
     expect(fixture.calls).toHaveLength(3);
     time = config.catalog.refreshMs + 1;
-    await second.read(config, async (integration) => connection(integration), 'owner');
+    await second.read(config, async (integration) => connection(integration), scope('owner'));
     expect(fixture.calls).toHaveLength(4);
   });
 
   it('fetches only listed image endpoint documents and uses the index for discovery', async () => {
     const fixture = imageTransport(() => JSON.stringify(imageEndpoints));
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
-    await catalog.read(config, async (integration) => connection(integration), 'owner');
+    await catalog.read(config, async (integration) => connection(integration), scope('owner'));
     expect(fixture.calls.map((call) => new URL(call.url).pathname)).toEqual([
       '/api/v1/images/models/google/image/endpoints',
     ]);
@@ -610,7 +635,7 @@ describe('media catalog provider conformance', () => {
         ],
       }),
       async (integration) => connection(integration),
-      'owner',
+      scope('owner'),
     );
     expect(fixture.calls.map((call) => new URL(call.url).pathname)).toContain(
       '/api/v1/images/models',
@@ -639,8 +664,8 @@ describe('media catalog provider conformance', () => {
     });
     const resolve = async (integration: MediaIntegration) => connection(integration);
     await Promise.all([
-      catalog.read(bounded, resolve, 'owner'),
-      catalog.read(bounded, resolve, 'owner'),
+      catalog.read(bounded, resolve, scope('owner')),
+      catalog.read(bounded, resolve, scope('owner')),
     ]);
     expect(fixture.calls).toHaveLength(3);
     expect(peak).toBe(2);
@@ -661,7 +686,7 @@ describe('OpenRouter representative public media catalog', () => {
   it('discovers the representative image/video catalog and preserves unavailable Muse without exposing credentials', async () => {
     const fixture = publicTransport();
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
-    const result = await catalog.read(config, resolve, 'owner');
+    const result = await catalog.read(config, resolve, scope('owner'));
     expect(() => mediaCatalogSchema.parse(result.catalog)).not.toThrow();
     expect(result.catalog.offerings.map((offering) => offering.modelId)).toEqual([
       ...publicCatalog.images.data.map((model) => model.id),
@@ -687,7 +712,7 @@ describe('OpenRouter representative public media catalog', () => {
   it('exposes the six SVG models and enforces required Recraft Styles references', async () => {
     const fixture = publicTransport();
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
-    const result = await catalog.read(config, resolve, 'owner');
+    const result = await catalog.read(config, resolve, scope('owner'));
     const vectors = result.catalog.offerings.filter((offering) =>
       offering.capabilities.some(
         (capability) =>
@@ -731,7 +756,7 @@ describe('OpenRouter representative public media catalog', () => {
       integrations: [imageIntegration],
       limits: { maxInputs: 5, maxOutputs: 3 },
     });
-    const result = await catalog.read(limited, resolve, 'owner');
+    const result = await catalog.read(limited, resolve, scope('owner'));
     const selected = result.resolved.get('images:google/image');
     if (!selected) throw new Error('Missing discovered image');
     expect(selected.offering.routes?.map((route) => route.providerTag)).toEqual([
@@ -779,7 +804,7 @@ describe('OpenRouter representative public media catalog', () => {
     const result = await catalog.read(
       limited,
       async (integration) => ({ ...connection(integration), routing }),
-      'owner',
+      scope('owner'),
     );
     const discovered = result.resolved.get(`images:${modelId}`);
     if (!discovered) throw new Error('Missing Google offering');
@@ -833,7 +858,7 @@ describe('OpenRouter representative public media catalog', () => {
   it('derives source video and audio inputs from the generic metadata and marks edit, upscale, and avatar workflows', async () => {
     const fixture = publicTransport();
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
-    const result = await catalog.read(config, resolve, 'owner');
+    const result = await catalog.read(config, resolve, scope('owner'));
     for (const metadata of publicCatalog.generalVideos.data) {
       const offering = result.resolved.get(`videos:${metadata.id}`)?.offering;
       expect(offering?.available).toBe(true);
@@ -901,7 +926,7 @@ describe('OpenRouter representative public media catalog', () => {
       integrations: [{ ...videoIntegration, catalog: { kind: 'configured', models: [modelId] } }],
     });
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
-    const result = await catalog.read(limited, resolve, 'owner');
+    const result = await catalog.read(limited, resolve, scope('owner'));
     const selected = result.resolved.get(`videos:${modelId}`);
     if (!selected) throw new Error('Missing Kling model');
     expect(selected.providerTag).toBe('atlas-cloud');
@@ -945,7 +970,7 @@ describe('OpenRouter representative public media catalog', () => {
       });
     });
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
-    const result = await catalog.read(config, resolve, 'owner');
+    const result = await catalog.read(config, resolve, scope('owner'));
     expect(
       result.catalog.offerings.filter(
         (offering) => offering.api === 'openrouter.videos' && offering.available,
@@ -979,7 +1004,7 @@ describe('OpenRouter representative public media catalog', () => {
         { ...videoIntegration, catalog: { kind: 'configured', models: ['google/veo-3.1'] } },
       ],
     });
-    const result = await catalog.read(limited, resolve, 'owner');
+    const result = await catalog.read(limited, resolve, scope('owner'));
     expect(result.catalog.offerings[0]).toMatchObject({
       available: false,
       unavailableReason: 'not_ready',
@@ -1000,7 +1025,7 @@ describe('OpenRouter representative public media catalog', () => {
         { ...imageIntegration, catalog: { kind: 'discovered', allowModels: selected } },
       ],
     });
-    const result = await catalog.read(curated, resolve, 'owner');
+    const result = await catalog.read(curated, resolve, scope('owner'));
     expect(result.catalog.offerings.map((offering) => offering.modelId)).toEqual(selected);
     expect(result.catalog.offerings.map((offering) => offering.available)).toEqual([true, false]);
     expect(fixture.calls.filter((call) => call.url.endsWith('/endpoints'))).toHaveLength(1);
@@ -1017,7 +1042,7 @@ describe('OpenRouter representative public media catalog', () => {
         },
       ],
     });
-    const expanded = await catalog.read(excluded, resolve, 'owner');
+    const expanded = await catalog.read(excluded, resolve, scope('owner'));
     expect(expanded.catalog.offerings).toHaveLength(10);
     expect(
       expanded.catalog.offerings.every(
@@ -1049,7 +1074,7 @@ describe('OpenRouter representative public media catalog', () => {
           },
         ],
       });
-      const result = await catalog.read(limited, resolve, 'owner');
+      const result = await catalog.read(limited, resolve, scope('owner'));
       expect(
         result.catalog.offerings.map(({ modelId, available }) => ({ modelId, available })),
       ).toEqual([
@@ -1062,7 +1087,7 @@ describe('OpenRouter representative public media catalog', () => {
           { ...imageIntegration, api, catalog: { kind: 'discovered', allModels: false } },
         ],
       });
-      expect((await catalog.read(empty, resolve, 'owner')).catalog.offerings).toEqual([]);
+      expect((await catalog.read(empty, resolve, scope('owner'))).catalog.offerings).toEqual([]);
     },
   );
 
@@ -1084,7 +1109,7 @@ describe('OpenRouter representative public media catalog', () => {
         });
     });
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
-    const result = await catalog.read(config, resolve, 'owner');
+    const result = await catalog.read(config, resolve, scope('owner'));
     expect(result.catalog.offerings).toHaveLength(21);
     expect(result.resolved.get('images:future/new-image')?.offering).toMatchObject({
       modelName: 'New Image',
@@ -1112,7 +1137,7 @@ describe('OpenRouter representative public media catalog', () => {
         });
     });
     const catalog = createMediaCatalog({ ...fixture, adapters, now: () => 0 });
-    const result = await catalog.read(config, resolve, 'owner');
+    const result = await catalog.read(config, resolve, scope('owner'));
     expect(result.catalog.offerings).toHaveLength(20);
     expect(result.catalog.offerings.filter((offering) => offering.available)).toHaveLength(17);
     expect(result.resolved.get('images:black-forest-labs/flux.2-pro')?.offering).toMatchObject({
@@ -1134,7 +1159,7 @@ describe('OpenRouter representative public media catalog', () => {
       catalog: { maxModels: 10 },
       integrations: [config.integrations[0]],
     });
-    const result = await catalog.read(limited, resolve, 'owner');
+    const result = await catalog.read(limited, resolve, scope('owner'));
     expect(result.catalog.offerings).toHaveLength(0);
     expect(result.catalog.integrations).toEqual([
       expect.objectContaining({
@@ -1154,7 +1179,7 @@ describe('OpenRouter representative public media catalog', () => {
       limits: { maxInputs: 1 },
       integrations: [config.integrations[1]],
     });
-    const result = await catalog.read(limited, resolve, 'owner');
+    const result = await catalog.read(limited, resolve, scope('owner'));
     expect(() => mediaCatalogSchema.parse(result.catalog)).not.toThrow();
     expect(result.resolved.get('videos:heygen/avatar-iv')?.offering).toMatchObject({
       available: false,
