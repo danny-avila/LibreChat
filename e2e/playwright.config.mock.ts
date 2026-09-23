@@ -120,6 +120,8 @@ const vanillaOverrides = {
   TENANT_ISOLATION_STRICT: 'false',
   TRUST_TENANT_HEADER: 'true',
   ALLOW_PASSKEY_LOGIN: 'true',
+  /** The password-reset scenario needs the reset routes; CI has no developer `.env`. */
+  ALLOW_PASSWORD_RESET: 'true',
   PASSKEY_RP_ID: 'localhost',
   PASSKEY_ORIGINS: passkeyOrigin,
   /** Every project reruns the reset and passkey sign-in scenarios from one IP, and each

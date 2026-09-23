@@ -308,6 +308,31 @@ test.describe('passkeys', () => {
     await expect(page.getByRole('button', { name: 'Sign in with a passkey' })).toHaveCount(0);
   });
 
+  test('with email login off, passkey sign-in is hidden but management stays @scenario:passkey-management-stays-when-email-login-off', async ({
+    browser,
+    playwright,
+    baseURL,
+  }) => {
+    test.setTimeout(60000);
+    const request = await playwright.request.newContext({ baseURL: passkeyBaseURL(baseURL) });
+    user = await createFreshUser(request);
+    context = await openContextFor(browser, request, passkeyBaseURL(baseURL));
+    await request.dispose();
+    await seedPasskey(user.email, `e2e-email-off-${randomUUID()}`, 'Office key');
+    await context.route('**/api/config', async (route) => {
+      const response = await route.fetch();
+      const config = await response.json();
+      await route.fulfill({ response, json: { ...config, emailLoginEnabled: false } });
+    });
+    const page = await context.newPage();
+
+    const passkeysDialog = await openPasskeysDialog(page);
+    await expect(passkeysDialog.getByText('Office key', { exact: true })).toBeVisible();
+
+    await logOut(page);
+    await expect(page.getByRole('button', { name: 'Sign in with a passkey' })).toHaveCount(0);
+  });
+
   test('a passkey sign-in on a 2FA account asks for the second factor @scenario:passkey-sign-in-hands-off-to-2fa', async ({
     browser,
     playwright,
