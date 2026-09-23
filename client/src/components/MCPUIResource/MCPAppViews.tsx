@@ -8,6 +8,13 @@ import { useLocalize } from '~/hooks';
 
 const DEFAULT_APP_VIEW_HEIGHT = 320;
 
+/**
+ * Attachments rendered by a stable ancestor. Presentation components may still receive those
+ * attachments for files, search rows, and outcome metadata; only their duplicate App view stands
+ * down. Object identity keeps independently owned nested attachments visible.
+ */
+export const MCPAppSuppressionContext = React.createContext<ReadonlySet<TAttachment> | null>(null);
+
 const MCPAppView = React.memo(function MCPAppView({
   app,
   userId,
@@ -40,7 +47,7 @@ const MCPAppView = React.memo(function MCPAppView({
   }
   if (frame.kind === 'unavailable') {
     return (
-      <div className="my-2 flex items-center gap-2 rounded-lg border border-border-light bg-surface-secondary px-4 py-3 text-sm text-text-secondary">
+      <div className="border-border-light bg-surface-secondary text-text-secondary my-2 flex items-center gap-2 rounded-lg border px-4 py-3 text-sm">
         {localize('com_ui_mcp_app_shared_unavailable')}
       </div>
     );
@@ -53,8 +60,16 @@ const MCPAppView = React.memo(function MCPAppView({
 });
 
 export function MCPAppViews({ attachments }: { attachments?: TAttachment[] }) {
+  const suppressedAttachments = React.useContext(MCPAppSuppressionContext);
   const { policy, userId } = useMCPAppsHost();
-  const apps = useMemo(() => selectToolCallUIResources(attachments), [attachments]);
+  const visibleAttachments = useMemo(
+    () =>
+      suppressedAttachments == null
+        ? attachments
+        : attachments?.filter((attachment) => !suppressedAttachments.has(attachment)),
+    [attachments, suppressedAttachments],
+  );
+  const apps = useMemo(() => selectToolCallUIResources(visibleAttachments), [visibleAttachments]);
 
   if (!policy.enabled || !userId || apps.length === 0) {
     return null;

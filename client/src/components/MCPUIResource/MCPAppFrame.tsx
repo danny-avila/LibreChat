@@ -59,14 +59,9 @@ export function MCPAppFrame({
           ref={frame.iframeRef}
           data-sandbox-url={frame.sandboxUrl}
           sandbox="allow-scripts allow-same-origin allow-forms"
-          style={{
-            width: '100%',
-            height: '100%',
-            border: 'none',
-            // visibility, not opacity: a transparent iframe keeps its whole subtree focusable behind
-            // the overlay.
-            visibility: frame.status === 'ready' ? 'visible' : 'hidden',
-          }}
+          className={
+            frame.status === 'ready' ? 'visible size-full border-0' : 'invisible size-full border-0'
+          }
           title={localize('com_ui_mcp_app_frame_title', { 0: resource.toolName ?? '' })}
         />
       )}

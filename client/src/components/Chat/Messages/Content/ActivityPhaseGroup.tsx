@@ -425,7 +425,7 @@ function LivePhaseHeader({
         {combo !== '' && (
           <span
             id={comboId}
-            className="shrink-0 text-xs font-normal text-text-secondary"
+            className="text-text-secondary shrink-0 text-xs font-normal"
             data-testid="live-phase-combo"
           >
             {combo}
@@ -440,7 +440,7 @@ function LivePhaseHeader({
         >
           {/** The verdict is the span's, not the newest line's, so it keeps its
            *  own separator from whatever the row happens to be saying. */}
-          <span className="mr-1 text-text-secondary">·</span>
+          <span className="text-text-secondary mr-1">·</span>
           <span>{detail}</span>
         </span>
       )}

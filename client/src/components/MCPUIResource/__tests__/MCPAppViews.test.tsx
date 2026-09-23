@@ -4,8 +4,8 @@ import { Tools } from 'librechat-data-provider';
 import type { TAttachment, TStartupConfig, UIResource } from 'librechat-data-provider';
 import type { MCPAppFrameState } from '~/hooks/MCP';
 import { MCPAppsPolicyProvider } from '~/Providers/MCPAppsPolicyContext';
+import { MCPAppSuppressionContext, MCPAppViews } from '../MCPAppViews';
 import { useAppBridge, useMCPAppFrame } from '~/hooks/MCP';
-import { MCPAppViews } from '../MCPAppViews';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: Record<number, string>) =>
@@ -208,6 +208,26 @@ describe('MCPAppViews', () => {
 
     view.rerender(renderViews([unrelatedAttachment, targetAttachment]));
     expect(view.getByTitle('MCP App: target')).toBe(targetFrame);
+  });
+
+  it('suppresses only attachments owned by an ancestor App surface', () => {
+    const owned = attachment({ toolCallId: 'call-owned', agentId: 'agent-a', stepId: 'step-a' }, [
+      app({ resourceId: 'owned', toolName: 'owned' }),
+    ]);
+    const nested = attachment({ toolCallId: 'call-nested', agentId: 'agent-b', stepId: 'step-b' }, [
+      app({ resourceId: 'nested', toolName: 'nested' }),
+    ]);
+
+    const view = render(
+      <MCPAppsPolicyProvider startupConfig={enabledConfig} ready userId="user-1">
+        <MCPAppSuppressionContext.Provider value={new Set([owned])}>
+          <MCPAppViews attachments={[owned, nested]} />
+        </MCPAppSuppressionContext.Provider>
+      </MCPAppsPolicyProvider>,
+    );
+
+    expect(view.queryByTitle('MCP App: owned')).not.toBeInTheDocument();
+    expect(view.getByTitle('MCP App: nested')).toBeInTheDocument();
   });
 
   it.each([
