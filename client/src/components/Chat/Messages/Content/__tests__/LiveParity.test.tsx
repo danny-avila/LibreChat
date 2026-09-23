@@ -201,9 +201,18 @@ describe('live combo aggregation', () => {
     for (const intent of ['Checking', 'Checking the', 'Checking the last file']) {
       parts[parts.length - 1] = toPart({ name: 'lookup', args: { intent } }, 'tail');
       readFirst.mockClear();
-      expect(activity(parts).comboCount).toBe(1024);
+      /** A tail that names its own work hides the count, but the span pass
+       *  still reaches the head, and must do so exactly once per delta. */
+      expect(activity(parts).comboCount).toBe(1);
       expect(readFirst).toHaveBeenCalledTimes(1);
     }
+
+    /** The same 1,024 parts under a generic tail: the whole suffix counts, on
+     *  the same single prefix read. */
+    parts[parts.length - 1] = toPart({ name: 'lookup', output: 'ok' }, 'tail');
+    readFirst.mockClear();
+    expect(activity(parts).comboCount).toBe(1024);
+    expect(readFirst).toHaveBeenCalledTimes(1);
   });
 
   it('counts only the suffix, ignoring descriptive metadata and sparse slots', () => {
@@ -394,14 +403,10 @@ describe('live fold parity with the cards it hides', () => {
 
   it('changes the multiplier with the throttled status line', () => {
     jest.useFakeTimers();
-    const first = toPart(
-      { name: 'create_file', args: '{"intent":"Creating the first file"}', output: '' },
-      'first',
-    );
-    const second = toPart(
-      { name: 'create_file', args: '{"intent":"Creating the second file"}', output: '' },
-      'second',
-    );
+    /** Generic lines, because only those carry a count: the multiplier has to
+     *  arrive with the line it belongs to, not a paint ahead of it. */
+    const first = toPart({ name: 'create_file', output: 'created' }, 'first');
+    const second = toPart({ name: 'create_file', output: '' }, 'second');
     const view = mount([first], undefined, true);
     view.rerender(
       <QueryClientProvider client={new QueryClient()}>
@@ -421,11 +426,59 @@ describe('live fold parity with the cards it hides', () => {
     );
 
     const header = within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0];
-    expect(header).toHaveAccessibleName('Creating the first file');
+    expect(header).toHaveAccessibleName('Ran Create File');
     act(() => {
       jest.advanceTimersByTime(500);
     });
-    expect(header).toHaveAccessibleName('Creating the second file ×2');
+    expect(header).toHaveAccessibleName('Running Create File ×2');
+  });
+
+  it('drops the multiplier as soon as the call names its own work', () => {
+    /** A count modifies the tool's name. Once the line is a sentence about
+     *  this call, `×2` reads as a claim about the sentence. */
+    const view = mount(
+      [
+        toPart({ name: 'create_file', output: 'created' }, 'first'),
+        toPart({ name: 'create_file', args: '{"intent":"Creating the second file"}' }, 'second'),
+      ],
+      undefined,
+      true,
+    );
+    const header = within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0];
+
+    expect(header).toHaveAccessibleName('Creating the second file');
+    expect(screen.queryByTestId('live-phase-combo')).toBeNull();
+
+    /** The same pair without the intent still counts, so the suppression is
+     *  the line's doing and not a lost count. */
+    view.unmount();
+    mount(
+      [
+        toPart({ name: 'create_file', output: 'created' }, 'first'),
+        toPart({ name: 'create_file', output: '' }, 'second'),
+      ],
+      undefined,
+      true,
+    );
+    expect(screen.getByTestId('live-phase-combo')).toHaveTextContent('×2');
+  });
+
+  it('drops the multiplier on a line that reports how the call ended', () => {
+    mount(
+      [
+        toPart({ name: 'lookup', output: 'rows' }, 'first'),
+        toPart({ name: 'lookup', output: 'rows', runStepStatus: 'failed' }, 'second'),
+      ],
+      undefined,
+      true,
+    );
+    const header = within(screen.getByTestId('activity-phase-card')).getAllByRole('button')[0];
+
+    /** The span's verdict still counts the failure; the line does not count
+     *  the tool, because "Failed lookup ×2" would blame both calls. */
+    expect(header).toHaveAccessibleName(/^Failed: lookup/);
+    expect(screen.queryByTestId('live-phase-combo')).toBeNull();
+    expect(screen.getByTestId('live-phase-outcome')).toHaveTextContent('1 failed');
   });
 
   it('resets the multiplier across an agent handoff', () => {
@@ -1084,7 +1137,8 @@ describe('live activity hardening transitions', () => {
       jest.advanceTimersByTime(500);
     });
     const header = screen.getByRole('button');
-    expect(header).toHaveAccessibleName('Checking the next file ×2');
+    expect(header).toHaveAccessibleName('Checking the next file');
+    expect(screen.queryByTestId('live-phase-combo')).toBeNull();
     expect(header.querySelector('.absolute[aria-hidden="true"]')).toBeNull();
   });
 
