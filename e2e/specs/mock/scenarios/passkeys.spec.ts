@@ -118,9 +118,19 @@ async function addPasskey(page: Page, password: string) {
   return passkeysDialog;
 }
 
+/** Nested dialogs close one per Escape, each after its exit animation. */
+async function closeDialogs(page: Page) {
+  const dialogs = page.getByRole('dialog');
+  await expect(async () => {
+    if ((await dialogs.count()) > 0) {
+      await page.keyboard.press('Escape');
+    }
+    await expect(dialogs).toHaveCount(0, { timeout: 1000 });
+  }).toPass({ timeout: 15000 });
+}
+
 async function logOut(page: Page) {
-  await page.keyboard.press('Escape');
-  await page.keyboard.press('Escape');
+  await closeDialogs(page);
   await page.getByTestId('nav-user').click();
   await page.getByRole('menuitem', { name: 'Log out' }).click();
   await expect(page).toHaveURL(/\/login/);
