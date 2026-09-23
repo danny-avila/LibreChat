@@ -18,7 +18,7 @@ The lockfile is the executable version boundary.
 | MCP connection                  | Standard shared sessions when Apps are off; profile-separated per-user, MCP OAuth, and direct OpenID sessions when on       |
 | View operations                 | Same-server tool calls, resource reads, resource and template listing, text messages, policy-controlled links, and logging  |
 | Visibility                      | Model, App, dual-visible, and omitted visibility follow the MCP Apps visibility rules                                       |
-| Rendering                       | One settled App on its tool-result surface; legacy inline HTML keeps its existing adapter with resize/actions               |
+| Rendering                       | Settled Apps render once in a message-owned area below the response; legacy inline HTML keeps its existing adapter          |
 | History                         | A stored settled result replays its input, unchanged result, and App document while its originating server binding is valid |
 | Search and public share         | Search results do not load Apps; public shares omit UI resources and retain ordinary transcript and tool text               |
 | Unsupported connection profiles | OBO, Graph-token placeholders, and request-body credential placeholders do not offer an interactive App View                |
