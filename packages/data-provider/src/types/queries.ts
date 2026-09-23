@@ -23,6 +23,19 @@ export type ConversationListParams = {
   tags?: string[];
   search?: string;
   projectId?: string;
+  /**
+   * Absolute cutoffs rather than a named window, so the server validates one thing
+   * (a date) instead of an enum it would have to keep in step with the client, and a
+   * caller can ask for a range the menu does not offer. ISO 8601, inclusive.
+   */
+  updatedAfter?: string;
+  createdAfter?: string;
+  /** OR-matched: a conversation qualifies if it ran on any of these endpoints. */
+  endpoints?: string[];
+  /** Only conversations carrying at least one attachment. */
+  hasFiles?: boolean;
+  /** Only conversations the user is actively sharing through a link. */
+  sharedOnly?: boolean;
 };
 
 export type MinimalConversation = Pick<

@@ -7,6 +7,7 @@ const {
   normalizeLimit,
   normalizeSortDirection,
   normalizeSortField,
+  parseConversationListFilters,
   CONVERSATION_SORT_FIELDS,
   openCheckpointDeletion,
   waitForGenerationPersistence,
@@ -180,6 +181,11 @@ router.get('/', async (req, res) => {
     tags = Array.isArray(req.query.tags) ? req.query.tags : [req.query.tags];
   }
 
+  const { filters, error: filterError } = parseConversationListFilters(req.query);
+  if (filterError) {
+    return res.status(400).json({ error: filterError });
+  }
+
   try {
     const result = await db.getConvosByCursor(req.user.id, {
       cursor,
@@ -191,6 +197,7 @@ router.get('/', async (req, res) => {
       sortBy,
       sortDirection,
       projectId,
+      ...filters,
     });
     res.status(200).json(result);
   } catch (error) {

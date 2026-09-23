@@ -319,6 +319,11 @@ export interface ConversationMethods {
       sortBy?: string;
       sortDirection?: string;
       projectId?: string;
+      updatedAfter?: Date;
+      createdAfter?: Date;
+      endpoints?: string[];
+      hasFiles?: boolean;
+      sharedOnly?: boolean;
     },
   ): Promise<{ conversations: IConversation[]; nextCursor: string | null }>;
   getConvosQueried(
@@ -2983,6 +2988,37 @@ export function createConversationMethods(
   }
 
   /**
+   * The conversations this user is actively sharing.
+   *
+   * Shared state is not a field on the conversation: it is a live link that can expire,
+   * so a denormalized flag would keep saying "shared" after a link lapsed. This asks the
+   * links themselves, indexed by `{ user, conversationId }`, and returns `null` when the
+   * deployment has sharing switched off so the caller can tell "no links" from "not
+   * applicable".
+   */
+  async function getSharedConversationIds(user: string): Promise<string[] | null> {
+    const SharedLink = mongoose.models.SharedLink as Model<ISharedLink> | undefined;
+    if (!SharedLink) {
+      return null;
+    }
+    const allowSharedLinks = process.env.ALLOW_SHARED_LINKS;
+    if (allowSharedLinks !== undefined && allowSharedLinks.toLowerCase().trim() !== 'true') {
+      return null;
+    }
+
+    const shares = await SharedLink.find({
+      user,
+      ...activeExpirationFilter<ISharedLink>(),
+    })
+      .select('conversationId')
+      .lean();
+
+    return shares
+      .map((share) => share.conversationId)
+      .filter((conversationId): conversationId is string => typeof conversationId === 'string');
+  }
+
+  /**
    * Retrieves conversations using cursor-based pagination.
    */
   async function getConvosByCursor(
@@ -2997,6 +3033,11 @@ export function createConversationMethods(
       sortBy = 'updatedAt',
       sortDirection = 'desc',
       projectId,
+      updatedAfter,
+      createdAfter,
+      endpoints,
+      hasFiles,
+      sharedOnly,
     }: {
       cursor?: string | null;
       limit?: number;
@@ -3007,6 +3048,11 @@ export function createConversationMethods(
       sortBy?: string;
       sortDirection?: string;
       projectId?: string;
+      updatedAfter?: Date;
+      createdAfter?: Date;
+      endpoints?: string[];
+      hasFiles?: boolean;
+      sharedOnly?: boolean;
     } = {},
   ) {
     const Conversation = mongoose.models.Conversation as Model<IConversation> &
@@ -3039,6 +3085,35 @@ export function createConversationMethods(
       } as FilterQuery<IConversation>);
     } else if (projectId) {
       filters.push({ chatProjectId: projectId } as FilterQuery<IConversation>);
+    }
+
+    /* Ranges are half-open on purpose: the caller sends the start of the window it
+       means, and "since midnight" must not depend on how the clock rounds. */
+    if (updatedAfter instanceof Date && !Number.isNaN(updatedAfter.getTime())) {
+      filters.push({ updatedAt: { $gte: updatedAfter } } as FilterQuery<IConversation>);
+    }
+    if (createdAfter instanceof Date && !Number.isNaN(createdAfter.getTime())) {
+      filters.push({ createdAt: { $gte: createdAfter } } as FilterQuery<IConversation>);
+    }
+
+    if (Array.isArray(endpoints) && endpoints.length > 0) {
+      filters.push({ endpoint: { $in: endpoints } } as FilterQuery<IConversation>);
+    }
+
+    /* `files` is absent on most rows and `[]` on rows that lost their last attachment,
+       so both have to read as "no attachments". */
+    if (hasFiles === true) {
+      filters.push({ files: { $exists: true, $not: { $size: 0 } } } as FilterQuery<IConversation>);
+    }
+
+    if (sharedOnly === true) {
+      const sharedIds = await getSharedConversationIds(user);
+      /* Nothing shared, or sharing switched off, means nothing can match. Returning early
+         also keeps an empty `$in` out of the query, which would match every document. */
+      if (sharedIds == null || sharedIds.length === 0) {
+        return { conversations: [], nextCursor: null };
+      }
+      filters.push({ conversationId: { $in: sharedIds } } as FilterQuery<IConversation>);
     }
 
     filters.push(getVisibleConversationRetentionFilter());

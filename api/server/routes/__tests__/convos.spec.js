@@ -1874,6 +1874,84 @@ describe('Convos Routes', () => {
     });
   });
 
+  describe('GET / list facets', () => {
+    const { getConvosByCursor } = require('~/models');
+
+    beforeEach(() => {
+      getConvosByCursor.mockResolvedValue({ conversations: [], nextCursor: null });
+    });
+
+    it('forwards the date cutoffs as dates', async () => {
+      const response = await request(app)
+        .get('/api/convos')
+        .query({ updatedAfter: '2026-09-01T00:00:00.000Z' });
+
+      expect(response.status).toBe(200);
+      const [, options] = getConvosByCursor.mock.calls.at(-1);
+      expect(options.updatedAfter).toBeInstanceOf(Date);
+      expect(options.updatedAfter.toISOString()).toBe('2026-09-01T00:00:00.000Z');
+    });
+
+    it('forwards repeated endpoint params as one list', async () => {
+      const response = await request(app)
+        .get('/api/convos')
+        .query('endpoints=openAI&endpoints=agents');
+
+      expect(response.status).toBe(200);
+      expect(getConvosByCursor).toHaveBeenCalledWith(
+        'test-user-123',
+        expect.objectContaining({ endpoints: ['openAI', 'agents'] }),
+      );
+    });
+
+    it('forwards the attachment flag only when it is on', async () => {
+      await request(app).get('/api/convos').query({ hasFiles: 'true' });
+      expect(getConvosByCursor).toHaveBeenLastCalledWith(
+        'test-user-123',
+        expect.objectContaining({ hasFiles: true }),
+      );
+
+      await request(app).get('/api/convos').query({ hasFiles: 'false' });
+      const [, options] = getConvosByCursor.mock.calls.at(-1);
+      expect(options.hasFiles).toBeUndefined();
+    });
+
+    /** Dropping a filter the caller sent would answer with conversations they asked
+     *  to exclude, which is worse than refusing the request. */
+    it('refuses a malformed cutoff instead of listing unfiltered', async () => {
+      const response = await request(app)
+        .get('/api/convos')
+        .query({ updatedAfter: 'last tuesday' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toMatch(/updatedAfter/);
+      expect(getConvosByCursor).not.toHaveBeenCalled();
+    });
+
+    it('forwards the shared flag only when it is on', async () => {
+      await request(app).get('/api/convos').query({ sharedOnly: 'true' });
+      expect(getConvosByCursor).toHaveBeenLastCalledWith(
+        'test-user-123',
+        expect.objectContaining({ sharedOnly: true }),
+      );
+
+      await request(app).get('/api/convos').query({ sharedOnly: 'false' });
+      const [, options] = getConvosByCursor.mock.calls.at(-1);
+      expect(options.sharedOnly).toBeUndefined();
+    });
+
+    it('sends no facet keys when the request carries none', async () => {
+      await request(app).get('/api/convos');
+
+      const [, options] = getConvosByCursor.mock.calls.at(-1);
+      expect(options.updatedAfter).toBeUndefined();
+      expect(options.createdAfter).toBeUndefined();
+      expect(options.endpoints).toBeUndefined();
+      expect(options.hasFiles).toBeUndefined();
+      expect(options.sharedOnly).toBeUndefined();
+    });
+  });
+
   describe('GET / sort normalization', () => {
     const { getConvosByCursor } = require('~/models');
 
