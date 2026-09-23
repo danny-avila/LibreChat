@@ -153,16 +153,22 @@ export default function useUsageHandler(): UsageHandlers {
       jotai.set(liveTokensFamily(convoKey), value);
     };
 
-    /** Flush the in-flight pending usage into a response's index entry, then
-     *  reset pending. Only flushes when events were actually folded this session
-     *  (eventCount > 0), so a finalize that carries persisted `metadata.usage`
-     *  but folded nothing — a late/second resumable subscriber — keeps the entry
-     *  loaded by `upsertEntries` instead of overwriting it with an empty record. */
-    const flushPendingInto = (convoKey: string, responseId: string | null) => {
+    /** Settle observed usage and clear live state. Pending supplies a response
+     * rollup only when the server supplied none (legacy FINAL or local stop).
+     * Session-only subagent usage still settles once, independently of which
+     * source supplied the whole-turn rollup. */
+    const flushPendingInto = (
+      convoKey: string,
+      responseId: string | null,
+      hasPersistedUsage = false,
+    ) => {
       const pendingAtom = pendingUsageFamily(convoKey);
       const pending = jotai.get(pendingAtom);
       const keep = responseId != null && pending.eventCount > 0;
-      if (keep) {
+      /** FINAL's persisted rollup covers the whole run; this subscriber may
+       * have observed only the last calls. Pending is a legacy/stop fallback,
+       * never a replacement for the response just upserted from the server. */
+      if (keep && !hasPersistedUsage) {
         setEntryUsage(convoKey, responseId, {
           input: pending.input,
           output: pending.output,
@@ -446,7 +452,7 @@ export default function useUsageHandler(): UsageHandlers {
        *  reset pending. Branch/total are summed from the index, so this single
        *  add is counted exactly once; the persisted `metadata.usage` reproduces
        *  it on reload. */
-      flushPendingInto(realId, responseId);
+      flushPendingInto(realId, responseId, data.responseMessage?.metadata?.usage != null);
 
       const tailId = responseId ?? data.requestMessage?.messageId ?? null;
       if (tailId) {

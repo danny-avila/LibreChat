@@ -13,6 +13,7 @@ import type { TMessage, TSubmission } from 'librechat-data-provider';
 import {
   activeUsageResponseIdFamily,
   liveTokensFamily,
+  branchTotalsFamily,
   pendingUsageFamily,
   removeUsageAtoms,
 } from '~/store/usage';
@@ -229,6 +230,8 @@ const mockFinalHandler = jest.fn();
 const mockCreatedHandler = jest.fn();
 const mockStepHandler = jest.fn();
 const mockTitleHandler = jest.fn();
+const mockContentHandler = jest.fn();
+const mockSyncHandler = jest.fn();
 const mockSetIsSubmitting = jest.fn();
 const mockClearStepMaps = jest.fn();
 
@@ -250,7 +253,8 @@ jest.mock('~/hooks/SSE/useEventHandlers', () => {
       attachmentHandler: jest.fn(),
       stepHandler: mockStepHandler,
       titleHandler: mockTitleHandler,
-      contentHandler: jest.fn(),
+      contentHandler: mockContentHandler,
+      syncHandler: mockSyncHandler,
       resetContentHandler: jest.fn(),
       syncStepMessage: jest.fn(),
       prunePtcTraces: jest.fn(),
@@ -483,6 +487,91 @@ describe('useResumableSSE', () => {
       });
       expect(getDefaultStore().get(activeUsageResponseIdFamily(CONV_ID))).toBe('created-user-id_');
       expect(getDefaultStore().get(pendingUsageFamily(CONV_ID)).eventCount).toBe(0);
+      sse.readyState = MOCK_SSE_CLOSED;
+      unmount();
+    },
+  );
+
+  it.each(['final', 'cancel', 'error'])(
+    'keeps Assistants sync identity consistent through content, usage, and %s',
+    async (terminal) => {
+      removeUsageAtoms(CONV_ID);
+      const submission = buildSubmission({ endpointOption: { endpoint: 'assistants' } });
+      const helpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useSSE(submission, helpers));
+      const sse = getLastSSE();
+      const synced = {
+        messageId: 'assistant-server-id',
+        parentMessageId: 'server-user',
+        conversationId: CONV_ID,
+        isCreatedByUser: false,
+        text: '',
+      };
+      await act(async () => {
+        sse._emit('message', {
+          data: JSON.stringify({
+            sync: true,
+            requestMessage: { ...submission.userMessage, messageId: 'server-user' },
+            responseMessage: synced,
+          }),
+        });
+      });
+      const store = getDefaultStore();
+      expect(store.get(activeUsageResponseIdFamily(CONV_ID))).toBe(synced.messageId);
+      expect(mockSyncHandler.mock.calls.at(-1)?.[1].initialResponse.messageId).toBe(
+        synced.messageId,
+      );
+      await act(async () => {
+        sse._emit('message', {
+          data: JSON.stringify({ type: 'text', index: 0, text: { value: 'x'.repeat(400) } }),
+        });
+        sse._emit('message', {
+          data: JSON.stringify({
+            event: 'on_token_usage',
+            data: {
+              input_tokens: 5,
+              output_tokens: 100,
+              cost: 0.01,
+              runId: 'assistant-usage',
+              seq: 1,
+            },
+          }),
+        });
+      });
+      expect(mockContentHandler.mock.calls.at(-1)?.[0].submission.initialResponse.messageId).toBe(
+        synced.messageId,
+      );
+      expect(mockContentHandler.mock.calls.at(-1)?.[0].submission.userMessage.messageId).toBe(
+        'server-user',
+      );
+      expect(store.get(activeUsageResponseIdFamily(CONV_ID))).toBe(synced.messageId);
+      expect(store.get(pendingUsageFamily(CONV_ID)).eventCount).toBe(1);
+      // The rendered response has the same ID that the accounting owner uses.
+      helpers.getMessages.mockReturnValue([synced]);
+      if (terminal === 'final') {
+        await act(async () =>
+          sse._emit('message', {
+            data: JSON.stringify({
+              final: true,
+              responseMessage: synced,
+              conversation: { conversationId: CONV_ID },
+            }),
+          }),
+        );
+        expect(mockFinalHandler.mock.calls.at(-1)?.[1].initialResponse.messageId).toBe(
+          synced.messageId,
+        );
+      } else {
+        await act(async () =>
+          sse._emit(terminal, { data: JSON.stringify({ message: 'Stream ended' }) }),
+        );
+      }
+      expect(store.get(activeUsageResponseIdFamily(CONV_ID))).toBeNull();
+      expect(store.get(pendingUsageFamily(CONV_ID)).eventCount).toBe(0);
+      if (terminal !== 'error') {
+        expect(store.get(branchTotalsFamily(CONV_ID)).tailId).toBe(synced.messageId);
+        expect(store.get(branchTotalsFamily(CONV_ID)).lastTurnUsage?.output).toBe(100);
+      }
       sse.readyState = MOCK_SSE_CLOSED;
       unmount();
     },

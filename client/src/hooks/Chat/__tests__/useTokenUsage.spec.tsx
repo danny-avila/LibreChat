@@ -1,17 +1,19 @@
 import { getDefaultStore } from 'jotai';
-import { QueryKeys } from 'librechat-data-provider';
 import { act, renderHook } from '@testing-library/react';
+import { Constants, QueryKeys } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TMessage, TConversation } from 'librechat-data-provider';
 import type { ContextSnapshot } from '~/store/usage';
 import {
   contextSnapshotFamily,
   pendingUsageFamily,
+  totalUsageFamily,
   activeUsageResponseIdFamily,
   liveTokensFamily,
   removeUsageAtoms,
   snapshotsByAnchorFamily,
 } from '~/store/usage';
+import { getRegenerateSubmissionMessages } from '~/hooks/Chat/useChatFunctions';
 import { useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
 import useUsageHandler from '~/hooks/SSE/useUsageHandler';
 import useTokenUsage from '~/hooks/Chat/useTokenUsage';
@@ -106,25 +108,238 @@ const renderTokenUsage = (
   store.set(contextSnapshotFamily(convo), overrides.snapshot ?? tailSnapshot);
   store.set(snapshotsByAnchorFamily(convo), anchors);
 
-  return renderHook(
-    () =>
+  const hook = renderHook(
+    (
+      { isSubmitting }: { isSubmitting: boolean } = {
+        isSubmitting: overrides.isSubmitting ?? false,
+      },
+    ) =>
       useTokenUsage({
         index: 0,
         conversation: { conversationId: convo, endpoint: 'agents' } as TConversation,
-        isSubmitting: overrides.isSubmitting ?? false,
+        isSubmitting,
       }),
     {
+      initialProps: { isSubmitting: overrides.isSubmitting ?? false },
       wrapper: ({ children }) => (
         <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
       ),
     },
   );
+  return { ...hook, queryClient };
 };
 
 describe('useTokenUsage — post-snapshot output', () => {
   beforeEach(() => {
     jest.mocked(useLatestMessageId).mockReturnValue('a2');
     removeUsageAtoms(convo);
+  });
+
+  it.each(['before idle', 'after idle'])(
+    'reconciles a recovered same-ID response whose metadata arrives %s',
+    (arrival) => {
+      const store = getDefaultStore();
+      store.set(activeUsageResponseIdFamily(convo), 'a2');
+      const pendingSnapshot = {
+        ...tailSnapshot,
+        anchorMessageId: 'u2',
+        responseMessageId: 'a2',
+        completedOutputTokens: 0,
+        remainingContextTokens: 10000,
+      };
+      const { result, rerender, queryClient } = renderTokenUsage(new Map(), {
+        isSubmitting: true,
+        snapshot: pendingSnapshot,
+      });
+      expect(result.current.lastTurnUsage).toBeUndefined();
+      const recovered = messages.map((message) =>
+        message.messageId === 'a2'
+          ? {
+              ...message,
+              metadata: {
+                usage: { input: 10, output: 20, cacheRead: 900, cacheWrite: 50, cost: 0.02 },
+                contextUsage: {
+                  ...tailSnapshot,
+                  completedOutputTokens: 20,
+                  cacheRead: 900,
+                  cacheWrite: 50,
+                },
+              },
+            }
+          : message,
+      );
+      const replaceCache = () =>
+        act(() => queryClient.setQueryData([QueryKeys.messages, convo], recovered));
+      if (arrival === 'before idle') {
+        replaceCache();
+        expect(result.current.lastTurnUsage).toBeUndefined();
+      }
+      // Terminal recovery clears live accounting, fetches messages, then idles.
+      act(() => store.set(activeUsageResponseIdFamily(convo), null));
+      rerender({ isSubmitting: false });
+      if (arrival === 'after idle') {
+        replaceCache();
+      }
+      expect(result.current.lastTurnUsage).toMatchObject({
+        input: 10,
+        output: 20,
+        cacheRead: 900,
+        cost: 0.02,
+        costKnown: true,
+      });
+      expect(result.current.branchUsage.cacheRead).toBe(900);
+      expect(result.current.totalUsage.cacheRead).toBe(900);
+      expect(result.current.usedTokens).toBe(195020);
+      expect(result.current.cacheRead).toBe(900);
+      // A later refetch updates metadata without changing the selected tail.
+      act(() =>
+        queryClient.setQueryData(
+          [QueryKeys.messages, convo],
+          recovered.map((message) =>
+            message.messageId === 'a2'
+              ? {
+                  ...message,
+                  metadata: {
+                    ...message.metadata,
+                    usage: { input: 10, output: 30, cacheRead: 950, cacheWrite: 50, cost: 0.03 },
+                  },
+                }
+              : message,
+          ),
+        ),
+      );
+      expect(result.current.lastTurnUsage?.cacheRead).toBe(950);
+      expect(result.current.branchCost).toBe(0.03);
+      expect(result.current.totalCost).toBe(0.03);
+    },
+  );
+
+  it('preserves all-branch history through a reduced regeneration cache, then honors an idle deletion', () => {
+    const usage = (input: number) => ({
+      input,
+      output: 10,
+      cacheRead: input,
+      cacheWrite: 0,
+      cost: input / 1000,
+    });
+    const saved = messages.map((message) =>
+      message.messageId === 'a1' || message.messageId === 'a2'
+        ? {
+            ...message,
+            metadata: { usage: usage(message.messageId === 'a1' ? 100 : 200) },
+          }
+        : message,
+    );
+    const descendantUser = { ...messages[2], messageId: 'u3', parentMessageId: 'a2' };
+    const descendant = {
+      ...messages[3],
+      messageId: 'a3',
+      parentMessageId: 'u3',
+      metadata: { usage: usage(300) },
+    };
+    const history = [...saved, descendantUser, descendant];
+    const { result, rerender, queryClient } = renderTokenUsage(undefined, {
+      messages: history as TMessage[],
+    });
+    expect(result.current.totalUsage.input).toBe(600);
+    const replacement = { ...messages[3], messageId: 'replacement', tokenCount: 0 };
+    const reduced = [
+      ...getRegenerateSubmissionMessages({
+        messages: history as TMessage[],
+        targetResponseMessage: history[3],
+        initialResponseId: replacement.messageId,
+      }),
+      replacement,
+    ];
+    const submission = {
+      conversation: { conversationId: convo },
+      userMessage: messages[2],
+      initialResponse: replacement,
+    };
+    const { result: writer } = renderHook(() => useUsageHandler());
+    // Same order as ask(): ownership, reduced cache, then React's next render.
+    act(() => {
+      writer.current.bindResponse(submission);
+      queryClient.setQueryData([QueryKeys.messages, convo], reduced);
+    });
+    jest.mocked(useLatestMessageId).mockReturnValue('replacement');
+    rerender({ isSubmitting: true });
+    expect(result.current.totalUsage.input).toBe(600);
+    expect(result.current.branchUsage.input).toBe(100);
+    expect(result.current.turnInProgress).toBe(true);
+    act(() =>
+      writer.current.backfillUsage(
+        [{ input_tokens: 50, output_tokens: 10, cost: 0.05, runId: 'regen-history', seq: 1 }],
+        submission,
+      ),
+    );
+    expect(result.current.totalUsage.input).toBe(650);
+    expect(result.current.branchUsage.input).toBe(150);
+    const final = { ...replacement, metadata: { usage: usage(50) } };
+    act(() => {
+      queryClient.setQueryData([QueryKeys.messages, convo], [...history, final]);
+      writer.current.finalizeUsage(
+        { responseMessage: final, conversation: { conversationId: convo } },
+        submission,
+      );
+    });
+    rerender({ isSubmitting: false });
+    expect(result.current.totalUsage.input).toBe(650);
+    expect(result.current.totalCost).toBeCloseTo(0.65);
+    jest.mocked(useLatestMessageId).mockReturnValue('a3');
+    rerender({ isSubmitting: false });
+    expect(result.current.branchUsage.input).toBe(600);
+    expect(result.current.lastTurnUsage?.input).toBe(300);
+    jest.mocked(useLatestMessageId).mockReturnValue('replacement');
+    rerender({ isSubmitting: false });
+    act(() =>
+      queryClient.setQueryData([QueryKeys.messages, convo], [...reduced.slice(0, -1), final]),
+    );
+    expect(result.current.totalUsage.input).toBe(150);
+    expect(result.current.totalCost).toBeCloseTo(0.15);
+  });
+
+  it('preserves unsaved usage across view unmount until the server assigns the conversation id', () => {
+    const store = getDefaultStore();
+    const key = String(Constants.NEW_CONVO);
+    removeUsageAtoms(key);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result: writer } = renderHook(() => useUsageHandler());
+    const submission = {
+      userMessage: { messageId: 'u-new', conversationId: key },
+      conversation: { conversationId: key },
+      initialResponse: { messageId: 'a-new', parentMessageId: 'u-new' },
+    };
+    writer.current.backfillUsage(
+      [{ input_tokens: 10, output_tokens: 5, cost: 0.01, runId: 'new-run', seq: 1 }],
+      submission,
+    );
+    const { unmount } = renderHook(
+      () =>
+        useTokenUsage({
+          index: 0,
+          conversation: { conversationId: key } as TConversation,
+          isSubmitting: true,
+        }),
+      {
+        wrapper: ({ children }) => (
+          <QueryClientProvider client={client}>{children}</QueryClientProvider>
+        ),
+      },
+    );
+    unmount();
+    expect(store.get(pendingUsageFamily(key)).eventCount).toBe(1);
+    writer.current.finalizeUsage(
+      {
+        conversation: { conversationId: 'newly-saved' },
+        responseMessage: { messageId: 'a-new', parentMessageId: 'u-new', isCreatedByUser: false },
+      },
+      submission,
+    );
+    expect(store.get(totalUsageFamily('newly-saved')).input).toBe(10);
+    expect(store.get(totalUsageFamily('newly-saved')).cost).toBe(0.01);
+    removeUsageAtoms(key);
+    removeUsageAtoms('newly-saved');
   });
 
   it('keeps a viewed sibling isolated while another response streams and finalizes', () => {

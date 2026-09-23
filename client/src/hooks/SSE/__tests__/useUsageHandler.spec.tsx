@@ -4,6 +4,8 @@ import { Constants, reconcileContextUsageFromEvent } from 'librechat-data-provid
 import type { TContextUsageEvent, TTokenUsageEvent } from 'librechat-data-provider';
 import {
   contextSnapshotFamily,
+  branchTotalsFamily,
+  totalUsageFamily,
   pendingUsageFamily,
   activeUsageResponseIdFamily,
   liveTokensFamily,
@@ -48,6 +50,57 @@ const primaryUsage = (over?: Partial<TTokenUsageEvent>): TTokenUsageEvent => ({
 });
 
 describe('useUsageHandler — live snapshot reconciliation', () => {
+  it.each([undefined, 0, 0.05])(
+    'prefers the server rollup to partially observed events (cost=%s)',
+    (cost) => {
+      const convo = `final-authority-${cost}`;
+      const store = getDefaultStore();
+      const { result } = renderHook(() => useUsageHandler());
+      const submission = {
+        conversation: { conversationId: convo },
+        userMessage: { messageId: 'u', conversationId: convo },
+        initialResponse: { messageId: 'r', parentMessageId: 'u' },
+      };
+      result.current.usageHandler(
+        {
+          input_tokens: 10,
+          output_tokens: 5,
+          cost: 0.01,
+          runId: 'partial',
+          seq: 1,
+          usage_type: 'subagent',
+        },
+        submission,
+      );
+      const final = {
+        conversation: { conversationId: convo },
+        responseMessage: {
+          messageId: 'r',
+          parentMessageId: 'u',
+          conversationId: convo,
+          isCreatedByUser: false,
+          metadata: { usage: { input: 100, output: 50, cacheRead: 900, cacheWrite: 40, cost } },
+        },
+      };
+      result.current.finalizeUsage(final, submission);
+      expect(store.get(branchTotalsFamily(convo)).lastTurnUsage).toEqual({
+        input: 100,
+        output: 50,
+        cacheRead: 900,
+        cacheWrite: 40,
+        cost: cost ?? 0,
+        costKnown: cost != null,
+      });
+      expect(store.get(totalUsageFamily(convo)).cacheRead).toBe(900);
+      expect(store.get(pendingUsageFamily(convo)).eventCount).toBe(0);
+      expect(store.get(activeUsageResponseIdFamily(convo))).toBeNull();
+      expect(store.get(subagentUsageFamily(convo)).input).toBe(10);
+      result.current.finalizeUsage(final, submission);
+      expect(store.get(totalUsageFamily(convo)).cacheRead).toBe(900);
+      expect(store.get(subagentUsageFamily(convo)).input).toBe(10);
+    },
+  );
+
   it('tracks hydrated response ownership across replay, resume, regeneration, and reset', () => {
     const convo = 'usage-response-identity';
     const store = getDefaultStore();
