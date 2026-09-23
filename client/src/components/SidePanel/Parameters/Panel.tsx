@@ -68,9 +68,12 @@ export default function Parameters() {
     const parameters = defaultParams.filter(
       (param) => param != null && !dropParamsSet.has(param.key),
     );
-    const visibleParameters = applyModelAwareDefaults(parameters, overriddenEndpointKey, model).map(
-      (param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param,
-    );
+    const visibleParameters = applyModelAwareDefaults(
+      parameters,
+      overriddenEndpointKey,
+      model,
+      endpointsConfig?.[provider ?? '']?.responsesApiRouting,
+    ).map((param) => (overriddenParamsMap[param.key] as SettingDefinition) ?? param);
     return { parameters, visibleParameters };
   }, [endpointType, endpointsConfig, model, provider, startupConfig]);
 

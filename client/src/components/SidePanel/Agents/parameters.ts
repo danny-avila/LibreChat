@@ -75,7 +75,12 @@ export function resolveAgentParameterSettings({
   const applyOverride = (param: SettingDefinition) =>
     (overriddenParamsMap[param.key] as SettingDefinition) ?? param;
   const parameters = endpointParams.map(applyOverride);
-  const visibleParameters = applyModelAwareDefaults(endpointParams, overriddenEndpointKey, model)
+  const visibleParameters = applyModelAwareDefaults(
+    endpointParams,
+    overriddenEndpointKey,
+    model,
+    resolvedEndpointsConfig[provider]?.responsesApiRouting,
+  )
     .map(applyOverride)
     .filter((param) => param.key !== 'web_search' || webSearchAllowed);
 
