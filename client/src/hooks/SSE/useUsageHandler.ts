@@ -19,6 +19,7 @@ import {
   clearUsageFolded,
   calibrationFamily,
   pendingUsageFamily,
+  activeUsageResponseIdFamily,
   branchTotalsFamily,
   subagentUsageFamily,
   pendingSubagentUsageFamily,
@@ -42,6 +43,8 @@ const FLUSH_INTERVAL_MS = 250;
 
 interface UsageSubmissionLike {
   userMessage?: Pick<TMessage, 'messageId' | 'conversationId'> | null;
+  initialResponse?: Pick<TMessage, 'messageId' | 'parentMessageId'> | null;
+  isRegenerate?: boolean;
   conversation?: Partial<Pick<TConversation, 'conversationId' | 'endpoint' | 'model'>> | null;
 }
 
@@ -122,6 +125,23 @@ export default function useUsageHandler(): UsageHandlers {
   return useMemo<UsageHandlers>(() => {
     const jotai = getDefaultStore();
 
+    /** Match the created response identity, including legacy user-id hydration.
+     * Regeneration and resumed durable responses keep their own response id. */
+    const bindResponse = (submission: UsageSubmissionLike) => {
+      const initial = submission.initialResponse;
+      let responseId = initial?.messageId ?? null;
+      if (
+        !submission.isRegenerate &&
+        initial?.parentMessageId != null &&
+        responseId === `${initial.parentMessageId}_` &&
+        submission.userMessage?.messageId != null
+      ) {
+        responseId = `${submission.userMessage.messageId}_`;
+      }
+      jotai.set(activeUsageResponseIdFamily(getConvoKey(submission)), responseId);
+      return responseId;
+    };
+
     const setLive = (convoKey: string, value: number) => {
       jotai.set(liveTokensFamily(convoKey), value);
     };
@@ -156,6 +176,7 @@ export default function useUsageHandler(): UsageHandlers {
       }
       jotai.set(pendingSubAtom, EMPTY_USAGE);
       jotai.set(pendingAtom, EMPTY_USAGE_TOTALS);
+      jotai.set(activeUsageResponseIdFamily(convoKey), null);
     };
 
     const contextHandler: UsageHandlers['contextHandler'] = (data, submission) => {
@@ -164,6 +185,7 @@ export default function useUsageHandler(): UsageHandlers {
         ...data,
         completedOutputTokens: data.resumedOutputTokens ?? data.completedOutputTokens,
         anchorMessageId: submission.userMessage?.messageId ?? null,
+        responseMessageId: bindResponse(submission),
       });
       if (data.calibrationRatio != null && data.calibrationRatio > 0) {
         jotai.set(calibrationFamily(convoKey), data.calibrationRatio);
@@ -191,6 +213,7 @@ export default function useUsageHandler(): UsageHandlers {
      *  `finalizeUsage` flushes the accumulated pending into the per-message index
      *  and resets it, so branch/total stay index-derived (no double count). */
     const foldUsage = (data: TTokenUsageEvent, submission: UsageSubmissionLike): boolean => {
+      bindResponse(submission);
       const convoKey = getConvoKey(submission);
       /** runId+seq is unique per model call; fall back to the payload when a
        *  source predates the sequence tag */
@@ -288,6 +311,7 @@ export default function useUsageHandler(): UsageHandlers {
     };
 
     const tapStream: UsageHandlers['tapStream'] = (data, submission) => {
+      bindResponse(submission);
       const chars = countDeltaChars(data?.delta?.content);
       if (chars <= 0) {
         return;
@@ -304,6 +328,7 @@ export default function useUsageHandler(): UsageHandlers {
     };
 
     const tapContent: UsageHandlers['tapContent'] = (text, submission) => {
+      bindResponse(submission);
       const value = extractContentText(text);
       if (value.length === 0) {
         return;
@@ -334,6 +359,7 @@ export default function useUsageHandler(): UsageHandlers {
        *  them as already folded and the response's usage stays missing until a
        *  full reload. */
       jotai.set(pendingUsageFamily(convoKey), EMPTY_USAGE_TOTALS);
+      jotai.set(activeUsageResponseIdFamily(convoKey), null);
       jotai.set(pendingSubagentUsageFamily(convoKey), EMPTY_USAGE);
       clearUsageFolded(convoKey);
     };
@@ -354,6 +380,7 @@ export default function useUsageHandler(): UsageHandlers {
     };
 
     const backfillUsage: UsageHandlers['backfillUsage'] = (entries, submission) => {
+      bindResponse(submission);
       /** Fold the resumed run's persisted events idempotently — never reset
        *  the conversation totals, or a reconnect mid-stream would drop the
        *  usage of prompts already completed earlier in the session */
@@ -363,6 +390,7 @@ export default function useUsageHandler(): UsageHandlers {
     };
 
     const seedLive: UsageHandlers['seedLive'] = (chars, submission) => {
+      bindResponse(submission);
       const convoKey = getConvoKey(submission);
       /** A completed resumed call already carries exact output in its snapshot.
        * Trailing text is the same output, not a new streaming delta. */

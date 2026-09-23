@@ -13,6 +13,7 @@ import {
   removeUsageAtoms,
   hydrateSnapshots,
   pendingUsageFamily,
+  activeUsageResponseIdFamily,
   subagentUsageFamily,
   pendingSubagentUsageFamily,
   branchTotalsFamily,
@@ -115,8 +116,20 @@ export default function useTokenUsage({
   const snapshot = useAtomValue(contextSnapshotFamily(conversationKey));
   const snapshotsByAnchor = useAtomValue(snapshotsByAnchorFamily(conversationKey));
   const pendingUsage = useAtomValue(pendingUsageFamily(conversationKey));
+  const activeResponseId = useAtomValue(activeUsageResponseIdFamily(conversationKey));
+  const turnInProgress = isSubmitting && activeResponseId != null && activeResponseId === tailId;
   const totalUsageBase = useAtomValue(totalUsageFamily(conversationKey));
-  const branchTotals = useAtomValue(branchTotalsFamily(conversationKey));
+  const storedBranchTotals = useAtomValue(branchTotalsFamily(conversationKey));
+  /** A terminal stream writer updates the shared rollup for its own response.
+   * Project a different viewed tail locally, without writing it back and making
+   * two views of the same conversation compete over the shared atom. */
+  const branchTotals = useMemo(
+    () =>
+      storedBranchTotals.tailId === tailId
+        ? storedBranchTotals
+        : sumBranch(conversationKey, tailId, snapshot?.anchorMessageId),
+    [storedBranchTotals, conversationKey, tailId, snapshot?.anchorMessageId],
+  );
   const liveTokens = useAtomValue(liveTokensFamily(conversationKey));
   const committedSubagentUsage = useAtomValue(subagentUsageFamily(conversationKey));
   const pendingSubagentUsage = useAtomValue(pendingSubagentUsageFamily(conversationKey));
@@ -160,8 +173,8 @@ export default function useTokenUsage({
     [pendingUsage],
   );
   const branchUsage = useMemo(
-    () => mergeUsage(branchTotals.usage, pendingAsUsage),
-    [branchTotals.usage, pendingAsUsage],
+    () => (turnInProgress ? mergeUsage(branchTotals.usage, pendingAsUsage) : branchTotals.usage),
+    [branchTotals.usage, pendingAsUsage, turnInProgress],
   );
   const totalUsage = useMemo(
     () => mergeUsage(totalUsageBase, pendingAsUsage),
@@ -177,7 +190,7 @@ export default function useTokenUsage({
   /** Do not show the previous response as the current turn during a submission.
    * Pending contains only provider-confirmed completed calls, not text estimates. */
   let lastTurnUsage = branchTotals.lastTurnUsage;
-  if (isSubmitting) {
+  if (turnInProgress) {
     lastTurnUsage = pendingUsage.eventCount > 0 ? pendingAsUsage : undefined;
   }
   const hasUsage =
@@ -262,7 +275,9 @@ export default function useTokenUsage({
      *  one branch's breakdown onto its siblings. */
     const currentActive =
       snapshot != null &&
-      (isSubmitting || (snapshot.anchorMessageId != null && branchTotals.containsAnchor));
+      (isSubmitting
+        ? turnInProgress && snapshot.responseMessageId === activeResponseId
+        : snapshot.anchorMessageId != null && branchTotals.containsAnchor);
 
     /** Precedence: live/active snapshot → persisted branch snapshot →
      *  per-message estimate. The first two are authoritative (real runs with the
@@ -282,7 +297,7 @@ export default function useTokenUsage({
      *  projection must too. */
     const completedOutput = normalizeTokenCount(effective?.completedOutputTokens);
     const retainedToolTokens = normalizeTokenCount(effective?.retainedToolTokens);
-    const liveOutput = normalizeTokenCount(liveTokens);
+    const liveOutput = turnInProgress ? normalizeTokenCount(liveTokens) : 0;
     const remainingForRunway =
       effective?.remainingContextTokens != null
         ? Math.max(
@@ -345,7 +360,7 @@ export default function useTokenUsage({
         branchUsage,
         totalUsage,
         lastTurnUsage,
-        turnInProgress: isSubmitting,
+        turnInProgress,
         hasUsage,
         branchCost: branchUsage.cost,
         totalCost: totalUsage.cost,
@@ -388,7 +403,7 @@ export default function useTokenUsage({
             latestExchangeTokens(
               conversationKey,
               tailId,
-              liveTokens > 0,
+              liveOutput > 0,
               normalizeTokenCount(breakdown.summaryTokens),
             ),
         ),
@@ -408,7 +423,7 @@ export default function useTokenUsage({
      *  gauge at 100% after a compaction). */
     const maxTokens =
       limits.maxContextTokens != null ? normalizeTokenCount(limits.maxContextTokens) : undefined;
-    const liveOnTail = normalizeTokenCount(liveTokens) > 0;
+    const liveOnTail = liveOutput > 0;
     /** Fixed instruction + tool-schema overhead for this agent/model (the latter is
      *  already folded into `instructionTokens`), cached from live usage events. The
      *  client can't otherwise know it for a snapshot-less branch, so reserve it from
@@ -485,7 +500,7 @@ export default function useTokenUsage({
       overheadTokens +
         normalizeTokenCount(branchTotals.summaryBaseline) +
         messageTokens +
-        normalizeTokenCount(liveTokens),
+        liveOutput,
     );
     return {
       usedTokens,
@@ -499,11 +514,11 @@ export default function useTokenUsage({
       branchUsage,
       totalUsage,
       lastTurnUsage,
-      turnInProgress: isSubmitting,
+      turnInProgress,
       hasUsage,
       branchCost: branchUsage.cost,
       totalCost: totalUsage.cost,
-      liveTokens: normalizeTokenCount(liveTokens),
+      liveTokens: liveOutput,
       estimatedTokens,
       overheadTokens,
       messageTokens,
@@ -516,6 +531,8 @@ export default function useTokenUsage({
   }, [
     snapshot,
     isSubmitting,
+    turnInProgress,
+    activeResponseId,
     branchTotals,
     branchUsage,
     totalUsage,

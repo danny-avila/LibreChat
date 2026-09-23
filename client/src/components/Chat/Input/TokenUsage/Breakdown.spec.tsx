@@ -454,6 +454,7 @@ describe('TokenUsage Breakdown', () => {
        *  above, so these may only appear indented — as peer rows a fully cached
        *  prompt would show its tokens twice and the visible rows would sum past
        *  the meter. */
+      expect(within(breakdown).getByText('com_ui_context_cache_last_call')).toBeInTheDocument();
       expect(cachedRow.parentElement?.className).toContain('pl-6');
       expect(cachedRow.textContent).toContain('30');
       /** The share column is keyed to the window, like every row above: without
@@ -561,6 +562,47 @@ describe('TokenUsage Breakdown', () => {
   });
 
   describe('last turn', () => {
+    it.each([true, false])(
+      'shows sibling totals on an unrecorded branch, showCost=%s',
+      async (showCost) => {
+        renderBreakdown({
+          view: {
+            ...view,
+            hasUsage: false,
+            branchUsage: {
+              input: 0,
+              output: 0,
+              cacheRead: 0,
+              cacheWrite: 0,
+              cost: 0,
+              costKnown: false,
+            },
+            branchCost: 0,
+            totalUsage: {
+              input: 40,
+              output: 5,
+              cacheRead: 800,
+              cacheWrite: 30,
+              cost: 0.02,
+              costKnown: true,
+            },
+            totalCost: 0.02,
+          },
+          showCost,
+        });
+        await userEvent.click(toggle());
+        expect(screen.queryByTestId('token-usage-totals')).not.toBeInTheDocument();
+        expect(screen.getByTestId('token-usage-all-branches')).toHaveTextContent('800');
+        if (showCost) {
+          expect(screen.getByTestId('token-usage-cost')).toHaveTextContent(
+            'com_ui_context_cost_total',
+          );
+        } else {
+          expect(screen.queryByTestId('token-usage-cost')).not.toBeInTheDocument();
+        }
+      },
+    );
+
     it('distinguishes a recorded turn from branch and all-branches cache usage', async () => {
       renderBreakdown({
         view: {

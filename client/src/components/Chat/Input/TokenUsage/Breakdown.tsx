@@ -662,40 +662,34 @@ export default function Breakdown({
                     <Row label={localize('com_ui_context_subagents_all')} value={subagentTokens} />
                   )}
                 </div>
-                {showTotal && (
-                  <div
-                    className="space-y-1.5 border-t border-border-light pt-2"
-                    data-testid="token-usage-all-branches"
-                  >
-                    <h3 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">
-                      {localize('com_ui_context_cost_total')}
-                    </h3>
-                    <Row
-                      label={localize('com_ui_context_uncached_input')}
-                      value={view.totalUsage.input}
-                    />
-                    <Row label={localize('com_ui_output')} value={view.totalUsage.output} />
-                    {normalizeTokenCount(view.totalUsage.cacheRead) > 0 && (
-                      <Row
-                        label={localize('com_ui_cache_read')}
-                        value={view.totalUsage.cacheRead}
-                      />
-                    )}
-                    {normalizeTokenCount(view.totalUsage.cacheWrite) > 0 && (
-                      <Row
-                        label={localize('com_ui_cache_write')}
-                        value={view.totalUsage.cacheWrite}
-                      />
-                    )}
-                  </div>
-                )}
               </>
+            )}
+            {showTotal && (
+              <div
+                className="space-y-1.5 border-t border-border-light pt-2"
+                data-testid="token-usage-all-branches"
+              >
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-text-tertiary">
+                  {localize('com_ui_context_cost_total')}
+                </h3>
+                <Row
+                  label={localize('com_ui_context_uncached_input')}
+                  value={view.totalUsage.input}
+                />
+                <Row label={localize('com_ui_output')} value={view.totalUsage.output} />
+                {normalizeTokenCount(view.totalUsage.cacheRead) > 0 && (
+                  <Row label={localize('com_ui_cache_read')} value={view.totalUsage.cacheRead} />
+                )}
+                {normalizeTokenCount(view.totalUsage.cacheWrite) > 0 && (
+                  <Row label={localize('com_ui_cache_write')} value={view.totalUsage.cacheWrite} />
+                )}
+              </div>
             )}
 
             {showCost &&
               (view.lastTurnUsage?.costKnown === true ||
                 (hasUsage && branchUsage.costKnown) ||
-                (hasUsage && showTotal && view.totalUsage.costKnown)) && (
+                (showTotal && view.totalUsage.costKnown)) && (
                 <>
                   <div className="border-t border-border-light" role="separator" />
                   <div className="space-y-1.5" data-testid="token-usage-cost">
@@ -725,7 +719,7 @@ export default function Breakdown({
                         </span>
                       </div>
                     )}
-                    {hasUsage && showTotal && view.totalUsage.costKnown && (
+                    {showTotal && view.totalUsage.costKnown && (
                       <div className="flex items-center justify-between gap-4 text-xs">
                         <span className="text-text-secondary">
                           {localize('com_ui_context_cost_total')}

@@ -1225,7 +1225,7 @@
   "com_ui_context_filter_sort": "Filter and Sort by Context",
   "com_ui_context_free": "Free space",
   "com_ui_context_cached": "Cached",
-  "com_ui_context_cache_last_call": "Cached input in the last model call",
+  "com_ui_context_cache_last_call": "Cached input in the context snapshot",
   "com_ui_context_cache_write": "Cache write",
   "com_ui_context_current_turn": "Current turn (so far)",
   "com_ui_context_last_turn": "Last turn",

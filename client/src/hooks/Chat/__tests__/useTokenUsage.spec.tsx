@@ -1,14 +1,23 @@
 import { getDefaultStore } from 'jotai';
-import { renderHook } from '@testing-library/react';
 import { QueryKeys } from 'librechat-data-provider';
+import { act, renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TMessage, TConversation } from 'librechat-data-provider';
 import type { ContextSnapshot } from '~/store/usage';
-import { contextSnapshotFamily, pendingUsageFamily, snapshotsByAnchorFamily } from '~/store/usage';
+import {
+  contextSnapshotFamily,
+  pendingUsageFamily,
+  activeUsageResponseIdFamily,
+  liveTokensFamily,
+  removeUsageAtoms,
+  snapshotsByAnchorFamily,
+} from '~/store/usage';
+import { useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
+import useUsageHandler from '~/hooks/SSE/useUsageHandler';
 import useTokenUsage from '~/hooks/Chat/useTokenUsage';
 
 jest.mock('~/hooks/Messages/useLatestMessage', () => ({
-  useLatestMessageId: () => 'a2',
+  useLatestMessageId: jest.fn(() => 'a2'),
 }));
 
 jest.mock('~/hooks/Chat/useTokenLimits', () => ({
@@ -113,6 +122,116 @@ const renderTokenUsage = (
 };
 
 describe('useTokenUsage — post-snapshot output', () => {
+  beforeEach(() => {
+    jest.mocked(useLatestMessageId).mockReturnValue('a2');
+    removeUsageAtoms(convo);
+  });
+
+  it('keeps a viewed sibling isolated while another response streams and finalizes', () => {
+    const saved = messages.map((message) =>
+      message.messageId === 'a2'
+        ? {
+            ...message,
+            metadata: {
+              usage: { input: 25, output: 10, cacheRead: 100, cacheWrite: 0, cost: 0.01 },
+            },
+          }
+        : message,
+    );
+    const generating = { ...messages[3], messageId: 'a2-alt', tokenCount: 0, text: '' };
+    const { result: writer } = renderHook(() => useUsageHandler());
+    const submission = {
+      userMessage: { messageId: 'u2', conversationId: convo },
+      initialResponse: { messageId: 'a2-alt', parentMessageId: 'u2' },
+      conversation: { conversationId: convo },
+      isRegenerate: true,
+    };
+    const store = getDefaultStore();
+    const liveSnapshot = {
+      ...tailSnapshot,
+      anchorMessageId: 'u2',
+      responseMessageId: 'a2-alt',
+      completedOutputTokens: 0,
+      remainingContextTokens: 8000,
+    };
+    const usage = {
+      input_tokens: 40,
+      output_tokens: 4,
+      input_token_details: { cache_read: 300 },
+      cost: 0.02,
+      runId: 'sibling-run',
+      seq: 1,
+    };
+    writer.current.backfillUsage([usage], submission);
+    store.set(liveTokensFamily(convo), 100);
+    const { result, rerender } = renderTokenUsage(new Map([['a2', tailSnapshot]]), {
+      messages: [...saved, generating] as TMessage[],
+      isSubmitting: true,
+      snapshot: liveSnapshot,
+    });
+
+    expect(result.current.turnInProgress).toBe(false);
+    expect(result.current.lastTurnUsage?.cacheRead).toBe(100);
+    expect(result.current.branchUsage.cacheRead).toBe(100);
+    expect(result.current.totalUsage.cacheRead).toBe(400);
+    expect(result.current.liveTokens).toBe(0);
+    expect(result.current.usedTokens).toBe(197000);
+
+    jest.mocked(useLatestMessageId).mockReturnValue('a2-alt');
+    rerender();
+    expect(result.current.turnInProgress).toBe(true);
+    expect(result.current.lastTurnUsage?.cacheRead).toBe(300);
+    expect(result.current.branchUsage.cacheRead).toBe(300);
+    expect(result.current.usedTokens).toBe(192100);
+
+    jest.mocked(useLatestMessageId).mockReturnValue('a2');
+    rerender();
+    act(() =>
+      writer.current.finalizeUsage(
+        { responseMessage: generating, conversation: { conversationId: convo } },
+        submission,
+      ),
+    );
+    expect(result.current.branchTotals.tailId).toBe('a2');
+    expect(result.current.lastTurnUsage?.cacheRead).toBe(100);
+    expect(result.current.branchUsage.cacheRead).toBe(100);
+    expect(result.current.totalUsage.cacheRead).toBe(400);
+    expect(store.get(activeUsageResponseIdFamily(convo))).toBeNull();
+  });
+
+  it('uses the selected branch estimate when only a sibling has live context', () => {
+    const store = getDefaultStore();
+    store.set(activeUsageResponseIdFamily(convo), 'a2-alt');
+    store.set(liveTokensFamily(convo), 9000);
+    const { result } = renderTokenUsage(new Map(), {
+      isSubmitting: true,
+      snapshot: { ...tailSnapshot, responseMessageId: 'a2-alt' },
+    });
+    expect(result.current.isEstimate).toBe(true);
+    expect(result.current.liveTokens).toBe(0);
+    expect(result.current.usedTokens).toBe(4400);
+  });
+
+  it('keeps ancestor context cache distinct from a newer response with usage but no snapshot', () => {
+    const ancestor = { ...tailSnapshot, anchorMessageId: 'a1', cacheRead: 1234, cacheWrite: 50 };
+    const saved = messages.map((message) =>
+      message.messageId === 'a2'
+        ? {
+            ...message,
+            metadata: { usage: { input: 10, output: 5, cacheRead: 888, cacheWrite: 20 } },
+          }
+        : message,
+    );
+    const { result } = renderTokenUsage(new Map([['a1', ancestor]]), {
+      messages: saved as TMessage[],
+      snapshot: { ...tailSnapshot, anchorMessageId: 'another-branch' },
+    });
+    expect(result.current.cacheRead).toBe(1234);
+    expect(result.current.cacheWrite).toBe(50);
+    expect(result.current.lastTurnUsage?.cacheRead).toBe(888);
+    expect(result.current.turnInProgress).toBe(false);
+  });
+
   it('uses the selected response rollup, not the cumulative branch usage', () => {
     const saved = messages.map((message) => {
       if (message.messageId === 'a1') {
@@ -148,6 +267,7 @@ describe('useTokenUsage — post-snapshot output', () => {
   it('reports only confirmed calls in an in-progress turn, never the previous tail', () => {
     const pendingAtom = pendingUsageFamily(convo);
     const store = getDefaultStore();
+    store.set(activeUsageResponseIdFamily(convo), 'a2');
     const saved = messages.map((message) =>
       message.messageId === 'a2'
         ? ({
@@ -183,6 +303,7 @@ describe('useTokenUsage — post-snapshot output', () => {
       costUSD: 0,
       costKnown: true,
     });
+    store.set(activeUsageResponseIdFamily(convo), 'a2');
     const waiting = renderTokenUsage(undefined, { messages: saved, isSubmitting: true });
     expect(waiting.result.current.lastTurnUsage).toBeUndefined();
     waiting.unmount();

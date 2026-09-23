@@ -4,6 +4,8 @@ import { Constants, reconcileContextUsageFromEvent } from 'librechat-data-provid
 import type { TContextUsageEvent, TTokenUsageEvent } from 'librechat-data-provider';
 import {
   contextSnapshotFamily,
+  pendingUsageFamily,
+  activeUsageResponseIdFamily,
   liveTokensFamily,
   subagentUsageFamily,
   pendingSubagentUsageFamily,
@@ -46,6 +48,37 @@ const primaryUsage = (over?: Partial<TTokenUsageEvent>): TTokenUsageEvent => ({
 });
 
 describe('useUsageHandler — live snapshot reconciliation', () => {
+  it('tracks hydrated response ownership across replay, resume, regeneration, and reset', () => {
+    const convo = 'usage-response-identity';
+    const store = getDefaultStore();
+    const { result } = renderHook(() => useUsageHandler());
+    const submission = {
+      userMessage: { messageId: 'server-user', conversationId: convo },
+      initialResponse: { messageId: 'local-user_', parentMessageId: 'local-user' },
+      conversation: { conversationId: convo },
+    };
+    result.current.contextHandler(inflatedSnapshot(), submission);
+    expect(store.get(activeUsageResponseIdFamily(convo))).toBe('server-user_');
+    expect(store.get(contextSnapshotFamily(convo))?.responseMessageId).toBe('server-user_');
+    result.current.backfillUsage([primaryUsage(), primaryUsage()], submission);
+    expect(store.get(pendingUsageFamily(convo)).eventCount).toBe(1);
+
+    result.current.resetLive(submission);
+    expect(store.get(activeUsageResponseIdFamily(convo))).toBeNull();
+    const resumed = {
+      ...submission,
+      initialResponse: { messageId: 'durable-response', parentMessageId: 'server-user' },
+    };
+    result.current.seedLive(40, resumed);
+    expect(store.get(activeUsageResponseIdFamily(convo))).toBe('durable-response');
+    result.current.resetLive(submission);
+    const regenerated = { ...submission, isRegenerate: true };
+    result.current.backfillUsage([], regenerated);
+    expect(store.get(activeUsageResponseIdFamily(convo))).toBe('local-user_');
+    result.current.attributePending('local-user_', regenerated);
+    expect(store.get(activeUsageResponseIdFamily(convo))).toBeNull();
+  });
+
   it('reconciles the live snapshot to the primary call’s actual prompt tokens', () => {
     const convo = 'convo-recon-1';
     const submission = {
