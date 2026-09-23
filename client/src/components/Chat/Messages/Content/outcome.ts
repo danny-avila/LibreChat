@@ -197,6 +197,9 @@ export function getOutcomeStatus({
 }
 
 export type SpanSummary = SpanOutcome & {
+  /** Consecutive uses of the last tool, reset by another tool or an agent handoff.
+   *  Reasoning and labels describe the work without breaking its sequence. */
+  trailingToolCount: number;
   /** The verdict for one part of the span, scoped the way the count was. */
   metaOf: (part: TMessageContentParts) => ToolMeta | null;
 };
@@ -274,8 +277,20 @@ export function summarizeSpan(
   };
   let failed = 0;
   let cancelled = 0;
+  let trailingToolCount = 0;
+  let trailingTool: string | undefined;
   for (const part of parts) {
+    if (part?.type === ContentTypes.AGENT_UPDATE) {
+      trailingTool = undefined;
+      trailingToolCount = 0;
+    }
     const meta = part == null ? null : metaOf(part);
+    if (meta != null) {
+      /** iconName retains full tool identity (including MCP names), with Bash
+       *  wrappers already normalized by the cached metadata resolver. */
+      trailingToolCount = meta.iconName === trailingTool ? trailingToolCount + 1 : 1;
+      trailingTool = meta.iconName;
+    }
     if (meta?.failed === true) {
       failed += 1;
     }
@@ -283,5 +298,5 @@ export function summarizeSpan(
       cancelled += 1;
     }
   }
-  return { failed, cancelled, metaOf };
+  return { failed, cancelled, trailingToolCount, metaOf };
 }

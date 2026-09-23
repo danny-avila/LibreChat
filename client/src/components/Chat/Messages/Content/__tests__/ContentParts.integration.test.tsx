@@ -1621,6 +1621,8 @@ describe('ContentParts — live activity fold', () => {
     expect(screen.getByTestId('activity-phase-announcer')).toHaveTextContent(
       'Reading the lens file',
     );
+    /** No multiplier: both calls named their own work, so the line is a
+     *  sentence about the newest one rather than the tool's label. */
     expect(liveHeader()).toHaveAccessibleName('Querying');
   });
 

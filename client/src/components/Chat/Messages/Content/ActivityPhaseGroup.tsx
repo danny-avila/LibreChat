@@ -123,6 +123,7 @@ const PhaseLabel = memo(function PhaseLabel({
   failed,
   source,
   live = false,
+  grow = true,
   lineId,
   previewRef,
 }: {
@@ -134,6 +135,10 @@ const PhaseLabel = memo(function PhaseLabel({
    *  in would read as flicker — so an unchanged source extends in place. */
   source?: string;
   live?: boolean;
+  /** Claim the row's free space, the default. Cleared when something has to
+   *  sit immediately after the text — the box then measures the line itself,
+   *  so its neighbour reads as part of it instead of drifting to the margin. */
+  grow?: boolean;
   /** Id for the current line, so a live disclosure can be named by it alone. */
   lineId?: string;
   previewRef?: RefObject<HTMLSpanElement>;
@@ -171,7 +176,10 @@ const PhaseLabel = memo(function PhaseLabel({
 
   return (
     <span
-      className="tool-status-text relative block min-w-0 flex-1 overflow-hidden text-left"
+      className={cn(
+        'tool-status-text relative block min-w-0 overflow-hidden text-left',
+        grow && 'flex-1',
+      )}
       title={text}
     >
       {lines.retired != null && (
@@ -264,6 +272,7 @@ function LivePhaseHeader({
   parts,
   animate,
   lineId,
+  comboId,
   detailId,
   attachments,
   onAnnounce,
@@ -271,6 +280,7 @@ function LivePhaseHeader({
   parts: ReadonlyArray<TMessageContentParts | undefined>;
   animate: boolean;
   lineId: string;
+  comboId: string;
   detailId: string;
   attachments?: TAttachment[];
   onAnnounce: (text: string) => void;
@@ -289,13 +299,18 @@ function LivePhaseHeader({
   const sandboxStarting = useAtomValue(
     sandboxStartingByToolCallId(activity.pendingToolCallId ?? ''),
   );
-  const text =
-    sandboxStarting && activity.pendingToolCallId != null
-      ? localize('com_ui_sandbox_starting')
-      : activity.text;
+  const showSandboxStartup = sandboxStarting && activity.pendingToolCallId != null;
+  const text = showSandboxStartup ? localize('com_ui_sandbox_starting') : activity.text;
+  /** Startup describes this call, not the repeated tool. Throttle its text
+   *  and suppressed count together so neither can paint with the old value. */
+  const comboCount = showSandboxStartup ? 1 : activity.comboCount;
   const { source } = activity;
-  const line = useMemo(() => ({ text, source }), [text, source]);
+  const line = useMemo(() => ({ text, source, comboCount }), [text, source, comboCount]);
   const previewRef = useRef<HTMLSpanElement>(null);
+  /** The full width the line may occupy, which is the flex track rather than
+   *  the label box: the box shrinks to its text whenever the multiplier rides
+   *  beside it, and measuring that would call every line full. */
+  const lineRowRef = useRef<HTMLSpanElement>(null);
   const [isPreviewFull, setIsPreviewFull] = useState(false);
   const painted = useThrottledValue(
     line,
@@ -303,7 +318,7 @@ function LivePhaseHeader({
   );
   const measurePreview = useCallback(() => {
     const preview = previewRef.current;
-    const width = preview?.parentElement?.clientWidth ?? 0;
+    const width = lineRowRef.current?.clientWidth ?? 0;
     setIsPreviewFull(width > 0 && (preview?.scrollWidth ?? 0) >= width);
   }, []);
 
@@ -312,7 +327,7 @@ function LivePhaseHeader({
   useLayoutEffect(measurePreview, [measurePreview, painted.text, painted.source]);
   useLayoutEffect(() => {
     const preview = previewRef.current;
-    const row = preview?.parentElement;
+    const row = lineRowRef.current;
     if (!preview || !row || typeof ResizeObserver === 'undefined') {
       return;
     }
@@ -329,6 +344,7 @@ function LivePhaseHeader({
    *  fail while a later one runs, and the line alone would never say so. The
    *  hidden group header carries the same counts in the same words. */
   const { failed, cancelled } = activity.outcome;
+  const combo = painted.comboCount > 1 ? `×${painted.comboCount}` : '';
   const detail = useMemo(() => {
     const notes: string[] = [];
     if (failed > 0) {
@@ -387,22 +403,44 @@ function LivePhaseHeader({
           />
         </span>
       )}
-      <PhaseLabel
-        text={painted.text}
-        source={painted.source}
-        failed={false}
-        animate={animate}
-        live
-        lineId={lineId}
-        previewRef={previewRef}
-      />
-      {detail && (
+      {/** The multiplier counts the line it is printed next to, so it travels
+       *  with that line instead of sitting out at the row's right edge beside
+       *  the chevron, where it read as a property of the row. `Create File ×2`
+       *  in the unfolded group is the same phrase in the same order. It is a
+       *  separate element rather than part of the line's text so the
+       *  disclosure's name keeps a space before it and the ticker still
+       *  animates one sentence at a time. */}
+      <span className="flex min-w-0 flex-1 items-center gap-1.5" ref={lineRowRef}>
+        <PhaseLabel
+          text={painted.text}
+          source={painted.source}
+          failed={false}
+          animate={animate}
+          live
+          grow={combo === ''}
+          lineId={lineId}
+          previewRef={previewRef}
+        />
+        {combo !== '' && (
+          <span
+            id={comboId}
+            className="shrink-0 text-xs font-normal text-text-secondary"
+            data-testid="live-phase-combo"
+          >
+            {combo}
+          </span>
+        )}
+      </span>
+      {detail !== '' && (
         <span
           id={detailId}
           className="shrink-0 text-xs font-normal text-text-warning"
           data-testid="live-phase-outcome"
         >
-          · {detail}
+          {/** The verdict is the span's, not the newest line's, so it keeps its
+           *  own separator from whatever the row happens to be saying. */}
+          <span className="mr-1 text-text-secondary">·</span>
+          <span>{detail}</span>
         </span>
       )}
     </>
@@ -469,6 +507,7 @@ export default function ActivityPhaseGroup({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const panelId = useId();
   const lineId = useId();
+  const comboId = useId();
   const detailId = useId();
   /** One polite region for the card's whole life. It sits outside the button,
    *  so it never joins the disclosure's name, and it outlives the live header:
@@ -644,13 +683,16 @@ export default function ActivityPhaseGroup({
              *  the previous line, and `sr-only` text still counts toward a
              *  button's computed name. */
             aria-label={isLive ? undefined : label}
-            aria-labelledby={isLive ? `${lineId} ${detailId}` : undefined}
+            /** Unresolved ids are skipped, so one list covers a row with no
+             *  multiplier and no outcome note as well as a row with both. */
+            aria-labelledby={isLive ? `${lineId} ${comboId} ${detailId}` : undefined}
           >
             {isLive ? (
               <LivePhaseHeader
                 parts={liveParts}
                 animate={smoothStreaming}
                 lineId={lineId}
+                comboId={comboId}
                 detailId={detailId}
                 attachments={attachments}
                 onAnnounce={setAnnouncement}

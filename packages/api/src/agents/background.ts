@@ -1831,11 +1831,43 @@ interface SerializedBackgroundTask {
   /** Coarse 0..1: no intermediate progress exists, only running vs settled. */
   progress: number;
   cancellation_requested?: boolean;
+  /** ISO-8601 dispatch time, the app's serialization for every timestamp. */
+  started_at?: string;
+  /** ISO-8601 terminal time. Absent while the task is still running. */
+  settled_at?: string;
+  /** Dispatch to settlement, or dispatch to this poll while still running. */
+  elapsed_ms?: number;
   result?: string;
   result_available?: boolean;
   result_chars?: number;
   note?: string;
   error?: string;
+}
+
+/**
+ * Model-facing task timings. The registry keeps epoch milliseconds; everything the
+ * app serializes carries ISO-8601 (`toISOString`), so the poll payload does too.
+ * `elapsed_ms` is served alongside them because a polling model has no clock of its
+ * own: without it, "running" carries no age and a caller cannot tell a task that
+ * started seconds ago from one stuck for an hour.
+ *
+ * `createdAt` is the strictly-increasing dispatch stamp, so a same-millisecond
+ * dispatch can read a few milliseconds after its real start and, for an instantly
+ * settled task, after `updatedAt`; clamping keeps `settled_at` from preceding
+ * `started_at` and `elapsed_ms` from going negative.
+ */
+function taskTimings(task: {
+  status: string;
+  createdAt: number;
+  updatedAt: number;
+}): Pick<SerializedBackgroundTask, 'started_at' | 'settled_at' | 'elapsed_ms'> {
+  const settled = task.status !== 'running';
+  const settledAt = Math.max(task.updatedAt, task.createdAt);
+  return {
+    started_at: new Date(task.createdAt).toISOString(),
+    ...(settled ? { settled_at: new Date(settledAt).toISOString() } : {}),
+    elapsed_ms: Math.max(0, (settled ? settledAt : Date.now()) - task.createdAt),
+  };
 }
 
 function resultFields(
@@ -1880,18 +1912,25 @@ function serializeTask(
     ...(task.status === 'running' && task.cancellationRequestedAt != null
       ? { cancellation_requested: true }
       : {}),
+    ...taskTimings(task),
     ...resultFields(task, includeResult),
     ...taskNote(task),
     ...(task.error !== undefined ? { error: task.error } : {}),
   };
 }
 
+/**
+ * A durable receipt is what a poll sees once process-local state is gone (another
+ * replica, or after a restart). It records when the task settled but not when it was
+ * dispatched, so it carries `settled_at` alone: no start, hence no elapsed span.
+ */
 function serializeDurableTask(task: BackgroundToolResultRecord): SerializedBackgroundTask {
   return {
     background_task_id: task.taskId,
     tool: task.toolName,
     status: task.status,
     progress: 1,
+    ...(task.settledAt == null ? {} : { settled_at: task.settledAt.toISOString() }),
     ...(task.status === 'completed' ? { result: task.output } : { error: task.output }),
   };
 }
@@ -1904,6 +1943,9 @@ interface SerializedSubagentTask {
   status: string;
   progress: number;
   progress_detail?: SubagentTaskSnapshot['progress'];
+  started_at?: string;
+  settled_at?: string;
+  elapsed_ms?: number;
   result?: string;
   result_available?: boolean;
   result_claimed?: boolean;
@@ -1930,6 +1972,8 @@ function serializeSubagentSnapshot(
     status: options.status ?? task.status,
     progress: task.status === 'running' ? 0 : 1,
     ...(task.progress == null ? {} : { progress_detail: task.progress }),
+    /** Timings follow the task's own lifecycle, never a control receipt's status. */
+    ...taskTimings(task),
     ...(options.includeResult == null ? {} : { result: options.includeResult }),
     ...(task.resultAvailable ? { result_available: true } : {}),
     ...(task.resultClaimed ? { result_claimed: true } : {}),

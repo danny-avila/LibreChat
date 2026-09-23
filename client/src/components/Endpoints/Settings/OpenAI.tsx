@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
-import { getSettingsKeys, presetSettings } from 'librechat-data-provider';
+import { presetSettings, getSettingsKeys, applyModelAwareDefaults } from 'librechat-data-provider';
 import type { SettingDefinition } from 'librechat-data-provider';
 import type { TModelSelectProps } from '~/common';
 import { componentMapping } from '~/components/SidePanel/Parameters/components';
+import { useGetEndpointsQuery } from '~/data-provider';
 import { getModelLabel } from '~/utils';
 
 export default function OpenAISettings({
@@ -12,13 +13,31 @@ export default function OpenAISettings({
   modelLabels,
   readonly,
 }: TModelSelectProps) {
+  const { data: endpointsConfig } = useGetEndpointsQuery();
   const parameters = useMemo(() => {
     const [combinedKey, endpointKey] = getSettingsKeys(
       conversation?.endpointType ?? conversation?.endpoint ?? '',
       conversation?.model ?? '',
     );
-    return presetSettings[combinedKey] ?? presetSettings[endpointKey];
-  }, [conversation]);
+    const settings = presetSettings[combinedKey] ?? presetSettings[endpointKey];
+    if (!settings) {
+      return undefined;
+    }
+    return {
+      col1: applyModelAwareDefaults(
+        settings.col1,
+        endpointKey,
+        conversation?.model ?? undefined,
+        endpointsConfig?.[conversation?.endpoint ?? '']?.responsesApiRouting,
+      ),
+      col2: applyModelAwareDefaults(
+        settings.col2,
+        endpointKey,
+        conversation?.model ?? undefined,
+        endpointsConfig?.[conversation?.endpoint ?? '']?.responsesApiRouting,
+      ),
+    };
+  }, [conversation, endpointsConfig]);
 
   if (!parameters) {
     return null;
@@ -35,7 +54,6 @@ export default function OpenAISettings({
     const { key, default: defaultValue, ...rest } = setting;
 
     const props = {
-      key,
       settingKey: key,
       defaultValue,
       ...rest,
@@ -47,6 +65,7 @@ export default function OpenAISettings({
     if (key === 'model') {
       return (
         <Component
+          key={key}
           {...props}
           options={models}
           items={models.map((model) => ({
@@ -57,7 +76,7 @@ export default function OpenAISettings({
       );
     }
 
-    return <Component {...props} />;
+    return <Component key={key} {...props} />;
   };
 
   return (

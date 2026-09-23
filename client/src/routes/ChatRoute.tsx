@@ -4,13 +4,7 @@ import { useRecoilCallback, useRecoilValue } from 'recoil';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { Button, Spinner, useToastContext } from '@librechat/client';
 import { useGetModelsQuery } from 'librechat-data-provider/react-query';
-import {
-  Constants,
-  EModelEndpoint,
-  PermissionBits,
-  isAgentsEndpoint,
-  isEphemeralAgentId,
-} from 'librechat-data-provider';
+import { Constants, EModelEndpoint, PermissionBits } from 'librechat-data-provider';
 import type { TPreset, TAgentsMap } from 'librechat-data-provider';
 import {
   defaultSpecAwaitsAgents,
@@ -80,10 +74,7 @@ export default function ChatRoute() {
   } else if (routeState.pending && conversation?.conversationId === conversationId) {
     setRouteState({ conversationId, pending: false });
   }
-  const mcpWarmupAllowed =
-    conversation != null &&
-    !(isAgentsEndpoint(conversation.endpoint) && isEphemeralAgentId(conversation.agent_id ?? ''));
-  useAppStartup({ startupConfig, user, mcpWarmupAllowed });
+  useAppStartup({ startupConfig, user });
   const { newConversation } = useNewConvo();
   const { showToast } = useToastContext();
   const localize = useLocalize();
