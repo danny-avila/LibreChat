@@ -28,7 +28,7 @@ const ResetPasswordBodyText = () => {
     <div className="flex flex-col space-y-4">
       <p>{localize('com_auth_reset_password_if_email_exists')}</p>
       <a
-        className="text-accent-primary hover:text-accent-primary-hover inline-flex text-sm font-medium transition-colors"
+        className="text-accent-primary hover:text-accent-primary-hover inline-flex text-sm font-medium"
         href={loginPage()}
       >
         {localize('com_auth_back_to_login')}
@@ -90,6 +90,7 @@ function RequestPasswordReset() {
       <div className="space-y-2">
         <div className="relative">
           <Input
+            colorTransition
             type="email"
             id="email"
             autoComplete="off"
@@ -110,7 +111,7 @@ function RequestPasswordReset() {
               },
             })}
             aria-invalid={!!errors.email}
-            className="webkit-dark-styles peer border-border-light bg-surface-primary text-text-primary focus:border-accent-primary h-auto w-full rounded-2xl border px-3.5 pt-3 pb-2.5 transition-colors duration-200"
+            className="webkit-dark-styles peer border-border-light bg-surface-primary text-text-primary focus:border-accent-primary h-auto w-full rounded-2xl border px-3.5 pt-3 pb-2.5 duration-200"
             placeholder=" "
           />
           <label
@@ -138,7 +139,7 @@ function RequestPasswordReset() {
         </Button>
         <a
           href={loginPage()}
-          className="text-accent-primary hover:text-accent-primary-hover block text-center text-sm font-medium transition-colors"
+          className="text-accent-primary hover:text-accent-primary-hover block text-center text-sm font-medium"
         >
           {localize('com_auth_back_to_login')}
         </a>

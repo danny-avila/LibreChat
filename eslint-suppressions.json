@@ -111,22 +111,22 @@
   },
   "client/src/components/Auth/LoginForm.tsx": {
     "shadcn/no-restyle": {
-      "count": 41
+      "count": 39
     }
   },
   "client/src/components/Auth/Registration.tsx": {
     "shadcn/no-restyle": {
-      "count": 41
+      "count": 39
     }
   },
   "client/src/components/Auth/RequestPasswordReset.tsx": {
     "shadcn/no-restyle": {
-      "count": 16
+      "count": 15
     }
   },
   "client/src/components/Auth/ResetPassword.tsx": {
     "shadcn/no-restyle": {
-      "count": 56
+      "count": 54
     }
   },
   "client/src/components/Auth/TwoFactorScreen.tsx": {
@@ -894,7 +894,7 @@
   },
   "client/src/components/Chat/Messages/Feedback.tsx": {
     "shadcn/no-restyle": {
-      "count": 18
+      "count": 17
     },
     "shadcn/require-static-classes": {
       "count": 3
@@ -2490,7 +2490,7 @@
       "count": 1
     },
     "shadcn/no-restyle": {
-      "count": 58
+      "count": 56
     },
     "shadcn/no-unknown-classes": {
       "count": 1

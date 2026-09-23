@@ -180,19 +180,20 @@ test.describe('logged out', () => {
     page,
   }) => {
     await page.goto('/login', { timeout: 15000 });
-    const email = page.getByLabel('Email');
-    await expect(email).toBeVisible({ timeout: 30000 });
+    for (const label of ['Email', 'Password']) {
+      const field = page.getByLabel(label, { exact: true });
+      await expect(field).toBeVisible({ timeout: 30000 });
 
-    const transition = await email.evaluate((node) => {
-      const style = getComputedStyle(node);
-      return { property: style.transitionProperty, duration: style.transitionDuration };
-    });
+      const transition = await field.evaluate((node) => {
+        const style = getComputedStyle(node);
+        return { property: style.transitionProperty, duration: style.transitionDuration };
+      });
 
-    // `transition-color` is not a class Tailwind can generate, so the field kept the
-    // initial `all` against its 200 ms duration: focusing it animated its geometry.
-    expect(transition.property).not.toBe('all');
-    expect(transition.property).toContain('border-color');
-    expect(transition.property).toContain('color');
-    expect(transition.duration).toBe('0.2s');
+      // `transition-color` leaves the initial `all` against the 200 ms duration.
+      expect(transition.property).not.toBe('all');
+      expect(transition.property).toContain('border-color');
+      expect(transition.property).toContain('color');
+      expect(transition.duration).toBe('0.2s');
+    }
   });
 });

@@ -318,7 +318,7 @@ export default function Feedback({
       )}
       <OGDialog open={openDialog} onOpenChange={setOpenDialog}>
         <OGDialogContent className="w-11/12 max-w-lg">
-          <OGDialogTitle className="text-text-primary text-lg leading-6 font-semibold">
+          <OGDialogTitle className="text-lg leading-6 font-semibold">
             {localize('com_ui_feedback_more_information')}
           </OGDialogTitle>
           <Textarea

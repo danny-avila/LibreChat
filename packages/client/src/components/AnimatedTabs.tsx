@@ -21,6 +21,7 @@ export interface AnimatedTabsProps {
   tabListProps?: Ariakit.TabListProps;
   containerClassName?: string;
   defaultSelectedId?: string;
+  tone?: 'default' | 'muted';
 }
 
 function usePrevious<T>(value: T) {
@@ -90,6 +91,7 @@ export function AnimatedTabs({
   containerClassName = '',
   tabListProps = {},
   defaultSelectedId,
+  tone = 'default',
 }: AnimatedTabsProps): JSX.Element {
   const tabIds = tabs.map((tab, index) => tab.id || `tab-${index}`);
   const firstTabId = defaultSelectedId || tabIds[0];
@@ -130,7 +132,7 @@ export function AnimatedTabs({
               key={tabIds[index]}
               id={tabIds[index]}
               disabled={tab.disabled}
-              className={tabClassName}
+              className={cn(tone === 'muted' && 'text-text-secondary', tabClassName)}
               data-state={tabIds[index] === firstTabId ? 'active' : 'inactive'}
             >
               {/* TypeScript workaround for React i18next children type compatibility */}
