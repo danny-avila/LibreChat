@@ -638,6 +638,8 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
   };
 
   const chunkResolver = createToolCallChunkResolver();
+  let modelEndedClientCalls: Set<string> | undefined;
+  let pendingClientToolDeferrals: Map<string, string> | undefined;
 
   /**
    * Ensure message item is started
@@ -682,6 +684,37 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
   };
 
   /**
+   * Closes a caller-executed call that the server answered itself, and emits
+   * the answer as a `function_call_output` item.
+   *
+   * Without the output item the call is indistinguishable from one handed back
+   * for the caller to run, so a caller would execute a tool the model was told
+   * to re-issue — and a side-effecting tool would run twice.
+   */
+  const deliverClientToolDeferral = (callId: string, output: string): void => {
+    if (state.completedToolCalls.has(callId)) {
+      return;
+    }
+    state.completedToolCalls.add(callId);
+    emitFunctionCallArgumentsDone(config, callId);
+    emitFunctionCallItemDone(config, callId);
+    emitFunctionCallOutputItem(config, callId, output);
+  };
+
+  const emitClientToolDeferral = (callId: string, output: string): void => {
+    if (!state.activeToolCalls.has(callId) || state.completedToolCalls.has(callId)) {
+      return;
+    }
+    // A tool-execute event can beat the model-end event that contains the
+    // authoritative arguments. Keep the result pending until they arrive.
+    if (modelEndedClientCalls?.has(callId)) {
+      deliverClientToolDeferral(callId, output);
+      return;
+    }
+    (pendingClientToolDeferrals ??= new Map()).set(callId, output);
+  };
+
+  /**
    * Terminate the still-open calls to a caller-executed tool.
    *
    * `on_tool_end` terminates a call the server ran, which a caller-executed
@@ -706,24 +739,6 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
    * backfills a delta for any call whose arguments the provider sent whole
    * rather than streamed.
    */
-  /**
-   * Closes a caller-executed call that the server answered itself, and emits
-   * the answer as a `function_call_output` item.
-   *
-   * Without the output item the call is indistinguishable from one handed back
-   * for the caller to run, so a caller would execute a tool the model was told
-   * to re-issue — and a side-effecting tool would run twice.
-   */
-  const emitClientToolDeferral = (callId: string, output: string): void => {
-    if (!state.activeToolCalls.has(callId) || state.completedToolCalls.has(callId)) {
-      return;
-    }
-    state.completedToolCalls.add(callId);
-    emitFunctionCallArgumentsDone(config, callId);
-    emitFunctionCallItemDone(config, callId);
-    emitFunctionCallOutputItem(config, callId, output);
-  };
-
   const closeOpenClientToolCalls = (): void => {
     for (const callId of state.clientToolCalls) {
       if (state.completedToolCalls.has(callId)) {
@@ -764,10 +779,6 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
       emitReasoningItemDone(config);
       state.reasoningStarted = false;
     }
-
-    /* Last, so the events every existing consumer already receives keep their
-       exact relative order and the terminating pair is strictly additive. */
-    closeOpenClientToolCalls();
   };
 
   const handlers = {
@@ -921,10 +932,21 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
           if (!state.activeToolCalls.has(id)) {
             continue;
           }
-          if ((config.tracker.accumulatedArguments.get(id) ?? '') !== '') {
-            continue;
+          const streamed = config.tracker.accumulatedArguments.get(id) ?? '';
+          // An early handoff mark changes the SDK's step key. If a later
+          // index-only chunk lands on that new step, recover just the missing
+          // suffix without duplicating fragments already sent over SSE.
+          if (args.startsWith(streamed) && args.length > streamed.length) {
+            emitFunctionCallArgumentsDelta(config, id, args.slice(streamed.length));
           }
-          emitFunctionCallArgumentsDelta(config, id, args);
+          if (state.clientToolCalls.has(id)) {
+            (modelEndedClientCalls ??= new Set()).add(id);
+            const deferred = pendingClientToolDeferrals?.get(id);
+            if (deferred !== undefined) {
+              pendingClientToolDeferrals?.delete(id);
+              deliverClientToolDeferral(id, deferred);
+            }
+          }
         }
       },
     },
@@ -935,6 +957,12 @@ export function createResponsesEventHandlers(config: StreamHandlerConfig): {
    */
   const finalizeStream = (usage?: Usage): void => {
     closeOpenStreams();
+    for (const [callId, output] of pendingClientToolDeferrals ?? []) {
+      deliverClientToolDeferral(callId, output);
+    }
+    // A later step can announce a sibling before its arguments or deferral
+    // are settled. Only terminate handoffs after the run has completed.
+    closeOpenClientToolCalls();
     emitResponseCompleted(config, usage);
     writeDone(config.res);
   };

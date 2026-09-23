@@ -1319,6 +1319,7 @@ const executeResponse = async (envelope, { req, res }) => {
           traceContext: { endpoint: EModelEndpoint.agents },
           tenantId: principal.tenantId,
           modelCallbacks: [terminalRunError.modelCallback],
+          clientToolNames: clientTools.clientToolNames,
           /** Bills subagent child-run model calls (reported outside the
            *  streamEvents loop) into the same collectedUsage array. */
           subagentUsageSink: createSubagentUsageSink(collectedUsage),
@@ -1550,6 +1551,7 @@ const executeResponse = async (envelope, { req, res }) => {
           traceContext: { endpoint: EModelEndpoint.agents },
           tenantId: principal.tenantId,
           modelCallbacks: [terminalRunError.modelCallback],
+          clientToolNames: clientTools.clientToolNames,
           /** Bills subagent child-run model calls (reported outside the
            *  streamEvents loop) into the same collectedUsage array. */
           subagentUsageSink: createSubagentUsageSink(collectedUsage),
