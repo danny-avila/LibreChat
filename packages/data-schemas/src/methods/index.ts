@@ -517,6 +517,7 @@ export function createMethods(
 
 export type {
   UserMethods,
+  PasskeyMethods,
   SessionMethods,
   TokenMethods,
   RefreshTokenBridgeMethods,

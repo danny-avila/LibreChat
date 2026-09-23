@@ -1,3 +1,6 @@
+/** Timestamp source a user document may carry for its last credential change. */
+export type CredentialChangeStamp = Date | string | number | null;
+
 /**
  * A password reset stamps `credentialsChangedAt` on the user. Access tokens are stateless,
  * so a token minted before the reset keeps verifying on signature and `exp` alone unless the
@@ -10,12 +13,11 @@
  * refresh in a tight loop, land a mint inside the reset's second and keep a full-lifetime token,
  * which is the attack the stamp exists to stop. The reset request issues no token of its own, so
  * the only cost is that a login completing within the same second as the reset must be retried.
- *
- * @param {{ iat?: number } | undefined} payload - Verified JWT payload.
- * @param {{ credentialsChangedAt?: Date | string | number } | undefined} user - User document.
- * @returns {boolean} Whether the token predates the user's last credential change.
  */
-const isTokenIssuedBeforeCredentialChange = (payload, user) => {
+export function isTokenIssuedBeforeCredentialChange(
+  payload: { iat?: number } | null | undefined,
+  user: { credentialsChangedAt?: CredentialChangeStamp } | null | undefined,
+): boolean {
   const changedAt = user?.credentialsChangedAt;
   if (!changedAt) {
     return false;
@@ -35,6 +37,4 @@ const isTokenIssuedBeforeCredentialChange = (payload, user) => {
   }
 
   return issuedAt * 1000 < changedAtMs;
-};
-
-module.exports = { isTokenIssuedBeforeCredentialChange };
+}

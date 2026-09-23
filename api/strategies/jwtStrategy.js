@@ -1,9 +1,8 @@
-const { AGENT_TRIGGER_SCOPE } = require('@librechat/api');
+const { AGENT_TRIGGER_SCOPE, isTokenIssuedBeforeCredentialChange } = require('@librechat/api');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
 const { Strategy: JwtStrategy, ExtractJwt } = require('passport-jwt');
 const { getUserById, updateUser } = require('~/models');
-const { isTokenIssuedBeforeCredentialChange } = require('./credentials');
 
 const AGENT_TRIGGER_ADMISSION_PATHS = ['/api/agents/chat/agents', '/api/agents/chat/steer/deliver'];
 

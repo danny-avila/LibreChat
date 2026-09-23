@@ -21,6 +21,8 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   AGENT_TRIGGER_SCOPE: 'agent_trigger',
+  isTokenIssuedBeforeCredentialChange:
+    jest.requireActual('@librechat/api').isTokenIssuedBeforeCredentialChange,
 }));
 
 jest.mock('~/models', () => ({

@@ -18,9 +18,9 @@ const {
   getHttpsProxyAgent,
   isAccessTokenJwt,
   math,
+  isTokenIssuedBeforeCredentialChange,
 } = require('@librechat/api');
 const { updateUser, findUser, isAgentTriggerPrincipalActive } = require('~/models');
-const { isTokenIssuedBeforeCredentialChange } = require('./credentials');
 const getLogStores = require('~/cache/getLogStores');
 
 function decodeJwtExpiry(token) {

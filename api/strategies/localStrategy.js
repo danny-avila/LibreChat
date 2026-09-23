@@ -2,8 +2,11 @@ const bcrypt = require('bcryptjs');
 const { logger } = require('@librechat/data-schemas');
 const { errorsToString } = require('librechat-data-provider');
 const { Strategy: PassportLocalStrategy } = require('passport-local');
-const { isEnabled, comparePassword } = require('@librechat/api');
-const { grandfatherLegacyEmailVerification } = require('./verification');
+const {
+  isEnabled,
+  comparePassword,
+  grandfatherLegacyEmailVerification,
+} = require('@librechat/api');
 const { findUser, updateUser } = require('~/models');
 const { loginSchema } = require('./validators');
 
@@ -41,7 +44,7 @@ async function passportLogin(req, email, password, done) {
       return done(null, false, { message: 'Incorrect password.' });
     }
 
-    await grandfatherLegacyEmailVerification(user);
+    await grandfatherLegacyEmailVerification({ updateUser }, user);
 
     const unverifiedAllowed = isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN);
     if (user.expiresAt && unverifiedAllowed) {

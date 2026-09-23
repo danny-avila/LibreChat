@@ -1,12 +1,12 @@
 const jwt = require('jsonwebtoken');
 const { logger } = require('@librechat/data-schemas');
+const { isTokenIssuedBeforeCredentialChange } = require('@librechat/api');
 const {
   verifyTOTP,
   getTOTPSecret,
   verifyBackupCode,
 } = require('~/server/services/twoFactorService');
 const { setAuthTokens } = require('~/server/services/AuthService');
-const { isTokenIssuedBeforeCredentialChange } = require('~/strategies/credentials');
 const { getUserById } = require('~/models');
 
 /**
