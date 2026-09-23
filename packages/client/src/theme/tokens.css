@@ -15,12 +15,6 @@
  * nothing.
  */
 @theme inline {
-  /* Clear the default scales before the preset supplies the legacy compatibility shades.
-   * Palette names are not semantic tokens: new code must use the roles below. */
-  --color-gray-*: initial;
-
-  --color-green-*: initial;
-
   /* brand and surfaces */
   --color-brand-purple: rgb(var(--brand-purple));
   --color-presentation: rgb(var(--presentation));

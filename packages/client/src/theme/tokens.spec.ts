@@ -24,37 +24,37 @@ const declared = new Set(
  */
 const cssOnlyFamilies = /^(shimmer|syntax)-/;
 
-async function generate(candidates: string[]) {
-  const compiler = await compile(
-    `@import 'tailwindcss';\n@import './tokens.css';\n@config '../../tailwind.preset.cjs';\n`,
-    {
-      base: __dirname,
-      async loadModule(id: string, base: string) {
-        const modulePath = id.startsWith('.') ? path.resolve(base, id) : require.resolve(id);
-        /** Tailwind hands this callback whatever `@config`/`@plugin` names, so the specifier is
-         *  only known at runtime; a static import cannot express it. */
-        const loaded = (await import(modulePath)) as { default?: unknown };
-        return {
-          base: path.dirname(modulePath),
-          module: loaded.default ?? loaded,
-          path: modulePath,
-        };
-      },
-      async loadStylesheet(id: string, base: string) {
-        /** Resolved through package.json: jest's moduleNameMapper turns a `.css` request into a
-         *  style stub, which would hand Tailwind JavaScript to parse. */
-        const stylesheet =
-          id === 'tailwindcss'
-            ? path.join(path.dirname(require.resolve('tailwindcss/package.json')), 'index.css')
-            : path.resolve(base, id);
-        return {
-          base: path.dirname(stylesheet),
-          content: await fsp.readFile(stylesheet, 'utf8'),
-          path: stylesheet,
-        };
-      },
+async function generate(
+  candidates: string[],
+  entry = `@import 'tailwindcss';\n@import './tokens.css';\n@config '../../tailwind.preset.cjs';\n`,
+) {
+  const compiler = await compile(entry, {
+    base: __dirname,
+    async loadModule(id: string, base: string) {
+      const modulePath = id.startsWith('.') ? path.resolve(base, id) : require.resolve(id);
+      /** Tailwind hands this callback whatever `@config`/`@plugin` names, so the specifier is
+       *  only known at runtime; a static import cannot express it. */
+      const loaded = (await import(modulePath)) as { default?: unknown };
+      return {
+        base: path.dirname(modulePath),
+        module: loaded.default ?? loaded,
+        path: modulePath,
+      };
     },
-  );
+    async loadStylesheet(id: string, base: string) {
+      /** Resolved through package.json: jest's moduleNameMapper turns a `.css` request into a
+       *  style stub, which would hand Tailwind JavaScript to parse. */
+      const stylesheet =
+        id === 'tailwindcss'
+          ? path.join(path.dirname(require.resolve('tailwindcss/package.json')), 'index.css')
+          : path.resolve(base, id);
+      return {
+        base: path.dirname(stylesheet),
+        content: await fsp.readFile(stylesheet, 'utf8'),
+        path: stylesheet,
+      };
+    },
+  });
 
   return compiler.build(candidates);
 }
@@ -83,16 +83,22 @@ describe('theme color tokens', () => {
     expect(css).toContain('color-mix(in oklab, rgb(var(--surface-primary)) 50%');
   });
 
-  it('preserves closed compatibility palettes without declaring them as semantic tokens', async () => {
-    expect(tokens).toContain('--color-gray-*: initial;');
-    expect(declared.has('gray-650')).toBe(false);
-    expect(declared.has('green-500')).toBe(false);
+  it.each(['./theme.css', '../../../../client/src/style.css'])(
+    '%s preserves closed compatibility palettes without declaring them as semantic tokens',
+    async (repositoryEntry) => {
+      expect(declared.has('gray-650')).toBe(false);
+      expect(declared.has('green-500')).toBe(false);
 
-    const css = await generate(['bg-gray-650', 'text-green-500', 'bg-gray-950', 'bg-green-950']);
+      const css = await generate(
+        ['bg-gray-500', 'bg-gray-650', 'text-green-500', 'bg-gray-950', 'bg-green-950'],
+        `@import '${repositoryEntry}';\n`,
+      );
 
-    expect(css).toContain('#393939');
-    expect(css).toContain('#10a37f');
-    expect(css).not.toContain('bg-gray-950');
-    expect(css).not.toContain('bg-green-950');
-  });
+      expect(css).toMatch(/\.bg-gray-500\s*\{\s*background-color:\s*#595959;/);
+      expect(css).toMatch(/\.bg-gray-650\s*\{\s*background-color:\s*#393939;/);
+      expect(css).toMatch(/\.text-green-500\s*\{\s*color:\s*#10a37f;/);
+      expect(css).not.toContain('.bg-gray-950');
+      expect(css).not.toContain('.bg-green-950');
+    },
+  );
 });

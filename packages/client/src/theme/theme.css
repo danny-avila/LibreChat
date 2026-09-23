@@ -1,10 +1,15 @@
 /**
- * The library's Tailwind entry: the preset's appearance roles plus the color tokens, which is
- * the theme its own components are written against. The app has its own entry
- * (client/src/style.css) and composes the same two pieces; this file exists so the package is
- * self-describing, `npm run lint` resolves a theme for files in this workspace, and a consumer
- * that wants the whole thing rather than the parts can import it.
+ * Repository entry for the library lint and compile checks. The app composes the same
+ * semantic tokens and legacy compatibility scales in client/src/style.css.
+ * Consumers import tokens.css through the package export and use the published preset;
+ * neither public entry overrides their standard Tailwind palettes.
  */
 @import 'tailwindcss';
 @import './tokens.css';
 @config '../../tailwind.config.js';
+
+/* Close the legacy palette scales only inside this repository. */
+@theme inline {
+  --color-gray-*: initial;
+  --color-green-*: initial;
+}

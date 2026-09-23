@@ -177,6 +177,9 @@ The published preset supplies the semantic appearance utilities used by theme-aw
 variants, including `h-theme-control`, `rounded-theme-control`, `gap-theme-compact`, and
 `duration-theme-fast`. Keep the preset enabled even when defining additional project utilities.
 
+The published stylesheet and preset preserve the host's standard Tailwind color palettes.
+LibreChat's legacy gray and green compatibility scales apply only to its repository builds.
+
 The package requires Tailwind v4 and declares `tailwindcss: ^4.3.3` as a peer dependency: the
 published components emit v4-only utilities such as `outline-hidden`, `shadow-xs` and
 `origin-(--radix-…)`, which Tailwind 3 silently generates nothing for.

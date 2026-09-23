@@ -1,7 +1,8 @@
 // const { fontFamily } = require('tailwindcss/defaultTheme');
-// Colors are not here: they are declared in
+// Semantic colors are declared in
 // packages/client/src/theme/tokens.css, which src/style.css imports.
 const libreChatTailwindPreset = require('../packages/client/tailwind.preset.cjs');
+const compatibilityColors = require('../packages/client/tailwind.compat.cjs');
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -44,6 +45,7 @@ module.exports = {
     //   mono: ['Söhne Mono', 'monospace'],
     // },
     extend: {
+      colors: compatibilityColors,
       width: {
         authPageWidth: '370px',
       },

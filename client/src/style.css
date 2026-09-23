@@ -1,17 +1,23 @@
 @import 'tailwindcss';
-/* Colors live in the component library, in CSS, so one file feeds this app, the published
+/* Semantic colors live in the component library, in CSS, so one file feeds this app, the published
  * package and @shadcn/lint's token checking. Imported from source rather than from the built
  * package so a lint or CI run needs no prior build. */
 @import '../../packages/client/src/theme/tokens.css';
 @config '../tailwind.config.cjs';
+
+/* Close the legacy palette scales only inside this repository. */
+@theme inline {
+  --color-gray-*: initial;
+  --color-green-*: initial;
+}
 
 /* Tailwind v4 changed two preflight defaults this app was built against. Each rule below
  * restores the v3 default rather than adopting the new one, so the upgrade carries no visual
  * change; drop one only as a deliberate design decision.
  *   - border-color: v3 used gray-200, v4 uses currentColor.
  *   - ::placeholder: v3 used gray-400, v4 uses currentColor at 50% opacity.
- * Both read the palette through `theme()`, so they follow the tokens imported above rather than
- * pinning a hex here. `button { cursor: pointer }` below already covers v4's third change. */
+ * Both read the repository compatibility palette through `theme()` instead of pinning a hex here.
+ * `button { cursor: pointer }` below already covers v4's third change. */
 @layer base {
   *,
   ::after,
