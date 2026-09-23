@@ -377,7 +377,7 @@ describe('getOpenAIConfig', () => {
       'HTTP-Referer': 'https://librechat.ai',
       'X-Title': 'LibreChat',
       'X-OpenRouter-Title': 'LibreChat',
-      'X-OpenRouter-Categories': 'general-chat,personal-agent',
+      'X-OpenRouter-Categories': 'general-chat,personal-agent,programming-app',
     });
     expect(result.llmConfig.include_reasoning).toBe(true);
     expect(result.llmConfig.promptCache).toBe(true);
@@ -1193,10 +1193,23 @@ describe('getOpenAIConfig', () => {
         'HTTP-Referer': 'https://librechat.ai',
         'X-Title': 'LibreChat',
         'X-OpenRouter-Title': 'LibreChat',
-        'X-OpenRouter-Categories': 'general-chat,personal-agent',
+        'X-OpenRouter-Categories': 'general-chat,personal-agent,programming-app',
         'X-Custom-Header': 'custom-value',
         Authorization: 'Bearer custom-token',
       });
+    });
+
+    it('should allow custom OpenRouter categories to override attribution defaults', () => {
+      const result = getOpenAIConfig(mockApiKey, {
+        reverseProxyUrl: 'https://openrouter.ai/api/v1',
+        headers: {
+          'X-OpenRouter-Categories': 'general-chat',
+        },
+      });
+
+      expect(result.configOptions?.defaultHeaders?.['X-OpenRouter-Categories']).toBe(
+        'general-chat',
+      );
     });
   });
 
