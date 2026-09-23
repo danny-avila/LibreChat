@@ -13,6 +13,11 @@ import { useListAgentsQuery } from '~/data-provider';
 
 const keys = new Set(Object.keys(defaultAgentFormValues));
 
+/** Dropdown caps: 480px tall, at most 10 agents listed unsearched; the search
+ * field covers agents past the cut. */
+const SELECTOR_MAX_HEIGHT = 480;
+const SELECTOR_ITEMS_LIMIT = 10;
+
 function AgentSelect({
   agentQuery,
   selectedAgentId = null,
@@ -274,6 +279,8 @@ function AgentSelect({
           selectPlaceholder={field?.value?.value ?? createAgent}
           iconSide="right"
           searchPlaceholder={localize('com_agents_search_name')}
+          popoverMaxHeight={SELECTOR_MAX_HEIGHT}
+          unsearchedLimit={SELECTOR_ITEMS_LIMIT}
           SelectIcon={field?.value?.icon}
           setValue={onSelect}
           items={
