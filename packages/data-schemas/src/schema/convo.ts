@@ -424,6 +424,13 @@ convoSchema.index({ user: 1, isArchived: 1, updatedAt: -1, _id: -1 });
 convoSchema.index({ user: 1, isArchived: 1, createdAt: -1, updatedAt: -1, _id: -1 });
 convoSchema.index({ user: 1, isArchived: 1, title: 1, updatedAt: 1, _id: 1 });
 
+/** The endpoint facet, on the default sort. Without `endpoint` in the key MongoDB has
+ * to fetch every document in the user's list order just to discard it, so a filter that
+ * matches few rows reads the whole list; with it the scan stays inside the index.
+ * Date-range facets need no index of their own: they are a bound on the sort key the
+ * indexes above already lead with. */
+convoSchema.index({ user: 1, isArchived: 1, endpoint: 1, updatedAt: -1, _id: -1 });
+
 /** The sidebar's pinned section filters on user + pinned and pages by `updatedAt`. */
 convoSchema.index({ user: 1, pinned: 1, updatedAt: -1, _id: -1 });
 

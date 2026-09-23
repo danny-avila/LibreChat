@@ -109,6 +109,44 @@ module.exports = {
       const raw = Array.isArray(value) ? value[0] : value;
       return raw === 'asc' || raw === 'desc' ? raw : fallback;
     }),
+    /** Mirrors the real parser closely enough to exercise the route's wiring: what
+     *  reaches the query, and that a malformed facet answers 400 instead of being
+     *  dropped. The parser's own rules are covered in `packages/api`. */
+    parseConversationListFilters: jest.fn((query = {}) => {
+      const first = (value) => (Array.isArray(value) ? value[0] : value);
+      const filters = {};
+
+      for (const key of ['updatedAfter', 'createdAfter']) {
+        const raw = first(query[key]);
+        if (raw == null || raw === '') {
+          continue;
+        }
+        const date = new Date(raw);
+        if (Number.isNaN(date.getTime())) {
+          return { filters: {}, error: `${key} must be an ISO 8601 date` };
+        }
+        filters[key] = date;
+      }
+
+      if (query.endpoints != null) {
+        const endpoints = (Array.isArray(query.endpoints) ? query.endpoints : [query.endpoints])
+          .filter((entry) => typeof entry === 'string' && entry.trim() !== '')
+          .map((entry) => entry.trim());
+        if (endpoints.length > 0) {
+          filters.endpoints = [...new Set(endpoints)];
+        }
+      }
+
+      if (first(query.hasFiles) === 'true') {
+        filters.hasFiles = true;
+      }
+
+      if (first(query.sharedOnly) === 'true') {
+        filters.sharedOnly = true;
+      }
+
+      return { filters };
+    }),
     resolveImportMaxFileSize: jest.fn(() => 262144000),
     createAxiosInstance: jest.fn(() => ({
       get: jest.fn(),
