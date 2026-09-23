@@ -14,6 +14,7 @@ const mockGetAccessibleMcpServerNames = jest.fn(async () => []);
 const mockPrimeCodeFiles = jest.fn(async () => ({ files: [], toolContext: undefined }));
 
 const mockCreateSearchTool = jest.fn(() => ({ name: 'web_search' }));
+const mockCreateAnysearchSearchTool = jest.fn(() => ({ name: 'web_search' }));
 const mockCreateCodeExecutionTool = jest.fn(() => ({ name: 'execute_code' }));
 const mockLoadWebSearchAuth = jest.fn(async () => ({
   authenticated: true,
@@ -33,6 +34,7 @@ jest.mock('~/server/services/Files/Code/process', () => ({
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   loadWebSearchAuth: (...args) => mockLoadWebSearchAuth(...args),
+  createAnysearchSearchTool: (...args) => mockCreateAnysearchSearchTool(...args),
 }));
 
 jest.mock('~/server/services/PluginService', () => mockPluginService);
@@ -950,5 +952,52 @@ describe('Tool Handlers', () => {
       expect(toolMap[Tools.web_search]).toBeUndefined();
       expect(mockCreateSearchTool).not.toHaveBeenCalled();
     });
+
+    it('routes the anysearch provider to the vendored web_search tool factory', async () => {
+      mockLoadWebSearchAuth.mockResolvedValueOnce({
+        authenticated: true,
+        authResult: { searchProvider: 'anysearch' },
+      });
+      mockCreateAnysearchSearchTool.mockClear();
+      mockCreateSearchTool.mockClear();
+
+      const toolMap = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [Tools.web_search],
+        returnMap: true,
+        webSearch: { searchProvider: 'anysearch' },
+        options: { req: buildReq() },
+      });
+      await toolMap[Tools.web_search]();
+
+      expect(mockCreateAnysearchSearchTool).toHaveBeenCalledTimes(1);
+      const config = mockCreateAnysearchSearchTool.mock.calls[0][0];
+      expect(config.searchProvider).toBe('anysearch');
+      expect(typeof config.httpAgent.createConnection).toBe('function');
+      expect(typeof config.httpsAgent.createConnection).toBe('function');
+      // The SDK's createSearchTool must never see provider `anysearch`; it
+      // dispatches over a closed switch and would throw.
+      expect(mockCreateSearchTool).not.toHaveBeenCalled();
+    });
+
+    it('registers no anysearch tool when authentication is incomplete', async () => {
+      mockLoadWebSearchAuth.mockResolvedValueOnce({
+        authenticated: false,
+        authResult: { searchProvider: 'anysearch' },
+      });
+      mockCreateAnysearchSearchTool.mockClear();
+
+      const toolMap = await loadTools({
+        user: fakeUser._id.toString(),
+        tools: [Tools.web_search],
+        returnMap: true,
+        webSearch: { searchProvider: 'anysearch' },
+        options: { req: buildReq() },
+      });
+
+      expect(toolMap[Tools.web_search]).toBeUndefined();
+      expect(mockCreateAnysearchSearchTool).not.toHaveBeenCalled();
+    });
+
   });
 });

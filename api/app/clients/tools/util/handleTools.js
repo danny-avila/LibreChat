@@ -21,6 +21,7 @@ const {
   buildWebSearchContext,
   DELETE_MEMORY_TOOL_NAME,
   createAskUserQuestionTool,
+  createAnysearchSearchTool,
   ASK_USER_QUESTION_TOOL_NAME,
   resolveWebSearchSSRFAgents,
   buildWebSearchDynamicContext,
@@ -30,6 +31,7 @@ const {
 const {
   AuthType,
   Tools,
+  SearchProviders,
   Constants,
   Permissions,
   EToolResources,
@@ -467,7 +469,14 @@ const loadTools = async ({
       requestedTools[tool] = async () => {
         toolContextMap[tool] = buildWebSearchContext();
         dynamicToolContextMap[tool] = buildWebSearchDynamicContext(options.req?.turnStartedAt);
-        return createSearchTool({
+        // The anysearch provider runs a vendored web_search tool: the SDK's
+        // createSearchTool dispatches over a closed provider switch and would
+        // reject `anysearch`, so it must never see it.
+        const createSearchToolForProvider =
+          result.authResult.searchProvider === SearchProviders.ANYSEARCH
+            ? createAnysearchSearchTool
+            : createSearchTool;
+        return createSearchToolForProvider({
           ...result.authResult,
           httpAgent,
           httpsAgent,

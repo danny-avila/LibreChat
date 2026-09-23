@@ -153,7 +153,7 @@ export interface WebSearchAuthResult {
   authResult: Partial<TWebSearchConfig>;
 }
 
-interface KeenableAuthResolution {
+interface KeylessAuthResolution {
   isUserProvided: boolean;
   hasSystemApiKey: boolean;
   rejectedUserApiUrl: boolean;
@@ -186,122 +186,137 @@ export async function loadWebSearchAuth({
   const authResult: Partial<TWebSearchConfig> = {};
 
   /**
-   * Keenable is keyless by default: both its search and its page fetch work
-   * against public endpoints with no key, so neither category needs a secret to
-   * authenticate. This resolves the optional key/URL overrides once (a key only
-   * lifts rate limits) and reports whether any of them came from the user.
+   * Keyless-optional providers (Keenable, AnySearch) work against public
+   * endpoints with no secret, so no category needs a key to authenticate.
+   * This factory resolves one provider's optional key/URL overrides once
+   * per `includeApiUrl` shape and reports whether any came from the user.
    */
-  const keenableAuth = new Map<boolean, Promise<KeenableAuthResolution>>();
-  function resolveKeenableAuth(includeApiUrl: boolean): Promise<KeenableAuthResolution> {
-    const cached = keenableAuth.get(includeApiUrl);
-    if (cached) {
-      return cached;
-    }
-
-    const resolution = (async () => {
-      let keenableUserProvided = false;
-      let hasSystemApiKey = false;
-      let rejectedUserApiUrl = false;
-      const keenableKeys: TWebSearchKeys[] = includeApiUrl
-        ? ['keenableApiKey', 'keenableApiUrl']
-        : ['keenableApiKey'];
-      const authEntries: Array<{ key: TWebSearchKeys; field: string }> = [];
-
-      for (const originalKey of keenableKeys) {
-        const [field] = extractWebSearchEnvVars({
-          keys: [originalKey],
-          config: webSearchConfig,
-        });
-        if (field) {
-          authEntries.push({ key: originalKey, field });
-        }
+  function createKeylessProviderAuthResolver({
+    secretKey,
+    urlKey,
+  }: {
+    secretKey: TWebSearchKeys;
+    urlKey: TWebSearchKeys;
+  }): (includeApiUrl: boolean) => Promise<KeylessAuthResolution> {
+    const resolutions = new Map<boolean, Promise<KeylessAuthResolution>>();
+    return function resolveKeylessAuth(includeApiUrl: boolean): Promise<KeylessAuthResolution> {
+      const cached = resolutions.get(includeApiUrl);
+      if (cached) {
+        return cached;
       }
 
-      let authValues: Record<string, string> = {};
-      try {
-        const authFields = authEntries.map(({ field }) => field);
-        authValues = await loadAuthValues({
-          userId,
-          authFields,
-          optional: new Set(authFields),
-          throwError: true,
-          failOnOptionalError: true,
-        });
-      } catch {
+      const resolution = (async () => {
+        let userProvided = false;
+        let hasSystemApiKey = false;
+        let rejectedUserApiUrl = false;
+        const authKeys: TWebSearchKeys[] = includeApiUrl ? [secretKey, urlKey] : [secretKey];
+        const authEntries: Array<{ key: TWebSearchKeys; field: string }> = [];
+
+        for (const originalKey of authKeys) {
+          const [field] = extractWebSearchEnvVars({
+            keys: [originalKey],
+            config: webSearchConfig,
+          });
+          if (field) {
+            authEntries.push({ key: originalKey, field });
+          }
+        }
+
+        let authValues: Record<string, string> = {};
+        try {
+          const authFields = authEntries.map(({ field }) => field);
+          authValues = await loadAuthValues({
+            userId,
+            authFields,
+            optional: new Set(authFields),
+            throwError: true,
+            failOnOptionalError: true,
+          });
+        } catch {
+          return {
+            isUserProvided: false,
+            hasSystemApiKey: false,
+            rejectedUserApiUrl: false,
+            lookupFailed: true,
+          };
+        }
+
+        const resolvedEntries: Array<{
+          key: TWebSearchKeys;
+          value: string;
+          isFieldUserProvided: boolean;
+        }> = [];
+        for (const { key: originalKey, field } of authEntries) {
+          const value = authValues[field];
+          const envValue = process.env[field];
+          const normalizedEnvValue = envValue?.trim();
+          const isFieldUserProvided =
+            normalizedEnvValue == null ||
+            normalizedEnvValue === '' ||
+            normalizedEnvValue === AuthType.USER_PROVIDED;
+          if (isFieldUserProvided) {
+            // The category stays editable even before the user saves a value.
+            // Otherwise a system key would hide a separately user-provided URL.
+            userProvided = true;
+          }
+          if (!value) {
+            continue;
+          }
+          if (
+            originalKey === urlKey &&
+            isFieldUserProvided &&
+            (await isSSRFUrl(value, webSearchConfig?.allowedAddresses))
+          ) {
+            rejectedUserApiUrl = true;
+            continue;
+          }
+          resolvedEntries.push({ key: originalKey, value, isFieldUserProvided });
+        }
+
+        if (rejectedUserApiUrl) {
+          return {
+            isUserProvided: true,
+            hasSystemApiKey: false,
+            rejectedUserApiUrl: true,
+            lookupFailed: false,
+          };
+        }
+
+        const hasUserProvidedApiUrl = resolvedEntries.some(
+          ({ key, isFieldUserProvided }) => key === urlKey && isFieldUserProvided,
+        );
+        for (const { key: originalKey, value, isFieldUserProvided } of resolvedEntries) {
+          // Never forward an administrator's secret to an endpoint controlled by
+          // the user. The provider remains functional without the key at that URL.
+          if (originalKey === secretKey && !isFieldUserProvided && hasUserProvidedApiUrl) {
+            continue;
+          }
+          authResult[originalKey] = value;
+          if (originalKey === secretKey && !isFieldUserProvided) {
+            hasSystemApiKey = true;
+          }
+        }
+
         return {
-          isUserProvided: false,
-          hasSystemApiKey: false,
+          isUserProvided: userProvided,
+          hasSystemApiKey,
           rejectedUserApiUrl: false,
-          lookupFailed: true,
-        };
-      }
-
-      const resolvedEntries: Array<{
-        key: TWebSearchKeys;
-        value: string;
-        isFieldUserProvided: boolean;
-      }> = [];
-      for (const { key: originalKey, field } of authEntries) {
-        const value = authValues[field];
-        const envValue = process.env[field];
-        const normalizedEnvValue = envValue?.trim();
-        const isFieldUserProvided =
-          normalizedEnvValue == null ||
-          normalizedEnvValue === '' ||
-          normalizedEnvValue === AuthType.USER_PROVIDED;
-        if (isFieldUserProvided) {
-          // The category stays editable even before the user saves a value.
-          // Otherwise a system key would hide a separately user-provided URL.
-          keenableUserProvided = true;
-        }
-        if (!value) {
-          continue;
-        }
-        if (
-          originalKey === 'keenableApiUrl' &&
-          isFieldUserProvided &&
-          (await isSSRFUrl(value, webSearchConfig?.allowedAddresses))
-        ) {
-          rejectedUserApiUrl = true;
-          continue;
-        }
-        resolvedEntries.push({ key: originalKey, value, isFieldUserProvided });
-      }
-
-      if (rejectedUserApiUrl) {
-        return {
-          isUserProvided: true,
-          hasSystemApiKey: false,
-          rejectedUserApiUrl: true,
           lookupFailed: false,
         };
-      }
-
-      const hasUserProvidedApiUrl = resolvedEntries.some(
-        ({ key, isFieldUserProvided }) => key === 'keenableApiUrl' && isFieldUserProvided,
-      );
-      for (const { key: originalKey, value, isFieldUserProvided } of resolvedEntries) {
-        // Never forward an administrator's secret to an endpoint controlled by
-        // the user. Keenable remains functional without the key at that URL.
-        if (originalKey === 'keenableApiKey' && !isFieldUserProvided && hasUserProvidedApiUrl) {
-          continue;
-        }
-        authResult[originalKey] = value;
-        if (originalKey === 'keenableApiKey' && !isFieldUserProvided) {
-          hasSystemApiKey = true;
-        }
-      }
-
-      return {
-        isUserProvided: keenableUserProvided,
-        hasSystemApiKey,
-        rejectedUserApiUrl: false,
-        lookupFailed: false,
-      };
-    })();
-    keenableAuth.set(includeApiUrl, resolution);
-    return resolution;
+      })();
+      resolutions.set(includeApiUrl, resolution);
+      return resolution;
+    };
   }
+
+  const resolveKeenableAuth = createKeylessProviderAuthResolver({
+    secretKey: 'keenableApiKey',
+    urlKey: 'keenableApiUrl',
+  });
+  const resolveAnysearchAuth = createKeylessProviderAuthResolver({
+    secretKey: 'anysearchApiKey',
+    urlKey: 'anysearchApiUrl',
+  });
 
   let userSelections:
     | Promise<{
@@ -408,6 +423,19 @@ export async function loadWebSearchAuth({
       return [true, isUserProvided];
     }
 
+    /** The anysearch provider ships its own vendored web_search tool (see
+     * handleTools) with search, directory, batch, and extraction built in.
+     * Scraper/reranker enrichment is implemented inside the SDK's
+     * createSearchTool, which the vendored tool does not use, so neither
+     * category can gate the tool. */
+    if (
+      (category === SearchCategories.SCRAPERS || category === SearchCategories.RERANKERS) &&
+      (authResult.searchProvider === SearchProviders.ANYSEARCH ||
+        webSearchConfig?.searchProvider === SearchProviders.ANYSEARCH)
+    ) {
+      return [true, false];
+    }
+
     // Special case: Keenable is keyless by default. The public endpoints need no
     // key, so a pinned Keenable authenticates even when nothing is configured —
     // as a search provider and as a scraper alike.
@@ -418,6 +446,17 @@ export async function loadWebSearchAuth({
         return [false, true];
       }
       return [true, isUserProvided || keenable.isUserProvided || !keenable.hasSystemApiKey];
+    }
+
+    // Special case: AnySearch is anonymous by default. The public endpoint needs
+    // no key, so a pinned AnySearch authenticates even when nothing is configured.
+    if (category === SearchCategories.PROVIDERS && specificService === SearchProviders.ANYSEARCH) {
+      const anysearch = await resolveAnysearchAuth(true);
+      authResult.searchProvider = SearchProviders.ANYSEARCH;
+      if (anysearch.lookupFailed || anysearch.rejectedUserApiUrl) {
+        return [false, true];
+      }
+      return [true, isUserProvided || anysearch.isUserProvided || !anysearch.hasSystemApiKey];
     }
     if (category === SearchCategories.SCRAPERS && specificService === ScraperProviders.KEENABLE) {
       const searchUsesKeenable =
@@ -586,6 +625,22 @@ export async function loadWebSearchAuth({
         authResult.searchProvider = SearchProviders.KEENABLE;
         return [true, keenable.isUserProvided];
       }
+      /**
+       * Same rationale for AnySearch: the loop above skips it whenever it isn't
+       * pinned because none of its auth fields are required, so a legacy
+       * AnySearch credential saved before provider selections were persisted
+       * would otherwise leave the category unauthenticated. Gating on an actual
+       * AnySearch value preserves those installs without making AnySearch the
+       * implicit default for new users.
+       */
+      const anysearch = await resolveAnysearchAuth(true);
+      if (anysearch.lookupFailed || anysearch.rejectedUserApiUrl) {
+        return [false, true];
+      }
+      if (authResult.anysearchApiKey || authResult.anysearchApiUrl) {
+        authResult.searchProvider = SearchProviders.ANYSEARCH;
+        return [true, anysearch.isUserProvided];
+      }
     }
 
     /**
@@ -654,6 +709,7 @@ export async function loadWebSearchAuth({
   authResult.tavilySearchOptions = webSearchConfig?.tavilySearchOptions;
   authResult.tavilyScraperOptions = webSearchConfig?.tavilyScraperOptions;
   authResult.keenableSearchOptions = webSearchConfig?.keenableSearchOptions;
+  authResult.anysearchSearchOptions = webSearchConfig?.anysearchSearchOptions;
   authResult.keenableScraperOptions = webSearchConfig?.keenableScraperOptions;
 
   return {

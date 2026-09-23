@@ -119,6 +119,45 @@ describe('ApiKeyDialog', () => {
     expect(screen.getByPlaceholderText('com_ui_web_search_keenable_url')).toBeInTheDocument();
   });
 
+  it('renders the AnySearch provider option with both inputs', () => {
+    mockUseGetStartupConfig.mockReturnValue({ data: {} });
+    render(<ApiKeyDialog {...defaultProps} />);
+
+    fireEvent.click(screen.getByText('com_ui_web_search_provider_anysearch'));
+
+    expect(screen.getByPlaceholderText('com_ui_enter_api_key_optional')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('com_ui_web_search_anysearch_url')).toBeInTheDocument();
+  });
+
+  it('submits anysearch credentials in the install payload', () => {
+    const onSubmit = jest.fn();
+    const formData = {
+      selectedProvider: SearchProviders.ANYSEARCH,
+      selectedScraper: ScraperProviders.FIRECRAWL,
+      selectedReranker: RerankerTypes.NONE,
+      anysearchApiKey: 'user-anysearch-key',
+      anysearchApiUrl: 'https://proxy.example.com/mcp',
+    } as any;
+    mockUseGetStartupConfig.mockReturnValue({ data: {} });
+    render(
+      <ApiKeyDialog
+        {...defaultProps}
+        onSubmit={onSubmit}
+        handleSubmit={(fn: any) => () => fn(formData)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_save' }));
+
+    expect(onSubmit).toHaveBeenCalledWith({
+      selectedProvider: SearchProviders.ANYSEARCH,
+      selectedScraper: ScraperProviders.FIRECRAWL,
+      selectedReranker: RerankerTypes.NONE,
+      anysearchApiKey: 'user-anysearch-key',
+      anysearchApiUrl: 'https://proxy.example.com/mcp',
+    });
+  });
+
   it('shows only Jina reranker field if rerankerType is set to jina', () => {
     mockUseGetStartupConfig.mockReturnValue({
       data: { webSearch: { rerankerType: RerankerTypes.JINA } },

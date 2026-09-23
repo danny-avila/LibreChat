@@ -62,6 +62,8 @@ describe('loadWebSearchConfig', () => {
         tavilyExtractUrl: '${TAVILY_EXTRACT_URL}',
         keenableApiKey: '${KEENABLE_API_KEY}',
         keenableApiUrl: '${KEENABLE_API_URL}',
+        anysearchApiKey: '${ANYSEARCH_API_KEY}',
+        anysearchApiUrl: '${ANYSEARCH_API_URL}',
       });
     });
 
@@ -191,6 +193,8 @@ describe('loadWebSearchConfig', () => {
       expect(result?.cohereApiKey).toBe('${COHERE_API_KEY}');
       expect(result?.keenableApiKey).toBe('${KEENABLE_API_KEY}');
       expect(result?.keenableApiUrl).toBe('${KEENABLE_API_URL}');
+      expect(result?.anysearchApiKey).toBe('${ANYSEARCH_API_KEY}');
+      expect(result?.anysearchApiUrl).toBe('${ANYSEARCH_API_URL}');
     });
 
     it('should preserve custom API keys', () => {
@@ -251,5 +255,25 @@ describe('webSearchAuth', () => {
 
     expect(keys.filter((key) => key === 'keenableApiKey')).toHaveLength(1);
     expect(keys).toContain('keenableApiUrl');
+  });
+});
+
+describe('webSearchAuth (AnySearch)', () => {
+  it('registers AnySearch in the provider category only', () => {
+    expect(webSearchAuth.providers).toHaveProperty(SearchProviders.ANYSEARCH);
+    expect(webSearchAuth.scrapers).not.toHaveProperty('anysearch');
+  });
+
+  it('marks every AnySearch auth field optional (anonymous by default)', () => {
+    // A required field (1) would make AnySearch unusable without a key, and
+    // the keyless carve-out in `loadWebSearchAuth` depends on there being none.
+    expect(Object.values(webSearchAuth.providers.anysearch)).toEqual([0, 0]);
+  });
+
+  it('exposes the AnySearch keys once across categories', () => {
+    const keys = getWebSearchKeys();
+
+    expect(keys.filter((key) => key === 'anysearchApiKey')).toHaveLength(1);
+    expect(keys).toContain('anysearchApiUrl');
   });
 });

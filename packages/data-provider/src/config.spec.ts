@@ -1400,6 +1400,42 @@ describe('webSearchSchema', () => {
     ).toThrow();
   });
 
+  it('accepts AnySearch as a search provider with its key, URL, and options', () => {
+    const result = webSearchSchema.parse({
+      searchProvider: 'anysearch',
+      anysearchApiKey: 'test-key',
+      anysearchApiUrl: 'https://example.com/mcp',
+      anysearchSearchOptions: {
+        maxResults: 5,
+        timeout: 20000,
+      },
+    });
+
+    expect(result.searchProvider).toBe('anysearch');
+    expect(result.anysearchApiKey).toBe('test-key');
+    expect(result.anysearchApiUrl).toBe('https://example.com/mcp');
+    expect(result.anysearchSearchOptions?.maxResults).toBe(5);
+    expect(result.anysearchSearchOptions?.timeout).toBe(20000);
+  });
+
+  it('rejects invalid AnySearch search options', () => {
+    expect(() =>
+      webSearchSchema.parse({
+        anysearchSearchOptions: {
+          maxResults: 11,
+        },
+      }),
+    ).toThrow();
+
+    expect(() =>
+      webSearchSchema.parse({
+        anysearchSearchOptions: {
+          timeout: 120001,
+        },
+      }),
+    ).toThrow();
+  });
+
   it('accepts SearXNG search options', () => {
     const result = webSearchSchema.parse({
       searxngSearchOptions: {

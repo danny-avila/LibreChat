@@ -12,7 +12,7 @@ export enum DATE_RANGE {
   PAST_YEAR = 'y',
 }
 
-export type SearchProvider = 'serper' | 'searxng' | 'tavily' | 'keenable';
+export type SearchProvider = 'serper' | 'searxng' | 'tavily' | 'keenable' | 'anysearch';
 export type ScraperProvider = 'firecrawl' | 'serper' | 'tavily' | 'keenable';
 export type RerankerType = 'infinity' | 'jina' | 'cohere' | 'none';
 
@@ -83,6 +83,9 @@ export interface SearchConfig {
   keenableApiKey?: string;
   keenableApiUrl?: string;
   keenableSearchOptions?: KeenableConfig['keenableSearchOptions'];
+  anysearchApiKey?: string;
+  anysearchApiUrl?: string;
+  anysearchSearchOptions?: z.infer<typeof webSearchSchema>['anysearchSearchOptions'];
 }
 
 export type References = {

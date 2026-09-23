@@ -2440,6 +2440,7 @@ export enum SearchProviders {
   SEARXNG = 'searxng',
   TAVILY = 'tavily',
   KEENABLE = 'keenable',
+  ANYSEARCH = 'anysearch',
 }
 
 export enum ScraperProviders {
@@ -2494,6 +2495,8 @@ export const webSearchSchema = z.object({
   tavilyExtractUrl: z.string().optional().default('${TAVILY_EXTRACT_URL}'),
   keenableApiKey: z.string().optional().default('${KEENABLE_API_KEY}'),
   keenableApiUrl: z.string().optional().default('${KEENABLE_API_URL}'),
+  anysearchApiKey: z.string().optional().default('${ANYSEARCH_API_KEY}'),
+  anysearchApiUrl: z.string().optional().default('${ANYSEARCH_API_URL}'),
   jinaApiKey: z.string().optional().default('${JINA_API_KEY}'),
   jinaApiKeyPreview: apiKeyPreviewSchema,
   jinaApiUrl: z.string().optional().default('${JINA_API_URL}'),
@@ -2586,6 +2589,12 @@ export const webSearchSchema = z.object({
   keenableScraperOptions: z
     .object({
       attributionTitle: z.string().optional(),
+      timeout: z.number().int().nonnegative().max(120000).optional(),
+    })
+    .optional(),
+  anysearchSearchOptions: z
+    .object({
+      maxResults: z.number().int().min(1).max(10).optional(),
       timeout: z.number().int().nonnegative().max(120000).optional(),
     })
     .optional(),

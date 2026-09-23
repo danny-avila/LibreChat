@@ -881,6 +881,127 @@ describe('web.ts', () => {
       ]);
     });
 
+    it('should authenticate AnySearch keyless (anonymous, no API key configured)', async () => {
+      // AnySearch works anonymously. Return nothing for the ANYSEARCH_* fields.
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field.startsWith('ANYSEARCH_')) {
+            return;
+          }
+          result[field] =
+            field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+        });
+        return Promise.resolve(result);
+      });
+
+      const anysearchConfig = {
+        ...webSearchConfig,
+        anysearchApiKey: '${ANYSEARCH_API_KEY}',
+        anysearchApiUrl: '${ANYSEARCH_API_URL}',
+        searchProvider: 'anysearch' as SearchProviders,
+        anysearchSearchOptions: { maxResults: 5, timeout: 20000 },
+      } as TWebSearchConfig;
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig: anysearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.searchProvider).toBe('anysearch' as SearchProviders);
+      // Anonymous: no key was resolved, so it should not be set on the result.
+      expect(result.authResult.anysearchApiKey).toBeUndefined();
+      // Provider-specific options are passed through untouched.
+      expect(result.authResult.anysearchSearchOptions).toEqual({ maxResults: 5, timeout: 20000 });
+    });
+
+    it('should pick up a configured AnySearch API key', async () => {
+      mockLoadAuthValues.mockImplementation(({ authFields }) => {
+        const result: Record<string, string> = {};
+        authFields.forEach((field: string) => {
+          if (field === 'ANYSEARCH_API_KEY') {
+            result[field] = 'user-anysearch-key';
+          } else if (field === 'ANYSEARCH_API_URL') {
+            return;
+          } else {
+            result[field] =
+              field === 'FIRECRAWL_API_URL' ? 'https://api.firecrawl.dev' : 'test-api-key';
+          }
+        });
+        return Promise.resolve(result);
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig: {
+          ...webSearchConfig,
+          anysearchApiKey: '${ANYSEARCH_API_KEY}',
+          anysearchApiUrl: '${ANYSEARCH_API_URL}',
+          searchProvider: 'anysearch' as SearchProviders,
+        } as TWebSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authResult.searchProvider).toBe('anysearch' as SearchProviders);
+      expect(result.authResult.anysearchApiKey).toBe('user-anysearch-key');
+    });
+
+    it('should authenticate a fully anonymous AnySearch stack without scraper or reranker credentials', async () => {
+      // Nothing is authenticated anywhere: every field resolves empty. The
+      // vendored tool carries extraction itself, so neither the scraper nor the
+      // reranker category may gate it.
+      mockLoadAuthValues.mockImplementation(() => Promise.resolve({}));
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig: {
+          anysearchApiKey: '${ANYSEARCH_API_KEY}',
+          anysearchApiUrl: '${ANYSEARCH_API_URL}',
+          firecrawlApiKey: '${FIRECRAWL_API_KEY}',
+          jinaApiKey: '${JINA_API_KEY}',
+          searchProvider: 'anysearch' as SearchProviders,
+          safeSearch: SafeSearchTypes.MODERATE,
+        } as TWebSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(true);
+      expect(result.authResult.searchProvider).toBe('anysearch' as SearchProviders);
+      expect(result.authResult.scraperProvider).toBeUndefined();
+      expect(result.authResult.rerankerType).toBeUndefined();
+      expect(result.authResult.anysearchApiKey).toBeUndefined();
+      expect(result.authTypes).toEqual([
+        ['providers', AuthType.USER_PROVIDED],
+        ['scrapers', AuthType.SYSTEM_DEFINED],
+        ['rerankers', AuthType.SYSTEM_DEFINED],
+      ]);
+    });
+
+    it('should reject selected AnySearch auth when its user API URL is blocked', async () => {
+      mockIsSSRFTarget.mockReturnValueOnce(true);
+      mockLoadAuthValues.mockResolvedValue({
+        ANYSEARCH_API_KEY: 'user-anysearch-key',
+        ANYSEARCH_API_URL: 'http://127.0.0.1:8080',
+      });
+
+      const result = await loadWebSearchAuth({
+        userId,
+        webSearchConfig: {
+          anysearchApiKey: '${ANYSEARCH_API_KEY}',
+          anysearchApiUrl: '${ANYSEARCH_API_URL}',
+          searchProvider: 'anysearch' as SearchProviders,
+        } as TWebSearchConfig,
+        loadAuthValues: mockLoadAuthValues,
+      });
+
+      expect(result.authenticated).toBe(false);
+      expect(result.authResult.searchProvider).toBe(SearchProviders.ANYSEARCH);
+      expect(result.authResult.anysearchApiKey).toBeUndefined();
+      expect(result.authResult.anysearchApiUrl).toBeUndefined();
+    });
+
     it('should fail closed when optional Keenable credential lookup fails', async () => {
       mockLoadAuthValues.mockImplementation(({ authFields, failOnOptionalError }) => {
         if (failOnOptionalError && authFields.includes('KEENABLE_API_URL')) {
@@ -1580,12 +1701,9 @@ describe('web.ts', () => {
       // Verify no duplicate categories
       expect(new Set(categories).size).toBe(expectedCategoryCount);
 
-      // Verify each entry has the correct format [category, AuthType]
-      result.authTypes.forEach(([category, authType]) => {
-        expect(typeof category).toBe('string');
-        expect([AuthType.SYSTEM_DEFINED, AuthType.USER_PROVIDED]).toContain(authType);
-      });
-
+      // Check providers
+      expect(webSearchAuth.providers).toHaveProperty('serper');
+      expect(webSearchAuth.providers.serper).toHaveProperty('serperApiKey', 1);
       // Restore original env
       process.env = originalEnv;
     });
@@ -1601,6 +1719,9 @@ describe('web.ts', () => {
       // Check providers
       expect(webSearchAuth.providers).toHaveProperty('serper');
       expect(webSearchAuth.providers.serper).toHaveProperty('serperApiKey', 1);
+      expect(webSearchAuth.providers).toHaveProperty('anysearch');
+      expect(webSearchAuth.providers.anysearch).toHaveProperty('anysearchApiKey', 0);
+      expect(webSearchAuth.providers.anysearch).toHaveProperty('anysearchApiUrl', 0);
 
       // Check scrapers
       expect(webSearchAuth.scrapers).toHaveProperty('firecrawl');

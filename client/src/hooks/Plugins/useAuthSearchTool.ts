@@ -24,6 +24,8 @@ export type SearchApiKeyFormData = {
   tavilyApiKey: string;
   keenableApiKey: string;
   keenableApiUrl: string;
+  anysearchApiKey: string;
+  anysearchApiUrl: string;
   jinaApiKey: string;
   jinaApiUrl: string;
   cohereApiKey: string;
@@ -75,6 +77,8 @@ const useAuthSearchTool = (options?: { isEntityTool: boolean }) => {
         tavilyApiKey: data.tavilyApiKey,
         keenableApiKey: data.keenableApiKey,
         keenableApiUrl: data.keenableApiUrl,
+        anysearchApiKey: data.anysearchApiKey,
+        anysearchApiUrl: data.anysearchApiUrl,
         jinaApiKey: data.jinaApiKey,
         jinaApiUrl: data.jinaApiUrl,
         cohereApiKey: data.cohereApiKey,

@@ -21,6 +21,11 @@ export const webSearchAuth = {
       keenableApiKey: 0 as const,
       keenableApiUrl: 0 as const,
     },
+    anysearch: {
+      /** Optional (0) — AnySearch works anonymously; a key only lifts rate limits */
+      anysearchApiKey: 0 as const,
+      anysearchApiUrl: 0 as const,
+    },
   },
   scrapers: {
     firecrawl: {
@@ -99,6 +104,8 @@ export function loadWebSearchConfig(
   const tavilyExtractUrl = config?.tavilyExtractUrl ?? '${TAVILY_EXTRACT_URL}';
   const keenableApiKey = config?.keenableApiKey ?? '${KEENABLE_API_KEY}';
   const keenableApiUrl = config?.keenableApiUrl ?? '${KEENABLE_API_URL}';
+  const anysearchApiKey = config?.anysearchApiKey ?? '${ANYSEARCH_API_KEY}';
+  const anysearchApiUrl = config?.anysearchApiUrl ?? '${ANYSEARCH_API_URL}';
   const jinaApiKey = config?.jinaApiKey ?? '${JINA_API_KEY}';
   const jinaApiUrl = config?.jinaApiUrl ?? '${JINA_API_URL}';
   const cohereApiKey = config?.cohereApiKey ?? '${COHERE_API_KEY}';
@@ -123,6 +130,8 @@ export function loadWebSearchConfig(
     tavilyExtractUrl,
     keenableApiKey,
     keenableApiUrl,
+    anysearchApiKey,
+    anysearchApiUrl,
     firecrawlApiKey,
     firecrawlApiUrl,
     firecrawlVersion,

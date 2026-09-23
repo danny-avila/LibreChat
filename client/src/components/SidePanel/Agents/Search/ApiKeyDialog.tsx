@@ -145,6 +145,24 @@ export default function ApiKeyDialog({
         },
       },
     },
+    {
+      key: SearchProviders.ANYSEARCH,
+      label: localize('com_ui_web_search_provider_anysearch'),
+      inputs: {
+        anysearchApiKey: {
+          placeholder: localize('com_ui_enter_api_key_optional'),
+          type: 'password' as const,
+          link: {
+            url: 'https://anysearch.com/console/api-keys',
+            text: localize('com_ui_web_search_provider_anysearch_key'),
+          },
+        },
+        anysearchApiUrl: {
+          placeholder: localize('com_ui_web_search_anysearch_url'),
+          type: 'text' as const,
+        },
+      },
+    },
   ];
 
   const rerankerOptions: DropdownOption[] = [
