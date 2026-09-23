@@ -102,6 +102,53 @@ describe('media file conversation consumers', () => {
     expect(await db.claimMediaAssetDeletion({ scope, fileId, token: 'delete' })).not.toBeNull();
   });
 
+  it('keeps a completed message deletion when immediate reconciliation fails', async () => {
+    const fileId = await asset({ retained: false });
+    const conversationId = randomUUID();
+    const messageId = randomUUID();
+    await db.saveMessage(
+      { userId: scope.ownerId },
+      { conversationId, messageId, files: [{ file_id: fileId }] },
+    );
+    expect((await file(fileId))?.mediaRetainers).toEqual([`conversation:${conversationId}`]);
+    jest.spyOn(mongoose.models.File, 'find').mockImplementationOnce(() => {
+      throw new Error('File collection unavailable');
+    });
+    await expect(
+      db.deleteMessages({ user: scope.ownerId, conversationId, messageId }),
+    ).resolves.toMatchObject({ deletedCount: 1 });
+    expect((await file(fileId))?.mediaRetainers).toEqual([`conversation:${conversationId}`]);
+    await db.reconcileMediaFileConsumers({
+      scope,
+      limit: 10,
+      now: new Date(Date.now() + 60_000).toISOString(),
+    });
+    expect((await file(fileId))?.mediaRetainers).toEqual([]);
+  });
+
+  it("does not return another writer's consumer token from duplicate-key recovery", async () => {
+    const conversationId = randomUUID();
+    const messageId = randomUUID();
+    await mongoose.models.Message.create({
+      user: scope.ownerId,
+      conversationId,
+      messageId,
+      isCreatedByUser: false,
+      mediaConsumerToken: 'concurrent-writer',
+    });
+    jest.spyOn(mongoose.models.Message, 'findOneAndUpdate').mockRejectedValueOnce(
+      Object.assign(new Error('E11000 duplicate key error collection: messages'), {
+        code: 11000,
+      }),
+    );
+    const recovered = await db.saveMessage(
+      { userId: scope.ownerId },
+      { conversationId, messageId, text: 'retry' },
+    );
+    expect(recovered).toMatchObject({ messageId });
+    expect(recovered).not.toHaveProperty('mediaConsumerToken');
+  });
+
   it.each(['files', 'attachments', 'image_file', 'steer'] as const)(
     'tracks %s in record and bulk writers, including raw rollback and TTL',
     async (kind) => {

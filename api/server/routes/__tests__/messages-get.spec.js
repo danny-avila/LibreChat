@@ -313,6 +313,33 @@ describe('message route conversation ownership filters', () => {
     expect(stored.files[0].filepath).toBe(file.filepath);
   });
 
+  it.each(['/api/messages/convo-media', '/api/messages/convo-media/saved-media'])(
+    'projects saved media originals on %s like the paginated read',
+    async (url) => {
+      const file = {
+        file_id: 'f17ecafe-1234-4123-8123-123456789012',
+        filename: 'original.png',
+        type: 'image/png',
+        bytes: 4096,
+        filepath: 'https://private.example/original.png?signature=private-secret',
+        storageKey: 'private-key',
+      };
+      getMessages.mockResolvedValue([
+        {
+          messageId: 'saved-media',
+          files: [file],
+          content: [{ type: 'image_file', image_file: file }],
+        },
+      ]);
+      const response = await request(app).get(url).expect(200);
+      const publicPath = `/api/media/assets/${file.file_id}/content`;
+      expect(response.body).toMatchObject([
+        { files: [{ filepath: publicPath }], content: [{ image_file: { filepath: publicPath } }] },
+      ]);
+      expect(JSON.stringify(response.body)).not.toContain('private-');
+    },
+  );
+
   it.each([
     { name: 'marked user-submitted assistant content', isUserSubmitted: true },
     { name: 'legacy unmarked model content', isUserSubmitted: undefined },

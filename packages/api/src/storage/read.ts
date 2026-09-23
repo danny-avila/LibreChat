@@ -1,7 +1,27 @@
+import { logger } from '@librechat/data-schemas';
 import type { ContainerClient } from '@azure/storage-blob';
 import type { Readable } from 'node:stream';
 import type { AxiosInstance } from 'axios';
 import type { StorageReadOptions, StorageByteRange } from './types';
+import { getSafeErrorMetadata } from '~/utils/errors';
+
+type OpenStorageStream = (
+  request: unknown,
+  filepath: string,
+  options?: StorageReadOptions,
+) => Promise<Readable>;
+
+/** Storage reads are the only place a provider download failure can be diagnosed. */
+function logStreamFailure(label: string, open: OpenStorageStream): OpenStorageStream {
+  return async (...args) => {
+    try {
+      return await open(...args);
+    } catch (error) {
+      logger.error(label, getSafeErrorMetadata(error));
+      throw error;
+    }
+  };
+}
 
 /** Parses a single HTTP byte range, including open-ended and suffix requests. */
 export function parseStorageRange(value: string, bytes: number): StorageByteRange | undefined {
@@ -79,46 +99,45 @@ export function createAzureFileStream({
   getContainerClient,
 }: {
   getContainerClient(name?: string): Promise<ContainerClient>;
-}) {
-  return async (
-    _request: unknown,
-    filepath: string,
-    options: StorageReadOptions = {},
-  ): Promise<Readable> => {
-    storageRangeHeader(options.range);
-    const url = new URL(filepath);
-    const configuredClient = await getContainerClient();
-    const configuredURL = configuredClient.url ? new URL(configuredClient.url) : undefined;
-    const configuredPrefix = configuredURL?.pathname.replace(/\/$/, '');
-    let containerClient = configuredClient;
-    let blobPath: string;
-    if (
-      configuredURL &&
-      configuredPrefix &&
-      url.origin === configuredURL.origin &&
-      url.pathname.startsWith(`${configuredPrefix}/`)
-    ) {
-      blobPath = url.pathname.slice(configuredPrefix.length + 1);
-    } else {
-      const pathSegments = url.pathname.split('/').filter(Boolean);
-      const containerName = pathSegments.shift();
-      blobPath = pathSegments.join('/');
-      if (containerName)
-        containerClient = await getContainerClient(decodeURIComponent(containerName));
-    }
-    blobPath = blobPath.split('/').map(decodeURIComponent).join('/');
-    if (!blobPath) throw new Error('Invalid Azure Blob URL');
-    const range = options.range;
-    const response = await containerClient
-      .getBlockBlobClient(blobPath)
-      .download(range?.start ?? 0, range ? range.end - range.start + 1 : undefined, {
-        abortSignal: options.signal,
-      });
-    const stream = response.readableStreamBody as Readable | undefined;
-    if (!stream) throw new Error('Azure Blob download returned no readable stream');
-    assertStorageRange(stream, range, response.contentRange);
-    return stream;
-  };
+}): OpenStorageStream {
+  return logStreamFailure(
+    '[getAzureFileStream] Error getting blob stream:',
+    async (_request, filepath, options = {}) => {
+      storageRangeHeader(options.range);
+      const url = new URL(filepath);
+      const configuredClient = await getContainerClient();
+      const configuredURL = configuredClient.url ? new URL(configuredClient.url) : undefined;
+      const configuredPrefix = configuredURL?.pathname.replace(/\/$/, '');
+      let containerClient = configuredClient;
+      let blobPath: string;
+      if (
+        configuredURL &&
+        configuredPrefix &&
+        url.origin === configuredURL.origin &&
+        url.pathname.startsWith(`${configuredPrefix}/`)
+      ) {
+        blobPath = url.pathname.slice(configuredPrefix.length + 1);
+      } else {
+        const pathSegments = url.pathname.split('/').filter(Boolean);
+        const containerName = pathSegments.shift();
+        blobPath = pathSegments.join('/');
+        if (containerName)
+          containerClient = await getContainerClient(decodeURIComponent(containerName));
+      }
+      blobPath = blobPath.split('/').map(decodeURIComponent).join('/');
+      if (!blobPath) throw new Error('Invalid Azure Blob URL');
+      const range = options.range;
+      const response = await containerClient
+        .getBlockBlobClient(blobPath)
+        .download(range?.start ?? 0, range ? range.end - range.start + 1 : undefined, {
+          abortSignal: options.signal,
+        });
+      const stream = response.readableStreamBody as Readable | undefined;
+      if (!stream) throw new Error('Azure Blob download returned no readable stream');
+      assertStorageRange(stream, range, response.contentRange);
+      return stream;
+    },
+  );
 }
 
 /** Firebase's signed object URL remains the existing credential boundary. */
@@ -128,22 +147,21 @@ export function createFirebaseFileStream({
 }: {
   getStorage(): object | null | undefined;
   http: AxiosInstance;
-}) {
-  return async (
-    _request: unknown,
-    filepath: string,
-    options: StorageReadOptions = {},
-  ): Promise<Readable> => {
-    if (!getStorage()) throw new Error('Firebase is not initialized');
-    const range = storageRangeHeader(options.range);
-    const response = await http.request<Readable>({
-      method: 'get',
-      url: filepath,
-      responseType: 'stream',
-      signal: options.signal,
-      ...(range ? { headers: { Range: range }, decompress: false } : {}),
-    });
-    assertStorageRange(response.data, options.range, response.headers['content-range']);
-    return response.data;
-  };
+}): OpenStorageStream {
+  return logStreamFailure(
+    'Error getting Firebase file stream:',
+    async (_request, filepath, options = {}) => {
+      if (!getStorage()) throw new Error('Firebase is not initialized');
+      const range = storageRangeHeader(options.range);
+      const response = await http.request<Readable>({
+        method: 'get',
+        url: filepath,
+        responseType: 'stream',
+        signal: options.signal,
+        ...(range ? { headers: { Range: range }, decompress: false } : {}),
+      });
+      assertStorageRange(response.data, options.range, response.headers['content-range']);
+      return response.data;
+    },
+  );
 }

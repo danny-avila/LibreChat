@@ -58,18 +58,23 @@ export async function saveGeneratedImage(
   deps: GeneratedImageDependencies,
 ): Promise<GeneratedImageFile> {
   const { req, endpoint, context } = options;
-  const match = /^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]*)$/.exec(url);
-  if (!match) throw new Error('Invalid base64 image');
-  const inputBuffer = Buffer.from(match[2], 'base64');
+  /** Tool artifacts may send raw base64 or a generic data URL; sharp identifies the real format. */
+  const match = /^data:([^;,]+);base64,([\s\S]*)$/.exec(url);
+  const declaredType = match?.[1] ?? '';
+  const data = match ? match[2] : url;
+  if (!data || (options.preserveOriginal && !declaredType.startsWith('image/'))) {
+    throw new Error('Invalid base64 image');
+  }
+  const inputBuffer = Buffer.from(data, 'base64');
   const retention = deps.getRetentionExpiry(req);
   const image = options.preserveOriginal
-    ? await inspectOriginal(inputBuffer, match[1])
+    ? await inspectOriginal(inputBuffer, declaredType)
     : await resizeImageBuffer(
         inputBuffer,
         options.resolution ?? req.config.fileConfig?.imageGeneration ?? 'high',
         endpoint,
       );
-  const type = image.type ?? match[1];
+  const type = image.type ?? declaredType;
   const file_id = options.file_id ?? randomUUID();
   let filename = `${file_id}-${options.filename}`;
   if (!path.extname(options.filename)) {

@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { Readable } from 'node:stream';
 import { createServer } from 'node:http';
+import { logger } from '@librechat/data-schemas';
 import type { ContainerClient } from '@azure/storage-blob';
 import { assertStorageRange, createAzureFileStream, createFirebaseFileStream } from './read';
 
@@ -72,3 +73,32 @@ it.each([undefined, 'bytes 0-31/8388608', 'bytes 8388576-8388607/32'])(
     expect(stream.destroyed).toBe(true);
   },
 );
+
+it('logs a storage download failure without its credentials before rethrowing', async () => {
+  const error = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+  const getContainerClient = jest.fn(
+    async () =>
+      ({
+        url: 'http://127.0.0.1:10000/account/files',
+        getBlockBlobClient: () => ({
+          download: async () => {
+            throw Object.assign(new Error('Blob not found'), { statusCode: 404 });
+          },
+        }),
+      }) as unknown as ContainerClient,
+  );
+  const openAzure = createAzureFileStream({ getContainerClient });
+  await expect(openAzure({}, 'http://127.0.0.1:10000/account/files/missing.png')).rejects.toThrow(
+    'Blob not found',
+  );
+  const openFirebase = createFirebaseFileStream({ getStorage: () => undefined, http: axios });
+  await expect(openFirebase({}, 'https://storage.example/object')).rejects.toThrow(
+    'Firebase is not initialized',
+  );
+  expect(error).toHaveBeenCalledWith('[getAzureFileStream] Error getting blob stream:', {
+    type: 'Error',
+    status: 404,
+  });
+  expect(error).toHaveBeenCalledWith('Error getting Firebase file stream:', { type: 'Error' });
+  error.mockRestore();
+});

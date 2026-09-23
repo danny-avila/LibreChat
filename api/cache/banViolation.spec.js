@@ -1,6 +1,8 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
+const { ViolationTypes } = require('librechat-data-provider');
 const banViolation = require('./banViolation');
+const getLogStores = require('./getLogStores');
 
 // Mock deleteAllUserSessions since we're testing ban logic, not session deletion
 jest.mock('~/models', () => ({
@@ -125,6 +127,19 @@ describe('banViolation', () => {
     errorMessage.violation_count = randomValueUnder;
     await banViolation(req, res, errorMessage);
     expect(errorMessage.ban).toBeFalsy();
+  });
+
+  it('stores the IP ban under the address the ban check reads, without the proxy port', async () => {
+    const proxied = Object.defineProperty({ ...req }, 'ip', {
+      get: () => '203.0.113.5:51234',
+      enumerable: true,
+    });
+    errorMessage.prev_count = 19;
+    errorMessage.violation_count = 20;
+    await banViolation(proxied, res, errorMessage);
+    const banLogs = getLogStores(ViolationTypes.BAN);
+    expect(await banLogs.get('203.0.113.5')).toMatchObject({ user_id: errorMessage.user_id });
+    expect(await banLogs.get('203.0.113.5:51234')).toBeUndefined();
   });
 
   it('[EDGE CASE] should not ban if violation_count is lower', async () => {

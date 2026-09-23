@@ -69,6 +69,18 @@ describe('shared generated image File publisher', () => {
     expect(file.type).toBe('image/png');
     expect(file.filename).toMatch(/\.png$/);
   });
+  it.each([
+    ['raw base64', (data: string) => data],
+    ['a generic data URL', (data: string) => `data:application/octet-stream;base64,${data}`],
+  ])('saves an ordinary generated image sent as %s', async (_label, encode) => {
+    const bytes = await sharp({ create: { width: 4, height: 4, channels: 3, background: 'red' } })
+      .png()
+      .toBuffer();
+    const { deps } = fixture();
+    const file = await saveGeneratedImage(encode(bytes.toString('base64')), options, deps);
+    expect(file.type).toBe('image/png');
+    expect(file.filename).toMatch(/\.png$/);
+  });
   it('rejects active formats and mismatched declared native MIME before writing bytes', async () => {
     const { deps, saveBuffer } = fixture();
     const bytes = await sharp({ create: { width: 1, height: 1, channels: 3, background: 'red' } })
@@ -89,6 +101,9 @@ describe('shared generated image File publisher', () => {
         deps,
       ),
     ).rejects.toThrow('raster MIME');
+    await expect(
+      saveGeneratedImage(bytes.toString('base64'), { ...options, preserveOriginal: true }, deps),
+    ).rejects.toThrow('Invalid base64 image');
     expect(saveBuffer).not.toHaveBeenCalled();
   });
 });

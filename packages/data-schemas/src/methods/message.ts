@@ -1236,7 +1236,9 @@ export function createMessageMethods(
           });
 
           if (existingMessage) {
-            return existingMessage.toObject();
+            const existing = existingMessage.toObject();
+            delete existing.mediaConsumerToken;
+            return existing;
           }
 
           return undefined;
@@ -3876,14 +3878,19 @@ export function createMessageMethods(
         typeof filter.conversationId === 'string' &&
         ownerTenant !== SYSTEM_TENANT_ID
       ) {
-        await deps.mediaFiles.reconcileMediaFileConsumers({
-          scope: {
-            ownerId: filter.user,
-            tenantId: ownerTenant,
-          },
-          conversationId: filter.conversationId,
-          limit: resolveMediaConfig().limits.maxPageSize,
-        });
+        // The periodic consumer sweep retries this; the messages are already gone.
+        await deps.mediaFiles
+          .reconcileMediaFileConsumers({
+            scope: {
+              ownerId: filter.user,
+              tenantId: ownerTenant,
+            },
+            conversationId: filter.conversationId,
+            limit: resolveMediaConfig().limits.maxPageSize,
+          })
+          .catch((error: unknown) =>
+            logger.warn('[deleteMessages] Media consumer reconciliation deferred:', error),
+          );
       }
       return result;
     } catch (err) {
