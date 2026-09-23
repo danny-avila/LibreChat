@@ -2471,6 +2471,8 @@ describe('registrationController - invite consumption', () => {
     await registrationController({ body: {}, invite }, res);
 
     expect(res.send).toHaveBeenCalledWith({ message: 'ok' });
+  });
+});
 
 describe('resetPasswordController', () => {
   let req, res;

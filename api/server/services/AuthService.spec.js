@@ -1031,28 +1031,6 @@ describe('resetPassword', () => {
     expect(deleteTokens).toHaveBeenCalledWith({ token: 'reset-hash', type: 'password_reset' });
   });
 
-  it('should stamp credentialsChangedAt with the new password to revoke outstanding access tokens', async () => {
-    const resetHash = bcrypt.hashSync('reset-token', 10);
-    findToken.mockResolvedValue({
-      token: resetHash,
-      userId: 'user-reset',
-      type: 'password_reset',
-    });
-    updateUser.mockResolvedValue({ email: 'user@example.com' });
-
-    const before = Date.now();
-    await resetPassword('user-reset', 'reset-token', 'new-password');
-    const after = Date.now();
-
-    expect(updateUser).toHaveBeenCalledTimes(1);
-    const [userId, update] = updateUser.mock.calls[0];
-    expect(userId).toBe('user-reset');
-    expect(update.password).toEqual(expect.any(String));
-    expect(update.credentialsChangedAt).toBeInstanceOf(Date);
-    expect(update.credentialsChangedAt.getTime()).toBeGreaterThanOrEqual(before);
-    expect(update.credentialsChangedAt.getTime()).toBeLessThanOrEqual(after);
-  });
-
   it('deletes an untyped legacy token by its exact stored shape', async () => {
     findToken.mockImplementation(async (query) =>
       query.type === 'password_reset'

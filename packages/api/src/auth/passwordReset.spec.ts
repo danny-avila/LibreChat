@@ -77,7 +77,7 @@ describe('commitPasswordReset', () => {
     await expect(commitPasswordReset(deps, input)).resolves.toMatchObject({ ok: true });
     expect(deps.updateUser).toHaveBeenCalledWith(
       'user-reset',
-      { password: 'hashed-password' },
+      { password: 'hashed-password', credentialsChangedAt: expect.any(Date) },
       { email: 'user@example.com' },
     );
   });

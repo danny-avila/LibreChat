@@ -182,6 +182,7 @@ describe('jwtStrategy', () => {
       'user-3',
       '-password -__v -totpSecret -backupCodes +agentTriggerDeletionStartedAt',
     );
+  });
 
   describe('credentialsChangedAt revocation', () => {
     /** Reset landed 500ms into second 1700000010 */
