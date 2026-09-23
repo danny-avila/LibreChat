@@ -63,9 +63,9 @@ export const darkTheme: IThemeRGB = {
   'rgb-text-fixed': '33 33 33', // #212121 (gray-800) — same in light + dark
 
   // Border colors
-  'rgb-border-light': '47 47 47', // #2f2f2f (gray-700)
-  'rgb-border-medium': '66 66 66', // #424242 (gray-600)
-  'rgb-border-medium-alt': '66 66 66', // #424242 (gray-600)
+  'rgb-border-light': '33 33 33', // #212121 (gray-800)
+  'rgb-border-medium': '57 57 57', // #393939 (gray-650)
+  'rgb-border-medium-alt': '57 57 57', // #393939 (gray-650)
   'rgb-border-heavy': '89 89 89', // #595959 (gray-500)
   'rgb-border-xheavy': '153 150 150', // #999696 (gray-400)
   'rgb-border-destructive': '239 68 68', // #ef4444 (red-500)

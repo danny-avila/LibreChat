@@ -347,9 +347,11 @@ html {
   --surface-code: var(--presentation);
   --surface-code-body: var(--surface-primary-alt);
   --surface-qr: var(--white);
-  --border-light: var(--gray-700);
-  --border-medium-alt: var(--gray-600);
-  --border-medium: var(--gray-600);
+  /* One step off the page instead of two: in dark the edge only has to separate
+     a surface from the one behind it, and a brighter line reads as a seam. */
+  --border-light: var(--gray-800);
+  --border-medium-alt: var(--gray-650);
+  --border-medium: var(--gray-650);
   --border-heavy: var(--gray-500);
   --border-xheavy: var(--gray-400);
   --border-destructive: var(--red-500);
@@ -1713,8 +1715,7 @@ html {
 }
 .dark body,
 .dark html {
-  --tw-bg-opacity: 1;
-  background-color: rgba(33, 33, 33, var(--tw-bg-opacity));
+  background-color: rgb(var(--surface-primary-alt));
 }
 #__next,
 #root {

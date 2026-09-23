@@ -28,6 +28,7 @@ type ButtonVariantOptions =
         | 'icon-sm'
         | 'icon-xs'
         | 'icon-theme'
+        | 'xs'
         | 'sm'
         | 'lg'
         | 'theme'
@@ -79,7 +80,7 @@ const buttonVariantRecipe = cva(
          * below, since a section heading is sized by its text.
          */
         'section-header':
-          'justify-start gap-1 rounded-lg px-1 py-2 text-xs font-bold text-text-secondary focus-visible:ring-inset focus-visible:ring-offset-0',
+          'justify-start gap-1 rounded-lg px-1 py-2 text-xs font-medium text-text-secondary focus-visible:ring-inset focus-visible:ring-offset-0',
         /**
          * A quiet icon action sitting beside a section heading in the sidebar.
          * Unlike `row-action`, it recedes until hovered so the heading stays
@@ -108,6 +109,12 @@ const buttonVariantRecipe = cva(
       },
       size: {
         default: 'h-10 px-4 py-2',
+        /**
+         * A chip, the text counterpart of `icon-xs`: the reset beside a list that
+         * matched nothing, and anything else that offers a way out without asking
+         * to be the thing the eye lands on.
+         */
+        xs: 'h-7 rounded-md px-2.5 text-xs',
         sm: 'h-9 rounded-lg px-3',
         lg: 'h-11 rounded-lg px-8',
         icon: 'size-10',

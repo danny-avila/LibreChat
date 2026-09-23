@@ -40,4 +40,28 @@ const Checkbox: React.ForwardRefExoticComponent<
 );
 Checkbox.displayName = CheckboxPrimitive.Root.displayName;
 
-export { Checkbox };
+/**
+ * The checkbox's appearance without its behaviour, for a control that already carries
+ * the state itself, e.g. a `Button` with `aria-pressed`. Radix's checkbox is a
+ * `<button>`, so nesting one inside another control puts two interactive elements in
+ * the same place: unreachable by keyboard, and announced twice by a screen reader.
+ * This is a span, so the control around it stays the only thing there.
+ */
+const CheckboxGlyph: React.FC<{ checked: boolean; className?: string }> = ({
+  checked,
+  className = '',
+}) => (
+  <span
+    aria-hidden="true"
+    className={cn(
+      'border-border-xheavy flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border',
+      checked && 'bg-surface-inverted text-text-inverted',
+      className,
+    )}
+  >
+    {checked && <Check className="h-4 w-4" />}
+  </span>
+);
+CheckboxGlyph.displayName = 'CheckboxGlyph';
+
+export { Checkbox, CheckboxGlyph };

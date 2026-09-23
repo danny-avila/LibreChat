@@ -52,6 +52,9 @@ export const composerControlClasses = (): string =>
   cn(
     'group relative inline-flex items-center justify-center gap-theme-compact',
     'h-theme-control rounded-theme-control-round border border-border-medium',
-    'bg-transparent text-sm font-medium text-text-primary shadow-xs transition-all',
-    'hover:bg-surface-hover hover:shadow-md active:shadow-inner',
+    'bg-transparent text-sm font-medium text-text-primary transition-all',
+    /** No elevation: a row of raised pills inside the composer competes with the
+     *  composer itself. The edge stays, because a fill alone against the composer
+     *  surface is under 1.2:1 and would leave the control with no visible boundary. */
+    'hover:bg-surface-hover',
   );
