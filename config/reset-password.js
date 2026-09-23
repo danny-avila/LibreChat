@@ -59,7 +59,8 @@ const resetPassword = async () => {
       { email },
       {
         password: hashedPassword,
-        passwordVersion: Date.now(), // Invalidate old sessions
+        /** Access tokens minted before this stamp stop verifying */
+        credentialsChangedAt: new Date(),
       },
     );
 
