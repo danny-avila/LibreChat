@@ -30,7 +30,17 @@ const FilterInput: React.ForwardRefExoticComponent<
 > = React.forwardRef<HTMLInputElement, FilterInputProps>(
   ({ className, label, inputId, containerClassName, surface = 'primary', ...props }, ref) => {
     return (
-      <div className={cn('relative', containerClassName)}>
+      <div
+        className={cn(
+          /** The floating label breaks the field's top border, so it has to paint the
+           *  surface behind it. The surface is painted here and inherited by the label,
+           *  so a field on another panel names it through `surface` or restates it once
+           *  through `containerClassName` instead of the label drifting from its host. */
+          'relative',
+          surface === 'presentation' ? 'bg-presentation' : 'bg-surface-primary-alt',
+          containerClassName,
+        )}
+      >
         <input
           id={inputId}
           ref={ref}
@@ -44,12 +54,7 @@ const FilterInput: React.ForwardRefExoticComponent<
         />
         <label
           htmlFor={inputId}
-          className={cn(
-            'text-text-secondary pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm transition-all duration-200 peer-focus:top-0 peer-focus:px-1 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:px-1 peer-[:not(:placeholder-shown)]:text-xs',
-            surface === 'presentation'
-              ? 'peer-focus:bg-presentation peer-[:not(:placeholder-shown)]:bg-presentation'
-              : 'peer-focus:bg-surface-primary peer-[:not(:placeholder-shown)]:bg-surface-primary',
-          )}
+          className="text-text-secondary pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm transition-all duration-200 peer-focus:top-0 peer-focus:bg-inherit peer-focus:px-1 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:bg-inherit peer-[:not(:placeholder-shown)]:px-1 peer-[:not(:placeholder-shown)]:text-xs"
         >
           {label}
         </label>
