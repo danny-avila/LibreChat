@@ -147,6 +147,23 @@ describe('recordPasskeyUse', () => {
     expect(updated?.lastUsedAt).toBeInstanceOf(Date);
   });
 
+  it('refreshes the backup state alongside the counter', async () => {
+    await methods.createPasskey(passkeyData({ backedUp: false }));
+
+    await expect(methods.recordPasskeyUse('credential-one', 7, true)).resolves.toBe(true);
+    expect((await methods.findPasskeyByCredentialId('credential-one'))?.backedUp).toBe(true);
+
+    await expect(methods.recordPasskeyUse('credential-one', 8, false)).resolves.toBe(true);
+    expect((await methods.findPasskeyByCredentialId('credential-one'))?.backedUp).toBe(false);
+  });
+
+  it('leaves the backup state alone when the assertion loses the counter race', async () => {
+    await methods.createPasskey(passkeyData({ counter: 5, backedUp: false }));
+
+    await expect(methods.recordPasskeyUse('credential-one', 3, true)).resolves.toBe(false);
+    expect((await methods.findPasskeyByCredentialId('credential-one'))?.backedUp).toBe(false);
+  });
+
   it('does not regress the counter when the new value is lower', async () => {
     await methods.createPasskey(passkeyData({ counter: 5 }));
 

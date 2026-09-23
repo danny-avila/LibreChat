@@ -298,7 +298,8 @@ export async function createPasskeyAuthenticationOptions({
 
 /**
  * Verifies an assertion against the challenge issued for `sessionId`.
- * Returns the authenticator's new signature counter on success, `null` otherwise.
+ * Returns the authenticator's new signature counter and current backup state on
+ * success, `null` otherwise.
  *
  * A passkey assertion is a complete single-factor login here, so user
  * verification is required: an assertion carrying only the user-present flag,
@@ -316,7 +317,7 @@ export async function verifyPasskeyAuthentication({
   sessionId: string;
   response: AuthenticationResponseJSON;
   credential: PasskeyCredential;
-}): Promise<{ newCounter: number } | null> {
+}): Promise<{ newCounter: number; backedUp: boolean } | null> {
   const expectedChallenge = await consumeChallenge(store, authenticationChallengeKey(sessionId));
   if (!expectedChallenge) {
     return null;
@@ -346,7 +347,8 @@ export async function verifyPasskeyAuthentication({
     return null;
   }
 
-  return { newCounter: verification.authenticationInfo.newCounter };
+  const { newCounter, credentialBackedUp } = verification.authenticationInfo;
+  return { newCounter, backedUp: credentialBackedUp };
 }
 
 /**
