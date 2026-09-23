@@ -92,10 +92,11 @@ export function buildNativeMediaFactory(
     jobs && streamId
       ? (signatures: NativeSignatures) => {
           const snapshot = { ...signatures };
-          pending = pending.then(() =>
+          const update = pending.then(() =>
             jobs.updateMetadata(streamId, { nativeSignatures: snapshot }, client.jobCreatedAt),
           );
-          return pending;
+          pending = update.catch(() => undefined);
+          return update;
         }
       : undefined;
   return resolveNativeMediaFactory(

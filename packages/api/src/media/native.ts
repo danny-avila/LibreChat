@@ -99,8 +99,9 @@ export function createNativeMediaFactory({
           : entry.catalog.allowModels
         ).includes(selection.model),
     );
-    const modalities = selection.responseModalities ?? (integration ? ['TEXT', 'IMAGE'] : ['TEXT']);
-    const wantsImages = modalities.some((modality) => modality.toUpperCase() === 'IMAGE');
+    const requested = selection.responseModalities;
+    let modalities = requested ?? (integration ? ['TEXT', 'IMAGE'] : ['TEXT']);
+    let wantsImages = modalities.some((modality) => modality.toUpperCase() === 'IMAGE');
     const historyIntegration: MediaIntegration = integration ?? {
       id: 'native-google-history',
       api: 'google.generateContent',
@@ -169,12 +170,25 @@ export function createNativeMediaFactory({
         throw new MediaServiceError('not_found', 404, 'The native conversation has expired.');
       return context;
     };
+    /** Images are only a default for configured models; a turn that cannot record them stays text. */
+    const canOutputImages = () =>
+      assertOutput()
+        .then(getConnection)
+        .then(
+          () => true,
+          (error: unknown) => {
+            if (error instanceof MediaServiceError) return false;
+            throw error;
+          },
+        );
     return {
       async start({ modelRunId, model, signal }) {
+        if (wantsImages && requested == null && !(await canOutputImages())) {
+          wantsImages = false;
+          modalities = ['TEXT'];
+        }
         if (!wantsImages) {
-          return selection.responseModalities == null
-            ? undefined
-            : { responseModalities: modalities };
+          return requested == null && !integration ? undefined : { responseModalities: modalities };
         }
         const context = await assertOutput();
         await getConnection();

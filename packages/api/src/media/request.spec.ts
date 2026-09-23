@@ -321,3 +321,26 @@ it('serializes private native snapshots onto the same generation before streamed
     123,
   );
 });
+
+it('publishes later native signatures after one metadata write fails', async () => {
+  const { request, nativeFactory } = fixture();
+  request._resumableStreamId = 'stream';
+  const client = {
+    options: { req: request, mediaRuntime: { nativeFactory } },
+    conversationId: 'conversation',
+    responseMessageId: 'message',
+    collectedUsage: [],
+    jobCreatedAt: 123,
+  };
+  const updateMetadata = jest
+    .fn<Promise<void>, unknown[]>()
+    .mockRejectedValueOnce(new Error('job store unavailable'))
+    .mockResolvedValue(undefined);
+  await buildNativeMediaFactory(client, {}, { updateMetadata });
+  const source = nativeFactory.mock.calls[0][1];
+  const signatures: NativeSignatures = { '0': { text: 'First', thoughtSignature: 'private-0' } };
+  await expect(source.onSignatures!(signatures)).rejects.toThrow('job store unavailable');
+  signatures['1'] = { mimeType: 'image/png', thoughtSignature: 'private-1' };
+  await expect(source.onSignatures!(signatures)).resolves.toBeUndefined();
+  expect(updateMetadata).toHaveBeenLastCalledWith('stream', { nativeSignatures: signatures }, 123);
+});

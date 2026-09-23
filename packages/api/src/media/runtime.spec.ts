@@ -2581,6 +2581,46 @@ describe('Media Studio HTTP and worker with standalone MongoDB', () => {
     },
   );
 
+  it('keeps a configured Google image model text-only when chat cannot record images', async () => {
+    config.media!.integrations.push({
+      id: 'google-images',
+      api: 'google.generateContent',
+      endpointRef: { kind: 'builtin', endpoint: EModelEndpoint.google },
+      catalog: { kind: 'configured', models: ['gemini-2.5-flash-image'] },
+      operations: ['image.generate'],
+    });
+    config.media!.surfaces.chat = false;
+    const factory = await runtime.nativeFactory(
+      Object.assign(Object.create(express.request) as express.Request, {
+        user: { id: scope.ownerId, role: 'USER' },
+      }),
+      { conversationId: 'chat-text', messageId: 'assistant-text', prompt: 'Hi', temporary: false },
+    );
+    const selection = {
+      provider: 'google',
+      model: 'gemini-2.5-flash-image',
+      apiKey: 'fixture-google',
+      baseURL: root,
+    };
+    const port = await factory?.(selection);
+    await expect(port?.start({ modelRunId: 'text-run', model: selection.model })).resolves.toEqual({
+      responseModalities: ['TEXT'],
+    });
+    await expect(
+      port?.part({
+        modelRunId: 'text-run',
+        chunkIndex: 0,
+        partIndex: 0,
+        part: { kind: 'text', text: 'Hello.' },
+      }),
+    ).resolves.toEqual({ type: 'text', text: 'Hello.' });
+    const explicit = await factory?.({ ...selection, responseModalities: ['TEXT', 'IMAGE'] });
+    await expect(
+      explicit?.start({ modelRunId: 'image-run', model: selection.model }),
+    ).rejects.toMatchObject({ code: 'unsupported' });
+    expect(await mongoose.models.File.countDocuments()).toBe(0);
+  });
+
   it('removes late upload bytes when cleanup retired its reservation before the stream opened', async () => {
     const storage = createMediaStorage({
       repository,
