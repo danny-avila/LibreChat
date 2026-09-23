@@ -14,6 +14,7 @@ import type {
   Agent,
 } from 'librechat-data-provider';
 import { getCustomEndpointConfig } from '~/app/config';
+import { resolveResponseAppInstructions } from './generatedResponsePrompts';
 
 const { mcp_all, mcp_delimiter } = Constants;
 type ModelParametersWithPromptPrefix = AgentModelParameters & { promptPrefix?: string | null };
@@ -31,6 +32,7 @@ export interface LoadAgentParams {
     user?: { id?: string };
     config?: AppConfig;
     body?: {
+      appId?: string | number;
       promptPrefix?: string;
       instructions?: string;
       ephemeralAgent?: TEphemeralAgent;
@@ -112,8 +114,13 @@ export async function loadEphemeralAgent(
   const requestPromptPrefix = req.body?.promptPrefix;
   const { promptPrefix: modelPromptPrefix, ...safeModelParameters } =
     model_parameters as ModelParametersWithPromptPrefix;
-  const instructions =
-    typeof modelPromptPrefix === 'string' ? modelPromptPrefix : requestPromptPrefix;
+  const requestInstructions =
+    typeof req.body?.instructions === 'string'
+      ? req.body.instructions
+      : typeof modelPromptPrefix === 'string'
+        ? modelPromptPrefix
+        : requestPromptPrefix;
+  const instructions = resolveResponseAppInstructions(req.body?.appId, requestInstructions);
 
   // Get endpoint config for modelDisplayLabel fallback
   const appConfig = req.config;
@@ -203,8 +210,17 @@ export async function loadAgent(
    */
   const requestInstructions =
     typeof req.body?.instructions === 'string' ? req.body.instructions.trim() : '';
-  if (requestInstructions) {
-    agent.additional_instructions = [agent.additional_instructions, requestInstructions]
+  const appInstructions = resolveResponseAppInstructions(req.body?.appId);
+  const requestTaskInstructions = appInstructions && requestInstructions.startsWith(`${appInstructions}\n\n`)
+    ? requestInstructions.slice(appInstructions.length).replace(/^\s+/, '')
+    : requestInstructions;
+
+  if (appInstructions) {
+    agent.instructions = resolveResponseAppInstructions(req.body?.appId, agent.instructions);
+  }
+
+  if (requestTaskInstructions) {
+    agent.additional_instructions = [agent.additional_instructions, requestTaskInstructions]
       .filter(Boolean)
       .join('\n\n');
   }

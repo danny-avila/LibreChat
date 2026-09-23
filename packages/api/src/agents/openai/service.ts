@@ -20,6 +20,7 @@
  */
 import { nanoid } from 'nanoid';
 import { AgentCapabilities } from 'librechat-data-provider';
+import { applyResponseAppPrompt } from '../appPrompt';
 import type { Response as ServerResponse, Request } from 'express';
 import type {
   ChatCompletionResponse,
@@ -93,6 +94,7 @@ interface Agent {
   provider: string;
   tools?: string[];
   instructions?: string;
+  additional_instructions?: string;
   model_parameters?: Record<string, unknown>;
   tool_resources?: Record<string, unknown>;
   tool_options?: Record<string, unknown>;
@@ -396,6 +398,22 @@ export async function createAgentChatCompletion(
     return;
   }
 
+  // App prompts are shipped inside this service package from the repository's
+  // generated prompt copy. Resolve them at the actual chat-completion entry
+  // point so caller-provided instructions cannot replace the selected app
+  // prompt. Keep the stored agent instructions after the app-level prompt.
+  const requestBody = req.body as Record<string, unknown>;
+  const additionalModelRequestFields = requestBody.additionalModelRequestFields as
+    | Record<string, unknown>
+    | undefined;
+  const appId = (requestBody.appId ?? additionalModelRequestFields?.appId) as
+    | string
+    | number
+    | undefined;
+  const requestInstructions =
+    typeof requestBody.instructions === 'string' ? requestBody.instructions.trim() : '';
+  const runtimeAgent = applyResponseAppPrompt(agent, appId, requestInstructions);
+
   // Generate IDs
   const requestId = `chatcmpl-${nanoid()}`;
   const conversationId = request.conversation_id ?? nanoid();
@@ -444,7 +462,7 @@ export async function createAgentChatCompletion(
     const initializedAgent = await deps.initializeAgent({
       req,
       res,
-      agent,
+      agent: runtimeAgent,
       conversationId,
       parentMessageId: request.parent_message_id,
       loadTools: deps.loadAgentTools,
