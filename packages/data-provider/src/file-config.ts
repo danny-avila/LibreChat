@@ -248,24 +248,25 @@ export const resolveEffectiveUseResponsesApi = ({
   endpoint,
   model,
   routing,
+  webSearch,
 }: {
   value?: boolean | null;
   endpoint?: string | null;
   model?: string | null;
   routing?: ResponsesApiRouting;
+  webSearch?: boolean | null;
 }): boolean | undefined => {
   if (endpoint !== EModelEndpoint.openAI && endpoint !== EModelEndpoint.azureOpenAI) {
     return value ?? undefined;
   }
   let policy = model ? routing?.[model] : undefined;
-  if (!policy && endpoint === EModelEndpoint.openAI && model && prefersResponsesApiByModel(model)) {
-    // Snapshots use the same native family rules. Azure configurations only
-    // advertise exact deployed model names, with '*' as their fallback.
+  if (!policy && model && prefersResponsesApiByModel(model)) {
     const family = /^gpt-6-(?:astra|sol|luna)(?=-|$)/i.exec(model)?.[0].toLowerCase();
-    policy = family ? routing?.[family] : undefined;
+    policy = family ? routing?.[`${family}-*`] : undefined;
   }
   policy ??= routing?.['*'];
   if (!policy) return value ?? undefined;
+  if (webSearch && policy.withWebSearch) policy = policy.withWebSearch;
   if (value == null) return policy.default;
   return value ? policy.on : policy.off;
 };

@@ -1,8 +1,10 @@
 import { EModelEndpoint, mapModelToAzureConfig } from 'librechat-data-provider';
 import type { ResponsesApiRouting } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
+import { getOpenAIEndpointParameters } from '../openai/parameters';
+import { getBuiltInBaseURL } from '../openai/initialize';
 import { getAzureCredentials } from '~/utils/azure';
-import { getOpenAILLMConfig } from '../openai/llm';
+import { getOpenAIConfig } from '../openai/config';
 import { isUserProvided } from '~/utils/common';
 
 /** Publish only routing booleans, never URLs, credentials, headers or addParams.
@@ -21,12 +23,9 @@ export function getResponsesApiRouting(
   const result: ResponsesApiRouting = {};
   for (const model of ['*', ...models]) {
     try {
-      let baseURL = isAzure ? process.env.AZURE_OPENAI_BASEURL : process.env.OPENAI_REVERSE_PROXY;
-      let serverless = false;
-      let azure: Parameters<typeof getOpenAILLMConfig>[0]['azure'];
-      const native = appConfig.endpoints?.openAI;
-      let addParams = isAzure ? undefined : native?.addParams;
-      let dropParams = isAzure ? undefined : native?.dropParams;
+      let baseURL = getBuiltInBaseURL(endpoint);
+      let azure: NonNullable<Parameters<typeof getOpenAIConfig>[1]>['azure'];
+      const { addParams, dropParams } = getOpenAIEndpointParameters(appConfig, endpoint, model);
       if (isAzure && azureConfig) {
         // Unknown deployments must not acquire a guessed Responses capability.
         if (model === '*') {
@@ -35,46 +34,51 @@ export function getResponsesApiRouting(
         }
         const mapped = mapModelToAzureConfig({ modelName: model, ...azureConfig });
         baseURL = mapped.baseURL ?? baseURL;
-        const groupName = azureConfig.modelGroupMap[model]?.group;
-        const group = groupName ? azureConfig.groupMap[groupName] : undefined;
-        if (!group) throw new Error('Missing Azure route group');
-        addParams = group.addParams;
-        dropParams = group.dropParams;
-        serverless = mapped.serverless === true;
-        azure = serverless ? undefined : mapped.azureOptions;
+        azure = mapped.serverless ? undefined : mapped.azureOptions;
       } else if (isAzure) {
         azure = getAzureCredentials();
       }
-      const globalDrop = appConfig.endpoints?.all?.dropParams;
-      if (globalDrop?.length) dropParams = [...new Set([...(dropParams ?? []), ...globalDrop])];
-      const route = (value?: boolean) => {
-        const effectiveValue = serverless ? true : value;
-        return (
-          getOpenAILLMConfig({
-            apiKey: 'route-policy',
+      // A user URL is unavailable without a credential read. Evaluate the
+      // noncanonical case: explicit/admin-forced routes still survive, whereas
+      // automatic model inference is conservatively withheld.
+      if (isUserProvided(baseURL)) baseURL = 'https://user-url.invalid/v1';
+      const route = (value?: boolean, webSearch?: boolean) =>
+        getOpenAIConfig(
+          'route-policy',
+          {
             streaming: true,
-            endpoint,
-            baseURL,
+            reverseProxyUrl: baseURL,
             azure,
             addParams,
             dropParams,
             modelOptions: {
               model: model === '*' ? '' : model,
-              ...(effectiveValue == null ? {} : { useResponsesApi: effectiveValue }),
+              ...(value == null ? {} : { useResponsesApi: value }),
+              ...(webSearch ? { web_search: true } : {}),
             },
-          }).llmConfig.useResponsesApi === true
-        );
-      };
+          },
+          endpoint,
+        ).llmConfig.useResponsesApi === true;
       result[model] = {
-        default: isUserProvided(baseURL) ? false : route(),
+        default: route(),
         on: route(true),
         off: route(false),
+        withWebSearch: {
+          default: route(undefined, true),
+          on: route(true, true),
+          off: route(false, true),
+        },
       };
     } catch {
       // Incomplete configuration must not break /api/endpoints or advertise
       // uploads for a route that execution cannot construct.
       result[model] = { default: false, on: false, off: false };
     }
+  }
+  if (!azureConfig || !isAzure) {
+    // Only environment-based routes accept discovered snapshots. Configured
+    // Azure deployments are an exact allowlist and must never inherit this.
+    for (const model of models) result[`${model}-*`] = result[model];
   }
   return result;
 }

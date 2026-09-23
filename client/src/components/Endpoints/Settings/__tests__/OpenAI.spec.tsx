@@ -81,6 +81,39 @@ describe.each([EModelEndpoint.openAI, EModelEndpoint.azureOpenAI])(
       },
     );
 
+    it.each([false, true])(
+      'displays an admin-forced route %s without replacing a saved opposite toggle',
+      (effective) => {
+        const queryClient = new QueryClient();
+        const model = 'gpt-6-sol';
+        queryClient.setQueryData([QueryKeys.endpoints], {
+          [endpoint]: {
+            responsesApiRouting: {
+              [model]: { default: effective, on: effective, off: effective },
+            },
+          },
+        });
+        const setOption: TSetOption = jest.fn(() => jest.fn());
+        const conversation = {
+          endpoint,
+          model,
+          useResponsesApi: !effective,
+        } as TModelSelectProps['conversation'];
+        render(
+          <QueryClientProvider client={queryClient}>
+            <ChatContext.Provider value={context}>
+              <OpenAISettings conversation={conversation} setOption={setOption} models={[model]} />
+            </ChatContext.Provider>
+          </QueryClientProvider>,
+        );
+        const toggle = screen.getByRole('switch', { name: 'Use Responses API' });
+        expect(toggle).toHaveAttribute('aria-checked', String(effective));
+        expect(toggle).toBeDisabled();
+        expect(conversation?.useResponsesApi).toBe(!effective);
+        expect(setOption).not.toHaveBeenCalled();
+      },
+    );
+
     it('keeps unsupported saved effort through the agent pruning boundary', () => {
       const settings = resolveAgentParameterSettings({
         provider: endpoint,

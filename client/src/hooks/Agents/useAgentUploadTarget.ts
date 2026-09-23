@@ -75,6 +75,9 @@ export default function useAgentUploadTarget(
       value: savedValue,
       endpoint: endpointType,
       model,
+      webSearch: isAgents
+        ? (agentData?.model_parameters?.web_search ?? mappedAgent?.model_parameters?.web_search)
+        : conversation?.web_search,
       routing: endpointsConfig?.[agentProvider ?? endpoint ?? '']?.responsesApiRouting,
     });
   }, [
@@ -86,6 +89,7 @@ export default function useAgentUploadTarget(
     endpointsConfig,
     conversation?.model,
     conversation?.useResponsesApi,
+    conversation?.web_search,
     agentData,
     agentsMap,
   ]);

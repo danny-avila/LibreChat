@@ -919,29 +919,12 @@ export function getOpenAILLMConfig({
     llmConfig.firstPartyEndpoint = true;
   }
 
-  /** Preserve old presets, but normalize unsupported minimal effort on native
-   * Sol/Luna requests before shaping either API. Drops below still win. */
-  if (
-    firstPartyEndpoint &&
-    /^gpt-6-(?:sol|luna)(?:-|$)/i.test(llmConfig.model ?? '') &&
-    reasoningEffort === ReasoningEffort.minimal
-  ) {
-    reasoningEffort = ReasoningEffort.low;
-  }
+  /** Settle an administrator route drop before shaping API-specific fields.
+   * The drop loop later removes the flag, but it must already govern effort. */
+  if (responsesApiExplicitlyOptedOut) llmConfig.useResponsesApi = false;
 
   const solLunaRulesApply =
     firstPartyEndpoint && /^gpt-6-(?:sol|luna)(?:-|$)/i.test(llmConfig.model ?? '');
-  /** LangChain constructor fields drop flat `reasoning_effort`. Chat
-   * Completions supports every Sol/Luna effort without tools (and `none` with
-   * tools), so put the effective value in model kwargs for both OpenAI and
-   * Azure deployment aliases. */
-  const solLunaChatCompletions = solLunaRulesApply && llmConfig.useResponsesApi !== true;
-  if (solLunaChatCompletions && reasoningEffort != null && reasoningEffort !== '') {
-    modelKwargs.reasoning_effort = reasoningEffort;
-    hasModelKwargs = true;
-    reasoningEffort = undefined;
-  }
-
   if (!useOpenRouter) {
     hasModelKwargs =
       applyReasoningConfig({
@@ -954,6 +937,17 @@ export function getOpenAILLMConfig({
         reasoningMode,
         reasoningContext,
       }) || hasModelKwargs;
+  }
+
+  /** Flat effort is an ignored constructor field in Chat Completions. Convert
+   * after shaping (including nested defaults), before administrator drops. */
+  if (solLunaRulesApply && llmConfig.useResponsesApi !== true) {
+    const effort = llmConfig.reasoning_effort ?? llmConfig.reasoning?.effort;
+    if (effort != null && effort !== '') {
+      modelKwargs.reasoning_effort = effort;
+      hasModelKwargs = true;
+    }
+    delete llmConfig.reasoning_effort;
   }
 
   /** DeepSeek thinking-mode requires `reasoning_content` replay on tool turns (#13366). */
@@ -1013,6 +1007,18 @@ export function getOpenAILLMConfig({
     combinedDropParams.forEach((param) => deleteConfigParam({ param, llmConfig, modelKwargs }));
   } else if (dropParams && Array.isArray(dropParams)) {
     dropParams.forEach((param) => deleteConfigParam({ param, llmConfig, modelKwargs }));
+  }
+
+  /** Normalize the final effective value in either API, regardless of whether
+   * it came from saved settings, flat params, or a nested configured object.
+   * Copy nested objects so administrator defaults are never mutated. */
+  if (solLunaRulesApply) {
+    if (llmConfig.reasoning?.effort === ReasoningEffort.minimal) {
+      llmConfig.reasoning = { ...llmConfig.reasoning, effort: ReasoningEffort.low };
+    }
+    if (modelKwargs.reasoning_effort === ReasoningEffort.minimal) {
+      modelKwargs.reasoning_effort = ReasoningEffort.low;
+    }
   }
 
   /** Sol/Luna reject sampling controls when Responses uses reasoning. The

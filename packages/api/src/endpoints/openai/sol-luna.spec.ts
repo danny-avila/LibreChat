@@ -118,6 +118,92 @@ describe.each(['gpt-6-sol', 'gpt-6-luna'])('%s requests', (model) => {
     },
   );
 
+  it.each([ReasoningEffort.none, ReasoningEffort.max])(
+    'settles a route drop before translating saved-true %s reasoning',
+    (effort) => {
+      const result = config({
+        modelOptions: { model, useResponsesApi: true, reasoning_effort: effort },
+        dropParams: ['useResponsesApi'],
+      });
+      expect(result.useResponsesApi).toBeUndefined();
+      expect(result.modelKwargs).toHaveProperty('reasoning_effort', effort);
+    },
+  );
+
+  describe.each(['addParams', 'defaultParams'] as const)('%s nested reasoning', (source) => {
+    it.each([undefined, false, true])(
+      'normalizes nested minimal for route %s without changing the configured object',
+      (useResponsesApi) => {
+        const reasoning = { effort: 'minimal', summary: 'auto' };
+        const result = config({
+          [source]: { reasoning },
+          modelOptions: { model, useResponsesApi },
+        });
+        expect(result.reasoning).toMatchObject({ effort: 'low', summary: 'auto' });
+        if (useResponsesApi === false)
+          expect(result.modelKwargs).toHaveProperty('reasoning_effort', 'low');
+        expect(reasoning).toEqual({ effort: 'minimal', summary: 'auto' });
+      },
+    );
+    it.each(['reasoning', 'reasoning_effort'])('honors %s drops for nested minimal', (param) => {
+      const result = config({
+        [source]: { reasoning: { effort: 'minimal' } },
+        dropParams: [param],
+      });
+      expect(result.reasoning?.effort).toBeUndefined();
+      expect(result.modelKwargs ?? {}).not.toHaveProperty('reasoning_effort');
+    });
+    it('does not normalize configured reasoning for a custom gateway', () => {
+      const result = config({
+        baseURL: 'https://gateway.example/v1',
+        [source]: { reasoning: { effort: 'minimal' } },
+      });
+      expect(result.reasoning?.effort).toBe('minimal');
+    });
+  });
+
+  it.each([false, true])(
+    'serializes nested minimal on Azure=%s using the real SDK',
+    async (isAzure) => {
+      let body: Record<string, unknown> | undefined;
+      const fetch: NonNullable<NonNullable<OpenAIConfiguration>['fetch']> = async (
+        _url,
+        options,
+      ) => {
+        body = JSON.parse(String(options?.body));
+        return Response.json({
+          id: 'resp',
+          object: 'response',
+          status: 'completed',
+          model,
+          output: [],
+          usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+        });
+      };
+      const { llmConfig, configOptions } = getOpenAIConfig(
+        'test-key',
+        {
+          streaming: false,
+          ...(isAzure ? { azure } : {}),
+          modelOptions: { model },
+          addParams: { reasoning: { effort: 'minimal' }, temperature: 0.7 },
+        },
+        isAzure ? EModelEndpoint.azureOpenAI : EModelEndpoint.openAI,
+      );
+      const llm = initializeModel({
+        provider: Providers.OPENAI,
+        clientOptions: {
+          ...llmConfig,
+          verbosity: undefined,
+          configuration: { ...configOptions, fetch },
+        },
+      });
+      await llm.invoke('test');
+      expect(body).toHaveProperty('reasoning.effort', 'low');
+      expect(body).not.toHaveProperty('temperature');
+    },
+  );
+
   it('keeps unrelated Responses includes while removing logprob includes for reasoning', () => {
     const include = ['message.output_text.logprobs', 'reasoning.encrypted_content'];
     const result = config({ addParams: { include } });

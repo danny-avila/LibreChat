@@ -1,4 +1,5 @@
 import React from 'react';
+import { ReasoningEffort } from 'librechat-data-provider';
 import { render, screen, act, fireEvent, waitFor } from '@testing-library/react';
 import type { TSetOption, SettingRange } from 'librechat-data-provider';
 import DynamicSlider from '../DynamicSlider';
@@ -61,7 +62,7 @@ describe('DynamicSlider', () => {
           label="Reasoning Effort"
           defaultValue=""
           options={['', 'none', 'low', 'medium', 'high', 'xhigh', 'max']}
-          conversation={{ reasoning_effort: 'minimal' as unknown as never }}
+          conversation={{ reasoning_effort: ReasoningEffort.minimal }}
           setOption={setOption}
         />
       </ChatContext.Provider>,

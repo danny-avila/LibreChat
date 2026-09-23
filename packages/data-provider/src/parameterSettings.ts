@@ -1349,11 +1349,12 @@ export function applyModelAwareDefaults(
       /** Match the native backend's unset default without writing into stored
        * settings. Explicit false still overrides this rendered default. */
       if (setting.key === 'useResponsesApi') {
+        const route = (value?: boolean) =>
+          resolveEffectiveUseResponsesApi({ endpoint, model, routing: responsesApiRouting, value });
         return {
           ...setting,
-          default:
-            resolveEffectiveUseResponsesApi({ endpoint, model, routing: responsesApiRouting }) ??
-            false,
+          default: route() ?? false,
+          enumMappings: { true: route(true) ?? true, false: route(false) ?? false },
         };
       }
       return setting;

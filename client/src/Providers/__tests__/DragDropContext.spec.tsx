@@ -48,6 +48,37 @@ function wrapper({ children }: { children: React.ReactNode }) {
 }
 
 describe('DragDropContext endpointType resolution', () => {
+  it('uses the environment Azure wildcard for a discovered snapshot and carries saved web search through a proxy', () => {
+    const entry = mockEndpointsConfig![EModelEndpoint.azureOpenAI]!;
+    const previous = entry.responsesApiRouting;
+    entry.responsesApiRouting = {
+      'gpt-6-sol-*': {
+        default: false,
+        on: true,
+        off: false,
+        withWebSearch: { default: true, on: true, off: true },
+      },
+    };
+    try {
+      mockConversation = { endpoint: EModelEndpoint.agents, agent_id: 'agent-1' };
+      mockAgentQueryData = {
+        provider: EModelEndpoint.azureOpenAI,
+        model: 'gpt-6-sol-2026-09-22',
+        model_parameters: { web_search: true },
+      } as Partial<Agent>;
+      const { result, rerender } = renderHook(() => useDragDropContext(), { wrapper });
+      expect(result.current.useResponsesApi).toBe(true);
+      mockAgentQueryData = {
+        ...mockAgentQueryData,
+        model_parameters: { web_search: false },
+      } as Partial<Agent>;
+      rerender();
+      expect(result.current.useResponsesApi).toBe(false);
+    } finally {
+      entry.responsesApiRouting = previous;
+    }
+  });
+
   it.each([EModelEndpoint.openAI, EModelEndpoint.azureOpenAI])(
     'honors server opt-outs on %s across direct and saved-agent uploads',
     (endpoint) => {

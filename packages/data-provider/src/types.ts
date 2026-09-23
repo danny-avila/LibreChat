@@ -629,7 +629,12 @@ export type TCodeEnvironmentMoveResponse = {
 };
 
 /** Sanitized results of server request shaping for each saved toggle state. */
-export type ResponsesApiRoute = { default: boolean; on: boolean; off: boolean };
+export type ResponsesApiRoute = {
+  default: boolean;
+  on: boolean;
+  off: boolean;
+  withWebSearch?: { default: boolean; on: boolean; off: boolean };
+};
 export type ResponsesApiRouting = Record<string, ResponsesApiRoute>;
 
 export type TConfig = {
