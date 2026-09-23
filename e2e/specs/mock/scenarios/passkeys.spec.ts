@@ -31,6 +31,13 @@ type VirtualAuthenticator = {
   credentialCount: () => Promise<number>;
 };
 
+/** Same server under its `localhost` name: WebAuthn refuses an IP address as the RP ID. */
+function passkeyBaseURL(baseURL: string | undefined): string {
+  const url = new URL(baseURL as string);
+  url.hostname = 'localhost';
+  return url.origin;
+}
+
 async function createFreshUser(request: APIRequestContext): Promise<FreshUser> {
   const email = `passkey-${randomUUID().slice(0, 8)}@example.com`;
   const name = 'Passkey Scenario';
@@ -103,6 +110,11 @@ async function addPasskey(page: Page, password: string) {
   const { passkeysDialog, addDialog } = await submitAddPasskey(page, password);
   await expect(addDialog).toBeHidden();
   await expect(passkeysDialog.getByTestId('passkey-item')).toHaveCount(1);
+  /** A new passkey opens in rename mode, prefilled with a name derived from its transport. */
+  const nameInput = passkeysDialog.getByRole('textbox', { name: 'Passkey name' });
+  await expect(nameInput).toHaveValue('This device');
+  await passkeysDialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(passkeysDialog.getByText('This device', { exact: true })).toBeVisible();
   return passkeysDialog;
 }
 
@@ -115,14 +127,20 @@ async function logOut(page: Page) {
 }
 
 /**
- * The login page may already be running a conditional-mediation (autofill) ceremony.
- * Pressing the button starts the modal one, which supersedes it; either way the
- * outcome the user sees is the same, and that outcome is what these scenarios assert.
+ * The login page starts a conditional-mediation (autofill) ceremony on load, and
+ * Chromium's virtual authenticator answers it without a prompt, so sign-in can finish
+ * before the button is pressed. Pressing it otherwise starts the modal ceremony. The
+ * outcome the user sees is the same either way, and that is what the scenarios assert.
  */
 async function signInWithPasskey(page: Page) {
-  const button = page.getByRole('button', { name: 'Sign in with a passkey' });
-  await expect(button).toBeVisible();
-  await button.click();
+  const leftLogin = page
+    .waitForURL((url) => !url.pathname.endsWith('/login'), { timeout: 15000 })
+    .catch(() => undefined);
+  const pressed = page
+    .getByRole('button', { name: 'Sign in with a passkey' })
+    .click({ timeout: 15000 })
+    .catch(() => undefined);
+  await Promise.race([leftLogin, pressed]);
 }
 
 test.describe('passkeys', () => {
@@ -146,15 +164,14 @@ test.describe('passkeys', () => {
     baseURL,
   }) => {
     test.setTimeout(90000);
-    const request = await playwright.request.newContext({ baseURL });
+    const request = await playwright.request.newContext({ baseURL: passkeyBaseURL(baseURL) });
     user = await createFreshUser(request);
-    context = await openContextFor(browser, request, baseURL as string);
+    context = await openContextFor(browser, request, passkeyBaseURL(baseURL));
     await request.dispose();
     const page = await context.newPage();
     const authenticator = await addVirtualAuthenticator(page);
 
-    const passkeysDialog = await addPasskey(page, user.password);
-    await expect(passkeysDialog.getByText('This device', { exact: true })).toBeVisible();
+    await addPasskey(page, user.password);
     expect(await authenticator.credentialCount()).toBe(1);
     expect(await countUserPasskeys(user.id)).toBe(1);
 
@@ -171,9 +188,9 @@ test.describe('passkeys', () => {
     baseURL,
   }) => {
     test.setTimeout(60000);
-    const request = await playwright.request.newContext({ baseURL });
+    const request = await playwright.request.newContext({ baseURL: passkeyBaseURL(baseURL) });
     user = await createFreshUser(request);
-    context = await openContextFor(browser, request, baseURL as string);
+    context = await openContextFor(browser, request, passkeyBaseURL(baseURL));
     await request.dispose();
     const page = await context.newPage();
     const authenticator = await addVirtualAuthenticator(page);
@@ -194,9 +211,9 @@ test.describe('passkeys', () => {
     baseURL,
   }) => {
     test.setTimeout(90000);
-    const request = await playwright.request.newContext({ baseURL });
+    const request = await playwright.request.newContext({ baseURL: passkeyBaseURL(baseURL) });
     user = await createFreshUser(request);
-    context = await openContextFor(browser, request, baseURL as string);
+    context = await openContextFor(browser, request, passkeyBaseURL(baseURL));
     await request.dispose();
     const page = await context.newPage();
     const authenticator = await addVirtualAuthenticator(page);
@@ -214,7 +231,8 @@ test.describe('passkeys', () => {
     await logOut(page);
     await signInWithPasskey(page);
 
-    await expect(page.getByText('Passkey sign-in failed. Please try again.')).toBeVisible();
+    /** Both the autofill and the button ceremony are refused, so the toast can appear twice. */
+    await expect(page.getByText('Passkey sign-in failed. Please try again.').first()).toBeVisible();
     await expect(page).toHaveURL(/\/login/);
   });
 
@@ -224,9 +242,9 @@ test.describe('passkeys', () => {
     baseURL,
   }) => {
     test.setTimeout(60000);
-    const request = await playwright.request.newContext({ baseURL });
+    const request = await playwright.request.newContext({ baseURL: passkeyBaseURL(baseURL) });
     user = await createFreshUser(request);
-    context = await openContextFor(browser, request, baseURL as string);
+    context = await openContextFor(browser, request, passkeyBaseURL(baseURL));
     await request.dispose();
     await seedPasskey(user.email, `e2e-rename-${randomUUID()}`, 'Old name');
     const page = await context.newPage();
@@ -264,9 +282,9 @@ test.describe('passkeys', () => {
     baseURL,
   }) => {
     test.setTimeout(60000);
-    const request = await playwright.request.newContext({ baseURL });
+    const request = await playwright.request.newContext({ baseURL: passkeyBaseURL(baseURL) });
     user = await createFreshUser(request);
-    context = await openContextFor(browser, request, baseURL as string);
+    context = await openContextFor(browser, request, passkeyBaseURL(baseURL));
     await request.dispose();
     await context.route('**/api/config', async (route) => {
       const response = await route.fetch();
@@ -296,9 +314,9 @@ test.describe('passkeys', () => {
     baseURL,
   }) => {
     test.setTimeout(90000);
-    const request = await playwright.request.newContext({ baseURL });
+    const request = await playwright.request.newContext({ baseURL: passkeyBaseURL(baseURL) });
     user = await createFreshUser(request);
-    context = await openContextFor(browser, request, baseURL as string);
+    context = await openContextFor(browser, request, passkeyBaseURL(baseURL));
     await request.dispose();
     const page = await context.newPage();
     await addVirtualAuthenticator(page);
@@ -319,7 +337,7 @@ test.describe('passkeys', () => {
     playwright,
     baseURL,
   }) => {
-    const request = await playwright.request.newContext({ baseURL });
+    const request = await playwright.request.newContext({ baseURL: passkeyBaseURL(baseURL) });
     try {
       user = await createFreshUser(request);
       await seedPasskey(user.email, `e2e-reset-${randomUUID()}`, 'Laptop');
@@ -355,7 +373,7 @@ test.describe('passkeys', () => {
     playwright,
     baseURL,
   }) => {
-    const request = await playwright.request.newContext({ baseURL });
+    const request = await playwright.request.newContext({ baseURL: passkeyBaseURL(baseURL) });
     try {
       user = await createFreshUser(request);
       await seedPasskey(user.email, `e2e-delete-${randomUUID()}`, 'Phone');
