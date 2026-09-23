@@ -120,12 +120,12 @@ export const useUpdateUserKeysMutation = (): UseMutationResult<
 > => {
   const queryClient = useQueryClient();
   return useMutation((payload: t.TUpdateUserKeyRequest) => dataService.updateUserKey(payload), {
-    onSuccess: async (data, variables) => {
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries([QueryKeys.name, variables.name]);
       queryClient.invalidateQueries([QueryKeys.models]);
       /** token-config is derived from the same per-user model fetch */
       queryClient.invalidateQueries([QueryKeys.tokenConfig]);
-      await queryClient.invalidateQueries([QueryKeys.mediaCatalog]);
+      queryClient.invalidateQueries([QueryKeys.mediaCatalog]);
     },
   });
 };
@@ -144,7 +144,7 @@ export const useClearConversationsMutation = (): UseMutationResult<unknown> => {
 export const useRevokeUserKeyMutation = (name: string): UseMutationResult<unknown> => {
   const queryClient = useQueryClient();
   return useMutation(() => dataService.revokeUserKey(name), {
-    onSuccess: async () => {
+    onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.name, name]);
       queryClient.invalidateQueries([QueryKeys.models]);
       queryClient.invalidateQueries([QueryKeys.tokenConfig]);
@@ -157,7 +157,7 @@ export const useRevokeUserKeyMutation = (name: string): UseMutationResult<unknow
         queryClient.invalidateQueries([QueryKeys.actions]);
         queryClient.invalidateQueries([QueryKeys.tools]);
       }
-      await queryClient.invalidateQueries([QueryKeys.mediaCatalog]);
+      queryClient.invalidateQueries([QueryKeys.mediaCatalog]);
     },
   });
 };
@@ -165,7 +165,7 @@ export const useRevokeUserKeyMutation = (name: string): UseMutationResult<unknow
 export const useRevokeAllUserKeysMutation = (): UseMutationResult<unknown> => {
   const queryClient = useQueryClient();
   return useMutation(() => dataService.revokeAllUserKeys(), {
-    onSuccess: async () => {
+    onSuccess: () => {
       queryClient.invalidateQueries([QueryKeys.name]);
       queryClient.invalidateQueries([QueryKeys.tokenConfig]);
       queryClient.invalidateQueries([
@@ -185,7 +185,7 @@ export const useRevokeAllUserKeysMutation = (): UseMutationResult<unknown> => {
       queryClient.invalidateQueries([QueryKeys.actions]);
       queryClient.invalidateQueries([QueryKeys.tools]);
       queryClient.invalidateQueries([QueryKeys.models]);
-      await queryClient.invalidateQueries([QueryKeys.mediaCatalog]);
+      queryClient.invalidateQueries([QueryKeys.mediaCatalog]);
     },
   });
 };

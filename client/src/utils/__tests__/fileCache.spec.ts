@@ -1,5 +1,5 @@
-import { QueryClient } from '@tanstack/react-query';
 import { QueryKeys } from 'librechat-data-provider';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import type { TFile } from 'librechat-data-provider';
 import { addFileToCache, addFilesToCache } from '../files';
 
@@ -24,6 +24,29 @@ afterEach(() => client.clear());
 test('stores a streamed file before the files query has loaded', () => {
   addFileToCache(client, file);
   expect(client.getQueryData([QueryKeys.files])).toEqual([file]);
+});
+
+test('still loads the full list after a file was cached before the first load', async () => {
+  addFileToCache(client, file);
+  const listed = { ...file, file_id: 'listed' };
+  const getFiles = jest.fn(async () => [file, listed]);
+  const observer = new QueryObserver(client, {
+    queryKey: [QueryKeys.files],
+    queryFn: getFiles,
+    refetchOnMount: false,
+  });
+  const unsubscribe = observer.subscribe(() => undefined);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  unsubscribe();
+  expect(getFiles).toHaveBeenCalledTimes(1);
+  expect(client.getQueryData([QueryKeys.files])).toEqual([file, listed]);
+});
+
+test('does not refetch a loaded list when a file is added', () => {
+  client.setQueryData([QueryKeys.files], [file]);
+  const invalidate = jest.spyOn(client, 'invalidateQueries');
+  addFileToCache(client, { ...file, file_id: 'two' });
+  expect(invalidate).not.toHaveBeenCalled();
 });
 
 test('keeps new files first and preserves each distinct streamed file', () => {

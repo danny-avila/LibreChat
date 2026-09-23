@@ -249,17 +249,29 @@ export function addFileToCache(queryClient: QueryClient, newfile: TFile) {
   addFilesToCache(queryClient, [newfile]);
 }
 
+/**
+ * A file that arrives before the Files list has loaded is cached so it can render at once, but
+ * the seeded list is provisional (`updatedAt: 0`) so the next observer still loads every file.
+ */
 export function addFilesToCache(queryClient: QueryClient, files: TFile[]) {
   if (!files.length) return;
-  queryClient.setQueryData<TFile[]>([QueryKeys.files], (previous = []) => {
-    const existing = new Map(previous.map((file) => [file.file_id, file]));
-    const added = new Map<string, TFile>();
-    for (const file of files) {
-      const target = existing.has(file.file_id) ? existing : added;
-      target.set(file.file_id, { ...target.get(file.file_id), ...file });
-    }
-    return [...added.values(), ...existing.values()];
-  });
+  const loaded = !!queryClient.getQueryState([QueryKeys.files])?.dataUpdatedAt;
+  queryClient.setQueryData<TFile[]>(
+    [QueryKeys.files],
+    (previous = []) => {
+      const existing = new Map(previous.map((file) => [file.file_id, file]));
+      const added = new Map<string, TFile>();
+      for (const file of files) {
+        const target = existing.has(file.file_id) ? existing : added;
+        target.set(file.file_id, { ...target.get(file.file_id), ...file });
+      }
+      return [...added.values(), ...existing.values()];
+    },
+    loaded ? undefined : { updatedAt: 0 },
+  );
+  if (!loaded) {
+    queryClient.invalidateQueries({ queryKey: [QueryKeys.files], exact: true });
+  }
 }
 
 export function formatBytes(bytes: number, decimals?: number): number;
