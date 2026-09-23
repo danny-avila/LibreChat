@@ -357,6 +357,32 @@ describe('Agent Management authentication config', () => {
     expect(result.success).toBe(true);
   });
 
+  it.each(['agents-api/manage another-scope', 'agents-api/manage\tanother-scope'])(
+    'rejects a required scope containing whitespace: %j',
+    (requiredScope) => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        endpoints: {
+          agents: {
+            managementApi: {
+              auth: {
+                oidc: {
+                  enabled: true,
+                  issuer: 'https://issuer.example.com',
+                  tokenUse: 'access',
+                  requiredScopes: [requiredScope],
+                },
+                clients: [binding],
+              },
+            },
+          },
+        },
+      });
+
+      expect(result.success).toBe(false);
+    },
+  );
+
   it('rejects enabled management auth without an audience or access-token validation', () => {
     const result = configSchema.safeParse({
       version: '1.0',

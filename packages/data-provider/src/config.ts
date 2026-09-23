@@ -931,7 +931,11 @@ const managementClientBindingSchema = z
 const managementApiOidcSchema = oidcAccessTokenSchema
   .extend({
     tokenUse: z.literal('access').optional(),
-    requiredScopes: z.array(z.string().trim().min(1).max(256)).min(1).max(20).optional(),
+    requiredScopes: z
+      .array(z.string().trim().min(1).max(256).regex(/^\S+$/, 'must be a single scope token'))
+      .min(1)
+      .max(20)
+      .optional(),
   })
   .strict()
   .superRefine((oidc, ctx) => {
