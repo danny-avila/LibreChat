@@ -66,6 +66,20 @@ describe('createPasskey', () => {
       methods.createPasskey(passkeyData({ user: otherUserId, name: 'Someone else' })),
     ).rejects.toThrow();
   });
+
+  it('builds the unique credential index itself when auto-indexing never ran', async () => {
+    await mongoose.connection.dropDatabase();
+    const freshMethods = createPasskeyMethods(mongoose);
+
+    await freshMethods.createPasskey(passkeyData());
+
+    await expect(
+      freshMethods.createPasskey(passkeyData({ user: otherUserId, name: 'Someone else' })),
+    ).rejects.toThrow(/duplicate key/);
+    expect(await mongoose.models.Passkey.countDocuments({ credentialId: 'credential-one' })).toBe(
+      1,
+    );
+  });
 });
 
 describe('findPasskeysByUser', () => {

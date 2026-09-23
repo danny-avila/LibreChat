@@ -1,6 +1,7 @@
 import { MAX_PASSKEYS_PER_USER } from 'librechat-data-provider';
 import type { DeleteResult } from 'mongoose';
 import type { IPasskey, PasskeyCreateData } from '~/types';
+import { createIndexesWithRetry } from '~/utils/retry';
 import logger from '~/config/winston';
 
 export { MAX_PASSKEYS_PER_USER };
@@ -43,8 +44,26 @@ function normalizePasskey<T extends IPasskey | null>(passkey: T): T {
 }
 
 export function createPasskeyMethods(mongoose: typeof import('mongoose')): PasskeyMethods {
+  let passkeyIndexesPromise: Promise<void> | null = null;
+
+  /**
+   * The unique `credentialId` index is what stops two concurrent registrations from
+   * storing the same credential. With `MONGO_AUTO_INDEX=false` the schema declaration
+   * alone never builds it, so it is ensured before the first write.
+   */
+  function ensurePasskeyIndexes(): Promise<void> {
+    if (!passkeyIndexesPromise) {
+      passkeyIndexesPromise = createIndexesWithRetry(mongoose.models.Passkey).catch((error) => {
+        passkeyIndexesPromise = null;
+        throw error;
+      });
+    }
+    return passkeyIndexesPromise;
+  }
+
   /** Registers a newly verified credential for a user. */
   async function createPasskey(data: PasskeyCreateData): Promise<IPasskey> {
+    await ensurePasskeyIndexes();
     const Passkey = mongoose.models.Passkey;
     return (await Passkey.create(data)) as IPasskey;
   }
