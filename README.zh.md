@@ -1,4 +1,4 @@
-<!-- Last synced with README.md: 2026-05-12 (947bfa4c40) -->
+<!-- Last synced with README.md: 2026-08-30 (14d4f27) -->
 
 <p align="center">
   <a href="https://librechat.ai">
@@ -53,6 +53,25 @@
   </a>
 </p>
 
+## 🚀 v0.8.8-rc1 新特性
+
+- **智能体运行控制（Agent run control）：** 可以在运行中随时中断或引导（Steer）智能体、追加后续待执行消息，并支持回收、编辑或升级待处理的引导指令。
+- **人机协同智能体（Human-in-the-loop Agents）：** 智能体以流式进度提问，单个表单最多可提 4 个相关问题，支持暂停等待用户输入或工具执行审批并恢复运行。
+- **统一智能体构建器（Unified Agent Builder）：** 全新设计的工具市场整合了技能（Skills）、MCP、代码解释器、编排调度、程序化工具调用（Programmatic Tool Calling）、模型规格控制，以及针对每个工具的后台与意图设置。
+- **高可读性智能体活动流（Readable Agent activity）：** 自动生成活动分组标题、父阶段摘要与实时工具意图标签，使冗长的推理和工具调用流更易于扫读浏览。
+- **代码解释器工作流（Code Interpreter workflows）：** 代码与 Shell 工具支持后台运行，沙箱图像输出为可查看的 Artifacts，高实验性的有状态会话可复用预热的对话工作区。
+- **智能体可扩展性（Agent extensibility）：** 实验性智能体插件可捆绑部署技能、MCP 服务器和可选命令钩子（Command Hooks），显式子智能体仅在被选中时按需初始化。
+- **记忆、上下文与身份（Memory, context, and identity）：** 智能体支持具备可选单智能体隔离的记忆管理，安全展示支持联系方式，并呈现更精准真实的上下文使用量表。
+- **分享与文件（Sharing and files）：** 分享的对话带有标记徽章且在固定 URL 持续更新，已登录访客可将其另存为个人副本继续对话。
+- **Artifacts 工作流：** 支持全屏预览、在上传/搜索/代码执行中支持 PowerPoint `.potx` 模板、支持通用 MIME 类型的 Shell 脚本上传、支持将 Mermaid 图表导出为 SVG 或 PNG，并可直接在 Artifacts 面板下载原始 Office 文件。
+- **模型与推理支持：** 新增 GPT-5.6 及其 Responses API 推理参数控制、Claude Opus 5 和 Sonnet 5、Gemini 3.7 / 3.6 Flash 以及 Gemini 3.5 Flash-Lite。
+- **Langfuse 可观测性：** 支持在应用内配置加密的 Langfuse 连接，授权管理员可直接打开采样会话，支持按租户分流 Trace，并支持在单次运行中禁用集中导出。
+- **管理与安全：** 支持配置片段委派（Delegate config sections）、加密已注册的密钥（Secrets）、对语音/OCR/网络工具强制执行 SSRF 安全检查，并在密钥留空时自动生成唯一临时凭据。
+- **消息与导航：** 采用右对齐用户发言、统一多部分编辑（Unified multi-part editing）、整条消息复制、Dock 式消息栏、虚拟化搜索、平滑流式输出以及更快速的智能体启动。
+- **流式传输与工具可靠性：** 提供自适应服务商平滑传输、Redis 增量批量合并、动态 MCP 工具刷新、解析 MCP 响应多媒体类型、运行时 OAuth 恢复机制以及智能体流式熔断保护，显著增强长时运行工作流的稳定性。
+- **部署与高可用：** 增加可配置的 HTTP 超时时间、支持 Amazon DocumentDB 5.0+、低噪点 Redis 与浏览器端可观测性，以及兼容滚动升级的安全生成协议。
+
+阅读[完整的 v0.8.8-rc1 更新日志](https://www.librechat.ai/changelog/v0.8.8-rc1)。
 
 # ✨ 功能
 
@@ -139,6 +158,11 @@
   - 支持 OAuth2, LDAP 和电子邮件登录的多用户安全认证。
   - 内置审核系统和 Token 消耗管理工具。
 
+- 🎛️ **[管理后台 (Admin Panel)](https://www.librechat.ai/docs/features/admin_panel)**：
+  - 基于浏览器的管理界面，轻松管理用户、用户组、角色和配置覆盖。
+  - 无需重新部署即可实时编辑系统设置及基于角色/用户组的权限。
+  - 默认集成在 Docker Compose 栈中，支持一键快速启动。
+
 - ⚙️ **配置与部署**：  
   - 支持代理、反向代理、Docker 及多种部署选项。  
   - 使用 [S3 与 CloudFront](https://www.librechat.ai/docs/configuration/cdn/cloudfront) 获得稳定的媒体链接、边缘分发、签名 Cookie 和安全下载。
@@ -186,8 +210,12 @@ LibreChat 是一个自托管的 AI 对话平台，在一个注重隐私的统一
 ## ⭐ Star 历史
 
 <p align="center">
-  <a href="https://star-history.com/#danny-avila/LibreChat&Date">
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date&theme=dark" onerror="this.src='https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date'" />
+  <a href="https://www.star-history.com/?type=date&repos=danny-avila%2FLibreChat">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=danny-avila/LibreChat&type=date&theme=dark&legend=top-left&sealed_token=CXsk3L39t1nlibOv3pQloYwrz8R_yXxCAe1X3DG8sEnmu3PZvzSRZGf7JvisknF83yXqMwR6IcuKLolIQBulChAOseTYP1TDglfT6clOHXzspF-DJhmmsnGasrGpLfCeOEU56Bx761CJp9xDxza5rbyXW3F1GqWNtDf9pMroBq86vS70ilRWu16VyucF" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=danny-avila/LibreChat&type=date&legend=top-left&sealed_token=CXsk3L39t1nlibOv3pQloYwrz8R_yXxCAe1X3DG8sEnmu3PZvzSRZGf7JvisknF83yXqMwR6IcuKLolIQBulChAOseTYP1TDglfT6clOHXzspF-DJhmmsnGasrGpLfCeOEU56Bx761CJp9xDxza5rbyXW3F1GqWNtDf9pMroBq86vS70ilRWu16VyucF" />
+      <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=danny-avila/LibreChat&type=date&legend=top-left&sealed_token=CXsk3L39t1nlibOv3pQloYwrz8R_yXxCAe1X3DG8sEnmu3PZvzSRZGf7JvisknF83yXqMwR6IcuKLolIQBulChAOseTYP1TDglfT6clOHXzspF-DJhmmsnGasrGpLfCeOEU56Bx761CJp9xDxza5rbyXW3F1GqWNtDf9pMroBq86vS70ilRWu16VyucF" />
+    </picture>
   </a>
 </p>
 <p align="center">
