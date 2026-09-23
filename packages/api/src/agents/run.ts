@@ -84,6 +84,12 @@ import {
   usesSubagentCompletionWakeups,
 } from '~/agents/subagentDelivery';
 import {
+  resolveStreamLimits,
+  resolveModelTransportTimeouts,
+  resolveSubagentMaxTurns,
+  resolveRecursionLimit,
+} from '~/agents/config';
+import {
   isSteeringSupported,
   isSteerPreemptSupported,
   isSteerTerminalContinuationSupported,
@@ -102,11 +108,6 @@ import {
   eventOnlyRunFileTools,
   isRunFileSharingSupported,
 } from './files/runtime';
-import {
-  resolveStreamLimits,
-  resolveSubagentMaxTurns,
-  resolveRecursionLimit,
-} from '~/agents/config';
 import { applyCustomHandoffPromptKeyCompatibility } from '~/agents/handoffPromptKeyCompatibility';
 import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/agents/intent';
 import { resolveConfigHeaders, resolveModelHeaders, mergeHeaders } from '~/utils/headers';
@@ -114,6 +115,7 @@ import { extractDefaultParams, resolveReasoningParams } from '~/endpoints/openai
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { buildAgentInitialToolSessions } from '~/agents/codeFilesSession';
+import { getDirectDispatcher, getProxyDispatcher } from '~/utils/proxy';
 import { getAzureCredentials, constructAzureURL } from '~/utils/azure';
 import { getBuiltInBaseURL } from '~/endpoints/openai/initialize';
 import { getProviderConfig } from '~/endpoints/config/providers';
@@ -704,11 +706,9 @@ function summarizationReasoningEffort(
  * defaults its model-specific constraints off without that declaration
  * (LibreChat#15598).
  *
- * Credentials and transport are deliberately not returned. A built-in provider
- * has no configured key here, so the client resolves one the way it does today;
- * emitting an empty `apiKey` would break that. The admin-configured base URL is
- * still passed *in*, because whether the endpoint is first-party is exactly what
- * `OPENAI_REVERSE_PROXY` decides.
+ * Credentials and base URLs are not returned: the SDK still resolves them as
+ * before. Cross-provider OpenAI-family clients do receive the Agent transport
+ * timeout policy, even when a URL override prevents built-in request shaping.
  */
 function resolveBuiltInClientOverrides(
   provider: string,
@@ -717,11 +717,9 @@ function resolveBuiltInClientOverrides(
     parameters?: SummarizationConfig['parameters'];
     agentProvider?: string;
   },
+  appConfig: AppConfig,
 ): SummarizationClientOverrides | undefined {
   const { model, parameters } = target;
-  if (!isNonEmptyString(model) || hasBaseURLOverride(parameters)) {
-    return undefined;
-  }
   /**
    * Mirrors the SDK's own condition: when the summarization provider matches the
    * agent's, `buildSummarizationClientConfig` spreads the agent's resolved client
@@ -733,10 +731,22 @@ function resolveBuiltInClientOverrides(
   if (provider === target.agentProvider) {
     return undefined;
   }
+  let transportOverrides: SummarizationClientOverrides | undefined;
+  if (provider === Providers.OPENAI || provider === Providers.AZURE) {
+    const timeouts = resolveModelTransportTimeouts(appConfig.endpoints?.agents);
+    transportOverrides = {
+      configuration: {
+        fetchOptions: {
+          dispatcher:
+            getProxyDispatcher(process.env.PROXY, timeouts) ?? getDirectDispatcher(timeouts),
+        },
+      },
+    };
+  }
   const baseURL = getBuiltInBaseURL(provider);
-  /** Resolving a user-provided base URL needs a database read this path avoids. */
-  if (isUserProvided(baseURL)) {
-    return undefined;
+  /** URL overrides still get timeouts, but must not inherit first-party request shaping. */
+  if (!isNonEmptyString(model) || hasBaseURLOverride(parameters) || isUserProvided(baseURL)) {
+    return transportOverrides;
   }
   const { llmConfig } = getOpenAIConfig(
     '',
@@ -753,7 +763,9 @@ function resolveBuiltInClientOverrides(
     streaming: _streaming,
     ...shaping
   } = llmConfig;
-  return Object.keys(shaping).length > 0 ? shaping : undefined;
+  return Object.keys(shaping).length > 0
+    ? { ...shaping, ...transportOverrides }
+    : transportOverrides;
 }
 
 /**
@@ -909,6 +921,7 @@ function resolveOpenAISummarization(
         tenantId: headerContext.tenantId,
         body: headerContext.requestBody,
       }),
+      transportTimeouts: resolveModelTransportTimeouts(appConfig?.endpoints?.agents),
     },
     EModelEndpoint.openAI,
   );
@@ -1080,6 +1093,7 @@ function resolveAzureSummarization(
       dropParams: group?.dropParams?.filter(
         (key) => key !== 'useResponsesApi' || typeof parameters?.useResponsesApi !== 'boolean',
       ),
+      transportTimeouts: resolveModelTransportTimeouts(appConfig?.endpoints?.agents),
     },
     EModelEndpoint.azureOpenAI,
   );
@@ -1153,7 +1167,7 @@ function resolveSummarizationProvider(
     if (!customEndpointConfig) {
       return {
         provider: overrideProvider,
-        clientOverrides: resolveBuiltInClientOverrides(overrideProvider, target),
+        clientOverrides: resolveBuiltInClientOverrides(overrideProvider, target, appConfig),
       };
     }
     const rawApiKey = customEndpointConfig.apiKey ?? '';
@@ -1254,6 +1268,7 @@ function resolveSummarizationProvider(
         dropParams: customEndpointConfig.dropParams,
         customParams: customEndpointConfig.customParams,
         directEndpoint: customEndpointConfig.directEndpoint,
+        transportTimeouts: resolveModelTransportTimeouts(appConfig?.endpoints?.agents),
       },
       rawProvider,
     );
@@ -2092,6 +2107,7 @@ export async function createRun({
   compactionSemanticIndex,
   initialSummary,
   modelCallbacks,
+  clientToolNames,
   calibrationRatio,
   fadingTier,
   fadingTiers,
@@ -2160,6 +2176,8 @@ export async function createRun({
   initialSummary?: { text: string; tokenCount: number };
   /** Model callbacks inherited by root, summary, fallback, and subagent clients. */
   modelCallbacks?: readonly RunModelCallback[];
+  /** Caller-executed tools must never run eagerly before handoff is decided. */
+  clientToolNames?: ReadonlySet<string>;
   /** Calibration ratio from previous run's contextMeta, seeds the pruner EMA */
   calibrationRatio?: number;
   /**
@@ -2968,6 +2986,7 @@ export async function createRun({
          */
         CHECK_BACKGROUND_TASK_NAME,
         ...agents.flatMap((agent) => agent.backgroundToolNames ?? []),
+        ...(clientToolNames ?? []),
       ],
     },
     // Let host file tools share the code-execution sandbox session so a file

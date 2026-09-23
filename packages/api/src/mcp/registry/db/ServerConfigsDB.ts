@@ -11,6 +11,7 @@ import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerCon
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import type { ResolvedPrincipal } from '~/types/principal';
 import { requireApiKeyReentryForRebinding } from '~/mcp/registry/binding';
+import { normalizeLegacyHeaderMaps } from '~/mcp/registry/compat';
 import { MCPOAuthSecretReentryRequiredError } from '~/mcp/errors';
 import { AccessControlService } from '~/acl/accessControlService';
 
@@ -62,20 +63,21 @@ function sanitizeCredentialPlaceholders(
  * Sanitizes every header map a shared config carries. `requestHeaders` is
  * included because it reaches the upstream server exactly like `headers` does:
  * left unsanitized, a user-managed config could name a privileged placeholder
- * there and have the runtime resolve it at chat time.
+ * there and have the runtime resolve it at chat time. Absent maps stay omitted
+ * because BSON can serialize explicit undefined properties as null.
  */
-function sanitizeConfigHeaderMaps(config: ParsedServerConfig): {
-  headers?: Record<string, string>;
-  requestHeaders?: Record<string, string>;
-} {
-  const carrier = config as ParsedServerConfig & {
+function sanitizeConfigHeaderMaps(config: ParsedServerConfig): ParsedServerConfig {
+  const { headers, requestHeaders, ...rest } = config as ParsedServerConfig & {
     headers?: Record<string, string>;
     requestHeaders?: Record<string, string>;
   };
   return {
-    headers: sanitizeCredentialPlaceholders(carrier.headers),
-    requestHeaders: sanitizeCredentialPlaceholders(carrier.requestHeaders),
-  };
+    ...rest,
+    ...(headers != null && { headers: sanitizeCredentialPlaceholders(headers) }),
+    ...(requestHeaders != null && {
+      requestHeaders: sanitizeCredentialPlaceholders(requestHeaders),
+    }),
+  } as ParsedServerConfig;
 }
 
 function stripBlockedOAuthEndpointParams(url?: string): string | undefined {
@@ -115,19 +117,6 @@ function sanitizeUserManagedOAuthConfig(config: ParsedServerConfig): ParsedServe
       }),
     },
   };
-}
-
-/** Normalizes legacy values that predate the current runtime config schemas. */
-function normalizePersistedConfig(config: ParsedServerConfig): ParsedServerConfig {
-  const persistedConfig = config as ParsedServerConfig & {
-    headers?: Record<string, string> | null;
-  };
-  if (persistedConfig.headers !== null) {
-    return config;
-  }
-
-  const { headers: _legacyNullHeaders, ...normalizedConfig } = persistedConfig;
-  return normalizedConfig as ParsedServerConfig;
 }
 
 function normalizeOAuthUrl(value?: string): string | undefined {
@@ -315,10 +304,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       );
     }
 
-    const sanitizedConfig = sanitizeUserManagedOAuthConfig({
-      ...config,
-      ...sanitizeConfigHeaderMaps(config),
-    } as ParsedServerConfig);
+    const sanitizedConfig = sanitizeUserManagedOAuthConfig(sanitizeConfigHeaderMaps(config));
 
     /** Transformed user-provided API key config (adds customUserVars and headers) */
     const transformedConfig = this.transformUserApiKeyConfig(sanitizedConfig);
@@ -366,10 +352,9 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       requireApiKeyReentryForRebinding(existingServer.config, config);
     }
 
-    let configToSave: ParsedServerConfig = sanitizeUserManagedOAuthConfig({
-      ...config,
-      ...sanitizeConfigHeaderMaps(config),
-    } as ParsedServerConfig);
+    let configToSave: ParsedServerConfig = sanitizeUserManagedOAuthConfig(
+      sanitizeConfigHeaderMaps(config),
+    );
 
     /** Transformed user-provided API key config (adds customUserVars and headers) */
     configToSave = this.transformUserApiKeyConfig(configToSave);
@@ -661,7 +646,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       ...(authorId ? { author: authorId } : {}),
     };
     return sanitizeUserManagedOAuthConfig(
-      await this.decryptConfig(normalizePersistedConfig(config)),
+      await this.decryptConfig(normalizeLegacyHeaderMaps(config)),
     );
   }
 

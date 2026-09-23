@@ -1236,6 +1236,7 @@ describe('Message Operations', () => {
     });
 
     it('lets a same-generation manual poll claim an anchored terminal receipt', async () => {
+      const settledAt = new Date('2026-09-22T09:00:00.000Z');
       await saveMessage(mockCtx, {
         ...mockMessageData,
         unfinished: true,
@@ -1252,7 +1253,7 @@ describe('Message Operations', () => {
                 taskId: 'task-same-generation',
                 toolName: 'slow_tool',
                 status: 'completed',
-                settledAt: new Date(),
+                settledAt,
                 completionWakeup: true,
               },
             },
@@ -1300,6 +1301,8 @@ describe('Message Operations', () => {
             status: 'completed',
             output: 'settled output',
             agentId: 'agent-a',
+            /** Carried through so a poll can report when the task settled. */
+            settledAt,
           },
         ],
       });
@@ -1424,6 +1427,7 @@ describe('Message Operations', () => {
             status: 'completed',
             output: 'durable result',
             agentId: 'agent-a',
+            settledAt: expect.any(Date),
           },
         ],
       };
@@ -1633,6 +1637,7 @@ describe('Message Operations', () => {
             toolName: 'bash_tool',
             status: 'cancelled',
             output: 'Background task cancellation requested',
+            settledAt: expect.any(Date),
           },
         ],
       });
@@ -1679,6 +1684,7 @@ describe('Message Operations', () => {
             status: 'completed',
             output: 'one',
             agentId: 'agent-a',
+            settledAt: expect.any(Date),
           },
           {
             taskId: 'task-2',
@@ -1687,6 +1693,7 @@ describe('Message Operations', () => {
             status: 'completed',
             output: 'two',
             agentId: 'agent-a',
+            settledAt: expect.any(Date),
           },
         ],
       });
@@ -1990,6 +1997,7 @@ describe('Message Operations', () => {
             status: 'completed',
             output: 'a',
             agentId: 'agent-a',
+            settledAt: expect.any(Date),
           },
         ],
       });

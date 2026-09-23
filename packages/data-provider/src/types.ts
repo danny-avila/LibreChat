@@ -628,9 +628,19 @@ export type TCodeEnvironmentMoveResponse = {
   codeWorkspaces: CodeWorkspaceSelection[];
 };
 
+/** Sanitized results of server request shaping for each saved toggle state. */
+export type ResponsesApiRoute = {
+  default: boolean;
+  on: boolean;
+  off: boolean;
+  withWebSearch?: { default: boolean; on: boolean; off: boolean };
+};
+export type ResponsesApiRouting = Record<string, ResponsesApiRoute>;
+
 export type TConfig = {
   /** Encoding of the saved Key value, declared by the endpoint owner. */
   keyEncoding?: 'apiKey' | 'google' | 'azure' | 'bedrock';
+  responsesApiRouting?: ResponsesApiRouting;
   order: number;
   type?: EModelEndpoint;
   azure?: boolean;

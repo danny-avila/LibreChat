@@ -553,6 +553,9 @@ export interface BackgroundToolResultRecord {
   status: 'completed' | 'error' | 'cancelled';
   output: string;
   agentId?: string;
+  /** When the task reached this terminal status. Absent on rows written before
+   * the stamp existed, so a consumer must treat it as optional. */
+  settledAt?: Date;
 }
 
 export type BackgroundToolResultClaim =
@@ -680,6 +683,22 @@ export interface ConversationTraceRefs {
   firstMessageAt?: Date;
   /** Sampled response messages, oldest first. */
   sampledMessages: SampledTraceMessage[];
+}
+
+/**
+ * Reads a stored terminal stamp defensively: rows written before the stamp existed
+ * omit it, and a document can reach here from a raw read where the date is still a
+ * string, so an unusable value is reported as absent rather than as `Invalid Date`.
+ */
+function toSettledAt(value: unknown): Date | undefined {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? undefined : value;
+  }
+  if (typeof value === 'string' || typeof value === 'number') {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  }
+  return undefined;
 }
 
 export interface MessageMethods {
@@ -1763,6 +1782,7 @@ export function createMessageMethods(
             toolName?: unknown;
             status?: unknown;
             cancelled?: unknown;
+            settledAt?: unknown;
             resultClaim?: { kind?: unknown; claimId?: unknown };
           };
         };
@@ -1785,6 +1805,7 @@ export function createMessageMethods(
       } else if (typeof toolCall.agentId === 'string') {
         resultAgentId = toolCall.agentId;
       }
+      const settledAt = toSettledAt(task.settledAt);
       results.push({
         taskId: task.taskId,
         toolCallId: toolCall.id,
@@ -1792,6 +1813,7 @@ export function createMessageMethods(
         status: task.cancelled === true ? 'cancelled' : task.status,
         output: typeof toolCall.output === 'string' ? toolCall.output : '',
         ...(resultAgentId == null ? {} : { agentId: resultAgentId }),
+        ...(settledAt == null ? {} : { settledAt }),
       });
     }
     return results;
