@@ -1,8 +1,8 @@
 // const { fontFamily } = require('tailwindcss/defaultTheme');
-const {
-  createTailwindColors,
-} = require('../packages/client/src/theme/utils/createTailwindColors.js');
+// Semantic colors are declared in
+// packages/client/src/theme/tokens.css, which src/style.css imports.
 const libreChatTailwindPreset = require('../packages/client/tailwind.preset.cjs');
+const compatibilityColors = require('../packages/client/tailwind.compat.cjs');
 
 /** @type {import('tailwindcss').Config} */
 module.exports = {
@@ -45,6 +45,7 @@ module.exports = {
     //   mono: ['Söhne Mono', 'monospace'],
     // },
     extend: {
+      colors: compatibilityColors,
       width: {
         authPageWidth: '370px',
       },
@@ -119,7 +120,6 @@ module.exports = {
         'refresh-link-spin': 'refresh-link-spin 650ms cubic-bezier(0.42, 0, 0.58, 1)',
         'reset-spin': 'reset-spin 500ms cubic-bezier(0.22, 1, 0.36, 1)',
       },
-      colors: createTailwindColors(),
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
@@ -131,8 +131,11 @@ module.exports = {
     // tailwindcss-radix is gone: its addVariant call produces nothing under Tailwind v4, and
     // Radix sets the same attributes it keyed off, so callers use `data-[state=open]:` and
     // `data-[disabled]:` directly. Its last caller was a table mockup nothing rendered, removed
-    // with this upgrade rather than migrated. tailwindcss-animate still works under v4.
-    require('tailwindcss-animate'),
+    // with this upgrade rather than migrated.
+    //
+    // tailwindcss-animate is not listed here: the published preset above registers it, and
+    // Tailwind runs a plugin once per registration, so naming it again would emit every
+    // `animate-in`/`fade-in-*` utility twice.
     // require('@tailwindcss/typography'),
   ],
 };

@@ -102,13 +102,22 @@ function App() {
 
 ### 3. Set Up Your Base CSS
 
-Ensure your app has CSS variables defined as fallbacks. Every theme variable must
-hold a **bare `R G B` channel triplet**, not a complete CSS color, because the
-Tailwind color map wraps them as `rgb(var(--x) / <alpha-value>)` so that opacity
-modifiers such as `bg-surface-primary/50` work:
+Import the published token stylesheet and define the variables it resolves. Every theme
+variable must hold a **bare `R G B` channel triplet**, not a complete CSS color, because
+each token wraps them as `rgb(var(--x))` so that opacity modifiers such as
+`bg-surface-primary/50` work:
 
 ```css
 /* style.css */
+@import 'tailwindcss';
+/* Declares --color-text-primary, --color-surface-primary and the rest of the tokens as
+ * `@theme inline`, so every utility resolves the custom property below at runtime. */
+@import '@librechat/client/theme.css';
+/* v4 reads no config by default: this is what loads the preset, the content globs and
+ * class-based dark mode from step 4. This app's own entry does the same
+ * (`client/src/style.css`), and so does the library's (`src/theme/theme.css`). */
+@config './tailwind.config.js';
+
 :root {
   --white: 255 255 255;
   --gray-800: 33 33 33;
@@ -136,6 +145,11 @@ itself: `color: rgb(var(--text-primary));`.
 > (`--text-primary: #212121`). Hex, `rgb(...)`, and named colors now produce
 > invalid declarations and must be converted to channel triplets.
 
+> **Breaking change:** the color map used to be built in JavaScript by
+> `createTailwindColors()` and spread into `theme.extend.colors`. Both are gone. The tokens
+> are declared in CSS, which is what lets a linter and an editor resolve them; a config that
+> still defines a `colors` block for these names shadows them and can be deleted.
+
 ### 4. Configure Tailwind
 
 Update your `tailwind.config.js`:
@@ -147,27 +161,24 @@ module.exports = {
   presets: [libreChatTailwindPreset],
   content: [
     './src/**/*.{js,jsx,ts,tsx}',
-    // Include component library files
-    './node_modules/@librechat/client/dist/**/*.js',
+    // Include component library files: tsdown emits .mjs/.cjs, never .js
+    './node_modules/@librechat/client/dist/**/*.{js,mjs,cjs}',
   ],
   darkMode: ['class'],
-  theme: {
-    extend: {
-      colors: {
-        // Wrap each channel triplet so opacity modifiers keep working
-        'text-primary': 'rgb(var(--text-primary) / <alpha-value>)',
-        'surface-primary': 'rgb(var(--surface-primary) / <alpha-value>)',
-        'brand-purple': 'rgb(var(--brand-purple) / <alpha-value>)',
-        // ... other colors
-      },
-    },
-  },
 };
 ```
+
+The semantic colors come from the stylesheet imported in step 3, so the config carries only content,
+dark mode and the preset, and it only applies through the `@config` line in that stylesheet:
+v4 loads no config file on its own, so without the directive the preset, the `content` globs
+and class-based dark mode are all silently absent.
 
 The published preset supplies the semantic appearance utilities used by theme-aware component
 variants, including `h-theme-control`, `rounded-theme-control`, `gap-theme-compact`, and
 `duration-theme-fast`. Keep the preset enabled even when defining additional project utilities.
+
+The published stylesheet and preset preserve the host's standard Tailwind color palettes.
+LibreChat's legacy gray and green compatibility scales apply only to its repository builds.
 
 The package requires Tailwind v4 and declares `tailwindcss: ^4.3.3` as a peer dependency: the
 published components emit v4-only utilities such as `outline-hidden`, `shadow-xs` and
@@ -186,12 +197,12 @@ below are never compiled and the import fails with Tailwind's direct-plugin erro
 
 Tailwind 4 does not look for a JavaScript config on its own, so writing the file above is not
 enough: the stylesheet has to load it, next to the import that pulls Tailwind in. Without the
-directive the preset, the package content glob, the semantic colors and the `high-contrast:`
-variant are all absent, and the published components render with most of their classes
-ungenerated. The SPA does exactly this at the top of `client/src/style.css`:
+directive the preset, the package content glob and the `high-contrast:` variant are absent,
+and the published components render with most of their classes ungenerated. A consumer uses the same import order as the SPA's `client/src/style.css`:
 
 ```css
 @import 'tailwindcss';
+@import '@librechat/client/theme.css';
 @config '../tailwind.config.js';
 
 @import '@librechat/client/style.css';
@@ -200,6 +211,10 @@ ungenerated. The SPA does exactly this at the top of `client/src/style.css`:
 The package stylesheet carries the component CSS and the one preflight rule the primitives
 depend on — Tailwind 3 gave every `button` a pointer cursor and Tailwind 4 does not — so import
 it once, after Tailwind.
+
+`tailwindcss-animate` is a peer dependency too, and the preset registers it: the components' own
+`animate-in`, `fade-in-0`, `zoom-in-95` and `slide-in-from-*` classes are its utilities, so a
+consumer that loads the preset gets them without configuring anything.
 
 ### 5. Use Theme Colors in Components
 
@@ -456,8 +471,8 @@ packages/client/src/theme/
 │   └── index.ts            # Theme exports
 ├── utils/
 │   ├── applyTheme.ts       # Apply CSS variables
-│   ├── tailwindConfig.ts   # Tailwind helpers
-│   └── createTailwindColors.js
+│   └── tailwindConfig.ts   # Tailwind helpers
+├── tokens.css              # Tailwind color tokens (published as @librechat/client/theme.css)
 ├── README.md               # This documentation
 └── index.ts               # Main exports
 ```

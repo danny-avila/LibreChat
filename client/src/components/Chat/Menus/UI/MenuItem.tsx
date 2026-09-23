@@ -59,7 +59,7 @@ const MenuItem: FC<MenuItemProps> = ({
             {icon != null ? icon : null}
             <div className={cn('truncate', textClassName)}>
               {title}
-              <div className="text-token-text-tertiary">{description}</div>
+              <div className="text-text-tertiary">{description}</div>
             </div>
           </div>
         </div>

@@ -16,13 +16,13 @@ const { defaultAppearance, themeAppearanceProperties } = require('./registry');
 const packageRoot = path.resolve(__dirname, '../..');
 
 /**
- * Compiles the package's Tailwind config the way an app consuming `./tailwind-preset` does, and
- * returns the CSS for `candidates`. Tailwind v4 has no `resolveConfig`, and a resolved config
- * would only prove the preset's objects merged; what a consumer actually depends on is that the
- * appearance utilities generate and fall back to the registry's defaults.
+ * Compiles the library's theme entry, the same file an app or tool loads, and returns the CSS
+ * for `candidates`. Tailwind v4 has no `resolveConfig`, and a resolved config would only prove
+ * the preset's objects merged; what a consumer actually depends on is that the appearance
+ * utilities generate and fall back to the registry's defaults.
  */
 async function generate(candidates) {
-  const compiler = await compile('@import "tailwindcss";\n@config "./tailwind.config.js";\n', {
+  const compiler = await compile(`@import './src/theme/theme.css';\n`, {
     base: packageRoot,
     async loadModule(id, base) {
       const modulePath = id.startsWith('.') ? path.resolve(base, id) : require.resolve(id);
@@ -48,6 +48,16 @@ async function generate(candidates) {
 }
 
 describe('LibreChat Tailwind preset', () => {
+  it('generates every component animation and its keyframes together', async () => {
+    const names = ['loading-dot', 'accordion-down', 'accordion-up', 'caret-blink'];
+    const css = await generate(names.map((name) => `animate-${name}`));
+
+    for (const name of names) {
+      expect(css).toContain(`.animate-${name}`);
+      expect(css).toContain(`@keyframes ${name}`);
+    }
+  });
+
   it('publishes the appearance roles without removing Tailwind defaults', async () => {
     expect(packageConfig.presets).toContain(tailwindPreset);
 
@@ -102,13 +112,18 @@ describe('LibreChat Tailwind preset', () => {
    *  reach is not a floor, so the registration is asserted, not just the value. */
   it('registers the appearance variants the utilities are written against', () => {
     const variants = {};
-    tailwindPreset.plugins.forEach((plugin) =>
-      plugin({
-        addVariant: (name, value) => {
-          variants[name] = value;
-        },
-      }),
-    );
+    /** The preset also carries `tailwindcss-animate`, which Tailwind hands an
+     *  object rather than a bare function; the variants live in the plugin this
+     *  file owns, so only the callable entries are invoked here. */
+    tailwindPreset.plugins
+      .filter((plugin) => typeof plugin === 'function')
+      .forEach((plugin) =>
+        plugin({
+          addVariant: (name, value) => {
+            variants[name] = value;
+          },
+        }),
+      );
 
     /** `any-pointer`, not `pointer`: the floor has to apply to a 2-in-1's
      *  touchscreen while its trackpad is the primary device and reports `fine`. */

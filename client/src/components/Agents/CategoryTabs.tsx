@@ -117,7 +117,7 @@ const CategoryTabs: React.FC<CategoryTabsProps> = ({
       <div
         className={cn(
           isSmallScreen
-            ? 'scrollbar-hide flex gap-1.5 overflow-x-auto'
+            ? 'hide-scrollbar flex gap-1.5 overflow-x-auto'
             : 'flex flex-wrap justify-start gap-1.5',
         )}
         role="tablist"

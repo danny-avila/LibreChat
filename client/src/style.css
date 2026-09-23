@@ -1,13 +1,23 @@
 @import 'tailwindcss';
+/* Semantic colors live in the component library, in CSS, so one file feeds this app, the published
+ * package and @shadcn/lint's token checking. Imported from source rather than from the built
+ * package so a lint or CI run needs no prior build. */
+@import '../../packages/client/src/theme/tokens.css';
 @config '../tailwind.config.cjs';
+
+/* Close the legacy palette scales only inside this repository. */
+@theme inline {
+  --color-gray-*: initial;
+  --color-green-*: initial;
+}
 
 /* Tailwind v4 changed two preflight defaults this app was built against. Each rule below
  * restores the v3 default rather than adopting the new one, so the upgrade carries no visual
  * change; drop one only as a deliberate design decision.
  *   - border-color: v3 used gray-200, v4 uses currentColor.
  *   - ::placeholder: v3 used gray-400, v4 uses currentColor at 50% opacity.
- * Both read the palette through `theme()` so they follow createTailwindColors() rather than
- * pinning a hex here. `button { cursor: pointer }` below already covers v4's third change. */
+ * Both read the repository compatibility palette through `theme()` instead of pinning a hex here.
+ * `button { cursor: pointer }` below already covers v4's third change. */
 @layer base {
   *,
   ::after,
@@ -594,19 +604,6 @@ html.high-contrast.dark .btn-neutral:hover {
   background-color: rgb(var(--surface-hover));
 }
 
-.text-token-text-primary {
-  color: #171717;
-  color: rgb(var(--text-primary));
-}
-.text-token-text-secondary {
-  color: #565869;
-  color: rgb(var(--text-secondary));
-}
-.text-token-text-tertiary {
-  color: #8e8ea0;
-  color: rgb(var(--text-tertiary));
-}
-
 .icon-sm {
   stroke-width: 2;
   height: 1rem;
@@ -635,19 +632,6 @@ html.high-contrast.dark .btn-neutral:hover {
   stroke-width: 1.5;
   height: 2rem;
   width: 2rem;
-}
-.border-token-border-light {
-  border-color: #ececf1;
-  border-color: rgb(var(--border-light) / var(--border-light-alpha, 1));
-}
-
-.border-token-border-medium {
-  border-color: #d9d9e3;
-  border-color: rgb(var(--border-medium) / var(--border-medium-alpha, 1));
-}
-
-.bg-token-surface-secondary {
-  background-color: rgb(var(--surface-secondary));
 }
 
 /* Forced-colors overrides the inline `background-color: currentColor` a masked
@@ -746,8 +730,7 @@ html.high-contrast.dark .btn-neutral:hover {
  * layered one whatever its specificity. The rules below are element and bare-pseudo
  * resets that utilities beat under v3 by being classes; each is layered so it keeps
  * losing to a utility. A rule that is meant to beat utilities stays unlayered
- * (`.dark :focus-visible`, the `code, pre` font reset, the `.hidden`/`.overflow-*`
- * class overrides). */
+ * (`.dark :focus-visible`, the `code, pre` font reset). */
 @layer base {
   select {
     --tw-shadow: 0 0 transparent;
@@ -765,19 +748,6 @@ html.high-contrast.dark .btn-neutral:hover {
     font-size: 1rem;
     line-height: 1.5rem;
   }
-}
-
-/* `overflow-*-auto` deliberately overrides the utility of the same name with `overlay`, so it
- * stays unlayered and keeps beating it; no source pairs it with a variant that would need to win
- * back. `.hidden` had no such reason to exist — Tailwind emits the identical rule — and unlayered
- * it outranked every responsive variant that reveals an element, so `hidden md:block` stayed
- * hidden at every width and the composer's MCP button lost its accessible name. */
-.overflow-y-auto {
-  overflow-y: overlay;
-}
-
-.overflow-x-auto {
-  overflow-x: overlay;
 }
 
 .reset-rc-number-input input {
@@ -1683,16 +1653,6 @@ html {
   text-underline-offset: 2px;
 }
 
-.truncate {
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.text-ellipsis,
-.truncate {
-  text-overflow: ellipsis;
-}
-
 .group:hover .group-hover\:visible {
   visibility: visible;
 }
@@ -1740,23 +1700,7 @@ html {
     transform: rotate(1turn);
   }
 }
-.animate-spin {
-  -webkit-animation: spin 1s linear infinite;
-  animation: spin 1s linear infinite;
-}
 
-.grow {
-  flex-grow: 1;
-}
-
-.transform {
-  -webkit-transform: translate(var(--tw-translate-x), var(--tw-translate-y))
-    rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y))
-    scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
-  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate))
-    skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x))
-    scaleY(var(--tw-scale-y));
-}
 body,
 html {
   height: 100%;

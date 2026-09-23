@@ -1,0 +1,114 @@
+/**
+ * The semantic Tailwind color tokens, and the single source for them.
+ *
+ * Every semantic token resolves to a CSS custom property that ThemeProvider/applyTheme
+ * rewrites at runtime, which is what `@theme inline` is for: the value is inlined into each
+ * utility instead of being frozen into a `--color-*` variable, so switching a theme
+ * re-colors the app without regenerating CSS. Those properties hold bare `R G B` triplets
+ * (see client/src/style.css), hence the `rgb()` wrapper; a token with an intrinsic alpha
+ * multiplies in its companion `--x-alpha` property, and Tailwind composes any `/50`
+ * modifier on top through color-mix.
+ *
+ * client/src/style.css imports this file, and `@librechat/client/theme.css` publishes it.
+ * Declaring a token here is what makes `bg-<token>` exist; @shadcn/lint reads these
+ * declarations, so a name that is not here is reported rather than silently rendering
+ * nothing.
+ */
+@theme inline {
+  /* brand and surfaces */
+  --color-brand-purple: rgb(var(--brand-purple));
+  --color-presentation: rgb(var(--presentation));
+  --color-accent-primary: rgb(var(--accent-primary));
+  --color-accent-primary-hover: rgb(var(--accent-primary-hover));
+  --color-ring-primary: rgb(var(--ring-primary));
+  --color-header-primary: rgb(var(--header-primary));
+  --color-header-hover: rgb(var(--header-hover));
+  --color-header-button-hover: rgb(var(--header-button-hover));
+  --color-surface-active: rgb(var(--surface-active));
+  --color-surface-active-alt: rgb(var(--surface-active-alt));
+  --color-surface-hover: rgb(var(--surface-hover));
+  --color-surface-hover-alt: rgb(var(--surface-hover-alt));
+  --color-surface-composer-hover: rgb(var(--surface-composer-hover));
+  --color-surface-primary: rgb(var(--surface-primary));
+  --color-surface-primary-alt: rgb(var(--surface-primary-alt));
+  --color-surface-primary-contrast: rgb(var(--surface-primary-contrast));
+  --color-surface-secondary: rgb(var(--surface-secondary));
+  --color-surface-secondary-alt: rgb(var(--surface-secondary-alt));
+  --color-surface-tertiary: rgb(var(--surface-tertiary));
+  --color-surface-tertiary-alt: rgb(var(--surface-tertiary-alt));
+  --color-surface-dialog: rgb(var(--surface-dialog));
+  --color-surface-overlay: rgb(var(--surface-overlay));
+  --color-surface-submit: rgb(var(--surface-submit));
+  --color-surface-submit-hover: rgb(var(--surface-submit-hover));
+  --color-surface-destructive: rgb(var(--surface-destructive));
+  --color-surface-destructive-hover: rgb(var(--surface-destructive-hover));
+  --color-surface-chat: rgb(var(--surface-chat));
+  --color-surface-code: rgb(var(--surface-code));
+  --color-surface-qr: rgb(var(--surface-qr));
+  --color-surface-inverted: rgb(var(--surface-inverted));
+  --color-surface-inverted-hover: rgb(var(--surface-inverted-hover));
+  --color-surface-fixed: rgb(var(--surface-fixed));
+  --color-surface-fixed-hover: rgb(var(--surface-fixed-hover));
+
+  /* text */
+  --color-text-primary: rgb(var(--text-primary));
+  --color-text-secondary: rgb(var(--text-secondary));
+  --color-text-secondary-alt: rgb(var(--text-secondary-alt));
+  --color-text-tertiary: rgb(var(--text-tertiary));
+  --color-text-muted: rgb(var(--text-muted));
+  --color-text-warning: rgb(var(--text-warning));
+  --color-text-destructive: rgb(var(--text-destructive));
+  --color-text-inverted: rgb(var(--text-inverted));
+  --color-text-fixed: rgb(var(--text-fixed));
+  --color-text-on-status: rgb(var(--text-on-status));
+
+  /* links */
+  --color-link: rgb(var(--link));
+  --color-link-hover: rgb(var(--link-hover));
+  --color-link-visited: rgb(var(--link-visited));
+
+  /* borders */
+  --color-border-light: rgb(var(--border-light) / var(--border-light-alpha, 1));
+  --color-border-medium: rgb(var(--border-medium) / var(--border-medium-alpha, 1));
+  --color-border-medium-alt: rgb(var(--border-medium-alt));
+  --color-border-heavy: rgb(var(--border-heavy) / var(--border-heavy-alpha, 1));
+  --color-border-xheavy: rgb(var(--border-xheavy) / var(--border-xheavy-alpha, 1));
+  --color-border-destructive: rgb(var(--border-destructive));
+
+  /* status */
+  --color-status-success: rgb(var(--status-success));
+  --color-status-success-subtle: rgb(var(--status-success-subtle));
+  --color-status-success-border: rgb(var(--status-success-border));
+  --color-status-success-strong: rgb(var(--status-success-strong));
+  --color-status-info: rgb(var(--status-info));
+  --color-status-info-subtle: rgb(var(--status-info-subtle));
+  --color-status-info-border: rgb(var(--status-info-border));
+  --color-status-info-strong: rgb(var(--status-info-strong));
+  --color-status-warning: rgb(var(--status-warning));
+  --color-status-warning-subtle: rgb(var(--status-warning-subtle));
+  --color-status-warning-border: rgb(var(--status-warning-border));
+  --color-status-warning-strong: rgb(var(--status-warning-strong));
+  --color-status-error: rgb(var(--status-error));
+  --color-status-error-subtle: rgb(var(--status-error-subtle));
+  --color-status-error-border: rgb(var(--status-error-border));
+  --color-status-error-strong: rgb(var(--status-error-strong));
+  --color-status-neutral: rgb(var(--status-neutral));
+  --color-status-neutral-subtle: rgb(var(--status-neutral-subtle));
+  --color-status-neutral-border: rgb(var(--status-neutral-border));
+  --color-status-verified: rgb(var(--status-verified));
+
+  /* data series */
+  --color-series-1: rgb(var(--series-1));
+  --color-series-2: rgb(var(--series-2));
+  --color-series-3: rgb(var(--series-3));
+  --color-series-4: rgb(var(--series-4));
+  --color-series-5: rgb(var(--series-5));
+  --color-series-6: rgb(var(--series-6));
+  --color-series-7: rgb(var(--series-7));
+  --color-series-8: rgb(var(--series-8));
+
+  /* charts and controls */
+  --color-chart-widget-surface: rgb(var(--chart-widget-surface));
+  --color-chart-widget-stroke: rgb(var(--chart-widget-stroke));
+  --color-switch-unchecked: rgb(var(--switch-unchecked));
+}

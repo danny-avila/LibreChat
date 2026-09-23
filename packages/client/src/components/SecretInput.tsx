@@ -6,6 +6,7 @@ import { cn } from '~/utils';
 
 export interface SecretInputProps
   extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'type'> {
+  colorTransition?: boolean;
   /** Show the built-in copy button */
   showCopy?: boolean;
   /** Custom copy control rendered inside the input, in place of the built-in one */
@@ -30,6 +31,7 @@ const SecretInput: React.ForwardRefExoticComponent<
       id,
       label,
       className,
+      colorTransition,
       showCopy = false,
       copyButton,
       labelClassName,
@@ -82,6 +84,7 @@ const SecretInput: React.ForwardRefExoticComponent<
           type={isVisible ? 'text' : 'password'}
           className={cn(
             'border-border-light placeholder:text-text-secondary flex h-10 w-full rounded-lg border bg-transparent py-2 pl-3 text-sm focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50',
+            colorTransition && 'transition-colors',
             className ?? '',
             copyButton != null || showCopy ? 'pr-20' : 'pr-11',
           )}

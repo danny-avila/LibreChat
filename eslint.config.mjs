@@ -196,11 +196,6 @@ export default [
   // violations are recorded in eslint-suppressions.json, so these rules gate new and edited
   // code without a tree-wide migration; see CLAUDE.md, "Theming and styling".
   //
-  // `no-unknown-classes` is deliberately not enabled: it asks the installed Tailwind whether a
-  // class generates CSS and needs Tailwind v4, while this repo runs tailwindcss 3.4 with a JS
-  // preset. Its grammar fallback would report every preset utility (`duration-theme-fast`,
-  // `rounded-theme-control`, `icon-md`) as a typo.
-  //
   // The client's entry points and helpers are `.jsx`/`.js` — App.jsx among them — so the globs
   // name those extensions too: the rules have to see them.
   {
@@ -262,6 +257,60 @@ export default [
         },
       ],
       'shadcn/require-static-classes': 'error',
+      // Now answerable: the rule asks the installed Tailwind whether a class generates CSS, and
+      // the app is on v4. Classes declared in a stylesheet Tailwind reads are recognized on their
+      // own; these are the ones it cannot see, plain selectors in files loaded separately
+      // (style.css families, the library's component CSS) and classes a third party puts in the
+      // DOM. Everything outside this list that generates no CSS is reported: the `prose` variants
+      // that quietly render nothing today, and the `token-`-prefixed names, which were painting
+      // through plain rules in `client/src/style.css` that this change removes in favour of the
+      // tokens themselves rather than adding six more names here.
+      'shadcn/no-unknown-classes': [
+        'error',
+        {
+          allow: [
+            // client/src/style.css and the library's component CSS
+            'icon-*',
+            'hover-button',
+            'toast-root',
+            'alert-root',
+            'tooltip',
+            'spinner',
+            'popover-ui',
+            'select-item',
+            'assistant-item',
+            'animated-tab',
+            'animated-tab-list',
+            'animated-tab-panel',
+            'animated-panels',
+            'animate-popover',
+            'animate-popover-bottom',
+            'animate-pulse-slow',
+            'animate-gradient-x',
+            'animate-fadeIn',
+            'slow-pulse',
+            'hide-scrollbar',
+            'scrollbar-gutter-spacer',
+            'active',
+            // put in the DOM by a dependency, not by Tailwind
+            'lucide',
+            'lucide-*',
+            'language-*',
+            'i-heroicons-*',
+            'form-check-label',
+            // Markers a selector reads rather than Tailwind styling: each one is queried by a
+            // stylesheet, a component, or an e2e spec, so it carries no CSS of its own.
+            'popover',
+            'user-turn',
+            'agent-turn',
+            'final-completion',
+            'sibling-content-group',
+            'scroll-animation',
+            'hover-button-active',
+            'open',
+          ],
+        },
+      ],
     },
   },
   {
@@ -319,6 +368,7 @@ export default [
       'shadcn/no-arbitrary-values': 'off',
       'shadcn/no-inline-styles': 'off',
       'shadcn/require-static-classes': 'off',
+      'shadcn/no-unknown-classes': 'off',
     },
   },
   ...compat

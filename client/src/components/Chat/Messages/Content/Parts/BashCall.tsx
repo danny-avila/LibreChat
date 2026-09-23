@@ -169,7 +169,11 @@ export default function BashCall({
             )}
           >
             {command && (
-              <div className="bg-surface-tertiary relative dark:bg-gray-950">
+              // The command is a code surface, so it takes the role every other one takes
+              // (`DiffView`, the user-turn code bars) instead of a palette shade a theme
+              // cannot reach: the previous `dark:bg-gray-950` was Tailwind's blue-black,
+              // outside this palette entirely.
+              <div className="bg-surface-code relative">
                 <CopyButton
                   iconOnly
                   isCopied={isCopied}

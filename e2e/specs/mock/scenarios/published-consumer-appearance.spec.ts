@@ -15,14 +15,17 @@ import { repoRoot, run } from './lint.helpers';
  *   - the radius scale is Tailwind's, not ours, so `rounded-sm` means whatever
  *     the current major says it means.
  *
- * The scenario builds what a consumer actually installs — the package's own
+ * The scenario builds what a consumer actually installs: the package's own
  * stylesheet and its published preset, compiled by Tailwind through the
- * package's config — and asks a browser holding nothing else what the
+ * documented consumer config, and asks a browser holding nothing else what the
  * primitives' class strings render as.
  */
 
+type ClientManifest = { exports: Record<string, string> };
+
 const PROBE_DIR = resolve(repoRoot, 'e2e/specs/.test-results/published-consumer');
 const DIST_STYLESHEET = resolve(repoRoot, 'packages/client/dist/style.css');
+const PACKAGE_ROOT = resolve(repoRoot, 'packages/client');
 
 /** The class strings below are the published primitives' own, copied from the
  *  components so the probe cannot drift away from what ships. */
@@ -38,14 +41,18 @@ test.describe('the published package appearance', () => {
     test.setTimeout(300_000);
     mkdirSync(PROBE_DIR, { recursive: true });
 
-    /** What the consumer imports as `@librechat/client/style.css`. The mock lane
-     *  and the verify runner both build the packages first; building here as
-     *  well keeps the scenario runnable on its own. */
-    if (!existsSync(DIST_STYLESHEET)) {
-      const built = run('npm', ['run', 'build', '--prefix', resolve(repoRoot, 'packages/client')]);
+    /** What the consumer imports as `@librechat/client/style.css` and
+     *  `@librechat/client/theme.css`. Both are build artifacts, so the mock lane
+     *  and the verify runner build the packages first; building here as well
+     *  keeps the scenario runnable on its own. */
+    const manifest = JSON.parse(
+      readFileSync(resolve(PACKAGE_ROOT, 'package.json'), 'utf8'),
+    ) as ClientManifest;
+    const tokenStylesheet = resolve(PACKAGE_ROOT, manifest.exports['./theme.css']);
+    if (!existsSync(DIST_STYLESHEET) || !existsSync(tokenStylesheet)) {
+      const built = run('npm', ['run', 'build', '--prefix', PACKAGE_ROOT]);
       expect(built.status, `the component library did not build:\n${built.output}`).toBe(0);
     }
-    const packageStylesheet = readFileSync(DIST_STYLESHEET, 'utf8');
 
     /** The markup the compile is allowed to see, so the utilities it emits are
      *  exactly the ones the primitives ask for. */
@@ -53,18 +60,35 @@ test.describe('the published package appearance', () => {
 <div id="box" class="${CHECKBOX_BOX}"></div>
 <input id="search" class="${SEARCH_FIELD}" placeholder="Search" />
 <button id="enabled" class="${BUTTON_DISABLED}">enabled</button>
-<button id="disabled" class="${BUTTON_DISABLED}" disabled>disabled</button>`;
+<button id="disabled" class="${BUTTON_DISABLED}" disabled>disabled</button>
+<div id="gray-500" class="bg-gray-500"></div>
+<div id="green-500" class="bg-green-500"></div>
+<div id="gray-950" class="bg-gray-950"></div>
+<div id="green-950" class="bg-green-950"></div>`;
     const probeMarkup = join(PROBE_DIR, 'probe.html');
     writeFileSync(probeMarkup, markup);
 
-    /** A consumer's stylesheet: Tailwind, the package's config — which is the
-     *  published preset plus the semantic colors — and nothing of this app. */
+    /** Compile the complete stylesheet example itself, so a missing import in
+     *  the README cannot be hidden by a separately maintained correct fixture. */
+    const readme = readFileSync(resolve(PACKAGE_ROOT, 'src/theme/README.md'), 'utf8');
+    const documentedStylesheet = [...readme.matchAll(/```css\n([\s\S]*?)```/g)]
+      .map((match) => match[1])
+      .find((stylesheet) => stylesheet.includes("@import '@librechat/client/style.css';"));
+    expect(documentedStylesheet, 'the complete consumer stylesheet is documented').toBeDefined();
+    const documentedConfig = [...readme.matchAll(/```js\n([\s\S]*?)```/g)]
+      .map((match) => match[1])
+      .find((config) => config.includes("require('@librechat/client/tailwind-preset')"));
+    expect(documentedConfig, 'the consumer preset configuration is documented').toBeDefined();
+    const consumerConfig = join(PROBE_DIR, 'tailwind.config.cjs');
+    writeFileSync(consumerConfig, documentedConfig!);
     const entry = join(PROBE_DIR, 'consumer.css');
     writeFileSync(
       entry,
       [
-        "@import 'tailwindcss';",
-        `@config '${resolve(repoRoot, 'packages/client/tailwind.config.js')}';`,
+        documentedStylesheet!
+          .replace("@import '@librechat/client/theme.css';", `@import '${tokenStylesheet}';`)
+          .replace("@import '@librechat/client/style.css';", `@import '${DIST_STYLESHEET}';`)
+          .replace(/@config '[^']+';/, `@config '${consumerConfig}';`),
         `@source '${probeMarkup}';`,
         '',
       ].join('\n'),
@@ -72,14 +96,21 @@ test.describe('the published package appearance', () => {
 
     const compiler = join(PROBE_DIR, 'compile.cjs');
     const compiled = join(PROBE_DIR, 'consumer.out.css');
+    const baseline = join(PROBE_DIR, 'baseline.css');
+    const baselineCompiled = join(PROBE_DIR, 'baseline.out.css');
+    writeFileSync(baseline, `@import 'tailwindcss' source(none);\n@source '${probeMarkup}';\n`);
     writeFileSync(
       compiler,
       `const postcss = require('postcss');
 const tailwind = require('@tailwindcss/postcss');
 const { readFileSync, writeFileSync } = require('node:fs');
-postcss([tailwind()])
-  .process(readFileSync(${JSON.stringify(entry)}, 'utf8'), { from: ${JSON.stringify(entry)} })
-  .then((result) => writeFileSync(${JSON.stringify(compiled)}, result.css))
+Promise.all(${JSON.stringify([
+        [entry, compiled],
+        [baseline, baselineCompiled],
+      ])}.map(async ([input, output]) => {
+  const result = await postcss([tailwind()]).process(readFileSync(input, 'utf8'), { from: input });
+  writeFileSync(output, result.css);
+}))
   .catch((error) => {
     console.error(error.message);
     process.exit(1);
@@ -100,9 +131,6 @@ postcss([tailwind()])
         body { color: rgb(200 0 0); }
       </style></head><body>${markup}</body></html>`,
     );
-    await page.addStyleTag({ content: consumerCss });
-    await page.addStyleTag({ content: packageStylesheet });
-
     const read = (id: string, properties: string[]) =>
       page.evaluate(
         ([selector, names]) => {
@@ -114,6 +142,18 @@ postcss([tailwind()])
         },
         [id, properties] as const,
       );
+
+    const palette = ['gray-500', 'green-500', 'gray-950', 'green-950'];
+    const readPalette = () => Promise.all(palette.map((id) => read(id, ['background-color'])));
+    const baselineStyle = await page.addStyleTag({
+      content: readFileSync(baselineCompiled, 'utf8'),
+    });
+    const defaultPalette = await readPalette();
+    await baselineStyle.evaluate((element) => element.remove());
+    await page.addStyleTag({ content: consumerCss });
+    expect(await readPalette(), 'the library must preserve the host Tailwind palette').toEqual(
+      defaultPalette,
+    );
 
     /** Tailwind 4 renamed the radius steps — the old `sm` is `xs`, and `sm` is
      *  0.25rem — so a checkbox that says `rounded-sm` doubles its corners unless

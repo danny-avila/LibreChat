@@ -14,7 +14,7 @@ export default function MessagesView({
   const [currentEditId, setCurrentEditId] = useState<number | string | null>(-1);
   return (
     <div className="min-h-0 flex-1 overflow-hidden" data-testid="messages-view">
-      <div className="dark:gpt-dark-gray relative h-full">
+      <div className="relative h-full">
         <div
           style={{
             height: '100%',
@@ -40,7 +40,7 @@ export default function MessagesView({
                 </div>
               </>
             )}
-            <div className="dark:gpt-dark-gray group h-0 w-full shrink-0 dark:border-gray-800/50" />
+            <div className="group h-0 w-full shrink-0 dark:border-gray-800/50" />
           </div>
         </div>
       </div>

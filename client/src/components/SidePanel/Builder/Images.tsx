@@ -4,7 +4,7 @@ import useLocalize from '~/hooks/useLocalize';
 
 export function NoImage() {
   return (
-    <div className="border-token-border-medium flex h-full w-full items-center justify-center rounded-full border-2 border-dashed border-black">
+    <div className="border-border-medium flex h-full w-full items-center justify-center rounded-full border-2 border-dashed">
       <svg
         stroke="currentColor"
         fill="none"
@@ -45,7 +45,7 @@ export const AssistantAvatar = ({
       <div className="relative h-20 w-20 overflow-hidden rounded-full">
         <img
           src={url}
-          className="bg-token-surface-secondary dark:bg-surface-tertiary h-full w-full rounded-full object-cover"
+          className="bg-surface-secondary dark:bg-surface-tertiary h-full w-full rounded-full object-cover"
           alt="GPT"
           width="80"
           height="80"
