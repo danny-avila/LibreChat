@@ -6,10 +6,10 @@ import type { MediaConsumerConfig, MediaFileConsumerWrite } from '~/types/mediaC
 import type { MediaOwnerScope } from '~/types/media';
 import type { IMessage } from '~/types/message';
 import type { IMongoFile } from '~/types/file';
-import { createMediaFileConsumerMethods } from './mediaConsumers';
-import { createMessageMethods } from './message';
-import { createMediaMethods } from './media';
-import { createMethods } from './index';
+import { createMediaFileConsumerMethods } from './consumers';
+import { createMessageMethods } from '../message';
+import { createMediaMethods } from './index';
+import { createMethods } from '../index';
 import { createModels } from '~/models';
 
 describe('media file conversation consumers', () => {

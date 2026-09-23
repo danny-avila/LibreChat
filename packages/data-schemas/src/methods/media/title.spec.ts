@@ -3,8 +3,8 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { mediaSubmissionRequestSchema } from 'librechat-data-provider';
 import type { MediaMethods, MediaOwnerScope, MediaStoredThread } from '~/types/media';
 import { tenantStorage } from '~/config/tenantContext';
-import { createMediaTitleMethods } from './mediaTitle';
-import { createMediaMethods } from './media';
+import { createMediaTitleMethods } from './title';
+import { createMediaMethods } from './index';
 
 describe('durable media title admission', () => {
   let mongo: MongoMemoryServer;

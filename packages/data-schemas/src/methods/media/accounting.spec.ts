@@ -7,12 +7,12 @@ import type { MediaOwnerScope, MediaMethods } from '~/types/media';
 import type { IBalance } from '~/types/balance';
 import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { createMediaSettlementModel } from '~/models/mediaSettlement';
-import { createMediaAccountingMethods } from './mediaAccounting';
 import { createTransactionModel } from '~/models/transaction';
-import { createTransactionMethods } from './transaction';
+import { createMediaAccountingMethods } from './accounting';
+import { createTransactionMethods } from '../transaction';
 import { createBalanceModel } from '~/models/balance';
 import { createUserModel } from '~/models/user';
-import { createMediaMethods } from './media';
+import { createMediaMethods } from './index';
 
 describe('media accounting on standalone MongoDB', () => {
   let mongo: MongoMemoryServer;

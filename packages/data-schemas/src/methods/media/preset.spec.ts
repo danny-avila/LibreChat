@@ -11,10 +11,10 @@ import type { MediaPresetMethods } from '~/types/mediaPreset';
 import type { MediaStoredPreset } from '~/types/mediaPreset';
 import type { IMongoFile } from '~/types/file';
 import { runAsSystem, tenantStorage } from '~/config/tenantContext';
-import { createMediaFileConsumerMethods } from './mediaConsumers';
-import { createMediaPresetMethods } from './mediaPreset';
-import { createMediaMethods } from './media';
-import { createMethods } from './index';
+import { createMediaFileConsumerMethods } from './consumers';
+import { createMediaPresetMethods } from './preset';
+import { createMediaMethods } from './index';
+import { createMethods } from '../index';
 import { createModels } from '~/models';
 
 describe('media presets on standalone MongoDB', () => {

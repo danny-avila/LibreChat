@@ -3,10 +3,10 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { mediaSubmissionRequestSchema } from 'librechat-data-provider';
 import type { MediaRecoveryRequest } from 'librechat-data-provider';
 import type { MediaStoredJob, MediaOwnerScope } from '~/types/media';
-import { createMediaRecoveryMethods } from './mediaRecovery';
-import { createMediaNativeMethods } from './mediaNative';
+import { createMediaRecoveryMethods } from './recovery';
 import { tenantStorage } from '~/config/tenantContext';
-import { createMediaMethods } from './media';
+import { createMediaNativeMethods } from './native';
+import { createMediaMethods } from './index';
 
 describe('operator media recovery on standalone MongoDB', () => {
   let mongo: MongoMemoryServer;

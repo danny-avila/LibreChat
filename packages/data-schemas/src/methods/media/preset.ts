@@ -9,12 +9,12 @@ import {
   positiveMediaLimit as positive,
   toMediaAsset,
 } from '~/utils/media';
-import { createMediaMethods, MediaPersistenceError } from './media';
-import { createMediaFileConsumerMethods } from './mediaConsumers';
+import { createMediaMethods, MediaPersistenceError } from './index';
+import { createMediaFileConsumerMethods } from './consumers';
 import { createMediaPresetModel } from '~/models/media';
 import { createIndexesWithRetry } from '~/utils/retry';
-import { durable, duplicate } from './media/scope';
 import { createFileModel } from '~/models/file';
+import { durable, duplicate } from './scope';
 
 function presetView(preset: MediaStoredPreset, assets: MediaAsset[]): MediaPreset {
   return {

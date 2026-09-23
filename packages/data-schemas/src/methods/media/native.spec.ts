@@ -11,9 +11,9 @@ import type {
   MediaNativeReference,
 } from '~/types/mediaNative';
 import type { MediaMethods, MediaOwnerScope, MediaStoredJob } from '~/types/media';
-import { createMediaNativeMethods } from './mediaNative';
-import { createMessageMethods } from './message';
-import { createMediaMethods } from './media';
+import { createMediaNativeMethods } from './native';
+import { createMessageMethods } from '../message';
+import { createMediaMethods } from './index';
 
 describe('legacy native recording readers and cleanup', () => {
   let mongo: MongoMemoryServer;

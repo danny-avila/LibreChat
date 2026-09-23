@@ -18,13 +18,13 @@ import type { IBalance, BalancePreparationRequest } from '~/types/balance';
 import { migrateMediaDates, migrateMediaHoldDates } from '~/utils/mediaDates';
 import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { createMediaSettlementModel } from '~/models/mediaSettlement';
-import { createCreditsTransactionWriter } from './transaction';
-import { createMediaLedgerReconciler } from './media/ledger';
+import { createCreditsTransactionWriter } from '../transaction';
+import { createMediaLedgerReconciler } from './ledger';
 import { createIndexesWithRetry } from '~/utils/retry';
 import { createMediaOwnerModel } from '~/models/media';
 import { createBalanceModel } from '~/models/balance';
 import { isMediaTenantScope } from '~/utils/media';
-import { durable } from './media/scope';
+import { durable } from './scope';
 
 export class MediaAccountingError extends Error {
   constructor(

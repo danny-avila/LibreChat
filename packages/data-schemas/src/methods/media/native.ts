@@ -15,7 +15,7 @@ import { migrateMediaDates } from '~/utils/mediaDates';
 import { createMessageModel } from '~/models/message';
 import { createFileModel } from '~/models/file';
 import { toMediaAsset } from '~/utils/media';
-import { durable } from './media/scope';
+import { durable } from './scope';
 
 /** Reads and retires legacy recordings; new native output belongs to Message and File. */
 export function createMediaNativeMethods(

@@ -16,7 +16,7 @@ import {
   createMediaThreadModel,
   createMediaTurnModel,
 } from '~/models/media';
-import { createMediaAccountingMethods } from '../mediaAccounting';
+import { createMediaAccountingMethods } from './accounting';
 import { createFileModel } from '~/models/file';
 
 /** Explicit dependencies between persistence aggregates; all methods share one connection. */

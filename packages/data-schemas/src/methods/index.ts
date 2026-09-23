@@ -12,14 +12,14 @@ import {
 } from './openidRefreshFlight';
 import { createMediaMethods, deriveMediaThreadTitle, MediaPersistenceError } from './media';
 import { createNativeMessageMethods, type NativeMessageMethods } from './nativeMessage';
-import { createMediaAccountingMethods, MediaAccountingError } from './mediaAccounting';
-import { createMediaFileConsumerMethods } from './mediaConsumers';
-import { createMediaRecoveryMethods } from './mediaRecovery';
-import { createMediaPresetMethods } from './mediaPreset';
-import { createMediaNativeMethods } from './mediaNative';
+import { createMediaAccountingMethods, MediaAccountingError } from './media/accounting';
+import { createMediaFileConsumerMethods } from './media/consumers';
+import { createMediaRecoveryMethods } from './media/recovery';
+import { createMediaPresetMethods } from './media/preset';
+import { createMediaNativeMethods } from './media/native';
 export { createNativeMessageMethods } from './nativeMessage';
 export type { NativeMessageMethods, NativeMessagePart, NativeMessageFile } from './nativeMessage';
-import { createMediaTitleMethods } from './mediaTitle';
+import { createMediaTitleMethods } from './media/title';
 export {
   createMCPAuthorizationFenceRetryStorage,
   type MCPAuthorizationFenceRetryStorage,

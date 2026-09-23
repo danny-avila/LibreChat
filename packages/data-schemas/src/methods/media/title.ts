@@ -2,7 +2,7 @@ import type { MediaTitleMethods } from '~/types/mediaTitle';
 import type { MediaStoredJob } from '~/types/media';
 import { createMediaJobModel, createMediaThreadModel } from '~/models/media';
 import { mediaScopeFilter } from '~/utils/media';
-import { durable } from './media/scope';
+import { durable } from './scope';
 
 /** A durable one-shot claim prevents duplicate paid title calls after concurrent submit or restart. */
 export function createMediaTitleMethods(mongoose: typeof import('mongoose')): MediaTitleMethods {

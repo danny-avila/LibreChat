@@ -19,8 +19,8 @@ import {
 import { canonical, claimable, cursorOf, cursorParts, durable, mediaDate } from './scope';
 import { migrateMediaDates, migrateMediaUnlinkMarker } from '~/utils/mediaDates';
 import { SYSTEM_TENANT_ID, tenantStorage } from '~/config/tenantContext';
-import { createMediaAccountingMethods } from '../mediaAccounting';
 import { createMediaPublicationMethods } from './publication';
+import { createMediaAccountingMethods } from './accounting';
 import { createMediaRetirementMethods } from './retirement';
 import { createIndexesWithRetry } from '~/utils/retry';
 import { createMediaAccountMethods } from './account';

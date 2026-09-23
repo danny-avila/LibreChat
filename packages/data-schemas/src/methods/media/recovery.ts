@@ -7,9 +7,9 @@ import type {
 } from '~/types/mediaRecovery';
 import type { MediaStoredJob } from '~/types/media';
 import { assertMediaTenant as assertTenant, positiveMediaLimit } from '~/utils/media';
-import { durable, cursorParts } from './media/scope';
 import { createMediaJobModel } from '~/models/media';
-import { MediaPersistenceError } from './media';
+import { MediaPersistenceError } from './index';
+import { durable, cursorParts } from './scope';
 
 function fingerprint(request: MediaRecoveryRequest): string {
   return createHash('sha256')

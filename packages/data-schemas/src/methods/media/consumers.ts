@@ -7,7 +7,7 @@ import { createMediaOwnerModel, createMediaPresetModel } from '~/models/media';
 import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { messageFileReferenceFilter } from '~/utils/messageFiles';
 import { createMessageModel } from '~/models/message';
-import { MediaPersistenceError } from './media';
+import { MediaPersistenceError } from './index';
 import { createFileModel } from '~/models/file';
 import { isMediaFileId } from '~/types/media';
 
