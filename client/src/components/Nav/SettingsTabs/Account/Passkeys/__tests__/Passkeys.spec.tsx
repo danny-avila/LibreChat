@@ -7,6 +7,7 @@ const mockClearPasswordError = jest.fn();
 const mockRegisterPasskey = jest.fn();
 
 jest.mock('~/data-provider', () => ({
+  useGetStartupConfig: () => ({ data: { maxPasskeysPerUser: 20 } }),
   usePasskeysQuery: () => ({ data: { passkeys: [] }, isLoading: false, isError: false }),
   useRenamePasskeyMutation: () => ({ mutate: jest.fn() }),
   useDeletePasskeyMutation: () => ({ mutateAsync: jest.fn() }),

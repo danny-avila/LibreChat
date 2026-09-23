@@ -2,6 +2,7 @@ import Keyv from 'keyv';
 import { logger } from '@librechat/data-schemas';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
+import { MAX_PASSKEYS_PER_USER } from 'librechat-data-provider';
 import type { PasskeyChallengeStore, PasskeyConfig } from './passkey';
 import {
   authenticationChallengeKey,
@@ -12,6 +13,7 @@ import {
   getPasskeyConfig,
   isPasskeyEnabled,
   registrationChallengeKey,
+  resolveMaxPasskeysPerUser,
   verifyPasskeyAuthentication,
   verifyPasskeyRegistration,
 } from './passkey';
@@ -106,6 +108,30 @@ function createAuthenticator(credentialId = 'cred-id') {
 
   return { assert, credential: { credentialId: id, publicKey: cosePublicKey, counter: 0 } };
 }
+
+describe('resolveMaxPasskeysPerUser', () => {
+  it('prefers the yaml value over the environment and the documented default', () => {
+    expect(
+      resolveMaxPasskeysPerUser({ perUserMax: 5 }, {
+        MAX_PASSKEYS_PER_USER: '9',
+      } as NodeJS.ProcessEnv),
+    ).toBe(5);
+  });
+
+  it('falls back to the environment, then the documented default', () => {
+    expect(
+      resolveMaxPasskeysPerUser(undefined, { MAX_PASSKEYS_PER_USER: '9' } as NodeJS.ProcessEnv),
+    ).toBe(9);
+    expect(resolveMaxPasskeysPerUser(undefined, {} as NodeJS.ProcessEnv)).toBe(
+      MAX_PASSKEYS_PER_USER,
+    );
+    expect(
+      resolveMaxPasskeysPerUser(undefined, {
+        MAX_PASSKEYS_PER_USER: 'not-a-number',
+      } as NodeJS.ProcessEnv),
+    ).toBe(MAX_PASSKEYS_PER_USER);
+  });
+});
 
 describe('getPasskeyConfig', () => {
   it('derives the RP ID and origins from DOMAIN_CLIENT', () => {

@@ -18,6 +18,7 @@ const {
   resolveCodeEnvironmentMoveVersion,
   isPasskeyEnabled,
   buildPreLoginInterface,
+  resolveMaxPasskeysPerUser,
 } = require('@librechat/api');
 const {
   DEFAULT_MCP_APP_CSP_LIMITS,
@@ -159,6 +160,7 @@ function buildPostLoginPayload(appConfig) {
       process.env.ALLOW_ACCOUNT_DELETION === undefined ||
       isEnabled(process.env.ALLOW_ACCOUNT_DELETION),
     allowEmailChange: resolveEmailChangeSettings(appConfig?.emailChange).enabled,
+    maxPasskeysPerUser: resolveMaxPasskeysPerUser(appConfig?.passkeys),
   };
 
   return payload;

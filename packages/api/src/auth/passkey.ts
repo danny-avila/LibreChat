@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
+import { MAX_PASSKEYS_PER_USER } from 'librechat-data-provider';
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from '@simplewebauthn/server';
-
 import type {
   AuthenticationResponseJSON,
   AuthenticatorTransportFuture,
@@ -15,7 +15,7 @@ import type {
   RegistrationResponseJSON,
 } from '@simplewebauthn/server';
 import type { PasskeyDeviceType } from '@librechat/data-schemas';
-
+import type { TCustomConfig } from 'librechat-data-provider';
 import { isEnabled } from '~/utils';
 
 /** How long a generated challenge stays valid, in milliseconds. */
@@ -145,6 +145,18 @@ export function getPasskeyConfig(env: NodeJS.ProcessEnv = process.env): PasskeyC
  */
 export function isPasskeyEnabled(config: PasskeyConfig = getPasskeyConfig()): boolean {
   return config.enabled && config.origins.length > 0;
+}
+
+/**
+ * yaml wins over the environment, which wins over the documented default, so a
+ * deployment that sets neither keeps exactly the behavior it has today.
+ */
+export function resolveMaxPasskeysPerUser(
+  config?: TCustomConfig['passkeys'],
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const fromEnv = Number.parseInt(env.MAX_PASSKEYS_PER_USER ?? '', 10);
+  return config?.perUserMax ?? (Number.isFinite(fromEnv) ? fromEnv : MAX_PASSKEYS_PER_USER);
 }
 
 /** Namespaced cache key for a pending registration ceremony. */

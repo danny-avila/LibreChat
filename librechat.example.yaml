@@ -390,6 +390,11 @@ interface:
 #   enabled: true
 #   tokenTTLSeconds: 900
 
+# Passkey (WebAuthn) enrollment limits.
+# Omitted, perUserMax falls back to MAX_PASSKEYS_PER_USER, then 20.
+# passkeys:
+#   perUserMax: 20
+
 registration:
   socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple', 'saml']
   # allowedDomains:

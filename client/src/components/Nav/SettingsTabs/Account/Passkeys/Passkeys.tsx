@@ -22,6 +22,7 @@ import {
 import type { PasskeyRemovalResult } from './PasskeyItem';
 import {
   useDeletePasskeyMutation,
+  useGetStartupConfig,
   usePasskeysQuery,
   useRenamePasskeyMutation,
 } from '~/data-provider';
@@ -48,13 +49,16 @@ function Passkeys() {
   const renameAfterCloseRef = useRef<string | null>(null);
 
   const { data, isLoading, isError } = usePasskeysQuery({ enabled: isDialogOpen });
+  const { data: startupConfig } = useGetStartupConfig();
   const { registerPasskey, isRegistering, passwordErrorKey, clearPasswordError } =
     usePasskeyRegistration();
   const { mutate: renameMutate } = useRenamePasskeyMutation();
   const { mutateAsync: deleteMutate } = useDeletePasskeyMutation();
 
   const passkeys = data?.passkeys ?? [];
-  const atLimit = passkeys.length >= MAX_PASSKEYS_PER_USER;
+  /** Falls back to the documented default while the startup config is still loading. */
+  const maxPasskeys = startupConfig?.maxPasskeysPerUser ?? MAX_PASSKEYS_PER_USER;
+  const atLimit = passkeys.length >= maxPasskeys;
   /**
    * Removing a passkey is password-confirmed, but an account provisioned by an
    * identity provider has no password to confirm with. The server waives the

@@ -259,6 +259,37 @@ describe('passkey registration provider enforcement', () => {
     expect(res.json).toHaveBeenCalledWith({ message: 'Passkey limit reached' });
   });
 
+  it('enforces the per-account cap the deployment configures', async () => {
+    const handlers = createPasskeyHandlers(buildDeps({ maxPasskeysPerUser: () => 2 }));
+    const user = await createUser();
+    await Promise.all([createStoredPasskey(user, 'cap-0'), createStoredPasskey(user, 'cap-1')]);
+    const res = buildRes();
+
+    await handlers.registerPasskeyOptions(authedReq(user, { password: PASSWORD }), res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({ message: 'Passkey limit reached' });
+  });
+
+  it('awaits an asynchronous cap resolver on the verify path', async () => {
+    const handlers = createPasskeyHandlers(buildDeps({ maxPasskeysPerUser: async () => 1 }));
+    const user = await createUser();
+    await createStoredPasskey(user, 'cap-verify-0');
+    const res = buildRes();
+
+    await handlers.registerPasskeyVerify(
+      authedReq(user, {
+        credential: attestation,
+        name: 'Third key',
+        password: PASSWORD,
+      }),
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({ message: 'Passkey limit reached' });
+  });
+
   it('stores the credential when the account is local', async () => {
     const handlers = createPasskeyHandlers(buildDeps());
     const user = await createUser();

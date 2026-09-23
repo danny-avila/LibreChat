@@ -115,6 +115,8 @@ export interface PasskeyHandlersDeps {
   findPasskeyByCredentialId: (credentialId: string) => Promise<PasskeyRecord | null>;
   /** Resolves the cache backing pending WebAuthn ceremonies. */
   getChallengeCache: () => PasskeyChallengeStore;
+  /** Resolves the per-account enrollment cap; defaults to the documented 20. */
+  maxPasskeysPerUser?: () => number | Promise<number>;
   compare: ComparePasswordDeps['compare'];
   /** The login ban middleware; reports an internal failure through `next(err)`. */
   checkBan: (
@@ -242,12 +244,17 @@ export function createPasskeyHandlers(deps: PasskeyHandlersDeps): PasskeyHandler
     recordPasskeyUse,
     getChallengeCache,
     findPasskeysByUser,
+    maxPasskeysPerUser,
     countPasskeysByUser,
     findPasskeyByCredentialId,
   } = deps;
 
   const getChallengeStore = (): PasskeyChallengeStore =>
     createPasskeyChallengeStore(getChallengeCache());
+
+  /** Resolved per request, so a config reload changes the cap without a restart. */
+  const resolveMaxPasskeys = async (): Promise<number> =>
+    (await maxPasskeysPerUser?.()) ?? MAX_PASSKEYS_PER_USER;
 
   /**
    * Step-up gate shared by the passkey endpoints that add or remove a login factor.
@@ -337,7 +344,7 @@ export function createPasskeyHandlers(deps: PasskeyHandlersDeps): PasskeyHandler
 
     try {
       const existingCredentials = await findPasskeysByUser(req.user.id);
-      if (existingCredentials.length >= MAX_PASSKEYS_PER_USER) {
+      if (existingCredentials.length >= (await resolveMaxPasskeys())) {
         return res.status(409).json({ message: 'Passkey limit reached' });
       }
 
@@ -387,7 +394,7 @@ export function createPasskeyHandlers(deps: PasskeyHandlersDeps): PasskeyHandler
         return res.status(400).json({ message: 'Missing credential' });
       }
 
-      if ((await countPasskeysByUser(req.user.id)) >= MAX_PASSKEYS_PER_USER) {
+      if ((await countPasskeysByUser(req.user.id)) >= (await resolveMaxPasskeys())) {
         return res.status(409).json({ message: 'Passkey limit reached' });
       }
 

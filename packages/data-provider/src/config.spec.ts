@@ -104,6 +104,22 @@ describe('ask user retained answers', () => {
   });
 });
 
+describe('passkey enrollment config', () => {
+  it('ships a per-account cap a deployment can raise or lower', () => {
+    expect(configSchema.parse({ version: '1.0' }).passkeys).toEqual({});
+    expect(
+      configSchema.parse({ version: '1.0', passkeys: { perUserMax: 5 } }).passkeys.perUserMax,
+    ).toBe(5);
+    /** A cap below one would brick enrollment; a fraction of a credential is nonsense. */
+    expect(configSchema.safeParse({ version: '1.0', passkeys: { perUserMax: 0 } }).success).toBe(
+      false,
+    );
+    expect(configSchema.safeParse({ version: '1.0', passkeys: { perUserMax: 1.5 } }).success).toBe(
+      false,
+    );
+  });
+});
+
 describe('retained tool-count ceiling', () => {
   it('ships the exact-count budget a deployment can raise or lower', () => {
     /** The save path tokenizes a stopped turn's retained tool results to add an
