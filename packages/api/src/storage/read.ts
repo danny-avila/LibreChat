@@ -3,7 +3,7 @@ import type { ContainerClient } from '@azure/storage-blob';
 import type { Readable } from 'node:stream';
 import type { AxiosInstance } from 'axios';
 import type { StorageReadOptions, StorageByteRange } from './types';
-import { getSafeErrorMetadata } from '~/utils/errors';
+import { getSafeErrorMetadata } from '../utils/errors';
 
 type OpenStorageStream = (
   request: unknown,

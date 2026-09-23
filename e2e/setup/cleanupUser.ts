@@ -96,16 +96,23 @@ export default async function cleanupUser(user: TUser) {
     await User.deleteMany({ _id: userId });
     userDeleted = true;
     await runAsSystem(() =>
-      completeMediaAccountDeletion({ repository: methods, session: mediaDeletion }),
-    );
-    const cleanupConfig = mediaConfigSchema.parse(mediaFixtureConfig());
-    await runAsSystem(() =>
-      methods.reconcileMediaAccountDeletion({
-        scope: mediaDeletion!.scope,
-        limit: cleanupConfig.limits.pageSize,
-        retentionMs: cleanupConfig.assets.deletedAccountRetentionMs,
+      completeMediaAccountDeletion({
+        repository: methods,
+        session: mediaDeletion,
+        log: console.error,
       }),
     );
+    if (mediaDeletion) {
+      const { scope } = mediaDeletion;
+      const cleanupConfig = mediaConfigSchema.parse(mediaFixtureConfig());
+      await runAsSystem(() =>
+        methods.reconcileMediaAccountDeletion({
+          scope,
+          limit: cleanupConfig.limits.pageSize,
+          retentionMs: cleanupConfig.assets.deletedAccountRetentionMs,
+        }),
+      );
+    }
 
     console.log('🤖:  ✅  Deleted user from Database');
   } catch (error) {
