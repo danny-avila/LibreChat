@@ -21,9 +21,9 @@ import type {
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
 import { clearComposerDrafts, applyPendingAction, findPendingActionMessageIndex } from '~/utils';
+import { startedAsNewConversation, buildCreatedInitialResponse } from './useEventHandlers';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
-import { startedAsNewConversation } from './useEventHandlers';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
 import useUsageHandler from './useUsageHandler';
@@ -82,6 +82,7 @@ export default function useSSE(
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
   const {
+    bindResponse,
     contextHandler,
     usageHandler,
     tapStream,
@@ -96,7 +97,21 @@ export default function useSSE(
       return;
     }
 
-    let { userMessage } = submission;
+    let currentSubmission = submission as EventSubmission;
+    /** Provider identity updates cross one boundary. Message rendering, usage,
+     * content, and terminal handlers all consume the same resolved response. */
+    const adoptResponse = (userMessage: Partial<TMessage>, responseMessage: Partial<TMessage>) => {
+      currentSubmission = {
+        ...currentSubmission,
+        userMessage: {
+          ...currentSubmission.userMessage,
+          ...userMessage,
+          overrideParentMessageId: currentSubmission.userMessage.overrideParentMessageId,
+        },
+        initialResponse: { ...currentSubmission.initialResponse, ...responseMessage },
+      };
+      bindResponse(currentSubmission);
+    };
 
     const payloadData = createPayload(submission);
     let { payload } = payloadData;
@@ -104,6 +119,7 @@ export default function useSSE(
 
     let textIndex = null;
     clearStepMaps();
+    bindResponse(currentSubmission);
 
     const sse = new SSE(payloadData.server, {
       payload: JSON.stringify(payload),
@@ -113,7 +129,7 @@ export default function useSSE(
     sse.addEventListener('attachment', (e: MessageEvent) => {
       try {
         const data = JSON.parse(e.data);
-        attachmentHandler({ data, submission: submission as EventSubmission });
+        attachmentHandler({ data, submission: currentSubmission });
       } catch (error) {
         console.error(error);
       }
@@ -130,8 +146,8 @@ export default function useSSE(
           includeNewChatDraft: startedAsNewConversation(submission),
         });
         try {
-          finalHandler(data, submission as EventSubmission);
-          finalizeUsage(data, { ...submission, userMessage });
+          finalHandler(data, currentSubmission);
+          finalizeUsage(data, currentSubmission);
         } catch (error) {
           console.error('Error in finalHandler:', error);
           setIsSubmitting(false);
@@ -143,19 +159,21 @@ export default function useSSE(
       } else if (data.created != null) {
         const runId = v4();
         setActiveRunId(runId);
-        userMessage = {
-          ...userMessage,
-          ...data.message,
-          overrideParentMessageId: userMessage.overrideParentMessageId,
-        };
-
-        createdHandler(data, { ...submission, userMessage } as EventSubmission);
+        const userMessage = { ...currentSubmission.userMessage, ...data.message };
+        adoptResponse(
+          userMessage,
+          buildCreatedInitialResponse({
+            ...currentSubmission,
+            userMessage,
+          }),
+        );
+        createdHandler(data, currentSubmission);
       } else if (data.event === 'title') {
         titleHandler(data);
       } else if (data.event === UsageEvents.ON_CONTEXT_USAGE) {
-        contextHandler(data.data, { ...submission, userMessage });
+        contextHandler(data.data, currentSubmission);
       } else if (data.event === UsageEvents.ON_TOKEN_USAGE) {
-        usageHandler(data.data, { ...submission, userMessage });
+        usageHandler(data.data, currentSubmission);
       } else if (data.event === ApprovalEvents.ON_PENDING_ACTION) {
         /** The pause card must attach to the same message state the stream
          * produced — apply any queued delta before reading the cache. */
@@ -181,37 +199,32 @@ export default function useSSE(
           data.event === StepEvents.ON_MESSAGE_DELTA ||
           data.event === StepEvents.ON_REASONING_DELTA
         ) {
-          tapStream(data.data, { ...submission, userMessage });
+          tapStream(data.data, currentSubmission);
         }
-        stepHandler(data, { ...submission, userMessage } as EventSubmission);
+        stepHandler(data, currentSubmission);
       } else if (data.sync != null) {
         const runId = v4();
         setActiveRunId(runId);
         /* synchronize messages to Assistants API as well as with real DB ID's */
-        syncHandler(data, { ...submission, userMessage } as EventSubmission);
+        adoptResponse(data.requestMessage, data.responseMessage);
+        syncHandler(data, currentSubmission);
       } else if (data.type != null) {
         const { text, index } = data;
         if (text != null && index !== textIndex) {
           textIndex = index;
         }
 
-        tapContent(text, { ...submission, userMessage });
-        contentHandler({ data, submission: submission as EventSubmission });
-      } else {
+        tapContent(text, currentSubmission);
+        contentHandler({ data, submission: currentSubmission });
+      } else if (data.message != null) {
         const text = data.text ?? data.response;
 
-        const initialResponse = {
-          ...(submission.initialResponse as TMessage),
-          parentMessageId: data.parentMessageId,
-          messageId: data.messageId,
-        };
+        adoptResponse({}, { parentMessageId: data.parentMessageId, messageId: data.messageId });
 
-        if (data.message != null) {
-          /** Legacy non-agent streams (handleText) send cumulative text here,
-           *  not via the content path — feed it to the live estimate too */
-          tapContent(text, { ...submission, userMessage });
-          messageHandler(text, { ...submission, userMessage, initialResponse });
-        }
+        /** Legacy non-agent streams (handleText) send cumulative text here,
+         *  not via the content path — feed it to the live estimate too */
+        tapContent(text, currentSubmission);
+        messageHandler(text, currentSubmission);
       }
     });
 
@@ -243,14 +256,14 @@ export default function useSSE(
       const tail = latestMessages?.[latestMessages.length - 1];
       const partialResponseId =
         tail != null && tail.isCreatedByUser === false ? tail.messageId : null;
-      attributePending(partialResponseId, { ...submission, userMessage });
+      attributePending(partialResponseId, currentSubmission);
       try {
         await abortConversation(
           conversationId ??
-            userMessage.conversationId ??
+            currentSubmission.userMessage.conversationId ??
             submission.conversation?.conversationId ??
             '',
-          submission as EventSubmission,
+          currentSubmission,
           latestMessages,
         );
       } catch (error) {
@@ -286,7 +299,7 @@ export default function useSSE(
 
       console.log('error in server stream.');
       (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
-      resetLive({ ...submission, userMessage });
+      resetLive(currentSubmission);
 
       let data: TResData | undefined = undefined;
       try {
@@ -300,7 +313,10 @@ export default function useSSE(
       /** FLUSH (not cancel): the error card is built from the cache tail, so
        * the last queued tokens must land before it is synthesized. */
       flushPendingDeltas();
-      errorHandler({ data, submission: { ...submission, userMessage } as EventSubmission });
+      errorHandler({
+        data,
+        submission: currentSubmission,
+      });
     });
 
     setIsSubmitting(true);

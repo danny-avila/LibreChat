@@ -8,6 +8,7 @@ import type {
   TMessage,
   TSubmission,
 } from 'librechat-data-provider';
+import { activeUsageResponseIdFamily, pendingUsageFamily } from '~/store/usage';
 import { revealedQueuedTurnFamily } from '~/store/steer';
 import useChatFunctions from '../useChatFunctions';
 import { isPasteSubmitted } from '~/utils';
@@ -156,6 +157,26 @@ describe('useChatFunctions ask', () => {
     mockGetLatestConversation.mockReturnValue(null);
     mockResolveCodeWorkspaceSubmission.mockReturnValue({});
   });
+
+  it.each([EModelEndpoint.agents, EModelEndpoint.openAI])(
+    'binds the optimistic %s response before publishing its messages',
+    (endpoint) => {
+      const { result, setMessages, setSubmission } = renderAsk([], 'conversation-1', { endpoint });
+      const store = getDefaultStore();
+      store.set(activeUsageResponseIdFamily('conversation-1'), null);
+      setMessages.mockImplementation((messages: TMessage[]) => {
+        expect(store.get(activeUsageResponseIdFamily('conversation-1'))).toBe(
+          messages.at(-1)?.messageId,
+        );
+      });
+      act(() => result.current.ask({ text: 'Hello', conversationId: 'conversation-1' }));
+      const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+      expect(store.get(activeUsageResponseIdFamily('conversation-1'))).toBe(
+        submission.initialResponse?.messageId,
+      );
+      expect(store.get(pendingUsageFamily('conversation-1')).eventCount).toBe(0);
+    },
+  );
 
   it('reads an approval-mode selection made immediately before send', () => {
     mockGetLatestConversation.mockReturnValue({

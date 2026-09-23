@@ -12,6 +12,13 @@ import {
 } from 'librechat-data-provider';
 import type { TMessage, TSubmission } from 'librechat-data-provider';
 import type { Query, QueryKey } from '@tanstack/react-query';
+import {
+  activeUsageResponseIdFamily,
+  liveTokensFamily,
+  branchTotalsFamily,
+  pendingUsageFamily,
+  removeUsageAtoms,
+} from '~/store/usage';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 
 type SSEEventListener = (e: Partial<MessageEvent> & { responseCode?: number }) => void;
@@ -21,6 +28,7 @@ interface MockSSEInstance {
   addEventListener: jest.Mock;
   stream: jest.Mock;
   close: jest.Mock;
+  dispatchEvent: jest.Mock;
   headers: Record<string, string>;
   readyState: number;
   _listeners: Record<string, SSEEventListener>;
@@ -42,6 +50,7 @@ jest.mock('sse.js', () => {
           listeners[event] = cb;
         }),
         stream: jest.fn(),
+        dispatchEvent: jest.fn(),
         close: jest.fn(() => {
           if (instance.readyState === 2) {
             return;
@@ -228,6 +237,8 @@ const mockFinalHandler = jest.fn();
 const mockCreatedHandler = jest.fn();
 const mockStepHandler = jest.fn();
 const mockTitleHandler = jest.fn();
+const mockContentHandler = jest.fn();
+const mockSyncHandler = jest.fn();
 const mockSetIsSubmitting = jest.fn();
 const mockClearStepMaps = jest.fn();
 
@@ -236,6 +247,12 @@ jest.mock('~/hooks/SSE/useEventHandlers', () => {
   return {
     __esModule: true,
     ...actual,
+    // Read at call time: the hooks barrel imports useSSE during this factory.
+    startedAsNewConversation: (submission: TSubmission) =>
+      jest.requireActual('~/hooks/SSE/useEventHandlers').startedAsNewConversation(submission),
+    buildCreatedInitialResponse: (
+      submission: Pick<TSubmission, 'initialResponse' | 'userMessage' | 'isRegenerate'>,
+    ) => jest.requireActual('~/hooks/SSE/useEventHandlers').buildCreatedInitialResponse(submission),
     default: jest.fn(() => ({
       errorHandler: mockErrorHandler,
       finalHandler: mockFinalHandler,
@@ -243,12 +260,15 @@ jest.mock('~/hooks/SSE/useEventHandlers', () => {
       attachmentHandler: jest.fn(),
       stepHandler: mockStepHandler,
       titleHandler: mockTitleHandler,
-      contentHandler: jest.fn(),
+      contentHandler: mockContentHandler,
+      syncHandler: mockSyncHandler,
       resetContentHandler: jest.fn(),
       syncStepMessage: jest.fn(),
       prunePtcTraces: jest.fn(),
       clearStepMaps: mockClearStepMaps,
       flushPendingDeltas: jest.fn(),
+      cancelPendingDeltaFlush: jest.fn(),
+      abortConversation: jest.fn(),
       messageHandler: jest.fn(),
       setIsSubmitting: mockSetIsSubmitting,
       setShowStopButton: jest.fn(),
@@ -282,6 +302,7 @@ jest.mock('librechat-data-provider', () => {
 });
 
 import useResumableSSE from '~/hooks/SSE/useResumableSSE';
+import useSSE from '~/hooks/SSE/useSSE';
 
 const CONV_ID = 'conv-abc-123';
 
@@ -456,6 +477,187 @@ describe('useResumableSSE', () => {
 
     return { sse, unmount, chatHelpers };
   };
+
+  it.each([useSSE, useResumableSSE])(
+    '%p binds a created response before any output or usage',
+    async (useTransport) => {
+      removeUsageAtoms(CONV_ID);
+      const submission = buildSubmission();
+      const { unmount } = renderHook(() => useTransport(submission, buildChatHelpers()));
+      await flushMicrotasks();
+      const sse = getLastSSE();
+      await act(async () => {
+        sse._emit('message', {
+          data: JSON.stringify({
+            created: true,
+            message: { ...submission.userMessage, messageId: 'created-user-id' },
+          }),
+        });
+      });
+      expect(getDefaultStore().get(activeUsageResponseIdFamily(CONV_ID))).toBe('created-user-id_');
+      expect(getDefaultStore().get(pendingUsageFamily(CONV_ID)).eventCount).toBe(0);
+      sse.readyState = MOCK_SSE_CLOSED;
+      unmount();
+    },
+  );
+
+  it.each(['final', 'cancel', 'error'])(
+    'keeps Assistants sync identity consistent through content, usage, and %s',
+    async (terminal) => {
+      removeUsageAtoms(CONV_ID);
+      const submission = buildSubmission({ endpointOption: { endpoint: 'assistants' } });
+      const helpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useSSE(submission, helpers));
+      const sse = getLastSSE();
+      const synced = {
+        messageId: 'assistant-server-id',
+        parentMessageId: 'server-user',
+        conversationId: CONV_ID,
+        isCreatedByUser: false,
+        text: '',
+      };
+      await act(async () => {
+        sse._emit('message', {
+          data: JSON.stringify({
+            sync: true,
+            requestMessage: { ...submission.userMessage, messageId: 'server-user' },
+            responseMessage: synced,
+          }),
+        });
+      });
+      const store = getDefaultStore();
+      expect(store.get(activeUsageResponseIdFamily(CONV_ID))).toBe(synced.messageId);
+      expect(mockSyncHandler.mock.calls.at(-1)?.[1].initialResponse.messageId).toBe(
+        synced.messageId,
+      );
+      await act(async () => {
+        sse._emit('message', {
+          data: JSON.stringify({ type: 'text', index: 0, text: { value: 'x'.repeat(400) } }),
+        });
+        sse._emit('message', {
+          data: JSON.stringify({
+            event: 'on_token_usage',
+            data: {
+              input_tokens: 5,
+              output_tokens: 100,
+              cost: 0.01,
+              runId: 'assistant-usage',
+              seq: 1,
+            },
+          }),
+        });
+      });
+      expect(mockContentHandler.mock.calls.at(-1)?.[0].submission.initialResponse.messageId).toBe(
+        synced.messageId,
+      );
+      expect(mockContentHandler.mock.calls.at(-1)?.[0].submission.userMessage.messageId).toBe(
+        'server-user',
+      );
+      expect(store.get(activeUsageResponseIdFamily(CONV_ID))).toBe(synced.messageId);
+      expect(store.get(pendingUsageFamily(CONV_ID)).eventCount).toBe(1);
+      // The rendered response has the same ID that the accounting owner uses.
+      helpers.getMessages.mockReturnValue([synced]);
+      if (terminal === 'final') {
+        await act(async () =>
+          sse._emit('message', {
+            data: JSON.stringify({
+              final: true,
+              responseMessage: synced,
+              conversation: { conversationId: CONV_ID },
+            }),
+          }),
+        );
+        expect(mockFinalHandler.mock.calls.at(-1)?.[1].initialResponse.messageId).toBe(
+          synced.messageId,
+        );
+      } else {
+        await act(async () =>
+          sse._emit(terminal, { data: JSON.stringify({ message: 'Stream ended' }) }),
+        );
+      }
+      expect(store.get(activeUsageResponseIdFamily(CONV_ID))).toBeNull();
+      expect(store.get(pendingUsageFamily(CONV_ID)).eventCount).toBe(0);
+      if (terminal !== 'error') {
+        expect(store.get(branchTotalsFamily(CONV_ID)).tailId).toBe(synced.messageId);
+        expect(store.get(branchTotalsFamily(CONV_ID)).lastTurnUsage?.output).toBe(100);
+      }
+      sse.readyState = MOCK_SSE_CLOSED;
+      unmount();
+    },
+  );
+
+  it('binds the waiting submission before the start request resolves', async () => {
+    removeUsageAtoms(CONV_ID);
+    let finishStart!: (value: unknown) => void;
+    (request.post as jest.Mock).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishStart = resolve;
+        }),
+    );
+    const submission = buildSubmission();
+    const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+    expect(getDefaultStore().get(activeUsageResponseIdFamily(CONV_ID))).toBe('resp-1');
+    expect(getDefaultStore().get(pendingUsageFamily(CONV_ID)).eventCount).toBe(0);
+    unmount();
+    await act(async () => {
+      finishStart({ streamId: 'stream-123', generationCreatedAt: 1000 });
+    });
+  });
+
+  it.each([useSSE, useResumableSSE])(
+    '%p retains authoritative legacy text response ownership for subsequent usage events',
+    async (useTransport) => {
+      removeUsageAtoms(CONV_ID);
+      const submission = buildSubmission();
+      const { unmount } = renderHook(() => useTransport(submission, buildChatHelpers()));
+      await flushMicrotasks();
+      const sse = getLastSSE();
+      await act(async () => {
+        sse._emit('message', {
+          data: JSON.stringify({
+            message: true,
+            messageId: 'server-text-id',
+            parentMessageId: 'msg-1',
+            text: 'a'.repeat(400),
+          }),
+        });
+      });
+      const store = getDefaultStore();
+      expect(store.get(activeUsageResponseIdFamily(CONV_ID))).toBe('server-text-id');
+      expect(store.get(liveTokensFamily(CONV_ID))).toBe(100);
+      await act(async () => {
+        sse._emit('message', {
+          data: JSON.stringify({
+            event: 'on_token_usage',
+            data: { input_tokens: 5, output_tokens: 100, runId: 'legacy-call', seq: 1 },
+          }),
+        });
+      });
+      expect(store.get(activeUsageResponseIdFamily(CONV_ID))).toBe('server-text-id');
+      expect(store.get(pendingUsageFamily(CONV_ID)).eventCount).toBe(1);
+      await act(async () => {
+        sse._emit('message', {
+          data: JSON.stringify({
+            final: true,
+            responseMessage: {
+              messageId: 'server-text-id',
+              parentMessageId: 'msg-1',
+              conversationId: CONV_ID,
+              isCreatedByUser: false,
+              text: 'done',
+            },
+            conversation: { conversationId: CONV_ID },
+          }),
+        });
+      });
+      expect(store.get(activeUsageResponseIdFamily(CONV_ID))).toBeNull();
+      expect(store.get(pendingUsageFamily(CONV_ID)).eventCount).toBe(0);
+      // A finalized legacy stream closes without dispatching cancellation.
+      sse.readyState = MOCK_SSE_CLOSED;
+      unmount();
+    },
+  );
 
   it('clears the text and files draft from localStorage on 404', async () => {
     seedDraft(CONV_ID);
