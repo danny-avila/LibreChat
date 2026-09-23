@@ -366,7 +366,7 @@ function Conversation({
       {isUnseen && (
         /* `ConvoLink`'s aria-label carries the text equivalent, so the dot itself stays
            decorative rather than announcing a second time outside the row's button. */
-        <span className="mr-1 size-2 shrink-0 rounded-full bg-status-info" aria-hidden="true" />
+        <span className="bg-status-info mr-1 size-2 shrink-0 rounded-full" aria-hidden="true" />
       )}
       {isSharedBadgeVisible && (
         <Link2 className="icon-sm text-text-secondary mr-1 shrink-0" aria-hidden="true" />

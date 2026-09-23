@@ -330,7 +330,7 @@ function ConvoOptions({
       {
         label: localize('com_ui_share'),
         onClick: shareHandler,
-        icon: <Share2 className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        icon: <Share2 className="icon-sm text-text-primary mr-2" aria-hidden="true" />,
         show: startupConfig && startupConfig.sharedLinksEnabled && canCreateSharedLinks,
         ariaHasPopup: 'dialog' as const,
         ariaControls: 'share-conversation-dialog',
@@ -346,7 +346,7 @@ function ConvoOptions({
         icon: isPinLoading ? (
           <Spinner className="size-4" />
         ) : (
-          <Pin className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
+          <Pin className="icon-sm text-text-primary mr-2" aria-hidden="true" />
         ),
       },
       {
@@ -355,12 +355,12 @@ function ConvoOptions({
         /* The conversation on screen is definitionally read: its own seen triggers would
            clear the flag the moment it is set. */
         show: !isActiveConvo && !isUnseen,
-        icon: <Mail className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        icon: <Mail className="icon-sm text-text-primary mr-2" aria-hidden="true" />,
       },
       {
         label: localize('com_ui_rename'),
         onClick: renameHandler,
-        icon: <Pen className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        icon: <Pen className="icon-sm text-text-primary mr-2" aria-hidden="true" />,
       },
       {
         label: localize('com_ui_duplicate'),
@@ -369,13 +369,13 @@ function ConvoOptions({
         icon: isDuplicateLoading ? (
           <Spinner className="size-4" />
         ) : (
-          <CopyPlus className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
+          <CopyPlus className="icon-sm text-text-primary mr-2" aria-hidden="true" />
         ),
       },
       {
         label: localize('com_ui_change_project'),
         onClick: projectHandler,
-        icon: <FolderInput className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        icon: <FolderInput className="icon-sm text-text-primary mr-2" aria-hidden="true" />,
         ariaHasPopup: 'dialog' as const,
         ariaControls: 'project-conversation-dialog',
         hideOnClick: false,
@@ -390,7 +390,7 @@ function ConvoOptions({
         icon: assignConversationToProject.isLoading ? (
           <Spinner className="size-4" />
         ) : (
-          <FolderX className="icon-sm mr-2 text-text-primary" aria-hidden="true" />
+          <FolderX className="icon-sm text-text-primary mr-2" aria-hidden="true" />
         ),
       },
       {
@@ -402,7 +402,7 @@ function ConvoOptions({
       {
         label: localize('com_ui_delete'),
         onClick: deleteHandler,
-        icon: <Trash className="icon-sm mr-2 text-text-primary" aria-hidden="true" />,
+        icon: <Trash className="icon-sm text-text-primary mr-2" aria-hidden="true" />,
         ariaHasPopup: 'dialog' as const,
         ariaControls: 'delete-conversation-dialog',
         /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
