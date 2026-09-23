@@ -38,7 +38,7 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
     'transition-colors duration-150',
     'text-text-secondary hover:text-text-primary',
     'hover:bg-surface-tertiary',
-    'focus:outline-hidden focus-visible:ring-2 focus-visible:ring-border-heavy',
+    'focus-visible:ring-2 focus-visible:ring-border-heavy',
   );
 
   const confirmDelete = () => {

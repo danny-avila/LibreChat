@@ -350,7 +350,8 @@ export default function Breakdown({
     <div className="w-72" role="region" aria-label={localize('com_ui_context_usage')}>
       <Collapsible open={expanded} onOpenChange={setExpanded}>
         <CollapsibleTrigger
-          className="group focus-visible:ring-text-primary flex w-full items-center justify-between gap-2 rounded-sm focus-visible:ring-2 focus-visible:outline-hidden"
+          focusOutline="hidden"
+          className="group focus-visible:ring-text-primary flex w-full items-center justify-between gap-2 rounded-sm focus-visible:ring-2"
           data-testid="context-breakdown-toggle"
         >
           <span className="text-text-primary text-sm font-medium whitespace-nowrap">

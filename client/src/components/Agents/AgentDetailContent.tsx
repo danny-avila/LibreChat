@@ -295,9 +295,10 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
                   {...shared}
                 >
                   <OGDialogTitle
+                    focusOutline="hidden"
                     ref={titleRef}
                     tabIndex={-1}
-                    className="text-text-primary text-2xl leading-tight font-semibold break-words outline-hidden sm:text-3xl"
+                    className="text-text-primary text-2xl leading-tight font-semibold break-words sm:text-3xl"
                   >
                     {agent.name?.trim() || localize('com_ui_agent')}
                   </OGDialogTitle>

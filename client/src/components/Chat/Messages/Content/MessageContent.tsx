@@ -69,7 +69,8 @@ const ConnectionError = ({ message }: { message?: TMessage }) => {
           <Alert
             variant="error"
             icon={false}
-            className="text-text-secondary mt-2 shadow-xs transition-all"
+            elevation="raised"
+            className="text-text-secondary mt-2 transition-all"
           >
             {localize('com_ui_error_connection')}
           </Alert>

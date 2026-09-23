@@ -231,6 +231,7 @@ const EditMessage = ({
       >
         {saveError && <Alert variant="error">{localize('com_ui_save_message_error')}</Alert>}
         <TextareaAutosize
+          focusOutline="hidden"
           {...registerProps}
           ref={(e) => {
             ref(e);
@@ -242,7 +243,6 @@ const EditMessage = ({
             'message-editor-text max-h-[65vh] min-h-24 w-full resize-y whitespace-pre-wrap',
             'border-border-medium bg-surface-tertiary-alt rounded-lg border break-words',
             'text-text-primary px-3 py-2',
-            'focus-visible:outline-hidden',
             isRTL ? 'text-right' : 'text-left',
             'disabled:opacity-50 md:max-h-[75vh]',
           )}

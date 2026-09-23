@@ -199,7 +199,7 @@ function AssistantToolsDialog({
                   onChange={handleSearch}
                   placeholder={localize('com_nav_tool_search')}
                   aria-label={localize('com_nav_tool_search')}
-                  className="border-border-medium text-text-primary w-64 rounded border bg-transparent px-2 py-1 focus:outline-hidden"
+                  className="border-border-medium text-text-primary w-64 rounded border bg-transparent px-2 py-1"
                 />
               </div>
               <div

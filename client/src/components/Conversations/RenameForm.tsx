@@ -50,9 +50,7 @@ const RenameForm: React.FC<RenameFormProps> = ({
       <Input
         ref={inputRef}
         type="text"
-        className={cn(
-          'h-auto w-full rounded border-0 bg-transparent p-0.5 text-sm leading-tight focus-visible:outline-hidden',
-        )}
+        className={cn('h-auto w-full rounded border-0 bg-transparent p-0.5 text-sm leading-tight')}
         value={titleInput}
         onChange={(e) => setTitleInput(e.target.value)}
         onKeyDown={handleKeyDown}
@@ -64,7 +62,7 @@ const RenameForm: React.FC<RenameFormProps> = ({
           variant="row-action"
           size="icon"
           onClick={() => onCancel()}
-          className={cn('focus:ring-text-primary size-auto p-1 focus:ring-2 focus:outline-hidden')}
+          className={cn('focus:ring-text-primary size-auto p-1 focus:ring-2')}
           aria-label={localize('com_ui_cancel')}
           type="button"
         >
@@ -74,7 +72,7 @@ const RenameForm: React.FC<RenameFormProps> = ({
           variant="row-action"
           size="icon"
           onClick={() => onSubmit(titleInput)}
-          className={cn('focus:ring-text-primary size-auto p-1 focus:ring-2 focus:outline-hidden')}
+          className={cn('focus:ring-text-primary size-auto p-1 focus:ring-2')}
           aria-label={localize('com_ui_save')}
           type="button"
         >

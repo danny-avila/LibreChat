@@ -147,7 +147,7 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
         <Button
           variant="link"
           size="sm"
-          className="text-text-secondary focus-visible:ring-border-heavy mt-1 h-auto p-0 text-xs underline focus-visible:ring-2 focus-visible:outline-hidden"
+          className="text-text-secondary focus-visible:ring-border-heavy mt-1 h-auto p-0 text-xs underline focus-visible:ring-2"
           onClick={() => setIsExpanded((prev) => !prev)}
         >
           {isExpanded ? localize('com_ui_show_less') : localize('com_ui_show_more')}
@@ -157,7 +157,7 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
         <Button
           variant="link"
           size="sm"
-          className="text-text-secondary focus-visible:ring-border-heavy mt-1 block h-auto p-0 text-xs underline focus-visible:ring-2 focus-visible:outline-hidden"
+          className="text-text-secondary focus-visible:ring-border-heavy mt-1 block h-auto p-0 text-xs underline focus-visible:ring-2"
           onClick={() => setShowErrorDetails((prev) => !prev)}
         >
           {localize('com_ui_details')}

@@ -258,7 +258,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                           }}
                           className={
                             isFilenameCell
-                              ? 'focus-visible:outline-text-primary focus:outline-hidden focus-visible:outline-2 focus-visible:outline-offset-[-2px]'
+                              ? 'focus-visible:outline-text-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px]'
                               : ''
                           }
                           data-skip-refocus="true"

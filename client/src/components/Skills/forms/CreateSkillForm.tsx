@@ -225,6 +225,7 @@ export default function CreateSkillForm({
                   <span className="text-text-destructive ml-0.5">*</span>
                 </Label>
                 <TextareaAutosize
+                  focusOutline="hidden"
                   {...field}
                   id="skill-description"
                   minRows={2}
@@ -233,7 +234,7 @@ export default function CreateSkillForm({
                   aria-label={localize('com_ui_description')}
                   aria-invalid={errors.description ? 'true' : 'false'}
                   aria-describedby={errors.description ? 'skill-description-error' : undefined}
-                  className="border-border-medium text-text-primary placeholder:text-text-secondary focus-visible:ring-ring-primary w-full resize-none rounded-xl border bg-transparent p-3 text-sm focus-visible:ring-2 focus-visible:outline-hidden"
+                  className="border-border-medium text-text-primary placeholder:text-text-secondary focus-visible:ring-ring-primary w-full resize-none rounded-xl border bg-transparent p-3 text-sm focus-visible:ring-2"
                 />
                 <p className="text-text-secondary mt-1 text-xs">
                   {localize('com_ui_skill_description_field_hint')}

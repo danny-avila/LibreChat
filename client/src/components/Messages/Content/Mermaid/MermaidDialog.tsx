@@ -119,7 +119,10 @@ const MermaidDialog: React.FC<MermaidDialogProps> = memo(
                 <MorphIcon icon={isCopied ? Check : Copy} size={18} />
                 <span className="hidden sm:inline">{localize('com_ui_copy_code')}</span>
               </Button>
-              <OGDialogClose className="text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:ring-border-heavy rounded-sm p-1 focus-visible:ring-2 focus-visible:outline-hidden">
+              <OGDialogClose
+                focusOutline="hidden"
+                className="text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:ring-border-heavy rounded-sm p-1 focus-visible:ring-2"
+              >
                 <X className="h-4 w-4" />
                 <span className="sr-only">{localize('com_ui_close')}</span>
               </OGDialogClose>

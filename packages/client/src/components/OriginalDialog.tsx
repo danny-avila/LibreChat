@@ -1,7 +1,10 @@
 import * as React from 'react';
 import { X } from 'lucide-react';
 import { JSX } from 'react/jsx-runtime';
+import { cx } from 'class-variance-authority';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
+import type { FocusOutline } from './Focus';
+import { focusOutlineVariants } from './Focus';
 import { cn } from '~/utils';
 
 const DialogDepthContext = React.createContext(0);
@@ -119,8 +122,20 @@ const DialogTrigger: React.ForwardRefExoticComponent<
 const DialogPortal: React.FC<DialogPrimitive.DialogPortalProps> = DialogPrimitive.Portal;
 
 const DialogClose: React.ForwardRefExoticComponent<
-  DialogPrimitive.DialogCloseProps & React.RefAttributes<HTMLButtonElement>
-> = DialogPrimitive.Close;
+  DialogPrimitive.DialogCloseProps & {
+    focusOutline?: FocusOutline;
+  } & React.RefAttributes<HTMLButtonElement>
+> = React.forwardRef<
+  React.ElementRef<typeof DialogPrimitive.Close>,
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Close> & { focusOutline?: FocusOutline }
+>(({ className, focusOutline, ...props }, ref) => (
+  <DialogPrimitive.Close
+    ref={ref}
+    className={cx(focusOutlineVariants({ focusOutline }), className) || undefined}
+    {...props}
+  />
+));
+DialogClose.displayName = DialogPrimitive.Close.displayName;
 
 /**
  * The scrim. `surface-overlay` is the theme's own scrim color, so a theme that
@@ -173,6 +188,7 @@ type DialogContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.
   bare?: boolean;
   /** Keep the portal mounted while closed so the caller can animate the exit itself. */
   forceMount?: true;
+  focusOutline?: FocusOutline;
 };
 
 /** Positioning and appearance a `bare` content opts out of. */
@@ -188,6 +204,7 @@ const DialogContent: React.ForwardRefExoticComponent<
     overlayClassName?: string;
     bare?: boolean;
     forceMount?: true;
+    focusOutline?: FocusOutline;
   } & React.RefAttributes<HTMLDivElement>
 > = React.forwardRef<React.ElementRef<typeof DialogPrimitive.Content>, DialogContentProps>(
   (
@@ -197,6 +214,7 @@ const DialogContent: React.ForwardRefExoticComponent<
       showCloseButton = true,
       bare = false,
       forceMount,
+      focusOutline,
       children,
       style,
       onEscapeKeyDown: propsOnEscapeKeyDown,
@@ -333,7 +351,12 @@ const DialogContent: React.ForwardRefExoticComponent<
           ref={composedRef}
           style={{ ...style, zIndex: contentZIndex }}
           onEscapeKeyDown={handleEscapeKeyDown}
-          className={cn('text-text-primary fixed', !bare && DIALOG_SURFACE_CLASSES, className)}
+          className={cn(
+            'text-text-primary fixed',
+            !bare && DIALOG_SURFACE_CLASSES,
+            focusOutlineVariants({ focusOutline }),
+            className,
+          )}
           {...props}
         >
           {children}
@@ -376,15 +399,20 @@ const DialogFooter: {
 DialogFooter.displayName = 'DialogFooter';
 
 const DialogTitle: React.ForwardRefExoticComponent<
-  Omit<DialogPrimitive.DialogTitleProps & React.RefAttributes<HTMLHeadingElement>, 'ref'> &
-    React.RefAttributes<HTMLHeadingElement>
+  Omit<DialogPrimitive.DialogTitleProps & React.RefAttributes<HTMLHeadingElement>, 'ref'> & {
+    focusOutline?: FocusOutline;
+  } & React.RefAttributes<HTMLHeadingElement>
 > = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Title>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
->(({ className, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title> & { focusOutline?: FocusOutline }
+>(({ className, focusOutline, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn('text-lg leading-none font-semibold tracking-tight', className)}
+    className={cn(
+      'text-lg leading-none font-semibold tracking-tight',
+      focusOutlineVariants({ focusOutline }),
+      className,
+    )}
     {...props}
   />
 ));

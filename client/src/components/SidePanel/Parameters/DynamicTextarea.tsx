@@ -73,6 +73,7 @@ function DynamicTextarea({
             </Label>
           </div>
           <TextareaAutosize
+            focusOutline="hidden"
             id={`${settingKey}-dynamic-textarea`}
             disabled={readonly}
             value={inputValue ?? ''}
@@ -87,7 +88,7 @@ function DynamicTextarea({
                 : placeholder
             }
             className={cn(
-              'border-border-light bg-surface-secondary flex max-h-[138px] min-h-[100px] w-full resize-none rounded-lg border px-3 py-2 text-sm focus:outline-hidden',
+              'border-border-light bg-surface-secondary flex max-h-[138px] min-h-[100px] w-full resize-none rounded-lg border px-3 py-2 text-sm',
             )}
           />
         </HoverCardTrigger>

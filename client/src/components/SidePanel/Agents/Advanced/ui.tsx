@@ -51,7 +51,7 @@ export function InfoTrigger() {
       <Button
         variant="ghost"
         aria-label={localize('com_ui_more_info')}
-        className="text-text-tertiary hover:text-text-secondary focus-visible:ring-text-primary flex h-4 w-4 shrink-0 items-center justify-center rounded p-0 transition-colors hover:bg-transparent focus:outline-hidden focus-visible:ring-2"
+        className="text-text-tertiary hover:text-text-secondary focus-visible:ring-text-primary flex h-4 w-4 shrink-0 items-center justify-center rounded p-0 transition-colors hover:bg-transparent focus-visible:ring-2"
       >
         <CircleHelpIcon className="h-3.5 w-3.5" aria-hidden={true} />
       </Button>

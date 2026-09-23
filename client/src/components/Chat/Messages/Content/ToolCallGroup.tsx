@@ -467,7 +467,7 @@ export default function ToolCallGroup({
       <Button
         variant="ghost"
         type="button"
-        className="text-text-secondary hover:text-text-secondary focus-visible:ring-border-heavy inline-flex h-auto w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 hover:bg-transparent focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:outline-hidden"
+        className="text-text-secondary hover:text-text-secondary focus-visible:ring-border-heavy inline-flex h-auto w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 hover:bg-transparent focus-visible:ring-2 focus-visible:ring-offset-0"
         onClick={handleToggle}
         aria-expanded={isExpanded}
         aria-label={groupAriaLabel}

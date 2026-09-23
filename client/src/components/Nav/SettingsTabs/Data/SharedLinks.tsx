@@ -290,10 +290,11 @@ export default function SharedLinks() {
         </OGDialogTrigger>
 
         <OGDialogContent
+          focusOutline="hidden"
           ref={contentRef}
           tabIndex={-1}
           onOpenAutoFocus={handleOpenAutoFocus}
-          className="w-11/12 max-w-3xl shadow-2xl focus:outline-hidden"
+          className="w-11/12 max-w-3xl shadow-2xl"
         >
           <OGDialogHeader>
             <OGDialogTitle>{localize('com_nav_shared_links')}</OGDialogTitle>

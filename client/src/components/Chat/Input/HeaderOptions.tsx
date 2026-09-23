@@ -53,7 +53,7 @@ export default function HeaderOptions({
                   role="button"
                   onClick={triggerAdvancedMode}
                   data-testid="parameters-button"
-                  className="border-border-light text-text-primary hover:bg-surface-tertiary data-[state=open]:bg-surface-tertiary inline-flex size-10 items-center justify-center rounded-lg border bg-transparent transition-all ease-in-out disabled:pointer-events-none disabled:opacity-50"
+                  className="border-border-light text-text-primary hover:bg-surface-tertiary inline-flex size-10 items-center justify-center rounded-lg border bg-transparent transition-all ease-in-out disabled:pointer-events-none disabled:opacity-50"
                 >
                   <Settings2 size={16} aria-hidden="true" />
                 </TooltipAnchor>

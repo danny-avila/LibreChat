@@ -723,7 +723,7 @@ function SourcesComponent({ messageId, conversationId }: SourcesProps = {}) {
         containerClassName="flex min-w-full mb-4"
         tabListClassName="flex items-center mb-2 border-b border-border-light overflow-x-auto"
         tabPanelClassName="w-full overflow-x-auto md:mx-0 md:px-0"
-        tabClassName="flex items-center whitespace-nowrap text-xs font-medium text-token-text-secondary px-1 pt-2 pb-1 border-b-2 border-transparent data-[state=active]:text-text-primary outline-hidden focus:ring-2 focus:ring-text-primary focus:ring-offset-2"
+        tabClassName="flex items-center whitespace-nowrap text-xs font-medium text-token-text-secondary px-1 pt-2 pb-1 border-b-2 border-transparent data-[state=active]:text-text-primary focus:ring-2 focus:ring-text-primary focus:ring-offset-2"
       />
     </div>
   );

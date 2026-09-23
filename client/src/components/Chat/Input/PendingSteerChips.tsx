@@ -93,11 +93,12 @@ function QueuedIcon({ warning, hint }: { warning: boolean; hint?: string }) {
   }
   return (
     <TooltipAnchor
+      focusOutline="hidden"
       description={hint}
       role="img"
       aria-label={hint}
       tabIndex={0}
-      className="focus-visible:ring-border-xheavy flex shrink-0 cursor-help rounded-full focus-visible:ring-2 focus-visible:outline-hidden"
+      className="focus-visible:ring-border-xheavy flex shrink-0 cursor-help rounded-full focus-visible:ring-2"
     >
       <Clock className={cn('h-4 w-4', QUEUE_ICON)} aria-hidden="true" />
     </TooltipAnchor>

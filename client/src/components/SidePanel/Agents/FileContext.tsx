@@ -15,7 +15,7 @@ import { cn } from '~/utils';
 
 const addButtonClassName = cn(
   'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-text-secondary transition-colors',
-  'hover:bg-surface-secondary hover:text-text-primary focus:outline-hidden focus-visible:ring-2 focus-visible:ring-ring-primary',
+  'hover:bg-surface-secondary hover:text-text-primary focus-visible:ring-2 focus-visible:ring-ring-primary',
   'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-text-secondary',
 );
 
@@ -114,7 +114,7 @@ function FileContext({
         <Ariakit.MenuButton
           disabled={disabledUploadButton}
           aria-label={addLabel}
-          className={addButtonClassName}
+          className={cn(addButtonClassName, 'focus:outline-hidden')}
         >
           <Plus className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
           {localize('com_ui_add')}

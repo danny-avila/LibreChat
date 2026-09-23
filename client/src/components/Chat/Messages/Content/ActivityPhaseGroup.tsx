@@ -634,7 +634,7 @@ export default function ActivityPhaseGroup({
              *  keyboard users with no focus indicator. The ghost variant
              *  supplies it today; stating it here keeps the requirement with
              *  the element that depends on it. */
-            className="text-text-secondary hover:text-text-primary focus-visible:ring-border-heavy flex h-auto min-h-7 w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-left font-medium hover:bg-transparent focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:outline-hidden focus-visible:ring-inset"
+            className="text-text-secondary hover:text-text-primary focus-visible:ring-border-heavy flex h-auto min-h-7 w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-left font-medium hover:bg-transparent focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:ring-inset"
             onClick={handleToggle}
             aria-expanded={isExpanded}
             aria-controls={panelId}

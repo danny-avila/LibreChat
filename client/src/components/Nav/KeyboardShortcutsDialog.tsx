@@ -354,7 +354,10 @@ function KeyboardShortcutsDialog() {
           <OGDialogTitle className="text-text-primary text-[16px] font-semibold">
             {localize('com_shortcut_keyboard_shortcuts')}
           </OGDialogTitle>
-          <OGDialogClose className="text-text-secondary hover:bg-surface-tertiary hover:text-text-primary focus-visible:ring-text-primary dark:hover:bg-surface-secondary-alt inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors focus-visible:ring-2 focus-visible:outline-hidden">
+          <OGDialogClose
+            focusOutline="hidden"
+            className="text-text-secondary hover:bg-surface-tertiary hover:text-text-primary focus-visible:ring-text-primary dark:hover:bg-surface-secondary-alt inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors focus-visible:ring-2"
+          >
             <X className="h-4 w-4" />
             <span className="sr-only">{localize('com_ui_close')}</span>
           </OGDialogClose>

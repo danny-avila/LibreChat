@@ -62,7 +62,9 @@ const PresetsMenu: FC = () => {
 
   return (
     <Root>
-      <Trigger asChild>
+      {/* The open state belongs to the trigger, which stamps `data-state` on the
+       *  button it renders through, so its fill is set here rather than on the button. */}
+      <Trigger asChild className="data-[state=open]:bg-surface-active-alt">
         <TooltipAnchor
           ref={presetsMenuTriggerRef}
           description={localize('com_endpoint_examples')}
@@ -74,7 +76,7 @@ const PresetsMenu: FC = () => {
               id="presets-button"
               data-testid="presets-button"
               aria-label={localize('com_endpoint_examples')}
-              className="rounded-theme-control bg-presentation hover:bg-surface-hover data-[state=open]:bg-surface-active-alt h-9 w-9 shrink-0 duration-0"
+              className="rounded-theme-control bg-presentation hover:bg-surface-hover h-9 w-9 shrink-0 duration-0"
             >
               <BookCopy className="icon-md" aria-hidden="true" />
             </Button>

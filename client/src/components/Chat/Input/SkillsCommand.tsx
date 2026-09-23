@@ -289,7 +289,7 @@ function SkillsCommandContent({
         <Input
           ref={initInputRef}
           placeholder={localize('com_ui_skills_command_placeholder')}
-          className="bg-surface-tertiary-alt text-text-primary mb-1 h-auto w-full rounded-none border-0 p-2 text-sm focus:outline-hidden"
+          className="bg-surface-tertiary-alt text-text-primary mb-1 h-auto w-full rounded-none border-0 p-2 text-sm"
           autoComplete="off"
           value={searchValue}
           onKeyDown={(e) => {

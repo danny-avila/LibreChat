@@ -58,7 +58,7 @@ export default function MCPCardActions({
     'transition-colors duration-150',
     'text-text-secondary hover:text-text-secondary',
     'hover:bg-surface-tertiary',
-    'focus:outline-hidden focus-visible:ring-2 focus-visible:ring-text-primary',
+    'focus-visible:ring-2 focus-visible:ring-text-primary',
   );
 
   // Loading state - show spinner (with cancel option)
@@ -68,6 +68,7 @@ export default function MCPCardActions({
         {/* Edit button stays visible during loading */}
         {canEdit && (
           <TooltipAnchor
+            focusOutline="hidden"
             ref={editButtonRef}
             description={localize('com_ui_edit')}
             side="top"
@@ -83,6 +84,7 @@ export default function MCPCardActions({
         {/* Spinner with cancel on hover */}
         {canCancel ? (
           <TooltipAnchor
+            focusOutline="hidden"
             description={localize('com_ui_cancel')}
             side="top"
             className={cn(buttonBaseClass, 'group')}
@@ -112,6 +114,7 @@ export default function MCPCardActions({
       {/* Edit button - opens MCPServerDialog to edit server definition */}
       {canEdit && (
         <TooltipAnchor
+          focusOutline="hidden"
           ref={editButtonRef}
           description={localize('com_ui_edit')}
           side="top"
@@ -127,6 +130,7 @@ export default function MCPCardActions({
       {/* Connect button - for disconnected or error states */}
       {(isDisconnected || isError) && !serverStatus?.requestScoped && (
         <TooltipAnchor
+          focusOutline="hidden"
           description={localize('com_nav_mcp_connect')}
           side="top"
           className={buttonBaseClass}
@@ -142,6 +146,7 @@ export default function MCPCardActions({
           must remain configurable without a live transport connection. */}
       {(isConnected || serverStatus?.requestScoped) && hasCustomUserVars && (
         <TooltipAnchor
+          focusOutline="hidden"
           description={localize('com_ui_configure')}
           side="top"
           className={buttonBaseClass}
@@ -156,6 +161,7 @@ export default function MCPCardActions({
       {/* Refresh button - for connected servers (allows reconnection) */}
       {isConnected && !serverStatus?.requestScoped && (
         <TooltipAnchor
+          focusOutline="hidden"
           description={localize('com_nav_mcp_reconnect')}
           side="top"
           className={buttonBaseClass}
@@ -170,6 +176,7 @@ export default function MCPCardActions({
       {/* Revoke button - for OAuth servers (available regardless of connection state) */}
       {serverStatus?.requiresOAuth && onRevoke && (
         <TooltipAnchor
+          focusOutline="hidden"
           description={localize('com_ui_revoke')}
           side="top"
           className={buttonBaseClass}

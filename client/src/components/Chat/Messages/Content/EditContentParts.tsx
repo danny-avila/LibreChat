@@ -399,6 +399,7 @@ export default function EditContentParts({
             >
               {label}
               <TextareaAutosize
+                focusOutline="hidden"
                 ref={editablePart === editableParts[0] ? firstEditorRef : undefined}
                 value={drafts[absoluteIndex]}
                 onChange={(event) =>
@@ -421,7 +422,6 @@ export default function EditContentParts({
                   'message-editor-text max-h-[65vh] min-h-24 w-full resize-y rounded-lg',
                   'border-border-medium bg-surface-tertiary-alt border px-3 py-2',
                   'text-text-primary font-normal',
-                  'focus-visible:outline-hidden',
                   isRTL ? 'text-right' : 'text-left',
                   'disabled:opacity-50 md:max-h-[75vh]',
                 )}
