@@ -29,7 +29,7 @@ describe('agent Git identity validation', () => {
 
   it('accepts a GitHub App bot noreply address for commit attribution', () => {
     const git_identity = {
-      name: 'lia-by-librechat[bot]',
+      name: 'Lia',
       email: '328778573+lia-by-librechat[bot]@users.noreply.github.com',
     };
     expect(agentCreateSchema.parse({ ...base, git_identity }).git_identity).toEqual(git_identity);

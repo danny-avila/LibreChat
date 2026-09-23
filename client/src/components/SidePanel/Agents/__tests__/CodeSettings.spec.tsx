@@ -200,7 +200,7 @@ test.each(['Disable code', 'Use managed', 'Disable sessions', 'Toggle Dialog'])(
 test.each([
   { name: 'Coding Agent', email: 'agent@example.com' },
   {
-    name: 'lia-by-librechat[bot]',
+    name: 'Lia',
     email: '328778573+lia-by-librechat[bot]@users.noreply.github.com',
   },
   { name: '', email: '' },

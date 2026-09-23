@@ -7,7 +7,7 @@ describe('agentGitIdentitySchema', () => {
     ).toBe(true);
     expect(
       agentGitIdentitySchema.safeParse({
-        name: 'lia-by-librechat[bot]',
+        name: 'Lia',
         email: '328778573+lia-by-librechat[bot]@users.noreply.github.com',
       }).success,
     ).toBe(true);
