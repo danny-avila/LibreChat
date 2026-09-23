@@ -47,18 +47,17 @@ function getEnabledAuth(
   config: AppConfig,
 ): { auth: ManagementAuth; oidc: EnabledManagementOidc } | undefined {
   const auth = config.endpoints?.agents?.managementApi?.auth;
-  if (
-    auth?.oidc?.enabled !== true ||
-    !auth.oidc.issuer ||
-    (!auth.oidc.audience && auth.oidc.tokenUse !== 'access')
-  ) {
+  const oidc = auth?.oidc;
+  const hasAudience = Boolean(oidc?.audience);
+  const hasScopedAccessToken = oidc?.tokenUse === 'access' && Boolean(oidc.requiredScopes?.length);
+  if (!auth || oidc?.enabled !== true || !oidc.issuer || (!hasAudience && !hasScopedAccessToken)) {
     return;
   }
   return {
     auth,
     oidc: {
-      ...auth.oidc,
-      issuer: auth.oidc.issuer,
+      ...oidc,
+      issuer: oidc.issuer,
     },
   };
 }

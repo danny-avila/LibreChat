@@ -946,11 +946,16 @@ const managementApiOidcSchema = oidcAccessTokenSchema
         message: 'issuer is required when OIDC auth is enabled',
       });
     }
-    if (oidc.enabled === true && !oidc.audience && oidc.tokenUse !== 'access') {
+    if (
+      oidc.enabled === true &&
+      !oidc.audience &&
+      (oidc.tokenUse !== 'access' || !oidc.requiredScopes?.length)
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ['audience'],
-        message: 'audience or access-token validation is required when OIDC auth is enabled',
+        path: ['requiredScopes'],
+        message:
+          'audience or access-token validation with required scopes is required when OIDC auth is enabled',
       });
     }
   });

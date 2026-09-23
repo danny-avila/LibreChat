@@ -274,6 +274,26 @@ describe('createAgentManagementAuth', () => {
     expect(res.status).toHaveBeenCalledWith(401);
   });
 
+  it('rejects audience-less access-token auth without required scopes before verification', async () => {
+    const config = createConfig();
+    const oidc = config.endpoints?.agents?.managementApi?.auth?.oidc;
+    if (oidc) {
+      delete oidc.audience;
+      oidc.tokenUse = 'access';
+      delete oidc.requiredScopes;
+    }
+    const deps = createDeps({ getAppConfig: jest.fn().mockResolvedValue(config) });
+    const res = createResponse();
+    const next = jest.fn();
+
+    await runMiddleware(deps, createRequest(), res, next);
+
+    expect(deps.verifyAccessToken).not.toHaveBeenCalled();
+    expect(deps.findUser).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['unknown', createPayload({ azp: 'unknown', sub: 'unknown@clients' }), createConfig()],
     [

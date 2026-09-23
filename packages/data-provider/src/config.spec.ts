@@ -357,6 +357,51 @@ describe('Agent Management authentication config', () => {
     expect(result.success).toBe(true);
   });
 
+  it('accepts audience-bound access-token validation without required scopes', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          managementApi: {
+            auth: {
+              oidc: {
+                enabled: true,
+                issuer: 'https://issuer.example.com',
+                audience: 'https://agents.example.com',
+                tokenUse: 'access',
+              },
+              clients: [binding],
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects audience-less access-token validation without required scopes', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          managementApi: {
+            auth: {
+              oidc: {
+                enabled: true,
+                issuer: 'https://issuer.example.com',
+                tokenUse: 'access',
+              },
+              clients: [binding],
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it.each(['agents-api/manage another-scope', 'agents-api/manage\tanother-scope'])(
     'rejects a required scope containing whitespace: %j',
     (requiredScope) => {
