@@ -15,7 +15,7 @@ import { repoRoot, run } from './lint.helpers';
  *   - the radius scale is Tailwind's, not ours, so `rounded-sm` means whatever
  *     the current major says it means.
  *
- * The scenario builds what a consumer actually installs — the package's own
+ * The scenario builds what a consumer actually installs: the package's own
  * stylesheet and its published preset, compiled by Tailwind through the
  * package's config — and asks a browser holding nothing else what the
  * primitives' class strings render as.
@@ -53,7 +53,6 @@ test.describe('the published package appearance', () => {
       const built = run('npm', ['run', 'build', '--prefix', PACKAGE_ROOT]);
       expect(built.status, `the component library did not build:\n${built.output}`).toBe(0);
     }
-    const packageStylesheet = readFileSync(DIST_STYLESHEET, 'utf8');
 
     /** The markup the compile is allowed to see, so the utilities it emits are
      *  exactly the ones the primitives ask for. */
@@ -65,18 +64,21 @@ test.describe('the published package appearance', () => {
     const probeMarkup = join(PROBE_DIR, 'probe.html');
     writeFileSync(probeMarkup, markup);
 
-    /** A consumer's stylesheet, in the order the theme README documents:
-     *  Tailwind, the published token stylesheet, the colours are declared there
-     *  as `@theme inline`, not in the config, so a consumer that skips this
-     *  import gets no `border-border-light` to paint with, the package's config,
-     *  and nothing of this app. */
+    /** Compile the complete stylesheet example itself, so a missing import in
+     *  the README cannot be hidden by a separately maintained correct fixture. */
+    const readme = readFileSync(resolve(PACKAGE_ROOT, 'src/theme/README.md'), 'utf8');
+    const documentedStylesheet = [...readme.matchAll(/```css\n([\s\S]*?)```/g)]
+      .map((match) => match[1])
+      .find((stylesheet) => stylesheet.includes("@import '@librechat/client/style.css';"));
+    expect(documentedStylesheet, 'the complete consumer stylesheet is documented').toBeDefined();
     const entry = join(PROBE_DIR, 'consumer.css');
     writeFileSync(
       entry,
       [
-        "@import 'tailwindcss';",
-        `@import '${tokenStylesheet}';`,
-        `@config '${resolve(PACKAGE_ROOT, 'tailwind.config.js')}';`,
+        documentedStylesheet!
+          .replace("@import '@librechat/client/theme.css';", `@import '${tokenStylesheet}';`)
+          .replace("@import '@librechat/client/style.css';", `@import '${DIST_STYLESHEET}';`)
+          .replace(/@config '[^']+';/, `@config '${resolve(PACKAGE_ROOT, 'tailwind.config.js')}';`),
         `@source '${probeMarkup}';`,
         '',
       ].join('\n'),
@@ -113,7 +115,6 @@ postcss([tailwind()])
       </style></head><body>${markup}</body></html>`,
     );
     await page.addStyleTag({ content: consumerCss });
-    await page.addStyleTag({ content: packageStylesheet });
 
     const read = (id: string, properties: string[]) =>
       page.evaluate(

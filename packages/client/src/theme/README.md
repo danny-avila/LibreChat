@@ -168,7 +168,7 @@ module.exports = {
 };
 ```
 
-The colors come from the stylesheet imported in step 3, so the config carries only content,
+The semantic colors come from the stylesheet imported in step 3, so the config carries only content,
 dark mode and the preset, and it only applies through the `@config` line in that stylesheet:
 v4 loads no config file on its own, so without the directive the preset, the `content` globs
 and class-based dark mode are all silently absent.
@@ -194,12 +194,12 @@ below are never compiled and the import fails with Tailwind's direct-plugin erro
 
 Tailwind 4 does not look for a JavaScript config on its own, so writing the file above is not
 enough: the stylesheet has to load it, next to the import that pulls Tailwind in. Without the
-directive the preset, the package content glob, the semantic colors and the `high-contrast:`
-variant are all absent, and the published components render with most of their classes
-ungenerated. The SPA does exactly this at the top of `client/src/style.css`:
+directive the preset, the package content glob and the `high-contrast:` variant are absent,
+and the published components render with most of their classes ungenerated. A consumer uses the same import order as the SPA's `client/src/style.css`:
 
 ```css
 @import 'tailwindcss';
+@import '@librechat/client/theme.css';
 @config '../tailwind.config.js';
 
 @import '@librechat/client/style.css';

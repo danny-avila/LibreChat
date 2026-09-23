@@ -130,6 +130,7 @@ test.describe('design-system rules', () => {
       'shadcn/no-arbitrary-values': 2,
       'shadcn/no-inline-styles': 2,
       'shadcn/require-static-classes': 2,
+      'shadcn/no-unknown-classes': 2,
     };
     const library: Record<string, number> = {
       ...caller,

@@ -1,5 +1,5 @@
 /**
- * The Tailwind color tokens, and the single source for them.
+ * The semantic Tailwind color tokens, and the single source for them.
  *
  * Every semantic token resolves to a CSS custom property that ThemeProvider/applyTheme
  * rewrites at runtime, which is what `@theme inline` is for: the value is inlined into each
@@ -15,35 +15,11 @@
  * nothing.
  */
 @theme inline {
-  /* The palette scales replace Tailwind's, rather than extending them: a shade that is not
-   * listed here is not a color this design system has. */
+  /* Clear the default scales before the preset supplies the legacy compatibility shades.
+   * Palette names are not semantic tokens: new code must use the roles below. */
   --color-gray-*: initial;
-  --color-gray-20: #ececf1;
-  --color-gray-50: #f7f7f8;
-  --color-gray-100: #ececec;
-  --color-gray-200: #e3e3e3;
-  --color-gray-300: #cdcdcd;
-  --color-gray-400: #999696;
-  --color-gray-500: #595959;
-  --color-gray-600: #424242;
-  --color-gray-650: #393939;
-  --color-gray-700: #2f2f2f;
-  --color-gray-800: #212121;
-  --color-gray-850: #171717;
-  --color-gray-900: #0d0d0d;
 
   --color-green-*: initial;
-  --color-green-50: #f1f9f7;
-  --color-green-100: #def2ed;
-  --color-green-200: #a6e5d6;
-  --color-green-300: #6dc8b9;
-  --color-green-400: #41a79d;
-  --color-green-500: #10a37f;
-  --color-green-550: #349072;
-  --color-green-600: #126e6b;
-  --color-green-700: #0a4f53;
-  --color-green-800: #06373e;
-  --color-green-900: #031f29;
 
   /* brand and surfaces */
   --color-brand-purple: rgb(var(--brand-purple));

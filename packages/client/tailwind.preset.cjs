@@ -2,6 +2,38 @@
 module.exports = {
   theme: {
     extend: {
+      // Legacy palette utilities still render, but only semantic roles are declared in CSS.
+      // Keeping compatibility colors here lets no-raw-colors continue to reject new uses.
+      colors: {
+        gray: {
+          20: '#ececf1',
+          50: '#f7f7f8',
+          100: '#ececec',
+          200: '#e3e3e3',
+          300: '#cdcdcd',
+          400: '#999696',
+          500: '#595959',
+          600: '#424242',
+          650: '#393939',
+          700: '#2f2f2f',
+          800: '#212121',
+          850: '#171717',
+          900: '#0d0d0d',
+        },
+        green: {
+          50: '#f1f9f7',
+          100: '#def2ed',
+          200: '#a6e5d6',
+          300: '#6dc8b9',
+          400: '#41a79d',
+          500: '#10a37f',
+          550: '#349072',
+          600: '#126e6b',
+          700: '#0a4f53',
+          800: '#06373e',
+          900: '#031f29',
+        },
+      },
       fontFamily: {
         'theme-ui': ['var(--theme-font-family, Inter, sans-serif)'],
       },

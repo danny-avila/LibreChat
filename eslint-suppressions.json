@@ -305,7 +305,7 @@
   },
   "client/src/components/Chat/Input/Files/Table/Columns.tsx": {
     "shadcn/no-raw-colors": {
-      "count": 2
+      "count": 3
     },
     "shadcn/no-restyle": {
       "count": 23
@@ -325,6 +325,9 @@
     }
   },
   "client/src/components/Chat/Input/InFlightSteers.tsx": {
+    "shadcn/no-raw-colors": {
+      "count": 1
+    },
     "shadcn/no-unknown-classes": {
       "count": 1
     },
@@ -554,6 +557,9 @@
   "client/src/components/Chat/Messages/Content/CodeAnalyze.tsx": {
     "shadcn/no-inline-styles": {
       "count": 1
+    },
+    "shadcn/no-raw-colors": {
+      "count": 2
     }
   },
   "client/src/components/Chat/Messages/Content/Container.tsx": {
@@ -940,6 +946,9 @@
   "client/src/components/Chat/Messages/MinimalMessages.tsx": {
     "shadcn/no-inline-styles": {
       "count": 1
+    },
+    "shadcn/no-raw-colors": {
+      "count": 1
     }
   },
   "client/src/components/Chat/Messages/PendingTurn.tsx": {
@@ -1227,7 +1236,7 @@
       "count": 4
     },
     "shadcn/no-raw-colors": {
-      "count": 3
+      "count": 5
     },
     "shadcn/no-restyle": {
       "count": 7
@@ -1238,7 +1247,7 @@
       "count": 4
     },
     "shadcn/no-raw-colors": {
-      "count": 2
+      "count": 11
     },
     "shadcn/no-restyle": {
       "count": 11
@@ -1264,6 +1273,9 @@
   },
   "client/src/components/Files/FileList/UploadFileModal.tsx": {
     "shadcn/no-arbitrary-values": {
+      "count": 3
+    },
+    "shadcn/no-raw-colors": {
       "count": 3
     },
     "shadcn/no-restyle": {
@@ -1293,7 +1305,7 @@
       "count": 2
     },
     "shadcn/no-raw-colors": {
-      "count": 1
+      "count": 15
     },
     "shadcn/no-restyle": {
       "count": 5
@@ -1780,6 +1792,9 @@
   "client/src/components/Share/MessagesView.tsx": {
     "shadcn/no-inline-styles": {
       "count": 1
+    },
+    "shadcn/no-raw-colors": {
+      "count": 1
     }
   },
   "client/src/components/Share/ShareArtifacts.tsx": {
@@ -1906,6 +1921,9 @@
   "client/src/components/SidePanel/Agents/AgentTool.tsx": {
     "shadcn/no-inline-styles": {
       "count": 5
+    },
+    "shadcn/no-raw-colors": {
+      "count": 2
     },
     "shadcn/no-restyle": {
       "count": 9
@@ -2130,6 +2148,9 @@
     }
   },
   "client/src/components/SidePanel/Builder/AppendDateCheckbox.tsx": {
+    "shadcn/no-raw-colors": {
+      "count": 3
+    },
     "shadcn/no-restyle": {
       "count": 1
     }
@@ -2143,6 +2164,9 @@
     }
   },
   "client/src/components/SidePanel/Builder/AssistantPanel.tsx": {
+    "shadcn/no-raw-colors": {
+      "count": 2
+    },
     "shadcn/no-restyle": {
       "count": 4
     },
@@ -2151,6 +2175,9 @@
     }
   },
   "client/src/components/SidePanel/Builder/AssistantSelect.tsx": {
+    "shadcn/no-raw-colors": {
+      "count": 15
+    },
     "shadcn/no-restyle": {
       "count": 19
     }
@@ -2158,9 +2185,15 @@
   "client/src/components/SidePanel/Builder/AssistantTool.tsx": {
     "shadcn/no-inline-styles": {
       "count": 5
+    },
+    "shadcn/no-raw-colors": {
+      "count": 2
     }
   },
   "client/src/components/SidePanel/Builder/Code.tsx": {
+    "shadcn/no-raw-colors": {
+      "count": 3
+    },
     "shadcn/no-restyle": {
       "count": 1
     }
@@ -2181,6 +2214,9 @@
     },
     "shadcn/no-inline-styles": {
       "count": 3
+    },
+    "shadcn/no-raw-colors": {
+      "count": 6
     }
   },
   "client/src/components/SidePanel/Builder/Knowledge.tsx": {
@@ -2189,6 +2225,9 @@
     }
   },
   "client/src/components/SidePanel/Builder/Retrieval.tsx": {
+    "shadcn/no-raw-colors": {
+      "count": 3
+    },
     "shadcn/no-restyle": {
       "count": 1
     }
@@ -2487,6 +2526,9 @@
   },
   "client/src/components/Web/Sources.tsx": {
     "shadcn/no-arbitrary-values": {
+      "count": 1
+    },
+    "shadcn/no-raw-colors": {
       "count": 1
     },
     "shadcn/no-restyle": {

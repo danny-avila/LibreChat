@@ -21,6 +21,31 @@ const CORRECT = [
 ].join('\n');
 
 test.describe('class and token existence', () => {
+  test('compatibility palette utilities still require semantic roles @scenario:compatibility-palette-utilities-still-require-semantic-roles', () => {
+    test.setTimeout(60_000);
+    const palette = [
+      'text-gray-500',
+      'dark:bg-gray-650/50',
+      'hover:border-green-500',
+      'ring-green-550',
+    ];
+    for (const root of ['client/src', 'packages/client/src']) {
+      const reported = designMessages(
+        lintStdin(
+          `${root}/__probe__.tsx`,
+          `export default () => <div className="${palette.join(' ')}" />;\n`,
+        ),
+      );
+      const raw = messagesFor(reported, 'shadcn/no-raw-colors');
+      expect(raw).toHaveLength(palette.length);
+      for (const utility of palette) {
+        expect(raw.some((message) => message.includes(`"${utility}"`))).toBe(true);
+      }
+      expect(messagesFor(reported, 'shadcn/no-unknown-classes')).toEqual([]);
+      expect(designMessages(lintStdin(`${root}/__probe__.tsx`, CORRECT))).toEqual([]);
+    }
+  });
+
   test('an unknown utility class is reported by the linter @scenario:an-unknown-utility-class-is-reported-by-the-linter', () => {
     test.setTimeout(60_000);
 
