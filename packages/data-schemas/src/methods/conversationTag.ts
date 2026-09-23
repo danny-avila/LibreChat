@@ -12,6 +12,72 @@ interface IConversationTag {
   [key: string]: unknown;
 }
 
+/**
+ * Atomically decrements tag counts for a user. Each entry in `tags` counts as a
+ * single decrement, so callers must dedupe tags per conversation before flattening
+ * to avoid double-decrementing a conversation's duplicate tag entries. Counts are
+ * clamped at zero to tolerate any pre-existing drift.
+ *
+ * Each tag emits three ops in one ordered bulkWrite instead of a
+ * `$max`/`$subtract` aggregation-pipeline update (which Amazon DocumentDB
+ * rejects): normalize a null/missing count to zero, apply the `$inc`, then
+ * clamp a negative result back to zero. The clamp keys on `count < 0` rather
+ * than `count < amount` so it composes with concurrent decrements of the same
+ * tag: increments commute and every interleaved call ends with its own clamp,
+ * so the count still converges on `max(0, ...)` exactly as the serialized
+ * pipeline did. The only trade-off is a transiently negative count between an
+ * op pair, which readers already tolerate.
+ */
+export async function decrementTagCounts(
+  mongoose: typeof import('mongoose'),
+  user: string,
+  tags: string[],
+): Promise<void> {
+  if (!tags.length) {
+    return;
+  }
+
+  const decrementByTag = new Map<string, number>();
+  for (const tag of tags) {
+    if (!tag) {
+      continue;
+    }
+    decrementByTag.set(tag, (decrementByTag.get(tag) ?? 0) + 1);
+  }
+
+  if (decrementByTag.size === 0) {
+    return;
+  }
+
+  try {
+    const ConversationTag = mongoose.models.ConversationTag as Model<IConversationTag>;
+    const bulkOps = [...decrementByTag.entries()].flatMap(([tag, amount]) => [
+      {
+        updateOne: {
+          filter: { user, tag, count: null },
+          update: { $set: { count: 0 } },
+        },
+      },
+      {
+        updateOne: {
+          filter: { user, tag },
+          update: { $inc: { count: -amount } },
+        },
+      },
+      {
+        updateOne: {
+          filter: { user, tag, count: { $lt: 0 } },
+          update: { $set: { count: 0 } },
+        },
+      },
+    ]);
+
+    await tenantSafeBulkWrite(ConversationTag, bulkOps);
+  } catch (error) {
+    logger.error('[decrementTagCounts] Error decrementing tag counts', error);
+  }
+}
+
 export function createConversationTagMethods(mongoose: typeof import('mongoose')): {
   getConversationTags: (user: string) => Promise<
     (import('mongoose').FlattenMaps<{

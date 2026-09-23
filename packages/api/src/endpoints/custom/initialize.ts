@@ -9,10 +9,10 @@ import {
 import type { TEndpoint } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type {
-  BaseInitializeParams,
   InitializeResultBase,
   EndpointTokenConfig,
   AnthropicModelOptions,
+  ProviderInitializeParams,
 } from '~/types';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { extractDefaultParams } from '~/endpoints/openai/llm';
@@ -20,6 +20,7 @@ import { isUserProvided, checkUserKeyExpiry } from '~/utils';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { getScopedTokenConfigKey } from '~/endpoints/keys';
 import { getCustomEndpointConfig } from '~/app/config';
+import { resolveEndpointRuntime } from '~/types';
 import { fetchModels } from '~/endpoints/models';
 import { validateEndpointURL } from '~/auth';
 import { tokenConfigCache } from '~/cache';
@@ -94,9 +95,9 @@ function buildCustomOptions(
   endpointConfig: Partial<TEndpoint>,
   appConfig?: AppConfig,
   endpointTokenConfig?: Record<string, unknown>,
+  forwardHeaders = true,
 ) {
   const customOptions: Record<string, unknown> = {
-    headers: endpointConfig.headers,
     addParams: endpointConfig.addParams,
     dropParams: endpointConfig.dropParams,
     customParams: endpointConfig.customParams,
@@ -110,8 +111,12 @@ function buildCustomOptions(
     endpointTokenConfig,
   };
 
+  if (forwardHeaders) {
+    customOptions.headers = endpointConfig.headers;
+  }
+
   const allConfig = appConfig?.endpoints?.all;
-  if (allConfig) {
+  if (allConfig?.streamRate != null) {
     customOptions.streamRate = allConfig.streamRate;
   }
 
@@ -131,17 +136,21 @@ function buildAnthropicCustomConfig({
   modelOptions,
   endpointConfig,
   userProvidesURL,
+  allowedAddresses,
 }: {
   apiKey: string;
   baseURL: string;
   modelOptions: AnthropicModelOptions;
   endpointConfig: Partial<TEndpoint>;
   userProvidesURL: boolean;
+  allowedAddresses?: string[] | null;
 }): InitializeResultBase {
   const result = getAnthropicLLMConfig(apiKey, {
     modelOptions,
     proxy: PROXY ?? undefined,
     reverseProxyUrl: baseURL,
+    baseURLIsUserProvided: userProvidesURL,
+    allowedAddresses,
     headers: userProvidesURL ? undefined : endpointConfig.headers,
     addParams: endpointConfig.addParams,
     dropParams: endpointConfig.dropParams,
@@ -165,14 +174,12 @@ function buildAnthropicCustomConfig({
  * @returns Promise resolving to endpoint configuration options
  * @throws Error if config is missing, API key is not provided, or base URL is missing
  */
-export async function initializeCustom({
-  req,
-  endpoint,
-  model_parameters,
-  db,
-}: BaseInitializeParams): Promise<InitializeResultBase> {
-  const appConfig = req.config;
-  const { key: expiresAt } = req.body;
+export async function initializeCustom(
+  params: ProviderInitializeParams,
+): Promise<InitializeResultBase> {
+  const { endpoint, model_parameters, db } = params;
+  const { appConfig, user, requestBody } = resolveEndpointRuntime(params);
+  const { key: expiresAt } = requestBody;
 
   const endpointConfig = getCustomEndpointConfig({
     endpoint,
@@ -206,13 +213,13 @@ export async function initializeCustom({
 
   let userValues = null;
   if (userProvidesKey || userProvidesURL) {
-    userValues = await db.getUserKeyValues({ userId: req.user?.id ?? '', name: endpoint });
+    userValues = await db.getUserKeyValues({ userId: user?.id ?? '', name: endpoint });
   }
 
-  const apiKey = userProvidesKey ? userValues?.apiKey : CUSTOM_API_KEY;
+  const apiKey = userProvidesKey || userProvidesURL ? userValues?.apiKey : CUSTOM_API_KEY;
   const baseURL = userProvidesURL ? userValues?.baseURL : CUSTOM_BASE_URL;
 
-  if (userProvidesKey && !apiKey) {
+  if ((userProvidesKey || userProvidesURL) && !apiKey) {
     throw new Error(
       JSON.stringify({
         type: ErrorTypes.NO_USER_KEY,
@@ -242,8 +249,8 @@ export async function initializeCustom({
 
   let endpointTokenConfig: EndpointTokenConfig | undefined;
 
-  const userId = req.user?.id ?? '';
-  const tenantId = req.user?.tenantId;
+  const userId = user?.id ?? '';
+  const tenantId = user?.tenantId;
 
   const cache = tokenConfigCache();
   const hasTokenConfig = endpointConfig.tokenConfig != null;
@@ -273,10 +280,12 @@ export async function initializeCustom({
     await fetchModels({
       apiKey,
       baseURL,
+      baseURLIsUserProvided: userProvidesURL,
+      allowedAddresses: appConfig?.endpoints?.allowedAddresses,
       name: endpoint,
       user: userId,
       tokenKey,
-      userObject: req.user,
+      userObject: user,
       // Mirror the security guard in `loadConfigModels`: never forward
       // header overrides when the base URL is user-supplied — configured
       // templates like {{LIBRECHAT_OPENID_ID_TOKEN}} would otherwise resolve
@@ -291,10 +300,17 @@ export async function initializeCustom({
     endpointTokenConfig = (await cache.get(tokenKey)) as EndpointTokenConfig | undefined;
   }
 
-  const customOptions = buildCustomOptions(endpointConfig, appConfig, endpointTokenConfig);
+  const customOptions = buildCustomOptions(
+    endpointConfig,
+    appConfig,
+    endpointTokenConfig,
+    !userProvidesURL,
+  );
 
   const clientOptions: Record<string, unknown> = {
     reverseProxyUrl: baseURL ?? null,
+    baseURLIsUserProvided: userProvidesURL,
+    allowedAddresses: appConfig?.endpoints?.allowedAddresses,
     proxy: PROXY ?? null,
     ...customOptions,
   };
@@ -312,6 +328,7 @@ export async function initializeCustom({
       modelOptions: modelOptions as AnthropicModelOptions,
       endpointConfig,
       userProvidesURL,
+      allowedAddresses: appConfig?.endpoints?.allowedAddresses,
     });
     options.endpointTokenConfig = endpointTokenConfig;
   } else {
@@ -327,8 +344,8 @@ export async function initializeCustom({
   }
 
   const streamRate = clientOptions.streamRate as number | undefined;
-  if (streamRate) {
-    (options.llmConfig as Record<string, unknown>)._lc_stream_delay = streamRate;
+  if (streamRate != null) {
+    options.llmConfig._lc_stream_delay = streamRate;
   }
 
   return options;

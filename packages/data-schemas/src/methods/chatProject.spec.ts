@@ -1,8 +1,12 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createModels } from '~/models';
 import type { IChatProject, IConversation } from '~/types';
-import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
+import {
+  createChatProjectMethods,
+  updateChatProjectLastConversationForUser,
+  type ChatProjectMethods,
+} from './chatProject';
+import { createModels } from '~/models';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -81,6 +85,26 @@ describe('ChatProject methods', () => {
     const list = await methods.listChatProjects(user, { sortBy: 'name', sortDirection: 'asc' });
     expect(list.projects).toHaveLength(1);
     expect(list.projects[0].name).toBe('Customer Alpha Updated');
+  });
+
+  it('filters projects by name or description search', async () => {
+    await methods.createChatProject(user, {
+      name: 'Customer Alpha',
+      description: 'Support work',
+    });
+    await methods.createChatProject(user, {
+      name: 'Internal Tools',
+      description: 'Overflow menu test',
+    });
+
+    const byName = await methods.listChatProjects(user, { search: 'alpha' });
+    expect(byName.projects.map((project) => project.name)).toEqual(['Customer Alpha']);
+
+    const byDescription = await methods.listChatProjects(user, { search: 'overflow' });
+    expect(byDescription.projects.map((project) => project.name)).toEqual(['Internal Tools']);
+
+    const noMatch = await methods.listChatProjects(user, { search: 'zzzz' });
+    expect(noMatch.projects).toHaveLength(0);
   });
 
   it('paginates projects deterministically when latest activity is null', async () => {
@@ -235,6 +259,181 @@ describe('ChatProject methods', () => {
     expect(refreshedProject?.conversationCount).toBe(1);
     expect(refreshedProject?.lastConversationId).toBe('visible-convo');
     expect(refreshedProject?.lastConversationAt?.toISOString()).toBe(visibleDate.toISOString());
+  });
+
+  it('retries instead of overwriting a newer concurrent stats update', async () => {
+    const project = await methods.createChatProject(user, { name: 'Concurrent Stats' });
+    const chatProjectId = project._id!.toString();
+    const initialDate = new Date('2026-01-01T00:00:00.000Z');
+    const newerDate = new Date('2026-02-01T00:00:00.000Z');
+
+    await Conversation.collection.insertOne({
+      conversationId: 'initial-convo',
+      title: 'Initial',
+      user,
+      endpoint: 'openAI',
+      chatProjectId,
+      createdAt: initialDate,
+      updatedAt: initialDate,
+    });
+    await ChatProject.findByIdAndUpdate(project._id, {
+      conversationCount: 1,
+      lastConversationAt: initialDate,
+      lastConversationId: 'initial-convo',
+    });
+
+    const findOneAndUpdate = ChatProject.findOneAndUpdate.bind(ChatProject);
+    const updateSpy = jest
+      .spyOn(ChatProject, 'findOneAndUpdate')
+      .mockImplementationOnce((filter, update, options) => {
+        const query = findOneAndUpdate(filter, update, options);
+        const exec = query.exec.bind(query);
+        jest.spyOn(query, 'exec').mockImplementationOnce(async () => {
+          await Conversation.collection.insertOne({
+            conversationId: 'newer-convo',
+            title: 'Newer',
+            user,
+            endpoint: 'openAI',
+            chatProjectId,
+            createdAt: newerDate,
+            updatedAt: newerDate,
+          });
+          await ChatProject.updateOne(
+            { _id: project._id },
+            {
+              conversationCount: 2,
+              lastConversationAt: newerDate,
+              lastConversationId: 'newer-convo',
+            },
+          );
+          return await exec();
+        });
+        return query;
+      });
+
+    try {
+      const refreshed = await methods.refreshChatProjectStats(user, chatProjectId);
+
+      expect(refreshed?.conversationCount).toBe(2);
+      expect(refreshed?.lastConversationId).toBe('newer-convo');
+      expect(refreshed?.lastConversationAt?.toISOString()).toBe(newerDate.toISOString());
+      expect(updateSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      updateSpy.mockRestore();
+    }
+
+    const persisted = await ChatProject.findById(project._id).lean<IChatProject>();
+    expect(persisted?.conversationCount).toBe(2);
+    expect(persisted?.lastConversationId).toBe('newer-convo');
+    expect(persisted?.lastConversationAt?.toISOString()).toBe(newerDate.toISOString());
+  });
+
+  it('keeps reconciling after the first three optimistic attempts lose the race', async () => {
+    const project = await methods.createChatProject(user, { name: 'Exhausted Then Succeeds' });
+    const chatProjectId = project._id!.toString();
+    await ChatProject.findByIdAndUpdate(project._id, {
+      conversationCount: 4,
+      lastConversationId: 'stale-convo',
+    });
+
+    let casAttempts = 0;
+    const findOneAndUpdate = ChatProject.findOneAndUpdate.bind(ChatProject);
+    const updateSpy = jest
+      .spyOn(ChatProject, 'findOneAndUpdate')
+      .mockImplementation((filter, update, options) => {
+        const query = findOneAndUpdate(filter, update, options);
+        const exec = query.exec.bind(query);
+        jest.spyOn(query, 'exec').mockImplementation(async () => {
+          casAttempts += 1;
+          if (casAttempts <= 3) {
+            await ChatProject.updateOne(
+              { _id: project._id },
+              {
+                lastConversationAt: new Date(`2026-03-0${casAttempts}T00:00:00.000Z`),
+                lastConversationId: `concurrent-${casAttempts}`,
+              },
+            );
+          }
+          return await exec();
+        });
+        return query;
+      });
+
+    try {
+      const refreshed = await methods.refreshChatProjectStats(user, chatProjectId);
+      expect(refreshed?.conversationCount).toBe(0);
+      expect(refreshed?.lastConversationId).toBeNull();
+      expect(casAttempts).toBeGreaterThan(3);
+    } finally {
+      updateSpy.mockRestore();
+    }
+
+    const persisted = await ChatProject.findById(project._id).lean<IChatProject>();
+    expect(persisted?.conversationCount).toBe(0);
+    expect(persisted?.lastConversationId).toBeNull();
+  });
+
+  it('throws instead of returning stale stats when every optimistic write loses', async () => {
+    const project = await methods.createChatProject(user, { name: 'Never Settles' });
+    const chatProjectId = project._id!.toString();
+    await ChatProject.findByIdAndUpdate(project._id, {
+      conversationCount: 4,
+      lastConversationId: 'stale-convo',
+    });
+
+    const updateSpy = jest.spyOn(ChatProject, 'findOneAndUpdate').mockImplementation(
+      () =>
+        ({
+          lean: async () => null,
+        }) as unknown as ReturnType<typeof ChatProject.findOneAndUpdate>,
+    );
+
+    try {
+      await expect(methods.refreshChatProjectStats(user, chatProjectId)).rejects.toThrow(
+        /refresh chat project stats/i,
+      );
+    } finally {
+      updateSpy.mockRestore();
+    }
+
+    const persisted = await ChatProject.findById(project._id).lean<IChatProject>();
+    expect(persisted?.conversationCount).toBe(4);
+    expect(persisted?.lastConversationId).toBe('stale-convo');
+  });
+
+  it('does not increment again when a refresh already counted the new conversation', async () => {
+    const project = await methods.createChatProject(user, { name: 'Pending Increment' });
+    const chatProjectId = project._id!.toString();
+    const createdAt = new Date('2026-04-01T00:00:00.000Z');
+    await Conversation.create({
+      conversationId: 'new-convo',
+      title: 'New',
+      user,
+      endpoint: 'openAI',
+      chatProjectId,
+      createdAt,
+      updatedAt: createdAt,
+    });
+
+    const refreshed = await methods.refreshChatProjectStats(user, chatProjectId);
+    expect(refreshed?.conversationCount).toBe(1);
+    expect(refreshed?.lastConversationId).toBe('new-convo');
+
+    await updateChatProjectLastConversationForUser(
+      mongoose,
+      user,
+      chatProjectId,
+      {
+        conversationId: 'new-convo',
+        createdAt,
+        updatedAt: createdAt,
+      },
+      true,
+    );
+
+    const persisted = await ChatProject.findById(project._id).lean<IChatProject>();
+    expect(persisted?.conversationCount).toBe(1);
+    expect(persisted?.lastConversationId).toBe('new-convo');
   });
 
   it('enforces one project per chat when moving conversations', async () => {

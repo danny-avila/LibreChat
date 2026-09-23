@@ -26,7 +26,16 @@ export interface OAuthMetadata {
   revocation_endpoint_auth_methods_supported?: string[];
 }
 
+/** How the OAuth client credentials associated with stored tokens were obtained. */
+export type OAuthClientSource = 'configured' | 'dynamic';
+
 export interface OAuthStoredClientMetadata extends OAuthMetadata {
+  /** Random identifier shared by the access, refresh, and client records from one authorization. */
+  credential_set_id?: string;
+  /** Canonical MCP server URL the tokens and client registration are bound to. */
+  server_url: string;
+  /** Whether the client came from server configuration or dynamic client registration. */
+  client_source: OAuthClientSource;
   /** Canonical OAuth resource indicator used when the authorization code was exchanged. */
   resource?: string;
 }
@@ -88,9 +97,13 @@ export interface MCPOAuthFlowMetadata extends FlowMetadata {
   serverName: string;
   userId: string;
   serverUrl: string;
+  /** Identity of the effective server definition that admitted this authorization attempt. */
+  serverGeneration?: string;
   state: string;
   codeVerifier?: string;
   clientInfo?: OAuthClientInformation;
+  /** Whether this flow uses a configured client or a dynamically registered client. */
+  clientSource?: OAuthClientSource;
   metadata?: OAuthMetadata;
   resourceMetadata?: OAuthProtectedResourceMetadata;
   authorizationUrl?: string;
@@ -102,15 +115,25 @@ export interface MCPOAuthFlowMetadata extends FlowMetadata {
   allowedAddresses?: string[] | null;
   /** True when the flow reused a stored client registration from a prior successful OAuth flow */
   reusedStoredClient?: boolean;
+  /** Credential generation of the reused client, used to scope stale-registration cleanup. */
+  reusedClientCredentialSetId?: string;
   /** Tenant context captured at flow initiation for callback replay (SameSite cookies unavailable on cross-origin redirects) */
   tenantId?: string;
 }
 
 export interface MCPOAuthTokens extends OAuthTokens {
+  /** Internal identifier for the persisted credential set; never sent to the OAuth provider. */
+  credential_set_id?: string;
   /** When the tokens were obtained */
   obtained_at: number;
   /** Calculated expiry time */
   expires_at?: number;
+  /**
+   * Tool-cache publication generation written when these tokens were persisted. Carried only by
+   * tokens handed to the waiters of the authorization or refresh that stored them, never by a
+   * stored row, so a connection built on them can lease under that generation.
+   */
+  publication_generation?: string;
 }
 
 /** Extended OAuth tokens that may include refresh token expiry */

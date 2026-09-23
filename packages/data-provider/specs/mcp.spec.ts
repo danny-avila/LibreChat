@@ -4,7 +4,50 @@ import {
   StreamableHTTPOptionsSchema,
   MCPServerUserInputSchema,
   MCP_USER_INPUT_FIELDS,
+  MAX_MCP_ICON_PATH_LENGTH,
 } from '../src/mcp';
+
+describe('MCP server title validation', () => {
+  const titleCases = [
+    ['hyphenated ASCII title', 'Read-Only Tools'],
+    ['accented title', "Générateur d'images"],
+    ['Unicode title', '画像ツール'],
+    ['typographic apostrophe', 'Today’s Tools'],
+  ];
+
+  it.each(titleCases)('accepts a %s in configured MCP servers', (_label, title) => {
+    const result = MCPOptionsSchema.safeParse({
+      type: 'sse',
+      url: 'https://mcp-server.com/sse',
+      title,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it.each(titleCases)('accepts a %s from the MCP Builder', (_label, title) => {
+    const result = MCPServerUserInputSchema.safeParse({
+      type: 'sse',
+      url: 'https://mcp-server.com/sse',
+      title,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it.each(['', '   ', '-Tools', "'Tools", 'Tools@Home'])(
+    'rejects an invalid MCP server title: %p',
+    (title) => {
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'sse',
+        url: 'https://mcp-server.com/sse',
+        title,
+      });
+
+      expect(result.success).toBe(false);
+    },
+  );
+});
 
 describe('MCPOptionsSchema', () => {
   describe('OBO transport support', () => {
@@ -44,6 +87,16 @@ describe('MCPOptionsSchema', () => {
       });
       expect(result.success).toBe(false);
     });
+  });
+
+  it('accepts the direct OpenID bearer placeholder for operator configuration', () => {
+    const result = MCPOptionsSchema.safeParse({
+      type: 'streamable-http',
+      url: 'https://mcp-server.com/http',
+      headers: { Authorization: 'Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}' },
+    });
+
+    expect(result.success).toBe(true);
   });
 });
 
@@ -179,6 +232,17 @@ describe('MCP schemas', () => {
         expect(result.data.oauth.redirect_uri).toBeUndefined();
         expect(result.data.oauth.revocation_endpoint).toBeUndefined();
       }
+    });
+  });
+
+  describe('iconPath', () => {
+    it('accepts an over-limit iconPath so editing a server with a pre-existing oversized icon is not rejected (the cap is enforced server-side by sanitizeMcpIconPath, not at parse time)', () => {
+      const result = MCPServerUserInputSchema.safeParse({
+        type: 'streamable-http',
+        url: 'https://mcp-server.com/http',
+        iconPath: `data:image/png;base64,${'A'.repeat(MAX_MCP_ICON_PATH_LENGTH + 1000)}`,
+      });
+      expect(result.success).toBe(true);
     });
   });
 

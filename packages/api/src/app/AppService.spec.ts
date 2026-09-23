@@ -60,6 +60,13 @@ const azureGroups = [
   } as const,
 ];
 
+/** Default agent capabilities served when no `memory` block is configured —
+ *  `AppService` strips `memory` from the defaults since the capability is inert
+ *  without a memory config. */
+const defaultAgentCapabilitiesWithoutMemory = defaultAgentCapabilities.filter(
+  (capability) => capability !== AgentCapabilities.memory,
+);
+
 describe('AppService', () => {
   const mockSystemTools: Record<string, FunctionTool> = {
     ExampleTool: {
@@ -113,7 +120,7 @@ describe('AppService', () => {
         mcpConfig: null,
         imageOutputType: expect.any(String),
         fileConfig: undefined,
-        secureImageLinks: undefined,
+        secureImageLinks: true,
         balance: { enabled: true },
         filteredTools: undefined,
         includedTools: undefined,
@@ -132,7 +139,7 @@ describe('AppService', () => {
         endpoints: expect.objectContaining({
           agents: expect.objectContaining({
             disableBuilder: false,
-            capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+            capabilities: expect.arrayContaining([...defaultAgentCapabilitiesWithoutMemory]),
             maxCitations: 30,
             maxCitationsPerFile: 7,
             minRelevanceScore: 0.45,
@@ -154,6 +161,14 @@ describe('AppService', () => {
         imageOutputType: EImageOutputType.WEBP,
       }),
     );
+  });
+
+  it('should require authentication for image links unless explicitly disabled', async () => {
+    const secureResult = await AppService({ config: {} });
+    const legacyResult = await AppService({ config: { secureImageLinks: false } });
+
+    expect(secureResult.secureImageLinks).toBe(true);
+    expect(legacyResult.secureImageLinks).toBe(false);
   });
 
   it('should default to `PNG` `imageOutputType` with no provided type', async () => {
@@ -313,7 +328,7 @@ describe('AppService', () => {
         endpoints: expect.objectContaining({
           [EModelEndpoint.agents]: expect.objectContaining({
             disableBuilder: false,
-            capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+            capabilities: expect.arrayContaining([...defaultAgentCapabilitiesWithoutMemory]),
           }),
         }),
       }),
@@ -336,7 +351,7 @@ describe('AppService', () => {
         endpoints: expect.objectContaining({
           [EModelEndpoint.agents]: expect.objectContaining({
             disableBuilder: false,
-            capabilities: expect.arrayContaining([...defaultAgentCapabilities]),
+            capabilities: expect.arrayContaining([...defaultAgentCapabilitiesWithoutMemory]),
           }),
           [EModelEndpoint.openAI]: expect.objectContaining({
             titleConvo: true,

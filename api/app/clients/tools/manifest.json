@@ -91,6 +91,13 @@
     "authConfig": []
   },
   {
+    "name": "Ask User",
+    "pluginKey": "ask_user_question",
+    "description": "Let the agent pause mid-run to ask you a clarifying question and wait for your answer.",
+    "agentsOnly": true,
+    "authConfig": []
+  },
+  {
     "name": "Stable Diffusion",
     "pluginKey": "stable-diffusion",
     "description": "Generate photo-realistic images given any text input.",

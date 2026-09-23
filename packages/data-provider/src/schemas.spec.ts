@@ -1,16 +1,25 @@
 import {
   AnthropicEffort,
+  ReasoningEffort,
+  ReasoningMode,
+  ReasoningContext,
   googleSettings,
   anthropicSettings,
   compactGoogleSchema,
+  tMessageSchema,
   eAnthropicEffortSchema,
+  eReasoningEffortSchema,
+  eReasoningModeSchema,
+  eReasoningContextSchema,
+  subagentThreadLineageSchema,
+  getGoogleThinkingBudgetBounds,
 } from './schemas';
 
 describe('anthropicSettings', () => {
   describe('maxOutputTokens.reset()', () => {
     const { reset } = anthropicSettings.maxOutputTokens;
 
-    describe('Claude Sonnet models', () => {
+    describe('Claude Sonnet 4/4.5 models (64K limit)', () => {
       it('should return 64K for claude-sonnet-4', () => {
         expect(reset('claude-sonnet-4')).toBe(64000);
       });
@@ -19,12 +28,45 @@ describe('anthropicSettings', () => {
         expect(reset('claude-sonnet-4-5')).toBe(64000);
       });
 
-      it('should return 64K for claude-sonnet-5', () => {
-        expect(reset('claude-sonnet-5')).toBe(64000);
+      it('should return 64K for dated claude-sonnet-4', () => {
+        expect(reset('claude-sonnet-4-20250514')).toBe(64000);
+      });
+    });
+
+    describe('Claude Sonnet 4.6+ models (128K limit)', () => {
+      it('should return 128K for claude-sonnet-4-6', () => {
+        expect(reset('claude-sonnet-4-6')).toBe(128000);
       });
 
-      it('should return 64K for future versions like claude-sonnet-9', () => {
-        expect(reset('claude-sonnet-9')).toBe(64000);
+      it('should return 128K for claude-sonnet-4.6', () => {
+        expect(reset('claude-sonnet-4.6')).toBe(128000);
+      });
+
+      it('should return 128K for claude-sonnet-4-7', () => {
+        expect(reset('claude-sonnet-4-7')).toBe(128000);
+      });
+
+      it('should return 128K for claude-sonnet-4-9', () => {
+        expect(reset('claude-sonnet-4-9')).toBe(128000);
+      });
+
+      it('should return 128K for double-digit claude-sonnet-4 minors', () => {
+        expect(reset('claude-sonnet-4-10')).toBe(128000);
+        expect(reset('claude-sonnet-4.10')).toBe(128000);
+      });
+    });
+
+    describe('Claude Sonnet 5+ models (128K limit)', () => {
+      it('should return 128K for claude-sonnet-5', () => {
+        expect(reset('claude-sonnet-5')).toBe(128000);
+      });
+
+      it('should return 128K for future versions like claude-sonnet-9', () => {
+        expect(reset('claude-sonnet-9')).toBe(128000);
+      });
+
+      it('should return 128K for double-digit minor versions like claude-sonnet-5-10', () => {
+        expect(reset('claude-sonnet-5-10')).toBe(128000);
       });
     });
 
@@ -251,9 +293,13 @@ describe('anthropicSettings', () => {
   describe('maxOutputTokens.set()', () => {
     const { set } = anthropicSettings.maxOutputTokens;
 
-    describe('Claude Sonnet and Haiku 4+ models (64K cap)', () => {
+    describe('Claude Sonnet 4/4.5 and Haiku 4+ models (64K cap)', () => {
       it('should cap at 64K for claude-sonnet-4 when value exceeds', () => {
         expect(set(100000, 'claude-sonnet-4')).toBe(64000);
+      });
+
+      it('should cap at 64K for dated claude-sonnet-4 when value exceeds', () => {
+        expect(set(100000, 'claude-sonnet-4-20250514')).toBe(64000);
       });
 
       it('should allow 50K for claude-sonnet-4', () => {
@@ -262,6 +308,41 @@ describe('anthropicSettings', () => {
 
       it('should cap at 64K for claude-haiku-4-5 when value exceeds', () => {
         expect(set(80000, 'claude-haiku-4-5')).toBe(64000);
+      });
+    });
+
+    describe('Claude Sonnet 4.6+ models (128K cap)', () => {
+      it('should allow 100K for claude-sonnet-4-6', () => {
+        expect(set(100000, 'claude-sonnet-4-6')).toBe(100000);
+      });
+
+      it('should cap at 128K for claude-sonnet-4-6 when value exceeds', () => {
+        expect(set(150000, 'claude-sonnet-4-6')).toBe(128000);
+      });
+
+      it('should allow 100K for claude-sonnet-4.6', () => {
+        expect(set(100000, 'claude-sonnet-4.6')).toBe(100000);
+      });
+
+      it('should cap at 128K for claude-sonnet-4.6 when value exceeds', () => {
+        expect(set(150000, 'claude-sonnet-4.6')).toBe(128000);
+      });
+
+      it('should cap at 128K for double-digit claude-sonnet-4 minors', () => {
+        expect(set(100000, 'claude-sonnet-4-10')).toBe(100000);
+        expect(set(150000, 'claude-sonnet-4.10')).toBe(128000);
+      });
+
+      it('should allow 100K for claude-sonnet-5', () => {
+        expect(set(100000, 'claude-sonnet-5')).toBe(100000);
+      });
+
+      it('should cap at 128K for claude-sonnet-5 when value exceeds', () => {
+        expect(set(150000, 'claude-sonnet-5')).toBe(128000);
+      });
+
+      it('should cap at 128K for future versions like claude-sonnet-9', () => {
+        expect(set(150000, 'claude-sonnet-9')).toBe(128000);
       });
     });
 
@@ -439,6 +520,37 @@ describe('googleSettings', () => {
     });
   });
 
+  describe('getGoogleThinkingBudgetBounds()', () => {
+    it('returns the documented Pro floor and ceiling', () => {
+      expect(getGoogleThinkingBudgetBounds('gemini-2.5-pro')).toEqual({ min: 128, max: 32768 });
+      expect(getGoogleThinkingBudgetBounds('gemini-2.5-pro-preview-05-06')).toEqual({
+        min: 128,
+        max: 32768,
+      });
+    });
+
+    it('returns the documented Flash floor and ceiling', () => {
+      expect(getGoogleThinkingBudgetBounds('gemini-2.5-flash')).toEqual({ min: 0, max: 24576 });
+    });
+
+    it('returns the documented Flash Lite floor and ceiling', () => {
+      expect(getGoogleThinkingBudgetBounds('gemini-2.5-flash-lite')).toEqual({
+        min: 512,
+        max: 24576,
+      });
+      expect(getGoogleThinkingBudgetBounds('gemini-2.5-flash-lite-preview-09-2025')).toEqual({
+        min: 512,
+        max: 24576,
+      });
+    });
+
+    it('does not apply 2.5 bounds to other Gemini families', () => {
+      expect(getGoogleThinkingBudgetBounds('gemini-2.0-flash')).toBeUndefined();
+      expect(getGoogleThinkingBudgetBounds('gemini-3-pro')).toBeUndefined();
+      expect(getGoogleThinkingBudgetBounds('gemini-1.5-pro')).toBeUndefined();
+    });
+  });
+
   describe('compactGoogleSchema (model-aware maxOutputTokens)', () => {
     it('strips the model default for current Gemini models', () => {
       const result = compactGoogleSchema.parse({
@@ -493,5 +605,130 @@ describe('AnthropicEffort', () => {
 
   it('rejects unknown effort values', () => {
     expect(() => eAnthropicEffortSchema.parse('ultra')).toThrow();
+  });
+});
+
+describe('ReasoningEffort', () => {
+  it('exposes max as the highest OpenAI reasoning effort, after xhigh', () => {
+    expect(ReasoningEffort.max).toBe('max');
+    const keys = Object.keys(ReasoningEffort);
+    expect(keys.indexOf('max')).toBeGreaterThan(keys.indexOf('xhigh'));
+  });
+
+  it('accepts max through the zod schema', () => {
+    expect(eReasoningEffortSchema.parse('max')).toBe('max');
+    expect(eReasoningEffortSchema.parse(ReasoningEffort.max)).toBe('max');
+  });
+
+  it('still rejects unknown effort values', () => {
+    expect(() => eReasoningEffortSchema.parse('ultra')).toThrow();
+  });
+});
+
+describe('ReasoningMode', () => {
+  it('exposes standard and pro plus an unset sentinel', () => {
+    expect(ReasoningMode.unset).toBe('');
+    expect(ReasoningMode.standard).toBe('standard');
+    expect(ReasoningMode.pro).toBe('pro');
+  });
+
+  it('accepts its values through the zod schema and rejects unknowns', () => {
+    expect(eReasoningModeSchema.parse('standard')).toBe('standard');
+    expect(eReasoningModeSchema.parse('pro')).toBe('pro');
+    expect(eReasoningModeSchema.parse('')).toBe('');
+    expect(() => eReasoningModeSchema.parse('turbo')).toThrow();
+  });
+});
+
+describe('ReasoningContext', () => {
+  it('exposes auto, current_turn, and all_turns plus an unset sentinel', () => {
+    expect(ReasoningContext.unset).toBe('');
+    expect(ReasoningContext.auto).toBe('auto');
+    expect(ReasoningContext.current_turn).toBe('current_turn');
+    expect(ReasoningContext.all_turns).toBe('all_turns');
+  });
+
+  it('accepts its values through the zod schema and rejects unknowns', () => {
+    expect(eReasoningContextSchema.parse('auto')).toBe('auto');
+    expect(eReasoningContextSchema.parse('current_turn')).toBe('current_turn');
+    expect(eReasoningContextSchema.parse('all_turns')).toBe('all_turns');
+    expect(() => eReasoningContextSchema.parse('next_turn')).toThrow();
+  });
+});
+
+describe('subagentThreadLineageSchema', () => {
+  const lineage = {
+    rootConversationId: 'root-conversation',
+    parentConversationId: 'parent-conversation',
+    parentMessageId: 'parent-message',
+    parentToolCallId: 'tool-call',
+    parentAgentId: 'parent-agent',
+    subagentType: 'researcher',
+    subagentKind: 'agent',
+    depth: 1,
+  };
+
+  it('accepts durable child-thread lineage', () => {
+    expect(subagentThreadLineageSchema.parse(lineage)).toEqual(lineage);
+  });
+
+  it('rejects non-positive depth and unknown execution shapes', () => {
+    expect(() => subagentThreadLineageSchema.parse({ ...lineage, depth: 0 })).toThrow();
+    expect(() =>
+      subagentThreadLineageSchema.parse({ ...lineage, subagentKind: 'workflow' }),
+    ).toThrow();
+    expect(() =>
+      subagentThreadLineageSchema.parse({ ...lineage, parentConversationId: '' }),
+    ).toThrow();
+  });
+});
+
+describe('tMessageSchema user-submitted provenance', () => {
+  const message = {
+    messageId: 'message-1',
+    conversationId: 'conversation-1',
+    parentMessageId: null,
+    text: 'Assistant-role text',
+    isCreatedByUser: false,
+  };
+
+  it('preserves an explicit user-submitted marker', () => {
+    expect(
+      tMessageSchema.parse({
+        ...message,
+        isUserSubmitted: true,
+        userSubmittedPaths: ['/text', '/content/0/steer'],
+        userSubmittedMessageFieldPaths: [
+          { path: '/content/1/tool_call/output', field: 'decision_response' },
+        ],
+      }),
+    ).toMatchObject({
+      isCreatedByUser: false,
+      isUserSubmitted: true,
+      userSubmittedPaths: ['/text', '/content/0/steer'],
+      userSubmittedMessageFieldPaths: [
+        { path: '/content/1/tool_call/output', field: 'decision_response' },
+      ],
+    });
+  });
+
+  it('keeps the marker optional for legacy messages', () => {
+    expect(tMessageSchema.parse(message)).not.toHaveProperty('isUserSubmitted');
+    expect(tMessageSchema.parse(message)).not.toHaveProperty('userSubmittedPaths');
+    expect(tMessageSchema.parse(message)).not.toHaveProperty('userSubmittedMessageFieldPaths');
+  });
+
+  it('rejects provenance paths that are not JSON pointers', () => {
+    expect(() =>
+      tMessageSchema.parse({ ...message, userSubmittedPaths: ['content/0/text'] }),
+    ).toThrow();
+  });
+
+  it.each([
+    [{ path: 'content/0/tool_call/output', field: 'answer' }],
+    [{ path: '/content/0/tool_call/output', field: 'content_part' }],
+    [{ path: '/content/0/tool_call/output', field: 'answer', extra: true }],
+  ])('rejects invalid exact message-field provenance %#', (userSubmittedMessageFieldPaths) => {
+    expect(() => tMessageSchema.parse({ ...message, userSubmittedMessageFieldPaths })).toThrow();
   });
 });

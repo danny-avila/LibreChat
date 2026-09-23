@@ -1,15 +1,16 @@
 import type { BedrockDocumentFormat } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { Readable } from 'stream';
-import type { ServerRequest } from './http';
 import type { DownloadURLParams } from '~/storage/types';
+import type { ServerRequest } from './http';
 export interface STTService {
   getInstance(): Promise<STTService>;
-  getProviderSchema(req: ServerRequest): Promise<[string, object]>;
+  getProviderSchema(req: ServerRequest): Promise<[string, object, string[] | undefined]>;
   sttRequest(
     provider: string,
     schema: object,
     params: { audioBuffer: Buffer; audioFile: AudioFileInfo },
+    allowedAddresses?: string[],
   ): Promise<string>;
 }
 
@@ -38,7 +39,7 @@ export interface GoogleVideoBlock {
   data: string;
 }
 
-/** OpenRouter video block format */
+/** OpenAI-compatible video block format (OpenRouter, vLLM, configured custom endpoints) */
 export interface OpenRouterVideoBlock {
   type: 'video_url';
   video_url: {
@@ -135,7 +136,7 @@ export interface GoogleAudioBlock {
   data: string;
 }
 
-/** OpenRouter audio block format */
+/** OpenAI-compatible audio block format (OpenRouter, vLLM, configured custom endpoints) */
 export interface OpenRouterAudioBlock {
   type: 'input_audio';
   input_audio: {
@@ -158,8 +159,8 @@ export interface AudioResult {
   }>;
 }
 
-export interface ProcessedFile {
-  file: IMongoFile;
+export interface ProcessedFile<T = IMongoFile> {
+  file: T;
   content: string;
   metadata: {
     file_id: string;

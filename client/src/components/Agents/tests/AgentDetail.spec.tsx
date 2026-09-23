@@ -1,14 +1,12 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { RecoilRoot } from 'recoil';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { RecoilRoot } from 'recoil';
-
-import type t from 'librechat-data-provider';
+import { render, screen, waitFor } from '@testing-library/react';
 import { Constants, EModelEndpoint } from 'librechat-data-provider';
-
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type t from 'librechat-data-provider';
 import AgentDetail from '../AgentDetail';
 
 // Mock dependencies
@@ -49,6 +47,15 @@ jest.mock('~/utils/agents', () => ({
   renderAgentAvatar: jest.fn((agent, options) => (
     <div data-testid="agent-avatar" data-size={options?.size} />
   )),
+}));
+
+jest.mock('~/utils/endpoints', () => ({
+  specDisplayFieldReset: {
+    spec: null,
+    iconURL: null,
+    modelLabel: null,
+    greeting: undefined,
+  },
 }));
 
 jest.mock('~/Providers', () => ({
@@ -148,6 +155,7 @@ describe('AgentDetail', () => {
     (useQueryClient as jest.Mock).mockReturnValue({
       getQueryData: jest.fn(),
       setQueryData: jest.fn(),
+      removeQueries: jest.fn(),
       invalidateQueries: jest.fn(),
     });
 
@@ -232,6 +240,7 @@ describe('AgentDetail', () => {
       const mockQueryClient = {
         getQueryData: jest.fn().mockReturnValue(null),
         setQueryData: jest.fn(),
+        removeQueries: jest.fn(),
         invalidateQueries: jest.fn(),
       };
 
@@ -260,7 +269,49 @@ describe('AgentDetail', () => {
           endpoint: EModelEndpoint.agents,
           agent_id: 'test-agent-id',
           title: 'Chat with Test Agent',
+          spec: null,
+          iconURL: null,
+          modelLabel: null,
+          greeting: undefined,
         },
+      });
+    });
+
+    it('should clear model spec display fields when starting an agent chat', async () => {
+      const user = userEvent.setup();
+      const mockNewConversation = jest.fn();
+      const { useChatContext } = require('~/Providers');
+      (useChatContext as jest.Mock).mockReturnValue({
+        conversation: {
+          conversationId: 'test-convo-id',
+          spec: 'ClickHouse Agent',
+          iconURL: '/images/clickhouse.svg',
+          modelLabel: 'ClickHouse Agent',
+        },
+        newConversation: mockNewConversation,
+      });
+      const { useDefaultConvo } = require('~/hooks');
+      (useDefaultConvo as jest.Mock).mockReturnValue(({ conversation, preset }) => ({
+        ...conversation,
+        ...preset,
+      }));
+
+      renderWithProviders(<AgentDetail {...defaultProps} />);
+      await user.click(screen.getByRole('button', { name: 'com_agents_start_chat' }));
+
+      expect(mockNewConversation).toHaveBeenCalledWith({
+        template: expect.objectContaining({
+          endpoint: EModelEndpoint.agents,
+          agent_id: 'test-agent-id',
+          spec: null,
+          iconURL: null,
+          modelLabel: null,
+        }),
+        preset: expect.objectContaining({
+          spec: null,
+          iconURL: null,
+          modelLabel: null,
+        }),
       });
     });
 

@@ -221,7 +221,7 @@ const TwoFactorAuthentication: React.FC = () => {
           >
             <OGDialogHeader>
               <OGDialogTitle className="mb-2 flex items-center gap-3 text-2xl font-bold">
-                <SmartphoneIcon className="h-6 w-6 text-primary" aria-hidden="true" />
+                <SmartphoneIcon className="h-6 w-6 text-text-primary" aria-hidden="true" />
                 {user?.twoFactorEnabled
                   ? localize('com_ui_2fa_disable')
                   : localize('com_ui_2fa_setup')}
@@ -238,7 +238,9 @@ const TwoFactorAuthentication: React.FC = () => {
                         key={step}
                         animate={{
                           color:
-                            currentStep >= index ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                            currentStep >= index
+                              ? 'rgb(var(--text-primary))'
+                              : 'rgb(var(--text-tertiary))',
                         }}
                         className="font-medium"
                       >

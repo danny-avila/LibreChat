@@ -1,16 +1,21 @@
+import { Agent } from 'undici';
 import { Providers } from '@librechat/agents';
 import { KnownEndpoints, EModelEndpoint, ReasoningParameterFormat } from 'librechat-data-provider';
+import type { Dispatcher } from 'undici';
 import type * as t from '~/types';
+import { getGoogleConfig, stripGeminiFlashBlockedParams } from '~/endpoints/google/llm';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
+import { createSSRFSafeAgents, createSSRFSafeUndiciConnect } from '~/auth';
 import { getOpenAILLMConfig, extractDefaultParams } from './llm';
-import { getGoogleConfig } from '~/endpoints/google/llm';
+import { constructAzureResponsesURL } from '~/utils/azure';
 import { transformToOpenAIConfig } from './transform';
 import { getProxyDispatcher } from '~/utils/proxy';
-import { constructAzureURL } from '~/utils/azure';
 import { createFetch } from '~/utils/generators';
 import { mergeHeaders } from '~/utils/headers';
 
 type Fetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+type FetchOptions = RequestInit & { dispatcher?: Dispatcher };
+type OpenAIConfiguration = NonNullable<t.OpenAIConfiguration>;
 
 const OPENROUTER_DEFAULT_PARAMS = { promptCache: true };
 
@@ -51,6 +56,33 @@ function getReasoningFormat({
   return undefined;
 }
 
+function getEffectiveURLPort(baseURL: string): string | null {
+  try {
+    const parsed = new URL(baseURL);
+    if (parsed.port) {
+      return parsed.port;
+    }
+    if (parsed.protocol === 'http:') {
+      return '80';
+    }
+    if (parsed.protocol === 'https:') {
+      return '443';
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function mergeFetchOptions(configOptions: OpenAIConfiguration, options: FetchOptions): void {
+  const currentOptions = (configOptions.fetchOptions ?? {}) as FetchOptions;
+  configOptions.fetchOptions = {
+    ...currentOptions,
+    ...options,
+  } as OpenAIConfiguration['fetchOptions'];
+}
+
 /**
  * Generates configuration options for creating a language model (LLM) instance.
  * @param apiKey - The API key for authentication.
@@ -73,6 +105,10 @@ export function getOpenAIConfig(
     modelOptions = {},
     reverseProxyUrl: baseURL,
   } = options;
+  const shouldProtectUserBaseURL = options.baseURLIsUserProvided === true && !!baseURL;
+  const ssrfAgents = shouldProtectUserBaseURL
+    ? createSSRFSafeAgents(options.allowedAddresses)
+    : undefined;
 
   let llmConfig: t.OAIClientOptions;
   let tools: t.LLMConfigResult['tools'];
@@ -133,9 +169,19 @@ export function getOpenAIConfig(
       },
       true,
     );
-    /** Transform handles addParams/dropParams - it knows about OpenAI params */
+    /**
+     * Transform handles addParams/dropParams - it knows about OpenAI params.
+     * `getGoogleConfig` already stripped Flash-blocked params from `llmConfig`,
+     * but the transform re-applies `addParams` raw, which would undo that; strip
+     * them from the forwarded `addParams` too so the model does not receive
+     * params it rejects. `defaultParams` is applied inside `getGoogleConfig`
+     * (and only read here for tool detection), so it needs no sanitizing.
+     */
     const transformed = transformToOpenAIConfig({
-      addParams,
+      addParams: stripGeminiFlashBlockedParams(
+        addParams,
+        (googleResult.llmConfig as { model?: string }).model,
+      ),
       dropParams,
       defaultParams,
       tools: googleResult.tools,
@@ -166,6 +212,19 @@ export function getOpenAIConfig(
     tools = openaiResult.tools;
   }
 
+  /**
+   * Within-run `reasoning_content` replay applies across every param-format
+   * branch above (OpenAI / Anthropic / Google gateway modes all resolve to the
+   * OpenAI client). `includeReasoningHistory` implies it, since reconstructed
+   * history reasoning is only sent when the within-run flag is set.
+   */
+  if (
+    options.customParams?.includeReasoningContent === true ||
+    options.customParams?.includeReasoningHistory === true
+  ) {
+    llmConfig.includeReasoningContent = true;
+  }
+
   const configOptions: t.OpenAIConfiguration = {};
   if (baseURL) {
     configOptions.baseURL = baseURL;
@@ -188,11 +247,21 @@ export function getOpenAIConfig(
     configOptions.defaultQuery = defaultQuery;
   }
 
+  if (shouldProtectUserBaseURL) {
+    mergeFetchOptions(configOptions, {
+      dispatcher: new Agent({
+        connect: createSSRFSafeUndiciConnect(
+          options.allowedAddresses,
+          getEffectiveURLPort(baseURL),
+        ),
+      }),
+      redirect: 'error',
+    });
+  }
+
   const proxyDispatcher = getProxyDispatcher(proxy);
-  if (proxyDispatcher) {
-    configOptions.fetchOptions = {
-      dispatcher: proxyDispatcher,
-    };
+  if (proxyDispatcher && !shouldProtectUserBaseURL) {
+    mergeFetchOptions(configOptions, { dispatcher: proxyDispatcher });
   }
 
   if (azure && !isAnthropic) {
@@ -201,20 +270,21 @@ export function getOpenAIConfig(
         return;
       }
 
-      const updatedUrl = configOptions.baseURL?.replace(/\/deployments(?:\/.*)?$/, '/v1');
-
-      configOptions.baseURL = constructAzureURL({
-        baseURL: updatedUrl || 'https://${INSTANCE_NAME}.openai.azure.com/openai/v1',
-        azureOptions: azure,
-      });
+      const responsesURL = constructAzureResponsesURL(configOptions.baseURL, azure);
+      const urlQuery = Object.fromEntries(responsesURL.searchParams);
+      responsesURL.search = '';
+      responsesURL.hash = '';
+      configOptions.baseURL = responsesURL.toString();
 
       configOptions.defaultHeaders = {
         ...configOptions.defaultHeaders,
         'api-key': apiKey,
       };
       configOptions.defaultQuery = {
+        ...urlQuery,
         ...configOptions.defaultQuery,
-        'api-version': configOptions.defaultQuery?.['api-version'] ?? 'preview',
+        'api-version':
+          configOptions.defaultQuery?.['api-version'] ?? urlQuery['api-version'] ?? 'preview',
       };
     };
 
@@ -229,6 +299,8 @@ export function getOpenAIConfig(
     configOptions.fetch = createFetch({
       directEndpoint: directEndpoint,
       reverseProxyUrl: configOptions?.baseURL,
+      ssrfAgents,
+      redirect: shouldProtectUserBaseURL ? 'error' : undefined,
     }) as unknown as Fetch;
   }
 

@@ -28,6 +28,8 @@ export interface TokenQuery {
   email?: string | null;
   type?: string | null;
   identifier?: string | RegExp | null;
+  /** Internal optimistic-concurrency selector for OAuth token record generations. */
+  metadataCredentialSetId?: string | null;
 }
 
 export interface TokenUpdateData {

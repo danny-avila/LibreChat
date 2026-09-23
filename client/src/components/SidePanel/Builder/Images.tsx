@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import * as Popover from '@radix-ui/react-popover';
+import useLocalize from '~/hooks/useLocalize';
 
 export function NoImage() {
   return (
@@ -44,7 +45,7 @@ export const AssistantAvatar = ({
       <div className="relative h-20 w-20 overflow-hidden rounded-full">
         <img
           src={url}
-          className="bg-token-surface-secondary dark:bg-token-surface-tertiary h-full w-full rounded-full object-cover"
+          className="bg-token-surface-secondary h-full w-full rounded-full object-cover dark:bg-surface-tertiary"
           alt="GPT"
           width="80"
           height="80"
@@ -87,6 +88,7 @@ export function AvatarMenu({
   handleFileChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const localize = useLocalize();
 
   const onItemClick = () => {
     if (fileInputRef.current) {
@@ -108,7 +110,7 @@ export function AvatarMenu({
           data-orientation="vertical"
           onClick={onItemClick}
         >
-          Upload Photo
+          {localize('com_ui_upload_image')}
         </div>
         {/* <Popover.Close
           role="menuitem"

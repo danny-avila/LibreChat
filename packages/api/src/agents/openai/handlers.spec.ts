@@ -1,6 +1,12 @@
 import type { Response as ServerResponse } from 'express';
+import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { OpenAIResponseContext } from './types';
-import { sendFinalChunk, OpenAIModelEndHandler, createOpenAIStreamTracker } from './handlers';
+import {
+  sendFinalChunk,
+  buildCompletionUsage,
+  OpenAIModelEndHandler,
+  createOpenAIStreamTracker,
+} from './handlers';
 
 describe('OpenAI-compatible agent stream handlers', () => {
   const context: OpenAIResponseContext = {
@@ -60,6 +66,58 @@ describe('OpenAI-compatible agent stream handlers', () => {
       completion_tokens_details: {
         reasoning_tokens: 641,
       },
+    });
+  });
+
+  it('streams the collected primary and subagent usage override', () => {
+    const tracker = createOpenAIStreamTracker();
+    const writes: string[] = [];
+    const res = {
+      write: (chunk: string) => {
+        writes.push(chunk);
+      },
+    } as unknown as ServerResponse;
+    const usage = buildCompletionUsage([
+      { input_tokens: 100, output_tokens: 40, provider: 'openai' },
+      {
+        input_tokens: 25,
+        output_tokens: 10,
+        provider: 'openai',
+        usage_type: 'subagent',
+      },
+    ]);
+
+    sendFinalChunk({ context, tracker, res }, 'stop', usage);
+
+    const finalChunk = JSON.parse(writes[0].replace(/^data: /, '').trim());
+    expect(finalChunk.usage).toEqual({
+      prompt_tokens: 125,
+      completion_tokens: 50,
+      total_tokens: 175,
+      primary: { prompt_tokens: 100, completion_tokens: 40, total_tokens: 140 },
+      subagent: { prompt_tokens: 25, completion_tokens: 10, total_tokens: 35 },
+    });
+  });
+
+  it('snapshots completed response usage before later detached calls arrive', () => {
+    const collectedUsage: UsageMetadata[] = [
+      { input_tokens: 100, output_tokens: 40, provider: 'openAI' },
+    ];
+    const completedUsage = buildCompletionUsage(collectedUsage);
+
+    collectedUsage.push({
+      input_tokens: 25,
+      output_tokens: 10,
+      provider: 'openAI',
+      usage_type: 'subagent',
+    });
+
+    expect(completedUsage).toEqual({
+      prompt_tokens: 100,
+      completion_tokens: 40,
+      total_tokens: 140,
+      primary: { prompt_tokens: 100, completion_tokens: 40, total_tokens: 140 },
+      subagent: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
     });
   });
 });

@@ -1,22 +1,32 @@
 import { useEffect, useState } from 'react';
 import { v4 } from 'uuid';
 import { SSE } from 'sse.js';
+import { useStore } from 'jotai';
 import { useSetRecoilState } from 'recoil';
 import {
   request,
   UsageEvents,
   StepEvents,
   createPayload,
+  ApprovalEvents,
   removeNullishValues,
 } from 'librechat-data-provider';
-import type { TMessage, TPayload, TSubmission, EventSubmission } from 'librechat-data-provider';
+import type {
+  Agents,
+  TMessage,
+  TPayload,
+  TSubmission,
+  EventSubmission,
+} from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData } from '~/common';
+import { clearComposerDrafts, applyPendingAction, findPendingActionMessageIndex } from '~/utils';
+import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
+import { startedAsNewConversation } from './useEventHandlers';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useEventHandlers from './useEventHandlers';
 import useUsageHandler from './useUsageHandler';
-import { clearAllDrafts } from '~/utils';
 import store from '~/store';
 
 type ChatHelpers = Pick<
@@ -30,6 +40,7 @@ export default function useSSE(
   isAddedRequest = false,
   runIndex = 0,
 ) {
+  const jotaiStore = useStore();
   const setActiveRunId = useSetRecoilState(store.activeRunFamily(runIndex));
 
   const { token, isAuthenticated } = useAuthContext();
@@ -52,11 +63,14 @@ export default function useSSE(
     titleHandler,
     attachmentHandler,
     abortConversation,
+    cancelPendingDeltaFlush,
+    flushPendingDeltas,
   } = useEventHandlers({
     setMessages,
     getMessages,
     setCompleted,
     isAddedRequest,
+    runIndex,
     setConversation,
     setIsSubmitting,
     newConversation,
@@ -109,7 +123,12 @@ export default function useSSE(
       const data = JSON.parse(e.data);
 
       if (data.final != null) {
-        clearAllDrafts(submission.conversation?.conversationId);
+        /** A queued delta flush reading the older streaming copy must never
+         * land on top of the server-final write. */
+        cancelPendingDeltaFlush();
+        clearComposerDrafts(runIndex, submission.conversation?.conversationId, {
+          includeNewChatDraft: startedAsNewConversation(submission),
+        });
         try {
           finalHandler(data, submission as EventSubmission);
           finalizeUsage(data, { ...submission, userMessage });
@@ -137,6 +156,26 @@ export default function useSSE(
         contextHandler(data.data, { ...submission, userMessage });
       } else if (data.event === UsageEvents.ON_TOKEN_USAGE) {
         usageHandler(data.data, { ...submission, userMessage });
+      } else if (data.event === ApprovalEvents.ON_PENDING_ACTION) {
+        /** The pause card must attach to the same message state the stream
+         * produced — apply any queued delta before reading the cache. */
+        flushPendingDeltas();
+        const pendingAction = data.data as Agents.PendingAction;
+        const pendingConversationId =
+          pendingAction.conversationId ?? submission.conversation?.conversationId;
+        if (pendingConversationId) {
+          jotaiStore.set(pendingApprovalActionFamily(pendingConversationId), pendingAction);
+        }
+        const messages = getMessages() ?? [];
+        const index = findPendingActionMessageIndex(messages, pendingAction);
+        if (index >= 0) {
+          const updated = applyPendingAction(messages[index], pendingAction);
+          if (updated !== messages[index]) {
+            const nextMessages = [...messages];
+            nextMessages[index] = updated;
+            setMessages(nextMessages);
+          }
+        }
       } else if (data.event != null) {
         if (
           data.event === StepEvents.ON_MESSAGE_DELTA ||
@@ -182,6 +221,9 @@ export default function useSSE(
     });
 
     sse.addEventListener('cancel', async () => {
+      /** FLUSH (not cancel): the abort below synthesizes the partial response
+       * from the cache, so the last queued tokens must land first. */
+      flushPendingDeltas();
       const streamKey = (submission as TSubmission | null)?.['initialResponse']?.messageId;
       if (completed.has(streamKey)) {
         setIsSubmitting(false);
@@ -255,6 +297,9 @@ export default function useSSE(
         setIsSubmitting(false);
       }
 
+      /** FLUSH (not cancel): the error card is built from the cache tail, so
+       * the last queued tokens must land before it is synthesized. */
+      flushPendingDeltas();
       errorHandler({ data, submission: { ...submission, userMessage } as EventSubmission });
     });
 

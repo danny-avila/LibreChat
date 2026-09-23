@@ -1,6 +1,7 @@
 import {
   parseCompactConvo,
   replaceSpecialVars,
+  resolveModelSpecEndpoint,
   type EModelEndpoint,
   type TConversation,
   type TModelSpec,
@@ -130,7 +131,37 @@ export function isModelSpecEndpointMatch(
   modelSpec: Pick<TModelSpec, 'preset'> | undefined,
   endpoint: string | null | undefined,
 ): boolean {
-  return Boolean(modelSpec && endpoint === modelSpec.preset?.endpoint);
+  return Boolean(modelSpec && endpoint === resolveModelSpecEndpoint(modelSpec));
+}
+
+export type ModelSpecEndpointResolution =
+  | { modelSpec: TModelSpec }
+  | { error: 'invalid-model-spec' | 'model-spec-mismatch' };
+
+/**
+ * Resolves the selected spec only when it serves the requested endpoint.
+ * Authorization and endpoint construction use this same result so a preset
+ * cannot change the resource identity after its access check has completed.
+ */
+export function resolveModelSpecForEndpoint({
+  modelSpecs,
+  spec,
+  endpoint,
+}: {
+  modelSpecs: Pick<TSpecsConfig, 'list'> | undefined;
+  spec: string;
+  endpoint: string | null | undefined;
+}): ModelSpecEndpointResolution {
+  const modelSpec = findModelSpecByName(modelSpecs, spec);
+  if (!modelSpec) {
+    return { error: 'invalid-model-spec' };
+  }
+
+  if (!isModelSpecEndpointMatch(modelSpec, endpoint)) {
+    return { error: 'model-spec-mismatch' };
+  }
+
+  return { modelSpec };
 }
 
 export function applyModelSpecPreset({
@@ -184,6 +215,25 @@ export function resolveModelSpecPromptPrefixVariables<T extends { promptPrefix?:
       now,
     }),
   };
+}
+
+/**
+ * Drops specs marked `showInMenu: false` so they are not advertised to clients
+ * (the model selector menu and the startup config). Such specs remain resolvable
+ * server-side by name, so a caller that sets `spec: "<name>"` can still use them.
+ * Returns the config unchanged when there is no list. Apply before `sanitizeModelSpecs`.
+ */
+export function excludeHiddenModelSpecs<T extends Partial<TSpecsConfig> | null | undefined>(
+  modelSpecs: T,
+): T {
+  if (!modelSpecs?.list || !Array.isArray(modelSpecs.list)) {
+    return modelSpecs;
+  }
+
+  return {
+    ...modelSpecs,
+    list: modelSpecs.list.filter((modelSpec) => modelSpec?.showInMenu !== false),
+  } as T;
 }
 
 export function sanitizeModelSpecs<T extends Partial<TSpecsConfig> | null | undefined>(

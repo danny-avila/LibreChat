@@ -1,4 +1,5 @@
 import { Schema } from 'mongoose';
+import { CODE_APPROVAL_MODES, CODE_ENVIRONMENT_MODES } from 'librechat-data-provider';
 
 // @ts-ignore
 export const conversationPreset: {
@@ -87,6 +88,9 @@ export const conversationPreset: {
   promptCache: {
     type: BooleanConstructor;
   };
+  promptCacheTtl: {
+    type: StringConstructor;
+  };
   thinking: {
     type: BooleanConstructor;
   };
@@ -112,6 +116,22 @@ export const conversationPreset: {
   /* agents */
   agent_id: {
     type: StringConstructor;
+  };
+  codeApprovalMode: {
+    type: StringConstructor;
+    enum: string[];
+  };
+  codeEnvironmentMode: {
+    type: StringConstructor;
+    enum: string[];
+  };
+  codeWorkspaces: {
+    type: {
+      environmentId: { type: StringConstructor; required: boolean };
+      workspaceId: { type: StringConstructor; required: boolean };
+      _id: boolean;
+    }[];
+    default: undefined;
   };
   /* assistants */
   assistant_id: {
@@ -163,6 +183,10 @@ export const conversationPreset: {
   web_search: {
     type: BooleanConstructor;
   };
+  /** Google API: URL Context tool (+ native YouTube video understanding) */
+  url_context: {
+    type: BooleanConstructor;
+  };
   disableStreaming: {
     type: BooleanConstructor;
   };
@@ -174,6 +198,13 @@ export const conversationPreset: {
     type: StringConstructor;
   };
   reasoning_summary: {
+    type: StringConstructor;
+  };
+  /** Responses API reasoning mode (standard/pro) + context */
+  reasoning_mode: {
+    type: StringConstructor;
+  };
+  reasoning_context: {
     type: StringConstructor;
   };
   /** Verbosity control */
@@ -256,6 +287,9 @@ export const conversationPreset: {
   promptCache: {
     type: Boolean,
   },
+  promptCacheTtl: {
+    type: String,
+  },
   thinking: {
     type: Boolean,
   },
@@ -281,6 +315,24 @@ export const conversationPreset: {
   /* agents */
   agent_id: {
     type: String,
+  },
+  codeApprovalMode: {
+    type: String,
+    enum: [...CODE_APPROVAL_MODES],
+  },
+  codeEnvironmentMode: {
+    type: String,
+    enum: [...CODE_ENVIRONMENT_MODES],
+  },
+  codeWorkspaces: {
+    type: [
+      {
+        environmentId: { type: String, required: true },
+        workspaceId: { type: String, required: true },
+        _id: false,
+      },
+    ],
+    default: undefined,
   },
   /* assistants */
   assistant_id: {
@@ -322,6 +374,10 @@ export const conversationPreset: {
   web_search: {
     type: Boolean,
   },
+  /** Google API: URL Context tool (+ native YouTube video understanding) */
+  url_context: {
+    type: Boolean,
+  },
   disableStreaming: {
     type: Boolean,
   },
@@ -333,6 +389,13 @@ export const conversationPreset: {
     type: String,
   },
   reasoning_summary: {
+    type: String,
+  },
+  /** Responses API reasoning mode (standard/pro) + context */
+  reasoning_mode: {
+    type: String,
+  },
+  reasoning_context: {
     type: String,
   },
   /** Verbosity control */

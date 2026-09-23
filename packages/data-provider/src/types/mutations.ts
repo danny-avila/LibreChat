@@ -1,18 +1,3 @@
-import * as types from '../types';
-import * as r from '../roles';
-import * as p from '../permissions';
-import {
-  Tools,
-  Assistant,
-  AssistantCreateParams,
-  AssistantUpdateParams,
-  FunctionTool,
-  AssistantDocument,
-  Agent,
-  AgentCreateParams,
-  AgentUpdateParams,
-} from './assistants';
-import { Action, ActionMetadata } from './agents';
 import type { InfiniteData, QueryKey } from '@tanstack/react-query';
 import type {
   TSkill,
@@ -26,6 +11,17 @@ import type {
   TDeleteSkillFileResponse,
   TSkillListResponse,
 } from './skills';
+import {
+  Assistant,
+  AssistantCreateParams,
+  AssistantUpdateParams,
+  AssistantDocument,
+} from './assistants';
+import { Action, ActionMetadata, Agent, AgentCreateParams, AgentUpdateParams } from './agents';
+import { Tools, FunctionTool } from './tools';
+import * as p from '../permissions';
+import * as types from '../types';
+import * as r from '../roles';
 
 export type MutationOptions<
   Response,
@@ -207,6 +203,11 @@ export type DuplicateConvoOptions = MutationOptions<
 
 export type ForkConvoOptions = MutationOptions<types.TForkConvoResponse, types.TForkConvoRequest>;
 
+export type ForkSharedConvoOptions = MutationOptions<
+  types.TForkConvoResponse,
+  types.TForkSharedConvoRequest
+>;
+
 export type CreateSharedLinkOptions = MutationOptions<
   types.TSharedLink,
   Partial<types.TSharedLink>
@@ -225,6 +226,11 @@ export type UpdateSharedLinkOptions = MutationOptions<
 export type ArchiveConvoOptions = MutationOptions<
   types.TArchiveConversationResponse,
   types.TArchiveConversationRequest
+>;
+
+export type ArchiveAllConversationsOptions = MutationOptions<
+  types.TArchiveAllConversationsResponse,
+  void
 >;
 
 export type DeleteSharedLinkContext = { previousQueries?: Map<string, TDeleteSharedLinkResponse> };

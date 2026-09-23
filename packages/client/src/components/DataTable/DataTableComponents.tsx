@@ -29,20 +29,9 @@ export const SelectionCheckbox: React.MemoExoticComponent<
     ariaLabel: string;
   }): JSX.Element => (
     <div
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onChange(!checked);
-        }
-        e.stopPropagation();
-      }}
       className="flex h-full w-8 items-center justify-center"
-      onClick={(e) => {
-        e.stopPropagation();
-        onChange(!checked);
-      }}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
     >
       <Checkbox checked={checked} onCheckedChange={onChange} aria-label={ariaLabel} />
     </div>
@@ -63,15 +52,15 @@ const TableRowComponent = <TData extends Record<string, unknown>>(
   { row, virtualIndex, style, selected }: TableRowComponentProps<TData>,
   ref: React.Ref<HTMLTableRowElement>,
 ) => {
-  // Check if we're on mobile - use window.innerWidth for component-level check
-  const isSmallScreen = typeof window !== 'undefined' && window.innerWidth < 768;
-
   return (
     <TableRow
       ref={ref}
       data-state={selected ? 'selected' : undefined}
       data-index={virtualIndex}
-      className="border-none hover:bg-surface-secondary"
+      /* The highlight is painted by the cells, not the row: `border-radius` has no
+         effect on a table row, so rounding the outer cells is what gives the hover
+         its pill shape. */
+      className="group border-0 hover:bg-transparent [&>*:first-child]:rounded-l-lg [&>*:last-child]:rounded-r-lg"
       style={style}
     >
       {row.getVisibleCells().map((cell) => {
@@ -94,24 +83,17 @@ const TableRowComponent = <TData extends Record<string, unknown>>(
 
         const CellComponent = isRowHeader ? TableRowHeader : TableCell;
 
-        // For desktop-only columns on mobile, keep them in DOM but visually hidden
-        // This ensures screen readers can still access the content
-        const cellProps =
-          isDesktopOnly && isSmallScreen
-            ? { 'aria-hidden': false as const } // Keep accessible to screen readers
-            : {};
-
         return (
           <CellComponent
             key={cell.id}
             className={cn(
-              'max-w-0 truncate px-2 py-2 md:px-3 md:py-3',
+              'max-w-0 truncate px-3 py-1 text-sm transition-colors',
+              'group-hover:bg-surface-secondary-alt group-data-[state=selected]:bg-surface-active',
               cell.column.id === 'select' && 'w-8 p-1',
               meta?.className,
               isDesktopOnly && 'hidden md:table-cell',
             )}
             style={widthStyle}
-            {...cellProps}
           >
             {flexRender(cell.column.columnDef.cell, cell.getContext())}
           </CellComponent>
@@ -133,34 +115,48 @@ interface GenericRowProps {
   virtualIndex?: number;
   style?: React.CSSProperties;
   selected: boolean;
+  /** Bumped when the column definitions change. Row data alone can't express a cell
+   *  that renders external state (a pending row action, say), so without this the
+   *  memo would keep showing the stale cell until the underlying row object moves. */
+  cellsVersion?: number;
 }
 
 export const MemoizedTableRow: React.MemoExoticComponent<(props: GenericRowProps) => JSX.Element> =
   memo(
     ForwardTableRowComponent as (props: GenericRowProps) => JSX.Element,
     (prev: GenericRowProps, next: GenericRowProps) =>
-      prev.row.original === next.row.original && prev.selected === next.selected,
+      prev.row.original === next.row.original &&
+      prev.selected === next.selected &&
+      prev.cellsVersion === next.cellsVersion,
   );
 
 export const SkeletonRows: React.MemoExoticComponent<
   <TData extends Record<string, unknown>, TValue>({
     count,
     columns,
+    rowHeight,
   }: {
     count?: number;
     columns: TableColumn<TData, TValue>[];
+    rowHeight?: number;
   }) => JSX.Element
 > = memo(
   <TData extends Record<string, unknown>, TValue>({
     count = 10,
     columns,
+    rowHeight = 40,
   }: {
     count?: number;
     columns: TableColumn<TData, TValue>[];
+    rowHeight?: number;
   }): JSX.Element => (
     <>
       {Array.from({ length: count }, (_, index) => (
-        <TableRow key={`skeleton-${index}`} className="h-[56px] border-b border-border-light">
+        <TableRow
+          key={`skeleton-${index}`}
+          className="border-0 hover:bg-transparent"
+          style={{ height: rowHeight }}
+        >
           {columns.map((column) => {
             const columnKey = String(
               column.id ?? ('accessorKey' in column && column.accessorKey) ?? '',
@@ -170,7 +166,7 @@ export const SkeletonRows: React.MemoExoticComponent<
               <TableCell
                 key={columnKey}
                 className={cn(
-                  'px-2 py-2 md:px-3',
+                  'px-3 py-1',
                   meta?.className,
                   meta?.desktopOnly && 'hidden md:table-cell',
                 )}

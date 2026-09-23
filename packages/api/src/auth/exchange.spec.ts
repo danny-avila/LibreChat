@@ -13,7 +13,12 @@ jest.mock(
   { virtual: true },
 );
 
-import { exchangeAdminCode, generateAdminExchangeCode, verifyCodeChallenge } from './exchange';
+import {
+  exchangeAdminCode,
+  generateAdminExchangeCode,
+  isAdminPanelRedirect,
+  verifyCodeChallenge,
+} from './exchange';
 
 describe('admin OAuth code exchange', () => {
   const user = {
@@ -212,6 +217,78 @@ describe('admin OAuth code exchange', () => {
 
       expect(result).not.toBeNull();
       expect(result!.token).toBe('jwt-token');
+    });
+  });
+
+  describe('isAdminPanelRedirect', () => {
+    it('returns true for cross-origin admin callback redirects', () => {
+      expect(
+        isAdminPanelRedirect(
+          'https://admin.example.com/auth/openid/callback',
+          'https://admin.example.com',
+          'https://chat.example.com',
+        ),
+      ).toBe(true);
+    });
+
+    it('returns true for same-origin callbacks under the admin subpath', () => {
+      expect(
+        isAdminPanelRedirect(
+          'https://chat.example.com/admin/auth/openid/callback',
+          'https://chat.example.com/admin',
+          'https://chat.example.com',
+        ),
+      ).toBe(true);
+    });
+
+    it('returns false for same-origin callbacks outside the admin subpath', () => {
+      expect(
+        isAdminPanelRedirect(
+          'https://chat.example.com/oauth/openid/callback',
+          'https://chat.example.com/admin',
+          'https://chat.example.com',
+        ),
+      ).toBe(false);
+    });
+
+    it('does not treat similarly prefixed paths as admin subpaths', () => {
+      expect(
+        isAdminPanelRedirect(
+          'https://chat.example.com/administrator/auth/openid/callback',
+          'https://chat.example.com/admin',
+          'https://chat.example.com',
+        ),
+      ).toBe(false);
+    });
+
+    it('treats trailing slash variants of admin subpath as equivalent', () => {
+      expect(
+        isAdminPanelRedirect(
+          'https://chat.example.com/admin/auth/openid/callback',
+          'https://chat.example.com/admin/',
+          'https://chat.example.com',
+        ),
+      ).toBe(true);
+    });
+
+    it('returns true when redirect path exactly matches admin subpath', () => {
+      expect(
+        isAdminPanelRedirect(
+          'https://chat.example.com/admin',
+          'https://chat.example.com/admin',
+          'https://chat.example.com',
+        ),
+      ).toBe(true);
+    });
+
+    it('returns false for same-origin root admin URL', () => {
+      expect(
+        isAdminPanelRedirect(
+          'https://chat.example.com/auth/openid/callback',
+          'https://chat.example.com/',
+          'https://chat.example.com',
+        ),
+      ).toBe(false);
     });
   });
 });

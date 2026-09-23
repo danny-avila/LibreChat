@@ -98,9 +98,47 @@ describe('parseJsonField', () => {
       expect(parseJsonField(partial, 'file_path')).toBe('C:\\note');
     });
 
-    it('preserves unknown escape sequences', () => {
-      const partial = '{"command":"tab\\there","incomplete":';
-      expect(parseJsonField(partial, 'command')).toBe('tab\\there');
+    it('decodes the full JSON escape set (matches the settled JSON.parse rendering)', () => {
+      const partial = '{"command":"tab\\there\\rreturn\\bback\\fform\\/slash","incomplete":';
+      expect(parseJsonField(partial, 'command')).toBe('tab\there\rreturn\bback\fform/slash');
+    });
+
+    it('preserves genuinely unknown escape sequences', () => {
+      const partial = '{"command":"odd\\qescape","incomplete":';
+      expect(parseJsonField(partial, 'command')).toBe('odd\\qescape');
+    });
+
+    it('decodes \\uXXXX escapes mid-stream, including surrogate pairs', () => {
+      const partial = '{"intent":"Checking caf\\u00e9 menu \\ud83d\\ude00 da';
+      expect(parseJsonField(partial, 'intent')).toBe('Checking café menu 😀 da');
+    });
+
+    it('drops an incomplete \\uXX escape at the stream edge instead of showing it literally', () => {
+      const partial = '{"intent":"Checking caf\\u00e';
+      expect(parseJsonField(partial, 'intent')).toBe('Checking caf');
+    });
+
+    it('holds back the high half of a split surrogate pair at the stream edge', () => {
+      const partial = '{"intent":"Searching \\ud83d';
+      expect(parseJsonField(partial, 'intent')).toBe('Searching ');
+    });
+
+    it.each(['\\', '\\u', '\\uD', '\\uDE0'])(
+      'holds the high surrogate while the low escape is still streaming: "\\ud83d%s"',
+      (lowPrefix) => {
+        const partial = `{"intent":"Searching \\ud83d${lowPrefix}`;
+        expect(parseJsonField(partial, 'intent')).toBe('Searching ');
+      },
+    );
+
+    it('emits a lone high surrogate when followed by ordinary text (matches JSON.parse)', () => {
+      const partial = '{"intent":"odd \\ud83d tail","incomplete":';
+      expect(parseJsonField(partial, 'intent')).toBe('odd \ud83d tail');
+    });
+
+    it('keeps a malformed \\u (bad hex mid-string) literal rather than corrupting the tail', () => {
+      const partial = '{"command":"regex \\uZZZZ tail","incomplete":';
+      expect(parseJsonField(partial, 'command')).toBe('regex \\uZZZZ tail');
     });
   });
 

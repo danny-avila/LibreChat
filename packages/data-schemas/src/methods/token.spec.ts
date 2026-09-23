@@ -448,6 +448,55 @@ describe('Token Methods - Detailed Tests', () => {
       expect(updated).toBeNull();
     });
 
+    test('should condition updates on the OAuth credential-set metadata selector', async () => {
+      await Token.updateOne(
+        { token: 'update-token' },
+        { $set: { metadata: { credential_set_id: 'generation-a' } } },
+      );
+
+      const staleUpdate = await methods.updateToken(
+        {
+          token: 'update-token',
+          metadataCredentialSetId: 'generation-b',
+        },
+        { email: 'stale@example.com' },
+      );
+      expect(staleUpdate).toBeNull();
+
+      const currentUpdate = await methods.updateToken(
+        {
+          token: 'update-token',
+          metadataCredentialSetId: 'generation-a',
+        },
+        { email: 'current@example.com' },
+      );
+      expect(currentUpdate?.email).toBe('current@example.com');
+    });
+
+    test('should condition legacy OAuth updates on a missing credential-set selector', async () => {
+      const legacyUpdate = await methods.updateToken(
+        {
+          token: 'update-token',
+          metadataCredentialSetId: null,
+        },
+        { email: 'claimed@example.com' },
+      );
+      expect(legacyUpdate?.email).toBe('claimed@example.com');
+
+      await Token.updateOne(
+        { token: 'update-token' },
+        { $set: { metadata: { credential_set_id: 'generation-a' } } },
+      );
+      const staleLegacyUpdate = await methods.updateToken(
+        {
+          token: 'update-token',
+          metadataCredentialSetId: null,
+        },
+        { email: 'stale@example.com' },
+      );
+      expect(staleLegacyUpdate).toBeNull();
+    });
+
     test('should update expiresAt when expiresIn is provided', async () => {
       const beforeUpdate = Date.now();
       const newExpiresIn = 7200;
@@ -578,6 +627,72 @@ describe('Token Methods - Detailed Tests', () => {
       const remainingTokens = await Token.find({});
       expect(remainingTokens).toHaveLength(3);
       expect(remainingTokens.find((t) => t.identifier === 'oauth-identifier-456')).toBeUndefined();
+    });
+
+    test('should condition OAuth client deletion on the credential-set metadata selector', async () => {
+      const identifier = 'mcp:test-server:client';
+      await Token.create({
+        token: 'encrypted-client-registration',
+        userId: oauthUserId,
+        type: 'mcp_oauth_client',
+        identifier,
+        metadata: { credential_set_id: 'generation-b' },
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 3600000),
+      });
+
+      const staleDelete = await methods.deleteTokens({
+        userId: oauthUserId.toString(),
+        type: 'mcp_oauth_client',
+        identifier,
+        metadataCredentialSetId: 'generation-a',
+      });
+      expect(staleDelete.deletedCount).toBe(0);
+      expect(await Token.exists({ token: 'encrypted-client-registration' })).not.toBeNull();
+
+      const currentDelete = await methods.deleteTokens({
+        userId: oauthUserId.toString(),
+        type: 'mcp_oauth_client',
+        identifier,
+        metadataCredentialSetId: 'generation-b',
+      });
+      expect(currentDelete.deletedCount).toBe(1);
+      expect(await Token.exists({ token: 'encrypted-client-registration' })).toBeNull();
+    });
+
+    test('should delete only a legacy OAuth token with a missing credential-set selector', async () => {
+      const identifier = 'mcp:test-server:refresh';
+      await Token.create([
+        {
+          token: 'legacy-refresh-token',
+          userId: oauthUserId,
+          type: 'mcp_oauth_refresh',
+          identifier,
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+        {
+          token: 'tagged-refresh-token',
+          userId: oauthUserId,
+          type: 'mcp_oauth_refresh',
+          identifier,
+          metadata: { credential_set_id: 'generation-b' },
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + 3600000),
+        },
+      ]);
+
+      const result = await methods.deleteTokens({
+        userId: oauthUserId.toString(),
+        type: 'mcp_oauth_refresh',
+        identifier,
+        token: 'legacy-refresh-token',
+        metadataCredentialSetId: null,
+      });
+
+      expect(result.deletedCount).toBe(1);
+      expect(await Token.exists({ token: 'legacy-refresh-token' })).toBeNull();
+      expect(await Token.exists({ token: 'tagged-refresh-token' })).not.toBeNull();
     });
 
     test('should delete tokens matching an identifier pattern', async () => {
@@ -988,5 +1103,90 @@ describe('Token Methods - Detailed Tests', () => {
         expect(remaining).toHaveLength(0);
       });
     });
+  });
+});
+
+describe('Token email normalization', () => {
+  const userId = new mongoose.Types.ObjectId();
+
+  const createFor = (email: string) =>
+    methods.createToken({
+      userId,
+      email,
+      token: 'hashed-token-value',
+      expiresIn: 3600,
+    });
+
+  it('stores the email normalized so reads can find it again', async () => {
+    await createFor('User@Example.COM');
+
+    const stored = await Token.findOne({ userId });
+    expect(stored?.email).toBe('user@example.com');
+  });
+
+  it('trims surrounding whitespace on write', async () => {
+    await createFor('  spaced@example.com  ');
+
+    const stored = await Token.findOne({ userId });
+    expect(stored?.email).toBe('spaced@example.com');
+  });
+
+  it('finds a token created with mixed case, whatever case the lookup uses', async () => {
+    await createFor('User@Example.COM');
+
+    for (const lookup of ['User@Example.COM', 'user@example.com', 'USER@EXAMPLE.COM']) {
+      const found = await methods.findToken({ token: 'hashed-token-value', email: lookup });
+      expect(found).not.toBeNull();
+    }
+  });
+
+  it('finds a token created with padding when the lookup is clean', async () => {
+    await createFor('  spaced@example.com  ');
+
+    const found = await methods.findToken({
+      token: 'hashed-token-value',
+      email: 'spaced@example.com',
+    });
+
+    expect(found).not.toBeNull();
+  });
+
+  it('deletes a token created with mixed case', async () => {
+    await createFor('User@Example.COM');
+
+    const result = await methods.deleteTokens({ email: 'user@example.com' });
+
+    expect(result.deletedCount).toBe(1);
+    expect(await Token.countDocuments({ userId })).toBe(0);
+  });
+
+  it('leaves a token written without an email alone', async () => {
+    await methods.createToken({
+      userId,
+      token: 'no-email-token',
+      expiresIn: 3600,
+    });
+
+    const stored = await Token.findOne({ userId });
+    expect(stored?.email).toBeUndefined();
+  });
+
+  it('leaves an explicitly null email as null, which the read side matches on', async () => {
+    /** `TokenCreateData.email` is `string | undefined`, so a null is only reachable by
+     *  writing the model directly — but `findToken` and `deleteTokens` both branch on
+     *  `email === null`, so the setters must not coerce it into something else. */
+    await Token.create({
+      userId,
+      email: null,
+      token: 'null-email-token',
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 3600000),
+    });
+
+    const stored = await Token.findOne({ userId });
+    expect(stored?.email).toBeNull();
+
+    const found = await methods.findToken({ token: 'null-email-token', email: null });
+    expect(found).not.toBeNull();
   });
 });

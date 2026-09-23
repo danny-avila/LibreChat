@@ -11,7 +11,12 @@ import {
   SKILL_SYNC_MAX_INTERVAL_MINUTES,
   summarizationTriggerSchema,
   summarizationConfigSchema,
+  retainRecentConfigSchema,
   MAX_SUBAGENTS,
+  MAX_SUBAGENTS_CEILING,
+  setMaxSubagents,
+  traceViewerDefaults,
+  resolveTraceViewerConfig,
 } from '../src/config';
 import {
   tModelSpecPresetSchema,
@@ -19,7 +24,7 @@ import {
   ReasoningParameterFormat,
   ReasoningResponseKey,
 } from '../src/schemas';
-import { specsConfigSchema } from '../src/models';
+import { specsConfigSchema, materializeModelSpecEndpoints } from '../src/models';
 import { FileSources } from '../src/types/files';
 
 describe('paramDefinitionSchema', () => {
@@ -42,6 +47,40 @@ describe('paramDefinitionSchema', () => {
       descriptionSide: 'right',
     });
     expect(result.success).toBe(true);
+  });
+
+  /**
+   * The shared `SettingRange` exposes it, so a configured sentinel range would
+   * otherwise reach the UI with its positive floor silently dropped.
+   */
+  it('preserves a configured positiveMin on the range', () => {
+    const result = paramDefinitionSchema.safeParse({
+      key: 'thinkingBudget',
+      type: 'number',
+      component: 'slider',
+      range: { min: -1, max: 32768, step: 1, positiveMin: 128 },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.range).toEqual({
+      min: -1,
+      max: 32768,
+      step: 1,
+      positiveMin: 128,
+    });
+  });
+
+  /** The floor would admit nothing but the sentinel while the clamp maps every
+   *  non-negative input onto a maximum the generated schema then rejects. */
+  it('rejects a positiveMin above the range maximum', () => {
+    const result = paramDefinitionSchema.safeParse({
+      key: 'thinkingBudget',
+      type: 'number',
+      component: 'slider',
+      range: { min: -1, max: 100, positiveMin: 200 },
+    });
+
+    expect(result.success).toBe(false);
   });
 
   it('rejects columns > 4', () => {
@@ -404,6 +443,411 @@ describe('endpointSchema addParams validation', () => {
 });
 
 describe('agentsEndpointSchema', () => {
+  it('defaults and bounds Code API upload recovery controls', () => {
+    expect(agentsEndpointSchema.parse({}).codeApiUploadConcurrency).toBe(3);
+    expect(
+      agentsEndpointSchema.parse({ codeApiUploadConcurrency: 8 }).codeApiUploadConcurrency,
+    ).toBe(8);
+    expect(agentsEndpointSchema.safeParse({ codeApiUploadConcurrency: 0 }).success).toBe(false);
+    expect(agentsEndpointSchema.safeParse({ codeApiUploadConcurrency: 101 }).success).toBe(false);
+    expect(agentsEndpointSchema.parse({}).codeApiMaxRetryWaitMs).toBe(20_000);
+    expect(
+      agentsEndpointSchema.parse({ codeApiMaxRetryWaitMs: 60_000 }).codeApiMaxRetryWaitMs,
+    ).toBe(60_000);
+    expect(agentsEndpointSchema.safeParse({ codeApiMaxRetryWaitMs: -1 }).success).toBe(false);
+    expect(agentsEndpointSchema.safeParse({ codeApiMaxRetryWaitMs: 300_001 }).success).toBe(false);
+  });
+
+  it('accepts a non-empty stateful code environment allowlist', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: { allowedEnvironments: ['user', 'agent-user'] },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it.each([0, 5, 1000])('accepts a personal worker ceiling of %i', (maxPerUser) => {
+    const principalWorkers = { enabled: true, maxPerUser };
+    const result = agentsEndpointSchema.parse({
+      statefulCodeSessions: { allowedEnvironments: ['user'], principalWorkers },
+    });
+    expect(result.statefulCodeSessions?.principalWorkers).toEqual(principalWorkers);
+  });
+
+  it.each([-1, 0.5, Infinity, Number.MAX_SAFE_INTEGER + 1])(
+    'rejects invalid personal worker ceiling %s',
+    (maxPerUser) => {
+      expect(
+        agentsEndpointSchema.safeParse({
+          statefulCodeSessions: {
+            allowedEnvironments: ['user'],
+            principalWorkers: { maxPerUser },
+          },
+        }).success,
+      ).toBe(false);
+    },
+  );
+
+  it('accepts uniquely named execution environments with exactly one default', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'managed',
+            name: 'Managed',
+            type: 'managed',
+            baseURL: 'https://code.example.com/v1',
+            default: true,
+          },
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it.each([
+    'ftp://code.example.com/v1',
+    'https://code.example.com/v1?',
+    'https://code.example.com/v1?token=secret',
+    'https://code.example.com/v1#',
+    'https://code.example.com/v1#fragment',
+  ])('rejects a non-base execution environment URL: %s', (baseURL) => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL,
+            default: true,
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('normalizes surrounding whitespace in an execution environment URL', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL: '  https://bridge.example.com/v1/  ',
+            default: true,
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.statefulCodeSessions?.environments?.[0]?.baseURL).toBe(
+        'https://bridge.example.com/v1/',
+      );
+    }
+  });
+
+  it('accepts deployment-owned pairing configuration for an attached environment', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            default: true,
+            owner: 'deployment',
+            pairing: {
+              workerId: 'vm-1',
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.statefulCodeSessions?.environments?.[0]).toMatchObject({
+        owner: 'deployment',
+        pairing: {
+          workerId: 'vm-1',
+          tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+        },
+      });
+    }
+  });
+
+  it('accepts a principal-owned environment without deployment pairing metadata', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['user'],
+        environments: [
+          {
+            id: 'personal-vm',
+            name: 'Personal VM',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            owner: 'principal',
+            default: true,
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts a principal-worker control plane without a singleton worker', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['user'],
+        environments: [
+          {
+            id: 'personal-code-control-plane',
+            name: 'Personal Code',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            pairing: {
+              allowPrincipalWorkers: true,
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a pairing-only control plane as the execution default', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['user'],
+        environments: [
+          {
+            id: 'personal-code-control-plane',
+            name: 'Personal Code',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            default: true,
+            pairing: {
+              allowPrincipalWorkers: true,
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects conflicting direct and pairing worker routes', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['user'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            default: true,
+            workerId: 'direct-worker',
+            pairing: {
+              workerId: 'paired-worker',
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects pairing metadata on a principal-owned environment', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['user'],
+        environments: [
+          {
+            id: 'personal-vm',
+            name: 'Personal VM',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            owner: 'principal',
+            pairing: {
+              workerId: 'vm-1',
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects pairing configuration without a singleton or principal workers', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['user'],
+        environments: [
+          {
+            id: 'invalid-control-plane',
+            name: 'Invalid',
+            type: 'attached',
+            baseURL: 'https://bridge.example.com/v1',
+            default: true,
+            pairing: { tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN' },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects pairing configuration for a managed environment', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'managed',
+            name: 'Managed',
+            type: 'managed',
+            baseURL: 'https://code.example.com/v1',
+            default: true,
+            pairing: {
+              workerId: 'vm-1',
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects pairing over insecure non-loopback transport', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL: 'http://bridge.example.com/v1',
+            default: true,
+            pairing: {
+              workerId: 'vm-1',
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('allows loopback HTTP pairing for local development', () => {
+    const result = agentsEndpointSchema.safeParse({
+      statefulCodeSessions: {
+        allowedEnvironments: ['conversation'],
+        environments: [
+          {
+            id: 'attached-vm',
+            name: 'Attached VM',
+            type: 'attached',
+            baseURL: 'http://127.0.0.1:23112/v1',
+            default: true,
+            pairing: {
+              workerId: 'vm-1',
+              tokenEnv: 'CODE_BRIDGE_ADMIN_TOKEN',
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects ambiguous execution environment routing', () => {
+    const environment = {
+      id: 'attached-vm',
+      name: 'Attached VM',
+      type: 'attached',
+      baseURL: 'https://bridge.example.com/v1',
+    } as const;
+    const parse = (environments: unknown[]) =>
+      agentsEndpointSchema.safeParse({
+        statefulCodeSessions: {
+          allowedEnvironments: ['conversation'],
+          environments,
+        },
+      });
+
+    expect(parse([environment]).success).toBe(false);
+    expect(parse([{ ...environment, default: true }, { ...environment }]).success).toBe(false);
+  });
+
+  it('defaults maxSubagents to MAX_SUBAGENTS and validates its bounds', () => {
+    const omitted = agentsEndpointSchema.safeParse({});
+    expect(omitted.success).toBe(true);
+    if (omitted.success) {
+      expect(omitted.data.maxSubagents).toBe(MAX_SUBAGENTS);
+    }
+
+    const raised = agentsEndpointSchema.safeParse({ maxSubagents: MAX_SUBAGENTS + 10 });
+    expect(raised.success).toBe(true);
+    if (raised.success) {
+      expect(raised.data.maxSubagents).toBe(MAX_SUBAGENTS + 10);
+    }
+
+    expect(agentsEndpointSchema.safeParse({ maxSubagents: 0 }).success).toBe(false);
+    expect(agentsEndpointSchema.safeParse({ maxSubagents: 2.5 }).success).toBe(false);
+    expect(
+      agentsEndpointSchema.safeParse({ maxSubagents: MAX_SUBAGENTS_CEILING + 1 }).success,
+    ).toBe(false);
+  });
+
+  it('rejects empty or unknown stateful code environment allowlists', () => {
+    expect(
+      agentsEndpointSchema.safeParse({
+        statefulCodeSessions: { allowedEnvironments: [] },
+      }).success,
+    ).toBe(false);
+    expect(
+      agentsEndpointSchema.safeParse({
+        statefulCodeSessions: { allowedEnvironments: ['agent'] },
+      }).success,
+    ).toBe(false);
+  });
+
   it('does not accept baseURL', () => {
     const result = agentsEndpointSchema.safeParse({
       baseURL: 'https://example.com',
@@ -971,6 +1415,27 @@ describe('configSchema skillSync', () => {
 });
 
 describe('interfaceSchema', () => {
+  it('accepts independent retention periods', () => {
+    expect(
+      interfaceSchema.parse({
+        retentionMode: RetentionMode.ALL,
+        temporaryChatRetention: 1,
+        generalChatRetention: 2160,
+      }),
+    ).toMatchObject({
+      temporaryChatRetention: 1,
+      generalChatRetention: 2160,
+    });
+    expect(interfaceSchema.parse({})).not.toHaveProperty('generalChatRetention');
+  });
+
+  it.each([0, 8761, '2160', null])(
+    'rejects invalid general retention: %s',
+    (generalChatRetention) => {
+      expect(interfaceSchema.safeParse({ generalChatRetention }).success).toBe(false);
+    },
+  );
+
   it('silently strips removed legacy fields', () => {
     const result = interfaceSchema.parse({
       endpointsMenu: true,
@@ -990,6 +1455,20 @@ describe('interfaceSchema', () => {
 
     expect(result.retentionMode).toBe(RetentionMode.ALL);
     expect(result.retainAgentFiles).toBe(true);
+  });
+
+  it('accepts defaultPinnedTools as a string array', () => {
+    const result = interfaceSchema.parse({
+      defaultPinnedTools: ['artifacts', 'execute_code', 'mcp'],
+    });
+
+    expect(result.defaultPinnedTools).toEqual(['artifacts', 'execute_code', 'mcp']);
+  });
+
+  it('leaves defaultPinnedTools undefined when not provided', () => {
+    const result = interfaceSchema.parse({ modelSelect: true });
+
+    expect(result.defaultPinnedTools).toBeUndefined();
   });
 });
 
@@ -1099,6 +1578,35 @@ describe('summarizationTriggerSchema', () => {
   });
 });
 
+describe('retainRecentConfigSchema', () => {
+  it('accepts turn and token retention limits', () => {
+    const result = retainRecentConfigSchema.safeParse({
+      turns: 5,
+      tokens: 40000,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects invalid turn and token retention limits', () => {
+    expect(retainRecentConfigSchema.safeParse({ turns: -1 }).success).toBe(false);
+    expect(retainRecentConfigSchema.safeParse({ turns: 21 }).success).toBe(false);
+    expect(retainRecentConfigSchema.safeParse({ tokens: 0 }).success).toBe(false);
+  });
+
+  it('parses inside the full summarization config', () => {
+    const result = summarizationConfigSchema.safeParse({
+      enabled: true,
+      retainRecent: { turns: 5, tokens: 40000 },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.retainRecent).toEqual({ turns: 5, tokens: 40000 });
+    }
+  });
+});
+
 describe('specsConfigSchema', () => {
   it('accepts an empty list (defaults applied)', () => {
     const result = specsConfigSchema.safeParse({ list: [] });
@@ -1149,6 +1657,100 @@ describe('specsConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  /**
+   * The endpoint is inferable from `agent_id`, so config validation must not
+   * reject the spec before `materializeModelSpecEndpoints` can fill it in.
+   */
+  it('accepts an agent spec whose preset omits endpoint', () => {
+    const result = specsConfigSchema.safeParse({
+      list: [
+        {
+          name: 'agent-spec',
+          label: 'Agent Spec',
+          preset: { agent_id: 'agent_abc' },
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.list[0].preset.agent_id).toBe('agent_abc');
+      expect(result.data.list[0].preset.endpoint).toBeUndefined();
+    }
+  });
+
+  /** Omission is only legal when inferable — a preset naming no agent still needs the key. */
+  it('rejects an endpoint-less preset that names no agent', () => {
+    const result = specsConfigSchema.safeParse({
+      list: [{ name: 'dead-spec', label: 'Dead Spec', preset: { model: 'gpt-4o' } }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  /** `endpoint: null` validated before the key became optional; it must keep validating. */
+  it('still accepts an explicit null endpoint without an agent', () => {
+    const result = specsConfigSchema.safeParse({
+      list: [{ name: 'null-spec', label: 'Null Spec', preset: { endpoint: null } }],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  /** Form-backed writers persist untouched fields as `''`, which names no agent. */
+  it('rejects an endpoint-less preset whose agent_id is an empty string', () => {
+    const result = specsConfigSchema.safeParse({
+      list: [{ name: 'empty-agent', label: 'Empty Agent', preset: { agent_id: '' } }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  /**
+   * An explicit `endpoint: null` is a statement, not an omission: such specs
+   * validated and stayed inert before inference existed, and must remain so.
+   */
+  it('does not infer over an explicit null endpoint, even with an agent_id', () => {
+    const parsed = specsConfigSchema.parse({
+      list: [
+        {
+          name: 'null-agent-spec',
+          label: 'Null Agent Spec',
+          preset: { endpoint: null, agent_id: 'agent_abc' },
+        },
+      ],
+    });
+
+    const materialized = materializeModelSpecEndpoints(parsed);
+
+    expect(materialized.list[0].preset.endpoint).toBeNull();
+    expect(materialized).toBe(parsed);
+  });
+
+  it('materializes the inferred endpoint onto parsed agent specs', () => {
+    const parsed = specsConfigSchema.parse({
+      list: [
+        { name: 'agent-spec', label: 'Agent Spec', preset: { agent_id: 'agent_abc' } },
+        {
+          name: 'explicit-spec',
+          label: 'Explicit Spec',
+          preset: { endpoint: EModelEndpoint.openAI, agent_id: 'agent_abc' },
+        },
+        { name: 'bare-spec', label: 'Bare Spec', preset: { endpoint: null } },
+      ],
+    });
+
+    const materialized = materializeModelSpecEndpoints(parsed);
+
+    expect(materialized.list[0].preset.endpoint).toBe(EModelEndpoint.agents);
+    expect(materialized.list[1].preset.endpoint).toBe(EModelEndpoint.openAI);
+    expect(materialized.list[1]).toBe(parsed.list[1]);
+    expect(materialized.list[2].preset.endpoint).toBeNull();
+  });
+
+  it('returns the same object when every spec already has an endpoint', () => {
+    const parsed = specsConfigSchema.parse({
+      list: [{ name: 'spec', label: 'Spec', preset: { endpoint: EModelEndpoint.openAI } }],
+    });
+    expect(materializeModelSpecEndpoints(parsed)).toBe(parsed);
+  });
+
   it('rejects model spec subagent ids above the shared cap', () => {
     const oversized = Array.from({ length: MAX_SUBAGENTS + 1 }, (_, i) => `agent_${i}`);
     const result = specsConfigSchema.safeParse({
@@ -1162,5 +1764,160 @@ describe('specsConfigSchema', () => {
       ],
     });
     expect(result.success).toBe(false);
+  });
+
+  it('validates model spec subagent ids against the configured cap', () => {
+    const raised = Array.from({ length: MAX_SUBAGENTS + 5 }, (_, i) => `agent_${i}`);
+    setMaxSubagents(MAX_SUBAGENTS + 10);
+    const withinRaised = specsConfigSchema.safeParse({
+      list: [
+        {
+          name: 'spec-1',
+          label: 'Spec 1',
+          preset: { endpoint: EModelEndpoint.openAI },
+          subagents: { enabled: true, agent_ids: raised },
+        },
+      ],
+    });
+    setMaxSubagents(undefined);
+    expect(withinRaised.success).toBe(true);
+  });
+});
+
+describe('configSchema langfuse', () => {
+  it('accepts tenant Langfuse connection config', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      langfuse: {
+        enabled: true,
+        publicKey: 'pk-lf-tenant',
+        secretKey: 'sk-lf-tenant',
+        destination: 'eu',
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts an explicit tenant Langfuse opt-out', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      langfuse: {
+        enabled: false,
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts custom Langfuse request headers', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      langfuse: {
+        enabled: true,
+        headers: {
+          'CF-Access-Client-Id': 'proxy-client',
+          'X-Proxy-Token': '${LANGFUSE_PROXY_TOKEN}',
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts trace identity and metadata allowlists', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      langfuse: {
+        trace: {
+          userIdField: 'email',
+          userMetadataFields: ['email', 'username', 'role', 'provider'],
+          conversationMetadataFields: ['conversationId', 'endpoint', 'model', 'spec'],
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects trace fields outside the allowlists', () => {
+    expect(
+      configSchema.safeParse({
+        version: '1.3.7',
+        langfuse: { trace: { userIdField: 'password' } },
+      }).success,
+    ).toBe(false);
+    expect(
+      configSchema.safeParse({
+        version: '1.3.7',
+        langfuse: { trace: { userMetadataFields: ['totpSecret'] } },
+      }).success,
+    ).toBe(false);
+    expect(
+      configSchema.safeParse({
+        version: '1.3.7',
+        langfuse: { trace: { conversationMetadataFields: ['text'] } },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects non-string Langfuse header values', () => {
+    const result = configSchema.safeParse({
+      version: '1.3.7',
+      langfuse: {
+        headers: { 'X-Proxy-Token': 42 },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('interface.traceViewer', () => {
+  it('accepts the documented fields and rejects out-of-range limits', () => {
+    const parse = (traceViewer: Record<string, unknown>) =>
+      interfaceSchema.safeParse({ traceViewer }).success;
+
+    expect(
+      parse({
+        enabled: true,
+        showInputOutput: true,
+        maxRecords: 500,
+        maxContentLength: 2000,
+        requestsPerMinute: 10,
+        requestTimeoutMs: 30_000,
+      }),
+    ).toBe(true);
+    expect(parse({ requestTimeoutMs: 999 })).toBe(false);
+    expect(parse({ requestTimeoutMs: 300_001 })).toBe(false);
+    expect(parse({ maxRecords: 0 })).toBe(false);
+    expect(parse({ maxRecords: 10_001 })).toBe(false);
+    expect(parse({ maxContentLength: 1.5 })).toBe(false);
+    expect(parse({ requestsPerMinute: 1001 })).toBe(false);
+  });
+
+  it('keeps the viewer off with the documented defaults when unset', () => {
+    expect(resolveTraceViewerConfig(undefined)).toEqual(traceViewerDefaults);
+    expect(interfaceSchema.parse({}).traceViewer).toBeUndefined();
+  });
+
+  it('re-validates overrides that bypassed the schema', () => {
+    expect(
+      resolveTraceViewerConfig({
+        enabled: 'true',
+        showInputOutput: 1,
+        maxRecords: 50_000,
+        maxContentLength: -5,
+        requestsPerMinute: Number.NaN,
+        requestTimeoutMs: 50,
+      }),
+    ).toEqual({
+      enabled: false,
+      showInputOutput: false,
+      maxRecords: 10_000,
+      maxContentLength: traceViewerDefaults.maxContentLength,
+      requestsPerMinute: traceViewerDefaults.requestsPerMinute,
+      requestTimeoutMs: traceViewerDefaults.requestTimeoutMs,
+    });
   });
 });

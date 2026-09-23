@@ -1,5 +1,6 @@
 import {
   ResourceType,
+  SkillsScope,
   SKILL_NAME_MAX_LENGTH,
   SKILL_DESCRIPTION_MAX_LENGTH,
   SKILL_DESCRIPTION_SHORT_THRESHOLD as SKILL_DESCRIPTION_SHORT_THRESHOLD_SHARED,
@@ -28,7 +29,7 @@ import logger from '~/config/winston';
 /**
  * A single validation issue emitted by a skill validator. Most issues are
  * errors and block the mutation; some are warnings (e.g. "description is
- * awfully short, Claude may undertrigger the skill") that surface inline
+ * awfully short, the agent may undertrigger the skill") that surface inline
  * coaching without rejecting the request.
  */
 export type ValidationIssue = {
@@ -162,7 +163,7 @@ export function validateSkillDescription(description: unknown): ValidationIssue[
       code: 'TOO_SHORT',
       severity: 'warning',
       message:
-        'Short descriptions may cause Claude to miss triggering opportunities — aim for a concrete "when to use this skill" sentence.',
+        'Short descriptions may cause the agent to miss triggering opportunities — aim for a concrete "when to use this skill" sentence.',
     });
   }
   return issues;
@@ -236,10 +237,12 @@ export function validateAlwaysApply(alwaysApply: unknown): ValidationIssue[] {
 
 /**
  * Known fields allowed inside a skill's YAML frontmatter. Anything else is
- * rejected in strict mode. The list is derived from Anthropic's Agent Skills
- * spec plus the fields LibreChat needs to pass through (`name`/`description`
- * are duplicated from the top-level columns because real `SKILL.md` files
- * include them in their frontmatter block).
+ * reported as a warning (see `validateSkillFrontmatter`) rather than rejected:
+ * the frontmatter convention keeps growing, and a single unrecognized key in
+ * one `SKILL.md` used to fail its whole GitHub sync source. The list is derived
+ * from Anthropic's Agent Skills spec plus the fields LibreChat needs to pass
+ * through (`name`/`description` are duplicated from the top-level columns
+ * because real `SKILL.md` files include them in their frontmatter block).
  */
 const ALLOWED_FRONTMATTER_KEYS = new Set<string>([
   'name',
@@ -261,12 +264,44 @@ const ALLOWED_FRONTMATTER_KEYS = new Set<string>([
   'hooks',
   'version',
   'license',
+  'compatibility',
   'metadata',
+  'references',
 ]);
+
+const CANONICAL_FRONTMATTER_KEYS = new Map(
+  Array.from(ALLOWED_FRONTMATTER_KEYS, (key) => [key.toLowerCase(), key]),
+);
+
+export function getCanonicalSkillFrontmatterKey(key: string): string | undefined {
+  return CANONICAL_FRONTMATTER_KEYS.get(key.toLowerCase());
+}
+
+export function normalizeSkillFrontmatterKeys(
+  frontmatter: Record<string, unknown>,
+): { frontmatter: Record<string, unknown> } | { error: string } {
+  const normalized = Object.create(null) as Record<string, unknown>;
+  const recognizedKeys = new Map<string, string>();
+  for (const [key, value] of Object.entries(frontmatter)) {
+    const canonicalKey = getCanonicalSkillFrontmatterKey(key);
+    if (canonicalKey) {
+      const previousKey = recognizedKeys.get(canonicalKey);
+      if (previousKey) {
+        return {
+          error: `Recognized frontmatter keys "${previousKey}" and "${key}" both resolve to "${canonicalKey}"`,
+        };
+      }
+      recognizedKeys.set(canonicalKey, key);
+    }
+    normalized[canonicalKey ?? key] = value;
+  }
+  return { frontmatter: normalized };
+}
 
 const FRONTMATTER_MAX_STRING = 2000;
 const FRONTMATTER_MAX_ARRAY = 100;
 const FRONTMATTER_MAX_DEPTH = 4;
+const NON_PERSISTABLE_FRONTMATTER_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 type FrontmatterKind = 'string' | 'number' | 'boolean' | 'stringArray';
 
@@ -289,10 +324,35 @@ const FRONTMATTER_KIND: Record<string, FrontmatterKind | FrontmatterKind[]> = {
   shell: 'string',
   version: 'string',
   license: 'string',
+  compatibility: 'string',
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function isValidFrontmatterKey(key: string): boolean {
+  return !key.includes('\u0000') && !NON_PERSISTABLE_FRONTMATTER_KEYS.has(key);
+}
+
+function containsInvalidFrontmatterKey(value: unknown, depth = 0): boolean {
+  if (depth > FRONTMATTER_MAX_DEPTH) {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    return value.some((nestedValue) => containsInvalidFrontmatterKey(nestedValue, depth + 1));
+  }
+  if (!isPlainObject(value)) {
+    return false;
+  }
+  return Object.entries(value).some(
+    ([key, nestedValue]) =>
+      !isValidFrontmatterKey(key) || containsInvalidFrontmatterKey(nestedValue, depth + 1),
+  );
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -336,17 +396,20 @@ function isJsonSafe(value: unknown, depth: number): boolean {
     return value.every((v) => isJsonSafe(v, depth + 1));
   }
   if (isPlainObject(value)) {
-    return Object.values(value).every((v) => isJsonSafe(v, depth + 1));
+    return Object.entries(value).every(
+      ([key, nestedValue]) => isValidFrontmatterKey(key) && isJsonSafe(nestedValue, depth + 1),
+    );
   }
   return false;
 }
 
 /**
- * Validate a skill's structured YAML frontmatter. Strict mode: unknown keys
- * are rejected so any expansion of the allowed set is an intentional code
- * change. Known keys are type-checked against `FRONTMATTER_KIND`; `hooks` and
- * `metadata` fall back to a shallow JSON-safety check because their full
- * schemas live outside this module.
+ * Validate a skill's structured YAML frontmatter. Known keys are type-checked
+ * against `FRONTMATTER_KIND`; `hooks`, `metadata` and `references` fall back to
+ * a shallow JSON-safety check because their full schemas live outside this
+ * module. Unknown keys are reported as warnings, not errors: authors regularly
+ * carry keys from other tooling, and failing the skill for one of them takes
+ * down every other skill in the same GitHub sync source.
  */
 export function validateSkillFrontmatter(frontmatter: unknown): ValidationIssue[] {
   if (frontmatter === undefined || frontmatter === null) {
@@ -362,14 +425,63 @@ export function validateSkillFrontmatter(frontmatter: unknown): ValidationIssue[
     ];
   }
 
+  const normalized = normalizeSkillFrontmatterKeys(frontmatter);
+  if ('error' in normalized) {
+    return [
+      {
+        field: 'frontmatter',
+        code: 'DUPLICATE_KEY',
+        message: normalized.error,
+      },
+    ];
+  }
+
   const issues: ValidationIssue[] = [];
-  for (const [key, value] of Object.entries(frontmatter)) {
+  for (const [key, value] of Object.entries(normalized.frontmatter)) {
+    if (!isValidFrontmatterKey(key)) {
+      issues.push({
+        field: 'frontmatter',
+        code: 'INVALID_KEY',
+        message: 'Frontmatter keys must be persistable object property names',
+      });
+      continue;
+    }
+    if (containsInvalidFrontmatterKey(value)) {
+      issues.push({
+        field: `frontmatter.${key}`,
+        code: 'INVALID_KEY',
+        message: `"${key}" contains a frontmatter key that cannot be persisted`,
+      });
+      continue;
+    }
     if (!ALLOWED_FRONTMATTER_KEYS.has(key)) {
       issues.push({
         field: `frontmatter.${key}`,
         code: 'UNKNOWN_KEY',
-        message: `"${key}" is not a recognized frontmatter key`,
+        severity: 'warning',
+        message: `"${key}" is not a recognized frontmatter key and is stored as-is`,
       });
+      /* The key is tolerated, its value still is not: an unrecognized key is
+         persisted, so it stays inside the same depth, array and string bounds
+         every structured key is held to. */
+      if (!isJsonSafe(value, 0)) {
+        issues.push({
+          field: `frontmatter.${key}`,
+          code: 'INVALID_SHAPE',
+          message: `"${key}" must be a JSON-safe value (max depth ${FRONTMATTER_MAX_DEPTH}, max string ${FRONTMATTER_MAX_STRING}, max array ${FRONTMATTER_MAX_ARRAY})`,
+        });
+      }
+      continue;
+    }
+
+    if (key === 'references') {
+      if (!isJsonSafe(value, 0)) {
+        issues.push({
+          field: 'frontmatter.references',
+          code: 'INVALID_SHAPE',
+          message: `"references" must be a JSON-safe value (max depth ${FRONTMATTER_MAX_DEPTH}, max string ${FRONTMATTER_MAX_STRING})`,
+        });
+      }
       continue;
     }
 
@@ -529,6 +641,11 @@ export function deriveStructuredFrontmatterFields(
   if (!frontmatter || typeof frontmatter !== 'object') {
     return {};
   }
+  const normalized = normalizeSkillFrontmatterKeys(frontmatter);
+  if ('error' in normalized) {
+    return {};
+  }
+  frontmatter = normalized.frontmatter;
   const derived: {
     disableModelInvocation?: boolean;
     userInvocable?: boolean;
@@ -634,6 +751,8 @@ export type UpsertSkillFileInput = {
 };
 
 export type ListSkillsByAccessParams = {
+  /** Trusted capability-authorized tenant scope; never accept directly from client input. */
+  manageTenantId?: string;
   accessibleIds: Types.ObjectId[];
   category?: string;
   search?: string;
@@ -671,7 +790,9 @@ export type ListAlwaysApplySkillsResult = {
     name: string;
     body: string;
     author: Types.ObjectId;
+    frontmatter?: Record<string, unknown>;
     allowedTools?: string[];
+    version: number;
   }>;
   /** `true` when another page exists beyond this one. */
   has_more: boolean;
@@ -836,7 +957,8 @@ function resolveAlwaysApplyFromInput(
 }
 
 /**
- * Narrows candidate skill ids to those backed by an existing Skill doc.
+ * Narrows candidate skill ids to those backed by an existing Skill doc or
+ * recognized by an injected external skill registry.
  * Existence-only check (no ACL) so pruning an agent allowlist never drops
  * skills the saving user merely can't view. Preserves input order, dedupes,
  * and drops malformed ids — they can't reference anything. Candidates are
@@ -848,6 +970,7 @@ function resolveAlwaysApplyFromInput(
 export async function filterExistingSkillIds(
   mongoose: typeof import('mongoose'),
   skillIds: string[],
+  isExternalSkillId?: (id: string) => boolean,
 ): Promise<string[]> {
   const candidates = [
     ...new Set(skillIds.filter(isValidObjectIdString).map((id) => id.toLowerCase())),
@@ -861,7 +984,7 @@ export async function filterExistingSkillIds(
     { _id: 1 },
   ).lean<Array<{ _id: Types.ObjectId }>>();
   const existing = new Set(docs.map((doc) => doc._id.toString()));
-  return candidates.filter((id) => existing.has(id));
+  return candidates.filter((id) => existing.has(id) || isExternalSkillId?.(id) === true);
 }
 
 /**
@@ -972,11 +1095,14 @@ export function createSkillMethods(
   const { ObjectId } = mongoose.Types;
 
   function buildSkillFilter(
-    params: Pick<ListSkillsByAccessParams, 'accessibleIds' | 'category' | 'search'>,
+    params: Pick<
+      ListSkillsByAccessParams,
+      'accessibleIds' | 'category' | 'search' | 'manageTenantId'
+    >,
   ): FilterQuery<ISkillDocument> {
-    const filter: FilterQuery<ISkillDocument> = {
-      _id: { $in: params.accessibleIds },
-    };
+    const filter: FilterQuery<ISkillDocument> = params.manageTenantId
+      ? { tenantId: params.manageTenantId }
+      : { _id: { $in: params.accessibleIds } };
     if (params.category && params.category.length > 0) {
       filter.category = params.category;
     }
@@ -1020,17 +1146,27 @@ export function createSkillMethods(
   }
 
   async function createSkill(data: CreateSkillInput): Promise<CreateSkillResult> {
+    const normalizedFrontmatter = isPlainObject(data.frontmatter)
+      ? normalizeSkillFrontmatterKeys(data.frontmatter)
+      : undefined;
+    const frontmatter =
+      normalizedFrontmatter && 'frontmatter' in normalizedFrontmatter
+        ? normalizedFrontmatter.frontmatter
+        : data.frontmatter;
+    const bodyIssues = validateSkillBody(data.body);
     /* Parse body's always-apply status once — reused for validation
        (below) and derivation in `resolveAlwaysApplyFromInput`. Avoids
        parsing the same YAML frontmatter block twice per create. */
     const bodyAlwaysApply =
-      data.body !== undefined ? extractAlwaysApplyFromBody(data.body) : undefined;
+      bodyIssues.length === 0 && data.body !== undefined
+        ? extractAlwaysApplyFromBody(data.body)
+        : undefined;
     const issues: ValidationIssue[] = [
       ...validateSkillName(data.name),
       ...validateSkillDescription(data.description),
-      ...validateSkillBody(data.body),
+      ...bodyIssues,
       ...validateSkillDisplayTitle(data.displayTitle),
-      ...validateSkillFrontmatter(data.frontmatter),
+      ...validateSkillFrontmatter(frontmatter),
       ...validateAlwaysApply(data.alwaysApply),
     ];
     /* Body-level `always-apply:` only needs to be well-formed when a
@@ -1043,7 +1179,7 @@ export function createSkillMethods(
     if (
       bodyAlwaysApply?.status === 'invalid' &&
       typeof data.alwaysApply !== 'boolean' &&
-      getAlwaysApplyFrontmatterValue(data.frontmatter) === undefined
+      getAlwaysApplyFrontmatterValue(frontmatter) === undefined
     ) {
       issues.push({
         field: 'body.frontmatter.alwaysApply',
@@ -1079,13 +1215,13 @@ export function createSkillMethods(
       throw error;
     }
 
-    const derived = deriveStructuredFrontmatterFields(data.frontmatter);
+    const derived = deriveStructuredFrontmatterFields(frontmatter);
     const doc = await Skill.create({
       name: data.name,
       displayTitle: data.displayTitle,
       description: data.description,
       body: data.body ?? '',
-      frontmatter: data.frontmatter ?? {},
+      frontmatter: frontmatter ?? {},
       category: data.category ?? '',
       author: data.author,
       authorName: data.authorName,
@@ -1095,7 +1231,7 @@ export function createSkillMethods(
       fileCount: 0,
       alwaysApply: resolveAlwaysApplyFromInput(
         data.alwaysApply,
-        data.frontmatter,
+        frontmatter,
         data.body,
         false,
         bodyAlwaysApply,
@@ -1293,7 +1429,7 @@ export function createSkillMethods(
     const rows = await Skill.find(filter)
       .sort({ updatedAt: -1, _id: 1 })
       .limit(limit + 1)
-      .select('name body author updatedAt allowedTools')
+      .select('name body author frontmatter updatedAt allowedTools version')
       .lean();
 
     const has_more = rows.length > limit;
@@ -1322,6 +1458,8 @@ export function createSkillMethods(
         name: row.name,
         body: row.body ?? '',
         author: row.author as Types.ObjectId,
+        version: row.version,
+        frontmatter: row.frontmatter,
       };
       if (row.allowedTools !== undefined) {
         result.allowedTools = row.allowedTools;
@@ -1341,22 +1479,31 @@ export function createSkillMethods(
     if (!isValidObjectIdString(id)) {
       return { status: 'not_found' };
     }
+    const normalizedFrontmatter = isPlainObject(update.frontmatter)
+      ? normalizeSkillFrontmatterKeys(update.frontmatter)
+      : undefined;
+    const frontmatter =
+      normalizedFrontmatter && 'frontmatter' in normalizedFrontmatter
+        ? normalizedFrontmatter.frontmatter
+        : update.frontmatter;
 
+    const bodyIssues = update.body !== undefined ? validateSkillBody(update.body) : [];
     /* Parse body's always-apply status once — reused for validation
        (precedence-aware, below) and the derivation cascade further
        down. Avoids parsing the same YAML frontmatter block twice per
        update. */
     const bodyAlwaysApply =
-      update.body !== undefined ? extractAlwaysApplyFromBody(update.body) : undefined;
+      bodyIssues.length === 0 && update.body !== undefined
+        ? extractAlwaysApplyFromBody(update.body)
+        : undefined;
     const issues: ValidationIssue[] = [];
     if (update.name !== undefined) issues.push(...validateSkillName(update.name));
     if (update.description !== undefined)
       issues.push(...validateSkillDescription(update.description));
-    if (update.body !== undefined) issues.push(...validateSkillBody(update.body));
+    issues.push(...bodyIssues);
     if (update.displayTitle !== undefined)
       issues.push(...validateSkillDisplayTitle(update.displayTitle));
-    if (update.frontmatter !== undefined)
-      issues.push(...validateSkillFrontmatter(update.frontmatter));
+    if (update.frontmatter !== undefined) issues.push(...validateSkillFrontmatter(frontmatter));
     if (update.alwaysApply !== undefined) issues.push(...validateAlwaysApply(update.alwaysApply));
     /* Body-level `always-apply:` only needs to be well-formed when a
        higher-precedence source won't override it (see
@@ -1367,7 +1514,7 @@ export function createSkillMethods(
     if (
       bodyAlwaysApply?.status === 'invalid' &&
       update.alwaysApply === undefined &&
-      getAlwaysApplyFrontmatterValue(update.frontmatter) === undefined
+      getAlwaysApplyFrontmatterValue(frontmatter) === undefined
     ) {
       issues.push({
         field: 'body.frontmatter.alwaysApply',
@@ -1394,14 +1541,14 @@ export function createSkillMethods(
     if (update.source !== undefined) setPayload.source = update.source;
     if (update.sourceMetadata !== undefined) setPayload.sourceMetadata = update.sourceMetadata;
     if (update.frontmatter !== undefined) {
-      setPayload.frontmatter = update.frontmatter;
+      setPayload.frontmatter = frontmatter;
       /**
        * Derived columns track frontmatter — when frontmatter changes, the
        * derived view must follow. Fields the new frontmatter omits are
        * unset (back to schema default) so removing `disable-model-invocation`
        * from a SKILL.md re-enables model invocation on the next save.
        */
-      const derived = deriveStructuredFrontmatterFields(update.frontmatter);
+      const derived = deriveStructuredFrontmatterFields(frontmatter);
       for (const key of ['disableModelInvocation', 'userInvocable', 'allowedTools'] as const) {
         if (derived[key] !== undefined) {
           setPayload[key] = derived[key];
@@ -1441,7 +1588,7 @@ export function createSkillMethods(
       derivedAlwaysApply = update.alwaysApply;
     }
     if (derivedAlwaysApply === undefined && update.frontmatter !== undefined) {
-      const fromFrontmatter = getAlwaysApplyFrontmatterValue(update.frontmatter);
+      const fromFrontmatter = getAlwaysApplyFrontmatterValue(frontmatter);
       if (typeof fromFrontmatter === 'boolean') {
         derivedAlwaysApply = fromFrontmatter;
       }
@@ -1515,6 +1662,12 @@ export function createSkillMethods(
    * accessible catalog at runtime, so a plain `$pull` would silently widen
    * a deliberately restricted agent. Disabling skills preserves the
    * restriction until an author makes a new explicit choice.
+   *
+   * That inference only applies to agents with no explicit `skills_scope`.
+   * With a scope persisted, the field already says what an empty allowlist
+   * means -- `selected` resolves to no skills on its own, and `all` means the
+   * full catalog on purpose -- so disabling them would turn skills off behind
+   * the author's back.
    */
   async function removeSkillsFromAgentAllowlists(skillIds: string[]): Promise<void> {
     if (skillIds.length === 0) {
@@ -1524,7 +1677,16 @@ export function createSkillMethods(
     const Agent = mongoose.models.Agent as Model<IAgent>;
     try {
       await Agent.updateMany(
-        { skills: { $in: ids, $not: { $elemMatch: { $nin: ids } } } },
+        {
+          skills: { $in: ids, $not: { $elemMatch: { $nin: ids } } },
+          /** Only `all` and `selected` opt out: each already defines what an
+           *  empty allowlist means. A missing field (matched here because
+           *  `$nin` also matches absent) is the legacy shape, and an explicit
+           *  `none` with the master flag still true is a contradictory shape
+           *  the API accepts, which `skillDeps` would otherwise keep reading
+           *  as permission to expose the skill-authoring tools. */
+          skills_scope: { $nin: [SkillsScope.all, SkillsScope.selected] },
+        },
         { $set: { skills: [], skills_enabled: false } },
         { timestamps: false },
       );
@@ -1696,7 +1858,7 @@ export function createSkillMethods(
           author: row.author,
           tenantId: row.tenantId,
         },
-        $unset: { content: '', isBinary: '', codeEnvRef: '' },
+        $unset: { content: '', isBinary: '', codeEnvRef: '', codeEnvRefs: '' },
       },
       { new: true, upsert: true, includeResultMetadata: true },
     ).lean()) as unknown as SkillFileUpsertResult;
@@ -1752,12 +1914,20 @@ export function createSkillMethods(
   ): Promise<{ matchedCount: number; modifiedCount: number }> {
     if (updates.length === 0) return { matchedCount: 0, modifiedCount: 0 };
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
-    const ops = updates.map((u) => ({
-      updateOne: {
-        filter: { skillId: u.skillId, relativePath: u.relativePath },
-        update: { $set: { codeEnvRef: u.codeEnvRef } },
-      },
-    }));
+    const ops = updates.map((u) => {
+      const routeKey = u.codeEnvRef.executionRouteKey ?? u.codeEnvRef.executionProfile ?? 'default';
+      return {
+        updateOne: {
+          filter: { skillId: u.skillId, relativePath: u.relativePath },
+          update: {
+            $set: {
+              codeEnvRef: u.codeEnvRef,
+              [`codeEnvRefs.${routeKey}`]: u.codeEnvRef,
+            },
+          },
+        },
+      };
+    });
 
     /**
      * The returned `{matchedCount, modifiedCount}` lets callers warn on

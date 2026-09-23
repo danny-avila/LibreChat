@@ -1,13 +1,14 @@
 import React, { memo, useMemo, useState, useCallback, useRef } from 'react';
-import { ArrowLeft, Eye, Code, Copy, Check, FileText, FileQuestion } from 'lucide-react';
+import { Copy, Check } from 'lucide';
 import { useNavigate } from 'react-router-dom';
-import { Spinner, TooltipAnchor, useToastContext } from '@librechat/client';
 import { apiBaseUrl } from 'librechat-data-provider';
+import { ArrowLeft, FileText, FileQuestion } from 'lucide-react';
+import { Spinner, MorphIcon, TooltipAnchor, useToastContext } from '@librechat/client';
 import { useGetSkillFileContentQuery } from '~/data-provider';
 import SkillMarkdownRenderer from './SkillMarkdownRenderer';
 import { parseFrontmatter } from '../utils';
+import ViewToggle from './ViewToggle';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 
 interface SkillFileViewerProps {
   skillId: string;
@@ -90,46 +91,14 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
                   className="rounded-md p-1 text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
                   aria-label={localize('com_ui_copy_to_clipboard')}
                 >
-                  {isCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
+                  <MorphIcon icon={isCopied ? Check : Copy} className="size-4" />
                 </button>
               }
             />
           )}
 
           {/* View toggle (markdown only) */}
-          {isMarkdown && isText && (
-            <div
-              role="group"
-              className="inline-flex h-7 rounded-lg bg-surface-tertiary p-0.5 text-sm font-medium"
-            >
-              <button
-                type="button"
-                onClick={() => setViewMode('rendered')}
-                className={cn(
-                  'flex items-center justify-center rounded-md px-1.5 transition-colors',
-                  viewMode === 'rendered'
-                    ? 'bg-surface-primary text-text-primary shadow-sm'
-                    : 'text-text-secondary hover:text-text-primary',
-                )}
-                aria-pressed={viewMode === 'rendered'}
-              >
-                <Eye className="size-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('source')}
-                className={cn(
-                  'flex items-center justify-center rounded-md px-1.5 transition-colors',
-                  viewMode === 'source'
-                    ? 'bg-surface-primary text-text-primary shadow-sm'
-                    : 'text-text-secondary hover:text-text-primary',
-                )}
-                aria-pressed={viewMode === 'source'}
-              >
-                <Code className="size-4" />
-              </button>
-            </div>
-          )}
+          {isMarkdown && isText && <ViewToggle viewMode={viewMode} setViewMode={setViewMode} />}
         </div>
       </div>
 
@@ -186,7 +155,11 @@ function SkillFileViewer({ skillId, relativePath }: SkillFileViewerProps) {
                   </div>
                 )}
                 {viewMode === 'rendered' ? (
-                  <SkillMarkdownRenderer content={parsed.body} />
+                  <SkillMarkdownRenderer
+                    content={parsed.body}
+                    skillId={skillId}
+                    currentFilePath={relativePath}
+                  />
                 ) : (
                   <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-text-primary">
                     {data.content}
