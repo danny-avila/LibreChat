@@ -27,7 +27,7 @@ function PasskeySignIn({ enabled }: { enabled: boolean }) {
         disabled={isSigningIn}
         aria-busy={isSigningIn}
         aria-label={localize('com_auth_passkey_login')}
-        className="flex w-full items-center space-x-3 rounded-2xl border border-border-light bg-surface-primary px-5 py-3 text-text-primary transition-colors duration-200 hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary disabled:opacity-60"
+        className="border-border-light bg-surface-primary text-text-primary hover:bg-surface-tertiary focus-visible:ring-text-primary flex w-full items-center space-x-3 rounded-2xl border px-5 py-3 transition-colors duration-200 focus-visible:ring-2 focus-visible:outline-none disabled:opacity-60"
       >
         {isSigningIn ? <Spinner className="h-5 w-5" /> : <PasskeyIcon />}
         <p>{localize('com_auth_passkey_login')}</p>

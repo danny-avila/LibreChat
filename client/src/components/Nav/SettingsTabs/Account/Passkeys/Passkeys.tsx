@@ -187,13 +187,15 @@ function Passkeys() {
 
       <OGDialogContent className="w-11/12 max-w-lg" showCloseButton={true}>
         <OGDialogHeader>
-          <OGDialogTitle className="flex items-center gap-3 text-xl font-semibold">
-            <PasskeyIcon className="h-5 w-5 text-text-secondary" />
-            {localize('com_ui_passkeys')}
+          <OGDialogTitle>
+            <div className="flex items-center gap-3 text-xl font-semibold">
+              <span className="text-text-secondary">
+                <PasskeyIcon className="h-5 w-5" />
+              </span>
+              {localize('com_ui_passkeys')}
+            </div>
           </OGDialogTitle>
-          <OGDialogDescription className="text-sm text-text-secondary">
-            {localize('com_ui_passkeys_description')}
-          </OGDialogDescription>
+          <OGDialogDescription>{localize('com_ui_passkeys_description')}</OGDialogDescription>
         </OGDialogHeader>
 
         <div className="mt-4">
@@ -206,16 +208,20 @@ function Passkeys() {
           {!isLoading && isError && (
             <div
               role="alert"
-              className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border-light p-8 text-center"
+              className="border-border-light flex flex-col items-center gap-2 rounded-xl border border-dashed p-8 text-center"
             >
-              <PasskeyIcon className="h-6 w-6 text-text-tertiary" aria-hidden="true" />
-              <p className="text-sm text-text-secondary">{localize('com_ui_passkey_load_error')}</p>
+              <span className="text-text-tertiary">
+                <PasskeyIcon className="h-6 w-6" />
+              </span>
+              <p className="text-text-secondary text-sm">{localize('com_ui_passkey_load_error')}</p>
             </div>
           )}
           {!isLoading && !isError && passkeys.length === 0 && (
-            <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-border-light p-8 text-center">
-              <PasskeyIcon className="h-6 w-6 text-text-tertiary" />
-              <p className="text-sm text-text-secondary">{localize('com_ui_passkey_empty')}</p>
+            <div className="border-border-light flex flex-col items-center gap-2 rounded-xl border border-dashed p-8 text-center">
+              <span className="text-text-tertiary">
+                <PasskeyIcon className="h-6 w-6" />
+              </span>
+              <p className="text-text-secondary text-sm">{localize('com_ui_passkey_empty')}</p>
             </div>
           )}
           {!isLoading && passkeys.length > 0 && (
@@ -262,7 +268,7 @@ function Passkeys() {
               {localize('com_ui_passkey_add')}
             </Button>
             {atLimit && (
-              <p className="text-xs text-text-secondary">
+              <p className="text-text-secondary text-xs">
                 {localize('com_ui_passkey_limit_reached')}
               </p>
             )}
@@ -285,7 +291,7 @@ function Passkeys() {
           </OGDialogHeader>
 
           <form id={PASSWORD_FORM_ID} onSubmit={handleConfirmAdd} className="flex flex-col gap-2">
-            <Label htmlFor={PASSWORD_FIELD_ID} className="text-sm font-medium text-text-primary">
+            <Label htmlFor={PASSWORD_FIELD_ID} className="text-sm font-medium">
               {localize('com_ui_passkey_confirm_password')}
             </Label>
             <SecretInput
@@ -299,7 +305,7 @@ function Passkeys() {
               aria-describedby={passwordErrorKey != null ? PASSWORD_ERROR_ID : undefined}
             />
             {passwordErrorKey != null && (
-              <p id={PASSWORD_ERROR_ID} role="alert" className="text-xs text-text-destructive">
+              <p id={PASSWORD_ERROR_ID} role="alert" className="text-text-destructive text-xs">
                 {localize(passwordErrorKey)}
               </p>
             )}

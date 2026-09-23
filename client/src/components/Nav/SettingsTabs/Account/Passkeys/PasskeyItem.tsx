@@ -170,10 +170,12 @@ function PasskeyItem({
   return (
     <AlertDialog open={isConfirming} onOpenChange={handleDeleteOpenChange}>
       <div
-        className="flex items-center gap-3 rounded-xl border border-border-light bg-surface-secondary px-3 py-2"
+        className="border-border-light bg-surface-secondary flex items-center gap-3 rounded-xl border px-3 py-2"
         data-testid="passkey-item"
       >
-        <PasskeyIcon className="h-5 w-5 shrink-0 text-text-secondary" />
+        <span className="text-text-secondary shrink-0">
+          <PasskeyIcon className="h-5 w-5" />
+        </span>
 
         {isRenaming ? (
           <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -219,8 +221,8 @@ function PasskeyItem({
         ) : (
           <>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-text-primary">{passkey.name}</p>
-              <p className="truncate text-xs text-text-secondary">
+              <p className="text-text-primary truncate text-sm font-medium">{passkey.name}</p>
+              <p className="text-text-secondary truncate text-xs">
                 {added != null && localize('com_ui_passkey_added_on', { date: added })}
                 {added != null && ' · '}
                 {lastUsed != null
@@ -230,7 +232,7 @@ function PasskeyItem({
             </div>
 
             {passkey.backedUp && (
-              <span className="shrink-0 rounded-full bg-status-success-subtle px-2 py-0.5 text-xs font-medium text-status-success">
+              <span className="bg-status-success-subtle text-status-success shrink-0 rounded-full px-2 py-0.5 text-xs font-medium">
                 {localize('com_ui_passkey_synced')}
               </span>
             )}
@@ -280,7 +282,7 @@ function PasskeyItem({
         <form onSubmit={submitDelete} className="flex flex-col gap-2">
           {showPasswordField && (
             <>
-              <Label htmlFor={passwordFieldId} className="text-sm font-medium text-text-primary">
+              <Label htmlFor={passwordFieldId} className="text-sm font-medium">
                 {localize('com_ui_passkey_confirm_password')}
               </Label>
               <SecretInput
@@ -294,7 +296,7 @@ function PasskeyItem({
                 aria-describedby={hasPasswordError ? passwordErrorId : undefined}
               />
               {hasPasswordError && (
-                <p id={passwordErrorId} role="alert" className="text-xs text-text-destructive">
+                <p id={passwordErrorId} role="alert" className="text-text-destructive text-xs">
                   {localize('com_ui_passkey_password_incorrect')}
                 </p>
               )}
