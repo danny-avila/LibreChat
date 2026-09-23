@@ -567,7 +567,11 @@ export function createPasskeyHandlers(deps: PasskeyHandlersDeps): PasskeyHandler
        * another assertion already consumed this counter value, so this one is a replay
        * or a clone even though the signature verified.
        */
-      const counterAdvanced = await recordPasskeyUse(passkey.credentialId, result.newCounter);
+      const counterAdvanced = await recordPasskeyUse(
+        passkey.credentialId,
+        result.newCounter,
+        result.backedUp,
+      );
       if (!counterAdvanced) {
         logger.warn(
           '[authenticatePasskey] Rejected an assertion that did not advance the signature counter',

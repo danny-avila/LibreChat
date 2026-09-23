@@ -8,7 +8,7 @@ export interface PasskeyMethods {
   findPasskeysByUser: (userId: string) => Promise<IPasskey[]>;
   findPasskeyByCredentialId: (credentialId: string) => Promise<IPasskey | null>;
   countPasskeysByUser: (userId: string) => Promise<number>;
-  recordPasskeyUse: (credentialId: string, counter: number) => Promise<boolean>;
+  recordPasskeyUse: (credentialId: string, counter: number, backedUp?: boolean) => Promise<boolean>;
   renamePasskey: (passkeyId: string, userId: string, name: string) => Promise<IPasskey | null>;
   deletePasskey: (passkeyId: string, userId: string) => Promise<DeleteResult>;
   deletePasskeysByUser: (userId: string) => Promise<DeleteResult>;
@@ -107,7 +107,11 @@ export function createPasskeyMethods(mongoose: typeof import('mongoose')): Passk
    * cannot take this write cannot mint the session either. A counterless credential
    * has no signal to forfeit, so it is not held to the same bar.
    */
-  async function recordPasskeyUse(credentialId: string, counter: number): Promise<boolean> {
+  async function recordPasskeyUse(
+    credentialId: string,
+    counter: number,
+    backedUp?: boolean,
+  ): Promise<boolean> {
     try {
       const Passkey = mongoose.models.Passkey;
       const filter =
@@ -115,7 +119,11 @@ export function createPasskeyMethods(mongoose: typeof import('mongoose')): Passk
           ? { credentialId, counter: { $lt: counter } }
           : { credentialId, counter: { $lte: 0 } };
       const result = await Passkey.updateOne(filter, {
-        $set: { counter, lastUsedAt: new Date() },
+        $set: {
+          counter,
+          lastUsedAt: new Date(),
+          ...(backedUp === undefined ? {} : { backedUp }),
+        },
       }).exec();
       return result.matchedCount > 0;
     } catch (error) {

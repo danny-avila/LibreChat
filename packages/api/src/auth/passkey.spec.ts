@@ -41,9 +41,10 @@ const config: PasskeyConfig = {
 
 const user = { id: '65f0000000000000000000aa', email: 'user@example.com', name: 'Ada' };
 
-/** Authenticator data flags: user present, and user present plus user verified. */
+/** Authenticator data flags: user present, user present plus user verified, and backup eligible plus backed up. */
 const FLAG_UP = 0x01;
 const FLAG_UP_UV = 0x05;
+const FLAG_BE_BS = 0x18;
 
 /**
  * Builds a real ES256 authenticator so assertions are genuinely signed and the
@@ -357,7 +358,23 @@ describe('verifyPasskeyAuthentication', () => {
       credential,
     });
 
-    expect(result).toEqual({ newCounter: 1 });
+    expect(result).toEqual({ newCounter: 1, backedUp: false });
+  });
+
+  it('reports the backup state the authenticator asserts', async () => {
+    const store = createStore();
+    const { assert, credential } = createAuthenticator();
+    const { options, sessionId } = await createPasskeyAuthenticationOptions({ config, store });
+
+    const result = await verifyPasskeyAuthentication({
+      config,
+      store,
+      sessionId,
+      response: assert({ challenge: options.challenge, flags: FLAG_UP_UV | FLAG_BE_BS }),
+      credential,
+    });
+
+    expect(result).toEqual({ newCounter: 1, backedUp: true });
   });
 
   it('rejects an assertion carrying only the user-present flag', async () => {

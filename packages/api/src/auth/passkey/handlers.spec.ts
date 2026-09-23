@@ -164,7 +164,7 @@ beforeEach(async () => {
     ReturnType<typeof createPasskeyRegistrationOptions>
   >);
   mockVerifyRegistration.mockResolvedValue(verifiedRegistration());
-  mockVerifyAuthentication.mockResolvedValue({ newCounter: 1 });
+  mockVerifyAuthentication.mockResolvedValue({ newCounter: 1, backedUp: false });
 
   await mongoose.models.User.deleteMany({});
   await mongoose.models.Passkey.deleteMany({});
@@ -826,7 +826,7 @@ describe('passkey sign-in', () => {
     const user = await createUser();
     await createStoredPasskey(user);
     await methods.recordPasskeyUse('cred-1', 5);
-    mockVerifyAuthentication.mockResolvedValue({ newCounter: 3 });
+    mockVerifyAuthentication.mockResolvedValue({ newCounter: 3, backedUp: false });
     const req = loginReq();
     const res = buildRes();
     const next = jest.fn();
@@ -836,6 +836,20 @@ describe('passkey sign-in', () => {
     expect(next).not.toHaveBeenCalled();
     expect(req.user).toBeUndefined();
     expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('persists the backup state the authenticator reports on sign-in', async () => {
+    const handlers = createPasskeyHandlers(buildDeps());
+    const user = await createUser();
+    await createStoredPasskey(user);
+    mockVerifyAuthentication.mockResolvedValue({ newCounter: 1, backedUp: true });
+    const next = jest.fn();
+
+    await handlers.authenticatePasskey(loginReq(), buildRes(), next);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    const stored = await methods.findPasskeyByCredentialId('cred-1');
+    expect(stored?.backedUp).toBe(true);
   });
 
   it('answers 500 when a lookup throws', async () => {
