@@ -1621,7 +1621,9 @@ describe('ContentParts — live activity fold', () => {
     expect(screen.getByTestId('activity-phase-announcer')).toHaveTextContent(
       'Reading the lens file',
     );
-    expect(liveHeader()).toHaveAccessibleName('Querying ×2');
+    /** No multiplier: both calls named their own work, so the line is a
+     *  sentence about the newest one rather than the tool's label. */
+    expect(liveHeader()).toHaveAccessibleName('Querying');
   });
 
   it('leaves a span of legacy Assistants calls, which the header cannot name, unfolded', () => {

@@ -334,6 +334,121 @@ describe('Agent Management authentication config', () => {
     expect(result.data.endpoints?.agents?.managementApi?.auth?.clients[0].subject).toBe(subject);
   });
 
+  it('accepts Cognito access-token validation', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          managementApi: {
+            auth: {
+              oidc: {
+                enabled: true,
+                issuer: 'https://cognito-idp.us-west-2.amazonaws.com/us-west-2_example',
+                tokenUse: 'access',
+                requiredScopes: ['agents-api/manage'],
+              },
+              clients: [binding],
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts audience-bound access-token validation without required scopes', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          managementApi: {
+            auth: {
+              oidc: {
+                enabled: true,
+                issuer: 'https://issuer.example.com',
+                audience: 'https://agents.example.com',
+                tokenUse: 'access',
+              },
+              clients: [binding],
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects audience-less access-token validation without required scopes', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          managementApi: {
+            auth: {
+              oidc: {
+                enabled: true,
+                issuer: 'https://issuer.example.com',
+                tokenUse: 'access',
+              },
+              clients: [binding],
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it.each(['agents-api/manage another-scope', 'agents-api/manage\tanother-scope'])(
+    'rejects a required scope containing whitespace: %j',
+    (requiredScope) => {
+      const result = configSchema.safeParse({
+        version: '1.0',
+        endpoints: {
+          agents: {
+            managementApi: {
+              auth: {
+                oidc: {
+                  enabled: true,
+                  issuer: 'https://issuer.example.com',
+                  tokenUse: 'access',
+                  requiredScopes: [requiredScope],
+                },
+                clients: [binding],
+              },
+            },
+          },
+        },
+      });
+
+      expect(result.success).toBe(false);
+    },
+  );
+
+  it('rejects enabled management auth without an audience or access-token validation', () => {
+    const result = configSchema.safeParse({
+      version: '1.0',
+      endpoints: {
+        agents: {
+          managementApi: {
+            auth: {
+              oidc: {
+                enabled: true,
+                issuer: 'https://issuer.example.com',
+              },
+              clients: [binding],
+            },
+          },
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it('normalizes binding User ObjectIds', () => {
     const result = configSchema.safeParse({
       version: '1.0',

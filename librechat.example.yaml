@@ -768,6 +768,10 @@ endpoints:
   #         issuer: 'https://identity.example.com/'
   #         audience: 'https://librechat.example.com/agents'
   #         # jwksUri: 'https://identity.example.com/.well-known/jwks.json'
+  #         # Cognito M2M access tokens use client_id instead of aud. For that
+  #         # profile, omit audience and require the access-token type and scope:
+  #         # tokenUse: access
+  #         # requiredScopes: ['agents-api/manage']
   #       clients:
   #         - clientId: 'machine-client-id'
   #           # subject: 'provider-specific-service-principal-subject'

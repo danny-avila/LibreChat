@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { EndpointFileConfig, FileConfig, RegexLike } from './types/files';
+import type { ResponsesApiRouting } from './types';
 import { EModelEndpoint, isAgentsEndpoint, isDocumentSupportedProvider } from './schemas';
 import { normalizeEndpointName } from './utils';
 
@@ -233,6 +234,42 @@ export const resolveUseResponsesApi = (
   agentValue?: boolean | null,
   conversationValue?: boolean | null,
 ): boolean | undefined => agentValue ?? conversationValue ?? undefined;
+
+/** Models whose native OpenAI and Azure execution defaults to Responses. Keep
+ * this shared with client upload routing so documents follow the API that the
+ * backend will actually invoke. Explicit false remains an opt-out. */
+export const prefersResponsesApiByModel = (model?: string | null): boolean =>
+  typeof model === 'string' && /^gpt-6-(?:astra|sol|luna)(?:-|$)/i.test(model);
+
+/** The server has transport and administrator settings the browser cannot see.
+ * Missing policy never enables model-based uploads (including during upgrades). */
+export const resolveEffectiveUseResponsesApi = ({
+  value,
+  endpoint,
+  model,
+  routing,
+  webSearch,
+}: {
+  value?: boolean | null;
+  endpoint?: string | null;
+  model?: string | null;
+  routing?: ResponsesApiRouting;
+  webSearch?: boolean | null;
+}): boolean | undefined => {
+  if (endpoint !== EModelEndpoint.openAI && endpoint !== EModelEndpoint.azureOpenAI) {
+    return value ?? undefined;
+  }
+  let policy = model ? routing?.[model] : undefined;
+  if (!policy && model && prefersResponsesApiByModel(model)) {
+    const family = /^gpt-6-(?:astra|sol|luna)(?=-|$)/i.exec(model)?.[0].toLowerCase();
+    policy = family ? routing?.[`${family}-*`] : undefined;
+  }
+  policy ??= routing?.['*'];
+  if (!policy) return value ?? undefined;
+  if (webSearch && policy.withWebSearch) policy = policy.withWebSearch;
+  if (value == null) return policy.default;
+  return value ? policy.on : policy.off;
+};
 
 export const isBedrockDocumentType = (mimeType?: string): boolean =>
   mimeType != null && mimeType in bedrockDocumentFormats;
