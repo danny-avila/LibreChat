@@ -163,6 +163,21 @@ describe('announceStoppedReply', () => {
     expect(saveConvo).not.toHaveBeenCalled();
   });
 
+  it('normalizes the ids the caller holds and drops rows that were never written', async () => {
+    const saveConvo = jest.fn().mockResolvedValue({ conversationId: 'convo-1' });
+    await announceStoppedReply(
+      { saveConvo },
+      {
+        ctx,
+        conversationId: 'convo-1',
+        reply: { messageId: 'msg-1', content: readable },
+        appendMessageIds: [null, new Types.ObjectId(rowA), undefined, rowB],
+        context: 'spec',
+      },
+    );
+    expect(saveConvo.mock.calls[0][2]).toMatchObject({ appendMessageIds: [rowA, rowB] });
+  });
+
   it('omits an empty append set rather than sending one', async () => {
     const saveConvo = jest.fn().mockResolvedValue({ conversationId: 'convo-1' });
     await announceStoppedReply(

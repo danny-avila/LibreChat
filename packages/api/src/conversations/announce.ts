@@ -95,9 +95,10 @@ export interface StoppedReplyAnnouncement {
   reply: PersistedReply;
   /**
    * The rows this turn already wrote, so the stamp write does not reload the whole history.
-   * Plain ids: the storage engine's own id type stays behind `saveConvo`, which casts them.
+   * Taken as the caller holds them and normalized to plain ids here: the storage engine's own
+   * id type stays behind `saveConvo`, which casts them back. Unwritten rows arrive as null.
    */
-  appendMessageIds?: string[];
+  appendMessageIds?: ReadonlyArray<string | { toString(): string } | null | undefined>;
   context: string;
 }
 
@@ -123,6 +124,7 @@ export async function announceStoppedReply(
   if (!isAnnounceableReply({ ...reply, isTemporary: ctx.isTemporary ?? reply.isTemporary })) {
     return false;
   }
+  const writtenIds = appendMessageIds.flatMap((id) => (id == null ? [] : [String(id)]));
   try {
     await deps.saveConvo(
       ctx,
@@ -135,7 +137,7 @@ export async function announceStoppedReply(
         context,
         stampReply: true,
         replyMessageId: reply.messageId as string,
-        ...(appendMessageIds.length > 0 ? { appendMessageIds } : {}),
+        ...(writtenIds.length > 0 ? { appendMessageIds: writtenIds } : {}),
       },
     );
     return true;

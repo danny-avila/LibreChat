@@ -867,9 +867,7 @@ router.post('/chat/abort', configMiddleware, async (req, res, next) => {
                     content,
                     attachments: responseMessage.attachments,
                   },
-                  appendMessageIds: [persistedRequestId, persistedResponse._id]
-                    .filter((id) => id != null)
-                    .map(String),
+                  appendMessageIds: [persistedRequestId, persistedResponse._id],
                   context: 'api/server/routes/agents/index.js - abort reply stamp',
                 },
               );
