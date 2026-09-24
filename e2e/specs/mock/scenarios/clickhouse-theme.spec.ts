@@ -1,0 +1,238 @@
+import { randomUUID } from 'crypto';
+import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import type { IThemeRGB } from '../../../../packages/client/src/theme/types';
+import { clickHouseTheme } from '../../../../packages/client/src/theme/themes/clickhouse';
+import { defaultTheme } from '../../../../packages/client/src/theme/themes/default';
+import { darkTheme } from '../../../../packages/client/src/theme/themes/dark';
+import { deleteConversations, seedConversations, seedMessages, withMongo } from '../db';
+import { getE2EUser } from '../../../setup/user';
+import { themeValue } from './style.helpers';
+
+/**
+ * `clickHouseTheme` is the reference theme that proves the engine repaints the
+ * app from data alone. A host hands it to `ThemeProvider`, which persists it as
+ * the stored definition, so the scenarios supply it the same way and read what
+ * the browser actually paints on real surfaces: the sidebar, the settings
+ * dialog, and the error box an assistant turn falls back to. Message prose is
+ * not one of them: it reads `--tw-prose-body`, which `client/src/style.css`
+ * still declares as literals, so no theme reaches it yet.
+ */
+
+type Mode = 'light' | 'dark';
+type Rgb = [number, number, number];
+
+const MODES: Mode[] = ['light', 'dark'];
+const THEME_PARAM = 'e2eThemeMode';
+const USER_TEXT = 'How fast is the ingest pipeline today?';
+const REPLY_TEXT = 'Ingest is steady at the usual rate.';
+const ERROR_TEXT = 'The provider refused the request.';
+const WCAG_AA_NORMAL = 4.5;
+
+test.use({ viewport: { width: 1280, height: 800 } });
+
+/** The mode rides in the URL so one init script can serve every navigation. */
+async function installThemeBridge(page: Page, definition: unknown) {
+  await page.addInitScript((stored) => {
+    const mode = new URL(location.href).searchParams.get('e2eThemeMode');
+    if (mode) {
+      localStorage.setItem('color-theme', mode);
+    }
+    localStorage.setItem('navVisible', 'true');
+    localStorage.removeItem('theme-colors');
+    localStorage.removeItem('theme-name');
+    if (stored) {
+      localStorage.setItem('theme-definition', JSON.stringify(stored));
+      localStorage.setItem('theme-source', 'definition');
+    } else {
+      localStorage.removeItem('theme-definition');
+      localStorage.removeItem('theme-source');
+    }
+  }, definition ?? null);
+}
+
+const rgbCss = (triplet: string | undefined) => `rgb(${(triplet ?? '').split(' ').join(', ')})`;
+
+const colorsFor = (mode: Mode): IThemeRGB => clickHouseTheme.modes[mode]?.colors ?? {};
+
+function parseRgb(value: string): Rgb {
+  const channels = value.match(/\d+(\.\d+)?/g)?.map(Number) ?? [];
+  return [channels[0], channels[1], channels[2]];
+}
+
+function channel(value: number): number {
+  const c = value / 255;
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+function contrast(a: Rgb, b: Rgb): number {
+  const luminance = ([r, g, b]: Rgb) =>
+    0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+  const [lighter, darker] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+async function seedChat(title: string, withError = false): Promise<string> {
+  const conversationId = randomUUID();
+  const { email } = getE2EUser();
+  await seedConversations(email, [{ conversationId, title, updatedAt: new Date() }]);
+  const userMessageId = randomUUID();
+  await seedMessages(email, conversationId, [
+    {
+      messageId: userMessageId,
+      parentMessageId: '00000000-0000-0000-0000-000000000000',
+      text: USER_TEXT,
+      isCreatedByUser: true,
+      sender: 'User',
+    },
+    ...(withError
+      ? []
+      : [
+          {
+            messageId: randomUUID(),
+            parentMessageId: userMessageId,
+            text: REPLY_TEXT,
+            isCreatedByUser: false,
+            sender: 'Mock Provider A',
+          },
+        ]),
+  ]);
+  if (withError) {
+    /** `seedMessages` always writes `error: false`, so the errored turn goes in directly. */
+    await withMongo(async (db) => {
+      const user = await db.collection('users').findOne({ email });
+      await db.collection('messages').insertOne({
+        messageId: randomUUID(),
+        parentMessageId: userMessageId,
+        conversationId,
+        user: String(user?._id),
+        endpoint: 'openAI',
+        text: ERROR_TEXT,
+        isCreatedByUser: false,
+        sender: 'Mock Provider A',
+        error: true,
+        unfinished: false,
+        createdAt: new Date(Date.now() + 2000),
+        updatedAt: new Date(Date.now() + 2000),
+        __v: 0,
+      });
+    });
+  }
+  return conversationId;
+}
+
+const titleColor = (page: Page, title: string) =>
+  page
+    .getByTestId('convo-item')
+    .filter({ hasText: title })
+    .first()
+    .getByText(title, { exact: true })
+    .evaluate((node) => getComputedStyle(node).color);
+
+test.describe('clickhouse reference theme', () => {
+  test('the ClickHouse definition repaints the chat and the settings dialog in both modes @scenario:clickhouse-definition-repaints-chat-sidebar-and-dialog', async ({
+    page,
+  }) => {
+    test.setTimeout(90000);
+    const conversationId = await seedChat('ClickHouse repaint');
+    await installThemeBridge(page, clickHouseTheme);
+
+    try {
+      for (const mode of MODES) {
+        const colors = colorsFor(mode);
+        await page.goto(`/c/${conversationId}?${THEME_PARAM}=${mode}`);
+        await expect(page.getByText(REPLY_TEXT, { exact: true }).first()).toBeVisible({
+          timeout: 20000,
+        });
+
+        await expect(page.locator('html')).toHaveAttribute('data-theme', 'clickhouse');
+        await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${mode}\\b`));
+        expect(await themeValue(page, '--surface-primary')).toBe(colors['rgb-surface-primary']);
+        expect(await themeValue(page, '--surface-primary-alt')).toBe(
+          colors['rgb-surface-primary-alt'],
+        );
+        expect(await themeValue(page, '--theme-control-radius')).toBe('0.25rem');
+        expect(await titleColor(page, 'ClickHouse repaint')).toBe(
+          rgbCss(colors['rgb-text-primary']),
+        );
+
+        await page.getByTestId('nav-user').click();
+        await page.getByRole('menuitem', { name: 'Settings' }).click();
+        /** Headless UI puts `role="dialog"` on a box-less wrapper, so the painted
+         *  surface is read off the first opaque ancestor of the panel's heading. */
+        const heading = page.getByRole('heading', { name: 'Settings', exact: true });
+        await expect(heading).toBeVisible({ timeout: 10000 });
+        const panelBackground = await heading.evaluate((node) => {
+          for (let el: Element | null = node; el; el = el.parentElement) {
+            const background = getComputedStyle(el).backgroundColor;
+            if (background !== 'rgba(0, 0, 0, 0)' && background !== 'transparent') {
+              return background;
+            }
+          }
+          return '';
+        });
+        expect(panelBackground).toBe(rgbCss(colors['rgb-surface-dialog']));
+        await page.keyboard.press('Escape');
+        await expect(heading).toBeHidden();
+      }
+    } finally {
+      await deleteConversations([conversationId]);
+    }
+  });
+
+  test('an errored reply stays readable under the ClickHouse theme @scenario:clickhouse-error-notice-text-stays-readable', async ({
+    page,
+  }) => {
+    test.setTimeout(90000);
+    const conversationId = await seedChat('ClickHouse error notice', true);
+    await installThemeBridge(page, clickHouseTheme);
+
+    try {
+      for (const mode of MODES) {
+        const colors = colorsFor(mode);
+        await page.goto(`/c/${conversationId}?${THEME_PARAM}=${mode}`);
+        const notice = page.getByRole('alert').filter({ hasText: ERROR_TEXT }).first();
+        await expect(notice).toBeVisible({ timeout: 20000 });
+
+        const painted = await notice.evaluate((node) => {
+          const style = getComputedStyle(node);
+          return { color: style.color, background: style.backgroundColor };
+        });
+        expect(painted.background).toBe(rgbCss(colors['rgb-status-error-subtle']));
+        expect(
+          contrast(parseRgb(painted.color), parseRgb(painted.background)),
+        ).toBeGreaterThanOrEqual(WCAG_AA_NORMAL);
+      }
+    } finally {
+      await deleteConversations([conversationId]);
+    }
+  });
+
+  test('a host with no theme definition keeps the LibreChat look @scenario:no-theme-definition-keeps-the-librechat-look', async ({
+    page,
+  }) => {
+    test.setTimeout(90000);
+    const conversationId = await seedChat('LibreChat default look');
+    await installThemeBridge(page, null);
+
+    try {
+      for (const [mode, palette] of [
+        ['light', defaultTheme],
+        ['dark', darkTheme],
+      ] as const) {
+        await page.goto(`/c/${conversationId}?${THEME_PARAM}=${mode}`);
+        await expect(page.getByText(REPLY_TEXT, { exact: true }).first()).toBeVisible({
+          timeout: 20000,
+        });
+
+        await expect(page.locator('html')).not.toHaveAttribute('data-theme', 'clickhouse');
+        expect(await themeValue(page, '--surface-primary')).toBe(palette['rgb-surface-primary']);
+        expect(await titleColor(page, 'LibreChat default look')).toBe(
+          rgbCss(palette['rgb-text-primary']),
+        );
+      }
+    } finally {
+      await deleteConversations([conversationId]);
+    }
+  });
+});

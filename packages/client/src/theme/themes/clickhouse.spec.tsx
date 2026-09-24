@@ -86,9 +86,12 @@ const solidFills: Array<keyof IThemeRGB> = [
   'rgb-status-error-strong',
 ];
 
-/** The borders that outline a control. `border-light` through `border-heavy`
- *  are dividers and card edges, which WCAG 1.4.11 does not require to contrast,
- *  and Click UI draws them deliberately faint. */
+/** The roles whose only job is to outline a control. `border-light` through
+ *  `border-heavy` paint dividers and card edges, and `border-medium` also
+ *  outlines inputs such as `Select` and `InputNumber`: that one sits at 1.24:1
+ *  here and 1.52:1 in the LibreChat palette, a gap the registry has no
+ *  control-boundary role to close, so it is left to a follow-up rather than
+ *  asserted. */
 const boundaryTokens: Array<keyof IThemeRGB> = [
   'rgb-border-xheavy',
   'rgb-border-destructive',
@@ -171,6 +174,15 @@ describe.each(modes)('clickhouse %s palette', (_mode, theme) => {
 
   it('keeps primary text at WCAG AA on hover, selected and header fills', () => {
     expect(below(theme, WCAG_AA_NORMAL, ['rgb-text-primary'], interactiveFills)).toEqual([]);
+  });
+
+  /** The chat error box, the route error boundary and the sign-in notices paint
+   *  secondary copy on a status fill rather than on a canvas. */
+  it('keeps secondary and destructive text at WCAG AA on every status fill', () => {
+    const fills = statusHues.map((hue) => `rgb-status-${hue}-subtle` as keyof IThemeRGB);
+    expect(
+      below(theme, WCAG_AA_NORMAL, ['rgb-text-secondary', 'rgb-text-destructive'], fills),
+    ).toEqual([]);
   });
 
   it('keeps warning and destructive text at WCAG AA on canvas surfaces', () => {
