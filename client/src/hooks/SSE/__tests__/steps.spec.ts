@@ -1,4 +1,4 @@
-import { StepTypes, ContentTypes } from 'librechat-data-provider';
+import { StepTypes, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type {
   Agents,
   TMessage,
@@ -7,9 +7,13 @@ import type {
   TMessageContentParts,
 } from 'librechat-data-provider';
 import {
+  applyToolCallCompleted,
   calculateContentIndex,
   applyReasoningDelta,
   applySummarizeDelta,
+  applyToolCallDelta,
+  applyRunStepClosed,
+  applyToolCallsStep,
   finalizeSummaries,
   applyMessageDelta,
   applySummaryStep,
@@ -43,6 +47,20 @@ const messageStep = (
   ...overrides,
 });
 
+const toolStep = (
+  id: string,
+  index: number,
+  toolCalls: Agents.ToolCall[],
+  overrides: Partial<Agents.RunStep> = {},
+): Agents.RunStep => ({
+  id,
+  index,
+  runId: RUN_ID,
+  type: StepTypes.TOOL_CALLS,
+  stepDetails: { type: StepTypes.TOOL_CALLS, tool_calls: toolCalls as Agents.AgentToolCall[] },
+  ...overrides,
+});
+
 const textDelta = (id: string, text: string): Agents.MessageDeltaEvent => ({
   id,
   delta: { content: [{ type: ContentTypes.TEXT, text }] },
@@ -53,7 +71,21 @@ const thinkDelta = (id: string, think: string): Agents.ReasoningDeltaEvent => ({
   delta: { content: [{ type: ContentTypes.THINK, think }] },
 });
 
+const argsDelta = (id: string, args: string): Agents.RunStepDeltaEvent => ({
+  id,
+  delta: { type: StepTypes.TOOL_CALLS, tool_calls: [{ args } as Agents.ToolCallChunk] },
+});
+
+const toolEnd = (id: string, toolCall: Partial<Agents.ToolCall>): Agents.ToolEndEvent => ({
+  id,
+  index: 0,
+  tool_call: { type: ToolCallTypes.TOOL_CALL, ...toolCall } as Agents.ToolCall,
+});
+
 const typesOf = (message: TMessage) => (message.content ?? []).map((part) => part?.type);
+
+const toolCallAt = (message: TMessage, index: number) =>
+  (message.content?.[index] as Agents.ToolCallContent | undefined)?.tool_call;
 
 /**
  * The invariant every reducer keeps: each step's part sits at `step.index + offset`, whatever
@@ -328,6 +360,183 @@ describe('steps', () => {
         ContentTypes.THINK,
       ]);
       expectStepPositions(result, [[think, ContentTypes.THINK]], 2);
+    });
+  });
+
+  describe('tool calls', () => {
+    const search = toolStep('step-tool', 1, [{ id: 'call-1', name: 'search', args: '' }]);
+
+    const runToolCall = (response: TMessage) => {
+      const opened = applyToolCallsStep(response, search, 0);
+      let message = opened.message;
+      for (const chunk of ['{"q":', '"cats"}']) {
+        message = applyToolCallDelta(
+          message,
+          search,
+          argsDelta(search.id, chunk),
+          opened.toolCallId ?? '',
+          0,
+        ) as TMessage;
+      }
+      return {
+        toolCallId: opened.toolCallId,
+        message: applyToolCallCompleted(
+          message,
+          search,
+          toolEnd(search.id, { id: 'call-1', name: 'search', args: '{"q":"cats"}', output: '3' }),
+          0,
+        ),
+      };
+    };
+
+    it('opens, streams args into, and completes the step part', () => {
+      const text = messageStep('step-text', 0);
+      const { message, toolCallId } = runToolCall(streamText(createResponse(), text, ['Hi']));
+
+      expect(toolCallId).toBe('call-1');
+      expect(toolCallAt(message, 1)).toMatchObject({
+        id: 'call-1',
+        name: 'search',
+        args: '{"q":"cats"}',
+        output: '3',
+        progress: 1,
+        stepId: search.id,
+      });
+      expectStepPositions(message, [
+        [text, ContentTypes.TEXT],
+        [search, ContentTypes.TOOL_CALL],
+      ]);
+    });
+
+    it('is idempotent when the run step or the completion is delivered twice', () => {
+      const { message } = runToolCall(createResponse());
+      const reopened = applyToolCallsStep(message, search, 0).message;
+      const completedTwice = applyToolCallCompleted(
+        message,
+        search,
+        toolEnd(search.id, { id: 'call-1', name: 'search', args: '{"q":"cats"}', output: '3' }),
+        0,
+      );
+
+      expect(completedTwice.content).toEqual(message.content);
+      expect(toolCallAt(reopened, 1)).toMatchObject({ id: 'call-1', name: 'search' });
+      expect(reopened.content).toHaveLength(2);
+    });
+
+    it('keeps streamed args when the completion omits them', () => {
+      const opened = applyToolCallsStep(createResponse(), search, 0).message;
+      const streamed = applyToolCallDelta(opened, search, argsDelta(search.id, '{}'), 'call-1', 0);
+      const completed = applyToolCallCompleted(
+        streamed as TMessage,
+        search,
+        toolEnd(search.id, { id: 'call-1', name: 'search', output: 'ok' }),
+        0,
+      );
+
+      expect(toolCallAt(completed, 1)).toMatchObject({ args: '{}', output: 'ok' });
+    });
+
+    it('fills the slot when a completion arrives before its run step opened it', () => {
+      const completed = applyToolCallCompleted(
+        createResponse(),
+        search,
+        toolEnd(search.id, { id: 'call-1', name: 'search', args: { q: 'cats' }, output: '3' }),
+        0,
+      );
+
+      expect(completed.content?.[0]).toBeUndefined();
+      expect(toolCallAt(completed, 1)).toMatchObject({ id: 'call-1', progress: 1 });
+    });
+
+    it('attaches OAuth prompts carried on an args delta', () => {
+      const opened = applyToolCallsStep(createResponse(), search, 0).message;
+      const result = applyToolCallDelta(
+        opened,
+        search,
+        {
+          id: search.id,
+          delta: {
+            type: StepTypes.TOOL_CALLS,
+            tool_calls: [{ args: '' } as Agents.ToolCallChunk],
+            auth: 'https://auth.example.com',
+            expires_at: 123,
+          },
+        },
+        'call-1',
+        0,
+      );
+
+      expect(toolCallAt(result as TMessage, 1)).toMatchObject({
+        auth: 'https://auth.example.com',
+        expires_at: 123,
+      });
+    });
+
+    it('ignores deltas that are not tool-call deltas', () => {
+      expect(
+        applyToolCallDelta(
+          createResponse(),
+          search,
+          { id: search.id, delta: { type: StepTypes.MESSAGE_CREATION } },
+          'call-1',
+          0,
+        ),
+      ).toBeUndefined();
+    });
+
+    it('displaces a pending OAuth prompt when real content lands in its slot', () => {
+      const oauth = createResponse([
+        {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: { id: 'oauth', name: 'oauth_mcp_github', args: '', type: 'tool_call' },
+        } as TMessageContentParts,
+      ]);
+
+      const result = streamText(oauth, messageStep('step-text', 0), ['resumed']);
+
+      expect(result.content).toEqual([{ type: ContentTypes.TEXT, text: 'resumed' }]);
+    });
+
+    it('stamps the terminal status on close, and only on tool calls', () => {
+      const { message } = runToolCall(createResponse());
+      const closed: Agents.RunStepClosedEvent = {
+        id: search.id,
+        index: 1,
+        type: StepTypes.TOOL_CALLS,
+        status: 'cancelled',
+        created_at: 1_000,
+        closed_at: 1_250,
+      };
+
+      const result = applyRunStepClosed(message, search, closed, 0);
+      const closedTwice = applyRunStepClosed(result as TMessage, search, closed, 0);
+
+      expect(toolCallAt(result as TMessage, 1)).toMatchObject({
+        runStepStatus: 'cancelled',
+        runStepDurationMs: 250,
+      });
+      expect(closedTwice?.content).toEqual(result?.content);
+      expect(applyRunStepClosed(createResponse(), search, closed, 0)).toBeUndefined();
+      expect(
+        applyRunStepClosed(
+          streamText(createResponse(), messageStep('step-text', 1), ['t']),
+          search,
+          closed,
+          0,
+        ),
+      ).toBeUndefined();
+    });
+
+    it('records the last non-empty tool call id announced by a step', () => {
+      const parallel = toolStep('step-many', 0, [
+        { id: 'call-a', name: 'a', args: '' },
+        { id: '', name: 'b', args: '' },
+      ]);
+
+      expect(applyToolCallsStep(createResponse(), parallel, 0).toolCallId).toBe('call-a');
+      expect(
+        applyToolCallsStep(createResponse(), messageStep('step-text', 0), 0).toolCallId,
+      ).toBeUndefined();
     });
   });
 
