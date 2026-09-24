@@ -5097,13 +5097,64 @@ describe('Support Contact Field', () => {
       );
 
       const result = await tenantStorage.run({ tenantId: tenantA }, () =>
-        getListAgentsByAccess({ accessibleIds: null, otherParams: { name } }),
+        getListAgentsByAccess({ accessibleIds: null, tenantId: tenantA, otherParams: { name } }),
       );
       expect(result.data.map((agent) => agent.id)).toEqual([agentInA.id]);
       const denied = await tenantStorage.run({ tenantId: tenantA }, () =>
         getListAgentsByAccess({ accessibleIds: [], otherParams: { name } }),
       );
       expect(denied.data).toHaveLength(0);
+    });
+
+    test('unrestricted list uses the supplied tenant even without request context', async () => {
+      const tenantA = `tenant-a-${uuidv4()}`;
+      const tenantB = `tenant-b-${uuidv4()}`;
+      const name = 'Same Agent Name';
+      const legacy = await createAgent({
+        id: `agent_${uuidv4()}`,
+        name,
+        provider: 'openai',
+        model: 'gpt-4',
+        author: userA,
+      });
+      const agentInA = await tenantStorage.run({ tenantId: tenantA }, () =>
+        createAgent({
+          id: `agent_${uuidv4()}`,
+          name,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userA,
+        }),
+      );
+      await tenantStorage.run({ tenantId: tenantB }, () =>
+        createAgent({
+          id: `agent_${uuidv4()}`,
+          name,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userB,
+        }),
+      );
+
+      const scoped = await getListAgentsByAccess({
+        accessibleIds: null,
+        tenantId: tenantA,
+        otherParams: { name },
+      });
+      expect(scoped.data.map((agent) => agent.id)).toEqual([agentInA.id]);
+      const legacyOnly = await getListAgentsByAccess({
+        accessibleIds: null,
+        tenantId: null,
+        otherParams: { name },
+      });
+      expect(legacyOnly.data.map((agent) => agent.id)).toEqual([legacy.id]);
+      const omitted = await getListAgentsByAccess({ accessibleIds: null, otherParams: { name } });
+      expect(omitted.data.map((agent) => agent.id)).toEqual([legacy.id]);
+    });
+
+    test('accepts plain string IDs from the API resolver without weakening ACL filtering', async () => {
+      const result = await getListAgentsByAccess({ accessibleIds: [agentA2._id.toString()] });
+      expect(result.data.map((agent) => agent.id)).toEqual([agentA2.id]);
     });
 
     test('should not return other users agents when accessibleIds is empty', async () => {

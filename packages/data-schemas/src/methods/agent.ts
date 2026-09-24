@@ -606,13 +606,16 @@ export function createAgentMethods(
   getListAgentsByAccess: ({
     accessibleIds,
     otherParams,
+    tenantId,
     limit,
     after,
     includeSkillConfig,
     includeExecutionConfig,
   }: {
-    accessibleIds?: Types.ObjectId[] | null;
+    accessibleIds?: Array<Types.ObjectId | string> | null;
     otherParams?: Record<string, unknown>;
+    /** Authenticated tenant for unrestricted listings; null/omitted restricts to legacy agents. */
+    tenantId?: string | null;
     limit?: number | null;
     after?: string | null;
     includeSkillConfig?: boolean;
@@ -1424,19 +1427,22 @@ export function createAgentMethods(
 
   /**
    * Get agents by accessible IDs with cursor pagination. Pass `accessibleIds: null`
-   * only after a management-capability check; `[]` and omitted IDs match nothing.
+   * only after a management-capability check, with the authenticated tenantId
+   * (or null for legacy agents); `[]` and omitted IDs match nothing.
    * Defaults to a 100-page limit (max 1000); pass `limit: null` to opt out entirely.
    */
   async function getListAgentsByAccess({
     accessibleIds = [],
     otherParams = {},
+    tenantId,
     limit = 100,
     after = null,
     includeSkillConfig = false,
     includeExecutionConfig = false,
   }: {
-    accessibleIds?: Types.ObjectId[] | null;
+    accessibleIds?: Array<Types.ObjectId | string> | null;
     otherParams?: Record<string, unknown>;
+    tenantId?: string | null;
     limit?: number | null;
     after?: string | null;
     includeSkillConfig?: boolean;
@@ -1457,7 +1463,9 @@ export function createAgentMethods(
 
     const baseQuery: Record<string, unknown> = {
       ...otherParams,
-      ...(accessibleIds === null ? {} : { _id: { $in: accessibleIds } }),
+      ...(accessibleIds === null
+        ? { tenantId: tenantId ?? null }
+        : { _id: { $in: accessibleIds } }),
     };
 
     if (after) {

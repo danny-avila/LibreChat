@@ -16,6 +16,8 @@ const {
   replaceEdgeSourceId,
   mergeDeploymentSkillIds,
   getAgentListAccess,
+  refreshAgentListAvatarsBeforePage,
+  refreshManagedAgentListPageAvatars,
   mergeAgentOcrConversion,
   sanitizeModelParameters,
   MAX_AVATAR_REFRESH_AGENTS,
@@ -1752,7 +1754,7 @@ const getListAgentsHandler = async (req, res) => {
     }
 
     const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
-    const refreshKey = `${userId}:agents_avatar_refresh`;
+    const refreshKey = `${userId}:${req.user.tenantId ?? ''}:agents_avatar_refresh`;
 
     /**
      * These reads share no inputs, so they resolve together rather than chaining round
@@ -1846,11 +1848,16 @@ const getListAgentsHandler = async (req, res) => {
       }
     };
 
-    const cachedRefresh = await resolveAvatarRefresh();
+    const cachedRefreshBeforePage = await refreshAgentListAvatarsBeforePage(
+      accessibleIds,
+      cachedRefreshEntry,
+      resolveAvatarRefresh,
+    );
 
-    // Use the new ACL-aware function
+    // Use the ACL-scoped or explicitly tenant-scoped list query.
     const data = await db.getListAgentsByAccess({
       accessibleIds,
+      tenantId: req.user.tenantId ?? null,
       otherParams: filter,
       limit,
       after: cursor,
@@ -1862,6 +1869,16 @@ const getListAgentsHandler = async (req, res) => {
     if (!agents.length) {
       return res.json(data);
     }
+
+    const cachedRefresh = await refreshManagedAgentListPageAvatars({
+      accessibleIds,
+      agents,
+      cachedEntry: cachedRefreshBeforePage,
+      refreshS3Url,
+      cacheSet: cache.set.bind(cache),
+      cacheKey: refreshKey,
+      ttl: Time.THIRTY_MINUTES,
+    });
 
     const accessibleSkillSet = canReturnSkillConfig
       ? null
