@@ -65,6 +65,12 @@ export const themeAppearanceProperties: Readonly<
   fontFamily: '--theme-font-family',
   monoFontFamily: '--theme-mono-font-family',
   elevationSurface: '--theme-elevation-surface',
+  shadowXs: '--theme-shadow-xs',
+  shadowSm: '--theme-shadow-sm',
+  shadowMd: '--theme-shadow-md',
+  shadowLg: '--theme-shadow-lg',
+  shadowXl: '--theme-shadow-xl',
+  shadow2xl: '--theme-shadow-2xl',
   motionFast: '--theme-motion-fast',
   motionNormal: '--theme-motion-normal',
 });
@@ -87,6 +93,12 @@ export const defaultAppearance: IThemeAppearance = Object.freeze({
   monoFontFamily:
     "'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, 'Cascadia Mono', 'Liberation Mono', Consolas, monospace",
   elevationSurface: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
+  shadowXs: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
+  shadowSm: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
+  shadowMd: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
+  shadowLg: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
+  shadowXl: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)',
+  shadow2xl: '0 25px 50px -12px rgb(0 0 0 / 0.25)',
   motionFast: '150ms',
   motionNormal: '200ms',
 });
@@ -210,6 +222,8 @@ const isLength = (value: unknown): value is string =>
   (cssLengthPattern.test(value) || cssLengthDifferencePattern.test(value));
 const isFontFamily = (value: unknown): value is string =>
   typeof value === 'string' && value.trim().length > 0 && !/[;{}]/.test(value);
+const isShadow = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0 && !/[;{}]|url\s*\(/i.test(value);
 const isDuration = (value: unknown): value is string =>
   typeof value === 'string' && cssDurationPattern.test(value);
 
@@ -241,8 +255,13 @@ const appearanceValidators: Record<keyof IThemeAppearance, (value: unknown) => b
   spaceNormal: isLength,
   fontFamily: isFontFamily,
   monoFontFamily: isFontFamily,
-  elevationSurface: (value) =>
-    typeof value === 'string' && value.trim().length > 0 && !/[;{}]|url\s*\(/i.test(value),
+  elevationSurface: isShadow,
+  shadowXs: isShadow,
+  shadowSm: isShadow,
+  shadowMd: isShadow,
+  shadowLg: isShadow,
+  shadowXl: isShadow,
+  shadow2xl: isShadow,
   motionFast: isDuration,
   motionNormal: isDuration,
 };

@@ -192,7 +192,7 @@ describe('LibreChat Tailwind preset', () => {
   });
 });
 
-describe('application radius and font scales', () => {
+describe('application radius, font and shadow scales', () => {
   const scale = [
     ['rounded-sm', '--theme-radius-sm', 'radiusSm'],
     ['rounded-md', '--theme-radius-md', 'radiusMd'],
@@ -201,6 +201,14 @@ describe('application radius and font scales', () => {
     ['rounded-2xl', '--theme-radius-2xl', 'radius2xl'],
     ['rounded-3xl', '--theme-radius-3xl', 'radius3xl'],
   ];
+  const shadows = [
+    ['shadow-xs', '--theme-shadow-xs', 'shadowXs', '--shadow-xs'],
+    ['shadow-sm', '--theme-shadow-sm', 'shadowSm', '--shadow-sm'],
+    ['shadow-md', '--theme-shadow-md', 'shadowMd', '--shadow-md'],
+    ['shadow-lg', '--theme-shadow-lg', 'shadowLg', '--shadow-lg'],
+    ['shadow-xl', '--theme-shadow-xl', 'shadowXl', '--shadow-xl'],
+    ['shadow-2xl', '--theme-shadow-2xl', 'shadow2xl', '--shadow-2xl'],
+  ];
 
   it('routes the plain radius and font utilities through theme-owned properties', async () => {
     const css = await generateApplication([
@@ -208,8 +216,11 @@ describe('application radius and font scales', () => {
       ...scale.map(([candidate]) => candidate),
       'font-sans',
       'font-mono',
+      'shadow',
+      ...shadows.map(([candidate]) => candidate),
       'rounded-theme-control',
       'font-theme-ui',
+      'shadow-theme-surface',
     ]);
 
     scale.forEach(([candidate, property]) => {
@@ -220,6 +231,11 @@ describe('application radius and font scales', () => {
     expect(rule(css, 'rounded')).toBe('border-radius: 0.25rem;');
     expect(rule(css, 'font-sans')).toBe('font-family: var(--theme-font-family);');
     expect(rule(css, 'font-mono')).toBe('font-family: var(--theme-mono-font-family);');
+    shadows.forEach(([candidate, property]) => {
+      expect(rule(css, candidate)).toContain(`--tw-shadow: var(${property});`);
+    });
+    /** Bare `shadow` has always matched `sm`, and follows it. */
+    expect(rule(css, 'shadow')).toContain('--tw-shadow: var(--theme-shadow-sm);');
 
     /** Preflight gives `html` and `code` the same families the utilities do. */
     expect(css).toContain('--default-font-family: var(--theme-font-family);');
@@ -231,6 +247,9 @@ describe('application radius and font scales', () => {
     );
     expect(rule(css, 'font-theme-ui')).toBe(
       `font-family: var(--theme-font-family, ${defaultAppearance.fontFamily});`,
+    );
+    expect(rule(css, 'shadow-theme-surface')).toContain(
+      `--tw-shadow: var(--theme-elevation-surface, ${defaultAppearance.elevationSurface});`,
     );
   });
 
@@ -250,5 +269,12 @@ describe('application radius and font scales', () => {
     expect(defaultAppearance.monoFontFamily).toBe(
       "'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, 'Cascadia Mono', 'Liberation Mono', Consolas, monospace",
     );
+
+    /** The shadow steps were Tailwind's own, read from the installed package. */
+    shadows.forEach(([, , key, variable]) => {
+      expect(defaultAppearance[key]).toBe(tailwindDefault(variable));
+    });
+    /** The surface elevation stays the alias it was, equal to `shadow-lg` by default. */
+    expect(defaultAppearance.elevationSurface).toBe(defaultAppearance.shadowLg);
   });
 });

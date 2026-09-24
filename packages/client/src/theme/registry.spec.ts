@@ -488,6 +488,7 @@ describe('theme registry', () => {
           },
           appearance: {
             controlRadius: 'url(theme.css)',
+            shadowLg: '0 1px red; color: red',
             unknownSpacing: '1rem',
           },
         },
@@ -498,6 +499,7 @@ describe('theme registry', () => {
       'Invalid RGB value for rgb-text-primary: 999 0 0',
       'Unknown color token: rgb-unknown',
       'Invalid appearance value for controlRadius: url(theme.css)',
+      'Invalid appearance value for shadowLg: 0 1px red; color: red',
       'Unknown appearance token: unknownSpacing',
     ]);
     expect(() => resolveTheme(invalidTheme, 'light')).toThrow(TypeError);

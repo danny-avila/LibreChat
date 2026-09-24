@@ -139,7 +139,7 @@ describe('applyTheme', () => {
 
   /** The plain `rounded-*`, `font-sans` and `font-mono` utilities read these properties, so a
    *  theme reaches every call site only if the adapter writes them and a reset removes them. */
-  it('applies and clears the radius scale and the mono family', () => {
+  it('applies and clears the radius and shadow scales and the mono family', () => {
     const root = document.documentElement;
     const scale = {
       radiusSm: ['--theme-radius-sm', '0px'],
@@ -149,6 +149,12 @@ describe('applyTheme', () => {
       radius2xl: ['--theme-radius-2xl', '0.75rem'],
       radius3xl: ['--theme-radius-3xl', '1rem'],
       monoFontFamily: ['--theme-mono-font-family', 'Inconsolata, monospace'],
+      shadowXs: ['--theme-shadow-xs', '0 1px 2px rgb(0 0 0 / 0.15)'],
+      shadowSm: ['--theme-shadow-sm', '0 2px 4px rgb(0 0 0 / 0.15)'],
+      shadowMd: ['--theme-shadow-md', '0 4px 8px rgb(0 0 0 / 0.15)'],
+      shadowLg: ['--theme-shadow-lg', '0 8px 16px rgb(0 0 0 / 0.15)'],
+      shadowXl: ['--theme-shadow-xl', '0 12px 24px rgb(0 0 0 / 0.15)'],
+      shadow2xl: ['--theme-shadow-2xl', 'none'],
     } as const;
     const appearance = Object.fromEntries(
       Object.entries(scale).map(([key, [, value]]) => [key, value]),
@@ -172,6 +178,7 @@ describe('applyTheme', () => {
     expect(root.style.getPropertyValue('--theme-mono-font-family')).toBe(
       defaultAppearance.monoFontFamily,
     );
+    expect(root.style.getPropertyValue('--theme-shadow-lg')).toBe(defaultAppearance.shadowLg);
 
     clearAppliedTheme(root);
     Object.values(scale).forEach(([property]) => {
