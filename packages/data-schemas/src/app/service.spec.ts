@@ -106,6 +106,7 @@ describe('loadClassificationConfig', () => {
     expect(config?.toolSelection.maxCatalogTools).toBe(200);
     expect(config?.toolSelection.minProbability).toBe(0.05);
     expect(config?.memoryGate.categoryThreshold).toBe(0.4);
+    expect(config?.memoryGate.threshold).toBe(0.5);
   });
 
   it('turns classification off rather than running on an invalid block', () => {

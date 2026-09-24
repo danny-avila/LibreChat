@@ -569,12 +569,15 @@ actions:
 #     instructions: Which tool should the assistant call first?
 #     guidance: Prefer the tool whose purpose matches the request.
 #
-#   # Skips the memory model on turns that carry nothing durable.
+#   # Skips the memory model on turns that do not ask to remember, update or
+#   # forget anything, which is all the default memory instructions act on.
 #   memoryGate:
 #     enabled: true
-#     threshold: 0.25
-#     # whenTrue/whenFalse rather than true/false: YAML reads those bare keys
-#     # as booleans.
+#     threshold: 0.5
+#     # If your memory.instructions also keep facts the user did not ask to
+#     # keep, ask about those instead. whenTrue/whenFalse rather than
+#     # true/false: YAML reads those bare keys as booleans.
+#     instructions: Does `latest` say something about the user worth keeping?
 #     whenTrue: A lasting preference or a fact about the user.
 #     whenFalse: Small talk, or a detail that only matters in this task.
 #     # Also ask which of memory.validKeys the turn belongs under and suggest it

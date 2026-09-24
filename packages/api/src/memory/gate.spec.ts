@@ -5,7 +5,7 @@ import type {
   ClassificationRequest,
 } from '~/classification/types';
 import type { MemoryGateSettings } from './gate';
-import { createMemoryGate, transcribeTail, DURABLE_QUESTION } from './gate';
+import { createMemoryGate, transcribeTail, MEMORY_REQUEST_QUESTION } from './gate';
 
 const ON: MemoryGateSettings = {
   enabled: true,
@@ -30,7 +30,7 @@ function stubClassifier(probability: number | Error): {
       }
       return {
         model: 'stub-1',
-        answers: { durable: { type: 'boolean', probability } },
+        answers: { request: { type: 'boolean', probability } },
         usage: { inputTokens: 40, outputTokens: 4 },
       };
     },
@@ -91,16 +91,16 @@ describe('createMemoryGate', () => {
     expect(createMemoryGate({ classifier, settings: { ...ON, enabled: false } })).toBeNull();
   });
 
-  it('processes a turn that carries something durable', async () => {
+  it('processes a turn that asks to remember something', async () => {
     const { classifier, requests } = stubClassifier(0.88);
     const gate = createMemoryGate({ classifier, settings: ON });
 
     await expect(gate?.({ messages: TURN })).resolves.toMatchObject({ process: true });
     expect(requests).toHaveLength(1);
-    expect(requests[0].questions.durable).toBeDefined();
+    expect(requests[0].questions.request).toBeDefined();
   });
 
-  it('skips a turn that carries nothing durable', async () => {
+  it('skips a turn that asks for no memory change', async () => {
     const { classifier } = stubClassifier(0.03);
     const gate = createMemoryGate({ classifier, settings: ON });
 
@@ -136,7 +136,7 @@ describe('createMemoryGate', () => {
       model: 'stub-1',
       classify: async () => ({
         model: 'stub-1',
-        answers: { durable: { type: 'choice', choice: 'yes', confidence: 1, probabilities: {} } },
+        answers: { request: { type: 'choice', choice: 'yes', confidence: 1, probabilities: {} } },
         usage: { inputTokens: 1, outputTokens: 1 },
       }),
     };
@@ -189,13 +189,13 @@ describe('createMemoryGate prompt overrides', () => {
 
     await gate?.({ messages: TURN });
 
-    const question = requests[0].questions.durable as unknown as {
+    const question = requests[0].questions.request as unknown as {
       instructions: string;
       criteria: { true: string; false: string };
     };
-    expect(question.instructions).toBe(DURABLE_QUESTION.instructions);
-    expect(question.criteria.true).toBe(DURABLE_QUESTION.criteria?.true);
-    expect(question.criteria.false).toBe(DURABLE_QUESTION.criteria?.false);
+    expect(question.instructions).toBe(MEMORY_REQUEST_QUESTION.instructions);
+    expect(question.criteria.true).toBe(MEMORY_REQUEST_QUESTION.criteria?.true);
+    expect(question.criteria.false).toBe(MEMORY_REQUEST_QUESTION.criteria?.false);
   });
 
   it('sends operator wording instead when it is configured', async () => {
@@ -212,7 +212,7 @@ describe('createMemoryGate prompt overrides', () => {
 
     await gate?.({ messages: TURN });
 
-    const question = requests[0].questions.durable as unknown as {
+    const question = requests[0].questions.request as unknown as {
       instructions: string;
       criteria: { true: string; false: string };
     };
@@ -241,19 +241,19 @@ describe('memory classification', () => {
     return { classifier, requests };
   }
 
-  const durable = { type: 'boolean' as const, probability: 0.9 };
+  const request = { type: 'boolean' as const, probability: 0.9 };
 
   it('asks only the durability question by default', async () => {
-    const { classifier, requests } = stubAnswers({ durable });
+    const { classifier, requests } = stubAnswers({ request });
     const gate = createMemoryGate({ classifier, settings: ON });
 
     await gate?.({ messages: TURN, validKeys: KEYS });
 
-    expect(Object.keys(requests[0].questions)).toEqual(['durable']);
+    expect(Object.keys(requests[0].questions)).toEqual(['request']);
   });
 
   it('adds the category and update questions to the same request', async () => {
-    const { classifier, requests } = stubAnswers({ durable });
+    const { classifier, requests } = stubAnswers({ request });
     const gate = createMemoryGate({
       classifier,
       settings: { ...ON, categorize: true, detectUpdates: true },
@@ -262,21 +262,21 @@ describe('memory classification', () => {
     await gate?.({ messages: TURN, validKeys: KEYS });
 
     expect(requests).toHaveLength(1);
-    expect(Object.keys(requests[0].questions).sort()).toEqual(['category', 'durable', 'updates']);
+    expect(Object.keys(requests[0].questions).sort()).toEqual(['category', 'request', 'updates']);
   });
 
   it('skips categorization when no valid keys are configured', async () => {
-    const { classifier, requests } = stubAnswers({ durable });
+    const { classifier, requests } = stubAnswers({ request });
     const gate = createMemoryGate({ classifier, settings: { ...ON, categorize: true } });
 
     await gate?.({ messages: TURN });
 
-    expect(Object.keys(requests[0].questions)).toEqual(['durable']);
+    expect(Object.keys(requests[0].questions)).toEqual(['request']);
   });
 
   it('suggests the winning key', async () => {
     const { classifier } = stubAnswers({
-      durable,
+      request,
       category: {
         type: 'choice',
         choice: 'work_context',
@@ -294,7 +294,7 @@ describe('memory classification', () => {
 
   it('drops a key it is not confident about', async () => {
     const { classifier } = stubAnswers({
-      durable,
+      request,
       category: {
         type: 'choice',
         choice: 'work_context',
@@ -312,7 +312,7 @@ describe('memory classification', () => {
 
   it('says so when the turn changes an existing fact', async () => {
     const { classifier } = stubAnswers({
-      durable,
+      request,
       category: {
         type: 'choice',
         choice: 'preferences',
@@ -331,9 +331,9 @@ describe('memory classification', () => {
     expect(judgment?.hint).toContain('a change to what is already stored');
   });
 
-  it('carries no hint when the turn is not durable', async () => {
+  it('carries no hint when the turn asks for nothing', async () => {
     const { classifier } = stubAnswers({
-      durable: { type: 'boolean', probability: 0.01 },
+      request: { type: 'boolean', probability: 0.01 },
       category: {
         type: 'choice',
         choice: 'personal',

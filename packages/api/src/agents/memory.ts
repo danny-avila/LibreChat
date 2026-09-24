@@ -1083,7 +1083,7 @@ export async function createMemoryProcessor({
         /** `messages` is one flattened buffer, oldest text first, so the gate reads the window. */
         const judgment = await gate({ messages: inspectionMessages ?? messages, validKeys });
         if (!judgment.process) {
-          logger.debug('[MemoryAgent] Turn carries nothing durable; skipping', {
+          logger.debug('[MemoryAgent] Turn asks for no memory change; skipping', {
             userId,
             conversationId,
             messageId,

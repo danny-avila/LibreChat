@@ -32,20 +32,22 @@ const DEFAULT_WINDOW = 6;
 const DEFAULT_MAX_CHARS = 8_000;
 const PROCESS = { process: true } as const;
 
-export const DURABLE_QUESTION: BooleanQuestion = boolean(
-  "Does `latest`, the user's newest message, tell us something about this user that would " +
-    'still matter in an unrelated conversation weeks from now? `conversation` is the earlier ' +
-    'context and is only there to help read `latest`.',
+/** Matches the default memory instructions, which store only what the user asks to keep. */
+export const MEMORY_REQUEST_QUESTION: BooleanQuestion = boolean(
+  "Does `latest`, the user's newest message, ask the assistant to remember, update or forget " +
+    'something about the user? `conversation` is the earlier context and is only there to help ' +
+    'read `latest`.',
   {
     true:
-      'A lasting preference, a fact about who they are or what they work on, or a decision ' +
-      'they want remembered.',
-    false: 'Small talk, a request for this task, or a detail that only matters inside this task.',
+      'An explicit request to remember, store, change or delete something, including a short ' +
+      'yes to an offer to remember.',
+    false:
+      'Anything else, including preferences or facts the user mentions without asking for ' +
+      'them to be kept.',
   },
 );
 
-export const CATEGORY_INSTRUCTIONS =
-  'Which stored memory does the durable part of `latest` belong under?';
+export const CATEGORY_INSTRUCTIONS = 'Which stored memory does the request in `latest` concern?';
 
 export const UPDATE_QUESTION: BooleanQuestion = boolean(
   'Does `latest` change something already known about this user, rather than adding ' +
@@ -128,7 +130,7 @@ export function buildHint(key: string | null, updates: boolean): string | undefi
     : '';
   return (
     '<memory_hint>\n' +
-    `The durable part of this turn most likely belongs under \`${key}\`.${change}\n` +
+    `This request most likely belongs under \`${key}\`.${change}\n` +
     'Ignore this if it does not fit what the user actually said.\n' +
     '</memory_hint>'
   );
@@ -142,13 +144,13 @@ export function createMemoryGate(params: CreateMemoryGateParams): MemoryGate | n
   const windowSize = params.windowSize ?? DEFAULT_WINDOW;
   const maxChars = params.maxChars ?? DEFAULT_MAX_CHARS;
   const threshold = settings.threshold;
-  const durable = boolean(settings.instructions ?? DURABLE_QUESTION.instructions, {
-    true: settings.whenTrue ?? DURABLE_QUESTION.criteria?.true,
-    false: settings.whenFalse ?? DURABLE_QUESTION.criteria?.false,
+  const request = boolean(settings.instructions ?? MEMORY_REQUEST_QUESTION.instructions, {
+    true: settings.whenTrue ?? MEMORY_REQUEST_QUESTION.criteria?.true,
+    false: settings.whenFalse ?? MEMORY_REQUEST_QUESTION.criteria?.false,
   });
 
   function buildQuestions(validKeys: string[]): Record<string, ClassificationQuestion> {
-    const questions: Record<string, ClassificationQuestion> = { durable };
+    const questions: Record<string, ClassificationQuestion> = { request };
     if (settings.categorize === true && validKeys.length > 0) {
       questions.category = choice(
         CATEGORY_INSTRUCTIONS,
@@ -185,13 +187,13 @@ export function createMemoryGate(params: CreateMemoryGateParams): MemoryGate | n
         questions: buildQuestions(validKeys),
       });
 
-      const answer = response.answers.durable;
+      const answer = response.answers.request;
       if (!isBooleanAnswer(answer)) {
         return PROCESS;
       }
       if (!isTrue(answer, threshold)) {
         logger.debug(
-          `[memoryGate] durable ${answer.probability.toFixed(2)} below ${threshold}: skipping`,
+          `[memoryGate] request ${answer.probability.toFixed(2)} below ${threshold}: skipping`,
         );
         return { process: false };
       }
@@ -206,7 +208,7 @@ export function createMemoryGate(params: CreateMemoryGateParams): MemoryGate | n
       const updates = isBooleanAnswer(updatesAnswer) && updatesAnswer.probability >= 0.5;
 
       logger.debug(
-        `[memoryGate] durable ${answer.probability.toFixed(2)}: processing` +
+        `[memoryGate] request ${answer.probability.toFixed(2)}: processing` +
           (key != null ? `, suggesting \`${key}\`${updates ? ' as an update' : ''}` : ''),
       );
       return { process: true, hint: buildHint(key, updates) };

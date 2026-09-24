@@ -780,7 +780,7 @@ describe('createMemoryTool tokenLimit enforcement', () => {
 });
 
 describe('memory gate inside the memory processor', () => {
-  function recordingGate(durable: number) {
+  function recordingGate(probability: number) {
     const requests: ClassificationRequest[] = [];
     const classifier: Classifier = {
       id: 'recording',
@@ -789,7 +789,7 @@ describe('memory gate inside the memory processor', () => {
         requests.push(request);
         return {
           model: 'test',
-          answers: { durable: { type: 'boolean', probability: durable } },
+          answers: { request: { type: 'boolean', probability } },
           usage: { inputTokens: 0, outputTokens: 0 },
         };
       },
@@ -838,7 +838,7 @@ describe('memory gate inside the memory processor', () => {
     expect(conversation).toContain('I prefer answers in Japanese from now on');
   });
 
-  it('skips the memory model when the gate says the turn holds nothing durable', async () => {
+  it('skips the memory model when the gate says the turn asks for nothing', async () => {
     const { gate } = recordingGate(0.01);
     const runCalls = (Run.create as jest.Mock).mock.calls.length;
 

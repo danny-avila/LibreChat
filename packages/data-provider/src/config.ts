@@ -2968,12 +2968,12 @@ export const classificationSchema = z.object({
       needsToolInstructions: z.string().min(1).max(4_000).optional(),
     })
     .default({}),
-  /** Skips the memory model on turns that carry nothing durable. */
+  /** Skips the memory model on turns that do not ask to remember, update or forget anything. */
   memoryGate: z
     .object({
       enabled: z.boolean().default(false),
       timeoutMs: z.number().int().positive().max(60_000).optional(),
-      threshold: z.number().min(0).max(1).default(0.25),
+      threshold: z.number().min(0).max(1).default(0.5),
       instructions: z.string().min(1).max(4_000).optional(),
       /**
        * What a yes and a no mean. Named `whenTrue`/`whenFalse` because YAML
