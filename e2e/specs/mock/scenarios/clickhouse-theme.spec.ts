@@ -14,9 +14,8 @@ import { themeValue } from './style.helpers';
  * app from data alone. A host hands it to `ThemeProvider`, which persists it as
  * the stored definition, so the scenarios supply it the same way and read what
  * the browser actually paints on real surfaces: the sidebar, the settings
- * dialog, and the error box an assistant turn falls back to. Message prose is
- * not one of them: it reads `--tw-prose-body`, which `client/src/style.css`
- * still declares as literals, so no theme reaches it yet.
+ * dialog, and the error box an assistant turn falls back to. Message prose,
+ * the composer and the model selector are covered in `theme-surfaces.spec.ts`.
  */
 
 type Mode = 'light' | 'dark';

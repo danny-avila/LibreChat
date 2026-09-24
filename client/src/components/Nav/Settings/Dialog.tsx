@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
 import { X, ChevronLeft } from 'lucide-react';
-import { Button, useMediaQuery } from '@librechat/client';
 import { SettingsTabValues } from 'librechat-data-provider';
+import { Button, useMediaQuery, DIALOG_SCRIM_CLASS } from '@librechat/client';
 import { Dialog, DialogPanel, DialogTitle, Transition, TransitionChild } from '@headlessui/react';
 import type { TDialogProps } from '~/common';
 import type { SettingsTab } from './types';
@@ -50,7 +50,7 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
           leaveFrom="opacity-100"
           leaveTo="opacity-0"
         >
-          <div className="fixed inset-0 bg-black opacity-50 dark:opacity-80" aria-hidden="true" />
+          <div className={cn('fixed inset-0', DIALOG_SCRIM_CLASS)} aria-hidden="true" />
         </TransitionChild>
         <TransitionChild
           enter="ease-out duration-200"
@@ -66,7 +66,7 @@ export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
                 /** Headless UI panel, so it bypasses the shared dialog primitives
                  *  and needs the contrast edge declared here. `shadow-2xl` is a
                  *  black shadow with nothing to separate against on a black canvas. */
-                'bg-surface-dialog high-contrast:border high-contrast:border-solid high-contrast:border-border-medium high-contrast:shadow-none flex max-h-[85vh] w-full flex-col overflow-hidden rounded-2xl shadow-2xl',
+                'bg-surface-dialog high-contrast:border high-contrast:border-solid high-contrast:border-border-medium high-contrast:shadow-none rounded-theme-surface flex max-h-[85vh] w-full flex-col overflow-hidden shadow-2xl',
                 'md:h-[85vh] md:w-[900px]',
               )}
             >
