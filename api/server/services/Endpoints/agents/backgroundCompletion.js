@@ -5,7 +5,10 @@ const {
   createBackgroundToolResultHandler,
   claimBackgroundToolResult: claimResult,
 } = require('@librechat/api');
-const { listPendingAgentBackgroundToolCompletions } = require('~/models');
+const {
+  listPendingAgentBackgroundToolCompletions,
+  listUndeliveredAgentTriggerTaskIds,
+} = require('~/models');
 const {
   enqueueAgentTrigger,
   persistAgentBackgroundToolResult,
@@ -25,6 +28,7 @@ const preregisterBackgroundToolCompletion = createBackgroundToolCompletionWakeup
 
 const pendingBackgroundToolCompletions = createPendingBackgroundCompletions({
   list: listPendingAgentBackgroundToolCompletions,
+  listTaskIds: listUndeliveredAgentTriggerTaskIds,
   retire: retireAgentTrigger,
 });
 

@@ -569,6 +569,7 @@ describe('agent trigger delivery methods', () => {
       });
       expect(one).toEqual({
         completions: [expect.objectContaining({ deliveryKey: second.delivery.deliveryKey })],
+        deadTaskIds: [],
         truncated: false,
       });
 
@@ -597,13 +598,15 @@ describe('agent trigger delivery methods', () => {
       expect(pending.completions).toEqual([]);
     });
 
-    it('omits capability-dead rows, which no worker will deliver', async () => {
+    it('reports dead-lettered tasks apart from pending ones', async () => {
       const user = new mongoose.Types.ObjectId();
       const dead = await completion(user, 'task-dead');
       await Delivery.updateOne(
         { _id: dead.delivery.id },
         { $set: { status: 'leased', capabilityStatus: 'dead' } },
       );
+      const deadLetter = await completion(user, 'task-dead-letter');
+      await Delivery.updateOne({ _id: deadLetter.delivery.id }, { $set: { status: 'dead' } });
 
       const pending = await methods.listPendingAgentBackgroundToolCompletions({
         user,
@@ -612,6 +615,33 @@ describe('agent trigger delivery methods', () => {
       });
 
       expect(pending.completions).toEqual([]);
+      expect(pending.deadTaskIds.sort()).toEqual(['task-dead', 'task-dead-letter']);
+    });
+
+    it("lists a conversation's undelivered task ids for one source", async () => {
+      const user = new mongoose.Types.ObjectId();
+      const subagent = { id: 'subagent-completion', type: 'internal' };
+      await completion(user, 'child-waiting', {
+        envelope: {
+          event: { source: subagent, payload: { taskId: 'child-waiting' } },
+          target: { conversationId: 'conversation-1' },
+        },
+      });
+      const delivered = await completion(user, 'child-delivered', {
+        envelope: {
+          event: { source: subagent, payload: { taskId: 'child-delivered' } },
+          target: { conversationId: 'conversation-1' },
+        },
+      });
+      await Delivery.updateOne({ _id: delivered.delivery.id }, { $set: { status: 'succeeded' } });
+
+      await expect(
+        methods.listUndeliveredAgentTriggerTaskIds({
+          user,
+          conversationId: 'conversation-1',
+          sourceId: subagent.id,
+        }),
+      ).resolves.toEqual({ taskIds: ['child-waiting'], truncated: false });
     });
 
     it('distinguishes retiring a completion from finding it already delivered', async () => {

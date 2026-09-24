@@ -3092,16 +3092,32 @@ describe('runCheckBackgroundTask (singleton)', () => {
       await new Promise((resolve) => setImmediate(resolve));
     }
 
-    const listed = JSON.parse(
-      await runCheckBackgroundTask({
-        userId: 'owner',
-        conversationId: 'settled-subagent-parent',
-        agentId: 'agent_parent',
-        args: {},
-        subagentTasks,
-      }),
-    );
+    const listWithWakeups = async (subagentWakeups: string[]) =>
+      JSON.parse(
+        await runCheckBackgroundTask({
+          userId: 'owner',
+          conversationId: 'settled-subagent-parent',
+          agentId: 'agent_parent',
+          args: {},
+          subagentTasks,
+          pendingCompletions: {
+            list: jest.fn(async () => ({ completions: [], deadTaskIds: [], complete: true })),
+            listSubagentWakeups: jest.fn(async () => ({
+              taskIds: subagentWakeups,
+              complete: true,
+            })),
+            discard: jest.fn(async () => 'not_pending' as const),
+            settleClaimed: jest.fn(async () => false),
+          },
+        }),
+      );
 
+    /** No durable wake-up (admitted poll-only): nothing will arrive, so nothing is pending. */
+    const pollOnly = await listWithWakeups([]);
+    expect(pollOnly.tasks[0].delivery).toBeUndefined();
+    expect(pollOnly.outstanding).toBe(0);
+
+    const listed = await listWithWakeups([started.task.taskId]);
     expect(listed.tasks[0]).toEqual(
       expect.objectContaining({ status: 'completed', result_available: true, delivery: 'pending' }),
     );
@@ -3470,13 +3486,20 @@ describe('runCheckBackgroundTask delivery semantics', () => {
     overrides: {
       list?: () => Promise<unknown[]>;
       complete?: boolean;
+      deadTaskIds?: string[];
+      subagentWakeups?: string[];
       discard?: () => Promise<string>;
     } = {},
   ) =>
     ({
       list: jest.fn(async () => ({
         completions: await (overrides.list ?? (async () => []))(),
+        deadTaskIds: overrides.deadTaskIds ?? [],
         complete: overrides.complete ?? true,
+      })),
+      listSubagentWakeups: jest.fn(async () => ({
+        taskIds: overrides.subagentWakeups ?? [],
+        complete: true,
       })),
       discard: jest.fn(overrides.discard ?? (async () => 'not_pending')),
       settleClaimed: jest.fn(async () => true),
@@ -3699,6 +3722,24 @@ describe('runCheckBackgroundTask delivery semantics', () => {
     expect(byId.get(delivered)).toBe('delivered');
     expect(byId.get(waiting)).toBe('pending');
     expect(listed.outstanding).toBe(1);
+  });
+
+  it('reports a local task whose automatic delivery dead-lettered as failed, not delivered', async () => {
+    const taskId = completedWithWakeup('dead-user', 'dead-convo', 'dead-call');
+    const listed = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'dead-user',
+        conversationId: 'dead-convo',
+        args: {},
+        pendingCompletions: pendingControls({ deadTaskIds: [taskId] }),
+      }),
+    );
+
+    expect(listed.tasks[0]).toEqual(
+      expect.objectContaining({ background_task_id: taskId, delivery: 'failed' }),
+    );
+    expect(listed.outstanding).toBe(1);
+    expect(listed.message).toContain('Automatic delivery failed');
   });
 
   it('keeps the local view and warns when the durable listing is incomplete', async () => {

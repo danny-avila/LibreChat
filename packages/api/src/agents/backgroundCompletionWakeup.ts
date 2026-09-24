@@ -24,6 +24,7 @@ import type { AgentContinueTriggerEnvelope } from './triggers/envelope';
 import type { AgentTriggerDispatchContext } from './triggers/dispatch';
 import type { AgentTriggerEnqueueOptions } from './triggers/delivery';
 import { BACKGROUND_TOOL_PRODUCER_LEASE_MS } from './backgroundCompletion';
+import { SUBAGENT_COMPLETION_SOURCE } from './subagentCompletionWakeup';
 import { createAgentTriggerEnvelope } from './triggers/envelope';
 import { AgentTriggerExecutionError } from './triggers/host';
 import { truncateMiddle } from '~/utils';
@@ -546,8 +547,14 @@ export function createPendingBackgroundCompletions(deps: {
     taskId?: string;
   }) => Promise<{
     completions: Array<PendingBackgroundCompletion & { deliveryKey: string }>;
+    deadTaskIds: string[];
     truncated: boolean;
   }>;
+  listTaskIds: (input: {
+    user: string;
+    conversationId: string;
+    sourceId: string;
+  }) => Promise<{ taskIds: string[]; truncated: boolean }>;
   retire: RetireBackgroundToolCompletion;
 }): PendingBackgroundCompletionControls {
   const read = (input: { userId: string; conversationId: string; taskId?: string }) =>
@@ -559,8 +566,9 @@ export function createPendingBackgroundCompletions(deps: {
     });
   return {
     list: async (input) => {
-      const { completions, truncated } = await read(input);
+      const { completions, deadTaskIds, truncated } = await read(input);
       return {
+        deadTaskIds,
         completions: completions.map(
           ({ taskId, toolName, dispatchedAt, result, claimedByWakeup }) => ({
             taskId,
@@ -594,6 +602,14 @@ export function createPendingBackgroundCompletions(deps: {
         { onlyIfUnclaimed: true, requireTransition: true },
       );
       return retired ? 'discarded' : 'delivering';
+    },
+    listSubagentWakeups: async (input) => {
+      const { taskIds, truncated } = await deps.listTaskIds({
+        user: input.userId,
+        conversationId: input.conversationId,
+        sourceId: SUBAGENT_COMPLETION_SOURCE,
+      });
+      return { taskIds, complete: !truncated };
     },
     settleClaimed: async (input) => {
       const [completion] = (await read(input)).completions;

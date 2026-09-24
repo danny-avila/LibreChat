@@ -805,15 +805,17 @@ describe('pending background completions', () => {
     ...overrides,
   });
   const listing = (completions: Array<ReturnType<typeof row>>, truncated = false) =>
-    jest.fn(async () => ({ completions, truncated }));
+    jest.fn(async () => ({ completions, deadTaskIds: ['task-dead'], truncated }));
+  const listTaskIds = jest.fn(async () => ({ taskIds: ['child-1'], truncated: false }));
 
   it('lists the durable view for the owner without delivery internals', async () => {
     const list = listing([row({ result: settled })], true);
-    const pending = createPendingBackgroundCompletions({ list, retire: jest.fn() });
+    const pending = createPendingBackgroundCompletions({ list, listTaskIds, retire: jest.fn() });
 
     await expect(
       pending.list({ userId: 'user-1', conversationId: 'conversation-1' }),
     ).resolves.toEqual({
+      deadTaskIds: ['task-dead'],
       completions: [
         {
           taskId: 'task-1',
@@ -835,7 +837,7 @@ describe('pending background completions', () => {
   it('discards a settled, unclaimed result by looking up that task and retiring it exactly', async () => {
     const retire = jest.fn(async () => true);
     const list = listing([row({ result: settled })]);
-    const pending = createPendingBackgroundCompletions({ list, retire });
+    const pending = createPendingBackgroundCompletions({ list, listTaskIds, retire });
 
     await expect(
       pending.discard({ userId: 'user-1', conversationId: 'conversation-1', taskId: 'task-1' }),
@@ -858,6 +860,7 @@ describe('pending background completions', () => {
     const retire = jest.fn(async () => true);
     const pending = createPendingBackgroundCompletions({
       list: listing([row({ result: settled })]),
+      listTaskIds,
       retire,
     });
 
@@ -875,12 +878,29 @@ describe('pending background completions', () => {
       { onlyIfUnclaimed: true },
     );
     await expect(
-      createPendingBackgroundCompletions({ list: listing([]), retire }).settleClaimed({
+      createPendingBackgroundCompletions({ list: listing([]), listTaskIds, retire }).settleClaimed({
         userId: 'user-1',
         conversationId: 'conversation-1',
         taskId: 'task-1',
       }),
     ).resolves.toBe(false);
+  });
+
+  it('lists undelivered subagent wake-ups from their own source', async () => {
+    const pending = createPendingBackgroundCompletions({
+      list: listing([]),
+      listTaskIds,
+      retire: jest.fn(),
+    });
+
+    await expect(
+      pending.listSubagentWakeups({ userId: 'user-1', conversationId: 'conversation-1' }),
+    ).resolves.toEqual({ taskIds: ['child-1'], complete: true });
+    expect(listTaskIds).toHaveBeenCalledWith({
+      user: 'user-1',
+      conversationId: 'conversation-1',
+      sourceId: 'subagent-completion',
+    });
   });
 
   it.each([
@@ -890,7 +910,11 @@ describe('pending background completions', () => {
     ['delivering', [row({ result: settled })], false],
   ])('reports %s without discarding what it cannot', async (outcome, rows, retired) => {
     const retire = jest.fn(async () => retired);
-    const pending = createPendingBackgroundCompletions({ list: listing(rows), retire });
+    const pending = createPendingBackgroundCompletions({
+      list: listing(rows),
+      listTaskIds,
+      retire,
+    });
 
     await expect(
       pending.discard({ userId: 'user-1', conversationId: 'conversation-1', taskId: 'task-1' }),

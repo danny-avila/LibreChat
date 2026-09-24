@@ -48,6 +48,11 @@ const CLAIM_CANDIDATE_BATCH = 8;
  * unless durable rows outlived that limit across restarts; it then says so. */
 const MAX_PENDING_BACKGROUND_COMPLETIONS = 200;
 /** Every status before a delivery settles, i.e. whose result has not reached its conversation. */
+const DEAD_STATUSES: IAgentTriggerDelivery['status'][] = ['dead', 'capability_dead'];
+/** Dead to every worker version, including a capability row a legacy worker still sees leased. */
+function isDeadDelivery(row: Pick<IAgentTriggerDelivery, 'status' | 'capabilityStatus'>): boolean {
+  return DEAD_STATUSES.includes(row.status) || row.capabilityStatus === 'dead';
+}
 const UNDELIVERED_STATUSES: IAgentTriggerDelivery['status'][] = [
   'staging',
   'capability_staging',
@@ -274,7 +279,14 @@ export interface PendingAgentBackgroundToolCompletion {
 
 export interface PendingAgentBackgroundToolCompletions {
   completions: PendingAgentBackgroundToolCompletion[];
+  /** Tasks whose delivery dead-lettered: never delivered, recoverable only by a poll. */
+  deadTaskIds: string[];
   /** More undelivered completions exist than were returned. */
+  truncated: boolean;
+}
+
+export interface UndeliveredAgentTriggerTaskIds {
+  taskIds: string[];
   truncated: boolean;
 }
 
@@ -350,6 +362,12 @@ export interface AgentTriggerDeliveryMethods {
     taskId?: string;
     limit?: number;
   }) => Promise<PendingAgentBackgroundToolCompletions>;
+  /** Task ids of one conversation's undelivered internal deliveries from one source. */
+  listUndeliveredAgentTriggerTaskIds: (input: {
+    user: string | Types.ObjectId;
+    conversationId: string;
+    sourceId: string;
+  }) => Promise<UndeliveredAgentTriggerTaskIds>;
   persistAgentBackgroundToolResult: (
     input: PersistAgentBackgroundToolResultInput,
   ) => Promise<boolean>;
@@ -2373,25 +2391,34 @@ export function createAgentTriggerDeliveryMethods(
         /** Legacy rows keep results only on the parent message, so a missing
          * receipt cannot tell running from finished; they drain on their own path. */
         requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
-        status: { $in: UNDELIVERED_STATUSES },
-        /** Capability-dead rows are dead letters to every worker version. */
-        capabilityStatus: { $ne: 'dead' },
+        /** Dead letters are read too, so a caller can tell "delivered" from "failed". */
+        status: { $in: [...UNDELIVERED_STATUSES, ...DEAD_STATUSES] },
       })
       .select(
-        'deliveryKey createdAt envelope.event.payload ' +
+        'deliveryKey createdAt status capabilityStatus envelope.event.payload ' +
           'backgroundToolResult.status backgroundToolResult.settledAt backgroundToolResult.resultClaim',
       )
       .sort({ createdAt: 1, _id: 1 })
       .limit(limit + 1)
       .lean<
         Array<
-          Pick<IAgentTriggerDelivery, 'deliveryKey' | 'createdAt' | 'backgroundToolResult'> & {
+          Pick<
+            IAgentTriggerDelivery,
+            'deliveryKey' | 'createdAt' | 'backgroundToolResult' | 'status' | 'capabilityStatus'
+          > & {
             envelope?: { event?: { payload?: Record<string, unknown> } };
           }
         >
       >();
+    const deadTaskIds: string[] = [];
     const completions = rows.slice(0, limit).flatMap((row) => {
       const payload = row.envelope?.event?.payload;
+      if (isDeadDelivery(row)) {
+        if (typeof payload?.taskId === 'string') {
+          deadTaskIds.push(payload.taskId);
+        }
+        return [];
+      }
       const taskId = payload?.taskId;
       const toolCallId = payload?.toolCallId;
       const toolName = payload?.toolName;
@@ -2418,7 +2445,40 @@ export function createAgentTriggerDeliveryMethods(
         },
       ];
     });
-    return { completions, truncated: rows.length > limit };
+    return { completions, deadTaskIds, truncated: rows.length > limit };
+  }
+
+  async function listUndeliveredAgentTriggerTaskIds(input: {
+    user: string | Types.ObjectId;
+    conversationId: string;
+    sourceId: string;
+  }): Promise<UndeliveredAgentTriggerTaskIds> {
+    if (
+      input.conversationId.length === 0 ||
+      input.conversationId.length > 256 ||
+      input.sourceId.length === 0 ||
+      input.sourceId.length > 256
+    ) {
+      throw new TypeError('Invalid undelivered task lookup');
+    }
+    const rows = await Delivery()
+      .find({
+        user: input.user,
+        'envelope.event.source.type': 'internal',
+        'envelope.event.source.id': input.sourceId,
+        'envelope.target.conversationId': input.conversationId,
+        status: { $in: UNDELIVERED_STATUSES },
+        capabilityStatus: { $ne: 'dead' },
+      })
+      .select('envelope.event.payload.taskId')
+      .sort({ createdAt: 1, _id: 1 })
+      .limit(MAX_PENDING_BACKGROUND_COMPLETIONS + 1)
+      .lean<Array<{ envelope?: { event?: { payload?: { taskId?: unknown } } } }>>();
+    const taskIds = rows
+      .slice(0, MAX_PENDING_BACKGROUND_COMPLETIONS)
+      .map((row) => row.envelope?.event?.payload?.taskId)
+      .filter((taskId): taskId is string => typeof taskId === 'string');
+    return { taskIds, truncated: rows.length > MAX_PENDING_BACKGROUND_COMPLETIONS };
   }
 
   /** Stores terminal output on the pre-admitted delivery before attempting the
@@ -4184,6 +4244,7 @@ export function createAgentTriggerDeliveryMethods(
     renewAgentTriggerDeliveryProducerLease,
     getAgentTriggerDeliveryProducerLease,
     listPendingAgentBackgroundToolCompletions,
+    listUndeliveredAgentTriggerTaskIds,
     persistAgentBackgroundToolResult,
     getAgentBackgroundToolResult,
     getAgentBackgroundToolResultClaim,

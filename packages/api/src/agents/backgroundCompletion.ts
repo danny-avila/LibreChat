@@ -92,10 +92,17 @@ export type BackgroundCompletionDiscardOutcome =
 /** Durable view and control of one principal's undelivered background completions. */
 export interface PendingBackgroundCompletionControls {
   /** `complete` is false when more undelivered completions exist than were listed. */
-  list: (input: {
+  list: (input: { userId: string; conversationId: string }) => Promise<{
+    completions: PendingBackgroundCompletion[];
+    /** Tasks whose automatic delivery dead-lettered; only a poll recovers them. */
+    deadTaskIds: string[];
+    complete: boolean;
+  }>;
+  /** Subagent tasks whose completion wake-up has not been delivered yet. */
+  listSubagentWakeups: (input: {
     userId: string;
     conversationId: string;
-  }) => Promise<{ completions: PendingBackgroundCompletion[]; complete: boolean }>;
+  }) => Promise<{ taskIds: string[]; complete: boolean }>;
   discard: (input: {
     userId: string;
     conversationId: string;
