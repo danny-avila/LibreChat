@@ -3,7 +3,7 @@ import { getClientBuildId } from './build';
 describe('loaded client build identity', () => {
   afterEach(() =>
     document
-      .querySelectorAll('[data-lc-client-entry], meta[name=\"lc-asset-build-id\"]')
+      .querySelectorAll('[data-lc-client-entry], meta[name="lc-asset-build-id"]')
       .forEach((el) => el.remove()),
   );
 

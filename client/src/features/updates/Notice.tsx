@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
 import { useIsMutating } from '@tanstack/react-query';
@@ -14,6 +14,12 @@ const ATTEMPT_KEY = 'lc-frontend-release-attempt';
 const AUTO_BUDGET_KEY = 'lc-frontend-release-auto-budget';
 const LEADER_LEASE_MS = 20000;
 const IDLE_MS = 60000;
+const NOTICE_MESSAGES = {
+  hint: 'com_ui_frontend_update_hint',
+  active: 'com_ui_frontend_update_deferred',
+  unavailable: 'com_ui_frontend_update_unavailable',
+  cooldown: 'com_ui_frontend_update_cooldown',
+} as const;
 
 type ReloadAttempt = { from: string; to: string; at: number };
 
@@ -51,7 +57,7 @@ export default function FrontendUpdateNotice() {
   expectedRef.current = expected;
   const checkingRef = useRef(false);
   const mismatchAt = useRef<number | null>(null);
-  const releaseUrl = new URL('version.json', document.baseURI);
+  const releaseUrl = useMemo(() => new URL('version.json', document.baseURI), []);
 
   useEffect(() => {
     if (!/^assets-[a-f0-9]{64}$/.test(clientBuildId)) {
@@ -190,7 +196,7 @@ export default function FrontendUpdateNotice() {
       window.removeEventListener('online', resume);
       channel?.close();
     };
-  }, [clientBuildId, pollIntervalMs, releaseUrl.pathname]);
+  }, [clientBuildId, pollIntervalMs, releaseUrl]);
 
   useEffect(() => {
     const interact = () => setLastInteraction(Date.now());
@@ -270,7 +276,7 @@ export default function FrontendUpdateNotice() {
         setChecking(false);
       }
     },
-    [checking, clientBuildId, releaseUrl.pathname],
+    [checking, clientBuildId, releaseUrl],
   );
 
   useEffect(() => {
@@ -304,17 +310,7 @@ export default function FrontendUpdateNotice() {
       aria-label={localize('com_ui_frontend_update_available')}
     >
       <p>{localize('com_ui_frontend_update_available')}</p>
-      <p className="mt-1 text-sm text-text-secondary">
-        {localize(
-          noticeState === 'active'
-            ? 'com_ui_frontend_update_deferred'
-            : noticeState === 'unavailable'
-              ? 'com_ui_frontend_update_unavailable'
-              : noticeState === 'cooldown'
-                ? 'com_ui_frontend_update_cooldown'
-                : 'com_ui_frontend_update_hint',
-        )}
-      </p>
+      <p className="mt-1 text-sm text-text-secondary">{localize(NOTICE_MESSAGES[noticeState])}</p>
       <Button
         type="button"
         variant="submit"
