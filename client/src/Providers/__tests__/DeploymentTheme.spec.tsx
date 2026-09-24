@@ -269,6 +269,20 @@ describe('DeploymentTheme', () => {
     expect(localStorage.getItem('theme-source')).toBe('legacy');
   });
 
+  it('does not persist a deployment theme that returns after a withdrawal', async () => {
+    const before = snapshotStorage();
+    serveTheme('clickhouse');
+    renderTheme(queryClient);
+    await waitFor(() => expect(root().dataset.theme).toBe('clickhouse'));
+
+    replaceConfig();
+    await waitFor(() => expect(root().dataset.theme).toBe('stored'));
+    replaceConfig(inlineTheme);
+
+    await waitFor(() => expect(root().dataset.theme).toBe('acme'));
+    expect(snapshotStorage()).toEqual(before);
+  });
+
   it('picks up the theme after the auth flow removes the startup config query', async () => {
     const before = snapshotStorage();
     getStartupConfig.mockReturnValueOnce(new Promise(() => undefined));

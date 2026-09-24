@@ -138,16 +138,12 @@ export default function DeploymentTheme({ children }: { children: React.ReactNod
   const [persistenceReleased, setPersistenceReleased] = useState(false);
   if (themeDefinition) {
     deploymentThemeApplied.current = true;
-    if (persistenceReleased) {
-      setPersistenceReleased(false);
-    }
   }
   const withdrawn = !themeDefinition && deploymentThemeApplied.current;
   useEffect(() => {
-    if (withdrawn) {
-      setPersistenceReleased(true);
-    }
+    setPersistenceReleased(withdrawn);
   }, [withdrawn]);
+  const persistenceOff = Boolean(themeDefinition) || (withdrawn && !persistenceReleased);
 
   /**
    * Clearing the prop would leave the provider on the LibreChat palette, so a
@@ -168,8 +164,7 @@ export default function DeploymentTheme({ children }: { children: React.ReactNod
         themeRGB: storedTheme.legacyColors,
         themeName: storedTheme.name,
       }),
-    ...(deploymentThemeApplied.current &&
-      !persistenceReleased && { persistThemeDefinition: false }),
+    ...(persistenceOff && { persistThemeDefinition: false }),
   };
 
   return <ThemeProvider {...props}>{children}</ThemeProvider>;
