@@ -50,6 +50,7 @@ const {
   resolvePersistableCodeEnvironmentDecision,
   getFailedTurnTraceFields,
   resolveFailedTurnContent,
+  savePrivateTextMessage,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -458,7 +459,9 @@ async function saveErrorTurn(
     const iconURL = getEndpointIconURL(req, endpointOption);
 
     if (userMessage) {
-      const savedUserMessage = await saveMessage(
+      const savedUserMessage = await savePrivateTextMessage(
+        saveMessage,
+        req,
         reqCtx,
         {
           ...userMessage,
@@ -2729,7 +2732,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                   convoSignal.observeMessageWrite(Promise.resolve(savedUserTurn));
                 } else {
                   // Custom clients used by integrations/tests may not inherit BaseClient.
-                  const savedUserMessage = await saveMessage(
+                  const savedUserMessage = await savePrivateTextMessage(
+                    saveMessage,
+                    req,
                     {
                       userId,
                       isTemporary:
@@ -2982,9 +2987,15 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           if (!userMessage) {
             throw new Error('User message was unavailable before terminal persistence');
           }
-          const savedUserMessage = await saveMessage(reqCtx, userMessage, {
-            context: 'api/server/controllers/agents/request.js - resumable user message',
-          });
+          const savedUserMessage = await savePrivateTextMessage(
+            saveMessage,
+            req,
+            reqCtx,
+            userMessage,
+            {
+              context: 'api/server/controllers/agents/request.js - resumable user message',
+            },
+          );
           if (!savedUserMessage) {
             throw new Error('User message could not be persisted before terminal publication');
           }

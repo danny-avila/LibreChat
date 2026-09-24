@@ -59,6 +59,8 @@ const messageSchema: Schema<IMessage> = new Schema(
     summary: {
       type: String,
     },
+    privateText: { type: String, select: false },
+    privacyRevision: { type: String },
     isCreatedByUser: {
       type: Boolean,
       required: true,

@@ -54,6 +54,7 @@ jest.mock('@librechat/api', () => {
     /** The real helper, without loading the rest of the package this suite mocks around. */
     withoutTraceRefs: jest.requireActual('../../../../packages/api/src/langfuse/trace.ts')
       .withoutTraceRefs,
+    createPrivateTextView: jest.fn(() => (_req, _res, next) => next()),
     createContentFilter: jest.fn(() => (req, res, next) => next()),
     inspectContent,
     extractChatContent,

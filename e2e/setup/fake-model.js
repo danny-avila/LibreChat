@@ -2976,6 +2976,22 @@ function resolveResponses({ graph, messages, text, toolNames }) {
     return askUserQuestionResponses(askUserQuestionLabel, toolNames);
   }
 
+  if (text.includes('E2E_PRIVATE_TEXT:')) {
+    return {
+      responses: [MOCK_REPLY],
+      resolveOnStream: (streamMessages) => {
+        const prompt = JSON.stringify(streamMessages);
+        const protectedText =
+          !prompt.includes('alice@example.com') && /EMAIL_1_[a-f0-9]{32}/.test(prompt);
+        return {
+          responses: [
+            protectedText ? 'E2E private model input verified' : 'E2E private model input failed',
+          ],
+        };
+      },
+    };
+  }
+
   if (text.includes(ASSERT_AGENT_CONTEXT_MARKER)) {
     return {
       responses: [MOCK_REPLY],

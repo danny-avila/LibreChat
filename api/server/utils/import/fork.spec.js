@@ -1453,6 +1453,27 @@ describe('splitAtTargetLevel', () => {
 });
 
 describe('cloneMessagesWithTimestamps', () => {
+  test('does not carry private owner metadata into a new message identity', () => {
+    const importBatchBuilder = createImportBatchBuilder('owner');
+    importBatchBuilder.startConversation();
+    cloneMessagesWithTimestamps(
+      [
+        {
+          messageId: 'source',
+          parentMessageId: Constants.NO_PARENT,
+          text: '[EMAIL_1]',
+          isCreatedByUser: true,
+          privateText: 'v1:ciphertext',
+          privacyRevision: 'source-revision',
+        },
+      ],
+      importBatchBuilder,
+    );
+    const cloned = importBatchBuilder.messages[0];
+    expect(cloned.text).toBe('[EMAIL_1]');
+    expect(cloned).not.toHaveProperty('privateText');
+    expect(cloned).not.toHaveProperty('privacyRevision');
+  });
   test('should preserve user-submitted provenance without marking untouched model output', () => {
     const messagesToClone = [
       {

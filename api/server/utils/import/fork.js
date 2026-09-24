@@ -29,6 +29,8 @@ function cloneMessagesWithTimestamps(
       parentMessageId,
       createdAt,
     };
+    delete clonedMessage.privateText;
+    delete clonedMessage.privacyRevision;
     if (detachSubagentRuntime) {
       delete clonedMessage.subagentTask;
       delete clonedMessage.subagentTranscript;

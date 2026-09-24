@@ -22,6 +22,7 @@ import { QueuedTurnPortalProvider } from './Steering/QueuedTurnPortal';
 import ApprovalProvider from './Messages/Content/ApprovalContext';
 import ConversationStarters from './Input/ConversationStarters';
 import { pendingApprovalActionFamily } from './approval/state';
+import { OwnerTextProvider } from './Messages/PrivateText';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import Footer, { useConfiguredFooter } from './Footer';
 import { AskAnswerHostProvider } from './ask/state';
@@ -187,7 +188,13 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                             : 'h-full overflow-y-auto',
                         )}
                       >
-                        {content}
+                        <OwnerTextProvider
+                          messages={messages}
+                          conversationId={conversationId}
+                          isSubmitting={chatHelpers.isSubmitting}
+                        >
+                          {content}
+                        </OwnerTextProvider>
                         {/* Named + opaque so a view transition (the ask_user_question
                         popover ⇄ chat-card morph) paints the whole composer band
                         over the travelling card instead of letting it show

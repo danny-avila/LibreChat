@@ -56,7 +56,14 @@ const STALE_SEND_REVALIDATION_MS = 5_000;
 
 const logChatRequest = (request: Record<string, unknown>) => {
   logger.log('=====================================\nAsk function called with:');
-  logger.dir(request);
+  logger.dir({
+    conversationId: request.conversationId,
+    messageId: request.messageId,
+    parentMessageId: request.parentMessageId,
+    isEdited: request.isEdited,
+    isContinued: request.isContinued,
+    isRegenerate: request.isRegenerate,
+  });
   logger.log('=====================================');
 };
 
