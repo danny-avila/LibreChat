@@ -67,9 +67,15 @@ function ActiveMCPAppView({
     onSizeChanged: frame.onSizeChanged,
     onLoaded: frame.onLoaded,
     onTeardown: () => {
+      // A peer can tear down while the user is in its frame or approval dialog. Restore
+      // their place without stealing focus if they have already moved elsewhere.
+      const focusedInView =
+        closeButtonRef.current?.parentElement?.contains(document.activeElement) ?? false;
+      const focusedInApproval =
+        approval.pending !== null &&
+        document.activeElement?.closest('[role="alertdialog"]') != null;
       approval.cancel();
-      // Peer-initiated teardown must not take focus from an unrelated user action.
-      close(false);
+      close(focusedInView || focusedInApproval);
     },
     onFailed: frame.onFailed,
   });

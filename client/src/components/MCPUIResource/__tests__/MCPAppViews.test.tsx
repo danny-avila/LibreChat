@@ -220,6 +220,13 @@ describe('MCPAppViews', () => {
     expect(view.getByRole('button', { name: /com_ui_mcp_app_open_named/ })).toHaveFocus();
 
     fireEvent.click(view.getByRole('button', { name: /com_ui_mcp_app_open_named/ }));
+    view.getByRole('button', { name: /com_ui_mcp_app_close_named/ }).focus();
+    act(() => {
+      mockUseAppBridge.mock.calls.at(-1)?.[0].onTeardown?.();
+    });
+    expect(view.getByRole('button', { name: /com_ui_mcp_app_open_named/ })).toHaveFocus();
+
+    fireEvent.click(view.getByRole('button', { name: /com_ui_mcp_app_open_named/ }));
     const unrelated = document.createElement('button');
     document.body.appendChild(unrelated);
     unrelated.focus();
