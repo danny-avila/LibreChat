@@ -2,6 +2,7 @@ import { logger } from '@librechat/data-schemas';
 import {
   Tools,
   Constants,
+  ArtifactModes,
   isAgentsEndpoint,
   isEphemeralAgentId,
   getEphemeralSender,
@@ -203,8 +204,13 @@ export async function loadEphemeralAgent(
     result.tool_options = mergeSynthesizedToolOptions(result.tool_options, intentToolOptions);
   }
 
-  if (ephemeralAgent?.artifacts) {
+  /** An explicit client value wins even when it is `''` (off), so the spec default
+   *  stays overridable; truthiness alone would make it permanent. Callers that send
+   *  no `ephemeralAgent` at all — scheduled runs, the public API — fall back here. */
+  if (ephemeralAgent != null && Object.prototype.hasOwnProperty.call(ephemeralAgent, 'artifacts')) {
     result.artifacts = ephemeralAgent.artifacts;
+  } else if (modelSpec?.artifacts) {
+    result.artifacts = modelSpec.artifacts === true ? ArtifactModes.DEFAULT : modelSpec.artifacts;
   }
   if (modelSpec?.subagents) {
     result.subagents = modelSpec.subagents;

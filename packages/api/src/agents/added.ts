@@ -2,6 +2,7 @@ import { logger } from '@librechat/data-schemas';
 import {
   Tools,
   Constants,
+  ArtifactModes,
   isAgentsEndpoint,
   isEphemeralAgentId,
   getEphemeralSender,
@@ -306,8 +307,12 @@ export async function loadAddedAgent(
     tools,
   };
 
-  if (ephemeralAgent?.artifacts != null && ephemeralAgent.artifacts) {
+  /** Mirrors `loadEphemeralAgent`: an explicit client value wins even when it is
+   *  `''` (off), and a spec default applies only when the client sent none. */
+  if (ephemeralAgent != null && Object.prototype.hasOwnProperty.call(ephemeralAgent, 'artifacts')) {
     result.artifacts = ephemeralAgent.artifacts;
+  } else if (modelSpec?.artifacts) {
+    result.artifacts = modelSpec.artifacts === true ? ArtifactModes.DEFAULT : modelSpec.artifacts;
   }
   applyModelSpecSubagents(result, modelSpec);
   applyModelSpecSkills(result, modelSpec);
