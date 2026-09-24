@@ -280,7 +280,9 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
       });
       await page.goto(`/c/new?agent_id=${encodeURIComponent(ordinary.id)}`);
       const conversationId = await chat('Keep this conversation and its history.');
-      expect((await readDecision(conversationId)).codeEnvironmentMode).toBeUndefined();
+      const ordinaryDecision = await readDecision(conversationId);
+      expect(ordinaryDecision.codeEnvironmentMode).toBe('without_attached');
+      expect(ordinaryDecision.codeWorkspaces ?? []).toEqual([]);
       await page.getByTestId('model-selector-button').click();
       await page.locator('#model-search').fill(`Native ${a.environmentId}`);
       await page.getByRole('option', { name: new RegExp(`Native ${a.environmentId}`) }).click();
