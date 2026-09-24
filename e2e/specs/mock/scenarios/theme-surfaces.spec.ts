@@ -73,6 +73,25 @@ function contrast(a: string, b: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+/**
+ * Tailwind 4 compiles a slash modifier to `color-mix`, which Chromium reports as
+ * `oklab(...)`. Round the colour through a canvas to get the sRGB channels back.
+ */
+function toRgba(page: Page, color: string): Promise<string> {
+  return page.evaluate((value) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 1;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      throw new Error('the color-normalizing canvas has no 2d context');
+    }
+    context.fillStyle = value;
+    context.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
+    return `rgba(${r}, ${g}, ${b}, ${Math.round((a / 255) * 100) / 100})`;
+  }, color);
+}
+
 async function seedChat(title: string): Promise<string> {
   const conversationId = randomUUID();
   const { email } = getE2EUser();
@@ -262,9 +281,9 @@ test.describe('theme roles on prose, Settings, composer and model selector', () 
     try {
       await openChat(page, conversationId, 'dark');
       const settings = await openSettings(page);
-      /** `bg-black` at `opacity-80` composited to the same paint as black at 80% alpha. */
-      const blackAt80 = await probeStyle(page, 'bg-black/80', 'background-color');
-      expect(settings.scrim?.background).toBe(blackAt80);
+      /** The old scrim was `bg-black` at `opacity-80`: black at 80% over the page. */
+      expect(settings.scrim?.opacity).toBe('1');
+      expect(await toRgba(page, settings.scrim?.background ?? '')).toBe('rgba(0, 0, 0, 0.8)');
       await closeSettings(page);
     } finally {
       await deleteConversations([conversationId]);
