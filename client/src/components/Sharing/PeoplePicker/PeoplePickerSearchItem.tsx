@@ -1,4 +1,5 @@
 import React, { forwardRef } from 'react';
+import { SeriesLabel } from '@librechat/client';
 import { PrincipalType } from 'librechat-data-provider';
 import type { TPrincipal } from 'librechat-data-provider';
 import PrincipalAvatar from '~/components/Sharing/PrincipalAvatar';
@@ -20,29 +21,27 @@ const PeoplePickerSearchItem = forwardRef<HTMLDivElement, PeoplePickerSearchItem
     const displayName = name || localize('com_ui_unknown');
     const subtitle = email || `${type} (${principal.source || 'local'})`;
 
-    /** Semantic series roles rather than palette hues, so the dot moves with the
-     *  theme. The series slots are contracted as marks at 3:1, so the hue rides
-     *  on a leading dot and the 12px label stays on `text-secondary` at 4.5:1. */
+    /** Semantic series slots rather than palette hues, so the dot moves with the theme. */
     const getBadgeConfig = () => {
       switch (type) {
         case PrincipalType.USER:
           return {
-            dotClassName: 'bg-series-1',
+            hue: 1 as const,
             label: localize('com_ui_user'),
           };
         case PrincipalType.GROUP:
           return {
-            dotClassName: 'bg-series-7',
+            hue: 7 as const,
             label: localize('com_ui_group'),
           };
         case PrincipalType.ROLE:
           return {
-            dotClassName: 'bg-series-6',
+            hue: 6 as const,
             label: localize('com_ui_role'),
           };
         default:
           return {
-            dotClassName: undefined,
+            hue: undefined,
             label: type,
           };
       }
@@ -68,15 +67,9 @@ const PeoplePickerSearchItem = forwardRef<HTMLDivElement, PeoplePickerSearchItem
         </div>
 
         <div className="shrink-0">
-          <span className="text-text-secondary inline-flex items-center gap-1.5 text-xs font-medium">
-            {badgeConfig.dotClassName != null && (
-              <span
-                aria-hidden="true"
-                className={cn('size-2 shrink-0 rounded-full', badgeConfig.dotClassName)}
-              />
-            )}
+          <SeriesLabel hue={badgeConfig.hue} className="text-xs font-medium">
             {badgeConfig.label}
-          </span>
+          </SeriesLabel>
         </div>
       </div>
     );

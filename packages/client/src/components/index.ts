@@ -5,6 +5,7 @@ export * from './AlertDialog';
 export * from './Breadcrumb';
 export * from './Button';
 export * from './Chip';
+export * from './SeriesLabel';
 export * from './Checkbox';
 export * from './DisclosureChevron';
 export * from './Dialog';

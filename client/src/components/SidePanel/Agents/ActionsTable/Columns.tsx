@@ -1,7 +1,8 @@
+import { SeriesLabel } from '@librechat/client';
+import type { SeriesLabelHue } from '@librechat/client';
 import type { ColumnDef } from '@tanstack/react-table';
 import type { TranslationKeys } from '~/hooks';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 
 export type Spec = {
   name: string;
@@ -12,18 +13,16 @@ export type Spec = {
 
 /**
  * Color-codes the HTTP verb the way API docs do, so the method reads at a
- * glance. The hue comes from the categorical series ramp (identity rather than
- * status) and rides on a leading dot, because the series slots are contracted
- * as marks at 3:1 and the verb itself is small text that needs 4.5:1, so the
- * label stays on `text-secondary`. `delete` takes the error role, because
- * destructive really is a status.
+ * glance. The hues come from the categorical series ramp (identity rather than
+ * status), chosen to stay close to the conventional verb colours. `delete`
+ * takes the error role, because destructive really is a status.
  */
-const METHOD_DOTS: Record<string, string> = {
-  get: 'bg-series-1',
-  post: 'bg-series-7',
-  put: 'bg-series-4',
-  patch: 'bg-series-6',
-  delete: 'bg-status-error',
+const METHOD_HUES: Record<string, SeriesLabelHue | undefined> = {
+  get: 1,
+  post: 7,
+  put: 4,
+  patch: 6,
+  delete: 'error',
 };
 
 function HeaderCell({ labelKey }: { labelKey: TranslationKeys }) {
@@ -32,14 +31,13 @@ function HeaderCell({ labelKey }: { labelKey: TranslationKeys }) {
 }
 
 function MethodBadge({ method }: { method: string }) {
-  const dot = METHOD_DOTS[method.toLowerCase()];
   return (
-    <span className="text-text-secondary inline-flex items-center gap-1.5 font-mono text-[11px] font-semibold tracking-wide uppercase">
-      {dot != null && (
-        <span aria-hidden="true" className={cn('size-2 shrink-0 rounded-full', dot)} />
-      )}
+    <SeriesLabel
+      hue={METHOD_HUES[method.toLowerCase()]}
+      className="font-mono text-[11px] font-semibold tracking-wide uppercase"
+    >
       {method}
-    </span>
+    </SeriesLabel>
   );
 }
 

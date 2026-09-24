@@ -358,7 +358,7 @@ describe.each([
     expect(failures).toEqual([]);
   });
 
-  /** Identity labels (action methods, principal types) are small text, so the
+  /** Identity labels (`SeriesLabel`: action methods, principal types) are small text, so the
    *  series hue never paints the glyphs: the label takes `text-secondary` at AA
    *  and the hue rides on a leading dot at the 3:1 mark floor, both on the rows
    *  and popover options that host them, at rest and while hovered or active. */

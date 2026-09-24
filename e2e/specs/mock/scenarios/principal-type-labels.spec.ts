@@ -258,10 +258,10 @@ test.describe('people picker principal type badges', () => {
       /** Each query isolates exactly one result: the secondary user's full
        *  name, the unique seeded group's name, and "admin", which matches only
        *  the ADMIN system role (no seeded user, group, or email contains it). */
-      const queries: ReadonlyArray<{ type: string; query: string }> = [
-        { type: 'user', query: secondaryUser.name },
-        { type: 'group', query: groupName },
-        { type: 'role', query: 'admin' },
+      const queries: ReadonlyArray<{ type: string; label: string; query: string }> = [
+        { type: 'user', label: 'User', query: secondaryUser.name },
+        { type: 'group', label: 'Group', query: groupName },
+        { type: 'role', label: 'Role', query: 'admin' },
       ];
 
       for (const variant of VARIANTS) {
@@ -273,9 +273,15 @@ test.describe('people picker principal type badges', () => {
           const search = dialog.getByRole('combobox', { name: SEARCH_LABEL });
           await expect(search).toBeVisible();
 
-          for (const { type, query } of queries) {
+          for (const { type, label, query } of queries) {
             await search.fill(query);
-            const option = dialog.getByRole('option').first();
+            /** The picker debounces the query and keeps the previous result on
+             *  screen until the new one lands, so wait for this query's own
+             *  option (its name and its type label) before reading any paint. */
+            const option = dialog
+              .getByRole('option')
+              .filter({ hasText: query })
+              .filter({ hasText: label });
             await expect(option).toBeVisible({ timeout: 10000 });
             await expect(dialog.getByRole('option')).toHaveCount(1);
 
