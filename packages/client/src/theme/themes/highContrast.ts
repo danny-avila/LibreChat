@@ -90,6 +90,7 @@ export const highContrastLightTheme: IThemeRGB = {
   'rgb-surface-destructive-hover': '122 0 0', // #7a0000
   'rgb-surface-chat': '255 255 255', // #ffffff
   'rgb-surface-code': '255 255 255', // #ffffff, matching surface-primary-alt
+  'rgb-surface-code-body': '255 255 255', // #ffffff, matching surface-chat
   'rgb-surface-inverted': '0 0 0', // #000000
   'rgb-surface-inverted-hover': '51 51 51', // #333333
   'rgb-text-inverted': '255 255 255', // #ffffff
@@ -230,6 +231,7 @@ export const highContrastDarkTheme: IThemeRGB = {
   'rgb-surface-destructive-hover': '255 179 179', // #ffb3b3
   'rgb-surface-chat': '0 0 0', // #000000
   'rgb-surface-code': '0 0 0', // #000000, matching presentation
+  'rgb-surface-code-body': '0 0 0', // #000000, matching surface-primary-alt
   'rgb-surface-inverted': '255 255 255', // #ffffff
   'rgb-surface-inverted-hover': '212 212 212', // #d4d4d4
   'rgb-text-inverted': '0 0 0', // #000000

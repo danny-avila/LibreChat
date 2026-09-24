@@ -55,6 +55,7 @@ export interface IThemeRGB {
   'rgb-surface-destructive-hover'?: string;
   'rgb-surface-chat'?: string;
   'rgb-surface-code'?: string;
+  'rgb-surface-code-body'?: string;
   'rgb-surface-inverted'?: string;
   'rgb-surface-inverted-hover'?: string;
   'rgb-text-inverted'?: string;
@@ -192,6 +193,7 @@ export interface IThemeVariables {
   '--surface-destructive-hover': string;
   '--surface-chat': string;
   '--surface-code': string;
+  '--surface-code-body': string;
   '--surface-inverted': string;
   '--surface-inverted-hover': string;
   '--text-inverted': string;
@@ -296,6 +298,7 @@ export interface IThemeColors {
   'surface-destructive-hover'?: string;
   'surface-chat'?: string;
   'surface-code'?: string;
+  'surface-code-body'?: string;
   'surface-inverted'?: string;
   'surface-inverted-hover'?: string;
   'text-inverted'?: string;

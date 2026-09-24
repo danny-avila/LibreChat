@@ -28,6 +28,7 @@ const canvasSurfaces: Array<keyof IThemeRGB> = [
   'rgb-surface-dialog',
   'rgb-surface-chat',
   'rgb-surface-code',
+  'rgb-surface-code-body',
   'rgb-presentation',
 ];
 
@@ -216,7 +217,9 @@ describe.each(modes)('clickhouse %s palette', (_mode, theme) => {
   });
 
   it('keeps every syntax colour at WCAG AA on the code surface', () => {
-    expect(below(theme, WCAG_AA_NORMAL, syntaxTokens, ['rgb-surface-code'])).toEqual([]);
+    expect(
+      below(theme, WCAG_AA_NORMAL, syntaxTokens, ['rgb-surface-code', 'rgb-surface-code-body']),
+    ).toEqual([]);
   });
 
   it('keeps inverted and fixed pairs at WCAG AA', () => {

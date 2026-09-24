@@ -44,6 +44,7 @@
   --color-surface-destructive-hover: rgb(var(--surface-destructive-hover));
   --color-surface-chat: rgb(var(--surface-chat));
   --color-surface-code: rgb(var(--surface-code));
+  --color-surface-code-body: rgb(var(--surface-code-body));
   --color-surface-qr: rgb(var(--surface-qr));
   --color-surface-inverted: rgb(var(--surface-inverted));
   --color-surface-inverted-hover: rgb(var(--surface-inverted-hover));

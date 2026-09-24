@@ -73,7 +73,7 @@ const textTokens: Array<keyof IThemeRGB> = [
 
 /** Code blocks share the mode's own high-contrast canvas rather than a bundled
  * fallback that would reintroduce a grey surface. */
-const codeSurfaces: Array<keyof IThemeRGB> = ['rgb-surface-code'];
+const codeSurfaces: Array<keyof IThemeRGB> = ['rgb-surface-code', 'rgb-surface-code-body'];
 
 const syntaxTokens: Array<keyof IThemeRGB> = [
   'rgb-syntax-text',

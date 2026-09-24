@@ -9,6 +9,8 @@ import {
   withMongo,
 } from '../db';
 import { clickHouseTheme } from '../../../../packages/client/src/theme/themes/clickhouse';
+import { defaultTheme } from '../../../../packages/client/src/theme/themes/default';
+import { darkTheme } from '../../../../packages/client/src/theme/themes/dark';
 import { openAgentBuilder, uniqueAgentName, cleanupAgent } from '../agents.helpers';
 import { MOCK_ENDPOINTS, getAccessToken, requestJson } from '../helpers';
 import { getE2EUser } from '../../../setup/user';
@@ -218,16 +220,17 @@ async function seedCodeReply(title: string, runs: string[] = []): Promise<string
   return conversationId;
 }
 
-/** Reads the shared code block's toolbar and code pane, which a theme reaches only through `surface-code`. */
+/** Reads the shared code block's toolbar (`surface-code`) and code pane (`surface-code-body`). */
 async function expectCodePanePaint(block: Locator, colors: IThemeRGB) {
   const surface = rgbCss(colors['rgb-surface-code']);
+  const body = rgbCss(colors['rgb-surface-code-body']);
   const code = block.locator('code').first();
   await expect(code).toBeVisible();
   const pane = code.locator('xpath=..');
   const toolbar = block.getByText('python', { exact: true }).first().locator('xpath=..');
   expect((await painted(toolbar)).background).toBe(surface);
   const panePaint = await painted(pane);
-  expect(panePaint.background).toBe(surface);
+  expect(panePaint.background).toBe(body);
   const codeColor = (await painted(code)).color;
   expect(contrast(parseRgb(codeColor), parseRgb(panePaint.background))).toBeGreaterThan(
     WCAG_AA_NORMAL,
@@ -361,6 +364,39 @@ test.describe('semantic colour roles on builder, tools and sharing surfaces', ()
         await expect(code).toBeVisible({ timeout: 20000 });
         const block = code.locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]');
         await expectCodePanePaint(block, colorsFor(mode));
+      }
+    } finally {
+      await deleteMessagesByConversation([conversationId]);
+      await deleteConversations([conversationId]);
+    }
+  });
+
+  test('the built-in theme keeps the code pane distinct from its toolbar @scenario:chat-code-block-keeps-default-pane', async ({
+    page,
+  }) => {
+    test.setTimeout(90000);
+    const conversationId = await seedCodeReply('Default chat code block');
+
+    try {
+      for (const mode of MODES) {
+        await page.addInitScript((m) => {
+          localStorage.setItem('color-theme', m);
+          localStorage.removeItem('theme-definition');
+          localStorage.removeItem('theme-source');
+          localStorage.removeItem('theme-colors');
+          localStorage.removeItem('theme-name');
+        }, mode);
+        await page.goto(`/c/${conversationId}`);
+        await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${mode}\\b`));
+        const code = page.locator('.message-render code', { hasText: CODE_INPUT }).first();
+        await expect(code).toBeVisible({ timeout: 20000 });
+        const block = code.locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]');
+        await expectCodePanePaint(block, mode === 'dark' ? darkTheme : defaultTheme);
+        const pane = (await painted(code.locator('xpath=..'))).background;
+        const toolbar = (
+          await painted(block.getByText('python', { exact: true }).first().locator('xpath=..'))
+        ).background;
+        expect(pane).not.toBe(toolbar);
       }
     } finally {
       await deleteMessagesByConversation([conversationId]);
