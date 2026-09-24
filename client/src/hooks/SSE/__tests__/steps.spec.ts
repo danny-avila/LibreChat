@@ -408,9 +408,8 @@ describe('steps', () => {
       ]);
     });
 
-    it('is idempotent when the run step or the completion is delivered twice', () => {
+    it('is idempotent when the completion is delivered twice', () => {
       const { message } = runToolCall(createResponse());
-      const reopened = applyToolCallsStep(message, search, 0).message;
       const completedTwice = applyToolCallCompleted(
         message,
         search,
@@ -419,8 +418,21 @@ describe('steps', () => {
       );
 
       expect(completedTwice.content).toEqual(message.content);
-      expect(toolCallAt(reopened, 1)).toMatchObject({ id: 'call-1', name: 'search' });
-      expect(reopened.content).toHaveLength(2);
+    });
+
+    it('keeps streamed args when an open step is announced again', () => {
+      const opened = applyToolCallsStep(createResponse(), search, 0).message;
+      const streamed = applyToolCallDelta(
+        opened,
+        search,
+        argsDelta(search.id, '{"q":'),
+        'call-1',
+        0,
+      ) as TMessage;
+
+      const reannounced = applyToolCallsStep(streamed, search, 0).message;
+
+      expect(reannounced.content).toEqual(streamed.content);
     });
 
     it('keeps streamed args when the completion omits them', () => {
@@ -436,7 +448,7 @@ describe('steps', () => {
       expect(toolCallAt(completed, 1)).toMatchObject({ args: '{}', output: 'ok' });
     });
 
-    it('fills the slot when a completion arrives before its run step opened it', () => {
+    it('writes a completion into its step slot when the opening part is missing', () => {
       const completed = applyToolCallCompleted(
         createResponse(),
         search,

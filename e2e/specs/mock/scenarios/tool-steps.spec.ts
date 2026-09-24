@@ -21,9 +21,9 @@ const TOOL_OUTPUT = 'stdout: E2E code exec ok';
 const uniqueLabel = (prefix: string) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-/** The code-execution card: its status toggle, then the command and its output. */
+/** The code-execution card's status toggle; a slow run appends its duration to the name. */
 const toolCard = (page: Page) =>
-  messagesView(page).getByRole('button', { name: 'Finished running', exact: true });
+  messagesView(page).getByRole('button', { name: /^Finished running/ });
 const toolOutput = (page: Page) => messagesView(page).getByText(TOOL_OUTPUT, { exact: true });
 
 /** True when `first` sits before `second` in document order. */
