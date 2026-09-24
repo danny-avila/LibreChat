@@ -7,6 +7,12 @@ export type FrontendRelease = {
 
 const BUILD_ID = /^assets-([a-f0-9]{64})$/;
 
+export function resolvePollInterval(value?: number): number {
+  return Number.isSafeInteger(value) && value != null && value >= 60000 && value <= 3600000
+    ? value
+    : 300000;
+}
+
 export function parseRelease(value: object | null): FrontendRelease | null {
   if (
     !value ||

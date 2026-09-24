@@ -1,4 +1,4 @@
-import { confirmRelease, parseRelease, readRelease } from './release';
+import { confirmRelease, parseRelease, readRelease, resolvePollInterval } from './release';
 
 const digestA = 'a'.repeat(64);
 const digestB = 'b'.repeat(64);
@@ -23,6 +23,14 @@ const response = (
 describe('frontend release descriptor', () => {
   afterEach(() => {
     delete (globalThis as { fetch?: typeof fetch }).fetch;
+  });
+
+  it('clamps invalid runtime cadence overrides before installing timers', () => {
+    expect(resolvePollInterval(60000)).toBe(60000);
+    expect(resolvePollInterval(3600000)).toBe(3600000);
+    for (const invalid of [undefined, 0, 59999, 3600001, 1.5, NaN, Infinity]) {
+      expect(resolvePollInterval(invalid)).toBe(300000);
+    }
   });
 
   it('accepts a matching digest and an optional publisher revision', () => {

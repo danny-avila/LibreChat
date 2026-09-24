@@ -3,8 +3,8 @@ import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
 import { useIsMutating } from '@tanstack/react-query';
 import type { FrontendRelease } from './release';
+import { confirmRelease, readRelease, resolvePollInterval } from './release';
 import { canLeave, hasRegisteredReloadGuard } from './activity';
-import { confirmRelease, readRelease } from './release';
 import { useGetStartupConfig } from '~/data-provider';
 import { getClientBuildId } from '~/lib/rum/build';
 import { useLocalize } from '~/hooks';
@@ -42,7 +42,7 @@ export default function FrontendUpdateNotice() {
   // The policy is read from the existing query; never fetch /api/config to establish a build ID.
   const { data: config } = useGetStartupConfig({ enabled: false });
   const autoReload = config?.interface?.frontendUpdates?.autoReload === true;
-  const pollIntervalMs = config?.interface?.frontendUpdates?.pollIntervalMs ?? 300000;
+  const pollIntervalMs = resolvePollInterval(config?.interface?.frontendUpdates?.pollIntervalMs);
   const anySubmitting = useRecoilValue(store.anySubmittingSelector);
   const mutations = useIsMutating();
   const busyRef = useRef(anySubmitting || mutations > 0);
