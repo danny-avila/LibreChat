@@ -29,6 +29,7 @@ export * from './backgroundClaims';
 export * from './backgroundCompletionWakeup';
 export * from './initialize';
 export * from './legacy';
+export * from './listing';
 export * from './lazySubagents';
 export * from './lazyHistory';
 export * from './memory';

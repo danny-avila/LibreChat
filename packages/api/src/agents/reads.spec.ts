@@ -10,6 +10,7 @@ import type { IRole, IUser } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { AgentManagementReadDeps } from './reads';
 import { createAgentManagementReadHandlers } from './reads';
+import { getAgentListAccess } from './listing';
 
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
@@ -69,6 +70,65 @@ function makeDeps(overrides: Partial<AgentManagementReadDeps> = {}): AgentManage
     ...overrides,
   };
 }
+
+describe('Agent list access', () => {
+  it('bypasses both agent ACL lookups for a manager', async () => {
+    const deps = makeDeps({ hasCapability: jest.fn().mockResolvedValue(true) });
+
+    const access = await getAgentListAccess(user, PermissionBits.VIEW, deps);
+
+    expect(deps.hasCapability).toHaveBeenCalledWith(user, SystemCapabilities.MANAGE_AGENTS);
+    expect(deps.findAccessibleResources).not.toHaveBeenCalled();
+    expect(access).toEqual({ accessibleIds: null, editableIds: null });
+  });
+
+  it('uses the ACL for ordinary viewers and marks only editable agents', async () => {
+    const editableId = new Types.ObjectId();
+    const deps = makeDeps({
+      findAccessibleResources: jest
+        .fn()
+        .mockImplementation(({ requiredPermissions }) =>
+          Promise.resolve(
+            requiredPermissions === PermissionBits.EDIT ? [editableId] : [objectId, editableId],
+          ),
+        ),
+    });
+
+    const access = await getAgentListAccess(user, PermissionBits.VIEW, deps);
+
+    expect(access).toEqual({ accessibleIds: [objectId, editableId], editableIds: [editableId] });
+    expect(deps.findAccessibleResources).toHaveBeenCalledWith({
+      userId: user.id,
+      role: user.role,
+      idOnTheSource: user.idOnTheSource,
+      resourceType: ResourceType.AGENT,
+      requiredPermissions: PermissionBits.VIEW,
+    });
+    expect(deps.findAccessibleResources).toHaveBeenCalledWith(
+      expect.objectContaining({ requiredPermissions: PermissionBits.EDIT }),
+    );
+  });
+
+  it('falls back to the ACL rather than bypassing on capability-check failure', async () => {
+    const deps = makeDeps({
+      hasCapability: jest.fn().mockRejectedValue(new Error('lookup failed')),
+    });
+
+    const access = await getAgentListAccess(user, PermissionBits.VIEW, deps);
+
+    expect(access).toEqual({ accessibleIds: [objectId], editableIds: [objectId] });
+    expect(deps.findAccessibleResources).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not repeat the EDIT lookup for an EDIT-scoped list', async () => {
+    const deps = makeDeps();
+
+    const access = await getAgentListAccess(user, PermissionBits.EDIT, deps);
+
+    expect(access).toEqual({ accessibleIds: [objectId], editableIds: null });
+    expect(deps.findAccessibleResources).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('Agent Management read handlers', () => {
   it('lists only ACL-discovered records in the authenticated tenant', async () => {

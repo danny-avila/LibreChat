@@ -611,7 +611,7 @@ export function createAgentMethods(
     includeSkillConfig,
     includeExecutionConfig,
   }: {
-    accessibleIds?: Types.ObjectId[];
+    accessibleIds?: Types.ObjectId[] | null;
     otherParams?: Record<string, unknown>;
     limit?: number | null;
     after?: string | null;
@@ -1423,8 +1423,9 @@ export function createAgentMethods(
   }
 
   /**
-   * Get agents by accessible IDs with cursor pagination. Defaults to a 100-page
-   * limit (max 1000); pass `limit: null` to opt out entirely.
+   * Get agents by accessible IDs with cursor pagination. Pass `accessibleIds: null`
+   * only after a management-capability check; `[]` and omitted IDs match nothing.
+   * Defaults to a 100-page limit (max 1000); pass `limit: null` to opt out entirely.
    */
   async function getListAgentsByAccess({
     accessibleIds = [],
@@ -1434,7 +1435,7 @@ export function createAgentMethods(
     includeSkillConfig = false,
     includeExecutionConfig = false,
   }: {
-    accessibleIds?: Types.ObjectId[];
+    accessibleIds?: Types.ObjectId[] | null;
     otherParams?: Record<string, unknown>;
     limit?: number | null;
     after?: string | null;
@@ -1456,7 +1457,7 @@ export function createAgentMethods(
 
     const baseQuery: Record<string, unknown> = {
       ...otherParams,
-      _id: { $in: accessibleIds },
+      ...(accessibleIds === null ? {} : { _id: { $in: accessibleIds } }),
     };
 
     if (after) {

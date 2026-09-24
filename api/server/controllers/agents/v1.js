@@ -15,6 +15,7 @@ const {
   collectEdgeAgentIds,
   replaceEdgeSourceId,
   mergeDeploymentSkillIds,
+  getAgentListAccess,
   mergeAgentOcrConversion,
   sanitizeModelParameters,
   MAX_AVATAR_REFRESH_AGENTS,
@@ -84,6 +85,7 @@ const {
   resolveConfigServers,
   userCanUseMCPServers,
 } = require('~/server/services/MCP');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { attachOwnerContacts } = require('~/server/services/Agents/ownerContact');
 const { getMCPServersRegistry } = require('~/config');
 const { getLogStores } = require('~/cache');
@@ -1706,7 +1708,7 @@ const deleteAgentHandler = async (req, res) => {
 };
 
 /**
- * Lists agents using ACL-aware permissions (ownership + explicit shares).
+ * Lists agents using ACL permissions or the manage:agents capability.
  * @route GET /Agents
  * @param {object} req - Express Request
  * @param {object} req.query - Request query
@@ -1727,12 +1729,6 @@ const getListAgentsHandler = async (req, res) => {
       requiredPermission = PermissionBits.VIEW;
     }
     const canReturnSkillConfig = hasEditBit(requiredPermission);
-    /**
-     * Derived from the same bit as `canReturnSkillConfig` but answering a different question:
-     * skill-config exposure versus edit-permission reporting. An EDIT-scoped request matches
-     * only editable agents, so it needs no second lookup to know which ones those are.
-     */
-    const needsEditableLookup = !hasEditBit(requiredPermission);
     // Base filter
     const filter = {};
 
@@ -1766,8 +1762,8 @@ const getListAgentsHandler = async (req, res) => {
      *
      * `editableIds` lets a VIEW-scoped response mark which agents the caller may also edit,
      * so consumers wanting just the editable subset can filter one shared VIEW fetch rather
-     * than issuing a second full paginated walk under an EDIT-scoped cache key. Requests
-     * that already ask for EDIT get it for free: everything they match is editable.
+     * than issuing a second full paginated walk under an EDIT-scoped cache key. Managers and
+     * EDIT-scoped requests need no separate edit lookup: everything they match is editable.
      *
      * `idOnTheSource` is forwarded so `getUserPrincipals` resolves identity without reading
      * the user document; the auth strategies already normalize it to a value or null. Each
@@ -1775,19 +1771,12 @@ const getListAgentsHandler = async (req, res) => {
      */
     const { idOnTheSource } = req.user;
     const [
-      accessibleIds,
+      { accessibleIds, editableIds },
       publiclyAccessibleIds,
       cachedRefreshEntry,
       accessibleSkillIds,
-      editableIds,
     ] = await Promise.all([
-      findAccessibleResources({
-        userId,
-        role: req.user.role,
-        idOnTheSource,
-        resourceType: ResourceType.AGENT,
-        requiredPermissions: requiredPermission,
-      }),
+      getAgentListAccess(req.user, requiredPermission, { hasCapability, findAccessibleResources }),
       findPubliclyAccessibleResources({
         resourceType: ResourceType.AGENT,
         requiredPermissions: PermissionBits.VIEW,
@@ -1802,15 +1791,6 @@ const getListAgentsHandler = async (req, res) => {
             resourceType: ResourceType.SKILL,
             requiredPermissions: PermissionBits.VIEW,
           }),
-      needsEditableLookup
-        ? findAccessibleResources({
-            userId,
-            role: req.user.role,
-            idOnTheSource,
-            resourceType: ResourceType.AGENT,
-            requiredPermissions: PermissionBits.EDIT,
-          })
-        : null,
     ]);
 
     const isValidCachedRefresh =

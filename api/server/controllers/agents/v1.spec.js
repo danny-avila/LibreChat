@@ -3,7 +3,7 @@ const express = require('express');
 const request = require('supertest');
 const { nanoid } = require('nanoid');
 const { v4: uuidv4 } = require('uuid');
-const { createModels, tenantStorage } = require('@librechat/data-schemas');
+const { createModels, tenantStorage, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   Tools,
   SkillsScope,
@@ -111,6 +111,7 @@ const {
   refreshS3Url,
 } = require('@librechat/api');
 const { grantPermission } = require('~/server/services/PermissionService');
+const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const db = require('~/models');
 
 /**
@@ -3389,6 +3390,32 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
           },
         ],
       });
+    });
+
+    test('lets a manage:agents role discover unshared agents by search', async () => {
+      await db.grantCapability({
+        principalType: PrincipalType.ROLE,
+        principalId: 'LIST_MANAGER_TEST',
+        capability: SystemCapabilities.MANAGE_AGENTS,
+      });
+      mockReq.user = {
+        id: userB.toString(),
+        role: 'LIST_MANAGER_TEST',
+        idOnTheSource: null,
+      };
+      mockReq.query.search = 'A2';
+      findAccessibleResources.mockResolvedValue([]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+
+      expect(await hasCapability(mockReq.user, SystemCapabilities.MANAGE_AGENTS)).toBe(true);
+      await getListAgentsHandler(mockReq, mockRes);
+
+      const response = mockRes.json.mock.calls[0][0];
+      expect(response.data.map((agent) => agent.id)).toEqual([agentA2.id]);
+      expect(response.data[0].isEditable).toBe(true);
+      expect(findAccessibleResources).not.toHaveBeenCalledWith(
+        expect.objectContaining({ resourceType: ResourceType.AGENT }),
+      );
     });
 
     test('should return empty list when user has no accessible agents', async () => {
