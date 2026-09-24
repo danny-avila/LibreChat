@@ -47,6 +47,7 @@ jest.mock('@librechat/api', () => ({
 }));
 
 jest.mock('~/models', () => ({
+  initializeMessageBudget: jest.fn(),
   saveMessage: (...args) => mockSaveMessage(...args),
   saveConvo: (...args) => mockSaveConvo(...args),
 }));
