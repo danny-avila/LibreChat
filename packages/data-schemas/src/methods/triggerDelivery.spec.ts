@@ -601,6 +601,30 @@ describe('agent trigger delivery methods', () => {
       expect((await Delivery.findById(held.delivery.id).lean())?.availableAt).toEqual(later);
     });
 
+    it("narrows a principal's selection to the conversation being resumed", async () => {
+      const user = new mongoose.Types.ObjectId();
+      const target = await waiting({
+        user,
+        envelope: { event: { source: background }, target: { conversationId: 'settled-convo' } },
+      });
+      const other = await waiting({
+        user,
+        envelope: { event: { source: background }, target: { conversationId: 'other-convo' } },
+      });
+
+      await expect(
+        methods.expediteAgentTriggerDeliveries({
+          user,
+          conversationId: 'settled-convo',
+          sourceIds: [background.id],
+          now: START,
+        }),
+      ).resolves.toEqual({ expedited: 1, held: 0 });
+
+      expect((await Delivery.findById(target.delivery.id).lean())?.availableAt).toEqual(START);
+      expect((await Delivery.findById(other.delivery.id).lean())?.availableAt).toEqual(later);
+    });
+
     it('refuses an unbounded or malformed selection', async () => {
       await expect(
         methods.expediteAgentTriggerDeliveries({ sourceIds: [background.id], now: START }),

@@ -58,7 +58,10 @@ export interface AgentTriggerServiceOptions {
   };
 }
 
-export type AgentTriggerCompletionExpedite = { user: string } | { deliveryKeys: string[] };
+/** A principal's deliveries resuming one conversation, or exact deliveries. */
+export type AgentTriggerCompletionExpedite =
+  | { user: string; conversationId: string }
+  | { deliveryKeys: string[] };
 
 export interface AgentTriggerServiceDeps {
   fetch?: AgentTriggerExecutionHostDeps['fetch'];
@@ -571,7 +574,9 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     }
     void runAsSystem(() =>
       expedite({
-        ...('user' in input ? { user: input.user } : { deliveryKeys: input.deliveryKeys }),
+        ...('user' in input
+          ? { user: input.user, conversationId: input.conversationId }
+          : { deliveryKeys: input.deliveryKeys }),
         sourceIds: COMPLETION_WAKEUP_SOURCES,
         now: new Date(),
       }),
@@ -658,8 +663,10 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         );
         deliveryReady = true;
         deliveryEngine.start();
-        unsubscribeGenerationSettled ??= deps.subscribeGenerationSettled?.(({ userId }) =>
-          expediteCompletions({ user: userId }),
+        /** Deliveries waiting on a parent resume that parent's conversation, so a
+         * settled generation wakes only those, not every waiting task of the user. */
+        unsubscribeGenerationSettled ??= deps.subscribeGenerationSettled?.(
+          ({ userId, conversationId }) => expediteCompletions({ user: userId, conversationId }),
         );
         startPurgeRecovery();
         logger.info('[agent-triggers] durable delivery engine started');

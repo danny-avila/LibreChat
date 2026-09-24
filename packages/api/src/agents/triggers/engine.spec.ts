@@ -192,6 +192,32 @@ describe('createAgentTriggerDeliveryEngine', () => {
     }
   });
 
+  it('arms each poll timer under the root trace context', async () => {
+    jest.useFakeTimers();
+    const withContext = jest.spyOn(context, 'with');
+    try {
+      const store = storeWith({ claimNext: jest.fn(async () => null) });
+      const engine = createAgentTriggerDeliveryEngine(
+        { store, dispatch: jest.fn(async () => successResult()), now: () => START },
+        { concurrency: 1, tickMs: 1_000 },
+      );
+      engine.start();
+      await jest.advanceTimersByTimeAsync(0);
+
+      const timersArmed = withContext.mock.results.filter(
+        (result, index) =>
+          withContext.mock.calls[index][0] === ROOT_CONTEXT &&
+          result.type === 'return' &&
+          typeof (result.value as { unref?: unknown } | undefined)?.unref === 'function',
+      );
+      expect(timersArmed.length).toBeGreaterThan(0);
+      await engine.stop();
+    } finally {
+      withContext.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
   it('persists generation identity when a bound continuation starts', async () => {
     const envelope = createAgentTriggerEnvelope({
       mode: 'continue',

@@ -253,6 +253,8 @@ export interface ExpediteAgentTriggerDeliveriesInput {
   deliveryKeys?: readonly string[];
   /** Every matching delivery of one principal, e.g. after one of its generations settled. */
   user?: string | Types.ObjectId;
+  /** Narrows a principal's selection to deliveries that resume this conversation. */
+  conversationId?: string;
   now: Date;
 }
 
@@ -2330,6 +2332,8 @@ export function createAgentTriggerDeliveryMethods(
       input.sourceIds.some((id) => id.length === 0 || id.length > 256) ||
       deliveryKeys.some((key) => key.length === 0 || key.length > 256) ||
       (deliveryKeys.length === 0 && input.user == null) ||
+      (input.conversationId != null &&
+        (input.conversationId.length === 0 || input.conversationId.length > 256)) ||
       !(input.now instanceof Date) ||
       !Number.isFinite(input.now.getTime())
     ) {
@@ -2340,36 +2344,39 @@ export function createAgentTriggerDeliveryMethods(
       'envelope.event.source.id': { $in: [...input.sourceIds] },
       ...(deliveryKeys.length > 0 && { deliveryKey: { $in: [...deliveryKeys] } }),
       ...(input.user != null && { user: input.user }),
+      ...(input.conversationId != null && {
+        'envelope.target.conversationId': input.conversationId,
+      }),
     };
     /** Classic operators only: aggregation-pipeline updates are not portable. A
      * held row may be deferred on readiness its worker read before the change,
-     * so it keeps a marker that its deferral honors instead of moving now. */
-    const [moved, held] = await Promise.all([
-      Delivery().updateMany(
-        {
-          ...selection,
-          availableAt: { $gt: input.now },
-          leaseBy: { $exists: false },
-          $or: [
-            { status: { $in: ['pending', 'capability_pending'] } },
-            {
-              status: 'leased',
-              capabilityStatus: 'pending',
-              capabilityLeaseBy: { $exists: false },
-            },
-          ],
-        },
-        { $set: { availableAt: input.now, claimAvailableAt: input.now } },
-      ),
-      Delivery().updateMany(
-        {
-          ...selection,
-          status: { $in: ['leased', 'capability_leased'] },
-          $or: [{ leaseBy: { $exists: true } }, { capabilityLeaseBy: { $exists: true } }],
-        },
-        { $set: { wakeRequestedAt: input.now } },
-      ),
-    ]);
+     * so it keeps a marker that its deferral honors instead of moving now. The
+     * marker is written first: a row released after it was read as held is then
+     * seen unheld by the move, so no release between the two escapes both. */
+    const held = await Delivery().updateMany(
+      {
+        ...selection,
+        status: { $in: ['leased', 'capability_leased'] },
+        $or: [{ leaseBy: { $exists: true } }, { capabilityLeaseBy: { $exists: true } }],
+      },
+      { $set: { wakeRequestedAt: input.now } },
+    );
+    const moved = await Delivery().updateMany(
+      {
+        ...selection,
+        availableAt: { $gt: input.now },
+        leaseBy: { $exists: false },
+        $or: [
+          { status: { $in: ['pending', 'capability_pending'] } },
+          {
+            status: 'leased',
+            capabilityStatus: 'pending',
+            capabilityLeaseBy: { $exists: false },
+          },
+        ],
+      },
+      { $set: { availableAt: input.now, claimAvailableAt: input.now } },
+    );
     return { expedited: moved.modifiedCount, held: held.matchedCount };
   }
 

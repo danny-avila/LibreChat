@@ -800,19 +800,23 @@ export function createAgentTriggerDeliveryEngine(
     if (eligibleDeadlinesMs.length > 0) {
       delay = Math.max(0, Math.min(delay, eligibleDeadlinesMs[0] - now().getTime()));
     }
-    timer = setTimeout(async () => {
-      if (stopped) {
-        return;
-      }
-      const nowMs = now().getTime();
-      while (eligibleDeadlinesMs.length > 0 && eligibleDeadlinesMs[0] <= nowMs) {
-        eligibleDeadlinesMs.shift();
-      }
-      await claimAvailable().catch((error) =>
-        logger.error('[agent-triggers] delivery claim pass failed:', error),
-      );
-      schedule();
-    }, delay);
+    /** Created under the root context too: `schedule()` runs from `wake()` inside
+     * request handlers, and each tick reschedules from its own callback. */
+    timer = context.with(ROOT_CONTEXT, () =>
+      setTimeout(async () => {
+        if (stopped) {
+          return;
+        }
+        const nowMs = now().getTime();
+        while (eligibleDeadlinesMs.length > 0 && eligibleDeadlinesMs[0] <= nowMs) {
+          eligibleDeadlinesMs.shift();
+        }
+        await claimAvailable().catch((error) =>
+          logger.error('[agent-triggers] delivery claim pass failed:', error),
+        );
+        schedule();
+      }, delay),
+    );
     timer.unref();
   };
 

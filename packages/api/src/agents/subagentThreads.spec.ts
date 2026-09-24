@@ -438,8 +438,10 @@ describe('SubagentThreadTaskStore', () => {
     const saveMessage = jest.spyOn(methods, 'saveMessage');
     const terminalSavedAtSettle: boolean[] = [];
     const store = new SubagentThreadTaskStore(methods, {
-      onTaskSettled: (settledUserId) => {
+      onTaskPrepared: jest.fn(),
+      onTaskSettled: (settledUserId, settledConversationId) => {
         expect(settledUserId).toBe(userId);
+        expect(settledConversationId).toBe(parentConversationId);
         terminalSavedAtSettle.push(
           saveMessage.mock.calls.some(([, message]) =>
             String((message as { messageId?: string }).messageId).endsWith(':assistant'),
@@ -453,12 +455,37 @@ describe('SubagentThreadTaskStore', () => {
       { completionWakeups: true },
     );
     const started = config.store.start(
-      taskRequest(config.scopeId, { parentRunId: 'parent-response-1' }),
+      taskRequest(config.scopeId, {
+        parentRunId: 'parent-response-1',
+        parentAgentId: 'agent_parent_1',
+      }),
     );
     await waitForSettled(store, config.scopeId, started);
     saveMessage.mockRestore();
 
     expect(terminalSavedAtSettle).toEqual([true]);
+  });
+
+  it('does not announce a settled child that has no completion delivery', async () => {
+    const userId = 'poll-only-settled-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const onTaskSettled = jest.fn();
+    const store = new SubagentThreadTaskStore(methods, {
+      onTaskPrepared: jest.fn(),
+      onTaskSettled,
+    });
+    const config = buildSubagentThreadTaskConfig(
+      store,
+      { userId, parentConversationId },
+      { completionWakeups: false },
+    );
+    const started = config.store.start(
+      taskRequest(config.scopeId, { parentRunId: 'parent-response-1' }),
+    );
+    await waitForSettled(store, config.scopeId, started);
+
+    expect(onTaskSettled).not.toHaveBeenCalled();
   });
 
   it('keeps subagent completion delivery poll-only when wakeups are disabled', async () => {
