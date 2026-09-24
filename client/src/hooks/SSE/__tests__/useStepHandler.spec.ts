@@ -3268,6 +3268,17 @@ describe('useStepHandler', () => {
         );
       });
       expect(onSubagentIndexChange).toHaveBeenCalledTimes(3);
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_SUBAGENT_UPDATE, data: makeUpdate({ phase: 'start' }) },
+          createSubmission({
+            userMessage: createUserMessage({ conversationId: String(Constants.NEW_CONVO) }),
+            initialResponse: createResponseMessage({ conversationId: 'saved-parent' }),
+          }),
+        );
+      });
+      expect(onSubagentIndexChange).toHaveBeenLastCalledWith('saved-parent');
     });
 
     it('correlates updates to a tool call via parentToolCallId (deterministic path)', () => {

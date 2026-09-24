@@ -1383,15 +1383,12 @@ export default function useStepHandler({
           stepEvent.data.phase === 'stop' ||
           stepEvent.data.phase === 'error'
         ) {
-          const conversationId =
-            submission?.userMessage?.conversationId ?? submission?.initialResponse?.conversationId;
-          if (
-            conversationId &&
-            conversationId !== Constants.NEW_CONVO &&
-            conversationId !== Constants.PENDING_CONVO
-          ) {
-            onSubagentIndexChange?.(conversationId);
-          }
+          const conversationId = [
+            submission?.userMessage?.conversationId,
+            submission?.initialResponse?.conversationId,
+            submission?.conversation?.conversationId,
+          ].find((id) => id && id !== Constants.NEW_CONVO && id !== Constants.PENDING_CONVO);
+          if (conversationId) onSubagentIndexChange?.(conversationId);
         }
       } else if (stepEvent.event === StepEvents.ON_SUMMARIZE_START) {
         announcePolite({ message: 'summarize_started', isStatus: true });
