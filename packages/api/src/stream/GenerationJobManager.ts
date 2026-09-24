@@ -9114,7 +9114,17 @@ class GenerationJobManagerClass {
           await this.runApprovalExpiredHandler(streamId, job);
         }
         await this.notifyApprovalExpiredRuntime(streamId, job.createdAt, runtime);
-        changed = this.releaseJobOwnership(streamId, job.createdAt) || changed;
+        const released = this.releaseJobOwnership(streamId, job.createdAt);
+        if (released) {
+          /** The store won the expiry CAS, so no local claim announced it. */
+          this.notifyGenerationSettled({
+            streamId,
+            conversationId: job.conversationId,
+            userId: job.userId,
+            status: 'aborted',
+          });
+        }
+        changed = released || changed;
         continue;
       }
       if (

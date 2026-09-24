@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { FilterQuery, Model, Types } from 'mongoose';
+import type { FilterQuery, Model, Types, UpdateQuery } from 'mongoose';
 import type {
   AgentBackgroundToolResultReceipt,
   AgentEventActorDetachedAction,
@@ -257,10 +257,10 @@ export interface ExpediteAgentTriggerDeliveriesInput {
 }
 
 export interface ExpediteAgentTriggerDeliveriesResult {
-  /** Selected deliveries not yet delivered, including ones a worker holds or already due. */
-  matched: number;
   /** Deferred, unheld deliveries moved to `now`. */
   expedited: number;
+  /** Deliveries a worker held, marked so their next deferral re-checks at once. */
+  held: number;
 }
 
 export interface AgentTriggerDeliveryMethods {
@@ -287,9 +287,10 @@ export interface AgentTriggerDeliveryMethods {
   beginAgentTriggerDeliveryAttempt: (
     input: AgentTriggerDeliveryFence & { now: Date },
   ) => Promise<number | null>;
+  /** `expedited` when readiness changed while the delivery was held: it is due now instead. */
   deferAgentTriggerDeliveryAttempt: (
     input: AgentTriggerDeliveryFence & { attempt: number; availableAt: Date },
-  ) => Promise<boolean>;
+  ) => Promise<boolean | 'expedited'>;
   completeAgentTriggerDelivery: (
     input: AgentTriggerDeliveryFence & {
       attempt: number;
@@ -1946,7 +1947,7 @@ export function createAgentTriggerDeliveryMethods(
   /** Releases a pre-dispatch deferral and restores the attempt consumed by beginAttempt. */
   async function deferAgentTriggerDeliveryAttempt(
     input: AgentTriggerDeliveryFence & { attempt: number; availableAt: Date },
-  ): Promise<boolean> {
+  ): Promise<boolean | 'expedited'> {
     if (!Number.isSafeInteger(input.attempt) || input.attempt <= 0) {
       throw new TypeError('attempt must be a positive integer');
     }
@@ -1956,54 +1957,63 @@ export function createAgentTriggerDeliveryMethods(
         availableAt: input.availableAt,
         claimAvailableAt: input.availableAt,
       },
-      $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1 },
+      $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1, wakeRequestedAt: 1 },
     };
-    const shieldResult = await Delivery().updateOne(
-      {
-        _id: input.id,
-        ...shieldCapabilityFence(input),
-        attempts: input.attempt,
-      },
-      {
-        $inc: update.$inc,
-        $set: {
-          status: 'leased',
-          availableAt: input.availableAt,
-          capabilityStatus: 'pending',
-          claimAvailableAt: input.availableAt,
+    const deferOne = (
+      filter: FilterQuery<IAgentTriggerDelivery>,
+      change: UpdateQuery<IAgentTriggerDelivery>,
+    ) =>
+      Delivery()
+        .findOneAndUpdate(filter, change, { new: false })
+        .select('wakeRequestedAt')
+        .lean<Pick<IAgentTriggerDelivery, '_id' | 'wakeRequestedAt'>>();
+    const previous =
+      (await deferOne(
+        { _id: input.id, ...shieldCapabilityFence(input), attempts: input.attempt },
+        {
+          $inc: update.$inc,
+          $set: {
+            status: 'leased',
+            availableAt: input.availableAt,
+            capabilityStatus: 'pending',
+            claimAvailableAt: input.availableAt,
+          },
+          $unset: {
+            leaseBy: 1,
+            leaseUntil: 1,
+            claimToken: 1,
+            capabilityLeaseBy: 1,
+            capabilityLeaseUntil: 1,
+            capabilityClaimToken: 1,
+            wakeRequestedAt: 1,
+          },
         },
-        $unset: {
-          leaseBy: 1,
-          leaseUntil: 1,
-          claimToken: 1,
-          capabilityLeaseBy: 1,
-          capabilityLeaseUntil: 1,
-          capabilityClaimToken: 1,
-        },
-      },
-    );
-    if (shieldResult.modifiedCount === 1) {
+      )) ??
+      (await deferOne(
+        { _id: input.id, ...legacyCapabilityFence(input), attempts: input.attempt },
+        { ...update, $set: { ...update.$set, status: 'capability_pending' } },
+      )) ??
+      (await deferOne(
+        { _id: input.id, ...ordinaryFence(input), attempts: input.attempt },
+        { ...update, $set: { ...update.$set, status: 'pending' } },
+      ));
+    if (previous == null) {
+      return false;
+    }
+    if (previous.wakeRequestedAt == null) {
       return true;
     }
-    const capabilityResult = await Delivery().updateOne(
+    const now = new Date();
+    const pulled = await Delivery().updateOne(
       {
         _id: input.id,
-        ...legacyCapabilityFence(input),
-        attempts: input.attempt,
+        availableAt: input.availableAt,
+        leaseBy: { $exists: false },
+        capabilityLeaseBy: { $exists: false },
       },
-      {
-        ...update,
-        $set: { ...update.$set, status: 'capability_pending' },
-      },
+      { $set: { availableAt: now, claimAvailableAt: now } },
     );
-    if (capabilityResult.modifiedCount === 1) {
-      return true;
-    }
-    const result = await Delivery().updateOne(
-      { _id: input.id, ...ordinaryFence(input), attempts: input.attempt },
-      { ...update, $set: { ...update.$set, status: 'pending' } },
-    );
-    return result.modifiedCount === 1;
+    return pulled.modifiedCount === 1 ? 'expedited' : true;
   }
 
   async function completeAgentTriggerDelivery(
@@ -2325,49 +2335,42 @@ export function createAgentTriggerDeliveryMethods(
     ) {
       throw new TypeError('Invalid agent trigger delivery expedite');
     }
-    /** Only a deferred row no worker holds moves; held and already-due rows
-     * still match, so the caller learns a wake-up may be needed after all. */
-    const deferredAndUnheld = {
-      $and: [
-        { $gt: ['$availableAt', input.now] },
-        { $eq: [{ $type: '$leaseBy' }, 'missing'] },
+    const selection = {
+      'envelope.event.source.type': 'internal',
+      'envelope.event.source.id': { $in: [...input.sourceIds] },
+      ...(deliveryKeys.length > 0 && { deliveryKey: { $in: [...deliveryKeys] } }),
+      ...(input.user != null && { user: input.user }),
+    };
+    /** Classic operators only: aggregation-pipeline updates are not portable. A
+     * held row may be deferred on readiness its worker read before the change,
+     * so it keeps a marker that its deferral honors instead of moving now. */
+    const [moved, held] = await Promise.all([
+      Delivery().updateMany(
         {
+          ...selection,
+          availableAt: { $gt: input.now },
+          leaseBy: { $exists: false },
           $or: [
-            { $in: ['$status', ['pending', 'capability_pending']] },
+            { status: { $in: ['pending', 'capability_pending'] } },
             {
-              $and: [
-                { $eq: ['$status', 'leased'] },
-                { $eq: ['$capabilityStatus', 'pending'] },
-                { $eq: [{ $type: '$capabilityLeaseBy' }, 'missing'] },
-              ],
+              status: 'leased',
+              capabilityStatus: 'pending',
+              capabilityLeaseBy: { $exists: false },
             },
           ],
         },
-      ],
-    };
-    const result = await Delivery().updateMany(
-      {
-        'envelope.event.source.type': 'internal',
-        'envelope.event.source.id': { $in: [...input.sourceIds] },
-        ...(deliveryKeys.length > 0 && { deliveryKey: { $in: [...deliveryKeys] } }),
-        ...(input.user != null && { user: input.user }),
-        status: { $in: ['pending', 'capability_pending', 'leased', 'capability_leased'] },
-      },
-      [
+        { $set: { availableAt: input.now, claimAvailableAt: input.now } },
+      ),
+      Delivery().updateMany(
         {
-          $set: {
-            availableAt: { $cond: [deferredAndUnheld, input.now, '$availableAt'] },
-            claimAvailableAt: {
-              $cond: [deferredAndUnheld, input.now, { $ifNull: ['$claimAvailableAt', '$$REMOVE'] }],
-            },
-            updatedAt: { $cond: [deferredAndUnheld, input.now, '$updatedAt'] },
-          },
+          ...selection,
+          status: { $in: ['leased', 'capability_leased'] },
+          $or: [{ leaseBy: { $exists: true } }, { capabilityLeaseBy: { $exists: true } }],
         },
-      ],
-      /** Automatic timestamps would rewrite every matched row, held ones included. */
-      { timestamps: false },
-    );
-    return { matched: result.matchedCount, expedited: result.modifiedCount };
+        { $set: { wakeRequestedAt: input.now } },
+      ),
+    ]);
+    return { expedited: moved.modifiedCount, held: held.matchedCount };
   }
 
   /** Stores terminal output on the pre-admitted delivery before attempting the

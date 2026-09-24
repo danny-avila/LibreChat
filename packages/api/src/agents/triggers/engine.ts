@@ -158,7 +158,7 @@ export interface AgentTriggerDeliveryStore {
     claimToken: string;
     attempt: number;
     availableAt: Date;
-  }) => Promise<boolean>;
+  }) => Promise<boolean | 'expedited'>;
   complete: (input: {
     id: string;
     workerId: string;
