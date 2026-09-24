@@ -9,6 +9,7 @@ import {
   AgentCapabilities,
   CODE_ENVIRONMENT_DECISION_VERSION,
   CODE_ENVIRONMENT_MOVE_VERSION,
+  CODE_WORKSPACE_RECOVERY_VERSION,
   PermissionTypes,
   Permissions,
 } from 'librechat-data-provider';
@@ -132,10 +133,11 @@ export default function useCodeWorkspace(
   const { data: startupConfig } = useGetStartupConfig();
   const supportsEnvironmentDecisions =
     startupConfig?.codeEnvironmentDecisionVersion === CODE_ENVIRONMENT_DECISION_VERSION;
-  const supportsWorkspaceRecovery =
-    startupConfig?.codeEnvironmentMoveVersion === CODE_ENVIRONMENT_MOVE_VERSION;
   const supportsEnvironmentMoves =
-    supportsWorkspaceRecovery || startupConfig?.codeEnvironmentMoveVersion === 1;
+    startupConfig?.codeEnvironmentMoveVersion === CODE_ENVIRONMENT_MOVE_VERSION;
+  const supportsWorkspaceRecovery =
+    supportsEnvironmentMoves &&
+    startupConfig?.codeWorkspaceRecoveryVersion === CODE_WORKSPACE_RECOVERY_VERSION;
   const preferences = useWorkspacePreferences(conversation?.agent_id);
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
   const canRunCode = useHasAccess({

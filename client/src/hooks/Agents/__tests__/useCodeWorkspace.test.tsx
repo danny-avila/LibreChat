@@ -641,7 +641,10 @@ describe('useCodeWorkspace', () => {
       const replacement = { environmentId: 'personal-vm', workspaceId: 'project-a' };
 
       beforeEach(() => {
-        mockStartupConfig.mockReturnValue({ codeEnvironmentMoveVersion: 2 });
+        mockStartupConfig.mockReturnValue({
+          codeEnvironmentMoveVersion: 1,
+          codeWorkspaceRecoveryVersion: 1,
+        });
       });
 
       it.each(['attached', undefined] as const)(
@@ -672,6 +675,25 @@ describe('useCodeWorkspace', () => {
           expect(result.current.relocation).toBeUndefined();
         },
       );
+
+      it.each([
+        { codeEnvironmentMoveVersion: 1 },
+        { codeEnvironmentMoveVersion: 1, codeWorkspaceRecoveryVersion: 2 },
+        { codeWorkspaceRecoveryVersion: 1 },
+        { codeEnvironmentMoveVersion: 2, codeWorkspaceRecoveryVersion: 1 },
+      ])('never offers recovery without both supported capabilities: %j', (config) => {
+        mockStartupConfig.mockReturnValue(config);
+        const { result } = renderHook(() => useCodeWorkspace(sealed([missing])));
+        expect(result.current.state).toBe('missing');
+        expect(result.current.relocation).toBeUndefined();
+        expect(result.current.canSubmit).toBe(false);
+      });
+
+      it('preserves ordinary environment moves on a recovery-capable API', () => {
+        const { result } = renderHook(() => useCodeWorkspace(sealed([mac])));
+        expect(result.current.state).toBe('relocatable');
+        expect(result.current.relocation?.targets[0].state).toBe('choose');
+      });
 
       it('offers the empty recovery picker without inventing a replacement', () => {
         mockStatus()[0].data.workspaces = [];

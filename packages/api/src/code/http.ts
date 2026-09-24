@@ -341,6 +341,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
         baseURL: target.controlPlane.baseURL,
         token,
         workerId: target.workerId,
+        bypassCache: true,
       });
     } catch (error) {
       if (error instanceof CodeBridgeStatusError) {

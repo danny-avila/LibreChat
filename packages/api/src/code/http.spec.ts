@@ -1640,8 +1640,20 @@ describe('moving a sealed conversation code-environment decision', () => {
       );
       return res;
     };
+    const status = async () => {
+      const res = response();
+      await handlers.status(
+        {
+          user: { id: userId, role: 'USER' },
+          params: { environmentId: vm.environmentId },
+        } as never,
+        res as never,
+      );
+      return res;
+    };
     return {
       move,
+      status,
       conversations,
       getConversation,
       listConversationRuns,
@@ -1692,6 +1704,54 @@ describe('moving a sealed conversation code-environment decision', () => {
       expect(fetchImpl).toHaveBeenCalledTimes(1);
       expect((await move({ from: [missing], to: [vm] })).statusCode).toBe(409);
       expect(fetchImpl).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  test.each([
+    {
+      name: 'old workspace restored',
+      workspaces: ['deleted-project', 'project-a'],
+      ready: true,
+      reason: 'locked',
+    },
+    { name: 'replacement removed', workspaces: ['unrelated'], ready: true, reason: 'missing' },
+    {
+      name: 'worker unavailable',
+      workspaces: ['project-a'],
+      ready: false,
+      reason: 'worker_unavailable',
+    },
+    { name: 'workspace still missing', workspaces: ['project-a'], ready: true, reason: undefined },
+  ])(
+    'revalidates recovery after a cached status poll: $name',
+    async ({ workspaces, ready, reason }) => {
+      jest.spyOn(Date, 'now').mockReturnValue(1_000);
+      const old = { ...vm, workspaceId: 'deleted-project' };
+      const fetchImpl = jest
+        .fn()
+        .mockImplementationOnce(async () => workerStatusResponse())
+        .mockImplementation(async () =>
+          workerStatusResponse({ workspaces: workspaces.map((id) => ({ id })), ready }),
+        );
+      const { move, status, conversations, replaceDecision } = setup({
+        stored: { conversationId: 'conversation-1', codeWorkspaces: [old] },
+        fetchImpl,
+      });
+      expect((await status()).statusCode).toBe(200);
+      expect((await status()).statusCode).toBe(200);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+      const res = await move({ from: [old], to: [vm] });
+
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      expect(res.statusCode).toBe(reason == null ? 200 : 409);
+      if (reason != null) {
+        expect(res.body).toEqual(expect.objectContaining({ reason }));
+        expect(replaceDecision).not.toHaveBeenCalled();
+      }
+      expect(conversations.get('conversation-1')?.codeWorkspaces).toEqual(
+        reason == null ? [vm] : [old],
+      );
     },
   );
 

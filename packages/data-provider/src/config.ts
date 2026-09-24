@@ -30,7 +30,11 @@ import {
   MAX_SUBAGENTS_CEILING,
   DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
 } from './limits';
-import { CODE_ENVIRONMENT_DECISION_VERSION, CODE_ENVIRONMENT_MOVE_VERSION } from './code/workspace';
+import {
+  CODE_ENVIRONMENT_DECISION_VERSION,
+  CODE_ENVIRONMENT_MOVE_VERSION,
+  CODE_WORKSPACE_RECOVERY_VERSION,
+} from './code/workspace';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
@@ -2390,7 +2394,10 @@ export type TStartupConfig = {
   codeEnvironmentDecisionVersion?: typeof CODE_ENVIRONMENT_DECISION_VERSION;
   /** Owner moves of a sealed code-environment decision supported by the API. Clients must not
    * offer to move a conversation unless this is advertised. */
-  codeEnvironmentMoveVersion?: 1 | typeof CODE_ENVIRONMENT_MOVE_VERSION;
+  codeEnvironmentMoveVersion?: typeof CODE_ENVIRONMENT_MOVE_VERSION;
+  /** Additive recovery support. Clients require this and the move capability before replacing
+   * a missing workspace. Keeping it separate preserves exact-version checks in older clients. */
+  codeWorkspaceRecoveryVersion?: typeof CODE_WORKSPACE_RECOVERY_VERSION;
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;
