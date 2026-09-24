@@ -51,6 +51,12 @@ function describeRelocation(
   relocation: CodeWorkspaceRelocation,
   localize: ReturnType<typeof useLocalize>,
 ): { label: string; info: string } {
+  if (relocation.targets.some(({ state }) => state === 'missing')) {
+    return {
+      label: localize('com_ui_code_workspace_recover'),
+      info: localize('com_ui_code_workspace_recover_info'),
+    };
+  }
   const targetNames = relocation.targets
     .map(({ environment }) => environment.name ?? environment.id)
     .join(', ');
@@ -263,7 +269,7 @@ export default function CodeWorkspaceMenu({
     }) ?? [];
   const moveReady = relocation != null && chosenTargets.length === relocation.targets.length;
   const confirmMove = () => {
-    if (relocation == null || !moveReady) return;
+    if (relocation == null || !moveReady || disabled || moveMutation.isLoading) return;
     moveMutation.mutate(
       {
         conversationId: relocation.conversationId,
@@ -337,7 +343,7 @@ export default function CodeWorkspaceMenu({
         {relocation != null && relocationText != null ? (
           <>
             <Ariakit.MenuHeading render={<div />} className={headingClasses}>
-              {localize('com_ui_code_workspace_move')}
+              {relocationText.label}
             </Ariakit.MenuHeading>
             <p className="px-2.5 pb-2 text-xs text-text-secondary">{relocationText.info}</p>
             {relocation.targets.map((target) => (
@@ -358,7 +364,7 @@ export default function CodeWorkspaceMenu({
             ))}
             <Ariakit.MenuSeparator className="my-1 h-0 w-full border-t border-border-light" />
             <Ariakit.MenuItem
-              disabled={!moveReady || moveMutation.isLoading}
+              disabled={disabled || !moveReady || moveMutation.isLoading}
               hideOnClick={true}
               onClick={confirmMove}
               className={cn(

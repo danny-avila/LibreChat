@@ -18,50 +18,57 @@ const mac = { environmentId: 'mac', workspaceId: 'primary' };
 const vm = { environmentId: 'vm', workspaceId: 'projects' };
 
 describe('useMoveConversationCodeEnvironmentMutation', () => {
-  it('keeps the moved decision when a conversation read from before the move resolves later', async () => {
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-    });
-    const stored = {
-      conversationId: 'convo-1',
-      codeEnvironmentMode: 'attached',
-      codeWorkspaces: [mac],
-    } as TConversation;
-    queryClient.setQueryData([QueryKeys.conversation, 'convo-1'], stored);
-    jest.mocked(dataService.moveConversationCodeEnvironment).mockResolvedValue({
-      conversationId: 'convo-1',
-      codeEnvironmentMode: 'attached',
-      codeWorkspaces: [vm],
-    });
-    let resolveStaleRead: (conversation: TConversation) => void = () => undefined;
-    const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(QueryClientProvider, { client: queryClient }, children);
+  it.each([vm, { ...mac, workspaceId: 'replacement' }])(
+    'keeps the moved decision %j when a pre-move conversation read resolves later',
+    async (target) => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      });
+      const stored = {
+        conversationId: 'convo-1',
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [mac],
+      } as TConversation;
+      queryClient.setQueryData([QueryKeys.conversation, 'convo-1'], stored);
+      jest.mocked(dataService.moveConversationCodeEnvironment).mockResolvedValue({
+        conversationId: 'convo-1',
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [target],
+      });
+      let resolveStaleRead: (conversation: TConversation) => void = () => undefined;
+      const wrapper = ({ children }: { children: ReactNode }) =>
+        createElement(QueryClientProvider, { client: queryClient }, children);
 
-    const { result } = renderHook(
-      () => ({
-        conversation: useQuery(
-          [QueryKeys.conversation, 'convo-1'],
-          () =>
-            new Promise<TConversation>((resolve) => {
-              resolveStaleRead = resolve;
-            }),
-          { staleTime: 0 },
-        ),
-        move: useMoveConversationCodeEnvironmentMutation(),
-      }),
-      { wrapper },
-    );
-    await waitFor(() => expect(result.current.conversation.isFetching).toBe(true));
+      const { result } = renderHook(
+        () => ({
+          conversation: useQuery(
+            [QueryKeys.conversation, 'convo-1'],
+            () =>
+              new Promise<TConversation>((resolve) => {
+                resolveStaleRead = resolve;
+              }),
+            { staleTime: 0 },
+          ),
+          move: useMoveConversationCodeEnvironmentMutation(),
+        }),
+        { wrapper },
+      );
+      await waitFor(() => expect(result.current.conversation.isFetching).toBe(true));
 
-    await act(async () => {
-      await result.current.move.mutateAsync({ conversationId: 'convo-1', from: [mac], to: [vm] });
-    });
-    await act(async () => {
-      resolveStaleRead(stored);
-    });
+      await act(async () => {
+        await result.current.move.mutateAsync({
+          conversationId: 'convo-1',
+          from: [mac],
+          to: [target],
+        });
+      });
+      await act(async () => {
+        resolveStaleRead(stored);
+      });
 
-    expect(queryClient.getQueryData([QueryKeys.conversation, 'convo-1'])).toEqual(
-      expect.objectContaining({ codeEnvironmentMode: 'attached', codeWorkspaces: [vm] }),
-    );
-  });
+      expect(queryClient.getQueryData([QueryKeys.conversation, 'convo-1'])).toEqual(
+        expect.objectContaining({ codeEnvironmentMode: 'attached', codeWorkspaces: [target] }),
+      );
+    },
+  );
 });
