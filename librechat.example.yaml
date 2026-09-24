@@ -145,6 +145,25 @@ interface:
   customWelcome: 'Welcome to LibreChat! Enjoy your experience.'
   # Minimum interval between syntax-highlighting passes while streamed code changes (default: 300 ms)
   # codeHighlightThrottleMs: 300
+  # Deployment theme applied to every user, in both light and dark mode (default: unset).
+  # It is not saved to the browser, outranks REACT_APP_THEME_* colors and stored themes,
+  # and yields to the high-contrast modes. Either a bundled theme name (librechat, clickhouse):
+  # theme: clickhouse
+  # or an inline definition. Colors are space-separated RGB triplets keyed by rgb-* token:
+  # theme:
+  #   version: 1
+  #   name: acme
+  #   modes:
+  #     light:
+  #       colors:
+  #         rgb-surface-primary: '255 255 255'
+  #         rgb-surface-submit: '21 21 21'
+  #       appearance:
+  #         controlRadius: '0.25rem'
+  #     dark:
+  #       colors:
+  #         rgb-surface-primary: '31 31 28'
+  #         rgb-surface-submit: '250 255 105'
   # Enable/disable file search as a chatarea selection (default: true)
   # Note: This setting does not disable the Agents File Search Capability.
   # To disable the Agents Capability, see the Agents Endpoint configuration instead.

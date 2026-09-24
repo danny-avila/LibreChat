@@ -260,6 +260,18 @@ describe('GET /api/config', () => {
       expect(response.body).not.toHaveProperty('interface');
     });
 
+    it('should include the deployment theme so the login page paints it', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        interfaceConfig: { modelSelect: true, theme: 'clickhouse' },
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.interface).toEqual({ theme: 'clickhouse' });
+    });
+
     it('keeps passkeys advertised for management when email login is disabled', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       const previous = {
