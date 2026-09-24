@@ -54,8 +54,10 @@ export function createSSETransport({ token }: { token?: string }): ChatTransport
         }
       });
 
+      let refreshed = false;
       sse.addEventListener('error', async (e: StreamErrorEvent) => {
-        if (e.responseCode === 401) {
+        if (e.responseCode === 401 && !refreshed) {
+          refreshed = true;
           try {
             const refreshResponse = await request.refreshToken();
             if (signal.aborted) {

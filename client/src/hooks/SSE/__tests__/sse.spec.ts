@@ -185,6 +185,27 @@ describe('createSSETransport', () => {
     expect(events).toEqual([]);
   });
 
+  it('reports a second 401 instead of refreshing again', async () => {
+    const refreshToken = jest
+      .spyOn(request, 'refreshToken')
+      .mockResolvedValue({ token: 'token-2' } as never);
+    jest.spyOn(request, 'dispatchTokenUpdatedEvent').mockImplementation(() => undefined);
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    send();
+    current().status = 401;
+    current().write('Unauthorized');
+    await new Promise(process.nextTick);
+
+    current().status = 401;
+    current().write('Unauthorized');
+    await new Promise(process.nextTick);
+
+    expect(refreshToken).toHaveBeenCalledTimes(1);
+    expect(xhrs).toHaveLength(2);
+    expect(events).toEqual([{ type: 'error', data: undefined }]);
+  });
+
   it.each([
     ['succeeds', () => Promise.resolve({ token: 'token-2' })],
     ['fails', () => Promise.reject(new Error('refresh failed'))],
