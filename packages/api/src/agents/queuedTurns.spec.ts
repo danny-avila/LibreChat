@@ -161,6 +161,27 @@ function createAgentQueuedTurnScheduler(deps: AgentQueuedTurnSchedulerDeps) {
 }
 
 describe('Agent queued-turn continuation', () => {
+  it.each([undefined, 'ask', 'acceptEdits', 'fullAccess'] as const)(
+    'prepares only the snapshotted approval mode %s, not event or current conversation permissions',
+    async (mode) => {
+      const { methods, spies } = resolverMethods();
+      const saved = claim();
+      spies.claimNextAgentQueuedTurn.mockResolvedValue({
+        outcome: 'acquired',
+        claim: { ...saved, ...(mode != null && { codeApprovalMode: mode }) },
+      });
+      const resolve = createAgentQueuedTurnResolver({
+        methods,
+        getGenerationJob: async () => null,
+      });
+      const delivery = envelope();
+      delivery.event.payload = { queuedTurnId: 'queued-turn-1', codeApprovalMode: 'fullAccess' };
+      const prepared = await resolve(delivery, { idempotencyKey: 'delivery-1' } as never);
+      expect(prepared?.status).toBe('ready');
+      expect(prepared?.status === 'ready' && prepared.codeApprovalMode).toBe(mode);
+    },
+  );
+
   it('dead-letters a delivery while preserving an admission-indeterminate source', async () => {
     const deadLetterAgentQueuedTurn = jest.fn(async () => ({
       outcome: 'admission_indeterminate' as const,

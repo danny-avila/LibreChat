@@ -3,7 +3,7 @@ import { getDefaultStore } from 'jotai';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
 import { Constants, ContentTypes, EModelEndpoint, LocalStorageKeys } from 'librechat-data-provider';
-import type { TConversation, TFile, TMessage } from 'librechat-data-provider';
+import type { CodeApprovalMode, TConversation, TFile, TMessage } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/store/families';
 import { clearAllDrafts, getPendingDraftId, getNewConversationDraftId } from '~/utils';
 import useSteering, { mergeQueuedTurnFileMetadata } from '../useSteering';
@@ -14,6 +14,7 @@ import store from '~/store';
 const CONVO_ID = 'convo-steer-ui';
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+let mockApprovalMode: CodeApprovalMode | undefined;
 const mockMutate = jest.fn();
 const mockCancelSteer = jest.fn();
 const mockEnqueueQueuedTurn = jest.fn();
@@ -25,6 +26,11 @@ let mockLatestMessage: TMessage | null | undefined;
 let mockServerQueuedTurns: unknown[] | undefined;
 let mockFileMap: Record<string, Pick<TFile, 'llmDeliveryPath'>> = {};
 const mockUseAgentQueuedTurns = jest.fn((..._args: unknown[]) => ({ data: mockServerQueuedTurns }));
+
+jest.mock('~/hooks/Agents/useCodeApprovalMode', () => ({
+  __esModule: true,
+  default: () => ({ selected: mockApprovalMode }),
+}));
 
 jest.mock('~/Providers', () => ({
   useFileMapContext: () => mockFileMap,
@@ -146,6 +152,7 @@ function useQueue(convoId: string) {
 describe('useSteering', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockApprovalMode = undefined;
     getDefaultStore().set(revealedQueuedTurnFamily(CONVO_ID), null);
     mockMessages = undefined;
     mockLatestMessage = undefined;
@@ -341,6 +348,21 @@ describe('useSteering', () => {
         } as unknown as TMessage,
       ];
     });
+
+    it.each([undefined, 'ask', 'acceptEdits', 'fullAccess'] as const)(
+      'captures the policy-filtered %s mode when queuing a new server-owned turn',
+      async (mode) => {
+        mockApprovalMode = mode;
+        const { result } = setupServerQueue();
+        await act(async () => {
+          result.current.steering.queueFromComposer('run this later');
+          await Promise.resolve();
+        });
+        const input = mockEnqueueQueuedTurn.mock.calls[0]?.[0];
+        expect(input?.codeApprovalMode).toBe(mode);
+        if (mode == null) expect(input).not.toHaveProperty('codeApprovalMode');
+      },
+    );
 
     it('keeps startup turns local until the server generation epoch exists', async () => {
       const { result } = setupServerQueue(

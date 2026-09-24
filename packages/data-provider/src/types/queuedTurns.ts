@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CODE_APPROVAL_MODES } from '../code/approval';
 
 export const agentQueuedTurnStatuses = [
   'queued',
@@ -30,6 +31,8 @@ export const enqueueAgentQueuedTurnSchema = z.object({
   files: z.array(agentQueuedTurnFileRefSchema).optional(),
   quotes: z.array(z.string()).optional(),
   manualSkills: z.array(z.string().trim().min(1)).optional(),
+  /** Selected when queued, revalidated against live policy at turn admission. */
+  codeApprovalMode: z.enum(CODE_APPROVAL_MODES).optional(),
   priority: z.boolean().optional(),
   expectedPredecessorCreatedAt: z.number().int().nonnegative().optional(),
 });

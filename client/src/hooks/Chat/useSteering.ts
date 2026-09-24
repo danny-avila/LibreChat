@@ -42,6 +42,7 @@ import {
   hydrateFileDeliveryMetadata,
   mergeRestagedQuotes,
 } from '~/utils';
+import useCodeApprovalMode from '../Agents/useCodeApprovalMode';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { revealedQueuedTurnFamily } from '~/store/steer';
 import { useLatestMessage } from '~/hooks/Messages';
@@ -436,6 +437,7 @@ export default function useSteering({
   const setDefaultAction = useSetRecoilState(store.duringRunDefaultAction);
   const steerInterruptsByDefault = useRecoilValue(store.steerInterruptsByDefault);
 
+  const { selected: codeApprovalMode } = useCodeApprovalMode(conversation);
   const endpoint = conversation?.endpointType ?? conversation?.endpoint;
   const steerable = !isAssistantsEndpoint(endpoint);
   const hasRealConvoId =
@@ -1051,6 +1053,7 @@ export default function useSteering({
                 item.manualSkills.length > 0 && {
                   manualSkills: item.manualSkills,
                 }),
+              ...(codeApprovalMode != null && { codeApprovalMode }),
               ...(item.priority === true && { priority: true }),
               ...(item.expectedPredecessorCreatedAt != null && {
                 expectedPredecessorCreatedAt: item.expectedPredecessorCreatedAt,
@@ -1108,6 +1111,7 @@ export default function useSteering({
       queueKey,
       conversationId,
       serverQueueEnabled,
+      codeApprovalMode,
       liveMessageState?.parentMessageId,
       pendingReveal,
       markQueuedFilesUsage,

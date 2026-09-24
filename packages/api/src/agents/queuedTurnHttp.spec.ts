@@ -39,6 +39,33 @@ function requestBody() {
 }
 
 describe('Agent queued-turn HTTP admission receipts', () => {
+  it('rejects a same-id replay that changes its queued approval snapshot', async () => {
+    const saved = { ...turn('admitted'), codeApprovalMode: 'ask' as const };
+    const methods = {
+      getConvo: jest.fn(),
+      getAgentQueuedTurnByClientRequestId: jest.fn(async () => saved),
+    };
+    const deps = {
+      methods: methods as unknown as AgentQueuedTurnMethods & { getConvo: typeof methods.getConvo },
+      lifecycle: { schedule: jest.fn(), cancel: jest.fn() },
+    } satisfies AgentQueuedTurnHttpDeps;
+    await expect(
+      handleAgentQueuedTurnEnqueue(
+        { id: USER_ID },
+        { ...requestBody(), codeApprovalMode: 'fullAccess' },
+        deps,
+      ),
+    ).resolves.toEqual({ status: 409, body: { code: 'QUEUED_TURN_IDEMPOTENCY_CONFLICT' } });
+    expect(methods.getConvo).not.toHaveBeenCalled();
+    await expect(
+      handleAgentQueuedTurnEnqueue(
+        { id: USER_ID },
+        { ...requestBody(), codeApprovalMode: 'ask' },
+        deps,
+      ),
+    ).resolves.toMatchObject({ status: 200, body: { receipt: { codeApprovalMode: 'ask' } } });
+  });
+
   it('rejects an enqueue after conversation deletion closes its lane', async () => {
     const methods = {
       getConvo: jest.fn(async () => ({ agent_id: 'agent_1', endpoint: 'agents' })),

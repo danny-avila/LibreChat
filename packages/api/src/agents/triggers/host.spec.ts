@@ -621,6 +621,7 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
 
   it('carries a prepared queued-turn payload and settles it after admission', async () => {
     const envelope = createContinueEnvelope();
+    envelope.event.payload = { codeApprovalMode: 'fullAccess' };
     const admitted = {
       mode: 'continue' as const,
       streamId: 'conversation-1',
@@ -644,6 +645,7 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
       files: [{ file_id: 'file-1' }],
       quotes: ['quoted context'],
       manualSkills: ['research'],
+      codeApprovalMode: 'acceptEdits' as const,
       admissionSource,
       settleOnAdmission,
     }));
@@ -665,6 +667,7 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
       files: [{ file_id: 'file-1' }],
       quotes: ['quoted context'],
       manualSkills: ['research'],
+      codeApprovalMode: 'acceptEdits',
       agentContinuationAdmission: admissionSource,
     });
     expect(getBaseUrl).toHaveBeenCalledWith({ localOnly: true });

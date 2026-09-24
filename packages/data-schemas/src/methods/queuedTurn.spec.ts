@@ -138,6 +138,35 @@ describe('agent queued turn methods', () => {
     expect(await Turn.countDocuments()).toBe(1);
   });
 
+  it('keeps the selected approval mode on queued, claimed, and retried turns', async () => {
+    const input = enqueueInput({ codeApprovalMode: 'fullAccess' });
+    const first = await methods.enqueueAgentQueuedTurn(input);
+    expect(first.turn.codeApprovalMode).toBe('fullAccess');
+    expect((await methods.enqueueAgentQueuedTurn(input)).replayed).toBe(true);
+    await expect(
+      methods.enqueueAgentQueuedTurn({ ...input, codeApprovalMode: 'ask' }),
+    ).rejects.toBeInstanceOf(AgentQueuedTurnConflictError);
+    const claimed = await methods.claimNextAgentQueuedTurn(claimInput(first.turn.queuedTurnId));
+    expect(claimed.outcome).toBe('acquired');
+    if (claimed.outcome === 'acquired') expect(claimed.claim.codeApprovalMode).toBe('fullAccess');
+    const listed = await methods.listActiveAgentQueuedTurns({
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+    });
+    expect(listed[0]?.codeApprovalMode).toBe('fullAccess');
+  });
+
+  it('keeps old queued turns without a mode and rejects an upgraded same-id replay', async () => {
+    const input = enqueueInput();
+    const created = await methods.enqueueAgentQueuedTurn(input);
+    expect(created.turn.codeApprovalMode).toBeUndefined();
+    expect((await methods.enqueueAgentQueuedTurn(input)).replayed).toBe(true);
+    await expect(
+      methods.enqueueAgentQueuedTurn({ ...input, codeApprovalMode: 'fullAccess' }),
+    ).rejects.toBeInstanceOf(AgentQueuedTurnConflictError);
+  });
+
   it('looks up terminal receipts by owner-scoped request identity', async () => {
     const created = await methods.enqueueAgentQueuedTurn(enqueueInput());
 

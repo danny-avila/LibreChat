@@ -16,6 +16,7 @@ import type {
   IMongoFile,
 } from '@librechat/data-schemas';
 import type {
+  CodeApprovalMode,
   TAgentQueuedTurnFileRef,
   TAgentQueuedTurnReceipt,
   TFile,
@@ -86,6 +87,7 @@ function receipt(
     ...(turn.files != null && { files: turn.files }),
     ...(turn.quotes != null && { quotes: turn.quotes }),
     ...(turn.manualSkills != null && { manualSkills: turn.manualSkills }),
+    ...(turn.codeApprovalMode != null && { codeApprovalMode: turn.codeApprovalMode }),
     priority: turn.priority,
     ...(turn.expectedPredecessorCreatedAt != null && {
       expectedPredecessorCreatedAt: turn.expectedPredecessorCreatedAt,
@@ -139,6 +141,7 @@ function matchesReplayIntent(
     clientRequestId: string;
     files?: readonly TAgentQueuedTurnFileRef[];
     manualSkills?: readonly string[];
+    codeApprovalMode?: CodeApprovalMode;
     expectedPredecessorCreatedAt?: number;
   },
   text: string,
@@ -154,6 +157,7 @@ function matchesReplayIntent(
     ) &&
     sameStrings(turn.quotes, quotes) &&
     sameStrings(turn.manualSkills, uniqueStrings(input.manualSkills)) &&
+    turn.codeApprovalMode === input.codeApprovalMode &&
     turn.expectedPredecessorCreatedAt === input.expectedPredecessorCreatedAt
   );
 }
@@ -338,6 +342,7 @@ export async function handleAgentQueuedTurnEnqueue(
       ...(resolvedFiles.files != null && { files: resolvedFiles.files }),
       ...(quotes != null && { quotes }),
       ...(input.manualSkills != null && { manualSkills: input.manualSkills }),
+      ...(input.codeApprovalMode != null && { codeApprovalMode: input.codeApprovalMode }),
       priority: false,
       ...(input.expectedPredecessorCreatedAt != null && {
         expectedPredecessorCreatedAt: input.expectedPredecessorCreatedAt,
