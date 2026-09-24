@@ -237,11 +237,11 @@ describe('steps', () => {
         0,
       ).message;
 
-      const part = result.content?.[0] as Record<string, unknown>;
-      expect(part.think).toBe('old more');
-      expect(part.reasoning_label_step_id).toBe('step-new');
-      expect(part.reasoning_label).toBeUndefined();
-      expect(part.reasoning_label_revision).toBeUndefined();
+      expect(result.content?.[0]).toStrictEqual({
+        type: ContentTypes.THINK,
+        think: 'old more',
+        reasoning_label_step_id: 'step-new',
+      });
     });
 
     it('stamps a THINK slot streamed on the message channel once it exists', () => {
