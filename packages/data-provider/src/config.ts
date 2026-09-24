@@ -2918,9 +2918,10 @@ export const classificationProviderSchema = z
     requestKey: z.string().optional(),
     /** Reads the answer envelope from this key, for hosts that wrap the response. */
     responseKey: z.string().optional(),
-    /** Per-request ceiling. A judgment that misses it is abandoned, never awaited. */
+    /** Ceiling for one judgment, retries and backoff included. A judgment that
+     *  misses it is abandoned, never awaited. */
     timeoutMs: z.number().int().positive().max(60_000).optional(),
-    /** Retries for a rate limit or a server error only. */
+    /** Retries inside `timeoutMs`, for a rate limit, server or network error only. */
     maxRetries: z.number().int().nonnegative().max(5).optional(),
     /** Environment variable holding this provider's key. Never the key itself. */
     apiKeyEnv: z.string().optional(),

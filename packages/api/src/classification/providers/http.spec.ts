@@ -84,7 +84,7 @@ describe('createHttpClassifier', () => {
     expect(classifier.id).toBe('http');
   });
 
-  it('carries choice and score answers through', async () => {
+  it('carries a choice answer through and drops a type it does not know', async () => {
     const body = JSON.stringify({
       model: 'test-1',
       answers: {
@@ -99,12 +99,11 @@ describe('createHttpClassifier', () => {
       state: 'x',
       questions: {
         pick: { type: 'choice', instructions: 'which', criteria: { a: null, b: null } },
-        rate: { type: 'score', instructions: 'how much', criteria: ['low', 'high'] },
       },
     });
 
     expect(result.answers.pick).toMatchObject({ type: 'choice', choice: 'b', confidence: 0.7 });
-    expect(result.answers.rate).toMatchObject({ type: 'score', score: 1.4 });
+    expect(result.answers).not.toHaveProperty('rate');
   });
 
   it('retries a 429 and honors retry-after', async () => {
@@ -138,6 +137,7 @@ describe('createHttpClassifier', () => {
       apiKey: 'sk-test',
       endpoint: ENDPOINT,
       fetch: transport,
+      timeoutMs: 30_000,
       sleep: async (ms) => {
         waits.push(ms);
       },
@@ -146,6 +146,51 @@ describe('createHttpClassifier', () => {
     await classifier.classify({ state: 'x', questions: QUESTION });
 
     expect(waits).toEqual([10_000]);
+  });
+
+  it('gives up instead of waiting past its timeout for a retry', async () => {
+    const waits: number[] = [];
+    const { transport, calls } = stubTransport([
+      { ok: false, status: 429, body: 'slow down', headers: { 'retry-after': '8' } },
+      { ok: true, status: 200, body: ANSWER },
+    ]);
+    const classifier = createHttpClassifier({
+      apiKey: 'sk-test',
+      endpoint: ENDPOINT,
+      fetch: transport,
+      timeoutMs: 4_000,
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+    });
+
+    await expect(classifier.classify({ state: 'x', questions: QUESTION })).rejects.toMatchObject({
+      failure: 'rate_limited',
+    });
+    expect(calls).toHaveLength(1);
+    expect(waits).toEqual([]);
+  });
+
+  it('stops backing off as soon as the caller aborts', async () => {
+    const controller = new AbortController();
+    const { transport, calls } = stubTransport([
+      { ok: false, status: 503, body: 'down', headers: { 'retry-after': '2' } },
+      { ok: true, status: 200, body: ANSWER },
+    ]);
+    const classifier = createHttpClassifier({
+      apiKey: 'sk-test',
+      endpoint: ENDPOINT,
+      fetch: transport,
+      timeoutMs: 30_000,
+    });
+    const started = Date.now();
+    setTimeout(() => controller.abort(), 20);
+
+    await expect(
+      classifier.classify({ state: 'x', questions: QUESTION, signal: controller.signal }),
+    ).rejects.toMatchObject({ failure: 'aborted' });
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(calls).toHaveLength(1);
   });
 
   it('gives up after maxRetries and names the provider', async () => {

@@ -1,5 +1,6 @@
 import { classificationSchema } from 'librechat-data-provider';
 import type { TClassificationConfig } from 'librechat-data-provider';
+import type { ProviderFetch } from './providers/transport';
 import { resolveClassifier } from './resolve';
 import { boolean } from './questions';
 
@@ -13,8 +14,8 @@ const ANSWER = { model: 'jev-1.13.0', answers: { d: { type: 'noul', noul: 0.8 } 
 
 function recorder(response: unknown = ANSWER) {
   const calls: { url: string; body: Record<string, unknown> }[] = [];
-  const fetch = async (url: string, init: { body?: string }) => {
-    calls.push({ url, body: JSON.parse(init.body ?? '{}') });
+  const fetch: ProviderFetch = async (url, init) => {
+    calls.push({ url, body: JSON.parse(init.body) });
     return {
       ok: true,
       status: 200,
@@ -22,11 +23,11 @@ function recorder(response: unknown = ANSWER) {
       text: async () => JSON.stringify(response),
     };
   };
-  return { calls, fetch: fetch as never };
+  return { calls, fetch };
 }
 
 function parse(raw: unknown): TClassificationConfig {
-  return classificationSchema.parse(raw) as TClassificationConfig;
+  return classificationSchema.parse(raw);
 }
 
 describe('classification config', () => {

@@ -515,9 +515,10 @@ actions:
 #     - 'host.docker.internal:8080'
 #     - '127.0.0.1:8080'
 
-# Classification: small typed judgments (yes/no, pick one, rate) that code can
-# branch on. Off unless enabled. The key is read from the environment variable
-# named by apiKeyEnv, never written here.
+# Classification: small typed judgments (yes/no, pick one) that code can branch
+# on. Off unless enabled. The key is read from the environment variable named by
+# apiKeyEnv, never written here. `timeoutMs` bounds each judgment, retries
+# included.
 # classification:
 #   enabled: true
 #   provider: http

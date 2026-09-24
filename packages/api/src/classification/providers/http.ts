@@ -14,6 +14,7 @@ import { createTransport } from './transport';
 export const PROVIDER_ID = 'http';
 
 export interface HttpProviderOptions {
+  providerId?: string;
   apiKey: string;
   /** Full URL, not a base path. */
   endpoint: string;
@@ -82,13 +83,14 @@ export function parseEnvelope(
 }
 
 export function createHttpClassifier(options: HttpProviderOptions): Classifier {
-  const send = createTransport({ providerId: PROVIDER_ID, ...options });
+  const providerId = options.providerId ?? PROVIDER_ID;
+  const send = createTransport({ ...options, providerId });
   const model = options.model ?? '';
   const dialect: Dialect = options.dialect ?? 'port';
   const { requestKey, responseKey } = options;
 
   return {
-    id: PROVIDER_ID,
+    id: providerId,
     model,
     async classify(request: ClassificationRequest): Promise<ClassificationResult> {
       const questions: Record<string, unknown> = {};
@@ -106,7 +108,7 @@ export function createHttpClassifier(options: HttpProviderOptions): Classifier {
         request.label ?? 'classify',
         request.timeoutMs,
       );
-      return parseEnvelope(body, PROVIDER_ID, (a) => readAnswer(a, dialect), responseKey);
+      return parseEnvelope(body, providerId, (a) => readAnswer(a, dialect), responseKey);
     },
   };
 }
