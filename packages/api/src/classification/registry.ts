@@ -1,18 +1,9 @@
+import type { TClassificationProviderConfig } from 'librechat-data-provider';
 import type { ProviderFetch } from './providers/transport';
-import type { Dialect } from './providers/dialect';
 import type { Classifier } from './types';
 import { createHttpClassifier } from './providers/http';
 
-export interface ProviderSettings {
-  baseURL?: string;
-  model?: string;
-  dialect?: Dialect;
-  requestKey?: string;
-  responseKey?: string;
-  timeoutMs?: number;
-  maxRetries?: number;
-  apiKeyEnv?: string;
-}
+export type ProviderSettings = TClassificationProviderConfig;
 
 export const DEFAULT_API_KEY_ENV = 'CLASSIFIER_API_KEY';
 
@@ -72,8 +63,10 @@ export function createClassifier(
   settings: ProviderSettings,
   apiKey: string,
   fetch?: ProviderFetch,
+  providerId?: string,
 ): Classifier {
   return createHttpClassifier({
+    providerId,
     apiKey,
     endpoint: settings.baseURL ?? '',
     model: settings.model,

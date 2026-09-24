@@ -1,4 +1,6 @@
-import type { TClassificationConfig } from 'librechat-data-provider';
+import { classificationSchema } from 'librechat-data-provider';
+import type { TClassificationConfig, TClassificationProviderConfig } from 'librechat-data-provider';
+import type { ProviderFetch } from './providers/transport';
 import { PRESETS, presetFor, mergeSettings } from './registry';
 import { resolveClassifier } from './resolve';
 import { boolean } from './questions';
@@ -7,8 +9,8 @@ type Captured = { url: string; body: Record<string, unknown> };
 
 function recorder(response: unknown) {
   const calls: Captured[] = [];
-  const fetch = async (url: string, init: { body?: string }) => {
-    calls.push({ url, body: JSON.parse(init.body ?? '{}') });
+  const fetch: ProviderFetch = async (url, init) => {
+    calls.push({ url, body: JSON.parse(init.body) });
     return {
       ok: true,
       status: 200,
@@ -16,17 +18,18 @@ function recorder(response: unknown) {
       text: async () => JSON.stringify(response),
     };
   };
-  return { calls, fetch: fetch as never };
+  return { calls, fetch };
 }
 
-function configFor(provider: string, settings?: Record<string, unknown>): TClassificationConfig {
-  return {
+function configFor(
+  provider: string,
+  settings?: TClassificationProviderConfig,
+): TClassificationConfig {
+  return classificationSchema.parse({
     enabled: true,
     provider,
     providers: settings == null ? {} : { [provider]: settings },
-    toolSelection: {},
-    memoryGate: {},
-  } as unknown as TClassificationConfig;
+  });
 }
 
 const NOUL = { model: 'jev-1.13.0', answers: { d: { type: 'noul', noul: 0.8 } }, usage: {} };

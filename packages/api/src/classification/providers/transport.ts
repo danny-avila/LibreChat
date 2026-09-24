@@ -29,7 +29,7 @@ export interface TransportOptions {
   timeoutMs?: number;
   maxRetries?: number;
   fetch?: ProviderFetch;
-  sleep?: (ms: number) => Promise<void>;
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }
 
 export type Transport = (
@@ -76,8 +76,20 @@ function briefly(body: string): string {
   return flat.length > 200 ? `${flat.slice(0, 200)}…` : flat;
 }
 
-const defaultSleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted === true) {
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener('abort', done, { once: true });
+  });
+}
 
 export function createTransport(options: TransportOptions): Transport {
   const { providerId } = options;
@@ -161,14 +173,16 @@ export function createTransport(options: TransportOptions): Transport {
     }
   }
 
+  /** `timeoutMs` bounds the whole call, retries and backoff included, not each attempt. */
   return async function send(payload, signal, label, timeoutOverrideMs) {
     const timeoutMs =
       timeoutOverrideMs != null && timeoutOverrideMs > 0 ? timeoutOverrideMs : defaultTimeoutMs;
+    const deadline = Date.now() + timeoutMs;
     let lastError: ClassificationError | undefined;
     for (let attemptNo = 0; attemptNo <= maxRetries; attemptNo++) {
       try {
         const started = Date.now();
-        const body = await attempt(payload, signal, timeoutMs);
+        const body = await attempt(payload, signal, Math.max(1, deadline - started));
         logger.debug(`[classification] ${label} answered in ${Date.now() - started}ms`);
         return body;
       } catch (error) {
@@ -179,9 +193,18 @@ export function createTransport(options: TransportOptions): Transport {
         if (attemptNo === maxRetries || !isRetryable(lastError.failure)) {
           break;
         }
-        await sleep(
-          lastError.retryAfterMs ?? BACKOFF_MS[Math.min(attemptNo, BACKOFF_MS.length - 1)],
-        );
+        const wait =
+          lastError.retryAfterMs ?? BACKOFF_MS[Math.min(attemptNo, BACKOFF_MS.length - 1)];
+        if (wait >= deadline - Date.now()) {
+          break;
+        }
+        await sleep(wait, signal);
+        if (signal?.aborted === true) {
+          lastError = new ClassificationError('aborted', 'caller aborted the request', {
+            provider: providerId,
+          });
+          break;
+        }
       }
     }
     throw (

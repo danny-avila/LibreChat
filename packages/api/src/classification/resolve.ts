@@ -76,7 +76,7 @@ export function resolveClassifier(params: ResolveClassifierParams): Classifier |
   }
 
   try {
-    const classifier = createClassifier(settings, apiKey, params.fetch);
+    const classifier = createClassifier(settings, apiKey, params.fetch, providerId);
     cache.set(config, { apiKey, provider: providerId, classifier });
     return classifier;
   } catch (error) {

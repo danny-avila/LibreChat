@@ -1,5 +1,5 @@
 import { toWireQuestion, readAnswer } from './dialect';
-import { boolean, choice, score } from '../questions';
+import { boolean, choice } from '../questions';
 
 describe('toWireQuestion', () => {
   it('keeps the port vocabulary by default', () => {
@@ -10,12 +10,10 @@ describe('toWireQuestion', () => {
     expect(toWireQuestion(boolean('durable?'), 'systemone').type).toBe('noul');
   });
 
-  it('leaves choice and score alone in either dialect', () => {
+  it('leaves a choice alone in either dialect', () => {
     const pick = choice('which', { a: null, b: null });
-    const rate = score('how much', ['low', 'high']);
 
     expect(toWireQuestion(pick, 'systemone').type).toBe('choice');
-    expect(toWireQuestion(rate, 'systemone').type).toBe('score');
     expect(toWireQuestion(pick, 'port').criteria).toEqual({ a: null, b: null });
   });
 

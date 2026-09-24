@@ -28,13 +28,7 @@ export interface ChoiceQuestion {
   criteria: Record<string, ClassificationText | null>;
 }
 
-export interface ScoreQuestion {
-  type: 'score';
-  instructions: ClassificationText;
-  criteria: ClassificationText[];
-}
-
-export type ClassificationQuestion = BooleanQuestion | ChoiceQuestion | ScoreQuestion;
+export type ClassificationQuestion = BooleanQuestion | ChoiceQuestion;
 
 export interface BooleanAnswer {
   type: 'boolean';
@@ -49,15 +43,7 @@ export interface ChoiceAnswer {
   probabilities: Record<string, number>;
 }
 
-export interface ScoreAnswer {
-  type: 'score';
-  /** 0 to levels - 1. */
-  score: number;
-  confidence: number | null;
-  probabilities: Record<string, number>;
-}
-
-export type ClassificationAnswer = BooleanAnswer | ChoiceAnswer | ScoreAnswer;
+export type ClassificationAnswer = BooleanAnswer | ChoiceAnswer;
 
 export interface ClassificationUsage {
   inputTokens: number;
@@ -121,8 +107,4 @@ export function isBooleanAnswer(answer: ClassificationAnswer | undefined): answe
 
 export function isChoiceAnswer(answer: ClassificationAnswer | undefined): answer is ChoiceAnswer {
   return answer?.type === 'choice';
-}
-
-export function isScoreAnswer(answer: ClassificationAnswer | undefined): answer is ScoreAnswer {
-  return answer?.type === 'score';
 }

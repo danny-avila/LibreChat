@@ -1,6 +1,7 @@
+import type { TClassificationProviderConfig } from 'librechat-data-provider';
 import type { ClassificationAnswer, ClassificationQuestion } from '../types';
 
-export type Dialect = 'port' | 'systemone';
+export type Dialect = NonNullable<TClassificationProviderConfig['dialect']>;
 
 interface WireQuestion {
   type: string;
@@ -13,7 +14,6 @@ interface WireAnswer {
   probability?: unknown;
   noul?: unknown;
   choice?: unknown;
-  score?: unknown;
   confidence?: unknown;
   probabilities?: unknown;
 }
@@ -41,9 +41,6 @@ export function readAnswer(answer: unknown, dialect: Dialect): ClassificationAns
   }
   if (record.type === 'choice' && typeof record.choice === 'string') {
     return { type: 'choice', choice: record.choice, confidence, probabilities };
-  }
-  if (record.type === 'score' && typeof record.score === 'number') {
-    return { type: 'score', score: record.score, confidence, probabilities };
   }
   return null;
 }
