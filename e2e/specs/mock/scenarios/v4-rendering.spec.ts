@@ -149,11 +149,13 @@ test.describe('Tailwind v4 rendering', () => {
     expect(bare).not.toBe(inherited);
 
     /** And v4 would paint a placeholder as the field's own colour at half
-     *  opacity. The app restores gray-400, which `text-gray-400` paints from the
-     *  same CSS. The composer sets its own `placeholder:` role, so the probe is
-     *  a plain field — which is what the preflight rule governs. */
+     *  opacity. The app restores gray-400, read from the root `--gray-400`
+     *  triplet for the same reason as the border: no source writes
+     *  `text-gray-400` any more, so a probe carrying it generates no CSS. The
+     *  composer sets its own `placeholder:` role, so the probe is a plain
+     *  field, which is what the preflight rule governs. */
     const placeholder = await probePlaceholderColor(page);
-    const gray400 = await probeStyle(page, 'text-gray-400', 'color');
+    const gray400 = await normalizeColor(page, `rgb(${await themeValue(page, '--gray-400')})`);
     const body = await probeStyle(page, '', 'color');
     expect(placeholder).toBe(gray400);
     expect(placeholder).not.toBe(body);

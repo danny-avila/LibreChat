@@ -304,11 +304,8 @@
     }
   },
   "client/src/components/Chat/Input/Files/Table/Columns.tsx": {
-    "shadcn/no-raw-colors": {
-      "count": 3
-    },
     "shadcn/no-restyle": {
-      "count": 23
+      "count": 21
     }
   },
   "client/src/components/Chat/Input/Files/Table/DataTable.tsx": {
@@ -325,9 +322,6 @@
     }
   },
   "client/src/components/Chat/Input/InFlightSteers.tsx": {
-    "shadcn/no-raw-colors": {
-      "count": 1
-    },
     "shadcn/no-unknown-classes": {
       "count": 1
     },
@@ -552,14 +546,6 @@
   "client/src/components/Chat/Messages/Content/AskUserQuestions.tsx": {
     "shadcn/no-restyle": {
       "count": 10
-    }
-  },
-  "client/src/components/Chat/Messages/Content/CodeAnalyze.tsx": {
-    "shadcn/no-inline-styles": {
-      "count": 1
-    },
-    "shadcn/no-raw-colors": {
-      "count": 2
     }
   },
   "client/src/components/Chat/Messages/Content/Container.tsx": {
@@ -1695,9 +1681,6 @@
   "client/src/components/Prompts/editor/Markdown.tsx": {
     "shadcn/no-arbitrary-values": {
       "count": 1
-    },
-    "shadcn/no-raw-colors": {
-      "count": 1
     }
   },
   "client/src/components/Prompts/editor/PromptEditor.tsx": {
@@ -1808,9 +1791,6 @@
     }
   },
   "client/src/components/SharePoint/SharePointPickerDialog.tsx": {
-    "shadcn/no-raw-colors": {
-      "count": 2
-    },
     "shadcn/no-restyle": {
       "count": 6
     }
@@ -1921,9 +1901,6 @@
   "client/src/components/SidePanel/Agents/AgentTool.tsx": {
     "shadcn/no-inline-styles": {
       "count": 5
-    },
-    "shadcn/no-raw-colors": {
-      "count": 2
     },
     "shadcn/no-restyle": {
       "count": 9
@@ -2082,9 +2059,6 @@
     }
   },
   "client/src/components/SidePanel/Agents/Tools/ToolRow.tsx": {
-    "shadcn/no-raw-colors": {
-      "count": 1
-    },
     "shadcn/no-restyle": {
       "count": 8
     }
@@ -2142,19 +2116,6 @@
       "count": 4
     }
   },
-  "client/src/components/SidePanel/Builder/ActionsPanel.tsx": {
-    "shadcn/no-raw-colors": {
-      "count": 1
-    }
-  },
-  "client/src/components/SidePanel/Builder/AppendDateCheckbox.tsx": {
-    "shadcn/no-raw-colors": {
-      "count": 3
-    },
-    "shadcn/no-restyle": {
-      "count": 1
-    }
-  },
   "client/src/components/SidePanel/Builder/AssistantConversationStarters.tsx": {
     "shadcn/no-inline-styles": {
       "count": 3
@@ -2164,9 +2125,6 @@
     }
   },
   "client/src/components/SidePanel/Builder/AssistantPanel.tsx": {
-    "shadcn/no-raw-colors": {
-      "count": 2
-    },
     "shadcn/no-restyle": {
       "count": 4
     },
@@ -2175,36 +2133,17 @@
     }
   },
   "client/src/components/SidePanel/Builder/AssistantSelect.tsx": {
-    "shadcn/no-raw-colors": {
-      "count": 15
-    },
     "shadcn/no-restyle": {
-      "count": 19
+      "count": 7
     }
   },
   "client/src/components/SidePanel/Builder/AssistantTool.tsx": {
     "shadcn/no-inline-styles": {
       "count": 5
-    },
-    "shadcn/no-raw-colors": {
-      "count": 2
-    }
-  },
-  "client/src/components/SidePanel/Builder/Code.tsx": {
-    "shadcn/no-raw-colors": {
-      "count": 3
-    },
-    "shadcn/no-restyle": {
-      "count": 1
     }
   },
   "client/src/components/SidePanel/Builder/CodeFiles.tsx": {
     "shadcn/no-inline-styles": {
-      "count": 1
-    }
-  },
-  "client/src/components/SidePanel/Builder/ContextButton.tsx": {
-    "shadcn/no-raw-colors": {
       "count": 1
     }
   },
@@ -2221,14 +2160,6 @@
   },
   "client/src/components/SidePanel/Builder/Knowledge.tsx": {
     "shadcn/no-inline-styles": {
-      "count": 1
-    }
-  },
-  "client/src/components/SidePanel/Builder/Retrieval.tsx": {
-    "shadcn/no-raw-colors": {
-      "count": 3
-    },
-    "shadcn/no-restyle": {
       "count": 1
     }
   },
@@ -2446,11 +2377,8 @@
     "shadcn/no-arbitrary-values": {
       "count": 4
     },
-    "shadcn/no-raw-colors": {
-      "count": 1
-    },
     "shadcn/no-restyle": {
-      "count": 19
+      "count": 18
     }
   },
   "client/src/components/Skills/tree/SkillFilePreview.tsx": {

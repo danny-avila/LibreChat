@@ -55,7 +55,7 @@ export default function Retrieval({
               />
             )}
           />
-          <div className="flex items-center space-x-2">
+          <div className="text-text-tertiary flex items-center space-x-2">
             <label
               id={Capabilities.retrieval}
               className={cn(
@@ -75,13 +75,13 @@ export default function Retrieval({
                 : localize('com_assistants_file_search')}
             </label>
             <HoverCardTrigger>
-              <CircleHelpIcon className="h-5 w-5 text-gray-500" />
+              <CircleHelpIcon className="h-5 w-5" />
             </HoverCardTrigger>
           </div>
           <HoverCardPortal>
             <HoverCardContent side={ESide.Top} disabled={isDisabled} className="ml-16 w-80">
               <div className="space-y-2">
-                <p className="text-sm text-gray-600 dark:text-gray-300">
+                <p className="text-text-secondary text-sm">
                   {version == 2 && localize('com_assistants_file_search_info')}
                 </p>
               </div>
