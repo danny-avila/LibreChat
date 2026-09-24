@@ -115,6 +115,12 @@ afterAll(async () => {
 });
 
 describe('Message Operations', () => {
+  it('constructs message methods before the host registers models', () => {
+    const unregistered = new mongoose.Mongoose();
+    expect(unregistered.models.Message).toBeUndefined();
+    expect(() => createMessageMethods(unregistered as unknown as typeof mongoose)).not.toThrow();
+  });
+
   let mockCtx: {
     userId: string;
     isTemporary?: boolean;

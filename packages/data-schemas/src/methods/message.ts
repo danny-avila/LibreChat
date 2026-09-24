@@ -887,18 +887,21 @@ function agentOwnershipFilter(prefix: string, agentId: string): Record<string, u
 }
 
 export function createMessageMethods(mongoose: typeof import('mongoose')): MessageMethods {
-  const Message = mongoose.models.Message as Model<IMessage>;
-  /** Include server-private fields in size checks; the ordinary client projection omits them. */
-  const privateMessagePaths = Object.entries(Message.schema.paths)
-    .filter(([, path]) => path.options.select === false)
-    .map(([name]) => `+${name}`)
-    .join(' ');
+  /** The API constructs method adapters before it necessarily registers every model. */
+  function privateMessagePaths(): string {
+    const Message = mongoose.models.Message as Model<IMessage>;
+    return Object.entries(Message.schema.paths)
+      .filter(([, path]) => path.options.select === false)
+      .map(([name]) => `+${name}`)
+      .join(' ');
+  }
 
   function prepareAppUpdate(
     update: Record<string, unknown>,
     current: Record<string, unknown> | null,
     unsetContextMeta = false,
   ): Record<string, unknown> {
+    const Message = mongoose.models.Message as Model<IMessage>;
     const attachments = update.attachments as unknown[];
     const admitted = fitBoundAppSnapshots(attachments, (candidateAttachments) => {
       const next = new Message({
@@ -1087,13 +1090,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             unsetContextMeta,
             retentionOnInsert,
             prepareAppUpdate: appUpdate,
-            privateMessagePaths,
+            privateMessagePaths: hasApps ? privateMessagePaths() : undefined,
           },
         );
       } else if (hasApps) {
         for (let attempt = 0; attempt < ATTACHMENT_MERGE_CAS_ATTEMPTS; attempt++) {
           const current = await Message.findOne({ messageId: params.messageId, user: userId })
-            .select(privateMessagePaths)
+            .select(privateMessagePaths())
             .lean<Record<string, unknown> | null>();
           const filter = {
             messageId: params.messageId,
@@ -1550,7 +1553,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       const incomingApp = hasBoundAppSnapshots(incomingAttachments);
       for (let attempt = 0; attempt < ATTACHMENT_MERGE_CAS_ATTEMPTS; attempt += 1) {
         const row = await Message.findOne(messageFilter)
-          .select(incomingApp ? privateMessagePaths : { _id: 1, attachments: 1, __v: 1 })
+          .select(incomingApp ? privateMessagePaths() : { _id: 1, attachments: 1, __v: 1 })
           .lean<
             | (Record<string, unknown> & {
                 _id: Types.ObjectId;
@@ -1571,7 +1574,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
                 _id: row._id,
                 __v: row.__v ?? null,
               })
-                .select(privateMessagePaths)
+                .select(privateMessagePaths())
                 .lean<
                   | (Record<string, unknown> & { _id: Types.ObjectId; attachments?: unknown[] })
                   | null
