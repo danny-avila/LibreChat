@@ -13,3 +13,18 @@ services:
       context: .
       dockerfile: Dockerfile.multi
       target: api-build
+    # nginx reaches the api at http://api:3080 over the compose network, so the
+    # container port needs no host publication. Dropping it removes a route that
+    # would otherwise bypass nginx, and with it TLS and the rate limiters.
+    ports: !reset []
+
+  # The bundled ClickHouse panel is replaced by Klima's own, served same-origin
+  # by the api container. Profiling it out retires it without editing the tracked
+  # deploy-compose.yml; `--profile legacy-admin` brings it back if ever needed.
+  admin-panel:
+    profiles: ['legacy-admin']
+
+  # nginx depends on admin-panel in deploy-compose.yml; that dependency must go
+  # with it, or compose refuses to start the stack.
+  client:
+    depends_on: !override ['api']

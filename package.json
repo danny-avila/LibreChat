@@ -9,6 +9,7 @@
   "workspaces": [
     "api",
     "client",
+    "klima/*",
     "packages/*"
   ],
   "scripts": {

@@ -59,7 +59,9 @@ const churnedUserWindowDays = 28;
 const churnedUserLimit = 8;
 const dayMs = 24 * 60 * 60 * 1000;
 
-function tenantMatch(tenantId?: string) {
+export type TenantMatch = { tenantId: string } | { tenantId: { $exists: false } };
+
+export function tenantMatch(tenantId?: string): TenantMatch {
   return tenantId ? { tenantId } : { tenantId: { $exists: false } };
 }
 
@@ -69,7 +71,7 @@ function joinedTenantMatch(tenantId?: string) {
     : { 'insightsConversation.tenantId': { $exists: false } };
 }
 
-function validTimeZone(timeZone?: string) {
+export function validTimeZone(timeZone?: string): string {
   if (!timeZone) return 'UTC';
   try {
     new Intl.DateTimeFormat('en', { timeZone }).format();
@@ -79,7 +81,7 @@ function validTimeZone(timeZone?: string) {
   }
 }
 
-function dateKey(date: Date, timeZone: string) {
+export function dateKey(date: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat('en', {
     day: '2-digit',
     month: '2-digit',
@@ -101,11 +103,11 @@ function addCalendarDaysToKey(key: string, days: number) {
   return date.toISOString().slice(0, 10);
 }
 
-function calendarDayDifference(startKey: string, endKey: string) {
+export function calendarDayDifference(startKey: string, endKey: string): number {
   return Math.round((dateKeyValue(endKey) - dateKeyValue(startKey)) / dayMs);
 }
 
-function startOfZonedDate(key: string, timeZone: string) {
+export function startOfZonedDate(key: string, timeZone: string): Date {
   const target = dateKeyValue(key);
   let instant = target;
   const formatter = new Intl.DateTimeFormat('en', {
@@ -134,6 +136,14 @@ function startOfZonedDate(key: string, timeZone: string) {
     instant += target - rendered;
   }
   return new Date(instant);
+}
+
+/**
+ * Last instant of a calendar day in `timeZone`, derived from the next day's start so a
+ * 23- or 25-hour DST day still ends exactly where the following one begins.
+ */
+export function endOfZonedDate(key: string, timeZone: string): Date {
+  return new Date(startOfZonedDate(addCalendarDaysToKey(key, 1), timeZone).getTime() - 1);
 }
 
 function resolveRange(options: InsightsOptions) {

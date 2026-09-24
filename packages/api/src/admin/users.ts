@@ -136,7 +136,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
 
       const users = await findUsers(
         { $or: [{ name: regex }, { email: regex }, { username: regex }] },
-        '_id name email username avatar',
+        '_id name email username avatar role',
         { limit: searchLimit, sort: { name: 1 } },
       );
 
@@ -146,6 +146,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
         email: u.email ?? '',
         username: u.username,
         avatarUrl: u.avatar,
+        role: u.role,
       }));
 
       return res

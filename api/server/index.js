@@ -25,6 +25,7 @@ const {
   ErrorController,
   memoryDiagnostics,
   createSecurityHeaders,
+  createAdminShellSender,
   performStartupChecks,
   handleJsonParseError,
   GenerationJobManager,
@@ -407,6 +408,8 @@ const startServer = async () => {
   app.use('/api/admin/skills', routes.adminSkills);
   app.use('/api/admin/users', routes.adminUsers);
   app.use('/api/admin/audit-log', routes.adminAuditLog);
+  app.use('/api/admin/balances', routes.adminBalances);
+  app.use('/api/admin/usage', routes.adminUsage);
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
   app.use('/api/api-keys', routes.apiKeys);
@@ -452,6 +455,14 @@ const startServer = async () => {
 
   /** 404 for unmatched API routes */
   app.use('/api', apiNotFound);
+
+  /** Klima admin shell — registered ahead of the SPA fallback, which would otherwise answer
+   * every `/klima-admin` deep link with the LibreChat shell. */
+  app.use(
+    '/klima-admin',
+    staticCache(appConfig.paths.adminDist),
+    createSpaFallback(createAdminShellSender({ distPath: appConfig.paths.adminDist, cspPolicy })),
+  );
 
   /** SPA fallback - serve index.html for all unmatched routes */
   app.use(createSpaFallback(sendIndexHtml));

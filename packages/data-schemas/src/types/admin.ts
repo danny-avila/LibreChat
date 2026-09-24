@@ -49,6 +49,7 @@ export type AdminConfigDeleteResponse = {
  */
 export const AUDIT_CATEGORIES = [
   'grant',
+  'balance',
   'agent_run',
   'tool_call',
   'mcp',
@@ -70,6 +71,8 @@ export const AUDIT_ACTIONS = [
   'grant.removed',
   'permission.insights_assigned',
   'permission.insights_removed',
+  'balance.topped_up',
+  'user.deleted',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -79,6 +82,8 @@ export const AUDIT_ACTION_CATEGORY: Record<AuditAction, AuditCategory> = {
   'grant.removed': 'grant',
   'permission.insights_assigned': 'permission',
   'permission.insights_removed': 'permission',
+  'balance.topped_up': 'balance',
+  'user.deleted': 'permission',
 };
 
 /** Result of the audited operation. Kept first-class instead of being encoded
@@ -219,4 +224,5 @@ export type AdminUserSearchResult = {
   email: string;
   username?: string;
   avatarUrl?: string;
+  role?: string;
 };

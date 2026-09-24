@@ -65,4 +65,8 @@ const transactionSchema: Schema<ITransaction> = new Schema(
   },
 );
 
+/** Admin usage rollups scan a user's ledger, or a tenant's, newest-first over a date range. */
+transactionSchema.index({ user: 1, createdAt: -1 });
+transactionSchema.index({ tenantId: 1, createdAt: -1 });
+
 export default transactionSchema;

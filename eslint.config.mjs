@@ -52,6 +52,7 @@ export default [
       'packages/api/test_bundle/**/*',
       'api/demo/**/*',
       'packages/client/dist/**/*',
+      'klima/admin/dist/**/*',
       'packages/data-provider/types/**/*',
       'packages/data-provider/dist/**/*',
       'packages/data-provider/test_bundle/**/*',
@@ -294,6 +295,14 @@ export default [
           caughtErrorsIgnorePattern: '^_',
         },
       ],
+    },
+  },
+  {
+    /** The Klima admin panel is standalone and carries no `useLocalize()` runtime, so the
+     * client's JSX literal-string rule does not apply to it. */
+    files: ['./klima/**/*.ts', './klima/**/*.tsx'],
+    rules: {
+      'i18next/no-literal-string': 'off',
     },
   },
   {

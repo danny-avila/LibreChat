@@ -187,6 +187,22 @@ import {
 } from './mcpAuthority';
 /* Insights */
 import { createInsightsMethods, type InsightsMethods } from './insights';
+export {
+  validTimeZone,
+  dateKey,
+  startOfZonedDate,
+  endOfZonedDate,
+  calendarDayDifference,
+} from './insights';
+/* Usage & balances */
+import { createUsageMethods, type UsageMethods } from './usage';
+export type {
+  ListBalancesOptions,
+  ListBalancesResult,
+  MonthlyUsageOptions,
+  MonthlyUsageResult,
+  UsageTotalsOptions,
+} from './usage';
 
 export {
   runAfterTransaction,
@@ -269,7 +285,8 @@ export type AllMethods = UserMethods &
   AgentMethods &
   ConfigMethods &
   MCPAuthorityMethods &
-  InsightsMethods;
+  InsightsMethods &
+  UsageMethods;
 
 /** Dependencies injected from the api layer into createMethods */
 export interface CreateMethodsDeps {
@@ -507,6 +524,8 @@ export function createMethods(
     ...createMCPAuthorityMethods(mongoose),
     /* Insights */
     ...createInsightsMethods(mongoose),
+    /* Usage & balances */
+    ...createUsageMethods(mongoose),
   };
 }
 
@@ -589,6 +608,7 @@ export type {
   MCPAuthorityConfigSourceDocument,
   MCPAuthorityCredentialSourceDocument,
   InsightsMethods,
+  UsageMethods,
 };
 
 export { recordAgentEventActorReceiptMetric, setAgentEventActorReceiptMetricObserver };

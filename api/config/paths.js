@@ -5,6 +5,7 @@ module.exports = {
   uploads: path.resolve(__dirname, '..', '..', 'uploads'),
   clientPath: path.resolve(__dirname, '..', '..', 'client'),
   dist: path.resolve(__dirname, '..', '..', 'client', 'dist'),
+  adminDist: path.resolve(__dirname, '..', '..', 'klima', 'admin', 'dist'),
   publicPath: path.resolve(__dirname, '..', '..', 'client', 'public'),
   fonts: path.resolve(__dirname, '..', '..', 'client', 'public', 'fonts'),
   assets: path.resolve(__dirname, '..', '..', 'client', 'public', 'assets'),
