@@ -6,17 +6,7 @@ import {
   guardMCPAppSSEEvents,
 } from './budget';
 
-const env = { ...process.env };
-afterEach(() => {
-  for (const name of [
-    'MCP_APP_MAX_UPSTREAM_BYTES',
-    'MCP_APP_OPERATION_TIMEOUT_MS',
-    'MCP_APP_MAX_ACTIVE_OPERATIONS',
-  ]) {
-    if (env[name] === undefined) delete process.env[name];
-    else process.env[name] = env[name];
-  }
-});
+const limits = { maxBytes: 4 * 1024 * 1024, timeoutMs: 30_000, maxActive: 16 };
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -29,67 +19,68 @@ function deferred<T>() {
 }
 
 describe('MCP App operation limits', () => {
-  it('ignores malformed or unsafe environment overrides', () => {
-    process.env.MCP_APP_MAX_UPSTREAM_BYTES = '0';
-    process.env.MCP_APP_OPERATION_TIMEOUT_MS = 'Infinity';
-    process.env.MCP_APP_MAX_ACTIVE_OPERATIONS = '99999999';
-    expect(getMCPAppOperationLimits()).toEqual({
-      maxBytes: 4 * 1024 * 1024,
-      timeoutMs: 30_000,
-      maxActive: 16,
+  it('uses the injected validated limits or defaults without consulting process state', () => {
+    expect(getMCPAppOperationLimits()).toEqual(limits);
+    expect(getMCPAppOperationLimits({ ...limits, maxBytes: 64 })).toEqual({
+      ...limits,
+      maxBytes: 64,
     });
   });
 
   it('rejects App JSON larger than the configured serialized UTF-8 limit', () => {
-    process.env.MCP_APP_MAX_UPSTREAM_BYTES = '12';
-    expect(() => assertMCPAppResultFits({ text: '😀' })).toThrow(MCPAppBudgetError);
-    expect(() => assertMCPAppResultFits({ text: '😀' })).toThrow('too large');
-    expect(() => assertMCPAppResultFits({ text: 'a' })).not.toThrow();
+    const small = { ...limits, maxBytes: 12 };
+    expect(() => assertMCPAppResultFits({ text: '😀' }, small)).toThrow(MCPAppBudgetError);
+    expect(() => assertMCPAppResultFits({ text: '😀' }, small)).toThrow('too large');
+    expect(() => assertMCPAppResultFits({ text: 'a' }, small)).not.toThrow();
   });
 
   it('admits at most one live operation with zero pending waiters, releasing on settlement', async () => {
-    process.env.MCP_APP_MAX_ACTIVE_OPERATIONS = '1';
+    const limited = { ...limits, maxActive: 1 };
     const budget = new MCPAppOperationBudget();
     const pending = deferred<string>();
-    const first = budget.run(new AbortController().signal, () => pending.promise);
+    const first = budget.run(new AbortController().signal, () => pending.promise, limited);
     await expect(
-      budget.run(new AbortController().signal, async () => 'second'),
+      budget.run(new AbortController().signal, async () => 'second', limited),
     ).rejects.toMatchObject({ status: 503, code: 'mcp_app_capacity' });
     pending.resolve('first');
     await expect(first).resolves.toBe('first');
-    await expect(budget.run(new AbortController().signal, async () => 'third')).resolves.toBe(
-      'third',
-    );
+    await expect(
+      budget.run(new AbortController().signal, async () => 'third', limited),
+    ).resolves.toBe('third');
   });
 
   it('holds an aborted work slot until the underlying operation actually settles', async () => {
-    process.env.MCP_APP_MAX_ACTIVE_OPERATIONS = '1';
+    const limited = { ...limits, maxActive: 1 };
     const budget = new MCPAppOperationBudget();
     const abort = new AbortController();
     const pending = deferred<string>();
-    const first = budget.run(abort.signal, () => pending.promise);
+    const first = budget.run(abort.signal, () => pending.promise, limited);
     abort.abort(new Error('client left'));
     await expect(first).rejects.toThrow('client left');
     await expect(
-      budget.run(new AbortController().signal, async () => 'not yet'),
+      budget.run(new AbortController().signal, async () => 'not yet', limited),
     ).rejects.toMatchObject({ status: 503 });
     pending.reject(new Error('late failure'));
     await new Promise<void>((resolve) => setImmediate(resolve));
-    await expect(budget.run(new AbortController().signal, async () => 'ready')).resolves.toBe(
-      'ready',
-    );
+    await expect(
+      budget.run(new AbortController().signal, async () => 'ready', limited),
+    ).resolves.toBe('ready');
   });
 
   it('aborts by absolute deadline even if the upstream promise ignores cancellation', async () => {
-    process.env.MCP_APP_OPERATION_TIMEOUT_MS = '20';
+    const limited = { ...limits, timeoutMs: 20 };
     const budget = new MCPAppOperationBudget();
     const pending = deferred<string>();
     let signal: AbortSignal | undefined;
     await expect(
-      budget.run(new AbortController().signal, (operationSignal) => {
-        signal = operationSignal;
-        return pending.promise;
-      }),
+      budget.run(
+        new AbortController().signal,
+        (operationSignal) => {
+          signal = operationSignal;
+          return pending.promise;
+        },
+        limited,
+      ),
     ).rejects.toMatchObject({ status: 504, code: 'mcp_app_timeout' });
     expect(signal?.aborted).toBe(true);
     pending.resolve('late');

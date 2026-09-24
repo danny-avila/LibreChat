@@ -23,6 +23,7 @@ import type {
 } from 'undici';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { ClientCapabilities } from '@modelcontextprotocol/sdk/types.js';
+import type { TMCPAppOperationLimits } from 'librechat-data-provider';
 import type { MCPClientCapabilityProfile } from './capabilities';
 import type { MCPOAuthTokens } from './oauth/types';
 import type * as t from './types';
@@ -296,7 +297,10 @@ function buildBlockedMCPResponseSSE(requestIds: JSONRPCRequestId[], message: str
   return textEncoder.encode(events);
 }
 
-function getMCPStreamableHTTPResponseLimits(appProfile = false): {
+function getMCPStreamableHTTPResponseLimits(
+  appProfile = false,
+  operationLimits?: TMCPAppOperationLimits,
+): {
   maxResponseBytes: number;
   maxLineBytes: number;
 } {
@@ -309,7 +313,7 @@ function getMCPStreamableHTTPResponseLimits(appProfile = false): {
     DEFAULT_MCP_STREAMABLE_HTTP_MAX_LINE_BYTES,
   );
   if (appProfile) {
-    const appLimit = getMCPAppOperationLimits().maxBytes;
+    const appLimit = getMCPAppOperationLimits(operationLimits).maxBytes;
     // Zero disables the generic guard, but must never disable an App-profile byte bound.
     return {
       maxResponseBytes: responseLimit === 0 ? appLimit : Math.min(responseLimit, appLimit),
@@ -327,6 +331,7 @@ async function guardMCPStreamableHTTPResponse(
     url: string;
     requestIds?: JSONRPCRequestId[];
     appProfile?: boolean;
+    operationLimits?: TMCPAppOperationLimits;
     onAppSSEOverflow?: () => void;
   },
 ): Promise<UndiciResponse> {
@@ -337,7 +342,7 @@ async function guardMCPStreamableHTTPResponse(
     if (isEventStream) {
       return guardMCPAppSSEEvents(
         response as unknown as Response,
-        getMCPAppOperationLimits().maxBytes,
+        getMCPAppOperationLimits(context.operationLimits).maxBytes,
         context.onAppSSEOverflow,
       ) as unknown as UndiciResponse;
     }
@@ -347,7 +352,10 @@ async function guardMCPStreamableHTTPResponse(
     return response;
   }
 
-  const { maxResponseBytes, maxLineBytes } = getMCPStreamableHTTPResponseLimits(context.appProfile);
+  const { maxResponseBytes, maxLineBytes } = getMCPStreamableHTTPResponseLimits(
+    context.appProfile,
+    context.operationLimits,
+  );
   const canEmitFallbackSSEError = isEventStream && maxLineBytes > 0;
   if (!isEventStream && maxResponseBytes === 0) {
     return response;
@@ -1024,6 +1032,7 @@ interface MCPConnectionParams {
   /** The owner will replace this connection after a tools/list authentication rejection. */
   directBearerRecoveryEnabled?: boolean;
   capabilityProfile?: MCPClientCapabilityProfile;
+  operationLimits?: TMCPAppOperationLimits;
 }
 
 /** Result of an MCP `tools/list` request: one page of tools plus an optional pagination cursor. */
@@ -1050,6 +1059,7 @@ export class MCPConnection extends EventEmitter {
   private readonly MAX_RECONNECT_ATTEMPTS = 3;
   public readonly serverName: string;
   public readonly capabilityProfile: MCPClientCapabilityProfile;
+  private readonly operationLimits?: TMCPAppOperationLimits;
   private shouldStopReconnecting = false;
   private isReconnecting = false;
   private isInitializing = false;
@@ -1238,6 +1248,7 @@ export class MCPConnection extends EventEmitter {
     this.options = params.serverConfig;
     this.serverName = params.serverName;
     this.capabilityProfile = params.capabilityProfile ?? STANDARD_MCP_CAPABILITY_PROFILE;
+    this.operationLimits = params.operationLimits;
     this.userId = params.userId;
     this.useSSRFProtection = params.useSSRFProtection === true;
     this.allowedAddresses = params.allowedAddresses ?? null;
@@ -1297,6 +1308,7 @@ export class MCPConnection extends EventEmitter {
     const logPrefix = this.getLogPrefix();
     const rejectDirectBearerAuthentication = this.directBearerRecoveryEnabled;
     const thisAppProfile = this.capabilityProfile === MCP_APPS_CAPABILITY_PROFILE;
+    const appOperationLimits = this.operationLimits;
     const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
     const requestDispatchers = new Map<string, ManagedDispatcher>();
     const ssrfConnects = new Map<string, ReturnType<typeof createSSRFSafeUndiciConnect>>();
@@ -1426,6 +1438,7 @@ export class MCPConnection extends EventEmitter {
           url: currentUrlString,
           requestIds: getJSONRPCRequestIds(currentInit?.body),
           appProfile: thisAppProfile,
+          operationLimits: appOperationLimits,
         };
 
         if (!isMethodPreservingRedirect || redirects >= MAX_REDIRECTS) {
@@ -1547,7 +1560,7 @@ export class MCPConnection extends EventEmitter {
             env: { ...getDefaultEnvironment(), ...(options.env ?? {}) },
             ...(options.cwd !== undefined && { cwd: options.cwd }),
             ...(this.capabilityProfile === MCP_APPS_CAPABILITY_PROFILE && {
-              maxBufferSize: getMCPAppOperationLimits().maxBytes,
+              maxBufferSize: getMCPAppOperationLimits(this.operationLimits).maxBytes,
             }),
           });
 
@@ -1687,6 +1700,7 @@ export class MCPConnection extends EventEmitter {
                       method: 'GET',
                       url: urlString,
                       appProfile: true,
+                      operationLimits: this.operationLimits,
                       onAppSSEOverflow: () => {
                         // Let the SDK observe its stream error and reject an in-flight start before
                         // closing EventSource. Closing synchronously leaves start() pending forever.

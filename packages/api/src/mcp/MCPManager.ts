@@ -1978,7 +1978,7 @@ Please follow these instructions when using tools from the respective MCP server
         if (resourceMeta && !options?.signal?.aborted) {
           const resourceUri = resourceMeta.uri;
           try {
-            const appReadTimeout = getMCPAppOperationLimits().timeoutMs;
+            const appReadTimeout = getMCPAppOperationLimits(mcpApps?.operationLimits).timeoutMs;
             const readResult = await connection.client.readResource(
               { uri: resourceUri },
               {
@@ -2306,7 +2306,7 @@ Please follow these instructions when using tools from the respective MCP server
 
         let result: TResult;
         try {
-          const operationTimeout = getMCPAppOperationLimits().timeoutMs;
+          const operationTimeout = getMCPAppOperationLimits(context.operationLimits).timeoutMs;
           result = await operation(connection, {
             timeout: Math.min(connection.timeout ?? operationTimeout, operationTimeout),
             maxTotalTimeout: operationTimeout,

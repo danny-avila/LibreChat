@@ -2467,6 +2467,24 @@ export type StartupConfigContext = 'share';
  */
 export type EndpointsDropParamsMap = Record<string, string[] | Record<string, string[]>>;
 
+export type TMCPAppOperationLimits = {
+  maxBytes: number;
+  timeoutMs: number;
+  maxActive: number;
+};
+
+export const DEFAULT_MCP_APP_OPERATION_LIMITS: TMCPAppOperationLimits = {
+  maxBytes: 4 * 1024 * 1024,
+  timeoutMs: 30_000,
+  maxActive: 16,
+};
+
+export function resolveMCPAppOperationLimits(
+  limits?: Partial<TMCPAppOperationLimits>,
+): TMCPAppOperationLimits {
+  return { ...DEFAULT_MCP_APP_OPERATION_LIMITS, ...limits };
+}
+
 export type TMCPAppsPolicy = {
   enabled: boolean;
   legacyHtmlEnabled: boolean;
@@ -2475,6 +2493,8 @@ export type TMCPAppsPolicy = {
   maxPersistedAppBytes?: number;
   /** Shared per-user ceiling applied before principal-scoped MCP App admission. */
   maxAdmissionRequestsPerMinute?: number;
+  /** Server-side bounds for App operations; never derived from App-provided content. */
+  operationLimits?: TMCPAppOperationLimits;
   /** Deployment-owned dedicated Sandbox Proxy URL published to authenticated clients. */
   sandboxUrl?: string;
 };
@@ -2496,6 +2516,7 @@ export function resolveMCPAppsPolicy(
   maxPersistedAppBytes = DEFAULT_MCP_APP_PERSISTED_BYTES,
   maxAdmissionRequestsPerMinute = DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
   sandboxUrl?: string,
+  operationLimits?: Partial<TMCPAppOperationLimits>,
 ): TMCPAppsPolicy {
   return {
     enabled: value === true,
@@ -2503,6 +2524,9 @@ export function resolveMCPAppsPolicy(
     ...(cspLimits != null ? { cspLimits: resolveMCPAppCspLimits(cspLimits) } : {}),
     maxPersistedAppBytes,
     maxAdmissionRequestsPerMinute,
+    ...(operationLimits != null
+      ? { operationLimits: resolveMCPAppOperationLimits(operationLimits) }
+      : {}),
     ...(sandboxUrl !== undefined ? { sandboxUrl } : {}),
   };
 }
@@ -3172,6 +3196,28 @@ export const configSchema = z.object({
         .positive()
         .max(Number.MAX_SAFE_INTEGER)
         .default(DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE),
+      operationLimits: z
+        .object({
+          maxBytes: z
+            .number()
+            .int()
+            .positive()
+            .max(16 * 1024 * 1024)
+            .default(DEFAULT_MCP_APP_OPERATION_LIMITS.maxBytes),
+          timeoutMs: z
+            .number()
+            .int()
+            .positive()
+            .max(10 * 60_000)
+            .default(DEFAULT_MCP_APP_OPERATION_LIMITS.timeoutMs),
+          maxActive: z
+            .number()
+            .int()
+            .positive()
+            .max(256)
+            .default(DEFAULT_MCP_APP_OPERATION_LIMITS.maxActive),
+        })
+        .default({}),
     })
     .default({}),
   mcpSettings: z

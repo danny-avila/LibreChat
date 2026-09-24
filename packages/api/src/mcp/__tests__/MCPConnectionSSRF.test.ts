@@ -2123,8 +2123,6 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
   });
 
   it('enforces App-profile HTTP response bounds before JSON parsing even when the generic guard is disabled', async () => {
-    const oldApp = process.env.MCP_APP_MAX_UPSTREAM_BYTES;
-    process.env.MCP_APP_MAX_UPSTREAM_BYTES = '64';
     process.env.MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES = '0';
     const server = await createRawResponseServer((_req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -2137,6 +2135,7 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
         serverConfig: { type: 'streamable-http', url: server.url },
         useSSRFProtection: false,
         capabilityProfile: 'apps',
+        operationLimits: { maxBytes: 64, timeoutMs: 30_000, maxActive: 16 },
       });
       const customFetch = getGuardedStreamableHTTPCustomFetch(conn);
       const response = await customFetch(server.url, {
@@ -2148,15 +2147,11 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
         /MCP response exceeded byte limit.*limit=64 bytes/,
       );
     } finally {
-      if (oldApp === undefined) delete process.env.MCP_APP_MAX_UPSTREAM_BYTES;
-      else process.env.MCP_APP_MAX_UPSTREAM_BYTES = oldApp;
       await server.close();
     }
   });
 
   it('blocks a chunked standalone SSE App event before the SDK delivers it', async () => {
-    const oldApp = process.env.MCP_APP_MAX_UPSTREAM_BYTES;
-    process.env.MCP_APP_MAX_UPSTREAM_BYTES = '128';
     let sentOversize = false;
     let getRequests = 0;
     const server = await createRawResponseServer((req, res) => {
@@ -2180,6 +2175,7 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
       serverConfig: { type: 'sse', url: server.url },
       useSSRFProtection: false,
       capabilityProfile: 'apps',
+      operationLimits: { maxBytes: 128, timeoutMs: 30_000, maxActive: 16 },
     });
     const transport = await (
       conn as unknown as {
@@ -2219,14 +2215,10 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
     } finally {
       clearTimeout(timeout);
       await server.close();
-      if (oldApp === undefined) delete process.env.MCP_APP_MAX_UPSTREAM_BYTES;
-      else process.env.MCP_APP_MAX_UPSTREAM_BYTES = oldApp;
     }
   });
 
   it('bounds App-profile HTTP GET error bodies before the SDK reads them', async () => {
-    const oldApp = process.env.MCP_APP_MAX_UPSTREAM_BYTES;
-    process.env.MCP_APP_MAX_UPSTREAM_BYTES = '64';
     process.env.MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES = '0';
     const server = await createRawResponseServer((_req, res) => {
       res.writeHead(503, { 'Content-Type': 'text/plain' });
@@ -2238,6 +2230,7 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
         serverConfig: { type: 'streamable-http', url: server.url },
         useSSRFProtection: false,
         capabilityProfile: 'apps',
+        operationLimits: { maxBytes: 64, timeoutMs: 30_000, maxActive: 16 },
       });
       const response = await getGuardedStreamableHTTPCustomFetch(conn)(server.url, {
         method: 'GET',
@@ -2246,8 +2239,6 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
         /MCP response exceeded byte limit.*limit=64 bytes/,
       );
     } finally {
-      if (oldApp === undefined) delete process.env.MCP_APP_MAX_UPSTREAM_BYTES;
-      else process.env.MCP_APP_MAX_UPSTREAM_BYTES = oldApp;
       await server.close();
     }
   });
@@ -2268,32 +2259,26 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
   });
 
   it('passes the App profile byte budget to the real SDK stdio ReadBuffer', async () => {
-    const oldApp = process.env.MCP_APP_MAX_UPSTREAM_BYTES;
-    process.env.MCP_APP_MAX_UPSTREAM_BYTES = '64';
     const config = { type: 'stdio' as const, command: 'node', args: ['-e', ''] };
     conn = new MCPConnection({
       serverName: 'app-profile-stdio-cap',
       serverConfig: config,
       useSSRFProtection: false,
       capabilityProfile: 'apps',
+      operationLimits: { maxBytes: 64, timeoutMs: 30_000, maxActive: 16 },
     });
-    try {
-      const transport = await (
-        conn as unknown as {
-          constructTransport(options: {
-            type: 'stdio';
-            command: string;
-            args: string[];
-          }): Promise<{ _readBuffer: { append(chunk: Buffer): void } }>;
-        }
-      ).constructTransport(config);
-      expect(() => transport._readBuffer.append(Buffer.alloc(65))).toThrow(
-        /maximum size of 64 bytes/,
-      );
-    } finally {
-      if (oldApp === undefined) delete process.env.MCP_APP_MAX_UPSTREAM_BYTES;
-      else process.env.MCP_APP_MAX_UPSTREAM_BYTES = oldApp;
-    }
+    const transport = await (
+      conn as unknown as {
+        constructTransport(options: {
+          type: 'stdio';
+          command: string;
+          args: string[];
+        }): Promise<{ _readBuffer: { append(chunk: Buffer): void } }>;
+      }
+    ).constructTransport(config);
+    expect(() => transport._readBuffer.append(Buffer.alloc(65))).toThrow(
+      /maximum size of 64 bytes/,
+    );
   });
 
   it('should reject oversized JSON POST responses with the streamable HTTP byte cap', async () => {

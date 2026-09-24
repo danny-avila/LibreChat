@@ -143,6 +143,7 @@ const getMCPTools = async (req, res) => {
       req.config?.mcpAppSandbox?.maxPersistedAppBytes,
       req.config?.mcpAppSandbox?.maxAdmissionRequestsPerMinute,
       req.config?.mcpAppSandbox?.url,
+      req.config?.mcpAppSandbox?.operationLimits,
     );
     /**
      * A server whose normalized name is claimed by an earlier server produces

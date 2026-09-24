@@ -17,7 +17,12 @@ import type {
   TextContent,
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
-import type { SearchResultData, UIResource, TPlugin } from 'librechat-data-provider';
+import type {
+  SearchResultData,
+  UIResource,
+  TPlugin,
+  TMCPAppOperationLimits,
+} from 'librechat-data-provider';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
 import type { LCTool } from '@librechat/agents';
 import type {
@@ -250,6 +255,8 @@ export interface BasicConnectionOptions {
   ephemeralConnection?: boolean;
   /** Immutable client capabilities negotiated for this connection. */
   capabilityProfile?: import('../capabilities').MCPClientCapabilityProfile;
+  /** Validated deployment limits captured for App-profile transport parsing. */
+  operationLimits?: TMCPAppOperationLimits;
 }
 
 /** User context for placeholder resolution in MCP connections (non-OAuth and OAuth alike) */

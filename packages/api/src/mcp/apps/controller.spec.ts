@@ -19,6 +19,9 @@ type MockRequest = EventEmitter & {
   query: Record<string, unknown>;
   user?: { id: string; role?: string };
   config?: {
+    mcpAppSandbox?: {
+      operationLimits?: Partial<{ maxBytes: number; timeoutMs: number; maxActive: number }>;
+    };
     mcpSettings?: {
       apps?: boolean;
       allowedDomains?: string[] | null;
@@ -811,15 +814,13 @@ describe('createMCPAppsController', () => {
 });
 
 describe('App operation budgets at the authenticated HTTP boundary', () => {
-  const original = {
-    maxBytes: process.env.MCP_APP_MAX_UPSTREAM_BYTES,
-    maxActive: process.env.MCP_APP_MAX_ACTIVE_OPERATIONS,
-    timeout: process.env.MCP_APP_OPERATION_TIMEOUT_MS,
-  };
-  const admitted = () =>
+  const admitted = (
+    operationLimits: Partial<{ maxBytes: number; timeoutMs: number; maxActive: number }> = {},
+  ) =>
     makeRequest({
       config: {
         mcpSettings: { apps: true },
+        mcpAppSandbox: { operationLimits },
         mcpConfig: { srv: { type: 'stdio', command: 'test', args: [] } },
       },
     });
@@ -827,19 +828,8 @@ describe('App operation budgets at the authenticated HTTP boundary', () => {
   beforeEach(() => {
     mockGetPluginAuthMap.mockResolvedValue({ mcp_srv: {} });
   });
-  afterEach(() => {
-    for (const [key, value] of [
-      ['MCP_APP_MAX_UPSTREAM_BYTES', original.maxBytes],
-      ['MCP_APP_MAX_ACTIVE_OPERATIONS', original.maxActive],
-      ['MCP_APP_OPERATION_TIMEOUT_MS', original.timeout],
-    ] as const) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
-  });
 
   it('rejects oversized live resources and tool replies without serializing them into HTTP responses', async () => {
-    process.env.MCP_APP_MAX_UPSTREAM_BYTES = '80';
     const manager = makeManager();
     manager.readResource.mockResolvedValue({
       contents: [{ uri: 'ui://view', text: 'x'.repeat(100) }],
@@ -849,7 +839,7 @@ describe('App operation budgets at the authenticated HTTP boundary', () => {
     const handlers = createMCPAppsController(dependencies);
     const resourceResponse = makeResponse();
     await handlers.readMCPResource(
-      asHandlerRequest(admitted()),
+      asHandlerRequest(admitted({ maxBytes: 80 })),
       asHandlerResponse(resourceResponse),
       jest.fn(),
     );
@@ -861,7 +851,7 @@ describe('App operation budgets at the authenticated HTTP boundary', () => {
       expect.objectContaining({ contents: expect.any(Array) }),
     );
     const toolResponse = makeResponse();
-    const toolRequest = admitted();
+    const toolRequest = admitted({ maxBytes: 80 });
     toolRequest.body.toolName = 'fixture-tool';
     await handlers.appToolCall(
       asHandlerRequest(toolRequest),
@@ -875,7 +865,6 @@ describe('App operation budgets at the authenticated HTTP boundary', () => {
   });
 
   it('rejects overload without allocating a second manager request, then admits after settlement', async () => {
-    process.env.MCP_APP_MAX_ACTIVE_OPERATIONS = '1';
     const manager = makeManager();
     let resolve!: (result: { contents: [] }) => void;
     manager.readResource.mockImplementationOnce(
@@ -889,26 +878,33 @@ describe('App operation budgets at the authenticated HTTP boundary', () => {
     const handler = createMCPAppsController(dependencies).readMCPResource;
     const firstResponse = makeResponse();
     const first = handler(
-      asHandlerRequest(admitted()),
+      asHandlerRequest(admitted({ maxActive: 1 })),
       asHandlerResponse(firstResponse),
       jest.fn(),
     );
     for (let i = 0; i < 20 && !resolve; i++) await Promise.resolve();
     expect(resolve).toBeDefined();
     const blocked = makeResponse();
-    await handler(asHandlerRequest(admitted()), asHandlerResponse(blocked), jest.fn());
+    await handler(
+      asHandlerRequest(admitted({ maxActive: 1 })),
+      asHandlerResponse(blocked),
+      jest.fn(),
+    );
     expect(blocked.status).toHaveBeenCalledWith(503);
     expect(manager.readResource).toHaveBeenCalledTimes(1);
     resolve({ contents: [] });
     await first;
     const allowed = makeResponse();
-    await handler(asHandlerRequest(admitted()), asHandlerResponse(allowed), jest.fn());
+    await handler(
+      asHandlerRequest(admitted({ maxActive: 1 })),
+      asHandlerResponse(allowed),
+      jest.fn(),
+    );
     expect(manager.readResource).toHaveBeenCalledTimes(2);
     expect(allowed.json).toHaveBeenCalledWith({ contents: [] });
   });
 
   it('returns 504 when upstream ignores the deadline and does not write its late reply', async () => {
-    process.env.MCP_APP_OPERATION_TIMEOUT_MS = '20';
     const manager = makeManager();
     let complete!: (value: { contents: [] }) => void;
     manager.readResource.mockImplementation(
@@ -920,7 +916,7 @@ describe('App operation budgets at the authenticated HTTP boundary', () => {
     const { dependencies } = makeDependencies(manager);
     const response = makeResponse();
     await createMCPAppsController(dependencies).readMCPResource(
-      asHandlerRequest(admitted()),
+      asHandlerRequest(admitted({ timeoutMs: 20 })),
       asHandlerResponse(response),
       jest.fn(),
     );

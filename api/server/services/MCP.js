@@ -397,6 +397,7 @@ async function getAssistantToolDefinitions({ req, res, tools }) {
     appConfig?.mcpAppSandbox?.maxPersistedAppBytes,
     appConfig?.mcpAppSandbox?.maxAdmissionRequestsPerMinute,
     appConfig?.mcpAppSandbox?.url,
+    appConfig?.mcpAppSandbox?.operationLimits,
   );
   const capabilityProfile = resolveMCPClientCapabilityProfile(mcpApps);
   const oboIdentityContext = createAuthIdentityContext({
@@ -1502,6 +1503,7 @@ async function getMCPSetupData(userId, options = {}) {
       appConfig?.mcpAppSandbox?.maxPersistedAppBytes,
       appConfig?.mcpAppSandbox?.maxAdmissionRequestsPerMinute,
       appConfig?.mcpAppSandbox?.url,
+      appConfig?.mcpAppSandbox?.operationLimits,
     ),
   );
   const configServers = await registry.ensureConfigServers(appConfig?.mcpConfig || {});

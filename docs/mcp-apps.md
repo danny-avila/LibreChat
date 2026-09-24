@@ -53,6 +53,10 @@ mcpAppSandbox:
   maxSerializedLength: 8192
   maxPersistedAppBytes: 2097152
   maxAdmissionRequestsPerMinute: 480
+  operationLimits:
+    maxBytes: 4194304
+    timeoutMs: 30000
+    maxActive: 16
 ```
 
 These positive-integer settings come only from the base deployment configuration; role, group, and
@@ -84,14 +88,10 @@ responses to the App bridge. Oversized optional initial `resources/read` results
 canonical tool result; a failed follow-up request returns a bounded error, never a truncated JSON
 success. The existing Express 3 MiB JSON ingress bound still applies before App route handlers.
 
-```dotenv
-MCP_APP_MAX_UPSTREAM_BYTES=4194304
-MCP_APP_OPERATION_TIMEOUT_MS=30000
-MCP_APP_MAX_ACTIVE_OPERATIONS=16
-```
-
-These deployment-owned positive integer settings default to the values shown and reject invalid
-or excessively high overrides. The timeout is absolute across configuration, connection checkout,
+Configure `mcpAppSandbox.operationLimits` in `librechat.yaml` as shown above. The validated
+positive-integer limits default to the values shown and reject invalid or excessively high
+overrides. They are read from the admitted deployment config, not from process environment
+variables. The timeout is absolute across configuration, connection checkout,
 recovery and the SDK operation; progress notifications cannot extend the SDK call beyond it. The
 16-slot concurrency bound is **per LibreChat process**, shared across App resource, tool and binding
 validation routes. There is no queue: requests above it receive 503. An aborted or timed-out

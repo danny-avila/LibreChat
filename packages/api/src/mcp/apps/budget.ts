@@ -1,36 +1,9 @@
-/** Deployment-owned limits. The app profile is opt-in; standard MCP connections are unchanged. */
-export const DEFAULT_MCP_APP_UPSTREAM_BYTES = 4 * 1024 * 1024;
-export const DEFAULT_MCP_APP_OPERATION_TIMEOUT_MS = 30_000;
-export const DEFAULT_MCP_APP_ACTIVE_OPERATIONS = 16;
+import { DEFAULT_MCP_APP_OPERATION_LIMITS } from 'librechat-data-provider';
+import type { TMCPAppOperationLimits } from 'librechat-data-provider';
 
-function positiveInteger(name: string, fallback: number, ceiling: number): number {
-  const value = Number(process.env[name]);
-  return Number.isSafeInteger(value) && value > 0 && value <= ceiling ? value : fallback;
-}
-
-export function getMCPAppOperationLimits(): {
-  maxBytes: number;
-  timeoutMs: number;
-  maxActive: number;
-} {
-  return {
-    maxBytes: positiveInteger(
-      'MCP_APP_MAX_UPSTREAM_BYTES',
-      DEFAULT_MCP_APP_UPSTREAM_BYTES,
-      16 * 1024 * 1024,
-    ),
-    timeoutMs: positiveInteger(
-      'MCP_APP_OPERATION_TIMEOUT_MS',
-      DEFAULT_MCP_APP_OPERATION_TIMEOUT_MS,
-      10 * 60_000,
-    ),
-    maxActive: positiveInteger(
-      'MCP_APP_MAX_ACTIVE_OPERATIONS',
-      DEFAULT_MCP_APP_ACTIVE_OPERATIONS,
-      256,
-    ),
-  };
-}
+/** Runtime consumers take a validated deployment snapshot rather than reading process state. */
+export const getMCPAppOperationLimits = (limits?: TMCPAppOperationLimits): TMCPAppOperationLimits =>
+  limits ?? DEFAULT_MCP_APP_OPERATION_LIMITS;
 
 export class MCPAppBudgetError extends Error {
   constructor(
@@ -50,8 +23,9 @@ export class MCPAppOperationBudget {
   async run<T>(
     callerSignal: AbortSignal,
     operation: (signal: AbortSignal) => Promise<T>,
+    limits: TMCPAppOperationLimits = DEFAULT_MCP_APP_OPERATION_LIMITS,
   ): Promise<T> {
-    const { timeoutMs, maxActive } = getMCPAppOperationLimits();
+    const { timeoutMs, maxActive } = limits;
     callerSignal.throwIfAborted();
     if (this.active >= maxActive) {
       throw new MCPAppBudgetError(
@@ -101,8 +75,11 @@ export class MCPAppOperationBudget {
 }
 
 /** JSON must be measured in the same UTF-8 form Express sends to the App bridge. */
-export function assertMCPAppResultFits(result: unknown): void {
-  const maxBytes = getMCPAppOperationLimits().maxBytes;
+export function assertMCPAppResultFits(
+  result: unknown,
+  limits: TMCPAppOperationLimits = DEFAULT_MCP_APP_OPERATION_LIMITS,
+): void {
+  const { maxBytes } = limits;
   let serialized: string | undefined;
   try {
     serialized = JSON.stringify(result);
