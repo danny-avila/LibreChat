@@ -74,7 +74,16 @@ function normalizeMemoryLLMConfig(llmConfig?: Partial<LLMConfig>): SanitizedMemo
 }
 
 export const memoryInstructions =
-  'The system automatically stores important user information and can update or delete memories based on user requests, enabling dynamic memory management.';
+  'LibreChat provides persistent memory across conversations. Saved memories, when available, are shown below. If no memories are shown, this does not mean persistent memory is unavailable. Use memory tools only if provided, and only claim a memory was saved or deleted after the action is confirmed.';
+
+export function formatMemoryContext(memory: string | undefined): string | undefined {
+  if (memory == null) {
+    return undefined;
+  }
+  return memory
+    ? `${memoryInstructions}\n\n# Existing memory about the user:\n${memory}`
+    : memoryInstructions;
+}
 
 export const SET_MEMORY_TOOL_NAME = 'set_memory';
 export const DELETE_MEMORY_TOOL_NAME = 'delete_memory';
@@ -505,7 +514,7 @@ export function agentHasInlineMemoryTools(agent: InlineMemoryAgent): boolean {
   );
 }
 
-/** Builds the existing-memory system context for an inline-memory agent. */
+/** Builds the memory system context for an inline-memory agent. */
 export async function buildInlineMemoryContext({
   agent,
   req,
@@ -529,9 +538,7 @@ export async function buildInlineMemoryContext({
       agentId: getMemoryAgentId(agent),
       getFormattedMemories,
     });
-    return memories.withKeys
-      ? `${memoryInstructions}\n\n# Existing memory about the user:\n${memories.withKeys}`
-      : '';
+    return formatMemoryContext(memories.withKeys) ?? '';
   } catch (error) {
     logger.error('[memory] Error loading inline agent memory context', error);
     return '';

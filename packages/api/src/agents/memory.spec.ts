@@ -9,6 +9,8 @@ import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
 import {
   processMemory,
+  memoryInstructions,
+  formatMemoryContext,
   createMemoryProcessor,
   createMemoryTool,
   getMemoryAgentId,
@@ -893,6 +895,22 @@ describe('agentHasInlineMemoryTools', () => {
   });
 });
 
+describe('formatMemoryContext', () => {
+  it('distinguishes unavailable memory from an eligible empty store', () => {
+    expect(formatMemoryContext(undefined)).toBeUndefined();
+    expect(formatMemoryContext('')).toBe(memoryInstructions);
+    expect(memoryInstructions).toContain('persistent memory across conversations');
+    expect(memoryInstructions).not.toContain('automatically stores');
+    expect(memoryInstructions).not.toContain('No existing memories');
+  });
+
+  it('includes existing memories without losing the capability guidance', () => {
+    expect(formatMemoryContext('name: Danny')).toBe(
+      `${memoryInstructions}\n\n# Existing memory about the user:\nname: Danny`,
+    );
+  });
+});
+
 describe('buildInlineMemoryContext', () => {
   it('loads keyed memories for an initialized inline-memory agent', async () => {
     const getFormattedMemories = jest.fn().mockResolvedValue({
@@ -917,6 +935,55 @@ describe('buildInlineMemoryContext', () => {
       userId: 'user-1',
       agentId: 'agent_memory',
     });
+  });
+
+  it('announces persistent memory before an inline agent has saved anything', async () => {
+    const getFormattedMemories = jest.fn().mockResolvedValue({
+      withKeys: '',
+      withoutKeys: '',
+      totalTokens: 0,
+    });
+    const context = await buildInlineMemoryContext({
+      agent: { id: 'agent_memory', memoryToolsRegistered: true },
+      req: {} as never,
+      userId: 'user-1',
+      memoryAvailable: true,
+      getFormattedMemories,
+    });
+
+    expect(context).toBe(memoryInstructions);
+    expect(context).not.toContain('# Existing memory about the user:');
+    expect(getFormattedMemories).toHaveBeenCalledWith({
+      userId: 'user-1',
+      agentId: undefined,
+    });
+  });
+
+  it('does not load or announce memory when permission is denied', async () => {
+    const getFormattedMemories = jest.fn();
+    await expect(
+      buildInlineMemoryContext({
+        agent: { id: 'agent_memory', memoryToolsRegistered: true },
+        req: {} as never,
+        userId: 'user-1',
+        memoryAvailable: false,
+        getFormattedMemories,
+      }),
+    ).resolves.toBe('');
+    expect(getFormattedMemories).not.toHaveBeenCalled();
+  });
+
+  it('keeps failed loads distinct from an empty store', async () => {
+    const getFormattedMemories = jest.fn().mockRejectedValue(new Error('read failed'));
+    await expect(
+      buildInlineMemoryContext({
+        agent: { id: 'agent_memory', memoryToolsRegistered: true },
+        req: {} as never,
+        userId: 'user-1',
+        memoryAvailable: true,
+        getFormattedMemories,
+      }),
+    ).resolves.toBe('');
   });
 
   it('does not load memories when inline tools are unavailable', async () => {
