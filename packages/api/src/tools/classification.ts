@@ -117,7 +117,7 @@ export function aliasMCPToolOptions(
   }
 }
 
-export function schemaByteSize(parameters: JsonSchemaType | undefined): number {
+export function schemaSize(parameters: JsonSchemaType | undefined): number {
   if (parameters == null) {
     return 0;
   }
@@ -133,15 +133,15 @@ export function schemaByteSize(parameters: JsonSchemaType | undefined): number {
 export function resolveDeferLoading(
   explicit: boolean | undefined,
   parameters: JsonSchemaType | undefined,
-  deferSchemaBytes: number,
+  deferSchemaChars: number,
 ): boolean {
   if (explicit != null) {
     return explicit === true;
   }
-  if (deferSchemaBytes <= 0) {
+  if (deferSchemaChars <= 0) {
     return false;
   }
-  return schemaByteSize(parameters) > deferSchemaBytes;
+  return schemaSize(parameters) > deferSchemaChars;
 }
 
 /**
@@ -149,13 +149,13 @@ export function resolveDeferLoading(
  *
  * @param tools - Array of tool definitions
  * @param agentToolOptions - Per-tool configuration from the agent
- * @param deferSchemaBytes - Size above which a schema defers absent an explicit choice
+ * @param deferSchemaChars - Size above which a schema defers absent an explicit choice
  * @returns Map of tool name to tool definition with classification
  */
 export function buildToolRegistryFromAgentOptions(
   tools: ToolDefinition[],
   agentToolOptions: AgentToolOptions,
-  deferSchemaBytes = 0,
+  deferSchemaChars = 0,
 ): LCToolRegistry {
   const registry: LCToolRegistry = new Map();
 
@@ -171,7 +171,7 @@ export function buildToolRegistryFromAgentOptions(
     const defer_loading = resolveDeferLoading(
       agentOptions?.defer_loading,
       parameters,
-      deferSchemaBytes,
+      deferSchemaChars,
     );
 
     const toolDef: LCTool = {
@@ -272,10 +272,10 @@ export function cleanupMCPToolSchemas(tools: MCPToolInstance[]): void {
 function buildToolRegistry(
   mcpToolDefs: ToolDefinition[],
   agentToolOptions?: AgentToolOptions,
-  deferSchemaBytes = 0,
+  deferSchemaChars = 0,
 ): LCToolRegistry {
   if (agentToolOptions && Object.keys(agentToolOptions).length > 0) {
-    return buildToolRegistryFromAgentOptions(mcpToolDefs, agentToolOptions, deferSchemaBytes);
+    return buildToolRegistryFromAgentOptions(mcpToolDefs, agentToolOptions, deferSchemaChars);
   }
 
   /** No agent options - build basic definitions for event-driven mode */
@@ -289,7 +289,7 @@ function buildToolRegistry(
       toolType: 'mcp',
     };
     /** The size rule is operator-wide, so it reaches agents with no per-tool options too. */
-    if (resolveDeferLoading(undefined, toolDef.parameters, deferSchemaBytes)) {
+    if (resolveDeferLoading(undefined, toolDef.parameters, deferSchemaChars)) {
       entry.defer_loading = true;
     }
     registry.set(toolDef.name, entry);
@@ -324,8 +324,8 @@ export interface BuildToolClassificationParams {
   codeExecutionContext?: CodeExecutionContext;
   codeEnvironments?: readonly CodeEnvironmentConfig[];
   getAppConfig?: CodeCapabilityConfigLoader;
-  /** See `mcpSettings.deferSchemaBytes`. `0` leaves every tool as configured. */
-  deferSchemaBytes?: number;
+  /** See `mcpSettings.deferSchemaChars`. `0` leaves every tool as configured. */
+  deferSchemaChars?: number;
 }
 
 /** Result from building tool classification */
@@ -399,7 +399,7 @@ export async function buildToolClassification(
     codeExecutionContext,
     codeEnvironments,
     getAppConfig,
-    deferSchemaBytes = 0,
+    deferSchemaChars = 0,
   } = params;
   const isGoogle = provider === Providers.GOOGLE || provider === Providers.VERTEXAI;
   const additionalTools: GenericTool[] = [];
@@ -421,7 +421,7 @@ export async function buildToolClassification(
   const toolRegistry: LCToolRegistry = buildToolRegistry(
     mcpToolDefs,
     agentToolOptions,
-    deferSchemaBytes,
+    deferSchemaChars,
   );
 
   /** Clean up temporary mcpJsonSchema property from tools now that registry is populated */
