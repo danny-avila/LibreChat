@@ -94,13 +94,21 @@ export function buildSharedLinkStartupPayload(
     payload.customFooter = env.CUSTOM_FOOTER;
   }
 
-  const { privacyPolicy, termsOfService, codeHighlightThrottleMs } =
+  const { privacyPolicy, termsOfService, codeHighlightThrottleMs, artifactUndocking } =
     appConfig?.interfaceConfig ?? {};
-  if (privacyPolicy || termsOfService || codeHighlightThrottleMs != null) {
+  /* A shared conversation shows the same artifacts pane, so it needs the same
+   * answer about opening that pane in its own window. */
+  if (
+    privacyPolicy ||
+    termsOfService ||
+    codeHighlightThrottleMs != null ||
+    artifactUndocking === false
+  ) {
     payload.interface = {
       ...(codeHighlightThrottleMs != null ? { codeHighlightThrottleMs } : {}),
       ...(privacyPolicy ? { privacyPolicy } : {}),
       ...(termsOfService ? { termsOfService } : {}),
+      ...(artifactUndocking === false ? { artifactUndocking } : {}),
     };
   }
 
