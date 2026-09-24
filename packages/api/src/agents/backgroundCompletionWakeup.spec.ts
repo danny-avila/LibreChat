@@ -854,6 +854,35 @@ describe('pending background completions', () => {
     );
   });
 
+  it("retires a manually claimed task's delivery only while no wake-up holds it", async () => {
+    const retire = jest.fn(async () => true);
+    const pending = createPendingBackgroundCompletions({
+      list: listing([row({ result: settled })]),
+      retire,
+    });
+
+    await expect(
+      pending.settleClaimed({
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        taskId: 'task-1',
+      }),
+    ).resolves.toBe(true);
+    expect(retire).toHaveBeenCalledWith(
+      'delivery-key-1',
+      'background-tool-completion',
+      'completion claimed by manual poll',
+      { onlyIfUnclaimed: true },
+    );
+    await expect(
+      createPendingBackgroundCompletions({ list: listing([]), retire }).settleClaimed({
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        taskId: 'task-1',
+      }),
+    ).resolves.toBe(false);
+  });
+
   it.each([
     ['not_pending', [], true],
     ['running', [row()], true],

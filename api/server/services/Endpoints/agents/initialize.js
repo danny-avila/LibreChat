@@ -515,12 +515,9 @@ const initializeClientWithProvider = async ({
       updateToolCallResult: db.updateToolCallResult,
     }),
     backgroundToolCompletion: {
-      ...(completionWakeupsEnabled
-        ? {
-            preregister: preregisterBackgroundToolCompletion,
-            pending: pendingBackgroundToolCompletions,
-          }
-        : {}),
+      ...(completionWakeupsEnabled ? { preregister: preregisterBackgroundToolCompletion } : {}),
+      /** Deliveries admitted before wake-ups were disabled still drain and still count. */
+      pending: pendingBackgroundToolCompletions,
       persist: createBackgroundToolResultPersistence({
         req,
         updateToolCallResult: db.updateToolCallResult,

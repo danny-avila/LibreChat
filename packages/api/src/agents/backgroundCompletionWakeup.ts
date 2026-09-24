@@ -595,6 +595,18 @@ export function createPendingBackgroundCompletions(deps: {
       );
       return retired ? 'discarded' : 'delivering';
     },
+    settleClaimed: async (input) => {
+      const [completion] = (await read(input)).completions;
+      if (completion == null) {
+        return false;
+      }
+      return deps.retire(
+        completion.deliveryKey,
+        BACKGROUND_TOOL_COMPLETION_SOURCE,
+        'completion claimed by manual poll',
+        { onlyIfUnclaimed: true },
+      );
+    },
   };
 }
 

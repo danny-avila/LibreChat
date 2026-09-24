@@ -1850,6 +1850,9 @@ interface SerializedBackgroundTask {
   error?: string;
 }
 
+const SUBAGENT_PENDING_DELIVERY_GUIDANCE =
+  'Some finished subagents have not been delivered yet (delivery: "pending"); each will arrive as a new turn. Poll one to collect its result now. Do not report them as finished until then.';
+
 const PENDING_DELIVERY_GUIDANCE =
   'Some finished tasks have not been delivered yet (delivery: "pending"); each will arrive as a new turn. Poll one to collect its result now, or cancel it so it does not arrive. Do not report these tasks as finished or cancelled until then.';
 
@@ -2465,18 +2468,16 @@ export async function runCheckBackgroundTask(params: {
       return JSON.stringify(serializeTask(task, { includeResult: true }));
     }
 
+    /** A failed lookup must not mask a subagent the controls below can still reach. */
+    let discardFailed = false;
     if (action === 'cancel' && params.pendingCompletions != null) {
-      let outcome: Awaited<ReturnType<PendingBackgroundCompletionControls['discard']>>;
+      let outcome: Awaited<ReturnType<PendingBackgroundCompletionControls['discard']>> =
+        'not_pending';
       try {
         outcome = await params.pendingCompletions.discard({ userId, conversationId, taskId });
       } catch (error) {
         logger.warn(`[background] Failed to discard pending completion ${taskId}:`, error);
-        return JSON.stringify({
-          status: 'unavailable',
-          background_task_id: taskId,
-          message:
-            'The pending result could not be discarded right now. It may still arrive as a new turn; retry the cancel shortly.',
-        });
+        discardFailed = true;
       }
       if (outcome === 'discarded') {
         return JSON.stringify({
@@ -2584,6 +2585,15 @@ export async function runCheckBackgroundTask(params: {
       if (durableClaim.status === 'acquired') {
         const durableTask = durableClaim.results.find((result) => result.taskId === taskId);
         if (durableTask != null) {
+          /** The result reaches the agent here, so its automatic delivery is redundant. */
+          await params.pendingCompletions
+            ?.settleClaimed({ userId, conversationId, taskId })
+            .catch((error: unknown) =>
+              logger.warn(
+                `[background] Failed to retire the delivery of manually claimed task ${taskId}:`,
+                error,
+              ),
+            );
           return JSON.stringify(serializeDurableTask(durableTask));
         }
         return JSON.stringify({
@@ -2674,6 +2684,14 @@ export async function runCheckBackgroundTask(params: {
       }
     }
 
+    if (discardFailed) {
+      return JSON.stringify({
+        status: 'unavailable',
+        background_task_id: taskId,
+        message:
+          'The pending result could not be discarded right now. It may still arrive as a new turn; retry the cancel shortly.',
+      });
+    }
     return JSON.stringify({
       status: 'not_found',
       background_task_id: taskId,
@@ -2761,12 +2779,11 @@ export async function runCheckBackgroundTask(params: {
     task.status === 'running' || task.delivery === 'pending';
   const outstanding =
     ordinaryTasks.filter(isOutstanding).length + subagentTasks.filter(isOutstanding).length;
+  const isFinishedPending = (task: { status: string; delivery?: string }): boolean =>
+    task.status !== 'running' && task.delivery === 'pending';
   const guidance = [
-    ...([...ordinaryTasks, ...subagentTasks].some(
-      (task) => task.status !== 'running' && task.delivery === 'pending',
-    )
-      ? [PENDING_DELIVERY_GUIDANCE]
-      : []),
+    ...(ordinaryTasks.some(isFinishedPending) ? [PENDING_DELIVERY_GUIDANCE] : []),
+    ...(subagentTasks.some(isFinishedPending) ? [SUBAGENT_PENDING_DELIVERY_GUIDANCE] : []),
     ...(completionWakeups && subagentTasks.some((task) => task.status === 'running')
       ? [SUBAGENT_WAKEUP_GUIDANCE]
       : []),

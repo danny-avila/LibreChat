@@ -582,6 +582,21 @@ describe('agent trigger delivery methods', () => {
       expect(page.truncated).toBe(true);
     });
 
+    it('omits legacy rows whose results live only on the parent message', async () => {
+      const user = new mongoose.Types.ObjectId();
+      await completion(user, 'task-legacy', {
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      });
+
+      const pending = await methods.listPendingAgentBackgroundToolCompletions({
+        user,
+        conversationId: 'conversation-1',
+        sourceId: background.id,
+      });
+
+      expect(pending.completions).toEqual([]);
+    });
+
     it('omits capability-dead rows, which no worker will deliver', async () => {
       const user = new mongoose.Types.ObjectId();
       const dead = await completion(user, 'task-dead');

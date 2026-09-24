@@ -3106,7 +3106,8 @@ describe('runCheckBackgroundTask (singleton)', () => {
       expect.objectContaining({ status: 'completed', result_available: true, delivery: 'pending' }),
     );
     expect(listed.outstanding).toBe(1);
-    expect(listed.message).toContain('have not been delivered yet');
+    expect(listed.message).toContain('Some finished subagents have not been delivered yet');
+    expect(listed.message).not.toContain('cancel');
   });
 
   it('tells a wakeup-enabled parent to yield on an unchanged running subagent', async () => {
@@ -3478,6 +3479,7 @@ describe('runCheckBackgroundTask delivery semantics', () => {
         complete: overrides.complete ?? true,
       })),
       discard: jest.fn(overrides.discard ?? (async () => 'not_pending')),
+      settleClaimed: jest.fn(async () => true),
     }) as never;
 
   function completedWithWakeup(userId: string, conversationId: string, toolCallId: string) {
@@ -3737,6 +3739,61 @@ describe('runCheckBackgroundTask delivery semantics', () => {
     expect(cancelled).toEqual(
       expect.objectContaining({ background_task_id: taskId, status: 'completed' }),
     );
+  });
+
+  it('retires the pending delivery of a remote task a manual poll just claimed', async () => {
+    const pendingCompletions = pendingControls();
+    const claimBackgroundToolResult = jest.fn(async () => ({
+      status: 'acquired' as const,
+      results: [
+        {
+          taskId: 'remote-task',
+          toolName: 'slow_task',
+          status: 'completed' as const,
+          output: 'remote result',
+          settledAt: new Date('2026-09-24T12:00:00Z'),
+        },
+      ],
+    }));
+
+    const polled = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'remote-user',
+        conversationId: 'remote-convo',
+        args: { background_task_id: 'remote-task' },
+        claimBackgroundToolResult: claimBackgroundToolResult as never,
+        pendingCompletions,
+      }),
+    );
+
+    expect(polled).toEqual(
+      expect.objectContaining({ status: 'completed', result: 'remote result' }),
+    );
+    expect(
+      (pendingCompletions as unknown as { settleClaimed: jest.Mock }).settleClaimed,
+    ).toHaveBeenCalledWith({
+      userId: 'remote-user',
+      conversationId: 'remote-convo',
+      taskId: 'remote-task',
+    });
+  });
+
+  it('reports a failed discard lookup only when nothing else claims the task', async () => {
+    const cancelled = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'discard-user',
+        conversationId: 'discard-convo',
+        args: { background_task_id: 'unknown-task', action: 'cancel' },
+        pendingCompletions: pendingControls({
+          discard: async () => {
+            throw new Error('delivery store unavailable');
+          },
+        }),
+      }),
+    );
+
+    expect(cancelled).toEqual(expect.objectContaining({ status: 'unavailable' }));
+    expect(cancelled.message).toContain('could not be discarded right now');
   });
 
   it('falls through to the ordinary lookup when nothing is pending for the task', async () => {

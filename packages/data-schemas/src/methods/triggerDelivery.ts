@@ -2370,6 +2370,9 @@ export function createAgentTriggerDeliveryMethods(
         'envelope.event.source.id': input.sourceId,
         'envelope.target.conversationId': input.conversationId,
         ...(input.taskId != null && { 'envelope.event.payload.taskId': input.taskId }),
+        /** Legacy rows keep results only on the parent message, so a missing
+         * receipt cannot tell running from finished; they drain on their own path. */
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
         status: { $in: UNDELIVERED_STATUSES },
         /** Capability-dead rows are dead letters to every worker version. */
         capabilityStatus: { $ne: 'dead' },

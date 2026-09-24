@@ -101,4 +101,10 @@ export interface PendingBackgroundCompletionControls {
     conversationId: string;
     taskId: string;
   }) => Promise<BackgroundCompletionDiscardOutcome>;
+  /** Retires a task's pending delivery after a manual poll claimed its result. */
+  settleClaimed: (input: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+  }) => Promise<boolean>;
 }
