@@ -4894,7 +4894,12 @@ describe('MCPConnectionFactory', () => {
           useOAuth: true,
           user: mockUser!,
           flowManager: mockFlowManager,
-          tokenMethods: { findToken: jest.fn() },
+          tokenMethods: {
+            findToken: jest.fn(),
+            createToken: jest.fn(),
+            updateToken: jest.fn(),
+            deleteTokens: jest.fn(),
+          },
         },
       );
 
