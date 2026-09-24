@@ -60,6 +60,7 @@ const {
   resolveMcpServerContext,
   resolveCollisionAuditNames,
 } = require('~/server/services/MCP');
+const { OpenIDReauthRequiredError } = require('@librechat/api');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
@@ -687,6 +688,10 @@ const loadTools = async ({
           /** Handle async loading for single 'all' tool config */
           mcpToolPromises.push(
             createMCPTools(mcpParams).catch((error) => {
+              /** A stale/expired OpenID token must fail the request (401), not silently drop the server's tools */
+              if (error instanceof OpenIDReauthRequiredError) {
+                throw error;
+              }
               logger.error(`Error loading ${serverName} tools:`, error);
               return null;
             }),
@@ -725,6 +730,10 @@ const loadTools = async ({
           );
         }
       } catch (error) {
+        /** A stale/expired OpenID token must fail the request (401), not silently drop the tool */
+        if (error instanceof OpenIDReauthRequiredError) {
+          throw error;
+        }
         logger.error(`Error loading MCP tool for server ${serverName}:`, error);
       }
     }
