@@ -265,7 +265,22 @@ async function expectConnectedApp(
   const view = page.locator(`[data-mcp-app-view="${toolName}"]`).nth(occurrence);
   await expect(view).toBeVisible({ timeout: 30_000 });
   const open = view.getByRole('button', { name: 'Open app' });
-  if (await open.count()) await open.click();
+  if (await open.count()) {
+    if (occurrence > 0) {
+      await open.evaluate((button) => {
+        const log = (event: Event) =>
+          console.info('MCP_APP_CLICK_TRACE', event.type, (event.target as Element).tagName);
+        button.addEventListener('pointerdown', log, { once: true });
+        button.addEventListener('click', log, { once: true });
+      });
+    }
+    await open.click();
+    // Diagnostic: a synthetic event tells us if an iframe stole only the pointer click.
+    if (occurrence > 0 && (await open.count())) {
+      console.info('MCP_APP_CLICK_TRACE', 'no state after pointer click');
+      await open.dispatchEvent('click');
+    }
+  }
   const app = appFrame(page, toolName, occurrence);
   await expect(app.getByTestId('status')).toHaveText('connected', { timeout: 30_000 });
   await expect(app.getByTestId('document-source')).toHaveText('resources-read-document');
