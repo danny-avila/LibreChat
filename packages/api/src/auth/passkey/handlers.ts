@@ -1,7 +1,7 @@
 import { logger } from '@librechat/data-schemas';
 import { MAX_PASSKEYS_PER_USER } from 'librechat-data-provider';
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
-import type { IUser, IPasskey, UserMethods, PasskeyMethods } from '@librechat/data-schemas';
+import type { PasskeyCreateData, PasskeyRecord } from '@librechat/data-schemas';
 import type { TPasskey } from 'librechat-data-provider';
 import type { Request, Response } from 'express';
 import type { PasskeyConfig, PasskeyChallengeStore } from '~/auth/passkey';
@@ -46,18 +46,39 @@ interface AuthenticationBody {
   sessionId?: string;
 }
 
+/**
+ * The account fields the passkey routes read, as a plain shape: neither the
+ * request's user nor the data-layer results carry Mongoose types across the
+ * package boundary. `twoFactorEnabled` and `createdAt` are read after the
+ * handoff to `loginController` and legacy-verification grandfathering, not by
+ * the route handlers themselves.
+ */
+export interface PasskeyAccount {
+  id?: string;
+  _id?: UserDocumentId;
+  email?: string;
+  name?: string;
+  username?: string;
+  emailVerified?: boolean;
+  expiresAt?: Date | null;
+  provider?: string;
+  password?: string;
+  twoFactorEnabled?: boolean;
+  createdAt?: Date | string;
+}
+
 export type PasskeyRequest<TBody = StepUpBody> = Request<
   { passkeyId: string },
   object,
   TBody | undefined
 > & {
-  user?: IUser;
+  user?: PasskeyAccount;
   banned?: boolean;
 };
 
 /** Every management route sits behind `requireJwtAuth`, so `req.user` is always populated. */
 export type AuthenticatedPasskeyRequest<TBody = StepUpBody> = PasskeyRequest<TBody> & {
-  user: IUser;
+  user: PasskeyAccount & { id: string; email: string };
 };
 
 /** The client-facing summary, carrying dates before JSON serialization turns them into strings. */
@@ -70,20 +91,28 @@ export type PasskeySummary = Omit<TPasskey, 'transports' | 'createdAt' | 'lastUs
 type PasskeyResult = Promise<Response | void>;
 type NextCallback = (err?: Error) => void;
 
-export interface PasskeyHandlersDeps
-  extends Pick<
-    PasskeyMethods,
-    | 'createPasskey'
-    | 'deletePasskey'
-    | 'renamePasskey'
-    | 'recordPasskeyUse'
-    | 'findPasskeysByUser'
-    | 'countPasskeysByUser'
-    | 'findPasskeyByCredentialId'
-  > {
-  getUserById: UserMethods['getUserById'];
+/**
+ * The handlers' data layer, in plain shapes. The data-schemas methods satisfy
+ * these signatures structurally, so the wiring stays unchanged while Mongoose
+ * types stay inside data-schemas.
+ */
+export interface PasskeyHandlersDeps {
+  getUserById: (
+    userId: string,
+    fieldsToSelect?: string | string[] | null,
+  ) => Promise<(PasskeyAccount & { _id: UserDocumentId }) | null>;
   /** Receives the raw document id, exactly as the password strategy passes it. */
-  updateUser: (userId: UserDocumentId, update: Partial<IUser>) => Promise<IUser | null>;
+  updateUser: (
+    userId: UserDocumentId,
+    update: Partial<PasskeyAccount>,
+  ) => Promise<PasskeyAccount | null>;
+  createPasskey: (data: PasskeyCreateData) => Promise<PasskeyRecord>;
+  deletePasskey: (passkeyId: string, userId: string) => Promise<{ deletedCount: number }>;
+  renamePasskey: (passkeyId: string, userId: string, name: string) => Promise<PasskeyRecord | null>;
+  recordPasskeyUse: (credentialId: string, counter: number, backedUp?: boolean) => Promise<boolean>;
+  findPasskeysByUser: (userId: string) => Promise<PasskeyRecord[]>;
+  countPasskeysByUser: (userId: string) => Promise<number>;
+  findPasskeyByCredentialId: (credentialId: string) => Promise<PasskeyRecord | null>;
   /** Resolves the cache backing pending WebAuthn ceremonies. */
   getChallengeCache: () => PasskeyChallengeStore;
   compare: ComparePasswordDeps['compare'];
@@ -132,12 +161,12 @@ export function createPasskeyChallengeStore(cache: PasskeyChallengeStore): Passk
  * provider must keep authenticating through it, otherwise the passkey becomes a
  * login path that bypasses IdP-side MFA, conditional access and deprovisioning.
  */
-const isLocalAccount = (user: IUser | null | undefined): boolean =>
+const isLocalAccount = (user: PasskeyAccount | null | undefined): boolean =>
   user?.provider === LOCAL_PROVIDER;
 
 /** Shapes a stored credential into the safe summary the client renders. */
-export const serializePasskey = (passkey: IPasskey): PasskeySummary => ({
-  id: passkey._id.toString(),
+export const serializePasskey = (passkey: PasskeyRecord): PasskeySummary => ({
+  id: passkey.id,
   name: passkey.name,
   deviceType: passkey.deviceType,
   backedUp: passkey.backedUp,
@@ -245,7 +274,7 @@ export function createPasskeyHandlers(deps: PasskeyHandlersDeps): PasskeyHandler
       return denyPasswordConfirmation(req, res, tag);
     }
 
-    let account: IUser | null;
+    let account: PasskeyAccount | null;
     try {
       account = await getUserById(req.user.id, '+password');
     } catch (err) {
@@ -516,7 +545,7 @@ export function createPasskeyHandlers(deps: PasskeyHandlersDeps): PasskeyHandler
       }
 
       const userHandle = decodeUserHandle(credential.response?.userHandle);
-      if (userHandle && userHandle !== passkey.user.toString()) {
+      if (userHandle && userHandle !== passkey.userId) {
         logger.warn('[authenticatePasskey] User handle does not match the credential owner');
         return failure();
       }
@@ -538,7 +567,7 @@ export function createPasskeyHandlers(deps: PasskeyHandlersDeps): PasskeyHandler
         return failure();
       }
 
-      const user = await getUserById(passkey.user.toString());
+      const user = await getUserById(passkey.userId);
       if (!user) {
         return failure();
       }
@@ -555,7 +584,7 @@ export function createPasskeyHandlers(deps: PasskeyHandlersDeps): PasskeyHandler
 
       const unverifiedAllowed = isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN);
       if (user.expiresAt && unverifiedAllowed) {
-        await updateUser(user._id || user.id, {});
+        await updateUser(user._id, {});
       }
       if (!user.emailVerified && !unverifiedAllowed) {
         logger.warn('[authenticatePasskey] Rejected unverified email login');
