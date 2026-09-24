@@ -321,6 +321,82 @@ describe('durable agent trigger service', () => {
     expect(deleteAgentTriggerDeliveriesByUser).toHaveBeenCalledWith('507f1f77bcf86cd799439011');
   });
 
+  it('backs off empty maintenance scans and wakes for new cleanup work', async () => {
+    jest.useFakeTimers();
+    try {
+      const recoverAgentTriggerUserPurges = jest.fn(async () => 0);
+      const methods = deliveryMethods({ recoverAgentTriggerUserPurges });
+      const service = createAgentTriggerService({
+        methods,
+        deliveryOptions: { concurrency: 1, tickMs: 300_000 },
+      });
+      await service.initialize({
+        address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+      });
+      await jest.advanceTimersByTimeAsync(0);
+      expect(recoverAgentTriggerUserPurges).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(60_000);
+      expect(recoverAgentTriggerUserPurges).toHaveBeenCalledTimes(2);
+      await jest.advanceTimersByTimeAsync(120_000);
+      expect(recoverAgentTriggerUserPurges).toHaveBeenCalledTimes(3);
+      await service.prepareUserPurge('507f1f77bcf86cd799439011', new Date());
+      await jest.advanceTimersByTimeAsync(0);
+      expect(recoverAgentTriggerUserPurges).toHaveBeenCalledTimes(4);
+      await service.stop();
+      await jest.advanceTimersByTimeAsync(120_000);
+      expect(recoverAgentTriggerUserPurges).toHaveBeenCalledTimes(4);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps the base cadence when a recovery marker was inspected but no repair completed', async () => {
+    jest.useFakeTimers();
+    try {
+      const recoverAgentTriggerBatchReceipts = jest.fn(
+        async (_limit?: number, activity?: { found: boolean }) => {
+          if (activity != null) activity.found = true;
+          return 0;
+        },
+      );
+      const service = createAgentTriggerService({
+        methods: deliveryMethods({ recoverAgentTriggerBatchReceipts }),
+        deliveryOptions: { concurrency: 1, tickMs: 300_000 },
+      });
+      await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
+      await jest.advanceTimersByTimeAsync(0);
+      expect(recoverAgentTriggerBatchReceipts).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(30_000);
+      expect(recoverAgentTriggerBatchReceipts).toHaveBeenCalledTimes(2);
+      await service.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not mistake an isolated maintenance failure for an empty scan', async () => {
+    jest.useFakeTimers();
+    try {
+      const recoverAgentTriggerUserPurges = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('mongo unavailable'))
+        .mockResolvedValue(0);
+      const methods = deliveryMethods({ recoverAgentTriggerUserPurges });
+      const service = createAgentTriggerService({
+        methods,
+        deliveryOptions: { concurrency: 1, tickMs: 300_000 },
+      });
+      await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
+      await jest.advanceTimersByTimeAsync(0);
+      expect(recoverAgentTriggerUserPurges).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(30_000);
+      expect(recoverAgentTriggerUserPurges).toHaveBeenCalledTimes(2);
+      await service.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('arms and disarms post-commit purge recovery in system context', async () => {
     const prepareAgentTriggerUserPurge = jest.fn(async () => {
       expect(getTenantId()).toBe(SYSTEM_TENANT_ID);
@@ -385,7 +461,11 @@ describe('durable agent trigger service', () => {
       address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
     });
 
-    expect(expireLegacyAgentEventActorReceipts).toHaveBeenCalledWith(expect.any(Date), 17);
+    expect(expireLegacyAgentEventActorReceipts).toHaveBeenCalledWith(
+      expect.any(Date),
+      17,
+      expect.objectContaining({ found: false }),
+    );
     await service.stop();
   });
 
@@ -405,7 +485,10 @@ describe('durable agent trigger service', () => {
       deliveryOptions: { concurrency: 1, tickMs: 60_000 },
     });
     await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
-    expect(reclaimCheckpointDeletions).toHaveBeenCalledWith(17);
+    expect(reclaimCheckpointDeletions).toHaveBeenCalledWith(
+      17,
+      expect.objectContaining({ found: false }),
+    );
     let stopped = false;
     const stop = service.stop().then(() => {
       stopped = true;

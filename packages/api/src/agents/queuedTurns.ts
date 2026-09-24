@@ -23,6 +23,7 @@ import type { AgentTriggerDeliveryFailure } from './triggers/engine';
 import { getAgentTriggerIdempotencyKey, parseAgentTriggerEnvelope } from './triggers/envelope';
 import { createAgentTriggerEnvelope } from './triggers/envelope';
 import { AgentTriggerExecutionError } from './triggers/host';
+import { createIdleRecoveryLoop } from './recovery';
 
 export const AGENT_QUEUED_TURN_SOURCE = 'agent-queued-turn';
 const AGENT_QUEUED_TURN_EVENT = 'agent.queued-turn';
@@ -32,6 +33,7 @@ const RECONCILIATION_LEASE_MS = 2 * 60 * 1000;
 const RECONCILIATION_BACKOFF_BASE_MS = 5_000;
 const RECONCILIATION_BACKOFF_MAX_MS = 5 * 60 * 1000;
 const DEFAULT_RECOVERY_INTERVAL_MS = 30_000;
+const DEFAULT_RECOVERY_MAX_IDLE_INTERVAL_MS = 2 * 60_000;
 const DEFAULT_RECOVERY_LIMIT = 100;
 const MAX_FAILURE_CODE_LENGTH = 128;
 const MAX_FAILURE_MESSAGE_LENGTH = 2048;
@@ -87,7 +89,7 @@ export interface AgentQueuedTurnSchedulerDeps {
 }
 
 export interface AgentQueuedTurnScheduler {
-  initialize: () => Promise<void>;
+  initialize: (options?: { maxIdleIntervalMs?: number }) => Promise<void>;
   stop: () => Promise<void>;
   schedule: (turn: AgentQueuedTurnRecord) => Promise<string>;
   recover: () => Promise<number>;
@@ -107,7 +109,7 @@ export interface AgentQueuedTurnLifecycle {
     rawSource: unknown,
     input: AgentQueuedTurnExecutionAdmission,
   ) => Promise<boolean>;
-  initialize: () => Promise<void>;
+  initialize: (options?: { maxIdleIntervalMs?: number }) => Promise<void>;
   stop: () => Promise<void>;
   schedule: (turn: AgentQueuedTurnRecord) => Promise<string>;
   cancel: (
@@ -732,10 +734,12 @@ function createAgentQueuedTurnScheduler({
   recoveryIntervalMs = DEFAULT_RECOVERY_INTERVAL_MS,
   recoveryLimit = DEFAULT_RECOVERY_LIMIT,
 }: AgentQueuedTurnSchedulerDeps): AgentQueuedTurnScheduler {
-  let timer: NodeJS.Timeout | undefined;
-  let recovery: Promise<number> | undefined;
+  let loop: ReturnType<typeof createIdleRecoveryLoop> | undefined;
+  let initialization: Promise<void> | undefined;
+  let stopped = false;
+  let recovery: Promise<{ repaired: number; idle: boolean }> | undefined;
 
-  const schedule = async (turn: AgentQueuedTurnRecord): Promise<string> => {
+  const publish = async (turn: AgentQueuedTurnRecord): Promise<string> => {
     const envelope = deliveryEnvelope(turn);
     const deliveryKey = getAgentTriggerIdempotencyKey(envelope);
     const reserved = await runAsSystem(() =>
@@ -776,7 +780,16 @@ function createAgentQueuedTurnScheduler({
     return receipt.deliveryKey;
   };
 
-  const recover = (): Promise<number> => {
+  const schedule = async (turn: AgentQueuedTurnRecord): Promise<string> => {
+    try {
+      return await publish(turn);
+    } catch (error) {
+      loop?.wake();
+      throw error;
+    }
+  };
+
+  const recoverPass = (): Promise<{ repaired: number; idle: boolean }> => {
     if (recovery != null) {
       return recovery;
     }
@@ -805,8 +818,11 @@ function createAgentQueuedTurnScheduler({
         ) {
           continue;
         }
-        const defer = () =>
-          runAsSystem(() =>
+        const defer = async () => {
+          const availableAt = new Date(
+            Date.now() + reconciliationBackoff(turn.reconciliationAttempts),
+          );
+          const deferred = await runAsSystem(() =>
             methods.deferAgentQueuedTurnAdmissionReconciliation({
               user: turn.user,
               ...(turn.tenantId != null && { tenantId: turn.tenantId }),
@@ -815,11 +831,13 @@ function createAgentQueuedTurnScheduler({
               deliveryKey,
               claimId: reconciliationClaimId,
               claimBy: PROCESS_CLAIM_OWNER,
-              availableAt: new Date(
-                Date.now() + reconciliationBackoff(turn.reconciliationAttempts),
-              ),
+              availableAt,
             }),
           );
+          if (deferred) {
+            loop?.noteEligibleAt(availableAt);
+          }
+        };
         try {
           const isIndeterminate =
             turn.terminalReceipt?.outcome === 'dead' &&
@@ -894,7 +912,7 @@ function createAgentQueuedTurnScheduler({
       }
       for (const turn of turns) {
         try {
-          await schedule(turn);
+          await publish(turn);
           repaired += 1;
         } catch (error) {
           logger.warn(
@@ -904,7 +922,7 @@ function createAgentQueuedTurnScheduler({
           );
         }
       }
-      return repaired;
+      return { repaired, idle: turns.length === 0 && quarantined.length === 0 };
     })();
     recovery = task;
     void task.then(
@@ -921,28 +939,48 @@ function createAgentQueuedTurnScheduler({
     );
     return task;
   };
+  const recover = async (): Promise<number> => (await recoverPass()).repaired;
 
   return {
     schedule,
     recover,
-    initialize: async () => {
-      await runAsSystem(() => methods.ensureAgentQueuedTurnIndexes());
-      timer = setInterval(() => {
-        void recover().catch((error: unknown) => {
-          logger.warn('[agentQueuedTurns] Delivery recovery pass failed', error);
+    initialize: (options = {}) => {
+      if (initialization != null) {
+        return initialization;
+      }
+      if (stopped) {
+        return Promise.resolve();
+      }
+      const maxIdleIntervalMs =
+        options.maxIdleIntervalMs ??
+        Math.max(recoveryIntervalMs, DEFAULT_RECOVERY_MAX_IDLE_INTERVAL_MS);
+      const next = (async () => {
+        loop = createIdleRecoveryLoop({
+          intervalMs: recoveryIntervalMs,
+          maxIdleIntervalMs,
+          scan: async () => (await recoverPass()).idle,
+          onError: (error) =>
+            logger.warn('[agentQueuedTurns] Delivery recovery pass failed', error),
         });
-      }, recoveryIntervalMs);
-      timer.unref?.();
-      await recover().catch((error: unknown) => {
-        logger.warn('[agentQueuedTurns] Initial delivery recovery pass failed', error);
+        await runAsSystem(() => methods.ensureAgentQueuedTurnIndexes());
+        if (!stopped) {
+          await loop.start();
+        }
+      })();
+      initialization = next.catch((error: unknown) => {
+        if (!stopped) {
+          initialization = undefined;
+          loop = undefined;
+        }
+        throw error;
       });
+      return initialization;
     },
     stop: async () => {
-      if (timer != null) {
-        clearInterval(timer);
-        timer = undefined;
-      }
-      await recovery;
+      stopped = true;
+      await loop?.stop();
+      await initialization?.catch(() => undefined);
+      await recovery?.catch(() => undefined);
     },
   };
 }

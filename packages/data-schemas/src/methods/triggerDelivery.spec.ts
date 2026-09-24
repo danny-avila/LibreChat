@@ -2244,6 +2244,9 @@ describe('agent trigger delivery methods', () => {
   });
 
   it('leaves staging unpublished while its durable user purge marker exists', async () => {
+    const emptyActivity = { found: false };
+    await expect(methods.recoverAgentTriggerLanePublications(1, emptyActivity)).resolves.toBe(0);
+    expect(emptyActivity.found).toBe(false);
     const user = new mongoose.Types.ObjectId();
     const orderingKey = 'purge-fenced-staging';
     await UserPurge.create({ _id: user, fenceStartedAt: START, tenantId: 'tenant-1' });
@@ -2256,7 +2259,9 @@ describe('agent trigger delivery methods', () => {
       stagingRecoveryAt: START,
     });
 
-    await expect(methods.recoverAgentTriggerLanePublications(1)).resolves.toBe(0);
+    const activity = { found: false };
+    await expect(methods.recoverAgentTriggerLanePublications(1, activity)).resolves.toBe(0);
+    expect(activity.found).toBe(true);
     await expect(Delivery.findById(staged._id).lean()).resolves.toMatchObject({
       status: 'staging',
       laneSequence: 0,

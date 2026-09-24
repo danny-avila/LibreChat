@@ -47,6 +47,7 @@ await enqueueAgentTrigger(
 ## Guarantees
 
 - Mongo owns queue state, leases, retry history, and dead letters across restarts and replicas.
+- Each replica keeps a bounded recovery scan even when idle. A successful empty queued-turn or maintenance pass doubles its next wait from 30 seconds up to 2 minutes; found work and errors return to the 30-second cadence. Local failed queued-turn publication and new cleanup markers wake recovery promptly. The delivery claim engine retains its separate 15-second idle cap and immediate wake on local enqueue or requeue. Work abandoned by another replica or a crashed producer can still wait up to the relevant idle cap before discovery; notifications are hints, never the source of truth. Set `endpoints.agents.eventDriven.idlePolling.{queuedTurnMaxIntervalMs,maintenanceMaxIntervalMs,deliveryMaxIntervalMs}` in `librechat.yaml` to change these ceilings (30,000–300,000 ms for recovery, 1,000–300,000 ms for delivery). Setting either recovery cap to 30,000 ms restores the original fixed recovery frequency.
 - A fresh token fences every claim, including reclaims by the same process.
 - A delivery is at-least-once. Fire, continue, and steer admission reuse the envelope's stable idempotency
   identity, so ambiguous retries do not duplicate accepted work.

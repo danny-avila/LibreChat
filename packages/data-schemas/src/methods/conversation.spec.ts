@@ -6449,7 +6449,9 @@ describe('Conversation Operations', () => {
         },
       ]);
 
-      await expect(methods.expireLegacyAgentEventActorReceipts(now, 1)).resolves.toBe(1);
+      const activity = { found: false };
+      await expect(methods.expireLegacyAgentEventActorReceipts(now, 1, activity)).resolves.toBe(1);
+      expect(activity.found).toBe(true);
       await expect(
         Conversation.findOne({ conversationId: oldConversationId })
           .select('+agentEventActorReconciliations')
