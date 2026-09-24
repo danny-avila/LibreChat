@@ -136,6 +136,15 @@ describe('steps', () => {
       });
     });
 
+    it('streams into a message step that carries no message_creation details', () => {
+      const step = messageStep('step-bare', 0, {
+        stepDetails: { type: StepTypes.MESSAGE_CREATION } as Agents.StepDetails,
+      });
+      const result = streamText(createResponse(), step, ['still streams']);
+
+      expect(result.content).toEqual([{ type: ContentTypes.TEXT, text: 'still streams' }]);
+    });
+
     it('keeps slots in place when a later step streams before an earlier one', () => {
       const first = messageStep('step-a', 0);
       const second = messageStep('step-b', 2);

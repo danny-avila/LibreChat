@@ -45,7 +45,7 @@ export function applyMessageDelta(
   }
   const phase =
     runStep.stepDetails.type === StepTypes.MESSAGE_CREATION
-      ? (runStep.stepDetails.message_creation as { phase?: TextPhase }).phase
+      ? (runStep.stepDetails.message_creation as { phase?: TextPhase } | undefined)?.phase
       : undefined;
   const metadata = getStepMetadata(runStep);
   for (const contentPart of toParts(delta.delta.content)) {
