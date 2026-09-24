@@ -50,6 +50,7 @@ import { mcpOptionsContainGraphTokenPlaceholder, preProcessGraphTokens } from '~
 import { MCPAuthenticationRejectedError, isMCPTransportAuthenticationError } from './errors';
 import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
 import { createLazyOboUpstreamTokenProvider, awaitOboOperation } from '~/mcp/oauth/obo';
+import { MCPAppOperationBudget, getMCPAppOperationLimits } from './apps/budget';
 import { formatToolContent, selectResolvedAppResource } from './parsers';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
@@ -61,7 +62,6 @@ import { UserConnectionManager } from './UserConnectionManager';
 import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { processMCPEnv, isPluginSourced } from '~/utils/env';
-import { getMCPAppOperationLimits } from './apps/budget';
 import { OAuthLifecycleRelay } from './oauth/pending';
 import { isOwnedAbortError } from '~/utils/errors';
 import { MCPConnection } from './connection';
@@ -147,6 +147,9 @@ export class MCPManager extends UserConnectionManager {
       catalogRecoveryMaxDetachedDiscoveries,
     );
   }
+
+  /** Per-process admission for follow-up requests and optional first document reads. */
+  public readonly appOperationBudget: MCPAppOperationBudget = new MCPAppOperationBudget();
 
   private readonly resourceUriCache = new Map<string, Map<string, { uri: string }>>();
 
@@ -1975,17 +1978,23 @@ Please follow these instructions when using tools from the respective MCP server
         }
 
         let resolvedAppResource: t.ResourceContents | undefined;
-        if (resourceMeta && !options?.signal?.aborted) {
+        const appConnection = connection;
+        if (resourceMeta && appConnection && !options?.signal?.aborted) {
           const resourceUri = resourceMeta.uri;
           try {
-            const appReadTimeout = getMCPAppOperationLimits(mcpApps?.operationLimits).timeoutMs;
-            const readResult = await connection.client.readResource(
-              { uri: resourceUri },
-              {
-                timeout: Math.min(connection.timeout ?? appReadTimeout, appReadTimeout),
-                maxTotalTimeout: appReadTimeout,
-                signal: options?.signal,
-              },
+            const limits = getMCPAppOperationLimits(mcpApps?.operationLimits);
+            const readResult = await this.appOperationBudget.run(
+              options?.signal ?? new AbortController().signal,
+              (signal) =>
+                appConnection.client.readResource(
+                  { uri: resourceUri },
+                  {
+                    timeout: Math.min(appConnection.timeout ?? limits.timeoutMs, limits.timeoutMs),
+                    maxTotalTimeout: limits.timeoutMs,
+                    signal,
+                  },
+                ),
+              limits,
             );
             if (!options?.signal?.aborted) {
               resolvedAppResource = selectResolvedAppResource(readResult.contents, resourceUri);

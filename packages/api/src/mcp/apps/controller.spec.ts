@@ -5,6 +5,7 @@ import type { RequestHandler, Response } from 'express';
 import type { MCPAppsControllerDependencies } from './controller';
 import type { MCPAppsProxyManager } from '../apps';
 import { createMCPAppsController } from './controller';
+import { MCPAppOperationBudget } from './budget';
 import { getPluginAuthMap } from '~/agents/auth';
 
 jest.mock('~/agents/auth', () => ({ getPluginAuthMap: jest.fn() }));
@@ -76,6 +77,7 @@ const asHandlerRequest = (request: MockRequest): Parameters<RequestHandler>[0] =
 const asHandlerResponse = (response: MockResponse): Response => response as unknown as Response;
 
 function makeDependencies(manager: MCPAppsProxyManager) {
+  const operationBudget = new MCPAppOperationBudget();
   const provider = jest.fn();
   const onOAuthCredentialsChanging = jest.fn(async () => async () => undefined);
   const dependencies: MCPAppsControllerDependencies = {
@@ -84,6 +86,7 @@ function makeDependencies(manager: MCPAppsProxyManager) {
     sandboxFrameAncestors: 'https://host.example.com',
     readSandboxFile: jest.fn(() => '<script>/*__CSP_APPLIED__*/ /*__VIEW_CSP__*/</script>'),
     getManager: jest.fn(() => manager),
+    getOperationBudget: jest.fn(() => operationBudget),
     getFlowManager: jest.fn(
       () => ({}) as ReturnType<MCPAppsControllerDependencies['getFlowManager']>,
     ),
@@ -862,6 +865,34 @@ describe('App operation budgets at the authenticated HTTP boundary', () => {
     expect(toolResponse.json).toHaveBeenCalledWith(
       expect.objectContaining({ error: 'mcp_app_response_too_large' }),
     );
+  });
+
+  it('shares the manager budget with an in-flight initial App resource read', async () => {
+    const manager = makeManager();
+    const operationBudget = new MCPAppOperationBudget();
+    const limits = { maxBytes: 4 * 1024 * 1024, timeoutMs: 30_000, maxActive: 1 };
+    let finish!: () => void;
+    const holding = operationBudget.run(
+      new AbortController().signal,
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+      limits,
+    );
+    const { dependencies } = makeDependencies(manager);
+    dependencies.getOperationBudget = () => operationBudget;
+    const response = makeResponse();
+    await createMCPAppsController(dependencies).readMCPResource(
+      asHandlerRequest(admitted({ maxActive: 1 })),
+      asHandlerResponse(response),
+      jest.fn(),
+    );
+    expect(response.status).toHaveBeenCalledWith(503);
+    expect(manager.readResource).not.toHaveBeenCalled();
+    await Promise.resolve();
+    finish();
+    await holding;
   });
 
   it('rejects overload without allocating a second manager request, then admits after settlement', async () => {

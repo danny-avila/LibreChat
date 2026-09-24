@@ -5,6 +5,7 @@ import type { Request, RequestHandler, Response } from 'express';
 import type { MCPAppAllowlists, MCPAppsProxyManager, AuthenticatedMCPAppUser } from '../apps';
 import type { UpstreamTokenProvider } from '../oauth/obo';
 import type { FlowStateManager } from '~/flow/manager';
+import type { MCPAppOperationBudget } from './budget';
 import type { MCPOAuthTokens } from '../oauth';
 import type * as t from '../types';
 import {
@@ -19,7 +20,7 @@ import {
   resolveAppValidationContext,
   resolveEffectiveAppServerConfig,
 } from '../apps';
-import { assertMCPAppResultFits, MCPAppOperationBudget } from './budget';
+import { assertMCPAppResultFits } from './budget';
 import { buildSandboxResponse } from '../sandbox';
 
 interface MCPAppsBody {
@@ -56,6 +57,7 @@ export interface MCPAppsControllerDependencies {
   sandboxFrameAncestors?: string;
   readSandboxFile: (path: string, encoding: 'utf8') => string;
   getManager: () => MCPAppsProxyManager;
+  getOperationBudget: () => MCPAppOperationBudget;
   getFlowManager: () => FlowStateManager<MCPOAuthTokens | null>;
   getAppConfig: (request: MCPAppsRequest) => Promise<MCPAppsConfig | undefined>;
   getSandboxCspLimits: () => Promise<MCPAppCspLimits>;
@@ -177,7 +179,6 @@ export function createMCPAppsController(dependencies: MCPAppsControllerDependenc
   serveMCPSandbox: RequestHandler;
   requireMCPAppsEnabled: RequestHandler;
 } {
-  const operationBudget = new MCPAppOperationBudget();
   let sandboxHtml: string | undefined;
   const loadSandboxHtml = (): string => {
     sandboxHtml ??= dependencies.readSandboxFile(dependencies.sandboxPath, 'utf8');
@@ -212,7 +213,7 @@ export function createMCPAppsController(dependencies: MCPAppsControllerDependenc
       try {
         cancellation.signal.throwIfAborted();
         const limits = resolveMCPAppOperationLimits(request.config?.mcpAppSandbox?.operationLimits);
-        const result = await operationBudget.run(
+        const result = await dependencies.getOperationBudget().run(
           cancellation.signal,
           async (signal) => {
             const body = request.body ?? {};
@@ -283,7 +284,7 @@ export function createMCPAppsController(dependencies: MCPAppsControllerDependenc
     try {
       cancellation.signal.throwIfAborted();
       const limits = resolveMCPAppOperationLimits(request.config?.mcpAppSandbox?.operationLimits);
-      const result = await operationBudget.run(
+      const result = await dependencies.getOperationBudget().run(
         cancellation.signal,
         async (signal) => {
           const body = request.body ?? {};

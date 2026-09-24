@@ -1145,6 +1145,47 @@ describe('MCPManager', () => {
       ).toHaveLength(1);
     });
 
+    it('retains a bound URI without retrying the tool when the shared App budget is full', async () => {
+      const limits = { maxBytes: 4 * 1024 * 1024, timeoutMs: 30_000, maxActive: 1 };
+      const manager = new MCPManager(undefined, undefined, {
+        create: jest.fn(() => 'binding'),
+        verify: jest.fn(() => true),
+      });
+      const request = jest.fn(async ({ method }: { method: string }) => {
+        if (method === 'tools/call') return toolResult;
+        throw new Error('resource read must not start when capacity is full');
+      });
+      jest.spyOn(manager, 'getConnection').mockResolvedValue(connectionFor(request));
+      let finish!: () => void;
+      const occupied = manager.appOperationBudget.run(
+        new AbortController().signal,
+        () =>
+          new Promise<void>((resolve) => {
+            finish = resolve;
+          }),
+        limits,
+      );
+
+      const [text, artifacts] = await manager.callTool({
+        user,
+        serverName,
+        serverConfig,
+        toolName: 'app_tool',
+        provider: 'openai',
+        flowManager,
+        mcpApps: { enabled: true, legacyHtmlEnabled: true, operationLimits: limits },
+      });
+      expect(text).toContain('ordinary output');
+      expect(artifacts?.ui_resources?.data?.[0]).toMatchObject({
+        uri: resourceUri,
+        serverBinding: 'binding',
+        content: toolResult.content,
+      });
+      expect(request.mock.calls.map(([call]) => call.method)).toEqual(['tools/call']);
+      finish();
+      await occupied;
+    });
+
     it('retains the bound URI if the read returns no usable matching App document', async () => {
       const request = jest.fn(async ({ method }: { method: string }) =>
         method === 'tools/call'

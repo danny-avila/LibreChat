@@ -113,8 +113,10 @@ overrides. They are read from the admitted deployment config, not from process e
 variables. The timeout is absolute across configuration, connection checkout,
 recovery and the SDK operation; progress notifications cannot extend the SDK call beyond it. The
 16-slot concurrency bound is **per LibreChat process**, shared across App resource, tool and binding
-validation routes. There is no queue: requests above it receive 503. An aborted or timed-out
-operation holds its slot until its underlying work actually settles, avoiding a false capacity
+validation routes and the optional initial document read after a tool completes. There is no queue:
+follow-up requests above it receive 503; an overloaded optional first read retains the bound URI
+for retry without changing the canonical tool result. An aborted or timed-out operation holds its
+slot until its underlying work actually settles, avoiding a false capacity
 release while upstream work remains active. This is not a distributed cluster-wide quota. Measure
 capacity per replica when sizing deployments. For safety, App-profile WebSocket connections are not
 supported: the installed SDK parses their messages before providing a configurable maximum payload.

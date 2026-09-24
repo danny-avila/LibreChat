@@ -116,6 +116,9 @@ describe('MCP Apps controller wiring', () => {
     const response = {};
 
     expect(dependencies.getManager).toBe(getMCPManager);
+    const appOperationBudget = {};
+    getMCPManager.mockReturnValueOnce({ appOperationBudget });
+    expect(dependencies.getOperationBudget()).toBe(appOperationBudget);
     expect(dependencies.readSandboxFile).toBe(fs.readFileSync);
     expect(dependencies.sandboxFrameAncestors).toBe('https://host.example.com');
     expect(dependencies.getFlowManager()).toBe('flow-manager');
