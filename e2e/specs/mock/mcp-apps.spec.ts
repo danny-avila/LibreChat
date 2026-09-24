@@ -268,8 +268,12 @@ async function expectConnectedApp(
   if (await open.count()) {
     if (occurrence > 0) {
       await open.evaluate((button) => {
-        const log = (event: Event) =>
-          console.info('MCP_APP_CLICK_TRACE', event.type, (event.target as Element).tagName);
+        const log = (event: Event) => {
+          button.setAttribute(
+            'data-mcp-browser-events',
+            `${button.getAttribute('data-mcp-browser-events') ?? ''} ${event.type}`,
+          );
+        };
         button.addEventListener('pointerdown', log, { once: true });
         button.addEventListener('click', log, { once: true });
       });
@@ -277,7 +281,11 @@ async function expectConnectedApp(
     await open.click();
     // Diagnostic: a synthetic event tells us if an iframe stole only the pointer click.
     if (occurrence > 0 && (await open.count())) {
-      console.info('MCP_APP_CLICK_TRACE', 'no state after pointer click');
+      console.info(
+        'MCP_APP_CLICK_TRACE',
+        'no React state after pointer click',
+        await open.getAttribute('data-mcp-browser-events'),
+      );
       await open.dispatchEvent('click');
     }
   }
