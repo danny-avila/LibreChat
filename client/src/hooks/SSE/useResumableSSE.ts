@@ -3136,6 +3136,8 @@ export default function useResumableSSE(
               }
               const fetched = await queryClient.fetchQuery<TMessage[]>({
                 queryKey: messageQueryKey,
+                // The first stream can finish before CREATED mounts the saved-chat query.
+                queryFn: () => dataService.getMessagesByConvoId(convoId),
               });
               if (!isCurrentSubscription()) {
                 return;
@@ -3304,18 +3306,42 @@ export default function useResumableSSE(
             !createdStreamIdsRef.current.has(currentStreamId) &&
             optimisticStreamIdsRef.current.has(currentStreamId)
           ) {
-            if (isResume) {
-              // A resumed subscribe attaches to an already-adopted stream (e.g. a deduped
-              // start request). A 404 means the job is gone — but the conversation may be
-              // persisted (the original completed and was cleaned up) or may never have
-              // existed (the winner died before persisting). Don't guess: reconcile against
-              // the server so a real conversation stays and a phantom is dropped.
-              invalidateConversationLists(queryClient);
-              queryClient.invalidateQueries({ queryKey: [QueryKeys.pinnedConversations] });
-            } else {
-              // Fresh optimistic stream that never started: prune immediately.
-              removeConvoFromAllQueries(queryClient, currentStreamId);
+            // Both fresh and resumed subscriptions can miss every event of a fast turn.
+            // A missing job proves neither that the conversation was saved nor that it failed.
+            try {
+              const persisted = await dataService.getConversationById(recoveryConvoId);
+              if (!isCurrentSubscription()) return;
+              if (persisted?.conversationId === recoveryConvoId) {
+                queryClient.setQueryData([QueryKeys.conversation, recoveryConvoId], persisted);
+                upsertConvoInAllQueries(queryClient, persisted);
+                if (!isAddedRequest) {
+                  setConversation?.((current) => {
+                    if (
+                      current?.conversationId != null &&
+                      current.conversationId !== Constants.NEW_CONVO &&
+                      current.conversationId !== recoveryConvoId
+                    )
+                      return current;
+                    return keepLocalCodeApprovalMode(
+                      { ...current, ...persisted },
+                      current,
+                      current?.conversationId,
+                    );
+                  });
+                }
+              }
+            } catch (error) {
+              if (!isCurrentSubscription()) return;
+              if (toStartGenerationError(error)?.response?.status === 404) {
+                removeConvoFromAllQueries(queryClient, currentStreamId);
+              }
             }
+            // An inconclusive read must not turn a saved chat into a phantom.
+            invalidateConversationLists(queryClient);
+            queryClient.invalidateQueries({ queryKey: [QueryKeys.pinnedConversations] });
+          }
+          if (persistedMessages) {
+            setMessages(persistedMessages);
           }
           subscriptionRetired = true;
           setIsSubmitting(false);
@@ -3866,6 +3892,8 @@ export default function useResumableSSE(
       }
     },
     [
+      isAddedRequest,
+      setConversation,
       runIndex,
       token,
       setAbortScroll,

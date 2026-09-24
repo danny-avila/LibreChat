@@ -419,9 +419,16 @@ const amazonModels = {
   'nova-2-pro': 995000, // -5000 from max
 };
 
+/** Bedrock can reject near-limit GPT prompts before its published window is reached. */
+const bedrockOpenAIContext = 950000;
+
 const openAIBedrockModels = {
   'openai.gpt-oss-20b': 128000,
   'openai.gpt-oss-120b': 128000,
+  'openai.gpt-5.6': bedrockOpenAIContext,
+  'openai.gpt-6-astra': bedrockOpenAIContext,
+  'openai.gpt-6-sol': bedrockOpenAIContext,
+  'openai.gpt-6-luna': bedrockOpenAIContext,
 };
 
 const bedrockModels = {

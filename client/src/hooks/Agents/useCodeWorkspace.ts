@@ -10,6 +10,7 @@ import {
   CODE_ENVIRONMENT_DECISION_VERSION,
   CODE_ENVIRONMENT_MOVE_VERSION,
   CODE_ENVIRONMENT_TRANSITION_VERSION,
+  CODE_WORKSPACE_RECOVERY_VERSION,
   PermissionTypes,
   Permissions,
 } from 'librechat-data-provider';
@@ -60,7 +61,7 @@ export interface CodeWorkspaceEnvironmentResult {
  * it never touches the chat's messages or copies a file between machines.
  *
  * - `move`: the attached decision no longer covers every environment the chat's agents use, most
- *   often because an agent was pointed at a different machine after the chat was created.
+ *   often because an agent was pointed at a different machine or its saved workspace disappeared.
  * - `attach`: the chat has been running without an attached environment and can now take one, so
  *   switching a saved chat to a coding agent is a transition rather than a dead end.
  */
@@ -74,9 +75,9 @@ export interface CodeWorkspaceTransition {
   previous: Array<
     Pick<TPublicCodeEnvironment, 'id'> & Partial<Pick<TPublicCodeEnvironment, 'name'>>
   >;
-  /** Sealed selections the agents still use; a move carries them over unchanged. */
+  /** Registered sealed selections the agents still use; a move carries them over unchanged. */
   retained: CodeWorkspaceSelection[];
-  /** Environments the chat may attach a workspace on. */
+  /** Environments needing a new selection, including those whose workspace disappeared. */
   targets: CodeWorkspaceEnvironmentResult[];
   /** Whether the chat may leave attached execution and continue without a workspace. Offered when
    *  the machine it sealed is no longer usable, so an unreachable worker never silently becomes a
@@ -166,6 +167,9 @@ export default function useCodeWorkspace(
     startupConfig?.codeEnvironmentTransitionVersion === CODE_ENVIRONMENT_TRANSITION_VERSION;
   const recovery = useConversationCodeEnvironmentRecovery(conversation?.conversationId);
   const replacingDecision = useIsReplacingConversationCodeEnvironment(conversation?.conversationId);
+  const supportsWorkspaceRecovery =
+    supportsEnvironmentMoves &&
+    startupConfig?.codeWorkspaceRecoveryVersion === CODE_WORKSPACE_RECOVERY_VERSION;
   const preferences = useWorkspacePreferences(conversation?.agent_id);
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
   const canRunCode = useHasAccess({
@@ -472,7 +476,10 @@ export default function useCodeWorkspace(
       retained: environmentResults.flatMap((result) =>
         result.state === 'ready' && result.selected != null ? [result.selected] : [],
       ),
-      targets: environmentResults.filter((result) => result.state === 'choose'),
+      targets: environmentResults.filter(
+        (result) =>
+          result.state === 'choose' || (supportsWorkspaceRecovery && result.state === 'missing'),
+      ),
     };
     /**
      * A transition replaces the decision whole, so one that named only some of the environments
@@ -511,7 +518,11 @@ export default function useCodeWorkspace(
        *  offering only where leaving attached execution is also served. */
       if (move.targets.length > 0 || move.retained.length > 0 || move.detachable) {
         transition = move;
-        if (state === 'choose') state = 'relocatable';
+        if (
+          state === 'choose' ||
+          (supportsWorkspaceRecovery && state === 'missing' && coversEveryEnvironment)
+        )
+          state = 'relocatable';
       }
     }
   }

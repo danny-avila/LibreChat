@@ -53,7 +53,7 @@ jobs:
       - name: Install and build LibreChat
         env:
           VITE_ENABLE_LOGGER: 'true'
-          VITE_LOGGER_FILTER: conversation
+          VITE_LOGGER_FILTER: conversation,ResumableSSE
         run: |
           npm ci
           npm run e2e:prepare

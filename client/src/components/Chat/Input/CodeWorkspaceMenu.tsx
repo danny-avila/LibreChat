@@ -55,6 +55,12 @@ function describeTransition(
   transition: CodeWorkspaceTransition,
   localize: ReturnType<typeof useLocalize>,
 ): { label: string; info: string } {
+  if (transition.targets.some(({ state }) => state === 'missing')) {
+    return {
+      label: localize('com_ui_code_workspace_recover'),
+      info: localize('com_ui_code_workspace_recover_info'),
+    };
+  }
   const targetNames = transition.targets
     .map(({ environment }) => environment.name ?? environment.id)
     .join(', ');
@@ -266,7 +272,7 @@ export default function CodeWorkspaceMenu({
   const moveReady =
     transition != null && chosenTargets.length === transition.targets.length && proposed.length > 0;
   const applyTransition = (to: CodeWorkspaceSelection[]) => {
-    if (transition == null) return;
+    if (transition == null || disabled || moveMutation.isLoading) return;
     moveMutation.mutate(
       { conversationId: transition.conversationId, from: transition.from, to },
       {
@@ -392,11 +398,7 @@ export default function CodeWorkspaceMenu({
         {transition != null && transitionText != null ? (
           <>
             <Ariakit.MenuHeading render={<div />} className={headingClasses}>
-              {localize(
-                transition.kind === 'attach'
-                  ? 'com_ui_code_workspace_attach'
-                  : 'com_ui_code_workspace_move',
-              )}
+              {transitionText.label}
             </Ariakit.MenuHeading>
             <p className="px-2.5 pb-2 text-xs text-text-secondary">{transitionText.info}</p>
             {transition.targets.map((target) => (
@@ -418,7 +420,7 @@ export default function CodeWorkspaceMenu({
             <Ariakit.MenuSeparator className="my-1 h-0 w-full border-t border-border-light" />
             {offersMove && (
               <Ariakit.MenuItem
-                disabled={!moveReady || moveMutation.isLoading}
+                disabled={disabled || !moveReady || moveMutation.isLoading}
                 hideOnClick={true}
                 onClick={confirmMove}
                 className={cn(
@@ -435,7 +437,7 @@ export default function CodeWorkspaceMenu({
             {transition.detachable && (
               <Ariakit.MenuItem
                 data-testid="code-workspace-detach"
-                disabled={moveMutation.isLoading}
+                disabled={disabled || moveMutation.isLoading}
                 hideOnClick={true}
                 onClick={confirmDetach}
                 className={cn(

@@ -13,6 +13,8 @@ export const CODE_ENVIRONMENT_MOVE_VERSION = 1 as const;
  * never offers an attach a replica would refuse as `locked` or a detach it would call `invalid`.
  */
 export const CODE_ENVIRONMENT_TRANSITION_VERSION = 2 as const;
+/** Additive capability for replacing a missing workspace without disabling moves in V1 clients. */
+export const CODE_WORKSPACE_RECOVERY_VERSION = 1 as const;
 export const CODE_WORKSPACE_OPERATIONS = [
   'read_file',
   'search_text',

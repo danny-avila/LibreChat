@@ -91,6 +91,8 @@ export function createCodeBridgeStatusPoller({
   baseURL: string;
   token: string;
   workerId: string;
+  /** Force a new upstream request, bypassing cached results and older in-flight polls. */
+  bypassCache?: boolean;
 }) => Promise<CodeBridgeWorkerStatus> {
   const requests = new Map<
     string,
@@ -98,6 +100,14 @@ export function createCodeBridgeStatusPoller({
   >();
   let active = 0;
   return (params) => {
+    if (params.bypassCache) {
+      if (active >= maxConcurrent) return Promise.reject(new CodeBridgeStatusError('busy'));
+      active += 1;
+      // Mutation validation needs its own observation, but still shares the polling capacity.
+      return getCodeBridgeWorkerStatus({ ...params, fetchImpl }).finally(() => {
+        active -= 1;
+      });
+    }
     const credentialId = createHash('sha256').update(params.token).digest('base64url');
     const normalizedBaseURL = params.baseURL.trim().replace(/\/+$/, '');
     const key = `${normalizedBaseURL}\u0000${params.workerId}\u0000${credentialId}`;

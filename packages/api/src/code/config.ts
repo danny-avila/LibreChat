@@ -3,8 +3,10 @@ import {
   CODE_ENVIRONMENT_DECISION_VERSION,
   CODE_ENVIRONMENT_MOVE_VERSION,
   CODE_ENVIRONMENT_TRANSITION_VERSION,
+  CODE_WORKSPACE_RECOVERY_VERSION,
   EModelEndpoint,
 } from 'librechat-data-provider';
+import type { TStartupConfig } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type {
   AccessibleCodeEnvironmentConfiguration,
@@ -61,6 +63,18 @@ export function resolveCodeEnvironmentTransitionVersion(
       ?.allowAttachDetach === true
     ? CODE_ENVIRONMENT_TRANSITION_VERSION
     : undefined;
+}
+
+/** Advertises recovery separately so already-open V1 clients retain ordinary environment moves. */
+export function resolveCodeEnvironmentMoveCapabilities(
+  appConfig?: Pick<AppConfig, 'endpoints'> | null,
+): Pick<TStartupConfig, 'codeEnvironmentMoveVersion' | 'codeWorkspaceRecoveryVersion'> {
+  const codeEnvironmentMoveVersion = resolveCodeEnvironmentMoveVersion(appConfig);
+  if (codeEnvironmentMoveVersion == null) return {};
+  return {
+    codeEnvironmentMoveVersion,
+    codeWorkspaceRecoveryVersion: CODE_WORKSPACE_RECOVERY_VERSION,
+  };
 }
 
 /** Enables the implicit managed route only after the versioned rollout is complete. */

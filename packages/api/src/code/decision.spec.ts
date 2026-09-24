@@ -192,21 +192,15 @@ describe('resolveConversationCodeEnvironmentMove', () => {
     ).toEqual({ mode: 'attached', codeWorkspaces: [vm] });
   });
 
-  it('never switches the workspace of an environment the decision already covers', () => {
-    expect(() =>
+  it('accepts an explicit workspace replacement for the caller to verify against live status', () => {
+    const replacement = { environmentId: 'mac', workspaceId: 'canary' };
+    expect(
       resolveConversationCodeEnvironmentMove({
-        conversation: sealedOn(mac),
-        from: [mac],
-        to: [{ environmentId: 'mac', workspaceId: 'canary' }],
+        conversation: sealedOn(mac, vm),
+        from: [mac, vm],
+        to: [replacement, vm],
       }),
-    ).toThrow(locked);
-    expect(() =>
-      resolveConversationCodeEnvironmentMove({
-        conversation: sealedOn(mac),
-        from: [mac],
-        to: [{ environmentId: 'mac', workspaceId: 'canary' }, vm],
-      }),
-    ).toThrow(locked);
+    ).toEqual({ mode: 'attached', codeWorkspaces: [replacement, vm] });
   });
 
   it('drops an environment the agents stopped using without adding one', () => {

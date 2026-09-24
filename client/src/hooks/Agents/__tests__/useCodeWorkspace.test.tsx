@@ -924,6 +924,151 @@ describe('useCodeWorkspace', () => {
       );
     });
 
+    it('does not offer recovery to an API that only supports environment moves', () => {
+      mockStartupConfig.mockReturnValue({ codeEnvironmentMoveVersion: 1 });
+      const removed = { environmentId: 'personal-vm', workspaceId: 'removed-project' };
+
+      const { result } = renderHook(() => useCodeWorkspace(sealed([removed])));
+
+      expect(result.current.state).toBe('missing');
+      expect(result.current.transition).toBeUndefined();
+    });
+
+    describe('missing workspace recovery', () => {
+      const missing = { environmentId: 'personal-vm', workspaceId: 'deleted-project' };
+      const replacement = { environmentId: 'personal-vm', workspaceId: 'project-a' };
+
+      beforeEach(() => {
+        mockStartupConfig.mockReturnValue({
+          codeEnvironmentMoveVersion: 1,
+          codeWorkspaceRecoveryVersion: 1,
+        });
+      });
+
+      it.each(['attached', undefined] as const)(
+        'offers explicit recovery without silently selecting a replacement for mode %s',
+        (codeEnvironmentMode) => {
+          const { result, rerender } = renderHook(
+            ({ codeWorkspaces }) =>
+              useCodeWorkspace({ ...sealed(codeWorkspaces), codeEnvironmentMode }),
+            { initialProps: { codeWorkspaces: [missing] } },
+          );
+
+          expect(result.current.state).toBe('relocatable');
+          expect(result.current.canSubmit).toBe(false);
+          expect(result.current.selections).toBeUndefined();
+          expect(result.current.resolveSubmission([missing], 'attached')).toBeUndefined();
+          expect(result.current.transition).toEqual({
+            kind: 'move',
+            detachable: false,
+            conversationId: 'existing',
+            from: [missing],
+            previous: [],
+            retained: [],
+            targets: [expect.objectContaining({ state: 'missing', selected: undefined })],
+          });
+
+          rerender({ codeWorkspaces: [replacement] });
+          expect(result.current.state).toBe('ready');
+          expect(result.current.locked).toBe(true);
+          expect(result.current.canSubmit).toBe(true);
+          expect(result.current.transition).toBeUndefined();
+        },
+      );
+
+      it.each([
+        { codeEnvironmentMoveVersion: 1 },
+        { codeEnvironmentMoveVersion: 1, codeWorkspaceRecoveryVersion: 2 },
+        { codeWorkspaceRecoveryVersion: 1 },
+        { codeEnvironmentMoveVersion: 2, codeWorkspaceRecoveryVersion: 1 },
+      ])('never offers recovery without both supported capabilities: %j', (config) => {
+        mockStartupConfig.mockReturnValue(config);
+        const { result } = renderHook(() => useCodeWorkspace(sealed([missing])));
+        expect(result.current.state).toBe('missing');
+        expect(result.current.transition).toBeUndefined();
+        expect(result.current.canSubmit).toBe(false);
+      });
+
+      it('preserves ordinary environment moves on a recovery-capable API', () => {
+        const { result } = renderHook(() => useCodeWorkspace(sealed([mac])));
+        expect(result.current.state).toBe('relocatable');
+        expect(result.current.transition?.targets[0].state).toBe('choose');
+      });
+
+      it('offers the empty recovery picker without inventing a replacement', () => {
+        mockStatus()[0].data.workspaces = [];
+        const { result } = renderHook(() => useCodeWorkspace(sealed([missing])));
+        expect(result.current.transition?.targets[0].workspaces).toEqual([]);
+        expect(result.current.canSubmit).toBe(false);
+      });
+
+      it.each(['ready', 'loading', 'unavailable', 'unsupported', 'choose', 'missing'] as const)(
+        'handles a second environment in state %s without dropping its sealed selection',
+        (state) => {
+          mockAgentPermissions().agent.subagents = { enabled: true, agent_ids: ['child'] };
+          mockAgentsMap.mockReturnValue({
+            child: {
+              id: 'child',
+              stateful_code_sessions: true,
+              code_environment_id: 'team-vm',
+              tools: [Tools.execute_code],
+            },
+          });
+          mockAgentsConfig().agentsConfig.statefulCodeSessions.environments.push({
+            id: 'team-vm',
+            name: 'Team VM',
+            type: 'attached',
+            baseURL: 'https://team.example.com',
+          });
+          const kept = { environmentId: 'team-vm', workspaceId: 'shared' };
+          mockStatus().push({
+            data: {
+              environmentId: 'team-vm',
+              status: state === 'unavailable' ? 'unavailable' : 'ready',
+              workspaces:
+                state === 'unsupported'
+                  ? undefined
+                  : [{ id: state === 'missing' ? 'replacement' : 'shared' }],
+            },
+            isLoading: state === 'loading',
+            isError: false,
+          });
+          const from = state === 'choose' ? [missing] : [missing, kept];
+          const { result } = renderHook(() => useCodeWorkspace(sealed(from)));
+
+          expect(result.current.canSubmit).toBe(false);
+          if (['loading', 'unavailable', 'unsupported'].includes(state)) {
+            expect(result.current.transition).toBeUndefined();
+            return;
+          }
+          expect(result.current.transition?.from).toEqual(from);
+          expect(result.current.transition?.retained).toEqual(state === 'ready' ? [kept] : []);
+          expect(
+            result.current.transition?.targets.map(({ environment }) => environment.id),
+          ).toEqual(state === 'ready' ? ['personal-vm'] : ['personal-vm', 'team-vm']);
+        },
+      );
+    });
+
+    it('offers both missing-workspace replacement and explicit detach when both are advertised', () => {
+      mockStartupConfig.mockReturnValue({
+        codeEnvironmentDecisionVersion: 1,
+        codeEnvironmentMoveVersion: 1,
+        codeWorkspaceRecoveryVersion: 1,
+        codeEnvironmentTransitionVersion: 2,
+      });
+      const missing = { environmentId: 'personal-vm', workspaceId: 'removed-project' };
+      const { result } = renderHook(() => useCodeWorkspace(sealed([missing])));
+      expect(result.current.state).toBe('relocatable');
+      expect(result.current.canSubmit).toBe(false);
+      expect(result.current.transition).toMatchObject({
+        kind: 'move',
+        detachable: true,
+        from: [missing],
+        targets: [expect.objectContaining({ state: 'missing' })],
+      });
+    });
+
     it('keeps a reachable sealed workspace out of the composer', () => {
       const kept = { environmentId: 'personal-vm', workspaceId: 'project-a' };
 

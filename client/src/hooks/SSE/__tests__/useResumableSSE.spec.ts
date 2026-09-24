@@ -502,6 +502,7 @@ describe('useResumableSSE', () => {
   });
 
   it('invalidates the stream conversation id on 404 for a new conversation', async () => {
+    mockGetConversationById.mockRejectedValueOnce({ response: { status: 404 } });
     /* Key-aware: the conversation cache helpers now run a second, pinned-keyed pass,
        and a fixed return value would attribute those writes to allConversations. */
     mockFindAll.mockImplementation((queryKey?: unknown) => [
@@ -566,6 +567,82 @@ describe('useResumableSSE', () => {
     });
     expect(result.pages[0].conversations).toEqual([{ conversationId: 'other' }]);
     unmount();
+  });
+
+  it('hydrates a first conversation when a fast run finishes before stream attachment', async () => {
+    const persisted = {
+      conversationId: 'stream-123',
+      endpoint: 'agents',
+      agent_id: 'ordinary',
+      codeEnvironmentMode: 'without_attached',
+    };
+    const messages = [{ messageId: 'saved-response', conversationId: 'stream-123', text: 'Done' }];
+    mockGetConversationById.mockResolvedValue(persisted);
+    mockFetchQuery.mockImplementation(({ queryFn }) => {
+      if (typeof queryFn !== 'function') throw new Error('Missing queryFn');
+      return Promise.resolve(messages);
+    });
+    const chatHelpers = buildChatHelpers();
+    const { unmount } = renderHook(() =>
+      useResumableSSE(
+        buildSubmission({
+          conversation: {},
+          userMessage: {
+            messageId: 'msg-1',
+            conversationId: null,
+            text: 'Hello',
+            isCreatedByUser: true,
+            sender: 'User',
+            parentMessageId: Constants.NO_PARENT,
+          },
+        }),
+        chatHelpers,
+      ),
+    );
+    await flushMicrotasks();
+    await act(async () => {
+      await getLastSSE()._emit('error', { responseCode: 404 });
+    });
+    expect(mockGetConversationById).toHaveBeenCalledWith('stream-123');
+    expect(chatHelpers.setMessages).toHaveBeenCalledWith(messages);
+    const update = chatHelpers.setConversation.mock.calls.at(-1)?.[0];
+    expect(update({ conversationId: 'new', codeApprovalMode: 'ask' })).toEqual({
+      ...persisted,
+      codeApprovalMode: 'ask',
+    });
+    const other = { conversationId: 'other', agent_id: 'different' };
+    expect(update(other)).toBe(other);
+    expect(mockSetRunEnd).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'aborted' }));
+    unmount();
+  });
+
+  it('ignores a first-stream conversation lookup that returns after navigation', async () => {
+    let finish!: (value: unknown) => void;
+    mockGetConversationById.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const chatHelpers = buildChatHelpers();
+    const { unmount } = renderHook(() =>
+      useResumableSSE(buildSubmission({ conversation: {} }), chatHelpers),
+    );
+    await flushMicrotasks();
+    await act(async () => {
+      getLastSSE()._emit('error', { responseCode: 404 });
+    });
+    await waitFor(() => expect(finish).toBeDefined());
+    unmount();
+    mockSetQueryData.mockClear();
+    chatHelpers.setConversation.mockClear();
+    chatHelpers.setMessages.mockClear();
+    await act(async () =>
+      finish({ conversationId: 'stream-123', codeEnvironmentMode: 'without_attached' }),
+    );
+    expect(chatHelpers.setConversation).not.toHaveBeenCalled();
+    expect(chatHelpers.setMessages).not.toHaveBeenCalled();
+    expect(mockSetQueryData).not.toHaveBeenCalled();
   });
 
   it('reconciles conversations via refetch instead of removing them on a resume 404', async () => {
@@ -4659,6 +4736,7 @@ describe('useResumableSSE', () => {
 
     expect(mockFetchQuery).toHaveBeenCalledWith({
       queryKey: [QueryKeys.messages, CONV_ID],
+      queryFn: expect.any(Function),
     });
     expect(mockSettleAppliedSteerParts).toHaveBeenCalledWith(CONV_ID, persisted);
     unmount();

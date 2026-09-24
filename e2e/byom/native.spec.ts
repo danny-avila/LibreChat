@@ -49,7 +49,7 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
   // Emit only conversation identifiers on failure, never raw browser arguments or worker logs.
   const conversationEvents: unknown[] = [];
   page.on('console', async (message) => {
-    if (!message.text().startsWith('[conversation]')) return;
+    if (!/^\[(conversation|ResumableSSE)\]/.test(message.text())) return;
     const values = await Promise.all(
       message.args().map((value, index) =>
         value
@@ -61,13 +61,16 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
               conversationId: record.conversationId,
               endpoint: record.endpoint,
               agent_id: record.agent_id,
+              streamId: record.streamId,
+              isResume: record.isResume,
+              hasResponseMessage: record.hasResponseMessage,
             };
           }, index)
           .catch(() => undefined),
       ),
     );
     conversationEvents.push(values);
-    if (conversationEvents.length > 20) conversationEvents.shift();
+    if (conversationEvents.length > 100) conversationEvents.shift();
   });
   let selectedWorker: Worker;
   let selectedApprovalMode: 'ask' | 'acceptEdits' | 'fullAccess' = 'ask';
@@ -266,6 +269,7 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
       )
       .toBe(false);
     await expect(page.getByText(text, { exact: true }).last()).toBeVisible();
+    await expect(page.getByText('Acceptance model ready.', { exact: true }).last()).toBeVisible();
     await expect(page.getByTestId('stop-generation-button')).toBeHidden();
     await expect(page).toHaveURL(new RegExp(`/c/${conversationId}$`));
     return conversationId;
@@ -313,7 +317,27 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
         'Acceptance ordinary chat',
       );
       await expect(page).toHaveURL(/\/c\/new$/);
+      // Reproduce a first turn that settles before the browser attaches. Do not rely on
+      // machine speed to cover the missing-stream recovery that must preserve saved identity.
+      const streamRoute = '**/api/agents/chat/stream/**';
+      await page.route(streamRoute, async (route) => {
+        const streamId = new URL(route.request().url()).pathname.split('/').pop();
+        await expect
+          .poll(
+            async () => {
+              const status = await requestJson<{ active: boolean }>(page, {
+                path: `/api/agents/chat/status/${streamId}`,
+                token,
+              });
+              return status.active;
+            },
+            { timeout: 30_000 },
+          )
+          .toBe(false);
+        await route.continue();
+      });
       const conversationId = await chat('Keep this conversation and its history.');
+      await page.unroute(streamRoute);
       const ordinaryDecision = await readDecision(conversationId);
       expect(ordinaryDecision.codeEnvironmentMode).toBe('without_attached');
       expect(ordinaryDecision.codeWorkspaces ?? []).toEqual([]);

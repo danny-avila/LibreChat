@@ -6,6 +6,7 @@ import {
   resolveCodeEnvironmentDecisionVersion,
   resolveCodeEnvironmentMoveVersion,
   resolveCodeEnvironmentTransitionVersion,
+  resolveCodeEnvironmentMoveCapabilities,
 } from './config';
 
 describe('resolveCodeEnvironmentDecisionVersion', () => {
@@ -33,6 +34,10 @@ describe('resolveCodeEnvironmentMoveVersion', () => {
 
   it('advertises moves only where the effective policy enables them', () => {
     expect(resolveCodeEnvironmentMoveVersion(withMoves({ enabled: true }))).toBe(1);
+    expect(resolveCodeEnvironmentMoveCapabilities(withMoves({ enabled: true }))).toEqual({
+      codeEnvironmentMoveVersion: 1,
+      codeWorkspaceRecoveryVersion: 1,
+    });
   });
 
   /* Attaching and leaving ship under the same policy as the move but on their own number, so a
@@ -65,12 +70,15 @@ describe('resolveCodeEnvironmentMoveVersion', () => {
     'keeps sealed decisions immovable by default: %j',
     (conversationMoves) => {
       expect(resolveCodeEnvironmentMoveVersion(withMoves(conversationMoves))).toBeUndefined();
+      expect(resolveCodeEnvironmentMoveCapabilities(withMoves(conversationMoves))).toEqual({});
     },
   );
 
   it('keeps moves off without any stateful code configuration', () => {
     expect(resolveCodeEnvironmentMoveVersion({} as AppConfig)).toBeUndefined();
     expect(resolveCodeEnvironmentMoveVersion(undefined)).toBeUndefined();
+    expect(resolveCodeEnvironmentMoveCapabilities({} as AppConfig)).toEqual({});
+    expect(resolveCodeEnvironmentMoveCapabilities(undefined)).toEqual({});
   });
 });
 
