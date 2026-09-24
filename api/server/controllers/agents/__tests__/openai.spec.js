@@ -820,6 +820,34 @@ describe('OpenAIChatCompletionController', () => {
     expect(mockExecution.beginProviderExecution).toHaveBeenCalledTimes(1);
   });
 
+  it('includes persistent-memory guidance in an inline agent with no saved memories', async () => {
+    const api = require('@librechat/api');
+    const { memoryInstructions, buildInlineMemoryContext } = jest.requireActual('@librechat/api');
+    const agent = {
+      id: 'agent-123',
+      model: 'gpt-4',
+      model_parameters: {},
+      toolRegistry: {},
+      edges: [],
+      memoryToolsRegistered: true,
+    };
+    api.initializeAgent.mockResolvedValueOnce(agent);
+    mockBuildInlineMemoryContext.mockImplementationOnce(buildInlineMemoryContext);
+
+    await OpenAIChatCompletionController(req, res);
+
+    expect(mockApplyContextToAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent,
+        sharedRunContext: expect.stringContaining(memoryInstructions),
+      }),
+    );
+    expect(require('~/models').getFormattedMemories).toHaveBeenCalledWith({
+      userId: 'user-123',
+      agentId: undefined,
+    });
+  });
+
   it('resolves saved graph subagents for remote chat-completion runs', async () => {
     const {
       initializeAgent,

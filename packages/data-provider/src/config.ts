@@ -31,7 +31,11 @@ import {
   MAX_SUBAGENTS_CEILING,
   DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
 } from './limits';
-import { CODE_ENVIRONMENT_DECISION_VERSION, CODE_ENVIRONMENT_MOVE_VERSION } from './code/workspace';
+import {
+  CODE_ENVIRONMENT_DECISION_VERSION,
+  CODE_ENVIRONMENT_MOVE_VERSION,
+  CODE_WORKSPACE_RECOVERY_VERSION,
+} from './code/workspace';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
@@ -1367,7 +1371,8 @@ export const agentsEndpointSchema = baseEndpointSchema
             })
             .optional(),
           /** Server-only policy letting a conversation's owner move its sealed attached decision
-           * onto the environments its agents now use. Omit to keep sealed decisions immovable. */
+           * onto the environments its agents now use, or recover a missing workspace. Omit to keep
+           * sealed decisions immovable. */
           conversationMoves: z
             .object({
               enabled: z.boolean().optional(),
@@ -1500,6 +1505,33 @@ export const agentsEndpointSchema = baseEndpointSchema
       eventDriven: z
         .object({
           selfUrl: z.string().url().optional(),
+          /** Every replica keeps polling Mongo as a crash-recovery fallback. Wakes
+           * keep local delivery prompt; these caps bound work missed across replicas. */
+          idlePolling: z
+            .object({
+              deliveryMaxIntervalMs: z
+                .number()
+                .int()
+                .min(1_000)
+                .max(300_000)
+                .optional()
+                .default(15_000),
+              queuedTurnMaxIntervalMs: z
+                .number()
+                .int()
+                .min(30_000)
+                .max(300_000)
+                .optional()
+                .default(120_000),
+              maintenanceMaxIntervalMs: z
+                .number()
+                .int()
+                .min(30_000)
+                .max(300_000)
+                .optional()
+                .default(120_000),
+            })
+            .optional(),
         })
         .optional(),
       /** Conversational background-task delivery policy. Automatic completion wakeups are
@@ -2096,6 +2128,24 @@ export enum RetentionMode {
   TEMPORARY = 'temporary',
 }
 
+/** Single source for the agents panel selector's unsearched list cap; the
+ * schema default and the client fallback both read it. */
+export const DEFAULT_AGENT_SELECTOR_LIMIT = 10;
+export const AGENT_SELECTOR_LIMIT_MIN = 1;
+export const AGENT_SELECTOR_LIMIT_MAX = 100;
+
+/** Runtime guard for values that bypass `interfaceSchema`: raw librechat.yaml
+ * reads and principal-scoped admin overrides reach the client unparsed, so an
+ * out-of-bounds value falls back to the default instead of emptying the list. */
+export function normalizeAgentSelectorLimit(value: unknown): number {
+  return typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= AGENT_SELECTOR_LIMIT_MIN &&
+    value <= AGENT_SELECTOR_LIMIT_MAX
+    ? value
+    : DEFAULT_AGENT_SELECTOR_LIMIT;
+}
+
 export const interfaceSchema = z
   .object({
     privacyPolicy: z
@@ -2110,6 +2160,14 @@ export const interfaceSchema = z
     modelSelect: z.boolean().optional(),
     /** Milliseconds between syntax highlights while a code block streams. */
     codeHighlightThrottleMs: z.number().int().min(0).max(60_000).default(300),
+    /** Most agents the agents panel selector lists before a search term is
+     * typed; typing lifts the cap so search reaches every agent. */
+    agentSelectorLimit: z
+      .number()
+      .int()
+      .min(AGENT_SELECTOR_LIMIT_MIN)
+      .max(AGENT_SELECTOR_LIMIT_MAX)
+      .default(DEFAULT_AGENT_SELECTOR_LIMIT),
     parameters: z.boolean().optional(),
     multiConvo: z.boolean().optional(),
     bookmarks: z.boolean().optional(),
@@ -2243,6 +2301,7 @@ export const interfaceSchema = z
   .default({
     modelSelect: true,
     codeHighlightThrottleMs: 300,
+    agentSelectorLimit: DEFAULT_AGENT_SELECTOR_LIMIT,
     parameters: true,
     presets: true,
     multiConvo: true,
@@ -2371,6 +2430,9 @@ export type TStartupConfig = {
   /** Owner moves of a sealed code-environment decision supported by the API. Clients must not
    * offer to move a conversation unless this is advertised. */
   codeEnvironmentMoveVersion?: typeof CODE_ENVIRONMENT_MOVE_VERSION;
+  /** Additive recovery support. Clients require this and the move capability before replacing
+   * a missing workspace. Keeping it separate preserves exact-version checks in older clients. */
+  codeWorkspaceRecoveryVersion?: typeof CODE_WORKSPACE_RECOVERY_VERSION;
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;

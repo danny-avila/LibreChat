@@ -813,6 +813,34 @@ describe('createResponse controller', () => {
     expect(mockExecution.beginProviderExecution).toHaveBeenCalledTimes(1);
   });
 
+  it('includes persistent-memory guidance in an inline agent with no saved memories', async () => {
+    const api = require('@librechat/api');
+    const { memoryInstructions, buildInlineMemoryContext } = jest.requireActual('@librechat/api');
+    const agent = {
+      id: 'agent-123',
+      model: 'claude-3',
+      model_parameters: {},
+      toolRegistry: {},
+      edges: [],
+      memoryToolsRegistered: true,
+    };
+    api.initializeAgent.mockResolvedValueOnce(agent);
+    mockBuildInlineMemoryContext.mockImplementationOnce(buildInlineMemoryContext);
+
+    await createResponse(req, res);
+
+    expect(mockApplyContextToAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent,
+        sharedRunContext: expect.stringContaining(memoryInstructions),
+      }),
+    );
+    expect(require('~/models').getFormattedMemories).toHaveBeenCalledWith({
+      userId: 'user-123',
+      agentId: undefined,
+    });
+  });
+
   it('resolves saved graph subagents for remote Responses API runs', async () => {
     const { initializeAgent, resolveSubagentGraphs } = require('@librechat/api');
     const primaryConfig = {

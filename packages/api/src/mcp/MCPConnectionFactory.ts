@@ -403,6 +403,10 @@ export class MCPConnectionFactory {
         return { tools: null, connection: null, oauthRequired: false, oauthUrl: null };
       }
       oauthTokens = loaded.value;
+      if (!oauthTokens && !this.usesObo && isOAuthServer(this.serverConfig)) {
+        oauthRequired = true;
+        shouldAttemptAuthenticatedDiscovery = false;
+      }
     }
 
     let connection: MCPConnection | null = null;

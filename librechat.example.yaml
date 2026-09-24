@@ -1438,7 +1438,11 @@ endpoints:
 #   messages:
 #     unattributedAssistantContent: model_output # `model_output` (default) or `inspect`
 #     pii:
-#       action: audit # `block` (default) or `audit`
+#       action: audit # `block` (default), `audit`, or `redact` (reserved for transformation-aware ingress; current routes still block)
+#       # `redact` requires the later encrypted owner-view and canonical-message integration.
+#       # maxCharacters: 65536 # bounded total inspected text per transformation session
+#       # maxMatches: 256 # bounded matches per transformation session
+#       # Custom patterns may set category: email, phone, name, credential, or custom.
 #       fields: [name, text, summary, quote, answer, decision_response, decision_reason, content_part, attachment_reference, assembled_context]
 #       starterPatterns: [sk_prefix, bearer_header, api_key_header]
 #       customPatterns:

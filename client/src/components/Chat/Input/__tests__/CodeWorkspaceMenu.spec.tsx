@@ -88,6 +88,37 @@ function renderMenu(ui: React.ReactElement) {
 }
 
 describe('CodeWorkspaceMenu', () => {
+  test('shows loading rather than the inferred no-workspace fallback on first load', () => {
+    renderMenu(
+      <CodeWorkspaceMenu
+        setConversation={jest.fn()}
+        workspace={workspace({
+          mode: 'without_attached',
+          state: 'loading',
+          selections: undefined,
+          environments: [{ environment, state: 'loading', workspaces: [] }],
+        })}
+        disabled={false}
+      />,
+    );
+    expect(screen.getByTestId('code-workspace')).toHaveTextContent('com_ui_code_workspace_loading');
+  });
+
+  test('can retry a locked unavailable workspace without changing its saved decision', async () => {
+    const invalidate = jest.spyOn(QueryClient.prototype, 'invalidateQueries');
+    const setConversation = jest.fn();
+    renderMenu(
+      <CodeWorkspaceMenu
+        setConversation={setConversation}
+        workspace={workspace({ locked: true, state: 'unavailable', canSubmit: false })}
+        disabled={false}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /com_ui_retry/ }));
+    expect(invalidate).toHaveBeenCalled();
+    expect(setConversation).not.toHaveBeenCalled();
+  });
+
   test('shows the instruction file and truncation reported by the worker', async () => {
     const state = workspace();
     state.environments[0].workspaces[0].instructions = [
@@ -260,7 +291,7 @@ describe('CodeWorkspaceMenu', () => {
     );
 
     expect(screen.getByTestId('code-workspace-locked-status')).toHaveAccessibleName(
-      'com_ui_code_workspace_unavailable. com_ui_code_workspace_locked_recovery',
+      'com_ui_code_workspace_unavailable. com_ui_code_workspace_locked_recovery. com_ui_retry',
     );
   });
 
@@ -311,6 +342,194 @@ describe('CodeWorkspaceMenu', () => {
 
     afterEach(() => {
       jest.restoreAllMocks();
+    });
+
+    test('recovers in the same chat only after confirmation, preserving healthy environments', async () => {
+      const missing = { ...moved, workspaceId: 'deleted-project' };
+      const kept = { environmentId: 'team-vm', workspaceId: 'shared' };
+      const replacement = { ...moved, workspaceId: 'project-b' };
+      const moveSpy = jest.spyOn(dataService, 'moveConversationCodeEnvironment').mockResolvedValue({
+        conversationId: 'existing',
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [replacement, kept],
+      });
+      const setConversation = jest.fn();
+      const rememberSelection = jest.fn();
+      const base = relocatable(
+        [
+          {
+            ...target(environment, [
+              { id: 'project-a', name: 'Project A' },
+              { id: 'project-b', name: 'Project B' },
+            ]),
+            state: 'missing',
+          },
+        ],
+        rememberSelection,
+      );
+      renderMenu(
+        <CodeWorkspaceMenu
+          setConversation={setConversation}
+          workspace={{
+            ...base,
+            relocation: {
+              ...base.relocation!,
+              from: [missing, kept],
+              previous: [],
+              retained: [kept],
+            },
+          }}
+          disabled={false}
+        />,
+      );
+
+      expect(screen.getByTestId('code-workspace-move')).toHaveAccessibleName(
+        'com_ui_code_workspace_recover. com_ui_code_workspace_recover_info',
+      );
+      await userEvent.click(screen.getByTestId('code-workspace-move'));
+      const confirm = await screen.findByRole('menuitem', {
+        name: 'com_ui_code_workspace_recover',
+      });
+      expect(confirm).toHaveAttribute('aria-disabled', 'true');
+      await userEvent.click(screen.getByRole('menuitemradio', { name: /Project B/ }));
+      expect(moveSpy).not.toHaveBeenCalled();
+      expect(setConversation).not.toHaveBeenCalled();
+      expect(rememberSelection).not.toHaveBeenCalled();
+      await userEvent.keyboard('{Escape}');
+      expect(moveSpy).not.toHaveBeenCalled();
+      await userEvent.click(screen.getByTestId('code-workspace-move'));
+      await userEvent.click(
+        await screen.findByRole('menuitem', { name: 'com_ui_code_workspace_recover' }),
+      );
+
+      await waitFor(() => expect(setConversation).toHaveBeenCalledTimes(1));
+      expect(moveSpy).toHaveBeenCalledWith({
+        conversationId: 'existing',
+        from: [missing, kept],
+        to: [kept, replacement],
+      });
+      expect(rememberSelection).toHaveBeenCalledWith(replacement);
+      const current = { ...sealed, codeWorkspaces: [missing, kept] };
+      expect(setConversation.mock.calls[0][0](current)).toEqual({
+        ...current,
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [replacement, kept],
+      });
+    });
+
+    test('keeps a failed recovery retryable without changing the chat or preferences', async () => {
+      const missing = { ...moved, workspaceId: 'deleted-project' };
+      const moveSpy = jest
+        .spyOn(dataService, 'moveConversationCodeEnvironment')
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValueOnce({
+          conversationId: 'existing',
+          codeEnvironmentMode: 'attached',
+          codeWorkspaces: [moved],
+        });
+      const setConversation = jest.fn();
+      const rememberSelection = jest.fn();
+      const base = relocatable(
+        [{ ...target(environment, [{ id: 'project-a' }]), state: 'missing' }],
+        rememberSelection,
+      );
+      renderMenu(
+        <CodeWorkspaceMenu
+          setConversation={setConversation}
+          workspace={{
+            ...base,
+            relocation: { ...base.relocation!, from: [missing], previous: [] },
+          }}
+          disabled={false}
+        />,
+      );
+      await userEvent.click(screen.getByTestId('code-workspace-move'));
+      await userEvent.click(
+        await screen.findByRole('menuitem', { name: 'com_ui_code_workspace_recover' }),
+      );
+      await waitFor(() =>
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'com_ui_code_workspace_move_error',
+          status: 'error',
+        }),
+      );
+      expect(setConversation).not.toHaveBeenCalled();
+      expect(rememberSelection).not.toHaveBeenCalled();
+
+      await userEvent.click(screen.getByTestId('code-workspace-move'));
+      await userEvent.click(
+        await screen.findByRole('menuitem', { name: 'com_ui_code_workspace_recover' }),
+      );
+      await waitFor(() => expect(setConversation).toHaveBeenCalledTimes(1));
+      expect(moveSpy).toHaveBeenCalledTimes(2);
+      expect(rememberSelection).toHaveBeenCalledTimes(1);
+    });
+
+    test('disables recovery while its request is pending and applies only the acknowledged result', async () => {
+      const missing = { ...moved, workspaceId: 'deleted-project' };
+      let finish: (() => void) | undefined;
+      jest.spyOn(dataService, 'moveConversationCodeEnvironment').mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            finish = () =>
+              resolve({
+                conversationId: 'existing',
+                codeEnvironmentMode: 'attached',
+                codeWorkspaces: [moved],
+              });
+          }),
+      );
+      const setConversation = jest.fn();
+      const base = relocatable([
+        { ...target(environment, [{ id: 'project-a' }]), state: 'missing' },
+      ]);
+      renderMenu(
+        <CodeWorkspaceMenu
+          setConversation={setConversation}
+          workspace={{
+            ...base,
+            relocation: { ...base.relocation!, from: [missing], previous: [] },
+          }}
+          disabled={false}
+        />,
+      );
+      await userEvent.click(screen.getByTestId('code-workspace-move'));
+      await userEvent.click(
+        await screen.findByRole('menuitem', { name: 'com_ui_code_workspace_recover' }),
+      );
+      await waitFor(() => expect(screen.getByTestId('code-workspace-move')).toBeDisabled());
+      expect(setConversation).not.toHaveBeenCalled();
+      finish?.();
+      await waitFor(() => expect(setConversation).toHaveBeenCalledTimes(1));
+      expect(screen.getByTestId('code-workspace-move')).not.toBeDisabled();
+    });
+
+    test('prevents confirmation if a generation starts while the recovery menu is open', async () => {
+      const moveSpy = jest.spyOn(dataService, 'moveConversationCodeEnvironment');
+      const base = relocatable([
+        { ...target(environment, [{ id: 'project-a' }]), state: 'missing' },
+      ]);
+      const state = {
+        ...base,
+        relocation: {
+          ...base.relocation!,
+          from: [{ ...moved, workspaceId: 'deleted-project' }],
+          previous: [],
+        },
+      };
+      const { rerenderMenu } = renderMenu(
+        <CodeWorkspaceMenu setConversation={jest.fn()} workspace={state} disabled={false} />,
+      );
+      await userEvent.click(screen.getByTestId('code-workspace-move'));
+      rerenderMenu(
+        <CodeWorkspaceMenu setConversation={jest.fn()} workspace={state} disabled={true} />,
+      );
+      const confirm = await screen.findByRole('menuitem', {
+        name: 'com_ui_code_workspace_recover',
+      });
+      expect(confirm).toHaveAttribute('aria-disabled', 'true');
+      await userEvent.setup({ pointerEventsCheck: 0 }).click(confirm);
+      expect(moveSpy).not.toHaveBeenCalled();
     });
 
     test('moves the chat onto the sole workspace its agent now uses', async () => {

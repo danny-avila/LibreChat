@@ -203,9 +203,13 @@ export interface AgentQueuedTurnMethods {
   listAgentQueuedTurnReceipts: (
     input: AgentQueuedTurnConversationScope & { clientRequestIds?: readonly string[] },
   ) => Promise<AgentQueuedTurnActiveRecord[]>;
-  findQueuedTurnsNeedingDelivery: (limit?: number) => Promise<AgentQueuedTurnRecord[]>;
+  findQueuedTurnsNeedingDelivery: (
+    limit?: number,
+    activity?: { found: boolean },
+  ) => Promise<AgentQueuedTurnRecord[]>;
   claimQueuedTurnsForAdmissionReconciliation: (
     input: ClaimAgentQueuedTurnReconciliationInput,
+    activity?: { found: boolean },
   ) => Promise<AgentQueuedTurnRecord[]>;
   deferAgentQueuedTurnAdmissionReconciliation: (
     input: AgentQueuedTurnConversationScope & {
@@ -1381,7 +1385,10 @@ export function createAgentQueuedTurnMethods(
     return { outcome: 'not_cancellable', turn: toRecord(current) };
   }
 
-  async function findQueuedTurnsNeedingDelivery(limit = 100): Promise<AgentQueuedTurnRecord[]> {
+  async function findQueuedTurnsNeedingDelivery(
+    limit = 100,
+    activity?: { found: boolean },
+  ): Promise<AgentQueuedTurnRecord[]> {
     if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 1000) {
       throw new TypeError('Agent queued turn recovery limit must be between 1 and 1000');
     }
@@ -1390,6 +1397,7 @@ export function createAgentQueuedTurnMethods(
       .sort({ createdAt: 1, _id: 1 })
       .limit(limit)
       .lean<IAgentQueuedTurn[]>();
+    if (activity != null && reservations.length > 0) activity.found = true;
     for (const reservation of reservations) {
       const scopeInput: AgentQueuedTurnConversationScope = {
         user: reservation.user,
@@ -1460,6 +1468,7 @@ export function createAgentQueuedTurnMethods(
 
   async function claimQueuedTurnsForAdmissionReconciliation(
     input: ClaimAgentQueuedTurnReconciliationInput,
+    activity?: { found: boolean },
   ): Promise<AgentQueuedTurnRecord[]> {
     const limit = input.limit ?? 100;
     if (!Number.isSafeInteger(limit) || limit <= 0 || limit > 1000) {
@@ -1519,6 +1528,7 @@ export function createAgentQueuedTurnMethods(
     if (candidates.length === 0) {
       return [];
     }
+    if (activity != null) activity.found = true;
     await Turn().updateMany(
       {
         ...eligible,
@@ -2773,10 +2783,14 @@ export function createAgentQueuedTurnMethods(
     }
     await Turn().updateMany(
       {
-        ...scope,
-        $or: [
-          { status: { $in: ['reserving', 'queued'] } },
-          { status: 'claimed', admissionStartedAt: { $exists: false } },
+        $and: [
+          scope,
+          {
+            $or: [
+              { status: { $in: ['reserving', 'queued'] } },
+              { status: 'claimed', admissionStartedAt: { $exists: false } },
+            ],
+          },
         ],
       },
       {
@@ -2838,11 +2852,15 @@ export function createAgentQueuedTurnMethods(
   }): Promise<number> {
     const scope = deletionScope(input);
     const blocker = await Turn().exists({
-      ...scope,
-      $or: [
-        { deliveryKey: { $exists: true }, deliveryState: { $ne: 'retired' } },
-        { status: { $in: ['reserving', 'queued', 'claimed'] } },
-        { admissionStartedAt: { $exists: true } },
+      $and: [
+        scope,
+        {
+          $or: [
+            { deliveryKey: { $exists: true }, deliveryState: { $ne: 'retired' } },
+            { status: { $in: ['reserving', 'queued', 'claimed'] } },
+            { admissionStartedAt: { $exists: true } },
+          ],
+        },
       ],
     });
     if (blocker != null) {

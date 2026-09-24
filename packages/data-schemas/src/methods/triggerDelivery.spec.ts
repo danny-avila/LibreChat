@@ -1744,6 +1744,74 @@ describe('agent trigger delivery methods', () => {
     });
   });
 
+  it.each(['complete', 'dead', 'cleanup'] as const)(
+    'signals maintenance after %s finalization fails without undoing root settlement',
+    async (mode) => {
+      const user = new mongoose.Types.ObjectId();
+      const coalesceUntil = new Date(Date.now() + 60_000);
+      const shared = {
+        user,
+        orderingKey: 'inline-recovery',
+        coalesceKey: 'inline-batch',
+        coalesceFrom: new Date(coalesceUntil.getTime() - 750),
+        coalesceUntil,
+        availableAt: coalesceUntil,
+        envelopeBytes: 128,
+      };
+      const root = await methods.enqueueAgentTriggerDelivery(enqueueInput(shared));
+      if (mode !== 'cleanup') await methods.enqueueAgentTriggerDelivery(enqueueInput(shared));
+      const claimed = await methods.claimNextAgentTriggerDelivery({
+        workerId: 'worker-1',
+        claimToken: 'inline-finalization-claim',
+        now: coalesceUntil,
+        leaseUntil: new Date(coalesceUntil.getTime() + 60_000),
+      });
+      expect(claimed?.id).toBe(root.delivery.id);
+      const input = {
+        id: claimed!.id,
+        workerId: 'worker-1',
+        claimToken: claimed!.claimToken!,
+        attempt: 1,
+        settledAt: coalesceUntil,
+      };
+      const failure =
+        mode === 'cleanup'
+          ? jest
+              .spyOn(LaneSequence, 'updateOne')
+              .mockRejectedValueOnce(new Error('cleanup interrupted'))
+          : jest
+              .spyOn(Delivery, 'updateMany')
+              .mockRejectedValueOnce(new Error('batch interrupted'));
+      const recovery = { required: false };
+      try {
+        const settled =
+          mode === 'dead'
+            ? await methods.deadLetterAgentTriggerDelivery(
+                { ...input, error: transientFailure({ retryable: false }) },
+                recovery,
+              )
+            : await methods.completeAgentTriggerDelivery(
+                { ...input, result: { accepted: true } },
+                recovery,
+              );
+        expect(settled).toBe(true);
+        expect(recovery.required).toBe(true);
+      } finally {
+        failure.mockRestore();
+      }
+      expect((await Delivery.findById(root.delivery.id).lean())?.status).toBe(
+        mode === 'dead' ? 'dead' : 'succeeded',
+      );
+      await methods.recoverAgentTriggerBatchReceipts();
+      await methods.reclaimInactiveAgentTriggerLanes();
+      const rows = await Delivery.find({ orderingKey: shared.orderingKey }).lean();
+      expect(rows.every((row) => row.status === (mode === 'dead' ? 'dead' : 'succeeded'))).toBe(
+        true,
+      );
+      if (mode !== 'dead') expect(await LaneSequence.findById(shared.orderingKey)).toBeNull();
+    },
+  );
+
   it('recovers batch receipts and lane cleanup after root settlement was interrupted', async () => {
     const user = new mongoose.Types.ObjectId();
     const coalesceUntil = new Date(Date.now() + 60_000);
@@ -2244,6 +2312,9 @@ describe('agent trigger delivery methods', () => {
   });
 
   it('leaves staging unpublished while its durable user purge marker exists', async () => {
+    const emptyActivity = { found: false };
+    await expect(methods.recoverAgentTriggerLanePublications(1, emptyActivity)).resolves.toBe(0);
+    expect(emptyActivity.found).toBe(false);
     const user = new mongoose.Types.ObjectId();
     const orderingKey = 'purge-fenced-staging';
     await UserPurge.create({ _id: user, fenceStartedAt: START, tenantId: 'tenant-1' });
@@ -2256,7 +2327,9 @@ describe('agent trigger delivery methods', () => {
       stagingRecoveryAt: START,
     });
 
-    await expect(methods.recoverAgentTriggerLanePublications(1)).resolves.toBe(0);
+    const activity = { found: false };
+    await expect(methods.recoverAgentTriggerLanePublications(1, activity)).resolves.toBe(0);
+    expect(activity.found).toBe(true);
     await expect(Delivery.findById(staged._id).lean()).resolves.toMatchObject({
       status: 'staging',
       laneSequence: 0,

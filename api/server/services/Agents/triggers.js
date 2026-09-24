@@ -64,7 +64,9 @@ service = createAgentTriggerService({
 
 const initializeAgentTriggerService = async (options) => {
   await service.initialize(options);
-  await queuedTurnLifecycle.initialize();
+  await queuedTurnLifecycle.initialize({
+    maxIdleIntervalMs: options?.idlePolling?.queuedTurnMaxIntervalMs,
+  });
 };
 
 const stopAgentTriggerService = async () => {

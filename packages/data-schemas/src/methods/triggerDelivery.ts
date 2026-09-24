@@ -281,18 +281,22 @@ export interface AgentTriggerDeliveryMethods {
       handling?: AgentTriggerHandlingState;
       awaitTerminalHandling?: true;
     },
+    recovery?: { required: boolean },
   ) => Promise<boolean>;
-  retireAgentTriggerDelivery: (input: {
-    deliveryKey: string;
-    sourceId: string;
-    settledAt: Date;
-    reason: string;
-    onlyIfUnclaimed?: boolean;
-    onlyIfDead?: boolean;
-    /** Accept transport success without a terminal handling receipt, unless the
-     * delivery explicitly keeps its lane open for terminal handling. */
-    allowSucceeded?: boolean;
-  }) => Promise<boolean>;
+  retireAgentTriggerDelivery: (
+    input: {
+      deliveryKey: string;
+      sourceId: string;
+      settledAt: Date;
+      reason: string;
+      onlyIfUnclaimed?: boolean;
+      onlyIfDead?: boolean;
+      /** Accept transport success without a terminal handling receipt, unless the
+       * delivery explicitly keeps its lane open for terminal handling. */
+      allowSucceeded?: boolean;
+    },
+    recovery?: { required: boolean },
+  ) => Promise<boolean>;
   renewAgentTriggerDeliveryProducerLease: (input: {
     deliveryKey: string;
     sourceId: string;
@@ -385,6 +389,7 @@ export interface AgentTriggerDeliveryMethods {
       settledAt: Date;
       receiptRetryAt?: Date;
     },
+    recovery?: { required: boolean },
   ) => Promise<boolean>;
   getAgentTriggerDelivery: (deliveryKey: string) => Promise<AgentTriggerDeliveryRecord | null>;
   getAgentTriggerDeliveryStatus: (
@@ -402,9 +407,18 @@ export interface AgentTriggerDeliveryMethods {
     user: string | Types.ObjectId,
     now: Date,
   ) => Promise<number>;
-  recoverAgentTriggerLanePublications: (limit?: number) => Promise<number>;
-  recoverAgentTriggerBatchReceipts: (limit?: number) => Promise<number>;
-  reclaimInactiveAgentTriggerLanes: (limit?: number) => Promise<number>;
+  recoverAgentTriggerLanePublications: (
+    limit?: number,
+    activity?: { found: boolean },
+  ) => Promise<number>;
+  recoverAgentTriggerBatchReceipts: (
+    limit?: number,
+    activity?: { found: boolean },
+  ) => Promise<number>;
+  reclaimInactiveAgentTriggerLanes: (
+    limit?: number,
+    activity?: { found: boolean },
+  ) => Promise<number>;
   prepareAgentTriggerUserPurge: (
     user: string | Types.ObjectId,
     fenceStartedAt: Date,
@@ -414,7 +428,7 @@ export interface AgentTriggerDeliveryMethods {
     user: string | Types.ObjectId,
     fenceStartedAt: Date,
   ) => Promise<boolean>;
-  recoverAgentTriggerUserPurges: (limit?: number) => Promise<number>;
+  recoverAgentTriggerUserPurges: (limit?: number, activity?: { found: boolean }) => Promise<number>;
   deleteAgentTriggerDeliveriesByUser: (user: string | Types.ObjectId) => Promise<void>;
   eraseAgentTriggerDeliveryConversationResults: (
     user: string | Types.ObjectId,
@@ -1092,6 +1106,7 @@ export function createAgentTriggerDeliveryMethods(
   /** Repairs abandoned reservations and staging rows left by crashed writers. */
   async function recoverAgentTriggerLanePublications(
     limit = DEFAULT_PURGE_RECOVERY_LIMIT,
+    activity?: { found: boolean },
   ): Promise<number> {
     if (!Number.isSafeInteger(limit) || limit <= 0) {
       throw new TypeError('Agent trigger lane recovery limit must be a positive integer');
@@ -1105,6 +1120,7 @@ export function createAgentTriggerDeliveryMethods(
       .sort({ publisherStartedAt: 1, _id: 1 })
       .limit(boundedLimit)
       .lean<IAgentTriggerLaneSequence[]>();
+    if (activity != null && lanes.length > 0) activity.found = true;
     let recovered = 0;
     const recoveryCursor = new Date();
     for (const lane of lanes) {
@@ -1175,6 +1191,9 @@ export function createAgentTriggerDeliveryMethods(
             .limit(remaining)
             .lean<IAgentTriggerDelivery[]>()
         : [];
+    if (activity != null && (legacyStaged.length > 0 || indexedStaged.length > 0)) {
+      activity.found = true;
+    }
     const staged = [
       ...legacyStaged.map((delivery) => ({
         ...delivery,
@@ -1293,6 +1312,7 @@ export function createAgentTriggerDeliveryMethods(
   /** Bounds high-cardinality ordering metadata after the final retained job settles. */
   async function reclaimInactiveAgentTriggerLanes(
     limit = DEFAULT_PURGE_RECOVERY_LIMIT,
+    activity?: { found: boolean },
   ): Promise<number> {
     if (!Number.isSafeInteger(limit) || limit <= 0) {
       throw new TypeError('Agent trigger lane reclamation limit must be a positive integer');
@@ -1304,6 +1324,7 @@ export function createAgentTriggerDeliveryMethods(
       .limit(boundedLimit)
       .select('_id orderingKey laneCleanupPendingAt')
       .lean<Array<Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'laneCleanupPendingAt'>>>();
+    if (activity != null && pendingCleanup.length > 0) activity.found = true;
     let reclaimed = 0;
     for (const delivery of pendingCleanup) {
       if (await fulfillLaneCleanupRequest(delivery)) {
@@ -1321,6 +1342,7 @@ export function createAgentTriggerDeliveryMethods(
       .limit(remaining)
       .select('_id')
       .lean<Array<Pick<IAgentTriggerLaneSequence, '_id'>>>();
+    if (activity != null && lanes.length > 0) activity.found = true;
     for (const lane of lanes) {
       if (await reclaimLaneIfInactive(lane._id)) {
         reclaimed += 1;
@@ -1760,6 +1782,7 @@ export function createAgentTriggerDeliveryMethods(
 
   async function recoverAgentTriggerBatchReceipts(
     limit = DEFAULT_PURGE_RECOVERY_LIMIT,
+    activity?: { found: boolean },
   ): Promise<number> {
     if (!Number.isSafeInteger(limit) || limit <= 0) {
       throw new TypeError('Agent trigger batch recovery limit must be a positive integer');
@@ -1773,6 +1796,7 @@ export function createAgentTriggerDeliveryMethods(
       .sort({ settledAt: 1, _id: 1 })
       .limit(Math.min(limit, MAX_PURGE_RECOVERY_LIMIT))
       .lean<IAgentTriggerDelivery[]>();
+    if (activity != null && roots.length > 0) activity.found = true;
     let recovered = 0;
     for (const root of roots) {
       if (root.settledAt == null || (root.status !== 'succeeded' && root.status !== 'dead')) {
@@ -1970,6 +1994,7 @@ export function createAgentTriggerDeliveryMethods(
       handling?: AgentTriggerHandlingState;
       awaitTerminalHandling?: true;
     },
+    recovery?: { required: boolean },
   ): Promise<boolean> {
     const awaitsTerminalHandling =
       input.awaitTerminalHandling === true && input.handling?.status === 'started';
@@ -2050,6 +2075,7 @@ export function createAgentTriggerDeliveryMethods(
       });
       await fulfillLaneCleanupRequest(completed);
     } catch (error) {
+      if (recovery != null) recovery.required = true;
       // Root success is authoritative. Maintenance retries both constituent
       // receipt settlement and the existing durable lane-cleanup marker.
       logger.warn('[agent-triggers] failed to finalize a completed trigger batch', {
@@ -2064,17 +2090,20 @@ export function createAgentTriggerDeliveryMethods(
    * that the result will never become dispatchable. This transition is keyed
    * by the immutable delivery identity rather than a worker lease so the
    * producer can unblock the lane even while a resolver is deferring it. */
-  async function retireAgentTriggerDelivery(input: {
-    deliveryKey: string;
-    sourceId: string;
-    settledAt: Date;
-    reason: string;
-    onlyIfUnclaimed?: boolean;
-    onlyIfDead?: boolean;
-    /** Accept transport success without a terminal handling receipt, unless the
-     * delivery explicitly keeps its lane open for terminal handling. */
-    allowSucceeded?: boolean;
-  }): Promise<boolean> {
+  async function retireAgentTriggerDelivery(
+    input: {
+      deliveryKey: string;
+      sourceId: string;
+      settledAt: Date;
+      reason: string;
+      onlyIfUnclaimed?: boolean;
+      onlyIfDead?: boolean;
+      /** Accept transport success without a terminal handling receipt, unless the
+       * delivery explicitly keeps its lane open for terminal handling. */
+      allowSucceeded?: boolean;
+    },
+    recovery?: { required: boolean },
+  ): Promise<boolean> {
     if (
       input.deliveryKey.length === 0 ||
       input.deliveryKey.length > 256 ||
@@ -2151,6 +2180,7 @@ export function createAgentTriggerDeliveryMethods(
       try {
         await fulfillLaneCleanupRequest(retired);
       } catch (error) {
+        if (recovery != null) recovery.required = true;
         logger.warn('[agent-triggers] failed to finalize a retired internal delivery', {
           deliveryKey: input.deliveryKey,
           error: error instanceof Error ? error.message : String(error),
@@ -3509,6 +3539,7 @@ export function createAgentTriggerDeliveryMethods(
       settledAt: Date;
       receiptRetryAt?: Date;
     },
+    recovery?: { required: boolean },
   ): Promise<boolean> {
     const error = normalizeFailure(input.error);
     if (
@@ -3603,6 +3634,7 @@ export function createAgentTriggerDeliveryMethods(
         error,
       });
     } catch (settlementError) {
+      if (recovery != null) recovery.required = true;
       logger.warn('[agent-triggers] failed to settle batch dead-letter receipts', {
         deliveryId: String(dead._id),
         error: settlementError instanceof Error ? settlementError.message : String(settlementError),
@@ -3881,6 +3913,7 @@ export function createAgentTriggerDeliveryMethods(
   /** Recovers cleanup markers whose users are gone; active-user markers are never destructive. */
   async function recoverAgentTriggerUserPurges(
     limit = DEFAULT_PURGE_RECOVERY_LIMIT,
+    activity?: { found: boolean },
   ): Promise<number> {
     if (!Number.isSafeInteger(limit) || limit <= 0) {
       throw new TypeError('Agent trigger purge recovery limit must be a positive integer');
@@ -3893,6 +3926,7 @@ export function createAgentTriggerDeliveryMethods(
       .sort({ backgroundToolResultDeletionPendingAt: 1, _id: 1 })
       .limit(Math.min(limit, MAX_PURGE_RECOVERY_LIMIT))
       .lean<IAgentTriggerDelivery[]>();
+    if (activity != null && pending.length > 0) activity.found = true;
     for (const row of pending) {
       const conversationId = (row.envelope as { target?: { conversationId?: string } }).target
         ?.conversationId;
@@ -3915,6 +3949,7 @@ export function createAgentTriggerDeliveryMethods(
       .sort({ updatedAt: 1, _id: 1 })
       .limit(Math.min(limit, MAX_PURGE_RECOVERY_LIMIT))
       .lean<IAgentTriggerUserPurge[]>();
+    if (activity != null && markers.length > 0) activity.found = true;
     let recovered = 0;
     for (const marker of markers) {
       const user = await mongoose.models.User.findById(marker._id)

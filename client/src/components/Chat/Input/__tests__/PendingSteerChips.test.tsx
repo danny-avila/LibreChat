@@ -731,7 +731,7 @@ describe('PendingSteerChips — revealed queued turn', () => {
     server: { id: `server-${clientRequestId}`, status: 'queued', revision: 1 },
   });
 
-  it('reduces the row shown as the next turn to its remove action', () => {
+  it('keeps an ordinary queue row when no matching pending message is visible', () => {
     getDefaultStore().set(revealedFamily(), {
       clientRequestId: 'req-1',
       parentMessageId: 'response-1',
@@ -744,8 +744,10 @@ describe('PendingSteerChips — revealed queued turn', () => {
 
     const rows = screen.getAllByTestId('queued-message-row');
     expect(rows).toHaveLength(2);
-    expect(rows[0]).toHaveTextContent('com_ui_queued_turn_starting');
-    expect(within(rows[0]).queryByRole('button', { name: 'com_ui_more_options' })).toBeNull();
+    expect(rows[0]).not.toHaveTextContent('com_ui_queued_turn_starting');
+    expect(
+      within(rows[0]).getByRole('button', { name: 'com_ui_more_options' }),
+    ).toBeInTheDocument();
     expect(within(rows[0]).getByRole('button', { name: /com_ui_remove/ })).toBeInTheDocument();
     expect(rows[1]).not.toHaveTextContent('com_ui_queued_turn_starting');
     expect(
