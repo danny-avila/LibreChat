@@ -103,7 +103,9 @@ export function MCPAppApproval({
             )}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            {localize('com_ui_mcp_app_action_warning')} {localize('com_ui_mcp_app_cancel_pauses')}
+            {localize('com_ui_mcp_app_action_warning')}{' '}
+            {action?.kind === 'message' && <>{localize('com_ui_mcp_app_message_tool_context')} </>}
+            {localize('com_ui_mcp_app_cancel_pauses')}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {action && (

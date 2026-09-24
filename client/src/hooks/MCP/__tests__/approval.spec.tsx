@@ -47,10 +47,29 @@ test('requires a host click before approving the exact tool request', async () =
   });
   expect(screen.getByRole('alertdialog')).toHaveTextContent('fixture / remove');
   expect(screen.getByRole('alertdialog')).toHaveTextContent('{"id":"1"}');
+  expect(screen.getByRole('alertdialog')).not.toHaveTextContent(
+    'com_ui_mcp_app_message_tool_context',
+  );
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_mcp_app_run_tool' }));
   });
   await expect(result).resolves.toBe(true);
+  view.unmount();
+});
+
+test('discloses conversation tool context before an App-authored chat turn is approved', async () => {
+  let approval!: ReturnType<typeof useMCPAppApproval>;
+  const view = render(<Harness onReady={(value) => (approval = value)} />);
+  let result!: Promise<boolean>;
+  act(() => {
+    result = approval.request(
+      { kind: 'message', serverName: 'fixture', text: 'continue' },
+      new AbortController().signal,
+    );
+  });
+  expect(screen.getByRole('alertdialog')).toHaveTextContent('com_ui_mcp_app_message_tool_context');
+  act(() => approval.cancel());
+  await expect(result).resolves.toBe(false);
   view.unmount();
 });
 

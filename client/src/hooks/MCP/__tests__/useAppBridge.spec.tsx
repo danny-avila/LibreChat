@@ -1114,6 +1114,24 @@ describe('useAppBridge', () => {
       view.unmount();
     });
 
+    it('acknowledges an accepted turn even when the App aborts immediately afterward', async () => {
+      const { view } = mountBridge(makeResource(), client);
+      await flush();
+      const controller = new AbortController();
+      mockAsk.mockImplementationOnce(() => {
+        controller.abort();
+        return undefined;
+      });
+      const result = await latest().onmessage?.(
+        { content: [{ type: 'text', text: 'approved turn' }] },
+        { signal: controller.signal },
+      );
+      expect(mockApproveAction).toHaveBeenCalledTimes(1);
+      expect(mockAsk).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({});
+      view.unmount();
+    });
+
     it('does not ask for approval for a whitespace-only App message', async () => {
       const { view } = mountBridge(makeResource(), client);
       await flush();

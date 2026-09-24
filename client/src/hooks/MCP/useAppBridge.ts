@@ -373,7 +373,9 @@ export function useAppBridge({
           if (accepted === false) {
             return { isError: true };
           }
-          return signal.aborted || cancelled ? { isError: true } : {};
+          // ask accepted the turn synchronously. A later App abort cannot undo it;
+          // claiming failure here encourages the App to retry and duplicate the turn.
+          return {};
         } catch (error) {
           logger.error('[MCP App] Failed to deliver message', error);
           return { isError: true };

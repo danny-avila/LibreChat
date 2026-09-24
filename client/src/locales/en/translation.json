@@ -1721,6 +1721,7 @@
   "com_ui_mcp_app_at_capacity": "Close another app before opening this one.",
   "com_ui_mcp_app_confirm_tool": "Run tool from app?",
   "com_ui_mcp_app_confirm_message": "Send message from app?",
+  "com_ui_mcp_app_message_tool_context": "Sending this message starts a model response in the current conversation. Its selected agent and tools may be used.",
   "com_ui_mcp_app_action_warning": "Review this request. The app cannot act until you approve it.",
   "com_ui_mcp_app_run_tool": "Run tool",
   "com_ui_mcp_app_send_message": "Send message",

@@ -536,6 +536,7 @@ test.describe('MCP Apps full integration', () => {
     await app.getByTestId('send-message').click();
     const messageDialog = page.getByRole('alertdialog');
     await expect(messageDialog).toContainText(appMessage);
+    await expect(messageDialog).toContainText('selected agent and tools may be used');
     await messageDialog.getByRole('button', { name: 'Send message' }).click();
     await expect(app.getByTestId('operation')).toHaveText('message-sent');
     expect((await nextGeneration).ok()).toBeTruthy();

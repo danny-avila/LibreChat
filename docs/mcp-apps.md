@@ -41,8 +41,10 @@ on the user's behalf. Each App-initiated tool call displays the originating serv
 complete arguments in a host-owned confirmation; App-initiated chat text shows the complete text
 and requires a separate **Send message**. An approved App message contains only that text: files,
 manual skills, and quotes staged for the user's next composer message are neither submitted nor
-drained. The conversation's selected agent and MCP server tools remain available to that turn;
-removing them would also change subsequent tool availability. An explicit empty file override
+drained. The confirmation warns that the resulting model response may use the conversation's
+selected agent and tools. Those selections remain available to the turn; removing them would also
+change subsequent tool availability. Once chat accepts an approved turn, a later App abort cannot
+undo it and is not reported as a failed submission. An explicit empty file override
 prevents a blank App message from becoming submittable just because a draft file exists. Rejecting an action or an App aborting its own pending approval request pauses further
 action requests from that View until it is closed and reopened. The dialog also provides a Close
 app and stop requests control for an App that repeatedly asks.
