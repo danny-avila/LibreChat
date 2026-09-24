@@ -212,7 +212,12 @@ test.describe('CLI password reset', () => {
         const newLogin = await request.post('/api/auth/login', {
           data: { email, password: NEW_PASSWORD },
         });
-        expect(newLogin.ok()).toBeTruthy();
+        if (expiresAt) {
+          expect(newLogin.status()).toBe(422);
+          expect(await newLogin.json()).toEqual({ message: 'Email not verified.' });
+        } else {
+          expect(newLogin.ok()).toBeTruthy();
+        }
       } finally {
         try {
           await Promise.all(keys.map((key) => cache.delete(key)));
