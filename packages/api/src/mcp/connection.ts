@@ -343,14 +343,15 @@ async function guardMCPStreamableHTTPResponse(
   const isEventStream = mediaTypeEssence(contentType) === 'text/event-stream';
   if (context.method === 'GET') {
     if (!context.appProfile) return response;
-    if (isEventStream) {
+    if (isEventStream && response.ok) {
       return guardMCPAppSSEEvents(
         response as unknown as Response,
         getMCPAppOperationLimits(context.operationLimits).maxBytes,
         context.onAppSSEOverflow,
       ) as unknown as UndiciResponse;
     }
-    // SDK GET error paths may call response.text(); bound those as ordinary HTTP bodies.
+    // SDK GET error paths may call response.text(); bound those as ordinary HTTP bodies,
+    // including non-2xx responses mislabelled as an event stream.
   }
   if (!response.body) {
     return response;
@@ -363,7 +364,9 @@ async function guardMCPStreamableHTTPResponse(
   const canEmitFallbackSSEError = isEventStream && maxLineBytes > 0;
   // SSE streams can emit many bounded events; cumulative bytes must not end a healthy App session.
   const fitsAppEvent =
-    isEventStream && context.appProfile ? createMCPAppSSEEventGuard(maxResponseBytes) : undefined;
+    isEventStream && response.ok && context.appProfile
+      ? createMCPAppSSEEventGuard(maxResponseBytes)
+      : undefined;
   if (!isEventStream && maxResponseBytes === 0) {
     return response;
   }

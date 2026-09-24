@@ -2299,6 +2299,40 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
     }
   });
 
+  it.each(['GET', 'POST'] as const)(
+    'bounds SSE-typed non-2xx %s App error bodies cumulatively',
+    async (method) => {
+      const errorEvent = 'data: {"error":"temporary"}\n\n';
+      const server = await createRawResponseServer((_req, res) => {
+        res.writeHead(503, { 'Content-Type': 'text/event-stream' });
+        res.write(errorEvent);
+        res.write(errorEvent);
+        res.end(errorEvent);
+      });
+      try {
+        conn = new MCPConnection({
+          serverName: 'app-profile-sse-error-cap',
+          serverConfig: { type: 'streamable-http', url: server.url },
+          useSSRFProtection: false,
+          capabilityProfile: 'apps',
+          operationLimits: { maxBytes: 64, timeoutMs: 30_000, maxActive: 16 },
+        });
+        const response = await getGuardedStreamableHTTPCustomFetch(conn)(server.url, {
+          method,
+          ...(method === 'POST' && {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled' }),
+          }),
+        });
+        await expect(response.text()).rejects.toThrow(
+          /MCP response exceeded byte limit.*limit=64 bytes/,
+        );
+      } finally {
+        await server.close();
+      }
+    },
+  );
+
   it('bounds App-profile HTTP GET error bodies before the SDK reads them', async () => {
     process.env.MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES = '0';
     const server = await createRawResponseServer((_req, res) => {
