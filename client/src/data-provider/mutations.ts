@@ -136,6 +136,8 @@ export const useArchiveConvoMutation = (
           queryKey: archivedConvoQueryKey,
           refetchPage: (_, index) => index === 0,
         });
+        // BKL: 아카이브된 대화는 북마크 건수에서 빠지므로 배지를 다시 받아야 한다.
+        queryClient.invalidateQueries([QueryKeys.conversationTags]);
       },
       ..._options,
     },
@@ -519,6 +521,8 @@ export const useDeleteConversationMutation = (
           queryKey: [QueryKeys.archivedConversations],
           refetchPage: (_, index) => index === 0,
         });
+        // BKL: 북마크 건수는 서버가 대화에서 집계하므로 삭제 후 다시 받아야 한다.
+        queryClient.invalidateQueries([QueryKeys.conversationTags]);
 
         options?.onSuccess?.(data, vars, context);
       },

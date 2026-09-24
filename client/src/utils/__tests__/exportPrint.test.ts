@@ -4,6 +4,7 @@
 import {
   buildPrintHtml,
   citationFileName,
+  printHtmlDocument,
   replaceCitationsWithFilenames,
 } from '../exportPrint';
 import type { BklSource } from '~/components/Chat/Messages/Content/ChunkModal';
@@ -97,5 +98,52 @@ describe('buildPrintHtml', () => {
     expect(html).toContain('msg-assistant');
     expect(html).toContain('<table><tr><td>표</td></tr></table>');
     expect(html).toContain('@page');
+  });
+});
+
+/**
+ * 조립한 HTML 이 실제로 iframe 에 실리는지 검증한다.
+ * 이 검증이 없어서 `html` 인자를 통째로 무시한 채 about:blank 를 인쇄하던
+ * 버그가 한동안 잡히지 않았다 (PDF 내보내기가 항상 백지).
+ */
+describe('printHtmlDocument', () => {
+  const DOC = '<!DOCTYPE html><html lang="ko"><body><p>대화 내용</p></body></html>';
+
+  afterEach(() => {
+    document.querySelectorAll('iframe').forEach((frame) => frame.remove());
+    jest.restoreAllMocks();
+  });
+
+  it('전달한 문서를 iframe 에 싣는다', () => {
+    void printHtmlDocument(DOC);
+
+    const iframe = document.querySelector('iframe');
+    expect(iframe).not.toBeNull();
+    expect(iframe?.srcdoc).toBe(DOC);
+  });
+
+  it('iframe 을 붙이기 전에 문서를 싣는다', () => {
+    // 순서가 뒤바뀌면 about:blank 로 onload 가 먼저 발화해 백지가 인쇄된다.
+    let srcdocAtAppend: string | undefined;
+    const appendChild = document.body.appendChild.bind(document.body);
+    jest.spyOn(document.body, 'appendChild').mockImplementation(<T extends Node>(node: T): T => {
+      if (node instanceof HTMLIFrameElement) {
+        srcdocAtAppend = node.srcdoc;
+      }
+      return appendChild(node);
+    });
+
+    void printHtmlDocument(DOC);
+
+    expect(srcdocAtAppend).toBe(DOC);
+  });
+
+  it('화면에 보이지 않지만 지면 크기를 갖는다', () => {
+    void printHtmlDocument(DOC);
+
+    const iframe = document.querySelector('iframe');
+    expect(iframe?.getAttribute('aria-hidden')).toBe('true');
+    expect(iframe?.style.width).toBe('210mm');
+    expect(iframe?.style.left).toBe('-10000px');
   });
 });

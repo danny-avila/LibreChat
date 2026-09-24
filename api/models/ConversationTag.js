@@ -2,13 +2,47 @@ const { logger } = require('@librechat/data-schemas');
 const { ConversationTag, Conversation } = require('~/db/models');
 
 /**
+ * BKL: 북마크 배지 건수를 조회 시점에 계산하기 위한 대화 필터.
+ *
+ * 사이드바 목록 쿼리(`getConvosByCursor`)와 조건이 하나라도 어긋나면 배지와
+ * 실제 목록 건수가 달라지므로, 그쪽을 수정할 때 여기도 함께 맞춰야 한다.
+ * @param {string} user - The user ID.
+ */
+const countableConvoFilter = (user) => ({
+  user,
+  bklDeletedAt: { $exists: false },
+  tags: { $exists: true, $ne: [] },
+  $and: [
+    { $or: [{ isArchived: false }, { isArchived: { $exists: false } }] },
+    { $or: [{ expiredAt: null }, { expiredAt: { $exists: false } }] },
+  ],
+});
+
+/**
  * Retrieves all conversation tags for a user.
+ *
+ * BKL: `count` 는 저장값을 신뢰하지 않고 매 조회마다 대화에서 집계한다.
+ * 저장값을 감소시키는 경로는 사용자가 북마크를 직접 해제할 때 하나뿐이어서
+ * 소프트 삭제·아카이브·보관정리 등으로 대화가 목록에서 빠지면 배지만 남아
+ * 실제 건수와 계속 벌어졌다. 파생값으로 바꾸면 이미 어긋난 값도 즉시 맞는다.
  * @param {string} user - The user ID.
  * @returns {Promise<Array>} An array of conversation tags.
  */
 const getConversationTags = async (user) => {
   try {
-    return await ConversationTag.find({ user }).sort({ position: 1 }).lean();
+    const tags = await ConversationTag.find({ user }).sort({ position: 1 }).lean();
+    if (!tags.length) {
+      return tags;
+    }
+
+    const counts = await Conversation.aggregate([
+      { $match: countableConvoFilter(user) },
+      { $unwind: '$tags' },
+      { $group: { _id: '$tags', count: { $sum: 1 } } },
+    ]);
+    const countByTag = new Map(counts.map((row) => [row._id, row.count]));
+
+    return tags.map((tag) => ({ ...tag, count: countByTag.get(tag.tag) ?? 0 }));
   } catch (error) {
     logger.error('[getConversationTags] Error getting conversation tags', error);
     throw new Error('Error getting conversation tags');

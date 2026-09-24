@@ -151,11 +151,13 @@ export function printHtmlDocument(html: string): Promise<void> {
   return new Promise((resolve) => {
     const iframe = document.createElement('iframe');
     iframe.setAttribute('aria-hidden', 'true');
+    // 0×0 이면 일부 엔진이 레이아웃을 잡지 않아 빈 페이지가 인쇄된다.
+    // 실제 지면 크기를 주고 화면 밖으로 밀어낸다.
     iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
+    iframe.style.left = '-10000px';
+    iframe.style.top = '0';
+    iframe.style.width = '210mm';
+    iframe.style.height = '297mm';
     iframe.style.border = '0';
     let done = false;
     const cleanup = () => {
@@ -184,6 +186,9 @@ export function printHtmlDocument(html: string): Promise<void> {
         doPrint();
       }
     };
+    // srcdoc 은 appendChild 전에 넣어야 한다. 먼저 붙이면 about:blank 로
+    // onload 가 한 번 발화해 빈 문서가 인쇄된다.
+    iframe.srcdoc = html;
     document.body.appendChild(iframe);
   });
 }

@@ -1,5 +1,6 @@
 const express = require('express');
-const { parseDateRange, getDb, loadUsers } = require('./helpers');
+const { parseDateRange, getDb, loadConversationMessages } = require('./helpers');
+const { isOrgApiEnabled, orgSyncFilter, syncUserOrg } = require('~/server/services/bklOrg');
 
 const router = express.Router();
 
@@ -20,6 +21,10 @@ router.get('/users', async (_req, res) => {
             bkl_user_id: 1,
             bkl_user_nm: 1,
             bkl_department: 1,
+            bkl_group_sid: 1,
+            bkl_group_name: 1,
+            bkl_div_name: 1,
+            bkl_hq_name: 1,
             createdAt: 1,
             bkl_last_login_at: 1,
           },
@@ -106,60 +111,35 @@ router.get('/sessions/messages', async (req, res) => {
       return res.status(400).json({ error: 'conversation_id required' });
     }
 
-    const msgs = await getDb()
-      .collection('messages')
-      .find(
-        { conversationId },
-        { projection: { isCreatedByUser: 1, text: 1, content: 1, createdAt: 1, model: 1, sender: 1 } },
-      )
-      .sort({ createdAt: 1 })
-      .toArray();
-
-    res.json({
-      data: msgs.map((msg) => {
-        let text = msg.text || '';
-        if (!text && Array.isArray(msg.content)) {
-          text = msg.content
-            .filter((content) => content && content.type === 'text')
-            .map((content) => content.text || '')
-            .join('\n')
-            .trim();
-        }
-        return {
-          role: msg.isCreatedByUser ? 'user' : 'assistant',
-          text,
-          createdAt: msg.createdAt,
-          model: msg.model || null,
-        };
-      }),
-    });
+    res.json({ data: await loadConversationMessages(getDb(), conversationId) });
   } catch (err) {
     res.status(500).json({ error: String(err.message) });
   }
 });
 
 /**
- * 그룹 인사이트 (항목 3): 그룹(class)별 시간대 패턴 + 최근 질의 키워드 상위.
+ * 그룹 인사이트 (항목 3): 그룹별 시간대 패턴 + 최근 질의 키워드 상위.
  * 문서/케이스 Top은 Postgres 기반 FastAPI analytics 프록시(/analytics/*)에서 제공.
  */
 router.get('/groups/insights', async (req, res) => {
   try {
     const { range } = parseDateRange(req.query, 30);
-    const userClass = req.query.user_class;
+    // BKL: 그룹 식별자는 BIMS 조직의 groupSid 다 (과거 user_class 는 조직 체계가 아니었다).
+    const groupSid = req.query.group_sid;
+    const scoped = groupSid != null && groupSid !== '' && groupSid !== 'all';
     const db = getDb();
 
-    const matchUsers = {};
-    if (userClass != null && userClass !== '' && userClass !== 'all') {
-      matchUsers.bkl_user_class = Number.isNaN(Number(userClass)) ? userClass : Number(userClass);
-    }
+    const matchUsers = scoped
+      ? { bkl_group_sid: Number.isNaN(Number(groupSid)) ? groupSid : Number(groupSid) }
+      : {};
     const users = await db
       .collection('users')
-      .find(matchUsers, { projection: { _id: 1, bkl_user_class: 1 } })
+      .find(matchUsers, { projection: { _id: 1, bkl_group_sid: 1 } })
       .toArray();
     const userIds = users.map((u) => String(u._id));
 
     const logMatch = { createdAt: range };
-    if (userClass != null && userClass !== '' && userClass !== 'all') {
+    if (scoped) {
       logMatch.user = { $in: userIds };
     }
 
@@ -262,6 +242,80 @@ router.post('/users/sync-departments', async (_req, res) => {
       { ordered: false },
     );
     res.json({ synced: result.modifiedCount, mappings: mappings.length });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message) });
+  }
+});
+
+/** 조직 API 는 배치 조회가 없어 사용자당 1콜이다 — BIMS 부하를 억제한다. */
+const ORG_SYNC_CONCURRENCY = 5;
+
+/**
+ * 그룹(조직) 일괄 동기화 — 아직 조직 정보가 없거나 오래된 사용자를 채운다.
+ *
+ * 로그인 시점에도 비차단으로 채우므로(`bklOrg.refreshUserOrgInBackground`)
+ * 이 엔드포인트는 "아직 로그인하지 않은 사용자" 정리용이다.
+ *
+ * 사용자당 1콜이라 전체를 한 번에 돌리면 요청이 길어져 프록시 타임아웃에
+ * 걸린다. `limit` 단위로 끊고 `remaining` 을 돌려주어 운영자가 다시 눌러
+ * 이어서 진행할 수 있게 한다.
+ */
+router.post('/users/sync-groups', async (req, res) => {
+  try {
+    if (!isOrgApiEnabled()) {
+      return res.json({
+        synced: 0,
+        message:
+          '조직 API 미연동 (BIMS_ORG_BASE 미설정). BIMS 운영 개방 후 환경변수를 설정하세요.',
+      });
+    }
+
+    const limit = Math.max(1, Math.min(parseInt(req.body?.limit, 10) || 200, 1000));
+    const users = getDb().collection('users');
+    const targets = await users
+      .find(orgSyncFilter(), { projection: { _id: 1, bkl_sid: 1 } })
+      .limit(limit)
+      .toArray();
+
+    if (!targets.length) {
+      return res.json({
+        synced: 0,
+        empty: 0,
+        failed: 0,
+        remaining: 0,
+        message: '동기화할 사용자가 없습니다.',
+      });
+    }
+
+    let synced = 0;
+    let empty = 0;
+    let failed = 0;
+    const errors = [];
+
+    const queue = [...targets];
+    const runWorker = async () => {
+      for (let user = queue.shift(); user; user = queue.shift()) {
+        try {
+          if (await syncUserOrg(user._id, user.bkl_sid)) {
+            synced += 1;
+          } else {
+            empty += 1;
+          }
+        } catch (err) {
+          failed += 1;
+          if (errors.length < 5) {
+            errors.push(`sid=${user.bkl_sid}: ${err.message}`);
+          }
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: ORG_SYNC_CONCURRENCY }, runWorker));
+
+    // 실패한 사용자는 타임스탬프가 남지 않아 여기 다시 포함된다. remaining 이
+    // 줄지 않으면 failed/errors 를 보고 원인을 판단하면 된다.
+    const remaining = await users.countDocuments(orgSyncFilter());
+
+    res.json({ synced, empty, failed, remaining, processed: targets.length, errors });
   } catch (err) {
     res.status(500).json({ error: String(err.message) });
   }

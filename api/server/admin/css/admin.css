@@ -171,6 +171,8 @@ html, body {
   white-space: pre-wrap; font-size: 13px; color: #374151;
   line-height: 1.7; padding: 8px 4px; word-break: break-word;
 }
+/* 삭제된 채팅 탭 — [보기] 로 펼친 대화 내용 (읽기 전용) */
+.deleted-detail-row td { background: #f8faff; }
 
 /* ── 요약 카드 ─────────────────────────────────────────────── */
 .cards-row {

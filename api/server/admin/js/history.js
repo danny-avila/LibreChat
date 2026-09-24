@@ -87,7 +87,7 @@
         return `<tr class="history-row" data-idx="${i}" style="cursor:pointer;">
           <td style="white-space:nowrap">${A.fmtKST(r.created_at)}</td>
           <td><div class="user-cell"><span class="user-name">${A.escHtml(name)}</span><span class="user-email">${A.escHtml(r.user_email || '')}</span></div></td>
-          <td>${r.user_class != null ? '<span class="badge">class ' + r.user_class + '</span>' : '—'}</td>
+          <td>${A.groupLabel(r.group_name)}</td>
           <td>${A.escHtml(r.department || '—')}</td>
           <td>${kindBadge}${previewMark}</td>
           <td style="white-space:nowrap">${A.escHtml(r.model || '—')}</td>
@@ -140,7 +140,7 @@
             A.fmtKST(r.created_at),
             r.user_name || '',
             r.user_email || '',
-            r.user_class != null ? 'class ' + r.user_class : '',
+            r.group_name || '',
             r.department || '',
             r.kind === 'query_enhance' ? '강화' : '질의',
             r.model || '',
