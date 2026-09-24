@@ -256,7 +256,7 @@ function SelectDropDown({
                             )}
                             {currentLabel}
                           </span>
-                          {currentValue === activeValue && (
+                          {value != null && currentValue === activeValue && (
                             <span
                               className={cn(
                                 'text-text-primary absolute inset-y-0 flex items-center',
