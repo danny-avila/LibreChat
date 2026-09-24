@@ -270,8 +270,8 @@ export const clickHouseDarkTheme: IThemeRGB = {
  *
  * Nearly every Click UI component (button, field, card, menu, popover, table, toast) is drawn at
  * `radii.1`, and the dialog at `radii.2`, so the small and medium steps collapse onto `radii.1`,
- * the dialog-sized steps onto `radii.2`, and the largest onto `radii.3`. `rounded-sm` keeps
- * `radii.1`, which is already LibreChat's `sm`; every larger step tightens.
+ * the dialog-sized steps onto `radii.2`, and the largest onto `radii.3`. `rounded-sm` takes
+ * `radii.1`, which LibreChat's `sm` also renders at on a 16px root; every larger step tightens.
  *
  * Click UI's mono family is Inconsolata. The app does not bundle it, so the tail is the same
  * metric-matched stack the default theme uses (Click UI's own tail names `"SFMono Regular"`,

@@ -340,8 +340,9 @@ describe('clickhouse theme definition', () => {
     expect(clickHouse.appearance.surfaceRadius).not.toBe(defaultAppearance.surfaceRadius);
     expect(clickHouse.appearance.largeSurfaceRadius).not.toBe(defaultAppearance.largeSurfaceRadius);
 
-    /** The plain utilities' scales move too, not only the `theme-*` roles. `rounded-sm` is the
-     *  one step the two share: Click UI's `radii.1` is already LibreChat's `sm`. */
+    /** The plain utilities' scales move too, not only the `theme-*` roles. `rounded-sm` is left
+     *  out: Click UI's `radii.1` (0.25rem) renders the same as LibreChat's `calc(0.5rem - 4px)`
+     *  on a 16px root. */
     const shapeTokens = [
       'radiusMd',
       'radiusLg',
@@ -360,7 +361,6 @@ describe('clickhouse theme definition', () => {
     expect(
       shapeTokens.filter((token) => clickHouse.appearance[token] === libreChat.appearance[token]),
     ).toEqual([]);
-    expect(clickHouse.appearance.radiusSm).toBe(libreChat.appearance.radiusSm);
   });
 
   it('keeps the brand yellow as the dark-mode accent and link', () => {
