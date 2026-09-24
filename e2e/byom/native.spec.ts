@@ -265,7 +265,7 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
         { timeout: 30_000 },
       )
       .toBe(false);
-    await expect(page.getByText('Acceptance model ready.', { exact: true }).last()).toBeVisible();
+    await expect(page.getByText(text, { exact: true }).last()).toBeVisible();
     await expect(page.getByTestId('stop-generation-button')).toBeHidden();
     await expect(page).toHaveURL(new RegExp(`/c/${conversationId}$`));
     return conversationId;
@@ -309,6 +309,10 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
         },
       });
       await page.goto(`/c/new?agent_id=${encodeURIComponent(ordinary.id)}`);
+      await expect(page.getByTestId('model-selector-button')).toContainText(
+        'Acceptance ordinary chat',
+      );
+      await expect(page).toHaveURL(/\/c\/new$/);
       const conversationId = await chat('Keep this conversation and its history.');
       const ordinaryDecision = await readDecision(conversationId);
       expect(ordinaryDecision.codeEnvironmentMode).toBe('without_attached');
@@ -423,10 +427,10 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
       }),
       contentType: 'application/json',
     });
+  } catch (error) {
+    console.log('Native acceptance conversation metadata:', JSON.stringify(conversationEvents));
+    throw error;
   } finally {
-    if (testInfo.status !== testInfo.expectedStatus) {
-      console.log('Native acceptance conversation metadata:', JSON.stringify(conversationEvents));
-    }
     for (const worker of workers) await stop(worker.child);
   }
 });
