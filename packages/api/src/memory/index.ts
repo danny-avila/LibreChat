@@ -3,3 +3,4 @@ export * from './authorization';
 export * from './handlers';
 export * from './protection';
 export * from './gate';
+export * from './window';

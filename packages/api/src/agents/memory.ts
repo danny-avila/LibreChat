@@ -1080,7 +1080,8 @@ export async function createMemoryProcessor({
     ): Promise<(TAttachment | null)[] | undefined> {
       let turnInstructions = finalInstructions;
       if (gate != null) {
-        const judgment = await gate({ messages, validKeys });
+        /** `messages` is one flattened buffer, oldest text first, so the gate reads the window. */
+        const judgment = await gate({ messages: inspectionMessages ?? messages, validKeys });
         if (!judgment.process) {
           logger.debug('[MemoryAgent] Turn carries nothing durable; skipping', {
             userId,

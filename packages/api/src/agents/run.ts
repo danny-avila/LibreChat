@@ -188,7 +188,7 @@ function parseToolSearchLegacy(content: string, discoveredTools: Set<string>): v
  * @param messages - The conversation message history
  * @returns Set of tool names that were discovered via tool_search
  */
-export function extractDiscoveredToolsFromHistory(messages: BaseMessage[]): Set<string> {
+export function extractDiscoveredToolsFromHistory(messages: readonly BaseMessage[]): Set<string> {
   const discoveredTools = new Set<string>();
 
   for (const message of messages) {

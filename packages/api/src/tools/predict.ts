@@ -11,6 +11,7 @@ import type {
 import { isBooleanAnswer, isChoiceAnswer } from '~/classification/types';
 import { boolean, choice, ranked } from '~/classification/questions';
 import { classificationCapability } from '~/classification/resolve';
+import { extractDiscoveredToolsFromHistory } from '~/agents/run';
 
 /** Option key standing for "none of these fit". Not a legal MCP tool name. */
 const NO_MATCH = '__no_tool_fits__';
@@ -91,28 +92,40 @@ export function baseToolName(name: string): string {
   return index === -1 ? name : name.slice(0, index);
 }
 
-/** Word-boundary matched, so a short name cannot match inside another word. */
-export function namedInRequest(candidates: readonly PredictCandidate[], request: string): string[] {
+function mentionsWord(haystack: string, word: string): boolean {
+  for (let at = haystack.indexOf(word); at !== -1; at = haystack.indexOf(word, at + 1)) {
+    const before = at === 0 ? '' : haystack[at - 1];
+    const after = haystack[at + word.length] ?? '';
+    if (!/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Word-boundary matched, so a short name cannot match inside another word, and
+ * capped at `limit` so a common word ("search") cannot surface a tool from every server.
+ */
+export function namedInRequest(
+  candidates: readonly PredictCandidate[],
+  request: string,
+  limit: number = Number.POSITIVE_INFINITY,
+): string[] {
   const haystack = request.toLowerCase();
-  if (haystack.length === 0) {
+  if (haystack.length === 0 || limit <= 0) {
     return [];
   }
   const found: string[] = [];
   for (const candidate of candidates) {
     const base = baseToolName(candidate.name).toLowerCase();
-    if (base.length < 4) {
-      continue;
-    }
-    const at = haystack.indexOf(base);
-    if (at === -1) {
-      continue;
-    }
-    const before = at === 0 ? '' : haystack[at - 1];
-    const after = haystack[at + base.length] ?? '';
-    if (/[a-z0-9]/.test(before) || /[a-z0-9]/.test(after)) {
+    if (base.length < 4 || !mentionsWord(haystack, base)) {
       continue;
     }
     found.push(candidate.name);
+    if (found.length >= limit) {
+      break;
+    }
   }
   return found;
 }
@@ -180,7 +193,7 @@ export async function predictTools(params: PredictToolsParams): Promise<PredictT
     return EMPTY_RESULT;
   }
 
-  const named = config.surfaceNamedTools ? namedInRequest(candidates, text) : [];
+  const named = config.surfaceNamedTools ? namedInRequest(candidates, text, config.shortlist) : [];
 
   const batches = batchCandidates(candidates, config.maxCatalogTools);
   let usage: ClassificationUsage = { inputTokens: 0, outputTokens: 0 };
@@ -359,11 +372,15 @@ export async function predictToolsForTurn(params: PredictToolsForTurnParams): Pr
     return [];
   }
 
+  const alreadyLoaded =
+    params.alreadyLoaded ??
+    (params.messages?.length ? extractDiscoveredToolsFromHistory(params.messages) : undefined);
+
   /** Names are unique across agents; `createRun` routes each to its owner. */
   const seen = new Set<string>();
   const candidates: PredictCandidate[] = [];
   for (const agent of params.agents) {
-    for (const candidate of deferredCandidates(agent.toolRegistry, params.alreadyLoaded)) {
+    for (const candidate of deferredCandidates(agent.toolRegistry, alreadyLoaded)) {
       if (seen.has(candidate.name)) {
         continue;
       }

@@ -47,6 +47,7 @@ const {
   getRunDiscoveredTools,
   predictToolsForTurn,
   createMemoryGate,
+  selectMemoryWindow,
   classificationCapability,
   captureResumeModelParameters,
   pickResumeContext,
@@ -1855,8 +1856,10 @@ class AgentClient extends BaseClient {
     return wiring;
   }
 
-  /** Builds the independently opt-in live reasoning-label controller. */
-  /** @returns {import('@librechat/api').MemoryGate | null} */
+  /**
+   * Builds the classifier gate that skips the memory model on turns with nothing durable.
+   * @returns {import('@librechat/api').MemoryGate | null}
+   */
   buildMemoryGate() {
     const config = this.options.req?.config?.classification;
     const capability = classificationCapability(config, 'memoryGate');
@@ -1869,6 +1872,7 @@ class AgentClient extends BaseClient {
     });
   }
 
+  /** Builds the independently opt-in live reasoning-label controller. */
   buildReasoningLabelWiring(streamId, abortSignal, seedFromContent = false) {
     if (!streamId || typeof Run?.prototype?.generateReasoningLabel !== 'function') {
       return undefined;
@@ -3525,20 +3529,7 @@ class AgentClient extends BaseClient {
        */
       const chatMessages = messages.filter((m) => !isSkillPrimeMessage(m));
 
-      let messagesToProcess = [...chatMessages];
-      if (chatMessages.length > messageWindowSize) {
-        for (let i = chatMessages.length - messageWindowSize; i >= 0; i--) {
-          const potentialWindow = chatMessages.slice(i, i + messageWindowSize);
-          if (potentialWindow[0]?.role === 'user') {
-            messagesToProcess = [...potentialWindow];
-            break;
-          }
-        }
-
-        if (messagesToProcess.length === chatMessages.length) {
-          messagesToProcess = [...chatMessages.slice(-messageWindowSize)];
-        }
-      }
+      const messagesToProcess = selectMemoryWindow(chatMessages, messageWindowSize);
 
       const filteredMessages = messagesToProcess.map((msg) => this.filterImageUrls(msg));
       const bufferString = getBufferString(filteredMessages);

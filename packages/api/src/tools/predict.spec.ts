@@ -319,6 +319,18 @@ describe('namedInRequest', () => {
   it('returns nothing for an empty request', () => {
     expect(namedInRequest(catalog, '')).toEqual([]);
   });
+
+  it('keeps looking past a match inside a longer word', () => {
+    expect(namedInRequest(catalog, 'geocoded badly, geocode it again')).toEqual([
+      'geocode_mcp_Maps',
+    ]);
+  });
+
+  it('stops at the limit when a common word matches tools on many servers', () => {
+    const shared = candidates('search_mcp_A', 'search_mcp_B', 'search_mcp_C', 'search_mcp_D');
+
+    expect(namedInRequest(shared, 'search for it', 2)).toEqual(['search_mcp_A', 'search_mcp_B']);
+  });
 });
 
 describe('shortlistSize', () => {
