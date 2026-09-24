@@ -2,9 +2,14 @@ import { randomUUID } from 'crypto';
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import type { IThemeRGB } from '../../../../packages/client/src/theme/types';
+import {
+  deleteConversations,
+  deleteMessagesByConversation,
+  seedConversations,
+  withMongo,
+} from '../db';
 import { clickHouseTheme } from '../../../../packages/client/src/theme/themes/clickhouse';
 import { openAgentBuilder, uniqueAgentName, cleanupAgent } from '../agents.helpers';
-import { deleteConversations, seedConversations, withMongo } from '../db';
 import { MOCK_ENDPOINTS, getAccessToken, requestJson } from '../helpers';
 import { getE2EUser } from '../../../setup/user';
 import { probeStyle } from './style.helpers';
@@ -256,6 +261,7 @@ test.describe('semantic colour roles on builder, tools and sharing surfaces', ()
         );
       }
     } finally {
+      await deleteMessagesByConversation([conversationId]);
       await deleteConversations([conversationId]);
     }
   });
@@ -276,6 +282,7 @@ test.describe('semantic colour roles on builder, tools and sharing surfaces', ()
         await expect(block.getByText('Result', { exact: true })).toHaveCount(0);
       }
     } finally {
+      await deleteMessagesByConversation([conversationId]);
       await deleteConversations([conversationId]);
     }
   });

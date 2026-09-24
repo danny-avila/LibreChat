@@ -540,7 +540,7 @@ const InFlightSteer = memo(function InFlightSteer({
               <div
                 className={cn(
                   'markdown prose message-content dark:prose-invert light min-w-0 break-words',
-                  'text-text-primary',
+                  'text-text-primary!',
                   !enableUserMsgMarkdown && 'whitespace-pre-wrap',
                 )}
               >
