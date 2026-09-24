@@ -59,10 +59,10 @@ async function serveThemes(page: Page, viewer: ConfigTheme, link: ConfigTheme) {
 }
 
 /** Creates a public link to a fresh conversation through the share API. */
-async function createSharedLink(page: Page): Promise<string> {
+async function createSharedLink(page: Page, text = `Shared theme ${Date.now()}`): Promise<string> {
   await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
   await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
-  await sendMessageAndWaitForCompletion(page, `Shared theme ${Date.now()}`);
+  await sendMessageAndWaitForCompletion(page, text);
   await expect(page).toHaveURL(/\/c\/(?!new)[0-9a-fA-F-]{36}$/);
   const conversationId = new URL(page.url()).pathname.split('/').pop();
   const token = await getAccessToken(page);
@@ -87,6 +87,12 @@ async function openSharedLink(page: Page, shareId: string) {
   ]);
   await expect(page.getByTestId('messages-view')).toBeVisible({ timeout: 20000 });
 }
+
+const backgroundOf = (page: Page, selector: string) =>
+  page
+    .locator(selector)
+    .first()
+    .evaluate((node) => getComputedStyle(node).backgroundColor);
 
 async function resolvedMode(page: Page): Promise<Mode> {
   const dark = await page.evaluate(() => document.documentElement.classList.contains('dark'));
@@ -132,5 +138,31 @@ test.describe('deployment theme on a shared link', () => {
     const palette = (await resolvedMode(page)) === 'dark' ? darkTheme : defaultTheme;
     await expect(page.locator('html')).not.toHaveAttribute('data-theme', 'viewer');
     expect(await themeValue(page, '--surface-primary')).toBe(palette['rgb-surface-primary']);
+  });
+
+  test('the user bubble on a shared link stands out from the page like it does in chat @scenario:shared-link-user-bubble-visible', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    const text = `Bubble ${Date.now()}`;
+    await serveThemes(page, null, 'clickhouse');
+    const shareId = await createSharedLink(page, text);
+
+    await openSharedLink(page, shareId);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'clickhouse');
+    const bubble = page.getByTestId('message-body').filter({ hasText: text });
+    await expect(bubble).toBeVisible();
+    const bubbleColor = await bubble.evaluate((node) => getComputedStyle(node).backgroundColor);
+    expect(await backgroundOf(page, 'main')).toBe(
+      await page.evaluate(() => {
+        const probe = document.createElement('div');
+        probe.className = 'bg-presentation';
+        document.body.appendChild(probe);
+        const color = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        return color;
+      }),
+    );
+    expect(bubbleColor).not.toBe(await backgroundOf(page, 'main'));
   });
 });

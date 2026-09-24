@@ -217,7 +217,7 @@ function SharedView() {
   }
 
   const footer = (
-    <div className="from-surface-secondary pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-40% to-transparent">
+    <div className="from-presentation pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-40% to-transparent">
       <Footer
         startupConfig={config ?? null}
         className="text-text-secondary pointer-events-auto relative mx-auto flex max-w-7xl flex-wrap items-center justify-center gap-2 px-3 pt-6 pb-4 text-center text-xs"
@@ -226,7 +226,7 @@ function SharedView() {
   );
 
   const mainContent = (
-    <div className="bg-surface-secondary relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden pt-0">
+    <div className="bg-presentation relative flex h-full w-full flex-1 flex-col items-stretch overflow-hidden pt-0">
       <div className="text-text-primary relative flex h-full min-h-0 flex-col" role="presentation">
         {content}
         {footer}
@@ -253,8 +253,8 @@ function SharedView() {
         value={{ isSharedConvo: true, shareId, hasConfiguredSender: data?.hasConfiguredSender }}
       >
         <AppChatSurface>
-          <div className="dark:bg-surface-secondary relative flex h-screen w-full overflow-hidden">
-            <main className="dark:bg-surface-secondary relative flex w-full grow overflow-hidden">
+          <div className="bg-presentation relative flex h-screen w-full overflow-hidden">
+            <main className="bg-presentation relative flex w-full grow overflow-hidden">
               {artifactsContainer}
             </main>
           </div>
