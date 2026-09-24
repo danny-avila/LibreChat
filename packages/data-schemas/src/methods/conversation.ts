@@ -1829,6 +1829,9 @@ export function createConversationMethods(
       return 0;
     }
     legacyReceiptExpiryCursor = candidates[candidates.length - 1]._id;
+    // A full page is not an empty sweep: later conversations may contain
+    // expired receipts. Keep scanning at base cadence until the page walk ends.
+    if (activity != null && candidates.length === boundedLimit) activity.found = true;
     const expiredInvocationIds = [
       ...new Set(
         candidates.flatMap((candidate) =>
@@ -1838,7 +1841,8 @@ export function createConversationMethods(
         ),
       ),
     ];
-    if (activity != null && expiredInvocationIds.length > 0) activity.found = true;
+    if (expiredInvocationIds.length === 0) return 0;
+    if (activity != null) activity.found = true;
     const protectedInvocationIds = new Set(
       await Delivery.find({
         deliveryKey: { $in: expiredInvocationIds },

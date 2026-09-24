@@ -146,6 +146,61 @@ describe('durable agent idle recovery', () => {
     await loop.stop();
   });
 
+  it.each([false, true])(
+    'rescans for a deadline that expires in-flight (stop: %s)',
+    async (stop) => {
+      let release!: (idle: boolean) => void;
+      const scan = jest
+        .fn<Promise<boolean>, []>()
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              release = resolve;
+            }),
+        )
+        .mockResolvedValue(true);
+      const loop = createIdleRecoveryLoop({
+        intervalMs: 30_000,
+        maxIdleIntervalMs: 120_000,
+        scan,
+        onError: jest.fn(),
+      });
+      const starting = loop.start();
+      await jest.advanceTimersByTimeAsync(0);
+      loop.noteEligibleAt(new Date(Date.now() + 5_000));
+      loop.noteEligibleAt(new Date(Date.now() + 20_000));
+      await jest.advanceTimersByTimeAsync(6_000);
+      expect(scan).toHaveBeenCalledTimes(1);
+      const stopping = stop ? loop.stop() : undefined;
+      release(false);
+      await starting;
+      await stopping;
+      await jest.advanceTimersByTimeAsync(0);
+      expect(scan).toHaveBeenCalledTimes(stop ? 1 : 2);
+      await jest.advanceTimersByTimeAsync(14_000);
+      expect(scan).toHaveBeenCalledTimes(stop ? 1 : 3);
+      await loop.stop();
+      expect(jest.getTimerCount()).toBe(0);
+    },
+  );
+
+  it('does not rescan or reset its idle timer when start is called twice', async () => {
+    const scan = jest.fn(async () => true);
+    const loop = createIdleRecoveryLoop({
+      intervalMs: 30_000,
+      maxIdleIntervalMs: 120_000,
+      scan,
+      onError: jest.fn(),
+    });
+    await loop.start();
+    await jest.advanceTimersByTimeAsync(59_000);
+    await loop.start();
+    expect(scan).toHaveBeenCalledTimes(1);
+    await jest.advanceTimersByTimeAsync(1_000);
+    expect(scan).toHaveBeenCalledTimes(2);
+    await loop.stop();
+  });
+
   it('waits for its active scan on shutdown and never rearms a timer', async () => {
     let release!: (value: boolean) => void;
     const scan = jest.fn(

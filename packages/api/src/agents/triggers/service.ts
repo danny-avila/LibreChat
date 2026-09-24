@@ -118,14 +118,14 @@ export interface AgentTriggerDeliveryPersistence {
   releaseAgentTriggerDelivery: AgentTriggerDeliveryStore['release'];
   beginAgentTriggerDeliveryAttempt: AgentTriggerDeliveryStore['beginAttempt'];
   deferAgentTriggerDeliveryAttempt: AgentTriggerDeliveryStore['defer'];
-  completeAgentTriggerDelivery: AgentTriggerDeliveryStore['complete'];
+  completeAgentTriggerDelivery: AgentTriggerDeliveryMethods['completeAgentTriggerDelivery'];
   retireAgentTriggerDelivery: AgentTriggerDeliveryMethods['retireAgentTriggerDelivery'];
   renewAgentTriggerDeliveryProducerLease: AgentTriggerDeliveryMethods['renewAgentTriggerDeliveryProducerLease'];
   persistAgentBackgroundToolResult?: AgentTriggerDeliveryMethods['persistAgentBackgroundToolResult'];
   getAgentBackgroundToolResultClaim?: AgentTriggerDeliveryMethods['getAgentBackgroundToolResultClaim'];
   releaseAgentBackgroundToolResultClaims?: AgentTriggerDeliveryMethods['releaseAgentBackgroundToolResultClaims'];
   retryAgentTriggerDelivery: AgentTriggerDeliveryStore['retry'];
-  deadLetterAgentTriggerDelivery: AgentTriggerDeliveryStore['dead'];
+  deadLetterAgentTriggerDelivery: AgentTriggerDeliveryMethods['deadLetterAgentTriggerDelivery'];
   getAgentTriggerDelivery: (deliveryKey: string) => Promise<AgentTriggerStoredRecord | null>;
   getAgentTriggerDeliveryStatus: (
     deliveryKey: string,
@@ -213,9 +213,29 @@ export interface AgentTriggerService {
   purgeUser: (userId: string) => Promise<void>;
 }
 
+/** A producer can commit durable state before an inline finalizer fails. Keep
+ * its authoritative result intact, but wake maintenance for the remaining marker.
+ * Rejections are uncertain commits, so they also request recovery. Healthy writes
+ * do not turn every delivered event into a full maintenance sweep. */
+async function withMaintenanceRecovery<T>(
+  operation: (recovery: { required: boolean }) => Promise<T>,
+  wake: () => void,
+): Promise<T> {
+  const recovery = { required: false };
+  try {
+    return await operation(recovery);
+  } catch (error) {
+    recovery.required = true;
+    throw error;
+  } finally {
+    if (recovery.required) wake();
+  }
+}
+
 function createDeliveryStore(
   methods: AgentTriggerDeliveryPersistence,
   supportsDetachedActionCompletion: () => boolean,
+  wakeMaintenance: () => void,
 ): AgentTriggerDeliveryStore {
   return {
     claimNext: (input) =>
@@ -235,9 +255,17 @@ function createDeliveryStore(
     release: methods.releaseAgentTriggerDelivery,
     beginAttempt: methods.beginAgentTriggerDeliveryAttempt,
     defer: methods.deferAgentTriggerDeliveryAttempt,
-    complete: methods.completeAgentTriggerDelivery,
+    complete: (input) =>
+      withMaintenanceRecovery(
+        (recovery) => methods.completeAgentTriggerDelivery(input, recovery),
+        wakeMaintenance,
+      ),
     retry: methods.retryAgentTriggerDelivery,
-    dead: methods.deadLetterAgentTriggerDelivery,
+    dead: (input) =>
+      withMaintenanceRecovery(
+        (recovery) => methods.deadLetterAgentTriggerDelivery(input, recovery),
+        wakeMaintenance,
+      ),
   };
 }
 
@@ -400,15 +428,18 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
      * still waits for a batch-recovery pass that did not fail. */
     let failed = false;
     const activity = { found: false };
-    const isolated = (label: string, run: () => Promise<number>): Promise<number> =>
-      run().catch((error) => {
+    const isolated = async (label: string, run: () => Promise<number>): Promise<number> => {
+      try {
+        return await run();
+      } catch (error) {
         failed = true;
         logger.error(
           `[agent-triggers] durable delivery maintenance step failed (${label}):`,
           error,
         );
         return 0;
-      });
+      }
+    };
     const current = runAsSystem(async () => {
       const [
         purgedUsers,
@@ -556,7 +587,9 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         }
         deliveryEngine = createAgentTriggerDeliveryEngine(
           {
-            store: createDeliveryStore(methods, supportsDetachedActionCompletion),
+            store: createDeliveryStore(methods, supportsDetachedActionCompletion, () =>
+              purgeRecoveryLoop?.wake(),
+            ),
             dispatch: dispatchForActivePrincipal,
             ...(deps.settleSourceBeforeDeadLetter != null && {
               settleSourceBeforeDeadLetter: deps.settleSourceBeforeDeadLetter,
@@ -593,7 +626,10 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
       };
       await requireActivePrincipal(String(prepared.user));
       const queued = await runAsSystem(async () =>
-        methods.enqueueAgentTriggerDelivery(durableDelivery),
+        withMaintenanceRecovery(
+          () => methods.enqueueAgentTriggerDelivery(durableDelivery),
+          () => purgeRecoveryLoop?.wake(),
+        ),
       );
       try {
         await requireActivePrincipal(String(prepared.user));
@@ -636,7 +672,11 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
       runAsSystem(async () => requireMethods().getAgentTriggerDeadLetters(limit)),
     requeue: (id, availableAt = new Date()) =>
       runAsSystem(async () => {
-        const revived = await requireMethods().requeueAgentTriggerDelivery(id, availableAt);
+        const methods = requireMethods();
+        const revived = await withMaintenanceRecovery(
+          () => methods.requeueAgentTriggerDelivery(id, availableAt),
+          () => purgeRecoveryLoop?.wake(),
+        );
         if (revived != null) {
           if (availableAt.getTime() > Date.now()) {
             deliveryEngine?.noteEligibleAt(availableAt);
@@ -648,17 +688,24 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
       }),
     retire: (deliveryKey, sourceId, reason, options) =>
       runAsSystem(async () => {
-        const retired = await requireCleanupMethods().retireAgentTriggerDelivery({
-          deliveryKey,
-          sourceId,
-          reason,
-          settledAt: new Date(),
-          ...(options?.onlyIfUnclaimed === true ? { onlyIfUnclaimed: true } : {}),
-          ...(options?.onlyIfDead === true ? { onlyIfDead: true } : {}),
-        });
+        const methods = requireCleanupMethods();
+        const retired = await withMaintenanceRecovery(
+          (recovery) =>
+            methods.retireAgentTriggerDelivery(
+              {
+                deliveryKey,
+                sourceId,
+                reason,
+                settledAt: new Date(),
+                ...(options?.onlyIfUnclaimed === true ? { onlyIfUnclaimed: true } : {}),
+                ...(options?.onlyIfDead === true ? { onlyIfDead: true } : {}),
+              },
+              recovery,
+            ),
+          () => purgeRecoveryLoop?.wake(),
+        );
         if (retired) {
           deliveryEngine?.wake();
-          purgeRecoveryLoop?.wake();
         }
         return retired;
       }),
@@ -689,10 +736,10 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     drainUser,
     prepareUserPurge: (userId, fenceStartedAt, tenantId) =>
       runAsSystem(async () => {
-        await requireCleanupMethods().prepareAgentTriggerUserPurge(
-          userId,
-          fenceStartedAt,
-          tenantId,
+        const methods = requireCleanupMethods();
+        await withMaintenanceRecovery(
+          () => methods.prepareAgentTriggerUserPurge(userId, fenceStartedAt, tenantId),
+          () => purgeRecoveryLoop?.wake(),
         );
         purgeRecoveryLoop?.wake();
       }),
@@ -705,7 +752,11 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     // and the delivery engine are deliberately no longer ready.
     purgeUser: (userId) =>
       runAsSystem(async () => {
-        await requireCleanupMethods().deleteAgentTriggerDeliveriesByUser(userId);
+        const methods = requireCleanupMethods();
+        await withMaintenanceRecovery(
+          () => methods.deleteAgentTriggerDeliveriesByUser(userId),
+          () => purgeRecoveryLoop?.wake(),
+        );
         purgeRecoveryLoop?.wake();
       }),
   };

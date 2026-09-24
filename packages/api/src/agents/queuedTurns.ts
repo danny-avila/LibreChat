@@ -796,18 +796,27 @@ function createAgentQueuedTurnScheduler({
     const task = (async () => {
       const reconciliationNow = new Date();
       const reconciliationClaimId = randomUUID();
-      const [turns, quarantined] = await Promise.all([
-        runAsSystem(() => methods.findQueuedTurnsNeedingDelivery(recoveryLimit)),
+      const activity = { found: false };
+      const discoveries = await Promise.allSettled([
+        runAsSystem(() => methods.findQueuedTurnsNeedingDelivery(recoveryLimit, activity)),
         runAsSystem(() =>
-          methods.claimQueuedTurnsForAdmissionReconciliation({
-            claimId: reconciliationClaimId,
-            claimBy: PROCESS_CLAIM_OWNER,
-            now: reconciliationNow,
-            leaseUntil: new Date(reconciliationNow.getTime() + RECONCILIATION_LEASE_MS),
-            limit: recoveryLimit,
-          }),
+          methods.claimQueuedTurnsForAdmissionReconciliation(
+            {
+              claimId: reconciliationClaimId,
+              claimBy: PROCESS_CLAIM_OWNER,
+              now: reconciliationNow,
+              leaseUntil: new Date(reconciliationNow.getTime() + RECONCILIATION_LEASE_MS),
+              limit: recoveryLimit,
+            },
+            activity,
+          ),
         ),
       ]);
+      // A rejected discovery must not release the single-flight guard while
+      // its sibling is still writing reconciliation leases in Mongo.
+      const [deliveries, reconciliations] = discoveries;
+      const turns = deliveries.status === 'fulfilled' ? deliveries.value : [];
+      const quarantined = reconciliations.status === 'fulfilled' ? reconciliations.value : [];
       let repaired = 0;
       for (const turn of quarantined) {
         const deliveryKey = turn.deliveryKey;
@@ -922,7 +931,11 @@ function createAgentQueuedTurnScheduler({
           );
         }
       }
-      return { repaired, idle: turns.length === 0 && quarantined.length === 0 };
+      // Do not strand leases already acquired by the successful discovery just
+      // because its independent sibling failed. Process them, then report failure.
+      if (deliveries.status === 'rejected') throw deliveries.reason;
+      if (reconciliations.status === 'rejected') throw reconciliations.reason;
+      return { repaired, idle: !activity.found && turns.length === 0 && quarantined.length === 0 };
     })();
     recovery = task;
     void task.then(

@@ -863,6 +863,76 @@ describe('Agent queued-turn delivery scheduling', () => {
     await scheduler.stop();
   });
 
+  it('does not back off when discovery repairs reservations but returns no deliveries', async () => {
+    jest.useFakeTimers();
+    const findQueuedTurnsNeedingDelivery = jest.fn(
+      async (_limit: number, activity: { found: boolean }) => {
+        activity.found = true;
+        return [];
+      },
+    );
+    const scheduler = createAgentQueuedTurnScheduler({
+      methods: {
+        ensureAgentQueuedTurnIndexes: jest.fn(async () => undefined),
+        findQueuedTurnsNeedingDelivery,
+        claimQueuedTurnsForAdmissionReconciliation: jest.fn(async () => []),
+      } as unknown as AgentQueuedTurnMethods,
+      enqueue: jest.fn(),
+      getGenerationAdmissionEvidence: async () => null,
+    });
+    try {
+      await scheduler.initialize();
+      await jest.advanceTimersByTimeAsync(30_000);
+      expect(findQueuedTurnsNeedingDelivery).toHaveBeenCalledTimes(2);
+    } finally {
+      await scheduler.stop();
+      jest.useRealTimers();
+    }
+  });
+
+  it('waits for sibling lease discovery after an error before allowing shutdown or another scan', async () => {
+    jest.useFakeTimers();
+    let release!: (turns: AgentQueuedTurnRecord[]) => void;
+    const findQueuedTurnsNeedingDelivery = jest
+      .fn()
+      .mockRejectedValue(new Error('mongo unavailable'));
+    const claimQueuedTurnsForAdmissionReconciliation = jest.fn(
+      () =>
+        new Promise<AgentQueuedTurnRecord[]>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const scheduler = createAgentQueuedTurnScheduler({
+      methods: {
+        ensureAgentQueuedTurnIndexes: jest.fn(async () => undefined),
+        findQueuedTurnsNeedingDelivery,
+        claimQueuedTurnsForAdmissionReconciliation,
+      } as unknown as AgentQueuedTurnMethods,
+      enqueue: jest.fn(),
+      getGenerationAdmissionEvidence: async () => null,
+    });
+    try {
+      const starting = scheduler.initialize();
+      await jest.advanceTimersByTimeAsync(120_000);
+      expect(findQueuedTurnsNeedingDelivery).toHaveBeenCalledTimes(1);
+      let stopped = false;
+      const stopping = scheduler.stop().then(() => {
+        stopped = true;
+      });
+      await jest.advanceTimersByTimeAsync(0);
+      expect(stopped).toBe(false);
+      release([]);
+      await Promise.all([starting, stopping]);
+      expect(stopped).toBe(true);
+      await jest.advanceTimersByTimeAsync(120_000);
+      expect(findQueuedTurnsNeedingDelivery).toHaveBeenCalledTimes(1);
+      expect(claimQueuedTurnsForAdmissionReconciliation).toHaveBeenCalledTimes(1);
+    } finally {
+      await scheduler.stop();
+      jest.useRealTimers();
+    }
+  });
+
   it('reduces empty Mongo discovery reads without losing bounded fallback polling', async () => {
     jest.useFakeTimers();
     try {

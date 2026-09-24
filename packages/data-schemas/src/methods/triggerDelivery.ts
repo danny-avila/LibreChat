@@ -281,18 +281,22 @@ export interface AgentTriggerDeliveryMethods {
       handling?: AgentTriggerHandlingState;
       awaitTerminalHandling?: true;
     },
+    recovery?: { required: boolean },
   ) => Promise<boolean>;
-  retireAgentTriggerDelivery: (input: {
-    deliveryKey: string;
-    sourceId: string;
-    settledAt: Date;
-    reason: string;
-    onlyIfUnclaimed?: boolean;
-    onlyIfDead?: boolean;
-    /** Accept transport success without a terminal handling receipt, unless the
-     * delivery explicitly keeps its lane open for terminal handling. */
-    allowSucceeded?: boolean;
-  }) => Promise<boolean>;
+  retireAgentTriggerDelivery: (
+    input: {
+      deliveryKey: string;
+      sourceId: string;
+      settledAt: Date;
+      reason: string;
+      onlyIfUnclaimed?: boolean;
+      onlyIfDead?: boolean;
+      /** Accept transport success without a terminal handling receipt, unless the
+       * delivery explicitly keeps its lane open for terminal handling. */
+      allowSucceeded?: boolean;
+    },
+    recovery?: { required: boolean },
+  ) => Promise<boolean>;
   renewAgentTriggerDeliveryProducerLease: (input: {
     deliveryKey: string;
     sourceId: string;
@@ -385,6 +389,7 @@ export interface AgentTriggerDeliveryMethods {
       settledAt: Date;
       receiptRetryAt?: Date;
     },
+    recovery?: { required: boolean },
   ) => Promise<boolean>;
   getAgentTriggerDelivery: (deliveryKey: string) => Promise<AgentTriggerDeliveryRecord | null>;
   getAgentTriggerDeliveryStatus: (
@@ -1989,6 +1994,7 @@ export function createAgentTriggerDeliveryMethods(
       handling?: AgentTriggerHandlingState;
       awaitTerminalHandling?: true;
     },
+    recovery?: { required: boolean },
   ): Promise<boolean> {
     const awaitsTerminalHandling =
       input.awaitTerminalHandling === true && input.handling?.status === 'started';
@@ -2069,6 +2075,7 @@ export function createAgentTriggerDeliveryMethods(
       });
       await fulfillLaneCleanupRequest(completed);
     } catch (error) {
+      if (recovery != null) recovery.required = true;
       // Root success is authoritative. Maintenance retries both constituent
       // receipt settlement and the existing durable lane-cleanup marker.
       logger.warn('[agent-triggers] failed to finalize a completed trigger batch', {
@@ -2083,17 +2090,20 @@ export function createAgentTriggerDeliveryMethods(
    * that the result will never become dispatchable. This transition is keyed
    * by the immutable delivery identity rather than a worker lease so the
    * producer can unblock the lane even while a resolver is deferring it. */
-  async function retireAgentTriggerDelivery(input: {
-    deliveryKey: string;
-    sourceId: string;
-    settledAt: Date;
-    reason: string;
-    onlyIfUnclaimed?: boolean;
-    onlyIfDead?: boolean;
-    /** Accept transport success without a terminal handling receipt, unless the
-     * delivery explicitly keeps its lane open for terminal handling. */
-    allowSucceeded?: boolean;
-  }): Promise<boolean> {
+  async function retireAgentTriggerDelivery(
+    input: {
+      deliveryKey: string;
+      sourceId: string;
+      settledAt: Date;
+      reason: string;
+      onlyIfUnclaimed?: boolean;
+      onlyIfDead?: boolean;
+      /** Accept transport success without a terminal handling receipt, unless the
+       * delivery explicitly keeps its lane open for terminal handling. */
+      allowSucceeded?: boolean;
+    },
+    recovery?: { required: boolean },
+  ): Promise<boolean> {
     if (
       input.deliveryKey.length === 0 ||
       input.deliveryKey.length > 256 ||
@@ -2170,6 +2180,7 @@ export function createAgentTriggerDeliveryMethods(
       try {
         await fulfillLaneCleanupRequest(retired);
       } catch (error) {
+        if (recovery != null) recovery.required = true;
         logger.warn('[agent-triggers] failed to finalize a retired internal delivery', {
           deliveryKey: input.deliveryKey,
           error: error instanceof Error ? error.message : String(error),
@@ -3528,6 +3539,7 @@ export function createAgentTriggerDeliveryMethods(
       settledAt: Date;
       receiptRetryAt?: Date;
     },
+    recovery?: { required: boolean },
   ): Promise<boolean> {
     const error = normalizeFailure(input.error);
     if (
@@ -3622,6 +3634,7 @@ export function createAgentTriggerDeliveryMethods(
         error,
       });
     } catch (settlementError) {
+      if (recovery != null) recovery.required = true;
       logger.warn('[agent-triggers] failed to settle batch dead-letter receipts', {
         deliveryId: String(dead._id),
         error: settlementError instanceof Error ? settlementError.message : String(settlementError),

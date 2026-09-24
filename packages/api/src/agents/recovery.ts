@@ -40,9 +40,6 @@ export function createIdleRecoveryLoop({
       clearTimeout(timer);
     }
     const now = Date.now();
-    while (deadlines.length > 0 && deadlines[0] <= now) {
-      deadlines.shift();
-    }
     let delay = Math.max(0, nextPollAt - now);
     if (deadlines.length > 0) {
       delay = Math.min(delay, Math.max(0, deadlines[0] - now));
@@ -64,6 +61,12 @@ export function createIdleRecoveryLoop({
     if (timer != null) {
       clearTimeout(timer);
       timer = undefined;
+    }
+    // This scan can cover deadlines already due when it starts. Deadlines
+    // learned or becoming due while it runs must survive for a follow-up scan.
+    const now = Date.now();
+    while (deadlines.length > 0 && deadlines[0] <= now) {
+      deadlines.shift();
     }
     const before = generation;
     const current = Promise.resolve()
@@ -101,6 +104,9 @@ export function createIdleRecoveryLoop({
     start: (): Promise<void> => {
       if (stopped) {
         return Promise.resolve();
+      }
+      if (started) {
+        return active ?? Promise.resolve();
       }
       started = true;
       return runNow();
