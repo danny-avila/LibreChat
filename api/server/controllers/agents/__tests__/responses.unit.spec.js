@@ -241,6 +241,13 @@ jest.mock('@librechat/api', () => ({
   buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
   applyContextToAgent: (...args) => mockApplyContextToAgent(...args),
   buildRunToolSet: jest.fn().mockReturnValue(new Set()),
+  /** No fixture declares a caller-executed tool, so the handoff stays inert. */
+  createClientToolHandoff: jest.fn(({ agentDefinitions }) => ({
+    toolDefinitions: agentDefinitions,
+    appliedTools: [],
+    wrapRunStep: (delegate) => delegate,
+    wrapToolExecute: (delegate) => delegate,
+  })),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
   resolveAdmittedCodeEnvironmentDecision: (...args) =>
@@ -885,6 +892,28 @@ describe('createResponse controller', () => {
       }),
     );
   });
+
+  it.each([false, true])(
+    'excludes caller-executed tools from eager execution: stream=%s',
+    async (stream) => {
+      const api = require('@librechat/api');
+      const clientToolNames = new Set(['submit_sql']);
+      api.validateResponseRequest.mockReturnValueOnce({
+        request: { model: 'agent-123', input: 'Hello', stream },
+      });
+      api.createClientToolHandoff.mockImplementationOnce(({ agentDefinitions }) => ({
+        toolDefinitions: agentDefinitions,
+        appliedTools: [],
+        clientToolNames,
+        wrapRunStep: (delegate) => delegate,
+        wrapToolExecute: (delegate) => delegate,
+      }));
+
+      await createResponse(req, res);
+
+      expect(api.createRun).toHaveBeenCalledWith(expect.objectContaining({ clientToolNames }));
+    },
+  );
 
   it('invokes the graph with the resolved recursion limit rather than the SDK default', async () => {
     const api = require('@librechat/api');

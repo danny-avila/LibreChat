@@ -18,6 +18,7 @@ export {
   defaultRate,
   createTxMethods,
   permissionBitSupersets,
+  PERM_BITS_WRITE_ATTEMPTS,
   partitionIssues,
   validateSkillName,
   validateSkillBody,

@@ -2386,6 +2386,9 @@ describe('agent queued turn methods', () => {
     await methods.enqueueAgentQueuedTurn(
       enqueueInput({ conversationId: 'conversation-2', clientRequestId: 'keep-conversation' }),
     );
+    const untouched = await Turn.find({ _id: { $ne: tenantOne.turn.queuedTurnId } })
+      .sort('_id')
+      .lean();
 
     await expect(
       methods.prepareAgentQueuedTurnConversationDeletion({
@@ -2435,6 +2438,7 @@ describe('agent queued turn methods', () => {
       }),
     ).resolves.toBe(1);
     expect(await Turn.countDocuments({ user, conversationId: 'conversation-1' })).toBe(1);
+    await expect(Turn.find().sort('_id').lean()).resolves.toEqual(untouched);
     await expect(
       methods.enqueueAgentQueuedTurn(
         enqueueInput({ clientRequestId: 'cannot-reopen-deleted-lane' }),
@@ -2452,7 +2456,116 @@ describe('agent queued turn methods', () => {
     });
     expect(await Turn.countDocuments({ user, conversationId: 'conversation-1' })).toBe(0);
     expect(await Turn.countDocuments({ user, conversationId: 'conversation-2' })).toBe(1);
+    await expect(Turn.find({ conversationId: 'conversation-2' }).lean()).resolves.toEqual(
+      untouched.filter((turn) => turn.conversationId === 'conversation-2'),
+    );
   });
+
+  it.each(['reserving', 'queued', 'claimed'] as const)(
+    'only cancels selected conversation lanes with %s turns',
+    async (status) => {
+      const otherUser = new mongoose.Types.ObjectId();
+      const scopes = [
+        { conversationId: 'conversation-1', tenantId: 'tenant-1' },
+        { conversationId: 'conversation-3', tenantId: undefined },
+        { conversationId: 'conversation-2', tenantId: 'tenant-1' },
+        { conversationId: 'conversation-1', tenantId: 'tenant-2' },
+        { conversationId: 'conversation-1', tenantId: undefined },
+        { conversationId: 'conversation-1', tenantId: 'tenant-1', user: otherUser },
+      ];
+      const turns = await Promise.all(
+        scopes.map((scope, index) =>
+          methods.enqueueAgentQueuedTurn(
+            enqueueInput({ ...scope, clientRequestId: `isolation-${index}` }),
+          ),
+        ),
+      );
+      if (status === 'reserving') {
+        await Turn.updateMany({}, { $set: { status, reservationWriterId: 'pending-writer' } });
+      } else if (status === 'claimed') {
+        for (const [index, scope] of scopes.entries()) {
+          await expect(
+            methods.claimNextAgentQueuedTurn(claimInput(turns[index].turn.queuedTurnId, scope)),
+          ).resolves.toMatchObject({ outcome: 'acquired' });
+        }
+      }
+      const untouchedIds = turns.slice(2).map(({ turn }) => turn.queuedTurnId);
+      const untouched = await Turn.find({ _id: { $in: untouchedIds } })
+        .sort('_id')
+        .lean();
+      const untouchedLanes = await Sequence.find({
+        laneId: { $in: untouched.map((turn) => turn.laneId) },
+      })
+        .sort('_id')
+        .lean();
+      const input = { user, targets: scopes.slice(0, 2), settledAt: START };
+
+      await expect(methods.prepareAgentQueuedTurnConversationDeletion(input)).resolves.toEqual([]);
+      for (const { turn } of turns.slice(0, 2)) {
+        await expect(Turn.findById(turn.queuedTurnId).lean()).resolves.toMatchObject({
+          status: 'cancelled',
+          deliveryState: 'retired',
+          terminalReceipt: { failure: { code: 'OWNER_DRAINED' } },
+        });
+      }
+      await expect(
+        Turn.find({ _id: { $in: untouchedIds } })
+          .sort('_id')
+          .lean(),
+      ).resolves.toEqual(untouched);
+      await expect(methods.deletePreparedAgentQueuedTurnConversations(input)).resolves.toBe(2);
+      await expect(Turn.find().sort('_id').lean()).resolves.toEqual(untouched);
+      await expect(
+        Sequence.find({ laneId: { $in: untouched.map((turn) => turn.laneId) } })
+          .sort('_id')
+          .lean(),
+      ).resolves.toEqual(untouchedLanes);
+    },
+  );
+
+  it.each([
+    { name: 'tenant-scoped', targets: [{ conversationId: 'empty-chat', tenantId: 'tenant-1' }] },
+    { name: 'legacy tenantless', targets: [{ conversationId: 'conversation-1' }] },
+    {
+      name: 'another tenant',
+      targets: [{ conversationId: 'conversation-1', tenantId: 'tenant-2' }],
+    },
+    { name: 'all tenants', targets: [{ conversationId: 'empty-chat', allTenants: true as const }] },
+  ])(
+    'deletes an empty $name conversation despite an unrelated published delivery',
+    async ({ targets }) => {
+      const queued = await methods.enqueueAgentQueuedTurn(enqueueInput());
+      const deliveryKey = 'unrelated-published-delivery';
+      const delivery = { ...claimInput(queued.turn.queuedTurnId), deliveryKey };
+      await methods.reserveAgentQueuedTurnDelivery(delivery);
+      await methods.markQueuedTurnScheduled({ ...delivery, scheduledAt: START });
+      await methods.claimNextAgentQueuedTurn(delivery);
+      await methods.beginAgentQueuedTurnAdmission({
+        ...delivery,
+        admissionId: deliveryKey,
+        startedAt: START,
+      });
+      await methods.markAgentQueuedTurnAdmitted({
+        ...delivery,
+        admissionId: deliveryKey,
+        admissionMode: 'ordinary',
+        generationCreatedAt: 42,
+        lineagePredecessorId: rootLineageId(),
+        settledAt: LATER,
+      });
+      const untouched = await Turn.findById(queued.turn.queuedTurnId).lean();
+      expect(untouched).toMatchObject({ status: 'admitted', deliveryState: 'published' });
+      const lane = await Sequence.findOne({ laneId: untouched?.laneId }).lean();
+      const input = { user, targets, settledAt: START };
+
+      await expect(methods.prepareAgentQueuedTurnConversationDeletion(input)).resolves.toEqual([]);
+      await expect(methods.deletePreparedAgentQueuedTurnConversations(input)).resolves.toBe(0);
+      await expect(methods.prepareAgentQueuedTurnConversationDeletion(input)).resolves.toEqual([]);
+      await expect(methods.deletePreparedAgentQueuedTurnConversations(input)).resolves.toBe(0);
+      await expect(Turn.findById(queued.turn.queuedTurnId).lean()).resolves.toEqual(untouched);
+      await expect(Sequence.findOne({ laneId: untouched?.laneId }).lean()).resolves.toEqual(lane);
+    },
+  );
 
   it('includes preexisting dead deliveries in conversation retirement', async () => {
     const queued = await methods.enqueueAgentQueuedTurn(

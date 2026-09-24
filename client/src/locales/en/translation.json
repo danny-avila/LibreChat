@@ -1266,6 +1266,7 @@
   "com_ui_conversation": "conversation",
   "com_ui_conversation_label": "{{title}} conversation",
   "com_ui_conversation_label_shared": "{{title}} conversation, shared link active",
+  "com_ui_conversation_load_error": "Could not load this chat. Please try again.",
   "com_ui_conversation_not_found": "Conversation not found",
   "com_ui_conversation_summarized": "Conversation summarized",
   "com_ui_conversations": "conversations",

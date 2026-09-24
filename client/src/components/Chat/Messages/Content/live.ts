@@ -34,6 +34,10 @@ export type LiveActivity = {
    *  the content array; the header reads the same signal for this call rather
    *  than unfolding the span to let the card say it. */
   pendingToolCallId?: string;
+  /** Consecutive uses of the newest tool, including the current call. Above 1
+   *  only while the line is the tool's own generic label, which is the only
+   *  thing a count of that tool can modify. */
+  comboCount: number;
   /** Failed and stopped calls anywhere in the span, not just the newest line. */
   outcome: SpanOutcome;
 };
@@ -82,13 +86,22 @@ export function needsReader(part: TMessageContentParts | undefined): boolean {
   return Array.isArray(toolCall.subagent_content) && toolCall.subagent_content.some(needsReader);
 }
 
+/**
+ * A tool's line, and whether it is the generic label rather than a line about
+ * this one call. `generic` is what a repeat count may modify: `Running Code ×3`
+ * counts runs of Code, while `Checking the PR head ×3` would claim that
+ * sentence happened three times — a call that names its own work already says
+ * which work it is doing, so the count only confuses it.
+ */
+type ToolLine = { text: string; generic: boolean };
+
 function toolCallLine(
   part: TMessageContentParts,
   toolCall: LiveToolCall,
   localize: Localize,
   serverNames: readonly string[],
   span: SpanSummary,
-): string {
+): ToolLine {
   const intent = getToolCallIntent(toolCall.args);
   const label = getToolDisplayLabel(toolCall.name ?? '', localize, serverNames);
   /** The verdict comes from the resolver the group header uses, so a collapsed
@@ -96,30 +109,39 @@ function toolCallLine(
    *  or a stop — whichever channel reported it. */
   const meta = span.metaOf(part);
   if (meta?.cancelled === true) {
-    return localize('com_ui_cancelled');
+    return { text: localize('com_ui_cancelled'), generic: false };
   }
   if (meta?.failed === true) {
     /** Reads as the hidden card does: `ToolCall` uses the same template. */
     const subject = intent ?? label;
-    return subject ? localize('com_ui_failed_subject', { 0: subject }) : localize('com_ui_failed');
+    return {
+      text: subject ? localize('com_ui_failed_subject', { 0: subject }) : localize('com_ui_failed'),
+      generic: false,
+    };
   }
   /** Ahead of the intent, as on `BashCall`/`ExecuteCode`: a returned handle
    *  is not a result, and "Ran …" would turn ongoing work into a success. */
   if (meta?.background != null) {
-    return localize(
-      meta.background === 'running' ? 'com_ui_background_running' : 'com_ui_background_finished',
-    );
+    return {
+      text: localize(
+        meta.background === 'running' ? 'com_ui_background_running' : 'com_ui_background_finished',
+      ),
+      generic: false,
+    };
   }
   if (intent != null) {
-    return intent;
+    return { text: intent, generic: false };
   }
   if (!label) {
-    return localize('com_assistants_running_action');
+    return { text: localize('com_assistants_running_action'), generic: true };
   }
-  return localize(
-    meta?.hasOutput === true ? 'com_assistants_completed_function' : 'com_assistants_running_var',
-    { 0: label },
-  );
+  return {
+    text: localize(
+      meta?.hasOutput === true ? 'com_assistants_completed_function' : 'com_assistants_running_var',
+      { 0: label },
+    ),
+    generic: true,
+  };
 }
 
 /** Bounds the sentence scan on long reasoning, like the streaming peek. */
@@ -235,7 +257,7 @@ function newestLine(
   localize: Localize,
   serverNames: readonly string[],
   span: SpanSummary,
-): Pick<LiveActivity, 'text' | 'source' | 'pendingToolCallId'> {
+): Pick<LiveActivity, 'text' | 'source' | 'pendingToolCallId' | 'comboCount'> {
   for (let position = parts.length - 1; position >= 0; position -= 1) {
     const part = parts[position];
     if (part == null) {
@@ -248,11 +270,15 @@ function newestLine(
       const reasoning = typeof part.think === 'string' ? part.think : (part.think?.value ?? '');
       const sentence = lastReasoningSentence(reasoning);
       if (sentence != null) {
-        return { text: sentence, source: `think:${position}` };
+        return { text: sentence, source: `think:${position}`, comboCount: 1 };
       }
       const label = part.reasoning_label?.trim();
       if (label || reasoning.trim()) {
-        return { text: label || localize('com_ui_thinking'), source: `think:${position}` };
+        return {
+          text: label || localize('com_ui_thinking'),
+          source: `think:${position}`,
+          comboCount: 1,
+        };
       }
       continue;
     }
@@ -264,38 +290,44 @@ function newestLine(
       const value = typeof part.text === 'string' ? part.text : (part.text?.value ?? '');
       const commentary = boundIntentLabel(value);
       if (commentary != null) {
-        return { text: commentary, source: `text:${position}` };
+        return { text: commentary, source: `text:${position}`, comboCount: 1 };
       }
       continue;
     }
     const labelText = getActivityLabelText(getBatchActivityLabelPart(part));
     if (labelText) {
-      return { text: labelText, source: `label:${position}` };
+      return { text: labelText, source: `label:${position}`, comboCount: 1 };
     }
     const toolCall = getStandardToolCall(part);
     if (toolCall != null) {
+      const line = toolCallLine(part, toolCall, localize, serverNames, span);
       return {
-        text: toolCallLine(part, toolCall, localize, serverNames, span),
+        text: line.text,
         /** Provider ids repeat across batches, so the position is part of the
          *  identity: a second call reusing an id is a new line, not the first
          *  one still growing. */
         source: `tool:${toolCall.id ?? ''}:${position}`,
+        /** Counted for the generic label alone: as soon as the call names its
+         *  own work, or reports how it ended, the count has nothing left to
+         *  multiply and reads as a claim about that sentence. */
+        comboCount: line.generic ? Math.max(1, span.trailingToolCount) : 1,
         ...(isAwaitingStartup(part, toolCall, span) && { pendingToolCallId: toolCall.id }),
       };
     }
   }
-  return { text: '', source: '' };
+  return { text: '', source: '', comboCount: 1 };
 }
 
 /**
  * The newest nameable activity in a span: the last tool call's own line (its
  * streamed intent, else the generic text its card would show), a filled batch
  * label once one lands after it, or the thought streaming after both. Later parts win, so the
- * header always reads as the bottom line of the list it stands for.
+ * header always reads as the bottom line of the list it stands for. A repeat
+ * count rides the generic label only, never a line that names one call.
  *
- * Runs on every streamed delta. Outcome aggregation visits the full span so
- * late failures cannot disappear; the line stops at the newest nameable part
- * and icons only inspect a fixed tail window.
+ * Runs on every streamed delta. Outcomes and the tool combo share one full-span
+ * pass so late failures cannot disappear; the line stops at the newest nameable
+ * part and icons only inspect a fixed tail window.
  */
 export function getLiveActivity(
   parts: ReadonlyArray<TMessageContentParts | undefined>,
