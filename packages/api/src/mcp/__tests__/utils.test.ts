@@ -75,7 +75,7 @@ describe('splitMCPToolKey', () => {
     // before LibreChat appends its own "_mcp_gitlab" suffix. A naive
     // `.split(delimiter)` produces 3 segments here and silently drops the
     // 3rd, yielding a bogus server name ("server_version" instead of
-    // "gitlab"). See https://github.com/danny-avila/LibreChat/issues/14440
+    // "gitlab"). See https://github.com/LibreChat-AI/LibreChat/issues/14440
     expect(splitMCPToolKey('gitlab-get_mcp_server_version_mcp_gitlab')).toEqual([
       'gitlab-get_mcp_server_version',
       'gitlab',

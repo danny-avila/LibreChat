@@ -289,6 +289,9 @@ export interface AgentTriggerDeliveryMethods {
     reason: string;
     onlyIfUnclaimed?: boolean;
     onlyIfDead?: boolean;
+    /** Accept transport success without a terminal handling receipt, unless the
+     * delivery explicitly keeps its lane open for terminal handling. */
+    allowSucceeded?: boolean;
   }) => Promise<boolean>;
   renewAgentTriggerDeliveryProducerLease: (input: {
     deliveryKey: string;
@@ -2068,6 +2071,9 @@ export function createAgentTriggerDeliveryMethods(
     reason: string;
     onlyIfUnclaimed?: boolean;
     onlyIfDead?: boolean;
+    /** Accept transport success without a terminal handling receipt, unless the
+     * delivery explicitly keeps its lane open for terminal handling. */
+    allowSucceeded?: boolean;
   }): Promise<boolean> {
     if (
       input.deliveryKey.length === 0 ||
@@ -2161,6 +2167,7 @@ export function createAgentTriggerDeliveryMethods(
         $or: [
           { handling: { $exists: false } },
           { 'handling.status': { $in: ['applied', 'completed_no_action', 'failed', 'cancelled'] } },
+          ...(input.allowSucceeded === true ? [{ awaitTerminalHandling: { $ne: true } }] : []),
         ],
       })) != null
     );

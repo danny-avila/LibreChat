@@ -928,7 +928,37 @@ const managementClientBindingSchema = z
   })
   .strict();
 
-const managementApiOidcSchema = oidcAccessTokenSchema.strict().superRefine(validateEnabledOidc);
+const managementApiOidcSchema = oidcAccessTokenSchema
+  .extend({
+    tokenUse: z.literal('access').optional(),
+    requiredScopes: z
+      .array(z.string().trim().min(1).max(256).regex(/^\S+$/, 'must be a single scope token'))
+      .min(1)
+      .max(20)
+      .optional(),
+  })
+  .strict()
+  .superRefine((oidc, ctx) => {
+    if (oidc.enabled === true && !oidc.issuer) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['issuer'],
+        message: 'issuer is required when OIDC auth is enabled',
+      });
+    }
+    if (
+      oidc.enabled === true &&
+      !oidc.audience &&
+      (oidc.tokenUse !== 'access' || !oidc.requiredScopes?.length)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['requiredScopes'],
+        message:
+          'audience or access-token validation with required scopes is required when OIDC auth is enabled',
+      });
+    }
+  });
 
 const managementApiAuthSchema = z
   .object({
@@ -1231,6 +1261,8 @@ export type CodeWorkerEnrollmentPolicy = NonNullable<
 >;
 
 export const DEFAULT_MAX_PROVIDER_ERROR_CHARS = 2000;
+export const DEFAULT_AGENT_MODEL_RESPONSE_BODY_TIMEOUT_MS = 900_000;
+export const DEFAULT_AGENT_MODEL_RESPONSE_HEADERS_TIMEOUT_MS = 300_000;
 
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
@@ -1244,6 +1276,20 @@ export const agentsEndpointSchema = baseEndpointSchema
         .min(0)
         .max(1_000_000)
         .default(DEFAULT_MAX_PROVIDER_ERROR_CHARS),
+      /** Maximum inactivity between provider response body chunks; 0 disables the idle timeout. */
+      modelResponseBodyTimeoutMs: z
+        .number()
+        .int()
+        .min(0)
+        .max(86_400_000)
+        .default(DEFAULT_AGENT_MODEL_RESPONSE_BODY_TIMEOUT_MS),
+      /** Maximum wait for provider response headers; 0 disables the header timeout. */
+      modelResponseHeadersTimeoutMs: z
+        .number()
+        .int()
+        .min(0)
+        .max(86_400_000)
+        .default(DEFAULT_AGENT_MODEL_RESPONSE_HEADERS_TIMEOUT_MS),
       recursionLimit: z.number().optional(),
       disableBuilder: z.boolean().optional().default(false),
       /** Optional workspace guidance acquisition budget, separate from command execution. */
@@ -2054,6 +2100,24 @@ export enum RetentionMode {
   TEMPORARY = 'temporary',
 }
 
+/** Single source for the agents panel selector's unsearched list cap; the
+ * schema default and the client fallback both read it. */
+export const DEFAULT_AGENT_SELECTOR_LIMIT = 10;
+export const AGENT_SELECTOR_LIMIT_MIN = 1;
+export const AGENT_SELECTOR_LIMIT_MAX = 100;
+
+/** Runtime guard for values that bypass `interfaceSchema`: raw librechat.yaml
+ * reads and principal-scoped admin overrides reach the client unparsed, so an
+ * out-of-bounds value falls back to the default instead of emptying the list. */
+export function normalizeAgentSelectorLimit(value: unknown): number {
+  return typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= AGENT_SELECTOR_LIMIT_MIN &&
+    value <= AGENT_SELECTOR_LIMIT_MAX
+    ? value
+    : DEFAULT_AGENT_SELECTOR_LIMIT;
+}
+
 export const interfaceSchema = z
   .object({
     privacyPolicy: z
@@ -2068,6 +2132,14 @@ export const interfaceSchema = z
     modelSelect: z.boolean().optional(),
     /** Milliseconds between syntax highlights while a code block streams. */
     codeHighlightThrottleMs: z.number().int().min(0).max(60_000).default(300),
+    /** Most agents the agents panel selector lists before a search term is
+     * typed; typing lifts the cap so search reaches every agent. */
+    agentSelectorLimit: z
+      .number()
+      .int()
+      .min(AGENT_SELECTOR_LIMIT_MIN)
+      .max(AGENT_SELECTOR_LIMIT_MAX)
+      .default(DEFAULT_AGENT_SELECTOR_LIMIT),
     parameters: z.boolean().optional(),
     multiConvo: z.boolean().optional(),
     bookmarks: z.boolean().optional(),
@@ -2190,6 +2262,7 @@ export const interfaceSchema = z
   .default({
     modelSelect: true,
     codeHighlightThrottleMs: 300,
+    agentSelectorLimit: DEFAULT_AGENT_SELECTOR_LIMIT,
     parameters: true,
     presets: true,
     multiConvo: true,
@@ -2905,8 +2978,12 @@ export const openIdDiscoverySchema = z.object({
 
 export type TOpenIdDiscoveryConfig = z.infer<typeof openIdDiscoverySchema>;
 
+/** Maximum CAS attempts per ACL document, including the initial attempt. */
+export const permissionWriteAttemptsSchema = z.number().int().min(1).max(100).default(3);
+
 export const configSchema = z.object({
   version: z.string(),
+  permissions: z.object({ maxWriteAttempts: permissionWriteAttemptsSchema }).optional(),
   cache: z.boolean().default(true),
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
@@ -3158,6 +3235,9 @@ export const alternateName = {
  * catalogs consume.
  */
 const responsesOnlyOpenAIModels = ['gpt-6-astra'];
+/** Tool calls with Sol/Luna's default reasoning require Responses. Do not offer
+ * these on Assistants, which cannot use the native request-routing path. */
+const responsesReasoningOpenAIModels = ['gpt-6-sol', 'gpt-6-luna'];
 
 const sharedOpenAIModels = [
   'gpt-5.6',
@@ -3189,6 +3269,7 @@ const sharedOpenAIModels = [
 const sharedAnthropicModels = [
   'claude-fable-5-1',
   'claude-fable-5',
+  'claude-opus-5-5',
   'claude-opus-5',
   'claude-opus-4-8',
   'claude-opus-4-7',
@@ -3225,6 +3306,7 @@ const sharedAnthropicModels = [
 export const bedrockModels = [
   'global.anthropic.claude-fable-5-1',
   'global.anthropic.claude-fable-5',
+  'global.anthropic.claude-opus-5-5',
   'global.anthropic.claude-opus-5',
   'global.anthropic.claude-opus-4-8',
   'global.anthropic.claude-opus-4-7',
@@ -3262,7 +3344,11 @@ export const defaultModels = {
   [EModelEndpoint.azureAssistants]: sharedOpenAIModels,
   [EModelEndpoint.assistants]: [...sharedOpenAIModels, 'chatgpt-4o-latest'],
   // TODO: Add agent models (agentsModels)
-  [EModelEndpoint.agents]: [...responsesOnlyOpenAIModels, ...sharedOpenAIModels],
+  [EModelEndpoint.agents]: [
+    ...responsesOnlyOpenAIModels,
+    ...responsesReasoningOpenAIModels,
+    ...sharedOpenAIModels,
+  ],
   [EModelEndpoint.google]: [
     // Gemini 3.8 Models
     'gemini-3.8-flash',
@@ -3288,6 +3374,7 @@ export const defaultModels = {
   [EModelEndpoint.anthropic]: sharedAnthropicModels,
   [EModelEndpoint.openAI]: [
     ...responsesOnlyOpenAIModels,
+    ...responsesReasoningOpenAIModels,
     ...sharedOpenAIModels,
     'chatgpt-4o-latest',
     'gpt-4-vision-preview',
@@ -3309,7 +3396,8 @@ const openAIModels = defaultModels[EModelEndpoint.openAI];
  * model list, including Astra when deployed.
  */
 const nonResponsesOnlyOpenAIModels = openAIModels.filter(
-  (model) => !responsesOnlyOpenAIModels.includes(model),
+  (model) =>
+    !responsesOnlyOpenAIModels.includes(model) && !responsesReasoningOpenAIModels.includes(model),
 );
 
 export const initialModelsConfig: TModelsConfig = {
@@ -3356,6 +3444,8 @@ export const visionModels = [
   'grok-vision',
   'grok-2-vision',
   'grok-3',
+  'grok-4.7',
+  'grok-4-7',
   'gpt-4o-mini',
   'gpt-4o',
   'gpt-4-turbo',
@@ -3923,7 +4013,7 @@ export enum Constants {
    */
   VERSION = '__LIBRECHAT_VERSION__',
   /** Key for the Custom Config's version (librechat.yaml). */
-  CONFIG_VERSION = '1.3.16',
+  CONFIG_VERSION = '1.3.17',
   /** Standard value for the first message's `parentMessageId` value, to indicate no parent exists. */
   NO_PARENT = '00000000-0000-0000-0000-000000000000',
   /** Standard value to use whatever the submission prelim. `responseMessageId` is */
