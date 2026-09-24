@@ -58,6 +58,9 @@ export function createSSETransport({ token }: { token?: string }): ChatTransport
         if (e.responseCode === 401) {
           try {
             const refreshResponse = await request.refreshToken();
+            if (signal.aborted) {
+              return;
+            }
             const refreshedToken = refreshResponse?.token ?? '';
             if (!refreshedToken) {
               throw new Error('Token refresh failed.');
@@ -69,6 +72,9 @@ export function createSSETransport({ token }: { token?: string }): ChatTransport
           } catch (error) {
             /* token refresh failed, continue handling the original 401 */
             console.log(error);
+          }
+          if (signal.aborted) {
+            return;
           }
         }
 
