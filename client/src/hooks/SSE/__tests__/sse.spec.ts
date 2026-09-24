@@ -209,23 +209,26 @@ describe('createSSETransport', () => {
   it.each([
     ['succeeds', () => Promise.resolve({ token: 'token-2' })],
     ['fails', () => Promise.reject(new Error('refresh failed'))],
-  ])('stays closed when aborted while a 401 refresh %s', async (_outcome, refresh) => {
-    jest.spyOn(console, 'log').mockImplementation(() => undefined);
-    jest.spyOn(request, 'refreshToken').mockImplementation(refresh as never);
-    const dispatchTokenUpdated = jest
-      .spyOn(request, 'dispatchTokenUpdatedEvent')
-      .mockImplementation(() => undefined);
-    send();
-    current().status = 401;
-    current().write('Unauthorized');
+  ])(
+    'cancels, and stays closed, when aborted while a 401 refresh %s',
+    async (_outcome, refresh) => {
+      jest.spyOn(console, 'log').mockImplementation(() => undefined);
+      jest.spyOn(request, 'refreshToken').mockImplementation(refresh as never);
+      const dispatchTokenUpdated = jest
+        .spyOn(request, 'dispatchTokenUpdatedEvent')
+        .mockImplementation(() => undefined);
+      send();
+      current().status = 401;
+      current().write('Unauthorized');
 
-    controller.abort();
-    await new Promise(process.nextTick);
+      controller.abort();
+      await new Promise(process.nextTick);
 
-    expect(xhrs).toHaveLength(1);
-    expect(dispatchTokenUpdated).not.toHaveBeenCalled();
-    expect(events).toEqual([]);
-  });
+      expect(xhrs).toHaveLength(1);
+      expect(dispatchTokenUpdated).not.toHaveBeenCalled();
+      expect(events).toEqual([{ type: 'abort' }]);
+    },
+  );
 
   it('emits abort when the caller aborts mid-stream, then goes quiet', () => {
     send();

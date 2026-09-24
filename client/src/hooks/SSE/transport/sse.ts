@@ -55,11 +55,16 @@ export function createSSETransport({ token }: { token?: string }): ChatTransport
       });
 
       let refreshed = false;
+      /** sse.js marks the connection closed on a 401, but the turn is still
+       * live until the retry settles, so an abort meanwhile must still cancel. */
+      let refreshing = false;
       sse.addEventListener('error', async (e: StreamErrorEvent) => {
         if (e.responseCode === 401 && !refreshed) {
           refreshed = true;
+          refreshing = true;
           try {
             const refreshResponse = await request.refreshToken();
+            refreshing = false;
             if (signal.aborted) {
               return;
             }
@@ -72,6 +77,7 @@ export function createSSETransport({ token }: { token?: string }): ChatTransport
             sse.stream();
             return;
           } catch (error) {
+            refreshing = false;
             /* token refresh failed, continue handling the original 401 */
             console.log(error);
           }
@@ -97,7 +103,7 @@ export function createSSETransport({ token }: { token?: string }): ChatTransport
       signal.addEventListener(
         'abort',
         () => {
-          const wasOpen = sse.readyState <= 1;
+          const wasOpen = sse.readyState <= 1 || refreshing;
           sse.close();
           if (wasOpen) {
             // @ts-expect-error sse.js declares dispatchEvent as (type, listener); it takes an event
