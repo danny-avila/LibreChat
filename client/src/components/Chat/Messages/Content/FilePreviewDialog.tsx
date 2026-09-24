@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import copy from 'copy-to-clipboard';
 import { Download } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
+import { FileSources } from 'librechat-data-provider';
 import {
   Button,
   OGDialog,
@@ -11,18 +12,20 @@ import {
 } from '@librechat/client';
 import type { TFile } from 'librechat-data-provider';
 import {
+  useFilePreview,
+  useFilePreviewBlob,
+  useFileDownload,
+  useSharedFileDownload,
+  useCodeOutputDownload,
+  useCodeOutputPreviewBlob,
+} from '~/data-provider';
+import {
   getFileExtension,
   getPreviewKind,
   isExtractedTextPreviewLoading,
   shouldUseExtractedTextPreview,
   shouldUseSharedFileDownload,
 } from './preview';
-import {
-  useFilePreview,
-  useFilePreviewBlob,
-  useFileDownload,
-  useSharedFileDownload,
-} from '~/data-provider';
 import { getDownloadFilename, logger, sortPagesByRelevance, triggerDownload } from '~/utils';
 import CopyButton from '~/components/Messages/Content/CopyButton';
 import { useFileMapContext, useShareContext } from '~/Providers';
@@ -91,6 +94,7 @@ export default function FilePreviewDialog({
   onOpenChange,
   fileName,
   fileId,
+  filePath,
   relevance,
   pages,
   pageRelevance,
@@ -122,11 +126,21 @@ export default function FilePreviewDialog({
   // Downloads own URLs; previews share bytes and create only their display URL.
   const { refetch: downloadOwned } = useFileDownload(user?.id ?? '', fileId, { direct: false });
   const { refetch: downloadShared } = useSharedFileDownload(shareId, fileId);
-  const { refetch: previewFile } = useFilePreviewBlob(user?.id, fileId, shareId);
+  const { refetch: previewOwned } = useFilePreviewBlob(user?.id, fileId, shareId);
+  // Code-interpreter outputs aren't persisted `TFile` records — they're fetched
+  // live from the execution session via `filePath`, so both download and preview
+  // route through that URL instead of the owner/share file-ACL lookups above.
+  const isCodeOutput = fileSource === FileSources.execute_code;
+  const { refetch: downloadCodeOutput } = useCodeOutputDownload(filePath);
+  const { refetch: previewCodeOutput } = useCodeOutputPreviewBlob(filePath);
   // A shared viewer must stay inside the share-scoped authorization boundary;
   // citation and retrieval previews do not carry a rewritten filepath signal.
   const useShared = shouldUseSharedFileDownload(shareId, fileId);
-  const downloadFile = useShared ? downloadShared : downloadOwned;
+  let downloadFile = useShared ? downloadShared : downloadOwned;
+  if (isCodeOutput) {
+    downloadFile = downloadCodeOutput;
+  }
+  const previewFile = isCodeOutput ? previewCodeOutput : previewOwned;
 
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [fileBlobUrl, setFileBlobUrl] = useState<string | null>(null);
@@ -199,7 +213,7 @@ export default function FilePreviewDialog({
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [open, fileId, previewKind, previewFile, shareId, user?.id]);
+  }, [open, fileId, previewKind, previewFile, shareId, user?.id, isCodeOutput, filePath]);
 
   const handleDownload = useCallback(async () => {
     if (!fileId) {
