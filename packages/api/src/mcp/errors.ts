@@ -20,6 +20,30 @@ export function isMCPInitializationError(error: unknown, signal?: AbortSignal): 
   );
 }
 
+/**
+ * Capture fatal outcomes without rejecting a parallel load early. The caller must
+ * settle every started MCP load before `throwIfFailed`, so request cleanup cannot
+ * race a connection that is still initializing. Optional-tool failures stay soft.
+ */
+export function createMCPToolLoadGuard(signal?: AbortSignal): {
+  capture: (error: unknown) => void;
+  throwIfFailed: () => void;
+} {
+  let failure: { error: unknown } | undefined;
+  return {
+    capture(error) {
+      if (!failure && isMCPInitializationError(error, signal)) {
+        failure = { error };
+      }
+    },
+    throwIfFailed() {
+      if (failure) {
+        throw failure.error;
+      }
+    },
+  };
+}
+
 export const MCPErrorCodes = {
   DOMAIN_NOT_ALLOWED: 'MCP_DOMAIN_NOT_ALLOWED',
   INSPECTION_FAILED: 'MCP_INSPECTION_FAILED',

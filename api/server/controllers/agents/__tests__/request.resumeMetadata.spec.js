@@ -4070,6 +4070,49 @@ describe('ResumableAgentController resume metadata', () => {
     });
   });
 
+  it.each([
+    new (jest.requireActual('@librechat/api').OpenIDReauthRequiredError)(
+      'Please sign in again to continue using this MCP server.',
+    ),
+    new (jest.requireActual('@librechat/api').MCPAuthenticationRejectedError)('private-mcp', false),
+    new (jest.requireActual('@librechat/api').MCPAuthenticationRefreshError)(
+      new Error('upstream refresh unavailable'),
+    ),
+  ])(
+    'publishes an actionable MCP initialization failure without an HTTP 401: %s',
+    async (error) => {
+      const initializeClient = jest.fn().mockRejectedValue(error);
+      const req = {
+        user: { id: 'user-123' },
+        body: {
+          text: 'Use the private tool.',
+          messageId: 'user-msg',
+          clientRequestId: 'req-abc',
+          conversationId: 'conversation-123',
+          endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        },
+        config: {},
+      };
+      const res = createResumableResponse();
+
+      await AgentController(req, res, jest.fn(), initializeClient, null);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.status).not.toHaveBeenCalledWith(401);
+      expect(initializeClient).toHaveBeenCalledTimes(1);
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+        'conversation-123',
+        JSON.stringify({
+          status: error.status ?? error.statusCode,
+          ...(error.code ? { code: error.code } : {}),
+          error: error.message,
+        }),
+        1000,
+        expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
+      );
+    },
+  );
+
   it('finalizes the failed job before releasing the idempotency claim', async () => {
     mockGenerationJobManager.claimGeneration.mockResolvedValue(wonGenerationClaim());
     const initializeClient = jest.fn().mockRejectedValue(new Error('init boom after res.json'));

@@ -11,8 +11,23 @@ import {
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
   isStepLimitError,
 } from './errors';
+import { MCPAuthenticationRejectedError, MCPAuthenticationRefreshError } from '~/mcp/errors';
+import { OboTokenResolutionError } from '~/mcp/oauth/obo';
+import { OpenIDReauthRequiredError } from '~/utils/oidc';
 
 describe('isFatalAgentInitializationError', () => {
+  it.each([
+    new OpenIDReauthRequiredError('Please sign in again'),
+    new MCPAuthenticationRejectedError('private-mcp', false),
+    new MCPAuthenticationRejectedError('private-mcp', true),
+    new MCPAuthenticationRefreshError(new Error('temporarily unavailable')),
+    new OboTokenResolutionError('session_refresh_failed', 'Please sign in again', false),
+    new OboTokenResolutionError('session_refresh_failed', 'Retry later', true),
+  ])('never hides a credential outcome behind optional-tool fallback: %s', (error) => {
+    expect(isFatalAgentInitializationError(error)).toBe(true);
+    expect(isFatalAgentInitializationError(error, { allowExpectedMCPFallback: true })).toBe(true);
+  });
+
   it('propagates cancellation even when optional MCP fallback is allowed', () => {
     const abort = new DOMException('Stopped', 'AbortError');
     const controller = new AbortController();

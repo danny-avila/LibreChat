@@ -6,6 +6,7 @@ const {
   toolRolePermissions,
   checkToolRolePermission,
   createSafeUser,
+  createMCPToolLoadGuard,
   createAuthIdentityContext,
   selectMCPUpstreamTokenProvider,
   mcpToolPattern,
@@ -622,6 +623,7 @@ const loadTools = async ({
 
   const loadedTools = (await Promise.all(toolPromises)).flatMap((plugin) => plugin || []);
   const mcpToolPromises = [];
+  const mcpLoadGuard = createMCPToolLoadGuard(signal);
   /** MCP server tools are initialized sequentially by server */
   let index = -1;
   const failedMCPServers = new Set();
@@ -687,6 +689,7 @@ const loadTools = async ({
           /** Handle async loading for single 'all' tool config */
           mcpToolPromises.push(
             createMCPTools(mcpParams).catch((error) => {
+              mcpLoadGuard.capture(error);
               logger.error(`Error loading ${serverName} tools:`, error);
               return null;
             }),
@@ -697,6 +700,7 @@ const loadTools = async ({
           try {
             availableTools = await getMCPServerTools(safeUser.id, serverName, config.config);
           } catch (error) {
+            mcpLoadGuard.capture(error);
             logger.error(`Error fetching available tools for MCP server ${serverName}:`, error);
           }
         }
@@ -725,11 +729,13 @@ const loadTools = async ({
           );
         }
       } catch (error) {
+        mcpLoadGuard.capture(error);
         logger.error(`Error loading MCP tool for server ${serverName}:`, error);
       }
     }
   }
   loadedTools.push(...(await Promise.all(mcpToolPromises)).flatMap((plugin) => plugin || []));
+  mcpLoadGuard.throwIfFailed();
   return { loadedTools, toolContextMap, dynamicToolContextMap, primedCodeFiles };
 };
 
