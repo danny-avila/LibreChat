@@ -113,6 +113,7 @@ export function createPiiTextTransformer(config: PiiRedactionConfig): {
       return {
         transform(fragment) {
           let matches: readonly PatternTextMatch[];
+          const reserved = new Set<string>();
           try {
             if (typeof fragment.text !== 'string' || fragment.text.length > remainingCharacters) {
               throw new PiiTransformationError('limit');
@@ -121,6 +122,7 @@ export function createPiiTextTransformer(config: PiiRedactionConfig): {
             for (const marker of fragment.text.matchAll(
               /\[(?:EMAIL|PHONE|NAME|CREDENTIAL|CUSTOM)_[1-9]\d*\]/g,
             )) {
+              reserved.add(marker[0]);
               if (issued.has(marker[0])) {
                 throw new PiiTransformationError('inspection');
               }
@@ -159,7 +161,7 @@ export function createPiiTextTransformer(config: PiiRedactionConfig): {
               do {
                 next++;
                 placeholder = `[${type}_${next}]`;
-              } while (fragment.text.includes(placeholder) || issued.has(placeholder));
+              } while (reserved.has(placeholder) || issued.has(placeholder));
               nextByCategory.set(type, next);
               placeholders.set(key, placeholder);
               issued.add(placeholder);
