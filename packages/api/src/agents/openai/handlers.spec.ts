@@ -72,12 +72,12 @@ describe('OpenAI-compatible agent stream handlers', () => {
       },
       {},
     ]);
-    expect(chunks.at(-1).choices[0].finish_reason).toBe('stop');
-    expect(chunks.at(-1).usage).toMatchObject({
+    expect(chunks[chunks.length - 1].choices[0].finish_reason).toBe('stop');
+    expect(chunks[chunks.length - 1].usage).toMatchObject({
       total_tokens: 15,
       subagent: { total_tokens: 3 },
     });
-    expect(current.at(-1)).toBe('data: [DONE]\n\n');
+    expect(current[current.length - 1]).toBe('data: [DONE]\n\n');
   });
 
   it('propagates a synchronous transport failure instead of claiming completion', () => {
