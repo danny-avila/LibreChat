@@ -176,13 +176,19 @@ describe.each(modes)('clickhouse %s palette', (_mode, theme) => {
     expect(below(theme, WCAG_AA_NORMAL, ['rgb-text-primary'], interactiveFills)).toEqual([]);
   });
 
-  /** The chat error box, the route error boundary and the sign-in notices paint
-   *  secondary copy on a status fill rather than on a canvas. */
-  it('keeps secondary and destructive text at WCAG AA on every status fill', () => {
+  /** The chat error box, the route error boundary, the sign-in notices and the
+   *  deleted rows of a diff paint neutral copy on a status fill rather than on a
+   *  canvas. `text-muted` is left out because no consumer puts it on one. */
+  it('keeps the text roles that meet status fills at WCAG AA on every one', () => {
     const fills = statusHues.map((hue) => `rgb-status-${hue}-subtle` as keyof IThemeRGB);
-    expect(
-      below(theme, WCAG_AA_NORMAL, ['rgb-text-secondary', 'rgb-text-destructive'], fills),
-    ).toEqual([]);
+    const onStatusFills: Array<keyof IThemeRGB> = [
+      'rgb-text-primary',
+      'rgb-text-secondary',
+      'rgb-text-secondary-alt',
+      'rgb-text-tertiary',
+      'rgb-text-destructive',
+    ];
+    expect(below(theme, WCAG_AA_NORMAL, onStatusFills, fills)).toEqual([]);
   });
 
   it('keeps warning and destructive text at WCAG AA on canvas surfaces', () => {

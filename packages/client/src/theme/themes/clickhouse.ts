@@ -24,13 +24,15 @@ import type { ThemeDefinition, IThemeRGB } from '../types';
 export const clickHouseLightTheme: IThemeRGB = {
   // Text colors
   'rgb-text-primary': '22 21 23', // #161517 (text.default)
-  /** Secondary copy also sits on the status fills (the chat error box, the route
-   *  error boundary, the sign-in notices), where text.muted #696e79 measures
-   *  4.05:1 on feedback.danger.background. One step down the slate ramp is
-   *  Click UI's own feedback.neutral.foreground. */
+  /** Secondary and tertiary copy also sit on the status fills (the chat error
+   *  box, the route error boundary, the sign-in notices, the deleted rows of a
+   *  diff), where text.muted #696e79 measures 4.05:1 on
+   *  feedback.danger.background. One step down the slate ramp is Click UI's own
+   *  feedback.neutral.foreground. `text-muted` never meets a status fill, so it
+   *  keeps text.muted. */
   'rgb-text-secondary': '83 87 95', // #53575f (palette.slate.700)
-  'rgb-text-secondary-alt': '105 110 121', // #696e79 (text.muted)
-  'rgb-text-tertiary': '105 110 121', // #696e79 (text.muted)
+  'rgb-text-secondary-alt': '83 87 95', // #53575f (palette.slate.700)
+  'rgb-text-tertiary': '83 87 95', // #53575f (palette.slate.700)
   'rgb-text-muted': '105 110 121', // #696e79 (text.muted)
   'rgb-text-warning': '163 60 0', // #a33c00 (text.warning)
   'rgb-text-destructive': '193 0 0', // #c10000 (text.danger)
