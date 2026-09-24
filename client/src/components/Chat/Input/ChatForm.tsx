@@ -721,10 +721,10 @@ const ChatForm = memo(function ChatForm({
               onClick={handleContainerClick}
               className={cn(
                 /* The surface runs to the viewport floor below `sm`, where it is
-                   squared off at the bottom (`rounded-t-3xl`) and no disclaimer
+                   squared off at the bottom (`rounded-t-theme-surface-lg`) and no disclaimer
                    follows it — so the action row is the last thing in it, with no
                    band of padding under the buttons. */
-                'relative flex w-full grow flex-col overflow-hidden rounded-t-3xl sm:rounded-3xl',
+                'rounded-t-theme-surface-lg sm:rounded-theme-surface-lg relative flex w-full grow flex-col overflow-hidden',
                 composerSurfaceClasses(),
                 isTextAreaFocused ? composerSurfaceShadow.focused : composerSurfaceShadow.blurred,
                 /* Temporary-chat accent is a ChatForm-only override, not part of
