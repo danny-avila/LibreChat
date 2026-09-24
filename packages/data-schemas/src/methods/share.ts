@@ -125,6 +125,13 @@ const SENSITIVE_SHARED_FILE_FIELDS = new Set([
 ]);
 
 /**
+ * Media Studio bookkeeping persisted on File records (`mediaRenditionLocations`,
+ * `mediaRetainers`, `mediaConsumerClaims`, …) and copied into saved messages with
+ * the rest of the record. None of it is render data.
+ */
+const PRIVATE_MEDIA_FILE_FIELD = /^media[A-Z]/;
+
+/**
  * Strip storage/identity-internal fields from a file or attachment while keeping
  * render-relevant data (including tool-call payloads keyed by tool name).
  */
@@ -135,7 +142,7 @@ function sanitizeSharedFile(value: unknown): t.SharedFile | null {
 
   const result: t.SharedFile = {};
   for (const [key, fieldValue] of Object.entries(value as Record<string, unknown>)) {
-    if (!SENSITIVE_SHARED_FILE_FIELDS.has(key)) {
+    if (!SENSITIVE_SHARED_FILE_FIELDS.has(key) && !PRIVATE_MEDIA_FILE_FIELD.test(key)) {
       result[key] = fieldValue;
     }
   }

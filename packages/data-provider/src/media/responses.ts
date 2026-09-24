@@ -56,10 +56,23 @@ export const mediaProviderDiagnosticSchema = z
 export const mediaJobDiagnosticsResponseSchema = z
   .object({ diagnostic: mediaProviderDiagnosticSchema.optional() })
   .strict();
+const MEDIA_FILE_PATH_PROTOCOLS = new Set(['http:', 'https:']);
+/** Asset paths become `src` and download `href` values, so the protocol is read the way a browser
+ * parses it: same-origin paths and HTTP(S) pass; `javascript:`, `data:` and the like do not. */
+const mediaFilePathSchema = z
+  .string()
+  .min(1)
+  .refine((value) => {
+    try {
+      return MEDIA_FILE_PATH_PROTOCOLS.has(new URL(value, 'http://localhost').protocol);
+    } catch {
+      return false;
+    }
+  }, 'Media file paths must be same-origin paths or HTTP(S) URLs');
 export const mediaRenditionKindSchema = z.enum(['thumbnail', 'poster', 'playback']);
 export const mediaRenditionSchema = z
   .object({
-    filepath: z.string().min(1),
+    filepath: mediaFilePathSchema,
     type: z.string().min(1),
     bytes: z.number().int().nonnegative().safe(),
     width: z.number().int().positive().optional(),
@@ -80,7 +93,7 @@ export const mediaAssetSchema = z
     filename: z.string(),
     type: z.string().min(1),
     bytes: z.number().int().nonnegative().safe(),
-    filepath: z.string().min(1),
+    filepath: mediaFilePathSchema,
     width: z.number().int().positive().optional(),
     height: z.number().int().positive().optional(),
     durationSeconds: z.number().finite().nonnegative().optional(),

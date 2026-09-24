@@ -1247,6 +1247,80 @@ describe('Share Methods', () => {
       },
     );
 
+    test('drops Media Studio bookkeeping from shared files, attachments and image parts', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const conversationId = `conv_${nanoid()}`;
+      const shareId = `share_${nanoid()}`;
+      await File.create({
+        user: userId,
+        file_id: 'studio-image',
+        filename: 'studio.png',
+        filepath: '/images/studio.png',
+        source: 'local',
+        type: 'image/png',
+        bytes: 1024,
+      });
+      const studioFile = {
+        file_id: 'studio-image',
+        filename: 'studio.png',
+        filepath: '/images/studio.png',
+        type: 'image/png',
+        bytes: 1024,
+        width: 640,
+        height: 480,
+        conversationId,
+        user: userId,
+        source: 'local',
+        mediaOutputKey: 'secret-output-key',
+        mediaRendition: 'original',
+        mediaContentDigest: 'secret-digest',
+        mediaRenditions: { thumbnail: { filepath: '/images/secret-thumbnail.webp' } },
+        mediaRenditionLocations: [
+          { kind: 'thumbnail', storageKey: 'secret/thumbnail.webp', source: 'local' },
+        ],
+        mediaLifecycle: 'live',
+        mediaEpoch: 1,
+        mediaRetainers: ['thread:secret-thread'],
+        mediaConsumerClaims: [
+          { token: 'secret-claim-token', conversationId: 'secret-convo', expiresAt: new Date() },
+        ],
+        mediaConsumerRevision: 2,
+        mediaDeletionToken: 'secret-deletion-token',
+        mediaUseUntil: new Date(),
+        mediaHardExpiresAt: new Date(),
+      };
+      const message = await Message.create({
+        user: userId,
+        conversationId,
+        messageId: `msg_${nanoid()}`,
+        isCreatedByUser: false,
+        files: [studioFile],
+        attachments: [{ ...studioFile, toolCallId: 'call_media' }],
+        content: [{ type: 'image_file', image_file: studioFile }],
+      });
+      await SharedLink.create({
+        user: userId,
+        conversationId,
+        shareId,
+        messages: [message._id],
+      });
+
+      const shared = (await shareMethods.getSharedMessages(shareId))?.messages[0];
+      const render = {
+        file_id: 'studio-image',
+        filename: 'studio.png',
+        type: 'image/png',
+        width: 640,
+        height: 480,
+        filepath: `/api/share/${shareId}/files/studio-image`,
+      };
+
+      expect(JSON.stringify(shared)).not.toMatch(/"media[A-Z]|secret-/);
+      expect(shared?.files?.[0]).toMatchObject(render);
+      expect(shared?.attachments?.[0]).toMatchObject({ ...render, toolCallId: 'call_media' });
+      expect(shared?.content?.[0]).toMatchObject({ type: 'image_file', image_file: render });
+    });
+
     test('leaves safe non-steer content untouched (same array reference)', () => {
       const plainContent = [
         { type: 'text', text: 'no steers here' },

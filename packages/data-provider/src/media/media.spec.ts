@@ -26,6 +26,7 @@ import {
   mediaErrorSchema,
   mediaProviderDiagnosticSchema,
   mediaJobDiagnosticsResponseSchema,
+  mediaAssetSchema,
 } from './index';
 import { PermissionTypes, Permissions, permissionsSchema } from '../permissions';
 import { configSchema, BASE_ONLY_CONFIG_SECTIONS } from '../config';
@@ -824,6 +825,46 @@ describe('media command contracts', () => {
     expect(mediaStartupConfigSchema.safeParse({ ...startup, apiKey: 'secret' }).success).toBe(
       false,
     );
+  });
+
+  it('accepts only same-origin or HTTP(S) asset paths, including rendition paths', () => {
+    const asset = {
+      file_id: 'asset',
+      filename: 'result.png',
+      type: 'image/png',
+      bytes: 10,
+      filepath: '/api/media/assets/asset/content',
+    };
+    const rendition = { filepath: '/api/media/assets/asset/content?rendition=thumbnail' };
+    for (const filepath of [
+      asset.filepath,
+      '/images/user/result.png',
+      'https://bucket.example/result.png',
+    ]) {
+      expect(mediaAssetSchema.safeParse({ ...asset, filepath }).success).toBe(true);
+    }
+    for (const filepath of [
+      'javascript:alert(1)',
+      ' javascript:alert(1)',
+      'java\tscript:alert(1)',
+      'JavaScript:alert(1)',
+      'data:text/html,<script>alert(1)</script>',
+      'vbscript:msgbox(1)',
+    ]) {
+      expect(mediaAssetSchema.safeParse({ ...asset, filepath }).success).toBe(false);
+      expect(
+        mediaAssetSchema.safeParse({
+          ...asset,
+          renditions: { thumbnail: { ...rendition, filepath, type: 'image/webp', bytes: 1 } },
+        }).success,
+      ).toBe(false);
+    }
+    expect(
+      mediaAssetSchema.safeParse({
+        ...asset,
+        renditions: { thumbnail: { ...rendition, type: 'image/webp', bytes: 1 } },
+      }).success,
+    ).toBe(true);
   });
 
   it('encodes all dynamic endpoint identities and cursors', () => {
