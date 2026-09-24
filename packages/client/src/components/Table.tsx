@@ -22,10 +22,25 @@ const Table: React.ForwardRefExoticComponent<TableProps & React.RefAttributes<HT
   );
 Table.displayName = 'Table';
 
+interface TableHeaderProps extends React.HTMLAttributes<HTMLTableSectionElement> {
+  sticky?: boolean;
+}
+
+const tableHeaderVariants = cva('', {
+  variants: {
+    sticky: {
+      true: 'bg-surface-secondary sticky top-0 z-50',
+      false: '',
+    },
+  },
+});
+
 const TableHeader: React.ForwardRefExoticComponent<
-  React.HTMLAttributes<HTMLTableSectionElement> & React.RefAttributes<HTMLTableSectionElement>
-> = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>(
-  ({ className, ...props }, ref) => <thead ref={ref} className={cn(className)} {...props} />,
+  TableHeaderProps & React.RefAttributes<HTMLTableSectionElement>
+> = React.forwardRef<HTMLTableSectionElement, TableHeaderProps>(
+  ({ className, sticky = false, ...props }, ref) => (
+    <thead ref={ref} className={cn(tableHeaderVariants({ sticky }), className)} {...props} />
+  ),
 );
 TableHeader.displayName = 'TableHeader';
 

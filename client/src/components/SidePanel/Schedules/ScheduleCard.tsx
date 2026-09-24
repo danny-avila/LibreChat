@@ -1,6 +1,6 @@
 import { useId, useRef, useMemo, useState, useCallback } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Trans, useTranslation } from 'react-i18next';
 import { PermissionTypes, Permissions } from 'librechat-data-provider';
 import { Play, Trash, Pencil, Ellipsis, TriangleAlert } from 'lucide-react';
@@ -96,8 +96,8 @@ function StateMarker({ tone }: { tone: ScheduleRowTone }) {
 
 /**
  * What the state means, at the end of the title line: when the next run lands, or
- * the one word that explains why none is coming. A run that ended badly carries its
- * conversation, so the word is also the way into what happened.
+ * the one word that explains why none is coming. When a previous run has a
+ * conversation, keep its navigation available alongside the current state.
  */
 function TrailingState({
   label,
@@ -139,6 +139,7 @@ function TrailingState({
     <button
       type="button"
       title={openRunLabel}
+      aria-label={label == null ? openRunLabel : `${label}: ${openRunLabel}`}
       onClick={onOpenRun}
       className={cn(
         className,
@@ -344,6 +345,15 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
             <p className="text-text-secondary min-w-0 flex-1 truncate text-xs" title={detailText}>
               {detailText}
             </p>
+            {rowState.tone === 'running' && lastRunConvoId && (
+              <Link
+                to={`/c/${lastRunConvoId}`}
+                aria-label={`${localize('com_ui_schedule_last_run')}: ${schedule.name}`}
+                className="text-text-secondary focus-visible:ring-text-primary shrink-0 rounded-sm text-xs hover:underline focus-visible:ring-2 focus-visible:outline-hidden"
+              >
+                {localize('com_ui_schedule_last_run')}
+              </Link>
+            )}
             {canWrite && (
               /* Not the collapsible slot other rows use: this panel's rows end at
                  the sidebar's resize handle, and a slot collapsed to zero width

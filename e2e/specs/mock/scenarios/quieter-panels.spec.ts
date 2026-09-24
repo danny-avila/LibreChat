@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import type { TSchedule, TSchedulesResponse } from 'librechat-data-provider';
+import { FileSources } from 'librechat-data-provider';
+import type { TFile, TSchedule, TSchedulesResponse } from 'librechat-data-provider';
 import type { Page } from '@playwright/test';
 import type { AgentSummary } from '../agents.helpers';
 import { getAccessToken, requestJson, uniqueName } from '../helpers';
@@ -71,11 +72,14 @@ test.describe('quieter management panels', () => {
       const quota = panel.getByText(`${count} of ${initial.limits.maxPerUser} schedules used`);
       const create = panel.getByRole('button', { name: 'New schedule', exact: true });
       const filter = panel.getByRole('textbox', { name: 'Filter schedules...' });
+      const fade = panel.locator('[aria-hidden="true"].pointer-events-none');
       const schedule = fixture.schedules[0];
 
       await expect(panel.getByTestId('schedule-card')).toHaveCount(count);
+      await expect(fade).toHaveCSS('opacity', '1');
       await filter.fill(schedule.name);
       await expect(panel.getByTestId('schedule-card')).toHaveCount(1);
+      await expect(fade).toHaveCSS('opacity', '0');
       await expect(quota).toBeVisible();
       await expect(create).toBeDisabled();
 
@@ -84,6 +88,7 @@ test.describe('quieter management panels', () => {
       await expect(quota).toBeVisible();
       await expect(create).toBeDisabled();
       await filter.clear();
+      await expect(fade).toHaveCSS('opacity', '1');
 
       const card = panel.getByTestId('schedule-card').filter({ hasText: schedule.name });
       const toggle = card.getByRole('switch', { name: `Enabled: ${schedule.name}`, exact: true });
@@ -105,7 +110,71 @@ test.describe('quieter management panels', () => {
       await page.reload();
       await openPanel(page, 'schedules', 'Scheduled chats');
       await expect(toggle).not.toBeChecked();
+
+      // Supply the historical run variant without starting the scheduling engine.
+      await page.route('**/api/schedules', async (route) => {
+        if (route.request().method() !== 'GET') {
+          await route.continue();
+          return;
+        }
+        const response = await route.fetch();
+        const data = (await response.json()) as TSchedulesResponse;
+        await route.fulfill({
+          response,
+          json: {
+            ...data,
+            schedules: data.schedules.map((item) =>
+              item.id === schedule.id
+                ? {
+                    ...item,
+                    lastRun: {
+                      status: 'success',
+                      firedAt: '2026-09-01T00:00:00.000Z',
+                      conversationId: 'historical-schedule-run',
+                    },
+                  }
+                : item,
+            ),
+          },
+        });
+      });
+      await page.reload();
+      await openPanel(page, 'schedules', 'Scheduled chats');
+      const lastRun = card.getByRole('button', { name: 'Paused: Last run', exact: true });
+      await expect(lastRun).toBeVisible();
+      await expect(lastRun).toHaveText('Paused');
+
+      await toggle.click();
+      await expect(toggle).toBeChecked();
+      const historyLink = card.getByRole('link', {
+        name: `Last run: ${schedule.name}`,
+        exact: true,
+      });
+      await expect(historyLink).toHaveAttribute('href', '/c/historical-schedule-run');
+
+      // Keep the panel visible while removing schedule-writing controls.
+      await page.route('**/api/roles/*', async (route) => {
+        const response = await route.fetch();
+        const role = await response.json();
+        await route.fulfill({
+          response,
+          json: {
+            ...role,
+            permissions: {
+              ...role.permissions,
+              SCHEDULES: { ...role.permissions.SCHEDULES, USE: true, CREATE: false },
+            },
+          },
+        });
+      });
+      await page.reload();
+      await openPanel(page, 'schedules', 'Scheduled chats');
+      await expect(card.getByRole('switch')).toHaveCount(0);
+      await expect(historyLink).toBeVisible();
+      await expect(historyLink).toHaveAttribute('href', '/c/historical-schedule-run');
     } finally {
+      await page.unroute('**/api/schedules');
+      await page.unroute('**/api/roles/*');
       await cleanupSchedules(page, fixture);
     }
   });
@@ -194,5 +263,67 @@ test.describe('quieter management panels', () => {
     await file.click();
     await expect(page).toHaveURL(/\/skills\/[^?]+\?file=guide.txt$/);
     await expect(page.getByText('deployment skill file fixture', { exact: true })).toBeVisible();
+  });
+
+  test('file table headers stay opaque over scrolling rows @scenario:file-picker-sticky-header-stays-opaque', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: page.viewportSize()?.width ?? 1280, height: 600 });
+    const files: TFile[] = Array.from({ length: 10 }, (_, index) => ({
+      file_id: `header-file-${index}`,
+      filename: `Header fixture ${index}.txt`,
+      filepath: `/files/header-file-${index}.txt`,
+      user: 'header-fixture-user',
+      bytes: 100,
+      object: 'file',
+      source: FileSources.local,
+      type: 'text/plain',
+      usage: 0,
+      embedded: false,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    }));
+    await page.route('**/api/files', (route) => route.fulfill({ json: files }));
+    await page.goto('/c/new');
+    await openPanel(page, 'files', 'Attach Files');
+    await page.getByRole('button', { name: 'Manage Files', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'My Files' });
+    const header = dialog.locator('thead');
+    await expect(header).toBeVisible();
+    // Actionability waits for the dialog's opening animation before measuring.
+    await header.click({ trial: true });
+    const metrics = await header.evaluate(async (element) => {
+      let scroller = element.parentElement;
+      while (
+        scroller &&
+        (!['auto', 'scroll'].includes(getComputedStyle(scroller).overflowY) ||
+          scroller.scrollHeight <= scroller.clientHeight)
+      ) {
+        scroller = scroller.parentElement;
+      }
+      if (!scroller) throw new Error('The fixture must overflow the file table');
+      const before = element.getBoundingClientRect().top;
+      scroller.scrollTop = 100;
+      await new Promise(requestAnimationFrame);
+      const context = document.createElement('canvas').getContext('2d')!;
+      const isOpaque = (node: Element) => {
+        context.clearRect(0, 0, 1, 1);
+        context.fillStyle = getComputedStyle(node).backgroundColor;
+        context.fillRect(0, 0, 1, 1);
+        return context.getImageData(0, 0, 1, 1).data[3] === 255;
+      };
+      return {
+        scrollTop: scroller.scrollTop,
+        topShift: Math.abs(element.getBoundingClientRect().top - before),
+        opaque: isOpaque(element) || [...element.querySelectorAll('th')].every(isOpaque),
+      };
+    });
+    expect(metrics.scrollTop).toBeGreaterThan(0);
+    expect(metrics.topShift).toBeLessThanOrEqual(1);
+    expect(metrics.opaque).toBe(true);
+    await test.info().attach('file-table-header', {
+      body: await page.screenshot(),
+      contentType: 'image/png',
+    });
   });
 });

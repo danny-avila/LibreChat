@@ -19,6 +19,7 @@ export default function useScrollFade<T extends HTMLElement>(): {
   const [hasMore, setHasMore] = useState(false);
   const nodeRef = useRef<T | null>(null);
   const observerRef = useRef<ResizeObserver | null>(null);
+  const contentObserverRef = useRef<MutationObserver | null>(null);
 
   const measure = useCallback(() => {
     const node = nodeRef.current;
@@ -32,6 +33,8 @@ export default function useScrollFade<T extends HTMLElement>(): {
     (node: T | null) => {
       observerRef.current?.disconnect();
       observerRef.current = null;
+      contentObserverRef.current?.disconnect();
+      contentObserverRef.current = null;
       nodeRef.current?.removeEventListener('scroll', measure);
       nodeRef.current = node;
 
@@ -45,11 +48,20 @@ export default function useScrollFade<T extends HTMLElement>(): {
         const observer = new ResizeObserver(measure);
         /** The container catches a resize of the panel; its content box catches rows
          *  arriving, which changes the scroll height without changing the container. */
-        observer.observe(node);
-        const content = node.firstElementChild;
-        if (content) {
-          observer.observe(content);
-        }
+        const observeContent = () => {
+          observer.disconnect();
+          observer.observe(node);
+          for (const content of node.children) {
+            observer.observe(content);
+          }
+          measure();
+        };
+        observeContent();
+        // Loading announcements, skeletons, lists, and pagination indicators can
+        // replace one another without changing the scroll container itself.
+        const contentObserver = new MutationObserver(observeContent);
+        contentObserver.observe(node, { childList: true });
+        contentObserverRef.current = contentObserver;
         observerRef.current = observer;
       }
       measure();
@@ -60,6 +72,7 @@ export default function useScrollFade<T extends HTMLElement>(): {
   useEffect(
     () => () => {
       observerRef.current?.disconnect();
+      contentObserverRef.current?.disconnect();
       nodeRef.current?.removeEventListener('scroll', measure);
     },
     [measure],

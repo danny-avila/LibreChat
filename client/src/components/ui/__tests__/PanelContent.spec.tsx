@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/extend-expect';
 import { createRef } from 'react';
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import PanelContent from '../PanelContent';
 
 describe('PanelContent', () => {
@@ -93,5 +93,70 @@ describe('PanelContent', () => {
     expect(fade).toBeInTheDocument();
     expect(fade).toHaveAttribute('aria-hidden', 'true');
     expect(fade).toHaveClass('opacity-0');
+  });
+
+  test('tracks overflowing content after loading and after more rows arrive', async () => {
+    const originalObserver = global.ResizeObserver;
+    const observed = new Set<Element>();
+    let notifyResize = () => {};
+    global.ResizeObserver = jest.fn().mockImplementation((callback) => {
+      notifyResize = () => callback([], {});
+      return {
+        observe: (node: Element) => observed.add(node),
+        unobserve: (node: Element) => observed.delete(node),
+        disconnect: () => observed.clear(),
+      };
+    });
+
+    try {
+      const ref = createRef<HTMLDivElement>();
+      const { container, rerender } = render(
+        <PanelContent ref={ref} isLoading={true} skeleton={skeleton} />,
+      );
+      const scroller = ref.current!;
+      Object.defineProperties(scroller, {
+        clientHeight: { value: 100, configurable: true },
+        scrollHeight: { value: 200, configurable: true },
+      });
+      const fade = container.querySelector('.pointer-events-none.absolute');
+      const resizeContent = () => {
+        // Only live content boxes resize here; the scroller stays 100px tall.
+        if ([...observed].some((node) => node !== scroller && scroller.contains(node))) {
+          act(notifyResize);
+        }
+      };
+
+      await act(async () => {
+        rerender(
+          <PanelContent ref={ref} isLoading={false} skeleton={skeleton}>
+            <div>
+              <div data-testid="row-1" />
+            </div>
+          </PanelContent>,
+        );
+      });
+      resizeContent();
+      expect(fade).toHaveClass('opacity-100');
+
+      scroller.scrollTop = 100;
+      fireEvent.scroll(scroller);
+      expect(fade).toHaveClass('opacity-0');
+
+      Object.defineProperty(scroller, 'scrollHeight', { value: 300, configurable: true });
+      await act(async () => {
+        rerender(
+          <PanelContent ref={ref} isLoading={false} skeleton={skeleton}>
+            <div>
+              <div data-testid="row-1" />
+              <div data-testid="row-2" />
+            </div>
+          </PanelContent>,
+        );
+      });
+      resizeContent();
+      expect(fade).toHaveClass('opacity-100');
+    } finally {
+      global.ResizeObserver = originalObserver;
+    }
   });
 });
