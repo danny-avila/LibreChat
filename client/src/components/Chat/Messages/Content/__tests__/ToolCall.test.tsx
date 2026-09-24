@@ -89,14 +89,33 @@ jest.mock('../Parts', () => ({
   ),
 }));
 
-jest.mock('@librechat/client', () => ({
-  Button: ({ children, onClick, ...props }: any) => (
-    <button onClick={onClick} {...props}>
-      {children}
-    </button>
-  ),
-  Spinner: (props: React.HTMLAttributes<HTMLSpanElement>) => <span {...props} />,
-}));
+jest.mock('@librechat/client', () => {
+  const DialogPart = ({ children }: { children?: React.ReactNode }) => <div>{children}</div>;
+  const DialogButton = ({
+    children,
+    onClick,
+  }: {
+    children?: React.ReactNode;
+    onClick?: () => void;
+  }) => <button onClick={onClick}>{children}</button>;
+  return {
+    Button: ({ children, onClick, ...props }: any) => (
+      <button onClick={onClick} {...props}>
+        {children}
+      </button>
+    ),
+    Spinner: (props: React.HTMLAttributes<HTMLSpanElement>) => <span {...props} />,
+    AlertDialog: ({ children, open }: { children?: React.ReactNode; open: boolean }) =>
+      open ? <div>{children}</div> : null,
+    AlertDialogContent: DialogPart,
+    AlertDialogHeader: DialogPart,
+    AlertDialogTitle: DialogPart,
+    AlertDialogDescription: DialogPart,
+    AlertDialogFooter: DialogPart,
+    AlertDialogAction: DialogButton,
+    AlertDialogCancel: DialogButton,
+  };
+});
 
 jest.mock('lucide-react', () => ({
   ChevronDown: () => <span>{'ChevronDown'}</span>,

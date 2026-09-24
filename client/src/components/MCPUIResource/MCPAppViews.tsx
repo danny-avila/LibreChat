@@ -107,7 +107,7 @@ const MCPAppView = React.memo(function MCPAppView({
     setOpened(true);
   };
   return (
-    <div className="my-2" data-mcp-app-view="">
+    <div className="my-2" data-mcp-app-view={app.toolName}>
       {opened ? (
         <ActiveMCPAppView app={app} userId={userId} close={close} />
       ) : (

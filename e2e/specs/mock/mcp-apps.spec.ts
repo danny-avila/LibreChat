@@ -260,12 +260,10 @@ async function expectConnectedApp(
   toolName = 'show_app',
   occurrence = 0,
 ) {
-  const view = page
-    .locator('[data-mcp-app-view]')
-    .filter({
-      has: page.getByText(toolName, { exact: true }),
-    })
-    .nth(occurrence);
+  // The placeholder is async after reload, and opening one View removes its button.
+  // Match the stable host-owned tool identity rather than a shifting list of placeholders.
+  const view = page.locator(`[data-mcp-app-view="${toolName}"]`).nth(occurrence);
+  await expect(view).toBeVisible({ timeout: 30_000 });
   const open = view.getByRole('button', { name: 'Open app' });
   if (await open.count()) await open.click();
   const app = appFrame(page, toolName, occurrence);
@@ -423,6 +421,7 @@ test.describe('MCP Apps full integration', () => {
     });
     // Merely receiving a completed App result must not run its code or perform App RPCs.
     await expect(page.locator('iframe[data-sandbox-url]')).toHaveCount(0);
+    expect(appRequests).toEqual([]);
     await page.getByRole('button', { name: 'Open app' }).click();
     await expect(page.locator('iframe[data-sandbox-url]')).toHaveCount(1);
     const outerCsp = (await sandboxResponse).headers()['content-security-policy'];
@@ -458,9 +457,13 @@ test.describe('MCP Apps full integration', () => {
     expect(viewCsp).not.toContain(MCP_APP_ORIGIN);
 
     const app = await expectConnectedApp(page, label);
-    await app.getByTestId('call-tool').click();
+    // App code can dispatch events without a user gesture. It must still be denied by default.
+    await app.getByTestId('call-tool').evaluate((button) => (button as HTMLElement).click());
     const toolDialog = page.getByRole('alertdialog');
     await expect(toolDialog).toContainText('follow_up');
+    expect(
+      (await readEvents(page)).filter((event) => event.method === 'tools/call:follow_up'),
+    ).toHaveLength(0);
     await toolDialog.getByRole('button', { name: 'Cancel' }).click();
     expect(
       (await readEvents(page)).filter((event) => event.method === 'tools/call:follow_up'),
