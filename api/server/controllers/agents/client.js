@@ -18,7 +18,6 @@ const {
   omitTitleOptions,
   getProviderConfig,
   memoryInstructions,
-  selectMemoryWindow,
   createCachedTokenCounter,
   applyContextToAgent,
   isMemoryAgentEnabled,
@@ -3508,7 +3507,7 @@ class AgentClient extends BaseClient {
        */
       const chatMessages = messages.filter((m) => !isSkillPrimeMessage(m));
 
-      const messagesToProcess = selectMemoryWindow(chatMessages, messageWindowSize);
+      const messagesToProcess = chatMessages.slice(-messageWindowSize);
 
       const filteredMessages = messagesToProcess.map((msg) => this.filterImageUrls(msg));
       const bufferString = getBufferString(filteredMessages);
