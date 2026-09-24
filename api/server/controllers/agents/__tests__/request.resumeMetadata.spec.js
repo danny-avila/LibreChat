@@ -252,6 +252,9 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  getSteerRecoveryFailure: jest.requireActual(
+    '../../../../../packages/api/src/stream/SteerRecovery',
+  ).getSteerRecoveryFailure,
   sendEvent: jest.fn(),
   logAgentMemorySnapshot: jest.fn(),
   isScheduleFireRequest: (...args) => mockIsScheduleFireRequest(...args),
@@ -2941,41 +2944,45 @@ describe('ResumableAgentController resume metadata', () => {
     );
   });
 
-  it('returns a recovery conflict when the atomic store rejects changed source content', async () => {
-    const mismatch = new Error('recovery mismatch');
-    mismatch.code = 'RECOVERY_PAYLOAD_MISMATCH';
-    mockGenerationJobManager.createJob.mockRejectedValue(mismatch);
-    const req = {
-      user: { id: 'user-123' },
-      body: {
-        text: 'Changed words',
-        messageId: 'recovered-user-msg',
-        clientRequestId: 'steer-recovery:server-steer-1',
-        conversationId: 'conversation-123',
-        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
-      },
-      config: {},
-    };
-    const res = createResumableResponse();
+  it.each(['source_missing', 'protocol_mismatch', 'payload_mismatch'])(
+    'returns a recovery conflict with its actual reason (%s)',
+    async (reason) => {
+      const mismatch = new Error('recovery mismatch');
+      mismatch.code = 'RECOVERY_PAYLOAD_MISMATCH';
+      mismatch.reason = reason;
+      mockGenerationJobManager.createJob.mockRejectedValue(mismatch);
+      const req = {
+        user: { id: 'user-123' },
+        body: {
+          text: 'Changed words',
+          messageId: 'recovered-user-msg',
+          clientRequestId: 'steer-recovery:server-steer-1',
+          conversationId: 'conversation-123',
+          endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        },
+        config: {},
+      };
+      const res = createResumableResponse();
 
-    await AgentController(req, res, jest.fn(), jest.fn(), null);
+      await AgentController(req, res, jest.fn(), jest.fn(), null);
 
-    expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
-      'conversation-123',
-      'user-123',
-      'conversation-123',
-      expect.objectContaining({
-        recoveredSteerId: 'server-steer-1',
-        recoveredSteerPayload: { text: 'Changed words', fileIds: [] },
-      }),
-    );
-    expect(res.status).toHaveBeenCalledWith(409);
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({ code: 'RECOVERY_PAYLOAD_MISMATCH' }),
-    );
-    expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
-    expect(mockGenerationJobManager.steering.consumeRecovered).not.toHaveBeenCalled();
-  });
+      expect(mockGenerationJobManager.createJob).toHaveBeenCalledWith(
+        'conversation-123',
+        'user-123',
+        'conversation-123',
+        expect.objectContaining({
+          recoveredSteerId: 'server-steer-1',
+          recoveredSteerPayload: { text: 'Changed words', fileIds: [] },
+        }),
+      );
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'RECOVERY_PAYLOAD_MISMATCH', reason }),
+      );
+      expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
+      expect(mockGenerationJobManager.steering.consumeRecovered).not.toHaveBeenCalled();
+    },
+  );
 
   it('restores a conditional queued send when a newer generation wins the create CAS', async () => {
     mockGenerationJobManager.claimGeneration.mockResolvedValue(

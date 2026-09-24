@@ -10,6 +10,7 @@ import type {
   QueuedMessage,
   SettledQueuedTurnReceipt,
 } from '~/store/families';
+import { recoveryDispositionsFamily } from '~/components/Chat/Steering/recovery';
 import { revealedQueuedTurnFamily } from '~/store/steer';
 import useQueueDrain from '../useQueueDrain';
 import store from '~/store';
@@ -101,8 +102,33 @@ const runEnd = (overrides: Partial<RunEnd> = {}): RunEnd => ({
 
 describe('useQueueDrain', () => {
   beforeEach(() => {
+    getDefaultStore().set(recoveryDispositionsFamily(CONVO_ID), {});
     mockMarkFilesUsage.mockClear();
   });
+
+  it.each(['blocked', 'cancelling', 'cancelled', 'dismissed'] as const)(
+    'does not drain a %s recovery at subsequent run boundaries',
+    async (disposition) => {
+      getDefaultStore().set(recoveryDispositionsFamily(CONVO_ID), { source: disposition });
+      const item = {
+        id: 'leftover',
+        text: 'original words',
+        createdAt: 1,
+        recoverySteerId: 'source',
+        clientRequestId: 'same-attempt',
+      };
+      const { ask, setters } = setup(({ set }) => {
+        set(store.queuedMessagesByConvoId(CONVO_ID), [item]);
+        set(store.isSubmittingFamily(INDEX), false);
+        set(store.runEndByIndex(INDEX), runEnd());
+      });
+      await waitFor(() => expect(setters.runEnd).toBeNull());
+      act(() => setters.setRunEnd?.(runEnd({ generationCreatedAt: 42 })));
+      await waitFor(() => expect(setters.runEnd).toBeNull());
+      expect(ask).not.toHaveBeenCalled();
+      expect(setters.queue).toEqual([item]);
+    },
+  );
 
   it('drains exactly one queued message on clean completion', async () => {
     const { ask, setters } = setup(({ set }) => {

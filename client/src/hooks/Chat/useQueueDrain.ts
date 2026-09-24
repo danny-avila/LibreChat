@@ -1,9 +1,14 @@
 import { useEffect, useMemo } from 'react';
-import { useAtomValue } from 'jotai';
+import { useAtomValue, useStore } from 'jotai';
 import { Constants } from 'librechat-data-provider';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import type { DrainAfterAbort, QueuedMessage, QueuedMessageOrigin, RunEnd } from '~/store/families';
 import type { TAskFunction } from '~/common';
+import {
+  recoveryDispositionsFamily,
+  recoveryDisposition,
+  canRestoreRecovery,
+} from '~/components/Chat/Steering/recovery';
 import { selectQueuedTurnReveal } from '~/hooks/Chat/useQueuedTurnReveal';
 import { useMarkFilesUsageMutation } from '~/data-provider';
 import { revealedQueuedTurnFamily } from '~/store/steer';
@@ -80,6 +85,7 @@ export default function useQueueDrain(
   ask: TAskFunction,
   revealQueuedTurn?: (item: QueuedMessage, end: RunEnd) => void,
 ) {
+  const jotaiStore = useStore();
   const runEnd = useRecoilValue(store.runEndByIndex(index));
   const parkedRunEnd = useRecoilValue(
     store.pendingRunEndByConvoId(activeConversationId ?? Constants.NEW_CONVO),
@@ -338,7 +344,12 @@ export default function useQueueDrain(
         // hard double-fire guard even if the effect re-runs before propagation.
         consumeEnd();
 
-        const next = shouldDrain ? (merged[0] ?? null) : null;
+        const head = merged[0];
+        const held =
+          head != null &&
+          recoveryDisposition(jotaiStore.get(recoveryDispositionsFamily(conversationId)), head) !=
+            null;
+        const next = shouldDrain && !held ? (head ?? null) : null;
         const remainder = next ? merged.slice(1) : merged;
 
         if (shouldMigrate && newConvoQueue.length > 0) {
@@ -362,17 +373,20 @@ export default function useQueueDrain(
             }
           : null;
       },
-    [index, activeConversationId],
+    [index, activeConversationId, jotaiStore],
   );
 
   const restoreQueued = useRecoilCallback(
     ({ set }) =>
       (convoId: string, item: QueuedMessage) => {
         set(store.queuedMessagesByConvoId(convoId), (prev) =>
-          prev.some((queued) => queued.id === item.id) ? prev : [item, ...prev],
+          !canRestoreRecovery(jotaiStore.get(recoveryDispositionsFamily(convoId)), item) ||
+          prev.some((queued) => queued.id === item.id)
+            ? prev
+            : [item, ...prev],
         );
       },
-    [],
+    [jotaiStore],
   );
 
   useEffect(() => {
