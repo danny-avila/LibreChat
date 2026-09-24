@@ -6449,7 +6449,9 @@ describe('Conversation Operations', () => {
         },
       ]);
 
-      await expect(methods.expireLegacyAgentEventActorReceipts(now, 1)).resolves.toBe(1);
+      const activity = { found: false };
+      await expect(methods.expireLegacyAgentEventActorReceipts(now, 1, activity)).resolves.toBe(1);
+      expect(activity.found).toBe(true);
       await expect(
         Conversation.findOne({ conversationId: oldConversationId })
           .select('+agentEventActorReconciliations')
@@ -6625,9 +6627,20 @@ describe('Conversation Operations', () => {
         awaitTerminalHandling: true,
       });
 
-      /** The first raw page contains no expired receipt. The second contains
-       * a protected receipt, and only the third reaches removable work. */
-      await expect(methods.expireLegacyAgentEventActorReceipts(now, 1)).resolves.toBe(0);
+      /** The first raw page contains no expired receipt. It must still keep
+       * discovery active, without querying delivery protection for an empty ID set.
+       * The second is protected, and only the third reaches removable work. */
+      const activity = { found: false };
+      const protection = jest.spyOn(Delivery, 'find');
+      try {
+        await expect(methods.expireLegacyAgentEventActorReceipts(now, 1, activity)).resolves.toBe(
+          0,
+        );
+        expect(activity.found).toBe(true);
+        expect(protection).not.toHaveBeenCalled();
+      } finally {
+        protection.mockRestore();
+      }
       await expect(methods.expireLegacyAgentEventActorReceipts(now, 1)).resolves.toBe(0);
       await expect(methods.expireLegacyAgentEventActorReceipts(now, 1)).resolves.toBe(1);
       await expect(

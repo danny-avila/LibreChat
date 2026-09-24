@@ -95,6 +95,19 @@ describe('Experimental server configuration', () => {
     expect(listenIndex).toBeGreaterThan(eventRuntimeIndex);
   });
 
+  it('passes the same idle recovery policy to both server startup paths', () => {
+    const standard = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
+    for (const [entrypoint, config] of [
+      [source, 'baseAppConfig'],
+      [standard, 'appConfig'],
+    ]) {
+      const start = entrypoint.indexOf('await initializeAgentTriggerService({');
+      expect(start).toBeGreaterThan(-1);
+      const call = entrypoint.slice(start, entrypoint.indexOf('});', start));
+      expect(call).toContain(`idlePolling: ${config}?.endpoints?.agents?.eventDriven?.idlePolling`);
+    }
+  });
+
   it('matches the standard server pre-authentication tenant routes', () => {
     expect(source).toContain("app.use('/oauth', preAuthTenantMiddleware, routes.oauth);");
     expect(source).toContain("app.use('/api/auth', preAuthTenantMiddleware, routes.auth);");
