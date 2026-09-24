@@ -95,6 +95,33 @@ export function assertMCPAppResultFits(
   }
 }
 
+/** Stateful across chunks and CRLF boundaries, resetting only at a blank SSE event separator. */
+export function createMCPAppSSEEventGuard(maxEventBytes: number): (chunk: Uint8Array) => boolean {
+  let eventBytes = 0;
+  let lineBytes = 0;
+  let previousCR = false;
+  return (chunk) => {
+    for (const byte of chunk) {
+      if (byte === 10 && previousCR) {
+        previousCR = false;
+        continue;
+      }
+      if (byte === 10 || byte === 13) {
+        previousCR = byte === 13;
+        if (lineBytes === 0) eventBytes = 0;
+        else eventBytes++;
+        lineBytes = 0;
+      } else {
+        previousCR = false;
+        eventBytes++;
+        lineBytes++;
+      }
+      if (eventBytes > maxEventBytes) return false;
+    }
+    return true;
+  };
+}
+
 /** GET SSE streams are long-lived: limit each complete event before EventSource calls JSON.parse. */
 export function guardMCPAppSSEEvents(
   response: Response,
@@ -109,36 +136,18 @@ export function guardMCPAppSSEEvents(
   ) {
     return response;
   }
-  let eventBytes = 0;
-  let lineBytes = 0;
-  let previousCR = false;
+  const fitsEvent = createMCPAppSSEEventGuard(maxEventBytes);
   const guarded = response.body.pipeThrough(
     new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
-        for (const byte of chunk) {
-          if (byte === 10 && previousCR) {
-            previousCR = false;
-            continue;
-          }
-          if (byte === 10 || byte === 13) {
-            previousCR = byte === 13;
-            if (lineBytes === 0) eventBytes = 0;
-            else eventBytes++;
-            lineBytes = 0;
-          } else {
-            previousCR = false;
-            eventBytes++;
-            lineBytes++;
-          }
-          if (eventBytes > maxEventBytes) {
-            const error = new MCPAppBudgetError(
-              502,
-              'mcp_app_event_too_large',
-              'MCP App event is too large',
-            );
-            onOversize?.(error);
-            throw error;
-          }
+        if (!fitsEvent(chunk)) {
+          const error = new MCPAppBudgetError(
+            502,
+            'mcp_app_event_too_large',
+            'MCP App event is too large',
+          );
+          onOversize?.(error);
+          throw error;
         }
         controller.enqueue(chunk);
       },

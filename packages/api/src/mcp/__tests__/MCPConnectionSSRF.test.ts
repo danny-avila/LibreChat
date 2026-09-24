@@ -2151,6 +2151,61 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
     }
   });
 
+  it('allows a long App SSE POST with cumulative bytes above the per-event cap', async () => {
+    const data = Array.from({ length: 4 }, (_, i) => `data: {"event":${i},"ok":true}\n\n`).join('');
+    expect(Buffer.byteLength(data)).toBeGreaterThan(64);
+    const server = await createRawResponseServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      const half = Math.floor(data.length / 2);
+      res.write(data.slice(0, half));
+      res.end(data.slice(half));
+    });
+    try {
+      conn = new MCPConnection({
+        serverName: 'app-profile-sse-long-lived',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        useSSRFProtection: false,
+        capabilityProfile: 'apps',
+        operationLimits: { maxBytes: 64, timeoutMs: 30_000, maxActive: 16 },
+      });
+      const response = await getGuardedStreamableHTTPCustomFetch(conn)(server.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled' }),
+      });
+      await expect(response.text()).resolves.toBe(data);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('rejects an App SSE POST event built from individually small data lines', async () => {
+    const server = await createRawResponseServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write(`data: ${'x'.repeat(30)}\n`);
+      res.end(`data: ${'y'.repeat(30)}\n\n`);
+    });
+    try {
+      conn = new MCPConnection({
+        serverName: 'app-profile-sse-multiline-cap',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        useSSRFProtection: false,
+        capabilityProfile: 'apps',
+        operationLimits: { maxBytes: 64, timeoutMs: 30_000, maxActive: 16 },
+      });
+      const response = await getGuardedStreamableHTTPCustomFetch(conn)(server.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/cancelled' }),
+      });
+      await expect(response.text()).rejects.toThrow(
+        /MCP response exceeded byte limit.*limit=64 bytes/,
+      );
+    } finally {
+      await server.close();
+    }
+  });
+
   it('blocks a chunked standalone SSE App event before the SDK delivers it', async () => {
     let sentOversize = false;
     let getRequests = 0;

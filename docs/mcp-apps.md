@@ -97,8 +97,10 @@ values at `rateLimits.mcpApps.resourcesPerMinute` and
 ## App operation budgets
 
 App-profile MCP sessions have a pre-parse upstream response cap of 4 MiB by default, independent
-of the standard-profile MCP transport settings. Streamable HTTP POST responses, stdio frames and
-standalone SSE events are bounded before the SDK parses JSON. An oversized standalone SSE event
+of the standard-profile MCP transport settings. Streamable HTTP JSON responses, stdio frames and
+SSE events (both Streamable HTTP and standalone) are bounded before the SDK parses JSON. The SSE
+cap resets between events, so a healthy long-lived stream is not rejected for its lifetime bytes.
+An oversized standalone SSE event
 closes that App session after the SDK observes the error, preventing a sustained reconnect loop.
 The same cap is checked on serialized
 responses to the App bridge. Oversized optional initial `resources/read` results preserve the

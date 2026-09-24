@@ -34,10 +34,14 @@ import {
   MCPTransportAuthenticationError,
   isStandaloneSseConflict,
 } from './errors';
+import {
+  createMCPAppSSEEventGuard,
+  getMCPAppOperationLimits,
+  guardMCPAppSSEEvents,
+} from './apps/budget';
 import { MCP_APPS_CAPABILITY_PROFILE, STANDARD_MCP_CAPABILITY_PROFILE } from './capabilities';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
 import { projectMCPAppRuntimeTarget, type MCPAppRuntimeTarget } from './apps/binding';
-import { getMCPAppOperationLimits, guardMCPAppSSEEvents } from './apps/budget';
 import { reserveMCPToolsChangedRevision } from './toolsChanged';
 import { runOutsideTracing } from '~/utils/tracing';
 import { mediaTypeEssence } from '~/utils/headers';
@@ -357,6 +361,9 @@ async function guardMCPStreamableHTTPResponse(
     context.operationLimits,
   );
   const canEmitFallbackSSEError = isEventStream && maxLineBytes > 0;
+  // SSE streams can emit many bounded events; cumulative bytes must not end a healthy App session.
+  const fitsAppEvent =
+    isEventStream && context.appProfile ? createMCPAppSSEEventGuard(maxResponseBytes) : undefined;
   if (!isEventStream && maxResponseBytes === 0) {
     return response;
   }
@@ -464,7 +471,10 @@ async function guardMCPStreamableHTTPResponse(
         chunkCount += 1;
         totalBytes += bytes.byteLength;
 
-        if (maxResponseBytes > 0 && totalBytes > maxResponseBytes) {
+        if (
+          maxResponseBytes > 0 &&
+          (fitsAppEvent ? !fitsAppEvent(bytes) : totalBytes > maxResponseBytes)
+        ) {
           blockResponse(controller, 'MCP response exceeded byte limit', {
             chunkBytes: bytes.byteLength,
           });
