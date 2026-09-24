@@ -30,7 +30,11 @@ import {
   MAX_SUBAGENTS_CEILING,
   DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
 } from './limits';
-import { CODE_ENVIRONMENT_DECISION_VERSION, CODE_ENVIRONMENT_MOVE_VERSION } from './code/workspace';
+import {
+  CODE_ENVIRONMENT_DECISION_VERSION,
+  CODE_ENVIRONMENT_MOVE_VERSION,
+  CODE_WORKSPACE_RECOVERY_VERSION,
+} from './code/workspace';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
@@ -1374,7 +1378,8 @@ export const agentsEndpointSchema = baseEndpointSchema
             })
             .optional(),
           /** Server-only policy letting a conversation's owner move its sealed attached decision
-           * onto the environments its agents now use. Omit to keep sealed decisions immovable. */
+           * onto the environments its agents now use, or recover a missing workspace. Omit to keep
+           * sealed decisions immovable. */
           conversationMoves: z
             .object({
               enabled: z.boolean().optional(),
@@ -2390,6 +2395,9 @@ export type TStartupConfig = {
   /** Owner moves of a sealed code-environment decision supported by the API. Clients must not
    * offer to move a conversation unless this is advertised. */
   codeEnvironmentMoveVersion?: typeof CODE_ENVIRONMENT_MOVE_VERSION;
+  /** Additive recovery support. Clients require this and the move capability before replacing
+   * a missing workspace. Keeping it separate preserves exact-version checks in older clients. */
+  codeWorkspaceRecoveryVersion?: typeof CODE_WORKSPACE_RECOVERY_VERSION;
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;
