@@ -76,6 +76,10 @@ test.describe('chat context', () => {
 
     await expect(page.getByText('2 / 2')).toBeVisible({ timeout: 30_000 });
     await expect(stopButton(page)).toBeHidden({ timeout: 30_000 });
+    await expect(messageRows(page).last().locator('.message-content')).toHaveText(
+      replyText(label),
+      { timeout: 30_000 },
+    );
     await page.getByRole('button', { name: 'Previous sibling message' }).click();
     await expect(page.getByText('1 / 2')).toBeVisible();
     await expect(messageRows(page).last().locator('.message-content')).toHaveText(replyText(label));
@@ -112,6 +116,9 @@ test.describe('chat context', () => {
     await expect(messageRows(page).last().locator('.message-content')).toContainText(
       `E2E slow reply ${label}`,
       { timeout: 30_000 },
+    );
+    await expect(messageRows(page).last().locator('.message-content')).not.toContainText(
+      'chunk-159',
     );
   });
 

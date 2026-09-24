@@ -1,6 +1,5 @@
 import type { TConversation, TMessage, TPreset } from 'librechat-data-provider';
 import type { SetStateAction, Dispatch, MouseEvent } from 'react';
-import type { SetterOrUpdater } from 'recoil';
 import type { NewConversationParams, TOptionSettings, ExtendedFile, TAskFunction } from '~/common';
 
 /** Options accepted by {@link ChatConversationContract.newConversation}: the shared params plus
@@ -26,17 +25,17 @@ export type ChatConversationContract = {
   /** The active conversation for this pane, or `null` before one is created. */
   conversation: TConversation | null;
   /** Replaces or updates the active conversation for this pane. */
-  setConversation: SetterOrUpdater<TConversation | null>;
+  setConversation: Dispatch<SetStateAction<TConversation | null>>;
   /** Starts a fresh conversation in this pane from a template and/or preset. */
   newConversation: (options?: NewConversationOptions) => void;
   /** The preset applied to this pane, if any. */
   preset: TPreset | null;
   /** Replaces the preset applied to this pane. */
-  setPreset: SetterOrUpdater<TPreset | null>;
+  setPreset: Dispatch<SetStateAction<TPreset | null>>;
   /** Legacy per-pane option toggles (examples, code chat). */
   optionSettings: TOptionSettings;
   /** Replaces the legacy per-pane option toggles. */
-  setOptionSettings: SetterOrUpdater<TOptionSettings>;
+  setOptionSettings: Dispatch<SetStateAction<TOptionSettings>>;
 };
 
 /** The message tree as cached for this conversation. AI SDK: `messages` / `setMessages`. */
@@ -68,7 +67,7 @@ export type ChatSubmissionContract = {
    */
   isSubmitting: boolean;
   /** Sets the in-flight flag for this pane. */
-  setIsSubmitting: SetterOrUpdater<boolean>;
+  setIsSubmitting: Dispatch<SetStateAction<boolean>>;
   /** Button handler that regenerates the latest response. AI SDK: `regenerate`. */
   handleRegenerate: (e: MouseEvent<HTMLButtonElement>) => void;
   /** Button handler that continues the latest response from where it stopped. */
@@ -84,7 +83,7 @@ export type ChatAbortContract = {
   /** Whether a stop just happened and the view should hold its scroll position. */
   abortScroll: boolean;
   /** Sets the post-stop scroll hold. */
-  setAbortScroll: SetterOrUpdater<boolean>;
+  setAbortScroll: Dispatch<SetStateAction<boolean>>;
 };
 
 /** Composer attachments for this pane. AI SDK: the `files` option of `sendMessage`. */
@@ -92,7 +91,7 @@ export type ChatFilesContract = {
   /** Attachments staged in the composer, keyed by file id. */
   files: Map<string, ExtendedFile>;
   /** Replaces the staged attachments. */
-  setFiles: SetterOrUpdater<Map<string, ExtendedFile>>;
+  setFiles: Dispatch<SetStateAction<Map<string, ExtendedFile>>>;
   /** Whether an attachment is still uploading. */
   filesLoading: boolean;
   /** Sets the attachment upload flag. */
@@ -104,7 +103,7 @@ export type ChatViewContract = {
   /** Whether the pane's settings popover is open. */
   showPopover: boolean;
   /** Opens or closes the pane's settings popover. */
-  setShowPopover: SetterOrUpdater<boolean>;
+  setShowPopover: Dispatch<SetStateAction<boolean>>;
   /** Whether message feedback controls are enabled by the startup config. */
   feedbackEnabled: boolean;
 };
@@ -115,6 +114,7 @@ export type ChatViewContract = {
  * Queue and steering are not part of it: they live in `useQueueDrain`, `useSteering` and
  * the SSE handlers, and reach the composer directly rather than through this context.
  * AI SDK `error` has no member here either; errors arrive as message content.
+ * Setters are typed as React dispatchers, so the contract names no state library.
  */
 export type ChatContract = ChatConversationContract &
   ChatMessagesContract &
@@ -128,7 +128,7 @@ export type AddedChatContract = {
   /** The added pane's conversation, or `null` when multi-convo is off. */
   conversation: TConversation | null;
   /** Replaces or updates the added pane's conversation. */
-  setConversation: SetterOrUpdater<TConversation | null>;
+  setConversation: Dispatch<SetStateAction<TConversation | null>>;
   /** Builds and stores a conversation for the added pane from a template and/or preset. */
   generateConversation: (params?: NewConversationParams) => TConversation;
 };
