@@ -43,6 +43,13 @@ export default function SchedulePanel() {
   );
   const maxPerUser = data?.limits.maxPerUser;
   const atLimit = maxPerUser !== undefined && allSchedules.length >= maxPerUser;
+  let filterAnnouncement = '';
+  if (query.length > 0 && !isLoading && !isError) {
+    filterAnnouncement =
+      schedules.length === 1
+        ? localize('com_ui_search_result_count', { count: schedules.length })
+        : localize('com_ui_search_results_count', { count: schedules.length });
+  }
   let panelContent: ReactNode;
 
   if (isError) {
@@ -102,12 +109,19 @@ export default function SchedulePanel() {
           )
         }
         search={
-          <FilterInput
-            inputId="schedules-filter"
-            label={localize('com_ui_schedules_filter')}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+          <>
+            {/* Focus stays in the field while the list changes, so the match count
+                is announced rather than left for the user to go and find. */}
+            <div aria-live="polite" aria-atomic="true" className="sr-only">
+              {filterAnnouncement}
+            </div>
+            <FilterInput
+              inputId="schedules-filter"
+              label={localize('com_ui_schedules_filter')}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </>
         }
       />
 

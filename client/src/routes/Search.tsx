@@ -275,11 +275,15 @@ export default function Search() {
     if (resultsCount === 0) {
       return localize('com_ui_nothing_found');
     }
+    /** More pages remain, so the loaded count is a floor rather than the total. */
+    if (hasNextPage) {
+      return localize('com_ui_results_found_more', { count: resultsCount });
+    }
     if (resultsCount === 1) {
       return localize('com_ui_result_found', { count: resultsCount });
     }
     return localize('com_ui_results_found', { count: resultsCount });
-  }, [resultsCount, localize]);
+  }, [resultsCount, hasNextPage, localize]);
 
   const loadingSpinner = (
     <div className="absolute inset-0 flex items-center justify-center">

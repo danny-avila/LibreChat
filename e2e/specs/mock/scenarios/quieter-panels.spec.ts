@@ -77,14 +77,17 @@ test.describe('quieter management panels', () => {
 
       await expect(panel.getByTestId('schedule-card')).toHaveCount(count);
       await expect(fade).toHaveCSS('opacity', '1');
+      const announcement = panel.locator('[aria-live="polite"]');
       await filter.fill(schedule.name);
       await expect(panel.getByTestId('schedule-card')).toHaveCount(1);
+      await expect(announcement).toHaveText('1 result found');
       await expect(fade).toHaveCSS('opacity', '0');
       await expect(quota).toBeVisible();
       await expect(create).toBeDisabled();
 
       await filter.fill('no matching schedule');
       await expect(panel.getByText('No schedules match your search')).toBeVisible();
+      await expect(announcement).toHaveText('0 results found');
       await expect(quota).toBeVisible();
       await expect(create).toBeDisabled();
       await filter.clear();

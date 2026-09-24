@@ -50,28 +50,35 @@ export default function MemoryUsageBadge({
   const percentText = `${percentage}% ${localize('com_ui_used').toLowerCase()}`;
 
   return (
-    <TooltipAnchor
-      /** The reading the badge is not showing, so hovering answers the other
-       *  question without having to click for it. */
-      description={showTokens ? percentText : tokenText}
-      side="top"
-      render={
-        <button
-          type="button"
-          onClick={() => setShowTokens((shown) => !shown)}
-          /** The name has to carry the words on the face of the control, or a voice
-           *  command that reads them back matches nothing (WCAG 2.5.3). */
-          aria-label={`${localize('com_ui_usage')}: ${showTokens ? tokenText : percentText}`}
-          className={cn(
-            'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1',
-            'text-xs font-medium hover:underline',
-            'focus-visible:ring-border-heavy focus-visible:ring-2 focus-visible:outline-hidden',
-            getStatusColor(percentage),
-          )}
-        >
-          {showTokens ? tokenText : percentText}
-        </button>
-      }
-    />
+    <>
+      {/* The button's name changes silently while focus is elsewhere, so a create,
+          edit or delete that moves the usage is announced from here instead. */}
+      <span className="sr-only" role="status" aria-atomic="true">
+        {`${localize('com_ui_usage')}: ${percentage}%`}
+      </span>
+      <TooltipAnchor
+        /** The reading the badge is not showing, so hovering answers the other
+         *  question without having to click for it. */
+        description={showTokens ? percentText : tokenText}
+        side="top"
+        render={
+          <button
+            type="button"
+            onClick={() => setShowTokens((shown) => !shown)}
+            /** The name has to carry the words on the face of the control, or a voice
+             *  command that reads them back matches nothing (WCAG 2.5.3). */
+            aria-label={`${localize('com_ui_usage')}: ${showTokens ? tokenText : percentText}`}
+            className={cn(
+              'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1',
+              'text-xs font-medium hover:underline',
+              'focus-visible:ring-border-heavy focus-visible:ring-2 focus-visible:outline-hidden',
+              getStatusColor(percentage),
+            )}
+          >
+            {showTokens ? tokenText : percentText}
+          </button>
+        }
+      />
+    </>
   );
 }

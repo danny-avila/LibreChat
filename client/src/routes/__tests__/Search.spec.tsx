@@ -188,6 +188,14 @@ describe('Search route', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('marks the count as partial while more pages remain', () => {
+    mockUseRecoilValue.mockReturnValue(searchState());
+    mockUseQuery.mockReturnValue(queryResult({ hasNextPage: true }));
+    render(<Search />);
+
+    expect(screen.getByRole('status')).toHaveTextContent('com_ui_results_found_more');
+  });
+
   it('announces empty results through a live region', () => {
     mockUseRecoilValue.mockReturnValue(searchState());
     mockUseQuery.mockReturnValue(
