@@ -303,8 +303,9 @@ describe('ToolCall', () => {
         />,
       );
 
-      // A server-bound inline resource renders through the sandbox bridge (not bare srcDoc),
-      // so its App.connect handshake receives tool input/results.
+      // Stored results do not run App code until the viewer explicitly opens the App.
+      expect(container.querySelector('iframe[data-sandbox-url]')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'com_ui_mcp_app_open' }));
       const iframe = container.querySelector('iframe[data-sandbox-url]');
       expect(iframe).toBeInTheDocument();
       const { useAppBridge } = jest.requireMock('~/hooks/MCP') as { useAppBridge: jest.Mock };
@@ -377,6 +378,8 @@ describe('ToolCall', () => {
           </MCPAppsPolicyProvider>
         </RecoilRoot>,
       );
+      expect(container.querySelector('iframe[data-sandbox-url]')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'com_ui_mcp_app_open' }));
       expect(container.querySelector('iframe[data-sandbox-url]')).toBeInTheDocument();
 
       rerender(
