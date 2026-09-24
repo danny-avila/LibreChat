@@ -1,6 +1,6 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useReducer, useRef } from 'react';
 import { QueryKeys } from 'librechat-data-provider';
-import { useIsFetching } from '@tanstack/react-query';
+import { notifyManager, useQueryClient } from '@tanstack/react-query';
 import {
   ThemeProvider,
   clickHouseTheme,
@@ -89,6 +89,28 @@ export function readStoredTheme(): ThemeDefinition | undefined {
 }
 
 /**
+ * The auth mutations call `removeQueries()`, which detaches this long-lived
+ * observer from the query it was reading; only a re-render rebinds it to the
+ * rebuilt one. The cache event is checked by key alone, since it fires for every
+ * query in the app, and the re-render is deferred past the render that built it.
+ */
+function useRebindOnStartupConfigRebuild() {
+  const queryClient = useQueryClient();
+  const [, rebind] = useReducer((count: number) => count + 1, 0);
+  useEffect(
+    () =>
+      queryClient.getQueryCache().subscribe(
+        notifyManager.batchCalls((event) => {
+          if (event.type === 'added' && event.query.queryKey[0] === QueryKeys.startupConfig) {
+            rebind();
+          }
+        }),
+      ),
+    [queryClient],
+  );
+}
+
+/**
  * Supplies the deployment theme from the startup config to `ThemeProvider`.
  * Precedence: high-contrast modes (inside the provider), then `interface.theme`,
  * then the `REACT_APP_THEME_*` build colors, then the user's stored theme. The
@@ -96,12 +118,7 @@ export function readStoredTheme(): ThemeDefinition | undefined {
  */
 export default function DeploymentTheme({ children }: { children: React.ReactNode }) {
   const envTheme = useMemo(() => getThemeFromEnv(), []);
-  /**
-   * The auth mutations call `removeQueries()`, which detaches this long-lived
-   * observer from the query it was reading; only a re-render rebinds it to the
-   * rebuilt one. Subscribing to the fetch count supplies that re-render.
-   */
-  useIsFetching([QueryKeys.startupConfig]);
+  useRebindOnStartupConfigRebuild();
   const { data: startupConfig } = useGetStartupConfig({ keepPreviousData: true });
   const configTheme = startupConfig?.interface?.theme;
   const themeDefinition = useMemo(() => resolveDeploymentTheme(configTheme), [configTheme]);
