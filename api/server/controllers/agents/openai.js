@@ -821,7 +821,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       // Create handler config for OpenAI streaming (only used when streaming)
       const handlerConfig = isStreaming
         ? {
-            res,
+            writer: res,
             context,
             tracker,
           }

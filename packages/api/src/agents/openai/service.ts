@@ -46,7 +46,7 @@ import type {
   FileContentInput,
 } from '~/protection';
 import type { InitializeAgentParams as CoreInitializeAgentParams } from '../initialize';
-import type { OpenAIStreamHandlerConfig, EventHandler } from './handlers';
+import type { OpenAIStreamWriterConfig, EventHandler } from './handlers';
 import type { LangfuseTraceContext } from '~/langfuse/identity';
 import type { MCPRuntimeRequestBody } from '~/mcp/request';
 import type { ToolExecuteOptions } from '../handlers';
@@ -824,10 +824,10 @@ export async function createAgentChatCompletion(
     }
 
     // Create handler config (only used for streaming)
-    const handlerConfig: OpenAIStreamHandlerConfig | null =
+    const handlerConfig: OpenAIStreamWriterConfig | null =
       isStreaming && tracker
         ? {
-            res,
+            writer: res,
             context,
             tracker,
           }
