@@ -1109,8 +1109,26 @@ describe('useAppBridge', () => {
       expect(mockAsk).toHaveBeenCalledTimes(1);
       expect(mockAsk).toHaveBeenCalledWith(
         { text: 'approved\nmessage' },
-        { overrideFiles: [], overrideManualSkills: [], overrideQuotes: [] },
+        {
+          overrideFiles: [],
+          overrideManualSkills: [],
+          overrideQuotes: [],
+          overrideEphemeralAgent: null,
+        },
       );
+      view.unmount();
+    });
+
+    it('does not ask for approval for a whitespace-only App message', async () => {
+      const { view } = mountBridge(makeResource(), client);
+      await flush();
+      const result = await latest().onmessage?.(
+        { content: [{ type: 'text', text: '  ' }] },
+        requestExtra(),
+      );
+      expect(result).toEqual({ isError: true });
+      expect(mockApproveAction).not.toHaveBeenCalled();
+      expect(mockAsk).not.toHaveBeenCalled();
       view.unmount();
     });
 

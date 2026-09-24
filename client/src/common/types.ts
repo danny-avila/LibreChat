@@ -370,6 +370,8 @@ export type TOptions = {
    * context even though the references still show on the user bubble.
    */
   overrideQuotes?: string[];
+  /** A non-composer turn can explicitly opt out of the agent selected for the next draft. */
+  overrideEphemeralAgent?: t.TEphemeralAgent | null;
   /** Added conversation for multi-convo feature - sent to server as part of submission payload */
   addedConvo?: t.TConversation;
   /** Reuse a durable submission identity (terminal steer recovery). */

@@ -7,6 +7,7 @@ import type {
   TConversation,
   TMessage,
   TSubmission,
+  TEphemeralAgent,
 } from 'librechat-data-provider';
 import { activeUsageResponseIdFamily, pendingUsageFamily } from '~/store/usage';
 import { revealedQueuedTurnFamily } from '~/store/steer';
@@ -16,7 +17,7 @@ import { isPasteSubmitted } from '~/utils';
 const mockNavigate = jest.fn();
 const mockSetShowStopButton = jest.fn();
 const mockSetIsSubmitting = jest.fn();
-const mockGetEphemeralAgent = jest.fn(() => null);
+const mockGetEphemeralAgent = jest.fn((): TEphemeralAgent | null => null);
 const mockSetFilesToDelete = jest.fn();
 const mockGetSender = jest.fn(() => 'Assistant');
 const mockGetExpiry = jest.fn(() => 'expiry-key');
@@ -470,6 +471,9 @@ describe('useChatFunctions ask attachments', () => {
     jest.clearAllMocks();
     mockGetQueryData.mockReturnValue({});
   });
+  afterEach(() => {
+    mockGetEphemeralAgent.mockReturnValue(null);
+  });
 
   /** The server titles an attachment-only turn from the submitted filenames
    *  (getAttachmentTitleText), so the fresh-file mapping must carry them. */
@@ -540,11 +544,17 @@ describe('useChatFunctions ask attachments', () => {
         setFiles,
       }),
     );
+    mockGetEphemeralAgent.mockReturnValue({ skills: true, mcp: ['staged-for-next-draft'] });
 
     act(() => {
       result.current.ask(
         { text: 'approved App message' },
-        { overrideFiles: [], overrideManualSkills: [], overrideQuotes: [] },
+        {
+          overrideFiles: [],
+          overrideManualSkills: [],
+          overrideQuotes: [],
+          overrideEphemeralAgent: null,
+        },
       );
     });
 
@@ -553,9 +563,58 @@ describe('useChatFunctions ask attachments', () => {
     expect(submission.userMessage.files).toBeUndefined();
     expect(submission.userMessage.manualSkills).toBeUndefined();
     expect(submission.userMessage.quotes).toBeUndefined();
+    expect(submission.ephemeralAgent).toBeNull();
+    expect(mockGetEphemeralAgent).not.toHaveBeenCalled();
     expect(files?.has('app-next-draft-file')).toBe(true);
     expect(setFiles).not.toHaveBeenCalled();
     expect(isPasteSubmitted('app-next-draft-file')).toBe(false);
+  });
+
+  it('rejects a blank text-only App turn even when the composer contains a staged file', () => {
+    const setSubmission = jest.fn();
+    const files = new Map([
+      ['staged-file', { file_id: 'staged-file', filename: 'private-draft.pdf' }],
+    ]) as unknown as Parameters<typeof useChatFunctions>[0]['files'];
+    const { result } = renderHook(() =>
+      useChatFunctions({
+        isSubmitting: false,
+        latestMessage: null,
+        conversation: conversation(Constants.NEW_CONVO as string),
+        getMessages: () => [],
+        setMessages: jest.fn(),
+        setSubmission,
+        files,
+        setFiles: jest.fn(),
+      }),
+    );
+    let accepted: ReturnType<typeof result.current.ask>;
+    act(() => {
+      accepted = result.current.ask(
+        { text: '  ' },
+        {
+          overrideFiles: [],
+          overrideManualSkills: [],
+          overrideQuotes: [],
+          overrideEphemeralAgent: null,
+        },
+      );
+    });
+    expect(accepted!).toBe(false);
+    expect(setSubmission).not.toHaveBeenCalled();
+    expect(files?.has('staged-file')).toBe(true);
+  });
+
+  it('still uses a staged ephemeral agent for an ordinary composer submission', () => {
+    const stagedAgent: TEphemeralAgent = { skills: true, mcp: ['selected-tool'] };
+    mockGetEphemeralAgent.mockReturnValue(stagedAgent);
+    const { result, setSubmission } = renderAsk([], 'conversation-1');
+    act(() => {
+      result.current.ask({ text: 'normal user draft' });
+    });
+    expect(mockGetEphemeralAgent).toHaveBeenCalledTimes(1);
+    expect((setSubmission.mock.calls.at(-1)?.[0] as TSubmission).ephemeralAgent).toEqual(
+      stagedAgent,
+    );
   });
 
   it('marks files consumed through overrideFiles as submitted', () => {

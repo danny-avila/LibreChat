@@ -347,7 +347,7 @@ export function useAppBridge({
           .map((block) => block.text)
           .join('\n');
         if (
-          !text ||
+          !text.trim() ||
           text.length >
             (maxActionPreviewCharsRef.current ?? DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS) ||
           signal.aborted ||
@@ -364,11 +364,16 @@ export function useAppBridge({
             actionSignal,
           );
           if (!allowed || actionSignal.aborted || cancelled) return { isError: true };
-          // An App action is not the user's next composer submission. Empty overrides keep
-          // staged files, skills, and quotes out of this message and in the user's draft.
+          // An App action is not the user's next composer submission. Explicit overrides keep
+          // staged files, skills, quotes and draft-only agent settings out of this message.
           const accepted = askRef.current(
             { text },
-            { overrideFiles: [], overrideManualSkills: [], overrideQuotes: [] },
+            {
+              overrideFiles: [],
+              overrideManualSkills: [],
+              overrideQuotes: [],
+              overrideEphemeralAgent: null,
+            },
           );
           if (accepted === false) {
             return { isError: true };

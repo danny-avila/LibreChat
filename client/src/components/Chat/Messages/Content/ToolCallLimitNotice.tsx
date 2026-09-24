@@ -56,17 +56,25 @@ export default function ToolCallLimitNotice({ message }: { message: TMessage }) 
     chat?.ask != null && chat.isSubmitting !== true && chat.latestMessageId === message.messageId;
   /**
    * Empty overrides are authoritative: a recovery prompt is not the user's next
-   * compose, so `ask` must not attach or drain files, skills, or quotes already
-   * staged in the composer.
+   * compose, so `ask` must not inherit files, skills, quotes or the draft's
+   * ephemeral agent selection.
    */
   const recover = (text: string) =>
-    chat?.ask({ text }, { overrideFiles: [], overrideManualSkills: [], overrideQuotes: [] });
+    chat?.ask(
+      { text },
+      {
+        overrideFiles: [],
+        overrideManualSkills: [],
+        overrideQuotes: [],
+        overrideEphemeralAgent: null,
+      },
+    );
 
   return (
     <div
       role="group"
       aria-labelledby={titleId}
-      className="relative my-2 flex w-full flex-col rounded-xl border border-border-light bg-surface-secondary p-3"
+      className="border-border-light bg-surface-secondary relative my-2 flex w-full flex-col rounded-xl border p-3"
     >
       <TooltipAnchor
         description={localize('com_ui_tool_call_limit_dismiss')}
@@ -77,7 +85,7 @@ export default function ToolCallLimitNotice({ message }: { message: TMessage }) 
             variant="ghost"
             size="icon-xs"
             aria-label={localize('com_ui_tool_call_limit_dismiss')}
-            className="absolute right-1.5 top-1.5 text-text-secondary focus-visible:ring-inset focus-visible:ring-offset-0"
+            className="text-text-secondary absolute top-1.5 right-1.5 focus-visible:ring-offset-0 focus-visible:ring-inset"
             onClick={() => setDismissed(true)}
           >
             <X className="h-4 w-4" aria-hidden="true" />
@@ -86,12 +94,12 @@ export default function ToolCallLimitNotice({ message }: { message: TMessage }) 
       />
       <p
         id={titleId}
-        className="flex min-w-0 items-center gap-2 pr-8 text-sm font-medium text-text-primary"
+        className="text-text-primary flex min-w-0 items-center gap-2 pr-8 text-sm font-medium"
       >
-        <Gauge className="h-4 w-4 shrink-0 text-text-secondary" aria-hidden="true" />
+        <Gauge className="text-text-secondary h-4 w-4 shrink-0" aria-hidden="true" />
         {localize('com_ui_tool_call_limit_title')}
       </p>
-      <p className="mb-3 mt-1 text-sm text-text-secondary">
+      <p className="text-text-secondary mt-1 mb-3 text-sm">
         {localize('com_ui_tool_call_limit_body')}
       </p>
       {canAct && (
