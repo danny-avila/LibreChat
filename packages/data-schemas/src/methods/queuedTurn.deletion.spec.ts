@@ -191,6 +191,64 @@ describe('queued-turn conversation deletion through createMethods', () => {
     },
   );
 
+  it.each([false, true])(
+    'deletes only the selected conversation (has queued turn: %s) and preserves unrelated work',
+    async (hasQueuedTurn) => {
+      const admitted = await admitQueuedTurn();
+      const owner = { user: admitted.user, tenantId: admitted.tenantId };
+      const enqueue = (conversationId: string) =>
+        methods.enqueueAgentQueuedTurn({
+          ...owner,
+          conversationId,
+          agentId: 'agent-1',
+          parentMessageId: 'parent-1',
+          clientRequestId: 'pending-turn',
+          text: 'keep this queued turn',
+          availableAt: admitted.now,
+        });
+      await enqueue(admitted.conversationId);
+      const selected = await models.Conversation.create({
+        ...owner,
+        user: owner.user.toString(),
+        conversationId: 'selected-conversation',
+        endpoint: 'agents',
+      });
+      if (hasQueuedTurn) {
+        await enqueue(selected.conversationId);
+      }
+      const unrelated = { conversationId: admitted.conversationId };
+      const before = {
+        turns: await models.AgentQueuedTurn.find(unrelated).sort('_id').lean(),
+        lane: await models.AgentQueuedTurnSequence.findOne(unrelated).lean(),
+        conversation: await models.Conversation.findOne(unrelated).lean(),
+        delivery: await models.AgentTriggerDelivery.findOne({
+          deliveryKey: admitted.deliveryKey,
+        }).lean(),
+      };
+
+      await expect(
+        methods.deleteConvos(owner.user.toString(), { conversationId: selected.conversationId }),
+      ).resolves.toMatchObject({ deletedCount: 1, conversationIds: [selected.conversationId] });
+
+      expect(await models.Conversation.findById(selected._id)).toBeNull();
+      expect(
+        await models.AgentQueuedTurn.countDocuments({ conversationId: selected.conversationId }),
+      ).toBe(0);
+      await expect(models.AgentQueuedTurn.find(unrelated).sort('_id').lean()).resolves.toEqual(
+        before.turns,
+      );
+      await expect(models.AgentQueuedTurnSequence.findOne(unrelated).lean()).resolves.toEqual(
+        before.lane,
+      );
+      await expect(models.Conversation.findOne(unrelated).lean()).resolves.toEqual(
+        before.conversation,
+      );
+      await expect(
+        models.AgentTriggerDelivery.findOne({ deliveryKey: admitted.deliveryKey }).lean(),
+      ).resolves.toEqual(before.delivery);
+    },
+  );
+
   it('keeps explicit terminal-handling fences and recovers a failed retirement on retry', async () => {
     const turn = await admitQueuedTurn(true);
     const remove = () =>
