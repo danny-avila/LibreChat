@@ -77,7 +77,9 @@ values at `rateLimits.mcpApps.resourcesPerMinute` and
 
 App-profile MCP sessions have a pre-parse upstream response cap of 4 MiB by default, independent
 of the standard-profile MCP transport settings. Streamable HTTP POST responses, stdio frames and
-standalone SSE events are bounded before the SDK parses JSON. The same cap is checked on serialized
+standalone SSE events are bounded before the SDK parses JSON. An oversized standalone SSE event
+closes that App session after the SDK observes the error, preventing a sustained reconnect loop.
+The same cap is checked on serialized
 responses to the App bridge. Oversized optional initial `resources/read` results preserve the
 canonical tool result; a failed follow-up request returns a bounded error, never a truncated JSON
 success. The existing Express 3 MiB JSON ingress bound still applies before App route handlers.

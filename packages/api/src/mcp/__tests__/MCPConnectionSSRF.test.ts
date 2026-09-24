@@ -2158,14 +2158,16 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
     const oldApp = process.env.MCP_APP_MAX_UPSTREAM_BYTES;
     process.env.MCP_APP_MAX_UPSTREAM_BYTES = '128';
     let sentOversize = false;
+    let getRequests = 0;
     const server = await createRawResponseServer((req, res) => {
       if (req.method !== 'GET') {
         res.writeHead(404);
         res.end();
         return;
       }
+      getRequests++;
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
-      res.write('event: endpoint\ndata: /messages\n\n');
+      res.write('retry: 10\nevent: endpoint\ndata: /messages\n\n');
       setImmediate(() => {
         sentOversize = true;
         res.write('data: {"jsonrpc":"2.0","id":1,"result":{"text":"');
@@ -2192,19 +2194,30 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
     const delivered: unknown[] = [];
     transport.onmessage = (message) => delivered.push(message);
     let timeout: ReturnType<typeof setTimeout> | undefined;
-    const blocked = new Promise<void>((resolve, reject) => {
-      timeout = setTimeout(() => reject(new Error('SSE oversize was not rejected')), 3000);
-      // EventSource hides the body-stream failure behind "SSE error: undefined"; the separate
-      // TransformStream test asserts the exact oversize error before SDK JSON parsing.
-      transport.onerror = () => resolve();
+    const originalClose = transport.close.bind(transport);
+    const closedOnOversize = new Promise<void>((resolve, reject) => {
+      timeout = setTimeout(
+        () => reject(new Error('SSE oversize did not close the SDK session')),
+        3000,
+      );
+      transport.close = async () => {
+        resolve();
+        await originalClose();
+      };
     });
     try {
-      await Promise.all([transport.start().catch(() => undefined), blocked]);
+      const startupSettled = transport.start().then(
+        () => 'connected',
+        () => 'rejected',
+      );
+      await Promise.all([startupSettled, closedOnOversize]);
       expect(sentOversize).toBe(true);
       expect(delivered).toEqual([]);
+      const requestsWhenClosed = getRequests;
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      expect(getRequests).toBe(requestsWhenClosed);
     } finally {
       clearTimeout(timeout);
-      await transport.close();
       await server.close();
       if (oldApp === undefined) delete process.env.MCP_APP_MAX_UPSTREAM_BYTES;
       else process.env.MCP_APP_MAX_UPSTREAM_BYTES = oldApp;

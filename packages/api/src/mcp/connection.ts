@@ -327,6 +327,7 @@ async function guardMCPStreamableHTTPResponse(
     url: string;
     requestIds?: JSONRPCRequestId[];
     appProfile?: boolean;
+    onAppSSEOverflow?: () => void;
   },
 ): Promise<UndiciResponse> {
   const contentType = response.headers.get('content-type') ?? '';
@@ -337,6 +338,7 @@ async function guardMCPStreamableHTTPResponse(
       return guardMCPAppSSEEvents(
         response as unknown as Response,
         getMCPAppOperationLimits().maxBytes,
+        context.onAppSSEOverflow,
       ) as unknown as UndiciResponse;
     }
     // SDK GET error paths may call response.text(); bound those as ordinary HTTP bodies.
@@ -1685,6 +1687,16 @@ export class MCPConnection extends EventEmitter {
                       method: 'GET',
                       url: urlString,
                       appProfile: true,
+                      onAppSSEOverflow: () => {
+                        // Let the SDK observe its stream error and reject an in-flight start before
+                        // closing EventSource. Closing synchronously leaves start() pending forever.
+                        // A short bounded grace also prevents the SDK's automatic retry loop.
+                        const stop = setTimeout(() => {
+                          abortController.abort();
+                          void transport.close().catch(() => undefined);
+                        }, 30);
+                        stop.unref?.();
+                      },
                     })
                   : response;
               },

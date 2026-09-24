@@ -119,7 +119,11 @@ export function assertMCPAppResultFits(result: unknown): void {
 }
 
 /** GET SSE streams are long-lived: limit each complete event before EventSource calls JSON.parse. */
-export function guardMCPAppSSEEvents(response: Response, maxEventBytes: number): Response {
+export function guardMCPAppSSEEvents(
+  response: Response,
+  maxEventBytes: number,
+  onOversize?: (error: MCPAppBudgetError) => void,
+): Response {
   if (
     !response.body ||
     !response.ok ||
@@ -150,11 +154,13 @@ export function guardMCPAppSSEEvents(response: Response, maxEventBytes: number):
             lineBytes++;
           }
           if (eventBytes > maxEventBytes) {
-            throw new MCPAppBudgetError(
+            const error = new MCPAppBudgetError(
               502,
               'mcp_app_event_too_large',
               'MCP App event is too large',
             );
+            onOversize?.(error);
+            throw error;
           }
         }
         controller.enqueue(chunk);
