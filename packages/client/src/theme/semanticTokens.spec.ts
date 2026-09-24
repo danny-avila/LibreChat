@@ -357,6 +357,28 @@ describe.each([
 
     expect(failures).toEqual([]);
   });
+
+  /** Identity labels (`SeriesLabel`: action methods, principal types) are small text, so the
+   *  series hue never paints the glyphs: the label takes `text-secondary` at AA
+   *  and the hue rides on a leading dot at the 3:1 mark floor, both on the rows
+   *  and popover options that host them, at rest and while hovered or active. */
+  it('keeps identity labels at AA and their hue dots at the 3:1 mark floor', () => {
+    const hosts: Array<keyof IThemeRGB> = [
+      'rgb-surface-primary',
+      'rgb-surface-secondary',
+      'rgb-surface-tertiary',
+      'rgb-surface-dialog',
+    ];
+    const dots: Array<keyof IThemeRGB> = [...seriesTokens, 'rgb-status-error'];
+    const dotFailures = dots.flatMap((token) =>
+      hosts.flatMap((surface) => {
+        const ratio = contrast(toRgb(theme, token), toRgb(theme, surface));
+        return ratio < WCAG_MARK_MIN ? [`${token} dot on ${surface}: ${ratio.toFixed(2)}:1`] : [];
+      }),
+    );
+
+    expect([...dotFailures, ...belowAA(theme, ['rgb-text-secondary'], hosts)]).toEqual([]);
+  });
 });
 
 describe.each([

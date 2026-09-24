@@ -222,7 +222,7 @@ export default [
             // A text primitive renders the caller's text, so the caller owns its size, weight
             // and leading. Color is still the theme's: it stays reported here.
             {
-              pattern: '^(Label|Description|DialogTitle|DialogDescription)$',
+              pattern: '^(Label|Description|DialogTitle|DialogDescription|SeriesLabel)$',
               allow: ['layout', 'icon-*', 'typography'],
             },
             // A skeleton stands in for the caller's content, so it takes that content's
