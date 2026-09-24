@@ -263,6 +263,9 @@ export interface SubagentThreadTaskStoreOptions extends InMemorySubagentTaskStor
     tenantId?: string;
   }) => Promise<boolean>;
   onTaskPrepared?: (registration: SubagentTaskWakeupRegistration) => Promise<void> | void;
+  /** Called once a child's terminal message is durable. The child generation settles
+   * before that write, so its completion wake-up is ready only from here. */
+  onTaskSettled?: (userId: string) => void;
 }
 
 export interface SubagentTaskWakeupRegistration {
@@ -616,6 +619,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   private readonly releaseOwnerAdmission?: (userId: string, token: string) => Promise<void>;
   private readonly cancelUnroutedTask?: SubagentThreadTaskStoreOptions['cancelUnroutedTask'];
   private readonly onTaskPrepared?: SubagentThreadTaskStoreOptions['onTaskPrepared'];
+  private readonly onTaskSettled?: SubagentThreadTaskStoreOptions['onTaskSettled'];
   private taskControlTransport?: SubagentTaskControlTransport;
   private activityStream = new SubagentActivityStream(new InMemoryEventTransport());
 
@@ -658,6 +662,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
     this.releaseOwnerAdmission = options.releaseOwnerAdmission;
     this.cancelUnroutedTask = options.cancelUnroutedTask;
     this.onTaskPrepared = options.onTaskPrepared;
+    this.onTaskSettled = options.onTaskSettled;
   }
 
   /** Receives payload-free authoritative transitions from the SDK task store. */
@@ -3374,6 +3379,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
         throw error;
       }
       logger.error(`[subagentThreads] Failed to refresh ${outcome} child thread`, error);
+    }
+    try {
+      this.onTaskSettled?.(scope.userId);
+    } catch (error) {
+      logger.warn('[subagentThreads] Settled-task listener failed', error);
     }
   }
 

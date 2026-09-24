@@ -9,10 +9,10 @@ import type { SubagentTaskWakeupRegistration } from './subagentThreads';
 import type { AgentContinueTriggerEnvelope } from './triggers/envelope';
 import type { AgentTriggerDispatchContext } from './triggers/dispatch';
 import type { AgentTriggerEnqueueOptions } from './triggers/delivery';
+import { WAITING_RETRY_CAP_MS, waitingRetryAfter } from './triggers/backoff';
 import { boundedSubagentTaskResult } from './subagentTaskRouting';
 import { createAgentTriggerEnvelope } from './triggers/envelope';
 import { AgentTriggerExecutionError } from './triggers/host';
-import { waitingRetryAfter } from './triggers/backoff';
 
 const WAKEUP_ADMISSION_DELAY_MS = 250;
 /** SDK tasks time out after 30 minutes; this grace covers terminal persistence. */
@@ -82,6 +82,8 @@ export interface SubagentCompletionWakeupResolverDeps {
   methods: WakeupMethods;
   getGenerationJob: (conversationId: string) => Promise<GenerationState | null>;
   now?: () => number;
+  /** Longest a waiting delivery re-checks readiness; the backoff default otherwise. */
+  getWaitMaxIntervalMs?: () => number | undefined;
 }
 
 function payloadRegistration(
@@ -586,9 +588,12 @@ export function createSubagentCompletionWakeupResolver({
   methods,
   getGenerationJob,
   now = Date.now,
+  getWaitMaxIntervalMs,
 }: SubagentCompletionWakeupResolverDeps): NonNullable<
   AgentTriggerExecutionHostDeps['prepareContinue']
 > {
+  const waitingRetry = (receivedAt: number): string =>
+    waitingRetryAfter(receivedAt, now(), getWaitMaxIntervalMs?.() ?? WAITING_RETRY_CAP_MS);
   return async (
     envelope: AgentContinueTriggerEnvelope,
     context: AgentTriggerDispatchContext,
@@ -623,9 +628,7 @@ export function createSubagentCompletionWakeupResolver({
         code: 'PARENT_NOT_READY',
         retryable: true,
         status: 409,
-        retryAfter: isParentWorking(parentJob)
-          ? waitingRetryAfter(envelope.receivedAt, now())
-          : '1',
+        retryAfter: isParentWorking(parentJob) ? waitingRetry(envelope.receivedAt) : '1',
         deferWithoutAttempt: true,
       });
     }
@@ -709,7 +712,7 @@ export function createSubagentCompletionWakeupResolver({
           code: 'CHILD_NOT_READY',
           retryable: true,
           status: 409,
-          retryAfter: waitingRetryAfter(envelope.receivedAt, now()),
+          retryAfter: waitingRetry(envelope.receivedAt),
           deferWithoutAttempt: true,
         });
       }

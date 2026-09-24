@@ -1317,6 +1317,14 @@ describe('createSubagentCompletionWakeupResolver', () => {
     await expect(
       resolverAt(20 * 60_000)(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
     ).rejects.toMatchObject({ code: 'CHILD_NOT_READY', retryAfter: '60' });
+    await expect(
+      createSubagentCompletionWakeupResolver({
+        methods: methods as never,
+        getGenerationJob: async () => null,
+        now: () => NOW + 20 * 60_000,
+        getWaitMaxIntervalMs: () => 30_000,
+      })(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    ).rejects.toMatchObject({ code: 'CHILD_NOT_READY', retryAfter: '30' });
   });
 
   it('backs off by waiting age while the parent generation keeps running', async () => {

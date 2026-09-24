@@ -21,10 +21,10 @@ import type {
 import type { AgentContinueTriggerEnvelope } from './triggers/envelope';
 import type { AgentTriggerDispatchContext } from './triggers/dispatch';
 import type { AgentTriggerEnqueueOptions } from './triggers/delivery';
+import { WAITING_RETRY_CAP_MS, waitingRetryAfter } from './triggers/backoff';
 import { BACKGROUND_TOOL_PRODUCER_LEASE_MS } from './backgroundCompletion';
 import { createAgentTriggerEnvelope } from './triggers/envelope';
 import { AgentTriggerExecutionError } from './triggers/host';
-import { waitingRetryAfter } from './triggers/backoff';
 import { truncateMiddle } from '~/utils';
 
 const WAKEUP_ADMISSION_DELAY_MS = 250;
@@ -95,6 +95,8 @@ export interface BackgroundToolCompletionWakeupResolverDeps {
   methods: WakeupMethods;
   getGenerationJob: (conversationId: string) => Promise<GenerationState | null>;
   getResultBatchSize?: () => number | undefined;
+  /** Longest a waiting delivery re-checks readiness; the backoff default otherwise. */
+  getWaitMaxIntervalMs?: () => number | undefined;
 }
 
 function executionError(
@@ -259,9 +261,12 @@ export function createBackgroundToolCompletionWakeupResolver({
   methods,
   getGenerationJob,
   getResultBatchSize,
+  getWaitMaxIntervalMs,
 }: BackgroundToolCompletionWakeupResolverDeps): NonNullable<
   AgentTriggerExecutionHostDeps['prepareContinue']
 > {
+  const waitingRetry = (receivedAt: number): string =>
+    waitingRetryAfter(receivedAt, Date.now(), getWaitMaxIntervalMs?.() ?? WAITING_RETRY_CAP_MS);
   return async (
     envelope: AgentContinueTriggerEnvelope,
     context: AgentTriggerDispatchContext,
@@ -295,7 +300,7 @@ export function createBackgroundToolCompletionWakeupResolver({
         code: 'PARENT_NOT_READY',
         retryable: true,
         status: 409,
-        retryAfter: isParentWorking(parentJob) ? waitingRetryAfter(envelope.receivedAt) : '1',
+        retryAfter: isParentWorking(parentJob) ? waitingRetry(envelope.receivedAt) : '1',
         deferWithoutAttempt: true,
       });
     }
@@ -533,7 +538,7 @@ export function createBackgroundToolCompletionWakeupResolver({
       code: 'BACKGROUND_TOOL_RESULT_NOT_READY',
       retryable: true,
       status: 409,
-      retryAfter: waitingRetryAfter(envelope.receivedAt),
+      retryAfter: waitingRetry(envelope.receivedAt),
       deferWithoutAttempt: true,
     });
   };
@@ -545,6 +550,7 @@ export function createBackgroundToolCompletionWakeupHandler(
   retire: RetireBackgroundToolCompletion,
   renewProducerLease: RenewBackgroundToolCompletionProducerLease,
   persistResult?: PersistBackgroundToolCompletionResult,
+  expedite?: (deliveryKey: string) => void,
 ): (
   registration: BackgroundToolWakeupRegistration,
 ) => Promise<BackgroundToolWakeupAdmission | false> {
@@ -608,6 +614,7 @@ export function createBackgroundToolCompletionWakeupHandler(
         options == null
           ? retire(admitted.deliveryKey, BACKGROUND_TOOL_COMPLETION_SOURCE, reason)
           : retire(admitted.deliveryKey, BACKGROUND_TOOL_COMPLETION_SOURCE, reason, options),
+      ...(expedite == null ? {} : { expedite: () => expedite(admitted.deliveryKey) }),
     };
   };
 }

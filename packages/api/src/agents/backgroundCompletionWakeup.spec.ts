@@ -112,6 +112,25 @@ describe('background tool completion wakeups', () => {
     jest.useRealTimers();
   });
 
+  it('expedites its own delivery when a result it can consume appears', async () => {
+    const expedite = jest.fn();
+    const notify = createBackgroundToolCompletionWakeupHandler(
+      async () => ({ deliveryKey: 'delivery-key-1' }),
+      async () => true,
+      async () => true,
+      undefined,
+      expedite,
+    );
+
+    const admission = await notify(registration());
+    if (admission === false) {
+      throw new Error('Expected an admission');
+    }
+    admission.expedite?.();
+
+    expect(expedite).toHaveBeenCalledWith('delivery-key-1');
+  });
+
   it('pre-registers the exact task on the invoking response branch', async () => {
     const enqueue = jest.fn<
       ReturnType<EnqueueBackgroundToolCompletion>,
@@ -771,6 +790,21 @@ describe('background tool completion wakeups', () => {
     jest.setSystemTime(NOW + 6 * 60 * 60_000);
     await expect(resolve(deliveryEnvelope, { idempotencyKey: 'delivery-1' })).rejects.toMatchObject(
       { code: 'PARENT_NOT_READY', retryAfter: '60' },
+    );
+  });
+
+  it('caps the waiting backoff at the configured interval', async () => {
+    const { methods } = resolverMethods();
+    const resolve = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => ({ status: 'running' }),
+      getWaitMaxIntervalMs: () => 20_000,
+    });
+    const deliveryEnvelope = await envelope();
+
+    jest.setSystemTime(NOW + 6 * 60 * 60_000);
+    await expect(resolve(deliveryEnvelope, { idempotencyKey: 'delivery-1' })).rejects.toMatchObject(
+      { code: 'PARENT_NOT_READY', retryAfter: '20' },
     );
   });
 

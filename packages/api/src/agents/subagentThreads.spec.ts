@@ -431,6 +431,36 @@ describe('SubagentThreadTaskStore', () => {
     });
   });
 
+  it('announces a settled child only after its terminal message is durable', async () => {
+    const userId = 'settled-child-user';
+    const parentConversationId = randomUUID();
+    await saveParent(userId, parentConversationId);
+    const saveMessage = jest.spyOn(methods, 'saveMessage');
+    const terminalSavedAtSettle: boolean[] = [];
+    const store = new SubagentThreadTaskStore(methods, {
+      onTaskSettled: (settledUserId) => {
+        expect(settledUserId).toBe(userId);
+        terminalSavedAtSettle.push(
+          saveMessage.mock.calls.some(([, message]) =>
+            String((message as { messageId?: string }).messageId).endsWith(':assistant'),
+          ),
+        );
+      },
+    });
+    const config = buildSubagentThreadTaskConfig(
+      store,
+      { userId, parentConversationId },
+      { completionWakeups: true },
+    );
+    const started = config.store.start(
+      taskRequest(config.scopeId, { parentRunId: 'parent-response-1' }),
+    );
+    await waitForSettled(store, config.scopeId, started);
+    saveMessage.mockRestore();
+
+    expect(terminalSavedAtSettle).toEqual([true]);
+  });
+
   it('keeps subagent completion delivery poll-only when wakeups are disabled', async () => {
     const userId = 'poll-only-user';
     const parentConversationId = randomUUID();

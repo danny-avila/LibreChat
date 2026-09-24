@@ -4,6 +4,7 @@
  * the generation's owner — and a failing listener must never disturb cleanup.
  */
 import type { GenerationSettledEvent } from '../GenerationJobManager';
+import { buildPendingAction, buildToolApprovalPayload } from '~/agents/hitl/policy';
 
 /** Suppress winston Console transport output (survives jest.resetModules) */
 jest.spyOn(console, 'log').mockImplementation();
@@ -73,6 +74,39 @@ describe('generation settled notifications', () => {
     expect(result.success).toBe(true);
     expect(events).toEqual([
       expect.objectContaining({ streamId: 'settled-abort', userId: 'user-3', status: 'aborted' }),
+    ]);
+    await manager.destroy();
+  });
+
+  it('announces a generation whose approval expired', async () => {
+    const manager = await configureManager();
+    const events: GenerationSettledEvent[] = [];
+    manager.onGenerationSettled((event) => events.push(event));
+    await manager.createJob('settled-approval', 'user-6', 'conversation-6');
+    const action = buildPendingAction(
+      buildToolApprovalPayload([
+        { name: 'shell', arguments: { command: 'ls' }, tool_call_id: 'call_expire' },
+      ]),
+      {
+        streamId: 'settled-approval',
+        conversationId: 'conversation-6',
+        runId: 'run-1',
+        responseMessageId: 'msg-1',
+      },
+    );
+    await manager.approvals.pause('settled-approval', action);
+    expect(events).toEqual([]);
+
+    await expect(manager.expireApproval('settled-approval')).resolves.toBe(true);
+    await expect(manager.expireApproval('settled-approval')).resolves.toBe(false);
+
+    expect(events).toEqual([
+      {
+        streamId: 'settled-approval',
+        conversationId: 'conversation-6',
+        userId: 'user-6',
+        status: 'aborted',
+      },
     ]);
     await manager.destroy();
   });

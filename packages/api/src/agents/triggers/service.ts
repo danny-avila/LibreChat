@@ -35,9 +35,13 @@ import { selfOriginFromAddress } from '../../app/origin';
 import { createAgentTriggerExecutionHost } from './host';
 import { parseAgentTriggerEnvelope } from './envelope';
 import { createIdleRecoveryLoop } from '../recovery';
+import { WAITING_RETRY_CAP_MS } from './backoff';
 
 /** Internal sources whose deliveries wait on a result or on their parent generation. */
 const COMPLETION_WAKEUP_SOURCES = [BACKGROUND_TOOL_COMPLETION_SOURCE, SUBAGENT_COMPLETION_SOURCE];
+/** A matching delivery a worker held while its readiness changed is re-expedited
+ * once, after that worker has had time to release it. */
+const EXPEDITE_FOLLOW_UP_MS = 2_000;
 
 export const AGENT_TRIGGER_TOKEN_TTL = '60s';
 const DEFAULT_USER_DRAIN_TIMEOUT_MS = 35_000;
@@ -53,8 +57,11 @@ export interface AgentTriggerServiceOptions {
     queuedTurnMaxIntervalMs?: number;
     maintenanceMaxIntervalMs?: number;
     deliveryMaxIntervalMs?: number;
+    completionWaitMaxIntervalMs?: number;
   };
 }
+
+export type AgentTriggerCompletionExpedite = { user: string } | { deliveryKeys: string[] };
 
 export interface AgentTriggerServiceDeps {
   fetch?: AgentTriggerExecutionHostDeps['fetch'];
@@ -222,6 +229,10 @@ export interface AgentTriggerService {
     input: Parameters<AgentTriggerDeliveryMethods['getAgentBackgroundToolResultClaim']>[0],
   ) => ReturnType<AgentTriggerDeliveryMethods['getAgentBackgroundToolResultClaim']>;
   getBackgroundCompletionResultBatchSize: () => number;
+  /** Longest a waiting completion delivery re-checks readiness. */
+  getCompletionWaitMaxIntervalMs: () => number;
+  /** Best effort: moves waiting completion deliveries forward after what they wait on changed. */
+  expediteCompletionWakeups: (input: AgentTriggerCompletionExpedite) => void;
   releaseBackgroundToolResultClaims: AgentTriggerDeliveryMethods['releaseAgentBackgroundToolResultClaims'];
   drainUser: (userId: string) => Promise<void>;
   prepareUserPurge: (userId: string, fenceStartedAt: Date, tenantId?: string) => Promise<void>;
@@ -339,6 +350,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
   }
   let boundOrigin: string | undefined;
   let backgroundCompletionResultBatchSize = 8;
+  let completionWaitMaxIntervalMs = WAITING_RETRY_CAP_MS;
   let deliveryEngine: AgentTriggerDeliveryEngine | undefined;
   let initializePromise: Promise<void> | undefined;
   let purgeRecoveryPromise: Promise<boolean> | undefined;
@@ -551,26 +563,29 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
   };
 
   /** Moves waiting completion deliveries forward when what they wait on has
-   * changed, then claims them here. Best effort: a missed expedite only means
-   * the delivery re-checks at its backoff instead of immediately. */
-  const expediteCompletions = (
-    input: { deliveryKeys: string[]; sourceIds: string[] } | { user: string },
-  ): void => {
+   * changed, then claims them here. A matching row that was already due or held
+   * by a worker still needs a claim pass, and a held one may be deferred again by
+   * a resolver that read the old state, so it is re-expedited once shortly after.
+   * Best effort: a missed expedite only means the delivery re-checks at its backoff. */
+  const expediteCompletions = (input: AgentTriggerCompletionExpedite, followUp = false): void => {
     const expedite = deps.methods?.expediteAgentTriggerDeliveries;
     if (expedite == null || !deliveryReady || stopping) {
       return;
     }
     void runAsSystem(() =>
       expedite({
-        ...('user' in input
-          ? { user: input.user, sourceIds: COMPLETION_WAKEUP_SOURCES }
-          : { deliveryKeys: input.deliveryKeys, sourceIds: input.sourceIds }),
+        ...('user' in input ? { user: input.user } : { deliveryKeys: input.deliveryKeys }),
+        sourceIds: COMPLETION_WAKEUP_SOURCES,
         now: new Date(),
       }),
     )
-      .then((expedited) => {
-        if (expedited > 0) {
-          deliveryEngine?.wake();
+      .then(({ matched, expedited }) => {
+        if (matched === 0) {
+          return;
+        }
+        deliveryEngine?.wake();
+        if (matched > expedited && !followUp) {
+          setTimeout(() => expediteCompletions(input, true), EXPEDITE_FOLLOW_UP_MS).unref?.();
         }
       })
       .catch((error) =>
@@ -601,6 +616,8 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
   return {
     initialize: (options = {}) => {
       backgroundCompletionResultBatchSize = options.completionResultBatchSize ?? 8;
+      completionWaitMaxIntervalMs =
+        options.idlePolling?.completionWaitMaxIntervalMs ?? WAITING_RETRY_CAP_MS;
       boundOrigin = selfOriginFromAddress(options.address) ?? boundOrigin;
       if (deps.methods == null || deliveryReady) {
         return Promise.resolve();
@@ -773,7 +790,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         const persist = requireMethods().persistAgentBackgroundToolResult;
         const persisted = persist == null ? false : await persist(input);
         if (persisted) {
-          expediteCompletions({ deliveryKeys: [input.deliveryKey], sourceIds: [input.sourceId] });
+          expediteCompletions({ deliveryKeys: [input.deliveryKey] });
         }
         return persisted;
       }),
@@ -783,6 +800,8 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         return getClaim == null ? null : getClaim(input);
       }),
     getBackgroundCompletionResultBatchSize: () => backgroundCompletionResultBatchSize,
+    getCompletionWaitMaxIntervalMs: () => completionWaitMaxIntervalMs,
+    expediteCompletionWakeups: (input) => expediteCompletions(input),
     releaseBackgroundToolResultClaims: (input) =>
       runAsSystem(async () => {
         const release = requireMethods().releaseAgentBackgroundToolResultClaims;

@@ -4099,15 +4099,17 @@ class GenerationJobManagerClass {
     };
   }
 
-  private notifyGenerationSettled(claim: TerminalJobClaim): void {
-    if (claim.userId == null || this.generationSettledListeners.size === 0) {
+  private notifyGenerationSettled(
+    target: Pick<TerminalJobClaim, 'streamId' | 'conversationId' | 'userId' | 'status'>,
+  ): void {
+    if (target.userId == null || this.generationSettledListeners.size === 0) {
       return;
     }
     const event: GenerationSettledEvent = {
-      streamId: claim.streamId,
-      conversationId: claim.conversationId ?? claim.streamId,
-      userId: claim.userId,
-      status: claim.status,
+      streamId: target.streamId,
+      conversationId: target.conversationId ?? target.streamId,
+      userId: target.userId,
+      status: target.status,
     };
     for (const listener of this.generationSettledListeners) {
       try {
@@ -8914,6 +8916,14 @@ class GenerationJobManagerClass {
 
     await this.runApprovalExpiredHandler(streamId, expiredJob);
     await this.notifyApprovalExpiredRuntime(streamId, expiredJob.createdAt, observedRuntime);
+    /** Expiry is a direct `requires_action -> aborted` transition that never builds a
+     * terminal claim, so it announces settlement itself. */
+    this.notifyGenerationSettled({
+      streamId,
+      conversationId: expiredJob.conversationId,
+      userId: expiredJob.userId,
+      status: 'aborted',
+    });
     return true;
   }
 

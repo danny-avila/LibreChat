@@ -256,6 +256,13 @@ export interface ExpediteAgentTriggerDeliveriesInput {
   now: Date;
 }
 
+export interface ExpediteAgentTriggerDeliveriesResult {
+  /** Selected deliveries not yet delivered, including ones a worker holds or already due. */
+  matched: number;
+  /** Deferred, unheld deliveries moved to `now`. */
+  expedited: number;
+}
+
 export interface AgentTriggerDeliveryMethods {
   ensureAgentTriggerDeliveryIndexes: () => Promise<void>;
   enqueueAgentTriggerDelivery: (
@@ -317,7 +324,9 @@ export interface AgentTriggerDeliveryMethods {
     sourceId: string;
     now: Date;
   }) => Promise<AgentTriggerProducerLeaseStatus>;
-  expediteAgentTriggerDeliveries: (input: ExpediteAgentTriggerDeliveriesInput) => Promise<number>;
+  expediteAgentTriggerDeliveries: (
+    input: ExpediteAgentTriggerDeliveriesInput,
+  ) => Promise<ExpediteAgentTriggerDeliveriesResult>;
   persistAgentBackgroundToolResult: (
     input: PersistAgentBackgroundToolResultInput,
   ) => Promise<boolean>;
@@ -2304,7 +2313,7 @@ export function createAgentTriggerDeliveryMethods(
    * a worker currently holds, or one already due, is left alone. */
   async function expediteAgentTriggerDeliveries(
     input: ExpediteAgentTriggerDeliveriesInput,
-  ): Promise<number> {
+  ): Promise<ExpediteAgentTriggerDeliveriesResult> {
     const deliveryKeys = input.deliveryKeys ?? [];
     if (
       input.sourceIds.length === 0 ||
@@ -2316,22 +2325,49 @@ export function createAgentTriggerDeliveryMethods(
     ) {
       throw new TypeError('Invalid agent trigger delivery expedite');
     }
+    /** Only a deferred row no worker holds moves; held and already-due rows
+     * still match, so the caller learns a wake-up may be needed after all. */
+    const deferredAndUnheld = {
+      $and: [
+        { $gt: ['$availableAt', input.now] },
+        { $eq: [{ $type: '$leaseBy' }, 'missing'] },
+        {
+          $or: [
+            { $in: ['$status', ['pending', 'capability_pending']] },
+            {
+              $and: [
+                { $eq: ['$status', 'leased'] },
+                { $eq: ['$capabilityStatus', 'pending'] },
+                { $eq: [{ $type: '$capabilityLeaseBy' }, 'missing'] },
+              ],
+            },
+          ],
+        },
+      ],
+    };
     const result = await Delivery().updateMany(
       {
         'envelope.event.source.type': 'internal',
         'envelope.event.source.id': { $in: [...input.sourceIds] },
         ...(deliveryKeys.length > 0 && { deliveryKey: { $in: [...deliveryKeys] } }),
         ...(input.user != null && { user: input.user }),
-        availableAt: { $gt: input.now },
-        leaseBy: { $exists: false },
-        $or: [
-          { status: { $in: ['pending', 'capability_pending'] } },
-          { status: 'leased', capabilityStatus: 'pending', capabilityLeaseBy: { $exists: false } },
-        ],
+        status: { $in: ['pending', 'capability_pending', 'leased', 'capability_leased'] },
       },
-      { $set: { availableAt: input.now, claimAvailableAt: input.now } },
+      [
+        {
+          $set: {
+            availableAt: { $cond: [deferredAndUnheld, input.now, '$availableAt'] },
+            claimAvailableAt: {
+              $cond: [deferredAndUnheld, input.now, { $ifNull: ['$claimAvailableAt', '$$REMOVE'] }],
+            },
+            updatedAt: { $cond: [deferredAndUnheld, input.now, '$updatedAt'] },
+          },
+        },
+      ],
+      /** Automatic timestamps would rewrite every matched row, held ones included. */
+      { timestamps: false },
     );
-    return result.modifiedCount;
+    return { matched: result.matchedCount, expedited: result.modifiedCount };
   }
 
   /** Stores terminal output on the pre-admitted delivery before attempting the

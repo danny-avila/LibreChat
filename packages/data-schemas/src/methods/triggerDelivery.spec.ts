@@ -486,7 +486,7 @@ describe('agent trigger delivery methods', () => {
           sourceIds: [background.id],
           now: START,
         }),
-      ).resolves.toBe(1);
+      ).resolves.toEqual({ matched: 1, expedited: 1 });
 
       await expect(methods.claimNextAgentTriggerDelivery(capable)).resolves.toMatchObject({
         id: target.delivery.id,
@@ -514,7 +514,7 @@ describe('agent trigger delivery methods', () => {
 
       await expect(
         methods.expediteAgentTriggerDeliveries({ user, sourceIds: [background.id], now: START }),
-      ).resolves.toBe(1);
+      ).resolves.toEqual({ matched: 2, expedited: 1 });
 
       const rows = await Delivery.find({
         _id: {
@@ -529,7 +529,7 @@ describe('agent trigger delivery methods', () => {
       expect(availableAt.get(due.delivery.id)).toEqual(START);
     });
 
-    it('leaves a delivery a worker currently holds untouched', async () => {
+    it('leaves a delivery a worker currently holds untouched but reports it', async () => {
       const user = new mongoose.Types.ObjectId();
       const held = await waiting({ user, availableAt: START });
       const claim = await methods.claimNextAgentTriggerDelivery(capable);
@@ -542,7 +542,7 @@ describe('agent trigger delivery methods', () => {
           sourceIds: [background.id],
           now: new Date(START.getTime() - 60_000),
         }),
-      ).resolves.toBe(0);
+      ).resolves.toEqual({ matched: 1, expedited: 0 });
 
       const after = await Delivery.findById(held.delivery.id).lean();
       expect(after?.status).toBe(before?.status);
