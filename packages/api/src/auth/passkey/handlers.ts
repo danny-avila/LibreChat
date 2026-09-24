@@ -49,7 +49,9 @@ interface AuthenticationBody {
 /**
  * The account fields the passkey routes read, as a plain shape: neither the
  * request's user nor the data-layer results carry Mongoose types across the
- * package boundary.
+ * package boundary. `twoFactorEnabled` and `createdAt` are read after the
+ * handoff to `loginController` and legacy-verification grandfathering, not by
+ * the route handlers themselves.
  */
 export interface PasskeyAccount {
   id?: string;
@@ -61,6 +63,8 @@ export interface PasskeyAccount {
   expiresAt?: Date | null;
   provider?: string;
   password?: string;
+  twoFactorEnabled?: boolean;
+  createdAt?: Date | string;
 }
 
 export type PasskeyRequest<TBody = StepUpBody> = Request<
