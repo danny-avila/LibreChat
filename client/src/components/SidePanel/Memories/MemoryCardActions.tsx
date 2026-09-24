@@ -3,6 +3,7 @@ import { Pencil } from 'lucide-react';
 import { Trans } from 'react-i18next';
 import {
   Label,
+  Button,
   Spinner,
   OGDialog,
   TrashIcon,
@@ -12,9 +13,9 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { TUserMemory } from 'librechat-data-provider';
-import { rowActionClasses, rowActionSlotClasses } from '~/utils';
 import { useDeleteMemoryMutation } from '~/data-provider';
 import MemoryEditDialog from './MemoryEditDialog';
+import { rowActionSlotClasses } from '~/utils';
 import { getMemoryAddress } from './address';
 import { useLocalize } from '~/hooks';
 
@@ -68,15 +69,17 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
             description={localize('com_ui_edit_memory')}
             side="top"
             render={
-              <button
+              <Button
                 ref={triggerRef}
                 type="button"
-                className={rowActionClasses({ open: editOpen })}
+                variant="row-action-reveal"
+                size="icon-xs"
+                data-open={editOpen || undefined}
                 aria-label={localize('com_ui_edit')}
                 onClick={() => setEditOpen(true)}
               >
                 <Pencil className="size-4" aria-hidden="true" />
-              </button>
+              </Button>
             }
           />
         </OGDialogTrigger>
@@ -89,9 +92,11 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
             description={localize('com_ui_delete_memory')}
             side="top"
             render={
-              <button
+              <Button
                 type="button"
-                className={rowActionClasses({ open: deleteOpen })}
+                variant="row-action-reveal"
+                size="icon-xs"
+                data-open={deleteOpen || undefined}
                 aria-label={localize('com_ui_delete')}
                 onClick={() => setDeleteOpen(true)}
               >
@@ -100,7 +105,7 @@ export default function MemoryCardActions({ memory }: MemoryCardActionsProps) {
                 ) : (
                   <TrashIcon className="size-4" aria-hidden="true" />
                 )}
-              </button>
+              </Button>
             }
           />
         </OGDialogTrigger>

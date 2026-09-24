@@ -17,6 +17,7 @@ type ButtonVariantOptions =
         | 'secondary'
         | 'ghost'
         | 'row-action'
+        | 'row-action-reveal'
         | 'section-header'
         | 'section-action'
         | 'header-action'
@@ -69,6 +70,10 @@ const buttonVariantRecipe = cva(
          * overrides the base radius rather than matching its host.
          */
         'row-action': 'rounded-md hover:bg-surface-hover-alt hover:text-text-primary',
+        /** A row action revealed by hover or keyboard focus, and kept visible
+         * while its dialog or menu is open. Touch users always see it. */
+        'row-action-reveal':
+          'shrink-0 rounded-md text-text-secondary transition-opacity hover:bg-surface-hover-alt hover:text-text-primary data-[open]:bg-surface-active data-[open]:text-text-primary data-[open]:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:focus-visible:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100 [@media(hover:hover)]:group-hover:opacity-100',
         link: 'text-text-primary underline-offset-4 hover:underline',
         submit: 'bg-surface-submit text-text-on-status hover:bg-surface-submit-hover',
         /**

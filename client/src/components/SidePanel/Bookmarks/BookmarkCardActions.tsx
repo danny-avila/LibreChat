@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 import {
+  Button,
   OGDialog,
   OGDialogTrigger,
   OGDialogTemplate,
@@ -9,9 +10,9 @@ import {
 } from '@librechat/client';
 import type { TConversationTag } from 'librechat-data-provider';
 import { useDeleteConversationTagMutation } from '~/data-provider';
-import { rowActionClasses, rowActionSlotClasses } from '~/utils';
 import { BookmarkEditDialog } from '~/components/Bookmarks';
 import { NotificationSeverity } from '~/common';
+import { rowActionSlotClasses } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 interface BookmarkCardActionsProps {
@@ -61,15 +62,17 @@ export default function BookmarkCardActions({ bookmark }: BookmarkCardActionsPro
             description={localize('com_ui_edit')}
             side="top"
             render={
-              <button
+              <Button
                 ref={editTriggerRef}
                 type="button"
-                className={rowActionClasses({ open: editOpen })}
+                variant="row-action-reveal"
+                size="icon-xs"
+                data-open={editOpen || undefined}
                 aria-label={localize('com_ui_bookmarks_edit')}
                 onClick={() => setEditOpen(true)}
               >
                 <Pencil className="size-4" aria-hidden="true" />
-              </button>
+              </Button>
             }
           />
         </OGDialogTrigger>
@@ -82,15 +85,17 @@ export default function BookmarkCardActions({ bookmark }: BookmarkCardActionsPro
             description={localize('com_ui_delete')}
             side="top"
             render={
-              <button
+              <Button
                 ref={deleteTriggerRef}
                 type="button"
-                className={rowActionClasses({ open: deleteOpen })}
+                variant="row-action-reveal"
+                size="icon-xs"
+                data-open={deleteOpen || undefined}
                 aria-label={localize('com_ui_bookmarks_delete')}
                 onClick={() => setDeleteOpen(true)}
               >
                 <Trash2 className="size-4" aria-hidden="true" />
-              </button>
+              </Button>
             }
           />
         </OGDialogTrigger>
