@@ -4873,6 +4873,37 @@ describe('MCPConnectionFactory', () => {
       { name: 'tool2', description: 'Second tool', inputSchema: { type: 'object' } },
     ];
 
+    it('preserves public tool listing without a redundant OAuth connect when tokens are absent', async () => {
+      const serverConfig = {
+        type: 'streamable-http' as const,
+        url: 'https://mcp.example.com',
+        requiresOAuth: true,
+      };
+      mockProcessMCPEnv.mockImplementation(({ options }) => options);
+      mockFlowManager.createFlowWithHandler.mockResolvedValue(null);
+      mockConnectionInstance.connect.mockResolvedValue(undefined);
+      mockConnectionInstance.isConnected.mockResolvedValue(true);
+      mockConnectionInstance.fetchOrderedToolsSnapshot = jest.fn().mockResolvedValue({
+        tools: mockTools,
+        complete: true,
+      });
+
+      const result = await MCPConnectionFactory.discoverTools(
+        { serverName: 'public-oauth', serverConfig },
+        {
+          useOAuth: true,
+          user: mockUser!,
+          flowManager: mockFlowManager,
+          tokenMethods: { findToken: jest.fn() },
+        },
+      );
+
+      expect(result.tools).toEqual(mockTools);
+      expect(result.oauthRequired).toBe(true);
+      expect(mockMCPConnection).toHaveBeenCalledTimes(1);
+      expect(mockConnectionInstance.connect).toHaveBeenCalledTimes(1);
+    });
+
     it('should discover tools from a successfully connected server', async () => {
       const basicOptions = {
         serverName: 'test-server',
@@ -6165,7 +6196,7 @@ describe('MCPConnectionFactory', () => {
       );
 
       expect(result.tools).toEqual(mockTools);
-      expect(result.oauthRequired).toBe(false);
+      expect(result.oauthRequired).toBe(true);
       expect(oauthOptions.oauthStart).not.toHaveBeenCalled();
       expect(mockMCPOAuthHandler.initiateOAuthFlow).not.toHaveBeenCalled();
     });
