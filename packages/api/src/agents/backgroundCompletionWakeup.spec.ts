@@ -1,5 +1,6 @@
 import { AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2 } from '@librechat/data-schemas';
 import type { AgentTriggerProducerLeaseStatus } from '@librechat/data-schemas';
+import type { CodeApprovalMode } from 'librechat-data-provider';
 import type { EnqueueBackgroundToolCompletion } from './backgroundCompletionWakeup';
 import {
   BACKGROUND_TOOL_WAKEUP_INPUT_MAX_CHARS,
@@ -45,12 +46,15 @@ function envelope(registrationOverrides = {}) {
   });
 }
 
-function resolverMethods() {
+function resolverMethods(codeApprovalMode?: CodeApprovalMode) {
   const releaseBackgroundToolResultClaims = jest.fn(async () => true);
   return {
     releaseBackgroundToolResultClaims,
     methods: {
-      getConvo: jest.fn(async () => ({ tenantId: 'tenant-1' })),
+      getConvo: jest.fn(async () => ({
+        tenantId: 'tenant-1',
+        ...(codeApprovalMode != null && { codeApprovalMode }),
+      })),
       getMessages: jest.fn(async () => [
         {
           messageId: 'response-1',
@@ -438,6 +442,72 @@ describe('background tool completion wakeups', () => {
     await expect(notify(registration({ parentAgentId: 'ephemeral-agent' }))).resolves.toBe(false);
     expect(enqueue).not.toHaveBeenCalled();
     expect(retire).not.toHaveBeenCalled();
+  });
+
+  describe.each(['projection', 'receipt', 'legacy receipt'] as const)(
+    '%s approval context',
+    (source) => {
+      it.each([undefined, 'ask', 'acceptEdits', 'fullAccess'] as const)(
+        'inherits the parent mode %s without granting broader access',
+        async (mode) => {
+          const { methods } = resolverMethods(mode);
+          if (source !== 'projection') {
+            methods.claimBackgroundToolResults.mockResolvedValue({
+              status: 'not_ready',
+              results: [],
+            });
+          }
+          if (source === 'receipt') {
+            methods.claimAgentBackgroundToolResults.mockResolvedValue({
+              status: 'acquired',
+              results: [
+                {
+                  taskId: 'task-1',
+                  toolCallId: 'call-1',
+                  toolName: 'slow_tool',
+                  status: 'completed',
+                  output: 'done',
+                },
+              ],
+            } as never);
+          }
+          if (source === 'legacy receipt') {
+            Reflect.deleteProperty(methods, 'claimAgentBackgroundToolResults');
+            methods.getAgentBackgroundToolResult.mockResolvedValue({
+              status: 'completed',
+              output: 'done',
+              settledAt: new Date(NOW),
+            } as never);
+          }
+          const resolve = createBackgroundToolCompletionWakeupResolver({
+            methods: methods as never,
+            getGenerationJob: async () => null,
+          });
+
+          const prepared = await resolve(await envelope(), { idempotencyKey: 'delivery-1' });
+
+          expect(prepared?.status).toBe('ready');
+          expect(prepared?.status === 'ready' && prepared.codeApprovalMode).toBe(mode);
+          expect(methods.getConvo).toHaveBeenCalledTimes(1);
+          expect(methods.getConvo).toHaveBeenCalledWith('user-1', 'conversation-1');
+        },
+      );
+    },
+  );
+
+  it('rereads the parent approval mode on a delivery retry', async () => {
+    const { methods } = resolverMethods('fullAccess');
+    const resolve = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+    const delivery = await envelope();
+    const first = await resolve(delivery, { idempotencyKey: 'delivery-1' });
+    expect(first?.status === 'ready' && first.codeApprovalMode).toBe('fullAccess');
+
+    methods.getConvo.mockResolvedValue({ tenantId: 'tenant-1', codeApprovalMode: 'ask' });
+    const retry = await resolve(delivery, { idempotencyKey: 'delivery-1' });
+    expect(retry?.status === 'ready' && retry.codeApprovalMode).toBe('ask');
   });
 
   it('claims a bounded sibling batch and continues from the latest branch leaf', async () => {

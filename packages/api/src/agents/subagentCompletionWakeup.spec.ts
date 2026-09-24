@@ -1,3 +1,4 @@
+import type { CodeApprovalMode } from 'librechat-data-provider';
 import type { IMessage } from '@librechat/data-schemas';
 import type { AgentContinueTriggerEnvelope } from './triggers/envelope';
 import type { SubagentTaskWakeupRegistration } from './subagentThreads';
@@ -153,7 +154,7 @@ function wakeupEnvelope(): AgentContinueTriggerEnvelope {
   return envelope;
 }
 
-function resolverMethods() {
+function resolverMethods(codeApprovalMode?: CodeApprovalMode) {
   const subagentTask: IMessage['subagentTask'] = {
     attemptKey: 'attempt-1',
     parentRunId: 'response-1',
@@ -173,7 +174,11 @@ function resolverMethods() {
   const methods = {
     getConvo: jest.fn(async (_userId: string, conversationId: string) =>
       conversationId === 'conversation-1'
-        ? { conversationId, tenantId: 'tenant-1' }
+        ? {
+            conversationId,
+            tenantId: 'tenant-1',
+            ...(codeApprovalMode != null && { codeApprovalMode }),
+          }
         : {
             conversationId,
             tenantId: 'tenant-1',
@@ -259,6 +264,27 @@ function orchestrationSnapshot(
 }
 
 describe('createSubagentCompletionWakeupResolver', () => {
+  it.each([undefined, 'ask', 'acceptEdits', 'fullAccess'] as const)(
+    'inherits parent approval mode %s rather than child or event permissions',
+    async (mode) => {
+      const { methods } = resolverMethods(mode);
+      const resolve = createSubagentCompletionWakeupResolver({
+        methods: methods as never,
+        getGenerationJob: async () => null,
+      });
+      const delivery = wakeupEnvelope();
+      if (delivery.event.payload == null || typeof delivery.event.payload !== 'object') {
+        throw new Error('Expected a completion payload');
+      }
+      delivery.event.payload = { ...delivery.event.payload, codeApprovalMode: 'fullAccess' };
+
+      const prepared = await resolve(delivery, { idempotencyKey: 'delivery-1' });
+
+      expect(prepared?.status).toBe('ready');
+      expect(prepared?.status === 'ready' && prepared.codeApprovalMode).toBe(mode);
+    },
+  );
+
   it('defers without claiming while the parent generation is active', async () => {
     const { methods } = resolverMethods();
     const resolve = createSubagentCompletionWakeupResolver({
