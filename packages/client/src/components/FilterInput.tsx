@@ -10,7 +10,7 @@ export interface FilterInputProps
   /** Container className for custom styling */
   containerClassName?: string;
   /** Surface behind the floating label, matching the input's surrounding panel. */
-  surface?: 'primary' | 'presentation';
+  surface?: 'primary' | 'presentation' | 'dialog';
 }
 
 /**
@@ -25,22 +25,22 @@ export interface FilterInputProps
  *   onChange={(e) => setSearchQuery(e.target.value)}
  * />
  */
+/** The floating label breaks the field's top border, so it has to paint the
+ *  surface behind it. The surface is painted on the container and inherited by the
+ *  label, so a field on another panel names it through `surface` rather than the
+ *  label drifting from its host. */
+const SURFACE_CLASSES: Record<NonNullable<FilterInputProps['surface']>, string> = {
+  primary: 'bg-surface-primary-alt',
+  presentation: 'bg-presentation',
+  dialog: 'bg-surface-dialog',
+};
+
 const FilterInput: React.ForwardRefExoticComponent<
   FilterInputProps & React.RefAttributes<HTMLInputElement>
 > = React.forwardRef<HTMLInputElement, FilterInputProps>(
   ({ className, label, inputId, containerClassName, surface = 'primary', ...props }, ref) => {
     return (
-      <div
-        className={cn(
-          /** The floating label breaks the field's top border, so it has to paint the
-           *  surface behind it. The surface is painted here and inherited by the label,
-           *  so a field on another panel names it through `surface` or restates it once
-           *  through `containerClassName` instead of the label drifting from its host. */
-          'relative',
-          surface === 'presentation' ? 'bg-presentation' : 'bg-surface-primary-alt',
-          containerClassName,
-        )}
-      >
+      <div className={cn('relative', SURFACE_CLASSES[surface], containerClassName)}>
         <input
           id={inputId}
           ref={ref}

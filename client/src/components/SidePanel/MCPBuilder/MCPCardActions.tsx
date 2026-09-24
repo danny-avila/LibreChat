@@ -96,7 +96,11 @@ export default function MCPCardActions({
             onClick={onCancel}
           >
             <div className="relative size-4">
-              <Spinner className="size-4 group-hover/cancel:opacity-0" />
+              {/* The fade belongs to the wrapper: the spinner's own opacity is the
+                  primitive's, and so is the cancel cross's to the icon. */}
+              <span className="absolute inset-0 flex items-center justify-center group-hover/cancel:opacity-0">
+                <Spinner className="size-4" />
+              </span>
               <X className="text-text-destructive absolute inset-0 size-4 opacity-0 group-hover/cancel:opacity-100" />
             </div>
           </TooltipAnchor>

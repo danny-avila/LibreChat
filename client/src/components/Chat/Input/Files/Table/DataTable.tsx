@@ -119,7 +119,8 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           label={localize('com_files_filter')}
           value={(table.getColumn('filename')?.getFilterValue() as string | undefined) ?? ''}
           onChange={(event) => table.getColumn('filename')?.setFilterValue(event.target.value)}
-          containerClassName="flex-1 bg-surface-dialog"
+          surface="dialog"
+          containerClassName="flex-1"
         />
         <div className="relative focus-within:z-[100]">
           <ColumnVisibilityDropdown
@@ -133,7 +134,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         <Table className="w-full min-w-[300px] border-separate border-spacing-0">
           <TableHeader className="sticky top-0 z-50">
             {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id} className="border-0">
+              <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header, _index) => {
                   const size = header.getSize();
                   const style: Style = {
@@ -143,7 +144,8 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
                   return (
                     <TableHead
                       key={header.id}
-                      className="bg-surface-dialog text-text-secondary px-2 py-2 text-left text-xs font-medium whitespace-nowrap sm:px-4"
+                      size="sm"
+                      className="px-2 py-2 whitespace-nowrap sm:px-4"
                       style={{ ...style }}
                     >
                       {header.isPlaceholder
@@ -158,11 +160,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           <TableBody className="w-full">
             {table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && 'selected'}
-                  className="hover:bg-surface-hover border-0 transition-colors"
-                >
+                <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'}>
                   {row.getVisibleCells().map((cell, _index) => {
                     const size = cell.column.getSize();
                     const style: Style = {

@@ -415,11 +415,15 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
 
     if (projects.length === 0) {
       return (
+        /* `section-action` owns the quiet-secondary-until-hovered treatment these
+         *  entries share with the section's other controls; only the row shape is
+         *  the caller's. */
         <Button
           type="button"
-          variant="ghost"
+          variant="section-action"
+          size="sm"
           onClick={() => setIsCreateOpen(true)}
-          className="text-text-secondary hover:bg-surface-active-alt hover:text-text-primary flex h-9 w-full justify-start gap-2 rounded-lg px-2 text-sm font-normal transition-colors"
+          className="flex w-full justify-start"
         >
           <FolderPlus className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span className="truncate">{localize('com_ui_new_project')}</span>
@@ -442,9 +446,10 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
           <li className="list-none">
             <Button
               type="button"
-              variant="ghost"
+              variant="section-action"
+              size="xs"
               onClick={openProjects}
-              className="text-text-secondary hover:bg-surface-active-alt hover:text-text-primary flex h-8 w-full justify-start rounded-lg px-2 text-xs font-medium transition-colors"
+              className="flex w-full justify-start"
             >
               {localize('com_ui_all_projects')}
             </Button>

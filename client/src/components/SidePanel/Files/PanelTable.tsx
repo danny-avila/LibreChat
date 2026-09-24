@@ -254,12 +254,13 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           <Table className="table-fixed">
             <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow key={headerGroup.id} className="border-0">
+                <TableRow key={headerGroup.id}>
                   {headerGroup.headers.map((header, index) => (
                     <TableHead
                       key={header.id}
+                      size="sm"
                       style={{ width: index === 0 ? '75%' : '25%' }}
-                      className="text-text-secondary bg-transparent py-2 text-xs font-medium"
+                      className="py-2"
                     >
                       <div className={index === 0 ? 'px-2' : 'flex justify-end px-1'}>
                         {header.isPlaceholder
@@ -274,11 +275,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
             <TableBody>
               {table.getRowModel().rows.length ? (
                 table.getRowModel().rows.map((row) => (
-                  <TableRow
-                    key={row.id}
-                    data-state={row.getIsSelected() && 'selected'}
-                    className="hover:bg-surface-hover rounded-lg border-0 transition-colors"
-                  >
+                  <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'}>
                     {row.getVisibleCells().map((cell) => {
                       const isFilenameCell = cell.column.id === 'filename';
 

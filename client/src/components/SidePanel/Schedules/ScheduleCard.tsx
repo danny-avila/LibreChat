@@ -30,8 +30,8 @@ import {
   scheduleLastRunKey,
   scheduleMCPCardOutcomes,
 } from './errors';
-import { cn, getMessageTimestamp, rowActionClasses, rowActionSlotClasses } from '~/utils';
 import { useLocalize, useHasAccess, useClockFormat, useWeekStart } from '~/hooks';
+import { cn, getMessageTimestamp, rowActionClasses } from '~/utils';
 import ScheduleMCPRecovery from './ScheduleMCPRecovery';
 import { useAgentsMapContext } from '~/Providers';
 import ScheduleDialog from './ScheduleDialog';
@@ -345,7 +345,12 @@ export default function ScheduleCard({ schedule, projectName }: ScheduleCardProp
               {detailText}
             </p>
             {canWrite && (
-              <div className={cn(rowActionSlotClasses({ open: menuOpen }), 'gap-2')}>
+              /* Not the collapsible slot other rows use: this panel's rows end at
+                 the sidebar's resize handle, and a slot collapsed to zero width
+                 puts the switch's clickable point outside the panel entirely,
+                 under that handle, where no hover can ever reveal it. The menu
+                 trigger still fades in on row hover by itself. */
+              <div className="flex shrink-0 items-center gap-2">
                 <Switch
                   checked={schedule.enabled}
                   onCheckedChange={handleToggle}

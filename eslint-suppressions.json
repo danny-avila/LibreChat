@@ -310,7 +310,7 @@
   },
   "client/src/components/Chat/Input/Files/Table/DataTable.tsx": {
     "shadcn/no-restyle": {
-      "count": 26
+      "count": 17
     },
     "shadcn/no-unknown-classes": {
       "count": 1
@@ -1113,7 +1113,7 @@
   },
   "client/src/components/Conversations/ProjectsSection.tsx": {
     "shadcn/no-restyle": {
-      "count": 28
+      "count": 11
     }
   },
   "client/src/components/Conversations/RenameForm.tsx": {
@@ -1336,11 +1336,6 @@
   "client/src/components/Nav/NavToggle.tsx": {
     "shadcn/no-inline-styles": {
       "count": 4
-    }
-  },
-  "client/src/components/Nav/SearchBar.tsx": {
-    "shadcn/no-raw-colors": {
-      "count": 1
     }
   },
   "client/src/components/Nav/Settings/Dialog.tsx": {
@@ -2055,7 +2050,7 @@
       "count": 3
     },
     "shadcn/no-restyle": {
-      "count": 15
+      "count": 6
     }
   },
   "client/src/components/SidePanel/MCPBuilder/MCPBuilderPanel.tsx": {
@@ -2064,9 +2059,6 @@
     }
   },
   "client/src/components/SidePanel/MCPBuilder/MCPCardActions.tsx": {
-    "shadcn/no-restyle": {
-      "count": 1
-    },
     "shadcn/require-static-classes": {
       "count": 7
     }
@@ -2167,11 +2159,6 @@
   "client/src/components/SidePanel/Schedules/SchedulePanel.tsx": {
     "shadcn/no-restyle": {
       "count": 2
-    }
-  },
-  "client/src/components/SidePanel/SidePanelGroup.tsx": {
-    "shadcn/no-restyle": {
-      "count": 1
     }
   },
   "client/src/components/Skills/buttons/ShareSkill.tsx": {
