@@ -8,6 +8,7 @@ import type {
   TMessage,
   TPayload,
   ChatEvent,
+  TAttachment,
   TSubmission,
   ChatErrorData,
   ChatFinalFrame,
@@ -30,7 +31,11 @@ type ChatHelpers = Pick<
   'setMessages' | 'getMessages' | 'setConversation' | 'setIsSubmitting' | 'newConversation'
 >;
 
-type TSyncData = Parameters<ReturnType<typeof useEventHandlers>['syncHandler']>[0];
+type EventHandlers = ReturnType<typeof useEventHandlers>;
+type TSyncData = Parameters<EventHandlers['syncHandler']>[0];
+/** The handlers predate the wire types and accept a narrower payload; these
+ * frames reached them unchanged before the transport existed. */
+type TStepEvent = Parameters<EventHandlers['stepHandler']>[0];
 
 export default function useSSE(
   submission: TSubmission | null,
@@ -242,7 +247,7 @@ export default function useSSE(
           titleHandler(event.data);
           return;
         case 'attachment':
-          attachmentHandler({ data: event.data, submission: currentSubmission });
+          attachmentHandler({ data: event.data as TAttachment, submission: currentSubmission });
           return;
         case 'context_usage':
           contextHandler(event.data, currentSubmission);
@@ -260,7 +265,7 @@ export default function useSSE(
           ) {
             tapStream(event.data.data, currentSubmission);
           }
-          stepHandler(event.data, currentSubmission);
+          stepHandler(event.data as TStepEvent, currentSubmission);
           return;
         case 'sync': {
           const runId = v4();
