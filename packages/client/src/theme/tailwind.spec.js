@@ -235,9 +235,10 @@ describe('application radius and font scales', () => {
 
   it('defaults to the values the utilities resolved to before the remap', () => {
     /** `sm`, `md` and `lg` were `calc(var(--radius) - 4px)`, `calc(var(--radius) - 2px)` and
-     *  `var(--radius)` over `--radius: 0.5rem`; at the 16px root those are the rem values below. */
-    expect(defaultAppearance.radiusSm).toBe('0.25rem');
-    expect(defaultAppearance.radiusMd).toBe('0.375rem');
+     *  `var(--radius)` over `--radius: 0.5rem`. The px offsets stay, so the corners match at
+     *  every root font size, not only at 16px; a theme still supplies plain lengths. */
+    expect(defaultAppearance.radiusSm).toBe('calc(0.5rem - 4px)');
+    expect(defaultAppearance.radiusMd).toBe('calc(0.5rem - 2px)');
     expect(defaultAppearance.radiusLg).toBe('0.5rem');
     /** The rest were Tailwind's own steps, read from the installed package. */
     expect(defaultAppearance.radiusXl).toBe(tailwindDefault('--radius-xl'));

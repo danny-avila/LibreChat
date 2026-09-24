@@ -301,8 +301,8 @@ html {
   --theme-round-control-radius: 9999px;
   --theme-surface-radius: 1rem;
   --theme-large-surface-radius: 1.5rem;
-  --theme-radius-sm: 0.25rem;
-  --theme-radius-md: 0.375rem;
+  --theme-radius-sm: calc(0.5rem - 4px);
+  --theme-radius-md: calc(0.5rem - 2px);
   --theme-radius-lg: 0.5rem;
   --theme-radius-xl: 0.75rem;
   --theme-radius-2xl: 1rem;
