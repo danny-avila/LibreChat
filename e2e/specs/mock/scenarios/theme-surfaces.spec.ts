@@ -21,6 +21,7 @@ type Mode = 'light' | 'dark';
 
 const MODES: Mode[] = ['light', 'dark'];
 const THEME_PARAM = 'e2eThemeMode';
+const DEFINITION_PARAM = 'e2eThemeDefinition';
 const USER_TEXT = 'Summarize the ingest report.';
 const REPLY_TEXT = 'The ingest report is steady.';
 const WCAG_AA_NORMAL = 4.5;
@@ -34,23 +35,32 @@ const CLICKHOUSE_RADII = { control: '4px', surface: '8px', largeSurface: '12px' 
 
 test.use({ viewport: { width: 1280, height: 800 } });
 
-async function installThemeBridge(page: Page, definition: unknown) {
-  await page.addInitScript((stored) => {
-    const mode = new URL(location.href).searchParams.get('e2eThemeMode');
-    if (mode) {
-      localStorage.setItem('color-theme', mode);
-    }
-    localStorage.setItem('navVisible', 'true');
-    localStorage.removeItem('theme-colors');
-    localStorage.removeItem('theme-name');
-    if (stored) {
-      localStorage.setItem('theme-definition', JSON.stringify(stored));
-      localStorage.setItem('theme-source', 'definition');
-    } else {
-      localStorage.removeItem('theme-definition');
-      localStorage.removeItem('theme-source');
-    }
-  }, definition ?? null);
+/**
+ * One init script per page: Playwright leaves the order of several undefined, so
+ * a second script could undo the first. The definition rides in the URL next to
+ * the mode, and the script installs or clears it per navigation.
+ */
+async function installThemeBridge(page: Page) {
+  await page.addInitScript(
+    ([modeParam, definitionParam, definition]) => {
+      const params = new URL(location.href).searchParams;
+      const mode = params.get(modeParam);
+      if (mode) {
+        localStorage.setItem('color-theme', mode);
+      }
+      localStorage.setItem('navVisible', 'true');
+      localStorage.removeItem('theme-colors');
+      localStorage.removeItem('theme-name');
+      if (params.get(definitionParam) === 'clickhouse') {
+        localStorage.setItem('theme-definition', JSON.stringify(definition));
+        localStorage.setItem('theme-source', 'definition');
+      } else {
+        localStorage.removeItem('theme-definition');
+        localStorage.removeItem('theme-source');
+      }
+    },
+    [THEME_PARAM, DEFINITION_PARAM, clickHouseTheme] as const,
+  );
 }
 
 const colorsFor = (mode: Mode): IThemeRGB => clickHouseTheme.modes[mode]?.colors ?? {};
@@ -116,8 +126,9 @@ async function seedChat(title: string): Promise<string> {
   return conversationId;
 }
 
-async function openChat(page: Page, conversationId: string, mode: Mode) {
-  await page.goto(`/c/${conversationId}?${THEME_PARAM}=${mode}`);
+async function openChat(page: Page, conversationId: string, mode: Mode, themed: boolean) {
+  const definition = themed ? `&${DEFINITION_PARAM}=clickhouse` : '';
+  await page.goto(`/c/${conversationId}?${THEME_PARAM}=${mode}${definition}`);
   await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${mode}\\b`));
   await expect(page.getByText(REPLY_TEXT, { exact: true }).first()).toBeVisible({
     timeout: 20000,
@@ -207,11 +218,11 @@ test.describe('theme roles on prose, Settings, composer and model selector', () 
   }) => {
     test.setTimeout(90000);
     const conversationId = await seedChat('Prose theme roles');
-    await installThemeBridge(page, clickHouseTheme);
+    await installThemeBridge(page);
 
     try {
       for (const mode of MODES) {
-        await openChat(page, conversationId, mode);
+        await openChat(page, conversationId, mode, true);
         await expect(page.locator('html')).toHaveAttribute('data-theme', 'clickhouse');
         const prose = await readProse(page);
         expect(prose.color).toBe(rgbCss(colorsFor(mode)['rgb-text-secondary']));
@@ -227,11 +238,11 @@ test.describe('theme roles on prose, Settings, composer and model selector', () 
   }) => {
     test.setTimeout(90000);
     const conversationId = await seedChat('Prose default look');
-    await installThemeBridge(page, null);
+    await installThemeBridge(page);
 
     try {
       for (const mode of MODES) {
-        await openChat(page, conversationId, mode);
+        await openChat(page, conversationId, mode, false);
         const prose = await readProse(page);
         if (mode === 'light') {
           expect(prose.color).toBe(DEFAULT_LIGHT_PROSE_BODY);
@@ -248,12 +259,12 @@ test.describe('theme roles on prose, Settings, composer and model selector', () 
   }) => {
     test.setTimeout(90000);
     const conversationId = await seedChat('Settings theme roles');
+    await installThemeBridge(page);
 
     try {
       for (const definition of [null, clickHouseTheme]) {
-        await installThemeBridge(page, definition);
         for (const mode of MODES) {
-          await openChat(page, conversationId, mode);
+          await openChat(page, conversationId, mode, definition !== null);
           const expectedScrim = await probeStyle(page, 'bg-surface-overlay/80', 'background-color');
           const settings = await openSettings(page);
 
@@ -276,10 +287,10 @@ test.describe('theme roles on prose, Settings, composer and model selector', () 
   }) => {
     test.setTimeout(60000);
     const conversationId = await seedChat('Settings dark scrim');
-    await installThemeBridge(page, null);
+    await installThemeBridge(page);
 
     try {
-      await openChat(page, conversationId, 'dark');
+      await openChat(page, conversationId, 'dark', false);
       const settings = await openSettings(page);
       /** The old scrim was `bg-black` at `opacity-80`: black at 80% over the page. */
       expect(settings.scrim?.opacity).toBe('1');
@@ -295,14 +306,14 @@ test.describe('theme roles on prose, Settings, composer and model selector', () 
   }) => {
     test.setTimeout(90000);
     const conversationId = await seedChat('Composer radius roles');
+    await installThemeBridge(page);
 
     try {
       for (const [definition, radii] of [
         [null, DEFAULT_RADII],
         [clickHouseTheme, CLICKHOUSE_RADII],
       ] as const) {
-        await installThemeBridge(page, definition);
-        await openChat(page, conversationId, 'light');
+        await openChat(page, conversationId, 'light', definition !== null);
         const { composer, pill } = await readSurfaceRadii(page);
         expect(composer).toEqual({ top: radii.largeSurface, bottom: radii.largeSurface });
         expect(pill.top).toBe(radii.control);
@@ -318,10 +329,10 @@ test.describe('theme roles on prose, Settings, composer and model selector', () 
     test.setTimeout(60000);
     const conversationId = await seedChat('Mobile composer radius');
     await page.setViewportSize({ width: 390, height: 844 });
-    await installThemeBridge(page, clickHouseTheme);
+    await installThemeBridge(page);
 
     try {
-      await openChat(page, conversationId, 'light');
+      await openChat(page, conversationId, 'light', true);
       const composer = await radiusOf(page.getByTestId('composer-surface'));
       expect(composer).toEqual({ top: CLICKHOUSE_RADII.largeSurface, bottom: '0px' });
     } finally {
