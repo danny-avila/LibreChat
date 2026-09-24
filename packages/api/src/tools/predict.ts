@@ -361,6 +361,8 @@ export interface PredictToolsForTurnParams {
   signal?: AbortSignal;
   apiKey?: string;
   alreadyLoaded?: ReadonlySet<string>;
+  /** Receives what the ranking cost, so the caller can bill it. */
+  onUsage?: (usage: ClassificationUsage, model: string) => void;
 }
 
 export async function predictToolsForTurn(params: PredictToolsForTurnParams): Promise<string[]> {
@@ -409,6 +411,10 @@ export async function predictToolsForTurn(params: PredictToolsForTurnParams): Pr
     request,
     signal: params.signal,
   });
+
+  if (result.requests > 0) {
+    params.onUsage?.(result.usage, capability.classifier.model);
+  }
 
   logger.debug(
     `[predictToolsForTurn] surfacing ${result.names.length} tool(s)` +

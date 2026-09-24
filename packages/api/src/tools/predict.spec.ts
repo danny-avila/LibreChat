@@ -1,3 +1,5 @@
+import { classificationSchema } from 'librechat-data-provider';
+import { HumanMessage } from '@librechat/agents/langchain/messages';
 import type { LCToolRegistry, LCTool } from '@librechat/agents';
 import type {
   Classifier,
@@ -11,6 +13,7 @@ import {
   namedInRequest,
   batchCandidates,
   deferredCandidates,
+  predictToolsForTurn,
   RANKING_QUESTION,
   NEEDS_TOOL_QUESTION,
 } from './predict';
@@ -476,5 +479,53 @@ describe('shortlistSize with unmeasured confidence', () => {
 
   it('still respects a zero extra', () => {
     expect(shortlistSize(null, CONFIG)).toBe(CONFIG.shortlist);
+  });
+});
+
+describe('predictToolsForTurn usage', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('reports what the ranking cost, priced by the configured model', async () => {
+    jest.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          model: 'jev-1.13.0',
+          answers: {
+            best_tool: {
+              type: 'choice',
+              choice: 'search_mcp_docs',
+              confidence: 0.9,
+              probabilities: { search_mcp_docs: 0.9 },
+            },
+            needs_tool: { type: 'noul', noul: 0.9 },
+          },
+          usage: { input_tokens: 512, output_tokens: 0 },
+        }),
+      ),
+    );
+    const onUsage = jest.fn();
+    const registry: LCToolRegistry = new Map([
+      [
+        'search_mcp_docs',
+        { name: 'search_mcp_docs', description: 'Search the docs', defer_loading: true } as LCTool,
+      ],
+    ]);
+
+    const names = await predictToolsForTurn({
+      config: classificationSchema.parse({
+        enabled: true,
+        provider: 'typesafe',
+        toolSelection: { enabled: true },
+      }),
+      agents: [{ id: 'agent', toolRegistry: registry }],
+      messages: [new HumanMessage('search the docs for pricing')],
+      apiKey: 'test-key',
+      onUsage,
+    });
+
+    expect(names).toEqual(['search_mcp_docs']);
+    expect(onUsage).toHaveBeenCalledWith({ inputTokens: 512, outputTokens: 0 }, 'jev-latest');
   });
 });

@@ -1,7 +1,12 @@
 import { logger } from '@librechat/data-schemas';
 import type { BaseMessage } from '@librechat/agents/langchain/messages';
 import type { TClassificationConfig } from 'librechat-data-provider';
-import type { Classifier, BooleanQuestion, ClassificationQuestion } from '~/classification/types';
+import type {
+  Classifier,
+  BooleanQuestion,
+  ClassificationUsage,
+  ClassificationQuestion,
+} from '~/classification/types';
 import { isBooleanAnswer, isChoiceAnswer } from '~/classification/types';
 import { boolean, choice, isTrue } from '~/classification/questions';
 
@@ -26,6 +31,8 @@ export interface CreateMemoryGateParams {
   signal?: AbortSignal;
   windowSize?: number;
   maxChars?: number;
+  /** Receives what each judgment cost, so the caller can bill it. */
+  onUsage?: (usage: ClassificationUsage, model: string) => void;
 }
 
 const DEFAULT_WINDOW = 6;
@@ -137,7 +144,7 @@ export function buildHint(key: string | null, updates: boolean): string | undefi
 }
 
 export function createMemoryGate(params: CreateMemoryGateParams): MemoryGate | null {
-  const { classifier, settings, signal } = params;
+  const { classifier, settings, signal, onUsage } = params;
   if (settings?.enabled !== true) {
     return null;
   }
@@ -186,6 +193,7 @@ export function createMemoryGate(params: CreateMemoryGateParams): MemoryGate | n
         state: { latest, conversation: transcript },
         questions: buildQuestions(validKeys),
       });
+      onUsage?.(response.usage, classifier.model);
 
       const answer = response.answers.request;
       if (!isBooleanAnswer(answer)) {

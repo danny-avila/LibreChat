@@ -2381,6 +2381,41 @@ describe('AgentClient - startup telemetry', () => {
     },
   );
 
+  it('bills classifier usage as its own secondary transaction', async () => {
+    mockRecordCollectedUsage.mockClear();
+    const client = new AgentClient({
+      req: { user: { id: 'user-123' }, body: {}, config: {} },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-4' },
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.responseMessageId = 'classifier-usage-response';
+    mockRecordCollectedUsage.mockResolvedValueOnce({ input_tokens: 512, output_tokens: 0 });
+
+    await client.recordClassifierUsage({ inputTokens: 512, outputTokens: 0 }, 'jev-latest');
+
+    expect(mockRecordCollectedUsage).toHaveBeenCalledTimes(1);
+    const [, params] = mockRecordCollectedUsage.mock.calls[0];
+    expect(params).toEqual(
+      expect.objectContaining({
+        context: 'classification',
+        model: 'jev-latest',
+        messageId: 'classifier-usage-response',
+        collectedUsage: [{ input_tokens: 512, output_tokens: 0 }],
+      }),
+    );
+    expect(client.getStreamUsage()).toBeFalsy();
+  });
+
   it('starts the memory run while tool prediction is still running', async () => {
     let resolvePrediction;
     mockPredictToolsForTurn.mockImplementationOnce(

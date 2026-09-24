@@ -1868,6 +1868,24 @@ class AgentClient extends BaseClient {
     return createMemoryGate({
       classifier: capability.classifier,
       settings: capability.settings,
+      onUsage: (usage, model) => this.recordClassifierUsage(usage, model),
+    });
+  }
+
+  /** Bills a classifier judgment like any other secondary call: priced from the shared table. */
+  recordClassifierUsage(usage, model) {
+    const appConfig = this.options.req?.config;
+    return this.recordCollectedUsage({
+      collectedUsage: [{ input_tokens: usage.inputTokens, output_tokens: usage.outputTokens }],
+      context: 'classification',
+      model,
+      crossEndpoint: true,
+      balance: getBalanceConfig(appConfig),
+      transactions: getTransactionsConfig(appConfig),
+      messageId: this.responseMessageId,
+      updateStreamUsage: false,
+    }).catch((err) => {
+      logger.error('[AgentClient] Error recording classifier usage', getSafeErrorMetadata(err));
     });
   }
 
@@ -4836,6 +4854,7 @@ class AgentClient extends BaseClient {
           agents,
           messages,
           signal: abortController.signal,
+          onUsage: (usage, model) => this.recordClassifierUsage(usage, model),
         }).catch((error) => {
           logger.warn(
             '[AgentClient] Tool prediction failed; continuing without it',

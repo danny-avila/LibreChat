@@ -182,6 +182,28 @@ describe('createMemoryGate', () => {
   });
 });
 
+describe('createMemoryGate usage', () => {
+  it('reports what each judgment cost', async () => {
+    const { classifier } = stubClassifier(0.9);
+    const onUsage = jest.fn();
+    const gate = createMemoryGate({ classifier, settings: ON, onUsage });
+
+    await gate?.({ messages: TURN });
+
+    expect(onUsage).toHaveBeenCalledWith({ inputTokens: 40, outputTokens: 4 }, 'stub-1');
+  });
+
+  it('reports nothing when the judgment fails', async () => {
+    const { classifier } = stubClassifier(new Error('upstream exploded'));
+    const onUsage = jest.fn();
+    const gate = createMemoryGate({ classifier, settings: ON, onUsage });
+
+    await gate?.({ messages: TURN });
+
+    expect(onUsage).not.toHaveBeenCalled();
+  });
+});
+
 describe('createMemoryGate prompt overrides', () => {
   it('uses the built-in wording when nothing is configured', async () => {
     const { classifier, requests } = stubClassifier(0.9);
