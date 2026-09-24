@@ -24,21 +24,9 @@ export const rowActionClasses = ({
   visible = false,
 }: { open?: boolean; visible?: boolean } = {}): string =>
   cn(
-    buttonVariants({ variant: 'row-action', size: 'icon-xs' }),
-    'shrink-0 text-text-secondary transition-opacity',
+    buttonVariants({ variant: 'row-action-reveal', size: 'icon-xs' }),
     open && 'bg-surface-active text-text-primary',
-    visible || open
-      ? 'opacity-100'
-      : [
-          /** Touch has no hover, so the reveal only applies where one exists.
-           *  Left to `opacity-0` the control would be invisible and unreachable
-           *  on a phone. */
-          '[@media(hover:hover)]:opacity-0',
-          '[@media(hover:hover)]:focus-visible:opacity-100',
-          '[@media(hover:hover)]:group-focus-within:opacity-100',
-          '[@media(hover:hover)]:group-hover:opacity-100',
-          'data-[open]:opacity-100',
-        ],
+    (visible || open) && 'opacity-100 [@media(hover:hover)]:opacity-100',
   );
 
 /**
