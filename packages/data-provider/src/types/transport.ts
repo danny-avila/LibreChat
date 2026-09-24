@@ -21,6 +21,7 @@ import type { TMessage, TPayload, TConversation } from '../types';
 import type { StreamContentData } from './content';
 import type { TAttachment } from '../schemas';
 import type { Agents } from './agents';
+import type { TFile } from './files';
 
 /**
  * Wire frames: the JSON the server writes into the `data:` line of an SSE
@@ -86,14 +87,26 @@ export type ChatTitleFrame = {
   };
 };
 
-/** `{ event, data }` for the agent graph's step events, dispatched to the step handler. */
+/** The status line `on_agent_update` carries when sequential outputs are hidden. */
+export type ChatAgentStatusUpdate = {
+  runId?: string;
+  message: string;
+};
+
+/** A run artifact publishes a plain file; tool outputs add message metadata. */
+export type ChatAttachment = TAttachment | TFile;
+
+/**
+ * `{ event, data }` for the agent graph's step events, dispatched to the step
+ * handler. Wider than the handler's own types where emitters send more shapes.
+ */
 export type ChatStepFrame =
   | { event: StepEvents.ON_RUN_STEP; data: Agents.RunStep }
-  | { event: StepEvents.ON_AGENT_UPDATE; data: Agents.AgentUpdate }
+  | { event: StepEvents.ON_AGENT_UPDATE; data: Agents.AgentUpdate | ChatAgentStatusUpdate }
   | { event: StepEvents.ON_MESSAGE_DELTA; data: Agents.MessageDeltaEvent }
   | { event: StepEvents.ON_REASONING_DELTA; data: Agents.ReasoningDeltaEvent }
   | { event: StepEvents.ON_RUN_STEP_DELTA; data: Agents.RunStepDeltaEvent }
-  | { event: StepEvents.ON_RUN_STEP_COMPLETED; data: { result: Agents.ToolEndEvent } }
+  | { event: StepEvents.ON_RUN_STEP_COMPLETED; data: { result?: Agents.ToolEndEvent | null } }
   | { event: StepEvents.ON_RUN_STEP_CLOSED; data: Agents.RunStepClosedEvent }
   | { event: StepEvents.ON_SUMMARIZE_START; data: Agents.SummarizeStartEvent }
   | { event: StepEvents.ON_SUMMARIZE_DELTA; data: Agents.SummarizeDeltaEvent }
@@ -106,7 +119,7 @@ export type ChatStepFrame =
 export type ChatEventFrame =
   | ChatTitleFrame
   | ChatStepFrame
-  | { event: 'attachment'; data: TAttachment }
+  | { event: 'attachment'; data: ChatAttachment }
   | { event: UsageEvents.ON_CONTEXT_USAGE; data: TContextUsageEvent }
   | { event: UsageEvents.ON_TOKEN_USAGE; data: TTokenUsageEvent }
   | { event: ApprovalEvents.ON_PENDING_ACTION; data: Agents.PendingAction }
@@ -157,7 +170,8 @@ export type ChatErrorData =
   | {
       text?: string;
       message?: string;
-      error?: string | { message?: string };
+      /** `true` from `sendError` once headers are sent, else the reason. */
+      error?: boolean | string | { message?: string };
       generationProtocolVersion?: number;
       conversation?: Partial<TConversation>;
       requestMessage?: TMessage;
@@ -184,7 +198,7 @@ export type ChatEvent =
    * AI SDK: `file` / `source-url`. Arrives as a named SSE `attachment` event
    * on standard streams and as `{ event: 'attachment' }` on resumable ones.
    */
-  | { type: 'attachment'; data: TAttachment }
+  | { type: 'attachment'; data: ChatAttachment }
   /** AI SDK: `message-metadata`. */
   | { type: 'context_usage'; data: TContextUsageEvent }
   /** AI SDK: `message-metadata`. */
