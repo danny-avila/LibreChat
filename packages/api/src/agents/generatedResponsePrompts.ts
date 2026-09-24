@@ -21,10 +21,15 @@ export async function resolveResponseAppInstructions(
   const appPrompt = RESPONSE_PROMPTS_BY_APP_ID[String(appId ?? '').trim() as keyof typeof RESPONSE_PROMPTS_BY_APP_ID];
   if (!appPrompt) return '';
   const bucket = process.env.PROMPTS_BUCKET?.trim() || 'juristai-system-prompts';
-  const response = await responsePromptS3.send(new GetObjectCommand({ Bucket: bucket, Key: appPrompt.key }));
-  const instructions = await response.Body?.transformToString('utf-8');
-  if (!instructions?.trim()) throw new Error(`Empty Responses prompt in s3://${bucket}/${appPrompt.key}`);
-  logger.info('responses_prompt_loaded', { appId: String(appId), promptId: appPrompt.id, key: appPrompt.key, versionId: response.VersionId });
-  return instructions.trim();
+  try {
+    const response = await responsePromptS3.send(new GetObjectCommand({ Bucket: bucket, Key: appPrompt.key }));
+    const instructions = await response.Body?.transformToString('utf-8');
+    if (!instructions?.trim()) throw new Error(`Empty Responses prompt in s3://${bucket}/${appPrompt.key}`);
+    logger.info('responses_prompt_loaded', { appId: String(appId), promptId: appPrompt.id, key: appPrompt.key, versionId: response.VersionId });
+    return instructions.trim();
+  } catch (error) {
+    logger.error('responses_prompt_unavailable', { appId: String(appId), promptId: appPrompt.id, key: appPrompt.key, error: (error as Error)?.message });
+    throw error;
+  }
 }
 // END GENERATED RESPONSE PROMPTS

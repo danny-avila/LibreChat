@@ -6,7 +6,7 @@ jest.mock('@aws-sdk/client-s3', () => ({
 }));
 
 jest.mock('@librechat/data-schemas', () => ({
-  logger: { info: jest.fn() },
+  logger: { info: jest.fn(), error: jest.fn() },
 }));
 
 import { logger } from '@librechat/data-schemas';
@@ -16,6 +16,7 @@ describe('resolveResponseAppInstructions', () => {
   beforeEach(() => {
     mockSend.mockReset();
     jest.mocked(logger.info).mockReset();
+    jest.mocked(logger.error).mockReset();
   });
 
   test('reads the current S3 object and logs the exact object version', async () => {
@@ -39,5 +40,16 @@ describe('resolveResponseAppInstructions', () => {
       key: 'prompts/responses/in-house-account-manager.txt',
       versionId: 's3-version-123',
     });
+  });
+
+  test('an unreadable mapped app prompt fails closed so the request boundary can return 503', async () => {
+    const accessDenied = Object.assign(new Error('Access Denied'), { name: 'AccessDenied' });
+    mockSend.mockRejectedValue(accessDenied);
+
+    await expect(resolveResponseAppInstructions(2)).rejects.toBe(accessDenied);
+    expect(logger.error).toHaveBeenCalledWith(
+      'responses_prompt_unavailable',
+      expect.objectContaining({ appId: '2', error: 'Access Denied' }),
+    );
   });
 });

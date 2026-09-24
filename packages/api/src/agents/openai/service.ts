@@ -399,10 +399,9 @@ export async function createAgentChatCompletion(
     return;
   }
 
-  // App prompts are shipped inside this service package from the repository's
-  // generated prompt copy. Resolve them at the actual chat-completion entry
-  // point so caller-provided instructions cannot replace the selected app
-  // prompt. Keep the stored agent instructions after the app-level prompt.
+  // Resolve the current S3-backed repository prompt at the request boundary
+  // so caller-provided instructions cannot replace the selected app prompt.
+  // Keep the stored agent instructions after the app-level prompt.
   const requestBody = req.body as Record<string, unknown>;
   const additionalModelRequestFields = requestBody.additionalModelRequestFields as
     | Record<string, unknown>
