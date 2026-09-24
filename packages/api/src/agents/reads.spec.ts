@@ -72,6 +72,16 @@ function makeDeps(overrides: Partial<AgentManagementReadDeps> = {}): AgentManage
 }
 
 describe('Agent list access', () => {
+  it('rejects invalid permission masks before checking the manager bypass', async () => {
+    const deps = makeDeps({ hasCapability: jest.fn().mockResolvedValue(true) });
+
+    await expect(getAgentListAccess(user, 0 as PermissionBits, deps)).rejects.toThrow(
+      'requiredPermissions must be a positive number',
+    );
+    expect(deps.hasCapability).not.toHaveBeenCalled();
+    expect(deps.findAccessibleResources).not.toHaveBeenCalled();
+  });
+
   it('bypasses both agent ACL lookups for a manager', async () => {
     const deps = makeDeps({ hasCapability: jest.fn().mockResolvedValue(true) });
 

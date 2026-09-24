@@ -9,6 +9,9 @@ export async function getAgentListAccess(
   requiredPermissions: PermissionBits,
   deps: Pick<AgentManagementReadDeps, 'hasCapability' | 'findAccessibleResources'>,
 ): Promise<{ accessibleIds: Types.ObjectId[] | null; editableIds: Types.ObjectId[] | null }> {
+  if (typeof requiredPermissions !== 'number' || requiredPermissions < 1) {
+    throw new Error('requiredPermissions must be a positive number');
+  }
   if (await hasManageAgentsCapability(user, deps)) {
     return { accessibleIds: null, editableIds: null };
   }
