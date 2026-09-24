@@ -47,6 +47,8 @@ const defaultMCPAppsPolicy = {
   enabled: false,
   legacyHtmlEnabled: true,
   maxAdmissionRequestsPerMinute: 240,
+  maxActiveViews: 3,
+  maxActionPreviewChars: 16384,
   maxPersistedAppBytes: 1048576,
 };
 
