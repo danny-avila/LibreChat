@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
 import {
@@ -14,6 +14,7 @@ import { cn, getToolDisplayLabel, logger, openInNewTab } from '~/utils';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { resolveToolCallPhase } from '~/utils/toolCallPhase';
+import { MCPAppViews } from '~/components/MCPUIResource';
 import { toolPanelSpacingClassName } from './disclosure';
 import { useToolCallIntent } from './Parts/intent';
 import { AttachmentGroup } from './Parts';
@@ -390,7 +391,7 @@ export default function ToolCall({
                 'border-border-light bg-surface-secondary overflow-hidden rounded-lg border',
               )}
             >
-              <ToolCallInfo input={args ?? ''} output={output} attachments={attachments} />
+              <ToolCallInfo input={args ?? ''} output={output} />
             </div>
           )}
         </div>
@@ -418,7 +419,10 @@ export default function ToolCall({
         </div>
       )}
       {!hideAttachments && attachments && attachments.length > 0 && (
-        <AttachmentGroup attachments={attachments} />
+        <>
+          <AttachmentGroup attachments={attachments} />
+          <MCPAppViews attachments={attachments} />
+        </>
       )}
     </>
   );

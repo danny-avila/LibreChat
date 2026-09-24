@@ -32,6 +32,7 @@ const {
   PermissionTypes,
   MCP_USER_INPUT_FIELDS,
   MCPServerUserInputSchema,
+  resolveMCPAppsPolicy,
 } = require('librechat-data-provider');
 const {
   resolveConfigServers,
@@ -136,6 +137,13 @@ const getMCPTools = async (req, res) => {
     }
 
     const mcpConfig = await resolveAllMcpConfigs(userId, req.user);
+    const mcpApps = resolveMCPAppsPolicy(
+      req.config?.mcpSettings?.apps,
+      undefined,
+      req.config?.mcpAppSandbox?.maxPersistedAppBytes,
+      req.config?.mcpAppSandbox?.maxAdmissionRequestsPerMinute,
+      req.config?.mcpAppSandbox?.url,
+    );
     /**
      * A server whose normalized name is claimed by an earlier server produces
      * IDENTICAL model-facing tool keys — selecting its tools would silently
@@ -186,6 +194,7 @@ const getMCPTools = async (req, res) => {
         oboIdentityContext,
         signal: catalogAbortController.signal,
         recoveryPolicy: req.config?.mcpSettings?.catalogRecovery,
+        mcpApps,
       });
     } finally {
       res.off('close', abortCatalogLoad);

@@ -210,6 +210,19 @@ export interface ToolEndCallbackMetadata {
   [key: string]: unknown;
 }
 
+/** Projects the graph-owned agent and step identifiers onto persisted tool attachments. */
+export function getAttachmentOwnership(metadata?: ToolEndCallbackMetadata): {
+  agentId?: string;
+  stepId?: string;
+} {
+  const agentId = metadata?.executingAgentId ?? metadata?.agentId ?? metadata?.agent_id;
+  const stepId = metadata?.stepId;
+  return {
+    ...(typeof agentId === 'string' && agentId.length > 0 ? { agentId } : {}),
+    ...(typeof stepId === 'string' && stepId.length > 0 ? { stepId } : {}),
+  };
+}
+
 export type ToolEndCallback = (
   data: ToolEndCallbackData,
   metadata: ToolEndCallbackMetadata,

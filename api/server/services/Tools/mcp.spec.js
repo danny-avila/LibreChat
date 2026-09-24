@@ -1,5 +1,6 @@
 const { Constants } = require('librechat-data-provider');
 const { logger } = require('@librechat/data-schemas');
+const { STANDARD_MCP_CAPABILITY_PROFILE } = require('@librechat/api');
 
 const mockGetConnection = jest.fn();
 const mockDiscoverServerTools = jest.fn();
@@ -266,6 +267,7 @@ describe('reinitMCPServer — customUserVars gating (issue #10969)', () => {
       tools: [],
       serverConfig: { type: 'streamable-http', url: 'https://thingy.example.com/mcp' },
       publicationGeneration: 'generation-current',
+      capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
     });
   });
 

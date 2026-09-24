@@ -135,6 +135,7 @@ async function saveUserMessage(req, params) {
  * @param {string} [params.instructions] - Optional: from preset for `instructions` field.
  * @param {string} [params.spec] - Optional: Model spec identifier.
  * @param {string} [params.iconURL]
+ * @param {import('librechat-data-provider').TAttachment[]} [params.attachments]
  * Overrides the instructions of the assistant.
  * @param {string} [params.promptPrefix] - Optional: from preset for `additional_instructions` field.
  * @return {Promise<{message: Object|null, conversation: Object|null}>} The persisted assistant
@@ -159,6 +160,7 @@ async function saveAssistantMessage(req, params) {
     /* For messages, use the assistant_id instead of model */
     model: params.assistant_id,
     content: params.content,
+    attachments: params.attachments,
     sender: 'Assistant',
     isCreatedByUser: false,
     text: params.text,

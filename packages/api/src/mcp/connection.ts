@@ -1,6 +1,7 @@
 import { isIP } from 'node:net';
 import { EventEmitter } from 'events';
 import { logger } from '@librechat/data-schemas';
+import { MCP_UI_EXTENSION_ID } from 'librechat-data-provider';
 import { fetch as undiciFetch, Agent, ProxyAgent } from 'undici';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
@@ -21,6 +22,8 @@ import type {
   Dispatcher,
 } from 'undici';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import type { ClientCapabilities } from '@modelcontextprotocol/sdk/types.js';
+import type { MCPClientCapabilityProfile } from './capabilities';
 import type { MCPOAuthTokens } from './oauth/types';
 import type * as t from './types';
 import {
@@ -30,12 +33,15 @@ import {
   MCPTransportAuthenticationError,
   isStandaloneSseConflict,
 } from './errors';
+import { MCP_APPS_CAPABILITY_PROFILE, STANDARD_MCP_CAPABILITY_PROFILE } from './capabilities';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
+import { projectMCPAppRuntimeTarget, type MCPAppRuntimeTarget } from './apps/binding';
 import { reserveMCPToolsChangedRevision } from './toolsChanged';
 import { runOutsideTracing } from '~/utils/tracing';
 import { mediaTypeEssence } from '~/utils/headers';
 import { isAddressAllowed } from '~/auth/domain';
 import { withTimeout } from '~/utils/promise';
+import { RESOURCE_MIME_TYPE } from './apps';
 import { isOAuthServer } from './utils';
 import { mcpConfig } from './mcpConfig';
 
@@ -996,6 +1002,7 @@ interface MCPConnectionParams {
   ephemeralConnection?: boolean;
   /** The owner will replace this connection after a tools/list authentication rejection. */
   directBearerRecoveryEnabled?: boolean;
+  capabilityProfile?: MCPClientCapabilityProfile;
 }
 
 /** Result of an MCP `tools/list` request: one page of tools plus an optional pagination cursor. */
@@ -1021,6 +1028,7 @@ export class MCPConnection extends EventEmitter {
   private connectPromise: Promise<void> | null = null;
   private readonly MAX_RECONNECT_ATTEMPTS = 3;
   public readonly serverName: string;
+  public readonly capabilityProfile: MCPClientCapabilityProfile;
   private shouldStopReconnecting = false;
   private isReconnecting = false;
   private isInitializing = false;
@@ -1070,6 +1078,13 @@ export class MCPConnection extends EventEmitter {
    * Used to detect if connection is stale compared to updated config.
    */
   public readonly createdAt: number;
+
+  /**
+   * Bumped on every tools/list_changed notification. Consumers that cache tool metadata can fold
+   * this into their freshness check to detect tool changes that happen on a live connection, which
+   * createdAt alone (stable until reconnect) cannot.
+   */
+  public toolListVersion = 0;
 
   private static circuitBreakers: Map<string, CircuitBreakerState> = new Map();
 
@@ -1164,6 +1179,11 @@ export class MCPConnection extends EventEmitter {
     this.requestHeaders = normalizedHeaders;
   }
 
+  /** Stable routing identity captured by this connection, without live authorization headers. */
+  getMCPAppRuntimeTarget(): MCPAppRuntimeTarget {
+    return projectMCPAppRuntimeTarget(this.options);
+  }
+
   getRequestHeaders(): Record<string, string> | null | undefined {
     return this.requestHeaders;
   }
@@ -1196,6 +1216,7 @@ export class MCPConnection extends EventEmitter {
     super();
     this.options = params.serverConfig;
     this.serverName = params.serverName;
+    this.capabilityProfile = params.capabilityProfile ?? STANDARD_MCP_CAPABILITY_PROFILE;
     this.userId = params.userId;
     this.useSSRFProtection = params.useSSRFProtection === true;
     this.allowedAddresses = params.allowedAddresses ?? null;
@@ -1210,14 +1231,16 @@ export class MCPConnection extends EventEmitter {
     if (params.oauthTokens) {
       this.oauthTokens = params.oauthTokens;
     }
+    const capabilities: ClientCapabilities =
+      this.capabilityProfile === MCP_APPS_CAPABILITY_PROFILE
+        ? { extensions: { [MCP_UI_EXTENSION_ID]: { mimeTypes: [RESOURCE_MIME_TYPE] } } }
+        : {};
     this.client = new Client(
       {
         name: '@librechat/api-client',
         version: '1.2.3',
       },
-      {
-        capabilities: {},
-      },
+      { capabilities },
     );
 
     this.setupEventListeners();
@@ -1845,6 +1868,9 @@ export class MCPConnection extends EventEmitter {
   private subscribeToToolListChanges(): void {
     this.client.setNotificationHandler(ToolListChangedNotificationSchema, async () => {
       logger.debug(`${this.getLogPrefix()} Server reported a changed tool list`);
+      // Stamps the MCP Apps per-tool metadata caches (resourceUri, visibility) as stale; createdAt
+      // alone cannot see a list change on a still-live connection.
+      this.toolListVersion += 1;
       await this.refreshToolList();
     });
   }
@@ -2609,6 +2635,7 @@ export class MCPConnection extends EventEmitter {
           serverName: this.serverName,
           serverConfig: this.options,
           userId: this.userId,
+          capabilityProfile: this.capabilityProfile,
         }),
       };
     } catch (error) {

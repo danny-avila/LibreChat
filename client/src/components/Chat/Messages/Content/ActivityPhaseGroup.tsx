@@ -28,6 +28,7 @@ import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { getActivityLabelText } from '~/utils/activityLabels';
 import { getOutcomeStatus, summarizeSpan } from './outcome';
 import { ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from './rows';
+import { MCPAppViews } from '~/components/MCPUIResource';
 import { sandboxStartingByToolCallId } from '~/store';
 import { StackedToolIcons } from './ToolOutput';
 import { getSourceDomains } from './sources';
@@ -424,7 +425,7 @@ function LivePhaseHeader({
         {combo !== '' && (
           <span
             id={comboId}
-            className="shrink-0 text-xs font-normal text-text-secondary"
+            className="text-text-secondary shrink-0 text-xs font-normal"
             data-testid="live-phase-combo"
           >
             {combo}
@@ -439,7 +440,7 @@ function LivePhaseHeader({
         >
           {/** The verdict is the span's, not the newest line's, so it keeps its
            *  own separator from whatever the row happens to be saying. */}
-          <span className="mr-1 text-text-secondary">·</span>
+          <span className="text-text-secondary mr-1">·</span>
           <span>{detail}</span>
         </span>
       )}
@@ -623,6 +624,7 @@ export default function ActivityPhaseGroup({
       <>
         <SearchVerticals attachments={attachments} />
         <AttachmentGroup attachments={attachments} />
+        <MCPAppViews attachments={attachments} />
       </>
     ) : null;
   if (!label && !isLive) {

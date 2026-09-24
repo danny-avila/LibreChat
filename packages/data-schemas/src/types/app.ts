@@ -104,6 +104,8 @@ export interface AppConfig {
   mcpConfig?: TCustomConfig['mcpServers'] | null;
   /** MCP settings (domain allowlist, etc.) */
   mcpSettings?: TCustomConfig['mcpSettings'] | null;
+  /** Deployment-owned MCP App sandbox transport limits. */
+  mcpAppSandbox?: TCustomConfig['mcpAppSandbox'];
   /** File configuration */
   fileConfig?: TFileConfig;
   /** Secure image links configuration, enabled unless explicitly disabled */
