@@ -196,7 +196,14 @@ export function finalizeSummaries(
     }
     didFinalize = true;
     if (!event.error && event.summary) {
-      return { ...event.summary, summarizing: false } as SummaryContentPart;
+      /** The completed summary may omit the step metadata the in-flight part was opened with. */
+      const { agentId, groupId } = part as ContentMetadata;
+      return {
+        ...(agentId != null && { agentId }),
+        ...(groupId != null && { groupId }),
+        ...event.summary,
+        summarizing: false,
+      } as SummaryContentPart;
     }
     if (event.error) {
       return { ...part, summarizing: false, failed: true } as SummaryContentPart;

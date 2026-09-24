@@ -1,5 +1,5 @@
 import { StepTypes, ContentTypes, getRunStepDurationMs } from 'librechat-data-provider';
-import type { Agents, TMessage } from 'librechat-data-provider';
+import type { Agents, TMessage, PartMetadata } from 'librechat-data-provider';
 import { getStepMetadata, updateContent } from './content';
 
 /** Mirrors `SKILL_FILE_PREFIX` in `@librechat/api` file-authoring handlers. */
@@ -30,9 +30,22 @@ export function isSkillAuthoringToolCall(toolCall?: Agents.ToolCall): boolean {
   return typeof filePath === 'string' && filePath.startsWith(SKILL_FILE_PREFIX);
 }
 
+/** True when the slot already holds this call settled: an output or full progress. */
+const isSettledToolCall = (message: TMessage, index: number, id: string): boolean => {
+  const part = message.content?.[index];
+  if (!id || part?.type !== ContentTypes.TOOL_CALL) {
+    return false;
+  }
+  const toolCall = part[ContentTypes.TOOL_CALL] as (Agents.ToolCall & PartMetadata) | undefined;
+  return toolCall?.id === id && (toolCall.output != null || toolCall.progress === 1);
+};
+
 /**
  * Opens the tool-call parts a `tool_calls` run step announces, all at the step's slot.
  * AI SDK: `tool-input-start`.
+ *
+ * A step announced again after its call settled, as the resume path does for every known run
+ * step, leaves the settled part alone: reopening it would drop its output and completion fields.
  *
  * Returns the next message and the tool-call id to record for the step, so later argument deltas,
  * which carry only the step id, can be attributed. The last non-empty id wins, matching a step
@@ -54,6 +67,9 @@ export function applyToolCallsStep(
     const id = toolCall.id ?? '';
     if ('id' in toolCall && id) {
       toolCallId = id;
+    }
+    if (isSettledToolCall(next, index, id)) {
+      continue;
     }
     next = updateContent(
       next,
