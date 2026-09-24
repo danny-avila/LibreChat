@@ -52,6 +52,7 @@ mcpAppSandbox:
   maxSourcesPerDirective: 64
   maxSerializedLength: 8192
   maxPersistedAppBytes: 2097152
+  maxPersistedMessageBytes: 8388608
   maxAdmissionRequestsPerMinute: 480
 ```
 
@@ -60,9 +61,25 @@ user overrides cannot change them. Apply a limits change across the server and c
 then reload open chat pages so host link decisions and newly served sandbox responses use the same
 snapshot. Request query parameters contain only the normalized CSP declaration and cannot choose
 their own limits. `maxPersistedAppBytes` defaults to 1 MiB and can be raised to at most 4 MiB. It
-bounds each complete App attachment added to a message, rather than the whole message document. An
-oversized full document falls back to a bound URI-only descriptor; if that descriptor is still too
-large, LibreChat omits the optional App artifact while preserving ordinary tool output.
+bounds each complete App attachment added to a message. `maxPersistedMessageBytes` is a separate,
+deployment-only aggregate target for App-bearing messages. It defaults to 12 MiB and accepts positive
+integers up to 12 MiB, leaving headroom below MongoDB's 16 MiB document ceiling. Roles, groups, users,
+and App requests cannot override it.
+
+All full saves, edits, records, imports, and background settlements check the actual candidate when
+it contains bound Apps, including stored fields omitted from the update. A small message-version
+fence makes competing writers retry from the row they actually read. Small text blocks and partial
+background outputs are not exempt. If the target is exceeded, the largest optional App documents
+become bound URI-only descriptors; if descriptors are too large, only optional Apps are omitted.
+Canonical output and unrelated attachments are never trimmed. Canonical-only data may exceed the
+App target, but must still fit the separate storage ceiling (16 MiB minus 16 KiB envelope reserve).
+Existing messages need no schema migration. As with other message upserts, the existing unique
+`(messageId, user, tenantId)` index must be present; the MongoDB regressions create that index too.
+
+Roll out this change to all message writers together before relying on the aggregate bound. An older
+replica does not participate in the version/admission contract and can still write an oversized
+snapshot; mixed-version writes are not protected by this change. Canary's normal authenticated
+same-version deployment remains the supported path.
 
 `maxAdmissionRequestsPerMinute` defaults to 240 and is a shared per-user ceiling across every App
 validation, resource, and tool-call route. LibreChat applies it before principal-scoped configuration

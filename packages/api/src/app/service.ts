@@ -157,6 +157,27 @@ function overrideCacheKey(role?: string, userId?: string, tenantId?: string): st
   return `_OVERRIDE_:${tenant}:${BASE_CONFIG_PRINCIPAL_ID}`;
 }
 
+/**
+ * Per-host late binding for method adapters constructed before the config service. The service
+ * installs its reader during composition; no module-global registry or cached budget is involved.
+ */
+export function createMessageBudgetReader(): {
+  initialize: (reader: (options?: GetAppConfigOptions) => Promise<AppConfig>) => void;
+  getBudget: () => Promise<number | undefined>;
+} {
+  let readConfig: ((options?: GetAppConfigOptions) => Promise<AppConfig>) | undefined;
+  return {
+    initialize(reader) {
+      readConfig = reader;
+    },
+    async getBudget() {
+      if (!readConfig) throw new Error('Message App budget reader has not been initialized');
+      const config = await readConfig({ baseOnly: true });
+      return config.mcpAppSandbox?.maxPersistedMessageBytes;
+    },
+  };
+}
+
 // ── Service factory ──────────────────────────────────────────────────
 
 export function createAppConfigService(deps: AppConfigServiceDeps): {
