@@ -68,6 +68,8 @@ function sanitizeImportedMessage(message) {
   /** Server-private run state and trace sampling records never come from an import. */
   const importable = withoutTraceRefs({ ...message });
   delete importable.contextMeta;
+  delete importable.privateText;
+  delete importable.privacyRevision;
   return {
     ...importable,
     isUserSubmitted: true,

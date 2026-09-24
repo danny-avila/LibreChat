@@ -280,12 +280,14 @@ function buildMessageSaveUpdate(
   options: {
     stampModelOutputOnInsert: boolean;
     unsetContextMeta: boolean;
+    unsetPrivateText?: boolean;
     retentionOnInsert?: { expiredAt: Date; isTemporary: false };
   },
 ): UpdateQuery<IMessage> {
   if (
     !options.stampModelOutputOnInsert &&
     !options.unsetContextMeta &&
+    !options.unsetPrivateText &&
     options.retentionOnInsert == null
   ) {
     return update;
@@ -298,7 +300,12 @@ function buildMessageSaveUpdate(
         ...options.retentionOnInsert,
       },
     }),
-    ...(options.unsetContextMeta && { $unset: { contextMeta: 1 } }),
+    ...((options.unsetContextMeta || options.unsetPrivateText) && {
+      $unset: {
+        ...(options.unsetContextMeta && { contextMeta: 1 }),
+        ...(options.unsetPrivateText && { privateText: 1, privacyRevision: 1 }),
+      },
+    }),
   };
 }
 
@@ -312,6 +319,7 @@ async function findOneAndMergeMessageProvenance(
     upsert: boolean;
     stampModelOutputOnInsert?: boolean;
     unsetContextMeta?: boolean;
+    unsetPrivateText?: boolean;
     retentionOnInsert?: { expiredAt: Date; isTemporary: false };
   },
 ) {
@@ -357,7 +365,12 @@ async function findOneAndMergeMessageProvenance(
           $set: { ...safeUpdate, ...provenance },
           ...(current == null &&
             options.retentionOnInsert != null && { $setOnInsert: options.retentionOnInsert }),
-          ...(options.unsetContextMeta && { $unset: { contextMeta: 1 } }),
+          ...((options.unsetContextMeta || options.unsetPrivateText) && {
+            $unset: {
+              ...(options.unsetContextMeta && { contextMeta: 1 }),
+              ...(options.unsetPrivateText && { privateText: 1, privacyRevision: 1 }),
+            },
+          }),
         },
         { upsert: options.upsert && current == null, new: true },
       );
@@ -1019,13 +1032,24 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
             update,
             userSubmittedPaths,
             userSubmittedMessageFieldPaths,
-            { upsert: true, stampModelOutputOnInsert, unsetContextMeta, retentionOnInsert },
+            {
+              upsert: true,
+              stampModelOutputOnInsert,
+              unsetContextMeta,
+              unsetPrivateText:
+                metadata?.privateText == null &&
+                Object.prototype.hasOwnProperty.call(update, 'text'),
+              retentionOnInsert,
+            },
           )
         : await Message.findOneAndUpdate(
             { messageId: params.messageId, user: userId },
             buildMessageSaveUpdate(update, {
               stampModelOutputOnInsert,
               unsetContextMeta,
+              unsetPrivateText:
+                metadata?.privateText == null &&
+                Object.prototype.hasOwnProperty.call(update, 'text'),
               retentionOnInsert,
             }),
             { upsert: true, new: true },
@@ -1114,6 +1138,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       const Message = mongoose.models.Message as Model<IMessage>;
       const bulkOps = messages.map((message) => {
         const normalizedMessage = { ...message };
+        delete normalizedMessage.privateText;
+        delete normalizedMessage.privacyRevision;
         const provenance = capNormalizedProvenance(
           normalizeUserSubmittedPaths(message.userSubmittedPaths),
           normalizeUserSubmittedMessageFieldPaths(message.userSubmittedMessageFieldPaths),
@@ -1135,7 +1161,10 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         return {
           updateOne: {
             filter: { messageId: message.messageId },
-            update: normalizedMessage,
+            update: {
+              $set: normalizedMessage,
+              $unset: { privateText: 1, privacyRevision: 1 },
+            },
             timestamps: !overrideTimestamp,
             upsert: true,
           },
@@ -1178,6 +1207,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         userSubmittedMessageFieldPaths: _userSubmittedMessageFieldPaths,
         ...safeRest
       } = rest;
+      delete safeRest.privateText;
+      delete safeRest.privacyRevision;
       const message = {
         user,
         endpoint,
@@ -1193,11 +1224,18 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         }),
         ...(provenance.promoteWholeMessage && { isUserSubmitted: true }),
       };
-      const update =
+      const unsetPrivateText = Object.prototype.hasOwnProperty.call(safeRest, 'text');
+      const stampModelOutputOnInsert =
         rest.isCreatedByUser === false &&
         rest.isUserSubmitted === undefined &&
-        !provenance.promoteWholeMessage
-          ? { $set: message, $setOnInsert: { isUserSubmitted: false } }
+        !provenance.promoteWholeMessage;
+      const update =
+        stampModelOutputOnInsert || unsetPrivateText
+          ? {
+              $set: message,
+              ...(stampModelOutputOnInsert && { $setOnInsert: { isUserSubmitted: false } }),
+              ...(unsetPrivateText && { $unset: { privateText: 1, privacyRevision: 1 } }),
+            }
           : message;
 
       return await Message.findOneAndUpdate({ user, messageId }, update, {
@@ -1219,7 +1257,10 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
   ) {
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
-      await Message.updateOne({ messageId, user: userId }, { text });
+      await Message.updateOne(
+        { messageId, user: userId },
+        { $set: { text }, $unset: { privateText: 1, privacyRevision: 1 } },
+      );
     } catch (err) {
       logger.error('Error updating message text:', err);
       throw err;
@@ -2011,9 +2052,18 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
               update,
               submittedPaths,
               submittedMessageFields,
-              { upsert: false },
+              {
+                upsert: false,
+                unsetPrivateText: Object.prototype.hasOwnProperty.call(update, 'text'),
+              },
             )
-          : await Message.findOneAndUpdate({ messageId, user: userId }, update, { new: true });
+          : await Message.findOneAndUpdate(
+              { messageId, user: userId },
+              Object.prototype.hasOwnProperty.call(update, 'text')
+                ? { $set: update, $unset: { privateText: 1, privacyRevision: 1 } }
+                : update,
+              { new: true },
+            );
 
       if (!updatedMessage) {
         throw new Error('Message not found or user not authorized.');

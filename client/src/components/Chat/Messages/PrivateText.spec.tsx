@@ -10,6 +10,13 @@ jest.mock('~/hooks/AuthContext', () => ({
 }));
 jest.mock('~/hooks', () => ({ useLocalize: () => (key: string) => key }));
 jest.mock('librechat-data-provider', () => ({ dataService: { getOwnerMessageTexts: jest.fn() } }));
+jest.mock('./Content/MessageContent', () => ({
+  DisplayMessage: ({ text, message }: { text: string; message: TMessage }) => (
+    <div data-testid="standard-user-renderer" data-canonical={message.text} dir="auto">
+      {text}
+    </div>
+  ),
+}));
 
 const canonical = Object.freeze({
   messageId: 'message',
@@ -28,13 +35,15 @@ const original = {
 function View({
   conversationId = 'conversation',
   messages = [canonical],
+  displayIndex = 0,
 }: {
   conversationId?: string;
   messages?: TMessage[];
+  displayIndex?: number;
 }) {
   return (
     <OwnerTextProvider messages={messages} conversationId={conversationId} isSubmitting={false}>
-      <PrivateText message={messages[0]} />
+      <PrivateText message={messages[displayIndex]} />
       <pre data-testid="canonical">{JSON.stringify(messages)}</pre>
     </OwnerTextProvider>
   );
@@ -50,6 +59,10 @@ it('renders originals without mutating canonical model/export input, and reloads
   const first = render(<View />);
   expect(await screen.findByText('alice@example.com')).toBeInTheDocument();
   expect(screen.getByTestId('canonical')).not.toHaveTextContent('alice@example.com');
+  expect(screen.getByTestId('standard-user-renderer')).toHaveAttribute(
+    'data-canonical',
+    canonical.text,
+  );
   expect(canonical.text).toBe('[EMAIL_1_turn]');
   expect(screen.getByRole('status')).toHaveTextContent('com_ui_private_text_hidden');
   first.unmount();
@@ -130,6 +143,35 @@ it('batches selected private rows and never loads ordinary messages', async () =
   await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
   expect(load.mock.calls.map(([, ids]) => ids.length)).toEqual([50, 1]);
   expect(load.mock.calls.flatMap(([, ids]) => ids)).not.toContain('plain');
+});
+
+it('loads batches concurrently, publishes completed batches, and only fetches new revisions', async () => {
+  let finishFirst!: (value: { messages: (typeof original)[] }) => void;
+  load.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finishFirst = resolve;
+      }),
+  );
+  load.mockResolvedValue({ messages: [{ ...original, messageId: 'message-9' }] });
+  const messages: TMessage[] = Array.from({ length: 51 }, (_, index) => ({
+    ...canonical,
+    messageId: `message-${index}`,
+  }));
+  const view = render(<View messages={messages} displayIndex={9} />);
+  await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+  expect(await screen.findByText(original.text)).toBeInTheDocument();
+  await act(async () => {
+    finishFirst({
+      messages: load.mock.calls[0][1].map((id: string) => ({ ...original, messageId: id })),
+    });
+  });
+  view.rerender(
+    <View messages={[...messages, { ...canonical, messageId: 'message-51' }]} displayIndex={9} />,
+  );
+  await waitFor(() => expect(load).toHaveBeenCalledTimes(3));
+  expect(load.mock.calls[2][1]).toEqual(['message-51']);
+  expect(screen.getByText(original.text)).toBeInTheDocument();
 });
 
 it('invalidates an already rendered original when the canonical message changes', async () => {

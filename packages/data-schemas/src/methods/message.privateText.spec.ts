@@ -134,6 +134,25 @@ it('does not accept sidecar writes from message parameters or generic edits', as
   });
 });
 
+it('invalidates an encrypted original when an untyped canonical edit sets text to null', async () => {
+  await tenant('tenant-a', async () => {
+    const conversationId = uuid();
+    const messageId = uuid();
+    await methods.saveMessage(
+      { userId: 'owner' },
+      { conversationId, messageId, text: '[EMAIL_1]', isCreatedByUser: true },
+      { privateText: { envelope: 'v1:owner', revision: 'original' } },
+    );
+    await methods.updateMessage('owner', { messageId, text: null as unknown as string });
+    const stored = await mongoose.models.Message.findOne({ messageId })
+      .select('+privateText')
+      .lean();
+    expect(stored).toMatchObject({ text: null });
+    expect(stored).not.toHaveProperty('privateText');
+    expect(stored).not.toHaveProperty('privacyRevision');
+  });
+});
+
 it('does not return expired originals even before the TTL sweeper runs', async () => {
   await tenant('tenant-a', async () => {
     const messageId = uuid();
@@ -148,6 +167,106 @@ it('does not return expired originals even before the TTL sweeper runs', async (
       },
       { privateText: { envelope: 'v1:ciphertext', revision: 'turn' } },
     );
+    expect(
+      await methods.getPrivateMessageTexts({
+        userId: 'owner',
+        tenantId: 'tenant-a',
+        conversationId,
+        messageIds: [messageId],
+      }),
+    ).toEqual([]);
+  });
+});
+
+it('strips private fields from bulk copies, including overwrites of protected rows', async () => {
+  await tenant('tenant-a', async () => {
+    const conversationId = uuid();
+    const messageId = uuid();
+    await methods.saveMessage(
+      { userId: 'owner' },
+      { conversationId, messageId, text: '[EMAIL_1]', isCreatedByUser: true },
+      { privateText: { envelope: 'v1:owner', revision: 'original' } },
+    );
+    await methods.bulkSaveMessages([
+      {
+        user: 'owner',
+        conversationId,
+        messageId,
+        text: 'clean copied',
+        isCreatedByUser: true,
+        privateText: 'forged',
+        privacyRevision: 'forged',
+      },
+      {
+        user: 'owner',
+        conversationId,
+        messageId: uuid(),
+        text: 'fresh copied',
+        isCreatedByUser: true,
+        privateText: 'forged',
+        privacyRevision: 'forged',
+      },
+    ]);
+    const rows = await mongoose.models.Message.find({ conversationId })
+      .select('+privateText')
+      .lean();
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row).not.toHaveProperty('privateText');
+      expect(row).not.toHaveProperty('privacyRevision');
+    }
+  });
+});
+
+it.each([
+  'updateMessage',
+  'updateMessageWithProvenance',
+  'updateMessageText',
+  'saveMessage',
+  'recordMessage',
+])('removes stored private text atomically when %s rewrites text', async (method) => {
+  await tenant('tenant-a', async () => {
+    const conversationId = uuid();
+    const messageId = uuid();
+    await methods.saveMessage(
+      { userId: 'owner' },
+      { conversationId, messageId, text: '[EMAIL_1]', isCreatedByUser: true },
+      { privateText: { envelope: 'v1:owner', revision: 'original' } },
+    );
+    if (method === 'updateMessage' || method === 'updateMessageWithProvenance') {
+      const updated = await methods.updateMessage('owner', {
+        messageId,
+        text: 'clean edited',
+        ...(method === 'updateMessageWithProvenance' && { userSubmittedPaths: ['/text'] }),
+      });
+      expect(updated).not.toHaveProperty('privacyRevision');
+    } else if (method === 'updateMessageText') {
+      await methods.updateMessageText('owner', { messageId, text: 'clean edited' });
+    } else if (method === 'recordMessage') {
+      await methods.recordMessage({
+        user: 'owner',
+        conversationId,
+        messageId,
+        text: 'clean edited',
+        isCreatedByUser: true,
+      });
+    } else {
+      await methods.saveMessage(
+        { userId: 'owner' },
+        {
+          conversationId,
+          messageId,
+          text: 'clean edited',
+          isCreatedByUser: true,
+        },
+      );
+    }
+    const stored = await mongoose.models.Message.findOne({ conversationId, messageId })
+      .select('+privateText')
+      .lean();
+    expect(stored).toMatchObject({ text: 'clean edited' });
+    expect(stored).not.toHaveProperty('privateText');
+    expect(stored).not.toHaveProperty('privacyRevision');
     expect(
       await methods.getPrivateMessageTexts({
         userId: 'owner',

@@ -45,7 +45,12 @@ test('owner sees original after reload while provider, sharing, and canonical re
     await expect(
       messagesView(page).getByText('E2E private model input verified', { exact: true }),
     ).toBeVisible();
-    await expect(messagesView(page).getByText(original, { exact: true })).toBeVisible();
+    const ownerText = messagesView(page).getByText(original, { exact: true });
+    await expect(ownerText).toBeVisible();
+    const standardContainer = ownerText.locator(
+      'xpath=ancestor::div[contains(@class,"text-message")][1]',
+    );
+    await expect(standardContainer).toHaveAttribute('dir', 'auto');
     await expect(
       messagesView(page).getByText('Private details hidden from the model', { exact: true }),
     ).toBeVisible();
@@ -74,6 +79,9 @@ test('owner sees original after reload while provider, sharing, and canonical re
 
     await page.reload();
     await expect(messagesView(page).getByText(original, { exact: true })).toBeVisible();
+    await expect(
+      ownerText.locator('xpath=ancestor::div[contains(@class,"text-message")][1]'),
+    ).toHaveAttribute('dir', 'auto');
     for (const theme of ['light', 'dark']) {
       await page.evaluate(
         (dark) => document.documentElement.classList.toggle('dark', dark),

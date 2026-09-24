@@ -162,6 +162,7 @@ const EditMessage = ({
       );
       if (!isInMessages) {
         message.text = data.text;
+        message.privacyRevision = undefined;
       } else {
         setMessages(
           messages.map((msg) =>
@@ -169,6 +170,7 @@ const EditMessage = ({
               ? {
                   ...msg,
                   text: data.text,
+                  privacyRevision: undefined,
                 }
               : msg,
           ),

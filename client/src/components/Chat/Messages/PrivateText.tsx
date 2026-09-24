@@ -1,9 +1,21 @@
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  lazy,
+  Suspense,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { dataService } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
+const DisplayMessage = lazy(async () => ({
+  default: (await import('./Content/MessageContent')).DisplayMessage,
+}));
 
 interface Original {
   canonicalText: string;
@@ -32,12 +44,7 @@ export function OwnerTextProvider(props: OwnerTextProviderProps) {
   return <ActiveOwnerTextProvider {...props} />;
 }
 
-function ActiveOwnerTextProvider({
-  messages,
-  conversationId,
-  isSubmitting,
-  children,
-}: OwnerTextProviderProps) {
+function ActiveOwnerTextProvider({ messages, conversationId, children }: OwnerTextProviderProps) {
   const { user } = useAuthContext();
   const selection = useMemo(
     () =>
@@ -51,57 +58,85 @@ function ActiveOwnerTextProvider({
   );
   const scope = JSON.stringify([user?.id, user?.tenantId, conversationId, selection]);
   const [state, setState] = useState<OwnerTextState>(empty);
+  const cached = useRef<{ scope: string; messages: Map<string, Original> }>({
+    scope: '',
+    messages: new Map(),
+  });
   useEffect(() => {
     let cancelled = false;
     const selected = JSON.parse(selection) as Array<[string, string, string]>;
     if (!user?.id || !conversationId || selected.length === 0) {
+      cached.current = { scope: '', messages: new Map() };
       setState(empty);
       return;
     }
-    setState({ scope, messages: new Map(), loading: true });
+    const ownerScope = JSON.stringify([user.id, user.tenantId, conversationId]);
+    if (cached.current.scope !== ownerScope) {
+      cached.current = { scope: ownerScope, messages: new Map() };
+    }
+    const originals = new Map<string, Original>();
+    const pending: Array<[string, string, string]> = [];
+    for (const [id, revision, text] of selected) {
+      const prior = cached.current.messages.get(id);
+      if (prior?.revision === revision && prior.canonicalText === text) {
+        originals.set(id, prior);
+      } else {
+        pending.push([id, revision, text]);
+      }
+    }
+    // Do not retain originals from removed or edited messages.
+    cached.current.messages = originals;
+    setState({ scope, messages: new Map(originals), loading: pending.length > 0 });
+    if (pending.length === 0) {
+      return;
+    }
+    let next = 0;
     const load = async () => {
-      const originals = new Map<string, Original>();
-      try {
-        for (let index = 0; index < selected.length; index += 50) {
-          if (cancelled) {
-            return;
-          }
-          const batch = selected.slice(index, index + 50);
-          const result = await dataService.getOwnerMessageTexts(
-            conversationId,
-            batch.map(([id]) => id),
-          );
-          for (const message of result.messages) {
-            if (
-              batch.some(
-                ([id, revision, text]) =>
-                  id === message.messageId &&
-                  revision === message.revision &&
-                  text === message.canonicalText,
-              )
-            ) {
-              originals.set(message.messageId, {
-                revision: message.revision,
-                text: message.text,
-                canonicalText: message.canonicalText,
-              });
+      const workers = Array.from(
+        { length: Math.min(3, Math.ceil(pending.length / 50)) },
+        async () => {
+          while (next < pending.length) {
+            const start = next;
+            next += 50;
+            const batch = pending.slice(start, start + 50);
+            const expected = new Map(batch.map(([id, revision, text]) => [id, { revision, text }]));
+            try {
+              const result = await dataService.getOwnerMessageTexts(
+                conversationId,
+                batch.map(([id]) => id),
+              );
+              if (cancelled) {
+                return;
+              }
+              for (const message of result.messages) {
+                const match = expected.get(message.messageId);
+                if (match?.revision === message.revision && match.text === message.canonicalText) {
+                  const original = {
+                    revision: message.revision,
+                    text: message.text,
+                    canonicalText: message.canonicalText,
+                  };
+                  originals.set(message.messageId, original);
+                  cached.current.messages.set(message.messageId, original);
+                }
+              }
+              setState({ scope, messages: new Map(originals), loading: true });
+            } catch {
+              // A failed batch does not discard successfully decrypted siblings.
             }
           }
-        }
-        if (!cancelled) {
-          setState({ scope, messages: originals, loading: false });
-        }
-      } catch {
-        if (!cancelled) {
-          setState({ scope, messages: new Map(), loading: false });
-        }
+        },
+      );
+      await Promise.all(workers);
+      if (!cancelled) {
+        setState({ scope, messages: new Map(originals), loading: false });
       }
     };
     void load();
     return () => {
       cancelled = true;
     };
-  }, [scope, selection, conversationId, user?.id, user?.tenantId, isSubmitting]);
+  }, [scope, selection, conversationId, user?.id, user?.tenantId]);
   const visible = state.scope === scope ? state : empty;
   return <OwnerTextContext.Provider value={visible}>{children}</OwnerTextContext.Provider>;
 }
@@ -119,7 +154,9 @@ export function PrivateText({ message }: { message: TMessage }) {
       : undefined;
   return (
     <div>
-      <div className="whitespace-pre-wrap break-words">{text ?? message.text}</div>
+      <Suspense fallback={null}>
+        <DisplayMessage text={text ?? message.text} isCreatedByUser={true} message={message} />
+      </Suspense>
       <p className="mt-1 text-xs text-text-secondary" role="status">
         {localize('com_ui_private_text_hidden')}
         {text == null && (
