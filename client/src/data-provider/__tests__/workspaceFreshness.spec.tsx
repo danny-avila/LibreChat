@@ -1,5 +1,4 @@
 import { createElement } from 'react';
-import { RecoilRoot } from 'recoil';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider, focusManager, useQueries } from '@tanstack/react-query';
 import {
@@ -46,7 +45,7 @@ function setup() {
   });
   client.setQueryData([QueryKeys.endpoints], { [EModelEndpoint.agents]: {} });
   const wrapper = ({ children }: { children: ReactNode }) =>
-    createElement(QueryClientProvider, { client }, createElement(RecoilRoot, null, children));
+    createElement(QueryClientProvider, { client }, children);
   return { client, wrapper };
 }
 
@@ -173,8 +172,9 @@ describe('workspace query lifecycle', () => {
     client.clear();
   });
 
-  it('starts agent discovery when endpoint configuration arrives without a parent rerender', async () => {
+  it('starts agent discovery from cached endpoint configuration without Recoil or a duplicate request', async () => {
     const request = jest.spyOn(dataService, 'listAgents').mockResolvedValue(agentList);
+    const getEndpoints = jest.spyOn(dataService, 'getAIEndpoints');
     const { client, wrapper } = setup();
     client.removeQueries([QueryKeys.endpoints]);
     const { result, unmount } = renderHook(() => useListAgentsQuery(), { wrapper });
@@ -184,6 +184,7 @@ describe('workspace query lifecycle', () => {
     });
     await waitFor(() => expect(result.current.data?.data).toEqual([agent]));
     expect(request).toHaveBeenCalledTimes(1);
+    expect(getEndpoints).not.toHaveBeenCalled();
     unmount();
     client.clear();
   });

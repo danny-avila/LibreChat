@@ -6,7 +6,6 @@ import type {
   UseInfiniteQueryOptions,
 } from '@tanstack/react-query';
 import type t from 'librechat-data-provider';
-import { useGetEndpointsQuery } from '../Endpoints/queries';
 import { retryTransientQuery } from '../retry';
 import { isEphemeralAgent } from '~/common';
 
@@ -76,7 +75,13 @@ export const useListAgentsQuery = <TData = t.AgentListResponse>(
   params: t.AgentListParams = defaultAgentParams,
   config?: UseQueryOptions<t.AgentListResponse, unknown, TData>,
 ): QueryObserverResult<TData> => {
-  const { data: endpointsConfig } = useGetEndpointsQuery({ enabled: false });
+  /** The shell owns fetching endpoints. Observe its query, but do not start a second
+   * request or couple this shared agent hook to the shell's Recoil gate. */
+  const { data: endpointsConfig } = useQuery<t.TEndpointsConfig>(
+    [QueryKeys.endpoints],
+    () => dataService.getAIEndpoints(),
+    { enabled: false },
+  );
 
   const enabled = !!endpointsConfig?.[EModelEndpoint.agents];
   return useQuery<t.AgentListResponse, unknown, TData>(
