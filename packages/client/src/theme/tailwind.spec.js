@@ -215,8 +215,9 @@ describe('application radius and font scales', () => {
     scale.forEach(([candidate, property]) => {
       expect(rule(css, candidate)).toBe(`border-radius: var(${property});`);
     });
-    /** Bare `rounded` has always matched `sm`, and follows it. */
-    expect(rule(css, 'rounded')).toBe('border-radius: var(--theme-radius-sm);');
+    /** Bare `rounded` was a fixed 0.25rem, which `sm`'s `calc(0.5rem - 4px)` only equals at a
+     *  16px root, so it keeps Tailwind's value rather than following `sm`. */
+    expect(rule(css, 'rounded')).toBe('border-radius: 0.25rem;');
     expect(rule(css, 'font-sans')).toBe('font-family: var(--theme-font-family);');
     expect(rule(css, 'font-mono')).toBe('font-family: var(--theme-mono-font-family);');
 

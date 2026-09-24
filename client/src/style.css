@@ -14,10 +14,10 @@
 /* The plain radius and font utilities read theme-owned properties, so a theme definition reshapes
  * the 900-odd `rounded-*`, `font-sans` and `font-mono` call sites without a migration. The
  * defaults in the `html` block reproduce the scale these utilities resolved to before. Bare
- * `rounded` reads `--radius` and has always matched `sm`. App-only: the published preset keeps
- * its own `sm`, which differs from this scale, so consumers' corners do not move. */
+ * `rounded` stays Tailwind's fixed 0.25rem: `sm` keeps its px offset, so the two part at a
+ * non-16px root. App-only: the published preset keeps its own `sm`, which differs from this
+ * scale, so consumers' corners do not move. */
 @theme inline {
-  --radius: var(--theme-radius-sm);
   --radius-sm: var(--theme-radius-sm);
   --radius-md: var(--theme-radius-md);
   --radius-lg: var(--theme-radius-lg);

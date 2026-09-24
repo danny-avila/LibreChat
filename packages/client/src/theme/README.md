@@ -30,11 +30,10 @@ The appearance registry covers shared control shape, surface shape, control heig
 spacing, UI and code typography, surface elevation, fast/normal motion, and the radius scale.
 
 In the LibreChat app the plain Tailwind utilities read theme-owned properties, so a theme reshapes
-existing call sites without a migration: `rounded-sm` through `rounded-3xl` (and bare `rounded`,
-which matches `sm`) read `radiusSm` through `radius3xl` (`--theme-radius-*`), `font-sans` reads
-`fontFamily` (`--theme-font-family`), and `font-mono` reads `monoFontFamily`
-(`--theme-mono-font-family`). The defaults reproduce the scale those utilities had before, so a
-theme that names none of them changes nothing. The mapping lives in the app stylesheet
+existing call sites without a migration: `rounded-sm` through `rounded-3xl` read `radiusSm`
+through `radius3xl` (`--theme-radius-*`), `font-sans` reads `fontFamily` (`--theme-font-family`),
+and `font-mono` reads `monoFontFamily` (`--theme-mono-font-family`). The defaults reproduce the
+scale those utilities had before, so a theme that names none of them changes nothing. The mapping lives in the app stylesheet
 (`client/src/style.css`), not the published `theme.css`, whose preset keeps its own `rounded-sm`.
 
 `themeRGB`, `REACT_APP_THEME_*`, and the existing localStorage keys remain supported through legacy
