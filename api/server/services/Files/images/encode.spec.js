@@ -58,3 +58,36 @@ it('encodes canonical storage keys through the built package and the existing CJ
     },
   ]);
 });
+
+it('preserves MCP identity and actual-byte limits through the built encoder', async () => {
+  encodeAndFormatImages.mockImplementation(
+    jest.requireActual('@librechat/api').encodeAndFormatImages,
+  );
+  const bytes = Buffer.from('uploaded-image-bytes');
+  const file = {
+    source: 'local',
+    file_id: 'mcp-image',
+    filename: 'image.png',
+    filepath: '/images/user/image.png',
+    type: 'image/png',
+    bytes: 0,
+    height: 10,
+    width: 10,
+  };
+  getStrategyFunctions.mockReturnValue({
+    prepareImagePayload: jest.fn().mockResolvedValue([file, bytes.toString('base64')]),
+  });
+  const req = { body: {}, config: {} };
+
+  const result = await encodeAndFormat(req, [file], { mcpImageSizeLimit: bytes.length }, 'mcp');
+  expect(result.image_urls).toEqual([
+    {
+      type: 'image_url',
+      file_id: file.file_id,
+      image_url: { url: `data:image/png;base64,${bytes.toString('base64')}`, detail: 'auto' },
+    },
+  ]);
+  await expect(
+    encodeAndFormat(req, [file], { mcpImageSizeLimit: bytes.length - 1 }, 'mcp'),
+  ).rejects.toThrow('Image validation failed for image.png');
+});

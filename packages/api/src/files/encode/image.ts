@@ -54,6 +54,7 @@ interface ImageResult {
   >;
   image_urls: Array<
     | Agents.MessageContentImageUrl
+    | (Agents.MessageContentImageUrl & Pick<ImageEncodingFile, 'file_id'>)
     | { type: ContentTypes.IMAGE_URL; inlineData: { mimeType: string; data: string } }
     | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
   >;
@@ -87,11 +88,16 @@ export class AttachmentStorageError extends Error {
 export async function encodeAndFormatImages(
   req: ServerRequest,
   files: ImageEncodingFile[] | null | undefined,
-  params: { provider?: string; endpoint?: string; imageDetail?: Agents.ImageDetail },
+  params: {
+    provider?: string;
+    endpoint?: string;
+    imageDetail?: Agents.ImageDetail;
+    mcpImageSizeLimit?: number;
+  },
   { getStrategyFunctions, httpClient }: ImageEncodingDependencies,
   mode?: string,
 ): Promise<ImageResult> {
-  const { provider, endpoint } = params;
+  const { provider, endpoint, mcpImageSizeLimit } = params;
   const effectiveEndpoint = endpoint ?? provider;
   const promises: Array<ImageEntry | Promise<ImageEntry>> = [];
   const encodingMethods: Record<string, ImageStrategy> = {};
@@ -187,6 +193,17 @@ export async function encodeAndFormatImages(
     const isURL = imageContent.startsWith('http');
     if (file.height && file.width && !isURL) {
       const imageBuffer = Buffer.from(imageContent, 'base64');
+      if (
+        mode === VisionModes.mcp &&
+        mcpImageSizeLimit != null &&
+        imageBuffer.length > mcpImageSizeLimit
+      ) {
+        const imageSizeMB = Math.round(imageBuffer.length / (1024 * 1024));
+        const limitMB = Math.round(mcpImageSizeLimit / (1024 * 1024));
+        throw new Error(
+          `Image validation failed for ${file.filename}: Image file size (${imageSizeMB}MB) exceeds the ${limitMB}MB limit`,
+        );
+      }
       const validation = await validateImage(
         imageBuffer,
         imageBuffer.length,
@@ -199,7 +216,13 @@ export async function encodeAndFormatImages(
     }
 
     const url = isURL ? imageContent : `data:${file.type};base64,${imageContent}`;
-    if (mode === VisionModes.agents) {
+    if (mode === VisionModes.mcp) {
+      result.image_urls.push({
+        type: ContentTypes.IMAGE_URL,
+        file_id: file.file_id,
+        image_url: { url, detail },
+      });
+    } else if (mode === VisionModes.agents) {
       result.image_urls.push({ type: ContentTypes.IMAGE_URL, image_url: { url, detail } });
     } else if (effectiveEndpoint === EModelEndpoint.google && mode === VisionModes.generative) {
       result.image_urls.push({
