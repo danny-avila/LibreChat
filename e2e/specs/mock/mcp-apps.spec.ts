@@ -483,11 +483,12 @@ test.describe('MCP Apps full integration', () => {
     expect(
       (await readEvents(page)).filter((event) => event.method === 'tools/call:follow_up'),
     ).toHaveLength(0);
-    await page
-      .locator('[data-mcp-app-view="show_app"]')
-      .first()
-      .getByRole('button', { name: 'Close app' })
-      .click();
+    const appView = page.locator('[data-mcp-app-view="show_app"]').first();
+    await appView.getByRole('button', { name: 'Close app' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(appView.getByRole('button', { name: 'Open app' })).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(appView.getByRole('button', { name: 'Close app' })).toBeFocused();
     await expectConnectedApp(page, label);
     const approvedTool = page.waitForResponse(
       (response) => new URL(response.url()).pathname === '/api/mcp/app-tool-call',

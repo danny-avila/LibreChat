@@ -121,7 +121,7 @@ test('the host Stop app control denies the current action and closes its View', 
   view.unmount();
 });
 
-test('closing or aborting an App clears its pending authority', async () => {
+test('an App-aborted displayed request suspends future prompts until the View is reopened', async () => {
   let approval!: ReturnType<typeof useMCPAppApproval>;
   const view = render(<Harness onReady={(value) => (approval = value)} />);
   const controller = new AbortController();
@@ -129,13 +129,38 @@ test('closing or aborting an App clears its pending authority', async () => {
   act(() => {
     first = approval.request(action, controller.signal);
   });
+  expect(screen.getByRole('alertdialog')).toBeInTheDocument();
   act(() => controller.abort());
   await expect(first).resolves.toBe(false);
   expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-  let second!: Promise<boolean>;
-  act(() => {
-    second = approval.request(action, new AbortController().signal);
-  });
+  for (let i = 0; i < 100; i++) {
+    await expect(approval.request(action, new AbortController().signal)).resolves.toBe(false);
+  }
+  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
   view.unmount();
-  await expect(second).resolves.toBe(false);
+
+  let reopened!: ReturnType<typeof useMCPAppApproval>;
+  const next = render(<Harness onReady={(value) => (reopened = value)} />);
+  let fresh!: Promise<boolean>;
+  act(() => {
+    fresh = reopened.request(action, new AbortController().signal);
+  });
+  expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+  next.unmount();
+  await expect(fresh).resolves.toBe(false);
+});
+
+test('an already aborted request does not suspend a fresh View', async () => {
+  let approval!: ReturnType<typeof useMCPAppApproval>;
+  const view = render(<Harness onReady={(value) => (approval = value)} />);
+  const aborted = new AbortController();
+  aborted.abort();
+  await expect(approval.request(action, aborted.signal)).resolves.toBe(false);
+  let pending!: Promise<boolean>;
+  act(() => {
+    pending = approval.request(action, new AbortController().signal);
+  });
+  expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+  view.unmount();
+  await expect(pending).resolves.toBe(false);
 });

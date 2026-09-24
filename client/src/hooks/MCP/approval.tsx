@@ -9,6 +9,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@librechat/client';
+import type { ComponentProps } from 'react';
 import { useLocalize } from '~/hooks';
 
 export type MCPAppAction =
@@ -35,7 +36,12 @@ export function useMCPAppApproval() {
         if (notify) setPending(null);
         resolve(allowed && !signal.aborted);
       };
-      const abort = () => settle(false);
+      // An App can abort its own SDK request while the host dialog is visible. Treat that
+      // just like a denial, rather than letting it reopen the dialog in a tight loop.
+      const abort = () => {
+        if (pendingRef.current === entry) suspendedRef.current = true;
+        settle(false);
+      };
       const entry: Pending = { action, settle };
       pendingRef.current = entry;
       signal.addEventListener('abort', abort, { once: true });
@@ -71,11 +77,13 @@ export function MCPAppApproval({
   approve,
   cancel,
   close,
+  onCloseAutoFocus,
 }: {
   action: MCPAppAction | null;
   approve: () => void;
   cancel: () => void;
   close?: () => void;
+  onCloseAutoFocus?: ComponentProps<typeof AlertDialogContent>['onCloseAutoFocus'];
 }) {
   const localize = useLocalize();
   return (
@@ -85,7 +93,7 @@ export function MCPAppApproval({
         if (!open) cancel();
       }}
     >
-      <AlertDialogContent className="w-11/12 max-w-lg">
+      <AlertDialogContent className="w-11/12 max-w-lg" onCloseAutoFocus={onCloseAutoFocus}>
         <AlertDialogHeader>
           <AlertDialogTitle>
             {localize(

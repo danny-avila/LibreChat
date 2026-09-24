@@ -950,6 +950,21 @@ describe('useAppBridge', () => {
       expect(openSpy).not.toHaveBeenCalled();
     });
 
+    it('refuses an otherwise allowed link after View disposal', async () => {
+      mockFetchHtml.mockResolvedValue({
+        html: '<p>app</p>',
+        csp: { connectDomains: ['https://api.example.com'] },
+      });
+      const { view } = mountBridge(makeResource(), client);
+      await flush();
+      const bridge = latest();
+      view.unmount();
+      await expect(
+        bridge.onopenlink?.({ url: 'https://api.example.com/x' }, requestExtra()),
+      ).resolves.toEqual({ isError: true });
+      expect(openSpy).not.toHaveBeenCalled();
+    });
+
     it('reports cancellation and thrown browser failures', async () => {
       mockFetchHtml.mockResolvedValue({
         html: '<p>app</p>',
@@ -998,10 +1013,52 @@ describe('useAppBridge', () => {
         'demo',
         'binding-demo',
         'ui://detail',
-        extra.signal,
+        expect.any(AbortSignal),
       );
-      expect(mockListResources).toHaveBeenCalledWith('demo', 'binding-demo', 'a', extra.signal);
-      expect(mockListTemplates).toHaveBeenCalledWith('demo', 'binding-demo', 'b', extra.signal);
+      expect(mockListResources).toHaveBeenCalledWith(
+        'demo',
+        'binding-demo',
+        'a',
+        expect.any(AbortSignal),
+      );
+      expect(mockListTemplates).toHaveBeenCalledWith(
+        'demo',
+        'binding-demo',
+        'b',
+        expect.any(AbortSignal),
+      );
+    });
+
+    it('aborts active resource operations and denies new requests after View disposal', async () => {
+      mockReadResource.mockResolvedValue({ contents: [] });
+      mockListResources.mockResolvedValue({ resources: [] });
+      mockListTemplates.mockResolvedValue({ resourceTemplates: [] });
+      const { view } = mountBridge(makeResource(), client);
+      await flush();
+      const bridge = latest();
+      await bridge.onreadresource?.({ uri: 'ui://detail' }, requestExtra());
+      await bridge.onlistresources?.({ cursor: 'a' }, requestExtra());
+      await bridge.onlistresourcetemplates?.({ cursor: 'b' }, requestExtra());
+      const readSignal = mockReadResource.mock.calls[0][3];
+      const resourcesSignal = mockListResources.mock.calls[0][3];
+      const templatesSignal = mockListTemplates.mock.calls[0][3];
+      expect(readSignal?.aborted).toBe(false);
+      view.unmount();
+      expect(readSignal?.aborted).toBe(true);
+      expect(resourcesSignal?.aborted).toBe(true);
+      expect(templatesSignal?.aborted).toBe(true);
+      await expect(
+        bridge.onreadresource?.({ uri: 'ui://detail' }, requestExtra()),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      await expect(bridge.onlistresources?.({ cursor: 'a' }, requestExtra())).rejects.toMatchObject(
+        { name: 'AbortError' },
+      );
+      await expect(
+        bridge.onlistresourcetemplates?.({ cursor: 'b' }, requestExtra()),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      expect(mockReadResource).toHaveBeenCalledTimes(1);
+      expect(mockListResources).toHaveBeenCalledTimes(1);
+      expect(mockListTemplates).toHaveBeenCalledTimes(1);
     });
 
     it('denies App tool and message actions without a host approval control', async () => {

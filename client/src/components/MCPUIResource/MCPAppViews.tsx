@@ -1,4 +1,12 @@
-import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Button } from '@librechat/client';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
 import { useMCPAppsHost, useMCPAppViewAtCapacity } from '~/Providers/MCPAppsPolicyContext';
@@ -29,11 +37,15 @@ function ActiveMCPAppView({
   app,
   userId,
   close,
+  closeButtonRef,
+  openButtonRef,
   ordinal,
 }: {
   app: UIResource;
   userId: string;
-  close: () => void;
+  close: (restoreFocus?: boolean) => void;
+  closeButtonRef: React.RefObject<HTMLButtonElement>;
+  openButtonRef: React.RefObject<HTMLButtonElement>;
   ordinal: number;
 }) {
   const localize = useLocalize();
@@ -56,7 +68,8 @@ function ActiveMCPAppView({
     onLoaded: frame.onLoaded,
     onTeardown: () => {
       approval.cancel();
-      close();
+      // Peer-initiated teardown must not take focus from an unrelated user action.
+      close(false);
     },
     onFailed: frame.onFailed,
   });
@@ -81,7 +94,8 @@ function ActiveMCPAppView({
         type="button"
         variant="outline"
         size="sm"
-        onClick={close}
+        ref={closeButtonRef}
+        onClick={() => close()}
         aria-label={localize('com_ui_mcp_app_close_named', { 0: app.toolName, 1: String(ordinal) })}
       >
         {localize('com_ui_mcp_app_close')}
@@ -94,6 +108,11 @@ function ActiveMCPAppView({
         close={() => {
           approval.cancel();
           close();
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          // The dialog has no persistent trigger. Return focus to the host View control.
+          (openButtonRef.current ?? closeButtonRef.current)?.focus();
         }}
       />
     </>
@@ -116,17 +135,33 @@ const MCPAppView = React.memo(function MCPAppView({
   const viewKey = useId();
   const [opened, setOpened] = useState(false);
   const [atCapacity, setAtCapacity] = useState(false);
+  const openButtonRef = useRef<HTMLButtonElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const focusAfterTransition = useRef<'open' | 'close' | null>(null);
+  useLayoutEffect(() => {
+    const target = focusAfterTransition.current;
+    if (!target) return;
+    const button = target === 'open' ? openButtonRef.current : closeButtonRef.current;
+    if (button) {
+      focusAfterTransition.current = null;
+      button.focus();
+    }
+  }, [opened]);
   useEffect(() => {
     if (unavailable) {
       releaseView(viewKey);
       setOpened(false);
     }
   }, [unavailable, releaseView, viewKey]);
-  const close = useCallback(() => {
-    releaseView(viewKey);
-    setOpened(false);
-    setAtCapacity(false);
-  }, [releaseView, viewKey]);
+  const close = useCallback(
+    (restoreFocus = true) => {
+      focusAfterTransition.current = restoreFocus ? 'open' : null;
+      releaseView(viewKey);
+      setOpened(false);
+      setAtCapacity(false);
+    },
+    [releaseView, viewKey],
+  );
   useEffect(
     () => () => {
       releaseView(viewKey);
@@ -140,6 +175,7 @@ const MCPAppView = React.memo(function MCPAppView({
       setAtCapacity(true);
       return;
     }
+    focusAfterTransition.current = 'close';
     setAtCapacity(false);
     setOpened(true);
   };
@@ -156,7 +192,14 @@ const MCPAppView = React.memo(function MCPAppView({
   return (
     <div className="my-2" data-mcp-app-view={app.toolName}>
       {opened ? (
-        <ActiveMCPAppView app={app} userId={userId} close={close} ordinal={ordinal} />
+        <ActiveMCPAppView
+          app={app}
+          userId={userId}
+          close={close}
+          closeButtonRef={closeButtonRef}
+          openButtonRef={openButtonRef}
+          ordinal={ordinal}
+        />
       ) : (
         <div className="border-border-light bg-surface-secondary text-text-secondary flex min-h-16 items-center gap-3 rounded-lg border px-4 py-3 text-sm">
           <span className="min-w-0 flex-1 truncate">{app.toolName}</span>
@@ -164,6 +207,7 @@ const MCPAppView = React.memo(function MCPAppView({
             type="button"
             variant="outline"
             size="sm"
+            ref={openButtonRef}
             onClick={open}
             aria-label={localize('com_ui_mcp_app_open_named', {
               0: app.toolName,

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tools } from 'librechat-data-provider';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { TAttachment, TStartupConfig, UIResource } from 'librechat-data-provider';
 import type { MCPAppFrameState } from '~/hooks/MCP';
 import { MCPAppsPolicyProvider } from '~/Providers/MCPAppsPolicyContext';
@@ -200,6 +200,35 @@ describe('MCPAppViews', () => {
     expect(view.queryByRole('alert')).not.toBeInTheDocument();
     fireEvent.click(view.getAllByRole('button', { name: /com_ui_mcp_app_open_named/ })[1]);
     expect(view.container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(1);
+  });
+
+  it('returns keyboard focus to the replacement App control without stealing focus on peer teardown', () => {
+    const attachments = [
+      attachment({ toolCallId: 'focus', agentId: 'agent', stepId: 'step' }, [app({})]),
+    ];
+    const view = render(
+      <MCPAppsPolicyProvider startupConfig={enabledConfig} ready userId="user-1">
+        <MCPAppViews attachments={attachments} />
+      </MCPAppsPolicyProvider>,
+    );
+    const open = view.getByRole('button', { name: /com_ui_mcp_app_open_named/ });
+    open.focus();
+    fireEvent.click(open);
+    const close = view.getByRole('button', { name: /com_ui_mcp_app_close_named/ });
+    expect(close).toHaveFocus();
+    fireEvent.click(close);
+    expect(view.getByRole('button', { name: /com_ui_mcp_app_open_named/ })).toHaveFocus();
+
+    fireEvent.click(view.getByRole('button', { name: /com_ui_mcp_app_open_named/ }));
+    const unrelated = document.createElement('button');
+    document.body.appendChild(unrelated);
+    unrelated.focus();
+    act(() => {
+      mockUseAppBridge.mock.calls.at(-1)?.[0].onTeardown?.();
+    });
+    expect(unrelated).toHaveFocus();
+    expect(view.getByRole('button', { name: /com_ui_mcp_app_open_named/ })).toBeInTheDocument();
+    unrelated.remove();
   });
 
   it('does not reserve capacity or mount a bridge for a read-only URI-only App', () => {

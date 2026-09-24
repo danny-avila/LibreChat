@@ -263,9 +263,17 @@ export function useAppBridge({
     };
 
     const interactive = !readOnly;
+    // SDK callbacks may already be queued when a View closes or a peer starts teardown.
+    // Deny new work and propagate View disposal to in-flight authenticated reads/lists.
+    const liveRequestSignal = (signal: AbortSignal): AbortSignal => {
+      if (cancelled || viewAbort.signal.aborted || signal.aborted) {
+        throw new DOMException('MCP App View is closed', 'AbortError');
+      }
+      return AbortSignal.any([signal, viewAbort.signal]);
+    };
 
     bridge.onopenlink = async ({ url }, { signal }) => {
-      if (signal.aborted) {
+      if (signal.aborted || viewAbort.signal.aborted || cancelled) {
         return { isError: true };
       }
       if (!isAllowedAppLink(url, effectiveCspRef.current, cspLimits)) {
@@ -320,13 +328,18 @@ export function useAppBridge({
       };
 
       bridge.onreadresource = async (params, { signal }) =>
-        readMCPResource(serverName, serverBinding, params.uri, signal);
+        readMCPResource(serverName, serverBinding, params.uri, liveRequestSignal(signal));
 
       bridge.onlistresources = async (params, { signal }) =>
-        listMCPResources(serverName, serverBinding, params?.cursor, signal);
+        listMCPResources(serverName, serverBinding, params?.cursor, liveRequestSignal(signal));
 
       bridge.onlistresourcetemplates = async (params, { signal }) =>
-        listMCPResourceTemplates(serverName, serverBinding, params?.cursor, signal);
+        listMCPResourceTemplates(
+          serverName,
+          serverBinding,
+          params?.cursor,
+          liveRequestSignal(signal),
+        );
 
       bridge.onmessage = async ({ content }, { signal }) => {
         const text = (content as MessageContentBlock[])

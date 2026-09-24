@@ -32,16 +32,18 @@ An App attachment displays an inert **Open app** placeholder until the authentic
 activates it. Merely opening or restoring a conversation does not create a sandbox iframe,
 validate a persisted binding, or let an App issue follow-up requests. The default limit is three Apps open
 concurrently across the host view (`maxActiveViews`, range 1–32); close one to open another. Closing an App tears down its
-bridge and cancels pending approval; reopening starts a fresh session and does not restore its
-previous in-View state.
+bridge, cancels pending approval and in-flight authenticated resource operations; reopening starts
+a fresh session and does not restore its previous in-View state. Keyboard focus moves to the new
+Close/Open control after a user-initiated transition, including the in-dialog Stop app control.
 
 Opening an App permits its own resource reads and declared link policy, but does not approve actions
 on the user's behalf. Each App-initiated tool call displays the originating server, tool name and
 complete arguments in a host-owned confirmation; App-initiated chat text shows the complete text
 and requires a separate **Send message**. An approved App message contains only that text: files,
 manual skills, and quotes staged in the user's composer remain in the draft and are neither submitted
-nor drained. Rejecting an action pauses further action requests from that View until it is closed and reopened.
-The dialog also provides a Close app and stop requests control for an App that repeatedly asks.
+nor drained. Rejecting an action or an App aborting its own pending approval request pauses further
+action requests from that View until it is closed and reopened. The dialog also provides a Close
+app and stop requests control for an App that repeatedly asks.
 Navigating away or closing the App does not execute a pending action. Tool arguments and message
 previews exceeding `maxActionPreviewChars` (default 16,384; range 1–131,072 UTF-16 characters)
 fail closed; they are never silently truncated for approval. The existing authenticated same-server binding
