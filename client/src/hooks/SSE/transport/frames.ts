@@ -12,7 +12,7 @@ import type {
   ChatTextFrame,
   ChatEventFrame,
   ChatFinalFrame,
-  TContentData,
+  ChatContentFrame,
   ChatCreatedFrame,
 } from 'librechat-data-provider';
 
@@ -75,7 +75,7 @@ export function normalizeFrame(frame: ChatFrame): ChatEvent | undefined {
     return { type: 'sync', data: frame as ChatSyncFrame };
   }
   if (keys.type != null) {
-    return { type: 'content', data: frame as TContentData };
+    return { type: 'content', data: frame as ChatContentFrame };
   }
   if (keys.message != null) {
     return { type: 'text', data: frame as ChatTextFrame };
