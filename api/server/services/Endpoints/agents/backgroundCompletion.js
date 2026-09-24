@@ -1,9 +1,11 @@
 const {
   createBackgroundToolCompletionWakeupHandler,
   createBackgroundToolDeadClaimRecovery,
+  createPendingBackgroundCompletions,
   createBackgroundToolResultHandler,
   claimBackgroundToolResult: claimResult,
 } = require('@librechat/api');
+const { listPendingAgentBackgroundToolCompletions } = require('~/models');
 const {
   enqueueAgentTrigger,
   persistAgentBackgroundToolResult,
@@ -20,6 +22,11 @@ const preregisterBackgroundToolCompletion = createBackgroundToolCompletionWakeup
   (deliveryKey, sourceId, result) =>
     persistAgentBackgroundToolResult({ deliveryKey, sourceId, result }),
 );
+
+const pendingBackgroundToolCompletions = createPendingBackgroundCompletions({
+  list: listPendingAgentBackgroundToolCompletions,
+  retire: retireAgentTrigger,
+});
 
 function createBackgroundToolResultPersistence({ req, updateToolCallResult }) {
   return createBackgroundToolResultHandler({ req, updateToolCallResult });
@@ -44,6 +51,7 @@ function createDeadBackgroundToolClaimRecovery(
 
 module.exports = {
   preregisterBackgroundToolCompletion,
+  pendingBackgroundToolCompletions,
   createBackgroundToolResultPersistence,
   claimBackgroundToolResult,
   createDeadBackgroundToolClaimRecovery,

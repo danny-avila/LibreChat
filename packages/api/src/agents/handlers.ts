@@ -36,6 +36,12 @@ import type { CodeEnvRef, CodeWorkspaceOperation, PtcToolCallEvent } from 'libre
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { CodeEnvFile, CodeSessionContext } from '@librechat/agents';
 import type {
+  BackgroundToolDeadClaimRecovery,
+  BackgroundToolWakeupAdmission,
+  BackgroundToolWakeupRegistration,
+  PendingBackgroundCompletionControls,
+} from './backgroundCompletion';
+import type {
   WorkspaceEditResult,
   WorkspacePreviewEditResult,
   WorkspaceListResult,
@@ -43,11 +49,6 @@ import type {
   WorkspaceSearchResult,
   WorkspaceWriteResult,
 } from '~/code/workspace';
-import type {
-  BackgroundToolDeadClaimRecovery,
-  BackgroundToolWakeupAdmission,
-  BackgroundToolWakeupRegistration,
-} from './backgroundCompletion';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { ArtifactDeliveryFailure } from '~/files/code';
 import type { BackgroundToolResultState } from './harvest';
@@ -345,6 +346,9 @@ export interface ToolExecuteOptions {
       allowUnfinished?: boolean;
     }) => Promise<BackgroundToolResultClaim>;
     recoverDeadClaim?: BackgroundToolDeadClaimRecovery;
+    /** Durable view of undelivered completions, so a status check counts results
+     * dispatched in earlier turns, on other replicas, or before a restart. */
+    pending?: PendingBackgroundCompletionControls;
   };
   /** Emits an `attachment` SSE event on the current request's live stream. */
   emitAttachment?: (attachment: unknown) => void;
@@ -6669,6 +6673,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                     subagentTasks,
                     claimBackgroundToolResult: backgroundToolCompletion?.claim,
                     recoverDeadBackgroundToolClaim: backgroundToolCompletion?.recoverDeadClaim,
+                    pendingCompletions: backgroundToolCompletion?.pending,
                     ordinaryToolCancellation,
                   });
                   const taskSnapshot = getBackgroundTaskSnapshot({

@@ -57,8 +57,10 @@ import type { BackgroundToolResultState } from './harvest';
 import type { CapabilityToolNames } from './selection';
 import {
   BACKGROUND_TASK_TIMEOUT_MS,
+  type PendingBackgroundCompletion,
   type BackgroundToolDeadClaimRecovery,
   type BackgroundToolWakeupAdmission,
+  type PendingBackgroundCompletionControls,
 } from './backgroundCompletion';
 import {
   CREATE_FILE_TOOL_NAME,
@@ -358,7 +360,7 @@ Provide a background_task_id to poll one task; omit it to list every background 
 
 const CHECK_BACKGROUND_TASK_WAKEUP_DESCRIPTION = `Check, control, and retrieve tool or subagent tasks previously dispatched in the background (with run_in_background: true).
 
-Provide a background_task_id to inspect one task; omit it to list every background task in this thread. Background tools and detached subagents use automatic completion delivery: continue independent work or end the turn instead of repeatedly polling an unchanged running task, and the host will resume you when one finishes. Use this tool for explicit status, steer, queue, interrupt, cancel, or cancel_message actions, or as a fallback if automatic delivery is unavailable. Ordinary tool execution remains process-local and does not survive restart; once its result is persisted, completion delivery may continue on another replica. Live subagent controls route across API replicas but do not survive a restart of the process that owns the executor. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
+Provide a background_task_id to inspect one task; omit it to list every background task in this thread. Background tools and detached subagents use automatic completion delivery: continue independent work or end the turn instead of repeatedly polling an unchanged running task, and the host will resume you when one finishes. Use this tool for explicit status, steer, queue, interrupt, cancel, or cancel_message actions, or as a fallback if automatic delivery is unavailable. A task is outstanding until its result is delivered, not merely until it stops running: a finished task whose delivery is "pending" will still arrive as a new turn, so never report it as done or cancelled on the strength of its status alone. Polling or cancelling a finished task retires its pending delivery so it never arrives as a new turn: a poll returns the result now, and cancelling a result this turn can no longer poll discards it. Ordinary tool execution remains process-local and does not survive restart; once its result is persisted, completion delivery may continue on another replica. Live subagent controls route across API replicas but do not survive a restart of the process that owns the executor. A completed subagent thread may be continued later through the subagent tool's durable thread id.`;
 
 function checkBackgroundTaskDescription(subagentCompletionWakeups: boolean): string {
   return subagentCompletionWakeups
@@ -1840,9 +1842,16 @@ interface SerializedBackgroundTask {
   result?: string;
   result_available?: boolean;
   result_chars?: number;
+  /** Whether the result has reached the conversation. `pending` results still
+   * arrive as a new turn unless polled or cancelled first. Absent when the task
+   * has no automatic delivery, so only a poll ever surfaces its result. */
+  delivery?: 'pending' | 'delivered';
   note?: string;
   error?: string;
 }
+
+const PENDING_DELIVERY_GUIDANCE =
+  'Some finished tasks have not been delivered yet (delivery: "pending"); each will arrive as a new turn. Poll one to collect its result now, or cancel it so it does not arrive. Do not report these tasks as finished or cancelled until then.';
 
 /**
  * Model-facing task timings. The registry keeps epoch milliseconds; everything the
@@ -1900,6 +1909,37 @@ function taskNote(task: BackgroundTask): Pick<SerializedBackgroundTask, 'note'> 
   return {};
 }
 
+function taskDelivery(task: BackgroundTask): Pick<SerializedBackgroundTask, 'delivery'> {
+  if (task.completionWakeup !== true || task.completionPersistenceFailed === true) {
+    return {};
+  }
+  if (task.resultClaim != null || task.completionWakeupRetired === true) {
+    return { delivery: 'delivered' };
+  }
+  return { delivery: 'pending' };
+}
+
+/** A completion known only to the durable delivery store: dispatched in an earlier
+ * turn, on another replica, or before a restart, and not delivered yet. */
+function serializePendingCompletion(
+  completion: PendingBackgroundCompletion,
+): SerializedBackgroundTask {
+  const settled = completion.result;
+  return {
+    background_task_id: completion.taskId,
+    tool: completion.toolName,
+    status: settled?.status ?? 'running',
+    progress: settled == null ? 0 : 1,
+    started_at: completion.dispatchedAt.toISOString(),
+    ...(settled != null && { settled_at: settled.settledAt.toISOString() }),
+    delivery: 'pending',
+    note:
+      settled == null
+        ? 'Still running outside this turn; its result will arrive as a new turn when it finishes.'
+        : 'Finished, but its result has not been delivered; it will arrive as a new turn unless you poll or cancel it.',
+  };
+}
+
 function serializeTask(
   task: BackgroundTask,
   { includeResult }: { includeResult: boolean },
@@ -1914,6 +1954,7 @@ function serializeTask(
       : {}),
     ...taskTimings(task),
     ...resultFields(task, includeResult),
+    ...taskDelivery(task),
     ...taskNote(task),
     ...(task.error !== undefined ? { error: task.error } : {}),
   };
@@ -2113,6 +2154,8 @@ export async function runCheckBackgroundTask(params: {
   recoverDeadBackgroundToolClaim?: BackgroundToolDeadClaimRecovery;
   /** Trusted deployment policy. Defaults false for backward compatibility. */
   ordinaryToolCancellation?: boolean;
+  /** Durable view of this conversation's undelivered background completions. */
+  pendingCompletions?: PendingBackgroundCompletionControls;
 }): Promise<string> {
   const { userId, conversationId } = params;
   const args = coerceArgsObject(params.args) ?? {};
@@ -2399,6 +2442,44 @@ export async function runCheckBackgroundTask(params: {
       return JSON.stringify(serializeTask(task, { includeResult: true }));
     }
 
+    if (action === 'cancel' && params.pendingCompletions != null) {
+      let outcome: Awaited<ReturnType<PendingBackgroundCompletionControls['discard']>>;
+      try {
+        outcome = await params.pendingCompletions.discard({ userId, conversationId, taskId });
+      } catch (error) {
+        logger.warn(`[background] Failed to discard pending completion ${taskId}:`, error);
+        return JSON.stringify({
+          status: 'unavailable',
+          background_task_id: taskId,
+          message:
+            'The pending result could not be discarded right now. It may still arrive as a new turn; retry the cancel shortly.',
+        });
+      }
+      if (outcome === 'discarded') {
+        return JSON.stringify({
+          status: 'cancelled',
+          background_task_id: taskId,
+          message: 'The finished result was discarded and will not arrive as a new turn.',
+        });
+      }
+      if (outcome === 'running') {
+        return JSON.stringify({
+          status: 'unavailable',
+          background_task_id: taskId,
+          delivery: 'pending',
+          message:
+            'This task is still running outside this turn and cannot be stopped from here. Its result will arrive as a new turn when it finishes; cancel it then to discard the result.',
+        });
+      }
+      if (outcome === 'delivering') {
+        return JSON.stringify({
+          status: 'delivery_scheduled',
+          background_task_id: taskId,
+          message: 'This result is already being delivered as a new turn.',
+        });
+      }
+    }
+
     const subagentTasks = params.subagentTasks;
     let subagentPollChecked = false;
     let subagentPollError: unknown;
@@ -2586,7 +2667,21 @@ export async function runCheckBackgroundTask(params: {
 
   const tasks = backgroundTaskRegistry.list(userId, conversationId);
   let subagentTasks: SerializedSubagentTask[] = [];
-  let listWarning: string | undefined;
+  const listWarnings: string[] = [];
+  let pendingCompletions: PendingBackgroundCompletion[] = [];
+  if (params.pendingCompletions != null) {
+    try {
+      const localTaskIds = new Set(tasks.map((task) => task.id));
+      pendingCompletions = (
+        await params.pendingCompletions.list({ userId, conversationId })
+      ).filter((completion) => !localTaskIds.has(completion.taskId));
+    } catch (error) {
+      logger.warn('[background] Failed to list undelivered background completions:', error);
+      listWarnings.push(
+        'Undelivered results from earlier turns could not be listed; some may still arrive as new turns.',
+      );
+    }
+  }
   const completionWakeups = agentUsesSubagentCompletionWakeups(
     params.subagentTasks,
     params.agentId,
@@ -2607,24 +2702,37 @@ export async function runCheckBackgroundTask(params: {
         subagentTasks = params.subagentTasks.store
           .list(params.subagentTasks.scopeId)
           .map((task) => serializeSubagentSnapshot(task));
-        listWarning = `Cross-replica subagent tasks could not be listed: ${error.message}`;
+        listWarnings.push(`Cross-replica subagent tasks could not be listed: ${error.message}`);
       } else {
         throw error;
       }
     }
   }
+  const ordinaryTasks = [
+    ...tasks.map((task) => serializeTask(task, { includeResult: false })),
+    ...pendingCompletions.map(serializePendingCompletion),
+  ];
+  /** Work is outstanding until its result reaches the conversation: a finished
+   * task with a pending delivery is still going to resume the agent. */
+  const outstanding =
+    ordinaryTasks.filter((task) => task.status === 'running' || task.delivery === 'pending')
+      .length + subagentTasks.filter((task) => task.status === 'running').length;
+  const guidance = [
+    ...(ordinaryTasks.some((task) => task.status !== 'running' && task.delivery === 'pending')
+      ? [PENDING_DELIVERY_GUIDANCE]
+      : []),
+    ...(completionWakeups && subagentTasks.some((task) => task.status === 'running')
+      ? [SUBAGENT_WAKEUP_GUIDANCE]
+      : []),
+  ];
   logger.debug(
-    `[background] check_background_task listed ${tasks.length + subagentTasks.length} task(s)`,
+    `[background] check_background_task listed ${ordinaryTasks.length + subagentTasks.length} task(s), ${outstanding} outstanding`,
   );
   return JSON.stringify({
-    tasks: [
-      ...tasks.map((task) => serializeTask(task, { includeResult: false })),
-      ...subagentTasks,
-    ],
-    ...(completionWakeups && subagentTasks.some((task) => task.status === 'running')
-      ? { message: SUBAGENT_WAKEUP_GUIDANCE }
-      : {}),
-    ...(listWarning != null && { partial: true, warning: listWarning }),
+    tasks: [...ordinaryTasks, ...subagentTasks],
+    outstanding,
+    ...(guidance.length > 0 && { message: guidance.join(' ') }),
+    ...(listWarnings.length > 0 && { partial: true, warning: listWarnings.join(' ') }),
   });
 }
 

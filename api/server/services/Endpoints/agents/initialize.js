@@ -94,6 +94,7 @@ const { processAddedConvo } = require('./addedConvo');
 const subagentThreadTaskStore = require('./subagentThreadStore');
 const {
   preregisterBackgroundToolCompletion,
+  pendingBackgroundToolCompletions,
   createBackgroundToolResultPersistence,
   claimBackgroundToolResult,
   createDeadBackgroundToolClaimRecovery,
@@ -514,7 +515,12 @@ const initializeClientWithProvider = async ({
       updateToolCallResult: db.updateToolCallResult,
     }),
     backgroundToolCompletion: {
-      ...(completionWakeupsEnabled ? { preregister: preregisterBackgroundToolCompletion } : {}),
+      ...(completionWakeupsEnabled
+        ? {
+            preregister: preregisterBackgroundToolCompletion,
+            pending: pendingBackgroundToolCompletions,
+          }
+        : {}),
       persist: createBackgroundToolResultPersistence({
         req,
         updateToolCallResult: db.updateToolCallResult,

@@ -62,3 +62,40 @@ export interface BackgroundToolDeadClaimRecoveryInput {
 export type BackgroundToolDeadClaimRecovery = (
   input: BackgroundToolDeadClaimRecoveryInput,
 ) => Promise<boolean>;
+
+/** A background tool completion whose result has not reached its conversation yet,
+ * read from the durable delivery store rather than a process-local registry. */
+export interface PendingBackgroundCompletion {
+  taskId: string;
+  toolName: string;
+  dispatchedAt: Date;
+  /** The tool's terminal outcome once it settled; absent while it still runs. */
+  result?: { status: 'completed' | 'error' | 'cancelled'; settledAt: Date };
+  /** An automatic delivery holds the result and is starting its turn. */
+  claimedByWakeup: boolean;
+}
+
+/**
+ * What cancelling an undelivered completion did: `discarded` retired its delivery,
+ * so the result never arrives; `running` found the tool still executing where this
+ * process cannot stop it; `delivering` found the result already being delivered;
+ * `not_pending` found no undelivered completion for the task.
+ */
+export type BackgroundCompletionDiscardOutcome =
+  | 'discarded'
+  | 'running'
+  | 'delivering'
+  | 'not_pending';
+
+/** Durable view and control of one principal's undelivered background completions. */
+export interface PendingBackgroundCompletionControls {
+  list: (input: {
+    userId: string;
+    conversationId: string;
+  }) => Promise<PendingBackgroundCompletion[]>;
+  discard: (input: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+  }) => Promise<BackgroundCompletionDiscardOutcome>;
+}

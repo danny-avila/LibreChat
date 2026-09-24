@@ -433,6 +433,12 @@ describe('registerBackgroundTaskTool', () => {
     expect(automatic.toolDefinitions[0].description).toContain(
       'Ordinary tool execution remains process-local',
     );
+    expect(automatic.toolDefinitions[0].description).toContain(
+      'A task is outstanding until its result is delivered',
+    );
+    expect(automatic.toolDefinitions[0].description).toContain(
+      'Polling or cancelling a finished task retires its pending delivery',
+    );
   });
 });
 
@@ -3409,5 +3415,219 @@ describe('toolOptionsSchema', () => {
       bogus: 'x',
     } as Record<string, unknown>);
     expect(parsed).toEqual({ run_in_background: true });
+  });
+});
+
+describe('runCheckBackgroundTask delivery semantics', () => {
+  const pendingControls = (
+    overrides: {
+      list?: () => Promise<unknown[]>;
+      discard?: () => Promise<string>;
+    } = {},
+  ) =>
+    ({
+      list: jest.fn(overrides.list ?? (async () => [])),
+      discard: jest.fn(overrides.discard ?? (async () => 'not_pending')),
+    }) as never;
+
+  function completedWithWakeup(userId: string, conversationId: string, toolCallId: string) {
+    const created = backgroundTaskRegistry.create({
+      userId,
+      conversationId,
+      toolCallId,
+      toolName: 'bash_tool',
+      messageId: `${toolCallId}-message`,
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.markCompletionWakeup(userId, conversationId, created.task.id, {
+      renew: jest.fn(async () => true),
+      retire: jest.fn(async () => true),
+    });
+    backgroundTaskRegistry.complete(userId, conversationId, created.task.id, {
+      content: 'finished output',
+    });
+    return created.task.id;
+  }
+
+  it('counts a finished task as outstanding until its result is delivered', async () => {
+    const taskId = completedWithWakeup('outstanding-user', 'outstanding-convo', 'outstanding-call');
+
+    const before = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'outstanding-user',
+        conversationId: 'outstanding-convo',
+        args: {},
+      }),
+    );
+    expect(before.tasks[0]).toEqual(
+      expect.objectContaining({
+        background_task_id: taskId,
+        status: 'completed',
+        delivery: 'pending',
+      }),
+    );
+    expect(before.outstanding).toBe(1);
+    expect(before.message).toContain('have not been delivered yet');
+
+    expect(
+      backgroundTaskRegistry.claimResult('outstanding-user', 'outstanding-convo', taskId, {
+        kind: 'wakeup',
+        claimId: 'automatic-delivery',
+      }),
+    ).toBe('acquired');
+    const after = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'outstanding-user',
+        conversationId: 'outstanding-convo',
+        args: {},
+      }),
+    );
+    expect(after.tasks[0].delivery).toBe('delivered');
+    expect(after.outstanding).toBe(0);
+    expect(after.message).toBeUndefined();
+  });
+
+  it('counts running work as outstanding without claiming undelivered results', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'running-user',
+      conversationId: 'running-convo',
+      toolCallId: 'running-call',
+      toolName: 'bash_tool',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+
+    const listed = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'running-user',
+        conversationId: 'running-convo',
+        args: {},
+      }),
+    );
+    expect(listed.tasks[0]).toEqual(expect.objectContaining({ status: 'running' }));
+    expect(listed.tasks[0].delivery).toBeUndefined();
+    expect(listed.outstanding).toBe(1);
+    expect(listed.message).toBeUndefined();
+  });
+
+  it('lists undelivered results the process-local registry no longer holds', async () => {
+    const localTaskId = completedWithWakeup('durable-user', 'durable-convo', 'durable-local');
+    const pendingCompletions = pendingControls({
+      list: async () => [
+        {
+          taskId: localTaskId,
+          toolName: 'bash_tool',
+          dispatchedAt: new Date('2026-09-24T12:00:00Z'),
+          result: { status: 'completed', settledAt: new Date('2026-09-24T12:01:00Z') },
+          claimedByWakeup: false,
+        },
+        {
+          taskId: 'earlier-turn-task',
+          toolName: 'slow_task',
+          dispatchedAt: new Date('2026-09-24T11:00:00Z'),
+          result: { status: 'error', settledAt: new Date('2026-09-24T11:05:00Z') },
+          claimedByWakeup: false,
+        },
+        {
+          taskId: 'other-replica-task',
+          toolName: 'slow_task',
+          dispatchedAt: new Date('2026-09-24T11:30:00Z'),
+          claimedByWakeup: false,
+        },
+      ],
+    });
+
+    const listed = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'durable-user',
+        conversationId: 'durable-convo',
+        args: {},
+        pendingCompletions,
+      }),
+    );
+
+    expect(
+      listed.tasks.map((task: { background_task_id: string }) => task.background_task_id),
+    ).toEqual([localTaskId, 'earlier-turn-task', 'other-replica-task']);
+    expect(listed.tasks[1]).toEqual(
+      expect.objectContaining({
+        status: 'error',
+        delivery: 'pending',
+        started_at: '2026-09-24T11:00:00.000Z',
+        settled_at: '2026-09-24T11:05:00.000Z',
+      }),
+    );
+    expect(listed.tasks[2]).toEqual(
+      expect.objectContaining({ status: 'running', delivery: 'pending', progress: 0 }),
+    );
+    expect(listed.tasks[1].result).toBeUndefined();
+    expect(listed.outstanding).toBe(3);
+  });
+
+  it('keeps listing local work when the durable view is unavailable', async () => {
+    const taskId = completedWithWakeup('degraded-user', 'degraded-convo', 'degraded-call');
+    const pendingCompletions = pendingControls({
+      list: async () => {
+        throw new Error('delivery store unavailable');
+      },
+    });
+
+    const listed = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'degraded-user',
+        conversationId: 'degraded-convo',
+        args: {},
+        pendingCompletions,
+      }),
+    );
+
+    expect(
+      listed.tasks.map((task: { background_task_id: string }) => task.background_task_id),
+    ).toEqual([taskId]);
+    expect(listed.partial).toBe(true);
+    expect(listed.warning).toContain('Undelivered results from earlier turns could not be listed');
+  });
+
+  it.each([
+    ['discarded', 'cancelled', 'will not arrive as a new turn'],
+    ['running', 'unavailable', 'cannot be stopped from here'],
+    ['delivering', 'delivery_scheduled', 'already being delivered'],
+  ])(
+    'reports a %s undelivered completion this process does not hold',
+    async (outcome, status, message) => {
+      const pendingCompletions = pendingControls({ discard: async () => outcome });
+
+      const cancelled = JSON.parse(
+        await runCheckBackgroundTask({
+          userId: 'discard-user',
+          conversationId: 'discard-convo',
+          args: { background_task_id: 'earlier-turn-task', action: 'cancel' },
+          pendingCompletions,
+        }),
+      );
+
+      expect(cancelled).toEqual(
+        expect.objectContaining({ status, background_task_id: 'earlier-turn-task' }),
+      );
+      expect(cancelled.message).toContain(message);
+    },
+  );
+
+  it('falls through to the ordinary lookup when nothing is pending for the task', async () => {
+    const pendingCompletions = pendingControls({ discard: async () => 'not_pending' });
+
+    const cancelled = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'discard-user',
+        conversationId: 'discard-convo',
+        args: { background_task_id: 'unknown-task', action: 'cancel' },
+        pendingCompletions,
+      }),
+    );
+
+    expect(cancelled).toEqual(expect.objectContaining({ status: 'not_found' }));
   });
 });

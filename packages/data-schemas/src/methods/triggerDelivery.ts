@@ -44,6 +44,18 @@ export const CLAIM_CAS_MAX_ATTEMPTS = 16;
 /** Candidates fetched per claim read; losing claimers advance through the
  * batch instead of re-reading the same head-of-queue row. */
 const CLAIM_CANDIDATE_BATCH = 8;
+/** A conversation's undelivered completions are few; this bounds a pathological listing. */
+const MAX_PENDING_BACKGROUND_COMPLETIONS = 50;
+/** Every status before a delivery settles, i.e. whose result has not reached its conversation. */
+const UNDELIVERED_STATUSES: IAgentTriggerDelivery['status'][] = [
+  'staging',
+  'capability_staging',
+  'batched',
+  'pending',
+  'capability_pending',
+  'leased',
+  'capability_leased',
+];
 /** Capability work is inert to legacy claimers while preserving their lane
  * behavior: publishing is `staging`; queued work is `leased` without a lease
  * owner/deadline; execution adds a private lease; dead work is terminal. */
@@ -246,6 +258,19 @@ export interface AgentEventActorReceiptStorageMetrics {
   deadDeliveries: number;
 }
 
+/** A background tool completion that has not reached its conversation yet. */
+export interface PendingAgentBackgroundToolCompletion {
+  deliveryKey: string;
+  taskId: string;
+  toolCallId: string;
+  toolName: string;
+  dispatchedAt: Date;
+  /** The tool's terminal outcome once it settled; absent while it still runs. */
+  result?: { status: AgentBackgroundToolResultReceipt['status']; settledAt: Date };
+  /** An automatic delivery holds the result and is starting its turn. */
+  claimedByWakeup: boolean;
+}
+
 export interface AgentTriggerDeliveryMethods {
   ensureAgentTriggerDeliveryIndexes: () => Promise<void>;
   enqueueAgentTriggerDelivery: (
@@ -307,6 +332,12 @@ export interface AgentTriggerDeliveryMethods {
     sourceId: string;
     now: Date;
   }) => Promise<AgentTriggerProducerLeaseStatus>;
+  listPendingAgentBackgroundToolCompletions: (input: {
+    user: string | Types.ObjectId;
+    conversationId: string;
+    sourceId: string;
+    limit?: number;
+  }) => Promise<PendingAgentBackgroundToolCompletion[]>;
   persistAgentBackgroundToolResult: (
     input: PersistAgentBackgroundToolResultInput,
   ) => Promise<boolean>;
@@ -2287,6 +2318,76 @@ export function createAgentTriggerDeliveryMethods(
       : { status: 'expired', leaseUntil: delivery.producerLeaseUntil };
   }
 
+  /** Every background completion of one conversation that has not been
+   * delivered yet: still running, or settled and waiting for a wake-up. The
+   * durable delivery row outlives the process-local task registry (another
+   * replica, a restart, or the registry's retention), so it is the record of
+   * what is still going to arrive. Result content is never returned here. */
+  async function listPendingAgentBackgroundToolCompletions(input: {
+    user: string | Types.ObjectId;
+    conversationId: string;
+    sourceId: string;
+    limit?: number;
+  }): Promise<PendingAgentBackgroundToolCompletion[]> {
+    const limit = input.limit ?? MAX_PENDING_BACKGROUND_COMPLETIONS;
+    if (
+      input.conversationId.length === 0 ||
+      input.conversationId.length > 256 ||
+      input.sourceId.length === 0 ||
+      input.sourceId.length > 256 ||
+      !Number.isSafeInteger(limit) ||
+      limit <= 0
+    ) {
+      throw new TypeError('Invalid pending background completion lookup');
+    }
+    const rows = await Delivery()
+      .find({
+        user: input.user,
+        'envelope.event.source.type': 'internal',
+        'envelope.event.source.id': input.sourceId,
+        'envelope.target.conversationId': input.conversationId,
+        status: { $in: UNDELIVERED_STATUSES },
+      })
+      .select('+backgroundToolResult deliveryKey createdAt envelope.event.payload')
+      .sort({ createdAt: 1, _id: 1 })
+      .limit(Math.min(limit, MAX_PENDING_BACKGROUND_COMPLETIONS))
+      .lean<
+        Array<
+          Pick<IAgentTriggerDelivery, 'deliveryKey' | 'createdAt' | 'backgroundToolResult'> & {
+            envelope?: { event?: { payload?: Record<string, unknown> } };
+          }
+        >
+      >();
+    return rows.flatMap((row) => {
+      const payload = row.envelope?.event?.payload;
+      const taskId = payload?.taskId;
+      const toolCallId = payload?.toolCallId;
+      const toolName = payload?.toolName;
+      if (
+        row.createdAt == null ||
+        typeof taskId !== 'string' ||
+        typeof toolCallId !== 'string' ||
+        typeof toolName !== 'string'
+      ) {
+        return [];
+      }
+      const receipt = row.backgroundToolResult;
+      return [
+        {
+          deliveryKey: row.deliveryKey,
+          taskId,
+          toolCallId,
+          toolName,
+          dispatchedAt: row.createdAt,
+          ...(receipt != null && {
+            result: { status: receipt.status, settledAt: receipt.settledAt },
+          }),
+          claimedByWakeup: receipt?.resultClaim != null,
+        },
+      ];
+    });
+  }
+
   /** Stores terminal output on the pre-admitted delivery before attempting the
    * parent-message projection. The first terminal receipt wins; exact retries
    * are idempotent and conflicting rewrites fail closed. */
@@ -4049,6 +4150,7 @@ export function createAgentTriggerDeliveryMethods(
     retireAgentTriggerDelivery,
     renewAgentTriggerDeliveryProducerLease,
     getAgentTriggerDeliveryProducerLease,
+    listPendingAgentBackgroundToolCompletions,
     persistAgentBackgroundToolResult,
     getAgentBackgroundToolResult,
     getAgentBackgroundToolResultClaim,
