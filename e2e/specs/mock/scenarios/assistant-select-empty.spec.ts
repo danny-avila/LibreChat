@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 import { getAccessToken, requestJson } from '../helpers';
 import { probeStyle } from './style.helpers';
+import { openSidebar } from './sidebar';
 
 /**
  * The Assistant Builder's picker shows "Create Assistant" until an assistant is
@@ -17,7 +18,15 @@ const ASSISTANT_NAME = 'E2E muted picker assistant';
 
 async function openBuilder(page: Page): Promise<Locator> {
   await page.goto('/c/new?endpoint=assistants&model=gpt-4o-mini', { timeout: 10000 });
-  await page.getByRole('button', { name: 'Assistant Builder' }).first().click();
+  await openSidebar(page);
+  /** The mobile drawer opens on chat history; its panels are items of the Control Panel menu. */
+  const controlPanel = page.getByRole('button', { name: 'Control Panel' });
+  if (await controlPanel.isVisible()) {
+    await controlPanel.click();
+    await page.getByRole('menuitemcheckbox', { name: 'Assistant Builder' }).click();
+  } else {
+    await page.getByRole('button', { name: 'Assistant Builder' }).first().click();
+  }
   const picker = page.getByTestId('select-dropdown-button').first();
   await expect(picker).toBeVisible();
   return picker;
