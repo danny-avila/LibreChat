@@ -107,14 +107,17 @@ export function createPiiTextTransformer(config: PiiRedactionConfig): {
     createSession() {
       const placeholders = new Map<string, string>();
       const issued = new Set<string>();
+      const reserved = new Set<string>();
       const nextByCategory = new Map<PiiPlaceholderType, number>();
       let remainingCharacters = maxCharacters;
       let remainingMatches = maxMatches;
       return {
         transform(fragment) {
           let matches: readonly PatternTextMatch[];
-          const reserved = new Set<string>();
           try {
+            if (fields != null && !fields.has(fragment.field)) {
+              return { version: 1, content: fragment.text, replacements: 0, categories: [] };
+            }
             if (typeof fragment.text !== 'string' || fragment.text.length > remainingCharacters) {
               throw new PiiTransformationError('limit');
             }
@@ -126,9 +129,6 @@ export function createPiiTextTransformer(config: PiiRedactionConfig): {
               if (issued.has(marker[0])) {
                 throw new PiiTransformationError('inspection');
               }
-            }
-            if (fields != null && !fields.has(fragment.field)) {
-              return { version: 1, content: fragment.text, replacements: 0, categories: [] };
             }
             matches = inspector.locate(fragment.text, remainingMatches);
           } catch (error) {

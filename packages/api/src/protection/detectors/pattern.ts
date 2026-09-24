@@ -468,8 +468,8 @@ function createLinearInspector(
 
   const compiled = new Map<string, RE2JS>();
   const locate = (text: string, maxMatches: number): readonly PatternTextMatch[] => {
-    if (!Number.isSafeInteger(maxMatches) || maxMatches <= 0) {
-      throw configurationError('redaction match limit must be a positive safe integer');
+    if (!Number.isSafeInteger(maxMatches) || maxMatches < 0) {
+      throw configurationError('redaction match limit must be a non-negative safe integer');
     }
     const matches: PatternTextMatch[] = [];
     const selected = customSet == null ? [] : customSet.match(text);

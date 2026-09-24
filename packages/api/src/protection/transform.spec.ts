@@ -72,6 +72,75 @@ describe('opt-in PII text transformation', () => {
     );
   });
 
+  it('reserves literal markers across selected fragments without sharing session state', () => {
+    const transformer = createPiiTextTransformer(pii);
+    const session = transformer.createSession();
+    const independent = transformer.createSession();
+
+    expect(session.transform(fragment('[EMAIL_1] [EMAIL_3]'))).toEqual({
+      version: 1,
+      content: '[EMAIL_1] [EMAIL_3]',
+      replacements: 0,
+      categories: [],
+    });
+    expect(session.transform(fragment('Alice@Example.com')).content).toBe('[EMAIL_2]');
+    expect(independent.transform(fragment('Alice@Example.com')).content).toBe('[EMAIL_1]');
+    expect(session.transform(fragment('Bob@Example.com Alice@Example.com')).content).toBe(
+      '[EMAIL_4] [EMAIL_2]',
+    );
+    expect(session.transform(fragment('[EMAIL_1]'))).toMatchObject({ replacements: 0 });
+    expect(() => session.transform(fragment('[EMAIL_4]'))).toThrow(PiiTransformationError);
+  });
+
+  it('still charges selected literal markers against the character budget', () => {
+    const session = createPiiTextTransformer({ ...pii, maxCharacters: 18 }).createSession();
+    expect(session.transform(fragment('[EMAIL_1]')).replacements).toBe(0);
+    expect(session.transform(fragment('[EMAIL_2]')).replacements).toBe(0);
+    expect(() => session.transform(fragment('[EMAIL_3]'))).toThrow(PiiTransformationError);
+  });
+
+  it('does not charge an excluded field against the selected character budget', () => {
+    const text = 'Alice@Example.com';
+    const session = createPiiTextTransformer({
+      ...pii,
+      maxCharacters: text.length,
+    }).createSession();
+    const excluded = fragment(text.repeat(100), { field: 'summary' });
+
+    expect(session.transform(excluded)).toEqual({
+      version: 1,
+      content: excluded.text,
+      replacements: 0,
+      categories: [],
+    });
+    expect(session.transform(fragment(text)).content).toBe('[EMAIL_1]');
+  });
+
+  it('neither validates nor reserves excluded markers before or after selected fragments', () => {
+    const session = createPiiTextTransformer(pii).createSession();
+    const excluded = fragment('[EMAIL_1] [EMAIL_2]', { field: 'summary' });
+
+    expect(session.transform(excluded).content).toBe(excluded.text);
+    expect(session.transform(fragment('Alice@Example.com')).content).toBe('[EMAIL_1]');
+    expect(session.transform(excluded).content).toBe(excluded.text);
+    expect(session.transform(fragment('Bob@Example.com')).content).toBe('[EMAIL_2]');
+  });
+
+  it('accepts clean and empty fragments at the match limit but rejects one more match', () => {
+    const session = createPiiTextTransformer({ ...pii, maxMatches: 1 }).createSession();
+
+    expect(session.transform(fragment('Alice@Example.com')).replacements).toBe(1);
+    for (const text of ['No private details here.', '']) {
+      expect(session.transform(fragment(text))).toEqual({
+        version: 1,
+        content: text,
+        replacements: 0,
+        categories: [],
+      });
+    }
+    expect(() => session.transform(fragment('Alice@Example.com'))).toThrow(PiiTransformationError);
+  });
+
   it('redacts selected built-in credential headers without leaking the value', () => {
     const session = createPiiTextTransformer({
       action: 'redact',
@@ -139,6 +208,7 @@ describe('opt-in PII text transformation', () => {
 
   it('rejects empty regex matches, invalid limits and missing redact action without echoing input', () => {
     expect(() => createPiiTextTransformer({ ...pii, maxMatches: -1 })).toThrow();
+    expect(() => createPiiTextTransformer({ ...pii, maxMatches: 0 })).toThrow();
     expect(() => createPiiTextTransformer({ ...pii, action: 'block' })).toThrow();
     const session = createPiiTextTransformer({
       action: 'redact',
