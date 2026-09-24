@@ -205,8 +205,11 @@ Use Node 24 with the exact lockfile installed and Playwright Chromium available.
 root, run the profile with one command:
 
 ```bash
+node --test e2e/mcp-apps/server.test.mjs
 node e2e/mcp-apps/run.mjs
 ```
+
+The Playwright E2E workflow runs these checks on eligible pull requests, the nightly schedule, and manual dispatch, regardless of codegraph selection. Its required `e2e` gate fails if this dedicated job fails. The runner verifies that enabled, disabled, omitted-policy, and quota phases each executed passing browser tests; a successful Playwright exit with only skipped tests does not pass. CI uploads separate reports for each phase and preserves failing traces and screenshots.
 
 The runner builds the client with the chat at `http://127.0.0.1:3080` and the Sandbox Proxy at
 `http://localhost:3080`. Those URLs reach the same disposable LibreChat process but have distinct

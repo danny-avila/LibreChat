@@ -543,6 +543,81 @@ jobs:
           ./redis-config/stop-cluster.sh || true
           redis-cli -p 6379 shutdown || true
 
+  mcp_apps:
+    name: MCP Apps (browser and server)
+    # Always run the dedicated fixture on eligible PRs, schedule, and manual runs. The regular
+    # mock shards skip it unless E2E_MCP_APPS=true; codegraph gating must not omit this lane.
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+      github.event.pull_request != null &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      CI: 'true'
+      E2E_CHROMIUM_CHANNEL: chrome
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Use Node.js 24.16.0
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24.16.0'
+
+      - name: Restore node_modules cache
+        id: cache-node-modules
+        uses: actions/cache@v5
+        with:
+          path: |
+            node_modules
+            client/node_modules
+            packages/client/node_modules
+            packages/data-provider/node_modules
+            packages/data-schemas/node_modules
+            packages/api/node_modules
+            api/node_modules
+          key: node-modules-e2e-${{ runner.os }}-24.16.0-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+      - name: Verify Chrome is present
+        run: google-chrome --version
+
+      - name: Check MCP Apps result gating
+        run: node --test e2e/mcp-apps/results.test.mjs
+
+      - name: Check real SDK server fixture
+        run: node --test e2e/mcp-apps/server.test.mjs
+
+      # The runner builds once, then runs all four browser policy phases against one disposable
+      # MongoDB. It also rejects a Playwright-successful phase if every test was skipped.
+      - name: Run MCP Apps browser fixture (enabled, disabled, omitted, quota)
+        run: node e2e/mcp-apps/run.mjs
+
+      - name: Upload per-phase Playwright reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-mcp-apps-reports
+          path: |
+            e2e/playwright-report/mcp-apps-*/**
+            e2e/.generated/mcp-apps-result-*.json
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Upload MCP Apps traces and screenshots
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-mcp-apps-results
+          path: e2e/specs/.test-results/mcp-apps-*/**
+          retention-days: 7
+          if-no-files-found: ignore
+
   e2e:
     name: e2e
     # `!cancelled()`, not `always()`: the gate has to survive a failed shard to report it, but a
@@ -557,13 +632,14 @@ jobs:
       (github.event_name == 'pull_request' &&
       github.event.pull_request != null &&
       contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)))
-    needs: [codegraph_select, e2e_shards, mcp_tool_list_changed]
+    needs: [codegraph_select, e2e_shards, mcp_tool_list_changed, mcp_apps]
     runs-on: ubuntu-latest
     steps:
       # A codegraph-skipped MCP lane reports `skipped`; that is a decision, not a failure.
       - name: Verify every Playwright job passed
         if: >-
           needs.e2e_shards.result != 'success' ||
+          needs.mcp_apps.result != 'success' ||
           (needs.mcp_tool_list_changed.result != 'success' &&
           !(needs.mcp_tool_list_changed.result == 'skipped' && needs.codegraph_select.outputs.mcp_run == 'false'))
         run: exit 1
