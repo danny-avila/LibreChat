@@ -280,7 +280,7 @@ function QueuedRow({
         icon: <Pencil className="h-4 w-4" aria-hidden="true" />,
         disabled: actionPending,
         onClick: () => {
-          onRestoreToComposer(
+          const copied = onRestoreToComposer(
             message.text,
             message.files,
             {
@@ -289,7 +289,11 @@ function QueuedRow({
             },
             conversationId,
           );
-          showToast({ message: localize('com_ui_steer_recovery_review'), status: 'info' });
+          showToast(
+            copied
+              ? { message: localize('com_ui_steer_recovery_review'), status: 'info' }
+              : { message: localize('com_ui_steer_recovery_copy_refused'), status: 'error' },
+          );
         },
       },
       {

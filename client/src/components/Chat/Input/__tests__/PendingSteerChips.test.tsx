@@ -809,6 +809,7 @@ describe('held steer recovery controls', () => {
   });
 
   it('copies the original context for review without cancelling or sending it', async () => {
+    mockRestoreToComposer.mockReturnValueOnce(true);
     const user = userEvent.setup();
     renderChips([item]);
     await user.click(screen.getByRole('button', { name: 'com_ui_more_options' }));
@@ -828,6 +829,32 @@ describe('held steer recovery controls', () => {
     });
     expect(mockSendQueuedNow).not.toHaveBeenCalled();
     expect(mockDiscardQueued).not.toHaveBeenCalled();
+    expect(mockRemoveQueued).not.toHaveBeenCalled();
+  });
+
+  it('leaves the recovery untouched and explains a refused copy to the occupied composer', async () => {
+    mockRestoreToComposer.mockReturnValueOnce(false);
+    const user = userEvent.setup();
+    renderChips([item]);
+    await user.click(screen.getByRole('button', { name: 'com_ui_more_options' }));
+    await user.click(screen.getByText('com_ui_steer_copy_to_composer'));
+    expect(mockRestoreToComposer).toHaveBeenCalledWith(
+      item.text,
+      item.files,
+      { quotes: item.quotes, manualSkills: undefined },
+      CONVO_ID,
+    );
+    expect(mockShowToast).toHaveBeenCalledWith({
+      message: 'com_ui_steer_recovery_copy_refused',
+      status: 'error',
+    });
+    expect(mockShowToast).not.toHaveBeenCalledWith({
+      message: 'com_ui_steer_recovery_review',
+      status: 'info',
+    });
+    expect(screen.getByText('com_ui_steer_recovery_held')).toBeTruthy();
+    expect(mockDismissRecovery).not.toHaveBeenCalled();
+    expect(mockSendQueuedNow).not.toHaveBeenCalled();
     expect(mockRemoveQueued).not.toHaveBeenCalled();
   });
 

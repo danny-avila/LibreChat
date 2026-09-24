@@ -251,6 +251,79 @@ describe('useSteering', () => {
     },
   );
 
+  it.each(['blocked', 'cancelled'] as const)(
+    'releases exactly one completed run-end after dismissing a %s recovery',
+    async (disposition) => {
+      const held: QueuedMessage = {
+        id: 'held',
+        text: 'might already be delivered',
+        createdAt: 1,
+        recoverySteerId: 'source',
+        clientRequestId: 'recovery-attempt',
+      };
+      const first: QueuedMessage = { id: 'next', text: 'send after dismissal', createdAt: 2 };
+      const second: QueuedMessage = { id: 'later', text: 'wait for next run', createdAt: 3 };
+      getDefaultStore().set(recoveryDispositionsFamily(CONVO_ID), { source: disposition });
+      const ask = jest.fn();
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <RecoilRoot
+          initializeState={withActiveGeneration(({ set }) => {
+            set(store.queuedMessagesByConvoId(CONVO_ID), [held, first, second]);
+            set(store.isSubmittingFamily(0), false);
+          })}
+        >
+          {children}
+        </RecoilRoot>
+      );
+      const { result } = renderHook(
+        () => {
+          const steering = useSteering({
+            consumeDraft: jest.fn(),
+            index: 0,
+            conversationId: CONVO_ID,
+            conversation: agentsConversation,
+            isSubmitting: false,
+            answerModeActive: false,
+            sendNow: jest.fn(),
+            stopGenerating: jest.fn(),
+          });
+          useQueueDrain(0, CONVO_ID, ask);
+          return {
+            steering,
+            queue: useQueue(CONVO_ID),
+            end: useRecoilValue(store.runEndByIndex(0)),
+            setEnd: useSetRecoilState(store.runEndByIndex(0)),
+          };
+        },
+        { wrapper },
+      );
+      const terminal = {
+        conversationId: CONVO_ID,
+        outcome: 'completed' as const,
+        endedAt: 200,
+        generationCreatedAt: 41,
+      };
+      act(() => result.current.setEnd(terminal));
+      await waitFor(() => expect(result.current.end).toEqual(terminal));
+      expect(ask).not.toHaveBeenCalled();
+      expect(result.current.queue).toEqual([held, first, second]);
+
+      act(() => result.current.steering.dismissRecovery(held));
+      await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+      expect(ask).toHaveBeenCalledWith(
+        { text: first.text },
+        expect.objectContaining({ overrideQueuedMessageOrigin: expect.any(Object) }),
+      );
+      expect(result.current.end).toBeNull();
+      expect(result.current.queue).toEqual([second]);
+      expect(getDefaultStore().get(recoveryDispositionsFamily(CONVO_ID))).toEqual({
+        source: 'dismissed',
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(ask).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('keeps optimistic delivery metadata when a legacy receipt omits it', () => {
     expect(
       mergeQueuedTurnFileMetadata(

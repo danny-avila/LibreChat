@@ -107,6 +107,10 @@ export default function useQueueDrain(
     store.settledQueuedTurnReceiptsByConvoId(activeConversationId ?? Constants.NEW_CONVO),
   );
   const hasServerOwnedQueue = [...ownQueue, ...newConvoQueue].some((item) => item.server != null);
+  // A held head can leave the queue without changing the terminal signal.
+  // Observe its identity so that dismissal wakes the parked boundary.
+  const ownHeadId = ownQueue[0]?.id ?? null;
+  const newConvoHeadId = newConvoQueue[0]?.id ?? null;
   /** The row the reveal would pick, and whether one is already revealed: a
    *  revealed head that is cancelled or dies before admission leaves the
    *  server-owned queue non-empty and its terminal evidence out of the
@@ -340,16 +344,26 @@ export default function useQueueDrain(
           return reveal == null ? null : { kind: 'reveal', item: reveal, end };
         }
 
-        // Consume only after server authority has yielded the boundary — a
-        // hard double-fire guard even if the effect re-runs before propagation.
-        consumeEnd();
-
         const head = merged[0];
         const held =
           head != null &&
           recoveryDisposition(jotaiStore.get(recoveryDispositionsFamily(conversationId)), head) !=
             null;
-        const next = shouldDrain && !held ? (head ?? null) : null;
+        if (shouldDrain && held) {
+          // The held source cannot spend this completion. Keep its one-shot
+          // boundary so a successor can drain if the user dismisses the hold.
+          if (shouldMigrate && newConvoQueue.length > 0) {
+            set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), []);
+            set(store.queuedMessagesByConvoId(conversationId), merged);
+          }
+          return null;
+        }
+
+        // Consume only after server authority and held recoveries yield the
+        // boundary. A later queue update cannot spend the same end twice.
+        consumeEnd();
+
+        const next = shouldDrain ? (head ?? null) : null;
         const remainder = next ? merged.slice(1) : merged;
 
         if (shouldMigrate && newConvoQueue.length > 0) {
@@ -450,6 +464,8 @@ export default function useQueueDrain(
   }, [
     runEnd,
     parkedRunEnd,
+    ownHeadId,
+    newConvoHeadId,
     isSubmitting,
     activeConversationId,
     parkForeignRunEnd,

@@ -106,8 +106,56 @@ describe('useQueueDrain', () => {
     mockMarkFilesUsage.mockClear();
   });
 
+  it('moves a held new-conversation head without spending its terminal boundary', async () => {
+    getDefaultStore().set(recoveryDispositionsFamily(CONVO_ID), { source: 'blocked' });
+    const held: QueuedMessage = {
+      id: 'held',
+      text: 'review before sending',
+      createdAt: 1,
+      recoverySteerId: 'source',
+    };
+    const next: QueuedMessage = { id: 'ordinary', text: 'send after review', createdAt: 2 };
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(Constants.NEW_CONVO), [held]);
+      set(store.queuedMessagesByConvoId(CONVO_ID), [next]);
+      set(store.isSubmittingFamily(INDEX), false);
+    });
+    const end = runEnd({ startedAsNewConvo: true });
+    act(() => setters.setRunEnd!(end));
+    await waitFor(() => expect(setters.newConvoQueue).toEqual([]));
+    expect(setters.queue).toEqual([held, next]);
+    expect(setters.runEnd).toEqual(end);
+    expect(ask).not.toHaveBeenCalled();
+
+    act(() => setters.setQueue!([next]));
+    await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+    expect(ask).toHaveBeenCalledWith({ text: next.text }, emptyOverrides);
+    expect(setters.queue).toEqual([]);
+    expect(setters.runEnd).toBeNull();
+  });
+
+  it('does not turn an aborted run into a send after a held row is dismissed', async () => {
+    getDefaultStore().set(recoveryDispositionsFamily(CONVO_ID), { source: 'blocked' });
+    const held: QueuedMessage = {
+      id: 'held',
+      text: 'review me',
+      createdAt: 1,
+      recoverySteerId: 'source',
+    };
+    const next: QueuedMessage = { id: 'ordinary', text: 'wait for next run', createdAt: 2 };
+    const { ask, setters } = setup(({ set }) => {
+      set(store.queuedMessagesByConvoId(CONVO_ID), [held, next]);
+      set(store.isSubmittingFamily(INDEX), false);
+    });
+    act(() => setters.setRunEnd!(runEnd({ outcome: 'aborted' })));
+    await waitFor(() => expect(setters.runEnd).toBeNull());
+    act(() => setters.setQueue!([next]));
+    expect(ask).not.toHaveBeenCalled();
+    expect(setters.queue).toEqual([next]);
+  });
+
   it.each(['blocked', 'cancelling', 'cancelled', 'dismissed'] as const)(
-    'does not drain a %s recovery at subsequent run boundaries',
+    'does not drain a %s recovery while its run-end boundary remains available',
     async (disposition) => {
       getDefaultStore().set(recoveryDispositionsFamily(CONVO_ID), { source: disposition });
       const item = {
@@ -117,14 +165,15 @@ describe('useQueueDrain', () => {
         recoverySteerId: 'source',
         clientRequestId: 'same-attempt',
       };
+      const firstEnd = runEnd();
       const { ask, setters } = setup(({ set }) => {
         set(store.queuedMessagesByConvoId(CONVO_ID), [item]);
         set(store.isSubmittingFamily(INDEX), false);
-        set(store.runEndByIndex(INDEX), runEnd());
+        set(store.runEndByIndex(INDEX), firstEnd);
       });
-      await waitFor(() => expect(setters.runEnd).toBeNull());
+      await waitFor(() => expect(setters.runEnd).toEqual(firstEnd));
       act(() => setters.setRunEnd?.(runEnd({ generationCreatedAt: 42 })));
-      await waitFor(() => expect(setters.runEnd).toBeNull());
+      expect(setters.runEnd).toEqual(firstEnd);
       expect(ask).not.toHaveBeenCalled();
       expect(setters.queue).toEqual([item]);
     },
