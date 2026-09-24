@@ -266,46 +266,12 @@ async function expectConnectedApp(
   await expect(view).toBeVisible({ timeout: 30_000 });
   const open = view.getByRole('button', { name: 'Open app' });
   if (await open.count()) {
-    if (occurrence > 0) {
-      await open.evaluate((button) => {
-        const log = (event: Event) => {
-          button.setAttribute(
-            'data-mcp-browser-events',
-            `${button.getAttribute('data-mcp-browser-events') ?? ''} ${event.type}`,
-          );
-        };
-        button.addEventListener('pointerdown', log, { once: true });
-        button.addEventListener('click', log, { once: true });
-      });
-    }
-    if (occurrence > 0) {
-      await open.scrollIntoViewIfNeeded();
-      const box = await open.boundingBox();
-      const hit =
-        box &&
-        (await page.evaluate(
-          ({ x, y }) => {
-            const element = document.elementFromPoint(x, y);
-            return {
-              tag: element?.tagName,
-              text: element?.textContent?.slice(0, 90),
-              className: element?.getAttribute('class')?.slice(0, 90),
-            };
-          },
-          { x: box.x + box.width / 2, y: box.y + box.height / 2 },
-        ));
-      console.info('MCP_APP_HIT_TRACE', hit);
-    }
+    // Pre-scroll before clicking a sibling View: Chrome can drop Playwright's first click when
+    // scrolling past an active sandbox iframe and dispatch it to the old focused frame.
+    await open.scrollIntoViewIfNeeded();
+    await open.boundingBox();
     await open.click();
-    // Diagnostic: a synthetic event tells us if an iframe stole only the pointer click.
-    if (occurrence > 0 && (await open.count())) {
-      console.info(
-        'MCP_APP_CLICK_TRACE',
-        'no React state after pointer click',
-        await open.getAttribute('data-mcp-browser-events'),
-      );
-      await open.dispatchEvent('click');
-    }
+    await expect(view.getByRole('button', { name: 'Close app' })).toBeVisible();
   }
   const app = appFrame(page, toolName, occurrence);
   await expect(app.getByTestId('status')).toHaveText('connected', { timeout: 30_000 });

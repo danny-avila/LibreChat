@@ -45,7 +45,6 @@ function ActiveMCPAppView({
     onSizeChanged: frame.onSizeChanged,
     onLoaded: frame.onLoaded,
     onTeardown: () => {
-      console.info('MCP_APP_VIEW_TRACE', app.resourceId, 'teardown');
       approval.cancel();
       close();
     },
@@ -94,21 +93,18 @@ const MCPAppView = React.memo(function MCPAppView({
   const [opened, setOpened] = useState(false);
   const [atCapacity, setAtCapacity] = useState(false);
   const close = useCallback(() => {
-    console.info('MCP_APP_VIEW_TRACE', viewKey, 'close');
     releaseView(viewKey);
     setOpened(false);
     setAtCapacity(false);
   }, [releaseView, viewKey]);
   useEffect(
     () => () => {
-      console.info('MCP_APP_VIEW_TRACE', viewKey, 'unmount');
       releaseView(viewKey);
     },
     [releaseView, viewKey],
   );
   const open = () => {
     const reserved = reserveView(viewKey);
-    console.info('MCP_APP_VIEW_TRACE', viewKey, app.resourceId, 'open', reserved);
     if (!reserved) {
       setAtCapacity(true);
       return;
