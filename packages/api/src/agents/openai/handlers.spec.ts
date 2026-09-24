@@ -1,7 +1,7 @@
 import type { Response as ServerResponse } from 'express';
+import type { OpenAIStreamHandlerConfig, OpenAIStreamWriterConfig } from './handlers';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { OpenAIResponseContext } from './types';
-import type { OpenAIStreamHandlerConfig, OpenAIStreamWriterConfig } from './handlers';
 import {
   sendFinalChunk,
   buildCompletionUsage,
