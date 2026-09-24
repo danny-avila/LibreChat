@@ -2476,9 +2476,13 @@ describe('registrationController - invite consumption', () => {
 
 describe('resetPasswordController', () => {
   let req, res;
+  const serviceResult = { message: 'Password reset successful' };
 
   beforeEach(() => {
     jest.clearAllMocks();
+    resetPassword.mockReset().mockResolvedValue(serviceResult);
+    deleteAllUserSessions.mockReset().mockResolvedValue(undefined);
+    deletePasskeysByUser.mockReset().mockResolvedValue(undefined);
     req = {
       body: {
         userId: 'user-123',
@@ -2517,5 +2521,93 @@ describe('resetPasswordController', () => {
     expect(deletePasskeysByUser).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(400);
     expect(res.json).toHaveBeenCalledWith(resetError);
+  });
+
+  it.each([
+    ['sessions', true, false],
+    ['passkeys', false, true],
+    ['sessions and passkeys', true, true],
+  ])('reports a committed reset when revoking %s fails', async (_, failSessions, failPasskeys) => {
+    const sessionError = new Error('Session store unavailable');
+    const passkeyError = new Error('Passkey store unavailable');
+    if (failSessions) {
+      deleteAllUserSessions.mockRejectedValue(sessionError);
+    }
+    if (failPasskeys) {
+      deletePasskeysByUser.mockRejectedValue(passkeyError);
+    }
+
+    await resetPasswordController(req, res);
+
+    expect(deleteAllUserSessions).toHaveBeenCalledWith({ userId: 'user-123' });
+    expect(deletePasskeysByUser).toHaveBeenCalledWith('user-123');
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(serviceResult);
+    expect(logger.error).toHaveBeenCalledTimes(Number(failSessions) + Number(failPasskeys));
+    if (failSessions) {
+      expect(logger.error).toHaveBeenCalledWith(
+        '[resetPasswordController] Failed to revoke sessions for user user-123',
+        sessionError,
+      );
+    }
+    if (failPasskeys) {
+      expect(logger.error).toHaveBeenCalledWith(
+        '[resetPasswordController] Failed to revoke passkeys for user user-123',
+        passkeyError,
+      );
+    }
+  });
+
+  it('starts passkey revocation while session revocation is still pending', async () => {
+    let finishSessions;
+    deleteAllUserSessions.mockReturnValue(
+      new Promise((resolve) => {
+        finishSessions = resolve;
+      }),
+    );
+
+    const reset = resetPasswordController(req, res);
+    await new Promise((resolve) => setImmediate(resolve));
+    const passkeyCalls = deletePasskeysByUser.mock.calls.length;
+    const responseCalls = res.status.mock.calls.length;
+    finishSessions();
+    await reset;
+
+    expect(passkeyCalls).toBe(1);
+    expect(responseCalls).toBe(0);
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it.each(['sessions', 'passkeys'])('handles a synchronous %s revocation failure', async (kind) => {
+    const error = new Error('Revocation failed');
+    const revoke = kind === 'sessions' ? deleteAllUserSessions : deletePasskeysByUser;
+    revoke.mockImplementation(() => {
+      throw error;
+    });
+
+    await resetPasswordController(req, res);
+
+    expect(deleteAllUserSessions).toHaveBeenCalledWith({ userId: 'user-123' });
+    expect(deletePasskeysByUser).toHaveBeenCalledWith('user-123');
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(serviceResult);
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith(
+      `[resetPasswordController] Failed to revoke ${kind} for user user-123`,
+      error,
+    );
+  });
+
+  it('does not revoke sessions or passkeys when the reset service throws', async () => {
+    const resetError = new Error('Password update failed');
+    resetPassword.mockRejectedValue(resetError);
+
+    await resetPasswordController(req, res);
+
+    expect(deleteAllUserSessions).not.toHaveBeenCalled();
+    expect(deletePasskeysByUser).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ message: resetError.message });
+    expect(logger.error).toHaveBeenCalledWith('[resetPasswordController]', resetError);
   });
 });

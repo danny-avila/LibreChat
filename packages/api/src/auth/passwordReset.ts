@@ -1,4 +1,5 @@
 import { logger } from '@librechat/data-schemas';
+import type { Request, Response } from 'express';
 import { EMAIL_CHANGE_TOKEN_TYPE } from './email';
 
 /** The stored reset token, in both the typed shape and the untyped legacy one. */
@@ -36,11 +37,58 @@ export interface PasswordResetInput {
   password: string;
 }
 
+export interface PasswordResetControllerDeps {
+  resetPassword: (
+    userId: string,
+    token: string,
+    password: string,
+  ) => Promise<{ message: string } | Error>;
+  deleteAllUserSessions: (query: { userId: string }) => Promise<{ deletedCount?: number }>;
+  deletePasskeysByUser: (userId: string) => Promise<{ deletedCount?: number }>;
+}
+
 export type PasswordResetOutcome =
   | { ok: true; user: PasswordResetUser; resetToken: PasswordResetToken }
   | { ok: false };
 
 export const PASSWORD_RESET_USER_FIELDS: string = 'email _id name username emailChangedAt';
+
+export function createResetPasswordController(deps: PasswordResetControllerDeps) {
+  return async (
+    req: Request<Record<string, string>, object, PasswordResetInput>,
+    res: Response,
+  ): Promise<Response> => {
+    try {
+      const { userId, token, password } = req.body;
+      const result = await deps.resetPassword(userId, token, password);
+      if (result instanceof Error) {
+        return res.status(400).json(result);
+      }
+
+      const [sessions, passkeys] = await Promise.allSettled([
+        Promise.resolve().then(() => deps.deleteAllUserSessions({ userId })),
+        Promise.resolve().then(() => deps.deletePasskeysByUser(userId)),
+      ]);
+      if (sessions.status === 'rejected') {
+        logger.error(
+          `[resetPasswordController] Failed to revoke sessions for user ${userId}`,
+          sessions.reason,
+        );
+      }
+      if (passkeys.status === 'rejected') {
+        logger.error(
+          `[resetPasswordController] Failed to revoke passkeys for user ${userId}`,
+          passkeys.reason,
+        );
+      }
+
+      return res.status(200).json(result);
+    } catch (error) {
+      logger.error('[resetPasswordController]', error);
+      return res.status(400).json({ message: error instanceof Error ? error.message : undefined });
+    }
+  };
+}
 
 /**
  * Keyed on the token's address binding rather than its type, so the untyped legacy shape

@@ -17,6 +17,7 @@ const {
   resolveCodeEnvironmentDecisionVersion,
   resolveCodeEnvironmentMoveVersion,
   isPasskeyEnabled,
+  buildPreLoginInterface,
 } = require('@librechat/api');
 const {
   DEFAULT_MCP_APP_CSP_LIMITS,
@@ -234,18 +235,9 @@ router.get('/', async function (req, res) {
       };
 
       const interfaceConfig = baseConfig?.interfaceConfig;
-      const buildInfoDisabled = interfaceConfig?.buildInfo === false;
-      if (interfaceConfig?.privacyPolicy || interfaceConfig?.termsOfService || buildInfoDisabled) {
-        payload.interface = {};
-        if (interfaceConfig.privacyPolicy) {
-          payload.interface.privacyPolicy = interfaceConfig.privacyPolicy;
-        }
-        if (interfaceConfig.termsOfService) {
-          payload.interface.termsOfService = interfaceConfig.termsOfService;
-        }
-        if (buildInfoDisabled) {
-          payload.interface.buildInfo = false;
-        }
+      const preLoginInterface = buildPreLoginInterface(interfaceConfig);
+      if (preLoginInterface) {
+        payload.interface = preLoginInterface;
       }
 
       const unauthBuildInfo = buildBuildInfoPayload(interfaceConfig);
