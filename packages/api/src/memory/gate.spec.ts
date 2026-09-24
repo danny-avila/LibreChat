@@ -152,6 +152,34 @@ describe('createMemoryGate', () => {
     await expect(gate?.({ messages: [] })).resolves.toMatchObject({ process: false });
     expect(requests).toHaveLength(0);
   });
+
+  it('judges the newest user message and sends earlier turns only as context', async () => {
+    const { classifier, requests } = stubClassifier(0.9);
+    const gate = createMemoryGate({ classifier, settings: ON });
+
+    await gate?.({
+      messages: [
+        new HumanMessage('I prefer answers in Japanese from now on'),
+        new AIMessage('Understood.'),
+        new HumanMessage('take a screenshot of the page'),
+      ],
+    });
+
+    expect(requests[0].state).toEqual({
+      latest: 'take a screenshot of the page',
+      conversation: 'human: I prefer answers in Japanese from now on\nai: Understood.',
+    });
+  });
+
+  it('skips without calling out when the window holds no user message', async () => {
+    const { classifier, requests } = stubClassifier(0.9);
+    const gate = createMemoryGate({ classifier, settings: ON });
+
+    await expect(gate?.({ messages: [new AIMessage('Hello!')] })).resolves.toMatchObject({
+      process: false,
+    });
+    expect(requests).toHaveLength(0);
+  });
 });
 
 describe('createMemoryGate prompt overrides', () => {

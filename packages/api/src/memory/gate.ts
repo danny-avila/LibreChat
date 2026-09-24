@@ -33,21 +33,22 @@ const DEFAULT_MAX_CHARS = 8_000;
 const PROCESS = { process: true } as const;
 
 export const DURABLE_QUESTION: BooleanQuestion = boolean(
-  'Does `conversation` hold something about this user that would still matter in an unrelated ' +
-    'conversation weeks from now?',
+  "Does `latest`, the user's newest message, tell us something about this user that would " +
+    'still matter in an unrelated conversation weeks from now? `conversation` is the earlier ' +
+    'context and is only there to help read `latest`.',
   {
     true:
       'A lasting preference, a fact about who they are or what they work on, or a decision ' +
       'they want remembered.',
-    false: 'Small talk, or a detail that only matters inside this task.',
+    false: 'Small talk, a request for this task, or a detail that only matters inside this task.',
   },
 );
 
 export const CATEGORY_INSTRUCTIONS =
-  'Which stored memory does the durable part of `conversation` belong under?';
+  'Which stored memory does the durable part of `latest` belong under?';
 
 export const UPDATE_QUESTION: BooleanQuestion = boolean(
-  'Does `conversation` change something already known about this user, rather than adding ' +
+  'Does `latest` change something already known about this user, rather than adding ' +
     'something new?',
   {
     true: 'It corrects, replaces or narrows a fact the assistant would already hold.',
@@ -108,6 +109,16 @@ export function transcribeTail(
   return lines.reverse().join('\n');
 }
 
+/** Index of the newest user message, or -1 when the window holds none. */
+function latestHumanIndex(messages: BaseMessage[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]._getType?.() === 'human' && messageText(messages[i]).trim().length > 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 export function buildHint(key: string | null, updates: boolean): string | undefined {
   if (key == null) {
     return undefined;
@@ -154,16 +165,23 @@ export function createMemoryGate(params: CreateMemoryGateParams): MemoryGate | n
     messages,
     validKeys = [],
   }: MemoryGateInput): Promise<MemoryJudgment> {
-    const transcript = transcribeTail(messages ?? [], windowSize, maxChars);
-    if (transcript.length === 0) {
+    const window = messages ?? [];
+    const index = latestHumanIndex(window);
+    if (index === -1) {
       return { process: false };
     }
+    const latest = messageText(window[index]).replace(/\s+/g, ' ').trim().slice(0, maxChars);
+    const transcript = transcribeTail(
+      window.slice(0, index),
+      windowSize - 1,
+      Math.max(0, maxChars - latest.length),
+    );
     try {
       const response = await classifier.classify({
         label: 'memory-gate',
         signal,
         timeoutMs: settings.timeoutMs,
-        state: { conversation: transcript },
+        state: { latest, conversation: transcript },
         questions: buildQuestions(validKeys),
       });
 
