@@ -1120,7 +1120,7 @@ describe('MCPManager', () => {
       expect(app?.content).toBe(toolResult.content);
     });
 
-    it('keeps canonical tool output without an App artifact when document reading fails', async () => {
+    it('keeps canonical tool output and a bound retryable URI when document reading fails', async () => {
       const request = jest.fn(async ({ method }: { method: string }) => {
         if (method === 'tools/call') {
           return toolResult;
@@ -1131,10 +1131,35 @@ describe('MCPManager', () => {
       const [text, artifacts] = await callWith(connectionFor(request));
 
       expect(text).toContain('ordinary output');
-      expect(artifacts?.ui_resources).toBeUndefined();
+      expect(artifacts?.ui_resources?.data).toEqual([
+        expect.objectContaining({
+          uri: resourceUri,
+          mimeType: 'text/html;profile=mcp-app',
+          serverBinding: 'binding',
+          content: toolResult.content,
+        }),
+      ]);
+      expect(artifacts?.ui_resources?.data?.[0]).not.toHaveProperty('text');
       expect(
         request.mock.calls.filter(([request]) => request.method === 'tools/call'),
       ).toHaveLength(1);
+    });
+
+    it('retains the bound URI if the read returns no usable matching App document', async () => {
+      const request = jest.fn(async ({ method }: { method: string }) =>
+        method === 'tools/call'
+          ? toolResult
+          : { contents: [{ uri: resourceUri, mimeType: 'text/plain', text: 'not an app' }] },
+      );
+      const [text, artifacts] = await callWith(connectionFor(request));
+      expect(text).toContain('ordinary output');
+      expect(artifacts?.ui_resources?.data?.[0]).toMatchObject({
+        uri: resourceUri,
+        serverBinding: 'binding',
+        content: toolResult.content,
+      });
+      expect(artifacts?.ui_resources?.data?.[0]?.text).toBeUndefined();
+      expect(request.mock.calls.filter(([call]) => call.method === 'tools/call')).toHaveLength(1);
     });
 
     it('does not read or attach the App when Apps policy denies it', async () => {

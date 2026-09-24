@@ -60,9 +60,15 @@ user overrides cannot change them. Apply a limits change across the server and c
 then reload open chat pages so host link decisions and newly served sandbox responses use the same
 snapshot. Request query parameters contain only the normalized CSP declaration and cannot choose
 their own limits. `maxPersistedAppBytes` defaults to 1 MiB and can be raised to at most 4 MiB. It
-bounds each complete App attachment added to a message, rather than the whole message document. An
-oversized full document falls back to a bound URI-only descriptor; if that descriptor is still too
-large, LibreChat omits the optional App artifact while preserving ordinary tool output.
+bounds each complete App attachment added to a message. In addition, a storage-owned 12 MiB BSON
+budget checks the _whole candidate message_ when it includes bound Apps, with headroom below MongoDB's
+16 MiB document limit. Concurrent background attachments use the existing compare-and-swap fence;
+a full response save checks the current row again before writing. If the aggregate would be too
+large, LibreChat removes optional App documents starting with the largest and retains bound URI-only
+descriptors. If even the descriptors do not fit, LibreChat omits optional App resources while
+preserving canonical tool output and unrelated attachments. Non-App content that does not fit the
+budget still fails explicitly; it is never silently truncated. Existing stored messages need no
+migration, and later full saves re-apply the same App budget.
 
 `maxAdmissionRequestsPerMinute` defaults to 240 and is a shared per-user ceiling across every App
 validation, resource, and tool-call route. LibreChat applies it before principal-scoped configuration

@@ -11,6 +11,7 @@ import type { AppConfig, IConversation, IMessage } from '~/types';
 import { createChatExpirationDate, createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { activeExpirationFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { fitBoundAppSnapshots, hasBoundAppSnapshots } from './appSnapshots';
 import logger from '~/config/winston';
 
 /** Simple UUID v4 regex to replace zod validation */
@@ -285,12 +286,14 @@ function buildMessageSaveUpdate(
   if (
     !options.stampModelOutputOnInsert &&
     !options.unsetContextMeta &&
-    options.retentionOnInsert == null
+    options.retentionOnInsert == null &&
+    !Array.isArray(update.attachments)
   ) {
     return update;
   }
   return {
     $set: update,
+    ...(Array.isArray(update.attachments) && { $inc: { __v: 1 } }),
     ...((options.stampModelOutputOnInsert || options.retentionOnInsert != null) && {
       $setOnInsert: {
         ...(options.stampModelOutputOnInsert && { isUserSubmitted: false }),
@@ -312,6 +315,8 @@ async function findOneAndMergeMessageProvenance(
     stampModelOutputOnInsert?: boolean;
     unsetContextMeta?: boolean;
     retentionOnInsert?: { expiredAt: Date; isTemporary: false };
+    prepareAppUpdate?: (current: Record<string, unknown> | null) => Record<string, unknown>;
+    privateMessagePaths?: string;
   },
 ) {
   const safeUpdate = { ...update };
@@ -325,13 +330,25 @@ async function findOneAndMergeMessageProvenance(
   /** A small optimistic loop keeps the merge atomic while using only classic update operators. */
   for (let attempt = 0; attempt < MAX_PROVENANCE_CAS_ATTEMPTS; attempt += 1) {
     const current = await Message.findOne(identity)
-      .select({
-        isUserSubmitted: 1,
-        userSubmittedPaths: 1,
-        userSubmittedMessageFieldPaths: 1,
-        _id: 0,
-      })
-      .lean<MessageProvenance | null>();
+      .select(
+        options.prepareAppUpdate
+          ? (options.privateMessagePaths ?? '')
+          : {
+              isUserSubmitted: 1,
+              userSubmittedPaths: 1,
+              userSubmittedMessageFieldPaths: 1,
+              _id: 0,
+            },
+      )
+      .lean<
+        | (MessageProvenance & {
+            _id?: Types.ObjectId;
+            attachments?: unknown[];
+            content?: unknown[];
+            __v?: number;
+          })
+        | null
+      >();
     if (current == null && !options.upsert) {
       return null;
     }
@@ -347,13 +364,22 @@ async function findOneAndMergeMessageProvenance(
     const filter = {
       ...identity,
       ...(current == null ? getMissingProvenanceFilter() : getProvenanceSnapshotFilter(current)),
+      ...(options.prepareAppUpdate &&
+        (current != null
+          ? {
+              _id: current._id,
+              __v: current.__v ?? null,
+            }
+          : { _id: new Message.base.Types.ObjectId() })),
     };
+    const admittedUpdate = options.prepareAppUpdate?.(current) ?? safeUpdate;
 
     try {
       const message = await Message.findOneAndUpdate(
         filter,
         {
-          $set: { ...safeUpdate, ...provenance },
+          $set: { ...admittedUpdate, ...provenance },
+          ...(Array.isArray(safeUpdate.attachments) && { $inc: { __v: 1 } }),
           ...(current == null &&
             options.retentionOnInsert != null && { $setOnInsert: options.retentionOnInsert }),
           ...(options.unsetContextMeta && { $unset: { contextMeta: 1 } }),
@@ -861,6 +887,38 @@ function agentOwnershipFilter(prefix: string, agentId: string): Record<string, u
 }
 
 export function createMessageMethods(mongoose: typeof import('mongoose')): MessageMethods {
+  const Message = mongoose.models.Message as Model<IMessage>;
+  /** Include server-private fields in size checks; the ordinary client projection omits them. */
+  const privateMessagePaths = Object.entries(Message.schema.paths)
+    .filter(([, path]) => path.options.select === false)
+    .map(([name]) => `+${name}`)
+    .join(' ');
+
+  function prepareAppUpdate(
+    update: Record<string, unknown>,
+    current: Record<string, unknown> | null,
+    unsetContextMeta = false,
+  ): Record<string, unknown> {
+    const attachments = update.attachments as unknown[];
+    const admitted = fitBoundAppSnapshots(attachments, (candidateAttachments) => {
+      const next = new Message({
+        ...current,
+        ...update,
+        attachments: candidateAttachments,
+        ...(unsetContextMeta ? { contextMeta: undefined } : {}),
+        createdAt: current?.createdAt ?? new Date(),
+        updatedAt: new Date(),
+      });
+      return mongoose.mongo.BSON.calculateObjectSize(
+        next.toObject({ depopulate: true, minimize: false }),
+      );
+    });
+    if (admitted !== attachments) {
+      logger.warn('[saveMessage] Optional MCP App documents exceeded the message BSON budget');
+    }
+    return admitted === attachments ? update : { ...update, attachments: admitted };
+  }
+
   /**
    * Saves a message in the database.
    */
@@ -979,28 +1037,100 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       );
       delete update.userSubmittedPaths;
       delete update.userSubmittedMessageFieldPaths;
+      delete update.__v;
       const stampModelOutputOnInsert =
         params.isCreatedByUser === false && params.isUserSubmitted === undefined;
       const hasProvenance =
         userSubmittedPaths.length > 0 || userSubmittedMessageFieldPaths.length > 0;
-      const message = hasProvenance
-        ? await findOneAndMergeMessageProvenance(
-            Message,
-            { messageId: params.messageId, user: userId },
-            update,
-            userSubmittedPaths,
-            userSubmittedMessageFieldPaths,
-            { upsert: true, stampModelOutputOnInsert, unsetContextMeta, retentionOnInsert },
-          )
-        : await Message.findOneAndUpdate(
-            { messageId: params.messageId, user: userId },
-            buildMessageSaveUpdate(update, {
-              stampModelOutputOnInsert,
-              unsetContextMeta,
-              retentionOnInsert,
-            }),
-            { upsert: true, new: true },
-          );
+      let hasApps = hasBoundAppSnapshots(update.attachments);
+      if (!hasApps) {
+        const content = Array.isArray(update.content) ? update.content : [];
+        const growingContent =
+          (typeof update.text === 'string' && update.text.length > 1024 * 1024) ||
+          content.length > 128 ||
+          content.some((item) => {
+            if (item == null || typeof item !== 'object') return false;
+            const value = item as { text?: unknown; tool_call?: { output?: unknown } };
+            return (
+              (typeof value.text === 'string' && value.text.length > 1024 * 1024) ||
+              (typeof value.tool_call?.output === 'string' &&
+                value.tool_call.output.length > 1024 * 1024)
+            );
+          });
+        if (growingContent) {
+          const stored = await Message.findOne({ messageId: params.messageId, user: userId })
+            .select({ attachments: 1 })
+            .lean<{ attachments?: unknown[] } | null>();
+          if (hasBoundAppSnapshots(stored?.attachments)) {
+            // Omitted attachments normally retain the stored array. Carry it into the same
+            // versioned budgeted write so optional HTML yields to new canonical output.
+            update.attachments = stored?.attachments;
+            hasApps = true;
+          }
+        }
+      }
+      const appUpdate = hasApps
+        ? (current: Record<string, unknown> | null) =>
+            prepareAppUpdate(update, current, unsetContextMeta)
+        : undefined;
+      let message: IMessage | null = null;
+      if (hasProvenance) {
+        message = await findOneAndMergeMessageProvenance(
+          Message,
+          { messageId: params.messageId, user: userId },
+          update,
+          userSubmittedPaths,
+          userSubmittedMessageFieldPaths,
+          {
+            upsert: true,
+            stampModelOutputOnInsert,
+            unsetContextMeta,
+            retentionOnInsert,
+            prepareAppUpdate: appUpdate,
+            privateMessagePaths,
+          },
+        );
+      } else if (hasApps) {
+        for (let attempt = 0; attempt < ATTACHMENT_MERGE_CAS_ATTEMPTS; attempt++) {
+          const current = await Message.findOne({ messageId: params.messageId, user: userId })
+            .select(privateMessagePaths)
+            .lean<Record<string, unknown> | null>();
+          const filter = {
+            messageId: params.messageId,
+            user: userId,
+            ...(current != null
+              ? { _id: current._id, __v: current.__v ?? null }
+              : { _id: new mongoose.Types.ObjectId() }),
+          };
+          try {
+            message = await Message.findOneAndUpdate(
+              filter,
+              buildMessageSaveUpdate(appUpdate!(current), {
+                stampModelOutputOnInsert,
+                unsetContextMeta,
+                retentionOnInsert,
+              }),
+              { upsert: current == null, new: true },
+            );
+            if (message) break;
+          } catch (error) {
+            if (!isDuplicateKeyError(error)) throw error;
+          }
+        }
+        if (!message) {
+          throw new Error('MCP App message write contention exceeded its retry bound');
+        }
+      } else {
+        message = await Message.findOneAndUpdate(
+          { messageId: params.messageId, user: userId },
+          buildMessageSaveUpdate(update, {
+            stampModelOutputOnInsert,
+            unsetContextMeta,
+            retentionOnInsert,
+          }),
+          { upsert: true, new: true },
+        );
+      }
 
       if (message == null) {
         return message;
@@ -1311,11 +1441,13 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         }
       }
     }
-    const mergingAttachments = attachments !== undefined && attachments.length > 0;
+    const incomingAttachments = attachments ?? [];
+    const mergingAttachments = incomingAttachments.length > 0;
     if (Object.keys(partPatch).length === 0 && !mergingAttachments) {
       return { matched: false, unfinished: false };
     }
     const settleUpdate = {
+      $inc: { __v: 1 },
       ...(Object.keys(partPatch).length > 0 ? { $set: partPatch } : {}),
       ...(disarmWakeup
         ? { $unset: { 'content.$[part].tool_call.backgroundTask.completionWakeup': 1 } }
@@ -1354,7 +1486,18 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           },
         );
       }
-      if (!mergingAttachments) {
+      const largeOutput = output !== undefined && Buffer.byteLength(output, 'utf8') > 1024 * 1024;
+      const budgetExistingApps =
+        !mergingAttachments &&
+        largeOutput &&
+        hasBoundAppSnapshots(
+          (
+            await Message.findOne(messageFilter)
+              .select({ attachments: 1 })
+              .lean<{ attachments?: unknown[] } | null>()
+          )?.attachments,
+        );
+      if (!mergingAttachments && !budgetExistingApps) {
         const result = await Message.findOneAndUpdate(
           messageFilter,
           settleUpdate,
@@ -1372,7 +1515,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
        * agent's attachment under the same id/key must survive (missing agent
        * identity = legacy wildcard). */
       const attachmentKeys = new Set(
-        attachments
+        incomingAttachments
           .map((attachment) => {
             const { file_id, filepath } = attachment as { file_id?: unknown; filepath?: unknown };
             return typeof file_id === 'string' ? file_id : filepath;
@@ -1397,33 +1540,90 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         if (stepId != null && entryStep !== null && entryStep !== stepId) return false;
         return true;
       };
-      /** The old pipeline replaced-and-appended `attachments` in one atomic
-       * write; classic `$pull` and `$push` conflict on one field and splitting
-       * them opens a window where a crash strips attachments and concurrent
-       * re-applications duplicate them. Instead: read the array, merge it here
-       * with the exact semantics the old `$filter`/`$concatArrays` had, and
-       * write everything back in ONE update fenced on the array being unchanged
-       * — the same guarded full-array compare-and-swap this file already uses
-       * for `subagentTask.controlReceipts`. A lost fence means a concurrent
-       * writer advanced the array; re-reading converges to exactly one copy. */
+      /** Classic `$pull` and `$push` conflict on the same field. Keep merge and
+       * part patch in one update; ordinary attachments retain the preexisting
+       * array compare-and-swap. For bound Apps, a large array in BOTH the filter
+       * and update exceeds MongoDB's 16 MiB command limit even when the resulting
+       * document fits. Use the small `__v` fence instead: every save with
+       * attachments and every background settle increments it. A lost fence is
+       * re-read and re-budgeted before retrying the combined write. */
+      const incomingApp = hasBoundAppSnapshots(incomingAttachments);
       for (let attempt = 0; attempt < ATTACHMENT_MERGE_CAS_ATTEMPTS; attempt += 1) {
         const row = await Message.findOne(messageFilter)
-          .select({ _id: 1, attachments: 1 })
-          .lean<{ _id: Types.ObjectId; attachments?: unknown[] } | null>();
+          .select(incomingApp ? privateMessagePaths : { _id: 1, attachments: 1, __v: 1 })
+          .lean<
+            | (Record<string, unknown> & {
+                _id: Types.ObjectId;
+                attachments?: unknown[];
+                __v?: number;
+              })
+            | null
+          >();
         if (row == null) {
           return { matched: false, unfinished: false };
         }
-        const prior = Array.isArray(row.attachments) ? row.attachments : [];
-        const merged = [...prior.filter((entry) => !replacesEntry(entry)), ...attachments];
+        const hasApps = incomingApp || hasBoundAppSnapshots(row.attachments);
+        /** Avoid materializing the whole message for ordinary file attachments. */
+        const current =
+          hasApps && !incomingApp
+            ? await Message.findOne({
+                ...messageFilter,
+                _id: row._id,
+                __v: row.__v ?? null,
+              })
+                .select(privateMessagePaths)
+                .lean<
+                  | (Record<string, unknown> & { _id: Types.ObjectId; attachments?: unknown[] })
+                  | null
+                >()
+            : row;
+        if (current == null) continue;
+        const prior = Array.isArray(current.attachments) ? current.attachments : [];
+        const merged = [...prior.filter((entry) => !replacesEntry(entry)), ...incomingAttachments];
+        let admitted = merged;
+        if (hasApps) {
+          const content = Array.isArray(current.content) ? current.content : [];
+          const nextContent =
+            output === undefined
+              ? content
+              : content.map((entry) => {
+                  if (entry == null || typeof entry !== 'object') return entry;
+                  const part = entry as {
+                    type?: unknown;
+                    agentId?: unknown;
+                    tool_call?: {
+                      id?: unknown;
+                      stepId?: unknown;
+                      agentId?: unknown;
+                      output?: string;
+                    };
+                  };
+                  if (
+                    part.type !== 'tool_call' ||
+                    part.tool_call?.id !== toolCallId ||
+                    (stepId != null && part.tool_call.stepId !== stepId) ||
+                    (agentId != null &&
+                      part.agentId != null &&
+                      part.agentId !== agentId &&
+                      part.tool_call.agentId !== agentId)
+                  )
+                    return entry;
+                  return { ...part, tool_call: { ...part.tool_call, output } };
+                });
+          admitted = prepareAppUpdate({ attachments: merged, content: nextContent }, current)
+            .attachments as unknown[];
+        }
         const result = await Message.findOneAndUpdate(
           {
             ...messageFilter,
-            _id: row._id,
-            attachments: row.attachments == null ? null : row.attachments,
+            _id: current._id,
+            ...(hasApps
+              ? { __v: current.__v ?? null }
+              : { attachments: current.attachments == null ? null : current.attachments }),
           },
           {
             ...settleUpdate,
-            $set: { ...partPatch, attachments: merged },
+            $set: { ...partPatch, attachments: admitted },
           },
           settleOptions,
         ).lean<{ unfinished?: boolean } | null>();
@@ -1982,7 +2182,11 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
               submittedMessageFields,
               { upsert: false },
             )
-          : await Message.findOneAndUpdate({ messageId, user: userId }, update, { new: true });
+          : await Message.findOneAndUpdate(
+              { messageId, user: userId },
+              Array.isArray(update.attachments) ? { $set: update, $inc: { __v: 1 } } : update,
+              { new: true },
+            );
 
       if (!updatedMessage) {
         throw new Error('Message not found or user not authorized.');

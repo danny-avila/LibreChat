@@ -1,7 +1,13 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { backgroundResultMetadata, Constants, RetentionMode } from 'librechat-data-provider';
+import {
+  backgroundResultMetadata,
+  Constants,
+  RetentionMode,
+  Tools,
+  MCP_APP_MIME_TYPE,
+} from 'librechat-data-provider';
 import type { AppConfig, IMessage } from '..';
 import {
   createMessageMethods,
@@ -13,6 +19,7 @@ import {
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createModels } from '../models';
 import logger from '~/config/winston';
+import { MAX_MCP_APP_MESSAGE_BSON_BYTES } from './appSnapshots';
 
 const waitForTimestampTick = () => new Promise((resolve) => setTimeout(resolve, 2));
 
@@ -143,7 +150,162 @@ describe('Message Operations', () => {
     };
   });
 
+  const appAttachment = (i: number, bytes: number, toolCallId = 'call_bg') => ({
+    type: Tools.ui_resources,
+    file_id: `app-${i}`,
+    toolCallId,
+    [Tools.ui_resources]: [
+      {
+        uri: `ui://app/${i}`,
+        mimeType: MCP_APP_MIME_TYPE,
+        serverName: 'server',
+        serverBinding: 'authenticated-binding',
+        resourceId: `resource-${i}`,
+        toolName: 'show_app',
+        content: [{ type: 'text', text: 'canonical' }],
+        text: 'x'.repeat(bytes),
+      },
+    ],
+  });
+
   describe('saveMessage', () => {
+    it('bounds aggregate App BSON without changing canonical output, even on a later full save', async () => {
+      const content = [{ type: 'text', text: 'canonical message' }];
+      const attachments = Array.from({ length: 17 }, (_, i) =>
+        appAttachment(i, 1024 * 1024 - 2048),
+      );
+      for (let attempt = 0; attempt < 2; attempt++) {
+        await saveMessage(mockCtx, {
+          ...mockMessageData,
+          content,
+          attachments: attachments as unknown as IMessage['attachments'],
+        });
+        const stored = await Message.findOne({ messageId: 'msg123' }).lean();
+        expect(mongoose.mongo.BSON.calculateObjectSize(stored!)).toBeLessThanOrEqual(
+          MAX_MCP_APP_MESSAGE_BSON_BYTES,
+        );
+        const apps =
+          stored?.attachments?.flatMap(
+            (attachment) =>
+              (
+                attachment as {
+                  [Tools.ui_resources]: Array<{ text?: string; serverBinding?: string }>;
+                }
+              )[Tools.ui_resources],
+          ) ?? [];
+        expect(apps).toHaveLength(17);
+        expect(apps.some((app) => app.text === undefined)).toBe(true);
+        expect(apps.every((app) => app.serverBinding === 'authenticated-binding')).toBe(true);
+        expect(stored?.content).toEqual(content);
+      }
+    }, 60000);
+
+    it('re-budgets retained Apps when a later save omits attachments and grows canonical text', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        attachments: Array.from({ length: 3 }, (_, i) =>
+          appAttachment(i, 3 * 1024 * 1024),
+        ) as unknown as IMessage['attachments'],
+      });
+      const text = 'model answer '.repeat(420_000);
+      await saveMessage(mockCtx, { ...mockMessageData, text, attachments: undefined });
+      const stored = await Message.findOne({ messageId: 'msg123' }).lean();
+      expect(stored?.text).toBe(text);
+      expect(mongoose.mongo.BSON.calculateObjectSize(stored!)).toBeLessThanOrEqual(
+        MAX_MCP_APP_MESSAGE_BSON_BYTES,
+      );
+      expect(stored?.attachments).toHaveLength(3);
+      expect(
+        stored?.attachments?.some((attachment) =>
+          (attachment as { [Tools.ui_resources]: Array<{ text?: string }> })[
+            Tools.ui_resources
+          ].some((resource) => resource.text === undefined),
+        ),
+      ).toBe(true);
+    }, 60000);
+
+    it('omits only oversized bound Apps, never legacy UI or canonical message text', async () => {
+      const original = appAttachment(1, 4 * 1024 * 1024);
+      const legacy = { uri: 'ui://legacy', mimeType: 'text/html', text: '<p>legacy</p>' };
+      const canonical = 'ordinary output '.repeat(420_000);
+      const attachment = {
+        ...original,
+        [Tools.ui_resources]: [
+          { ...original[Tools.ui_resources][0], content: [{ type: 'text', text: canonical }] },
+          legacy,
+        ],
+      };
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        text: canonical,
+        attachments: [
+          attachment,
+          { file_id: 'ordinary-file' },
+        ] as unknown as IMessage['attachments'],
+      });
+      const stored = await Message.findOne({ messageId: 'msg123' }).lean();
+      expect(mongoose.mongo.BSON.calculateObjectSize(stored!)).toBeLessThanOrEqual(
+        MAX_MCP_APP_MESSAGE_BSON_BYTES,
+      );
+      expect(stored?.text).toBe(canonical);
+      expect(stored?.attachments).toEqual([
+        expect.objectContaining({ [Tools.ui_resources]: [legacy] }),
+        { file_id: 'ordinary-file' },
+      ]);
+    }, 60000);
+
+    it('accounts for server-private message fields that the chat projection omits', async () => {
+      await saveMessage(mockCtx, mockMessageData);
+      await Message.updateOne(
+        { messageId: 'msg123' },
+        {
+          $set: {
+            subagentTranscript: {
+              taskId: 'private-task',
+              mode: 'append',
+              messagesJson: 'p'.repeat(4 * 1024 * 1024),
+            },
+          },
+        },
+      );
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        attachments: Array.from({ length: 9 }, (_, i) =>
+          appAttachment(i, 1024 * 1024 - 2048),
+        ) as unknown as IMessage['attachments'],
+      });
+      const stored = await Message.findOne({ messageId: 'msg123' })
+        .select('+subagentTranscript')
+        .lean();
+      expect(mongoose.mongo.BSON.calculateObjectSize(stored!)).toBeLessThanOrEqual(
+        MAX_MCP_APP_MESSAGE_BSON_BYTES,
+      );
+      const apps =
+        stored?.attachments?.flatMap(
+          (item) =>
+            (item as { [Tools.ui_resources]: Array<{ text?: string }> })[Tools.ui_resources],
+        ) ?? [];
+      expect(apps).toHaveLength(9);
+      expect(apps.some((item) => item.text === undefined)).toBe(true);
+    }, 60000);
+
+    it('applies the same App budget when merging user-submitted provenance', async () => {
+      const attachments = Array.from({ length: 17 }, (_, i) =>
+        appAttachment(i, 1024 * 1024 - 2048),
+      );
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [{ type: 'steer', text: 'user-authored' }],
+        attachments: attachments as unknown as IMessage['attachments'],
+      });
+      const stored = await Message.findOne({ messageId: 'msg123' }).lean();
+      expect(mongoose.mongo.BSON.calculateObjectSize(stored!)).toBeLessThanOrEqual(
+        MAX_MCP_APP_MESSAGE_BSON_BYTES,
+      );
+      expect(stored?.content?.[0]).toMatchObject({ type: 'steer', text: 'user-authored' });
+      expect(stored?.userSubmittedPaths).toContain('/content/0');
+    }, 60000);
+
     it('should save a message for an authenticated user', async () => {
       const result = await saveMessage(mockCtx, mockMessageData);
 
@@ -821,6 +983,67 @@ describe('Message Operations', () => {
   });
 
   describe('updateToolCallResult', () => {
+    it('preserves a large canonical background result by downgrading existing App HTML', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [
+          { type: 'tool_call', tool_call: { id: 'call_bg', name: 'show_app', output: 'pending' } },
+        ],
+        attachments: Array.from({ length: 3 }, (_, i) =>
+          appAttachment(i, 3 * 1024 * 1024),
+        ) as unknown as IMessage['attachments'],
+      });
+      const largeOutput = 'result '.repeat(700_000);
+      const patched = await updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        output: largeOutput,
+      });
+      expect(patched.matched).toBe(true);
+      const stored = await Message.findOne({ messageId: 'msg123' }).lean();
+      expect(mongoose.mongo.BSON.calculateObjectSize(stored!)).toBeLessThanOrEqual(
+        MAX_MCP_APP_MESSAGE_BSON_BYTES,
+      );
+      expect(stored?.content?.[0]).toMatchObject({ tool_call: { output: largeOutput } });
+      expect(
+        stored?.attachments?.some((attachment) =>
+          (attachment as { [Tools.ui_resources]: Array<{ text?: string }> })[
+            Tools.ui_resources
+          ].some((resource) => resource.text === undefined),
+        ),
+      ).toBe(true);
+    }, 60000);
+
+    it('serializes concurrent App attachment settlements under the shared BSON budget', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [
+          { type: 'tool_call', tool_call: { id: 'call_bg', name: 'show_app', output: 'pending' } },
+        ],
+      });
+      const patch = (i: number) =>
+        updateToolCallResult({
+          userId: 'user123',
+          messageId: 'msg123',
+          conversationId: mockMessageData.conversationId as string,
+          toolCallId: 'call_bg',
+          output: 'canonical result',
+          attachments: [appAttachment(i, 3 * 1024 * 1024)],
+        });
+      const settled = await Promise.all(Array.from({ length: 5 }, (_, i) => patch(i)));
+      expect(settled.every((item) => item.matched)).toBe(true);
+      const stored = await Message.findOne({ messageId: 'msg123' }).lean();
+      expect(mongoose.mongo.BSON.calculateObjectSize(stored!)).toBeLessThanOrEqual(
+        MAX_MCP_APP_MESSAGE_BSON_BYTES,
+      );
+      expect(stored?.attachments).toHaveLength(5);
+      expect(stored?.content?.[0]).toMatchObject({ tool_call: { output: 'canonical result' } });
+      await patch(0);
+      expect((await Message.findOne({ messageId: 'msg123' }).lean())?.attachments).toHaveLength(5);
+    }, 60000);
+
     const toolCallContent = () => [
       { type: 'text', text: 'intro' },
       {
